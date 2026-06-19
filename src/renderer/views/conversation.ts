@@ -82,7 +82,11 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
     const icon = tc.status === 'done' ? '✓' : tc.status === 'error' ? '✕' : '⋯'
     // The whole card is a <details>, collapsed by default, so a turn full of
     // tool calls stays compact and the final answer is easy to reach.
-    const card = el('details', { class: 'tool-card', 'data-tool-id': tc.id, 'data-status': tc.status })
+    const card = el('details', {
+      class: 'tool-card',
+      'data-tool-id': tc.id,
+      'data-status': tc.status,
+    })
     card.innerHTML = `
       <summary class="tool-card-header">
         <span class="tool-name">${tc.name}</span>

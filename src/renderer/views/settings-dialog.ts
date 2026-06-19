@@ -154,7 +154,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     statusEl.className = 'lmstudio-test-status'
     void api.lmStudio.test(url, key).then((r) => {
       if (r.ok) {
-        const list = r.models && r.models.length ? r.models.slice(0, 3).join(', ') : 'no models loaded'
+        const list =
+          r.models && r.models.length ? r.models.slice(0, 3).join(', ') : 'no models loaded'
         statusEl.textContent = `✓ Connected — ${r.models?.length ?? 0} model(s): ${list}`
         statusEl.classList.add('ok')
       } else {

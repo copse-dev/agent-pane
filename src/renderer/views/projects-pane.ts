@@ -6,7 +6,11 @@ import { addProject, switchProject } from '../controller/projects.ts'
 
 export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const title = el('span', {}, 'Projects')
-  const openBtn = el('button', { class: 'projects-open-btn', 'aria-label': 'Open project' }, '+ Open')
+  const openBtn = el(
+    'button',
+    { class: 'projects-open-btn', 'aria-label': 'Open project' },
+    '+ Open',
+  )
   const header = el('div', { class: 'pane-projects-header' }, title, openBtn)
   const list = el('div', { class: 'projects-list' })
   root.append(header, list)
