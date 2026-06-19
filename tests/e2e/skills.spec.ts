@@ -41,7 +41,11 @@ test('skills slash picker and manual invocation', async () => {
     })
 
     // Tier 2: mock LLM echoes the demo skill's example output when instructions were injected.
-    await expect(win.locator('.msg-assistant')).toContainText('Demoskillactive')
+    const assistantText = win.locator('.msg-assistant .message-text')
+    await expect(assistantText).toContainText(
+      'Demo skill active — agent-pane skills support is working.',
+      { timeout: 20_000 },
+    )
 
     await win.screenshot({ path: join(SCREENSHOTS, '03-skill-conversation.png'), fullPage: true })
   } finally {
