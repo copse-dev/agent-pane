@@ -1,7 +1,3 @@
-import {
-  FORCE_TEXT_FILL_RATIO,
-  SOFT_NUDGE_FILL_RATIO,
-} from '@shared/agent/agent-loop-escalation.ts'
 import type { ContextSnapshot } from '@shared/types'
 
 const RADIUS = 6
@@ -10,12 +6,6 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS
 function formatTokenCount(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
   return String(Math.round(n))
-}
-
-function fillClass(ratio: number): string {
-  if (ratio >= FORCE_TEXT_FILL_RATIO) return 'is-critical'
-  if (ratio >= SOFT_NUDGE_FILL_RATIO) return 'is-warn'
-  return 'is-normal'
 }
 
 export function createContextWheel(): {
@@ -46,12 +36,14 @@ export function createContextWheel(): {
   fill.setAttribute('r', String(RADIUS))
   fill.setAttribute('fill', 'none')
   fill.setAttribute('stroke-width', '2')
-  fill.setAttribute('stroke-linecap', 'round')
   fill.setAttribute('transform', 'rotate(-90 8 8)')
   fill.classList.add('context-wheel-fill')
 
+  const label = document.createElement('span')
+  label.className = 'context-wheel-label'
+
   svg.append(track, fill)
-  root.append(svg)
+  root.append(svg, label)
 
   function update(snapshot: ContextSnapshot | null | undefined, running: boolean): void {
     if (!snapshot || snapshot.conversationBudget <= 0) {
@@ -66,8 +58,7 @@ export function createContextWheel(): {
     if (!visible) return
 
     fill.setAttribute('stroke-dasharray', `${ratio * CIRCUMFERENCE} ${CIRCUMFERENCE}`)
-    root.classList.remove('is-normal', 'is-warn', 'is-critical')
-    root.classList.add(fillClass(ratio))
+    label.textContent = `${pct}%`
     root.title = `Context: ${formatTokenCount(snapshot.conversationTokens)} / ${formatTokenCount(snapshot.conversationBudget)} (${pct}%)`
     root.setAttribute(
       'aria-label',

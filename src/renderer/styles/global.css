@@ -786,22 +786,20 @@ label {
 .context-wheel {
   display: flex;
   align-items: center;
+  gap: 4px;
   flex-shrink: 0;
 }
 .context-wheel-track {
   stroke: var(--border);
 }
 .context-wheel-fill {
+  stroke: var(--text-secondary);
   transition: stroke-dasharray 0.2s ease;
 }
-.context-wheel.is-normal .context-wheel-fill {
-  stroke: var(--accent);
-}
-.context-wheel.is-warn .context-wheel-fill {
-  stroke: #d4a017;
-}
-.context-wheel.is-critical .context-wheel-fill {
-  stroke: #e05252;
+.context-wheel-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 2.5ch;
 }
 .footer-usage {
   font-size: 11px;
