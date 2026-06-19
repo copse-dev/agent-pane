@@ -44,6 +44,8 @@ function createToolHeader(
 }
 
 function createIndividualToolCard(tc: ToolCall, label: string): HTMLElement {
+  if (tc.subagent) return createSubagentToolCard(tc, label)
+
   const card = el('details', {
     class: 'tool-card',
     'data-tool-id': tc.id,
@@ -59,6 +61,74 @@ function createIndividualToolCard(tc: ToolCall, label: string): HTMLElement {
 
 function assistantDisplayText(content: string): string {
   return stripTextToolCallBlocks(content)
+}
+
+function summaryPreview(text: string, max = 200): string {
+  const trimmed = text.trim()
+  if (trimmed.length <= max) return trimmed
+  return `${trimmed.slice(0, max)}…`
+}
+
+function createInnerToolCard(tc: ToolCall): HTMLElement {
+  const entry = el('details', {
+    class: 'tool-group-item subagent-inner-tool',
+    'data-tool-id': tc.id,
+    'data-status': tc.status,
+  })
+  entry.append(
+    createToolHeader(getToolDisplayName(tc.name), tc.status, 'tool-group-item-header'),
+    createToolArgsSection(tc.args),
+    el('div', { class: 'tool-result' }, ...(tc.result ? [tc.result] : [])),
+  )
+  return entry
+}
+
+function createSubagentToolCard(tc: ToolCall, label: string): HTMLElement {
+  const session = tc.subagent!
+  const status =
+    tc.status === 'running' || session.status === 'running'
+      ? 'running'
+      : session.status === 'error' || tc.status === 'error'
+        ? 'error'
+        : 'done'
+
+  const card = el('details', {
+    class: 'tool-card tool-card-subagent',
+    'data-tool-id': tc.id,
+    'data-status': status,
+  })
+
+  const preview = session.summary ?? tc.result ?? ''
+  card.append(createToolHeader(label, status, 'tool-card-header'))
+
+  if (preview && status !== 'running') {
+    card.append(el('div', { class: 'subagent-summary-preview' }, summaryPreview(preview)))
+  }
+
+  card.append(createToolArgsSection(tc.args))
+
+  const timeline = el('div', { class: 'subagent-timeline' })
+  for (const msg of session.messages) {
+    if (msg.content.trim()) {
+      timeline.append(
+        el('div', { class: 'subagent-message subagent-message-assistant' }, msg.content),
+      )
+    }
+    if (msg.toolCalls.length > 0) {
+      const toolsWrap = el('div', { class: 'subagent-inner-tools' })
+      for (const inner of msg.toolCalls) {
+        toolsWrap.append(createInnerToolCard(inner))
+      }
+      timeline.append(toolsWrap)
+    }
+  }
+  card.append(timeline)
+
+  if (tc.result && status === 'done') {
+    card.append(el('div', { class: 'tool-result subagent-parent-result' }, tc.result))
+  }
+
+  return card
 }
 
 function createGroupToolCard(item: Extract<ToolCallDisplayItem, { type: 'group' }>): HTMLElement {
@@ -142,7 +212,9 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
 
     const userExpandedTools = new Set<string>()
     msgEl
-      .querySelectorAll('.tool-card[data-tool-id][open], .tool-group-item[open]')
+      .querySelectorAll(
+        '.tool-card[data-tool-id][open], .tool-group-item[open], .tool-card-subagent[open]',
+      )
       .forEach((node) => {
         const id = (node as HTMLElement).dataset.toolId
         if (id) userExpandedTools.add(id)
@@ -154,10 +226,12 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
       const card = createToolCard(item) as HTMLDetailsElement
       if (item.type === 'group') {
         const status = aggregateToolStatus(item.toolCalls)
-        // Expand while tools are running; auto-collapse to one summary row when done.
         card.open = status === 'running' || userExpandedGroups.has(item.key)
-      } else if (userExpandedTools.has(item.toolCall.id)) {
-        card.open = true
+      } else {
+        const tc = item.toolCall
+        const subStatus = tc.subagent?.status
+        const running = tc.status === 'running' || subStatus === 'running'
+        card.open = running || userExpandedTools.has(tc.id)
       }
       msgEl.append(card)
     }

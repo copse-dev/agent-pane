@@ -29,8 +29,62 @@ import {
   getAgentRunReadFileLimits,
 } from './agent-run-read-limits.ts'
 import { formatReadFileLimitHint } from '@shared/agent/read-file-limits.ts'
+import {
+  setExploreSubagentContext,
+  resetSubagentUsage,
+  getAccumulatedSubagentUsage,
+} from './explore-subagent-runner.ts'
 
 const abortMap = new Map<string, AbortController>()
+
+const PARENT_DELEGATED_TOOLS = ['read_file', 'list_dir', 'search_code', 'find_files'] as const
+
+const BASE_SYSTEM_PROMPT = `You are a coding assistant with access to the user's local workspace.
+
+Available tools:
+- explore: Explore the codebase by reading and searching files (returns a summary — use this instead of reading files directly)
+- write_file: Propose writing a file (user approves the diff before it's written)
+- git_status: Show working tree status
+- git_diff: Show unstaged or staged changes
+- git_log: Show recent commit history
+- run_shell: Run a shell command (auto-runs when contained in the sandbox; prompts for network/outside access)
+{SKILLS_TOOLS_LINE}
+Working directory: {WORKSPACE_ROOT}
+
+When the user asks an open-ended question (review, explain, validate, summarize):
+1. Use explore to read or search the codebase, then finish with a clear written answer in plain language.
+2. Do not end the turn with tool calls alone — always follow exploration with a summary for the user.
+3. Do not re-explore the same areas repeatedly. Run tests or commands with run_shell when asked to validate code.
+
+When modifying files:
+1. Use explore to understand the file before changing it
+2. Use write_file to propose changes — the user sees a diff and must approve
+3. Do not assume file content; always explore before writing`
+
+const BASE_SYSTEM_PROMPT_DIRECT_READS = `You are a coding assistant with access to the user's local workspace.
+
+Available tools:
+- read_file: Read a file from the workspace
+- write_file: Propose writing a file (user approves the diff before it's written)
+- list_dir: List directory contents
+- search_code: Search for text/regex patterns using ripgrep
+- find_files: Find files by name or glob pattern
+- git_status: Show working tree status
+- git_diff: Show unstaged or staged changes
+- git_log: Show recent commit history
+- run_shell: Run a shell command (auto-runs when contained in the sandbox; prompts for network/outside access)
+{SKILLS_TOOLS_LINE}
+Working directory: {WORKSPACE_ROOT}
+
+When the user asks an open-ended question (review, explain, validate, summarize):
+1. Use tools as needed, then finish with a clear written answer in plain language.
+2. Do not end the turn with tool calls alone — always follow exploration with a summary for the user.
+3. List the workspace root at most once; do not re-read the same paths. Then run tests or commands with run_shell when asked to validate code.
+
+When modifying files:
+1. Read the file first
+2. Use write_file to propose changes — the user sees a diff and must approve
+3. Do not assume file content; always read before writing`
 
 const DEFAULT_LM_STUDIO_URL = 'http://localhost:1234/v1'
 
@@ -78,30 +132,32 @@ function hasLastUsage(p: unknown): p is ProviderWithUsage {
   return typeof p === 'object' && p !== null && 'lastUsage' in p
 }
 
-const BASE_SYSTEM_PROMPT = `You are a coding assistant with access to the user's local workspace.
+function extractParentGoal(messages: LLMMessage[], userPrompt: UserContent): string {
+  const lastUser = [...messages].reverse().find((m) => m.role === 'user')
+  if (lastUser && typeof lastUser.content === 'string') return lastUser.content.slice(0, 2000)
+  if (typeof userPrompt === 'string') return userPrompt.slice(0, 2000)
+  return '(complex user input)'
+}
 
-Available tools:
-- read_file: Read a file from the workspace
-- write_file: Propose writing a file (user approves the diff before it's written)
-- list_dir: List directory contents
-- search_code: Search for text/regex patterns using ripgrep
-- find_files: Find files by name or glob pattern
-- git_status: Show working tree status
-- git_diff: Show unstaged or staged changes
-- git_log: Show recent commit history
-- run_shell: Run a shell command (auto-runs when contained in the sandbox; prompts for network/outside access)
-{SKILLS_TOOLS_LINE}
-Working directory: {WORKSPACE_ROOT}
-
-When the user asks an open-ended question (review, explain, validate, summarize):
-1. Use tools as needed, then finish with a clear written answer in plain language.
-2. Do not end the turn with tool calls alone — always follow exploration with a summary for the user.
-3. List the workspace root at most once; do not re-read the same paths. Then run tests or commands with run_shell when asked to validate code.
-
-When modifying files:
-1. Read the file first
-2. Use write_file to propose changes — the user sees a diff and must approve
-3. Do not assume file content; always read before writing`
+function parentTools(registry: ToolRegistry, subagentsEnabled: boolean) {
+  const tools = registry.toLLMTools()
+  if (!subagentsEnabled) {
+    return tools
+      .filter((t) => t.name !== 'explore')
+      .map((t) =>
+        t.name === 'read_file'
+          ? {
+              ...t,
+              description: `Read a file from the workspace. ${formatReadFileLimitHint(
+                getAgentRunReadFileLimits(),
+              )}; use start_line / end_line for more.`,
+            }
+          : t,
+      )
+  }
+  const excluded = new Set<string>(PARENT_DELEGATED_TOOLS)
+  return tools.filter((t) => !excluded.has(t.name))
+}
 
 export async function runAgent(
   threadId: string,
@@ -111,19 +167,12 @@ export async function runAgent(
   registry: ToolRegistry,
   options?: { invokedSkills?: string[] },
 ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> {
+  const skillsToolsLine = buildSkillsToolsPromptLine()
   const projectInstructions = await loadProjectInstructions()
   const invokedSkills = options?.invokedSkills ?? []
-  const skillsToolsLine = buildSkillsToolsPromptLine()
-  const systemPrompt =
-    BASE_SYSTEM_PROMPT.replace('{SKILLS_TOOLS_LINE}', skillsToolsLine).replace(
-      '{WORKSPACE_ROOT}',
-      getWorkspaceRoot() ?? '(none)',
-    ) +
-    buildSkillsCatalogBlock() +
-    (await buildInvokedSkillsBlock(invokedSkills)) +
-    (projectInstructions ? `\n\n---\n\n## Project instructions\n\n${projectInstructions}` : '')
 
   const model = getSetting<string>('model', 'claude-sonnet-4-6')
+  const subagentsEnabled = getSetting<boolean>('subagentsEnabled', true)
   const contextWindow = await resolveContextWindow(model)
   const toolSchemaReserve = model === 'lm-studio' || model.startsWith('lmstudio:') ? 2_500 : 1_000
   const historyBudget = historyTokenBudget(contextWindow, { reserveTokens: toolSchemaReserve })
@@ -132,11 +181,22 @@ export async function runAgent(
   // and the currently-selected model take effect without a restart.
   const provider = await buildProvider(model)
 
+  const basePrompt = subagentsEnabled ? BASE_SYSTEM_PROMPT : BASE_SYSTEM_PROMPT_DIRECT_READS
+  const systemPrompt =
+    basePrompt
+      .replace('{SKILLS_TOOLS_LINE}', skillsToolsLine)
+      .replace('{WORKSPACE_ROOT}', getWorkspaceRoot() ?? '(none)') +
+    buildSkillsCatalogBlock() +
+    (await buildInvokedSkillsBlock(invokedSkills)) +
+    (projectInstructions ? `\n\n---\n\n## Project instructions\n\n${projectInstructions}` : '')
+
   const messages: LLMMessage[] = [
     { role: 'system', content: systemPrompt },
     ...priorMessages,
     { role: 'user', content: userPrompt },
   ]
+
+  const parentGoal = extractParentGoal(messages, userPrompt)
 
   const { messages: trimmed, trimmed: wasTrimmed } = trimHistory(messages, contextWindow, {
     reserveTokens: toolSchemaReserve,
@@ -174,34 +234,59 @@ export async function runAgent(
   let inputTokens = 0,
     outputTokens = 0
 
+  resetSubagentUsage()
+  const sendChunk = (chunk: StreamChunk) => {
+    mainWindow.webContents.send('agent:chunk', threadId, chunk)
+  }
+
   try {
     await runAgentLoop({
       provider,
       messages: trimmed,
-      tools: registry.toLLMTools().map((t) =>
-        t.name === 'read_file'
-          ? {
-              ...t,
-              description: `Read a file from the workspace. ${formatReadFileLimitHint(
-                getAgentRunReadFileLimits(),
-              )}; use start_line / end_line for more.`,
-            }
-          : t,
-      ),
-      executeTool: (name, args, signal) => registry.execute(name, args, signal),
+      tools: parentTools(registry, subagentsEnabled),
+      executeTool: async (name, args, signal, toolCallId) => {
+        if (name === 'explore' && subagentsEnabled) {
+          setExploreSubagentContext({
+            parentToolCallId: toolCallId,
+            parentGoal,
+            provider,
+            registry,
+            contextWindow,
+            toolSchemaReserve,
+            onChunk: sendChunk,
+          })
+          try {
+            return await registry.execute(name, args, signal)
+          } finally {
+            setExploreSubagentContext(null)
+          }
+        }
+        return registry.execute(name, args, signal)
+      },
       signal: controller.signal,
       maxContextTokens: contextWindow,
       toolSchemaReserveTokens: toolSchemaReserve,
       onHistoryTrimmed: notifyTrimmed,
       getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
       onChunk: (chunk) => {
-        mainWindow.webContents.send('agent:chunk', threadId, chunk)
+        sendChunk(chunk)
         if (chunk.type === 'usage') {
           inputTokens += chunk.inputTokens
           outputTokens += chunk.outputTokens
         }
       },
     })
+
+    const subUsage = getAccumulatedSubagentUsage()
+    if (subUsage.inputTokens || subUsage.outputTokens) {
+      inputTokens += subUsage.inputTokens
+      outputTokens += subUsage.outputTokens
+      sendChunk({
+        type: 'usage',
+        inputTokens: subUsage.inputTokens,
+        outputTokens: subUsage.outputTokens,
+      })
+    }
   } catch (err) {
     const msg = classifyError(err)
     mainWindow.webContents.send('agent:chunk', threadId, {
