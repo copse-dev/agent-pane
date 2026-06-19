@@ -5,8 +5,8 @@ import { readSkill } from '../services/skills-registry.ts'
 export const readSkillTool: ToolDefinition = {
   name: 'read_skill',
   description:
-    'Read a skill definition or a file under a skill directory (scripts/, references/, assets/). ' +
-    'Use when the user invoked a skill via /skill-name or when you need skill instructions.',
+    'Read a file under a skill directory (scripts/, references/, assets/). ' +
+    'Skill instructions from SKILL.md are injected automatically when the user invokes /skill-name.',
   parameters: z.object({
     name: z.string().describe('Skill name from frontmatter, e.g. "demo-skill"'),
     path: z
