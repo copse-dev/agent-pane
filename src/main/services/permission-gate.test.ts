@@ -1,0 +1,73 @@
+import { describe, it } from 'node:test'
+import assert from 'node:assert/strict'
+import { decideShellPermission } from './permission-policy.ts'
+
+describe('decideShellPermission', () => {
+  const root = '/Users/me/project'
+
+  it('prompts when auto-run is disabled', () => {
+    const d = decideShellPermission('npm test', {
+      workspaceRoot: root,
+      sandboxEnabled: true,
+      autoRun: false,
+      classification: null,
+      confidenceThreshold: 0.85,
+    })
+    assert.equal(d.action, 'prompt')
+  })
+
+  it('allows sandbox-contained commands when OS sandbox is active', () => {
+    const d = decideShellPermission('npm test', {
+      workspaceRoot: root,
+      sandboxEnabled: true,
+      autoRun: true,
+      classification: null,
+      confidenceThreshold: 0.85,
+    })
+    assert.equal(d.action, 'allow')
+  })
+
+  it('prompts for external commands even with OS sandbox', () => {
+    const d = decideShellPermission('curl https://example.com', {
+      workspaceRoot: root,
+      sandboxEnabled: true,
+      autoRun: true,
+      classification: null,
+      confidenceThreshold: 0.85,
+    })
+    assert.equal(d.action, 'prompt')
+  })
+
+  it('uses safety model on unsandboxed platforms when confident', () => {
+    const d = decideShellPermission('npm test', {
+      workspaceRoot: root,
+      sandboxEnabled: false,
+      autoRun: true,
+      classification: { scope: 'sandbox', confidence: 0.95, reason: 'local test runner' },
+      confidenceThreshold: 0.85,
+    })
+    assert.equal(d.action, 'allow')
+  })
+
+  it('prompts on unsandboxed platforms when safety model is uncertain', () => {
+    const d = decideShellPermission('npm test', {
+      workspaceRoot: root,
+      sandboxEnabled: false,
+      autoRun: true,
+      classification: { scope: 'sandbox', confidence: 0.5, reason: 'uncertain' },
+      confidenceThreshold: 0.85,
+    })
+    assert.equal(d.action, 'prompt')
+  })
+
+  it('prompts on unsandboxed platforms when safety model is unavailable', () => {
+    const d = decideShellPermission('npm test', {
+      workspaceRoot: root,
+      sandboxEnabled: false,
+      autoRun: true,
+      classification: null,
+      confidenceThreshold: 0.85,
+    })
+    assert.equal(d.action, 'prompt')
+  })
+})

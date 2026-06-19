@@ -1,97 +1,237 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { populateModelSelect } from './model-options.ts'
+import { populateLocalModelSelect, populateModelSelect } from './model-options.ts'
+
+type SettingsSection = 'general' | 'local-models' | 'appearance'
+
+let overlayEl: HTMLElement | null = null
+
+export function openSettingsDialog(): void {
+  if (!overlayEl || !overlayEl.hidden) return
+  overlayEl.hidden = false
+  overlayEl.dispatchEvent(new Event('settings-open'))
+}
+
+export function closeSettingsDialog(): void {
+  if (!overlayEl || overlayEl.hidden) return
+  overlayEl.hidden = true
+}
+
+export function isSettingsDialogOpen(): boolean {
+  return !!overlayEl && !overlayEl.hidden
+}
 
 export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
-  const dialog = document.createElement('dialog')
-  dialog.id = 'settings-dialog'
-  dialog.className = 'settings-dialog'
-  dialog.innerHTML = `
-    <form method="dialog">
-      <h2>Settings</h2>
+  const overlay = document.createElement('div')
+  overlay.id = 'settings-dialog'
+  overlay.className = 'settings-overlay'
+  overlay.hidden = true
+  overlay.innerHTML = `
+    <div class="settings-shell">
+      <header class="settings-header">
+        <h2>Settings</h2>
+        <button type="button" class="settings-close-btn" id="settings-close" aria-label="Close settings">✕</button>
+      </header>
 
-      <fieldset>
-        <legend>API Keys</legend>
-        <label>
-          Anthropic API key
-          <input type="password" name="anthropicKey" placeholder="sk-ant-…" autocomplete="off" />
-          <span class="key-status" data-key="anthropic"></span>
-        </label>
-        <label>
-          OpenAI API key
-          <input type="password" name="openaiKey" placeholder="sk-…" autocomplete="off" />
-          <span class="key-status" data-key="openai"></span>
-        </label>
-      </fieldset>
+      <div class="settings-body">
+        <nav class="settings-nav" aria-label="Settings sections">
+          <button type="button" class="settings-nav-btn active" data-section="general">General</button>
+          <button type="button" class="settings-nav-btn" data-section="local-models">Local models</button>
+          <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
+        </nav>
 
-      <fieldset>
-        <legend>Model</legend>
-        <label>
-          Model
-          <select name="model"></select>
-        </label>
-      </fieldset>
+        <form class="settings-content">
+          <section class="settings-section active" data-section="general">
+            <h3>General</h3>
+            <p class="settings-section-desc">Cloud API keys and the default chat model for new conversations.</p>
 
-      <fieldset>
-        <legend>LM Studio (local server)</legend>
-        <label>
-          Server URL
-          <input type="text" name="lmStudioUrl" placeholder="http://localhost:1234/v1" autocomplete="off" />
-        </label>
-        <label>
-          Model name (blank = first loaded)
-          <input type="text" name="lmStudioModel" placeholder="(auto)" autocomplete="off" />
-        </label>
-        <label>
-          API key (only if your LM Studio server requires one)
-          <input type="password" name="lmStudioKey" placeholder="leave blank if disabled" autocomplete="off" />
-          <span class="key-status" data-key="lmstudio"></span>
-        </label>
-        <label class="checkbox-label">
-          <input type="checkbox" name="lmStudioForSmallTasks" />
-          Use LM Studio for small tasks (e.g. naming threads)
-        </label>
-        <div class="lmstudio-test-row">
-          <button type="button" id="lmstudio-test-btn">Test connection</button>
-          <span class="lmstudio-test-status" id="lmstudio-test-status"></span>
-        </div>
-      </fieldset>
+            <fieldset>
+              <legend>API Keys</legend>
+              <label>
+                Anthropic API key
+                <input type="password" name="anthropicKey" placeholder="sk-ant-…" autocomplete="off" />
+                <span class="key-status" data-key="anthropic"></span>
+              </label>
+              <label>
+                OpenAI API key
+                <input type="password" name="openaiKey" placeholder="sk-…" autocomplete="off" />
+                <span class="key-status" data-key="openai"></span>
+              </label>
+            </fieldset>
 
-      <fieldset>
-        <legend>Appearance</legend>
-        <label>
-          Theme
-          <select name="theme">
-            <option value="dark">Dark</option>
-            <option value="light">Light</option>
-          </select>
-        </label>
-        <label>
-          Font size
-          <input type="number" name="fontSize" min="12" max="20" step="1" />
-        </label>
-      </fieldset>
+            <fieldset>
+              <legend>Chat model</legend>
+              <label>
+                Default model
+                <select name="model"></select>
+              </label>
+            </fieldset>
+          </section>
 
-      <div class="settings-buttons">
-        <button type="submit">Save</button>
-        <button type="button" id="settings-cancel">Cancel</button>
+          <section class="settings-section" data-section="local-models">
+            <h3>Local models</h3>
+            <p class="settings-section-desc">
+              Connect to an LM Studio (or other OpenAI-compatible) server and route different tasks to
+              specific local models.
+            </p>
+
+            <fieldset>
+              <legend>Server connection</legend>
+              <label>
+                Server URL
+                <input type="text" name="lmStudioUrl" placeholder="http://localhost:1234/v1" autocomplete="off" />
+              </label>
+              <label>
+                API key (only if your server requires one)
+                <input type="password" name="lmStudioKey" placeholder="leave blank if disabled" autocomplete="off" />
+                <span class="key-status" data-key="lmstudio"></span>
+              </label>
+              <div class="lmstudio-test-row">
+                <button type="button" id="lmstudio-test-btn">Test connection</button>
+                <span class="lmstudio-test-status" id="lmstudio-test-status"></span>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Model routing</legend>
+              <p class="settings-fieldset-desc">
+                Choose which loaded model handles each task. Leave a route on “auto” to use the first model
+                the server reports.
+              </p>
+              <label>
+                Default local model
+                <select name="lmStudioModel"></select>
+                <span class="field-hint">Fallback when a local model is selected in chat but not specified</span>
+              </label>
+              <label>
+                Small tasks model
+                <select name="lmStudioSmallTasksModel"></select>
+                <span class="field-hint">Thread title generation and other lightweight prompts</span>
+              </label>
+              <label>
+                Instruct / safety model
+                <select name="lmStudioSafetyModel"></select>
+                <span class="field-hint">Classifies shell commands when the OS sandbox is off</span>
+              </label>
+            </fieldset>
+
+            <fieldset>
+              <legend>Routing behavior</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="lmStudioForSmallTasks" />
+                Use local models for small tasks (e.g. naming threads)
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="lmStudioSafetyEnabled" />
+                Use instruct model to classify shell commands (when OS sandbox is off)
+              </label>
+              <label>
+                Safety confidence threshold
+                <input
+                  type="number"
+                  name="lmStudioSafetyConfidenceThreshold"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                />
+                <span class="field-hint">Auto-allow sandbox-scoped commands at or above this confidence (0–1)</span>
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="autoRunSandboxCommands" />
+                Auto-run shell commands contained within the sandbox
+              </label>
+            </fieldset>
+          </section>
+
+          <section class="settings-section" data-section="appearance">
+            <h3>Appearance</h3>
+            <p class="settings-section-desc">Theme and editor font size.</p>
+
+            <fieldset>
+              <legend>Display</legend>
+              <label>
+                Theme
+                <select name="theme">
+                  <option value="dark">Dark</option>
+                  <option value="light">Light</option>
+                </select>
+              </label>
+              <label>
+                Font size
+                <input type="number" name="fontSize" min="12" max="20" step="1" />
+              </label>
+            </fieldset>
+          </section>
+
+          <div class="settings-buttons">
+            <button type="submit">Save</button>
+            <button type="button" id="settings-cancel">Cancel</button>
+          </div>
+        </form>
       </div>
-    </form>
+    </div>
   `
-  document.body.append(dialog)
+  document.body.append(overlay)
+  overlayEl = overlay
 
-  // Populate key status badges on open
-  dialog.addEventListener('toggle', () => {
-    if (!(dialog as HTMLDialogElement).open) return
+  const navBtns = overlay.querySelectorAll<HTMLButtonElement>('.settings-nav-btn')
+  const sections = overlay.querySelectorAll<HTMLElement>('.settings-section')
+
+  function showSection(id: SettingsSection): void {
+    navBtns.forEach((btn) => btn.classList.toggle('active', btn.dataset.section === id))
+    sections.forEach((sec) => sec.classList.toggle('active', sec.dataset.section === id))
+  }
+
+  navBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.section as SettingsSection | undefined
+      if (id) showSection(id)
+    })
+  })
+
+  async function refreshLocalModelSelects(): Promise<void> {
+    const form = overlay.querySelector('form') as HTMLFormElement
+    let models: string[] = []
+    try {
+      models = await api.lmStudio.models()
+    } catch {
+      models = []
+    }
+
+    const lmModel = (await api.settings.get('lmStudioModel')) as string | undefined
+    const lmSmall = (await api.settings.get('lmStudioSmallTasksModel')) as string | undefined
+    const lmSafety = (await api.settings.get('lmStudioSafetyModel')) as string | undefined
+
+    populateLocalModelSelect(
+      form.elements.namedItem('lmStudioModel') as HTMLSelectElement,
+      models,
+      lmModel ?? '',
+    )
+    populateLocalModelSelect(
+      form.elements.namedItem('lmStudioSmallTasksModel') as HTMLSelectElement,
+      models,
+      lmSmall ?? '',
+      '(auto — use default local model)',
+    )
+    populateLocalModelSelect(
+      form.elements.namedItem('lmStudioSafetyModel') as HTMLSelectElement,
+      models,
+      lmSafety ?? '',
+      '(auto — use default local model)',
+    )
+  }
+
+  overlay.addEventListener('settings-open', () => {
+    showSection('general')
     void (async () => {
       const anthSet = await api.settings.getKey('anthropic')
       const openSet = await api.settings.getKey('openai')
       const lmSet = await api.settings.getKey('lmstudio')
-      dialog.querySelector('[data-key="anthropic"]')!.textContent = anthSet ? '● set' : '○ not set'
-      dialog.querySelector('[data-key="openai"]')!.textContent = openSet ? '● set' : '○ not set'
-      dialog.querySelector('[data-key="lmstudio"]')!.textContent = lmSet ? '● set' : '○ not set'
+      overlay.querySelector('[data-key="anthropic"]')!.textContent = anthSet ? '● set' : '○ not set'
+      overlay.querySelector('[data-key="openai"]')!.textContent = openSet ? '● set' : '○ not set'
+      overlay.querySelector('[data-key="lmstudio"]')!.textContent = lmSet ? '● set' : '○ not set'
 
-      const form = dialog.querySelector('form') as HTMLFormElement
+      const form = overlay.querySelector('form') as HTMLFormElement
       const model = (await api.settings.get('model')) as string | undefined
       await populateModelSelect(
         form.elements.namedItem('model') as HTMLSelectElement,
@@ -104,19 +244,37 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       )
 
       const lmUrl = (await api.settings.get('lmStudioUrl')) as string | undefined
-      const lmModel = (await api.settings.get('lmStudioModel')) as string | undefined
-      const lmSmall = (await api.settings.get('lmStudioForSmallTasks')) as boolean | undefined
+      const lmSmallEnabled = (await api.settings.get('lmStudioForSmallTasks')) as
+        | boolean
+        | undefined
+      const lmSafetyEnabled = (await api.settings.get('lmStudioSafetyEnabled')) as
+        | boolean
+        | undefined
+      const autoRunSandbox = (await api.settings.get('autoRunSandboxCommands')) as
+        | boolean
+        | undefined
+      const confidence = (await api.settings.get('lmStudioSafetyConfidenceThreshold')) as
+        | number
+        | undefined
       ;(form.elements.namedItem('lmStudioUrl') as HTMLInputElement).value =
         lmUrl ?? 'http://localhost:1234/v1'
-      ;(form.elements.namedItem('lmStudioModel') as HTMLInputElement).value = lmModel ?? ''
       ;(form.elements.namedItem('lmStudioForSmallTasks') as HTMLInputElement).checked =
-        lmSmall ?? true
+        lmSmallEnabled ?? true
+      ;(form.elements.namedItem('lmStudioSafetyEnabled') as HTMLInputElement).checked =
+        lmSafetyEnabled ?? true
+      ;(form.elements.namedItem('autoRunSandboxCommands') as HTMLInputElement).checked =
+        autoRunSandbox ?? true
+      ;(form.elements.namedItem('lmStudioSafetyConfidenceThreshold') as HTMLInputElement).value =
+        String(confidence ?? 0.85)
+
+      await refreshLocalModelSelects()
     })()
   })
 
-  dialog.querySelector('form')!.addEventListener('submit', () => {
+  overlay.querySelector('form')!.addEventListener('submit', (e) => {
+    e.preventDefault()
     void (async () => {
-      const form = dialog.querySelector('form') as HTMLFormElement
+      const form = overlay.querySelector('form') as HTMLFormElement
       const data = new FormData(form)
 
       const anthKey = (data.get('anthropicKey') as string).trim()
@@ -129,27 +287,42 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const model = data.get('model') as string
       const theme = data.get('theme') as 'light' | 'dark'
       const fontSize = parseInt(data.get('fontSize') as string, 10)
+      const confidence = parseFloat(data.get('lmStudioSafetyConfidenceThreshold') as string)
 
       await api.settings.set('model', model)
       await api.settings.set('theme', theme)
       await api.settings.set('fontSize', fontSize)
       await api.settings.set('lmStudioUrl', (data.get('lmStudioUrl') as string).trim())
       await api.settings.set('lmStudioModel', (data.get('lmStudioModel') as string).trim())
+      await api.settings.set(
+        'lmStudioSmallTasksModel',
+        (data.get('lmStudioSmallTasksModel') as string).trim(),
+      )
       await api.settings.set('lmStudioForSmallTasks', data.get('lmStudioForSmallTasks') === 'on')
+      await api.settings.set(
+        'lmStudioSafetyModel',
+        (data.get('lmStudioSafetyModel') as string).trim(),
+      )
+      await api.settings.set('lmStudioSafetyEnabled', data.get('lmStudioSafetyEnabled') === 'on')
+      await api.settings.set(
+        'lmStudioSafetyConfidenceThreshold',
+        Number.isFinite(confidence) ? confidence : 0.85,
+      )
+      await api.settings.set('autoRunSandboxCommands', data.get('autoRunSandboxCommands') === 'on')
 
       store.setState({ theme, fontSize, settings: { ...store.getState().settings, model } })
       store.emit('theme_changed', theme)
       store.emit('settings_changed')
       document.documentElement.dataset.theme = theme
+      closeSettingsDialog()
     })()
   })
 
-  // Local-only connectivity check for LM Studio — never runs against billed APIs.
-  dialog.querySelector('#lmstudio-test-btn')!.addEventListener('click', () => {
-    const form = dialog.querySelector('form') as HTMLFormElement
+  overlay.querySelector('#lmstudio-test-btn')!.addEventListener('click', () => {
+    const form = overlay.querySelector('form') as HTMLFormElement
     const url = (form.elements.namedItem('lmStudioUrl') as HTMLInputElement).value.trim()
     const key = (form.elements.namedItem('lmStudioKey') as HTMLInputElement).value.trim()
-    const statusEl = dialog.querySelector('#lmstudio-test-status') as HTMLElement
+    const statusEl = overlay.querySelector('#lmstudio-test-status') as HTMLElement
     statusEl.textContent = 'Testing…'
     statusEl.className = 'lmstudio-test-status'
     void api.lmStudio.test(url, key).then((r) => {
@@ -158,6 +331,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           r.models && r.models.length ? r.models.slice(0, 3).join(', ') : 'no models loaded'
         statusEl.textContent = `✓ Connected — ${r.models?.length ?? 0} model(s): ${list}`
         statusEl.classList.add('ok')
+        void refreshLocalModelSelects()
       } else {
         statusEl.textContent = `✗ ${r.error ?? 'Connection failed'}`
         statusEl.classList.add('err')
@@ -165,7 +339,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     })
   })
 
-  dialog.querySelector('#settings-cancel')!.addEventListener('click', () => {
-    dialog.close()
-  })
+  overlay.querySelector('#settings-cancel')!.addEventListener('click', closeSettingsDialog)
+  overlay.querySelector('#settings-close')!.addEventListener('click', closeSettingsDialog)
 }

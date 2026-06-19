@@ -1,4 +1,5 @@
 import type { StreamChunk } from '@shared/types'
+import type { SkillSummary } from '@shared/types/skills.ts'
 
 export interface ApiClient {
   workspace: {
@@ -66,6 +67,9 @@ export interface ApiClient {
   }
   index: {
     query: (pattern: string) => Promise<string[]>
+  }
+  skills: {
+    list: () => Promise<SkillSummary[]>
   }
 }
 
