@@ -2,6 +2,7 @@ import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { renderMarkdown } from '../markdown/renderer.ts'
 import type { ToolCall } from '@shared/types'
+import { agentActivityLabel } from '../agent-activity.ts'
 import {
   aggregateToolStatus,
   buildToolCallDisplayItems,
@@ -98,7 +99,34 @@ function createToolCard(item: ToolCallDisplayItem): HTMLElement {
 
 export function mountConversation(root: HTMLElement, store: AppStore): () => void {
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
-  root.append(list)
+  const activityBar = el('div', { class: 'agent-activity', role: 'status', 'aria-live': 'polite' })
+  const activityLabel = el('span', { class: 'agent-activity-label' })
+  activityBar.append(
+    el('span', { class: 'agent-activity-pulse', 'aria-hidden': 'true' }),
+    activityLabel,
+  )
+  root.append(list, activityBar)
+
+  function setActivity(label: string | null) {
+    if (!label) {
+      activityBar.hidden = true
+      return
+    }
+    activityLabel.textContent = label
+    activityBar.hidden = false
+    scrollToBottom()
+  }
+
+  function syncFromStore() {
+    const tid = store.getState().activeThreadId
+    if (!tid) {
+      setActivity(null)
+      return
+    }
+    const thread = store.getState().threads.find((t) => t.id === tid)
+    // Writing state lives in the agent controller; agent_activity events carry the label.
+    setActivity(agentActivityLabel(thread, false))
+  }
 
   function scrollToBottom() {
     // The scrollable element is the messages list, not the mount root.
@@ -149,22 +177,14 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
     } else {
       textEl.textContent = msg.content
     }
-    msgEl.append(textEl)
 
-    // Copy button for assistant replies — copies the raw text.
-    if (msg.role === 'assistant') {
-      const copyBtn = el('button', { class: 'msg-copy', 'aria-label': 'Copy response' }, 'Copy')
-      copyBtn.addEventListener('click', () => {
-        const current = store
-          .getState()
-          .threads.flatMap((t) => t.messages)
-          .find((m) => m.id === msgId)
-        void navigator.clipboard.writeText(current?.content ?? '').then(() => {
-          copyBtn.textContent = 'Copied'
-          setTimeout(() => (copyBtn.textContent = 'Copy'), 1200)
-        })
-      })
-      msgEl.append(copyBtn)
+    const body = el('div', { class: 'message-body' })
+    body.append(textEl)
+    msgEl.append(body)
+
+    // Copy only when there is reply text — tool-only bubbles stay compact.
+    if (msg.role === 'assistant' && msg.content.trim()) {
+      attachCopyButton(body, msgId, store)
     }
 
     list.append(msgEl)
@@ -200,14 +220,49 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
       }
     }),
     store.on('message_done', (mid) => {
-      const textEl = list.querySelector(`[data-message-id="${mid}"] .message-text`)
+      const msgEl = list.querySelector(`[data-message-id="${mid}"]`)
+      const textEl = msgEl?.querySelector('.message-text')
       if (textEl) textEl.innerHTML = renderMarkdown(textEl.textContent ?? '')
+      const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
+      const msg = thread?.messages.find((m) => m.id === mid)
+      if (msg?.role === 'assistant' && msg.content.trim()) {
+        const body = msgEl?.querySelector('.message-body')
+        if (body && !body.querySelector('.msg-copy'))
+          attachCopyButton(body as HTMLElement, mid, store)
+      }
     }),
     store.on('tool_call_started', (mid) => refreshToolCards(mid)),
     store.on('tool_call_updated', (mid) => refreshToolCards(mid)),
-    store.on('threads_changed', () => rebuildForThread()),
+    store.on('threads_changed', () => {
+      rebuildForThread()
+      syncFromStore()
+    }),
+    store.on('thread_status_changed', (tid, status) => {
+      if (tid !== store.getState().activeThreadId) return
+      if (status !== 'running') setActivity(null)
+    }),
+    store.on('agent_activity', (tid, label) => {
+      if (tid !== store.getState().activeThreadId) return
+      setActivity(label)
+    }),
   ]
 
   rebuildForThread()
+  syncFromStore()
   return () => unsubs.forEach((u) => u())
+}
+
+function attachCopyButton(body: HTMLElement, msgId: string, store: AppStore) {
+  const copyBtn = el('button', { class: 'msg-copy', 'aria-label': 'Copy response' }, 'Copy')
+  copyBtn.addEventListener('click', () => {
+    const current = store
+      .getState()
+      .threads.flatMap((t) => t.messages)
+      .find((m) => m.id === msgId)
+    void navigator.clipboard.writeText(current?.content ?? '').then(() => {
+      copyBtn.textContent = 'Copied'
+      setTimeout(() => (copyBtn.textContent = 'Copy'), 1200)
+    })
+  })
+  body.append(copyBtn)
 }
