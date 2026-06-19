@@ -17,7 +17,10 @@ export function skillMarkdownBody(raw: string): string {
 /** Extra tool line for the system prompt when skills are discovered (omitted otherwise). */
 export function buildSkillsToolsPromptLine(): string {
   if (listSkills().length === 0) return ''
-  return '- read_skill: Read additional files under a skill directory (scripts/, references/, assets/)\n'
+  return (
+    '- read_skill: Read additional files under a skill directory (scripts/, references/, assets/) — ' +
+    'auto-runs; reads outside the workspace sandbox. Pass skill name + optional relative path, not absolute paths.\n'
+  )
 }
 
 /** Tier 1 — skill catalog (name, description, path) without full instructions. */
@@ -35,8 +38,8 @@ export function buildSkillsCatalogBlock(): string {
   return (
     `\n\n---\n\n<available_skills>\n${entries}\n</available_skills>\n\n` +
     `Skills are invoked manually via /skill-name in the input. When a skill is invoked, ` +
-    `its full instructions are injected below. Use read_skill only for additional files ` +
-    `under a skill directory (scripts/, references/, assets/).`
+    `its full instructions are injected below. Use read_skill (not read_file or run_shell) with ` +
+    `skill name + optional relative path for additional files under a skill directory.`
   )
 }
 
@@ -70,8 +73,8 @@ export async function buildInvokedSkillsBlock(invokedSkills: string[]): Promise<
     `\n\n---\n\n## Invoked skills\n\n` +
     `The user explicitly invoked these skills for this turn. Treat each invoked skill as the ` +
     `primary task for this turn — follow its instructions even when prior conversation ` +
-    `context suggests a different task. Use read_skill with an optional path when you need files ` +
-    `under scripts/, references/, or assets/.\n\n` +
+    `context suggests a different task. Use read_skill (not read_file or run_shell) with skill ` +
+    `name + optional relative path when you need files under scripts/, references, or assets/.\n\n` +
     sections.join('\n\n')
   )
 }
