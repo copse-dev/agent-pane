@@ -46,6 +46,11 @@ export interface IpcInvokeMap {
   // Index
   'index:query': { args: [pattern: string]; result: string[] }
 
+  // Terminal
+  'terminal:create': { args: []; result: string }
+  'terminal:write': { args: [sessionId: string, data: string]; result: void }
+  'terminal:destroy': { args: [sessionId: string]; result: void }
+
   // LM Studio
   'lmstudio:test': {
     args: [url: string, apiKey?: string]
@@ -66,4 +71,6 @@ export interface IpcEventMap {
   'fs:changed': [path: string, content: string]
   'menu:settings': []
   'theme:changed': ['light' | 'dark']
+  'terminal:output': [sessionId: string, data: string]
+  'terminal:exit': [sessionId: string, code: number]
 }
