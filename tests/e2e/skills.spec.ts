@@ -1,40 +1,17 @@
 import { _electron as electron, test, expect } from '@playwright/test'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
+import { seedProjectConfig } from './helpers.ts'
 
-const CONFIG_DIR = join(homedir(), '.config', 'agent-pane')
 const SCREENSHOTS = join(process.cwd(), 'test-results', 'skills-screenshots')
 
 test('skills slash picker and manual invocation', async () => {
-  await mkdir(CONFIG_DIR, { recursive: true })
+  const workspaceRoot = process.cwd()
+  await seedProjectConfig(workspaceRoot, {
+    projectId: 'skills-demo-project',
+    threadId: 'skills-demo-thread',
+  })
   await mkdir(SCREENSHOTS, { recursive: true })
-
-  const projectId = 'skills-demo-project'
-  const threadId = 'skills-demo-thread'
-  await writeFile(
-    join(CONFIG_DIR, 'config.json'),
-    JSON.stringify(
-      {
-        projects: [{ id: projectId, path: '/workspace', name: 'workspace' }],
-        activeProjectId: projectId,
-        workspaceRoot: '/workspace',
-        [`threads:${projectId}`]: [
-          {
-            id: threadId,
-            title: 'Skills demo',
-            status: 'idle',
-            messages: [],
-            usage: { inputTokens: 0, outputTokens: 0 },
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          },
-        ],
-      },
-      null,
-      2,
-    ),
-  )
 
   const app = await electron.launch({
     args: ['dist/main/index.js', '--disable-gpu'],
