@@ -34,6 +34,53 @@ export function seedEmptyProject(workspaceRoot: string, projectId: string): void
   )
 }
 
+/** Tool args containing HTML-like strings that break innerHTML <pre> templates. */
+export const INNERHTML_TRAP_ARGS = {
+  path: 'index.html',
+  content: '</pre><img src=x alt="injected"><pre>',
+} as const
+
+export function seedInnerHtmlToolArgsFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-innerhtml-project'
+  const threadId = 'e2e-innerhtml-thread'
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'innerHTML trap test',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-innerhtml',
+              role: 'assistant',
+              content: 'Wrote a file with tricky HTML-like content in the arguments.',
+              toolCalls: [
+                {
+                  id: 'tc-write-trap',
+                  name: 'write_file',
+                  args: INNERHTML_TRAP_ARGS,
+                  status: 'done',
+                  result: 'Wrote index.html',
+                },
+              ],
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
 export function seedToolDisplayFixture(workspaceRoot: string): void {
   const projectId = 'e2e-tool-display-project'
   const threadId = 'e2e-tool-display-thread'
