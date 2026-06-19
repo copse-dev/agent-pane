@@ -16,7 +16,7 @@ const nodeOpts = {
   bundle: true,
   platform: 'node' as const,
   format: 'cjs' as const,
-  external: ['electron'],
+  external: ['electron', '@anthropic-ai/sandbox-runtime', 'shell-quote'],
   sourcemap: true,
 }
 

@@ -1,9 +1,12 @@
-import { spawn } from 'node:child_process'
 import { z } from 'zod'
 import type { ToolDefinition } from '@shared/types'
 import { getWorkspaceRoot } from '../services/workspace.ts'
 import { requestApproval } from '../services/approval.ts'
 import { getMainWindow } from '../windows/create-main-window.ts'
+import {
+  afterSandboxedCommand,
+  spawnShellInProjectSandbox,
+} from '../project-sandbox/index.ts'
 
 export const runShellTool: ToolDefinition = {
   name: 'run_shell',
@@ -27,58 +30,70 @@ export const runShellTool: ToolDefinition = {
     const win = getMainWindow()
 
     return new Promise<string>((resolve, reject) => {
-      // Use Node's built-in child_process rather than a native pty module:
-      // node-pty must be ABI-matched to Electron and otherwise fails at spawn
-      // time with posix_spawnp errors. We lose TTY behaviour but gain
-      // reliability, and still stream output to the conversation.
-      const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh'
-      const args = process.platform === 'win32' ? ['/c', command] : ['-c', command]
-
-      const proc = spawn(shell, args, {
-        cwd,
-        env: process.env,
-        stdio: 'pipe',
-      })
-
-      let output = ''
-      let settled = false
-      const stream = (data: Buffer) => {
-        const text = data.toString()
-        output += text
-        win?.webContents.send('agent:shell_output', text)
-      }
-      proc.stdout?.on('data', stream)
-      proc.stderr?.on('data', stream)
-
-      const timer = setTimeout(() => {
-        proc.kill('SIGKILL')
-        if (!settled) {
-          settled = true
-          reject(new Error(`Command timed out after ${timeout_ms}ms`))
+      void (async () => {
+        // Use Node's built-in child_process rather than a native pty module:
+        // node-pty must be ABI-matched to Electron and otherwise fails at spawn
+        // time with posix_spawnp errors. We lose TTY behaviour but gain
+        // reliability, and still stream output to the conversation.
+        let proc
+        try {
+          proc = await spawnShellInProjectSandbox(command, {
+            cwd,
+            env: process.env,
+            stdio: 'pipe',
+            signal,
+          })
+        } catch (err) {
+          reject(err instanceof Error ? err : new Error(String(err)))
+          return
         }
-      }, timeout_ms)
 
-      proc.on('error', (err) => {
-        clearTimeout(timer)
-        if (!settled) {
-          settled = true
-          reject(err)
+        let output = ''
+        let settled = false
+        const stream = (data: Buffer) => {
+          const text = data.toString()
+          output += text
+          win?.webContents.send('agent:shell_output', text)
         }
-      })
+        proc.stdout?.on('data', stream)
+        proc.stderr?.on('data', stream)
 
-      proc.on('close', (code) => {
-        clearTimeout(timer)
-        if (settled) return
-        settled = true
-        const clean = output.replace(/\[[0-9;]*m/g, '').trim()
-        if (code === 0) resolve(clean || '(no output)')
-        else reject(new Error(`Exited with code ${code ?? 'null'}:\n${clean}`))
-      })
+        const timer = setTimeout(() => {
+          proc.kill('SIGKILL')
+          if (!settled) {
+            settled = true
+            reject(new Error(`Command timed out after ${timeout_ms}ms`))
+          }
+        }, timeout_ms)
 
-      signal.addEventListener('abort', () => {
-        clearTimeout(timer)
-        proc.kill('SIGKILL')
-      })
+        const finish = () => {
+          afterSandboxedCommand()
+        }
+
+        proc.on('error', (err) => {
+          clearTimeout(timer)
+          finish()
+          if (!settled) {
+            settled = true
+            reject(err instanceof Error ? err : new Error(String(err)))
+          }
+        })
+
+        proc.on('close', (code) => {
+          clearTimeout(timer)
+          finish()
+          if (settled) return
+          settled = true
+          const clean = output.replace(/\[[0-9;]*m/g, '').trim()
+          if (code === 0) resolve(clean || '(no output)')
+          else reject(new Error(`Exited with code ${code ?? 'null'}:\n${clean}`))
+        })
+
+        signal.addEventListener('abort', () => {
+          clearTimeout(timer)
+          proc.kill('SIGKILL')
+        })
+      })()
     })
   },
 }

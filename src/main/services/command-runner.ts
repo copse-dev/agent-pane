@@ -1,4 +1,8 @@
-import { spawn } from 'node:child_process'
+import { getWorkspaceRoot } from './workspace.ts'
+import {
+  afterSandboxedCommand,
+  spawnInProjectSandbox,
+} from '../project-sandbox/index.ts'
 
 export interface CommandResult {
   stdout: string
@@ -11,18 +15,37 @@ export function runCommand(
   args: string[],
   opts: { cwd?: string; signal?: AbortSignal } = {},
 ): Promise<CommandResult> {
+  const cwd = opts.cwd ?? getWorkspaceRoot() ?? process.cwd()
+
   return new Promise((resolve, reject) => {
-    const proc = spawn(cmd, args, { cwd: opts.cwd, stdio: 'pipe' })
-    let stdout = '',
-      stderr = ''
-    proc.stdout.on('data', (d: Buffer) => {
-      stdout += d.toString()
-    })
-    proc.stderr.on('data', (d: Buffer) => {
-      stderr += d.toString()
-    })
-    proc.on('close', (code) => resolve({ stdout, stderr, code: code ?? 0 }))
-    proc.on('error', reject)
-    opts.signal?.addEventListener('abort', () => proc.kill())
+    void (async () => {
+      try {
+        const spawnOpts: Parameters<typeof spawnInProjectSandbox>[2] = {
+          cwd,
+          stdio: 'pipe',
+        }
+        if (opts.signal) spawnOpts.signal = opts.signal
+        const proc = await spawnInProjectSandbox(cmd, args, spawnOpts)
+        let stdout = '',
+          stderr = ''
+        proc.stdout?.on('data', (d: Buffer) => {
+          stdout += d.toString()
+        })
+        proc.stderr?.on('data', (d: Buffer) => {
+          stderr += d.toString()
+        })
+        proc.on('close', (code) => {
+          afterSandboxedCommand()
+          resolve({ stdout, stderr, code: code ?? 0 })
+        })
+        proc.on('error', (err) => {
+          afterSandboxedCommand()
+          reject(new Error(err.message ?? String(err)))
+        })
+        opts.signal?.addEventListener('abort', () => proc.kill())
+      } catch (err) {
+        reject(new Error(err.message ?? String(err)))
+      }
+    })()
   })
 }
