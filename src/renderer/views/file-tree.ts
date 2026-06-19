@@ -34,6 +34,7 @@ const LANG: Record<string, string> = {
   swift: 'swift',
   kt: 'kotlin',
   md: 'markdown',
+  mdx: 'markdown',
   json: 'json',
   html: 'html',
   css: 'css',

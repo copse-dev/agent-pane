@@ -1,6 +1,16 @@
 import type * as Monaco from 'monaco-editor'
 import type { AppStore } from '@shared/store/store.ts'
+import type { OpenFile } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { renderMarkdown } from '../markdown/renderer.ts'
+
+type MarkdownViewMode = 'preview' | 'source'
+
+function isMarkdownFile(openFile: OpenFile): boolean {
+  if (openFile.language === 'markdown') return true
+  const name = openFile.path.split('/').pop()?.toLowerCase() ?? ''
+  return name.endsWith('.md') || name.endsWith('.mdx')
+}
 
 export function mountContextPanel(
   root: HTMLElement,
@@ -8,6 +18,21 @@ export function mountContextPanel(
   api: ApiClient,
   monaco: typeof Monaco,
 ): () => void {
+  const fileToolbar = document.createElement('div')
+  fileToolbar.className = 'file-viewer-toolbar'
+  fileToolbar.hidden = true
+  const previewBtn = document.createElement('button')
+  previewBtn.type = 'button'
+  previewBtn.textContent = 'Preview'
+  const sourceBtn = document.createElement('button')
+  sourceBtn.type = 'button'
+  sourceBtn.textContent = 'Edit source'
+  fileToolbar.append(previewBtn, sourceBtn)
+
+  const previewContainer = document.createElement('div')
+  previewContainer.className = 'markdown-file-preview message-text'
+  previewContainer.hidden = true
+
   const fileContainer = document.createElement('div')
   fileContainer.className = 'monaco-container'
   const diffContainer = document.createElement('div')
@@ -16,7 +41,34 @@ export function mountContextPanel(
   emptyContainer.className = 'panel-empty'
   emptyContainer.textContent = 'Open a file or run a task to see content here'
 
-  root.append(fileContainer, diffContainer, emptyContainer)
+  root.append(fileToolbar, previewContainer, fileContainer, diffContainer, emptyContainer)
+
+  let markdownViewMode: MarkdownViewMode = 'preview'
+  let lastMarkdownPath: string | null = null
+
+  function syncToolbarActive() {
+    previewBtn.classList.toggle('is-active', markdownViewMode === 'preview')
+    sourceBtn.classList.toggle('is-active', markdownViewMode === 'source')
+  }
+
+  previewBtn.addEventListener('click', () => {
+    markdownViewMode = 'preview'
+    const model = fileEditor.getModel()
+    if (model && !model.isDisposed()) {
+      previewContainer.innerHTML = renderMarkdown(model.getValue())
+    }
+    syncToolbarActive()
+    previewContainer.hidden = false
+    fileContainer.hidden = true
+  })
+
+  sourceBtn.addEventListener('click', () => {
+    markdownViewMode = 'source'
+    syncToolbarActive()
+    previewContainer.hidden = true
+    fileContainer.hidden = false
+    fileEditor.layout()
+  })
 
   const fileEditor = monaco.editor.create(fileContainer, {
     readOnly: false,
@@ -60,10 +112,28 @@ export function mountContextPanel(
     if (panelTab === 'file' && openFile) {
       emptyContainer.hidden = true
       diffContainer.hidden = true
-      fileContainer.hidden = false
+
       const old = fileEditor.getModel()
       fileEditor.setModel(monaco.editor.createModel(openFile.content, openFile.language))
       old?.dispose()
+
+      const md = isMarkdownFile(openFile)
+      fileToolbar.hidden = !md
+      if (md && openFile.path !== lastMarkdownPath) {
+        markdownViewMode = 'preview'
+        lastMarkdownPath = openFile.path
+      }
+      if (!md) lastMarkdownPath = null
+
+      if (md && markdownViewMode === 'preview') {
+        previewContainer.innerHTML = renderMarkdown(openFile.content)
+        previewContainer.hidden = false
+        fileContainer.hidden = true
+      } else {
+        previewContainer.hidden = true
+        fileContainer.hidden = false
+      }
+      syncToolbarActive()
     } else if (panelTab === 'diff' && activeDiff) {
       emptyContainer.hidden = true
       fileContainer.hidden = true
@@ -78,6 +148,8 @@ export function mountContextPanel(
       acceptBtn.onclick = () => void api.diff.approve(activeDiff.path)
       rejectBtn.onclick = () => void api.diff.reject(activeDiff.path)
     } else {
+      fileToolbar.hidden = true
+      previewContainer.hidden = true
       fileContainer.hidden = true
       diffContainer.hidden = true
       emptyContainer.hidden = false
@@ -110,6 +182,9 @@ export function mountContextPanel(
     const model = fileEditor.getModel()
     if (model && !model.isDisposed() && !fileEditor.hasTextFocus()) {
       model.setValue(newContent)
+    }
+    if (markdownViewMode === 'preview' && !previewContainer.hidden) {
+      previewContainer.innerHTML = renderMarkdown(newContent)
     }
   })
 
