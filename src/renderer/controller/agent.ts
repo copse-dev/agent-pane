@@ -11,6 +11,13 @@ import {
   updateUsage,
   recordContextTrim,
 } from '@shared/store/thread-helpers.ts'
+import {
+  initSubagent,
+  appendSubagentText,
+  addSubagentToolCall,
+  updateSubagentToolCall,
+  finishSubagent,
+} from '@shared/store/subagent-helpers.ts'
 import { planAgentTextChunk } from '@shared/agent/agent-text-chunk.ts'
 import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY } from '../agent-activity.ts'
 
@@ -96,6 +103,56 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           estimatedTokens: chunk.estimatedTokens,
         })
         store.emit('agent_activity', threadId, CONTEXT_TRIM_ACTIVITY)
+        break
+      }
+      case 'subagent_start': {
+        if (!st.msgId) st.msgId = addMessage(store, threadId, 'assistant')
+        initSubagent(store, st.msgId, chunk.parentToolCallId, chunk.session)
+        st.writing = false
+        activity(threadId)
+        break
+      }
+      case 'subagent_text': {
+        if (st.msgId) {
+          appendSubagentText(store, st.msgId, chunk.parentToolCallId, chunk.messageId, chunk.text)
+        }
+        break
+      }
+      case 'subagent_tool_call': {
+        if (st.msgId) {
+          addSubagentToolCall(store, st.msgId, chunk.parentToolCallId, chunk.messageId, {
+            id: chunk.toolCall.id,
+            name: chunk.toolCall.name,
+            args: chunk.toolCall.args,
+            status: 'running',
+            result: null,
+          })
+        }
+        activity(threadId)
+        break
+      }
+      case 'subagent_tool_result': {
+        if (st.msgId) {
+          updateSubagentToolCall(store, st.msgId, chunk.parentToolCallId, chunk.toolCallId, {
+            status: chunk.isError ? 'error' : 'done',
+            result: chunk.result,
+          })
+        }
+        activity(threadId)
+        break
+      }
+      case 'subagent_done': {
+        if (st.msgId) {
+          finishSubagent(store, st.msgId, chunk.parentToolCallId, chunk.summary, 'done')
+        }
+        activity(threadId)
+        break
+      }
+      case 'subagent_error': {
+        if (st.msgId) {
+          finishSubagent(store, st.msgId, chunk.parentToolCallId, chunk.error, 'error')
+        }
+        activity(threadId)
         break
       }
       case 'done': {
