@@ -2,8 +2,11 @@ import * as esbuild from 'esbuild'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { cpSync, copyFileSync } from 'node:fs'
 
-// Copy Monaco workers once at start
+// Copy static renderer assets once at start
 cpSync('node_modules/monaco-editor/min/vs', 'dist/renderer/monaco/vs', { recursive: true })
+cpSync('node_modules/vscode-material-icons/generated/icons', 'dist/renderer/material-icons', {
+  recursive: true,
+})
 copyFileSync('src/renderer/index.html', 'dist/renderer/index.html')
 
 let electron: ChildProcess | null = null
