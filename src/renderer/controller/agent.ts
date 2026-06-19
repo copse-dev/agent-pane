@@ -8,8 +8,9 @@ import {
   setMessageContent,
   setThreadStatus,
   setThreadTitle,
-  updateUsage,
+  addUsageDelta,
   recordContextTrim,
+  updateContextSnapshot,
 } from '@shared/store/thread-helpers.ts'
 import { planAgentTextChunk } from '@shared/agent/agent-text-chunk.ts'
 import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY } from '../agent-activity.ts'
@@ -95,7 +96,29 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           historyBudget: chunk.historyBudget,
           estimatedTokens: chunk.estimatedTokens,
         })
+        updateContextSnapshot(store, threadId, {
+          contextWindow: chunk.contextWindow,
+          conversationBudget: chunk.historyBudget,
+          conversationTokens: chunk.estimatedTokens,
+          fillRatio: chunk.estimatedTokens / chunk.historyBudget,
+        })
         store.emit('agent_activity', threadId, CONTEXT_TRIM_ACTIVITY)
+        break
+      }
+      case 'usage': {
+        addUsageDelta(store, threadId, {
+          inputTokens: chunk.inputTokens,
+          outputTokens: chunk.outputTokens,
+        })
+        break
+      }
+      case 'context_pressure': {
+        updateContextSnapshot(store, threadId, {
+          contextWindow: chunk.contextWindow,
+          conversationBudget: chunk.conversationBudget,
+          conversationTokens: chunk.conversationTokens,
+          fillRatio: chunk.fillRatio,
+        })
         break
       }
       case 'done': {
@@ -109,14 +132,9 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     }
   })
 
-  // Accumulate token usage per thread so the input-bar footer can show cost.
+  // Legacy path: some callers may still emit agent:usage directly.
   api.agent.onUsage((threadId, usage) => {
-    const thread = store.getState().threads.find((t) => t.id === threadId)
-    if (!thread) return
-    updateUsage(store, threadId, {
-      inputTokens: thread.usage.inputTokens + usage.inputTokens,
-      outputTokens: thread.usage.outputTokens + usage.outputTokens,
-    })
+    addUsageDelta(store, threadId, usage)
   })
 
   api.diff.onShowDiff((path, before, after, language) => {

@@ -10,6 +10,14 @@ export type StreamChunk =
       historyBudget: number
       estimatedTokens: number
     }
+  | { type: 'usage'; inputTokens: number; outputTokens: number }
+  | {
+      type: 'context_pressure'
+      contextWindow: number
+      conversationBudget: number
+      conversationTokens: number
+      fillRatio: number
+    }
   | { type: 'done' }
 
 export interface ToolCallChunk {
