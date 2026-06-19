@@ -267,7 +267,9 @@ export async function suggestThreadTitle(text: string): Promise<string | null> {
 
   let provider: LLMProvider | null = null
   if (useLmStudio && lmUrl) {
-    const configured = getSetting<string>('lmStudioModel', '')
+    const configured =
+      getSetting<string>('lmStudioSmallTasksModel', '').trim() ||
+      getSetting<string>('lmStudioModel', '').trim()
     const model = configured || (await fetchFirstLocalModel(lmUrl))
     if (model) provider = createLMStudioProvider(lmUrl, model, lmStudioKey())
   }
