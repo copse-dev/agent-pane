@@ -47,7 +47,11 @@ export async function listLmStudioModels(): Promise<string[]> {
   const url = getSetting<string>('lmStudioUrl', DEFAULT_LM_STUDIO_URL)
   const cacheKey = `${url}${lmStudioKey()}`
   const now = Date.now()
-  if (lmModelsCache && lmModelsCache.key === cacheKey && now - lmModelsCache.at < LM_MODELS_TTL_MS) {
+  if (
+    lmModelsCache &&
+    lmModelsCache.key === cacheKey &&
+    now - lmModelsCache.at < LM_MODELS_TTL_MS
+  ) {
     return lmModelsCache.models
   }
   const r = await testLmStudio(url)
