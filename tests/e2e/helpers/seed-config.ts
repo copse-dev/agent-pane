@@ -81,6 +81,47 @@ export function seedInnerHtmlToolArgsFixture(workspaceRoot: string): void {
   )
 }
 
+export function seedMarkdownListFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-markdown-list-project'
+  const threadId = 'e2e-markdown-list-thread'
+  const content = [
+    'The lint is already clean — no issues to fix. Here is the summary:',
+    '',
+    '- **Tests:** All 110 tests pass.',
+    '- **Lint:** `npm run lint` (which runs `eslint .`) exits with code 0 and reports zero errors or warnings.',
+    '- `npx eslint . --max-warnings 0`: Also exits cleanly with no violations.',
+    '',
+    'There are no lint errors in this codebase — ESLint is configured and passing.',
+  ].join('\n')
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Markdown list indent',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-list',
+              role: 'assistant',
+              content,
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
 export function seedToolDisplayFixture(workspaceRoot: string): void {
   const projectId = 'e2e-tool-display-project'
   const threadId = 'e2e-tool-display-thread'

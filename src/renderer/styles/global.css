@@ -522,6 +522,16 @@ label {
 .message-text tbody tr:nth-child(even) td {
   background: rgba(255, 255, 255, 0.02);
 }
+.message-text ul,
+.message-text ol {
+  /* Global reset zeros list padding, so outside bullets hang left of body text. */
+  margin-left: 1px;
+  padding-inline-start: 0.55em;
+  list-style-position: outside;
+}
+.message-text li + li {
+  margin-top: var(--spacing-xs);
+}
 .message-text hr {
   border: none;
   border-top: 1px solid var(--border);
