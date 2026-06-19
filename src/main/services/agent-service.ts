@@ -204,7 +204,7 @@ export async function runAgent(
   }
 
   // Return non-system messages for history persistence in main process
-  const updatedHistory = messages.filter((m) => m.role !== 'system')
+  const updatedHistory = trimmed.filter((m) => m.role !== 'system')
   return { usage: { inputTokens, outputTokens }, messages: updatedHistory }
 }
 
