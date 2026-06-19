@@ -40,6 +40,9 @@ test('skills slash picker and manual invocation', async () => {
       timeout: 20_000,
     })
 
+    // Tier 2: mock LLM echoes the demo skill's example output when instructions were injected.
+    await expect(win.locator('.msg-assistant')).toContainText('Demoskillactive')
+
     await win.screenshot({ path: join(SCREENSHOTS, '03-skill-conversation.png'), fullPage: true })
   } finally {
     await app.close()
