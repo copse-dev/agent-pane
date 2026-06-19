@@ -545,7 +545,42 @@ label {
 }
 .tool-name {
   font-weight: 600;
-  font-family: var(--font-mono);
+}
+.tool-count {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.tool-card-group > .tool-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.tool-card-group[data-status='done'] > .tool-group-items {
+  margin-top: var(--spacing-xs);
+}
+.tool-card-group:not([open]) {
+  padding-block: 6px;
+}
+.tool-group-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--bg-base);
+}
+.tool-group-item-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+  list-style-position: inside;
+  font-size: var(--font-size-sm);
+}
+.tool-group-item[open] .tool-group-item-header {
+  margin-bottom: var(--spacing-xs);
+}
+.tool-group-item > .tool-args,
+.tool-group-item > .tool-result {
+  margin-top: var(--spacing-xs);
 }
 .tool-status-icon {
   color: var(--text-muted);
