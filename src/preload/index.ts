@@ -6,8 +6,9 @@ contextBridge.exposeInMainWorld('api', {
     get: () => ipcRenderer.invoke('workspace:get'),
     set: (root: string) => ipcRenderer.invoke('workspace:set', root),
     onOpened: (handler: (root: string) => void) => {
-      ipcRenderer.on('workspace:opened', (_e, root) => handler(root))
-      return () => ipcRenderer.removeAllListeners('workspace:opened')
+      const listener = (_e: Electron.IpcRendererEvent, root: string) => handler(root)
+      ipcRenderer.on('workspace:opened', listener)
+      return () => ipcRenderer.off('workspace:opened', listener)
     },
   },
   fs: {
@@ -18,8 +19,9 @@ contextBridge.exposeInMainWorld('api', {
     watch: (path: string) => ipcRenderer.invoke('fs:watch', path),
     unwatch: (path: string) => ipcRenderer.invoke('fs:unwatch', path),
     onChanged: (handler: (path: string, content: string) => void) => {
-      ipcRenderer.on('fs:changed', (_e, p, c) => handler(p, c))
-      return () => ipcRenderer.removeAllListeners('fs:changed')
+      const listener = (_e: Electron.IpcRendererEvent, p: string, c: string) => handler(p, c)
+      ipcRenderer.on('fs:changed', listener)
+      return () => ipcRenderer.off('fs:changed', listener)
     },
   },
   agent: {
@@ -28,24 +30,36 @@ contextBridge.exposeInMainWorld('api', {
     clearHistory: (threadId: string) => ipcRenderer.invoke('agent:clearHistory', threadId),
     suggestTitle: (text: string) => ipcRenderer.invoke('agent:suggestTitle', text),
     onChunk: (handler: (threadId: string, chunk: unknown) => void) => {
-      ipcRenderer.on('agent:chunk', (_e, tid, chunk) => handler(tid, chunk))
-      return () => ipcRenderer.removeAllListeners('agent:chunk')
+      const listener = (_e: Electron.IpcRendererEvent, tid: string, chunk: unknown) =>
+        handler(tid, chunk)
+      ipcRenderer.on('agent:chunk', listener)
+      return () => ipcRenderer.off('agent:chunk', listener)
     },
     onApprovalRequest: (
       handler: (req: { id: string; title: string; body: string; type: string }) => void,
     ) => {
-      ipcRenderer.on('agent:approval_request', (_e, req) => handler(req))
-      return () => ipcRenderer.removeAllListeners('agent:approval_request')
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        req: { id: string; title: string; body: string; type: string },
+      ) => handler(req)
+      ipcRenderer.on('agent:approval_request', listener)
+      return () => ipcRenderer.off('agent:approval_request', listener)
     },
     onShellOutput: (handler: (data: string) => void) => {
-      ipcRenderer.on('agent:shell_output', (_e, data) => handler(data))
-      return () => ipcRenderer.removeAllListeners('agent:shell_output')
+      const listener = (_e: Electron.IpcRendererEvent, data: string) => handler(data)
+      ipcRenderer.on('agent:shell_output', listener)
+      return () => ipcRenderer.off('agent:shell_output', listener)
     },
     onUsage: (
       handler: (threadId: string, usage: { inputTokens: number; outputTokens: number }) => void,
     ) => {
-      ipcRenderer.on('agent:usage', (_e, threadId, usage) => handler(threadId, usage))
-      return () => ipcRenderer.removeAllListeners('agent:usage')
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        threadId: string,
+        usage: { inputTokens: number; outputTokens: number },
+      ) => handler(threadId, usage)
+      ipcRenderer.on('agent:usage', listener)
+      return () => ipcRenderer.off('agent:usage', listener)
     },
   },
   diff: {
@@ -54,12 +68,23 @@ contextBridge.exposeInMainWorld('api', {
     approveAll: () => ipcRenderer.invoke('diff:approveAll'),
     rejectAll: () => ipcRenderer.invoke('diff:rejectAll'),
     onShowDiff: (handler: (path: string, before: string, after: string, lang: string) => void) => {
-      ipcRenderer.on('agent:show_diff', (_e, p, b, a, l) => handler(p, b, a, l))
-      return () => ipcRenderer.removeAllListeners('agent:show_diff')
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        p: string,
+        b: string,
+        a: string,
+        l: string,
+      ) => handler(p, b, a, l)
+      ipcRenderer.on('agent:show_diff', listener)
+      return () => ipcRenderer.off('agent:show_diff', listener)
     },
     onQueued: (handler: (entries: { path: string; language: string }[]) => void) => {
-      ipcRenderer.on('diff:queued', (_e, entries) => handler(entries))
-      return () => ipcRenderer.removeAllListeners('diff:queued')
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        entries: { path: string; language: string }[],
+      ) => handler(entries)
+      ipcRenderer.on('diff:queued', listener)
+      return () => ipcRenderer.off('diff:queued', listener)
     },
   },
   approval: {
@@ -76,8 +101,9 @@ contextBridge.exposeInMainWorld('api', {
   },
   menu: {
     onSettings: (handler: () => void) => {
-      ipcRenderer.on('menu:settings', () => handler())
-      return () => ipcRenderer.removeAllListeners('menu:settings')
+      const listener = () => handler()
+      ipcRenderer.on('menu:settings', listener)
+      return () => ipcRenderer.off('menu:settings', listener)
     },
   },
   settings: {
