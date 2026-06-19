@@ -3,3 +3,4 @@ dist-test/
 dist-types/
 node_modules/
 test-results/
+.claude/

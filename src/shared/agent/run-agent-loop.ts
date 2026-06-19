@@ -17,9 +17,41 @@ export interface AgentLoopOptions {
   maxSteps?: number
 }
 
+const FINALIZE_NUDGE =
+  'Based on your exploration so far, write a clear final answer for the user. Do not call any tools.'
+
+const INCOMPLETE_RUN_MESSAGE =
+  'The agent stopped before producing a final answer. Try a shorter question, reduce tool use, or switch models.'
+
+async function streamTextOnlyTurn(
+  provider: LLMProvider,
+  messages: LLMMessage[],
+  onChunk: (chunk: StreamChunk) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  const turnMessages: LLMMessage[] = [...messages, { role: 'user', content: FINALIZE_NUDGE }]
+  let assistantText = ''
+
+  for await (const chunk of provider.stream(turnMessages, [], signal)) {
+    if (signal?.aborted) break
+    if (chunk.type === 'text') {
+      assistantText += chunk.text
+      onChunk(chunk)
+    }
+    if (chunk.type === 'done') break
+  }
+
+  const trimmed = assistantText.trim()
+  if (trimmed) {
+    messages.push({ role: 'assistant', content: assistantText })
+  }
+  return trimmed
+}
+
 export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   const { provider, messages, tools, onChunk, signal, maxSteps = 20 } = opts
   let steps = 0
+  let finishedWithAnswer = false
 
   while (steps < maxSteps) {
     if (signal?.aborted) break
@@ -55,7 +87,10 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     }
 
     // No tool calls — we're done
-    if (pendingToolCalls.length === 0) break
+    if (pendingToolCalls.length === 0) {
+      if (assistantText.trim()) finishedWithAnswer = true
+      break
+    }
 
     // Execute tools and collect results
     const toolResults: ToolResult[] = []
@@ -80,6 +115,16 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
 
     // Push tool results to history
     messages.push({ role: 'tool', toolResults })
+  }
+
+  if (!signal?.aborted && !finishedWithAnswer) {
+    const finalText = await streamTextOnlyTurn(provider, messages, onChunk, signal)
+    if (!finalText.trim()) {
+      onChunk({ type: 'text', text: INCOMPLETE_RUN_MESSAGE })
+      messages.push({ role: 'assistant', content: INCOMPLETE_RUN_MESSAGE })
+    } else {
+      finishedWithAnswer = true
+    }
   }
 
   onChunk({ type: 'done' })

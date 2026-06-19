@@ -117,6 +117,10 @@ Available tools:
 
 Working directory: {WORKSPACE_ROOT}
 
+When the user asks an open-ended question (review, explain, validate, summarize):
+1. Use tools as needed, then finish with a clear written answer in plain language.
+2. Do not end the turn with tool calls alone — always follow exploration with a summary for the user.
+
 When modifying files:
 1. Read the file first
 2. Use write_file to propose changes — the user sees a diff and must approve
