@@ -13,6 +13,7 @@ function tc(id: string, name: string, status: ToolCall['status'] = 'done'): Tool
 
 describe('tool-display', () => {
   it('maps known tools to human-readable names', () => {
+    assert.equal(getToolDisplayName('explore'), 'Explore files')
     assert.equal(getToolDisplayName('read_file'), 'Read file')
     assert.equal(getToolDisplayName('list_dir'), 'List directory')
     assert.equal(getToolDisplayName('run_shell'), 'Run command')
@@ -20,6 +21,16 @@ describe('tool-display', () => {
 
   it('formats unknown tools from snake_case', () => {
     assert.equal(getToolDisplayName('custom_tool_name'), 'Custom Tool Name')
+  })
+
+  it('groups explore with reading tools', () => {
+    const items = buildToolCallDisplayItems([tc('1', 'explore'), tc('2', 'read_file')])
+    assert.equal(items.length, 1)
+    assert.equal(items[0]?.type, 'group')
+    if (items[0]?.type === 'group') {
+      assert.equal(items[0].label, 'Reading files')
+      assert.equal(items[0].toolCalls.length, 2)
+    }
   })
 
   it('groups multiple successful reading tools', () => {
