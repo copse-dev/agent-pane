@@ -11,6 +11,8 @@ import { mountConversation } from './views/conversation.ts'
 import { mountFileTree } from './views/file-tree.ts'
 import { mountInputBar } from './views/input-bar.ts'
 import { mountContextPanel } from './views/context-panel.ts'
+import { mountRightPanelTabs } from './views/right-panel-tabs.ts'
+import { mountTerminalPanel } from './views/terminal-panel.ts'
 import {
   mountSettingsDialog,
   openSettingsDialog,
@@ -85,6 +87,8 @@ function mountFullLayout() {
   mountConversation(document.getElementById('conversation')!, store)
   mountInputBar(document.getElementById('input-bar')!, store, api)
   mountFileTree(document.getElementById('file-tree-host')!, store, api)
+  mountRightPanelTabs(document.getElementById('right-panel-tabs')!, store)
+  mountTerminalPanel(document.getElementById('terminal-host')!, store, api)
   mountContextPanel(document.getElementById('file-viewer')!, store, api, monaco)
 
   const body = document.getElementById('body')

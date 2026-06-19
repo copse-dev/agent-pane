@@ -123,9 +123,11 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     store.setState({
       activeDiff: { path, before, after, language },
       panelTab: 'diff',
+      rightPanelMode: 'explorer',
       filesPaneOpen: true,
     })
     store.emit('panel_changed')
+    store.emit('right_panel_mode_changed')
     store.emit('files_pane_changed')
   })
 
@@ -137,11 +139,13 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     store.setState({
       stagedDiffs: entries,
       panelTab: entries.length > 0 ? 'diff' : store.getState().panelTab,
+      rightPanelMode: entries.length > 0 ? 'explorer' : store.getState().rightPanelMode,
       filesPaneOpen: entries.length > 0 ? true : store.getState().filesPaneOpen,
       activeDiff: entries.length === 0 ? null : stillQueued,
     })
     store.emit('staged_diffs_changed')
     store.emit('panel_changed')
+    if (entries.length > 0) store.emit('right_panel_mode_changed')
     store.emit('files_pane_changed')
   })
 

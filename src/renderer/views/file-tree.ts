@@ -63,9 +63,8 @@ function join(parent: string, child: string): string {
 }
 
 export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
-  const title = el('span', {}, 'Explorer')
   const refreshBtn = el('button', { class: 'sidebar-refresh', 'aria-label': 'Refresh' }, '⟳')
-  const header = el('div', { class: 'sidebar-header' }, title, refreshBtn)
+  const header = el('div', { class: 'sidebar-header sidebar-header-compact' }, refreshBtn)
   const treeEl = el('div', { class: 'file-tree', role: 'tree' })
   root.append(header, treeEl)
 
@@ -77,9 +76,11 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
       store.setState({
         openFile: { path, content, language: detectLanguage(name) },
         panelTab: 'file',
+        rightPanelMode: 'explorer',
         filesPaneOpen: true,
       })
       store.emit('panel_changed')
+      store.emit('right_panel_mode_changed')
       store.emit('files_pane_changed')
     } catch {
       // ignore read errors (binary files, permissions, etc.)
