@@ -1,4 +1,5 @@
 import type { SkillSummary } from '@shared/types/skills.ts'
+import { clear } from '../dom/helpers.ts'
 
 export interface SkillPickerOptions {
   textarea: HTMLTextAreaElement
@@ -36,7 +37,7 @@ export function initSkillPicker(opts: SkillPickerOptions): () => void {
   }
 
   function renderPicker() {
-    picker.innerHTML = ''
+    clear(picker)
     selectedIdx = 0
     currentSkills.forEach((skill, i) => {
       const item = document.createElement('div')

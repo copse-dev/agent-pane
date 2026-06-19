@@ -1,4 +1,5 @@
 import type { ApiClient } from '../../preload/api.d.ts'
+import { clear } from '../dom/helpers.ts'
 
 // Cloud models, each tagged with the provider key it needs. They're only shown
 // when that provider is available. LM Studio models are discovered at runtime.
@@ -84,7 +85,7 @@ export async function populateModelSelect(
   api: ApiClient,
   current: string,
 ): Promise<void> {
-  select.innerHTML = ''
+  clear(select)
   const options = await fetchModelOptions(api, current)
   let lastGroup: string | undefined
   let groupEl: HTMLOptGroupElement | null = null
@@ -113,7 +114,7 @@ export function populateLocalModelSelect(
   current: string,
   autoLabel = '(auto — first loaded model)',
 ): void {
-  select.innerHTML = ''
+  clear(select)
   const auto = document.createElement('option')
   auto.value = ''
   auto.textContent = autoLabel
