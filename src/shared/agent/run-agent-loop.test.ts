@@ -77,4 +77,38 @@ describe('runAgentLoop', () => {
     })
     assert.ok(steps <= 3)
   })
+
+  it('emits a final text answer after maxSteps tool-only loop', async () => {
+    const chunks: StreamChunk[] = []
+    await runAgentLoop({
+      provider: mockProvider([
+        [{ type: 'tool_call', toolCall: { id: '1', name: 'loop', args: {} } }, { type: 'done' }],
+        [{ type: 'tool_call', toolCall: { id: '2', name: 'loop', args: {} } }, { type: 'done' }],
+        [{ type: 'text', text: 'Here is the repo review.' }, { type: 'done' }],
+      ]),
+      messages: [{ role: 'user', content: 'review the repo' }],
+      tools: [],
+      maxSteps: 2,
+      onChunk: (c) => chunks.push(c),
+      executeTool: async () => 'ok',
+    })
+    assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('repo review')))
+    assert.equal(chunks.at(-1)?.type, 'done')
+  })
+
+  it('surfaces a terminal message when finalize returns empty', async () => {
+    const chunks: StreamChunk[] = []
+    await runAgentLoop({
+      provider: mockProvider([[{ type: 'done' }], [{ type: 'done' }]]),
+      messages: [{ role: 'user', content: 'review the repo' }],
+      tools: [],
+      onChunk: (c) => chunks.push(c),
+      executeTool: async () => '',
+    })
+    assert.ok(
+      chunks.some(
+        (c) => c.type === 'text' && c.text.includes('stopped before producing a final answer'),
+      ),
+    )
+  })
 })

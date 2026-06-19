@@ -9,6 +9,7 @@ export default ts.config(
       'dist-test/',
       'dist-types/',
       'node_modules/',
+      '.claude/**',
       'eslint.config.mjs',
       'prettier.config.mjs',
       'playwright.config.ts',
