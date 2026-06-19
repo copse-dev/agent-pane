@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { _electron as electron, test, expect } from '@playwright/test'
-import { resetUserData, seedToolDisplayFixture } from './helpers/seed-config.ts'
+import { resetUserData, seedToolDisplayFixture, seedEmptyProject } from './helpers/seed-config.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -61,19 +61,7 @@ test.describe('tool call display', () => {
   test('live mock turn shows human-readable single tool name', async () => {
     resetUserData()
     const projectId = 'e2e-live-project'
-    const { writeFileSync, mkdirSync: mk } = await import('node:fs')
-    const { homedir } = await import('node:os')
-    const userData = join(homedir(), '.config', 'agent-pane')
-    mk(userData, { recursive: true })
-    writeFileSync(
-      join(userData, 'config.json'),
-      JSON.stringify({
-        projects: [{ id: projectId, path: process.cwd(), name: 'workspace' }],
-        activeProjectId: projectId,
-        [`threads:${projectId}`]: [],
-      }),
-      'utf8',
-    )
+    seedEmptyProject(process.cwd(), projectId)
 
     const app = await electron.launch({
       args: ['dist/main/index.js'],
