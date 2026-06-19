@@ -94,6 +94,16 @@ export function appendToken(store: AppStore, messageId: string, text: string): v
   store.emit('message_token', messageId, text)
 }
 
+export function setMessageContent(store: AppStore, messageId: string, content: string): void {
+  const { threads } = store.getState()
+  const updated = threads.map((t) => ({
+    ...t,
+    messages: t.messages.map((m) => (m.id !== messageId ? m : { ...m, content })),
+  }))
+  store.setState({ threads: updated })
+  store.emit('message_token', messageId, content)
+}
+
 export function addToolCall(store: AppStore, messageId: string, toolCall: ToolCall): void {
   const { threads } = store.getState()
   const updated = threads.map((t) => ({
