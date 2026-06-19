@@ -19,27 +19,40 @@ function renderToolArgs(args: unknown): string {
   return JSON.stringify(args, null, 2)
 }
 
+function createToolArgsSection(args: unknown): HTMLDetailsElement {
+  return el(
+    'details',
+    { class: 'tool-args' },
+    el('summary', {}, 'Arguments'),
+    el('pre', {}, renderToolArgs(args)),
+  )
+}
+
+function createToolHeader(
+  label: string,
+  status: ToolCall['status'],
+  summaryClass: string,
+  count?: number,
+): HTMLElement {
+  const children: (Node | string)[] = [el('span', { class: 'tool-name' }, label)]
+  if (count !== undefined && count > 1) {
+    children.push(el('span', { class: 'tool-count' }, `×${count}`))
+  }
+  children.push(el('span', { class: 'tool-status-icon', 'aria-label': status }, statusIcon(status)))
+  return el('summary', { class: summaryClass }, ...children)
+}
+
 function createIndividualToolCard(tc: ToolCall, label: string): HTMLElement {
   const card = el('details', {
     class: 'tool-card',
     'data-tool-id': tc.id,
     'data-status': tc.status,
   })
-  card.innerHTML = `
-    <summary class="tool-card-header">
-      <span class="tool-name">${label}</span>
-      <span class="tool-status-icon" aria-label="${tc.status}">${statusIcon(tc.status)}</span>
-    </summary>
-    <details class="tool-args">
-      <summary>Arguments</summary>
-      <pre>${renderToolArgs(tc.args)}</pre>
-    </details>
-    <div class="tool-result"></div>
-  `
-  if (tc.result) {
-    const resultEl = card.querySelector('.tool-result')
-    if (resultEl) resultEl.textContent = tc.result
-  }
+  card.append(
+    createToolHeader(label, tc.status, 'tool-card-header'),
+    createToolArgsSection(tc.args),
+    el('div', { class: 'tool-result' }, ...(tc.result ? [tc.result] : [])),
+  )
   return card
 }
 
@@ -52,42 +65,21 @@ function createGroupToolCard(item: Extract<ToolCallDisplayItem, { type: 'group' 
   })
 
   const count = item.toolCalls.length
-  const countLabel = count > 1 ? `<span class="tool-count">×${count}</span>` : ''
+  const groupItems = el('div', { class: 'tool-group-items' })
+  card.append(createToolHeader(item.label, status, 'tool-card-header', count), groupItems)
 
-  card.innerHTML = `
-    <summary class="tool-card-header">
-      <span class="tool-name">${item.label}</span>
-      ${countLabel}
-      <span class="tool-status-icon" aria-label="${status}">${statusIcon(status)}</span>
-    </summary>
-    <div class="tool-group-items"></div>
-  `
-
-  const groupItems = card.querySelector('.tool-group-items')
-  if (groupItems) {
-    for (const tc of item.toolCalls) {
-      const entry = el('details', {
-        class: 'tool-group-item',
-        'data-tool-id': tc.id,
-        'data-status': tc.status,
-      })
-      entry.innerHTML = `
-        <summary class="tool-group-item-header">
-          <span class="tool-name">${getToolDisplayName(tc.name)}</span>
-          <span class="tool-status-icon" aria-label="${tc.status}">${statusIcon(tc.status)}</span>
-        </summary>
-        <details class="tool-args">
-          <summary>Arguments</summary>
-          <pre>${renderToolArgs(tc.args)}</pre>
-        </details>
-        <div class="tool-result"></div>
-      `
-      if (tc.result) {
-        const resultEl = entry.querySelector('.tool-result')
-        if (resultEl) resultEl.textContent = tc.result
-      }
-      groupItems.append(entry)
-    }
+  for (const tc of item.toolCalls) {
+    const entry = el('details', {
+      class: 'tool-group-item',
+      'data-tool-id': tc.id,
+      'data-status': tc.status,
+    })
+    entry.append(
+      createToolHeader(getToolDisplayName(tc.name), tc.status, 'tool-group-item-header'),
+      createToolArgsSection(tc.args),
+      el('div', { class: 'tool-result' }, ...(tc.result ? [tc.result] : [])),
+    )
+    groupItems.append(entry)
   }
 
   return card
