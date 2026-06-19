@@ -12,9 +12,6 @@ import { getSetting } from './settings.ts'
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
   registry.register(readFileTool)
-  if (getSetting<boolean>('skillsEnabled', true) && listSkills().length > 0) {
-    registry.register(readSkillTool)
-  }
   registry.register(writeFileTool)
   registry.register(listDirTool)
   registry.register(searchCodeTool)
@@ -25,4 +22,11 @@ export function createRegistry(): ToolRegistry {
   registry.register(runShellTool)
   registry.register(exploreTool)
   return registry
+}
+
+/** Register skill tools after the skills registry has been populated. */
+export function registerSkillTools(registry: ToolRegistry): void {
+  if (!getSetting<boolean>('skillsEnabled', true)) return
+  if (listSkills().length === 0) return
+  if (!registry.has('read_skill')) registry.register(readSkillTool)
 }

@@ -15,8 +15,9 @@ import {
 import { storageGet, storageSet } from '../services/storage.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills-registry.ts'
+import { registerSkillTools } from '../services/registry-bootstrap.ts'
 
-export function registerAllHandlers(_win: BrowserWindow, _registry: ToolRegistry): void {
+export function registerAllHandlers(_win: BrowserWindow, registry: ToolRegistry): void {
   ipcMain.handle('workspace:open', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
     if (result.canceled || !result.filePaths[0]) return null
@@ -24,6 +25,7 @@ export function registerAllHandlers(_win: BrowserWindow, _registry: ToolRegistry
     setWorkspaceRoot(root)
     await buildIndex(root)
     await initSkillsRegistry()
+    registerSkillTools(registry)
     return root
   })
 
@@ -35,6 +37,7 @@ export function registerAllHandlers(_win: BrowserWindow, _registry: ToolRegistry
     setWorkspaceRoot(root)
     await buildIndex(root)
     await initSkillsRegistry()
+    registerSkillTools(registry)
     return root
   })
 
