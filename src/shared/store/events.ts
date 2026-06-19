@@ -8,6 +8,7 @@ export interface StoreEvents {
   tool_call_started: [messageId: string, toolCall: ToolCall]
   tool_call_updated: [messageId: string, toolCallId: string]
   thread_status_changed: [threadId: string, status: ThreadStatus]
+  agent_activity: [threadId: string, label: string | null]
   threads_changed: []
   panel_changed: []
   workspace_changed: []

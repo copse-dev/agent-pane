@@ -9,26 +9,36 @@ import {
   setThreadTitle,
   updateUsage,
 } from '@shared/store/thread-helpers.ts'
+import { syncAgentActivity } from '../agent-activity.ts'
 
 export function startAgentController(store: AppStore, api: ApiClient): () => void {
   // Per-thread streaming state: the message currently accumulating text, and
   // whether a tool call has arrived since the last text chunk. When text
   // resumes after tool calls, we finalize the current message and start a new
   // one so the final answer renders BELOW the tool cards rather than above them.
-  const state = new Map<string, { msgId: string | null; toolSinceText: boolean }>()
+  const state = new Map<
+    string,
+    { msgId: string | null; toolSinceText: boolean; writing: boolean }
+  >()
   const get = (tid: string) => {
     let st = state.get(tid)
     if (!st) {
-      st = { msgId: null, toolSinceText: false }
+      st = { msgId: null, toolSinceText: false, writing: false }
       state.set(tid, st)
     }
     return st
   }
+  const activity = (tid: string) => syncAgentActivity(store, tid, get(tid).writing)
 
   const unsub = api.agent.onChunk((threadId, chunk) => {
     const st = get(threadId)
     switch (chunk.type) {
       case 'text': {
+        if (!chunk.text.trim()) {
+          // Whitespace between tool calls must not start a new assistant bubble.
+          if (st.toolSinceText) break
+          break
+        }
         if (!st.msgId || st.toolSinceText) {
           // Finalize the previous block (markdown render) before starting a new one.
           if (st.msgId) store.emit('message_done', st.msgId)
@@ -36,6 +46,8 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           st.toolSinceText = false
         }
         appendToken(store, st.msgId, chunk.text)
+        st.writing = true
+        activity(threadId)
         break
       }
       case 'tool_call': {
@@ -48,6 +60,8 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           result: null,
         })
         st.toolSinceText = true
+        st.writing = false
+        activity(threadId)
         break
       }
       case 'tool_result': {
@@ -60,12 +74,15 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
             tryOpenFileFromResult(store, chunk.result)
           }
         }
+        st.writing = false
+        activity(threadId)
         break
       }
       case 'done': {
         if (st.msgId) store.emit('message_done', st.msgId)
         state.delete(threadId)
         setThreadStatus(store, threadId, 'idle')
+        store.emit('agent_activity', threadId, null)
         void maybeNameThread(store, api, threadId)
         break
       }

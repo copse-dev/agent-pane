@@ -3,7 +3,13 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { addMessage, setThreadStatus } from '@shared/store/thread-helpers.ts'
 import { initMentionPicker } from './mention-picker.ts'
-import { populateModelSelect } from './model-options.ts'
+import { initSkillPicker } from './skill-picker.ts'
+import { parseSkillInvocation } from '@shared/skills/parse-skill-invocation.ts'
+import type { UserContent } from '@shared/types'
+import type { AgentRunPayload, SkillSummary } from '@shared/types/skills.ts'
+import { mountFooterModelPicker } from './footer-model-picker.ts'
+import { downloadThreadJsonl } from '../export-thread.ts'
+import { syncAgentActivity } from '../agent-activity.ts'
 
 export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const chips = el('div', { class: 'attachment-chips' })
@@ -18,28 +24,36 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   // bar), so it sits inside the textarea box and never overlaps the footer.
   const inputRow = el('div', { class: 'input-row' }, textarea, submitBtn)
   const footer = el('div', { class: 'input-footer' })
-  // Model picker — changing it persists the selection and updates everywhere.
-  const modelSelect = el('select', {
-    class: 'footer-model-select',
-    'aria-label': 'Model',
-  }) as HTMLSelectElement
-  function refreshModelOptions() {
-    const current = store.getState().settings?.model ?? 'claude-sonnet-4-6'
-    void populateModelSelect(modelSelect, api, current)
-  }
-  refreshModelOptions()
+  const modelHost = el('div', { class: 'footer-model-host' })
+  const exportBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'footer-export',
+      'aria-label': 'Export conversation as JSONL',
+    },
+    'Export',
+  )
   // Token usage — always shown once a thread has used tokens; click to expand
   // into the in/out breakdown and cost.
   const usageBtn = el('button', { class: 'footer-usage', 'aria-label': 'Toggle cost details' })
-  footer.append(modelSelect, usageBtn)
+  footer.append(modelHost, exportBtn, usageBtn)
   let costVisible = false
 
-  modelSelect.addEventListener('change', () => {
-    const model = modelSelect.value
-    if (!model) return
-    void api.settings.set('model', model)
-    store.setState({ settings: { ...store.getState().settings, model } })
-    updateFooter()
+  const modelPicker = mountFooterModelPicker(
+    modelHost,
+    api,
+    () => store.getState().settings?.model ?? 'claude-sonnet-4-6',
+    (model) => {
+      void api.settings.set('model', model)
+      store.setState({ settings: { ...store.getState().settings, model } })
+      updateFooter()
+    },
+  )
+
+  exportBtn.addEventListener('click', () => {
+    const thread = store.getState().threads.find((t) => t.id === getActiveThreadId())
+    if (thread) downloadThreadJsonl(thread)
   })
   usageBtn.addEventListener('click', () => {
     costVisible = !costVisible
@@ -64,7 +78,6 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     textarea.disabled = running
     submitBtn.textContent = running ? 'Stop' : 'Send'
     submitBtn.dataset.action = running ? 'abort' : 'submit'
-    updateFooter()
   }
 
   function updateFooter() {
@@ -73,14 +86,14 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     const { inputTokens, outputTokens } = thread?.usage ?? { inputTokens: 0, outputTokens: 0 }
     const total = inputTokens + outputTokens
     if (!total) {
-      // No usage yet for this thread — hide the usage control entirely.
       usageBtn.hidden = true
-      return
+    } else {
+      usageBtn.hidden = false
+      usageBtn.textContent = costVisible
+        ? `${inputTokens} in / ${outputTokens} out · ${estimateCost(model, { inputTokens, outputTokens })}`
+        : `${(total / 1000).toFixed(1)}k tokens`
     }
-    usageBtn.hidden = false
-    usageBtn.textContent = costVisible
-      ? `${inputTokens} in / ${outputTokens} out · ${estimateCost(model, { inputTokens, outputTokens })}`
-      : `${(total / 1000).toFixed(1)}k tokens`
+    updateState()
   }
 
   submitBtn.addEventListener('click', () => {
@@ -88,14 +101,14 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       const id = getActiveThreadId()
       if (id) void api.agent.abort(id)
     } else {
-      submit()
+      void submit()
     }
   })
 
   textarea.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       e.preventDefault()
-      submit()
+      void submit()
     }
   })
 
@@ -106,33 +119,51 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     return [text, ...files.map((f) => `\`\`\`\n// ${f.path}\n${f.content}\n\`\`\``)].join('\n\n')
   }
 
-  function submit() {
-    const text = textarea.value.trim()
-    if (!text && attachedFiles.length === 0 && attachedImages.length === 0) return
+  async function submit() {
+    const rawText = textarea.value.trim()
+    if (!rawText && attachedFiles.length === 0 && attachedImages.length === 0) return
     const id = getActiveThreadId()
     if (!id) return
 
-    let fullContent: string | Array<{ type: string; text?: string; dataUrl?: string }>
+    const invocation = parseSkillInvocation(rawText)
+    const text = invocation?.remainder ?? rawText
+    const invokedSkills = invocation ? [invocation.skillName] : []
+
+    if (invocation) {
+      const skills = skillsCache ?? (await api.skills.list())
+      skillsCache = skills
+      if (!skills.some((skill) => skill.name === invocation.skillName)) {
+        textarea.setCustomValidity(`Unknown skill: /${invocation.skillName}`)
+        textarea.reportValidity()
+        return
+      }
+    }
+    textarea.setCustomValidity('')
+
+    let fullContent: UserContent
     if (attachedImages.length > 0) {
       fullContent = [
-        ...attachedImages.map((img) => ({ type: 'image', dataUrl: img.dataUrl })),
-        { type: 'text', text: buildTextWithAttachments(text, attachedFiles) },
+        ...attachedImages.map((img) => ({ type: 'image' as const, dataUrl: img.dataUrl })),
+        { type: 'text' as const, text: buildTextWithAttachments(text, attachedFiles) },
       ]
     } else {
       fullContent = buildTextWithAttachments(text, attachedFiles)
     }
 
+    const payload: AgentRunPayload = { content: fullContent, invokedSkills }
+
     // Record the user's message in the conversation and mark the thread running
     // before dispatching to the agent — the controller only adds assistant
     // messages, so without this the user's own prompt never appears.
     const displayParts: string[] = []
-    if (text) displayParts.push(text)
+    if (rawText) displayParts.push(rawText)
     attachedFiles.forEach((f) => displayParts.push(`📎 ${f.path.split('/').pop() ?? f.path}`))
     if (attachedImages.length) displayParts.push(`🖼 ${attachedImages.length} image(s)`)
     addMessage(store, id, 'user', displayParts.join('\n'))
     setThreadStatus(store, id, 'running')
+    syncAgentActivity(store, id, false)
 
-    void api.agent.run(id, JSON.stringify(fullContent))
+    void api.agent.run(id, JSON.stringify(payload))
     textarea.value = ''
     attachedFiles = []
     attachedImages = []
@@ -204,22 +235,40 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
 
   initMentionPicker({ textarea, inputBar: root, store, api, onAttach: addChip })
 
+  let skillsCache: SkillSummary[] | null = null
+  void api.skills.list().then((skills) => {
+    skillsCache = skills
+  })
+
+  const skillPicker = initSkillPicker({
+    textarea,
+    inputBar: root,
+    listSkills: () => api.skills.list(),
+  })
+
   const unsubs = [
     store.on('thread_status_changed', (tid) => {
       if (tid === getActiveThreadId()) updateState()
     }),
-    store.on('threads_changed', () => updateState()),
+    store.on('threads_changed', () => {
+      updateState()
+      updateFooter()
+    }),
     store.on('usage_updated', (tid) => {
       if (tid === getActiveThreadId()) updateFooter()
     }),
     store.on('settings_changed', () => {
-      refreshModelOptions()
+      modelPicker.refresh()
       updateFooter()
     }),
   ]
 
   updateState()
-  return () => unsubs.forEach((u) => u())
+  return () => {
+    unsubs.forEach((u) => u())
+    modelPicker.destroy()
+    skillPicker()
+  }
 }
 
 function estimateCost(model: string, usage: { inputTokens: number; outputTokens: number }): string {

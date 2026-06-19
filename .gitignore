@@ -16,3 +16,6 @@ DEVELOPMENT-NOTES.md
 # Local env / secrets
 .env
 .env.*
+
+# Claude Code local agent worktrees (linked checkouts)
+.claude/worktrees/
