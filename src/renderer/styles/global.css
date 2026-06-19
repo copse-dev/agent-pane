@@ -38,13 +38,23 @@ body {
   min-height: 0;
 }
 .pane-projects {
-  width: 240px;
+  width: var(--projects-width, 240px);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-right: 1px solid var(--border);
   background: var(--bg-elevated);
+}
+.pane-resizer {
+  flex-shrink: 0;
+  width: 4px;
+  cursor: col-resize;
+  background: var(--border);
+  touch-action: none;
+}
+.pane-resizer:hover,
+.pane-resizer.is-dragging {
+  background: var(--accent);
 }
 .pane-projects-header {
   display: flex;
@@ -109,6 +119,7 @@ body {
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
+  cursor: default;
 }
 .chat-row:hover {
   background: var(--bg-hover);
@@ -148,18 +159,16 @@ body {
   min-height: 0;
 }
 .pane-files {
-  width: 46%;
+  width: var(--files-width, 480px);
   flex-shrink: 0;
   display: flex;
   flex-direction: row;
   overflow: hidden;
-  border-left: 1px solid var(--border);
 }
 .file-tree-host {
-  width: 200px;
+  width: var(--tree-width, 200px);
   flex-shrink: 0;
   overflow-y: auto;
-  border-right: 1px solid var(--border);
   background: var(--bg-elevated);
 }
 .file-viewer {
