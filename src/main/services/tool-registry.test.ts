@@ -1,10 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { ToolRegistry } from './tool-registry.ts'
+import { ToolRegistry, setPermissionGateForTests } from './tool-registry.ts'
 import { z } from 'zod'
 
 describe('ToolRegistry', () => {
   it('registers and executes a tool', async () => {
+    setPermissionGateForTests(async () => true)
     const reg = new ToolRegistry()
     reg.register({
       name: 'echo',
@@ -14,17 +15,21 @@ describe('ToolRegistry', () => {
     })
     const result = await reg.execute('echo', { msg: 'hello' }, new AbortController().signal)
     assert.equal(result, 'hello')
+    setPermissionGateForTests(null)
   })
 
   it('throws on unknown tool', async () => {
+    setPermissionGateForTests(async () => true)
     const reg = new ToolRegistry()
     await assert.rejects(
       () => reg.execute('nope', {}, new AbortController().signal),
       /Unknown tool/,
     )
+    setPermissionGateForTests(null)
   })
 
   it('toLLMTools returns JSON Schema shape', () => {
+    setPermissionGateForTests(async () => true)
     const reg = new ToolRegistry()
     reg.register({
       name: 'greet',
@@ -36,5 +41,6 @@ describe('ToolRegistry', () => {
     assert.equal(tools.length, 1)
     assert.equal(tools[0]!.name, 'greet')
     assert.ok((tools[0]!.parameters as any).properties?.name)
+    setPermissionGateForTests(null)
   })
 })

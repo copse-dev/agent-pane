@@ -10,6 +10,64 @@ export const CLOUD_MODELS: Array<[value: string, label: string, provider: 'anthr
     ['gpt-4o-mini', 'gpt-4o-mini', 'openai'],
   ]
 
+export interface ModelOption {
+  value: string
+  label: string
+  group?: string
+  disabled?: boolean
+}
+
+export function modelDisplayLabel(model: string): string {
+  if (model.startsWith('lmstudio:')) return model.slice('lmstudio:'.length)
+  return model
+}
+
+export async function fetchModelOptions(api: ApiClient, current: string): Promise<ModelOption[]> {
+  const options: ModelOption[] = []
+
+  let available = { anthropic: true, openai: true }
+  try {
+    available = await api.settings.availableProviders()
+  } catch {
+    /* keep defaults */
+  }
+  for (const [value, label, provider] of CLOUD_MODELS) {
+    if (available[provider]) options.push({ value, label })
+  }
+
+  const lmGroup = 'LM Studio (local)'
+  let models: string[] = []
+  try {
+    models = await api.lmStudio.models()
+  } catch {
+    models = []
+  }
+  if (models.length) {
+    for (const id of models) options.push({ value: `lmstudio:${id}`, label: id, group: lmGroup })
+  } else {
+    options.push({
+      value: '',
+      label: 'Not connected — configure in Settings',
+      group: lmGroup,
+      disabled: true,
+    })
+  }
+
+  if (current && !options.some((o) => o.value === current)) {
+    if (current.startsWith('lmstudio:')) {
+      options.push({
+        value: current,
+        label: `${current.slice('lmstudio:'.length)} (offline)`,
+        group: lmGroup,
+      })
+    } else {
+      options.push({ value: current, label: `${current} (no key)` })
+    }
+  }
+
+  return options
+}
+
 function opt(value: string, label: string, disabled = false): HTMLOptionElement {
   const o = document.createElement('option')
   o.value = value
@@ -27,43 +85,23 @@ export async function populateModelSelect(
   current: string,
 ): Promise<void> {
   select.innerHTML = ''
-
-  // Only show cloud models whose provider has a key (stored or in env).
-  let available = { anthropic: true, openai: true }
-  try {
-    available = await api.settings.availableProviders()
-  } catch {
-    /* keep defaults */
-  }
-  for (const [value, label, provider] of CLOUD_MODELS) {
-    if (available[provider]) select.append(opt(value, label))
-  }
-
-  const group = document.createElement('optgroup')
-  group.label = 'LM Studio (local)'
-  let models: string[] = []
-  try {
-    models = await api.lmStudio.models()
-  } catch {
-    models = []
-  }
-  if (models.length) {
-    for (const id of models) group.append(opt(`lmstudio:${id}`, id))
-  } else {
-    group.append(opt('', 'Not connected — configure in Settings', true))
-  }
-  select.append(group)
-
-  // If the saved model is an LM Studio model the server didn't return (offline),
-  // still show it so the selection isn't silently lost.
-  if (current && !Array.from(select.options).some((o) => o.value === current)) {
-    if (current.startsWith('lmstudio:')) {
-      group.append(opt(current, `${current.slice('lmstudio:'.length)} (offline)`))
-    } else {
-      // A cloud model whose provider key is missing — still show the active
-      // selection (marked) so it isn't silently lost.
-      select.append(opt(current, `${current} (no key)`))
+  const options = await fetchModelOptions(api, current)
+  let lastGroup: string | undefined
+  let groupEl: HTMLOptGroupElement | null = null
+  for (const item of options) {
+    if (item.group !== lastGroup) {
+      lastGroup = item.group
+      if (item.group) {
+        groupEl = document.createElement('optgroup')
+        groupEl.label = item.group
+        select.append(groupEl)
+      } else {
+        groupEl = null
+      }
     }
+    const node = opt(item.value, item.label, item.disabled)
+    if (groupEl) groupEl.append(node)
+    else select.append(node)
   }
   select.value = current
 }
