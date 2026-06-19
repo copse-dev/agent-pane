@@ -275,7 +275,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     }),
   ]
 
-  updateState()
+  updateFooter()
   return () => {
     unsubs.forEach((u) => u())
     modelPicker.destroy()

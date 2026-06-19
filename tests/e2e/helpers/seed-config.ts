@@ -122,6 +122,49 @@ export function seedMarkdownListFixture(workspaceRoot: string): void {
   )
 }
 
+/** Seeded thread with context snapshot and token usage for footer doughnut validation. */
+export function seedContextWheelFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-context-wheel-project'
+  const threadId = 'e2e-context-wheel-thread'
+  const conversationBudget = 180_000
+  const conversationTokens = 54_000
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Context wheel test',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-user-1',
+              role: 'user',
+              content: 'Explain this codebase.',
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 1200, outputTokens: 800 },
+          contextSnapshot: {
+            contextWindow: 200_000,
+            conversationBudget,
+            conversationTokens,
+            fillRatio: conversationTokens / conversationBudget,
+            updatedAt: Date.now(),
+          },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
 export function seedToolDisplayFixture(workspaceRoot: string): void {
   const projectId = 'e2e-tool-display-project'
   const threadId = 'e2e-tool-display-thread'
