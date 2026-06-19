@@ -47,8 +47,9 @@ export interface IpcInvokeMap {
   'index:query': { args: [pattern: string]; result: string[] }
 
   // Terminal
-  'terminal:create': { args: []; result: string }
+  'terminal:create': { args: [cols: number, rows: number]; result: string }
   'terminal:write': { args: [sessionId: string, data: string]; result: void }
+  'terminal:resize': { args: [sessionId: string, cols: number, rows: number]; result: void }
   'terminal:destroy': { args: [sessionId: string]; result: void }
 
   // LM Studio

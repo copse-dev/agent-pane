@@ -162,21 +162,15 @@ body {
   width: var(--files-width, 480px);
   flex-shrink: 0;
   display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.pane-files-body {
+  flex: 1;
+  display: flex;
   flex-direction: row;
   overflow: hidden;
-}
-.right-sidebar {
-  display: flex;
-  flex-direction: column;
-  width: var(--tree-width, 200px);
-  flex-shrink: 0;
-  overflow: hidden;
-  background: var(--bg-elevated);
-}
-.right-sidebar:has(#terminal-host:not([hidden])) {
-  flex: 1;
-  width: auto;
-  min-width: 0;
+  min-height: 0;
 }
 .right-panel-tabs {
   display: flex;
@@ -203,24 +197,128 @@ body {
   color: var(--text-primary);
   background: var(--bg-base);
 }
+.right-sidebar {
+  display: flex;
+  flex-direction: column;
+  width: var(--tree-width, 200px);
+  flex-shrink: 0;
+  overflow: hidden;
+  background: var(--bg-elevated);
+}
 .file-tree-host {
   flex: 1;
   overflow-y: auto;
   background: var(--bg-elevated);
   min-height: 0;
 }
-.terminal-host {
+.terminals-list-host {
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
+}
+.terminals-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-sm) var(--spacing-sm);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.terminals-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: var(--spacing-xs) 0;
+  min-height: 0;
+}
+.terminals-tab {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  padding: 5px var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+.terminals-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
   min-width: 0;
+}
+.terminals-tab:hover {
+  background: var(--bg-hover);
+}
+.terminals-tab.is-active {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+.terminals-tab-close {
+  flex-shrink: 0;
+  opacity: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 0 4px;
+}
+.terminals-tab:hover .terminals-tab-close {
+  opacity: 1;
+}
+.terminals-new-btn {
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-muted);
+  padding: 0 4px;
+}
+.terminals-new-btn:hover {
+  color: var(--text-primary);
+}
+.terminals-viewer-host {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+.terminals-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+  position: relative;
+}
+.terminals-tab-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+.terminals-tab-panel:not(.is-active) {
+  display: none;
 }
 .terminal-container {
   flex: 1;
   padding: var(--spacing-xs);
   overflow: hidden;
+  -webkit-app-region: no-drag;
+}
+.terminal-container .xterm {
+  height: 100%;
+}
+.terminal-container .xterm .xterm-helper-textarea {
+  /* Keep IME/focus target above any pane chrome. */
+  z-index: 10;
 }
 .file-viewer {
   flex: 1;
@@ -348,6 +446,8 @@ body {
 }
 #titlebar {
   flex-shrink: 0;
+  position: relative;
+  z-index: 60;
 }
 #thread-tabs {
   flex-shrink: 0;
@@ -884,14 +984,13 @@ label {
 }
 #welcome {
   position: absolute;
-  inset: 0;
+  inset: 38px 0 0 0;
   z-index: 50;
   display: none;
   align-items: center;
   justify-content: center;
   background: var(--bg-base);
-  /* No titlebar is mounted on the welcome screen, so make the whole overlay a
-     window-drag region (interactive elements opt out below). */
+  /* Titlebar stays visible above the welcome card; interactive elements opt out below. */
   -webkit-app-region: drag;
 }
 #welcome.visible {
