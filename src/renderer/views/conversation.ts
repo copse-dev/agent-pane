@@ -1,6 +1,7 @@
 import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { renderMarkdown } from '../markdown/renderer.ts'
+import { renderStreamingMarkdown } from '../markdown/streaming.ts'
 import type { ToolCall } from '@shared/types'
 import { agentActivityLabel } from '../agent-activity.ts'
 import {
@@ -170,7 +171,7 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
     if (!msg) return
 
     const msgEl = el('div', { class: `msg msg-${msg.role}`, 'data-message-id': msgId })
-    const textEl = el('p', { class: 'message-text' })
+    const textEl = el('div', { class: 'message-text' })
     // Assistant text that already has content (e.g. restored from disk) is
     // rendered as markdown immediately. Live-streamed messages start empty and
     // get markdown-rendered on the message_done event instead.
@@ -214,19 +215,23 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
 
   const unsubs = [
     store.on('message_added', (tid, mid) => appendMessageEl(tid, mid)),
-    store.on('message_token', (mid, text) => {
-      const el = list.querySelector(`[data-message-id="${mid}"] .message-text`)
-      if (el) {
-        el.textContent = (el.textContent ?? '') + text
+    store.on('message_token', (mid) => {
+      const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
+      const msg = thread?.messages.find((m) => m.id === mid)
+      const textEl = list.querySelector(`[data-message-id="${mid}"] .message-text`)
+      if (textEl && msg?.role === 'assistant') {
+        textEl.innerHTML = renderStreamingMarkdown(msg.content)
         scrollToBottom()
       }
     }),
     store.on('message_done', (mid) => {
       const msgEl = list.querySelector(`[data-message-id="${mid}"]`)
       const textEl = msgEl?.querySelector('.message-text')
-      if (textEl) textEl.innerHTML = renderMarkdown(textEl.textContent ?? '')
       const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
       const msg = thread?.messages.find((m) => m.id === mid)
+      if (textEl && msg?.role === 'assistant') {
+        textEl.innerHTML = renderMarkdown(msg.content)
+      }
       if (msg?.role === 'assistant' && msg.content.trim()) {
         const body = msgEl?.querySelector('.message-body')
         if (body && !body.querySelector('.msg-copy'))
