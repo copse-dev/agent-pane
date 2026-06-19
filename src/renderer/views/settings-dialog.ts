@@ -51,6 +51,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <input type="checkbox" name="lmStudioForSmallTasks" />
           Use LM Studio for small tasks (e.g. naming threads)
         </label>
+        <label>
+          Safety model (blank = use model above)
+          <input type="text" name="lmStudioSafetyModel" placeholder="qwen2.5-3b-instruct" autocomplete="off" />
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" name="lmStudioSafetyEnabled" />
+          Use safety model to classify shell commands (when OS sandbox is off)
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" name="autoRunSandboxCommands" />
+          Auto-run shell commands contained within the sandbox
+        </label>
         <div class="lmstudio-test-row">
           <button type="button" id="lmstudio-test-btn">Test connection</button>
           <span class="lmstudio-test-status" id="lmstudio-test-status"></span>
@@ -106,11 +118,24 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const lmUrl = (await api.settings.get('lmStudioUrl')) as string | undefined
       const lmModel = (await api.settings.get('lmStudioModel')) as string | undefined
       const lmSmall = (await api.settings.get('lmStudioForSmallTasks')) as boolean | undefined
+      const lmSafetyModel = (await api.settings.get('lmStudioSafetyModel')) as string | undefined
+      const lmSafetyEnabled = (await api.settings.get('lmStudioSafetyEnabled')) as
+        | boolean
+        | undefined
+      const autoRunSandbox = (await api.settings.get('autoRunSandboxCommands')) as
+        | boolean
+        | undefined
       ;(form.elements.namedItem('lmStudioUrl') as HTMLInputElement).value =
         lmUrl ?? 'http://localhost:1234/v1'
       ;(form.elements.namedItem('lmStudioModel') as HTMLInputElement).value = lmModel ?? ''
       ;(form.elements.namedItem('lmStudioForSmallTasks') as HTMLInputElement).checked =
         lmSmall ?? true
+      ;(form.elements.namedItem('lmStudioSafetyModel') as HTMLInputElement).value =
+        lmSafetyModel ?? ''
+      ;(form.elements.namedItem('lmStudioSafetyEnabled') as HTMLInputElement).checked =
+        lmSafetyEnabled ?? true
+      ;(form.elements.namedItem('autoRunSandboxCommands') as HTMLInputElement).checked =
+        autoRunSandbox ?? true
     })()
   })
 
@@ -136,6 +161,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await api.settings.set('lmStudioUrl', (data.get('lmStudioUrl') as string).trim())
       await api.settings.set('lmStudioModel', (data.get('lmStudioModel') as string).trim())
       await api.settings.set('lmStudioForSmallTasks', data.get('lmStudioForSmallTasks') === 'on')
+      await api.settings.set(
+        'lmStudioSafetyModel',
+        (data.get('lmStudioSafetyModel') as string).trim(),
+      )
+      await api.settings.set('lmStudioSafetyEnabled', data.get('lmStudioSafetyEnabled') === 'on')
+      await api.settings.set('autoRunSandboxCommands', data.get('autoRunSandboxCommands') === 'on')
 
       store.setState({ theme, fontSize, settings: { ...store.getState().settings, model } })
       store.emit('theme_changed', theme)
