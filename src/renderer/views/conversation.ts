@@ -165,6 +165,37 @@ function createToolCard(item: ToolCallDisplayItem): HTMLElement {
   return createIndividualToolCard(item.toolCall, item.label)
 }
 
+function createMessageImages(images: string[]): HTMLElement {
+  const wrap = el('div', { class: 'message-images' })
+  for (const dataUrl of images) {
+    wrap.append(
+      el('img', {
+        class: 'message-image',
+        src: dataUrl,
+        alt: 'Attached image',
+        loading: 'lazy',
+      }),
+    )
+  }
+  return wrap
+}
+
+function appendMessageContent(
+  body: HTMLElement,
+  msg: { role: string; content: string; images?: string[] },
+) {
+  if (msg.role === 'user' && msg.images?.length) {
+    body.append(createMessageImages(msg.images))
+  }
+  const textEl = el('div', { class: 'message-text' })
+  if (msg.role === 'assistant' && msg.content) {
+    textEl.innerHTML = renderMarkdown(assistantDisplayText(msg.content))
+  } else {
+    textEl.textContent = msg.content
+  }
+  body.append(textEl)
+}
+
 export function mountConversation(root: HTMLElement, store: AppStore): () => void {
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
   const activityBar = el('div', { class: 'agent-activity', role: 'status', 'aria-live': 'polite' })
@@ -244,18 +275,8 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
     if (!msg) return
 
     const msgEl = el('div', { class: `msg msg-${msg.role}`, 'data-message-id': msgId })
-    const textEl = el('div', { class: 'message-text' })
-    // Assistant text that already has content (e.g. restored from disk) is
-    // rendered as markdown immediately. Live-streamed messages start empty and
-    // get markdown-rendered on the message_done event instead.
-    if (msg.role === 'assistant' && msg.content) {
-      textEl.innerHTML = renderMarkdown(assistantDisplayText(msg.content))
-    } else {
-      textEl.textContent = msg.content
-    }
-
     const body = el('div', { class: 'message-body' })
-    body.append(textEl)
+    appendMessageContent(body, msg)
     msgEl.append(body)
 
     // Copy only when there is reply text — tool-only bubbles stay compact.
