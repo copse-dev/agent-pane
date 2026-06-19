@@ -4,6 +4,7 @@ import type { ClassificationResult } from './safety-classifier.ts'
 /** Tools that always auto-run (writes still go through the diff queue). */
 export const SANDBOX_TOOLS = new Set([
   'read_file',
+  'read_skill',
   'write_file',
   'list_dir',
   'search_code',
