@@ -1347,6 +1347,12 @@ label {
   border-radius: 2px;
   object-fit: cover;
 }
+.text-chip {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .attachment-chip button {
   background: none;
   border: none;

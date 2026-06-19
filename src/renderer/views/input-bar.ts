@@ -11,6 +11,11 @@ import type { AgentRunPayload, SkillSummary } from '@shared/types/skills.ts'
 import { mountFooterModelPicker } from './footer-model-picker.ts'
 import { downloadThreadJsonl } from '../export-thread.ts'
 import { syncAgentActivity } from '../agent-activity.ts'
+import {
+  buildTextWithAttachments,
+  isTextBlockAttachment,
+  textBlockLabel,
+} from '@shared/agent/build-text-with-attachments.ts'
 
 export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const chips = el('div', { class: 'attachment-chips' })
@@ -64,6 +69,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   root.append(chips, inputRow, footer)
 
   let attachedFiles: { path: string; content: string }[] = []
+  let attachedTextBlocks: { id: string; label: string; content: string }[] = []
   let attachedImages: { dataUrl: string; mimeType: string }[] = []
 
   function getActiveThreadId() {
@@ -113,16 +119,15 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     }
   })
 
-  function buildTextWithAttachments(
-    text: string,
-    files: { path: string; content: string }[],
-  ): string {
-    return [text, ...files.map((f) => `\`\`\`\n// ${f.path}\n${f.content}\n\`\`\``)].join('\n\n')
-  }
-
   async function submit() {
     const rawText = textarea.value.trim()
-    if (!rawText && attachedFiles.length === 0 && attachedImages.length === 0) return
+    if (
+      !rawText &&
+      attachedFiles.length === 0 &&
+      attachedTextBlocks.length === 0 &&
+      attachedImages.length === 0
+    )
+      return
     const id = getActiveThreadId()
     if (!id) return
 
@@ -151,10 +156,13 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     if (attachedImages.length > 0) {
       fullContent = [
         ...attachedImages.map((img) => ({ type: 'image' as const, dataUrl: img.dataUrl })),
-        { type: 'text' as const, text: buildTextWithAttachments(text, attachedFiles) },
+        {
+          type: 'text' as const,
+          text: buildTextWithAttachments(text, attachedFiles, attachedTextBlocks),
+        },
       ]
     } else {
-      fullContent = buildTextWithAttachments(text, attachedFiles)
+      fullContent = buildTextWithAttachments(text, attachedFiles, attachedTextBlocks)
     }
 
     const payload: AgentRunPayload = { content: fullContent, invokedSkills }
@@ -165,6 +173,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     const displayParts: string[] = []
     if (rawText) displayParts.push(rawText)
     attachedFiles.forEach((f) => displayParts.push(`📎 ${f.path.split('/').pop() ?? f.path}`))
+    attachedTextBlocks.forEach((b) => displayParts.push(`📝 ${b.label}`))
     if (attachedImages.length) displayParts.push(`🖼 ${attachedImages.length} image(s)`)
     addMessage(store, id, 'user', displayParts.join('\n'))
     setThreadStatus(store, id, 'running')
@@ -173,6 +182,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     void api.agent.run(id, JSON.stringify(payload))
     textarea.value = ''
     attachedFiles = []
+    attachedTextBlocks = []
     attachedImages = []
     clear(chips)
   }
@@ -186,6 +196,23 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     remove.textContent = '✕'
     remove.addEventListener('click', () => {
       attachedFiles = attachedFiles.filter((f) => f.path !== file.path)
+      chip.remove()
+    })
+    chip.append(remove)
+    chips.append(chip)
+  }
+
+  function addTextChip(content: string) {
+    const id = crypto.randomUUID()
+    const label = textBlockLabel(content)
+    attachedTextBlocks.push({ id, label, content })
+    const chip = document.createElement('span')
+    chip.className = 'attachment-chip text-chip'
+    chip.textContent = label
+    const remove = document.createElement('button')
+    remove.textContent = '✕'
+    remove.addEventListener('click', () => {
+      attachedTextBlocks = attachedTextBlocks.filter((b) => b.id !== id)
       chip.remove()
     })
     chip.append(remove)
@@ -222,11 +249,19 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   document.addEventListener('paste', (e) => {
     const items = Array.from(e.clipboardData?.items ?? [])
     const img = items.find((i) => i.type.startsWith('image/'))
-    if (!img) return
+    if (img) {
+      e.preventDefault()
+      const blob = img.getAsFile()
+      if (!blob) return
+      void readAsDataUrl(blob).then((dataUrl) => addImageChip(dataUrl, blob.type))
+      return
+    }
+
+    if (!textarea.matches(':focus')) return
+    const text = e.clipboardData?.getData('text/plain') ?? ''
+    if (!isTextBlockAttachment(text)) return
     e.preventDefault()
-    const blob = img.getAsFile()
-    if (!blob) return
-    void readAsDataUrl(blob).then((dataUrl) => addImageChip(dataUrl, blob.type))
+    addTextChip(text)
   })
 
   textarea.addEventListener('dragover', (e) => {
