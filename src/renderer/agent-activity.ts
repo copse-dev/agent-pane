@@ -1,6 +1,8 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
 
+export const CONTEXT_TRIM_ACTIVITY = 'Shortened earlier messages'
+
 export function runningToolName(thread: Thread): string | null {
   for (let i = thread.messages.length - 1; i >= 0; i--) {
     const m = thread.messages[i]!

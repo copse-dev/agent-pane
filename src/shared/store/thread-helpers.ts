@@ -1,7 +1,7 @@
 // Use the Web Crypto API available in both browsers and Node 19+
 const randomUUID = () => globalThis.crypto.randomUUID()
 import type { AppStore } from './store.ts'
-import type { Message, ToolCall, ThreadUsage } from '@shared/types'
+import type { Message, ToolCall, ThreadUsage, ContextTrimRecord } from '@shared/types'
 
 export function createThread(store: AppStore): string {
   const id = randomUUID()
@@ -41,6 +41,24 @@ export function deleteThread(store: AppStore, id: string): void {
   const newActive =
     activeThreadId === id ? (remaining[remaining.length - 1]?.id ?? null) : activeThreadId
   store.setState({ threads: remaining, activeThreadId: newActive })
+  store.emit('threads_changed')
+}
+
+export function recordContextTrim(
+  store: AppStore,
+  threadId: string,
+  record: Omit<ContextTrimRecord, 'at'>,
+): void {
+  const threads = store.getState().threads.map((t) => {
+    if (t.id !== threadId) return t
+    const entry: ContextTrimRecord = { ...record, at: Date.now() }
+    return {
+      ...t,
+      contextTrims: [...(t.contextTrims ?? []), entry],
+      updatedAt: Date.now(),
+    }
+  })
+  store.setState({ threads })
   store.emit('threads_changed')
 }
 

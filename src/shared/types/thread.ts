@@ -1,11 +1,20 @@
 export type ThreadStatus = 'idle' | 'running' | 'error'
 
+export interface ContextTrimRecord {
+  at: number
+  contextWindow: number
+  historyBudget: number
+  estimatedTokens: number
+}
+
 export interface Thread {
   id: string
   title: string
   status: ThreadStatus
   messages: Message[]
   usage: ThreadUsage
+  /** Populated when history compaction runs during an agent turn (also in JSONL export). */
+  contextTrims?: ContextTrimRecord[]
   createdAt: number
   updatedAt: number
 }

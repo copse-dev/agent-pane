@@ -6,7 +6,28 @@ import type { LLMMessage, LLMProvider, StreamChunk, UserContent } from '@shared/
 import type { ToolRegistry } from './tool-registry.ts'
 import { getSetting, getApiKey } from './settings.ts'
 import { getWorkspaceRoot } from './workspace.ts'
-import { buildInvokedSkillsBlock, buildSkillsCatalogBlock } from './skill-prompt.ts'
+import {
+  buildInvokedSkillsBlock,
+  buildSkillsCatalogBlock,
+  buildSkillsToolsPromptLine,
+} from './skill-prompt.ts'
+import { resolveContextWindow } from './resolve-context-window.ts'
+import {
+  fetchLmStudioModelsCached,
+  invalidateLmStudioModelsCache as invalidateLmStudioModelsCacheImpl,
+} from './lm-studio-models.ts'
+import {
+  trimHistory,
+  historyTokenBudget,
+  estimateMessageTokens,
+  conversationTokenBudget,
+} from '@shared/agent/trim-history.ts'
+import {
+  clearAgentRunReadFileLimits,
+  setAgentRunReadFileLimits,
+  getAgentRunReadFileLimits,
+} from './agent-run-read-limits.ts'
+import { formatReadFileLimitHint } from '@shared/agent/read-file-limits.ts'
 
 const abortMap = new Map<string, AbortController>()
 
@@ -36,35 +57,17 @@ async function buildProvider(model: string): Promise<LLMProvider> {
   return createProvider(model)
 }
 
-// Cache the models list to avoid hammering the server (the renderer asks on
-// every footer mount / settings change). Keyed by url+key so changing either
-// invalidates it; failures are cached too so an unreachable server doesn't incur
-// a 4s timeout on every call.
-const LM_MODELS_TTL_MS = 60_000
-let lmModelsCache: { key: string; at: number; models: string[] } | null = null
-
 // List the model ids an LM Studio server currently exposes (using saved URL/key).
 export async function listLmStudioModels(): Promise<string[]> {
   const url = getSetting<string>('lmStudioUrl', DEFAULT_LM_STUDIO_URL)
-  const cacheKey = `${url}${lmStudioKey()}`
-  const now = Date.now()
-  if (
-    lmModelsCache &&
-    lmModelsCache.key === cacheKey &&
-    now - lmModelsCache.at < LM_MODELS_TTL_MS
-  ) {
-    return lmModelsCache.models
-  }
-  const r = await testLmStudio(url)
-  const models = r.ok ? (r.models ?? []) : []
-  lmModelsCache = { key: cacheKey, at: now, models }
-  return models
+  const r = await fetchLmStudioModelsCached(url)
+  return r.ok ? r.models.map((m) => m.id) : []
 }
 
 // Drop the cache so the next models query refetches (e.g. right after a manual
 // "Test connection" succeeds, or settings change).
 export function invalidateLmStudioModelsCache(): void {
-  lmModelsCache = null
+  invalidateLmStudioModelsCacheImpl()
 }
 
 interface ProviderWithUsage {
@@ -72,35 +75,6 @@ interface ProviderWithUsage {
 }
 function hasLastUsage(p: unknown): p is ProviderWithUsage {
   return typeof p === 'object' && p !== null && 'lastUsage' in p
-}
-
-const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
-  'claude-sonnet-4-6': 200_000,
-  'claude-opus-4-8': 200_000,
-  'gpt-4o': 128_000,
-  'gpt-4o-mini': 128_000,
-}
-
-function estimateTokens(messages: LLMMessage[]): number {
-  // Rough estimate: 1 token ≈ 4 chars
-  return JSON.stringify(messages).length / 4
-}
-
-function trimHistory(
-  messages: LLMMessage[],
-  maxTokens: number,
-): { messages: LLMMessage[]; trimmed: boolean } {
-  const system = messages.filter((m) => m.role === 'system')
-  let rest = messages.filter((m) => m.role !== 'system')
-
-  let trimmed = false
-  while (rest.length > 12 && estimateTokens([...system, ...rest]) > maxTokens * 0.8) {
-    // Drop oldest pair (user + assistant)
-    rest = rest.slice(2)
-    trimmed = true
-  }
-
-  return { messages: [...system, ...rest], trimmed }
 }
 
 const BASE_SYSTEM_PROMPT = `You are a coding assistant with access to the user's local workspace.
@@ -115,15 +89,13 @@ Available tools:
 - git_diff: Show unstaged or staged changes
 - git_log: Show recent commit history
 - run_shell: Run a shell command (auto-runs when contained in the sandbox; prompts for network/outside access)
-- read_skill: Read additional files under a skill directory (scripts/, references/, assets/)
-
+{SKILLS_TOOLS_LINE}
 Working directory: {WORKSPACE_ROOT}
-
-Skills are invoked manually via /skill-name in the input. Invoked skill instructions are injected automatically; use read_skill for supporting files under a skill directory.
 
 When the user asks an open-ended question (review, explain, validate, summarize):
 1. Use tools as needed, then finish with a clear written answer in plain language.
 2. Do not end the turn with tool calls alone — always follow exploration with a summary for the user.
+3. List the workspace root at most once; do not re-read the same paths. Then run tests or commands with run_shell when asked to validate code.
 
 When modifying files:
 1. Read the file first
@@ -140,14 +112,20 @@ export async function runAgent(
 ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> {
   const projectInstructions = await loadProjectInstructions()
   const invokedSkills = options?.invokedSkills ?? []
+  const skillsToolsLine = buildSkillsToolsPromptLine()
   const systemPrompt =
-    BASE_SYSTEM_PROMPT.replace('{WORKSPACE_ROOT}', getWorkspaceRoot() ?? '(none)') +
+    BASE_SYSTEM_PROMPT.replace('{SKILLS_TOOLS_LINE}', skillsToolsLine).replace(
+      '{WORKSPACE_ROOT}',
+      getWorkspaceRoot() ?? '(none)',
+    ) +
     buildSkillsCatalogBlock() +
     (await buildInvokedSkillsBlock(invokedSkills)) +
     (projectInstructions ? `\n\n---\n\n## Project instructions\n\n${projectInstructions}` : '')
 
   const model = getSetting<string>('model', 'claude-sonnet-4-6')
-  const contextWindow = MODEL_CONTEXT_WINDOWS[model] ?? 128_000
+  const contextWindow = await resolveContextWindow(model)
+  const toolSchemaReserve = model === 'lm-studio' || model.startsWith('lmstudio:') ? 2_500 : 1_000
+  const historyBudget = historyTokenBudget(contextWindow, { reserveTokens: toolSchemaReserve })
 
   // Build the provider per run so a freshly-saved API key (now in process.env)
   // and the currently-selected model take effect without a restart.
@@ -159,13 +137,27 @@ export async function runAgent(
     { role: 'user', content: userPrompt },
   ]
 
-  const { messages: trimmed, trimmed: wasTrimmed } = trimHistory(messages, contextWindow)
-  if (wasTrimmed) {
+  const { messages: trimmed, trimmed: wasTrimmed } = trimHistory(messages, contextWindow, {
+    reserveTokens: toolSchemaReserve,
+  })
+  let trimNoticeSent = wasTrimmed
+  const notifyTrimmed = () => {
+    if (trimNoticeSent) return
+    trimNoticeSent = true
+    const estimatedTokens = Math.round(estimateMessageTokens(trimmed))
     mainWindow.webContents.send('agent:chunk', threadId, {
-      type: 'text',
-      text: '\n\n[Earlier conversation trimmed to fit context window]\n\n',
+      type: 'context_trimmed',
+      contextWindow,
+      historyBudget,
+      estimatedTokens,
     } satisfies StreamChunk)
   }
+  if (wasTrimmed) notifyTrimmed()
+
+  const conversationBudget = conversationTokenBudget(trimmed, contextWindow, {
+    reserveTokens: toolSchemaReserve,
+  })
+  setAgentRunReadFileLimits(conversationBudget)
 
   const controller = new AbortController()
   abortMap.set(threadId, controller)
@@ -177,9 +169,21 @@ export async function runAgent(
     await runAgentLoop({
       provider,
       messages: trimmed,
-      tools: registry.toLLMTools(),
+      tools: registry.toLLMTools().map((t) =>
+        t.name === 'read_file'
+          ? {
+              ...t,
+              description: `Read a file from the workspace. ${formatReadFileLimitHint(
+                getAgentRunReadFileLimits(),
+              )}; use start_line / end_line for more.`,
+            }
+          : t,
+      ),
       executeTool: (name, args, signal) => registry.execute(name, args, signal),
       signal: controller.signal,
+      maxContextTokens: contextWindow,
+      toolSchemaReserveTokens: toolSchemaReserve,
+      onHistoryTrimmed: notifyTrimmed,
       onChunk: (chunk) => {
         mainWindow.webContents.send('agent:chunk', threadId, chunk)
         if (chunk.type === 'done' && hasLastUsage(provider)) {
@@ -199,6 +203,7 @@ export async function runAgent(
     } satisfies StreamChunk)
     mainWindow.webContents.send('agent:chunk', threadId, { type: 'done' } satisfies StreamChunk)
   } finally {
+    clearAgentRunReadFileLimits()
     abortMap.delete(threadId)
   }
 
@@ -222,21 +227,12 @@ export async function testLmStudio(
   url: string,
   apiKey?: string,
 ): Promise<{ ok: boolean; models?: string[]; error?: string }> {
-  const base = (url || DEFAULT_LM_STUDIO_URL).replace(/\/$/, '')
-  // Prefer the key the user just typed (unsaved), else the stored one.
-  const key = (apiKey && apiKey.trim()) || lmStudioKey()
-  try {
-    const res = await fetch(`${base}/models`, {
-      signal: AbortSignal.timeout(4000),
-      headers: { Authorization: `Bearer ${key}` },
-    })
-    if (!res.ok) return { ok: false, error: `HTTP ${res.status} ${res.statusText}` }
-    const json = (await res.json()) as { data?: Array<{ id?: string }> }
-    const models = (json.data ?? []).map((m) => m.id).filter((id): id is string => !!id)
-    return { ok: true, models }
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  invalidateLmStudioModelsCacheImpl()
+  const r = await fetchLmStudioModelsCached(url, apiKey)
+  if (!r.ok) {
+    return { ok: false, error: r.error ?? 'Could not list models' }
   }
+  return { ok: true, models: r.models.map((m) => m.id) }
 }
 
 // Fetch the first model id a local OpenAI-compatible server has loaded.
@@ -314,7 +310,13 @@ function classifyError(err: unknown): string {
     return 'The API key was rejected (401). The key reached the provider but was refused — check it is correct and current in Settings, and that no stale `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` is set in your shell.'
   if (s.includes('429') || s.includes('rate_limit'))
     return 'Rate limit reached. Please wait a moment and try again.'
-  if (s.includes('context_length') || s.includes('context window'))
-    return 'Conversation too long. Starting a new thread is recommended.'
+  if (
+    s.includes('context_length') ||
+    s.includes('context window') ||
+    s.includes('tokens to keep from the initial prompt')
+  )
+    return 'Conversation too long for the loaded model context. Reload the model in LM Studio with a larger context, start a new thread, or use smaller reads.'
+  if (s.includes('No user query found in messages') || s.includes('jinja template'))
+    return 'The local model prompt template failed after history was trimmed. Reload the model in LM Studio with enough context for the chat template, or use a model with a fixed chat template (e.g. under lmstudio-community).'
   return `An error occurred: ${err instanceof Error ? err.message : s}`
 }

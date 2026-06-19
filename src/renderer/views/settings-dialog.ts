@@ -90,6 +90,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <button type="button" id="lmstudio-test-btn">Test connection</button>
                 <span class="lmstudio-test-status" id="lmstudio-test-status"></span>
               </div>
+              <p class="field-hint">
+                Agent history trimming uses each loaded model’s context length when LM Studio reports it
+                via the models API; otherwise 8192 tokens.
+              </p>
             </fieldset>
 
             <fieldset>
