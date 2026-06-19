@@ -776,13 +776,39 @@ label {
 .footer-export:hover {
   color: var(--text-secondary);
 }
+.footer-usage-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.context-wheel {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.context-wheel-track {
+  stroke: var(--border);
+}
+.context-wheel-fill {
+  transition: stroke-dasharray 0.2s ease;
+}
+.context-wheel.is-normal .context-wheel-fill {
+  stroke: var(--accent);
+}
+.context-wheel.is-warn .context-wheel-fill {
+  stroke: #d4a017;
+}
+.context-wheel.is-critical .context-wheel-fill {
+  stroke: #e05252;
+}
 .footer-usage {
   font-size: 11px;
   color: var(--text-muted);
   text-decoration: underline dotted;
   text-underline-offset: 2px;
   padding: 0;
-  margin-left: auto;
   flex-shrink: 0;
 }
 .footer-model-select {

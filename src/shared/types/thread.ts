@@ -7,6 +7,15 @@ export interface ContextTrimRecord {
   estimatedTokens: number
 }
 
+/** Live context fill snapshot (updated during an agent run). */
+export interface ContextSnapshot {
+  contextWindow: number
+  conversationBudget: number
+  conversationTokens: number
+  fillRatio: number
+  updatedAt: number
+}
+
 export interface Thread {
   id: string
   title: string
@@ -15,6 +24,8 @@ export interface Thread {
   usage: ThreadUsage
   /** Populated when history compaction runs during an agent turn (also in JSONL export). */
   contextTrims?: ContextTrimRecord[]
+  /** Latest context fill estimate while the agent is running (or after the last run). */
+  contextSnapshot?: ContextSnapshot
   createdAt: number
   updatedAt: number
 }

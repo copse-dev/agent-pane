@@ -20,6 +20,7 @@ import {
   trimHistory,
   historyTokenBudget,
   estimateMessageTokens,
+  estimateConversationTokens,
   conversationTokenBudget,
 } from '@shared/agent/trim-history.ts'
 import {
@@ -157,6 +158,14 @@ export async function runAgent(
   const conversationBudget = conversationTokenBudget(trimmed, contextWindow, {
     reserveTokens: toolSchemaReserve,
   })
+  const initialConversationTokens = estimateConversationTokens(trimmed)
+  mainWindow.webContents.send('agent:chunk', threadId, {
+    type: 'context_pressure',
+    contextWindow,
+    conversationBudget,
+    conversationTokens: initialConversationTokens,
+    fillRatio: initialConversationTokens / conversationBudget,
+  } satisfies StreamChunk)
   setAgentRunReadFileLimits(conversationBudget)
 
   const controller = new AbortController()
@@ -184,14 +193,12 @@ export async function runAgent(
       maxContextTokens: contextWindow,
       toolSchemaReserveTokens: toolSchemaReserve,
       onHistoryTrimmed: notifyTrimmed,
+      getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
       onChunk: (chunk) => {
         mainWindow.webContents.send('agent:chunk', threadId, chunk)
-        if (chunk.type === 'done' && hasLastUsage(provider)) {
-          const u = provider.lastUsage
-          if (u) {
-            inputTokens = u.inputTokens
-            outputTokens = u.outputTokens
-          }
+        if (chunk.type === 'usage') {
+          inputTokens += chunk.inputTokens
+          outputTokens += chunk.outputTokens
         }
       },
     })
@@ -207,11 +214,7 @@ export async function runAgent(
     abortMap.delete(threadId)
   }
 
-  // Surface token usage to the renderer so the per-thread cost can be shown.
-  if (inputTokens || outputTokens) {
-    mainWindow.webContents.send('agent:usage', threadId, { inputTokens, outputTokens })
-  }
-
+  // Usage is streamed per LLM step via agent:chunk (type: usage).
   // Return non-system messages for history persistence in main process
   const updatedHistory = trimmed.filter((m) => m.role !== 'system')
   return { usage: { inputTokens, outputTokens }, messages: updatedHistory }
