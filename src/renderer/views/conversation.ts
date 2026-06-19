@@ -141,12 +141,12 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
     })
 
     const userExpandedTools = new Set<string>()
-    msgEl.querySelectorAll('.tool-card[data-tool-id][open], .tool-group-item[open]').forEach(
-      (node) => {
+    msgEl
+      .querySelectorAll('.tool-card[data-tool-id][open], .tool-group-item[open]')
+      .forEach((node) => {
         const id = (node as HTMLElement).dataset.toolId
         if (id) userExpandedTools.add(id)
-      },
-    )
+      })
 
     msgEl.querySelectorAll('.tool-card').forEach((node) => node.remove())
 
