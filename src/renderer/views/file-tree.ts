@@ -118,11 +118,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
       row.addEventListener('click', () => {
         expanded = !expanded
         twisty.textContent = expanded ? '▼' : '▶'
-        mountMaterialIcon(
-          icon,
-          materialFolderIconUrl(path, expanded),
-          `${entry.name} folder`,
-        )
+        mountMaterialIcon(icon, materialFolderIconUrl(path, expanded), `${entry.name} folder`)
         childrenEl.hidden = !expanded
         if (expanded && !loaded) {
           loaded = true
