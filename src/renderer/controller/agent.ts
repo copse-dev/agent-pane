@@ -9,6 +9,7 @@ import {
   setThreadTitle,
   updateUsage,
 } from '@shared/store/thread-helpers.ts'
+import { planAgentTextChunk } from '@shared/agent/agent-text-chunk.ts'
 import { syncAgentActivity } from '../agent-activity.ts'
 
 export function startAgentController(store: AppStore, api: ApiClient): () => void {
@@ -34,20 +35,23 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     const st = get(threadId)
     switch (chunk.type) {
       case 'text': {
-        if (!chunk.text.trim()) {
-          // Whitespace between tool calls must not start a new assistant bubble.
-          if (st.toolSinceText) break
-          break
-        }
-        if (!st.msgId || st.toolSinceText) {
-          // Finalize the previous block (markdown render) before starting a new one.
-          if (st.msgId) store.emit('message_done', st.msgId)
+        const { plan, state: nextState } = planAgentTextChunk(
+          { msgId: st.msgId, toolSinceText: st.toolSinceText },
+          chunk.text,
+        )
+        if (plan.action === 'ignore') break
+
+        if (plan.startNewMessage) {
+          if (plan.finalizeMsgId) store.emit('message_done', plan.finalizeMsgId)
           st.msgId = addMessage(store, threadId, 'assistant')
-          st.toolSinceText = false
         }
-        appendToken(store, st.msgId, chunk.text)
-        st.writing = true
-        activity(threadId)
+        st.toolSinceText = nextState.toolSinceText
+        appendToken(store, st.msgId!, plan.text)
+
+        if (plan.text.trim()) {
+          st.writing = true
+          activity(threadId)
+        }
         break
       }
       case 'tool_call': {
