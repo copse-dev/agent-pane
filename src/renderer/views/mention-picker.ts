@@ -1,5 +1,6 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { clear } from '../dom/helpers.ts'
 
 export interface MentionPickerOptions {
   textarea: HTMLTextAreaElement
@@ -29,7 +30,7 @@ export function initMentionPicker(opts: MentionPickerOptions): () => void {
       currentFiles = []
     }
 
-    picker.innerHTML = ''
+    clear(picker)
     selectedIdx = 0
     currentFiles.forEach((path, i) => {
       const item = document.createElement('div')

@@ -1,6 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type * as Monaco from 'monaco-editor'
+import { clear } from '../dom/helpers.ts'
 
 export function mountDiffQueuePanel(
   root: HTMLElement,
@@ -37,7 +38,7 @@ export function mountDiffQueuePanel(
   let selectedPath: string | null = null
 
   function renderFileList() {
-    fileList.innerHTML = ''
+    clear(fileList)
     const { stagedDiffs } = store.getState()
     stagedDiffs.forEach((entry) => {
       const btn = document.createElement('button')

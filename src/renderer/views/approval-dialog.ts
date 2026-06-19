@@ -1,16 +1,18 @@
+import { el } from '../dom/helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 
 export function mountApprovalDialog(api: ApiClient): void {
-  const dialog = document.createElement('dialog')
-  dialog.id = 'approval-dialog'
-  dialog.innerHTML = `
-    <h3 class="approval-title"></h3>
-    <pre class="approval-body"></pre>
-    <div class="approval-buttons">
-      <button class="approval-approve">Approve</button>
-      <button class="approval-reject">Reject</button>
-    </div>
-  `
+  const dialog = el('dialog', { id: 'approval-dialog' })
+  dialog.append(
+    el('h3', { class: 'approval-title' }),
+    el('pre', { class: 'approval-body' }),
+    el(
+      'div',
+      { class: 'approval-buttons' },
+      el('button', { class: 'approval-approve' }, 'Approve'),
+      el('button', { class: 'approval-reject' }, 'Reject'),
+    ),
+  )
   document.body.append(dialog)
 
   let currentId = ''
