@@ -4,7 +4,8 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { addMessage, setThreadStatus } from '@shared/store/thread-helpers.ts'
 import { initMentionPicker } from './mention-picker.ts'
 import { initSkillPicker } from './skill-picker.ts'
-import { parseSkillInvocation } from '@shared/skills/parse-skill-invocation.ts'
+import { resolveSkillInvocation } from '@shared/skills/parse-skill-invocation.ts'
+import { buildSkillUserText } from '@shared/skills/build-skill-user-content.ts'
 import type { UserContent } from '@shared/types'
 import type { AgentRunPayload, SkillSummary } from '@shared/types/skills.ts'
 import { mountFooterModelPicker } from './footer-model-picker.ts'
@@ -125,19 +126,25 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     const id = getActiveThreadId()
     if (!id) return
 
-    const invocation = parseSkillInvocation(rawText)
-    const text = invocation?.remainder ?? rawText
+    const skills = skillsCache ?? (await api.skills.list())
+    skillsCache = skills
+    const skillNames = skills.map((skill) => skill.name)
+    const invocation = resolveSkillInvocation(rawText, skillNames)
     const invokedSkills = invocation ? [invocation.skillName] : []
 
-    if (invocation) {
-      const skills = skillsCache ?? (await api.skills.list())
-      skillsCache = skills
-      if (!skills.some((skill) => skill.name === invocation.skillName)) {
-        textarea.setCustomValidity(`Unknown skill: /${invocation.skillName}`)
-        textarea.reportValidity()
-        return
-      }
+    if (invocation && !skills.some((skill) => skill.name === invocation.skillName)) {
+      textarea.setCustomValidity(`Unknown skill: /${invocation.skillName}`)
+      textarea.reportValidity()
+      return
     }
+
+    const text = invocation
+      ? buildSkillUserText(
+          invocation.skillName,
+          invocation.remainder,
+          attachedFiles.length > 0 || attachedImages.length > 0,
+        )
+      : rawText
     textarea.setCustomValidity('')
 
     let fullContent: UserContent
