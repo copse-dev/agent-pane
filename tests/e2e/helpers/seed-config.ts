@@ -16,12 +16,23 @@ function agentPaneUserDataDir(): string {
 
 const USER_DATA = agentPaneUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
+const SETTINGS_PATH = join(USER_DATA, 'settings.json')
 
 export function resetUserData(): void {
   rmSync(CONFIG_PATH, { force: true })
+  rmSync(SETTINGS_PATH, { force: true })
 }
 
-export function seedEmptyProject(workspaceRoot: string, projectId: string): void {
+function writeSettings(settings: Record<string, unknown>): void {
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(SETTINGS_PATH, JSON.stringify(settings), 'utf8')
+}
+
+export function seedEmptyProject(
+  workspaceRoot: string,
+  projectId: string,
+  options?: { subagentsEnabled?: boolean },
+): void {
   mkdirSync(USER_DATA, { recursive: true })
   writeFileSync(
     CONFIG_PATH,
@@ -32,6 +43,9 @@ export function seedEmptyProject(workspaceRoot: string, projectId: string): void
     }),
     'utf8',
   )
+  if (options?.subagentsEnabled !== undefined) {
+    writeSettings({ subagentsEnabled: options.subagentsEnabled })
+  }
 }
 
 /** Tool args containing HTML-like strings that break innerHTML <pre> templates. */
