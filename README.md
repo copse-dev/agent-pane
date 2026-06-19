@@ -6,12 +6,12 @@ Requires Node ≥ 22.
 
 ## Commands
 
-| Command | Purpose |
-| --- | --- |
-| `npm run dev` | Dev build + Electron |
-| `npm run build` | Production bundle to `dist/` |
-| `npm start` | Run built app |
-| `npm test` | Unit tests |
+| Command         | Purpose                       |
+| --------------- | ----------------------------- |
+| `npm run dev`   | Dev build + Electron          |
+| `npm run build` | Production bundle to `dist/`  |
+| `npm start`     | Run built app                 |
+| `npm test`      | Unit tests                    |
 | `npm run check` | typecheck, lint, format, test |
 
 ## Layout

@@ -1,10 +1,6 @@
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
-import {
-  DEFAULT_LAYOUT,
-  LAYOUT_LIMITS,
-  type LayoutState,
-} from '@shared/types/layout.ts'
+import { DEFAULT_LAYOUT, LAYOUT_LIMITS, type LayoutState } from '@shared/types/layout.ts'
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n))
@@ -71,11 +67,7 @@ function mountResizeHandle(
     const initial = opts.startWidth()
 
     const onMove = (ev: PointerEvent) => {
-      const width = clamp(
-        opts.deltaToWidth(initial, ev.clientX - startX),
-        opts.min,
-        opts.max(),
-      )
+      const width = clamp(opts.deltaToWidth(initial, ev.clientX - startX), opts.min, opts.max())
       opts.applyWidth(width)
     }
 
