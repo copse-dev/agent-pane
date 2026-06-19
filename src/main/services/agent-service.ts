@@ -113,7 +113,7 @@ Available tools:
 - git_status: Show working tree status
 - git_diff: Show unstaged or staged changes
 - git_log: Show recent commit history
-- run_shell: Run a shell command (always requires user approval)
+- run_shell: Run a shell command (auto-runs when contained in the sandbox; prompts for network/outside access)
 
 Working directory: {WORKSPACE_ROOT}
 

@@ -1,5 +1,25 @@
 import { zodToJsonSchema } from 'zod-to-json-schema'
 import type { ToolDefinition, LLMTool } from '@shared/types'
+import type { PermissionCheck } from './permission-policy.ts'
+
+type PermissionGateFn = (check: PermissionCheck) => Promise<boolean>
+
+let permissionGateOverride: PermissionGateFn | null = null
+let permissionGateDefault: PermissionGateFn | null = null
+
+async function ensurePermitted(check: PermissionCheck): Promise<boolean> {
+  if (permissionGateOverride) return permissionGateOverride(check)
+  if (!permissionGateDefault) {
+    const mod = await import('./permission-gate.ts')
+    permissionGateDefault = mod.ensureToolPermitted
+  }
+  return permissionGateDefault(check)
+}
+
+/** Test hook — bypasses the real permission gate (and its Electron deps). */
+export function setPermissionGateForTests(fn: PermissionGateFn | null): void {
+  permissionGateOverride = fn
+}
 
 export class ToolRegistry {
   private tools = new Map<string, ToolDefinition>()
@@ -20,6 +40,8 @@ export class ToolRegistry {
     const tool = this.tools.get(name)
     if (!tool) throw new Error(`Unknown tool: ${name}`)
     const parsed = tool.parameters.parse(rawArgs)
+    const permitted = await ensurePermitted({ toolName: name, args: parsed })
+    if (!permitted) return `User rejected the ${name} tool call.`
     return tool.execute(parsed, signal)
   }
 
