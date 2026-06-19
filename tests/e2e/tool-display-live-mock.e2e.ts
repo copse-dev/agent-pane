@@ -9,7 +9,7 @@ describe('tool call display live mock', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-live-project')
+    seedEmptyProject(process.cwd(), 'e2e-live-project', { subagentsEnabled: false })
     await browser.reloadSession()
   })
 
@@ -24,8 +24,7 @@ describe('tool call display live mock', () => {
     await textarea.setValue('list files please')
     await $('.submit-btn').click()
 
-    const toolCard = await $('.tool-card')
-    await expect(toolCard.$('.tool-name')).toHaveText('List directory', { wait: 15_000 })
+    await expect($('.tool-card .tool-name')).toHaveText('List directory', { wait: 15_000 })
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'tool-display-live-mock.png'))
   })

@@ -24,14 +24,14 @@ describe('subagent display', () => {
     await expect(card).toBeDisplayed()
     await expect(card).not.toHaveAttribute('open')
     await expect(card.$('summary.tool-card-header .tool-name')).toHaveText('Explore files')
-    await expect(card.$('.subagent-summary-preview')).toHaveText('README describes', {
-      containing: true,
-    })
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'subagent-display-collapsed.png'))
 
     await card.$('summary.tool-card-header').click()
-    await expect(card.$('.subagent-inner-tool .tool-name').first()).toHaveText('Read file')
+    await expect(card.$('.subagent-summary-preview')).toHaveText('README describes', {
+      containing: true,
+    })
+    await expect(card.$('.subagent-inner-tool .tool-name')).toHaveText('Read file')
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'subagent-display-expanded.png'))
   })
