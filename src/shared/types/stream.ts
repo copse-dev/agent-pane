@@ -1,5 +1,7 @@
 export type StreamChunk =
   | { type: 'text'; text: string }
+  /** Replace accumulated assistant text (e.g. after stripping embedded pseudo tool XML). */
+  | { type: 'text_replace'; text: string }
   | { type: 'tool_call'; toolCall: ToolCallChunk }
   | { type: 'tool_result'; toolCallId: string; result: string; isError: boolean }
   | {

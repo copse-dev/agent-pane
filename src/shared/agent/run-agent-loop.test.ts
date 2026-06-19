@@ -121,6 +121,34 @@ describe('runAgentLoop', () => {
     assert.equal(executeCount, 1)
   })
 
+  it('recovers embedded Cursor-style text tool calls', async () => {
+    let executedName = ''
+    const embedded = `Checking lint.
+
+<tool_call>
+<function=run_shell>
+<parameter=command>npm run lint</parameter>
+</function>
+</tool_call>`
+    const chunks: StreamChunk[] = []
+    await runAgentLoop({
+      provider: mockProvider([
+        [{ type: 'text', text: embedded }, { type: 'done' }],
+        [{ type: 'text', text: 'All good.' }, { type: 'done' }],
+      ]),
+      messages: [{ role: 'user', content: 'lint' }],
+      tools: [],
+      onChunk: (c) => chunks.push(c),
+      executeTool: async (name, _args, _signal) => {
+        executedName = name
+        return 'lint ok'
+      },
+    })
+    assert.equal(executedName, 'run_shell')
+    assert.ok(chunks.some((c) => c.type === 'text_replace'))
+    assert.ok(chunks.some((c) => c.type === 'tool_result'))
+  })
+
   it('surfaces a terminal message when finalize returns empty', async () => {
     const chunks: StreamChunk[] = []
     await runAgentLoop({
