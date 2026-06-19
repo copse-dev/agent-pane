@@ -1,0 +1,18 @@
+node_modules/
+dist/
+dist-test/
+dist-types/
+.DS_Store
+*.log
+
+# Test artifacts
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Internal build/dev notes — not published for now
+DEVELOPMENT-NOTES.md
+
+# Local env / secrets
+.env
+.env.*

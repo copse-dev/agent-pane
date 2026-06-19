@@ -1,0 +1,143 @@
+import './styles/tokens.css'
+import './styles/global.css'
+import './styles/themes.css'
+
+import { createStore } from '@shared/store/store.ts'
+import { createThread, switchThread } from '@shared/store/thread-helpers.ts'
+import { mountWelcome } from './views/welcome.ts'
+import { mountTitlebar } from './views/titlebar.ts'
+import { mountProjectsPane } from './views/projects-pane.ts'
+import { mountConversation } from './views/conversation.ts'
+import { mountFileTree } from './views/file-tree.ts'
+import { mountInputBar } from './views/input-bar.ts'
+import { mountContextPanel } from './views/context-panel.ts'
+import { mountSettingsDialog } from './views/settings-dialog.ts'
+import { mountApprovalDialog } from './views/approval-dialog.ts'
+import { startAgentController } from './controller/agent.ts'
+import { loadProjects, attachAutosave } from './controller/persistence.ts'
+import { addProjectFromPath, restoreProject } from './controller/projects.ts'
+import { initMonaco } from './monaco/setup.ts'
+
+const store = createStore()
+const api = window.api
+
+let layoutMounted = false
+
+async function boot() {
+  mountSettingsDialog(store, api)
+  mountApprovalDialog(api)
+
+  // Load the persisted model selection so the footer picker reflects it.
+  const savedModel = (await api.settings.get('model')) as string | null
+  store.setState({ settings: { model: savedModel ?? 'claude-sonnet-4-6' } })
+  startAgentController(store, api)
+  attachAutosave(store, api)
+
+  // File ▸ Settings… (Cmd+,) from the native menu opens the settings dialog.
+  api.menu.onSettings(() => {
+    const d = document.getElementById('settings-dialog')
+    if (d instanceof HTMLDialogElement && !d.open) d.showModal()
+  })
+
+  // File ▸ Open Folder… registers the chosen folder as a project and switches.
+  api.workspace.onOpened((root) => {
+    void addProjectFromPath(store, api, root).then(ensureLayout)
+  })
+
+  const { projects, activeProjectId } = await loadProjects(api)
+  store.setState({ projects, activeProjectId })
+
+  if (projects.length > 0) {
+    const active = projects.find((p) => p.id === activeProjectId) ?? projects[0]!
+    await restoreProject(store, api, active.id)
+    ensureLayout()
+  } else {
+    const unmountWelcome = mountWelcome(document.getElementById('welcome')!, store, api)
+    const unsubWelcome = store.on('workspace_changed', () => {
+      unsubWelcome()
+      unmountWelcome()
+      ensureLayout()
+    })
+  }
+}
+
+function ensureLayout() {
+  if (layoutMounted) return
+  layoutMounted = true
+  mountFullLayout()
+  registerKeyboardShortcuts()
+  updateFilesPane()
+}
+
+function mountFullLayout() {
+  const monaco = initMonaco()
+  mountTitlebar(document.getElementById('titlebar')!, store, api)
+  mountProjectsPane(document.getElementById('pane-projects')!, store, api)
+  mountConversation(document.getElementById('conversation')!, store)
+  mountInputBar(document.getElementById('input-bar')!, store, api)
+  mountFileTree(document.getElementById('file-tree-host')!, store, api)
+  mountContextPanel(document.getElementById('file-viewer')!, store, api, monaco)
+
+  store.on('files_pane_changed', updateFilesPane)
+}
+
+// The right pane (explorer + file viewer) is hidden by default so chat is
+// full width; it shows when filesPaneOpen is set (toggle, or auto on file open).
+function updateFilesPane() {
+  const pane = document.getElementById('pane-files')
+  if (pane) pane.hidden = !store.getState().filesPaneOpen
+}
+
+function registerKeyboardShortcuts() {
+  document.addEventListener('keydown', (e) => {
+    const meta = e.ctrlKey || e.metaKey
+    if (meta && e.key === 't') {
+      e.preventDefault()
+      createThread(store)
+    }
+    // Cmd/Ctrl+O is handled by the native File ▸ Open Folder… menu accelerator.
+    if (meta && e.key === ',') {
+      e.preventDefault()
+      const d = document.getElementById('settings-dialog')
+      if (d && 'showModal' in d) (d as HTMLDialogElement).showModal()
+    }
+    if (meta && e.key === 'w') {
+      e.preventDefault()
+      confirmDeleteThread()
+    }
+    if (e.key === 'Escape') {
+      const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
+      if (thread?.status === 'running') {
+        const id = store.getState().activeThreadId
+        if (id) void api.agent.abort(id)
+      }
+    }
+    if (e.altKey && e.key === 'ArrowLeft') switchToPrevThread()
+    if (e.altKey && e.key === 'ArrowRight') switchToNextThread()
+  })
+}
+
+function confirmDeleteThread() {
+  const { activeThreadId, threads } = store.getState()
+  if (!activeThreadId || threads.length <= 1) return
+  if (confirm('Delete this thread?')) {
+    const remaining = threads.filter((t) => t.id !== activeThreadId)
+    const newActive = remaining[remaining.length - 1]?.id ?? null
+    store.setState({ threads: remaining, activeThreadId: newActive })
+    store.emit('threads_changed')
+  }
+}
+
+function switchToPrevThread() {
+  const { threads, activeThreadId } = store.getState()
+  const idx = threads.findIndex((t) => t.id === activeThreadId)
+  if (idx > 0) switchThread(store, threads[idx - 1]!.id)
+}
+
+function switchToNextThread() {
+  const { threads, activeThreadId } = store.getState()
+  const idx = threads.findIndex((t) => t.id === activeThreadId)
+  if (idx < threads.length - 1) switchThread(store, threads[idx + 1]!.id)
+}
+
+void boot()
