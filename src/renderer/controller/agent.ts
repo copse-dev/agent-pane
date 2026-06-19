@@ -5,6 +5,7 @@ import {
   appendToken,
   addToolCall,
   updateToolCall,
+  setMessageContent,
   setThreadStatus,
   setThreadTitle,
   updateUsage,
@@ -53,6 +54,11 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           st.writing = true
           activity(threadId)
         }
+        break
+      }
+      case 'text_replace': {
+        if (!st.msgId) st.msgId = addMessage(store, threadId, 'assistant')
+        setMessageContent(store, st.msgId, chunk.text)
         break
       }
       case 'tool_call': {
