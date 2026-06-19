@@ -1,4 +1,9 @@
 import { el, clear } from '../dom/helpers.ts'
+import {
+  materialFileIconUrl,
+  materialFolderIconUrl,
+  mountMaterialIcon,
+} from '../icons/material-file-icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 
@@ -56,66 +61,6 @@ function join(parent: string, child: string): string {
   return parent ? `${parent}/${child}` : child
 }
 
-// A small emoji icon per file type for quick visual scanning in the tree.
-const ICON_BY_EXT: Record<string, string> = {
-  ts: '🟦',
-  tsx: '🟦',
-  mts: '🟦',
-  cts: '🟦',
-  js: '🟨',
-  jsx: '🟨',
-  mjs: '🟨',
-  cjs: '🟨',
-  json: '🔧',
-  py: '🐍',
-  rs: '🦀',
-  go: '🐹',
-  rb: '💎',
-  java: '☕',
-  c: '🇨',
-  h: '🇨',
-  cpp: '🇨',
-  cc: '🇨',
-  hpp: '🇨',
-  cs: '🟩',
-  swift: '🐦',
-  kt: '🟪',
-  php: '🐘',
-  md: '📝',
-  mdx: '📝',
-  txt: '📄',
-  html: '🌐',
-  css: '🎨',
-  scss: '🎨',
-  less: '🎨',
-  yaml: '⚙️',
-  yml: '⚙️',
-  toml: '⚙️',
-  xml: '📃',
-  sh: '🐚',
-  bash: '🐚',
-  zsh: '🐚',
-  sql: '🗃️',
-  graphql: '◈',
-  png: '🖼️',
-  jpg: '🖼️',
-  jpeg: '🖼️',
-  gif: '🖼️',
-  svg: '🖼️',
-  webp: '🖼️',
-  lock: '🔒',
-  env: '🔑',
-}
-
-function fileIcon(name: string): string {
-  const lower = name.toLowerCase()
-  if (lower === 'dockerfile') return '🐳'
-  if (lower === 'makefile') return '🛠️'
-  if (lower.startsWith('.git')) return '🌿'
-  const ext = lower.split('.').pop() ?? ''
-  return ICON_BY_EXT[ext] ?? '📄'
-}
-
 export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const title = el('span', {}, 'Explorer')
   const refreshBtn = el('button', { class: 'sidebar-refresh', 'aria-label': 'Refresh' }, '⟳')
@@ -146,7 +91,12 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
     depth: number,
   ): HTMLElement {
     const twisty = el('span', { class: 'tree-twisty' }, entry.isDir ? '▶' : '')
-    const icon = el('span', { class: 'tree-icon' }, entry.isDir ? '📁' : fileIcon(entry.name))
+    const icon = el('span', { class: 'tree-icon' })
+    if (entry.isDir) {
+      mountMaterialIcon(icon, materialFolderIconUrl(path, false), `${entry.name} folder`)
+    } else {
+      mountMaterialIcon(icon, materialFileIconUrl(path), entry.name)
+    }
     const row = el(
       'button',
       { class: 'tree-row', role: 'treeitem', title: path },
@@ -168,7 +118,11 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
       row.addEventListener('click', () => {
         expanded = !expanded
         twisty.textContent = expanded ? '▼' : '▶'
-        icon.textContent = expanded ? '📂' : '📁'
+        mountMaterialIcon(
+          icon,
+          materialFolderIconUrl(path, expanded),
+          `${entry.name} folder`,
+        )
         childrenEl.hidden = !expanded
         if (expanded && !loaded) {
           loaded = true
