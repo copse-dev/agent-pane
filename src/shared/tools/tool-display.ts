@@ -1,0 +1,93 @@
+import type { ToolCall } from '@shared/types'
+
+const TOOL_DISPLAY_NAMES: Record<string, string> = {
+  read_file: 'Read file',
+  list_dir: 'List directory',
+  search_code: 'Search code',
+  find_files: 'Find files',
+  git_status: 'Git status',
+  git_diff: 'Git diff',
+  git_log: 'Git log',
+  write_file: 'Write file',
+  run_shell: 'Run command',
+}
+
+const TOOL_GROUPS: Record<string, { tools: string[]; label: string }> = {
+  reading: { tools: ['read_file', 'list_dir'], label: 'Reading files' },
+  searching: { tools: ['search_code', 'find_files'], label: 'Searching' },
+  git: { tools: ['git_status', 'git_diff', 'git_log'], label: 'Git' },
+  writing: { tools: ['write_file'], label: 'Writing files' },
+  shell: { tools: ['run_shell'], label: 'Running commands' },
+}
+
+const TOOL_TO_GROUP = new Map<string, string>(
+  Object.entries(TOOL_GROUPS).flatMap(([key, { tools }]) => tools.map((name) => [name, key])),
+)
+
+export type ToolCallDisplayItem =
+  | { type: 'group'; key: string; label: string; toolCalls: ToolCall[] }
+  | { type: 'individual'; toolCall: ToolCall; label: string }
+
+export function getToolDisplayName(name: string): string {
+  return TOOL_DISPLAY_NAMES[name] ?? formatToolNameFallback(name)
+}
+
+export function getToolGroupKey(name: string): string | null {
+  return TOOL_TO_GROUP.get(name) ?? null
+}
+
+export function getToolGroupLabel(key: string): string {
+  return TOOL_GROUPS[key]?.label ?? key
+}
+
+function formatToolNameFallback(name: string): string {
+  return name
+    .split('_')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
+export function aggregateToolStatus(toolCalls: ToolCall[]): ToolCall['status'] {
+  if (toolCalls.some((tc) => tc.status === 'running')) return 'running'
+  if (toolCalls.some((tc) => tc.status === 'error')) return 'error'
+  return 'done'
+}
+
+export function buildToolCallDisplayItems(toolCalls: ToolCall[]): ToolCallDisplayItem[] {
+  if (toolCalls.length === 0) return []
+
+  const groupMembers = new Map<string, ToolCall[]>()
+  for (const tc of toolCalls) {
+    if (tc.status === 'error') continue
+    const key = getToolGroupKey(tc.name)
+    if (!key) continue
+    const members = groupMembers.get(key) ?? []
+    members.push(tc)
+    groupMembers.set(key, members)
+  }
+
+  const result: ToolCallDisplayItem[] = []
+  const emittedGroups = new Set<string>()
+
+  for (const tc of toolCalls) {
+    if (tc.status === 'error') {
+      result.push({ type: 'individual', toolCall: tc, label: getToolDisplayName(tc.name) })
+      continue
+    }
+
+    const key = getToolGroupKey(tc.name)
+    const members = key ? groupMembers.get(key) : undefined
+    if (key && members && members.length >= 2) {
+      if (!emittedGroups.has(key)) {
+        emittedGroups.add(key)
+        result.push({ type: 'group', key, label: getToolGroupLabel(key), toolCalls: members })
+      }
+      continue
+    }
+
+    result.push({ type: 'individual', toolCall: tc, label: getToolDisplayName(tc.name) })
+  }
+
+  return result
+}
