@@ -1,8 +1,5 @@
 import { getWorkspaceRoot } from './workspace.ts'
-import {
-  afterSandboxedCommand,
-  spawnInProjectSandbox,
-} from '../project-sandbox/index.ts'
+import { afterSandboxedCommand, spawnInProjectSandbox } from '../project-sandbox/index.ts'
 
 export interface CommandResult {
   stdout: string
@@ -40,11 +37,11 @@ export function runCommand(
         })
         proc.on('error', (err) => {
           afterSandboxedCommand()
-          reject(new Error(err.message ?? String(err)))
+          reject(err instanceof Error ? err : new Error(String(err)))
         })
         opts.signal?.addEventListener('abort', () => proc.kill())
       } catch (err) {
-        reject(new Error(err.message ?? String(err)))
+        reject(err instanceof Error ? err : new Error(String(err)))
       }
     })()
   })

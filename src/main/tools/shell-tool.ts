@@ -3,10 +3,7 @@ import type { ToolDefinition } from '@shared/types'
 import { getWorkspaceRoot } from '../services/workspace.ts'
 import { requestApproval } from '../services/approval.ts'
 import { getMainWindow } from '../windows/create-main-window.ts'
-import {
-  afterSandboxedCommand,
-  spawnShellInProjectSandbox,
-} from '../project-sandbox/index.ts'
+import { afterSandboxedCommand, spawnShellInProjectSandbox } from '../project-sandbox/index.ts'
 
 export const runShellTool: ToolDefinition = {
   name: 'run_shell',
