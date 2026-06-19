@@ -20,10 +20,10 @@ that display set (e.g. `DISPLAY=:1 npm run dev`). Key gotchas discovered during 
   run `npm run build` once before `npm run dev` (so `dist/` already holds a valid bundle), or just
   restart `npm run dev`.
 - **GPU errors are benign.** The headless GPU stack logs `Exiting GPU process due to errors during
-  initialization` / `bus.cc ... Failed to connect to the bus`. The app still runs and renders. Add
+initialization` / `bus.cc ... Failed to connect to the bus`. The app still runs and renders. Add
   `--disable-gpu` (e.g. `DISPLAY=:1 npx electron --disable-gpu dist/main/index.js`) to silence the
   GPU noise; it is optional.
-- **VNC idle screen-blanker.** After ~10s without a *real* X input event the VNC desktop blanks to a
+- **VNC idle screen-blanker.** After ~10s without a _real_ X input event the VNC desktop blanks to a
   black screen / spinning cube / clock overlay that hides the app window — this is NOT an app crash
   (the Electron process keeps running). Synthetic pointer warps (`xdotool mousemove_relative`) do
   NOT reset it, but real key events do. For clean screen recordings, run a keep-awake loop of real
