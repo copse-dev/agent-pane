@@ -1,4 +1,5 @@
 import type { AppState } from '@shared/types'
+import { DEFAULT_LAYOUT } from '@shared/types/layout.ts'
 import type { StoreEvents } from './events.ts'
 
 type EventHandler<K extends keyof StoreEvents> = (...args: StoreEvents[K]) => void
@@ -23,6 +24,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     activeDiff: null,
     stagedDiffs: [],
     filesPaneOpen: false,
+    layout: { ...DEFAULT_LAYOUT },
     theme: 'dark',
     fontSize: 14,
     ...initial,

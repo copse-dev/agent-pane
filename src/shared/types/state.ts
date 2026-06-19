@@ -1,4 +1,5 @@
 import type { Thread } from './thread.ts'
+import type { LayoutState } from './layout.ts'
 
 export type PanelTab = 'file' | 'diff'
 export type Theme = 'light' | 'dark'
@@ -33,6 +34,7 @@ export interface AppState {
   activeDiff: ActiveDiff | null
   stagedDiffs: StagedDiffEntry[] // multi-file queue (see spec 10)
   filesPaneOpen: boolean // right pane (explorer + file viewer) visibility
+  layout: LayoutState
   theme: Theme
   fontSize: number // 12–20, applied to app + Monaco
   settings?: { model: string }
