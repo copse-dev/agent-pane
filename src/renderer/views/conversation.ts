@@ -136,8 +136,10 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
   function renderToolCards(msgEl: HTMLElement, toolCalls: ToolCall[]) {
     const userExpandedGroups = new Set<string>()
     msgEl.querySelectorAll('.tool-card-group[open]').forEach((node) => {
-      const key = (node as HTMLElement).dataset.groupKey
-      if (key) userExpandedGroups.add(key)
+      const el = node as HTMLElement
+      const key = el.dataset.groupKey
+      // Running groups are auto-expanded; don't treat that as a user preference.
+      if (key && el.dataset.status !== 'running') userExpandedGroups.add(key)
     })
 
     const userExpandedTools = new Set<string>()

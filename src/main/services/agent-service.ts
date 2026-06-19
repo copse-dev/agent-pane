@@ -6,6 +6,7 @@ import type { LLMMessage, LLMProvider, StreamChunk, UserContent } from '@shared/
 import type { ToolRegistry } from './tool-registry.ts'
 import { getSetting, getApiKey } from './settings.ts'
 import { getWorkspaceRoot } from './workspace.ts'
+import { buildInvokedSkillsBlock, buildSkillsCatalogBlock } from './skill-prompt.ts'
 
 const abortMap = new Map<string, AbortController>()
 
@@ -114,8 +115,11 @@ Available tools:
 - git_diff: Show unstaged or staged changes
 - git_log: Show recent commit history
 - run_shell: Run a shell command (auto-runs when contained in the sandbox; prompts for network/outside access)
+- read_skill: Read additional files under a skill directory (scripts/, references/, assets/)
 
 Working directory: {WORKSPACE_ROOT}
+
+Skills are invoked manually via /skill-name in the input. Invoked skill instructions are injected automatically; use read_skill for supporting files under a skill directory.
 
 When the user asks an open-ended question (review, explain, validate, summarize):
 1. Use tools as needed, then finish with a clear written answer in plain language.
@@ -132,10 +136,14 @@ export async function runAgent(
   priorMessages: LLMMessage[],
   mainWindow: BrowserWindow,
   registry: ToolRegistry,
+  options?: { invokedSkills?: string[] },
 ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> {
   const projectInstructions = await loadProjectInstructions()
+  const invokedSkills = options?.invokedSkills ?? []
   const systemPrompt =
     BASE_SYSTEM_PROMPT.replace('{WORKSPACE_ROOT}', getWorkspaceRoot() ?? '(none)') +
+    buildSkillsCatalogBlock() +
+    (await buildInvokedSkillsBlock(invokedSkills)) +
     (projectInstructions ? `\n\n---\n\n## Project instructions\n\n${projectInstructions}` : '')
 
   const model = getSetting<string>('model', 'claude-sonnet-4-6')
@@ -200,7 +208,7 @@ export async function runAgent(
   }
 
   // Return non-system messages for history persistence in main process
-  const updatedHistory = messages.filter((m) => m.role !== 'system')
+  const updatedHistory = trimmed.filter((m) => m.role !== 'system')
   return { usage: { inputTokens, outputTokens }, messages: updatedHistory }
 }
 

@@ -56,7 +56,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         const del = el('button', { class: 'chat-delete', 'aria-label': 'Delete thread' }, '✕')
         del.addEventListener('click', (e) => {
           e.stopPropagation()
-          if (threads.length > 1) deleteThread(store, thread.id)
+          if (threads.length > 1) {
+            void api.agent.clearHistory(thread.id)
+            deleteThread(store, thread.id)
+          }
         })
         chatRow.append(del)
         chats.append(chatRow)
