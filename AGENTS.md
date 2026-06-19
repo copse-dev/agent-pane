@@ -38,11 +38,20 @@ No real model key is required to exercise core functionality. With neither `ANTH
 `list_dir` tool call on the first turn — enough to drive the full agent loop end-to-end. Set
 `AGENT_WINDOW_MOCK_LLM=1` to force the mock even when keys are present.
 
+### Before committing
+
+Agents should run **`npm run check`** before creating a commit. That runs typecheck, ESLint,
+Prettier, and unit tests (`npm test`) — the same fast gates CI runs before build/e2e. If you
+changed renderer UI or e2e fixtures, also run **`npm run build && npm run test:e2e`** locally
+(macOS/Linux paths for seeded `electron-store` data must match `src/main/app-init.ts`).
+
 ### App data / state
 
 Persistent state (projects, threads, selected model, workspace root) lives in an `electron-store`
-JSON at `~/.config/agent-pane/config.json` (the app sets its userData dir to `agent-pane` in
-`src/main/app-init.ts`). The "Open Folder" button uses a native GTK dialog; to open a workspace
+JSON named `config.json` under the app userData directory (`agent-pane` in
+`src/main/app-init.ts`): on macOS
+`~/Library/Application Support/agent-pane/`, on Linux `~/.config/agent-pane/`, on Windows
+`%APPDATA%/agent-pane/`. The "Open Folder" button uses a native dialog; to open a workspace
 without driving that dialog, pre-seed `config.json` with a `projects` entry and `activeProjectId`
 before launching.
 
@@ -51,3 +60,22 @@ before launching.
 - `npm test` runs Node's test runner over `src/**/*.test.ts` (esbuild-bundled into `dist-test/`).
 - `npm run test:e2e` is Playwright + Electron and needs a display. It passes under
   `xvfb-run -a npx playwright test` on this headless VM.
+
+### Visual validation (tool UI / screenshots)
+
+Use Playwright Electron e2e — do not hand-drive VNC unless debugging layout.
+
+1. `npm run build`
+2. Seed `~/.config/agent-pane/config.json` before launch (see `tests/e2e/helpers/seed-config.ts`):
+   - `projects` + `activeProjectId` pointing at repo root
+   - optional `threads:<projectId>` with pre-built `toolCalls` to exercise grouping without a real model
+3. Launch with mock LLM: `AGENT_WINDOW_MOCK_LLM=1 ANTHROPIC_API_KEY= OPENAI_API_KEY=`
+4. Run: `xvfb-run -a npx playwright test tests/e2e/tool-display.spec.ts`
+5. Screenshots land in `tests/e2e/screenshots/`:
+   - `tool-display-collapsed.png` — grouped label (`Reading files ×2`) + failed tool outside group
+   - `tool-display-group-expanded.png` — nested human names (`Read file`, `List directory`)
+   - `tool-display-live-mock.png` — live mock turn shows `List directory` (not `list_dir`)
+
+Assertions to mirror: `.tool-card-group .tool-name` = group label; `.tool-count` = `×N`;
+failed tools stay `.tool-card[data-status=error]` with individual `getToolDisplayName` labels.
+Unit coverage for grouping logic: `src/shared/tools/tool-display.test.ts`.

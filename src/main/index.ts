@@ -1,6 +1,6 @@
 import './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
 import { app, ipcMain } from 'electron'
-import type { UserContent, LLMMessage } from '@shared/types'
+import type { LLMMessage } from '@shared/types'
 import { createMainWindow } from './windows/create-main-window.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
 import { getApiKey } from './services/settings.ts'
@@ -11,6 +11,8 @@ import { initApproval } from './services/approval.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
+import { initSkillsRegistry } from './services/skills-registry.ts'
+import { parseAgentRunPayload } from '@shared/agent/parse-agent-run-payload.ts'
 import {
   runAgent,
   abortAgent,
@@ -61,17 +63,13 @@ app
     initFsWatcher(win)
     registerAllHandlers(win, registry)
 
+    await initSkillsRegistry()
     await loadMcpServers(registry)
 
     const messageHistory = new Map<string, LLMMessage[]>()
 
     ipcMain.handle('agent:run', async (_e, threadId: string, rawPrompt: string) => {
-      let userContent: UserContent
-      try {
-        userContent = JSON.parse(rawPrompt) as UserContent
-      } catch {
-        userContent = rawPrompt
-      }
+      const { userContent, invokedSkills } = parseAgentRunPayload(rawPrompt)
 
       // Hydrate from persisted storage on first use after a restart
       if (!messageHistory.has(threadId)) {
@@ -82,7 +80,9 @@ app
       }
 
       const priorMessages = messageHistory.get(threadId) ?? []
-      const result = await runAgent(threadId, userContent, priorMessages, win, registry)
+      const result = await runAgent(threadId, userContent, priorMessages, win, registry, {
+        invokedSkills,
+      })
       messageHistory.set(threadId, result.messages)
       storageSet(`llm-history:${threadId}`, result.messages)
     })

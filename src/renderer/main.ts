@@ -11,7 +11,12 @@ import { mountConversation } from './views/conversation.ts'
 import { mountFileTree } from './views/file-tree.ts'
 import { mountInputBar } from './views/input-bar.ts'
 import { mountContextPanel } from './views/context-panel.ts'
-import { mountSettingsDialog } from './views/settings-dialog.ts'
+import {
+  mountSettingsDialog,
+  openSettingsDialog,
+  isSettingsDialogOpen,
+  closeSettingsDialog,
+} from './views/settings-dialog.ts'
 import { mountApprovalDialog } from './views/approval-dialog.ts'
 import { startAgentController } from './controller/agent.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
@@ -40,8 +45,7 @@ async function boot() {
 
   // File ▸ Settings… (Cmd+,) from the native menu opens the settings dialog.
   api.menu.onSettings(() => {
-    const d = document.getElementById('settings-dialog')
-    if (d instanceof HTMLDialogElement && !d.open) d.showModal()
+    if (!isSettingsDialogOpen()) openSettingsDialog()
   })
 
   // File ▸ Open Folder… registers the chosen folder as a project and switches.
@@ -106,14 +110,17 @@ function registerKeyboardShortcuts() {
     // Cmd/Ctrl+O is handled by the native File ▸ Open Folder… menu accelerator.
     if (meta && e.key === ',') {
       e.preventDefault()
-      const d = document.getElementById('settings-dialog')
-      if (d && 'showModal' in d) (d as HTMLDialogElement).showModal()
+      openSettingsDialog()
     }
     if (meta && e.key === 'w') {
       e.preventDefault()
       confirmDeleteThread()
     }
     if (e.key === 'Escape') {
+      if (isSettingsDialogOpen()) {
+        closeSettingsDialog()
+        return
+      }
       const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
       if (thread?.status === 'running') {
         const id = store.getState().activeThreadId
