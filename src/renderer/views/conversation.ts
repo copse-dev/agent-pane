@@ -120,7 +120,9 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
         for (const tc of item.toolCalls) {
           if (openIds.has(tc.id)) {
             card.open = true
-            const entry = card.querySelector(`[data-tool-id="${tc.id}"]`) as HTMLDetailsElement | null
+            const entry = card.querySelector(
+              `[data-tool-id="${tc.id}"]`,
+            ) as HTMLDetailsElement | null
             if (entry) entry.open = true
           }
         }

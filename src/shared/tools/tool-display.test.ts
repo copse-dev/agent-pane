@@ -7,11 +7,7 @@ import {
   aggregateToolStatus,
 } from './tool-display.ts'
 
-function tc(
-  id: string,
-  name: string,
-  status: ToolCall['status'] = 'done',
-): ToolCall {
+function tc(id: string, name: string, status: ToolCall['status'] = 'done'): ToolCall {
   return { id, name, args: {}, status, result: status === 'running' ? null : 'ok' }
 }
 
