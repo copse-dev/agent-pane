@@ -19,21 +19,40 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
   // file explorer and opens settings.
   const filesBtn = el(
     'button',
-    { class: 'titlebar-btn titlebar-text-btn', 'aria-label': 'Toggle file explorer' },
-    '🗂 Files',
+    { class: 'titlebar-btn titlebar-text-btn', 'aria-label': 'Toggle right panel' },
+    '🗂 Panel',
+  )
+  const terminalBtn = el(
+    'button',
+    { class: 'titlebar-btn titlebar-text-btn', 'aria-label': 'Open terminal' },
+    '> Terminal',
   )
   const settingsBtn = el('button', { class: 'titlebar-btn', 'aria-label': 'Settings' }, '⚙')
 
-  root.append(dragRegion, workspaceName, filesBtn, settingsBtn)
+  root.append(dragRegion, workspaceName, filesBtn, terminalBtn, settingsBtn)
 
   filesBtn.addEventListener('click', () => {
-    store.setState({ filesPaneOpen: !store.getState().filesPaneOpen })
+    const open = !store.getState().filesPaneOpen
+    store.setState({
+      filesPaneOpen: open,
+      ...(open ? { rightPanelMode: 'explorer' as const } : {}),
+    })
     store.emit('files_pane_changed')
-    syncFilesBtn()
+    if (open) store.emit('right_panel_mode_changed')
+    syncPanelBtns()
   })
 
-  function syncFilesBtn() {
-    filesBtn.classList.toggle('active', store.getState().filesPaneOpen)
+  terminalBtn.addEventListener('click', () => {
+    store.setState({ filesPaneOpen: true, rightPanelMode: 'terminal' })
+    store.emit('files_pane_changed')
+    store.emit('right_panel_mode_changed')
+    syncPanelBtns()
+  })
+
+  function syncPanelBtns() {
+    const { filesPaneOpen, rightPanelMode } = store.getState()
+    filesBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'explorer')
+    terminalBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'terminal')
   }
 
   function syncName() {
@@ -43,10 +62,11 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
   // Set state immediately — the titlebar is mounted in response to
   // workspace_changed, so it would otherwise miss that initial event.
   syncName()
-  syncFilesBtn()
+  syncPanelBtns()
   const unsubs = [
     store.on('workspace_changed', syncName),
-    store.on('files_pane_changed', syncFilesBtn),
+    store.on('files_pane_changed', syncPanelBtns),
+    store.on('right_panel_mode_changed', syncPanelBtns),
   ]
 
   settingsBtn.addEventListener('click', () => {
