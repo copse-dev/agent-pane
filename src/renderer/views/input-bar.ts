@@ -174,8 +174,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     if (rawText) displayParts.push(rawText)
     attachedFiles.forEach((f) => displayParts.push(`📎 ${f.path.split('/').pop() ?? f.path}`))
     attachedTextBlocks.forEach((b) => displayParts.push(`📝 ${b.label}`))
-    if (attachedImages.length) displayParts.push(`🖼 ${attachedImages.length} image(s)`)
-    addMessage(store, id, 'user', displayParts.join('\n'))
+    const imageUrls = attachedImages.map((img) => img.dataUrl)
+    addMessage(store, id, 'user', displayParts.join('\n'), imageUrls.length ? imageUrls : undefined)
     setThreadStatus(store, id, 'running')
     syncAgentActivity(store, id, false)
 

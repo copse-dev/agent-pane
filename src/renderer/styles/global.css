@@ -622,6 +622,20 @@ label {
   white-space: pre-wrap;
   word-break: break-word;
 }
+.message-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+.message-image {
+  max-width: min(100%, 320px);
+  max-height: 240px;
+  border-radius: var(--radius);
+  object-fit: contain;
+  border: 1px solid var(--border);
+  background: var(--bg-base);
+}
 .message-text .stream-pending {
   white-space: pre-wrap;
 }
