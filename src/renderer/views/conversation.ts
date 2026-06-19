@@ -134,27 +134,29 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
   }
 
   function renderToolCards(msgEl: HTMLElement, toolCalls: ToolCall[]) {
-    const openIds = new Set<string>()
-    msgEl.querySelectorAll('.tool-card[open], .tool-group-item[open]').forEach((node) => {
-      const id = (node as HTMLElement).dataset.toolId
-      if (id) openIds.add(id)
+    const userExpandedGroups = new Set<string>()
+    msgEl.querySelectorAll('.tool-card-group[open]').forEach((node) => {
+      const key = (node as HTMLElement).dataset.groupKey
+      if (key) userExpandedGroups.add(key)
     })
+
+    const userExpandedTools = new Set<string>()
+    msgEl.querySelectorAll('.tool-card[data-tool-id][open], .tool-group-item[open]').forEach(
+      (node) => {
+        const id = (node as HTMLElement).dataset.toolId
+        if (id) userExpandedTools.add(id)
+      },
+    )
 
     msgEl.querySelectorAll('.tool-card').forEach((node) => node.remove())
 
     for (const item of buildToolCallDisplayItems(toolCalls)) {
       const card = createToolCard(item) as HTMLDetailsElement
       if (item.type === 'group') {
-        for (const tc of item.toolCalls) {
-          if (openIds.has(tc.id)) {
-            card.open = true
-            const entry = card.querySelector(
-              `[data-tool-id="${tc.id}"]`,
-            ) as HTMLDetailsElement | null
-            if (entry) entry.open = true
-          }
-        }
-      } else if (openIds.has(item.toolCall.id)) {
+        const status = aggregateToolStatus(item.toolCalls)
+        // Expand while tools are running; auto-collapse to one summary row when done.
+        card.open = status === 'running' || userExpandedGroups.has(item.key)
+      } else if (userExpandedTools.has(item.toolCall.id)) {
         card.open = true
       }
       msgEl.append(card)

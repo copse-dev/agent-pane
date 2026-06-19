@@ -35,6 +35,7 @@ test.describe('tool call display', () => {
 
     const groupCard = win.locator('.tool-card-group')
     await expect(groupCard).toBeVisible()
+    await expect(groupCard).not.toHaveAttribute('open', '')
     await expect(groupCard.locator('.tool-name').first()).toHaveText('Reading files')
     await expect(groupCard.locator('.tool-count')).toHaveText('×2')
 

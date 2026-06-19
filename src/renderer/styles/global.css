@@ -554,7 +554,12 @@ label {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
+}
+.tool-card-group[data-status='done'] > .tool-group-items {
   margin-top: var(--spacing-xs);
+}
+.tool-card-group:not([open]) {
+  padding-block: 6px;
 }
 .tool-group-item {
   border: 1px solid var(--border);
