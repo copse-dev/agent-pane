@@ -1,6 +1,7 @@
 import { el } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { openSettingsDialog } from './settings-dialog.ts'
 
 function basename(p: string) {
   return p.split('/').pop() ?? p
@@ -49,8 +50,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
   ]
 
   settingsBtn.addEventListener('click', () => {
-    const d = document.getElementById('settings-dialog')
-    if (d instanceof HTMLDialogElement) d.showModal()
+    openSettingsDialog()
   })
 
   return () => unsubs.forEach((u) => u())

@@ -105,3 +105,30 @@ export async function populateModelSelect(
   }
   select.value = current
 }
+
+/** Fill a <select> with LM Studio model ids for routing settings (blank = auto). */
+export function populateLocalModelSelect(
+  select: HTMLSelectElement,
+  models: string[],
+  current: string,
+  autoLabel = '(auto — first loaded model)',
+): void {
+  select.innerHTML = ''
+  const auto = document.createElement('option')
+  auto.value = ''
+  auto.textContent = autoLabel
+  select.append(auto)
+  for (const id of models) {
+    const o = document.createElement('option')
+    o.value = id
+    o.textContent = id
+    select.append(o)
+  }
+  if (current && !models.includes(current)) {
+    const o = document.createElement('option')
+    o.value = current
+    o.textContent = `${current} (offline)`
+    select.append(o)
+  }
+  select.value = current
+}
