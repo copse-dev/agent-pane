@@ -522,6 +522,14 @@ label {
 .message-text tbody tr:nth-child(even) td {
   background: rgba(255, 255, 255, 0.02);
 }
+.message-text ul,
+.message-text ol {
+  /* Global reset zeros list padding, so outside bullets hang left of body text. */
+  list-style-position: inside;
+}
+.message-text li + li {
+  margin-top: var(--spacing-xs);
+}
 .tool-card {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
