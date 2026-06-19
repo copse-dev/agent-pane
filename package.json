@@ -9,7 +9,7 @@
     "dev": "node --experimental-strip-types scripts/dev.mts",
     "build": "node --experimental-strip-types scripts/build.mts",
     "start": "electron dist/main/index.js",
-    "postinstall": "node --experimental-strip-types scripts/patch-dev-name.mts && electron-rebuild -f -w node-pty",
+    "postinstall": "node --experimental-strip-types scripts/patch-dev-name.mts && node --experimental-strip-types scripts/postinstall-native.mts",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint .",
     "format": "prettier --write .",
