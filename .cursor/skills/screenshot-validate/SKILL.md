@@ -1,6 +1,6 @@
 ---
 name: screenshot-validate
-description: Validate a UI fix in agent-pane with Playwright Electron e2e screenshots. Use when asked to prove a renderer change works, capture before/after screenshots, or visually evaluate whether a fix landed correctly.
+description: Validate a UI fix in agent-pane with WebdriverIO Electron e2e screenshots. Use when asked to prove a renderer change works, capture before/after screenshots, or visually evaluate whether a fix landed correctly.
 ---
 
 # Screenshot validate (agent-pane)
@@ -10,16 +10,17 @@ Use this skill to **prove a UI change works** and **judge whether it looks corre
 ## Workflow
 
 1. **Identify what to show** — Which view, state, and edge case (e.g. tool args containing `</pre>`).
-2. **Prefer Playwright e2e over VNC** — Do not hand-drive the desktop unless debugging layout.
+2. **Prefer WebdriverIO e2e over VNC** — Do not hand-drive the desktop unless debugging layout.
 3. **Seed state** — Add or extend a fixture in `tests/e2e/helpers/seed-config.ts` so the app opens in the target state without a real LLM.
 4. **Write a focused spec** under `tests/e2e/` that:
-   - Launches Electron: `electron.launch({ args: ['dist/main/index.js', '--disable-gpu'], env: { AGENT_WINDOW_MOCK_LLM: '1', ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '' } })`
+   - Relies on `wdio.conf.ts` to launch Electron (`appEntryPoint: dist/main/index.js`, `--disable-gpu`)
+   - Sets mock LLM env in `beforeEach`: `AGENT_WINDOW_MOCK_LLM=1`, empty API keys
    - Asserts DOM structure (counts, text, attributes) — not just screenshots.
-   - Saves PNGs to `tests/e2e/screenshots/` with descriptive names.
+   - Saves PNGs to `tests/e2e/screenshots/` with descriptive names via `browser.saveScreenshot(...)`.
 5. **Run**:
    ```bash
    npm run build
-   xvfb-run -a npx playwright test tests/e2e/<your-spec>.ts
+   npm run test:e2e -- --spec tests/e2e/<your-spec>.e2e.ts
    ```
 6. **Read the screenshots** — Open the PNG paths from the test and visually inspect layout, labels, and that injected-looking strings stayed plain text.
 7. **Evaluate and report** — In your reply, state:
@@ -31,7 +32,7 @@ Use this skill to **prove a UI change works** and **judge whether it looks corre
 
 - Mock LLM: `AGENT_WINDOW_MOCK_LLM=1` with empty API keys.
 - User data: `~/.config/agent-pane/config.json` (Linux); use `resetUserData()` in tests.
-- Existing examples: `tests/e2e/tool-display.spec.ts`, `tests/e2e/innerhtml-tool-args.spec.ts`.
+- Existing examples: `tests/e2e/tool-display.e2e.ts`, `tests/e2e/innerhtml-tool-args.e2e.ts`.
 - Full CI gate after renderer changes: `npm run check && npm run build && npm run test:e2e`.
 
 ## Example evaluation (innerHTML tool args)
