@@ -96,6 +96,31 @@ describe('runAgentLoop', () => {
     assert.equal(chunks.at(-1)?.type, 'done')
   })
 
+  it('skips duplicate explore tool execution', async () => {
+    let executeCount = 0
+    await runAgentLoop({
+      provider: mockProvider([
+        [
+          { type: 'tool_call', toolCall: { id: '1', name: 'list_dir', args: { path: '.' } } },
+          { type: 'done' },
+        ],
+        [
+          { type: 'tool_call', toolCall: { id: '2', name: 'list_dir', args: { path: '.' } } },
+          { type: 'done' },
+        ],
+        [{ type: 'text', text: 'Done.' }, { type: 'done' }],
+      ]),
+      messages: [{ role: 'user', content: 'review' }],
+      tools: [],
+      onChunk: () => {},
+      executeTool: async () => {
+        executeCount++
+        return 'listing'
+      },
+    })
+    assert.equal(executeCount, 1)
+  })
+
   it('surfaces a terminal message when finalize returns empty', async () => {
     const chunks: StreamChunk[] = []
     await runAgentLoop({
