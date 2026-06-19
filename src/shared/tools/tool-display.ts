@@ -1,6 +1,7 @@
 import type { ToolCall } from '@shared/types'
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
+  explore: 'Explore files',
   read_file: 'Read file',
   list_dir: 'List directory',
   search_code: 'Search code',
@@ -13,7 +14,7 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
 }
 
 const TOOL_GROUPS: Record<string, { tools: string[]; label: string }> = {
-  reading: { tools: ['read_file', 'list_dir'], label: 'Reading files' },
+  reading: { tools: ['explore', 'read_file', 'list_dir'], label: 'Reading files' },
   searching: { tools: ['search_code', 'find_files'], label: 'Searching' },
   git: { tools: ['git_status', 'git_diff', 'git_log'], label: 'Git' },
   writing: { tools: ['write_file'], label: 'Writing files' },

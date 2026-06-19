@@ -1,3 +1,5 @@
+import type { SubagentSession } from './thread.ts'
+
 export type StreamChunk =
   | { type: 'text'; text: string }
   /** Replace accumulated assistant text (e.g. after stripping embedded pseudo tool XML). */
@@ -10,6 +12,23 @@ export type StreamChunk =
       historyBudget: number
       estimatedTokens: number
     }
+  | { type: 'subagent_start'; parentToolCallId: string; session: SubagentSession }
+  | { type: 'subagent_text'; parentToolCallId: string; messageId: string; text: string }
+  | {
+      type: 'subagent_tool_call'
+      parentToolCallId: string
+      messageId: string
+      toolCall: ToolCallChunk
+    }
+  | {
+      type: 'subagent_tool_result'
+      parentToolCallId: string
+      toolCallId: string
+      result: string
+      isError: boolean
+    }
+  | { type: 'subagent_done'; parentToolCallId: string; summary: string }
+  | { type: 'subagent_error'; parentToolCallId: string; error: string }
   | { type: 'done' }
 
 export interface ToolCallChunk {
