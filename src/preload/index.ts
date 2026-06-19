@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('api', {
   agent: {
     run: (threadId: string, prompt: string) => ipcRenderer.invoke('agent:run', threadId, prompt),
     abort: (threadId: string) => ipcRenderer.invoke('agent:abort', threadId),
+    clearHistory: (threadId: string) => ipcRenderer.invoke('agent:clearHistory', threadId),
     suggestTitle: (text: string) => ipcRenderer.invoke('agent:suggestTitle', text),
     onChunk: (handler: (threadId: string, chunk: unknown) => void) => {
       ipcRenderer.on('agent:chunk', (_e, tid, chunk) => handler(tid, chunk))
