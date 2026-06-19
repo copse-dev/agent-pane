@@ -2,11 +2,36 @@ import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-const USER_DATA = join(homedir(), '.config', 'agent-pane')
+/** Mirrors `app.setPath('userData', …)` in `src/main/app-init.ts`. */
+function agentPaneUserDataDir(): string {
+  if (process.platform === 'darwin') {
+    return join(homedir(), 'Library', 'Application Support', 'agent-pane')
+  }
+  if (process.platform === 'win32') {
+    const appData = process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming')
+    return join(appData, 'agent-pane')
+  }
+  return join(homedir(), '.config', 'agent-pane')
+}
+
+const USER_DATA = agentPaneUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
 
 export function resetUserData(): void {
   rmSync(CONFIG_PATH, { force: true })
+}
+
+export function seedEmptyProject(workspaceRoot: string, projectId: string): void {
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [],
+    }),
+    'utf8',
+  )
 }
 
 export function seedToolDisplayFixture(workspaceRoot: string): void {
