@@ -243,8 +243,17 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   initMentionPicker({ textarea, inputBar: root, store, api, onAttach: addChip })
 
   let skillsCache: SkillSummary[] | null = null
-  void api.skills.list().then((skills) => {
-    skillsCache = skills
+  const refreshSkillsCache = (): void => {
+    void api.skills.list().then((skills) => {
+      skillsCache = skills
+    })
+  }
+  refreshSkillsCache()
+  // Skills are workspace-scoped; drop the stale list when the workspace changes
+  // so inline /skill detection and validation use the new workspace's skills.
+  store.on('workspace_changed', () => {
+    skillsCache = null
+    refreshSkillsCache()
   })
 
   const skillPicker = initSkillPicker({
