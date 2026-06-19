@@ -7,8 +7,7 @@ dist-types/
 
 # Test artifacts
 test-results/
-playwright-report/
-playwright/.cache/
+.wdio-profile-*/
 
 # Internal build/dev notes — not published for now
 DEVELOPMENT-NOTES.md

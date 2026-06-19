@@ -1,5 +1,6 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
+import { getToolDisplayName } from '@shared/tools/tool-display.ts'
 
 export const CONTEXT_TRIM_ACTIVITY = 'Shortened earlier messages'
 
@@ -8,7 +9,10 @@ export function runningToolName(thread: Thread): string | null {
     const m = thread.messages[i]!
     for (let j = m.toolCalls.length - 1; j >= 0; j--) {
       const tc = m.toolCalls[j]!
-      if (tc.status === 'running') return tc.name
+      if (tc.status === 'running') {
+        return tc.name === 'explore' ? 'explore' : tc.name
+      }
+      if (tc.subagent?.status === 'running') return 'explore'
     }
   }
   return null
@@ -17,7 +21,7 @@ export function runningToolName(thread: Thread): string | null {
 export function agentActivityLabel(thread: Thread | undefined, writing: boolean): string | null {
   if (!thread || thread.status !== 'running') return null
   const tool = runningToolName(thread)
-  if (tool) return `Running ${tool}…`
+  if (tool) return `Running ${getToolDisplayName(tool)}…`
   if (writing) return 'Writing…'
   return 'Thinking…'
 }

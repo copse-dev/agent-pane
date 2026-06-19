@@ -20,7 +20,7 @@ describe('runAgentLoop', () => {
       messages: [{ role: 'user', content: 'hello' }],
       tools: [],
       onChunk: (c) => chunks.push(c),
-      executeTool: async () => '',
+      executeTool: async (_name, _args, _signal, _toolCallId) => '',
     })
     assert.equal(chunks.at(-1)?.type, 'done')
   })
@@ -34,7 +34,7 @@ describe('runAgentLoop', () => {
       messages: [{ role: 'user', content: 'hello' }],
       tools: [],
       onChunk: (c) => chunks.push(c),
-      executeTool: async () => '',
+      executeTool: async (_name, _args, _signal, _toolCallId) => '',
       signal: controller.signal,
     })
     assert.equal(chunks.length, 1) // only 'done'
@@ -51,7 +51,7 @@ describe('runAgentLoop', () => {
       messages: [{ role: 'user', content: 'go' }],
       tools: [],
       onChunk: (c) => chunks.push(c),
-      executeTool: async () => {
+      executeTool: async (_name, _args, _signal, _toolCallId) => {
         executed = true
         return 'result'
       },
@@ -70,7 +70,7 @@ describe('runAgentLoop', () => {
       tools: [],
       maxSteps: 3,
       onChunk: () => {},
-      executeTool: async () => {
+      executeTool: async (_name, _args, _signal, _toolCallId) => {
         steps++
         return 'ok'
       },
@@ -90,7 +90,7 @@ describe('runAgentLoop', () => {
       tools: [],
       maxSteps: 2,
       onChunk: (c) => chunks.push(c),
-      executeTool: async () => 'ok',
+      executeTool: async (_name, _args, _signal, _toolCallId) => 'ok',
     })
     assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('repo review')))
     assert.equal(chunks.at(-1)?.type, 'done')
@@ -113,7 +113,7 @@ describe('runAgentLoop', () => {
       messages: [{ role: 'user', content: 'review' }],
       tools: [],
       onChunk: () => {},
-      executeTool: async () => {
+      executeTool: async (_name, _args, _signal, _toolCallId) => {
         executeCount++
         return 'listing'
       },
@@ -156,7 +156,7 @@ describe('runAgentLoop', () => {
       messages: [{ role: 'user', content: 'review the repo' }],
       tools: [],
       onChunk: (c) => chunks.push(c),
-      executeTool: async () => '',
+      executeTool: async (_name, _args, _signal, _toolCallId) => '',
     })
     assert.ok(
       chunks.some(

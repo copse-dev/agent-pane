@@ -33,7 +33,12 @@ export interface AgentLoopOptions {
   messages: LLMMessage[] // mutated in-place as turns are added
   tools: LLMTool[]
   onChunk: (chunk: StreamChunk) => void
-  executeTool: (name: string, args: unknown, signal: AbortSignal) => Promise<string>
+  executeTool: (
+    name: string,
+    args: unknown,
+    signal: AbortSignal,
+    toolCallId: string,
+  ) => Promise<string>
   signal?: AbortSignal
   maxSteps?: number
   /** Trim in-loop history to this context size (tokens). */
@@ -257,7 +262,12 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       try {
         const result = duplicate
           ? DUPLICATE_TOOL_RESULT_PREFIX
-          : await opts.executeTool(tc.name, normalizedArgs, signal ?? new AbortController().signal)
+          : await opts.executeTool(
+              tc.name,
+              normalizedArgs,
+              signal ?? new AbortController().signal,
+              tc.id,
+            )
         toolResults.push({ toolCallId: tc.id, result })
         onChunk({ type: 'tool_result', toolCallId: tc.id, result, isError: false })
       } catch (err) {

@@ -12,7 +12,7 @@ export default ts.config(
       '.claude/**',
       'eslint.config.mjs',
       'prettier.config.mjs',
-      'playwright.config.ts',
+      'wdio.conf.ts',
       'tests/e2e/**',
     ],
   },

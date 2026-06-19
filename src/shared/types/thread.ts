@@ -38,12 +38,30 @@ export interface Message {
   createdAt: number
 }
 
+export interface SubagentSession {
+  id: string
+  kind: 'explore'
+  status: 'running' | 'done' | 'error'
+  prompt: string
+  summary: string | null
+  messages: SubagentMessage[]
+  usage?: { inputTokens: number; outputTokens: number }
+}
+
+export interface SubagentMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  toolCalls: ToolCall[]
+}
+
 export interface ToolCall {
   id: string
   name: string
   args: unknown
   status: 'running' | 'done' | 'error'
   result: string | null
+  subagent?: SubagentSession
 }
 
 export interface ThreadUsage {
