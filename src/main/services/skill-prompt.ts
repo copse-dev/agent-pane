@@ -74,7 +74,7 @@ export async function buildInvokedSkillsBlock(invokedSkills: string[]): Promise<
     `The user explicitly invoked these skills for this turn. Treat each invoked skill as the ` +
     `primary task for this turn — follow its instructions even when prior conversation ` +
     `context suggests a different task. Use read_skill (not read_file or run_shell) with skill ` +
-    `name + optional relative path when you need files under scripts/, references, or assets/.\n\n` +
+    `name + optional relative path when you need files under scripts/, references/, or assets/.\n\n` +
     sections.join('\n\n')
   )
 }

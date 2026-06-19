@@ -52,4 +52,16 @@ describe('resolveSkillInvocation', () => {
   it('returns null when no skill is referenced', () => {
     assert.equal(resolveSkillInvocation('hello world', known), null)
   })
+
+  it('does not match a shorter skill name inside a longer token', () => {
+    // `/demo-skill` must not be read as the `demo` skill.
+    assert.equal(resolveSkillInvocation('run /demo-skill now', ['demo']), null)
+  })
+
+  it('handles skill names containing regex metacharacters without throwing', () => {
+    assert.deepEqual(resolveSkillInvocation('please run /c++tools fast', ['c++tools']), {
+      skillName: 'c++tools',
+      remainder: 'please run fast',
+    })
+  })
 })
