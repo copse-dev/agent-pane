@@ -72,8 +72,9 @@ export interface ApiClient {
     list: () => Promise<SkillSummary[]>
   }
   terminal: {
-    create: () => Promise<string>
+    create: (cols: number, rows: number) => Promise<string>
     write: (sessionId: string, data: string) => Promise<void>
+    resize: (sessionId: string, cols: number, rows: number) => Promise<void>
     destroy: (sessionId: string) => Promise<void>
     onOutput: (handler: (sessionId: string, data: string) => void) => () => void
     onExit: (handler: (sessionId: string, code: number) => void) => () => void

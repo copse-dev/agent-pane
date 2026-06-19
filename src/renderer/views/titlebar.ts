@@ -2,6 +2,13 @@ import { el } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
+import { addProject } from '../controller/projects.ts'
+
+function ensureWorkspaceForPanel(api: ApiClient, store: AppStore): boolean {
+  if (store.getState().workspaceRoot) return true
+  void addProject(store, api)
+  return false
+}
 
 function basename(p: string) {
   return p.split('/').pop() ?? p
@@ -32,6 +39,10 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
   root.append(dragRegion, workspaceName, filesBtn, terminalBtn, settingsBtn)
 
   filesBtn.addEventListener('click', () => {
+    if (!store.getState().workspaceRoot) {
+      void addProject(store, _api)
+      return
+    }
     const open = !store.getState().filesPaneOpen
     store.setState({
       filesPaneOpen: open,
@@ -43,6 +54,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
   })
 
   terminalBtn.addEventListener('click', () => {
+    if (!ensureWorkspaceForPanel(_api, store)) return
     store.setState({ filesPaneOpen: true, rightPanelMode: 'terminal' })
     store.emit('files_pane_changed')
     store.emit('right_panel_mode_changed')

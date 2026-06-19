@@ -122,9 +122,11 @@ contextBridge.exposeInMainWorld('api', {
     list: () => ipcRenderer.invoke('skills:list'),
   },
   terminal: {
-    create: () => ipcRenderer.invoke('terminal:create'),
+    create: (cols: number, rows: number) => ipcRenderer.invoke('terminal:create', cols, rows),
     write: (sessionId: string, data: string) =>
       ipcRenderer.invoke('terminal:write', sessionId, data),
+    resize: (sessionId: string, cols: number, rows: number) =>
+      ipcRenderer.invoke('terminal:resize', sessionId, cols, rows),
     destroy: (sessionId: string) => ipcRenderer.invoke('terminal:destroy', sessionId),
     onOutput: (handler: (sessionId: string, data: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, id: string, data: string) =>

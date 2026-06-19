@@ -23,27 +23,29 @@ export function mountRightPanelTabs(root: HTMLElement, store: AppStore): () => v
   )
   root.append(explorerBtn, terminalBtn)
 
+  function syncLayout() {
+    const mode = store.getState().rightPanelMode
+    const isExplorer = mode === 'explorer'
+
+    const treeHost = document.getElementById('file-tree-host')
+    const terminalsList = document.getElementById('terminals-list-host')
+    const treeResizer = document.getElementById('resizer-tree')
+    const fileViewer = document.getElementById('file-viewer')
+    const terminalsViewer = document.getElementById('terminals-viewer-host')
+
+    if (treeHost) treeHost.hidden = !isExplorer
+    if (terminalsList) terminalsList.hidden = isExplorer
+    if (fileViewer) fileViewer.hidden = !isExplorer
+    if (terminalsViewer) terminalsViewer.hidden = isExplorer
+    if (treeResizer) treeResizer.hidden = !store.getState().filesPaneOpen
+  }
+
   function setMode(mode: RightPanelMode) {
     if (store.getState().rightPanelMode === mode) return
     store.setState({ rightPanelMode: mode, filesPaneOpen: true })
     store.emit('right_panel_mode_changed')
     store.emit('files_pane_changed')
     sync()
-    syncLayout()
-  }
-
-  function syncLayout() {
-    const mode = store.getState().rightPanelMode
-    const treeHost = document.getElementById('file-tree-host')
-    const treeResizer = document.getElementById('resizer-tree')
-    const fileViewer = document.getElementById('file-viewer')
-    const terminalHost = document.getElementById('terminal-host')
-    const isExplorer = mode === 'explorer'
-
-    if (treeHost) treeHost.hidden = !isExplorer
-    if (treeResizer) treeResizer.hidden = !isExplorer
-    if (fileViewer) fileViewer.hidden = !isExplorer
-    if (terminalHost) terminalHost.hidden = isExplorer
   }
 
   function sync() {
