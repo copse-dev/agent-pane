@@ -20,6 +20,7 @@ import {
   shouldForceTextAnswer,
   shouldInjectLoopNudge,
 } from './agent-loop-escalation.ts'
+import { recoverTextToolCalls } from './parse-text-tool-calls.ts'
 
 const RECENT_FINGERPRINT_WINDOW = 16
 /** Do not compact on the first tool round unless the transcript is critically full. */
@@ -162,6 +163,18 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     }
 
     if (signal?.aborted) break
+
+    if (pendingToolCalls.length === 0 && /<\s*tool_call\s*>/i.test(assistantText)) {
+      const recovered = recoverTextToolCalls(assistantText)
+      if (recovered.toolCalls.length > 0) {
+        assistantText = recovered.cleanedText
+        onChunk({ type: 'text_replace', text: assistantText })
+        for (const tc of recovered.toolCalls) {
+          pendingToolCalls.push(tc)
+          onChunk({ type: 'tool_call', toolCall: tc })
+        }
+      }
+    }
 
     // Push assistant message to history
     if (pendingToolCalls.length > 0) {
