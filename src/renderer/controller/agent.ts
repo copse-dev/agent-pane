@@ -82,11 +82,30 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     })
   })
 
+  api.diff.onShowDiff((path, before, after, language) => {
+    store.setState({
+      activeDiff: { path, before, after, language },
+      panelTab: 'diff',
+      filesPaneOpen: true,
+    })
+    store.emit('panel_changed')
+    store.emit('files_pane_changed')
+  })
+
   // When diff is queued from main, update staged diffs in store
   api.diff.onQueued((entries) => {
-    store.setState({ stagedDiffs: entries, panelTab: 'diff' })
+    const { activeDiff } = store.getState()
+    const stillQueued =
+      activeDiff && entries.some((e) => e.path === activeDiff.path) ? activeDiff : null
+    store.setState({
+      stagedDiffs: entries,
+      panelTab: entries.length > 0 ? 'diff' : store.getState().panelTab,
+      filesPaneOpen: entries.length > 0 ? true : store.getState().filesPaneOpen,
+      activeDiff: entries.length === 0 ? null : stillQueued,
+    })
     store.emit('staged_diffs_changed')
     store.emit('panel_changed')
+    store.emit('files_pane_changed')
   })
 
   return unsub

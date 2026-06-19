@@ -20,6 +20,7 @@ import {
   invalidateLmStudioModelsCache,
 } from './services/agent-service.ts'
 import { getMainWindow } from './windows/create-main-window.ts'
+import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
 
 // Prevent multiple instances stacking invisible windows at the same position.
 // A second launch focuses the existing window instead.
@@ -48,6 +49,7 @@ app
     if (storedOpenai) process.env.OPENAI_API_KEY = storedOpenai
 
     await checkToolAvailability()
+    await initProjectSandbox()
 
     const win = createMainWindow()
     buildAppMenu(win)
@@ -93,4 +95,5 @@ app
 app.on('before-quit', () => {
   closeAllWatchers()
   void shutdownMcpServers()
+  void shutdownProjectSandbox()
 })
