@@ -10,6 +10,10 @@ export function setAgentRunReadFileLimits(conversationBudgetTokens: number): voi
   active = readFileLimitsFromConversationBudget(conversationBudgetTokens)
 }
 
+export function setAgentRunReadFileLimitsExplicit(limits: ReadFileLimits): void {
+  active = limits
+}
+
 export function clearAgentRunReadFileLimits(): void {
   active = null
 }
