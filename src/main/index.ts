@@ -10,6 +10,7 @@ import { loadMcpServers, shutdownMcpServers } from './services/mcp-registry.ts'
 import { initApproval } from './services/approval.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
+import { initTerminal } from './ipc/terminal.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
 import { initSkillsRegistry } from './services/skills-registry.ts'
 import { parseAgentRunPayload } from '@shared/agent/parse-agent-run-payload.ts'
@@ -61,6 +62,7 @@ app
     initApproval(win)
     initDiffQueue(win)
     initFsWatcher(win)
+    initTerminal(win)
     registerAllHandlers(win, registry)
 
     await initSkillsRegistry()
