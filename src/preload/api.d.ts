@@ -1,4 +1,5 @@
 import type { StreamChunk } from '@shared/types'
+import type { SkillSummary } from '@shared/types/skills.ts'
 
 export interface ApiClient {
   workspace: {
@@ -19,6 +20,7 @@ export interface ApiClient {
   agent: {
     run: (threadId: string, prompt: string) => Promise<void>
     abort: (threadId: string) => Promise<void>
+    clearHistory: (threadId: string) => Promise<void>
     suggestTitle: (text: string) => Promise<string | null>
     onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => () => void
     onApprovalRequest: (
@@ -65,6 +67,9 @@ export interface ApiClient {
   }
   index: {
     query: (pattern: string) => Promise<string[]>
+  }
+  skills: {
+    list: () => Promise<SkillSummary[]>
   }
 }
 
