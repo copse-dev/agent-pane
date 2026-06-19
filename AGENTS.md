@@ -58,19 +58,19 @@ before launching.
 ### Tests
 
 - `npm test` runs Node's test runner over `src/**/*.test.ts` (esbuild-bundled into `dist-test/`).
-- `npm run test:e2e` is Playwright + Electron and needs a display. It passes under
-  `xvfb-run -a npx playwright test` on this headless VM.
+- `npm run test:e2e` is WebdriverIO + `@wdio/electron-service` and needs a display. It passes under
+  `npm run test:e2e` on this headless VM (WDIO auto-starts Xvfb on Linux).
 
 ### Visual validation (tool UI / screenshots)
 
-Use Playwright Electron e2e — do not hand-drive VNC unless debugging layout.
+Use WebdriverIO Electron e2e — do not hand-drive VNC unless debugging layout.
 
 1. `npm run build`
 2. Seed `~/.config/agent-pane/config.json` before launch (see `tests/e2e/helpers/seed-config.ts`):
    - `projects` + `activeProjectId` pointing at repo root
    - optional `threads:<projectId>` with pre-built `toolCalls` to exercise grouping without a real model
 3. Launch with mock LLM: `AGENT_WINDOW_MOCK_LLM=1 ANTHROPIC_API_KEY= OPENAI_API_KEY=`
-4. Run: `xvfb-run -a npx playwright test tests/e2e/tool-display.spec.ts`
+4. Run: `npm run test:e2e -- --spec tests/e2e/tool-display.e2e.ts`
 5. Screenshots land in `tests/e2e/screenshots/`:
    - `tool-display-collapsed.png` — grouped label (`Reading files ×2`) + failed tool outside group
    - `tool-display-group-expanded.png` — nested human names (`Read file`, `List directory`)

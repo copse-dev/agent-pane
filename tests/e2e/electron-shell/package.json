@@ -1,0 +1,4 @@
+{
+  "name": "agent-pane-e2e-shell",
+  "main": "../../../dist/main/index.js"
+}
