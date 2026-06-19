@@ -6,6 +6,7 @@ import type { LLMMessage, LLMProvider, StreamChunk, UserContent } from '@shared/
 import type { ToolRegistry } from './tool-registry.ts'
 import { getSetting, getApiKey } from './settings.ts'
 import { getWorkspaceRoot } from './workspace.ts'
+import { getSkill } from './skills-registry.ts'
 
 const abortMap = new Map<string, AbortController>()
 
@@ -114,13 +115,31 @@ Available tools:
 - git_diff: Show unstaged or staged changes
 - git_log: Show recent commit history
 - run_shell: Run a shell command (auto-runs when contained in the sandbox; prompts for network/outside access)
+- read_skill: Read a skill definition or files under a skill directory (scripts/, references/, assets/)
 
 Working directory: {WORKSPACE_ROOT}
+
+Skills are invoked manually via /skill-name in the input. When a skill is invoked, call read_skill for each one before proceeding.
 
 When modifying files:
 1. Read the file first
 2. Use write_file to propose changes — the user sees a diff and must approve
 3. Do not assume file content; always read before writing`
+
+function buildInvokedSkillsBlock(invokedSkills: string[]): string {
+  if (invokedSkills.length === 0) return ''
+  const lines: string[] = []
+  for (const name of invokedSkills) {
+    const skill = getSkill(name)
+    if (skill) lines.push(`- **${skill.name}**: ${skill.description}`)
+    else lines.push(`- **${name}**: (skill metadata unavailable)`)
+  }
+  return (
+    `\n\n---\n\n## Invoked skills\n\n` +
+    `The user explicitly invoked these skills for this turn:\n${lines.join('\n')}\n\n` +
+    `You MUST call read_skill for each invoked skill before proceeding, then follow its instructions.`
+  )
+}
 
 export async function runAgent(
   threadId: string,
@@ -128,10 +147,13 @@ export async function runAgent(
   priorMessages: LLMMessage[],
   mainWindow: BrowserWindow,
   registry: ToolRegistry,
+  options?: { invokedSkills?: string[] },
 ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> {
   const projectInstructions = await loadProjectInstructions()
+  const invokedSkills = options?.invokedSkills ?? []
   const systemPrompt =
     BASE_SYSTEM_PROMPT.replace('{WORKSPACE_ROOT}', getWorkspaceRoot() ?? '(none)') +
+    buildInvokedSkillsBlock(invokedSkills) +
     (projectInstructions ? `\n\n---\n\n## Project instructions\n\n${projectInstructions}` : '')
 
   const model = getSetting<string>('model', 'claude-sonnet-4-6')

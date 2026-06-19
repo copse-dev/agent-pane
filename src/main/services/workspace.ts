@@ -14,6 +14,15 @@ export function setWorkspaceRoot(root: string | null): void {
   storageSet(WORKSPACE_KEY, root)
 }
 
+/** Test helper — set workspace root without touching persistent storage. */
+export function setWorkspaceRootForTest(root: string | null): () => void {
+  const prev = workspaceRoot
+  workspaceRoot = root
+  return () => {
+    workspaceRoot = prev
+  }
+}
+
 export function resolveWorkspacePath(path: string): string {
   if (!workspaceRoot) throw new Error('No workspace open. Use Open Folder first.')
   const absRoot = resolve(workspaceRoot)

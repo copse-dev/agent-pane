@@ -14,6 +14,7 @@ import {
 } from '../services/settings.ts'
 import { storageGet, storageSet } from '../services/storage.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
+import { listSkills, initSkillsRegistry } from '../services/skills-registry.ts'
 
 export function registerAllHandlers(_win: BrowserWindow, _registry: ToolRegistry): void {
   ipcMain.handle('workspace:open', async () => {
@@ -22,6 +23,7 @@ export function registerAllHandlers(_win: BrowserWindow, _registry: ToolRegistry
     const root = result.filePaths[0]
     setWorkspaceRoot(root)
     await buildIndex(root)
+    await initSkillsRegistry()
     return root
   })
 
@@ -32,6 +34,7 @@ export function registerAllHandlers(_win: BrowserWindow, _registry: ToolRegistry
   ipcMain.handle('workspace:set', async (_e, root: string) => {
     setWorkspaceRoot(root)
     await buildIndex(root)
+    await initSkillsRegistry()
     return root
   })
 
@@ -86,4 +89,6 @@ export function registerAllHandlers(_win: BrowserWindow, _registry: ToolRegistry
   }))
   ipcMain.handle('storage:get', (_e, key: string) => storageGet(key))
   ipcMain.handle('storage:set', (_e, key: string, value: unknown) => storageSet(key, value))
+
+  ipcMain.handle('skills:list', () => listSkills())
 }

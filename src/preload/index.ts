@@ -91,4 +91,7 @@ contextBridge.exposeInMainWorld('api', {
   index: {
     query: (pattern: string) => ipcRenderer.invoke('index:query', pattern),
   },
+  skills: {
+    list: () => ipcRenderer.invoke('skills:list'),
+  },
 })
