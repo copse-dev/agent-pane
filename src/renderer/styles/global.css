@@ -525,7 +525,9 @@ label {
 .message-text ul,
 .message-text ol {
   /* Global reset zeros list padding, so outside bullets hang left of body text. */
-  list-style-position: inside;
+  margin-left: 1px;
+  padding-inline-start: 0.55em;
+  list-style-position: outside;
 }
 .message-text li + li {
   margin-top: var(--spacing-xs);
