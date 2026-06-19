@@ -4,10 +4,12 @@ import { searchCodeTool, findFilesTool } from '../tools/search-tools.ts'
 import { gitStatusTool, gitDiffTool, gitLogTool } from '../tools/git-tools.ts'
 import { runShellTool } from '../tools/shell-tool.ts'
 import { writeFileTool } from '../tools/write-file-tool.ts'
+import { readSkillTool } from '../tools/read-skill-tool.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
   registry.register(readFileTool)
+  registry.register(readSkillTool)
   registry.register(writeFileTool)
   registry.register(listDirTool)
   registry.register(searchCodeTool)
