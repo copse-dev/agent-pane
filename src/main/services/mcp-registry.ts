@@ -5,7 +5,6 @@ import { join } from 'node:path'
 import { app } from 'electron'
 import { z } from 'zod'
 import type { ToolRegistry } from './tool-registry.ts'
-import { requestApproval } from './approval.ts'
 
 interface McpServerConfig {
   name: string
@@ -48,13 +47,6 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
           description: `[MCP:${cfg.name}] ${tool.description ?? ''}`,
           parameters: z.unknown(),
           async execute(args, signal) {
-            const approved = await requestApproval({
-              title: `MCP tool: ${cfg.name}/${tool.name}`,
-              body: JSON.stringify(args, null, 2),
-              type: 'mcp',
-            })
-            if (!approved) return 'User rejected the MCP tool call.'
-
             const result = await client.callTool(
               { name: tool.name, arguments: args as Record<string, unknown> },
               undefined,
