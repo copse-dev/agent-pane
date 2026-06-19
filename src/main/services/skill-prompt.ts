@@ -14,6 +14,12 @@ export function skillMarkdownBody(raw: string): string {
   return split?.body ?? raw
 }
 
+/** Extra tool line for the system prompt when skills are discovered (omitted otherwise). */
+export function buildSkillsToolsPromptLine(): string {
+  if (listSkills().length === 0) return ''
+  return '- read_skill: Read additional files under a skill directory (scripts/, references/, assets/)\n'
+}
+
 /** Tier 1 — skill catalog (name, description, path) without full instructions. */
 export function buildSkillsCatalogBlock(): string {
   const skills = listSkills()

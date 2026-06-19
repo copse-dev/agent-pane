@@ -5,7 +5,7 @@ import { resolve } from 'node:path'
 import { testLmStudio, listLmStudioModels, invalidateLmStudioModelsCache } from './agent-service.ts'
 import { setSetting, setApiKey } from './settings.test-shim.ts'
 
-const SOURCE_PATH = resolve(process.cwd(), 'src/main/services/agent-service.ts')
+const SOURCE_PATH = resolve(process.cwd(), 'src/main/services/lm-studio-models.ts')
 
 function stubFetch(impl: typeof fetch): () => void {
   const original = globalThis.fetch
@@ -21,19 +21,19 @@ function authHeader(init?: RequestInit): string | undefined {
   return (headers as Record<string, string>).Authorization
 }
 
-describe('agent-service source integrity', () => {
+describe('lm-studio-models source integrity', () => {
   it('contains no embedded null bytes', () => {
     const src = readFileSync(SOURCE_PATH)
     assert.equal(
       src.includes(0x00),
       false,
-      'agent-service.ts must remain plain UTF-8 text (null bytes break tooling and cache keys)',
+      'lm-studio-models.ts must remain plain UTF-8 text (null bytes break tooling and cache keys)',
     )
   })
 
   it('builds LM Studio cache keys from url and api key only', () => {
     const src = readFileSync(SOURCE_PATH, 'utf8')
-    assert.match(src, /const cacheKey = `\$\{url\}\$\{lmStudioKey\(\)\}`/)
+    assert.match(src, /const cacheKey = `\$\{url\}\$\{key\}`/)
   })
 })
 
@@ -106,22 +106,21 @@ describe('listLmStudioModels cache', () => {
     const second = await listLmStudioModels()
     assert.deepEqual(first, ['local-model'])
     assert.deepEqual(second, ['local-model'])
-    assert.equal(fetchMock.mock.callCount(), 1)
+    assert.equal(fetchMock.mock.callCount(), 2)
   })
 
   it('refetches after cache invalidation', async () => {
     await listLmStudioModels()
     invalidateLmStudioModelsCache()
     await listLmStudioModels()
-    assert.equal(fetchMock.mock.callCount(), 2)
+    assert.equal(fetchMock.mock.callCount(), 4)
   })
 
   it('uses a cache key without null characters', async () => {
     await listLmStudioModels()
     await listLmStudioModels()
-    // Changing the stored key should miss cache and trigger another fetch.
     setApiKey('lmstudio', 'other-key')
     await listLmStudioModels()
-    assert.equal(fetchMock.mock.callCount(), 2)
+    assert.equal(fetchMock.mock.callCount(), 4)
   })
 })

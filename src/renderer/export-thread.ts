@@ -11,6 +11,7 @@ export function threadToJsonl(thread: Thread): string {
       title: thread.title,
       exportedAt: new Date().toISOString(),
       usage: thread.usage,
+      contextTrims: thread.contextTrims,
       createdAt: thread.createdAt,
       updatedAt: thread.updatedAt,
     }),

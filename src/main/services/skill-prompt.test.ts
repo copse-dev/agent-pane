@@ -7,6 +7,7 @@ import {
   skillMarkdownBody,
   buildSkillsCatalogBlock,
   buildInvokedSkillsBlock,
+  buildSkillsToolsPromptLine,
 } from './skill-prompt.ts'
 import { refreshSkillsRegistry, setSkillsForTest } from './skills-registry.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
@@ -38,6 +39,12 @@ describe('buildSkillsCatalogBlock', () => {
   it('returns empty string when no skills are registered', () => {
     setSkillsForTest([])
     assert.equal(buildSkillsCatalogBlock(), '')
+    assert.equal(buildSkillsToolsPromptLine(), '')
+  })
+
+  it('includes read_skill tool line when skills exist', () => {
+    setSkillsForTest([demoSkill])
+    assert.match(buildSkillsToolsPromptLine(), /read_skill/)
   })
 
   it('includes agent_skill entries for discovered skills', () => {
