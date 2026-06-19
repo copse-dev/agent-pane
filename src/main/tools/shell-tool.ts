@@ -1,26 +1,18 @@
 import { z } from 'zod'
 import type { ToolDefinition } from '@shared/types'
 import { getWorkspaceRoot } from '../services/workspace.ts'
-import { requestApproval } from '../services/approval.ts'
 import { getMainWindow } from '../windows/create-main-window.ts'
 import { afterSandboxedCommand, spawnShellInProjectSandbox } from '../project-sandbox/index.ts'
 
 export const runShellTool: ToolDefinition = {
   name: 'run_shell',
   description:
-    'Run a shell command in the workspace directory. Output is streamed to the conversation. Always requires user approval.',
+    'Run a shell command in the workspace directory. Output is streamed to the conversation. Commands contained within the sandbox auto-run; network or outside-workspace access prompts for approval.',
   parameters: z.object({
     command: z.string().describe('Shell command to run'),
     timeout_ms: z.number().int().min(1000).max(300_000).optional().default(30_000),
   }),
   async execute({ command, timeout_ms }, signal) {
-    const approved = await requestApproval({
-      title: 'Run shell command?',
-      body: command,
-      type: 'shell',
-    })
-    if (!approved) return 'User rejected the shell command.'
-
     const cwd = getWorkspaceRoot()
     if (!cwd) return 'No workspace open.'
 
