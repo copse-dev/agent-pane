@@ -27,6 +27,7 @@
     "monaco-editor": "^0.52.2",
     "openai": "^4.104.0",
     "shell-quote": "^1.8.4",
+    "vscode-material-icons": "^0.1.1",
     "zod": "^3.25.36",
     "zod-to-json-schema": "^3.24.5"
   },
