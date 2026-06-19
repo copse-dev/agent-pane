@@ -2,6 +2,7 @@ import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { renderMarkdown } from '../markdown/renderer.ts'
 import { renderStreamingMarkdown } from '../markdown/streaming.ts'
+import { stripTextToolCallBlocks } from '@shared/agent/parse-text-tool-calls.ts'
 import type { ToolCall } from '@shared/types'
 import { agentActivityLabel } from '../agent-activity.ts'
 import {
@@ -54,6 +55,10 @@ function createIndividualToolCard(tc: ToolCall, label: string): HTMLElement {
     el('div', { class: 'tool-result' }, ...(tc.result ? [tc.result] : [])),
   )
   return card
+}
+
+function assistantDisplayText(content: string): string {
+  return stripTextToolCallBlocks(content)
 }
 
 function createGroupToolCard(item: Extract<ToolCallDisplayItem, { type: 'group' }>): HTMLElement {
@@ -170,7 +175,7 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
     // rendered as markdown immediately. Live-streamed messages start empty and
     // get markdown-rendered on the message_done event instead.
     if (msg.role === 'assistant' && msg.content) {
-      textEl.innerHTML = renderMarkdown(msg.content)
+      textEl.innerHTML = renderMarkdown(assistantDisplayText(msg.content))
     } else {
       textEl.textContent = msg.content
     }
@@ -214,7 +219,7 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
       const msg = thread?.messages.find((m) => m.id === mid)
       const textEl = list.querySelector(`[data-message-id="${mid}"] .message-text`)
       if (textEl && msg?.role === 'assistant') {
-        textEl.innerHTML = renderStreamingMarkdown(msg.content)
+        textEl.innerHTML = renderStreamingMarkdown(assistantDisplayText(msg.content))
         scrollToBottom()
       }
     }),
@@ -224,7 +229,7 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
       const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
       const msg = thread?.messages.find((m) => m.id === mid)
       if (textEl && msg?.role === 'assistant') {
-        textEl.innerHTML = renderMarkdown(msg.content)
+        textEl.innerHTML = renderMarkdown(assistantDisplayText(msg.content))
       }
       if (msg?.role === 'assistant' && msg.content.trim()) {
         const body = msgEl?.querySelector('.message-body')
