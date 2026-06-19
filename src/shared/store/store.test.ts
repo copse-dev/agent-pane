@@ -34,6 +34,17 @@ describe('store', () => {
     assert.deepEqual(tokens, ['foo', 'bar'])
   })
 
+  it('preserves newline-only tokens in message content', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const msgId = addMessage(store, threadId, 'assistant')
+    appendToken(store, msgId, '## Title')
+    appendToken(store, msgId, '\n')
+    appendToken(store, msgId, '- item')
+    const msg = store.getState().threads[0]!.messages[0]!
+    assert.equal(msg.content, '## Title\n- item')
+  })
+
   it('unsubscribe stops receiving events', () => {
     const store = createStore()
     let count = 0
