@@ -38,9 +38,7 @@ function sanitizeBounds(saved: Bounds): Bounds {
 }
 
 export function createMainWindow(): BrowserWindow {
-  const saved = sanitizeBounds(
-    getSetting<Bounds>('windowBounds', { width: 1200, height: 800 }),
-  )
+  const saved = sanitizeBounds(getSetting<Bounds>('windowBounds', { width: 1200, height: 800 }))
   const win = new BrowserWindow({
     ...saved,
     minWidth: 800,

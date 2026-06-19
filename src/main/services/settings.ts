@@ -33,9 +33,7 @@ export function setApiKey(provider: KeyProvider, key: string): void {
   else if (provider === 'openai') process.env.OPENAI_API_KEY = trimmed
 
   const available = safeStorage.isEncryptionAvailable()
-  const bytes = available
-    ? safeStorage.encryptString(trimmed)
-    : Buffer.from(trimmed, 'utf8')
+  const bytes = available ? safeStorage.encryptString(trimmed) : Buffer.from(trimmed, 'utf8')
   const record: StoredKey = { v: 1, enc: bytes.toString('base64'), plain: !available }
   store.set(`apiKey.${provider}`, record)
 }
