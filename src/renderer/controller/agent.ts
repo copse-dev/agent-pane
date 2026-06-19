@@ -8,9 +8,10 @@ import {
   setThreadStatus,
   setThreadTitle,
   updateUsage,
+  recordContextTrim,
 } from '@shared/store/thread-helpers.ts'
 import { planAgentTextChunk } from '@shared/agent/agent-text-chunk.ts'
-import { syncAgentActivity } from '../agent-activity.ts'
+import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY } from '../agent-activity.ts'
 
 export function startAgentController(store: AppStore, api: ApiClient): () => void {
   // Per-thread streaming state: the message currently accumulating text, and
@@ -80,6 +81,15 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         }
         st.writing = false
         activity(threadId)
+        break
+      }
+      case 'context_trimmed': {
+        recordContextTrim(store, threadId, {
+          contextWindow: chunk.contextWindow,
+          historyBudget: chunk.historyBudget,
+          estimatedTokens: chunk.estimatedTokens,
+        })
+        store.emit('agent_activity', threadId, CONTEXT_TRIM_ACTIVITY)
         break
       }
       case 'done': {
