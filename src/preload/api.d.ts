@@ -71,6 +71,13 @@ export interface ApiClient {
   skills: {
     list: () => Promise<SkillSummary[]>
   }
+  terminal: {
+    create: () => Promise<string>
+    write: (sessionId: string, data: string) => Promise<void>
+    destroy: (sessionId: string) => Promise<void>
+    onOutput: (handler: (sessionId: string, data: string) => void) => () => void
+    onExit: (handler: (sessionId: string, code: number) => void) => () => void
+  }
 }
 
 declare global {

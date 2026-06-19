@@ -121,4 +121,22 @@ contextBridge.exposeInMainWorld('api', {
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
   },
+  terminal: {
+    create: () => ipcRenderer.invoke('terminal:create'),
+    write: (sessionId: string, data: string) =>
+      ipcRenderer.invoke('terminal:write', sessionId, data),
+    destroy: (sessionId: string) => ipcRenderer.invoke('terminal:destroy', sessionId),
+    onOutput: (handler: (sessionId: string, data: string) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, id: string, data: string) =>
+        handler(id, data)
+      ipcRenderer.on('terminal:output', listener)
+      return () => ipcRenderer.off('terminal:output', listener)
+    },
+    onExit: (handler: (sessionId: string, code: number) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, id: string, code: number) =>
+        handler(id, code)
+      ipcRenderer.on('terminal:exit', listener)
+      return () => ipcRenderer.off('terminal:exit', listener)
+    },
+  },
 })

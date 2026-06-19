@@ -23,6 +23,8 @@
     "@anthropic-ai/sandbox-runtime": "^0.0.56",
     "@anthropic-ai/sdk": "^0.52.0",
     "@modelcontextprotocol/sdk": "^1.12.1",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
     "electron-store": "^10.0.1",
     "micromatch": "^4.0.8",
     "monaco-editor": "^0.52.2",
