@@ -396,15 +396,50 @@ label {
   flex-direction: column;
   gap: var(--spacing-md);
 }
+.agent-activity {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border);
+}
+.agent-activity[hidden] {
+  display: none;
+}
+.agent-activity-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  animation: agent-activity-pulse 1.2s ease-in-out infinite;
+}
+@keyframes agent-activity-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
 .msg {
   padding: var(--spacing-sm) var(--spacing-md);
   border-radius: var(--radius);
+}
+.message-body {
   position: relative;
 }
 .msg-copy {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: 0;
+  right: 0;
   opacity: 0;
   font-size: 11px;
   color: var(--text-muted);
@@ -414,7 +449,7 @@ label {
   padding: 2px 8px;
   transition: opacity 0.1s;
 }
-.msg:hover .msg-copy {
+.message-body:hover .msg-copy {
   opacity: 1;
 }
 .msg-user {
@@ -488,8 +523,11 @@ label {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: var(--spacing-sm);
-  margin-top: var(--spacing-xs);
+  margin-top: 2px;
   font-size: var(--font-size-sm);
+}
+.msg .tool-card:first-of-type {
+  margin-top: var(--spacing-xs);
 }
 .tool-card-header {
   display: flex;
@@ -617,16 +655,111 @@ label {
   padding: 6px 16px;
 }
 .input-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
   padding: 2px var(--spacing-md);
   font-size: 11px;
   color: var(--text-muted);
   background: var(--bg-elevated);
   border-top: 1px solid var(--border);
 }
-.input-footer {
+.footer-model-host {
+  min-width: 0;
+  max-width: min(220px, 40vw);
+}
+.model-picker {
+  position: relative;
+}
+.model-picker-trigger {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: 4px;
+  max-width: 100%;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  padding: 0 2px;
+  cursor: pointer;
+}
+.model-picker-trigger:hover {
+  color: var(--text-primary);
+}
+.model-picker-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.model-picker-chevron {
+  flex-shrink: 0;
+  font-size: 10px;
+  opacity: 0.7;
+}
+.model-picker-menu {
+  position: absolute;
+  z-index: 20;
+  bottom: calc(100% + 4px);
+  left: 0;
+  width: max-content;
+  max-width: min(420px, 90vw);
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-xs) 0;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.model-picker-group-label {
+  padding: 4px var(--spacing-md);
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.model-picker-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  padding: 6px var(--spacing-md);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.model-picker-option:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+.model-picker-option.is-selected {
+  color: var(--accent);
+}
+.model-picker-option:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.footer-export {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+.footer-export:hover {
+  color: var(--text-secondary);
+}
+.footer-usage {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  padding: 0;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 .footer-model-select {
   font-size: 11px;
@@ -639,16 +772,6 @@ label {
 }
 .footer-model-select:hover {
   color: var(--text-primary);
-}
-.footer-usage {
-  font-size: 11px;
-  color: var(--text-muted);
-  text-decoration: underline dotted;
-  text-underline-offset: 2px;
-  padding: 0;
-}
-.footer-usage:hover {
-  color: var(--text-secondary);
 }
 .checkbox-label {
   flex-direction: row;
