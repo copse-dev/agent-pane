@@ -17,6 +17,7 @@ import { startAgentController } from './controller/agent.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
 import { addProjectFromPath, restoreProject } from './controller/projects.ts'
 import { initMonaco } from './monaco/setup.ts'
+import { mountPaneResizers, parseSavedLayout } from './views/pane-resizer.ts'
 
 const store = createStore()
 const api = window.api
@@ -27,9 +28,13 @@ async function boot() {
   mountSettingsDialog(store, api)
   mountApprovalDialog(api)
 
-  // Load the persisted model selection so the footer picker reflects it.
+  // Load persisted user preferences before the main layout mounts.
   const savedModel = (await api.settings.get('model')) as string | null
-  store.setState({ settings: { model: savedModel ?? 'claude-sonnet-4-6' } })
+  const savedLayout = await api.settings.get('layout')
+  store.setState({
+    settings: { model: savedModel ?? 'claude-sonnet-4-6' },
+    layout: parseSavedLayout(savedLayout),
+  })
   startAgentController(store, api)
   attachAutosave(store, api)
 
@@ -77,6 +82,9 @@ function mountFullLayout() {
   mountInputBar(document.getElementById('input-bar')!, store, api)
   mountFileTree(document.getElementById('file-tree-host')!, store, api)
   mountContextPanel(document.getElementById('file-viewer')!, store, api, monaco)
+
+  const body = document.getElementById('body')
+  if (body) mountPaneResizers(body, store, api)
 
   store.on('files_pane_changed', updateFilesPane)
 }
