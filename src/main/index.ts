@@ -19,6 +19,7 @@ import {
   listLmStudioModels,
   invalidateLmStudioModelsCache,
 } from './services/agent-service.ts'
+import { storageGet, storageSet } from './services/storage.ts'
 import { getMainWindow } from './windows/create-main-window.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
 
@@ -71,9 +72,24 @@ app
       } catch {
         userContent = rawPrompt
       }
+
+      // Hydrate from persisted storage on first use after a restart
+      if (!messageHistory.has(threadId)) {
+        const stored = storageGet(`llm-history:${threadId}`)
+        if (Array.isArray(stored)) {
+          messageHistory.set(threadId, stored as LLMMessage[])
+        }
+      }
+
       const priorMessages = messageHistory.get(threadId) ?? []
       const result = await runAgent(threadId, userContent, priorMessages, win, registry)
       messageHistory.set(threadId, result.messages)
+      storageSet(`llm-history:${threadId}`, result.messages)
+    })
+
+    ipcMain.handle('agent:clearHistory', (_e, threadId: string) => {
+      messageHistory.delete(threadId)
+      storageSet(`llm-history:${threadId}`, null)
     })
 
     ipcMain.handle('agent:abort', (_e, threadId: string) => {

@@ -19,6 +19,7 @@ export interface ApiClient {
   agent: {
     run: (threadId: string, prompt: string) => Promise<void>
     abort: (threadId: string) => Promise<void>
+    clearHistory: (threadId: string) => Promise<void>
     suggestTitle: (text: string) => Promise<string | null>
     onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => () => void
     onApprovalRequest: (
