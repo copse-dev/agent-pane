@@ -1461,6 +1461,38 @@ label {
   border-radius: var(--radius);
   padding: 6px 16px;
 }
+.approval-remember {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+.mcp-server-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+}
+.mcp-server-row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-sm);
+}
+.mcp-server-summary {
+  font-weight: 600;
+}
+.mcp-server-detail {
+  font-size: 11px;
+  color: var(--text-muted);
+  word-break: break-word;
+}
+.mcp-server-row.mcp-state-error .mcp-server-summary {
+  color: var(--error);
+}
+.mcp-server-row.mcp-state-connected .mcp-server-summary {
+  color: var(--success);
+}
 .mention-picker {
   position: absolute;
   bottom: 100%;

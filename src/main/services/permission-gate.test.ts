@@ -3,6 +3,10 @@ import assert from 'node:assert/strict'
 import { decideShellPermission, SANDBOX_TOOLS } from './permission-policy.ts'
 import { setPermissionGateForTests } from './tool-registry.ts'
 import { ensureToolPermitted } from './permission-gate.ts'
+import {
+  decideMcpPermission,
+  describeMcpAnnotations,
+} from './permission-policy.ts'
 
 describe('SANDBOX_TOOLS', () => {
   it('includes read_skill so skill reads auto-run without approval', () => {
@@ -98,5 +102,51 @@ describe('decideShellPermission', () => {
       confidenceThreshold: 0.85,
     })
     assert.equal(d.action, 'prompt')
+  })
+})
+
+describe('decideMcpPermission', () => {
+  const baseInput = { trusted: false, remembered: false, autoAllowReadOnly: false }
+
+  it('prompts for an unannotated external tool by default', () => {
+    assert.equal(decideMcpPermission(baseInput).action, 'prompt')
+  })
+
+  it('allows when the user remembered the tool', () => {
+    assert.equal(decideMcpPermission({ ...baseInput, remembered: true }).action, 'allow')
+  })
+
+  it('allows tools from trusted servers', () => {
+    assert.equal(decideMcpPermission({ ...baseInput, trusted: true }).action, 'allow')
+  })
+
+  it('auto-allows read-only tools only when the setting is on', () => {
+    const ann = { readOnlyHint: true }
+    assert.equal(decideMcpPermission({ ...baseInput, annotations: ann }).action, 'prompt')
+    assert.equal(
+      decideMcpPermission({ ...baseInput, annotations: ann, autoAllowReadOnly: true }).action,
+      'allow',
+    )
+  })
+
+  it('always prompts for destructive tools even when read-only auto-allow is on', () => {
+    const d = decideMcpPermission({
+      ...baseInput,
+      annotations: { readOnlyHint: true, destructiveHint: true },
+      autoAllowReadOnly: true,
+    })
+    assert.equal(d.action, 'prompt')
+  })
+})
+
+describe('describeMcpAnnotations', () => {
+  it('lists relevant hints', () => {
+    assert.deepEqual(describeMcpAnnotations({ readOnlyHint: true, openWorldHint: true }), [
+      'Read-only',
+      'May access external systems',
+    ])
+  })
+  it('returns empty when no annotations', () => {
+    assert.deepEqual(describeMcpAnnotations(undefined), [])
   })
 })
