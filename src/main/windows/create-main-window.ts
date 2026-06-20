@@ -45,7 +45,7 @@ export function createMainWindow(): BrowserWindow {
     minHeight: 600,
     frame: false,
     titleBarStyle: 'hidden',
-    // y centers 12px traffic lights in the 40px titlebar ((40 − 12) / 2).
+    // y centers 12px traffic lights in the titlebar ((titlebar-height − 12) / 2).
     trafficLightPosition: { x: 12, y: 14 },
     backgroundColor: '#1e1e1e',
     show: false,
