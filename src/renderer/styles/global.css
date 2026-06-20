@@ -812,9 +812,8 @@ label {
 }
 .message-text ul,
 .message-text ol {
-  /* Global reset zeros list padding, so outside bullets hang left of body text. */
-  margin-left: 1px;
-  padding-inline-start: 0.55em;
+  /* Global reset zeros list padding; restore a readable hanging indent. */
+  padding-inline-start: 1.5em;
   list-style-position: outside;
 }
 .message-text li + li {
@@ -919,7 +918,9 @@ label {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   margin-top: var(--spacing-xs);
-  white-space: pre-wrap;
+}
+.tool-card-subagent[open] .subagent-summary-preview {
+  display: none;
 }
 .tool-card-subagent .subagent-timeline {
   margin-top: var(--spacing-sm);
