@@ -76,6 +76,7 @@ Available tools:
 - write_file: Propose writing a file (user approves the diff before it's written)
 - list_dir: List directory contents
 - search_codebase: Search by regex or meaning (auto-selects; prefer over search_code)
+- semantic_search: Search by meaning only (native codesearch/vera index)
 - search_code: Search for text/regex patterns (indexed grep when available, otherwise ripgrep)
 - find_files: Find files by name or glob pattern
 - git_status: Show working tree status
@@ -256,7 +257,7 @@ export async function runAgent(
       .replace('{WORKSPACE_ROOT}', getWorkspaceRoot() ?? '(none)') +
     buildSkillsCatalogBlock() +
     (await buildInvokedSkillsBlock(invokedSkills)) +
-    buildSemanticSearchPromptBlock(registry) +
+    buildSemanticSearchPromptBlock() +
     (projectInstructions ? `\n\n---\n\n## Project instructions\n\n${projectInstructions}` : '')
 
   const messages: LLMMessage[] = [

@@ -35,11 +35,10 @@ export function classifySearchQuery(query: string): SearchQueryMode {
   return 'regex'
 }
 
-export function buildSearchRoutingPromptBlock(semanticTools: string[]): string {
-  const semanticLine =
-    semanticTools.length > 0
-      ? `- Concept or behavior questions → semantic MCP tools first (${semanticTools.join(', ')}), then search_code for exact strings`
-      : '- Concept or behavior questions → search_code with descriptive keywords, then read likely files'
+export function buildSearchRoutingPromptBlock(nativeAvailable = false): string {
+  const semanticLine = nativeAvailable
+    ? '- Concept or behavior questions → search_codebase (auto/semantic) or semantic_search, then search_code for exact strings'
+    : '- Concept or behavior questions → search_code with descriptive keywords, then read likely files'
 
   return `
 
@@ -53,6 +52,6 @@ ${semanticLine}
 - Do not repeat the same search with minor variations`
 }
 
-export function buildExploreSearchRoutingAddon(semanticTools: string[]): string {
-  return buildSearchRoutingPromptBlock(semanticTools).trim()
+export function buildExploreSearchRoutingAddon(nativeAvailable = false): string {
+  return buildSearchRoutingPromptBlock(nativeAvailable).trim()
 }
