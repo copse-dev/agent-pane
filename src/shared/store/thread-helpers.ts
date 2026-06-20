@@ -1,7 +1,13 @@
 // Use the Web Crypto API available in both browsers and Node 19+
 const randomUUID = () => globalThis.crypto.randomUUID()
 import type { AppStore } from './store.ts'
-import type { Message, ToolCall, ThreadUsage, ContextTrimRecord } from '@shared/types'
+import type {
+  Message,
+  ToolCall,
+  ThreadUsage,
+  ContextTrimRecord,
+  ContextSnapshot,
+} from '@shared/types'
 
 export function createThread(store: AppStore): string {
   const id = randomUUID()
@@ -159,6 +165,47 @@ export function updateUsage(store: AppStore, threadId: string, usage: ThreadUsag
   const updated = threads.map((t) => (t.id !== threadId ? t : { ...t, usage }))
   store.setState({ threads: updated })
   store.emit('usage_updated', threadId)
+}
+
+export function addUsageDelta(
+  store: AppStore,
+  threadId: string,
+  delta: { inputTokens: number; outputTokens: number },
+): void {
+  const thread = store.getState().threads.find((t) => t.id === threadId)
+  if (!thread) return
+  updateUsage(store, threadId, {
+    inputTokens: thread.usage.inputTokens + delta.inputTokens,
+    outputTokens: thread.usage.outputTokens + delta.outputTokens,
+  })
+}
+
+export function updateContextSnapshot(
+  store: AppStore,
+  threadId: string,
+  snapshot: Omit<ContextSnapshot, 'updatedAt'>,
+): void {
+  const threads = store.getState().threads.map((t) =>
+    t.id !== threadId
+      ? t
+      : {
+          ...t,
+          contextSnapshot: { ...snapshot, updatedAt: Date.now() },
+          updatedAt: Date.now(),
+        },
+  )
+  store.setState({ threads })
+  store.emit('context_updated', threadId)
+}
+
+export function clearContextSnapshot(store: AppStore, threadId: string): void {
+  const threads = store.getState().threads.map((t) => {
+    if (t.id !== threadId) return t
+    const { contextSnapshot: _removed, ...rest } = t
+    return rest
+  })
+  store.setState({ threads })
+  store.emit('context_updated', threadId)
 }
 
 export function setThreadStatus(

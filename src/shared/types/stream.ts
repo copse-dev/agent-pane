@@ -12,6 +12,14 @@ export type StreamChunk =
       historyBudget: number
       estimatedTokens: number
     }
+  | { type: 'usage'; inputTokens: number; outputTokens: number }
+  | {
+      type: 'context_pressure'
+      contextWindow: number
+      conversationBudget: number
+      conversationTokens: number
+      fillRatio: number
+    }
   | { type: 'subagent_start'; parentToolCallId: string; session: SubagentSession }
   | { type: 'subagent_text'; parentToolCallId: string; messageId: string; text: string }
   | {

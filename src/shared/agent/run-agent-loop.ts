@@ -46,6 +46,8 @@ export interface AgentLoopOptions {
   /** Reserve headroom for tool JSON schemas on each provider call. */
   toolSchemaReserveTokens?: number
   onHistoryTrimmed?: () => void
+  /** Called after each provider stream to read per-step token usage. */
+  getLastUsage?: () => { inputTokens: number; outputTokens: number } | null
 }
 
 const FINALIZE_NUDGE =
@@ -54,12 +56,43 @@ const FINALIZE_NUDGE =
 const INCOMPLETE_RUN_MESSAGE =
   'The agent stopped before producing a final answer. Try a shorter question, reduce tool use, or switch models.'
 
+function emitStepUsage(
+  getLastUsage: (() => { inputTokens: number; outputTokens: number } | null) | undefined,
+  onChunk: (chunk: StreamChunk) => void,
+): void {
+  const usage = getLastUsage?.()
+  if (usage && (usage.inputTokens || usage.outputTokens)) {
+    onChunk({ type: 'usage', inputTokens: usage.inputTokens, outputTokens: usage.outputTokens })
+  }
+}
+
+function emitContextPressure(
+  input: {
+    messages: LLMMessage[]
+    maxContextTokens: number
+    toolSchemaReserveTokens: number
+    toolOnlySteps: number
+    trimEvents: number
+  },
+  onChunk: (chunk: StreamChunk) => void,
+): void {
+  const pressure = measureConversationPressure(input)
+  onChunk({
+    type: 'context_pressure',
+    contextWindow: input.maxContextTokens,
+    conversationBudget: pressure.conversationBudget,
+    conversationTokens: pressure.conversationTokens,
+    fillRatio: pressure.fillRatio,
+  })
+}
+
 async function streamTextOnlyTurn(
   provider: LLMProvider,
   messages: LLMMessage[],
   onChunk: (chunk: StreamChunk) => void,
   signal?: AbortSignal,
   nudge = FINALIZE_NUDGE,
+  getLastUsage?: () => { inputTokens: number; outputTokens: number } | null,
 ): Promise<string> {
   const turnMessages: LLMMessage[] = [...messages, { role: 'user', content: nudge }]
   let assistantText = ''
@@ -77,6 +110,7 @@ async function streamTextOnlyTurn(
   if (trimmed) {
     messages.push({ role: 'assistant', content: assistantText })
   }
+  emitStepUsage(getLastUsage, onChunk)
   return trimmed
 }
 
@@ -91,6 +125,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     maxContextTokens,
     toolSchemaReserveTokens = 0,
     onHistoryTrimmed,
+    getLastUsage,
   } = opts
   let steps = 0
   let finishedWithAnswer = false
@@ -126,6 +161,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           onChunk,
           signal,
           STUCK_FINALIZE_NUDGE,
+          getLastUsage,
         )
         if (forced.trim()) {
           finishedWithAnswer = true
@@ -165,6 +201,21 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         onChunk(chunk)
       }
       if (chunk.type === 'done') break
+    }
+
+    emitStepUsage(getLastUsage, onChunk)
+
+    if (maxContextTokens) {
+      emitContextPressure(
+        {
+          messages,
+          maxContextTokens,
+          toolSchemaReserveTokens,
+          toolOnlySteps,
+          trimEvents,
+        },
+        onChunk,
+      )
     }
 
     if (signal?.aborted) break
@@ -235,7 +286,14 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   }
 
   if (!signal?.aborted && !finishedWithAnswer) {
-    const finalText = await streamTextOnlyTurn(provider, messages, onChunk, signal)
+    const finalText = await streamTextOnlyTurn(
+      provider,
+      messages,
+      onChunk,
+      signal,
+      FINALIZE_NUDGE,
+      getLastUsage,
+    )
     if (!finalText.trim()) {
       onChunk({ type: 'text', text: INCOMPLETE_RUN_MESSAGE })
       messages.push({ role: 'assistant', content: INCOMPLETE_RUN_MESSAGE })

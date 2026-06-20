@@ -19,4 +19,5 @@ export interface StoreEvents {
   theme_changed: ['light' | 'dark']
   staged_diffs_changed: []
   usage_updated: [threadId: string]
+  context_updated: [threadId: string]
 }
