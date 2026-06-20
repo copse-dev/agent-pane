@@ -66,6 +66,35 @@ describe('parseMcpConfig', () => {
     assert.equal(servers[0]!.trusted, true)
   })
 
+  it('honors trusted by default and when honorTrusted is true', () => {
+    const cfg = JSON.stringify({ mcpServers: { s: { command: 'x', trusted: true } } })
+    assert.equal(parseMcpConfig(cfg).servers[0]!.trusted, true)
+    assert.equal(parseMcpConfig(cfg, 'home.json', { honorTrusted: true }).servers[0]!.trusted, true)
+  })
+
+  it('ignores trusted from untrusted project configs and warns', () => {
+    const { servers, errors } = parseMcpConfig(
+      JSON.stringify({ mcpServers: { s: { command: 'x', trusted: true } } }),
+      '/repo/.mcp.json',
+      { honorTrusted: false },
+    )
+    // The server still loads, but never auto-runs without per-call approval.
+    assert.equal(servers.length, 1)
+    assert.equal(servers[0]!.trusted, false)
+    assert.equal(errors.length, 1)
+    assert.match(errors[0]!, /trusted.*ignoring/i)
+  })
+
+  it('does not warn for a project config that never asked to be trusted', () => {
+    const { servers, errors } = parseMcpConfig(
+      JSON.stringify({ mcpServers: { s: { command: 'x' } } }),
+      '/repo/.mcp.json',
+      { honorTrusted: false },
+    )
+    assert.equal(servers[0]!.trusted, false)
+    assert.equal(errors.length, 0)
+  })
+
   it('reports an error for entries with neither command nor url', () => {
     const { servers, errors } = parseMcpConfig(JSON.stringify({ mcpServers: { bad: {} } }))
     assert.equal(servers.length, 0)

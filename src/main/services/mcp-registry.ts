@@ -80,14 +80,14 @@ export function rememberMcpTool(toolName: string): void {
   }
 }
 
-async function readConfigFile(path: string): Promise<McpServerConfig[]> {
+async function readConfigFile(path: string, honorTrusted: boolean): Promise<McpServerConfig[]> {
   let raw: string
   try {
     raw = await fs.readFile(path, 'utf-8')
   } catch {
     return [] // missing file is normal
   }
-  const { servers, errors } = parseMcpConfig(raw, path)
+  const { servers, errors } = parseMcpConfig(raw, path, { honorTrusted })
   for (const err of errors) console.warn(`[MCP] ${err}`)
   return servers
 }
@@ -95,15 +95,24 @@ async function readConfigFile(path: string): Promise<McpServerConfig[]> {
 /** Gather and merge MCP server definitions from all known config locations. */
 async function collectConfigs(): Promise<McpServerConfig[]> {
   const workspace = getWorkspaceRoot()
-  const sources: string[] = []
+  // Project/workspace configs are attacker-supplied (any cloned repo), so a
+  // `trusted` flag in them is ignored. Only user-controlled locations (home /
+  // userData) may mark a server trusted for blanket auto-run.
+  const projectSources: string[] = []
   if (workspace) {
-    sources.push(join(workspace, '.cursor', 'mcp.json'))
-    sources.push(join(workspace, '.mcp.json'))
+    projectSources.push(join(workspace, '.cursor', 'mcp.json'))
+    projectSources.push(join(workspace, '.mcp.json'))
   }
-  sources.push(join(homedir(), '.cursor', 'mcp.json'))
-  sources.push(join(app.getPath('userData'), 'mcp.json'))
+  const userSources: string[] = [
+    join(homedir(), '.cursor', 'mcp.json'),
+    join(app.getPath('userData'), 'mcp.json'),
+  ]
 
-  const perSource = await Promise.all(sources.map(readConfigFile))
+  // Keep project sources first so existing name-precedence behavior is unchanged.
+  const perSource = await Promise.all([
+    ...projectSources.map((p) => readConfigFile(p, false)),
+    ...userSources.map((p) => readConfigFile(p, true)),
+  ])
   return mergeMcpConfigs(perSource)
 }
 
