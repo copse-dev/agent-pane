@@ -27,7 +27,17 @@ export class AnthropicProvider implements LLMProvider {
         {
           model,
           max_tokens: 8096,
-          ...(systemMsg ? { system: systemMsg.content as string } : {}),
+          ...(systemMsg
+            ? {
+                system: [
+                  {
+                    type: 'text' as const,
+                    text: systemMsg.content as string,
+                    cache_control: { type: 'ephemeral' as const },
+                  },
+                ],
+              }
+            : {}),
           messages: apiMessages,
           tools: tools.map((t) => ({
             name: t.name,
@@ -41,6 +51,7 @@ export class AnthropicProvider implements LLMProvider {
       let currentToolId = ''
       let currentToolName = ''
       let toolJson = ''
+      let stopReason: string | undefined
 
       for await (const event of stream) {
         if (event.type === 'content_block_start' && event.content_block.type === 'tool_use') {
@@ -68,14 +79,17 @@ export class AnthropicProvider implements LLMProvider {
           currentToolName = ''
           toolJson = ''
         }
-        if (event.type === 'message_delta' && event.usage) {
-          self.lastUsage = {
-            inputTokens: event.usage.input_tokens ?? 0,
-            outputTokens: event.usage.output_tokens ?? 0,
+        if (event.type === 'message_delta') {
+          if (event.delta.stop_reason) stopReason = event.delta.stop_reason
+          if (event.usage) {
+            self.lastUsage = {
+              inputTokens: event.usage.input_tokens ?? 0,
+              outputTokens: event.usage.output_tokens ?? 0,
+            }
           }
         }
       }
-      yield { type: 'done' }
+      yield stopReason ? { type: 'done', stopReason } : { type: 'done' }
     })()
   }
 }

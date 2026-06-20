@@ -37,7 +37,7 @@ export type StreamChunk =
     }
   | { type: 'subagent_done'; parentToolCallId: string; summary: string }
   | { type: 'subagent_error'; parentToolCallId: string; error: string }
-  | { type: 'done' }
+  | { type: 'done'; stopReason?: string }
 
 export interface ToolCallChunk {
   id: string

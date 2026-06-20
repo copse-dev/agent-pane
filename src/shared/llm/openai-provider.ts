@@ -48,6 +48,7 @@ export class OpenAIProvider implements LLMProvider {
       )
 
       const toolCallBuilders = new Map<number, { id: string; name: string; argsJson: string }>()
+      let finishReason: string | undefined
 
       for await (const event of stream) {
         if (event.usage) {
@@ -56,12 +57,14 @@ export class OpenAIProvider implements LLMProvider {
             outputTokens: event.usage.completion_tokens,
           }
         }
-        const delta = event.choices[0]?.delta
-        if (!delta) continue
+        const choice = event.choices[0]
+        const reason = choice?.finish_reason
+        if (reason) finishReason = reason
 
-        if (delta.content) yield { type: 'text', text: delta.content }
+        const delta = choice?.delta
+        if (delta?.content) yield { type: 'text', text: delta.content }
 
-        if (delta.tool_calls) {
+        if (delta?.tool_calls) {
           for (const tc of delta.tool_calls) {
             const idx = tc.index
             if (!toolCallBuilders.has(idx)) {
@@ -78,7 +81,7 @@ export class OpenAIProvider implements LLMProvider {
           }
         }
 
-        if (event.choices[0]?.finish_reason === 'tool_calls') {
+        if (reason === 'tool_calls') {
           for (const [, builder] of toolCallBuilders) {
             let args: unknown = {}
             try {
@@ -91,7 +94,7 @@ export class OpenAIProvider implements LLMProvider {
           toolCallBuilders.clear()
         }
       }
-      yield { type: 'done' }
+      yield finishReason ? { type: 'done', stopReason: finishReason } : { type: 'done' }
     })()
   }
 }
