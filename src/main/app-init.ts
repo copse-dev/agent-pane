@@ -9,5 +9,5 @@ import { join } from 'node:path'
 //
 // Without this, an unpackaged `electron .` run stores data under an "Electron"
 // directory and presents itself as "Electron" in the menu/About panel.
-app.setName('agent-pane')
+app.setName('Agent Pane')
 app.setPath('userData', join(app.getPath('appData'), 'agent-pane'))
