@@ -8,7 +8,10 @@ import { createSearchCodebaseTool } from './search-codebase-tool.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
 import { setIndexedGrepBackendForTest } from '../services/indexed-grep.ts'
 import { setRgAvailableForTest } from '../services/tool-availability.ts'
-import { z } from 'zod'
+import {
+  setSemanticBackendForTest,
+  setSemanticSearchExecutorForTest,
+} from '../services/semantic-index.ts'
 
 describe('search_codebase tool', () => {
   let tempRoot = ''
@@ -20,16 +23,20 @@ describe('search_codebase tool', () => {
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
     await writeFile(join(tempRoot, 'auth.ts'), 'export function authenticate() {}\n', 'utf-8')
     registry = new ToolRegistry()
-    registry.register(createSearchCodebaseTool(registry))
+    registry.register(createSearchCodebaseTool())
     setPermissionGateForTests(async () => true)
     setIndexedGrepBackendForTest('rg')
     setRgAvailableForTest(true)
+    setSemanticBackendForTest(null)
+    setSemanticSearchExecutorForTest(null)
   })
 
   afterEach(async () => {
     setPermissionGateForTests(null)
     setIndexedGrepBackendForTest(null)
     setRgAvailableForTest(null)
+    setSemanticBackendForTest(null)
+    setSemanticSearchExecutorForTest(null)
     restoreWorkspace?.()
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
   })
@@ -45,23 +52,35 @@ describe('search_codebase tool', () => {
     assert.match(result, /auth\.ts/)
   })
 
-  it('uses semantic MCP search when available', async () => {
-    registry.register({
-      name: 'mcp__vera__search_code',
-      description: 'semantic',
-      parameters: z.object({ query: z.string() }),
-      async execute({ query }) {
-        return `semantic hit for ${query}`
-      },
-    })
+  it('uses native semantic search when available', async () => {
+    setSemanticBackendForTest('codesearch')
+    setSemanticSearchExecutorForTest(async ({ query }) => ({
+      hits: [
+        {
+          path: 'src/auth.ts',
+          startLine: 1,
+          text: `semantic hit for ${query}`,
+        },
+      ],
+      backend: 'codesearch',
+    }))
 
     const result = await registry.execute(
       'search_codebase',
       { query: 'where is authentication handled', mode: 'auto' },
       new AbortController().signal,
     )
-    assert.match(result, /\[semantic search\]/)
+    assert.match(result, /\[native semantic search\]/)
     assert.match(result, /semantic hit/)
+  })
+
+  it('falls back to regex when native semantic search is unavailable', async () => {
+    const result = await registry.execute(
+      'search_codebase',
+      { query: 'where is authentication handled', mode: 'auto' },
+      new AbortController().signal,
+    )
+    assert.match(result, /\[semantic search unavailable — regex fallback\]/)
   })
 
   it('reports when semantic mode is requested but unavailable', async () => {
@@ -71,5 +90,6 @@ describe('search_codebase tool', () => {
       new AbortController().signal,
     )
     assert.match(result, /Semantic search unavailable/)
+    assert.match(result, /codesearch/)
   })
 })
