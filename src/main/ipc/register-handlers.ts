@@ -16,6 +16,8 @@ import { storageGet, storageSet } from '../services/storage.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills-registry.ts'
 import { registerSkillTools } from '../services/registry-bootstrap.ts'
+import { getGitFileDiff, getGitStatus, isInsideGitWorkTree } from '../services/git-service.ts'
+import { isGitAvailable } from '../services/tool-availability.ts'
 
 export function registerAllHandlers(_win: BrowserWindow, registry: ToolRegistry): void {
   ipcMain.handle('workspace:open', async () => {
@@ -94,4 +96,10 @@ export function registerAllHandlers(_win: BrowserWindow, registry: ToolRegistry)
   ipcMain.handle('storage:set', (_e, key: string, value: unknown) => storageSet(key, value))
 
   ipcMain.handle('skills:list', () => listSkills())
+
+  ipcMain.handle('git:isAvailable', async () => isGitAvailable() && (await isInsideGitWorkTree()))
+  ipcMain.handle('git:status', () => getGitStatus())
+  ipcMain.handle('git:fileDiff', (_e, path: string, staged: boolean) =>
+    getGitFileDiff(path, staged),
+  )
 }

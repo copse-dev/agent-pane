@@ -289,6 +289,108 @@ body {
   overflow: hidden;
   min-width: 0;
 }
+.git-changes-host {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+.git-changes-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-sm);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.git-changes-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.git-changes-refresh-btn {
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+}
+.git-changes-refresh-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.git-changes-list {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+.git-changes-section-title {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.git-change-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  width: 100%;
+  text-align: left;
+  padding: 4px var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+.git-change-row:hover {
+  background: var(--bg-hover);
+}
+.git-change-row.is-selected {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+.git-change-status {
+  flex-shrink: 0;
+  width: 16px;
+  font-size: 10px;
+  font-weight: 600;
+  text-align: center;
+  font-family: monospace;
+}
+.git-change-status-modified {
+  color: #e2b340;
+}
+.git-change-status-added,
+.git-change-status-untracked {
+  color: #73c991;
+}
+.git-change-status-deleted {
+  color: #f14c4c;
+}
+.git-change-status-renamed {
+  color: #75beff;
+}
+.git-change-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.git-changes-empty {
+  padding: var(--spacing-md) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+.git-diff-viewer-host {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+.git-diff-editor-wrap {
+  flex: 1;
+  min-height: 0;
+}
 .terminals-body {
   flex: 1;
   display: flex;

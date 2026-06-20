@@ -141,4 +141,9 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.off('terminal:exit', listener)
     },
   },
+  git: {
+    isAvailable: () => ipcRenderer.invoke('git:isAvailable'),
+    status: () => ipcRenderer.invoke('git:status'),
+    fileDiff: (path: string, staged: boolean) => ipcRenderer.invoke('git:fileDiff', path, staged),
+  },
 })
