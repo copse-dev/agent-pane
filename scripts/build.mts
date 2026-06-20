@@ -1,6 +1,8 @@
 import * as esbuild from 'esbuild'
-import { cpSync, copyFileSync } from 'node:fs'
+import { accessSync, cpSync, copyFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+
+const bundledCodesearchName = process.platform === 'win32' ? 'codesearch.exe' : 'codesearch'
 
 const sharedAlias = { '@shared': resolve('./src/shared') }
 
@@ -39,3 +41,11 @@ cpSync('node_modules/monaco-editor/min/vs', 'dist/renderer/monaco/vs', { recursi
 cpSync('node_modules/vscode-material-icons/generated/icons', 'dist/renderer/material-icons', {
   recursive: true,
 })
+
+const bundledCodesearch = resolve('vendor/codesearch', bundledCodesearchName)
+try {
+  accessSync(bundledCodesearch)
+  cpSync('vendor/codesearch', 'dist/resources/codesearch', { recursive: true })
+} catch {
+  // Optional — postinstall may be skipped on unsupported platforms.
+}

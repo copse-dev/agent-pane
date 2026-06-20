@@ -10,6 +10,7 @@ export const SANDBOX_TOOLS = new Set([
   'list_dir',
   'search_code',
   'search_codebase',
+  'semantic_search',
   'find_files',
   'git_status',
   'git_diff',

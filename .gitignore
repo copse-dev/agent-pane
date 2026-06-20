@@ -2,6 +2,8 @@ node_modules/
 dist/
 dist-test/
 dist-types/
+vendor/codesearch/
+.codesearch.db/
 .DS_Store
 *.log
 

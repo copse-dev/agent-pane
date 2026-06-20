@@ -37,5 +37,6 @@ export function resolveWorkspacePath(path: string): string {
 export function toRelativePath(absPath: string): string {
   if (!workspaceRoot) return absPath
   const rel = relative(resolve(workspaceRoot), resolve(absPath))
-  return rel || absPath
+  if (!rel) return '.'
+  return rel
 }

@@ -33,8 +33,14 @@ The agent is an MCP (Model Context Protocol) host and ships with no servers
 connected. Add them in `.cursor/mcp.json` / `.mcp.json` (project) or
 `~/.cursor/mcp.json` (global), using the standard `mcpServers` format (same as
 Cursor / Claude Desktop); reference secrets with `${env:VAR}`. See
-[`mcp.json.example`](./mcp.json.example) for optional semantic code search
-servers (e.g. [Vera](https://github.com/lemon07r/Vera),
-[codesearch](https://github.com/flupkede/codesearch)) that complement built-in
-`search_code` regex search. Status, reload, and approval settings live under
-**Settings → MCP servers**.
+[`mcp.json.example`](./mcp.json.example) for optional MCP servers. Status, reload, and
+approval settings live under **Settings → MCP servers**.
+
+## Semantic search
+
+On supported platforms, `npm install` downloads a bundled `codesearch` binary to
+`vendor/codesearch/` (postinstall; skip with `SKIP_CODESEARCH_FETCH=1`). Native tools
+(`semantic_search`, `search_codebase` semantic mode) use codesearch or vera on PATH,
+preferring a system install over the bundled copy, and keep the index in sync with the
+workspace. Index data is stored in `.codesearch.db/` at the project root — add that to
+your `.gitignore` (this repo already does).

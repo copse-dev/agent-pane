@@ -15,6 +15,7 @@ export const EXPLORE_TOOL_NAMES = [
   'list_dir',
   'search_code',
   'search_codebase',
+  'semantic_search',
   'find_files',
 ] as const
 
@@ -24,7 +25,7 @@ Your job is to read and search the workspace, then return a concise summary for 
 
 Rules:
 - Use read_file, list_dir, search_codebase, search_code, and find_files as needed
-- Prefer search_codebase (auto mode) over search_code alone — it combines regex and semantic MCP search
+- Prefer search_codebase (auto mode) or semantic_search over search_code alone — they combine regex and native semantic search
 - Do not write files or run shell commands
 - Cite file paths and line ranges when relevant
 - Be thorough in exploration but concise in your final summary
