@@ -1,6 +1,24 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { decideShellPermission } from './permission-policy.ts'
+import { decideShellPermission, SANDBOX_TOOLS } from './permission-policy.ts'
+import { setPermissionGateForTests } from './tool-registry.ts'
+import { ensureToolPermitted } from './permission-gate.ts'
+
+describe('SANDBOX_TOOLS', () => {
+  it('includes read_skill so skill reads auto-run without approval', () => {
+    assert.equal(SANDBOX_TOOLS.has('read_skill'), true)
+  })
+})
+
+describe('ensureToolPermitted', () => {
+  it('auto-allows read_skill without prompting', async () => {
+    setPermissionGateForTests(null)
+    assert.equal(
+      await ensureToolPermitted({ toolName: 'read_skill', args: { name: 'demo-skill' } }),
+      true,
+    )
+  })
+})
 
 describe('decideShellPermission', () => {
   const root = '/Users/me/project'

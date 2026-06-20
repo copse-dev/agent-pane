@@ -34,6 +34,8 @@ export interface Message {
   id: string
   role: 'user' | 'assistant' | 'error'
   content: string // accumulated text (appended during streaming)
+  /** Pasted image attachments as data URLs (user messages only). */
+  images?: string[]
   toolCalls: ToolCall[]
   createdAt: number
 }

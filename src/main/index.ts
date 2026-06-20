@@ -5,11 +5,12 @@ import { createMainWindow } from './windows/create-main-window.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
 import { getApiKey } from './services/settings.ts'
 import { checkToolAvailability } from './services/tool-availability.ts'
-import { createRegistry } from './services/registry-bootstrap.ts'
+import { createRegistry, registerSkillTools } from './services/registry-bootstrap.ts'
 import { loadMcpServers, shutdownMcpServers } from './services/mcp-registry.ts'
 import { initApproval } from './services/approval.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
+import { initTerminal } from './ipc/terminal.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
 import { initSkillsRegistry } from './services/skills-registry.ts'
 import { parseAgentRunPayload } from '@shared/agent/parse-agent-run-payload.ts'
@@ -61,9 +62,11 @@ app
     initApproval(win)
     initDiffQueue(win)
     initFsWatcher(win)
+    initTerminal(win)
     registerAllHandlers(win, registry)
 
     await initSkillsRegistry()
+    registerSkillTools(registry)
     await loadMcpServers(registry)
 
     const messageHistory = new Map<string, LLMMessage[]>()
