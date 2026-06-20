@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { LLMProvider, LLMMessage, LLMTool, StreamChunk } from '@shared/types'
+import { anthropicMaxOutputTokens } from './cloud-models.ts'
 
 export class AnthropicProvider implements LLMProvider {
   private client: Anthropic
@@ -26,7 +27,7 @@ export class AnthropicProvider implements LLMProvider {
       const stream = client.messages.stream(
         {
           model,
-          max_tokens: 8096,
+          max_tokens: anthropicMaxOutputTokens(model),
           ...(systemMsg ? { system: systemMsg.content as string } : {}),
           messages: apiMessages,
           tools: tools.map((t) => ({

@@ -1,7 +1,9 @@
 import type * as Monaco from 'monaco-editor'
 import type { AppStore } from '@shared/store/store.ts'
 import type { OpenFile } from '@shared/types'
+import type { ActiveDiff } from '@shared/types/state.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { pruneStagedDiffCache, resolveStagedDiffView } from '@shared/diff/staged-diff-ui.ts'
 import { renderMarkdown } from '../markdown/renderer.ts'
 import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
@@ -37,13 +39,36 @@ export function mountContextPanel(
 
   const fileContainer = document.createElement('div')
   fileContainer.className = 'monaco-container'
+
+  const diffStage = document.createElement('div')
+  diffStage.className = 'diff-stage'
+  diffStage.hidden = true
+  const diffToolbar = document.createElement('div')
+  diffToolbar.className = 'diff-stage-toolbar'
+  diffToolbar.hidden = true
+  const acceptAllBtn = document.createElement('button')
+  acceptAllBtn.type = 'button'
+  acceptAllBtn.textContent = 'Accept all'
+  const rejectAllBtn = document.createElement('button')
+  rejectAllBtn.type = 'button'
+  rejectAllBtn.textContent = 'Reject all'
+  diffToolbar.append(acceptAllBtn, rejectAllBtn)
+
+  const diffBody = document.createElement('div')
+  diffBody.className = 'diff-stage-body'
+  const diffFileList = document.createElement('div')
+  diffFileList.className = 'diff-file-list'
+  diffFileList.hidden = true
   const diffContainer = document.createElement('div')
   diffContainer.className = 'monaco-container diff-container'
+  diffBody.append(diffFileList, diffContainer)
+  diffStage.append(diffToolbar, diffBody)
+
   const emptyContainer = document.createElement('div')
   emptyContainer.className = 'panel-empty'
   emptyContainer.textContent = 'Open a file or run a task to see content here'
 
-  root.append(fileToolbar, previewContainer, fileContainer, diffContainer, emptyContainer)
+  root.append(fileToolbar, previewContainer, fileContainer, diffStage, emptyContainer)
 
   let markdownViewMode: MarkdownViewMode = 'preview'
   let lastMarkdownPath: string | null = null
@@ -96,6 +121,47 @@ export function mountContextPanel(
   rejectBtn.className = 'diff-reject-btn'
   diffContainer.append(acceptBtn, rejectBtn)
 
+  acceptAllBtn.addEventListener('click', () => void api.diff.approveAll())
+  rejectAllBtn.addEventListener('click', () => void api.diff.rejectAll())
+
+  const diffCache = new Map<string, ActiveDiff>()
+  let selectedDiffPath: string | null = null
+
+  api.diff.onShowDiff((path, before, after, language) => {
+    diffCache.set(path, { path, before, after, language })
+  })
+
+  function renderDiffFileList(entries: { path: string }[], highlightPath: string) {
+    diffFileList.replaceChildren()
+    const multi = entries.length > 1
+    diffFileList.hidden = !multi
+    diffToolbar.hidden = !multi
+    if (!multi) return
+    for (const entry of entries) {
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = `diff-file-btn${entry.path === highlightPath ? ' selected' : ''}`
+      btn.textContent = entry.path
+      btn.addEventListener('click', () => {
+        selectedDiffPath = entry.path
+        store.emit('panel_changed')
+      })
+      diffFileList.append(btn)
+    }
+  }
+
+  function showDiffView(view: ActiveDiff) {
+    const oldModels = diffEditor.getModel()
+    diffEditor.setModel({
+      original: monaco.editor.createModel(view.before, view.language),
+      modified: monaco.editor.createModel(view.after, view.language),
+    })
+    oldModels?.original.dispose()
+    oldModels?.modified.dispose()
+    acceptBtn.onclick = () => void api.diff.approve(view.path)
+    rejectBtn.onclick = () => void api.diff.reject(view.path)
+  }
+
   fileEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
     const { openFile } = store.getState()
     if (openFile) void api.fs.writeFile(openFile.path, fileEditor.getValue())
@@ -103,9 +169,9 @@ export function mountContextPanel(
 
   function updatePanel() {
     const { openFile, activeDiff, panelTab, stagedDiffs } = store.getState()
+    const queue = stagedDiffs ?? []
 
-    // Auto-switch to diff tab when staged diffs arrive
-    if (stagedDiffs && stagedDiffs.length > 0 && panelTab !== 'diff') {
+    if (queue.length > 0 && panelTab !== 'diff') {
       store.setState({ panelTab: 'diff' })
       store.emit('panel_changed')
       return
@@ -113,7 +179,7 @@ export function mountContextPanel(
 
     if (panelTab === 'file' && openFile) {
       emptyContainer.hidden = true
-      diffContainer.hidden = true
+      diffStage.hidden = true
 
       const old = fileEditor.getModel()
       fileEditor.setModel(monaco.editor.createModel(openFile.content, openFile.language))
@@ -136,24 +202,34 @@ export function mountContextPanel(
         fileContainer.hidden = false
       }
       syncToolbarActive()
-    } else if (panelTab === 'diff' && activeDiff) {
-      emptyContainer.hidden = true
-      fileContainer.hidden = true
-      diffContainer.hidden = false
-      const oldModels = diffEditor.getModel()
-      diffEditor.setModel({
-        original: monaco.editor.createModel(activeDiff.before, activeDiff.language),
-        modified: monaco.editor.createModel(activeDiff.after, activeDiff.language),
-      })
-      oldModels?.original.dispose()
-      oldModels?.modified.dispose()
-      acceptBtn.onclick = () => void api.diff.approve(activeDiff.path)
-      rejectBtn.onclick = () => void api.diff.reject(activeDiff.path)
+    } else if (panelTab === 'diff') {
+      pruneStagedDiffCache(diffCache, queue)
+      if (activeDiff) diffCache.set(activeDiff.path, activeDiff)
+      if (selectedDiffPath && !queue.some((e) => e.path === selectedDiffPath)) {
+        selectedDiffPath = null
+      }
+      const view = resolveStagedDiffView(queue, diffCache, selectedDiffPath, activeDiff)
+      if (view) {
+        emptyContainer.hidden = true
+        fileToolbar.hidden = true
+        previewContainer.hidden = true
+        fileContainer.hidden = true
+        diffStage.hidden = false
+        renderDiffFileList(queue, view.path)
+        showDiffView(view)
+      } else {
+        selectedDiffPath = null
+        fileToolbar.hidden = true
+        previewContainer.hidden = true
+        fileContainer.hidden = true
+        diffStage.hidden = true
+        emptyContainer.hidden = false
+      }
     } else {
       fileToolbar.hidden = true
       previewContainer.hidden = true
       fileContainer.hidden = true
-      diffContainer.hidden = true
+      diffStage.hidden = true
       emptyContainer.hidden = false
     }
   }
