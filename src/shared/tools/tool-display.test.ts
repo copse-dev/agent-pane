@@ -4,6 +4,8 @@ import type { ToolCall } from '@shared/types'
 import {
   buildToolCallDisplayItems,
   getToolDisplayName,
+  getToolGroupKey,
+  getToolGroupLabel,
   aggregateToolStatus,
 } from './tool-display.ts'
 
@@ -84,6 +86,28 @@ describe('tool-display', () => {
 
   it('does not group unrelated tools', () => {
     const items = buildToolCallDisplayItems([tc('1', 'read_file'), tc('2', 'search_code')])
+    assert.equal(items.length, 2)
+    assert.ok(items.every((item) => item.type === 'individual'))
+  })
+
+  it('humanizes MCP tool names with their server prefix', () => {
+    assert.equal(getToolDisplayName('mcp__github__create_issue'), 'github: Create Issue')
+  })
+
+  it('groups MCP tools by server', () => {
+    assert.equal(getToolGroupKey('mcp__github__create_issue'), 'mcp:github')
+    assert.equal(getToolGroupLabel('mcp:github'), 'github (MCP)')
+    const items = buildToolCallDisplayItems([
+      tc('1', 'mcp__github__create_issue'),
+      tc('2', 'mcp__github__list_issues'),
+    ])
+    assert.equal(items.length, 1)
+    assert.equal(items[0]?.type, 'group')
+    if (items[0]?.type === 'group') assert.equal(items[0].label, 'github (MCP)')
+  })
+
+  it('does not group MCP tools from different servers', () => {
+    const items = buildToolCallDisplayItems([tc('1', 'mcp__github__x'), tc('2', 'mcp__linear__y')])
     assert.equal(items.length, 2)
     assert.ok(items.every((item) => item.type === 'individual'))
   })
