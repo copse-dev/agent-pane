@@ -3,6 +3,8 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { OpenFile } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { renderMarkdown } from '../markdown/renderer.ts'
+import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
+import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 
 type MarkdownViewMode = 'preview' | 'source'
 
@@ -189,8 +191,17 @@ export function mountContextPanel(
   })
 
   updatePanel()
+
+  const unbindDrop = bindFileDropTarget(
+    root,
+    getPromptAttachmentHandlers,
+    api,
+    () => store.getState().workspaceRoot,
+  )
+
   return () => {
     unsubs.forEach((u) => u())
+    unbindDrop()
     fileEditor.dispose()
     diffEditor.dispose()
   }
