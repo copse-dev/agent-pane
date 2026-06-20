@@ -58,6 +58,11 @@ interface McpToolMeta {
 const activeServers: ActiveServer[] = []
 const toolMeta = new Map<string, McpToolMeta>()
 let serverStatuses: McpServerStatus[] = []
+// Bumped on every (re)load/teardown/shutdown. An in-flight connect that finishes
+// after a newer load started is "stale": it must close its client and avoid
+// mutating the shared registry/state, or it orphans a child process and
+// re-registers tools the newer teardown already cleared.
+let loadGeneration = 0
 
 export function getMcpServerStatuses(): McpServerStatus[] {
   return serverStatuses.map((s) => ({ ...s }))
@@ -146,6 +151,7 @@ async function connectServer(
   registry: ToolRegistry,
   rawCfg: McpServerConfig,
   userDisabled: ReadonlySet<string>,
+  generation: number,
 ): Promise<McpServerStatus> {
   const cfg = interpolateServerConfig(rawCfg, process.env)
   const configDisabled = rawCfg.disabled === true
@@ -170,6 +176,13 @@ async function connectServer(
     const transport = createTransport(cfg)
     const client = new Client({ name: 'copse-panel', version: '0.1.0' }, { capabilities: {} })
     await withTimeout(client.connect(transport), CONNECT_TIMEOUT_MS, `Connecting to "${cfg.name}"`)
+
+    // A newer load/teardown superseded us while connecting — close this client
+    // instead of pushing it (and its child process) into the live set.
+    if (generation !== loadGeneration) {
+      await client.close().catch(() => {})
+      return { ...base, state: 'error', error: 'superseded by a newer reload' }
+    }
     activeServers.push({ config: cfg, client })
 
     const { tools } = await client.listTools()
@@ -211,6 +224,9 @@ async function connectServer(
 }
 
 async function teardown(registry: ToolRegistry): Promise<void> {
+  // Invalidate any in-flight load so its connects close themselves rather than
+  // re-registering into the set we are clearing.
+  loadGeneration++
   for (const name of registry.names()) {
     if (name.startsWith(MCP_TOOL_PREFIX)) registry.unregister(name)
   }
@@ -220,15 +236,19 @@ async function teardown(registry: ToolRegistry): Promise<void> {
 }
 
 export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
+  const generation = ++loadGeneration
   const configs = await collectConfigs()
+  if (generation !== loadGeneration) return // superseded while reading config
   const userDisabled = getUserDisabledServerNames()
   if (configs.length === 0) {
     serverStatuses = []
     return
   }
-  serverStatuses = await Promise.all(
-    configs.map((cfg) => connectServer(registry, cfg, userDisabled)),
+  const statuses = await Promise.all(
+    configs.map((cfg) => connectServer(registry, cfg, userDisabled, generation)),
   )
+  // Only publish statuses if a newer load hasn't started in the meantime.
+  if (generation === loadGeneration) serverStatuses = statuses
 }
 
 /** Tear down all MCP clients/tools and reconnect from current config. */
@@ -239,6 +259,7 @@ export async function reloadMcpServers(registry: ToolRegistry): Promise<McpServe
 }
 
 export async function shutdownMcpServers(): Promise<void> {
+  loadGeneration++ // invalidate any in-flight load
   await Promise.allSettled(activeServers.map((s) => s.client.close()))
   activeServers.length = 0
   toolMeta.clear()
