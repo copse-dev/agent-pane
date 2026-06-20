@@ -200,6 +200,14 @@ export function interpolateServerConfig(
 /** The tool name prefix used to namespace MCP tools in the registry. */
 export const MCP_TOOL_PREFIX = 'mcp__'
 
+/** Whether a server should be skipped (file flag or app-local user override). */
+export function isMcpServerEffectivelyDisabled(
+  cfg: Pick<McpServerConfig, 'name' | 'disabled'>,
+  userDisabledNames: ReadonlySet<string>,
+): boolean {
+  return cfg.disabled === true || userDisabledNames.has(cfg.name)
+}
+
 export function mcpToolName(serverName: string, toolName: string): string {
   return `${MCP_TOOL_PREFIX}${serverName}__${toolName}`
 }

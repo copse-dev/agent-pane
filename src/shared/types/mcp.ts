@@ -43,4 +43,8 @@ export interface McpServerStatus {
   trusted: boolean
   source?: string
   error?: string
+  /** User has not turned this server off in Settings (app-local override). */
+  userEnabled: boolean
+  /** `"disabled": true` in the on-disk MCP config; cannot be enabled from the UI. */
+  configDisabled: boolean
 }

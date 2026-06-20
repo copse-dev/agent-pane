@@ -160,6 +160,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <fieldset>
               <legend>Connected servers</legend>
               <div id="mcp-server-list" class="mcp-server-list">No servers loaded.</div>
+              <p class="field-hint">
+                Use the switch on each server to turn it off without editing your MCP config files.
+                Off servers are not started on reload.
+              </p>
               <div class="lmstudio-test-row">
                 <button type="button" id="mcp-reload-btn">Reload servers</button>
                 <span class="lmstudio-test-status" id="mcp-reload-status"></span>
@@ -275,21 +279,67 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               : '… connecting'
       const row = document.createElement('div')
       row.className = `mcp-server-row mcp-state-${s.state}`
-      const summary = `${s.name} (${s.transport})${s.trusted ? ' · trusted' : ''} — ${badge}`
-      const detail =
+
+      const header = document.createElement('div')
+      header.className = 'mcp-server-header'
+
+      const toggleLabel = document.createElement('label')
+      toggleLabel.className = 'toggle-switch mcp-server-toggle'
+      toggleLabel.title = s.configDisabled
+        ? 'This server is disabled in your MCP config file'
+        : s.userEnabled
+          ? 'Turn off this MCP server'
+          : 'Turn on this MCP server'
+      const toggle = document.createElement('input')
+      toggle.type = 'checkbox'
+      toggle.checked = s.userEnabled && !s.configDisabled
+      toggle.disabled = s.configDisabled
+      toggle.setAttribute('aria-label', `${s.name} MCP server enabled`)
+      const track = document.createElement('span')
+      track.className = 'toggle-switch-track'
+      track.setAttribute('aria-hidden', 'true')
+      toggle.addEventListener('change', () => {
+        toggle.disabled = true
+        void api.mcp
+          .setEnabled(s.name, toggle.checked)
+          .then((next) => {
+            renderMcpServers(next)
+          })
+          .catch(() => {
+            toggle.checked = !toggle.checked
+          })
+          .finally(() => {
+            if (!s.configDisabled) toggle.disabled = false
+          })
+      })
+      toggleLabel.append(toggle, track)
+
+      const title = document.createElement('div')
+      title.className = 'mcp-server-summary'
+      title.textContent = `${s.name} (${s.transport})${s.trusted ? ' · trusted' : ''} — ${badge}`
+
+      header.append(toggleLabel, title)
+      row.append(header)
+
+      let detailText =
         s.state === 'connected'
           ? `${s.toolCount} tool(s)${s.tools.length ? `: ${s.tools.join(', ')}` : ''}`
           : (s.error ?? '')
-      row.append(
-        Object.assign(document.createElement('div'), {
-          className: 'mcp-server-summary',
-          textContent: summary,
-        }),
-        Object.assign(document.createElement('div'), {
-          className: 'mcp-server-detail',
-          textContent: detail,
-        }),
-      )
+      if (s.configDisabled) {
+        detailText = detailText
+          ? `${detailText} · disabled in MCP config`
+          : 'Disabled in MCP config ("disabled": true)'
+      } else if (!s.userEnabled && s.state === 'disabled') {
+        detailText = 'Turned off in Settings'
+      }
+      if (detailText) {
+        row.append(
+          Object.assign(document.createElement('div'), {
+            className: 'mcp-server-detail',
+            textContent: detailText,
+          }),
+        )
+      }
       listEl.append(row)
     }
   }
