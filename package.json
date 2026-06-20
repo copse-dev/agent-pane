@@ -9,6 +9,8 @@
     "dev": "node --experimental-strip-types scripts/dev.mts",
     "build": "node --experimental-strip-types scripts/build.mts",
     "generate:icon": "node --experimental-strip-types scripts/generate-icon.mts",
+    "icons:mac": "node --experimental-strip-types scripts/generate-icon.mts && AGENT_PANE_REFRESH_DOCK=1 node --experimental-strip-types scripts/patch-dev-name.mts",
+    "start:mac": "npm run icons:mac && env -u ELECTRON_RUN_AS_NODE electron dist/main/index.js",
     "start": "electron dist/main/index.js",
     "postinstall": "node --experimental-strip-types scripts/patch-dev-name.mts && node --experimental-strip-types scripts/postinstall-native.mts",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
@@ -18,7 +20,31 @@
     "test": "node --experimental-strip-types scripts/run-tests.mts",
     "validate:local-agent": "node --experimental-strip-types scripts/run-validate-local-agent.mts",
     "test:e2e": "wdio run wdio.conf.ts",
+    "pack:mac": "npm run build && npm run icons:mac && electron-builder --mac dir",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm test"
+  },
+  "build": {
+    "appId": "app.agent-pane",
+    "productName": "Agent Pane",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/node_modules/node-pty/**/*",
+      "**/node_modules/@anthropic-ai/sandbox-runtime/**/*"
+    ],
+    "mac": {
+      "icon": "assets/icons/app.icns",
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dir"
+      ]
+    }
   },
   "dependencies": {
     "@anthropic-ai/sandbox-runtime": "^0.0.56",
@@ -48,6 +74,7 @@
     "@wdio/spec-reporter": "^9.29.0",
     "c8": "^10.1.3",
     "electron": "^35.5.0",
+    "electron-builder": "^26.15.3",
     "electron-chromedriver": "^35.7.5",
     "electron-rebuild": "^3.2.9",
     "esbuild": "^0.25.5",
