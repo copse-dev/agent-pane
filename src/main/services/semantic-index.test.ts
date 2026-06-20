@@ -44,7 +44,7 @@ describe('semantic-index parsing', () => {
       {
         path: 'src/main/index.ts',
         line: 4,
-        snippet: 'app.setName("agent-pane")',
+        snippet: 'app.setName("Copse")',
         score: 0.77,
       },
     ])
@@ -53,7 +53,7 @@ describe('semantic-index parsing', () => {
       {
         path: 'src/main/index.ts',
         startLine: 4,
-        text: 'app.setName("agent-pane")',
+        text: 'app.setName("Copse")',
         score: 0.77,
       },
     ])

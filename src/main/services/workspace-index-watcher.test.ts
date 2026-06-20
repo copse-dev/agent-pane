@@ -17,7 +17,7 @@ describe('workspace-index-watcher', () => {
   let restoreWorkspace: (() => void) | undefined
 
   beforeEach(async () => {
-    tempRoot = await mkdtemp(join(tmpdir(), 'agent-pane-index-watch-'))
+    tempRoot = await mkdtemp(join(tmpdir(), 'copse-panel-index-watch-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
     invalidateIndex()
     await buildIndex(tempRoot)

@@ -11,9 +11,9 @@ interface ProviderKeys {
 // `model` is the user's selected model (from settings). It both picks the
 // provider family (claude* → Anthropic, gpt* → OpenAI) and is passed through as
 // the model id. Falls back to whichever key is present; mock only when
-// AGENT_WINDOW_MOCK_LLM=1 (tests / dev).
+// COPSE_PANEL_MOCK_LLM=1 (tests / dev).
 export function createProvider(model?: string, keys: ProviderKeys = {}): LLMProvider {
-  if (process.env.AGENT_WINDOW_MOCK_LLM === '1') {
+  if (process.env.COPSE_PANEL_MOCK_LLM === '1') {
     return new MockLLMProvider()
   }
   const m = model ?? ''
@@ -36,7 +36,7 @@ export function createProvider(model?: string, keys: ProviderKeys = {}): LLMProv
     })
   }
   throw new Error(
-    'No LLM provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY in Settings, pick an LM Studio model, or set AGENT_WINDOW_MOCK_LLM=1 for development.',
+    'No LLM provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY in Settings, pick an LM Studio model, or set COPSE_PANEL_MOCK_LLM=1 for development.',
   )
 }
 

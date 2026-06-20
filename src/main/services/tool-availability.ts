@@ -12,19 +12,19 @@ export async function checkToolAvailability(): Promise<void> {
   const grepBackend = await probeIndexedGrepBackends()
   const semanticBackend = await probeSemanticBackends()
   if (!rgAvail)
-    console.warn('[agent-pane] ripgrep (rg) not found — search_code will use slow fallback')
+    console.warn('[copse-panel] ripgrep (rg) not found — search_code will use slow fallback')
   else if (grepBackend !== 'rg')
-    console.info(`[agent-pane] search_code will prefer indexed grep backend: ${grepBackend}`)
+    console.info(`[copse-panel] search_code will prefer indexed grep backend: ${grepBackend}`)
   if (semanticBackend)
     console.info(
-      `[agent-pane] semantic search will use native backend: ${semanticBackend}` +
+      `[copse-panel] semantic search will use native backend: ${semanticBackend}` +
         (getCodesearchCommand() === getBundledCodesearchPath() ? ' (bundled)' : ''),
     )
   else
     console.warn(
-      '[agent-pane] codesearch/vera not found — semantic search disabled (run npm install or add CLI to PATH)',
+      '[copse-panel] codesearch/vera not found — semantic search disabled (run npm install or add CLI to PATH)',
     )
-  if (!gitAvail) console.warn('[agent-pane] git not found — git tools will be unavailable')
+  if (!gitAvail) console.warn('[copse-panel] git not found — git tools will be unavailable')
 }
 
 export const isRgAvailable = () => rgAvail === true

@@ -168,7 +168,7 @@ async function connectServer(
 
   try {
     const transport = createTransport(cfg)
-    const client = new Client({ name: 'agent-pane', version: '0.1.0' }, { capabilities: {} })
+    const client = new Client({ name: 'copse-panel', version: '0.1.0' }, { capabilities: {} })
     await withTimeout(client.connect(transport), CONNECT_TIMEOUT_MS, `Connecting to "${cfg.name}"`)
     activeServers.push({ config: cfg, client })
 

@@ -2,7 +2,7 @@
 
 ## Cursor Cloud specific instructions
 
-`agent-pane` is a single product: an Electron desktop app (an AI coding assistant). There is no
+`copse-panel` (branded **Copse**) is a single product: an Electron desktop app (an AI coding assistant). There is no
 backend service — the app's main process talks directly to LLM providers. The standard scripts
 live in `package.json` (`dev`, `build`, `start`, `typecheck`, `lint`, `format:check`, `test`,
 `test:e2e`, `check`); CI (`.github/workflows/ci.yml`) runs the full `check` + `build` + `test:e2e`
@@ -33,10 +33,10 @@ initialization` / `bus.cc ... Failed to connect to the bus`. The app still runs 
 ### LLM provider / mock
 
 No real model key is required to exercise core functionality. With neither `ANTHROPIC_API_KEY` nor
-`OPENAI_API_KEY` set (and `AGENT_WINDOW_MOCK_LLM` unset), the app falls back to `MockLLMProvider`
+`OPENAI_API_KEY` set (and `COPSE_PANEL_MOCK_LLM` unset), the app falls back to `MockLLMProvider`
 (`src/shared/llm/mock-provider.ts`), which echoes `Mock response to: <message>` and issues one
 `list_dir` tool call on the first turn — enough to drive the full agent loop end-to-end. Set
-`AGENT_WINDOW_MOCK_LLM=1` to force the mock even when keys are present.
+`COPSE_PANEL_MOCK_LLM=1` to force the mock even when keys are present.
 
 ### Before committing
 
@@ -48,10 +48,10 @@ changed renderer UI or e2e fixtures, also run **`npm run build && npm run test:e
 ### App data / state
 
 Persistent state (projects, threads, selected model, workspace root) lives in an `electron-store`
-JSON named `config.json` under the app userData directory (`agent-pane` in
+JSON named `config.json` under the app userData directory (`copse-panel` in
 `src/main/app-init.ts`): on macOS
-`~/Library/Application Support/agent-pane/`, on Linux `~/.config/agent-pane/`, on Windows
-`%APPDATA%/agent-pane/`. The "Open Folder" button uses a native dialog; to open a workspace
+`~/Library/Application Support/copse-panel/`, on Linux `~/.config/copse-panel/`, on Windows
+`%APPDATA%/copse-panel/`. The "Open Folder" button uses a native dialog; to open a workspace
 without driving that dialog, pre-seed `config.json` with a `projects` entry and `activeProjectId`
 before launching.
 
@@ -66,10 +66,10 @@ before launching.
 Use WebdriverIO Electron e2e — do not hand-drive VNC unless debugging layout.
 
 1. `npm run build`
-2. Seed `~/.config/agent-pane/config.json` before launch (see `tests/e2e/helpers/seed-config.ts`):
+2. Seed `~/.config/copse-panel/config.json` before launch (see `tests/e2e/helpers/seed-config.ts`):
    - `projects` + `activeProjectId` pointing at repo root
    - optional `threads:<projectId>` with pre-built `toolCalls` to exercise grouping without a real model
-3. Launch with mock LLM: `AGENT_WINDOW_MOCK_LLM=1 ANTHROPIC_API_KEY= OPENAI_API_KEY=`
+3. Launch with mock LLM: `COPSE_PANEL_MOCK_LLM=1 ANTHROPIC_API_KEY= OPENAI_API_KEY=`
 4. Run: `npm run test:e2e -- --spec tests/e2e/tool-display.e2e.ts`
 5. Screenshots land in `tests/e2e/screenshots/`:
    - `tool-display-collapsed.png` — grouped label (`Reading files ×2`) + failed tool outside group

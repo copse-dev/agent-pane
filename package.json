@@ -1,15 +1,15 @@
 {
-  "name": "agent-pane",
+  "name": "copse-panel",
   "version": "0.1.0",
   "private": true,
-  "description": "Agent-powered coding assistant desktop app",
+  "description": "Copse — AI coding assistant desktop app",
   "main": "dist/main/index.js",
   "type": "commonjs",
   "scripts": {
     "dev": "node --experimental-strip-types scripts/dev.mts",
     "build": "node --experimental-strip-types scripts/build.mts",
     "generate:icon": "node --experimental-strip-types scripts/generate-icon.mts",
-    "icons:mac": "node --experimental-strip-types scripts/generate-icon.mts && AGENT_PANE_REFRESH_DOCK=1 node --experimental-strip-types scripts/patch-dev-name.mts",
+    "icons:mac": "node --experimental-strip-types scripts/generate-icon.mts && COPSE_PANEL_REFRESH_DOCK=1 node --experimental-strip-types scripts/patch-dev-name.mts",
     "start:mac": "npm run icons:mac && env -u ELECTRON_RUN_AS_NODE electron dist/main/index.js",
     "start": "electron dist/main/index.js",
     "postinstall": "node --experimental-strip-types scripts/patch-dev-name.mts && node --experimental-strip-types scripts/postinstall-native.mts && node --experimental-strip-types scripts/fetch-codesearch.mts",
@@ -25,8 +25,8 @@
     "check": "npm run typecheck && npm run lint && npm run format:check && npm test"
   },
   "build": {
-    "appId": "app.agent-pane",
-    "productName": "Agent Pane",
+    "appId": "app.copse-panel",
+    "productName": "Copse",
     "asar": true,
     "directories": {
       "output": "release"
