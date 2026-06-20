@@ -121,7 +121,7 @@ export function initSkillPicker(opts: SkillPickerOptions): () => void {
       selectedIdx = Math.max(selectedIdx - 1, 0)
       updateSelection()
     }
-    if (e.key === 'Enter' || e.key === 'Tab') {
+    if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
       e.preventDefault()
       selectItem(selectedIdx)
     }
