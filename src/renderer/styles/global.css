@@ -1937,3 +1937,116 @@ label {
   flex: 1;
   position: relative;
 }
+
+/* Todo plan panel */
+.conversation-todos-host {
+  flex-shrink: 0;
+  padding: var(--spacing-sm) var(--spacing-md) 0;
+}
+.todo-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+}
+.todo-panel-compact {
+  font-size: 13px;
+}
+.todo-panel-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+.todo-panel-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  font-size: 11px;
+}
+.todo-panel-progress {
+  margin-left: auto;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.todo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.todo-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  padding: 2px 0;
+  color: var(--text-primary);
+}
+.todo-item-completed .todo-content {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+.todo-item-cancelled .todo-content {
+  color: var(--text-muted);
+  opacity: 0.65;
+}
+.todo-item-in_progress .todo-content {
+  font-weight: 500;
+}
+.todo-status-icon {
+  flex-shrink: 0;
+  width: 1rem;
+  text-align: center;
+  color: var(--text-muted);
+}
+.todo-item-in_progress .todo-status-icon {
+  color: var(--accent);
+}
+.todo-item-completed .todo-status-icon {
+  color: var(--success, #3fb950);
+}
+.todo-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.todo-badge-local {
+  color: var(--accent);
+}
+.plan-pane-host {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--spacing-md);
+  min-height: 0;
+}
+.plan-viewer-host {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--spacing-md);
+  min-height: 0;
+  background: var(--bg-base);
+}
+.plan-pane-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin: 0;
+}

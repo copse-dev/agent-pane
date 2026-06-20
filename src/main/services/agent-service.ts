@@ -36,6 +36,20 @@ import {
 } from './explore-subagent-runner.ts'
 import { isLocalModel } from '@shared/llm/estimate-cost.ts'
 import { buildSemanticSearchPromptBlock } from './semantic-search.ts'
+import { setAgentRunTodoContext, clearAgentRunTodos, getAgentRunTodos } from './agent-run-todos.ts'
+import {
+  shouldSteerTodos,
+  formatTodosForPrompt,
+  findNewlyInProgressLocal,
+  findNewlyCompleted,
+  shouldRouteToLocal,
+  TODO_STEERING_PROMPT,
+} from '@shared/todos/todo-logic.ts'
+import { compactAtTodoBoundary } from '@shared/todos/todo-context.ts'
+import { setTodoToolPostProcess } from '../tools/todo-tool.ts'
+import { runTodoWorker } from './todo-worker-runner.ts'
+import { verifyTodoCheck } from './todo-verification.ts'
+import type { TodoItem } from '@shared/types/todo.ts'
 
 const abortMap = new Map<string, AbortController>()
 
@@ -56,6 +70,7 @@ Available tools:
 - git_diff: Show unstaged or staged changes
 - git_log: Show recent commit history
 - run_shell: Run a shell command in the workspace (may prompt for approval)
+- update_todos: Create or update a structured multi-step plan (use only for complex multi-step work)
 {SKILLS_TOOLS_LINE}
 Working directory: {WORKSPACE_ROOT}
 
@@ -83,6 +98,7 @@ Available tools:
 - git_diff: Show unstaged or staged changes
 - git_log: Show recent commit history
 - run_shell: Run a shell command in the workspace (may prompt for approval)
+- update_todos: Create or update a structured multi-step plan (use only for complex multi-step work)
 {SKILLS_TOOLS_LINE}
 Working directory: {WORKSPACE_ROOT}
 
@@ -232,7 +248,7 @@ export async function runAgent(
   priorMessages: LLMMessage[],
   mainWindow: BrowserWindow,
   registry: ToolRegistry,
-  options?: { invokedSkills?: string[] },
+  options?: { invokedSkills?: string[]; priorTodos?: TodoItem[] },
 ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> {
   const skillsToolsLine = buildSkillsToolsPromptLine()
   const projectInstructions = await loadProjectInstructions()
@@ -268,9 +284,27 @@ export async function runAgent(
 
   const parentGoal = extractParentGoal(messages, userPrompt)
 
+  const userTextForSteering =
+    typeof userPrompt === 'string' ? userPrompt : extractParentGoal(messages, userPrompt)
+  const todoSteering = shouldSteerTodos(userTextForSteering) ? `\n\n${TODO_STEERING_PROMPT}` : ''
+  if (todoSteering && messages[0]?.role === 'system') {
+    messages[0] = {
+      role: 'system',
+      content: (messages[0].content as string) + todoSteering,
+    }
+  }
+  const priorTodos = options?.priorTodos ?? []
+  if (priorTodos.length && messages[0]?.role === 'system') {
+    messages[0] = {
+      role: 'system',
+      content: (messages[0].content as string) + formatTodosForPrompt(priorTodos),
+    }
+  }
+
   const { messages: trimmed, trimmed: wasTrimmed } = trimHistory(messages, contextWindow, {
     reserveTokens: toolSchemaReserve,
   })
+  const loopMessages = trimmed
   let trimNoticeSent = wasTrimmed
   const notifyTrimmed = () => {
     if (trimNoticeSent) return
@@ -309,14 +343,94 @@ export async function runAgent(
     mainWindow.webContents.send('agent:chunk', threadId, chunk)
   }
 
+  setAgentRunTodoContext({
+    initial: priorTodos,
+    onUpdate: (todos) => {
+      sendChunk({ type: 'todo_update', todos })
+    },
+  })
+
+  setTodoToolPostProcess(async (before, after) => {
+    let todos = after
+    let extraMessage: string | undefined
+
+    const localItem = findNewlyInProgressLocal(before, after)
+    if (
+      localItem &&
+      shouldRouteToLocal(localItem, {
+        lmStudioForTodoItems: getSetting<boolean>('lmStudioForTodoItems', true),
+        parentIsLocal: isLocalChatModel(model),
+      }) &&
+      subagentRoute
+    ) {
+      sendChunk({ type: 'todo_worker_start', todoId: localItem.id, content: localItem.content })
+      try {
+        const worker = await runTodoWorker({
+          item: localItem,
+          provider: subagentRoute.provider,
+          registry,
+          contextWindow: subagentRoute.contextWindow,
+          toolSchemaReserve: subagentRoute.toolSchemaReserve,
+          signal: controller.signal,
+          onChunk: sendChunk,
+        })
+        inputTokens += worker.usage.inputTokens
+        outputTokens += worker.usage.outputTokens
+        sendChunk({
+          type: 'usage',
+          model: subagentUsageModel,
+          inputTokens: worker.usage.inputTokens,
+          outputTokens: worker.usage.outputTokens,
+        })
+
+        let passed = true
+        if (localItem.check) {
+          const check = await verifyTodoCheck(localItem.check, controller.signal)
+          passed = check.passed
+          extraMessage = passed
+            ? `Local worker completed "${localItem.content}" (${check.detail})`
+            : `Local worker finished but check failed: ${check.detail}`
+        }
+
+        todos = todos.map((t) =>
+          t.id === localItem.id ? { ...t, status: passed ? 'completed' : 'in_progress' } : t,
+        )
+        sendChunk({ type: 'todo_update', todos })
+        sendChunk({
+          type: 'todo_worker_done',
+          todoId: localItem.id,
+          summary: worker.summary,
+          passed,
+        })
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        extraMessage = `Local worker failed: ${msg}`
+        sendChunk({
+          type: 'todo_worker_done',
+          todoId: localItem.id,
+          summary: msg,
+          passed: false,
+        })
+      }
+    }
+
+    const completed = findNewlyCompleted(before, todos)
+    if (completed && compactAtTodoBoundary(loopMessages, todos)) {
+      notifyTrimmed()
+    }
+
+    return { todos, ...(extraMessage ? { extraMessage } : {}) }
+  })
+
   try {
     await runWithAgentRunReadFileLimits(runReadLimits, async () => {
       await runAgentLoop({
         provider,
-        messages: trimmed,
+        messages: loopMessages,
         tools: parentTools(registry, subagentsEnabled),
         usageModel: model,
         coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
+        getOpenTodos: () => getAgentRunTodos(),
         executeTool: async (name, args, signal, toolCallId) => {
           if (name === 'explore' && subagentsEnabled) {
             setExploreSubagentContext({
@@ -370,6 +484,8 @@ export async function runAgent(
     } satisfies StreamChunk)
     mainWindow.webContents.send('agent:chunk', threadId, { type: 'done' } satisfies StreamChunk)
   } finally {
+    clearAgentRunTodos()
+    setTodoToolPostProcess(null)
     abortMap.delete(threadId)
   }
 

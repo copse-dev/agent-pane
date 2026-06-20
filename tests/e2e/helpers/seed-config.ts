@@ -442,6 +442,60 @@ export function seedScrollStreamingFixture(workspaceRoot: string): void {
   )
 }
 
+export function seedTodoDisplayFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-todo-project'
+  const threadId = 'e2e-todo-thread'
+  const todos = [
+    { id: 'todo-1', content: 'Refactor renderer.ts fence extraction', status: 'completed' },
+    { id: 'todo-2', content: 'Add mermaid lazy loader + post-render hook', status: 'in_progress' },
+    {
+      id: 'todo-3',
+      content: 'Add CSS, unit tests, and e2e coverage',
+      status: 'pending',
+      assignedModel: 'local',
+      check: { kind: 'typecheck' },
+    },
+    { id: 'todo-4', content: 'Run npm run check + build/e2e', status: 'pending' },
+    { id: 'todo-5', content: 'Create GitHub issue for diagram steering', status: 'pending' },
+  ]
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Todo display test',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-user-todo',
+              role: 'user',
+              content: 'Implement mermaid and open an issue for diagram steering.',
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+            {
+              id: 'msg-assistant-todo',
+              role: 'assistant',
+              content: 'Working through the plan.',
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+          ],
+          todos,
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
 export function seedToolDisplayFixture(workspaceRoot: string): void {
   const projectId = 'e2e-tool-display-project'
   const threadId = 'e2e-tool-display-thread'
