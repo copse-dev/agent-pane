@@ -156,8 +156,31 @@ function buildDeterministicFollowUps(
   return out
 }
 
+/** Fixed suggestions for e2e / headless screenshot validation (no LM Studio or gh required). */
+export function mockFollowUpSuggestions(): FollowUpSuggestion[] {
+  const changes = buildChangesSuggestion({ additions: 1, deletions: 1 })
+  const ci = buildDebugCiSuggestion()
+  return [
+    {
+      id: changes.id,
+      label: changes.label,
+      prompt: changes.prompt,
+      variant: 'changes',
+      additions: changes.additions,
+      deletions: changes.deletions,
+    },
+    { id: ci.id, label: ci.label, prompt: ci.prompt },
+  ]
+}
+
 /** Build follow-up bubbles: deterministic PR/git signals first, then model picks. */
 export async function suggestFollowUps(context: FollowUpContext): Promise<FollowUpSuggestion[]> {
+  if (
+    process.env.AGENT_WINDOW_MOCK_FOLLOW_UPS === '1' ||
+    getSetting<boolean>('mockFollowUps', false)
+  ) {
+    return mockFollowUpSuggestions()
+  }
   const workspaceCtx = await getPrWorkspaceContext()
   const deterministic = buildDeterministicFollowUps(workspaceCtx)
   const modelPicks = await pickModelFollowUps(context)
