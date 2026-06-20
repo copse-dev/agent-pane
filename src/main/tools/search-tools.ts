@@ -3,14 +3,14 @@ import { z } from 'zod'
 import micromatch from 'micromatch'
 import type { ToolDefinition } from '@shared/types'
 import { resolveWorkspacePath, getWorkspaceRoot, toRelativePath } from '../services/workspace.ts'
-import { runCommand } from '../services/command-runner.ts'
 import { isRgAvailable } from '../services/tool-availability.ts'
 import { getIndex } from '../services/file-index.ts'
+import { formatCodeSearchResults, searchCodeContent } from '../services/indexed-grep.ts'
 
 export const searchCodeTool: ToolDefinition = {
   name: 'search_code',
   description:
-    'Search for a text pattern or regex in the workspace. Respects .gitignore. Returns matching lines with file:line format.',
+    'Search for a text pattern or regex in the workspace. Uses a local content index when available (ig/trigrep), otherwise ripgrep. Returns matching lines with file:line format.',
   parameters: z.object({
     pattern: z.string().describe('Search pattern (regex by default)'),
     path: z.string().optional().describe('Subdirectory to search in. Defaults to workspace root.'),
@@ -28,49 +28,17 @@ export const searchCodeTool: ToolDefinition = {
       return slowSearch(searchRoot, pattern, max_results)
     }
 
-    const args = [
-      '--line-number',
-      '--no-heading',
-      '--with-filename',
-      '--max-count',
-      String(max_results),
-      '--json',
-      ...(fixed_string ? ['--fixed-strings'] : []),
-      ...(case_sensitive ? [] : ['--ignore-case']),
-      ...(file_glob ? ['--glob', file_glob] : []),
-      '--',
+    const { lines, backend } = await searchCodeContent({
       pattern,
       searchRoot,
-    ]
+      fixedString: fixed_string,
+      caseSensitive: case_sensitive,
+      fileGlob: file_glob,
+      maxResults: max_results,
+      signal,
+    })
 
-    const { stdout } = await runCommand('rg', args, { signal })
-    const matches = stdout
-      .split('\n')
-      .filter(Boolean)
-      .map((l) => {
-        try {
-          return JSON.parse(l) as Record<string, unknown>
-        } catch {
-          return null
-        }
-      })
-      .filter((o): o is Record<string, unknown> => o !== null && o['type'] === 'match')
-      .map((o) => {
-        const data = o['data'] as {
-          path: { text: string }
-          line_number: number
-          lines: { text: string }
-        }
-        return `${toRelativePath(data.path.text)}:${data.line_number}: ${data.lines.text.trimEnd()}`
-      })
-
-    if (matches.length === 0) return 'No matches found.'
-    return (
-      matches.join('\n') +
-      (matches.length >= max_results
-        ? `\n[Truncated at ${max_results} results. Narrow your search.]`
-        : '')
-    )
+    return formatCodeSearchResults(lines, max_results, backend)
   },
 }
 
