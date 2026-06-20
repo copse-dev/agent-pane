@@ -323,6 +323,85 @@ export function cleanupGitChangesFixture(repoRoot: string): void {
   rmSync(repoRoot, { recursive: true, force: true })
 }
 
+/** Long thread so the messages list overflows and scroll-to-bottom can be exercised. */
+export function seedScrollToBottomFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-scroll-bottom-project'
+  const threadId = 'e2e-scroll-bottom-thread'
+  const messages = Array.from({ length: 24 }, (_, i) => {
+    const isUser = i % 2 === 0
+    const turn = Math.floor(i / 2) + 1
+    return {
+      id: `msg-scroll-${i}`,
+      role: isUser ? 'user' : 'assistant',
+      content: isUser
+        ? `Question ${turn}: Can you explain part ${turn} of this feature in detail?`
+        : `Answer ${turn}: Here is a detailed explanation for turn ${turn}. `.repeat(8),
+      toolCalls: [],
+      createdAt: Date.now() + i,
+    }
+  })
+
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Scroll to bottom test',
+          status: 'idle',
+          messages,
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
+/** One completed exchange plus a long history so scrolling up during streaming is meaningful. */
+export function seedScrollStreamingFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-scroll-stream-project'
+  const threadId = 'e2e-scroll-stream-thread'
+  const history = Array.from({ length: 20 }, (_, i) => {
+    const isUser = i % 2 === 0
+    const turn = Math.floor(i / 2) + 1
+    return {
+      id: `msg-history-${i}`,
+      role: isUser ? 'user' : 'assistant',
+      content: isUser
+        ? `Earlier question ${turn}`
+        : `Earlier answer ${turn}: `.repeat(10),
+      toolCalls: [],
+      createdAt: Date.now() + i,
+    }
+  })
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Scroll while streaming',
+          status: 'idle',
+          messages: history,
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
 export function seedToolDisplayFixture(workspaceRoot: string): void {
   const projectId = 'e2e-tool-display-project'
   const threadId = 'e2e-tool-display-thread'

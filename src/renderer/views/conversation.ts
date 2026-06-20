@@ -207,31 +207,80 @@ function appendMessageContent(
 }
 
 const SCROLL_PIN_THRESHOLD_PX = 48
+/** Ignore auto-scroll briefly after the user scrolls up during streaming. */
+const USER_SCROLL_UP_DEBOUNCE_MS = 150
 
 export function mountConversation(root: HTMLElement, store: AppStore): () => void {
+  const scrollArea = el('div', { class: 'conversation-scroll' })
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
+  const scrollToBottomBtn = el(
+    'button',
+    {
+      class: 'scroll-to-bottom',
+      type: 'button',
+      'aria-label': 'Scroll to bottom',
+      hidden: true,
+    },
+    '↓',
+  )
+  scrollArea.append(list, scrollToBottomBtn)
+
   const activityBar = el('div', { class: 'agent-activity', role: 'status', 'aria-live': 'polite' })
   const activityLabel = el('span', { class: 'agent-activity-label' })
   activityBar.append(
     el('span', { class: 'agent-activity-pulse', 'aria-hidden': 'true' }),
     activityLabel,
   )
-  root.append(list, activityBar)
+  root.append(scrollArea, activityBar)
 
   let pinnedToBottom = true
+  let lastScrollTop = 0
+  let suppressScrollPinUpdate = false
+  let userScrolledUpAt = 0
 
   function isNearBottom(): boolean {
     const distance = list.scrollHeight - list.scrollTop - list.clientHeight
     return distance <= SCROLL_PIN_THRESHOLD_PX
   }
 
+  function shouldAutoScroll(): boolean {
+    return pinnedToBottom && Date.now() - userScrolledUpAt > USER_SCROLL_UP_DEBOUNCE_MS
+  }
+
+  function updateScrollButton() {
+    scrollToBottomBtn.hidden = isNearBottom()
+  }
+
+  function handleUserScroll() {
+    if (suppressScrollPinUpdate) return
+
+    const scrollTop = list.scrollTop
+    if (scrollTop < lastScrollTop - 1) {
+      userScrolledUpAt = Date.now()
+      pinnedToBottom = false
+    } else if (isNearBottom()) {
+      pinnedToBottom = true
+    }
+    lastScrollTop = scrollTop
+    updateScrollButton()
+  }
+
+  list.addEventListener('scroll', handleUserScroll, { passive: true })
   list.addEventListener(
-    'scroll',
-    () => {
-      pinnedToBottom = isNearBottom()
+    'wheel',
+    (event) => {
+      if (event.deltaY < 0) {
+        userScrolledUpAt = Date.now()
+        pinnedToBottom = false
+        updateScrollButton()
+      }
     },
     { passive: true },
   )
+  scrollToBottomBtn.addEventListener('click', () => {
+    userScrolledUpAt = 0
+    scrollToBottom(true)
+  })
 
   function setActivity(label: string | null) {
     if (!label) {
@@ -255,10 +304,19 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
   }
 
   function scrollToBottom(force = false) {
-    if (!force && !pinnedToBottom) return
+    if (!force && !shouldAutoScroll()) return
     // The scrollable element is the messages list, not the mount root.
+    suppressScrollPinUpdate = true
     list.scrollTop = list.scrollHeight
-    if (force) pinnedToBottom = true
+    lastScrollTop = list.scrollTop
+    requestAnimationFrame(() => {
+      suppressScrollPinUpdate = false
+    })
+    if (force) {
+      userScrolledUpAt = 0
+      pinnedToBottom = true
+    }
+    updateScrollButton()
   }
 
   function renderToolCards(msgEl: HTMLElement, toolCalls: ToolCall[]) {
@@ -321,9 +379,12 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
 
   function rebuildForThread() {
     pinnedToBottom = true
+    userScrolledUpAt = 0
+    lastScrollTop = 0
     clear(list)
     const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
     thread?.messages.forEach((m) => appendMessageEl(store.getState().activeThreadId!, m.id))
+    updateScrollButton()
   }
 
   function refreshToolCards(msgId: string) {
