@@ -1,5 +1,6 @@
 import './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
 import { app, ipcMain } from 'electron'
+import { applyAppIcon } from './app-icon.ts'
 import type { LLMMessage } from '@shared/types'
 import { createMainWindow } from './windows/create-main-window.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
@@ -50,6 +51,7 @@ if (!app.requestSingleInstanceLock()) {
 app
   .whenReady()
   .then(async () => {
+    applyAppIcon()
     await checkToolAvailability()
     await initProjectSandbox()
 

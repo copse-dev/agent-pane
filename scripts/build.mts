@@ -35,6 +35,8 @@ await esbuild.build({
 })
 
 copyFileSync('src/renderer/index.html', 'dist/renderer/index.html')
+cpSync('assets', 'dist/assets', { recursive: true })
+copyFileSync('assets/icons/icon-32.png', 'dist/renderer/favicon.png')
 cpSync('node_modules/monaco-editor/min/vs', 'dist/renderer/monaco/vs', { recursive: true })
 cpSync('node_modules/vscode-material-icons/generated/icons', 'dist/renderer/material-icons', {
   recursive: true,
