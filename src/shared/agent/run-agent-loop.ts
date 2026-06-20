@@ -21,6 +21,11 @@ import {
   shouldInjectLoopNudge,
 } from './agent-loop-escalation.ts'
 import { recoverTextToolCalls } from './parse-text-tool-calls.ts'
+import {
+  AGENT_RUN_TIMEOUT_MS,
+  defaultMaxLlmCallsForSteps,
+  isRunPastDeadline,
+} from './agent-loop-limits.ts'
 
 const RECENT_FINGERPRINT_WINDOW = 16
 /** Do not compact on the first tool round unless the transcript is critically full. */
@@ -50,6 +55,10 @@ export interface AgentLoopOptions {
   getLastUsage?: () => { inputTokens: number; outputTokens: number } | null
   /** Model id for usage/cost attribution on this loop's provider calls. */
   usageModel?: string
+  /** Max provider.stream calls (main loop + finalize / forced text). */
+  maxLlmCalls?: number
+  /** Wall-clock budget checked alongside maxLlmCalls. */
+  runTimeoutMs?: number
 }
 
 const FINALIZE_NUDGE =
@@ -57,6 +66,29 @@ const FINALIZE_NUDGE =
 
 const INCOMPLETE_RUN_MESSAGE =
   'The agent stopped before producing a final answer. Try a shorter question, reduce tool use, or switch models.'
+
+const RUN_LIMIT_MESSAGE =
+  'The agent run reached its time or LLM call limit before finishing. Try a shorter question or start a new turn.'
+
+type LlmCallBudget = {
+  llmCalls: number
+  maxLlmCalls: number
+  runStartedAt: number
+  runTimeoutMs: number
+  signal?: AbortSignal
+}
+
+function runBudgetExhausted(budget: LlmCallBudget): boolean {
+  if (isRunPastDeadline(budget.runStartedAt, budget.runTimeoutMs)) return true
+  if (budget.llmCalls >= budget.maxLlmCalls) return true
+  return false
+}
+
+function reserveLlmCall(budget: LlmCallBudget): boolean {
+  if (runBudgetExhausted(budget)) return false
+  budget.llmCalls++
+  return true
+}
 
 function emitStepUsage(
   getLastUsage: (() => { inputTokens: number; outputTokens: number } | null) | undefined,
@@ -98,11 +130,13 @@ async function streamTextOnlyTurn(
   provider: LLMProvider,
   messages: LLMMessage[],
   onChunk: (chunk: StreamChunk) => void,
-  signal?: AbortSignal,
+  budget: LlmCallBudget,
   nudge = FINALIZE_NUDGE,
   getLastUsage?: () => { inputTokens: number; outputTokens: number } | null,
   usageModel?: string,
 ): Promise<string> {
+  if (!reserveLlmCall(budget)) return ''
+  const signal = budget.signal
   const turnMessages: LLMMessage[] = [...messages, { role: 'user', content: nudge }]
   let assistantText = ''
 
@@ -136,9 +170,19 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     onHistoryTrimmed,
     getLastUsage,
     usageModel,
+    maxLlmCalls = defaultMaxLlmCallsForSteps(maxSteps),
+    runTimeoutMs = AGENT_RUN_TIMEOUT_MS,
   } = opts
+  const budget: LlmCallBudget = {
+    llmCalls: 0,
+    maxLlmCalls,
+    runStartedAt: Date.now(),
+    runTimeoutMs,
+    ...(signal !== undefined ? { signal } : {}),
+  }
   let steps = 0
   let finishedWithAnswer = false
+  let hitRunLimit = false
   let toolOnlySteps = 0
   let loopNudgeSent = false
   let forceTextAttempted = false
@@ -146,6 +190,10 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   const recentFingerprints: string[] = []
 
   while (steps < maxSteps) {
+    if (runBudgetExhausted(budget)) {
+      hitRunLimit = true
+      break
+    }
     if (signal?.aborted) break
     steps++
 
@@ -169,7 +217,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           provider,
           messages,
           onChunk,
-          signal,
+          budget,
           STUCK_FINALIZE_NUDGE,
           getLastUsage,
           usageModel,
@@ -200,6 +248,11 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     // Collect one full LLM response
     let assistantText = ''
     const pendingToolCalls: ToolCallChunk[] = []
+
+    if (!reserveLlmCall(budget)) {
+      hitRunLimit = true
+      break
+    }
 
     for await (const chunk of provider.stream(messages, tools, signal)) {
       if (signal?.aborted) break
@@ -296,12 +349,12 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     messages.push({ role: 'tool', toolResults })
   }
 
-  if (!signal?.aborted && !finishedWithAnswer) {
+  if (!signal?.aborted && !finishedWithAnswer && !hitRunLimit) {
     const finalText = await streamTextOnlyTurn(
       provider,
       messages,
       onChunk,
-      signal,
+      budget,
       FINALIZE_NUDGE,
       getLastUsage,
       usageModel,
@@ -312,6 +365,11 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     } else {
       finishedWithAnswer = true
     }
+  }
+
+  if (hitRunLimit && !finishedWithAnswer && !signal?.aborted) {
+    onChunk({ type: 'text', text: RUN_LIMIT_MESSAGE })
+    messages.push({ role: 'assistant', content: RUN_LIMIT_MESSAGE })
   }
 
   onChunk({ type: 'done' })

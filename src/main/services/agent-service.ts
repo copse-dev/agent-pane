@@ -1,6 +1,7 @@
 import { BrowserWindow } from 'electron'
 import { createProvider, createLMStudioProvider } from '@shared/llm/create-provider.ts'
 import { runAgentLoop } from '@shared/agent/run-agent-loop.ts'
+import { AGENT_RUN_TIMEOUT_MS, DEFAULT_MAX_LLM_CALLS } from '@shared/agent/agent-loop-limits.ts'
 import { loadProjectInstructions } from './project-instructions.ts'
 import type { LLMMessage, LLMProvider, StreamChunk, UserContent } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
@@ -300,6 +301,7 @@ export async function runAgent(
 
   const controller = new AbortController()
   abortMap.set(threadId, controller)
+  const runTimeoutTimer = setTimeout(() => controller.abort(), AGENT_RUN_TIMEOUT_MS)
 
   let inputTokens = 0,
     outputTokens = 0
@@ -315,6 +317,8 @@ export async function runAgent(
       messages: trimmed,
       tools: parentTools(registry, subagentsEnabled),
       usageModel: model,
+      maxLlmCalls: DEFAULT_MAX_LLM_CALLS,
+      runTimeoutMs: AGENT_RUN_TIMEOUT_MS,
       executeTool: async (name, args, signal, toolCallId) => {
         if (name === 'explore' && subagentsEnabled) {
           setExploreSubagentContext({
@@ -325,6 +329,7 @@ export async function runAgent(
             contextWindow: subagentRoute?.contextWindow ?? contextWindow,
             toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
             onChunk: sendChunk,
+            usageModel: subagentUsageModel,
           })
           try {
             return await registry.execute(name, args, signal)
@@ -367,6 +372,7 @@ export async function runAgent(
     } satisfies StreamChunk)
     mainWindow.webContents.send('agent:chunk', threadId, { type: 'done' } satisfies StreamChunk)
   } finally {
+    clearTimeout(runTimeoutTimer)
     clearAgentRunReadFileLimits()
     abortMap.delete(threadId)
   }

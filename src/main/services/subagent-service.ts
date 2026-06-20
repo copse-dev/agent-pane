@@ -11,14 +11,6 @@ import { getWorkspaceRoot } from './workspace.ts'
 import { buildExploreSearchRoutingAddon } from '@shared/agent/search-routing.ts'
 import { isSemanticSearchAvailable } from './semantic-index.ts'
 
-interface ProviderWithUsage {
-  lastUsage: { inputTokens: number; outputTokens: number } | null
-}
-
-function hasLastUsage(p: unknown): p is ProviderWithUsage {
-  return typeof p === 'object' && p !== null && 'lastUsage' in p
-}
-
 export interface RunExploreSubagentOptions {
   parentToolCallId: string
   query: string
@@ -30,6 +22,7 @@ export interface RunExploreSubagentOptions {
   toolSchemaReserve: number
   signal: AbortSignal
   onChunk: (chunk: StreamChunk) => void
+  usageModel: string
 }
 
 export interface ExploreSubagentResult {
@@ -68,6 +61,7 @@ export async function runExploreSubagent(
     toolSchemaReserve,
     signal,
     onChunk,
+    usageModel,
   } = opts
 
   const workspace = getWorkspaceRoot() ?? '(none)'
@@ -95,18 +89,11 @@ export async function runExploreSubagent(
       executeTool: (name, args, sig) => executeExploreTool(registry, name, args, sig),
       onSubagentChunk: onChunk,
       systemPromptSuffix: buildExploreSearchRoutingAddon(isSemanticSearchAvailable()),
+      usageModel,
     })
 
-    let inputTokens = 0
-    let outputTokens = 0
-    if (hasLastUsage(provider) && provider.lastUsage) {
-      inputTokens = provider.lastUsage.inputTokens
-      outputTokens = provider.lastUsage.outputTokens
-    }
-
-    session.usage = { inputTokens, outputTokens }
-
-    return { summary, usage: { inputTokens, outputTokens } }
+    const usage = session.usage ?? { inputTokens: 0, outputTokens: 0 }
+    return { summary, usage }
   } finally {
     clearAgentRunReadFileLimits()
   }

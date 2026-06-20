@@ -1,4 +1,5 @@
 import { runAgentLoop } from './run-agent-loop.ts'
+import { defaultMaxLlmCallsForSteps } from './agent-loop-limits.ts'
 import type {
   LLMProvider,
   LLMMessage,
@@ -9,6 +10,14 @@ import type {
 } from '@shared/types'
 
 const randomUUID = () => globalThis.crypto.randomUUID()
+
+interface ProviderWithUsage {
+  lastUsage: { inputTokens: number; outputTokens: number } | null
+}
+
+function hasLastUsage(p: unknown): p is ProviderWithUsage {
+  return typeof p === 'object' && p !== null && 'lastUsage' in p
+}
 
 export const EXPLORE_TOOL_NAMES = [
   'read_file',
@@ -44,6 +53,7 @@ export interface RunSubagentOptions {
   onSubagentChunk: (chunk: StreamChunk) => void
   parentToolCallId: string
   systemPromptSuffix?: string
+  usageModel?: string
 }
 
 export interface RunSubagentResult {
@@ -74,6 +84,7 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
     onSubagentChunk,
     parentToolCallId,
     systemPromptSuffix,
+    usageModel,
   } = opts
 
   const sessionId = randomUUID()
@@ -118,16 +129,29 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
 
   let summary = ''
 
+  const recordUsage = (input: number, output: number) => {
+    const prev = session.usage ?? { inputTokens: 0, outputTokens: 0 }
+    session.usage = {
+      inputTokens: prev.inputTokens + input,
+      outputTokens: prev.outputTokens + output,
+    }
+  }
+
   try {
-    const loopOpts = {
+    const loopOpts: Parameters<typeof runAgentLoop>[0] = {
       provider,
       messages,
       tools,
       maxSteps,
+      maxLlmCalls: defaultMaxLlmCallsForSteps(maxSteps),
       toolSchemaReserveTokens,
+      getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
       executeTool: (name: string, args: unknown, signal: AbortSignal, _toolCallId: string) =>
         executeTool(name, args, signal),
       onChunk: (chunk: StreamChunk) => {
+        if (chunk.type === 'usage') {
+          recordUsage(chunk.inputTokens, chunk.outputTokens)
+        }
         if (chunk.type === 'text') {
           const msgId = ensureAssistantMessage()
           const msg = session.messages.find((m) => m.id === msgId)!
@@ -176,12 +200,9 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
         }
       },
     }
-    if (maxContextTokens !== undefined) {
-      Object.assign(loopOpts, { maxContextTokens })
-    }
-    if (signal !== undefined) {
-      Object.assign(loopOpts, { signal })
-    }
+    if (maxContextTokens !== undefined) loopOpts.maxContextTokens = maxContextTokens
+    if (signal !== undefined) loopOpts.signal = signal
+    if (usageModel !== undefined) loopOpts.usageModel = usageModel
     await runAgentLoop(loopOpts)
 
     // Collect final assistant text as summary
