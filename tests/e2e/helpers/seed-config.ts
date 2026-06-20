@@ -370,3 +370,129 @@ export function seedToolDisplayFixture(workspaceRoot: string): void {
     'utf8',
   )
 }
+
+/** Explore subagent thread with search-routing markdown matching semantic-search UI. */
+export function seedSemanticSearchExploreFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-semantic-search-project'
+  const threadId = 'e2e-semantic-search-thread'
+  const summary = [
+    'Here is the complete summary of how semantic search is classified, routed, and executed:',
+    '',
+    '---',
+    '',
+    "## Search Routing Summary ('search-routing.ts')",
+    '',
+    "### 1. Classification ('classifySearchQuery')",
+    '',
+    '**File:** `src/main/services/search-routing.ts`',
+    '',
+    'The router picks semantic vs grep based on query shape.',
+    '',
+    '- **Semantic path** — embedding search via `search_codebase`',
+    '- **Grep path** — ripgrep via `grep_search`',
+    '',
+    '### 2. Execution',
+    '',
+    'Let me find where this classification function is called.',
+    '',
+    '- Read `search-routing.ts`',
+    '- Search for `classifySearchQuery`',
+  ].join('\n')
+
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'agent-pane' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Mechanism Explained',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-user-1',
+              role: 'user',
+              content: 'is there semantic search',
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+            {
+              id: 'msg-assistant-1',
+              role: 'assistant',
+              content:
+                "Good find — there *is* semantic search, but it's not in the file path indexer. It's in the **agent's code search routing**. Let me explore it.",
+              toolCalls: [
+                {
+                  id: 'tc-explore-semantic',
+                  name: 'explore',
+                  args: { query: 'How is semantic search routed?' },
+                  status: 'done',
+                  result: summary,
+                  subagent: {
+                    id: 'sub-semantic-1',
+                    kind: 'explore',
+                    status: 'done',
+                    prompt: 'How is semantic search routed?',
+                    summary,
+                    messages: [
+                      {
+                        id: 'sub-msg-1',
+                        role: 'assistant',
+                        content: summary,
+                        toolCalls: [
+                          {
+                            id: 'inner-read-1',
+                            name: 'read_file',
+                            args: { path: 'src/main/services/search-routing.ts' },
+                            status: 'done',
+                            result: 'export function classifySearchQuery() {}',
+                          },
+                          {
+                            id: 'inner-search-1',
+                            name: 'search_codebase',
+                            args: { query: 'classifySearchQuery' },
+                            status: 'done',
+                            result: 'search-routing.ts:12',
+                          },
+                        ],
+                      },
+                      {
+                        id: 'sub-msg-2',
+                        role: 'assistant',
+                        content:
+                          'Let me find where this classification function is called and how semantic tools are passed in.',
+                        toolCalls: [
+                          {
+                            id: 'inner-search-2',
+                            name: 'search_codebase',
+                            args: { query: 'semantic search routing' },
+                            status: 'done',
+                            result: 'agent-service.ts:88',
+                          },
+                          {
+                            id: 'inner-read-2',
+                            name: 'read_file',
+                            args: { path: 'src/main/services/agent-service.ts' },
+                            status: 'done',
+                            result: 'const route = classifySearchQuery(query)',
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                },
+              ],
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
