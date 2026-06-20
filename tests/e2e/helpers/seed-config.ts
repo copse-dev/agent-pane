@@ -100,13 +100,20 @@ export function seedMarkdownListFixture(workspaceRoot: string): void {
   const projectId = 'e2e-markdown-list-project'
   const threadId = 'e2e-markdown-list-thread'
   const content = [
-    'The lint is already clean — no issues to fix. Here is the summary:',
+    '### ⚠️ Known Failures',
     '',
-    '- **Tests:** All 110 tests pass.',
-    '- **Lint:** `npm run lint` (which runs `eslint .`) exits with code 0 and reports zero errors or warnings.',
-    '- `npx eslint . --max-warnings 0`: Also exits cleanly with no violations.',
+    '**Unit tests (2 failures):**',
+    '- `terminal-service` — 2 subtests fail with posix spawnp failed',
     '',
-    'There are no lint errors in this codebase — ESLint is configured and passing.',
+    '**E2E tests (all 10 fail):**',
+    '- Every e2e test fails with listen EPERM: operation not permitted 0.0.0.0',
+    '',
+    '### 📦 Architecture Highlights',
+    '- Electron app — AI coding assistant with tool-executing agents',
+    '- No backend — Direct LLM provider calls (Anthropic, OpenAI, LM Studio)',
+    '- Mock LLM — `AGENT-WINDOW-MOCK-LLM=1` enables full e2e testing without API keys',
+    '- MCP host — Per-server enable toggles in Settings',
+    '- Persistence — `electron-store` for projects, threads, settings',
   ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })
   writeFileSync(
