@@ -26,5 +26,5 @@
   --spacing-xl: 24px;
   /* Left inset for custom titlebars under macOS traffic lights (see trafficLightPosition). */
   --traffic-light-inset: 78px;
-  --titlebar-height: 38px;
+  --titlebar-height: 40px;
 }
