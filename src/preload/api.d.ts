@@ -2,6 +2,7 @@ import type { StreamChunk, UsageDelta } from '@shared/types'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { GitFileDiff, GitStatusResult } from '@shared/types/git.ts'
 import type { McpServerStatus } from '@shared/types/mcp.ts'
+import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
 
 export interface ApiClient {
   workspace: {
@@ -24,6 +25,7 @@ export interface ApiClient {
     abort: (threadId: string) => Promise<void>
     clearHistory: (threadId: string) => Promise<void>
     suggestTitle: (text: string) => Promise<string | null>
+    suggestFollowUps: (contextJson: string) => Promise<FollowUpSuggestion[]>
     onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => () => void
     onApprovalRequest: (
       handler: (req: {
