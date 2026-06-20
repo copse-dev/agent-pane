@@ -5,6 +5,7 @@ import micromatch from 'micromatch'
 import * as fsp from 'node:fs/promises'
 import { getWorkspaceRoot, setWorkspaceRoot, resolveWorkspacePath } from '../services/workspace.ts'
 import { buildIndex, getIndex } from '../services/file-index.ts'
+import { ensureSemanticIndex } from '../services/semantic-index.ts'
 import {
   scheduleIndexRebuild,
   startWorkspaceIndexWatcher,
@@ -35,6 +36,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const root = result.filePaths[0]
     setWorkspaceRoot(root)
     await buildIndex(root)
+    void ensureSemanticIndex(root)
     startWorkspaceIndexWatcher(root)
     await initSkillsRegistry()
     registerSkillTools(registry)
@@ -48,6 +50,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('workspace:set', async (_e, root: string) => {
     setWorkspaceRoot(root)
     await buildIndex(root)
+    void ensureSemanticIndex(root)
     startWorkspaceIndexWatcher(root)
     await initSkillsRegistry()
     registerSkillTools(registry)

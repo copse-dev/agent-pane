@@ -10,7 +10,7 @@
     "build": "node --experimental-strip-types scripts/build.mts",
     "generate:icon": "node --experimental-strip-types scripts/generate-icon.mts",
     "start": "electron dist/main/index.js",
-    "postinstall": "node --experimental-strip-types scripts/patch-dev-name.mts && node --experimental-strip-types scripts/postinstall-native.mts",
+    "postinstall": "node --experimental-strip-types scripts/patch-dev-name.mts && node --experimental-strip-types scripts/postinstall-native.mts && node --experimental-strip-types scripts/fetch-codesearch.mts",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint .",
     "format": "prettier --write .",

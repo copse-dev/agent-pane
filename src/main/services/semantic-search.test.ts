@@ -1,34 +1,51 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { ToolRegistry } from './tool-registry.ts'
-import { setPermissionGateForTests } from './tool-registry.ts'
-import {
-  buildSemanticSearchPromptBlock,
-  isSemanticMcpTool,
-  listSemanticMcpTools,
-} from './semantic-search.ts'
-import { z } from 'zod'
+import { setWorkspaceRootForTest } from './workspace.ts'
+import { buildSemanticSearchPromptBlock, executeSemanticSearch } from './semantic-search.ts'
+import { setSemanticBackendForTest, setSemanticSearchExecutorForTest } from './semantic-index.ts'
 
 describe('semantic-search', () => {
-  it('detects semantic MCP tool names', () => {
-    assert.equal(isSemanticMcpTool('mcp__vera__search_code'), true)
-    assert.equal(isSemanticMcpTool('mcp__locus__search_codebase'), true)
-    assert.equal(isSemanticMcpTool('search_code'), false)
+  it('builds native routing guidance when semantic backend is available', () => {
+    setSemanticBackendForTest('codesearch')
+    try {
+      assert.match(buildSemanticSearchPromptBlock(), /search_codebase \(auto\/semantic\) or semantic_search/)
+    } finally {
+      setSemanticBackendForTest(null)
+    }
   })
 
-  it('builds a routing prompt block from connected semantic tools', () => {
-    const registry = new ToolRegistry()
-    registry.register({
-      name: 'mcp__vera__search_code',
-      description: 'semantic',
-      parameters: z.object({ query: z.string() }),
-      async execute() {
-        return 'ok'
-      },
-    })
-    setPermissionGateForTests(async () => true)
-    assert.deepEqual(listSemanticMcpTools(registry), ['mcp__vera__search_code'])
-    assert.match(buildSemanticSearchPromptBlock(registry), /vera/)
-    setPermissionGateForTests(null)
+  it('executes native semantic search when backend is available', async () => {
+    const restoreWorkspace = setWorkspaceRootForTest('/tmp/repo')
+    setSemanticBackendForTest('codesearch')
+    setSemanticSearchExecutorForTest(async () => ({
+      hits: [{ path: 'src/a.ts', startLine: 1, text: 'native hit' }],
+      backend: 'codesearch',
+    }))
+
+    try {
+      const result = await executeSemanticSearch(
+        { query: 'where is auth handled' },
+        new AbortController().signal,
+      )
+      assert.match(result?.text ?? '', /native hit/)
+    } finally {
+      setSemanticBackendForTest(null)
+      setSemanticSearchExecutorForTest(null)
+      restoreWorkspace()
+    }
+  })
+
+  it('returns null when native semantic search is unavailable', async () => {
+    const restoreWorkspace = setWorkspaceRootForTest('/tmp/repo')
+    setSemanticBackendForTest(null)
+    try {
+      const result = await executeSemanticSearch(
+        { query: 'where is auth handled' },
+        new AbortController().signal,
+      )
+      assert.equal(result, null)
+    } finally {
+      restoreWorkspace()
+    }
   })
 })
