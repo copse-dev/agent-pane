@@ -66,7 +66,18 @@ export interface ToolCall {
   subagent?: SubagentSession
 }
 
+export interface ModelUsage {
+  inputTokens: number
+  outputTokens: number
+}
+
 export interface ThreadUsage {
   inputTokens: number
   outputTokens: number
+  /** Token totals keyed by model id (e.g. claude-sonnet-4-6, lmstudio:qwen). */
+  byModel?: Record<string, ModelUsage>
+}
+
+export interface UsageDelta extends ModelUsage {
+  model: string
 }

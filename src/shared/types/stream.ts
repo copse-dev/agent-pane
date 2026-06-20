@@ -12,7 +12,7 @@ export type StreamChunk =
       historyBudget: number
       estimatedTokens: number
     }
-  | { type: 'usage'; inputTokens: number; outputTokens: number }
+  | { type: 'usage'; model: string; inputTokens: number; outputTokens: number }
   | {
       type: 'context_pressure'
       contextWindow: number

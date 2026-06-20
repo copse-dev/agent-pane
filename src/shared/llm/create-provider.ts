@@ -10,7 +10,8 @@ interface ProviderKeys {
 
 // `model` is the user's selected model (from settings). It both picks the
 // provider family (claude* → Anthropic, gpt* → OpenAI) and is passed through as
-// the model id. Falls back to whichever key is present, then mock.
+// the model id. Falls back to whichever key is present; mock only when
+// AGENT_WINDOW_MOCK_LLM=1 (tests / dev).
 export function createProvider(model?: string, keys: ProviderKeys = {}): LLMProvider {
   if (process.env.AGENT_WINDOW_MOCK_LLM === '1') {
     return new MockLLMProvider()
@@ -34,7 +35,9 @@ export function createProvider(model?: string, keys: ProviderKeys = {}): LLMProv
       apiKey: openAiApiKey,
     })
   }
-  return new MockLLMProvider()
+  throw new Error(
+    'No LLM provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY in Settings, pick an LM Studio model, or set AGENT_WINDOW_MOCK_LLM=1 for development.',
+  )
 }
 
 // LM Studio (and other OpenAI-compatible local servers) speak the OpenAI API,

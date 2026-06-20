@@ -10,7 +10,7 @@ export function mountWelcome(root: HTMLElement, store: AppStore, api: ApiClient)
   const keyHint = el(
     'p',
     { class: 'welcome-hint' },
-    'Set ANTHROPIC_API_KEY or OPENAI_API_KEY to connect to a real model. Without a key the mock provider is used.',
+    'Set ANTHROPIC_API_KEY or OPENAI_API_KEY in Settings, or configure LM Studio, to connect to a model.',
   )
   const agentHint = el(
     'p',
