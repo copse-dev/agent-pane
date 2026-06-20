@@ -1,15 +1,8 @@
 import type { ApiClient } from '../../preload/api.d.ts'
+import { CLOUD_MODELS } from '@shared/llm/cloud-models.ts'
 import { clear } from '../dom/helpers.ts'
 
-// Cloud models, each tagged with the provider key it needs. They're only shown
-// when that provider is available. LM Studio models are discovered at runtime.
-export const CLOUD_MODELS: Array<[value: string, label: string, provider: 'anthropic' | 'openai']> =
-  [
-    ['claude-sonnet-4-6', 'claude-sonnet-4-6', 'anthropic'],
-    ['claude-opus-4-8', 'claude-opus-4-8', 'anthropic'],
-    ['gpt-4o', 'gpt-4o', 'openai'],
-    ['gpt-4o-mini', 'gpt-4o-mini', 'openai'],
-  ]
+export { CLOUD_MODELS }
 
 export interface ModelOption {
   value: string
@@ -32,8 +25,8 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
   } catch {
     /* keep defaults */
   }
-  for (const [value, label, provider] of CLOUD_MODELS) {
-    if (available[provider]) options.push({ value, label })
+  for (const model of CLOUD_MODELS) {
+    if (available[model.provider]) options.push({ value: model.id, label: model.label })
   }
 
   const lmGroup = 'LM Studio (local)'
