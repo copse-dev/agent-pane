@@ -1,6 +1,6 @@
-# agent-pane
+# Copse
 
-Electron desktop app: chat with an LLM that can use tools (read/write/search files, shell, git, MCP) against opened project folders. UI includes conversation, file tree, Monaco editor, tool approvals, and a pending-diff queue.
+Electron desktop app (`copse-panel`): chat with an LLM that can use tools (read/write/search files, shell, git, MCP) against opened project folders. UI includes conversation, file tree, Monaco editor, tool approvals, and a pending-diff queue.
 
 Requires Node ≥ 22.
 

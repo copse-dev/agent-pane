@@ -12,7 +12,7 @@ describe('titlebar workspace name', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'agent-pane-titlebar-'))
+    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-titlebar-'))
     seedEmptyProject(workspaceRoot, 'e2e-titlebar-project')
     await browser.reloadSession()
   })

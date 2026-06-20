@@ -18,7 +18,7 @@ interface McpStatus {
 }
 
 async function makeWorkspace(mcpConfig: unknown): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'agent-pane-mcp-'))
+  const root = await mkdtemp(join(tmpdir(), 'copse-panel-mcp-'))
   await mkdir(join(root, '.cursor'), { recursive: true })
   await writeFile(join(root, '.cursor', 'mcp.json'), JSON.stringify(mcpConfig), 'utf8')
   return root
@@ -33,7 +33,7 @@ async function launch(workspaceRoot: string, env: Record<string, string> = {}) {
     args: ['dist/main/index.js', '--disable-gpu'],
     env: {
       ...process.env,
-      AGENT_WINDOW_MOCK_LLM: '1',
+      COPSE_PANEL_MOCK_LLM: '1',
       ANTHROPIC_API_KEY: '',
       OPENAI_API_KEY: '',
       ...env,

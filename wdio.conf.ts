@@ -47,7 +47,7 @@ export const config: Options.Testrunner = {
     timeout: 30_000,
   },
   beforeSession(_config, capabilities) {
-    process.env.AGENT_WINDOW_MOCK_LLM = '1'
+    process.env.COPSE_PANEL_MOCK_LLM = '1'
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
 

@@ -162,7 +162,7 @@ async function buildProvider(model: string): Promise<LLMProvider> {
     }
     return createLMStudioProvider(url, id, lmStudioKey())
   }
-  if (process.env.AGENT_WINDOW_MOCK_LLM === '1') return createProvider(model)
+  if (process.env.COPSE_PANEL_MOCK_LLM === '1') return createProvider(model)
   if (model.startsWith('claude')) {
     return createProvider(model, {
       anthropicApiKey: storedOrEnvApiKey('anthropic'),

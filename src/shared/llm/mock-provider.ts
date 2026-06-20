@@ -19,7 +19,7 @@ export class MockLLMProvider implements LLMProvider {
     const fullUserText = typeof lastUserMsg?.content === 'string' ? lastUserMsg.content : ''
     const userText = fullUserText ? fullUserText.slice(0, 40) : '(complex input)'
     const text = demoSkillLoaded
-      ? 'Demo skill active — agent-pane skills support is working.'
+      ? 'Demo skill active — Copse skills support is working.'
       : `Mock response to: ${userText}`
 
     const isFirstTurn = messages.filter((m) => m.role === 'assistant').length === 0
