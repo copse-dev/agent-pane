@@ -10,6 +10,7 @@ import {
   formatShellPromptBody,
   mcpToolLabel,
 } from './permission-policy.ts'
+import { formatUnsandboxedPromptBody } from './sandbox-failure.ts'
 
 export type { ShellPermissionDecision, PermissionCheck } from './permission-policy.ts'
 export { decideShellPermission } from './permission-policy.ts'
@@ -20,6 +21,15 @@ async function promptShell(command: string, reasons: string[]): Promise<boolean>
   return requestApproval({
     title: 'Run shell command?',
     body: formatShellPromptBody(command, reasons),
+    type: 'shell',
+  })
+}
+
+/** Prompt when a sandboxed command failed and may succeed unsandboxed. */
+export async function promptUnsandboxedShell(command: string, reasons: string[]): Promise<boolean> {
+  return requestApproval({
+    title: 'Run outside sandbox?',
+    body: formatUnsandboxedPromptBody(command, reasons),
     type: 'shell',
   })
 }
