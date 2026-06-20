@@ -1,6 +1,7 @@
 import * as fs from 'node:fs'
 import { buildIndex } from './file-index.ts'
 import { getWorkspaceRoot } from './workspace.ts'
+import { updateSemanticIndex } from './semantic-index.ts'
 
 const REBUILD_DEBOUNCE_MS = 500
 
@@ -39,9 +40,11 @@ export function scheduleIndexRebuild(): void {
   if (debounceTimer) clearTimeout(debounceTimer)
   debounceTimer = setTimeout(() => {
     debounceTimer = null
-    rebuildInFlight = buildIndex(root).catch((err) => {
-      console.warn('[agent-pane] file index rebuild failed:', err)
-    })
+    rebuildInFlight = Promise.all([buildIndex(root), updateSemanticIndex(root)])
+      .then(() => {})
+      .catch((err) => {
+        console.warn('[agent-pane] workspace index rebuild failed:', err)
+      })
   }, REBUILD_DEBOUNCE_MS)
 }
 
@@ -51,7 +54,9 @@ export async function flushScheduledIndexRebuild(): Promise<void> {
     clearTimeout(debounceTimer)
     debounceTimer = null
     const root = watchedRoot ?? getWorkspaceRoot()
-    if (root) rebuildInFlight = buildIndex(root)
+    if (root) {
+      rebuildInFlight = Promise.all([buildIndex(root), updateSemanticIndex(root)]).then(() => {})
+    }
   }
   await rebuildInFlight
   rebuildInFlight = null
