@@ -10,6 +10,22 @@ const KEY_PROJECTS = 'projects'
 const KEY_ACTIVE = 'activeProjectId'
 const threadsKey = (projectId: string) => `threads:${projectId}`
 
+// Autosave fires several events per turn and project switches save/load
+// concurrently, so writes to the same key could overlap and land out of order
+// (a stale in-flight write completing after a newer one). Chain writes per key
+// so they apply strictly in submission order; the latest-submitted value wins.
+const writeChains = new Map<string, Promise<unknown>>()
+
+export function serializedSet(api: ApiClient, key: string, value: unknown): Promise<void> {
+  const prev = writeChains.get(key) ?? Promise.resolve()
+  const next = prev.catch(() => undefined).then(() => api.storage.set(key, value))
+  writeChains.set(key, next)
+  void next.finally(() => {
+    if (writeChains.get(key) === next) writeChains.delete(key)
+  })
+  return next
+}
+
 export async function loadProjects(
   api: ApiClient,
 ): Promise<{ projects: Project[]; activeProjectId: string | null }> {
@@ -23,8 +39,10 @@ export async function saveProjects(
   projects: Project[],
   activeProjectId: string | null,
 ): Promise<void> {
-  await api.storage.set(KEY_PROJECTS, projects)
-  await api.storage.set(KEY_ACTIVE, activeProjectId)
+  await Promise.all([
+    serializedSet(api, KEY_PROJECTS, projects),
+    serializedSet(api, KEY_ACTIVE, activeProjectId),
+  ])
 }
 
 export async function loadThreads(api: ApiClient, projectId: string): Promise<Thread[]> {
@@ -37,7 +55,7 @@ export async function saveThreads(
   projectId: string,
   threads: Thread[],
 ): Promise<void> {
-  await api.storage.set(threadsKey(projectId), threads)
+  await serializedSet(api, threadsKey(projectId), threads)
 }
 
 // Autosave: persists the active project's threads (and the project list) on
