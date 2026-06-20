@@ -71,6 +71,8 @@ export async function restoreProject(store: AppStore, api: ApiClient, id: string
     activeThreadId: loaded[0]?.id ?? null,
   })
   if (loaded.length === 0) createThread(store)
+  store.emit('workspace_changed')
+  store.emit('threads_changed')
 }
 
 export async function addProject(store: AppStore, api: ApiClient): Promise<boolean> {
