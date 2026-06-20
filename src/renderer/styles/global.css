@@ -1502,6 +1502,53 @@ label {
 .settings-content fieldset {
   background: var(--bg-elevated);
 }
+.app-icon-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.app-icon-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+.app-icon-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.app-icon-preview {
+  display: block;
+  padding: 4px;
+  border: 2px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-base);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.app-icon-preview img {
+  display: block;
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+}
+.app-icon-option:hover .app-icon-preview {
+  border-color: var(--border-strong);
+}
+.app-icon-option:has(input:checked) .app-icon-preview {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.app-icon-option:has(input:checked) .app-icon-label {
+  color: var(--text-primary);
+}
+.app-icon-label {
+  font-size: 12px;
+}
 .settings-content label select,
 .settings-content label input[type='text'],
 .settings-content label input[type='password'],

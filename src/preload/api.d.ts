@@ -79,6 +79,9 @@ export interface ApiClient {
     setKey: (provider: 'anthropic' | 'openai' | 'lmstudio', key: string) => Promise<void>
     availableProviders: () => Promise<{ anthropic: boolean; openai: boolean }>
   }
+  appIcon: {
+    apply: () => Promise<void>
+  }
   index: {
     query: (pattern: string) => Promise<string[]>
   }

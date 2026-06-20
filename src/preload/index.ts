@@ -132,6 +132,9 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('settings:setKey', provider, key),
     availableProviders: () => ipcRenderer.invoke('settings:availableProviders'),
   },
+  appIcon: {
+    apply: () => ipcRenderer.invoke('app-icon:apply'),
+  },
   index: {
     query: (pattern: string) => ipcRenderer.invoke('index:query', pattern),
   },
