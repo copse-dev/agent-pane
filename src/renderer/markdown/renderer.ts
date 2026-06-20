@@ -32,21 +32,55 @@ export function renderMarkdown(raw: string): string {
   // Thematic breaks (---, ***, ___) — isolate as block elements before list/paragraph passes
   s = s.replace(/^ {0,3}(-{3,}|\*{3,}|_{3,}) *$/gm, '\n\n<hr>\n\n')
 
-  // Unordered list items
-  s = s.replace(/^- (.+)$/gm, '<li>$1</li>')
+  // Unordered list items (-, *, +)
+  s = s.replace(/^(?:[-*+] )(.+)$/gm, '<li>$1</li>')
   s = s.replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`)
 
   // Paragraphs (blank-line separated)
   s = s
     .split(/\n\n+/)
-    .map((block) => {
-      if (/^<(pre|ul|h[34]|table|hr)/.test(block.trim())) return block
-      if (block.trim() === '') return ''
-      return `<p>${block.replace(/\n/g, '<br>')}</p>`
-    })
+    .map((block) => wrapParagraphBlock(block))
+    .filter((block) => block !== '')
     .join('\n')
 
   return s
+}
+
+const BLOCK_START_RE = /^<(pre|ul|ol|h[34]|table|hr)/
+const BLOCK_CLOSE_RE = /<\/(pre|ul|ol|h[34]|table|hr)>$/
+const CONTAINS_BLOCK_RE = /<(ul|ol|h[34]|pre|table|hr)[\s>]/
+
+function splitBlockElements(block: string): string[] {
+  const lines = block.split('\n')
+  const parts: string[] = []
+  let current: string[] = []
+  for (const line of lines) {
+    const trimmed = line.trim()
+    const prev = current[current.length - 1]?.trim() ?? ''
+    if (BLOCK_START_RE.test(trimmed) && current.length > 0) {
+      parts.push(current.join('\n'))
+      current = [line]
+    } else if (prev && BLOCK_CLOSE_RE.test(prev) && trimmed && !BLOCK_START_RE.test(trimmed)) {
+      parts.push(current.join('\n'))
+      current = [line]
+    } else {
+      current.push(line)
+    }
+  }
+  if (current.length > 0) parts.push(current.join('\n'))
+  return parts
+}
+
+function wrapParagraphBlock(block: string): string {
+  const trimmed = block.trim()
+  if (trimmed === '') return ''
+  if (BLOCK_START_RE.test(trimmed)) return block
+  if (CONTAINS_BLOCK_RE.test(trimmed)) {
+    return splitBlockElements(block)
+      .map((part) => wrapParagraphBlock(part))
+      .join('\n')
+  }
+  return `<p>${block.replace(/\n/g, '<br>')}</p>`
 }
 
 function splitRow(line: string): string[] {

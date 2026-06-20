@@ -27,6 +27,22 @@ describe('renderMarkdown', () => {
     assert.match(html, /<li>beta<\/li>/)
   })
 
+  it('renders asterisk unordered lists', () => {
+    const html = renderMarkdown('* alpha\n* beta')
+    assert.match(html, /<ul>/)
+    assert.match(html, /<li>alpha<\/li>/)
+    assert.match(html, /<li>beta<\/li>/)
+  })
+
+  it('keeps lists and headings outside paragraph wrappers', () => {
+    const html = renderMarkdown(
+      '### Section\n\n**Subheading:**\n- first\n\n**Other:**\n- second\n\n### Next\n- third',
+    )
+    assert.doesNotMatch(html, /<p>(?:(?!<\/p>)[\s\S])*<ul>/)
+    assert.match(html, /<p><strong>Subheading:<\/strong><\/p>\s*<ul><li>first<\/li>\s*<\/ul>/)
+    assert.match(html, /<h3>Next<\/h3>\s*<ul><li>third<\/li><\/ul>/)
+  })
+
   it('renders fenced code blocks', () => {
     const html = renderMarkdown('```ts\nconst x = 1\n```')
     assert.match(html, /<pre><code class="lang-ts">const x = 1<\/code><\/pre>/)
