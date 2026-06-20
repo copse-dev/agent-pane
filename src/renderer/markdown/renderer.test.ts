@@ -71,4 +71,43 @@ describe('renderMarkdown', () => {
     assert.match(html, /<h3>tests<\/h3>/)
     assert.match(html, /14 passed\./)
   })
+
+  it('renders asterisk italic without breaking snake_case in code spans', () => {
+    const html = renderMarkdown(
+      'there *is* semantic search via `search_codebase` and `grep_search`',
+    )
+    assert.match(html, /there <em>is<\/em> semantic search/)
+    assert.match(html, /<code>search_codebase<\/code>/)
+    assert.match(html, /<code>grep_search<\/code>/)
+    assert.doesNotMatch(html, /<code>search<em>/)
+  })
+
+  it('renders explore-style summary markdown with headings, hr, and lists', () => {
+    const html = renderMarkdown(
+      [
+        'Here is the complete summary:',
+        '',
+        '---',
+        '',
+        "## Search Routing Summary ('search-routing.ts')",
+        '',
+        "### 1. Classification ('classifySearchQuery')",
+        '',
+        '**File:** `src/main/services/search-routing.ts`',
+        '',
+        '- **Semantic path** — `search_codebase`',
+        '- **Grep path** — `grep_search`',
+        '',
+        '### 2. Execution',
+        '',
+        '- Read `search-routing.ts`',
+      ].join('\n'),
+    )
+    assert.doesNotMatch(html, /<p>(?:(?!<\/p>)[\s\S])*<ul>/)
+    assert.match(html, /<hr>/)
+    assert.match(html, /<h4>Search Routing Summary/)
+    assert.match(html, /<h3>1\. Classification/)
+    assert.match(html, /<code>search_codebase<\/code>/)
+    assert.match(html, /<h3>2\. Execution<\/h3>\s*<ul>/)
+  })
 })

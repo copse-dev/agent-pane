@@ -21,8 +21,9 @@ export function renderMarkdown(raw: string): string {
   // Bold
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
 
-  // Italic
-  s = s.replace(/_([^_]+)_/g, '<em>$1</em>')
+  // Italic — skip underscores/asterisks inside inline code (e.g. `search_codebase`)
+  s = applyOutsideCode(s, /_([^_\n]+)_/g, '<em>$1</em>')
+  s = applyOutsideCode(s, /(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
 
   // Headings (h3/h4 — h1/h2 are too large in a narrow pane)
   s = s.replace(/^### (.+)$/gm, '<h3>$1</h3>')
@@ -44,6 +45,13 @@ export function renderMarkdown(raw: string): string {
     .join('\n')
 
   return s
+}
+
+function applyOutsideCode(text: string, pattern: RegExp, replacement: string): string {
+  return text
+    .split(/(<code>[\s\S]*?<\/code>)/g)
+    .map((segment, index) => (index % 2 === 1 ? segment : segment.replace(pattern, replacement)))
+    .join('')
 }
 
 const BLOCK_START_RE = /^<(pre|ul|ol|h[34]|table|hr)/
