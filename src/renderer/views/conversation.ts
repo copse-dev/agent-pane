@@ -2,6 +2,7 @@ import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { renderMarkdown } from '../markdown/renderer.ts'
 import { renderStreamingMarkdown } from '../markdown/streaming.ts'
+import { stripTextToolCallBlocks } from '@shared/agent/parse-text-tool-calls.ts'
 import type { ToolCall } from '@shared/types'
 import { agentActivityLabel } from '../agent-activity.ts'
 import {
@@ -43,6 +44,8 @@ function createToolHeader(
 }
 
 function createIndividualToolCard(tc: ToolCall, label: string): HTMLElement {
+  if (tc.subagent) return createSubagentToolCard(tc, label)
+
   const card = el('details', {
     class: 'tool-card',
     'data-tool-id': tc.id,
@@ -53,6 +56,78 @@ function createIndividualToolCard(tc: ToolCall, label: string): HTMLElement {
     createToolArgsSection(tc.args),
     el('div', { class: 'tool-result' }, ...(tc.result ? [tc.result] : [])),
   )
+  return card
+}
+
+function assistantDisplayText(content: string): string {
+  return stripTextToolCallBlocks(content)
+}
+
+function summaryPreview(text: string, max = 200): string {
+  const trimmed = text.trim()
+  if (trimmed.length <= max) return trimmed
+  return `${trimmed.slice(0, max)}…`
+}
+
+function createInnerToolCard(tc: ToolCall): HTMLElement {
+  const entry = el('details', {
+    class: 'tool-group-item subagent-inner-tool',
+    'data-tool-id': tc.id,
+    'data-status': tc.status,
+  })
+  entry.append(
+    createToolHeader(getToolDisplayName(tc.name), tc.status, 'tool-group-item-header'),
+    createToolArgsSection(tc.args),
+    el('div', { class: 'tool-result' }, ...(tc.result ? [tc.result] : [])),
+  )
+  return entry
+}
+
+function createSubagentToolCard(tc: ToolCall, label: string): HTMLElement {
+  const session = tc.subagent!
+  const status =
+    tc.status === 'running' || session.status === 'running'
+      ? 'running'
+      : session.status === 'error' || tc.status === 'error'
+        ? 'error'
+        : 'done'
+
+  const card = el('details', {
+    class: 'tool-card tool-card-subagent',
+    'data-tool-id': tc.id,
+    'data-status': status,
+  })
+
+  const preview = session.summary ?? tc.result ?? ''
+  card.append(createToolHeader(label, status, 'tool-card-header'))
+
+  if (preview && status !== 'running') {
+    card.append(el('div', { class: 'subagent-summary-preview' }, summaryPreview(preview)))
+  }
+
+  card.append(createToolArgsSection(tc.args))
+
+  const timeline = el('div', { class: 'subagent-timeline' })
+  for (const msg of session.messages) {
+    if (msg.content.trim()) {
+      timeline.append(
+        el('div', { class: 'subagent-message subagent-message-assistant' }, msg.content),
+      )
+    }
+    if (msg.toolCalls.length > 0) {
+      const toolsWrap = el('div', { class: 'subagent-inner-tools' })
+      for (const inner of msg.toolCalls) {
+        toolsWrap.append(createInnerToolCard(inner))
+      }
+      timeline.append(toolsWrap)
+    }
+  }
+  card.append(timeline)
+
+  if (tc.result && status === 'done') {
+    card.append(el('div', { class: 'tool-result subagent-parent-result' }, tc.result))
+  }
+
   return card
 }
 
@@ -88,6 +163,37 @@ function createGroupToolCard(item: Extract<ToolCallDisplayItem, { type: 'group' 
 function createToolCard(item: ToolCallDisplayItem): HTMLElement {
   if (item.type === 'group') return createGroupToolCard(item)
   return createIndividualToolCard(item.toolCall, item.label)
+}
+
+function createMessageImages(images: string[]): HTMLElement {
+  const wrap = el('div', { class: 'message-images' })
+  for (const dataUrl of images) {
+    wrap.append(
+      el('img', {
+        class: 'message-image',
+        src: dataUrl,
+        alt: 'Attached image',
+        loading: 'lazy',
+      }),
+    )
+  }
+  return wrap
+}
+
+function appendMessageContent(
+  body: HTMLElement,
+  msg: { role: string; content: string; images?: string[] },
+) {
+  if (msg.role === 'user' && msg.images?.length) {
+    body.append(createMessageImages(msg.images))
+  }
+  const textEl = el('div', { class: 'message-text' })
+  if (msg.role === 'assistant' && msg.content) {
+    textEl.innerHTML = renderMarkdown(assistantDisplayText(msg.content))
+  } else {
+    textEl.textContent = msg.content
+  }
+  body.append(textEl)
 }
 
 export function mountConversation(root: HTMLElement, store: AppStore): () => void {
@@ -137,7 +243,9 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
 
     const userExpandedTools = new Set<string>()
     msgEl
-      .querySelectorAll('.tool-card[data-tool-id][open], .tool-group-item[open]')
+      .querySelectorAll(
+        '.tool-card[data-tool-id][open], .tool-group-item[open], .tool-card-subagent[open]',
+      )
       .forEach((node) => {
         const id = (node as HTMLElement).dataset.toolId
         if (id) userExpandedTools.add(id)
@@ -149,10 +257,12 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
       const card = createToolCard(item) as HTMLDetailsElement
       if (item.type === 'group') {
         const status = aggregateToolStatus(item.toolCalls)
-        // Expand while tools are running; auto-collapse to one summary row when done.
         card.open = status === 'running' || userExpandedGroups.has(item.key)
-      } else if (userExpandedTools.has(item.toolCall.id)) {
-        card.open = true
+      } else {
+        const tc = item.toolCall
+        const subStatus = tc.subagent?.status
+        const running = tc.status === 'running' || subStatus === 'running'
+        card.open = running || userExpandedTools.has(tc.id)
       }
       msgEl.append(card)
     }
@@ -165,18 +275,8 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
     if (!msg) return
 
     const msgEl = el('div', { class: `msg msg-${msg.role}`, 'data-message-id': msgId })
-    const textEl = el('div', { class: 'message-text' })
-    // Assistant text that already has content (e.g. restored from disk) is
-    // rendered as markdown immediately. Live-streamed messages start empty and
-    // get markdown-rendered on the message_done event instead.
-    if (msg.role === 'assistant' && msg.content) {
-      textEl.innerHTML = renderMarkdown(msg.content)
-    } else {
-      textEl.textContent = msg.content
-    }
-
     const body = el('div', { class: 'message-body' })
-    body.append(textEl)
+    appendMessageContent(body, msg)
     msgEl.append(body)
 
     // Copy only when there is reply text — tool-only bubbles stay compact.
@@ -214,7 +314,7 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
       const msg = thread?.messages.find((m) => m.id === mid)
       const textEl = list.querySelector(`[data-message-id="${mid}"] .message-text`)
       if (textEl && msg?.role === 'assistant') {
-        textEl.innerHTML = renderStreamingMarkdown(msg.content)
+        textEl.innerHTML = renderStreamingMarkdown(assistantDisplayText(msg.content))
         scrollToBottom()
       }
     }),
@@ -224,7 +324,7 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
       const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
       const msg = thread?.messages.find((m) => m.id === mid)
       if (textEl && msg?.role === 'assistant') {
-        textEl.innerHTML = renderMarkdown(msg.content)
+        textEl.innerHTML = renderMarkdown(assistantDisplayText(msg.content))
       }
       if (msg?.role === 'assistant' && msg.content.trim()) {
         const body = msgEl?.querySelector('.message-body')

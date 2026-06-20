@@ -20,6 +20,7 @@ import {
   shouldForceTextAnswer,
   shouldInjectLoopNudge,
 } from './agent-loop-escalation.ts'
+import { recoverTextToolCalls } from './parse-text-tool-calls.ts'
 
 const RECENT_FINGERPRINT_WINDOW = 16
 /** Do not compact on the first tool round unless the transcript is critically full. */
@@ -32,7 +33,12 @@ export interface AgentLoopOptions {
   messages: LLMMessage[] // mutated in-place as turns are added
   tools: LLMTool[]
   onChunk: (chunk: StreamChunk) => void
-  executeTool: (name: string, args: unknown, signal: AbortSignal) => Promise<string>
+  executeTool: (
+    name: string,
+    args: unknown,
+    signal: AbortSignal,
+    toolCallId: string,
+  ) => Promise<string>
   signal?: AbortSignal
   maxSteps?: number
   /** Trim in-loop history to this context size (tokens). */
@@ -40,6 +46,8 @@ export interface AgentLoopOptions {
   /** Reserve headroom for tool JSON schemas on each provider call. */
   toolSchemaReserveTokens?: number
   onHistoryTrimmed?: () => void
+  /** Called after each provider stream to read per-step token usage. */
+  getLastUsage?: () => { inputTokens: number; outputTokens: number } | null
 }
 
 const FINALIZE_NUDGE =
@@ -48,12 +56,43 @@ const FINALIZE_NUDGE =
 const INCOMPLETE_RUN_MESSAGE =
   'The agent stopped before producing a final answer. Try a shorter question, reduce tool use, or switch models.'
 
+function emitStepUsage(
+  getLastUsage: (() => { inputTokens: number; outputTokens: number } | null) | undefined,
+  onChunk: (chunk: StreamChunk) => void,
+): void {
+  const usage = getLastUsage?.()
+  if (usage && (usage.inputTokens || usage.outputTokens)) {
+    onChunk({ type: 'usage', inputTokens: usage.inputTokens, outputTokens: usage.outputTokens })
+  }
+}
+
+function emitContextPressure(
+  input: {
+    messages: LLMMessage[]
+    maxContextTokens: number
+    toolSchemaReserveTokens: number
+    toolOnlySteps: number
+    trimEvents: number
+  },
+  onChunk: (chunk: StreamChunk) => void,
+): void {
+  const pressure = measureConversationPressure(input)
+  onChunk({
+    type: 'context_pressure',
+    contextWindow: input.maxContextTokens,
+    conversationBudget: pressure.conversationBudget,
+    conversationTokens: pressure.conversationTokens,
+    fillRatio: pressure.fillRatio,
+  })
+}
+
 async function streamTextOnlyTurn(
   provider: LLMProvider,
   messages: LLMMessage[],
   onChunk: (chunk: StreamChunk) => void,
   signal?: AbortSignal,
   nudge = FINALIZE_NUDGE,
+  getLastUsage?: () => { inputTokens: number; outputTokens: number } | null,
 ): Promise<string> {
   const turnMessages: LLMMessage[] = [...messages, { role: 'user', content: nudge }]
   let assistantText = ''
@@ -71,6 +110,7 @@ async function streamTextOnlyTurn(
   if (trimmed) {
     messages.push({ role: 'assistant', content: assistantText })
   }
+  emitStepUsage(getLastUsage, onChunk)
   return trimmed
 }
 
@@ -85,6 +125,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     maxContextTokens,
     toolSchemaReserveTokens = 0,
     onHistoryTrimmed,
+    getLastUsage,
   } = opts
   let steps = 0
   let finishedWithAnswer = false
@@ -120,6 +161,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           onChunk,
           signal,
           STUCK_FINALIZE_NUDGE,
+          getLastUsage,
         )
         if (forced.trim()) {
           finishedWithAnswer = true
@@ -161,7 +203,34 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       if (chunk.type === 'done') break
     }
 
+    emitStepUsage(getLastUsage, onChunk)
+
+    if (maxContextTokens) {
+      emitContextPressure(
+        {
+          messages,
+          maxContextTokens,
+          toolSchemaReserveTokens,
+          toolOnlySteps,
+          trimEvents,
+        },
+        onChunk,
+      )
+    }
+
     if (signal?.aborted) break
+
+    if (pendingToolCalls.length === 0 && /<\s*tool_call\s*>/i.test(assistantText)) {
+      const recovered = recoverTextToolCalls(assistantText)
+      if (recovered.toolCalls.length > 0) {
+        assistantText = recovered.cleanedText
+        onChunk({ type: 'text_replace', text: assistantText })
+        for (const tc of recovered.toolCalls) {
+          pendingToolCalls.push(tc)
+          onChunk({ type: 'tool_call', toolCall: tc })
+        }
+      }
+    }
 
     // Push assistant message to history
     if (pendingToolCalls.length > 0) {
@@ -193,7 +262,12 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       try {
         const result = duplicate
           ? DUPLICATE_TOOL_RESULT_PREFIX
-          : await opts.executeTool(tc.name, normalizedArgs, signal ?? new AbortController().signal)
+          : await opts.executeTool(
+              tc.name,
+              normalizedArgs,
+              signal ?? new AbortController().signal,
+              tc.id,
+            )
         toolResults.push({ toolCallId: tc.id, result })
         onChunk({ type: 'tool_result', toolCallId: tc.id, result, isError: false })
       } catch (err) {
@@ -212,7 +286,14 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   }
 
   if (!signal?.aborted && !finishedWithAnswer) {
-    const finalText = await streamTextOnlyTurn(provider, messages, onChunk, signal)
+    const finalText = await streamTextOnlyTurn(
+      provider,
+      messages,
+      onChunk,
+      signal,
+      FINALIZE_NUDGE,
+      getLastUsage,
+    )
     if (!finalText.trim()) {
       onChunk({ type: 'text', text: INCOMPLETE_RUN_MESSAGE })
       messages.push({ role: 'assistant', content: INCOMPLETE_RUN_MESSAGE })

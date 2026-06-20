@@ -33,10 +33,13 @@ export class MockLLMProvider implements LLMProvider {
       !demoSkillLoaded
     ) {
       if (signal?.aborted) return
+      const explore = tools.find((t) => t.name === 'explore')
       const listDir = tools.find((t) => t.name === 'list_dir')
-      const toolCall = listDir
-        ? { id: randomUUID(), name: 'list_dir', args: { path: '.' } }
-        : { id: randomUUID(), name: tools[0]!.name, args: {} }
+      const toolCall = explore
+        ? { id: randomUUID(), name: 'explore', args: { query: 'List the workspace root' } }
+        : listDir
+          ? { id: randomUUID(), name: 'list_dir', args: { path: '.' } }
+          : { id: randomUUID(), name: tools[0]!.name, args: {} }
       yield { type: 'tool_call', toolCall }
       yield { type: 'done' }
       return

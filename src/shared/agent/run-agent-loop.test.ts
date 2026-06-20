@@ -20,7 +20,7 @@ describe('runAgentLoop', () => {
       messages: [{ role: 'user', content: 'hello' }],
       tools: [],
       onChunk: (c) => chunks.push(c),
-      executeTool: async () => '',
+      executeTool: async (_name, _args, _signal, _toolCallId) => '',
     })
     assert.equal(chunks.at(-1)?.type, 'done')
   })
@@ -34,7 +34,7 @@ describe('runAgentLoop', () => {
       messages: [{ role: 'user', content: 'hello' }],
       tools: [],
       onChunk: (c) => chunks.push(c),
-      executeTool: async () => '',
+      executeTool: async (_name, _args, _signal, _toolCallId) => '',
       signal: controller.signal,
     })
     assert.equal(chunks.length, 1) // only 'done'
@@ -51,7 +51,7 @@ describe('runAgentLoop', () => {
       messages: [{ role: 'user', content: 'go' }],
       tools: [],
       onChunk: (c) => chunks.push(c),
-      executeTool: async () => {
+      executeTool: async (_name, _args, _signal, _toolCallId) => {
         executed = true
         return 'result'
       },
@@ -70,7 +70,7 @@ describe('runAgentLoop', () => {
       tools: [],
       maxSteps: 3,
       onChunk: () => {},
-      executeTool: async () => {
+      executeTool: async (_name, _args, _signal, _toolCallId) => {
         steps++
         return 'ok'
       },
@@ -90,7 +90,7 @@ describe('runAgentLoop', () => {
       tools: [],
       maxSteps: 2,
       onChunk: (c) => chunks.push(c),
-      executeTool: async () => 'ok',
+      executeTool: async (_name, _args, _signal, _toolCallId) => 'ok',
     })
     assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('repo review')))
     assert.equal(chunks.at(-1)?.type, 'done')
@@ -113,12 +113,40 @@ describe('runAgentLoop', () => {
       messages: [{ role: 'user', content: 'review' }],
       tools: [],
       onChunk: () => {},
-      executeTool: async () => {
+      executeTool: async (_name, _args, _signal, _toolCallId) => {
         executeCount++
         return 'listing'
       },
     })
     assert.equal(executeCount, 1)
+  })
+
+  it('recovers embedded Cursor-style text tool calls', async () => {
+    let executedName = ''
+    const embedded = `Checking lint.
+
+<tool_call>
+<function=run_shell>
+<parameter=command>npm run lint</parameter>
+</function>
+</tool_call>`
+    const chunks: StreamChunk[] = []
+    await runAgentLoop({
+      provider: mockProvider([
+        [{ type: 'text', text: embedded }, { type: 'done' }],
+        [{ type: 'text', text: 'All good.' }, { type: 'done' }],
+      ]),
+      messages: [{ role: 'user', content: 'lint' }],
+      tools: [],
+      onChunk: (c) => chunks.push(c),
+      executeTool: async (name, _args, _signal) => {
+        executedName = name
+        return 'lint ok'
+      },
+    })
+    assert.equal(executedName, 'run_shell')
+    assert.ok(chunks.some((c) => c.type === 'text_replace'))
+    assert.ok(chunks.some((c) => c.type === 'tool_result'))
   })
 
   it('surfaces a terminal message when finalize returns empty', async () => {
@@ -128,7 +156,7 @@ describe('runAgentLoop', () => {
       messages: [{ role: 'user', content: 'review the repo' }],
       tools: [],
       onChunk: (c) => chunks.push(c),
-      executeTool: async () => '',
+      executeTool: async (_name, _args, _signal, _toolCallId) => '',
     })
     assert.ok(
       chunks.some(
