@@ -109,7 +109,9 @@ function createSubagentToolCard(tc: ToolCall, label: string): HTMLElement {
   card.append(createToolHeader(label, status, 'tool-card-header'))
 
   if (preview && status !== 'running') {
-    card.append(el('div', { class: 'subagent-summary-preview' }, summaryPreview(preview)))
+    const previewEl = el('div', { class: 'subagent-summary-preview message-text' })
+    previewEl.innerHTML = renderMarkdown(assistantDisplayText(summaryPreview(preview)))
+    card.append(previewEl)
   }
 
   card.append(createToolArgsSection(tc.args))

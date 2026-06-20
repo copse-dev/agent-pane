@@ -79,3 +79,11 @@ Use WebdriverIO Electron e2e — do not hand-drive VNC unless debugging layout.
 Assertions to mirror: `.tool-card-group .tool-name` = group label; `.tool-count` = `×N`;
 failed tools stay `.tool-card[data-status=error]` with individual `getToolDisplayName` labels.
 Unit coverage for grouping logic: `src/shared/tools/tool-display.test.ts`.
+
+### Markdown rendering
+
+Conversation messages, subagent timelines, and file preview use the hand-rolled renderer in
+`src/renderer/markdown/`. Design invariants, regression tests, and e2e fixtures are documented in
+[`src/renderer/markdown/README.md`](src/renderer/markdown/README.md).
+
+After markdown or list-indent changes, run `npm run build && npm run test:e2e:markdown`.
