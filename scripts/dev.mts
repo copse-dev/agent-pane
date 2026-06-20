@@ -19,7 +19,7 @@ const nodeOpts = {
   bundle: true,
   platform: 'node' as const,
   format: 'cjs' as const,
-  external: ['electron', '@anthropic-ai/sandbox-runtime', 'shell-quote'],
+  external: ['electron', '@anthropic-ai/sandbox-runtime', 'shell-quote', 'node-pty'],
   sourcemap: true,
 }
 
