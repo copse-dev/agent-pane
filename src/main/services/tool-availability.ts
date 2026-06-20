@@ -1,4 +1,5 @@
 import { runCommand } from './command-runner.ts'
+import { probeIndexedGrepBackends } from './indexed-grep.ts'
 
 let rgAvail: boolean | null = null
 let gitAvail: boolean | null = null
@@ -6,8 +7,11 @@ let gitAvail: boolean | null = null
 export async function checkToolAvailability(): Promise<void> {
   rgAvail = await probe('rg', ['--version'])
   gitAvail = await probe('git', ['--version'])
+  const grepBackend = await probeIndexedGrepBackends()
   if (!rgAvail)
     console.warn('[agent-pane] ripgrep (rg) not found — search_code will use slow fallback')
+  else if (grepBackend !== 'rg')
+    console.info(`[agent-pane] search_code will prefer indexed grep backend: ${grepBackend}`)
   if (!gitAvail) console.warn('[agent-pane] git not found — git tools will be unavailable')
 }
 
