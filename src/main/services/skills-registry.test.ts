@@ -20,7 +20,7 @@ describe('skills-registry', () => {
     setSkillsForTest([])
     setSetting('skillsEnabled', true)
     setSetting('skillPluginPaths', [])
-    tempRoot = await mkdtemp(join(tmpdir(), 'agent-pane-skills-'))
+    tempRoot = await mkdtemp(join(tmpdir(), 'copse-panel-skills-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
     await mkdir(join(tempRoot, '.cursor', 'skills', 'demo-skill'), { recursive: true })
     await writeFile(

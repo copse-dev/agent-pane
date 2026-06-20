@@ -3,7 +3,7 @@
 // node_modules/electron/dist/Electron.app, so the Dock tooltip stays "Electron"
 // even when CFBundleDisplayName is patched — Launch Services keys off the bundle
 // path/filename. Spaces in the .app name break Chromium helper lookup (icudtl.dat /
-// GPU process). Use AgentPane.app on disk; CFBundleDisplayName stays "Agent Pane".
+// GPU process). Use Copse.app on disk; CFBundleDisplayName stays "Copse".
 //
 // Runs on postinstall so it survives `npm install`. Does NOT rename
 // CFBundleExecutable (the binary must stay "Electron").
@@ -22,9 +22,9 @@ import { join } from 'node:path'
 
 const ELECTRON_DIST = join('node_modules', 'electron', 'dist')
 const SOURCE_APP = join(ELECTRON_DIST, 'Electron.app')
-const APP_BUNDLE = 'AgentPane.app'
+const APP_BUNDLE = 'Copse.app'
 const TARGET_APP = join(ELECTRON_DIST, APP_BUNDLE)
-const DISPLAY_NAME = 'Agent Pane'
+const DISPLAY_NAME = 'Copse'
 const PATH_TXT = join('node_modules', 'electron', 'path.txt')
 const EXEC_REL = `${APP_BUNDLE}/Contents/MacOS/Electron`
 
@@ -38,8 +38,9 @@ if (!existsSync(sourcePlist)) {
   process.exit(0)
 }
 
-rmSync(join(ELECTRON_DIST, 'Agent Pane.app'), { recursive: true, force: true })
-rmSync(TARGET_APP, { recursive: true, force: true })
+for (const legacy of ['Agent Pane.app', 'AgentPane.app', APP_BUNDLE]) {
+  rmSync(join(ELECTRON_DIST, legacy), { recursive: true, force: true })
+}
 execSync(`ditto "${SOURCE_APP}" "${TARGET_APP}"`, { stdio: 'inherit' })
 
 const targetPlist = join(TARGET_APP, 'Contents', 'Info.plist')
@@ -55,7 +56,7 @@ try {
     '-replace',
     'CFBundleIdentifier',
     '-string',
-    'dev.agent-pane',
+    'dev.copse-panel',
     targetPlist,
   ])
 } catch (err) {
@@ -67,9 +68,9 @@ const resourcesDir = join(TARGET_APP, 'Contents', 'Resources')
 let icnsHash: string | undefined
 if (existsSync(ICNS)) {
   icnsHash = createHash('sha256').update(readFileSync(ICNS)).digest('hex').slice(0, 12)
-  const iconBase = `agent-pane-${icnsHash}`
+  const iconBase = `copse-panel-${icnsHash}`
   for (const name of readdirSync(resourcesDir)) {
-    if (name.startsWith('agent-pane') && name.endsWith('.icns')) {
+    if (name.startsWith('copse-panel') && name.endsWith('.icns')) {
       unlinkSync(join(resourcesDir, name))
     }
   }
@@ -117,12 +118,12 @@ console.log(
   `[patch-dev-name] using ${APP_BUNDLE} (path.txt → ${readFileSync(PATH_TXT, 'utf8').trim()})`,
 )
 if (icnsHash) {
-  console.log(`[patch-dev-name] agent-pane.icns sha256:${icnsHash} (also CFBundleVersion)`)
+  console.log(`[patch-dev-name] copse-panel.icns sha256:${icnsHash} (also CFBundleVersion)`)
 }
 
-if (process.env.AGENT_PANE_REFRESH_DOCK === '1') {
+if (process.env.COPSE_PANEL_REFRESH_DOCK === '1') {
   try {
-    execSync('pkill -f "AgentPane.app/Contents/MacOS/Electron" || true', { stdio: 'ignore' })
+    execSync('pkill -f "Copse.app/Contents/MacOS/Electron" || true', { stdio: 'ignore' })
   } catch {
     /* none running */
   }
@@ -136,6 +137,6 @@ if (process.env.AGENT_PANE_REFRESH_DOCK === '1') {
   console.log('[patch-dev-name] quit app if running; restarted Dock + IconServices cache')
 } else {
   console.log(
-    '[patch-dev-name] Cmd+Q Agent Pane, then npm start. For Dock refresh: AGENT_PANE_REFRESH_DOCK=1 npm run icons:mac',
+    '[patch-dev-name] Cmd+Q Copse, then npm start. For Dock refresh: COPSE_PANEL_REFRESH_DOCK=1 npm run icons:mac',
   )
 }

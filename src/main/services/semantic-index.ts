@@ -135,7 +135,7 @@ export async function ensureSemanticIndex(workspaceRoot: string): Promise<void> 
       }
       indexedRoot = root
     } catch (err) {
-      console.warn('[agent-pane] semantic index setup failed:', err)
+      console.warn('[copse-panel] semantic index setup failed:', err)
     }
   })()
 
@@ -168,7 +168,7 @@ export async function updateSemanticIndex(workspaceRoot: string): Promise<void> 
         break
     }
   } catch (err) {
-    console.warn('[agent-pane] semantic index update failed:', err)
+    console.warn('[copse-panel] semantic index update failed:', err)
   }
 }
 

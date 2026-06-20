@@ -12,7 +12,7 @@ describe('registerSkillTools', () => {
   let restoreWorkspace: (() => void) | undefined
 
   beforeEach(async () => {
-    tempRoot = await mkdtemp(join(tmpdir(), 'agent-pane-registry-'))
+    tempRoot = await mkdtemp(join(tmpdir(), 'copse-panel-registry-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
     await mkdir(join(tempRoot, '.cursor', 'skills', 'demo-skill'), { recursive: true })
     await writeFile(

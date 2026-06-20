@@ -4,18 +4,18 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 /** Mirrors `app.setPath('userData', …)` in `src/main/app-init.ts`. */
-function agentPaneUserDataDir(): string {
+function copsePanelUserDataDir(): string {
   if (process.platform === 'darwin') {
-    return join(homedir(), 'Library', 'Application Support', 'agent-pane')
+    return join(homedir(), 'Library', 'Application Support', 'copse-panel')
   }
   if (process.platform === 'win32') {
     const appData = process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming')
-    return join(appData, 'agent-pane')
+    return join(appData, 'copse-panel')
   }
-  return join(homedir(), '.config', 'agent-pane')
+  return join(homedir(), '.config', 'copse-panel')
 }
 
-const USER_DATA = agentPaneUserDataDir()
+const USER_DATA = copsePanelUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
 const SETTINGS_PATH = join(USER_DATA, 'settings.json')
 
@@ -118,7 +118,7 @@ export function seedMarkdownListFixture(workspaceRoot: string): void {
     '### 📦 Architecture Highlights',
     '- Electron app — AI coding assistant with tool-executing agents',
     '- No backend — Direct LLM provider calls (Anthropic, OpenAI, LM Studio)',
-    '- Mock LLM — `AGENT-WINDOW-MOCK-LLM=1` enables full e2e testing without API keys',
+    '- Mock LLM — `COPSE-PANEL-MOCK-LLM=1` enables full e2e testing without API keys',
     '- MCP host — Per-server enable toggles in Settings',
     '- Persistence — `electron-store` for projects, threads, settings',
   ].join('\n')
@@ -219,13 +219,13 @@ export function seedSubagentFixture(workspaceRoot: string): void {
                   name: 'explore',
                   args: { query: 'Find README' },
                   status: 'done',
-                  result: 'README describes agent-pane setup and dev workflow.',
+                  result: 'README describes Copse setup and dev workflow.',
                   subagent: {
                     id: 'sub-session-1',
                     kind: 'explore',
                     status: 'done',
                     prompt: 'Find README',
-                    summary: 'README describes agent-pane setup and dev workflow.',
+                    summary: 'README describes Copse setup and dev workflow.',
                     messages: [
                       {
                         id: 'sub-msg-1',
@@ -237,14 +237,14 @@ export function seedSubagentFixture(workspaceRoot: string): void {
                             name: 'read_file',
                             args: { path: 'README.md' },
                             status: 'done',
-                            result: '# Agent Pane\n',
+                            result: '# Copse\n',
                           },
                         ],
                       },
                       {
                         id: 'sub-msg-2',
                         role: 'assistant',
-                        content: 'README describes agent-pane setup and dev workflow.',
+                        content: 'README describes Copse setup and dev workflow.',
                         toolCalls: [],
                       },
                     ],
@@ -270,7 +270,7 @@ export function seedSubagentFixture(workspaceRoot: string): void {
  * as the active project. Returns the repo path so the spec can clean it up.
  */
 export function seedGitChangesFixture(): string {
-  const repoRoot = mkdtempSync(join(tmpdir(), 'agent-pane-git-'))
+  const repoRoot = mkdtempSync(join(tmpdir(), 'copse-panel-git-'))
   const git = (...args: string[]) => execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
 
   git('init', '-q')
@@ -348,7 +348,7 @@ export function seedToolDisplayFixture(workspaceRoot: string): void {
                   name: 'read_file',
                   args: { path: 'README.md' },
                   status: 'done',
-                  result: '# Agent Pane\n',
+                  result: '# Copse\n',
                 },
                 {
                   id: 'tc-list-1',
@@ -410,7 +410,7 @@ export function seedSemanticSearchExploreFixture(workspaceRoot: string): void {
   writeFileSync(
     CONFIG_PATH,
     JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'agent-pane' }],
+      projects: [{ id: projectId, path: workspaceRoot, name: 'copse-panel' }],
       activeProjectId: projectId,
       [`threads:${projectId}`]: [
         {

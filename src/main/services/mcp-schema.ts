@@ -1,6 +1,6 @@
 /**
  * Pure helpers for turning an MCP tool's `inputSchema` into the JSON Schema
- * object agent-pane hands to LLM providers, plus result flattening.
+ * object copse-panel hands to LLM providers, plus result flattening.
  */
 
 const EMPTY_OBJECT_SCHEMA = { type: 'object', properties: {} } as const

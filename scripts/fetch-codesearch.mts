@@ -102,7 +102,7 @@ async function main(): Promise<void> {
   }
 
   const url = `https://github.com/${REPO}/releases/download/${CODESEARCH_VERSION}/${asset}`
-  const tmpRoot = join(tmpdir(), `agent-pane-codesearch-${Date.now()}`)
+  const tmpRoot = join(tmpdir(), `copse-panel-codesearch-${Date.now()}`)
   const archivePath = join(tmpRoot, asset)
   const extractDir = join(tmpRoot, 'extract')
 

@@ -11,7 +11,7 @@ describe('file-index', () => {
   let restoreWorkspace: (() => void) | undefined
 
   beforeEach(async () => {
-    tempRoot = await mkdtemp(join(tmpdir(), 'agent-pane-file-index-'))
+    tempRoot = await mkdtemp(join(tmpdir(), 'copse-panel-file-index-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
     invalidateIndex()
     await mkdir(join(tempRoot, 'src'), { recursive: true })
