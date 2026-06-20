@@ -33,5 +33,8 @@ The agent is an MCP (Model Context Protocol) host and ships with no servers
 connected. Add them in `.cursor/mcp.json` / `.mcp.json` (project) or
 `~/.cursor/mcp.json` (global), using the standard `mcpServers` format (same as
 Cursor / Claude Desktop); reference secrets with `${env:VAR}`. See
-[`mcp.json.example`](./mcp.json.example). Status, reload, and approval settings
-live under **Settings → MCP servers**.
+[`mcp.json.example`](./mcp.json.example) for optional semantic code search
+servers (e.g. [Vera](https://github.com/lemon07r/Vera),
+[codesearch](https://github.com/flupkede/codesearch)) that complement built-in
+`search_code` regex search. Status, reload, and approval settings live under
+**Settings → MCP servers**.

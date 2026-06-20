@@ -8,6 +8,8 @@ import {
   clearAgentRunReadFileLimits,
 } from './agent-run-read-limits.ts'
 import { getWorkspaceRoot } from './workspace.ts'
+import { buildExploreSearchRoutingAddon } from '@shared/agent/search-routing.ts'
+import { listSemanticMcpTools } from './semantic-search.ts'
 
 interface ProviderWithUsage {
   lastUsage: { inputTokens: number; outputTokens: number } | null
@@ -92,6 +94,7 @@ export async function runExploreSubagent(
       toolSchemaReserveTokens: toolSchemaReserve,
       executeTool: (name, args, sig) => executeExploreTool(registry, name, args, sig),
       onSubagentChunk: onChunk,
+      systemPromptSuffix: buildExploreSearchRoutingAddon(listSemanticMcpTools(registry)),
     })
 
     let inputTokens = 0
