@@ -16,5 +16,10 @@ DEVELOPMENT-NOTES.md
 .env
 .env.*
 
+# MCP server config may hold secrets / be machine-specific (keep the .example)
+mcp.json
+.cursor/mcp.json
+.mcp.json
+
 # Claude Code local agent worktrees (linked checkouts)
 .claude/worktrees/
