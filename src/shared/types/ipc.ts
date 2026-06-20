@@ -1,4 +1,5 @@
 import type { StreamChunk } from './stream.ts'
+import type { GitFileDiff, GitStatusResult } from './git.ts'
 
 type Provider = 'anthropic' | 'openai' | 'lmstudio'
 
@@ -51,6 +52,11 @@ export interface IpcInvokeMap {
   'terminal:write': { args: [sessionId: string, data: string]; result: void }
   'terminal:resize': { args: [sessionId: string, cols: number, rows: number]; result: void }
   'terminal:destroy': { args: [sessionId: string]; result: void }
+
+  // Git
+  'git:status': { args: []; result: GitStatusResult | null }
+  'git:fileDiff': { args: [path: string, staged: boolean]; result: GitFileDiff | null }
+  'git:isAvailable': { args: []; result: boolean }
 
   // LM Studio
   'lmstudio:test': {

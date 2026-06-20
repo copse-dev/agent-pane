@@ -1,5 +1,6 @@
 import type { StreamChunk } from '@shared/types'
 import type { SkillSummary } from '@shared/types/skills.ts'
+import type { GitFileDiff, GitStatusResult } from '@shared/types/git.ts'
 
 export interface ApiClient {
   workspace: {
@@ -78,6 +79,11 @@ export interface ApiClient {
     destroy: (sessionId: string) => Promise<void>
     onOutput: (handler: (sessionId: string, data: string) => void) => () => void
     onExit: (handler: (sessionId: string, code: number) => void) => () => void
+  }
+  git: {
+    isAvailable: () => Promise<boolean>
+    status: () => Promise<GitStatusResult | null>
+    fileDiff: (path: string, staged: boolean) => Promise<GitFileDiff | null>
   }
 }
 
