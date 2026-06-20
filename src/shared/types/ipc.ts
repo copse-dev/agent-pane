@@ -47,6 +47,19 @@ export interface IpcInvokeMap {
   // Settings
   'settings:get': { args: [key: string]; result: unknown }
   'settings:set': { args: [key: string, value: unknown]; result: void }
+  'settings:setSecurity': {
+    args: [
+      prefs: {
+        lmStudioUrl: string
+        lmStudioSafetyEnabled: boolean
+        lmStudioSafetyConfidenceThreshold: number
+        lmStudioSafetyModel: string
+        autoRunSandboxCommands: boolean
+        mcpAutoAllowReadOnly: boolean
+      },
+    ]
+    result: void
+  }
   'settings:getKey': { args: [provider: Provider]; result: boolean }
   'settings:setKey': { args: [provider: Provider, key: string]; result: void }
   'settings:availableProviders': { args: []; result: { anthropic: boolean; openai: boolean } }
