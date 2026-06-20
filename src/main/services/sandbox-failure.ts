@@ -18,12 +18,20 @@ const SANDBOX_FAILURE_PATTERNS: Array<{ re: RegExp; reason: string }> = [
     reason: 'permission error (EPERM/EACCES)',
   },
   { re: /seatbelt|sandbox.*denied/i, reason: 'sandbox restriction reported' },
+  { re: /posix_spawnp failed/i, reason: 'process spawn blocked by sandbox' },
+  {
+    re: /Failed to spawn (?:shell|process|pty)/i,
+    reason: 'shell/PTY spawn blocked by sandbox',
+  },
 ]
 
 const BROWSER_RUNNER_HINT = /\b(playwright|puppeteer|cypress|chromedriver|geckodriver|selenium)\b/i
 
 const BROWSER_LAUNCH_FAILURE =
   /(?:browser(?:type)?\.launch|failed to launch|executable (?:doesn't|does not) exist|spawn.*ENOENT|connect ECONNREFUSED)/i
+
+const DEV_TOOL_NOT_FOUND =
+  /\/bin\/(?:ba)?sh: (?:node|npm|npx|pnpm|yarn|corepack): command not found/i
 
 export function detectLikelySandboxFailure(
   output: string,
@@ -38,6 +46,10 @@ export function detectLikelySandboxFailure(
 
   if (BROWSER_RUNNER_HINT.test(output) && BROWSER_LAUNCH_FAILURE.test(output)) {
     reasons.push('browser/test runner likely needs network or paths outside the workspace')
+  }
+
+  if (exitCode === 127 && DEV_TOOL_NOT_FOUND.test(output)) {
+    reasons.push('Node.js toolchain unavailable inside sandbox (often blocked home-directory installs)')
   }
 
   return { likely: reasons.length > 0, reasons: [...new Set(reasons)] }

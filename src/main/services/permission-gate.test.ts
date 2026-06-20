@@ -45,7 +45,7 @@ describe('decideShellPermission', () => {
     assert.equal(d.action, 'allow')
   })
 
-  it('prompts for external commands even with OS sandbox', () => {
+  it('auto-runs external commands inside OS sandbox (unsandboxed retry is separate)', () => {
     const d = decideShellPermission('curl https://example.com', {
       workspaceRoot: root,
       sandboxEnabled: true,
@@ -53,7 +53,18 @@ describe('decideShellPermission', () => {
       classification: null,
       confidenceThreshold: 0.85,
     })
-    assert.equal(d.action, 'prompt')
+    assert.equal(d.action, 'allow')
+  })
+
+  it('auto-runs home-directory probes inside OS sandbox', () => {
+    const d = decideShellPermission('ls ~/.nvm/nvm.sh', {
+      workspaceRoot: root,
+      sandboxEnabled: true,
+      autoRun: true,
+      classification: null,
+      confidenceThreshold: 0.85,
+    })
+    assert.equal(d.action, 'allow')
   })
 
   it('uses safety model on unsandboxed platforms when confident', () => {

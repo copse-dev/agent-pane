@@ -32,4 +32,21 @@ describe('detectLikelySandboxFailure', () => {
     const r = detectLikelySandboxFailure('Error: network access blocked by sandbox policy', 1)
     assert.equal(r.likely, true)
   })
+
+  it('detects missing node/npm inside sandbox shells', () => {
+    const r = detectLikelySandboxFailure('/bin/bash: npm: command not found\n', 127)
+    assert.equal(r.likely, true)
+    assert.ok(r.reasons.some((x) => x.includes('toolchain')))
+  })
+
+  it('detects node-pty spawn failures from unit tests in sandbox', () => {
+    const output = [
+      'not ok 21 - terminal-service',
+      '  Error: posix_spawnp failed.',
+      'not ok 1 - creates a session and streams output',
+    ].join('\n')
+    const r = detectLikelySandboxFailure(output, 1)
+    assert.equal(r.likely, true)
+    assert.ok(r.reasons.some((x) => x.includes('spawn blocked')))
+  })
 })
