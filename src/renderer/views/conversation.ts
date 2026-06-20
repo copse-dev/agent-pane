@@ -204,6 +204,8 @@ function appendMessageContent(
   body.append(textEl)
 }
 
+const SCROLL_PIN_THRESHOLD_PX = 48
+
 export function mountConversation(root: HTMLElement, store: AppStore): () => void {
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
   const activityBar = el('div', { class: 'agent-activity', role: 'status', 'aria-live': 'polite' })
@@ -213,6 +215,21 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
     activityLabel,
   )
   root.append(list, activityBar)
+
+  let pinnedToBottom = true
+
+  function isNearBottom(): boolean {
+    const distance = list.scrollHeight - list.scrollTop - list.clientHeight
+    return distance <= SCROLL_PIN_THRESHOLD_PX
+  }
+
+  list.addEventListener(
+    'scroll',
+    () => {
+      pinnedToBottom = isNearBottom()
+    },
+    { passive: true },
+  )
 
   function setActivity(label: string | null) {
     if (!label) {
@@ -235,9 +252,11 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
     setActivity(agentActivityLabel(thread, false))
   }
 
-  function scrollToBottom() {
+  function scrollToBottom(force = false) {
+    if (!force && !pinnedToBottom) return
     // The scrollable element is the messages list, not the mount root.
     list.scrollTop = list.scrollHeight
+    if (force) pinnedToBottom = true
   }
 
   function renderToolCards(msgEl: HTMLElement, toolCalls: ToolCall[]) {
@@ -295,10 +314,11 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
     list.append(msgEl)
     // Re-render any tool cards this message already carries (restored threads).
     renderToolCards(msgEl, msg.toolCalls)
-    scrollToBottom()
+    scrollToBottom(msg.role === 'user')
   }
 
   function rebuildForThread() {
+    pinnedToBottom = true
     clear(list)
     const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
     thread?.messages.forEach((m) => appendMessageEl(store.getState().activeThreadId!, m.id))
