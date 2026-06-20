@@ -9,6 +9,10 @@ import {
 } from '../project-sandbox/index.ts'
 import { detectLikelySandboxFailure } from '../services/sandbox-failure.ts'
 import { promptUnsandboxedShell } from '../services/permission-gate.ts'
+import {
+  CappedOutputAccumulator,
+  stripTerminalControlSequences,
+} from '../services/subprocess-output-cap.ts'
 
 interface ShellRunResult {
   output: string
@@ -40,12 +44,11 @@ async function runShellOnce(
         return
       }
 
-      let output = ''
+      const outputAcc = new CappedOutputAccumulator()
       let settled = false
       const stream = (data: Buffer) => {
-        const text = data.toString()
-        output += text
-        win?.webContents.send('agent:shell_output', text)
+        const toStream = outputAcc.append(data.toString())
+        if (toStream) win?.webContents.send('agent:shell_output', toStream)
       }
       proc.stdout?.on('data', stream)
       proc.stderr?.on('data', stream)
@@ -76,7 +79,7 @@ async function runShellOnce(
         finish()
         if (settled) return
         settled = true
-        resolve({ output, exitCode: code ?? 0 })
+        resolve({ output: outputAcc.toString(), exitCode: code ?? 0 })
       })
 
       signal.addEventListener('abort', () => {
@@ -104,12 +107,12 @@ async function maybeRetryUnsandboxed(
 }
 
 function formatShellSuccess(result: ShellRunResult): string {
-  const clean = result.output.replace(/\[[0-9;]*m/g, '').trim()
+  const clean = stripTerminalControlSequences(result.output).trim()
   return clean || '(no output)'
 }
 
 function formatShellFailure(result: ShellRunResult): Error {
-  const clean = result.output.replace(/\[[0-9;]*m/g, '').trim()
+  const clean = stripTerminalControlSequences(result.output).trim()
   return new Error(`Exited with code ${result.exitCode}:\n${clean}`)
 }
 
