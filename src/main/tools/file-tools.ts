@@ -3,6 +3,8 @@ import { z } from 'zod'
 import type { ToolDefinition } from '@shared/types'
 import { resolveWorkspacePath, toRelativePath } from '../services/workspace.ts'
 import { runCommand } from '../services/command-runner.ts'
+import { getIndex } from '../services/file-index.ts'
+import micromatch from 'micromatch'
 import { getAgentRunReadFileLimits } from '../services/agent-run-read-limits.ts'
 
 export const readFileTool: ToolDefinition = {
@@ -74,11 +76,18 @@ export const listDirTool: ToolDefinition = {
   async execute({ path, recursive }) {
     const absPath = resolveWorkspacePath(path || '.')
     if (recursive) {
-      const { stdout } = await runCommand('rg', ['--files', '--sort', 'path', absPath])
-      const paths = stdout
-        .split('\n')
-        .filter(Boolean)
-        .map((p) => toRelativePath(p))
+      const idx = getIndex()
+      let paths: string[]
+      if (idx) {
+        const glob = path && path !== '.' ? `${path.replace(/\/$/, '')}/**` : '**'
+        paths = micromatch(idx.paths, glob)
+      } else {
+        const { stdout } = await runCommand('rg', ['--files', '--sort', 'path', absPath])
+        paths = stdout
+          .split('\n')
+          .filter(Boolean)
+          .map((p) => toRelativePath(p))
+      }
       return (
         paths.slice(0, 1000).join('\n') +
         (paths.length > 1000 ? '\n[Truncated at 1000 entries]' : '')

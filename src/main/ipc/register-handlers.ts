@@ -6,6 +6,10 @@ import * as fsp from 'node:fs/promises'
 import { getWorkspaceRoot, setWorkspaceRoot, resolveWorkspacePath } from '../services/workspace.ts'
 import { buildIndex, getIndex } from '../services/file-index.ts'
 import {
+  scheduleIndexRebuild,
+  startWorkspaceIndexWatcher,
+} from '../services/workspace-index-watcher.ts'
+import {
   getSetting,
   setSetting,
   hasApiKey,
@@ -31,6 +35,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const root = result.filePaths[0]
     setWorkspaceRoot(root)
     await buildIndex(root)
+    startWorkspaceIndexWatcher(root)
     await initSkillsRegistry()
     registerSkillTools(registry)
     return root
@@ -43,6 +48,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('workspace:set', async (_e, root: string) => {
     setWorkspaceRoot(root)
     await buildIndex(root)
+    startWorkspaceIndexWatcher(root)
     await initSkillsRegistry()
     registerSkillTools(registry)
     return root
@@ -57,6 +63,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const abs = resolveWorkspacePath(path)
     await fsp.mkdir(dirname(abs), { recursive: true })
     await fsp.writeFile(abs, content, 'utf-8')
+    scheduleIndexRebuild()
   })
 
   ipcMain.handle('fs:readdir', async (_e, path: string) => {

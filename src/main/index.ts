@@ -13,6 +13,7 @@ import {
 import { initApproval } from './services/approval.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
+import { stopWorkspaceIndexWatcher } from './services/workspace-index-watcher.ts'
 import { initTerminal } from './ipc/terminal.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
 import { initSkillsRegistry } from './services/skills-registry.ts'
@@ -116,6 +117,7 @@ app
 
 app.on('before-quit', () => {
   closeAllWatchers()
+  stopWorkspaceIndexWatcher()
   void shutdownMcpServers()
   void shutdownProjectSandbox()
 })
