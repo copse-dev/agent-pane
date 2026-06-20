@@ -1,17 +1,42 @@
+const FENCE_RE = /```(\w*)\n([\s\S]*?)```/g
+const FENCED_BLOCK_SPLIT_RE = /(<pre>[\s\S]*?<\/pre>|<div class="mermaid-diagram">[\s\S]*?<\/div>)/
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function renderFencedBlock(lang: string, code: string): string {
+  const body = escapeHtml(code.trimEnd())
+  if (lang === 'mermaid') {
+    return `<div class="mermaid-diagram"><pre class="mermaid">${body}</pre></div>`
+  }
+  return `<pre><code class="lang-${lang || 'text'}">${body}</code></pre>`
+}
+
+/** Extract fenced blocks before prose escaping so code and diagram syntax stay intact. */
+function extractFencedBlocks(raw: string): { text: string; blocks: string[] } {
+  const blocks: string[] = []
+  const text = raw.replace(FENCE_RE, (_, lang: string, code: string) => {
+    const idx = blocks.length
+    blocks.push(renderFencedBlock(lang, code))
+    return `\x00FENCE${idx}\x00`
+  })
+  return { text, blocks }
+}
+
+function restoreFencedBlocks(text: string, blocks: string[]): string {
+  return text.replace(/\x00FENCE(\d+)\x00/g, (_, i: string) => blocks[Number(i)] ?? '')
+}
+
 export function renderMarkdown(raw: string): string {
-  // Sanitise first — strip any literal HTML tags from model output
-  let s = raw.replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const { text: withPlaceholders, blocks } = extractFencedBlocks(raw)
+  let s = escapeHtml(withPlaceholders)
+  s = restoreFencedBlocks(s, blocks)
 
-  // Fenced code blocks
-  s = s.replace(
-    /```(\w*)\n([\s\S]*?)```/g,
-    (_, lang, code) => `<pre><code class="lang-${lang || 'text'}">${code.trimEnd()}</code></pre>`,
-  )
-
-  // Tables (GFM). Parse only outside <pre> blocks so code containing pipes is
+  // Tables (GFM). Parse only outside fenced blocks so code containing pipes is
   // left alone. Cell contents keep their markdown — inline formatting runs after.
   s = s
-    .split(/(<pre>[\s\S]*?<\/pre>)/)
+    .split(FENCED_BLOCK_SPLIT_RE)
     .map((seg, i) => (i % 2 === 1 ? seg : parseTables(seg)))
     .join('')
 
@@ -54,9 +79,9 @@ function applyOutsideCode(text: string, pattern: RegExp, replacement: string): s
     .join('')
 }
 
-const BLOCK_START_RE = /^<(pre|ul|ol|h[34]|table|hr)/
-const BLOCK_CLOSE_RE = /<\/(pre|ul|ol|h[34]|table|hr)>$/
-const CONTAINS_BLOCK_RE = /<(ul|ol|h[34]|pre|table|hr)[\s>]/
+const BLOCK_START_RE = /^<(pre|ul|ol|h[34]|table|hr|div class="mermaid-diagram")/
+const BLOCK_CLOSE_RE = /<\/(pre|ul|ol|h[34]|table|hr|div)>$/
+const CONTAINS_BLOCK_RE = /<(ul|ol|h[34]|pre|table|hr|div class="mermaid-diagram")[\s>]/
 
 function splitBlockElements(block: string): string[] {
   const lines = block.split('\n')
