@@ -12,6 +12,10 @@ export {
 /**
  * Start Anthropic Sandbox Runtime for macOS project subprocesses (shell, git, rg, indexer).
  * No-op on non-macOS; falls back to unsandboxed spawns if init fails.
+ *
+ * Subprocesses inherit seatbelt filesystem rules from {@link workspaceSandboxOverlay}.
+ * Renderer `fs:*` IPC and other main-process `node:fs` calls are not seatbelt-confined;
+ * they rely on {@link ../services/workspace.ts} path checks instead (issue #76).
  */
 export async function initProjectSandbox(): Promise<void> {
   if (process.platform !== 'darwin') {
