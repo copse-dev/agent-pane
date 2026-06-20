@@ -55,4 +55,11 @@ describe('workspaceSandboxOverlay', () => {
     assert.ok(overlay.filesystem?.allowRead?.includes(join(home, '.config/git/**')))
     assert.equal(overlay.filesystem?.allowGitConfig, true)
   })
+
+  it('includes workspace-scoped mandatory write deny paths', () => {
+    const overlay = workspaceSandboxOverlay('/Users/me/project')
+    const denyWrite = overlay.filesystem?.denyWrite ?? []
+    assert.ok(denyWrite.includes('/Users/me/project/.git/hooks'))
+    assert.ok(denyWrite.some((p) => p === '**/.git/hooks/**'))
+  })
 })
