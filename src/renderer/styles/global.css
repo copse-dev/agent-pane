@@ -929,10 +929,9 @@ label {
   flex-direction: column;
   gap: var(--spacing-xs);
 }
-.tool-card-subagent .subagent-message-assistant {
+.tool-card-subagent .subagent-message-assistant.message-text {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
-  white-space: pre-wrap;
 }
 .tool-card-subagent .subagent-inner-tools {
   display: flex;
