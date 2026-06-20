@@ -107,3 +107,28 @@ npm run test:e2e:markdown
 Screenshots under `tests/e2e/screenshots/` (`markdown-list-indent-*.png`,
 `semantic-search-*.png`) are updated by those specs for human review; CI asserts DOM layout, not
 pixels.
+
+### Markdown rendering taste
+
+The renderer is a small hand-rolled pass in `src/renderer/markdown/renderer.ts` — not a markdown
+library. Keep it that way unless requirements clearly outgrow it. When extending it, preserve these
+invariants:
+
+- **Valid block HTML.** Block elements (`<ul>`, `<ol>`, `<h3>`, `<h4>`, `<pre>`, `<table>`,
+  `<hr>`) must never end up inside `<p>`. Mixed single-newline blocks (heading → subheading → list)
+  are common in LLM output; split at block boundaries before wrapping paragraphs.
+- **Inline formatting order.** Fenced code → inline code → bold → italic. Italic (`_` and `*`) runs
+  only outside `<code>` spans and must not match across newlines (or `* list` lines get eaten).
+- **Agent-output shapes.** Support `-`, `*`, and `+` list markers. Map `#`/`##` to `<h4>`, `###` to
+  `<h3>` — h1/h2 are intentionally too large for the narrow pane.
+- **List indent.** Global `* { padding: 0 }` strips UA list padding. Restore readable indent on
+  `.message-text ul/ol` (currently `padding-inline-start: 1.5em; list-style-position: outside`).
+  Bullets should sit clearly inset from headings, not flush with them.
+- **Subagent explore cards.** Render markdown in the timeline via `renderMarkdown`. The collapsed
+  summary preview also renders markdown, but is hidden when the card is expanded — the timeline is
+  the single source of truth; never show truncated raw `## …` text.
+- **Fixtures over toy examples.** E2e seeds should mirror real agent summaries (multi-section
+  headings + lists, explore subagent with `` `snake_case` `` tool names), not single-line `- foo`.
+
+Prefer structural unit tests on HTML output plus WDIO geometry checks over pixel-diff screenshot CI.
+E2e specs live in `tests/e2e/*.e2e.ts` (WebdriverIO) — not Playwright.
