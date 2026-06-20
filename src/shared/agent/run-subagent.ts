@@ -10,15 +10,21 @@ import type {
 
 const randomUUID = () => globalThis.crypto.randomUUID()
 
-export const EXPLORE_TOOL_NAMES = ['read_file', 'list_dir', 'search_code', 'find_files'] as const
+export const EXPLORE_TOOL_NAMES = [
+  'read_file',
+  'list_dir',
+  'search_code',
+  'search_codebase',
+  'find_files',
+] as const
 
 export const SUBAGENT_SYSTEM_PROMPT = `You are an exploration subagent for a coding assistant.
 
 Your job is to read and search the workspace, then return a concise summary for the parent agent.
 
 Rules:
-- Use read_file, list_dir, search_code, and find_files as needed
-- Prefer search_code for exact symbols/strings; use semantic MCP search tools when the query is conceptual
+- Use read_file, list_dir, search_codebase, search_code, and find_files as needed
+- Prefer search_codebase (auto mode) over search_code alone — it combines regex and semantic MCP search
 - Do not write files or run shell commands
 - Cite file paths and line ranges when relevant
 - Be thorough in exploration but concise in your final summary
