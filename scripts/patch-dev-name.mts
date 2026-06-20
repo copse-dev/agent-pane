@@ -1,28 +1,141 @@
-// Dev-only: the macOS app-menu name (bold item next to the Apple logo) comes
-// from the running .app bundle's CFBundleName, NOT app.setName(). When running
-// unpackaged via `electron .`, that bundle is node_modules/electron's
-// Electron.app, so the menu shows "Electron". This patches its Info.plist to
-// "Agent Pane". A real packaged build (electron-builder/forge with
-// productName) makes this unnecessary.
+// Dev-only: macOS menu + Dock labels come from the running .app bundle (name +
+// Info.plist), not app.setName(). Unpackaged `electron .` uses
+// node_modules/electron/dist/Electron.app, so the Dock tooltip stays "Electron"
+// even when CFBundleDisplayName is patched — Launch Services keys off the bundle
+// path/filename. Spaces in the .app name break Chromium helper lookup (icudtl.dat /
+// GPU process). Use AgentPane.app on disk; CFBundleDisplayName stays "Agent Pane".
 //
-// Runs on postinstall so it survives `npm install`. Does NOT touch
-// CFBundleExecutable (the binary must stay named "Electron").
-import { execFileSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+// Runs on postinstall so it survives `npm install`. Does NOT rename
+// CFBundleExecutable (the binary must stay "Electron").
+import { createHash } from 'node:crypto'
+import { execFileSync, execSync } from 'node:child_process'
+import {
+  cpSync,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
+import { join } from 'node:path'
 
-const PLIST = 'node_modules/electron/dist/Electron.app/Contents/Info.plist'
+const ELECTRON_DIST = join('node_modules', 'electron', 'dist')
+const SOURCE_APP = join(ELECTRON_DIST, 'Electron.app')
+const APP_BUNDLE = 'AgentPane.app'
+const TARGET_APP = join(ELECTRON_DIST, APP_BUNDLE)
 const DISPLAY_NAME = 'Agent Pane'
+const PATH_TXT = join('node_modules', 'electron', 'path.txt')
+const EXEC_REL = `${APP_BUNDLE}/Contents/MacOS/Electron`
 
-if (!existsSync(PLIST)) {
+if (process.platform !== 'darwin') {
+  process.exit(0)
+}
+
+const sourcePlist = join(SOURCE_APP, 'Contents', 'Info.plist')
+if (!existsSync(sourcePlist)) {
   console.log('[patch-dev-name] Electron.app not found, skipping')
   process.exit(0)
 }
 
+rmSync(join(ELECTRON_DIST, 'Agent Pane.app'), { recursive: true, force: true })
+rmSync(TARGET_APP, { recursive: true, force: true })
+execSync(`ditto "${SOURCE_APP}" "${TARGET_APP}"`, { stdio: 'inherit' })
+
+const targetPlist = join(TARGET_APP, 'Contents', 'Info.plist')
 for (const key of ['CFBundleName', 'CFBundleDisplayName']) {
   try {
-    execFileSync('plutil', ['-replace', key, '-string', DISPLAY_NAME, PLIST])
+    execFileSync('plutil', ['-replace', key, '-string', DISPLAY_NAME, targetPlist])
   } catch (err) {
     console.warn(`[patch-dev-name] could not set ${key}:`, (err as Error).message)
   }
 }
-console.log(`[patch-dev-name] set Electron.app menu name to "${DISPLAY_NAME}"`)
+try {
+  execFileSync('plutil', [
+    '-replace',
+    'CFBundleIdentifier',
+    '-string',
+    'dev.agent-pane',
+    targetPlist,
+  ])
+} catch (err) {
+  console.warn('[patch-dev-name] could not set CFBundleIdentifier:', (err as Error).message)
+}
+
+const ICNS = join('assets', 'icons', 'app.icns')
+const resourcesDir = join(TARGET_APP, 'Contents', 'Resources')
+let icnsHash: string | undefined
+if (existsSync(ICNS)) {
+  icnsHash = createHash('sha256').update(readFileSync(ICNS)).digest('hex').slice(0, 12)
+  const iconBase = `agent-pane-${icnsHash}`
+  for (const name of readdirSync(resourcesDir)) {
+    if (name.startsWith('agent-pane') && name.endsWith('.icns')) {
+      unlinkSync(join(resourcesDir, name))
+    }
+  }
+  cpSync(ICNS, join(resourcesDir, `${iconBase}.icns`))
+  const stockIcns = join(resourcesDir, 'electron.icns')
+  if (existsSync(stockIcns)) unlinkSync(stockIcns)
+  try {
+    execFileSync('plutil', ['-replace', 'CFBundleIconFile', '-string', iconBase, targetPlist])
+    execFileSync('plutil', ['-replace', 'CFBundleVersion', '-string', icnsHash, targetPlist])
+    execFileSync('plutil', [
+      '-replace',
+      'CFBundleShortVersionString',
+      '-string',
+      `dev-${icnsHash}`,
+      targetPlist,
+    ])
+  } catch (err) {
+    console.warn('[patch-dev-name] could not set icon plist keys:', (err as Error).message)
+  }
+} else {
+  console.warn(
+    '[patch-dev-name] assets/icons/app.icns missing — run `npm run generate:icon` on macOS for a HIG-compliant Dock icon',
+  )
+}
+
+try {
+  execFileSync('codesign', ['--force', '--deep', '-s', '-', TARGET_APP])
+} catch (err) {
+  console.warn('[patch-dev-name] codesign failed:', (err as Error).message)
+}
+
+writeFileSync(PATH_TXT, EXEC_REL)
+
+const lsregister =
+  '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister'
+if (existsSync(lsregister)) {
+  try {
+    execFileSync(lsregister, ['-f', '-R', '-trusted', TARGET_APP])
+  } catch {
+    // Non-fatal; Dock picks up the new name after relaunch.
+  }
+}
+
+console.log(
+  `[patch-dev-name] using ${APP_BUNDLE} (path.txt → ${readFileSync(PATH_TXT, 'utf8').trim()})`,
+)
+if (icnsHash) {
+  console.log(`[patch-dev-name] agent-pane.icns sha256:${icnsHash} (also CFBundleVersion)`)
+}
+
+if (process.env.AGENT_PANE_REFRESH_DOCK === '1') {
+  try {
+    execSync('pkill -f "AgentPane.app/Contents/MacOS/Electron" || true', { stdio: 'ignore' })
+  } catch {
+    /* none running */
+  }
+  for (const proc of ['iconservicesd', 'Dock']) {
+    try {
+      execFileSync('killall', [proc])
+    } catch {
+      /* not running */
+    }
+  }
+  console.log('[patch-dev-name] quit app if running; restarted Dock + IconServices cache')
+} else {
+  console.log(
+    '[patch-dev-name] Cmd+Q Agent Pane, then npm start. For Dock refresh: AGENT_PANE_REFRESH_DOCK=1 npm run icons:mac',
+  )
+}
