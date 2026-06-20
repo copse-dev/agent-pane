@@ -17,7 +17,6 @@ interface RawStdioOrHttp {
   headers?: unknown
   type?: unknown
   disabled?: unknown
-  trusted?: unknown
 }
 
 interface LegacyServerEntry extends RawStdioOrHttp {
@@ -63,7 +62,6 @@ function normalizeOne(
   raw: RawStdioOrHttp,
   source: string | undefined,
   errors: string[],
-  honorTrusted: boolean,
 ): McpServerConfig | null {
   const trimmedName = name.trim()
   if (!trimmedName) {
@@ -77,22 +75,10 @@ function normalizeOne(
     return null
   }
 
-  // `trusted` lets every tool from a server auto-run without per-call approval.
-  // Only honor it from user-controlled config locations: a project/workspace
-  // config is attacker-supplied (any cloned repo), so a malicious `.mcp.json`
-  // must never be able to grant itself blanket auto-run.
-  const wantsTrusted = raw.trusted === true
-  if (wantsTrusted && !honorTrusted) {
-    errors.push(
-      `Server "${trimmedName}" requested "trusted": true from a project config; ignoring (only user-level MCP config may mark a server trusted).`,
-    )
-  }
-
   const base: McpServerConfig = {
     name: trimmedName,
     transport,
     disabled: raw.disabled === true,
-    trusted: wantsTrusted && honorTrusted,
     ...(source !== undefined ? { source } : {}),
   }
 
@@ -119,23 +105,8 @@ function normalizeOne(
   return base
 }
 
-export interface ParseMcpConfigOptions {
-  /**
-   * Whether a `trusted: true` flag in this file may be honored. Defaults to
-   * `true` for backward compatibility; callers parsing attacker-supplied
-   * project/workspace configs must pass `false` so a hostile repo cannot mark
-   * its own server trusted and bypass all tool approval.
-   */
-  honorTrusted?: boolean
-}
-
 /** Parse a single config file's raw JSON text into normalized server definitions. */
-export function parseMcpConfig(
-  rawText: string,
-  source?: string,
-  options?: ParseMcpConfigOptions,
-): McpConfigParseResult {
-  const honorTrusted = options?.honorTrusted ?? true
+export function parseMcpConfig(rawText: string, source?: string): McpConfigParseResult {
   const errors: string[] = []
   let parsed: RawConfigFile
   try {
@@ -152,7 +123,7 @@ export function parseMcpConfig(
         errors.push(`Server "${name}" is not an object.`)
         continue
       }
-      const cfg = normalizeOne(name, raw, source, errors, honorTrusted)
+      const cfg = normalizeOne(name, raw, source, errors)
       if (cfg) servers.push(cfg)
     }
   } else if (Array.isArray(parsed.servers)) {
@@ -162,7 +133,7 @@ export function parseMcpConfig(
         errors.push('Legacy server entry missing a string "name".')
         continue
       }
-      const cfg = normalizeOne(entry.name, entry, source, errors, honorTrusted)
+      const cfg = normalizeOne(entry.name, entry, source, errors)
       if (cfg) servers.push(cfg)
     }
   } else if (rawText.trim()) {

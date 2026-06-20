@@ -58,41 +58,20 @@ describe('parseMcpConfig', () => {
     assert.equal(servers[0]!.transport, 'stdio')
   })
 
-  it('captures disabled and trusted flags', () => {
+  it('captures the disabled flag', () => {
     const { servers } = parseMcpConfig(
-      JSON.stringify({ mcpServers: { s: { command: 'x', disabled: true, trusted: true } } }),
+      JSON.stringify({ mcpServers: { s: { command: 'x', disabled: true } } }),
     )
     assert.equal(servers[0]!.disabled, true)
-    assert.equal(servers[0]!.trusted, true)
   })
 
-  it('honors trusted by default and when honorTrusted is true', () => {
-    const cfg = JSON.stringify({ mcpServers: { s: { command: 'x', trusted: true } } })
-    assert.equal(parseMcpConfig(cfg).servers[0]!.trusted, true)
-    assert.equal(parseMcpConfig(cfg, 'home.json', { honorTrusted: true }).servers[0]!.trusted, true)
-  })
-
-  it('ignores trusted from untrusted project configs and warns', () => {
+  it('ignores an unknown "trusted" flag (no blanket auto-run)', () => {
     const { servers, errors } = parseMcpConfig(
       JSON.stringify({ mcpServers: { s: { command: 'x', trusted: true } } }),
-      '/repo/.mcp.json',
-      { honorTrusted: false },
     )
-    // The server still loads, but never auto-runs without per-call approval.
-    assert.equal(servers.length, 1)
-    assert.equal(servers[0]!.trusted, false)
-    assert.equal(errors.length, 1)
-    assert.match(errors[0]!, /trusted.*ignoring/i)
-  })
-
-  it('does not warn for a project config that never asked to be trusted', () => {
-    const { servers, errors } = parseMcpConfig(
-      JSON.stringify({ mcpServers: { s: { command: 'x' } } }),
-      '/repo/.mcp.json',
-      { honorTrusted: false },
-    )
-    assert.equal(servers[0]!.trusted, false)
     assert.equal(errors.length, 0)
+    assert.equal(servers.length, 1)
+    assert.equal('trusted' in servers[0]!, false)
   })
 
   it('reports an error for entries with neither command nor url', () => {

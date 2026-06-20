@@ -51,7 +51,6 @@ interface ActiveServer {
 
 interface McpToolMeta {
   server: string
-  trusted: boolean
   annotations?: McpToolAnnotations | undefined
 }
 
@@ -80,14 +79,14 @@ export function rememberMcpTool(toolName: string): void {
   }
 }
 
-async function readConfigFile(path: string, honorTrusted: boolean): Promise<McpServerConfig[]> {
+async function readConfigFile(path: string): Promise<McpServerConfig[]> {
   let raw: string
   try {
     raw = await fs.readFile(path, 'utf-8')
   } catch {
     return [] // missing file is normal
   }
-  const { servers, errors } = parseMcpConfig(raw, path, { honorTrusted })
+  const { servers, errors } = parseMcpConfig(raw, path)
   for (const err of errors) console.warn(`[MCP] ${err}`)
   return servers
 }
@@ -95,24 +94,15 @@ async function readConfigFile(path: string, honorTrusted: boolean): Promise<McpS
 /** Gather and merge MCP server definitions from all known config locations. */
 async function collectConfigs(): Promise<McpServerConfig[]> {
   const workspace = getWorkspaceRoot()
-  // Project/workspace configs are attacker-supplied (any cloned repo), so a
-  // `trusted` flag in them is ignored. Only user-controlled locations (home /
-  // userData) may mark a server trusted for blanket auto-run.
-  const projectSources: string[] = []
+  const sources: string[] = []
   if (workspace) {
-    projectSources.push(join(workspace, '.cursor', 'mcp.json'))
-    projectSources.push(join(workspace, '.mcp.json'))
+    sources.push(join(workspace, '.cursor', 'mcp.json'))
+    sources.push(join(workspace, '.mcp.json'))
   }
-  const userSources: string[] = [
-    join(homedir(), '.cursor', 'mcp.json'),
-    join(app.getPath('userData'), 'mcp.json'),
-  ]
+  sources.push(join(homedir(), '.cursor', 'mcp.json'))
+  sources.push(join(app.getPath('userData'), 'mcp.json'))
 
-  // Keep project sources first so existing name-precedence behavior is unchanged.
-  const perSource = await Promise.all([
-    ...projectSources.map((p) => readConfigFile(p, false)),
-    ...userSources.map((p) => readConfigFile(p, true)),
-  ])
+  const perSource = await Promise.all(sources.map(readConfigFile))
   return mergeMcpConfigs(perSource)
 }
 
@@ -165,7 +155,6 @@ async function connectServer(
     state: 'connecting',
     toolCount: 0,
     tools: [],
-    trusted: cfg.trusted === true,
     userEnabled,
     configDisabled,
     ...(cfg.source !== undefined ? { source: cfg.source } : {}),
@@ -187,7 +176,7 @@ async function connectServer(
     for (const tool of tools) {
       const fullName = mcpToolName(cfg.name, tool.name)
       toolNames.push(tool.name)
-      const meta: McpToolMeta = { server: cfg.name, trusted: cfg.trusted === true }
+      const meta: McpToolMeta = { server: cfg.name }
       if (tool.annotations) meta.annotations = tool.annotations as McpToolAnnotations
       toolMeta.set(fullName, meta)
       registry.register({
