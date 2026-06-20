@@ -98,6 +98,42 @@ function storedOrEnvApiKey(provider: 'anthropic' | 'openai'): string | null {
   return getApiKey('openai') ?? process.env.OPENAI_API_KEY ?? null
 }
 
+export function isLocalChatModel(model: string): boolean {
+  return model === 'lm-studio' || model.startsWith('lmstudio:')
+}
+
+async function resolveSubagentLocalModelId(url: string): Promise<string | null> {
+  const configured = getSetting<string>('lmStudioSubagentModel', '').trim()
+  if (configured) return configured
+  const fallback = getSetting<string>('lmStudioModel', '').trim()
+  if (fallback) return fallback
+  return fetchFirstLocalModel(url)
+}
+
+interface SubagentRoute {
+  provider: LLMProvider
+  contextWindow: number
+  toolSchemaReserve: number
+}
+
+/** When the parent chat uses a cloud model, route explore subagents to LM Studio. */
+export async function buildSubagentRoute(parentModel: string): Promise<SubagentRoute | null> {
+  if (isLocalChatModel(parentModel)) return null
+  if (!getSetting<boolean>('lmStudioForSubagents', true)) return null
+
+  const url = getSetting<string>('lmStudioUrl', DEFAULT_LM_STUDIO_URL)
+  const modelId = await resolveSubagentLocalModelId(url)
+  if (!modelId) return null
+
+  const contextWindow = await resolveContextWindow(`lmstudio:${modelId}`)
+  return {
+    provider: createLMStudioProvider(url, modelId, lmStudioKey()),
+    contextWindow,
+    toolSchemaReserve: 2_500,
+  }
+}
+
+
 // Builds the provider for the main agent loop. LM Studio models are encoded as
 // `lmstudio:<modelId>`; the legacy `lm-studio` value resolves to the configured
 // model or the first one the server has loaded (never the bogus "local-model").
@@ -200,6 +236,7 @@ export async function runAgent(
   // Build the provider per run so a freshly-saved API key (now in process.env)
   // and the currently-selected model take effect without a restart.
   const provider = await buildProvider(model)
+  const subagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
 
   const basePrompt = subagentsEnabled ? BASE_SYSTEM_PROMPT : BASE_SYSTEM_PROMPT_DIRECT_READS
   const systemPrompt =
@@ -269,10 +306,10 @@ export async function runAgent(
           setExploreSubagentContext({
             parentToolCallId: toolCallId,
             parentGoal,
-            provider,
+            provider: subagentRoute?.provider ?? provider,
             registry,
-            contextWindow,
-            toolSchemaReserve,
+            contextWindow: subagentRoute?.contextWindow ?? contextWindow,
+            toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
             onChunk: sendChunk,
           })
           try {

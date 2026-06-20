@@ -114,6 +114,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <span class="field-hint">Thread title generation and other lightweight prompts</span>
               </label>
               <label>
+                Exploration subagent model
+                <select name="lmStudioSubagentModel"></select>
+                <span class="field-hint">File exploration when the chat model is a cloud API model</span>
+              </label>
+              <label>
                 Instruct / safety model
                 <select name="lmStudioSafetyModel"></select>
                 <span class="field-hint">Classifies shell commands when the OS sandbox is off</span>
@@ -125,6 +130,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <label class="checkbox-label">
                 <input type="checkbox" name="lmStudioForSmallTasks" />
                 Use local models for small tasks (e.g. naming threads)
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="lmStudioForSubagents" />
+                Use local models for exploration subagents when chat uses a cloud model
               </label>
               <label class="checkbox-label">
                 <input type="checkbox" name="lmStudioSafetyEnabled" />
@@ -240,6 +249,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
     const lmModel = (await api.settings.get('lmStudioModel')) as string | undefined
     const lmSmall = (await api.settings.get('lmStudioSmallTasksModel')) as string | undefined
+    const lmSubagent = (await api.settings.get('lmStudioSubagentModel')) as string | undefined
     const lmSafety = (await api.settings.get('lmStudioSafetyModel')) as string | undefined
 
     populateLocalModelSelect(
@@ -251,6 +261,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       form.elements.namedItem('lmStudioSmallTasksModel') as HTMLSelectElement,
       models,
       lmSmall ?? '',
+      '(auto — use default local model)',
+    )
+    populateLocalModelSelect(
+      form.elements.namedItem('lmStudioSubagentModel') as HTMLSelectElement,
+      models,
+      lmSubagent ?? '',
       '(auto — use default local model)',
     )
     populateLocalModelSelect(
@@ -396,6 +412,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const lmSmallEnabled = (await api.settings.get('lmStudioForSmallTasks')) as
         | boolean
         | undefined
+      const lmSubagentsEnabled = (await api.settings.get('lmStudioForSubagents')) as
+        | boolean
+        | undefined
       const lmSafetyEnabled = (await api.settings.get('lmStudioSafetyEnabled')) as
         | boolean
         | undefined
@@ -409,6 +428,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         lmUrl ?? 'http://localhost:1234/v1'
       ;(form.elements.namedItem('lmStudioForSmallTasks') as HTMLInputElement).checked =
         lmSmallEnabled ?? true
+      ;(form.elements.namedItem('lmStudioForSubagents') as HTMLInputElement).checked =
+        lmSubagentsEnabled ?? true
       ;(form.elements.namedItem('lmStudioSafetyEnabled') as HTMLInputElement).checked =
         lmSafetyEnabled ?? true
       ;(form.elements.namedItem('autoRunSandboxCommands') as HTMLInputElement).checked =
@@ -452,7 +473,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         'lmStudioSmallTasksModel',
         (data.get('lmStudioSmallTasksModel') as string).trim(),
       )
+      await api.settings.set(
+        'lmStudioSubagentModel',
+        (data.get('lmStudioSubagentModel') as string).trim(),
+      )
       await api.settings.set('lmStudioForSmallTasks', data.get('lmStudioForSmallTasks') === 'on')
+      await api.settings.set('lmStudioForSubagents', data.get('lmStudioForSubagents') === 'on')
       await api.settings.set(
         'lmStudioSafetyModel',
         (data.get('lmStudioSafetyModel') as string).trim(),
