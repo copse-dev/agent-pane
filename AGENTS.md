@@ -87,3 +87,15 @@ Conversation messages, subagent timelines, and file preview use the hand-rolled 
 [`src/renderer/markdown/README.md`](src/renderer/markdown/README.md).
 
 After markdown or list-indent changes, run `npm run build && npm run test:e2e:markdown`.
+
+### Shell and tool permissions (#19)
+
+How privileged actions are gated depends on platform and settings:
+
+- **macOS (project sandbox on):** `run_shell` and interactive terminal PTY spawns go through the Anthropic sandbox runtime (seatbelt) when a workspace root is set. File tools and IPC `fs:*` handlers run in the main process with workspace path checks — they are not wrapped by the same seatbelt as subprocesses. See issue #76 for the architectural split.
+- **Linux / Windows:** There is no seatbelt; shell commands are classified with static heuristics in `shell-scope.ts` / `permission-policy.ts` (network, destructive patterns, etc.). The UI may prompt before run; auto-run toggles live in settings.
+- **Optional LM Studio safety classifier:** When configured, an extra model can score shell commands before execution (`safety-classifier.ts`).
+
+Regression coverage for permission decisions: `src/main/services/permission-gate.test.ts`, `src/main/services/shell-scope.test.ts`, and `src/main/services/sandbox-failure.test.ts`. End-to-end mock LLM flows use `MockLLMProvider` (`src/shared/llm/mock-provider.test.ts`).
+
+**Issue #35 (thread working brief)** is not implemented yet — track in GitHub #35 for parent/explore shared goal state.
