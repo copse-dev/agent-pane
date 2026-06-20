@@ -109,7 +109,21 @@ async function buildProvider(model: string): Promise<LLMProvider> {
     }
     return createLMStudioProvider(url, id, lmStudioKey())
   }
-  return createProvider(model)
+  if (process.env.AGENT_WINDOW_MOCK_LLM === '1') return createProvider(model)
+  if (model.startsWith('claude')) {
+    return createProvider(model, {
+      anthropicApiKey: getApiKey('anthropic') ?? process.env.ANTHROPIC_API_KEY,
+    })
+  }
+  if (model.startsWith('gpt')) {
+    return createProvider(model, {
+      openAiApiKey: getApiKey('openai') ?? process.env.OPENAI_API_KEY,
+    })
+  }
+  return createProvider(model, {
+    anthropicApiKey: getApiKey('anthropic') ?? process.env.ANTHROPIC_API_KEY,
+    openAiApiKey: getApiKey('openai') ?? process.env.OPENAI_API_KEY,
+  })
 }
 
 // List the model ids an LM Studio server currently exposes (using saved URL/key).
