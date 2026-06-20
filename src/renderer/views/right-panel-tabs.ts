@@ -21,22 +21,37 @@ export function mountRightPanelTabs(root: HTMLElement, store: AppStore): () => v
     },
     'Terminal',
   )
-  root.append(explorerBtn, terminalBtn)
+  const changesBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'right-panel-tab',
+      'aria-label': 'Changes',
+    },
+    'Changes',
+  )
+  root.append(explorerBtn, terminalBtn, changesBtn)
 
   function syncLayout() {
     const mode = store.getState().rightPanelMode
     const isExplorer = mode === 'explorer'
+    const isTerminal = mode === 'terminal'
+    const isChanges = mode === 'changes'
 
     const treeHost = document.getElementById('file-tree-host')
     const terminalsList = document.getElementById('terminals-list-host')
+    const gitChangesHost = document.getElementById('git-changes-host')
     const treeResizer = document.getElementById('resizer-tree')
     const fileViewer = document.getElementById('file-viewer')
     const terminalsViewer = document.getElementById('terminals-viewer-host')
+    const gitDiffViewer = document.getElementById('git-diff-viewer-host')
 
     if (treeHost) treeHost.hidden = !isExplorer
-    if (terminalsList) terminalsList.hidden = isExplorer
+    if (terminalsList) terminalsList.hidden = !isTerminal
+    if (gitChangesHost) gitChangesHost.hidden = !isChanges
     if (fileViewer) fileViewer.hidden = !isExplorer
-    if (terminalsViewer) terminalsViewer.hidden = isExplorer
+    if (terminalsViewer) terminalsViewer.hidden = !isTerminal
+    if (gitDiffViewer) gitDiffViewer.hidden = !isChanges
     if (treeResizer) treeResizer.hidden = !store.getState().filesPaneOpen
   }
 
@@ -52,11 +67,13 @@ export function mountRightPanelTabs(root: HTMLElement, store: AppStore): () => v
     const mode = store.getState().rightPanelMode
     explorerBtn.classList.toggle('is-active', mode === 'explorer')
     terminalBtn.classList.toggle('is-active', mode === 'terminal')
+    changesBtn.classList.toggle('is-active', mode === 'changes')
     syncLayout()
   }
 
   explorerBtn.addEventListener('click', () => setMode('explorer'))
   terminalBtn.addEventListener('click', () => setMode('terminal'))
+  changesBtn.addEventListener('click', () => setMode('changes'))
 
   sync()
   const unsubs = [

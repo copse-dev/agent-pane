@@ -13,6 +13,7 @@ import { mountInputBar } from './views/input-bar.ts'
 import { mountContextPanel } from './views/context-panel.ts'
 import { mountRightPanelTabs } from './views/right-panel-tabs.ts'
 import { mountTerminalsPane } from './views/terminals-pane.ts'
+import { mountGitChangesPane } from './views/git-changes-pane.ts'
 import {
   mountSettingsDialog,
   openSettingsDialog,
@@ -94,6 +95,13 @@ function mountFullLayout() {
     document.getElementById('terminals-viewer-host')!,
     store,
     api,
+  )
+  mountGitChangesPane(
+    document.getElementById('git-changes-host')!,
+    document.getElementById('git-diff-viewer-host')!,
+    store,
+    api,
+    monaco,
   )
   mountContextPanel(document.getElementById('file-viewer')!, store, api, monaco)
 

@@ -42,8 +42,13 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
     { class: 'titlebar-btn titlebar-text-btn', 'aria-label': 'Open terminal' },
     '> Terminal',
   )
+  const changesBtn = el(
+    'button',
+    { class: 'titlebar-btn titlebar-text-btn', 'aria-label': 'Open changes' },
+    'Changes',
+  )
 
-  root.append(leftCluster, dragRegion, filesBtn, terminalBtn)
+  root.append(leftCluster, dragRegion, filesBtn, terminalBtn, changesBtn)
 
   filesBtn.addEventListener('click', () => {
     if (!store.getState().workspaceRoot) {
@@ -68,10 +73,19 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
     syncPanelBtns()
   })
 
+  changesBtn.addEventListener('click', () => {
+    if (!ensureWorkspaceForPanel(_api, store)) return
+    store.setState({ filesPaneOpen: true, rightPanelMode: 'changes' })
+    store.emit('files_pane_changed')
+    store.emit('right_panel_mode_changed')
+    syncPanelBtns()
+  })
+
   function syncPanelBtns() {
     const { filesPaneOpen, rightPanelMode } = store.getState()
     filesBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'explorer')
     terminalBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'terminal')
+    changesBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'changes')
   }
 
   function syncName() {

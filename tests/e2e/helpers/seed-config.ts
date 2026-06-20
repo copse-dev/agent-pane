@@ -1,5 +1,6 @@
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 /** Mirrors `app.setPath('userData', …)` in `src/main/app-init.ts`. */
@@ -247,6 +248,65 @@ export function seedSubagentFixture(workspaceRoot: string): void {
     }),
     'utf8',
   )
+}
+
+/**
+ * Creates a throwaway git repo with a committed baseline plus a staged
+ * modification, an unstaged modification, and an untracked file, then seeds it
+ * as the active project. Returns the repo path so the spec can clean it up.
+ */
+export function seedGitChangesFixture(): string {
+  const repoRoot = mkdtempSync(join(tmpdir(), 'agent-pane-git-'))
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
+
+  git('init', '-q')
+  git('config', 'user.email', 'e2e@example.com')
+  git('config', 'user.name', 'E2E')
+  git('config', 'commit.gpgsign', 'false')
+
+  writeFileSync(join(repoRoot, 'staged.ts'), 'export const value = 1\n', 'utf8')
+  writeFileSync(join(repoRoot, 'unstaged.ts'), 'export const name = "old"\n', 'utf8')
+  git('add', '.')
+  git('commit', '-q', '-m', 'baseline')
+
+  // Staged modification.
+  writeFileSync(join(repoRoot, 'staged.ts'), 'export const value = 2\n', 'utf8')
+  git('add', 'staged.ts')
+
+  // Unstaged modification to a tracked file.
+  writeFileSync(join(repoRoot, 'unstaged.ts'), 'export const name = "new"\n', 'utf8')
+
+  // Untracked file.
+  writeFileSync(join(repoRoot, 'untracked.ts'), 'export const fresh = true\n', 'utf8')
+
+  const projectId = 'e2e-git-changes-project'
+  const threadId = 'e2e-git-changes-thread'
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: repoRoot, name: 'git-workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Git changes test',
+          status: 'idle',
+          messages: [],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+
+  return repoRoot
+}
+
+export function cleanupGitChangesFixture(repoRoot: string): void {
+  rmSync(repoRoot, { recursive: true, force: true })
 }
 
 export function seedToolDisplayFixture(workspaceRoot: string): void {
