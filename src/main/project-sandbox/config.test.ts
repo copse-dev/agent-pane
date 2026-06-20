@@ -1,7 +1,8 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { accessSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { homedir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 import { resolveNodeToolchainAllowRead, workspaceSandboxOverlay } from './config.ts'
 
 describe('resolveNodeToolchainAllowRead', () => {
@@ -41,5 +42,17 @@ describe('workspaceSandboxOverlay', () => {
     if (toolchain.length > 0) {
       assert.ok(toolchain.every((p) => allowRead.includes(p)))
     }
+  })
+
+  it('denies home reads but re-allows git config files', () => {
+    const overlay = workspaceSandboxOverlay('/Users/me/project')
+    const home = homedir()
+    // Home is broadly denied so projects cannot read unrelated user files...
+    assert.ok(overlay.filesystem?.denyRead?.includes(home))
+    // ...but git's user-level config must stay readable or seatbelt EPERM makes
+    // every git command fatal (exit 128).
+    assert.ok(overlay.filesystem?.allowRead?.includes(join(home, '.gitconfig')))
+    assert.ok(overlay.filesystem?.allowRead?.includes(join(home, '.config/git/**')))
+    assert.equal(overlay.filesystem?.allowGitConfig, true)
   })
 })

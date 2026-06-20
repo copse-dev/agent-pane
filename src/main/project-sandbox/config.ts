@@ -1,7 +1,24 @@
 import { accessSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
+
+/**
+ * User-level git config files git reads on every invocation. They live under
+ * the home directory, which the workspace overlay otherwise denies. macOS
+ * seatbelt denials surface as EPERM ("Operation not permitted"), which git
+ * treats as fatal (exit 128) — so these must stay readable or every git command
+ * fails. A more-specific allowRead overrides the broad home denyRead.
+ */
+function gitConfigReadPaths(): string[] {
+  const home = homedir()
+  return [
+    join(home, '.gitconfig'),
+    join(home, '.config/git/**'),
+    join(home, '.gitignore'),
+    join(home, '.gitignore_global'),
+  ]
+}
 
 /** Base ASRT config; workspace-specific paths are passed per spawn via `customConfig`. */
 export function baseSandboxConfig(): SandboxRuntimeConfig {
@@ -59,11 +76,13 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
       deniedDomains: ['*'],
     },
     filesystem: {
-      // Deny home reads, re-allow only this project (ASRT deny-then-allow).
+      // Deny home reads, re-allow only this project plus the user's git config
+      // files (ASRT deny-then-allow; a more-specific allow overrides the deny).
       denyRead: [homedir()],
-      allowRead: [root, `${root}/**`, ...toolchainRead],
+      allowRead: [root, `${root}/**`, ...toolchainRead, ...gitConfigReadPaths()],
       allowWrite: [root, `${root}/**`],
       denyWrite: [],
+      allowGitConfig: true,
     },
   }
 }
