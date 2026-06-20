@@ -9,7 +9,7 @@
   <!-- Packaged .app / .icns: square master; macOS applies squircle + rim. -->
   <rect width="512" height="512" fill="#0F172A"/>
 
-  <g transform="translate(-8, 10)">
+  <g transform="translate(-8, 14)">
     <g transform="translate(256, 256) scale(1.18) translate(-256, -256)">
       <path
         d="
