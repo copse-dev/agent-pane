@@ -45,9 +45,11 @@ export async function spawnInProjectSandbox(
     cwd: string
     env?: NodeJS.ProcessEnv
     signal?: AbortSignal
+    /** When true, skip the macOS project sandbox even if it is active. */
+    unsandboxed?: boolean
   } & Pick<SpawnOptionsWithoutStdio, 'stdio'>,
 ): Promise<ChildProcess> {
-  if (!isProjectSandboxEnabled()) {
+  if (!isProjectSandboxEnabled() || opts.unsandboxed) {
     return spawn(executable, args, {
       cwd: opts.cwd,
       env: opts.env ?? process.env,
@@ -79,9 +81,11 @@ export async function spawnShellInProjectSandbox(
     cwd: string
     env?: NodeJS.ProcessEnv
     signal?: AbortSignal
+    /** When true, skip the macOS project sandbox even if it is active. */
+    unsandboxed?: boolean
   } & Pick<SpawnOptionsWithoutStdio, 'stdio'>,
 ): Promise<ChildProcess> {
-  if (!isProjectSandboxEnabled()) {
+  if (!isProjectSandboxEnabled() || opts.unsandboxed) {
     const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh'
     const shellArgs =
       process.platform === 'win32' ? ['/c', shellCommandLine] : ['-c', shellCommandLine]
