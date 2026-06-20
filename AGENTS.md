@@ -80,30 +80,10 @@ Assertions to mirror: `.tool-card-group .tool-name` = group label; `.tool-count`
 failed tools stay `.tool-card[data-status=error]` with individual `getToolDisplayName` labels.
 Unit coverage for grouping logic: `src/shared/tools/tool-display.test.ts`.
 
-### Markdown list / subagent rendering regression
+### Markdown rendering
 
-CI already runs the full gate (`npm run check` + `npm run build` + `npm run test:e2e`). After
-changing `src/renderer/markdown/renderer.ts`, `src/renderer/views/conversation.ts`, or
-`.message-text ul/ol` styles, also run the focused markdown e2e slice:
+Conversation messages, subagent timelines, and file preview use the hand-rolled renderer in
+`src/renderer/markdown/`. Design invariants, regression tests, and e2e fixtures are documented in
+[`src/renderer/markdown/README.md`](src/renderer/markdown/README.md).
 
-```bash
-npm run build
-npm run test:e2e:markdown
-```
-
-**Unit tests** (`src/renderer/markdown/renderer.test.ts`, via `npm test`):
-
-- No `<ul>` nested inside `<p>` for multi-section agent summaries
-- `*italic*` and `` `snake_case` `` code spans stay intact (no cross-line `<em>` bleed)
-- Explore-style fixtures: `##`/`###` headings, `<hr>`, and lists as sibling block elements
-
-**E2e tests** (WebdriverIO, seeded via `tests/e2e/helpers/seed-config.ts`):
-
-- `tests/e2e/markdown-list-indent.e2e.ts` — Known Failures + Architecture Highlights;
-  asserts list text is inset >4px from headings
-- `tests/e2e/semantic-search-markdown.e2e.ts` — explore subagent timeline; asserts no raw `##`
-  in rendered text, summary preview hidden when expanded, code spans intact
-
-Screenshots under `tests/e2e/screenshots/` (`markdown-list-indent-*.png`,
-`semantic-search-*.png`) are updated by those specs for human review; CI asserts DOM layout, not
-pixels.
+After markdown or list-indent changes, run `npm run build && npm run test:e2e:markdown`.
