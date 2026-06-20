@@ -25,6 +25,10 @@ list-style-position: outside`). Bullets should sit clearly inset from headings, 
   text.
 - **Fixtures over toy examples.** E2e seeds should mirror real agent summaries (multi-section
   headings + lists, explore subagent with `` `snake_case` `` tool names), not single-line `- foo`.
+- **Mermaid diagrams.** Fenced ` ```mermaid ` blocks render as SVG via lazy-loaded `mermaid`
+  (`mermaid.ts`). Diagram rendering runs after final markdown insertion (`message_done`, thread
+  restore) — not on every streaming token. Fenced blocks are extracted before HTML escaping so
+  arrow syntax (`A --> B`) and code operators (`a < b`) stay intact.
 
 Prefer structural unit tests on HTML output plus WDIO geometry checks over pixel-diff screenshot CI.
 E2e specs live in `tests/e2e/*.e2e.ts` (WebdriverIO) — not Playwright.
@@ -51,6 +55,7 @@ npm run test:e2e:markdown
   text is inset >4px from headings
 - `tests/e2e/semantic-search-markdown.e2e.ts` — explore subagent timeline; asserts no raw `##` in
   rendered text, summary preview hidden when expanded, code spans intact
+- `tests/e2e/mermaid-diagram.e2e.ts` — seeded flowchart; asserts `.mermaid-diagram svg` renders
 
 Screenshots under `tests/e2e/screenshots/` (`markdown-list-indent-*.png`, `semantic-search-*.png`)
 are updated by those specs for human review; CI asserts DOM layout, not pixels.

@@ -861,6 +861,18 @@ label {
   border-top: 1px solid var(--border);
   margin: var(--spacing-md) 0;
 }
+.message-text .mermaid-diagram {
+  overflow-x: auto;
+  margin: var(--spacing-sm) 0;
+}
+.message-text .mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+.message-text .mermaid-diagram .error-icon {
+  fill: var(--error);
+}
 .tool-card {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
