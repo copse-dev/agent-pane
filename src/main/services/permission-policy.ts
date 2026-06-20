@@ -38,28 +38,31 @@ export function decideShellPermission(
   }
 
   const analysis = analyzeShellCommand(command, opts.workspaceRoot)
+
+  // With macOS seatbelt active, always try inside the project sandbox first.
+  // If the command needs broader access, shell-tool offers a separate unsandboxed retry prompt.
+  if (opts.sandboxEnabled) {
+    return { action: 'allow', reasons: analysis.reasons }
+  }
+
   if (analysis.verdict === 'external') {
     return { action: 'prompt', reasons: analysis.reasons }
   }
 
-  if (!opts.sandboxEnabled) {
-    const { classification, confidenceThreshold } = opts
-    if (
-      classification &&
-      classification.scope === 'sandbox' &&
-      classification.confidence >= confidenceThreshold
-    ) {
-      return { action: 'allow', reasons: [classification.reason] }
-    }
-    const reasons = classification
-      ? [
-          `safety model: ${classification.reason} (confidence ${classification.confidence.toFixed(2)})`,
-        ]
-      : ['OS sandbox unavailable — prompt required']
-    return { action: 'prompt', reasons }
+  const { classification, confidenceThreshold } = opts
+  if (
+    classification &&
+    classification.scope === 'sandbox' &&
+    classification.confidence >= confidenceThreshold
+  ) {
+    return { action: 'allow', reasons: [classification.reason] }
   }
-
-  return { action: 'allow', reasons: analysis.reasons }
+  const reasons = classification
+    ? [
+        `safety model: ${classification.reason} (confidence ${classification.confidence.toFixed(2)})`,
+      ]
+    : ['OS sandbox unavailable — prompt required']
+  return { action: 'prompt', reasons }
 }
 
 export function shellCommandFromArgs(args: unknown): string | null {
