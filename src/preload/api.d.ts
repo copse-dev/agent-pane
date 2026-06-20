@@ -1,4 +1,4 @@
-import type { StreamChunk } from '@shared/types'
+import type { StreamChunk, UsageDelta } from '@shared/types'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { GitFileDiff, GitStatusResult } from '@shared/types/git.ts'
 import type { McpServerStatus } from '@shared/types/mcp.ts'
@@ -35,9 +35,7 @@ export interface ApiClient {
       }) => void,
     ) => () => void
     onShellOutput: (handler: (data: string) => void) => () => void
-    onUsage: (
-      handler: (threadId: string, usage: { inputTokens: number; outputTokens: number }) => void,
-    ) => () => void
+    onUsage: (handler: (threadId: string, usage: UsageDelta) => void) => () => void
   }
   diff: {
     approve: (path: string) => Promise<void>

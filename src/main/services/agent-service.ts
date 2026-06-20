@@ -34,6 +34,7 @@ import {
   resetSubagentUsage,
   getAccumulatedSubagentUsage,
 } from './explore-subagent-runner.ts'
+import { isLocalModel } from '@shared/llm/estimate-cost.ts'
 
 const abortMap = new Map<string, AbortController>()
 
@@ -47,7 +48,7 @@ Available tools:
 - git_status: Show working tree status
 - git_diff: Show unstaged or staged changes
 - git_log: Show recent commit history
-- run_shell: Run a shell command (auto-runs when contained in the sandbox; prompts for network/outside access)
+- run_shell: Run a shell command in the workspace (may prompt for approval)
 {SKILLS_TOOLS_LINE}
 Working directory: {WORKSPACE_ROOT}
 
@@ -72,7 +73,7 @@ Available tools:
 - git_status: Show working tree status
 - git_diff: Show unstaged or staged changes
 - git_log: Show recent commit history
-- run_shell: Run a shell command (auto-runs when contained in the sandbox; prompts for network/outside access)
+- run_shell: Run a shell command in the workspace (may prompt for approval)
 {SKILLS_TOOLS_LINE}
 Working directory: {WORKSPACE_ROOT}
 
@@ -96,6 +97,43 @@ function storedOrEnvApiKey(provider: 'anthropic' | 'openai'): string | null {
   if (provider === 'anthropic')
     return getApiKey('anthropic') ?? process.env.ANTHROPIC_API_KEY ?? null
   return getApiKey('openai') ?? process.env.OPENAI_API_KEY ?? null
+}
+
+export function isLocalChatModel(model: string): boolean {
+  return isLocalModel(model)
+}
+
+async function resolveSubagentLocalModelId(url: string): Promise<string | null> {
+  const configured = getSetting<string>('lmStudioSubagentModel', '').trim()
+  if (configured) return configured
+  const fallback = getSetting<string>('lmStudioModel', '').trim()
+  if (fallback) return fallback
+  return fetchFirstLocalModel(url)
+}
+
+interface SubagentRoute {
+  provider: LLMProvider
+  usageModel: string
+  contextWindow: number
+  toolSchemaReserve: number
+}
+
+/** When the parent chat uses a cloud model, route explore subagents to LM Studio. */
+export async function buildSubagentRoute(parentModel: string): Promise<SubagentRoute | null> {
+  if (isLocalChatModel(parentModel)) return null
+  if (!getSetting<boolean>('lmStudioForSubagents', true)) return null
+
+  const url = getSetting<string>('lmStudioUrl', DEFAULT_LM_STUDIO_URL)
+  const modelId = await resolveSubagentLocalModelId(url)
+  if (!modelId) return null
+
+  const contextWindow = await resolveContextWindow(`lmstudio:${modelId}`)
+  return {
+    provider: createLMStudioProvider(url, modelId, lmStudioKey()),
+    usageModel: `lmstudio:${modelId}`,
+    contextWindow,
+    toolSchemaReserve: 2_500,
+  }
 }
 
 // Builds the provider for the main agent loop. LM Studio models are encoded as
@@ -200,6 +238,8 @@ export async function runAgent(
   // Build the provider per run so a freshly-saved API key (now in process.env)
   // and the currently-selected model take effect without a restart.
   const provider = await buildProvider(model)
+  const subagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
+  const subagentUsageModel = subagentRoute?.usageModel ?? model
 
   const basePrompt = subagentsEnabled ? BASE_SYSTEM_PROMPT : BASE_SYSTEM_PROMPT_DIRECT_READS
   const systemPrompt =
@@ -264,15 +304,16 @@ export async function runAgent(
       provider,
       messages: trimmed,
       tools: parentTools(registry, subagentsEnabled),
+      usageModel: model,
       executeTool: async (name, args, signal, toolCallId) => {
         if (name === 'explore' && subagentsEnabled) {
           setExploreSubagentContext({
             parentToolCallId: toolCallId,
             parentGoal,
-            provider,
+            provider: subagentRoute?.provider ?? provider,
             registry,
-            contextWindow,
-            toolSchemaReserve,
+            contextWindow: subagentRoute?.contextWindow ?? contextWindow,
+            toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
             onChunk: sendChunk,
           })
           try {
@@ -303,6 +344,7 @@ export async function runAgent(
       outputTokens += subUsage.outputTokens
       sendChunk({
         type: 'usage',
+        model: subagentUsageModel,
         inputTokens: subUsage.inputTokens,
         outputTokens: subUsage.outputTokens,
       })
