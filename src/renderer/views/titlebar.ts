@@ -92,8 +92,8 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
     const r = store.getState().workspaceRoot
     workspaceName.textContent = r ? basename(r) : 'No folder'
   }
-  // Set state immediately — the titlebar is mounted in response to
-  // workspace_changed, so it would otherwise miss that initial event.
+  // Titlebar mounts before persisted projects restore on boot; sync on mount
+  // for the no-project case, then again when restoreProject emits workspace_changed.
   syncName()
   syncPanelBtns()
   const unsubs = [
