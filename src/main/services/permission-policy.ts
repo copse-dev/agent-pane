@@ -9,6 +9,7 @@ export const SANDBOX_TOOLS = new Set([
   'write_file',
   'list_dir',
   'search_code',
+  'search_codebase',
   'find_files',
   'git_status',
   'git_diff',

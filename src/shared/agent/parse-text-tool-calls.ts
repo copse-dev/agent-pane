@@ -15,6 +15,8 @@ const TOOL_NAME_ALIASES: Record<string, string> = {
   list_dir: 'list_dir',
   searchcode: 'search_code',
   search_code: 'search_code',
+  searchcodebase: 'search_codebase',
+  search_codebase: 'search_codebase',
   findfiles: 'find_files',
   find_files: 'find_files',
   writefile: 'write_file',

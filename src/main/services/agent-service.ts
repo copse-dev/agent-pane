@@ -39,7 +39,13 @@ import { buildSemanticSearchPromptBlock } from './semantic-search.ts'
 
 const abortMap = new Map<string, AbortController>()
 
-const PARENT_DELEGATED_TOOLS = ['read_file', 'list_dir', 'search_code', 'find_files'] as const
+const PARENT_DELEGATED_TOOLS = [
+  'read_file',
+  'list_dir',
+  'search_code',
+  'search_codebase',
+  'find_files',
+] as const
 
 const BASE_SYSTEM_PROMPT = `You are a coding assistant with access to the user's local workspace.
 
@@ -69,6 +75,7 @@ Available tools:
 - read_file: Read a file from the workspace
 - write_file: Propose writing a file (user approves the diff before it's written)
 - list_dir: List directory contents
+- search_codebase: Search by regex or meaning (auto-selects; prefer over search_code)
 - search_code: Search for text/regex patterns (indexed grep when available, otherwise ripgrep)
 - find_files: Find files by name or glob pattern
 - git_status: Show working tree status
