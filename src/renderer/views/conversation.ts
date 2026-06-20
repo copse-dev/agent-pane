@@ -83,6 +83,13 @@ function createInnerToolCard(tc: ToolCall): HTMLElement {
   return entry
 }
 
+function createSubagentMessageEl(content: string, streaming: boolean): HTMLElement {
+  const textEl = el('div', { class: 'subagent-message subagent-message-assistant message-text' })
+  const display = assistantDisplayText(content)
+  textEl.innerHTML = streaming ? renderStreamingMarkdown(display) : renderMarkdown(display)
+  return textEl
+}
+
 function createSubagentToolCard(tc: ToolCall, label: string): HTMLElement {
   const session = tc.subagent!
   const status =
@@ -108,11 +115,12 @@ function createSubagentToolCard(tc: ToolCall, label: string): HTMLElement {
   card.append(createToolArgsSection(tc.args))
 
   const timeline = el('div', { class: 'subagent-timeline' })
-  for (const msg of session.messages) {
+  for (let i = 0; i < session.messages.length; i++) {
+    const msg = session.messages[i]
+    if (!msg) continue
     if (msg.content.trim()) {
-      timeline.append(
-        el('div', { class: 'subagent-message subagent-message-assistant' }, msg.content),
-      )
+      const isLast = i === session.messages.length - 1
+      timeline.append(createSubagentMessageEl(msg.content, status === 'running' && isLast))
     }
     if (msg.toolCalls.length > 0) {
       const toolsWrap = el('div', { class: 'subagent-inner-tools' })

@@ -3,7 +3,6 @@ import { app, ipcMain } from 'electron'
 import type { LLMMessage } from '@shared/types'
 import { createMainWindow } from './windows/create-main-window.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
-import { getApiKey } from './services/settings.ts'
 import { checkToolAvailability } from './services/tool-availability.ts'
 import { createRegistry, registerSkillTools } from './services/registry-bootstrap.ts'
 import {
@@ -48,14 +47,6 @@ if (!app.requestSingleInstanceLock()) {
 app
   .whenReady()
   .then(async () => {
-    // A key saved in Settings is an explicit user choice, so let it override any
-    // (possibly stale) ANTHROPIC_API_KEY / OPENAI_API_KEY inherited from the
-    // shell. Only fall back to the inherited env var when nothing is stored.
-    const storedAnthropic = getApiKey('anthropic')
-    if (storedAnthropic) process.env.ANTHROPIC_API_KEY = storedAnthropic
-    const storedOpenai = getApiKey('openai')
-    if (storedOpenai) process.env.OPENAI_API_KEY = storedOpenai
-
     await checkToolAvailability()
     await initProjectSandbox()
 
