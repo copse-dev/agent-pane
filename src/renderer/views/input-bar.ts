@@ -132,11 +132,16 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     }
   })
 
+  function isAutocompletePickerOpen() {
+    return root.querySelector('.mention-picker:not([hidden])') !== null
+  }
+
   textarea.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-      e.preventDefault()
-      void submit()
-    }
+    if (e.isComposing) return
+    if (e.key !== 'Enter' || e.shiftKey) return
+    if (isAutocompletePickerOpen()) return
+    e.preventDefault()
+    void submit()
   })
 
   async function submit() {
