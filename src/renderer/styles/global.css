@@ -460,13 +460,26 @@ body {
 }
 .titlebar {
   -webkit-app-region: drag;
-  height: 38px;
+  height: 40px;
   display: flex;
   align-items: center;
   /* Left padding clears the macOS traffic-light buttons. */
   padding: 0 var(--spacing-lg) 0 78px;
   background: var(--bg-elevated);
   gap: var(--spacing-sm);
+}
+.titlebar-left {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+.titlebar-settings-btn {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  padding: 0;
+  line-height: 1;
 }
 .titlebar-text-btn {
   display: inline-flex;
@@ -1108,6 +1121,9 @@ label {
   color: var(--text-secondary);
 }
 .titlebar-btn {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
   padding: 4px 8px;
   border-radius: var(--radius);
 }
