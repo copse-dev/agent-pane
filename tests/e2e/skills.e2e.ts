@@ -40,10 +40,10 @@ describe('skills', () => {
     )
 
     const assistantText = await $('.msg-assistant .message-text')
-    await expect(assistantText).toHaveText(
-      'Demo skill active — Copse skills support is working.',
-      { containing: true, wait: 20_000 },
-    )
+    await expect(assistantText).toHaveText('Demo skill active — Copse skills support is working.', {
+      containing: true,
+      wait: 20_000,
+    })
 
     await browser.saveScreenshot(join(SCREENSHOTS, '03-skill-conversation.png'))
   })
