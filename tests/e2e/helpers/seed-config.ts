@@ -216,7 +216,7 @@ export function seedSubagentFixture(workspaceRoot: string): void {
                       {
                         id: 'sub-msg-1',
                         role: 'assistant',
-                        content: 'Reading README.md for project overview.',
+                        content: 'Reading **README.md** for project overview.',
                         toolCalls: [
                           {
                             id: 'inner-read-1',
