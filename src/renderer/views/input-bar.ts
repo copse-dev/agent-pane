@@ -1,7 +1,7 @@
 import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { addMessage, setThreadStatus } from '@shared/store/thread-helpers.ts'
+import { addMessage, setThreadStatus, clearContextSnapshot } from '@shared/store/thread-helpers.ts'
 import { initMentionPicker } from './mention-picker.ts'
 import { initSkillPicker } from './skill-picker.ts'
 import { resolveSkillInvocation } from '@shared/skills/parse-skill-invocation.ts'
@@ -9,6 +9,7 @@ import { buildSkillUserText } from '@shared/skills/build-skill-user-content.ts'
 import type { UserContent } from '@shared/types'
 import type { AgentRunPayload, SkillSummary } from '@shared/types/skills.ts'
 import { mountFooterModelPicker } from './footer-model-picker.ts'
+import { createContextWheel } from './context-wheel.ts'
 import { downloadThreadJsonl } from '../export-thread.ts'
 import { syncAgentActivity } from '../agent-activity.ts'
 import {
@@ -43,7 +44,10 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   // Token usage — always shown once a thread has used tokens; click to expand
   // into the in/out breakdown and cost.
   const usageBtn = el('button', { class: 'footer-usage', 'aria-label': 'Toggle cost details' })
-  footer.append(modelHost, exportBtn, usageBtn)
+  const usageGroup = el('div', { class: 'footer-usage-group' })
+  const contextWheel = createContextWheel()
+  usageGroup.append(contextWheel.root, usageBtn)
+  footer.append(modelHost, exportBtn, usageGroup)
   let costVisible = false
 
   const modelPicker = mountFooterModelPicker(
@@ -92,13 +96,17 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     const thread = store.getState().threads.find((t) => t.id === getActiveThreadId())
     const { inputTokens, outputTokens } = thread?.usage ?? { inputTokens: 0, outputTokens: 0 }
     const total = inputTokens + outputTokens
-    if (!total) {
+    const running = thread?.status === 'running'
+    contextWheel.update(thread?.contextSnapshot, running)
+    if (!total && !running) {
       usageBtn.hidden = true
     } else {
       usageBtn.hidden = false
       usageBtn.textContent = costVisible
         ? `${inputTokens} in / ${outputTokens} out · ${estimateCost(model, { inputTokens, outputTokens })}`
-        : `${(total / 1000).toFixed(1)}k tokens`
+        : total
+          ? `${(total / 1000).toFixed(1)}k tokens`
+          : '0 tokens'
     }
     updateState()
   }
@@ -176,6 +184,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     attachedTextBlocks.forEach((b) => displayParts.push(`📝 ${b.label}`))
     const imageUrls = attachedImages.map((img) => img.dataUrl)
     addMessage(store, id, 'user', displayParts.join('\n'), imageUrls.length ? imageUrls : undefined)
+    clearContextSnapshot(store, id)
     setThreadStatus(store, id, 'running')
     syncAgentActivity(store, id, false)
 
@@ -308,13 +317,16 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     store.on('usage_updated', (tid) => {
       if (tid === getActiveThreadId()) updateFooter()
     }),
+    store.on('context_updated', (tid) => {
+      if (tid === getActiveThreadId()) updateFooter()
+    }),
     store.on('settings_changed', () => {
       modelPicker.refresh()
       updateFooter()
     }),
   ]
 
-  updateState()
+  updateFooter()
   return () => {
     unsubs.forEach((u) => u())
     modelPicker.destroy()

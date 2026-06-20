@@ -973,13 +973,37 @@ label {
 .footer-export:hover {
   color: var(--text-secondary);
 }
+.footer-usage-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.context-wheel {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.context-wheel-track {
+  stroke: var(--border);
+}
+.context-wheel-fill {
+  stroke: var(--text-secondary);
+  transition: stroke-dasharray 0.2s ease;
+}
+.context-wheel-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 2.5ch;
+}
 .footer-usage {
   font-size: 11px;
   color: var(--text-muted);
   text-decoration: underline dotted;
   text-underline-offset: 2px;
   padding: 0;
-  margin-left: auto;
   flex-shrink: 0;
 }
 .footer-model-select {
