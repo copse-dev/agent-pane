@@ -1,5 +1,6 @@
 import type { StreamChunk } from './stream.ts'
 import type { GitFileDiff, GitStatusResult } from './git.ts'
+import type { McpServerStatus } from './mcp.ts'
 
 type Provider = 'anthropic' | 'openai' | 'lmstudio'
 
@@ -31,7 +32,12 @@ export interface IpcInvokeMap {
   'diff:rejectAll': { args: []; result: void }
 
   // Approval gate (shell / MCP)
-  'approval:respond': { args: [id: string, approved: boolean]; result: void }
+  'approval:respond': { args: [id: string, approved: boolean, remember?: boolean]; result: void }
+
+  // MCP servers
+  'mcp:list': { args: []; result: McpServerStatus[] }
+  'mcp:reload': { args: []; result: McpServerStatus[] }
+  'mcp:setEnabled': { args: [name: string, enabled: boolean]; result: McpServerStatus[] }
 
   // Settings
   'settings:get': { args: [key: string]; result: unknown }
@@ -73,7 +79,10 @@ export interface IpcEventMap {
   'agent:usage': [threadId: string, usage: { inputTokens: number; outputTokens: number }]
   'agent:show_diff': [path: string, before: string, after: string, language: string]
   'agent:shell_output': [data: string]
-  'agent:approval_request': [{ id: string; title: string; body: string; type: 'shell' | 'mcp' }]
+  'agent:approval_request': [
+    { id: string; title: string; body: string; type: 'shell' | 'mcp'; allowRemember?: boolean },
+  ]
+  'mcp:status_changed': [statuses: McpServerStatus[]]
   'diff:queued': [entries: { path: string; language: string }[]]
   'fs:changed': [path: string, content: string]
   'menu:settings': []

@@ -26,3 +26,12 @@ scripts/         esbuild dev/build and test runner
 ```
 
 Path alias `@shared/*` maps to `src/shared/*` (see tsconfig).
+
+## MCP servers
+
+The agent is an MCP (Model Context Protocol) host and ships with no servers
+connected. Add them in `.cursor/mcp.json` / `.mcp.json` (project) or
+`~/.cursor/mcp.json` (global), using the standard `mcpServers` format (same as
+Cursor / Claude Desktop); reference secrets with `${env:VAR}`. See
+[`mcp.json.example`](./mcp.json.example). Status, reload, and approval settings
+live under **Settings → MCP servers**.

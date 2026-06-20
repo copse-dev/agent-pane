@@ -29,15 +29,41 @@ export type ToolCallDisplayItem =
   | { type: 'group'; key: string; label: string; toolCalls: ToolCall[] }
   | { type: 'individual'; toolCall: ToolCall; label: string }
 
+const MCP_PREFIX = 'mcp__'
+const MCP_GROUP_PREFIX = 'mcp:'
+
+interface ParsedMcp {
+  server: string
+  tool: string
+}
+
+function parseMcp(name: string): ParsedMcp | null {
+  if (!name.startsWith(MCP_PREFIX)) return null
+  const rest = name.slice(MCP_PREFIX.length)
+  const sep = rest.indexOf('__')
+  if (sep < 0) return null
+  return { server: rest.slice(0, sep), tool: rest.slice(sep + 2) }
+}
+
 export function getToolDisplayName(name: string): string {
-  return TOOL_DISPLAY_NAMES[name] ?? formatToolNameFallback(name)
+  if (TOOL_DISPLAY_NAMES[name]) return TOOL_DISPLAY_NAMES[name]
+  const mcp = parseMcp(name)
+  if (mcp) return `${mcp.server}: ${formatToolNameFallback(mcp.tool)}`
+  return formatToolNameFallback(name)
 }
 
 export function getToolGroupKey(name: string): string | null {
-  return TOOL_TO_GROUP.get(name) ?? null
+  const builtIn = TOOL_TO_GROUP.get(name)
+  if (builtIn) return builtIn
+  const mcp = parseMcp(name)
+  if (mcp) return `${MCP_GROUP_PREFIX}${mcp.server}`
+  return null
 }
 
 export function getToolGroupLabel(key: string): string {
+  if (key.startsWith(MCP_GROUP_PREFIX)) {
+    return `${key.slice(MCP_GROUP_PREFIX.length)} (MCP)`
+  }
   return TOOL_GROUPS[key]?.label ?? key
 }
 

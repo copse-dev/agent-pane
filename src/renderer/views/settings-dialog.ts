@@ -2,7 +2,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { populateLocalModelSelect, populateModelSelect } from './model-options.ts'
 
-type SettingsSection = 'general' | 'local-models' | 'appearance'
+type SettingsSection = 'general' | 'local-models' | 'mcp' | 'appearance'
 
 let overlayEl: HTMLElement | null = null
 
@@ -37,6 +37,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         <nav class="settings-nav" aria-label="Settings sections">
           <button type="button" class="settings-nav-btn active" data-section="general">General</button>
           <button type="button" class="settings-nav-btn" data-section="local-models">Local models</button>
+          <button type="button" class="settings-nav-btn" data-section="mcp">MCP servers</button>
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
         </nav>
 
@@ -147,6 +148,41 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
           </section>
 
+          <section class="settings-section" data-section="mcp">
+            <h3>MCP servers</h3>
+            <p class="settings-section-desc">
+              Model Context Protocol servers expose external tools to the agent. Define them in
+              <code>.cursor/mcp.json</code> (project), <code>.mcp.json</code> (project), or
+              <code>~/.cursor/mcp.json</code> (global) using the standard <code>mcpServers</code> format,
+              then reload.
+            </p>
+
+            <fieldset>
+              <legend>Connected servers</legend>
+              <div id="mcp-server-list" class="mcp-server-list">No servers loaded.</div>
+              <p class="field-hint">
+                Use the switch on each server to turn it off without editing your MCP config files.
+                Off servers are not started on reload.
+              </p>
+              <div class="lmstudio-test-row">
+                <button type="button" id="mcp-reload-btn">Reload servers</button>
+                <span class="lmstudio-test-status" id="mcp-reload-status"></span>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Tool approval</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="mcpAutoAllowReadOnly" />
+                Auto-run MCP tools the server flags as read-only
+              </label>
+              <p class="field-hint">
+                Destructive tools always prompt. Servers marked <code>"trusted": true</code> in config
+                bypass approval entirely.
+              </p>
+            </fieldset>
+          </section>
+
           <section class="settings-section" data-section="appearance">
             <h3>Appearance</h3>
             <p class="settings-section-desc">Theme and editor font size.</p>
@@ -225,6 +261,115 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     )
   }
 
+  function renderMcpServers(statuses: import('@shared/types/mcp.ts').McpServerStatus[]): void {
+    const listEl = overlay.querySelector('#mcp-server-list') as HTMLElement
+    if (statuses.length === 0) {
+      listEl.textContent = 'No servers configured.'
+      return
+    }
+    listEl.innerHTML = ''
+    for (const s of statuses) {
+      const badge =
+        s.state === 'connected'
+          ? '● connected'
+          : s.state === 'error'
+            ? '✗ error'
+            : s.state === 'disabled'
+              ? '○ disabled'
+              : '… connecting'
+      const row = document.createElement('div')
+      row.className = `mcp-server-row mcp-state-${s.state}`
+
+      const header = document.createElement('div')
+      header.className = 'mcp-server-header'
+
+      const toggleLabel = document.createElement('label')
+      toggleLabel.className = 'toggle-switch mcp-server-toggle'
+      toggleLabel.title = s.configDisabled
+        ? 'This server is disabled in your MCP config file'
+        : s.userEnabled
+          ? 'Turn off this MCP server'
+          : 'Turn on this MCP server'
+      const toggle = document.createElement('input')
+      toggle.type = 'checkbox'
+      toggle.checked = s.userEnabled && !s.configDisabled
+      toggle.disabled = s.configDisabled
+      toggle.setAttribute('aria-label', `${s.name} MCP server enabled`)
+      const track = document.createElement('span')
+      track.className = 'toggle-switch-track'
+      track.setAttribute('aria-hidden', 'true')
+      toggle.addEventListener('change', () => {
+        toggle.disabled = true
+        void api.mcp
+          .setEnabled(s.name, toggle.checked)
+          .then((next) => {
+            renderMcpServers(next)
+          })
+          .catch(() => {
+            toggle.checked = !toggle.checked
+          })
+          .finally(() => {
+            if (!s.configDisabled) toggle.disabled = false
+          })
+      })
+      toggleLabel.append(toggle, track)
+
+      const title = document.createElement('div')
+      title.className = 'mcp-server-summary'
+      title.textContent = `${s.name} (${s.transport})${s.trusted ? ' · trusted' : ''} — ${badge}`
+
+      header.append(toggleLabel, title)
+      row.append(header)
+
+      let detailText =
+        s.state === 'connected'
+          ? `${s.toolCount} tool(s)${s.tools.length ? `: ${s.tools.join(', ')}` : ''}`
+          : (s.error ?? '')
+      if (s.configDisabled) {
+        detailText = detailText
+          ? `${detailText} · disabled in MCP config`
+          : 'Disabled in MCP config ("disabled": true)'
+      } else if (!s.userEnabled && s.state === 'disabled') {
+        detailText = 'Turned off in Settings'
+      }
+      if (detailText) {
+        row.append(
+          Object.assign(document.createElement('div'), {
+            className: 'mcp-server-detail',
+            textContent: detailText,
+          }),
+        )
+      }
+      listEl.append(row)
+    }
+  }
+
+  async function refreshMcpServers(): Promise<void> {
+    try {
+      renderMcpServers(await api.mcp.list())
+    } catch {
+      renderMcpServers([])
+    }
+  }
+
+  overlay.querySelector('#mcp-reload-btn')!.addEventListener('click', () => {
+    const statusEl = overlay.querySelector('#mcp-reload-status') as HTMLElement
+    statusEl.textContent = 'Reloading…'
+    statusEl.className = 'lmstudio-test-status'
+    void api.mcp
+      .reload()
+      .then((statuses) => {
+        renderMcpServers(statuses)
+        const ok = statuses.filter((s) => s.state === 'connected').length
+        statusEl.textContent = `✓ ${ok}/${statuses.length} server(s) connected`
+        statusEl.classList.add('ok')
+      })
+      .catch((err) => {
+        statusEl.textContent = `✗ ${err instanceof Error ? err.message : String(err)}`
+        statusEl.classList.add('err')
+      })
+  })
+
   overlay.addEventListener('settings-open', () => {
     showSection('general')
     void (async () => {
@@ -271,7 +416,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       ;(form.elements.namedItem('lmStudioSafetyConfidenceThreshold') as HTMLInputElement).value =
         String(confidence ?? 0.85)
 
+      const mcpAutoAllow = (await api.settings.get('mcpAutoAllowReadOnly')) as boolean | undefined
+      ;(form.elements.namedItem('mcpAutoAllowReadOnly') as HTMLInputElement).checked =
+        mcpAutoAllow ?? false
+
       await refreshLocalModelSelects()
+      await refreshMcpServers()
     })()
   })
 
@@ -313,6 +463,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         Number.isFinite(confidence) ? confidence : 0.85,
       )
       await api.settings.set('autoRunSandboxCommands', data.get('autoRunSandboxCommands') === 'on')
+      await api.settings.set('mcpAutoAllowReadOnly', data.get('mcpAutoAllowReadOnly') === 'on')
 
       store.setState({ theme, fontSize, settings: { ...store.getState().settings, model } })
       store.emit('theme_changed', theme)
