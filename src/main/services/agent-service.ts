@@ -34,6 +34,7 @@ import {
   resetSubagentUsage,
   getAccumulatedSubagentUsage,
 } from './explore-subagent-runner.ts'
+import { isLocalModel } from '@shared/llm/estimate-cost.ts'
 
 const abortMap = new Map<string, AbortController>()
 
@@ -47,7 +48,7 @@ Available tools:
 - git_status: Show working tree status
 - git_diff: Show unstaged or staged changes
 - git_log: Show recent commit history
-- run_shell: Run a shell command (auto-runs when contained in the sandbox; prompts for network/outside access)
+- run_shell: Run a shell command in the workspace (may prompt for approval)
 {SKILLS_TOOLS_LINE}
 Working directory: {WORKSPACE_ROOT}
 
@@ -72,7 +73,7 @@ Available tools:
 - git_status: Show working tree status
 - git_diff: Show unstaged or staged changes
 - git_log: Show recent commit history
-- run_shell: Run a shell command (auto-runs when contained in the sandbox; prompts for network/outside access)
+- run_shell: Run a shell command in the workspace (may prompt for approval)
 {SKILLS_TOOLS_LINE}
 Working directory: {WORKSPACE_ROOT}
 
@@ -99,7 +100,7 @@ function storedOrEnvApiKey(provider: 'anthropic' | 'openai'): string | null {
 }
 
 export function isLocalChatModel(model: string): boolean {
-  return model === 'lm-studio' || model.startsWith('lmstudio:')
+  return isLocalModel(model)
 }
 
 async function resolveSubagentLocalModelId(url: string): Promise<string | null> {
@@ -112,6 +113,7 @@ async function resolveSubagentLocalModelId(url: string): Promise<string | null> 
 
 interface SubagentRoute {
   provider: LLMProvider
+  usageModel: string
   contextWindow: number
   toolSchemaReserve: number
 }
@@ -128,11 +130,11 @@ export async function buildSubagentRoute(parentModel: string): Promise<SubagentR
   const contextWindow = await resolveContextWindow(`lmstudio:${modelId}`)
   return {
     provider: createLMStudioProvider(url, modelId, lmStudioKey()),
+    usageModel: `lmstudio:${modelId}`,
     contextWindow,
     toolSchemaReserve: 2_500,
   }
 }
-
 
 // Builds the provider for the main agent loop. LM Studio models are encoded as
 // `lmstudio:<modelId>`; the legacy `lm-studio` value resolves to the configured
@@ -237,6 +239,7 @@ export async function runAgent(
   // and the currently-selected model take effect without a restart.
   const provider = await buildProvider(model)
   const subagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
+  const subagentUsageModel = subagentRoute?.usageModel ?? model
 
   const basePrompt = subagentsEnabled ? BASE_SYSTEM_PROMPT : BASE_SYSTEM_PROMPT_DIRECT_READS
   const systemPrompt =
@@ -301,6 +304,7 @@ export async function runAgent(
       provider,
       messages: trimmed,
       tools: parentTools(registry, subagentsEnabled),
+      usageModel: model,
       executeTool: async (name, args, signal, toolCallId) => {
         if (name === 'explore' && subagentsEnabled) {
           setExploreSubagentContext({
@@ -340,6 +344,7 @@ export async function runAgent(
       outputTokens += subUsage.outputTokens
       sendChunk({
         type: 'usage',
+        model: subagentUsageModel,
         inputTokens: subUsage.inputTokens,
         outputTokens: subUsage.outputTokens,
       })

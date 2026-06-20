@@ -1,6 +1,7 @@
 import type { StreamChunk } from './stream.ts'
 import type { GitFileDiff, GitStatusResult } from './git.ts'
 import type { McpServerStatus } from './mcp.ts'
+import type { UsageDelta } from './thread.ts'
 
 type Provider = 'anthropic' | 'openai' | 'lmstudio'
 
@@ -76,7 +77,7 @@ export interface IpcInvokeMap {
 export interface IpcEventMap {
   'workspace:opened': [root: string]
   'agent:chunk': [threadId: string, chunk: StreamChunk]
-  'agent:usage': [threadId: string, usage: { inputTokens: number; outputTokens: number }]
+  'agent:usage': [threadId: string, usage: UsageDelta]
   'agent:show_diff': [path: string, before: string, after: string, language: string]
   'agent:shell_output': [data: string]
   'agent:approval_request': [
