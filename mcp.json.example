@@ -4,6 +4,18 @@
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
     },
+    "vera": {
+      "command": "vera",
+      "args": ["mcp", "--path", "."],
+      "trusted": true,
+      "disabled": true
+    },
+    "codesearch": {
+      "command": "codesearch",
+      "args": ["mcp"],
+      "trusted": true,
+      "disabled": true
+    },
     "github": {
       "type": "http",
       "url": "https://api.githubcopilot.com/mcp/",
