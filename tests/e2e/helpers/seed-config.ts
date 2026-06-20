@@ -373,9 +373,7 @@ export function seedScrollStreamingFixture(workspaceRoot: string): void {
     return {
       id: `msg-history-${i}`,
       role: isUser ? 'user' : 'assistant',
-      content: isUser
-        ? `Earlier question ${turn}`
-        : `Earlier answer ${turn}: `.repeat(10),
+      content: isUser ? `Earlier question ${turn}` : `Earlier answer ${turn}: `.repeat(10),
       toolCalls: [],
       createdAt: Date.now() + i,
     }

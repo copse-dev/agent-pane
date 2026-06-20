@@ -1,8 +1,6 @@
 import { dialog, ipcMain } from 'electron'
 import type { BrowserWindow } from 'electron'
-import { dirname } from 'node:path'
 import micromatch from 'micromatch'
-import * as fsp from 'node:fs/promises'
 import {
   assertAllowedWorkspaceRoot,
   getWorkspaceRoot,
@@ -37,6 +35,12 @@ import {
 } from '../services/mcp-registry.ts'
 import { applyAppIcon } from '../app-icon.ts'
 import { getMainWindow } from '../windows/create-main-window.ts'
+import {
+  gatewayListDir,
+  gatewayReadFile,
+  gatewayReaddir,
+  gatewayWriteFile,
+} from '../project-sandbox/sandbox-fs-client.ts'
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
   const storedProjects = (storageGet('projects') as { path: string }[] | null) ?? []
@@ -82,20 +86,18 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   ipcMain.handle('fs:readFile', async (_e, path: string) => {
     const abs = resolveWorkspacePath(path)
-    return fsp.readFile(abs, 'utf-8')
+    return gatewayReadFile(abs)
   })
 
   ipcMain.handle('fs:writeFile', async (_e, path: string, content: string) => {
     const abs = resolveWorkspacePath(path)
-    await fsp.mkdir(dirname(abs), { recursive: true })
-    await fsp.writeFile(abs, content, 'utf-8')
+    await gatewayWriteFile(abs, content)
     scheduleIndexRebuild()
   })
 
   ipcMain.handle('fs:readdir', async (_e, path: string) => {
     const abs = resolveWorkspacePath(path)
-    const entries = await fsp.readdir(abs)
-    return entries
+    return gatewayReaddir(abs)
   })
 
   // Directory listing with type info, for the file-tree sidebar. Hides dotfiles
@@ -103,10 +105,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // relative to the workspace root ('' = root).
   ipcMain.handle('fs:listDir', async (_e, path: string) => {
     const abs = resolveWorkspacePath(path || '.')
-    const dirents = await fsp.readdir(abs, { withFileTypes: true })
+    const dirents = await gatewayListDir(abs)
     return dirents
       .filter((d) => !d.name.startsWith('.') && d.name !== 'node_modules')
-      .map((d) => ({ name: d.name, isDir: d.isDirectory() }))
       .sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1))
   })
 
