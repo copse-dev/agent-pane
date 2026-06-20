@@ -108,6 +108,18 @@ describe('interpolateEnv', () => {
   it('expands unknown references to empty string', () => {
     assert.equal(interpolateEnv('x${env:MISSING}y', env), 'xy')
   })
+  it('leaves non-allowlisted references literal (#102)', () => {
+    const allow = new Set(['TOKEN'])
+    assert.equal(interpolateEnv('Bearer ${env:TOKEN}', env, allow), 'Bearer secret')
+    // ANTHROPIC_API_KEY is not allowlisted → not substituted, so it can't leak.
+    assert.equal(
+      interpolateEnv('${env:ANTHROPIC_API_KEY}', { ANTHROPIC_API_KEY: 'sk-secret' }, allow),
+      '${env:ANTHROPIC_API_KEY}',
+    )
+  })
+  it('expands nothing with an empty allowlist (#102)', () => {
+    assert.equal(interpolateEnv('Bearer ${env:TOKEN}', env, new Set()), 'Bearer ${env:TOKEN}')
+  })
 })
 
 describe('interpolateServerConfig', () => {

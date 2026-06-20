@@ -166,33 +166,52 @@ const ENV_REF = /\$\{(?:env:)?([A-Za-z_][A-Za-z0-9_]*)\}/g
 /**
  * Expand `${env:VAR}` (Cursor) and `${VAR}` (Claude Desktop) references against
  * the supplied environment. Unknown references expand to an empty string.
+ *
+ * When an `allowlist` is given, only references it contains are expanded; any
+ * other reference is left **literal** (not substituted). This is the guard for
+ * attacker-controlled configs (a cloned repo's `.mcp.json`): without it a
+ * project config could read `${env:ANTHROPIC_API_KEY}` into a server `url` /
+ * `headers` and exfiltrate it. An empty allowlist expands nothing.
  */
-export function interpolateEnv(value: string, env: Record<string, string | undefined>): string {
-  return value.replace(ENV_REF, (_match, name: string) => env[name] ?? '')
+export function interpolateEnv(
+  value: string,
+  env: Record<string, string | undefined>,
+  allowlist?: ReadonlySet<string>,
+): string {
+  return value.replace(ENV_REF, (match, name: string) => {
+    if (allowlist && !allowlist.has(name)) return match
+    return env[name] ?? ''
+  })
 }
 
 function interpolateRecord(
   record: Record<string, string> | undefined,
   env: Record<string, string | undefined>,
+  allowlist?: ReadonlySet<string>,
 ): Record<string, string> | undefined {
   if (!record) return undefined
   const out: Record<string, string> = {}
-  for (const [k, v] of Object.entries(record)) out[k] = interpolateEnv(v, env)
+  for (const [k, v] of Object.entries(record)) out[k] = interpolateEnv(v, env, allowlist)
   return out
 }
 
-/** Resolve env-var references in secret-bearing fields (env, headers, args, url). */
+/**
+ * Resolve env-var references in secret-bearing fields (env, headers, args, url).
+ * Pass `allowlist` to restrict which env vars an untrusted (project) config may
+ * read; omit it for trusted (user/global) configs to allow full expansion.
+ */
 export function interpolateServerConfig(
   cfg: McpServerConfig,
   env: Record<string, string | undefined>,
+  allowlist?: ReadonlySet<string>,
 ): McpServerConfig {
-  const interpolatedEnv = interpolateRecord(cfg.env, env)
-  const interpolatedHeaders = interpolateRecord(cfg.headers, env)
+  const interpolatedEnv = interpolateRecord(cfg.env, env, allowlist)
+  const interpolatedHeaders = interpolateRecord(cfg.headers, env, allowlist)
   return {
     ...cfg,
-    ...(cfg.args ? { args: cfg.args.map((a) => interpolateEnv(a, env)) } : {}),
+    ...(cfg.args ? { args: cfg.args.map((a) => interpolateEnv(a, env, allowlist)) } : {}),
     ...(interpolatedEnv ? { env: interpolatedEnv } : {}),
-    ...(cfg.url ? { url: interpolateEnv(cfg.url, env) } : {}),
+    ...(cfg.url ? { url: interpolateEnv(cfg.url, env, allowlist) } : {}),
     ...(interpolatedHeaders ? { headers: interpolatedHeaders } : {}),
   }
 }

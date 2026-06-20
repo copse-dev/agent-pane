@@ -107,6 +107,24 @@ async function collectConfigs(): Promise<McpServerConfig[]> {
   return mergeMcpConfigs(perSource)
 }
 
+// Project/workspace configs are attacker-controlled (a cloned repo can ship a
+// `.mcp.json`), so they may not read process env into server url/headers/args/
+// env — an empty allowlist. User-controlled config locations expand freely.
+const PROJECT_ENV_ALLOWLIST: ReadonlySet<string> = new Set()
+
+function isUserMcpSource(source: string | undefined): boolean {
+  if (!source) return false
+  return (
+    source === join(homedir(), '.cursor', 'mcp.json') ||
+    source === join(app.getPath('userData'), 'mcp.json')
+  )
+}
+
+/** Env-interpolation allowlist for a config: unrestricted for user sources. */
+function envAllowlistFor(cfg: McpServerConfig): ReadonlySet<string> | undefined {
+  return isUserMcpSource(cfg.source) ? undefined : PROJECT_ENV_ALLOWLIST
+}
+
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
@@ -147,7 +165,7 @@ async function connectServer(
   rawCfg: McpServerConfig,
   userDisabled: ReadonlySet<string>,
 ): Promise<McpServerStatus> {
-  const cfg = interpolateServerConfig(rawCfg, process.env)
+  const cfg = interpolateServerConfig(rawCfg, process.env, envAllowlistFor(rawCfg))
   const configDisabled = rawCfg.disabled === true
   const userEnabled = !userDisabled.has(cfg.name)
   const base: McpServerStatus = {
