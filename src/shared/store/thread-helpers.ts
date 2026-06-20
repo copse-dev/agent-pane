@@ -67,6 +67,7 @@ export function addMessage(
   threadId: string,
   role: Message['role'],
   content = '',
+  images?: string[],
 ): string {
   const id = randomUUID()
   const { threads } = store.getState()
@@ -75,7 +76,17 @@ export function addMessage(
       ? t
       : {
           ...t,
-          messages: [...t.messages, { id, role, content, toolCalls: [], createdAt: Date.now() }],
+          messages: [
+            ...t.messages,
+            {
+              id,
+              role,
+              content,
+              ...(images?.length ? { images } : {}),
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+          ],
           updatedAt: Date.now(),
         },
   )
