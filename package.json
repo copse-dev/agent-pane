@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "node --experimental-strip-types scripts/dev.mts",
     "build": "node --experimental-strip-types scripts/build.mts",
+    "generate:icon": "node --experimental-strip-types scripts/generate-icon.mts",
     "start": "electron dist/main/index.js",
     "postinstall": "node --experimental-strip-types scripts/patch-dev-name.mts && node --experimental-strip-types scripts/postinstall-native.mts",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
@@ -37,6 +38,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.28.0",
+    "@resvg/resvg-js": "^2.6.2",
     "@types/micromatch": "^4.0.9",
     "@types/node": "^22.0.0",
     "@types/shell-quote": "^1.7.5",
