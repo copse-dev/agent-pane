@@ -20,8 +20,16 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
   // collapse and hide under the macOS window buttons.
   root.classList.add('titlebar')
 
-  const dragRegion = el('div', { class: 'titlebar-drag' })
+  const leftCluster = el('div', { class: 'titlebar-left' })
+  const settingsBtn = el(
+    'button',
+    { class: 'titlebar-btn titlebar-settings-btn', 'aria-label': 'Settings' },
+    'Settings',
+  )
   const workspaceName = el('span', { class: 'workspace-name' }, 'No folder')
+  leftCluster.append(settingsBtn, workspaceName)
+
+  const dragRegion = el('div', { class: 'titlebar-drag' })
   // Opening projects lives in the projects panel; the titlebar only toggles the
   // file explorer and opens settings.
   const filesBtn = el(
@@ -34,9 +42,8 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
     { class: 'titlebar-btn titlebar-text-btn', 'aria-label': 'Open terminal' },
     '> Terminal',
   )
-  const settingsBtn = el('button', { class: 'titlebar-btn', 'aria-label': 'Settings' }, '⚙')
 
-  root.append(dragRegion, workspaceName, filesBtn, terminalBtn, settingsBtn)
+  root.append(leftCluster, dragRegion, filesBtn, terminalBtn)
 
   filesBtn.addEventListener('click', () => {
     if (!store.getState().workspaceRoot) {
