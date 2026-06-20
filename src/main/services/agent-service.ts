@@ -92,6 +92,12 @@ function lmStudioKey(): string {
   return getApiKey('lmstudio') ?? 'lm-studio'
 }
 
+function storedOrEnvApiKey(provider: 'anthropic' | 'openai'): string | null {
+  if (provider === 'anthropic')
+    return getApiKey('anthropic') ?? process.env.ANTHROPIC_API_KEY ?? null
+  return getApiKey('openai') ?? process.env.OPENAI_API_KEY ?? null
+}
+
 // Builds the provider for the main agent loop. LM Studio models are encoded as
 // `lmstudio:<modelId>`; the legacy `lm-studio` value resolves to the configured
 // model or the first one the server has loaded (never the bogus "local-model").
@@ -112,17 +118,17 @@ async function buildProvider(model: string): Promise<LLMProvider> {
   if (process.env.AGENT_WINDOW_MOCK_LLM === '1') return createProvider(model)
   if (model.startsWith('claude')) {
     return createProvider(model, {
-      anthropicApiKey: getApiKey('anthropic') ?? process.env.ANTHROPIC_API_KEY,
+      anthropicApiKey: storedOrEnvApiKey('anthropic'),
     })
   }
   if (model.startsWith('gpt')) {
     return createProvider(model, {
-      openAiApiKey: getApiKey('openai') ?? process.env.OPENAI_API_KEY,
+      openAiApiKey: storedOrEnvApiKey('openai'),
     })
   }
   return createProvider(model, {
-    anthropicApiKey: getApiKey('anthropic') ?? process.env.ANTHROPIC_API_KEY,
-    openAiApiKey: getApiKey('openai') ?? process.env.OPENAI_API_KEY,
+    anthropicApiKey: storedOrEnvApiKey('anthropic'),
+    openAiApiKey: storedOrEnvApiKey('openai'),
   })
 }
 

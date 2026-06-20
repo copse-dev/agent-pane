@@ -78,9 +78,8 @@ export function registerAllHandlers(_win: BrowserWindow, registry: ToolRegistry)
 
   ipcMain.handle('settings:get', (_e, key: string) => getSetting(key, null))
   ipcMain.handle('settings:set', (_e, key: string, value: unknown) => setSetting(key, value))
-  ipcMain.handle(
-    'settings:getKey',
-    (_e, provider: 'anthropic' | 'openai' | 'lmstudio') => hasApiKey(provider),
+  ipcMain.handle('settings:getKey', (_e, provider: 'anthropic' | 'openai' | 'lmstudio') =>
+    hasApiKey(provider),
   )
   ipcMain.handle(
     'settings:setKey',
