@@ -460,11 +460,11 @@ body {
 }
 .titlebar {
   -webkit-app-region: drag;
-  height: 38px;
+  height: var(--titlebar-height);
   display: flex;
   align-items: center;
   /* Left padding clears the macOS traffic-light buttons. */
-  padding: 0 var(--spacing-lg) 0 78px;
+  padding: 0 var(--spacing-lg) 0 var(--traffic-light-inset);
   background: var(--bg-elevated);
   gap: var(--spacing-sm);
 }
@@ -1106,6 +1106,7 @@ label {
 .workspace-name {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
+  line-height: var(--titlebar-height);
 }
 .titlebar-btn {
   padding: 4px 8px;
@@ -1167,22 +1168,25 @@ label {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--spacing-lg) var(--spacing-xl);
+  height: var(--titlebar-height);
+  padding: 0 var(--spacing-lg) 0 var(--traffic-light-inset);
+  background: var(--bg-elevated);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   -webkit-app-region: drag;
 }
 .settings-header h2 {
-  font-size: 20px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
+  color: var(--text-secondary);
+  line-height: var(--titlebar-height);
 }
 .settings-close-btn {
   -webkit-app-region: no-drag;
-  width: 32px;
-  height: 32px;
+  padding: 4px 8px;
   border-radius: var(--radius);
   color: var(--text-secondary);
-  font-size: 16px;
+  font-size: var(--font-size-sm);
   line-height: 1;
 }
 .settings-close-btn:hover {
@@ -1293,7 +1297,6 @@ label {
   width: 100%;
   max-width: 480px;
 }
-.settings-header,
 .settings-nav,
 .settings-content,
 .settings-content button,
