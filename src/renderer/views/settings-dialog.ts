@@ -186,8 +186,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Auto-run MCP tools the server flags as read-only
               </label>
               <p class="field-hint">
-                Destructive tools always prompt. Servers marked <code>"trusted": true</code> in config
-                bypass approval entirely.
+                Destructive tools always prompt. Other tools prompt once; choose “always allow” to
+                remember a specific tool.
               </p>
             </fieldset>
           </section>
@@ -332,7 +332,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       const title = document.createElement('div')
       title.className = 'mcp-server-summary'
-      title.textContent = `${s.name} (${s.transport})${s.trusted ? ' · trusted' : ''} — ${badge}`
+      title.textContent = `${s.name} (${s.transport}) — ${badge}`
 
       header.append(toggleLabel, title)
       row.append(header)
