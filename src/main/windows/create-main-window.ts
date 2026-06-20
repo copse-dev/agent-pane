@@ -52,6 +52,10 @@ export function createMainWindow(): BrowserWindow {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      // Run the renderer in a Chromium sandbox. The preload only uses
+      // contextBridge/ipcRenderer (no Node APIs), so it stays functional while
+      // a renderer compromise can no longer reach Node from the preload context.
+      sandbox: true,
       spellcheck: false,
       preload: join(__dirname, '../preload/index.js'),
     },
