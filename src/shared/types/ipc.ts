@@ -25,6 +25,10 @@ export interface IpcInvokeMap {
   'agent:abort': { args: [threadId: string]; result: void }
   'agent:clearHistory': { args: [threadId: string]; result: void }
   'agent:suggestTitle': { args: [text: string]; result: string | null }
+  'agent:suggestFollowUps': {
+    args: [contextJson: string]
+    result: import('@shared/follow-ups/types.ts').FollowUpSuggestion[]
+  }
 
   // Diff approval
   'diff:approve': { args: [path: string]; result: void }
