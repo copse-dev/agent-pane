@@ -49,7 +49,9 @@ export function detectLikelySandboxFailure(
   }
 
   if (exitCode === 127 && DEV_TOOL_NOT_FOUND.test(output)) {
-    reasons.push('Node.js toolchain unavailable inside sandbox (often blocked home-directory installs)')
+    reasons.push(
+      'Node.js toolchain unavailable inside sandbox (often blocked home-directory installs)',
+    )
   }
 
   return { likely: reasons.length > 0, reasons: [...new Set(reasons)] }
