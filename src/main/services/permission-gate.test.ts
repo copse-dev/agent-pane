@@ -3,10 +3,7 @@ import assert from 'node:assert/strict'
 import { decideShellPermission, SANDBOX_TOOLS } from './permission-policy.ts'
 import { setPermissionGateForTests } from './tool-registry.ts'
 import { ensureToolPermitted } from './permission-gate.ts'
-import {
-  decideMcpPermission,
-  describeMcpAnnotations,
-} from './permission-policy.ts'
+import { decideMcpPermission, describeMcpAnnotations } from './permission-policy.ts'
 
 describe('SANDBOX_TOOLS', () => {
   it('includes read_skill so skill reads auto-run without approval', () => {
