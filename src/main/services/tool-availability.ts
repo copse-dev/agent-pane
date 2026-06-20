@@ -18,6 +18,11 @@ export async function checkToolAvailability(): Promise<void> {
 export const isRgAvailable = () => rgAvail === true
 export const isGitAvailable = () => gitAvail === true
 
+/** Test hook — force ripgrep availability without probing PATH. */
+export function setRgAvailableForTest(value: boolean | null): void {
+  rgAvail = value
+}
+
 async function probe(cmd: string, args: string[]): Promise<boolean> {
   try {
     await runCommand(cmd, args)
