@@ -4,9 +4,12 @@ import { contextLengthForModel, fetchLmStudioModelsCached } from './lm-studio-mo
 const DEFAULT_LM_STUDIO_URL = 'http://localhost:1234/v1'
 const DEFAULT_LOCAL_CONTEXT = 8192
 
+// Context window (max input tokens) per cloud model. Claude Sonnet 4.6 and
+// Opus 4.8 expose a 1M-token window at standard pricing; Haiku 4.5 is 200K.
 const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
-  'claude-sonnet-4-6': 200_000,
-  'claude-opus-4-8': 200_000,
+  'claude-sonnet-4-6': 1_000_000,
+  'claude-opus-4-8': 1_000_000,
+  'claude-haiku-4-5': 200_000,
   'gpt-4o': 128_000,
   'gpt-4o-mini': 128_000,
 }

@@ -24,7 +24,7 @@ export interface SemanticSearchHit {
 let activeBackend: SemanticBackend | null = null
 let codesearchCommand: string | null = null
 let veraCommand = 'vera'
-let indexedRoot: string | null = null
+let _indexedRoot: string | null = null
 const indexPromises = new Map<string, Promise<void>>()
 
 const SEMANTIC_CMD_OPTS = { unsandboxed: true } as const
@@ -119,7 +119,7 @@ export async function ensureSemanticIndex(workspaceRoot: string): Promise<void> 
   const existing = indexPromises.get(root)
   if (existing) {
     await existing
-    indexedRoot = root
+    _indexedRoot = root
     return
   }
 
@@ -133,7 +133,7 @@ export async function ensureSemanticIndex(workspaceRoot: string): Promise<void> 
           await ensureVeraIndex(root)
           break
       }
-      indexedRoot = root
+      _indexedRoot = root
     } catch (err) {
       console.warn('[copse-panel] semantic index setup failed:', err)
     }
