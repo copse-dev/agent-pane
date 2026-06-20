@@ -28,11 +28,17 @@ export class ToolRegistry {
     this.tools.set(tool.name, tool)
   }
 
+  unregister(name: string): void {
+    this.tools.delete(name)
+  }
+
   toLLMTools(): LLMTool[] {
     return Array.from(this.tools.values()).map((t) => ({
       name: t.name,
       description: t.description,
-      parameters: zodToJsonSchema(t.parameters, { target: 'openApi3' }) as Record<string, unknown>,
+      parameters:
+        t.rawParameters ??
+        (zodToJsonSchema(t.parameters, { target: 'openApi3' }) as Record<string, unknown>),
     }))
   }
 

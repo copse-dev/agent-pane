@@ -5,7 +5,11 @@ import { createMainWindow } from './windows/create-main-window.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
 import { checkToolAvailability } from './services/tool-availability.ts'
 import { createRegistry, registerSkillTools } from './services/registry-bootstrap.ts'
-import { loadMcpServers, shutdownMcpServers } from './services/mcp-registry.ts'
+import {
+  loadMcpServers,
+  shutdownMcpServers,
+  getMcpServerStatuses,
+} from './services/mcp-registry.ts'
 import { initApproval } from './services/approval.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
@@ -59,6 +63,7 @@ app
     await initSkillsRegistry()
     registerSkillTools(registry)
     await loadMcpServers(registry)
+    win.webContents.send('mcp:status_changed', getMcpServerStatuses())
 
     const messageHistory = new Map<string, LLMMessage[]>()
 

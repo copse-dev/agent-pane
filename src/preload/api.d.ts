@@ -1,6 +1,7 @@
 import type { StreamChunk } from '@shared/types'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { GitFileDiff, GitStatusResult } from '@shared/types/git.ts'
+import type { McpServerStatus } from '@shared/types/mcp.ts'
 
 export interface ApiClient {
   workspace: {
@@ -25,7 +26,13 @@ export interface ApiClient {
     suggestTitle: (text: string) => Promise<string | null>
     onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => () => void
     onApprovalRequest: (
-      handler: (req: { id: string; title: string; body: string; type: string }) => void,
+      handler: (req: {
+        id: string
+        title: string
+        body: string
+        type: string
+        allowRemember?: boolean
+      }) => void,
     ) => () => void
     onShellOutput: (handler: (data: string) => void) => () => void
     onUsage: (
@@ -43,7 +50,13 @@ export interface ApiClient {
     onQueued: (handler: (entries: { path: string; language: string }[]) => void) => () => void
   }
   approval: {
-    respond: (id: string, approved: boolean) => Promise<void>
+    respond: (id: string, approved: boolean, remember?: boolean) => Promise<void>
+  }
+  mcp: {
+    list: () => Promise<McpServerStatus[]>
+    reload: () => Promise<McpServerStatus[]>
+    setEnabled: (name: string, enabled: boolean) => Promise<McpServerStatus[]>
+    onStatusChanged: (handler: (statuses: McpServerStatus[]) => void) => () => void
   }
   storage: {
     get: (key: string) => Promise<unknown>

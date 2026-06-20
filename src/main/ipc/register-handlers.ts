@@ -18,8 +18,13 @@ import { listSkills, initSkillsRegistry } from '../services/skills-registry.ts'
 import { registerSkillTools } from '../services/registry-bootstrap.ts'
 import { getGitFileDiff, getGitStatus, isInsideGitWorkTree } from '../services/git-service.ts'
 import { isGitAvailable } from '../services/tool-availability.ts'
+import {
+  getMcpServerStatuses,
+  reloadMcpServers,
+  setMcpServerUserEnabled,
+} from '../services/mcp-registry.ts'
 
-export function registerAllHandlers(_win: BrowserWindow, registry: ToolRegistry): void {
+export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
   ipcMain.handle('workspace:open', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
     if (result.canceled || !result.filePaths[0]) return null
@@ -101,4 +106,17 @@ export function registerAllHandlers(_win: BrowserWindow, registry: ToolRegistry)
   ipcMain.handle('git:fileDiff', (_e, path: string, staged: boolean) =>
     getGitFileDiff(path, staged),
   )
+
+  ipcMain.handle('mcp:list', () => getMcpServerStatuses())
+  ipcMain.handle('mcp:reload', async () => {
+    const statuses = await reloadMcpServers(registry)
+    win.webContents.send('mcp:status_changed', statuses)
+    return statuses
+  })
+  ipcMain.handle('mcp:setEnabled', async (_e, name: string, enabled: boolean) => {
+    setMcpServerUserEnabled(name, enabled)
+    const statuses = await reloadMcpServers(registry)
+    win.webContents.send('mcp:status_changed', statuses)
+    return statuses
+  })
 }

@@ -36,11 +36,17 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.off('agent:chunk', listener)
     },
     onApprovalRequest: (
-      handler: (req: { id: string; title: string; body: string; type: string }) => void,
+      handler: (req: {
+        id: string
+        title: string
+        body: string
+        type: string
+        allowRemember?: boolean
+      }) => void,
     ) => {
       const listener = (
         _e: Electron.IpcRendererEvent,
-        req: { id: string; title: string; body: string; type: string },
+        req: { id: string; title: string; body: string; type: string; allowRemember?: boolean },
       ) => handler(req)
       ipcRenderer.on('agent:approval_request', listener)
       return () => ipcRenderer.off('agent:approval_request', listener)
@@ -88,8 +94,19 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
   approval: {
-    respond: (id: string, approved: boolean) =>
-      ipcRenderer.invoke('approval:respond', id, approved),
+    respond: (id: string, approved: boolean, remember?: boolean) =>
+      ipcRenderer.invoke('approval:respond', id, approved, remember),
+  },
+  mcp: {
+    list: () => ipcRenderer.invoke('mcp:list'),
+    reload: () => ipcRenderer.invoke('mcp:reload'),
+    setEnabled: (name: string, enabled: boolean) =>
+      ipcRenderer.invoke('mcp:setEnabled', name, enabled),
+    onStatusChanged: (handler: (statuses: unknown) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, statuses: unknown) => handler(statuses)
+      ipcRenderer.on('mcp:status_changed', listener)
+      return () => ipcRenderer.off('mcp:status_changed', listener)
+    },
   },
   storage: {
     get: (key: string) => ipcRenderer.invoke('storage:get', key),
