@@ -14,14 +14,13 @@ describe('search-routing', () => {
     assert.equal(classifySearchQuery('how does failed payment retry work'), 'semantic')
   })
 
-  it('includes semantic MCP tools in the routing prompt when present', () => {
-    const block = buildSearchRoutingPromptBlock(['mcp__vera__search_code'])
-    assert.match(block, /mcp__vera__search_code/)
-    assert.match(block, /semantic MCP tools first/)
+  it('prefers native semantic search guidance when available', () => {
+    const block = buildSearchRoutingPromptBlock(true)
+    assert.match(block, /search_codebase \(auto\/semantic\) or semantic_search/)
   })
 
-  it('falls back to keyword search guidance without semantic tools', () => {
-    const block = buildSearchRoutingPromptBlock([])
+  it('falls back to keyword search guidance without native semantic search', () => {
+    const block = buildSearchRoutingPromptBlock(false)
     assert.match(block, /search_code with descriptive keywords/)
   })
 })
