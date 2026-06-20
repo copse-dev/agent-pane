@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src blob:;"
+      content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src blob:;"
     />
     <title>Agent Pane</title>
     <link rel="stylesheet" href="./app.css" />
@@ -22,9 +22,16 @@
         </div>
         <div id="resizer-files" class="pane-resizer" aria-hidden="true" hidden></div>
         <div id="pane-files" class="pane-files" hidden>
-          <div id="file-tree-host" class="file-tree-host"></div>
-          <div id="resizer-tree" class="pane-resizer" aria-hidden="true"></div>
-          <div id="file-viewer" class="file-viewer"></div>
+          <div id="right-panel-tabs" class="right-panel-tabs"></div>
+          <div class="pane-files-body">
+            <div id="right-sidebar" class="right-sidebar">
+              <div id="file-tree-host" class="file-tree-host"></div>
+              <div id="terminals-list-host" class="terminals-list-host" hidden></div>
+            </div>
+            <div id="resizer-tree" class="pane-resizer" aria-hidden="true"></div>
+            <div id="file-viewer" class="file-viewer"></div>
+            <div id="terminals-viewer-host" class="terminals-viewer-host" hidden></div>
+          </div>
         </div>
       </div>
       <div id="welcome"></div>

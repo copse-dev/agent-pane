@@ -23,6 +23,7 @@ export function threadToJsonl(thread: Thread): string {
         id: msg.id,
         role: msg.role,
         content: msg.content,
+        images: msg.images,
         toolCalls: msg.toolCalls,
         createdAt: msg.createdAt,
       }),

@@ -24,6 +24,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     activeDiff: null,
     stagedDiffs: [],
     filesPaneOpen: false,
+    rightPanelMode: 'explorer',
     layout: { ...DEFAULT_LAYOUT },
     theme: 'dark',
     fontSize: 14,
