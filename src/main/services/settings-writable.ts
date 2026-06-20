@@ -14,6 +14,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   lmStudioSubagentModel: z.string().max(256),
   lmStudioForSmallTasks: z.boolean(),
   lmStudioForSubagents: z.boolean(),
+  lmStudioForTodoItems: z.boolean(),
   skillsEnabled: z.boolean(),
   skillPluginPaths: z.array(z.string().max(4096)).max(64),
   subagentsEnabled: z.boolean(),
