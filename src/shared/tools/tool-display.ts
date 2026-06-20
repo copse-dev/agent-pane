@@ -5,6 +5,7 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   read_file: 'Read file',
   list_dir: 'List directory',
   search_code: 'Search code',
+  search_codebase: 'Search codebase',
   find_files: 'Find files',
   git_status: 'Git status',
   git_diff: 'Git diff',
@@ -15,7 +16,7 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
 
 const TOOL_GROUPS: Record<string, { tools: string[]; label: string }> = {
   reading: { tools: ['explore', 'read_file', 'list_dir'], label: 'Reading files' },
-  searching: { tools: ['search_code', 'find_files'], label: 'Searching' },
+  searching: { tools: ['search_code', 'search_codebase', 'find_files'], label: 'Searching' },
   git: { tools: ['git_status', 'git_diff', 'git_log'], label: 'Git' },
   writing: { tools: ['write_file'], label: 'Writing files' },
   shell: { tools: ['run_shell'], label: 'Running commands' },
