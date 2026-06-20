@@ -20,6 +20,7 @@ import {
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
 import { formatThreadUsageCost } from '@shared/llm/estimate-cost.ts'
+import { mountFollowUpSuggestions } from './follow-up-suggestions.ts'
 
 export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const chips = el('div', { class: 'attachment-chips' })
@@ -74,6 +75,14 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   })
 
   root.append(chips, inputRow, footer)
+
+  const followUps = mountFollowUpSuggestions(store, api, (prompt) => {
+    textarea.value = prompt
+    void submit()
+  })
+  root.insertBefore(followUps.root, inputRow)
+  const defaultPlaceholder = 'Message…'
+  const followUpPlaceholder = 'Send follow-up'
 
   let attachedFiles: { path: string; content: string }[] = []
   let attachedTextBlocks: { id: string; label: string; content: string }[] = []
@@ -131,6 +140,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   })
 
   async function submit() {
+    followUps.clearSuggestions()
+    textarea.placeholder = defaultPlaceholder
     const rawText = textarea.value.trim()
     if (
       !rawText &&
@@ -332,9 +343,17 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     }),
   ]
 
+  const observer = new MutationObserver(() => {
+    const hasSuggestions = !followUps.root.hidden
+    textarea.placeholder = hasSuggestions ? followUpPlaceholder : defaultPlaceholder
+  })
+  observer.observe(followUps.root, { attributes: true, attributeFilter: ['hidden'] })
+
   updateFooter()
   return () => {
     unsubs.forEach((u) => u())
+    observer.disconnect()
+    followUps.destroy()
     unbindDrop()
     unregisterAttachments()
     modelPicker.destroy()
