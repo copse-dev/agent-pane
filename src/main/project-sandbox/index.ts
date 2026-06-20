@@ -7,6 +7,7 @@ export {
   spawnShellInProjectSandbox,
   afterSandboxedCommand,
   isProjectSandboxEnabled,
+  resolvePtyShellSpawn,
 } from './spawn.ts'
 
 /**

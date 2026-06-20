@@ -30,7 +30,7 @@ describe('terminal-service', () => {
     const win = mockWindow()
     let sessionId = ''
     try {
-      sessionId = createTerminalSession(win)
+      sessionId = await createTerminalSession(win)
       assert.ok(sessionId)
       writeTerminalSession(sessionId, 'echo hello\n')
       await new Promise((r) => setTimeout(r, 300))
@@ -44,10 +44,16 @@ describe('terminal-service', () => {
     }
   })
 
-  it('destroys a session', () => {
+  it('destroys a session', async () => {
+    const restore = setWorkspaceRootForTest('/tmp')
     const win = mockWindow()
-    const sessionId = createTerminalSession(win)
-    destroyTerminalSession(sessionId)
-    assert.throws(() => writeTerminalSession(sessionId, 'x'), /Unknown terminal session/)
+    let sessionId = ''
+    try {
+      sessionId = await createTerminalSession(win)
+      destroyTerminalSession(sessionId)
+      assert.throws(() => writeTerminalSession(sessionId, 'x'), /Unknown terminal session/)
+    } finally {
+      restore()
+    }
   })
 })

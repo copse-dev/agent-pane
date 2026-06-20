@@ -117,3 +117,28 @@ export function afterSandboxedCommand(): void {
     SandboxManager.cleanupAfterCommand()
   }
 }
+
+/** Wrap an interactive shell executable for node-pty under the project seatbelt when active. */
+export async function resolvePtyShellSpawn(
+  shell: string,
+  opts: { cwd: string; env: Record<string, string> },
+): Promise<{ file: string; args: string[]; env: Record<string, string> }> {
+  if (!isProjectSandboxEnabled()) {
+    return { file: shell, args: [], env: opts.env }
+  }
+
+  const command = shellCommand(shell, [])
+  const customConfig = workspaceSandboxOverlay(opts.cwd)
+
+  const { argv, env } = await withWrapCwd(opts.cwd, () =>
+    SandboxManager.wrapWithSandboxArgv(command, '/bin/bash', customConfig),
+  )
+
+  const file = argv[0]
+  if (!file) throw new Error('sandbox wrap produced empty argv')
+  return {
+    file,
+    args: argv.slice(1),
+    env: { ...env, ...opts.env } as Record<string, string>,
+  }
+}

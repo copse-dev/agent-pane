@@ -2,11 +2,18 @@ import { randomUUID } from 'node:crypto'
 import * as pty from 'node-pty'
 import type { BrowserWindow } from 'electron'
 import type { IPty } from 'node-pty'
+import {
+  afterSandboxedCommand,
+  isProjectSandboxEnabled,
+  resolvePtyShellSpawn,
+} from '../project-sandbox/index.ts'
+import { envForRendererChildProcess } from './child-process-env.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 
 export interface TerminalSession {
   id: string
   pty: IPty
+  sandboxed: boolean
 }
 
 const sessions = new Map<string, TerminalSession>()
@@ -23,41 +30,55 @@ function sessionCwd(): string {
   return getWorkspaceRoot() ?? process.cwd()
 }
 
-function attachPtyHandlers(win: BrowserWindow, sessionId: string, ptyProcess: IPty): void {
+function attachPtyHandlers(win: BrowserWindow, session: TerminalSession): void {
+  const { id: sessionId, pty: ptyProcess, sandboxed } = session
   ptyProcess.onData((data) => {
     win.webContents.send('terminal:output', sessionId, data)
   })
   ptyProcess.onExit(({ exitCode }) => {
     sessions.delete(sessionId)
+    if (sandboxed) afterSandboxedCommand()
     win.webContents.send('terminal:exit', sessionId, exitCode ?? 1)
   })
 }
 
-function spawnShell(win: BrowserWindow, cols: number, rows: number): TerminalSession {
+async function spawnShell(
+  win: BrowserWindow,
+  cols: number,
+  rows: number,
+): Promise<TerminalSession> {
+  const cwd = sessionCwd()
   const shell = defaultShell()
-  const ptyProcess = pty.spawn(shell, [], {
+  const sandboxed = isProjectSandboxEnabled()
+  const env = envForRendererChildProcess()
+  env.TERM = 'xterm-256color'
+  env.COLORTERM = 'truecolor'
+
+  const { file, args, env: spawnEnv } = await resolvePtyShellSpawn(shell, { cwd, env })
+  const ptyProcess = pty.spawn(file, args, {
     name: 'xterm-256color',
     cols,
     rows,
-    cwd: sessionCwd(),
-    env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' } as Record<
-      string,
-      string
-    >,
+    cwd,
+    env: spawnEnv,
   })
 
-  const session: TerminalSession = { id: randomUUID(), pty: ptyProcess }
+  const session: TerminalSession = {
+    id: randomUUID(),
+    pty: ptyProcess,
+    sandboxed,
+  }
   sessions.set(session.id, session)
-  attachPtyHandlers(win, session.id, ptyProcess)
+  attachPtyHandlers(win, session)
   return session
 }
 
-export function createTerminalSession(
+export async function createTerminalSession(
   win: BrowserWindow,
   cols = DEFAULT_COLS,
   rows = DEFAULT_ROWS,
-): string {
-  const session = spawnShell(win, cols, rows)
+): Promise<string> {
+  const session = await spawnShell(win, cols, rows)
   return session.id
 }
 
@@ -78,11 +99,15 @@ export function destroyTerminalSession(sessionId: string): void {
   if (!session) return
   session.pty.kill()
   sessions.delete(sessionId)
+  if (session.sandboxed) afterSandboxedCommand()
 }
 
 export function destroyAllTerminalSessions(): void {
+  let hadSandboxed = false
   for (const session of sessions.values()) {
     session.pty.kill()
+    if (session.sandboxed) hadSandboxed = true
   }
   sessions.clear()
+  if (hadSandboxed) afterSandboxedCommand()
 }

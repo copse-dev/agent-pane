@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import type { BrowserWindow } from 'electron'
+import { ensureTerminalPermitted } from '../services/permission-gate.ts'
 import {
   createTerminalSession,
   destroyAllTerminalSessions,
@@ -9,9 +10,11 @@ import {
 } from '../services/terminal-service.ts'
 
 export function initTerminal(win: BrowserWindow): () => void {
-  ipcMain.handle('terminal:create', (_e, cols: number, rows: number) =>
-    createTerminalSession(win, cols, rows),
-  )
+  ipcMain.handle('terminal:create', async (_e, cols: number, rows: number) => {
+    const permitted = await ensureTerminalPermitted()
+    if (!permitted) throw new Error('Terminal access was not approved')
+    return createTerminalSession(win, cols, rows)
+  })
 
   ipcMain.handle('terminal:write', (_e, sessionId: string, data: string) => {
     writeTerminalSession(sessionId, data)
