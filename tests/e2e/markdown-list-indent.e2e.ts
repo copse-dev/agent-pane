@@ -62,8 +62,8 @@ describe('markdown list indentation', () => {
     expect(layout.listsInsideParagraphs).toBe(0)
     expect(layout.architectureHeadingIsFollowedByUl).toBe(true)
     expect(layout.knownFailuresHeadingIsFollowedByUl).toBe(true)
-    expect(layout.architectureItemLeft).toBeGreaterThanOrEqual(layout.architectureHeadingLeft - 1)
-    expect(layout.knownFailuresItemLeft).toBeGreaterThanOrEqual(layout.subheadingLeft - 1)
+    expect(layout.architectureItemLeft).toBeGreaterThan(layout.architectureHeadingLeft + 4)
+    expect(layout.knownFailuresItemLeft).toBeGreaterThan(layout.subheadingLeft + 4)
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'markdown-list-indent-multi-section.png'))
 

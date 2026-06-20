@@ -58,6 +58,13 @@ describe('semantic search explore markdown', () => {
       return {
         introMetrics,
         summaryMetrics,
+        previewHiddenWhenOpen:
+          (
+            document.querySelector(
+              '.tool-card-subagent[open] .subagent-summary-preview',
+            ) as HTMLElement | null
+          )?.offsetParent === null,
+        timelineHasRawHeadingMarkdown: (firstSummary.textContent ?? '').includes('##'),
         classificationHeadingFollowedByUl: classificationList?.tagName === 'UL',
         firstListItemLeft: firstListItem?.getBoundingClientRect().left ?? 0,
         headingLeft: classificationHeading?.getBoundingClientRect().left ?? 0,
@@ -72,7 +79,9 @@ describe('semantic search explore markdown', () => {
     expect(layout.summaryMetrics.hasClassificationHeading).toBe(true)
     expect(layout.summaryMetrics.listCount).toBeGreaterThanOrEqual(2)
     expect(layout.classificationHeadingFollowedByUl).toBe(false)
-    expect(layout.firstListItemLeft).toBeGreaterThanOrEqual(layout.headingLeft - 1)
+    expect(layout.previewHiddenWhenOpen).toBe(true)
+    expect(layout.timelineHasRawHeadingMarkdown).toBe(false)
+    expect(layout.firstListItemLeft).toBeGreaterThan(layout.headingLeft + 4)
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'semantic-search-explore-expanded.png'))
 
