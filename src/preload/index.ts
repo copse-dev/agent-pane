@@ -100,6 +100,8 @@ contextBridge.exposeInMainWorld('api', {
   mcp: {
     list: () => ipcRenderer.invoke('mcp:list'),
     reload: () => ipcRenderer.invoke('mcp:reload'),
+    setEnabled: (name: string, enabled: boolean) =>
+      ipcRenderer.invoke('mcp:setEnabled', name, enabled),
     onStatusChanged: (handler: (statuses: unknown) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, statuses: unknown) => handler(statuses)
       ipcRenderer.on('mcp:status_changed', listener)

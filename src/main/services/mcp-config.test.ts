@@ -7,6 +7,7 @@ import {
   interpolateServerConfig,
   mcpToolName,
   parseMcpToolName,
+  isMcpServerEffectivelyDisabled,
 } from './mcp-config.ts'
 
 describe('parseMcpConfig', () => {
@@ -124,6 +125,25 @@ describe('interpolateServerConfig', () => {
     assert.deepEqual(out.headers, { Authorization: 'Bearer abc' })
     assert.deepEqual(out.args, ['--key=abc'])
     assert.deepEqual(out.env, { K: 'abc' })
+  })
+})
+
+describe('isMcpServerEffectivelyDisabled', () => {
+  it('respects config disabled flag', () => {
+    const userOff = new Set<string>()
+    assert.equal(isMcpServerEffectivelyDisabled({ name: 'a', disabled: true }, userOff), true)
+  })
+  it('respects app-local user disabled set', () => {
+    assert.equal(
+      isMcpServerEffectivelyDisabled({ name: 'a', disabled: false }, new Set(['a'])),
+      true,
+    )
+  })
+  it('is enabled when neither flag applies', () => {
+    assert.equal(
+      isMcpServerEffectivelyDisabled({ name: 'a', disabled: false }, new Set(['b'])),
+      false,
+    )
   })
 })
 

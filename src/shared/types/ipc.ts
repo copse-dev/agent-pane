@@ -37,6 +37,7 @@ export interface IpcInvokeMap {
   // MCP servers
   'mcp:list': { args: []; result: McpServerStatus[] }
   'mcp:reload': { args: []; result: McpServerStatus[] }
+  'mcp:setEnabled': { args: [name: string, enabled: boolean]; result: McpServerStatus[] }
 
   // Settings
   'settings:get': { args: [key: string]; result: unknown }

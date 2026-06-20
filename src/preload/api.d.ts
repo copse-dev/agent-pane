@@ -55,6 +55,7 @@ export interface ApiClient {
   mcp: {
     list: () => Promise<McpServerStatus[]>
     reload: () => Promise<McpServerStatus[]>
+    setEnabled: (name: string, enabled: boolean) => Promise<McpServerStatus[]>
     onStatusChanged: (handler: (statuses: McpServerStatus[]) => void) => () => void
   }
   storage: {

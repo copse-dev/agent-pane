@@ -18,11 +18,31 @@ import {
   parseMcpConfig,
   parseMcpToolName,
   MCP_TOOL_PREFIX,
+  isMcpServerEffectivelyDisabled,
 } from './mcp-config.ts'
 import { flattenMcpContent, sanitizeMcpInputSchema } from './mcp-schema.ts'
 
 const CONNECT_TIMEOUT_MS = 30_000
 const GRANTS_STORAGE_KEY = 'mcp-remembered-grants'
+const USER_DISABLED_KEY = 'mcpDisabledServers'
+
+function getUserDisabledServerNames(): Set<string> {
+  const raw = storageGet(USER_DISABLED_KEY)
+  if (!Array.isArray(raw)) return new Set()
+  return new Set(raw.filter((n): n is string => typeof n === 'string' && n.length > 0))
+}
+
+function persistUserDisabledServerNames(names: Set<string>): void {
+  storageSet(USER_DISABLED_KEY, [...names].sort())
+}
+
+/** Turn a server on/off from Settings without editing mcp.json (stored in app userData). */
+export function setMcpServerUserEnabled(name: string, enabled: boolean): void {
+  const disabled = getUserDisabledServerNames()
+  if (enabled) disabled.delete(name)
+  else disabled.add(name)
+  persistUserDisabledServerNames(disabled)
+}
 
 interface ActiveServer {
   config: McpServerConfig
@@ -125,8 +145,11 @@ function createTransport(cfg: McpServerConfig): Transport {
 async function connectServer(
   registry: ToolRegistry,
   rawCfg: McpServerConfig,
+  userDisabled: ReadonlySet<string>,
 ): Promise<McpServerStatus> {
   const cfg = interpolateServerConfig(rawCfg, process.env)
+  const configDisabled = rawCfg.disabled === true
+  const userEnabled = !userDisabled.has(cfg.name)
   const base: McpServerStatus = {
     name: cfg.name,
     transport: cfg.transport,
@@ -134,10 +157,12 @@ async function connectServer(
     toolCount: 0,
     tools: [],
     trusted: cfg.trusted === true,
+    userEnabled,
+    configDisabled,
     ...(cfg.source !== undefined ? { source: cfg.source } : {}),
   }
 
-  if (cfg.disabled) {
+  if (isMcpServerEffectivelyDisabled(rawCfg, userDisabled)) {
     return { ...base, state: 'disabled' }
   }
 
@@ -196,11 +221,14 @@ async function teardown(registry: ToolRegistry): Promise<void> {
 
 export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
   const configs = await collectConfigs()
+  const userDisabled = getUserDisabledServerNames()
   if (configs.length === 0) {
     serverStatuses = []
     return
   }
-  serverStatuses = await Promise.all(configs.map((cfg) => connectServer(registry, cfg)))
+  serverStatuses = await Promise.all(
+    configs.map((cfg) => connectServer(registry, cfg, userDisabled)),
+  )
 }
 
 /** Tear down all MCP clients/tools and reconnect from current config. */
