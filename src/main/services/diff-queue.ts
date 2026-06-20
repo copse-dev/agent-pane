@@ -1,9 +1,9 @@
-import * as fsp from 'node:fs/promises'
 import type { BrowserWindow } from 'electron'
 import { ipcMain } from 'electron'
-import { resolveWorkspacePath } from './workspace.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import { buildIndex } from './file-index.ts'
+import { applyStagedWrite } from './apply-staged-write.ts'
+import type { DiffApplyResult } from '@shared/types/diff.ts'
 
 interface QueueEntry {
   path: string
@@ -18,27 +18,39 @@ let mainWindow: BrowserWindow | null = null
 export function initDiffQueue(win: BrowserWindow): void {
   mainWindow = win
 
-  ipcMain.handle('diff:approve', async (_e, path: string) => {
+  ipcMain.handle('diff:approve', async (_e, path: string): Promise<DiffApplyResult> => {
     const entry = queue.find((e) => e.path === path)
-    if (!entry) return
-    await fsp.writeFile(resolveWorkspacePath(path), entry.after, 'utf-8')
+    if (!entry) return { ok: false, reason: 'missing_entry', message: 'Diff no longer queued.' }
+    const result = await applyStagedWrite(entry.path, entry.before, entry.after)
+    if (!result.ok) {
+      mainWindow?.webContents.send('diff:apply_failed', path, result.message)
+      return result
+    }
     const root = getWorkspaceRoot()
     if (root) await buildIndex(root)
     removeEntry(path)
+    return result
   })
 
   ipcMain.handle('diff:reject', (_e, path: string) => {
     removeEntry(path)
   })
 
-  ipcMain.handle('diff:approveAll', async () => {
+  ipcMain.handle('diff:approveAll', async (): Promise<DiffApplyResult[]> => {
+    const results: DiffApplyResult[] = []
     for (const entry of [...queue]) {
-      await fsp.writeFile(resolveWorkspacePath(entry.path), entry.after, 'utf-8')
+      const result = await applyStagedWrite(entry.path, entry.before, entry.after)
+      results.push(result)
+      if (!result.ok) {
+        mainWindow?.webContents.send('diff:apply_failed', entry.path, result.message)
+        continue
+      }
+      removeEntry(entry.path)
     }
     const root = getWorkspaceRoot()
     if (root) await buildIndex(root)
-    queue.length = 0
     broadcastQueue()
+    return results
   })
 
   ipcMain.handle('diff:rejectAll', () => {
@@ -54,7 +66,6 @@ export function stageDiff(
   language: string,
 ): Promise<string> {
   queue.push({ path, before, after, language })
-  // Payload before queue broadcast so the renderer can populate activeDiff first.
   mainWindow?.webContents.send('agent:show_diff', path, before, after, language)
   broadcastQueue()
   return Promise.resolve(

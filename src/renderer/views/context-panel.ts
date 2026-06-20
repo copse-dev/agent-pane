@@ -147,7 +147,11 @@ export function mountContextPanel(
       })
       oldModels?.original.dispose()
       oldModels?.modified.dispose()
-      acceptBtn.onclick = () => void api.diff.approve(activeDiff.path)
+      acceptBtn.onclick = async () => {
+        if (!activeDiff) return
+        const result = await api.diff.approve(activeDiff.path)
+        if (!result.ok) window.alert(result.message)
+      }
       rejectBtn.onclick = () => void api.diff.reject(activeDiff.path)
     } else {
       fileToolbar.hidden = true

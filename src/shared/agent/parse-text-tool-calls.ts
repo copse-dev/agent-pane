@@ -21,6 +21,8 @@ const TOOL_NAME_ALIASES: Record<string, string> = {
   find_files: 'find_files',
   writefile: 'write_file',
   write_file: 'write_file',
+  strreplace: 'str_replace',
+  str_replace: 'str_replace',
   gitstatus: 'git_status',
   git_status: 'git_status',
   gitdiff: 'git_diff',

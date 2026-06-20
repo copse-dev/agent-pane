@@ -12,6 +12,7 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   git_diff: 'Git diff',
   git_log: 'Git log',
   write_file: 'Write file',
+  str_replace: 'Replace in file',
   run_shell: 'Run command',
 }
 
@@ -22,7 +23,7 @@ const TOOL_GROUPS: Record<string, { tools: string[]; label: string }> = {
     label: 'Searching',
   },
   git: { tools: ['git_status', 'git_diff', 'git_log'], label: 'Git' },
-  writing: { tools: ['write_file'], label: 'Writing files' },
+  writing: { tools: ['write_file', 'str_replace'], label: 'Writing files' },
   shell: { tools: ['run_shell'], label: 'Running commands' },
 }
 

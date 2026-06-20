@@ -52,6 +52,7 @@ const BASE_SYSTEM_PROMPT = `You are a coding assistant with access to the user's
 Available tools:
 - explore: Explore the codebase by reading and searching files (returns a summary — use this instead of reading files directly)
 - write_file: Propose writing a file (user approves the diff before it's written)
+- str_replace: Replace a unique substring in a file (user approves the diff; prefer over write_file for small edits)
 - git_status: Show working tree status
 - git_diff: Show unstaged or staged changes
 - git_log: Show recent commit history
@@ -66,7 +67,7 @@ When the user asks an open-ended question (review, explain, validate, summarize)
 
 When modifying files:
 1. Use explore to understand the file before changing it
-2. Use write_file to propose changes — the user sees a diff and must approve
+2. Use str_replace for partial edits or write_file for full rewrites — the user sees a diff and must approve
 3. Do not assume file content; always explore before writing`
 
 const BASE_SYSTEM_PROMPT_DIRECT_READS = `You are a coding assistant with access to the user's local workspace.
@@ -74,6 +75,7 @@ const BASE_SYSTEM_PROMPT_DIRECT_READS = `You are a coding assistant with access 
 Available tools:
 - read_file: Read a file from the workspace
 - write_file: Propose writing a file (user approves the diff before it's written)
+- str_replace: Replace a unique substring in a file (user approves the diff; prefer over write_file for small edits)
 - list_dir: List directory contents
 - search_codebase: Search by regex or meaning (auto-selects; prefer over search_code)
 - semantic_search: Search by meaning only (native codesearch/vera index)
@@ -93,7 +95,7 @@ When the user asks an open-ended question (review, explain, validate, summarize)
 
 When modifying files:
 1. Read the file first
-2. Use write_file to propose changes — the user sees a diff and must approve
+2. Use str_replace for partial edits or write_file for full rewrites — the user sees a diff and must approve
 3. Do not assume file content; always read before writing`
 
 const DEFAULT_LM_STUDIO_URL = 'http://localhost:1234/v1'
