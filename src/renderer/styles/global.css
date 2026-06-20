@@ -327,6 +327,11 @@ body {
   overflow: hidden;
   min-width: 0;
 }
+.file-viewer.is-drop-target,
+#input-bar.is-drop-target {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
 .file-viewer-toolbar {
   display: flex;
   gap: var(--spacing-xs);

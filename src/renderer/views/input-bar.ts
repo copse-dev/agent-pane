@@ -17,6 +17,8 @@ import {
   isTextBlockAttachment,
   textBlockLabel,
 } from '@shared/agent/build-text-with-attachments.ts'
+import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
+import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
 
 export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const chips = el('div', { class: 'attachment-chips' })
@@ -255,6 +257,13 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     })
   }
 
+  const attachmentHandlers = {
+    attachFile: addChip,
+    attachTextBlock: addTextChip,
+    attachImage: addImageChip,
+  }
+  const unregisterAttachments = registerPromptAttachments(attachmentHandlers)
+
   document.addEventListener('paste', (e) => {
     const items = Array.from(e.clipboardData?.items ?? [])
     const img = items.find((i) => i.type.startsWith('image/'))
@@ -273,16 +282,12 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     addTextChip(text)
   })
 
-  textarea.addEventListener('dragover', (e) => {
-    e.preventDefault()
-  })
-  textarea.addEventListener('drop', (e) => {
-    e.preventDefault()
-    const file = e.dataTransfer?.files[0]
-    if (file?.type.startsWith('image/')) {
-      void readAsDataUrl(file).then((dataUrl) => addImageChip(dataUrl, file.type))
-    }
-  })
+  const unbindDrop = bindFileDropTarget(
+    root,
+    () => attachmentHandlers,
+    api,
+    () => store.getState().workspaceRoot,
+  )
 
   initMentionPicker({ textarea, inputBar: root, store, api, onAttach: addChip })
 
@@ -329,6 +334,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   updateFooter()
   return () => {
     unsubs.forEach((u) => u())
+    unbindDrop()
+    unregisterAttachments()
     modelPicker.destroy()
     skillPicker()
   }

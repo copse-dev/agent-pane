@@ -6,6 +6,7 @@ import {
 } from '../icons/material-file-icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { WORKSPACE_PATH_MIME } from '../attachments/handle-file-drop.ts'
 
 // Minimal renderer-side language detection for Monaco. Mirrors the main-process
 // language service for the common cases; unknown extensions fall back to
@@ -128,6 +129,11 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
         }
       })
     } else {
+      row.draggable = true
+      row.addEventListener('dragstart', (e) => {
+        e.dataTransfer?.setData(WORKSPACE_PATH_MIME, path)
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy'
+      })
       row.addEventListener('click', () => {
         if (selectedRow) selectedRow.classList.remove('selected')
         row.classList.add('selected')
