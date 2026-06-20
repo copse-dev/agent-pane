@@ -507,7 +507,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         await api.settings.set('appIconVariant', appIconVariant)
         await api.appIcon.apply()
       }
-      await api.settings.set('lmStudioUrl', (data.get('lmStudioUrl') as string).trim())
       await api.settings.set('lmStudioModel', (data.get('lmStudioModel') as string).trim())
       await api.settings.set(
         'lmStudioSmallTasksModel',
@@ -519,17 +518,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       )
       await api.settings.set('lmStudioForSmallTasks', data.get('lmStudioForSmallTasks') === 'on')
       await api.settings.set('lmStudioForSubagents', data.get('lmStudioForSubagents') === 'on')
-      await api.settings.set(
-        'lmStudioSafetyModel',
-        (data.get('lmStudioSafetyModel') as string).trim(),
-      )
-      await api.settings.set('lmStudioSafetyEnabled', data.get('lmStudioSafetyEnabled') === 'on')
-      await api.settings.set(
-        'lmStudioSafetyConfidenceThreshold',
-        Number.isFinite(confidence) ? confidence : 0.85,
-      )
-      await api.settings.set('autoRunSandboxCommands', data.get('autoRunSandboxCommands') === 'on')
-      await api.settings.set('mcpAutoAllowReadOnly', data.get('mcpAutoAllowReadOnly') === 'on')
+      await api.settings.setSecurity({
+        lmStudioUrl: (data.get('lmStudioUrl') as string).trim(),
+        lmStudioSafetyModel: (data.get('lmStudioSafetyModel') as string).trim(),
+        lmStudioSafetyEnabled: data.get('lmStudioSafetyEnabled') === 'on',
+        lmStudioSafetyConfidenceThreshold: Number.isFinite(confidence) ? confidence : 0.85,
+        autoRunSandboxCommands: data.get('autoRunSandboxCommands') === 'on',
+        mcpAutoAllowReadOnly: data.get('mcpAutoAllowReadOnly') === 'on',
+      })
 
       store.setState({ theme, fontSize, settings: { ...store.getState().settings, model } })
       store.emit('theme_changed', theme)
