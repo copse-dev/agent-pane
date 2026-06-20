@@ -3,7 +3,14 @@ import type { BrowserWindow } from 'electron'
 import { dirname } from 'node:path'
 import micromatch from 'micromatch'
 import * as fsp from 'node:fs/promises'
-import { getWorkspaceRoot, setWorkspaceRoot, resolveWorkspacePath } from '../services/workspace.ts'
+import {
+  assertAllowedWorkspaceRoot,
+  getWorkspaceRoot,
+  registerAllowedWorkspaceRoot,
+  resolveWorkspacePath,
+  seedAllowedWorkspaceRoots,
+  setWorkspaceRoot,
+} from '../services/workspace.ts'
 import { buildIndex, getIndex } from '../services/file-index.ts'
 import { ensureSemanticIndex } from '../services/semantic-index.ts'
 import {
@@ -32,10 +39,21 @@ import { applyAppIcon } from '../app-icon.ts'
 import { getMainWindow } from '../windows/create-main-window.ts'
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+  const storedProjects = (storageGet('projects') as { path: string }[] | null) ?? []
+  seedAllowedWorkspaceRoots(storedProjects.map((p) => p.path))
+  const persistedRoot = getWorkspaceRoot()
+  if (persistedRoot) {
+    try {
+      registerAllowedWorkspaceRoot(persistedRoot)
+    } catch {
+      // Stale workspaceRoot in config — ignore until user picks a folder.
+    }
+  }
+
   ipcMain.handle('workspace:open', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
     if (result.canceled || !result.filePaths[0]) return null
-    const root = result.filePaths[0]
+    const root = registerAllowedWorkspaceRoot(result.filePaths[0])
     setWorkspaceRoot(root)
     await buildIndex(root)
     void ensureSemanticIndex(root)
@@ -50,13 +68,16 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Switch to a known folder without a dialog (used when picking a saved
   // project from the left pane).
   ipcMain.handle('workspace:set', async (_e, root: string) => {
-    setWorkspaceRoot(root)
-    await buildIndex(root)
-    void ensureSemanticIndex(root)
-    startWorkspaceIndexWatcher(root)
+    const projects = (storageGet('projects') as { path: string }[] | null) ?? []
+    seedAllowedWorkspaceRoots(projects.map((p) => p.path))
+    const canonical = assertAllowedWorkspaceRoot(root)
+    setWorkspaceRoot(canonical)
+    await buildIndex(canonical)
+    void ensureSemanticIndex(canonical)
+    startWorkspaceIndexWatcher(canonical)
     await initSkillsRegistry()
     registerSkillTools(registry)
-    return root
+    return canonical
   })
 
   ipcMain.handle('fs:readFile', async (_e, path: string) => {
