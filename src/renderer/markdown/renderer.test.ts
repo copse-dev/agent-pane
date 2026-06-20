@@ -39,6 +39,13 @@ describe('renderMarkdown', () => {
     assert.match(html, /<td>2<\/td>/)
   })
 
+  it('renders thematic breaks as horizontal rules', () => {
+    const html = renderMarkdown('Above\n\n---\n\nBelow')
+    assert.match(html, /<hr>/)
+    assert.match(html, /<p>Above<\/p>/)
+    assert.match(html, /<p>Below<\/p>/)
+  })
+
   it('does not strip interior newlines from multi-line content', () => {
     const input = '## Repo summary\n\n### index.html\nMain app file.\n\n### tests\n14 passed.'
     const html = renderMarkdown(input)

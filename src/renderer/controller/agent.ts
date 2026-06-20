@@ -5,11 +5,20 @@ import {
   appendToken,
   addToolCall,
   updateToolCall,
+  setMessageContent,
   setThreadStatus,
   setThreadTitle,
-  updateUsage,
+  addUsageDelta,
   recordContextTrim,
+  updateContextSnapshot,
 } from '@shared/store/thread-helpers.ts'
+import {
+  initSubagent,
+  appendSubagentText,
+  addSubagentToolCall,
+  updateSubagentToolCall,
+  finishSubagent,
+} from '@shared/store/subagent-helpers.ts'
 import { planAgentTextChunk } from '@shared/agent/agent-text-chunk.ts'
 import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY } from '../agent-activity.ts'
 
@@ -55,6 +64,11 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         }
         break
       }
+      case 'text_replace': {
+        if (!st.msgId) st.msgId = addMessage(store, threadId, 'assistant')
+        setMessageContent(store, st.msgId, chunk.text)
+        break
+      }
       case 'tool_call': {
         if (!st.msgId) st.msgId = addMessage(store, threadId, 'assistant')
         addToolCall(store, st.msgId, {
@@ -89,7 +103,79 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           historyBudget: chunk.historyBudget,
           estimatedTokens: chunk.estimatedTokens,
         })
+        updateContextSnapshot(store, threadId, {
+          contextWindow: chunk.contextWindow,
+          conversationBudget: chunk.historyBudget,
+          conversationTokens: chunk.estimatedTokens,
+          fillRatio: chunk.estimatedTokens / chunk.historyBudget,
+        })
         store.emit('agent_activity', threadId, CONTEXT_TRIM_ACTIVITY)
+        break
+      }
+      case 'usage': {
+        addUsageDelta(store, threadId, {
+          inputTokens: chunk.inputTokens,
+          outputTokens: chunk.outputTokens,
+        })
+        break
+      }
+      case 'context_pressure': {
+        updateContextSnapshot(store, threadId, {
+          contextWindow: chunk.contextWindow,
+          conversationBudget: chunk.conversationBudget,
+          conversationTokens: chunk.conversationTokens,
+          fillRatio: chunk.fillRatio,
+        })
+        break
+      }
+      case 'subagent_start': {
+        if (!st.msgId) st.msgId = addMessage(store, threadId, 'assistant')
+        initSubagent(store, st.msgId, chunk.parentToolCallId, chunk.session)
+        st.writing = false
+        activity(threadId)
+        break
+      }
+      case 'subagent_text': {
+        if (st.msgId) {
+          appendSubagentText(store, st.msgId, chunk.parentToolCallId, chunk.messageId, chunk.text)
+        }
+        break
+      }
+      case 'subagent_tool_call': {
+        if (st.msgId) {
+          addSubagentToolCall(store, st.msgId, chunk.parentToolCallId, chunk.messageId, {
+            id: chunk.toolCall.id,
+            name: chunk.toolCall.name,
+            args: chunk.toolCall.args,
+            status: 'running',
+            result: null,
+          })
+        }
+        activity(threadId)
+        break
+      }
+      case 'subagent_tool_result': {
+        if (st.msgId) {
+          updateSubagentToolCall(store, st.msgId, chunk.parentToolCallId, chunk.toolCallId, {
+            status: chunk.isError ? 'error' : 'done',
+            result: chunk.result,
+          })
+        }
+        activity(threadId)
+        break
+      }
+      case 'subagent_done': {
+        if (st.msgId) {
+          finishSubagent(store, st.msgId, chunk.parentToolCallId, chunk.summary, 'done')
+        }
+        activity(threadId)
+        break
+      }
+      case 'subagent_error': {
+        if (st.msgId) {
+          finishSubagent(store, st.msgId, chunk.parentToolCallId, chunk.error, 'error')
+        }
+        activity(threadId)
         break
       }
       case 'done': {
@@ -103,23 +189,20 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     }
   })
 
-  // Accumulate token usage per thread so the input-bar footer can show cost.
+  // Legacy path: some callers may still emit agent:usage directly.
   api.agent.onUsage((threadId, usage) => {
-    const thread = store.getState().threads.find((t) => t.id === threadId)
-    if (!thread) return
-    updateUsage(store, threadId, {
-      inputTokens: thread.usage.inputTokens + usage.inputTokens,
-      outputTokens: thread.usage.outputTokens + usage.outputTokens,
-    })
+    addUsageDelta(store, threadId, usage)
   })
 
   api.diff.onShowDiff((path, before, after, language) => {
     store.setState({
       activeDiff: { path, before, after, language },
       panelTab: 'diff',
+      rightPanelMode: 'explorer',
       filesPaneOpen: true,
     })
     store.emit('panel_changed')
+    store.emit('right_panel_mode_changed')
     store.emit('files_pane_changed')
   })
 
@@ -131,11 +214,13 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     store.setState({
       stagedDiffs: entries,
       panelTab: entries.length > 0 ? 'diff' : store.getState().panelTab,
+      rightPanelMode: entries.length > 0 ? 'explorer' : store.getState().rightPanelMode,
       filesPaneOpen: entries.length > 0 ? true : store.getState().filesPaneOpen,
       activeDiff: entries.length === 0 ? null : stillQueued,
     })
     store.emit('staged_diffs_changed')
     store.emit('panel_changed')
+    if (entries.length > 0) store.emit('right_panel_mode_changed')
     store.emit('files_pane_changed')
   })
 

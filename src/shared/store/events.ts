@@ -14,8 +14,10 @@ export interface StoreEvents {
   workspace_changed: []
   projects_changed: []
   files_pane_changed: []
+  right_panel_mode_changed: []
   settings_changed: []
   theme_changed: ['light' | 'dark']
   staged_diffs_changed: []
   usage_updated: [threadId: string]
+  context_updated: [threadId: string]
 }

@@ -29,6 +29,9 @@ export function renderMarkdown(raw: string): string {
   s = s.replace(/^## (.+)$/gm, '<h4>$1</h4>')
   s = s.replace(/^# (.+)$/gm, '<h4>$1</h4>')
 
+  // Thematic breaks (---, ***, ___) — isolate as block elements before list/paragraph passes
+  s = s.replace(/^ {0,3}(-{3,}|\*{3,}|_{3,}) *$/gm, '\n\n<hr>\n\n')
+
   // Unordered list items
   s = s.replace(/^- (.+)$/gm, '<li>$1</li>')
   s = s.replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`)
@@ -37,7 +40,7 @@ export function renderMarkdown(raw: string): string {
   s = s
     .split(/\n\n+/)
     .map((block) => {
-      if (/^<(pre|ul|h[34]|table)/.test(block.trim())) return block
+      if (/^<(pre|ul|h[34]|table|hr)/.test(block.trim())) return block
       if (block.trim() === '') return ''
       return `<p>${block.replace(/\n/g, '<br>')}</p>`
     })

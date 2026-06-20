@@ -1,15 +1,22 @@
 import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { addMessage, setThreadStatus } from '@shared/store/thread-helpers.ts'
+import { addMessage, setThreadStatus, clearContextSnapshot } from '@shared/store/thread-helpers.ts'
 import { initMentionPicker } from './mention-picker.ts'
 import { initSkillPicker } from './skill-picker.ts'
-import { parseSkillInvocation } from '@shared/skills/parse-skill-invocation.ts'
+import { resolveSkillInvocation } from '@shared/skills/parse-skill-invocation.ts'
+import { buildSkillUserText } from '@shared/skills/build-skill-user-content.ts'
 import type { UserContent } from '@shared/types'
 import type { AgentRunPayload, SkillSummary } from '@shared/types/skills.ts'
 import { mountFooterModelPicker } from './footer-model-picker.ts'
+import { createContextWheel } from './context-wheel.ts'
 import { downloadThreadJsonl } from '../export-thread.ts'
 import { syncAgentActivity } from '../agent-activity.ts'
+import {
+  buildTextWithAttachments,
+  isTextBlockAttachment,
+  textBlockLabel,
+} from '@shared/agent/build-text-with-attachments.ts'
 
 export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const chips = el('div', { class: 'attachment-chips' })
@@ -37,7 +44,10 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   // Token usage — always shown once a thread has used tokens; click to expand
   // into the in/out breakdown and cost.
   const usageBtn = el('button', { class: 'footer-usage', 'aria-label': 'Toggle cost details' })
-  footer.append(modelHost, exportBtn, usageBtn)
+  const usageGroup = el('div', { class: 'footer-usage-group' })
+  const contextWheel = createContextWheel()
+  usageGroup.append(contextWheel.root, usageBtn)
+  footer.append(modelHost, exportBtn, usageGroup)
   let costVisible = false
 
   const modelPicker = mountFooterModelPicker(
@@ -63,6 +73,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   root.append(chips, inputRow, footer)
 
   let attachedFiles: { path: string; content: string }[] = []
+  let attachedTextBlocks: { id: string; label: string; content: string }[] = []
   let attachedImages: { dataUrl: string; mimeType: string }[] = []
 
   function getActiveThreadId() {
@@ -85,13 +96,17 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     const thread = store.getState().threads.find((t) => t.id === getActiveThreadId())
     const { inputTokens, outputTokens } = thread?.usage ?? { inputTokens: 0, outputTokens: 0 }
     const total = inputTokens + outputTokens
-    if (!total) {
+    const running = thread?.status === 'running'
+    contextWheel.update(thread?.contextSnapshot, running)
+    if (!total && !running) {
       usageBtn.hidden = true
     } else {
       usageBtn.hidden = false
       usageBtn.textContent = costVisible
         ? `${inputTokens} in / ${outputTokens} out · ${estimateCost(model, { inputTokens, outputTokens })}`
-        : `${(total / 1000).toFixed(1)}k tokens`
+        : total
+          ? `${(total / 1000).toFixed(1)}k tokens`
+          : '0 tokens'
     }
     updateState()
   }
@@ -112,42 +127,50 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     }
   })
 
-  function buildTextWithAttachments(
-    text: string,
-    files: { path: string; content: string }[],
-  ): string {
-    return [text, ...files.map((f) => `\`\`\`\n// ${f.path}\n${f.content}\n\`\`\``)].join('\n\n')
-  }
-
   async function submit() {
     const rawText = textarea.value.trim()
-    if (!rawText && attachedFiles.length === 0 && attachedImages.length === 0) return
+    if (
+      !rawText &&
+      attachedFiles.length === 0 &&
+      attachedTextBlocks.length === 0 &&
+      attachedImages.length === 0
+    )
+      return
     const id = getActiveThreadId()
     if (!id) return
 
-    const invocation = parseSkillInvocation(rawText)
-    const text = invocation?.remainder ?? rawText
+    const skills = skillsCache ?? (await api.skills.list())
+    skillsCache = skills
+    const skillNames = skills.map((skill) => skill.name)
+    const invocation = resolveSkillInvocation(rawText, skillNames)
     const invokedSkills = invocation ? [invocation.skillName] : []
 
-    if (invocation) {
-      const skills = skillsCache ?? (await api.skills.list())
-      skillsCache = skills
-      if (!skills.some((skill) => skill.name === invocation.skillName)) {
-        textarea.setCustomValidity(`Unknown skill: /${invocation.skillName}`)
-        textarea.reportValidity()
-        return
-      }
+    if (invocation && !skills.some((skill) => skill.name === invocation.skillName)) {
+      textarea.setCustomValidity(`Unknown skill: /${invocation.skillName}`)
+      textarea.reportValidity()
+      return
     }
+
+    const text = invocation
+      ? buildSkillUserText(
+          invocation.skillName,
+          invocation.remainder,
+          attachedFiles.length > 0 || attachedImages.length > 0,
+        )
+      : rawText
     textarea.setCustomValidity('')
 
     let fullContent: UserContent
     if (attachedImages.length > 0) {
       fullContent = [
         ...attachedImages.map((img) => ({ type: 'image' as const, dataUrl: img.dataUrl })),
-        { type: 'text' as const, text: buildTextWithAttachments(text, attachedFiles) },
+        {
+          type: 'text' as const,
+          text: buildTextWithAttachments(text, attachedFiles, attachedTextBlocks),
+        },
       ]
     } else {
-      fullContent = buildTextWithAttachments(text, attachedFiles)
+      fullContent = buildTextWithAttachments(text, attachedFiles, attachedTextBlocks)
     }
 
     const payload: AgentRunPayload = { content: fullContent, invokedSkills }
@@ -158,14 +181,17 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     const displayParts: string[] = []
     if (rawText) displayParts.push(rawText)
     attachedFiles.forEach((f) => displayParts.push(`📎 ${f.path.split('/').pop() ?? f.path}`))
-    if (attachedImages.length) displayParts.push(`🖼 ${attachedImages.length} image(s)`)
-    addMessage(store, id, 'user', displayParts.join('\n'))
+    attachedTextBlocks.forEach((b) => displayParts.push(`📝 ${b.label}`))
+    const imageUrls = attachedImages.map((img) => img.dataUrl)
+    addMessage(store, id, 'user', displayParts.join('\n'), imageUrls.length ? imageUrls : undefined)
+    clearContextSnapshot(store, id)
     setThreadStatus(store, id, 'running')
     syncAgentActivity(store, id, false)
 
     void api.agent.run(id, JSON.stringify(payload))
     textarea.value = ''
     attachedFiles = []
+    attachedTextBlocks = []
     attachedImages = []
     clear(chips)
   }
@@ -179,6 +205,23 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     remove.textContent = '✕'
     remove.addEventListener('click', () => {
       attachedFiles = attachedFiles.filter((f) => f.path !== file.path)
+      chip.remove()
+    })
+    chip.append(remove)
+    chips.append(chip)
+  }
+
+  function addTextChip(content: string) {
+    const id = crypto.randomUUID()
+    const label = textBlockLabel(content)
+    attachedTextBlocks.push({ id, label, content })
+    const chip = document.createElement('span')
+    chip.className = 'attachment-chip text-chip'
+    chip.textContent = label
+    const remove = document.createElement('button')
+    remove.textContent = '✕'
+    remove.addEventListener('click', () => {
+      attachedTextBlocks = attachedTextBlocks.filter((b) => b.id !== id)
       chip.remove()
     })
     chip.append(remove)
@@ -215,11 +258,19 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   document.addEventListener('paste', (e) => {
     const items = Array.from(e.clipboardData?.items ?? [])
     const img = items.find((i) => i.type.startsWith('image/'))
-    if (!img) return
+    if (img) {
+      e.preventDefault()
+      const blob = img.getAsFile()
+      if (!blob) return
+      void readAsDataUrl(blob).then((dataUrl) => addImageChip(dataUrl, blob.type))
+      return
+    }
+
+    if (!textarea.matches(':focus')) return
+    const text = e.clipboardData?.getData('text/plain') ?? ''
+    if (!isTextBlockAttachment(text)) return
     e.preventDefault()
-    const blob = img.getAsFile()
-    if (!blob) return
-    void readAsDataUrl(blob).then((dataUrl) => addImageChip(dataUrl, blob.type))
+    addTextChip(text)
   })
 
   textarea.addEventListener('dragover', (e) => {
@@ -236,8 +287,17 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   initMentionPicker({ textarea, inputBar: root, store, api, onAttach: addChip })
 
   let skillsCache: SkillSummary[] | null = null
-  void api.skills.list().then((skills) => {
-    skillsCache = skills
+  const refreshSkillsCache = (): void => {
+    void api.skills.list().then((skills) => {
+      skillsCache = skills
+    })
+  }
+  refreshSkillsCache()
+  // Skills are workspace-scoped; drop the stale list when the workspace changes
+  // so inline /skill detection and validation use the new workspace's skills.
+  store.on('workspace_changed', () => {
+    skillsCache = null
+    refreshSkillsCache()
   })
 
   const skillPicker = initSkillPicker({
@@ -257,13 +317,16 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     store.on('usage_updated', (tid) => {
       if (tid === getActiveThreadId()) updateFooter()
     }),
+    store.on('context_updated', (tid) => {
+      if (tid === getActiveThreadId()) updateFooter()
+    }),
     store.on('settings_changed', () => {
       modelPicker.refresh()
       updateFooter()
     }),
   ]
 
-  updateState()
+  updateFooter()
   return () => {
     unsubs.forEach((u) => u())
     modelPicker.destroy()
