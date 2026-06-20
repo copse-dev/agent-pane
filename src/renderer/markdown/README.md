@@ -17,7 +17,7 @@ When extending the renderer or its CSS, preserve these rules:
   `<h3>` — h1/h2 are intentionally too large for the narrow pane.
 - **List indent.** Global `* { padding: 0 }` strips UA list padding. Restore readable indent on
   `.message-text ul/ol` in `global.css` (currently `padding-inline-start: 1.5em;
-  list-style-position: outside`). Bullets should sit clearly inset from headings, not flush with
+list-style-position: outside`). Bullets should sit clearly inset from headings, not flush with
   them.
 - **Subagent explore cards.** Render markdown in the timeline via `renderMarkdown` (see
   `conversation.ts`). The collapsed summary preview also renders markdown, but is hidden when the
