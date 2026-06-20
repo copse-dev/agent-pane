@@ -25,6 +25,8 @@ import {
   listLmStudioModels,
   invalidateLmStudioModelsCache,
 } from './services/agent-service.ts'
+import { suggestFollowUps } from './services/follow-up-service.ts'
+import type { FollowUpContext } from '@shared/follow-ups/types.ts'
 import { storageGet, storageSet } from './services/storage.ts'
 import { getMainWindow } from './windows/create-main-window.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
@@ -96,6 +98,11 @@ app
     })
 
     ipcMain.handle('agent:suggestTitle', (_e, text: string) => suggestThreadTitle(text))
+
+    ipcMain.handle('agent:suggestFollowUps', (_e, contextJson: string) => {
+      const context = JSON.parse(contextJson) as FollowUpContext
+      return suggestFollowUps(context)
+    })
 
     ipcMain.handle('lmstudio:test', async (_e, url: string, apiKey?: string) => {
       const result = await testLmStudio(url, apiKey)

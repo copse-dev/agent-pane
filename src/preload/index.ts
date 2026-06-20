@@ -29,6 +29,8 @@ contextBridge.exposeInMainWorld('api', {
     abort: (threadId: string) => ipcRenderer.invoke('agent:abort', threadId),
     clearHistory: (threadId: string) => ipcRenderer.invoke('agent:clearHistory', threadId),
     suggestTitle: (text: string) => ipcRenderer.invoke('agent:suggestTitle', text),
+    suggestFollowUps: (contextJson: string) =>
+      ipcRenderer.invoke('agent:suggestFollowUps', contextJson),
     onChunk: (handler: (threadId: string, chunk: unknown) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, tid: string, chunk: unknown) =>
         handler(tid, chunk)

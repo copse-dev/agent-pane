@@ -32,7 +32,7 @@ function writeSettings(settings: Record<string, unknown>): void {
 export function seedEmptyProject(
   workspaceRoot: string,
   projectId: string,
-  options?: { subagentsEnabled?: boolean },
+  options?: { subagentsEnabled?: boolean; mockFollowUps?: boolean },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
   writeFileSync(
@@ -44,8 +44,15 @@ export function seedEmptyProject(
     }),
     'utf8',
   )
+  const settings: Record<string, unknown> = {}
   if (options?.subagentsEnabled !== undefined) {
-    writeSettings({ subagentsEnabled: options.subagentsEnabled })
+    settings.subagentsEnabled = options.subagentsEnabled
+  }
+  if (options?.mockFollowUps) {
+    settings.mockFollowUps = true
+  }
+  if (Object.keys(settings).length > 0) {
+    writeSettings(settings)
   }
 }
 
