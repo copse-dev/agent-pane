@@ -1,7 +1,7 @@
 import * as fs from 'node:fs'
-import * as fsp from 'node:fs/promises'
 import { ipcMain, type BrowserWindow } from 'electron'
 import { resolveWorkspacePath } from '../services/workspace.ts'
+import { gatewayReadFile } from '../project-sandbox/sandbox-fs-client.ts'
 
 const watchers = new Map<string, fs.FSWatcher>()
 
@@ -13,8 +13,7 @@ export function initFsWatcher(win: BrowserWindow): void {
     const w = fs.watch(abs, { persistent: false }, () => {
       clearTimeout(debounce)
       debounce = setTimeout(() => {
-        fsp
-          .readFile(abs, 'utf-8')
+        gatewayReadFile(abs)
           .then((content) => win.webContents.send('fs:changed', path, content))
           .catch(() => undefined)
       }, 200)

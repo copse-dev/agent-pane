@@ -12,9 +12,8 @@ const allowedWorkspaceRoots = new Set<string>()
 /**
  * macOS seatbelt (ASRT) confines spawned shell/git tools to the workspace, but
  * `fs:*` IPC handlers read/write via node:fs in the unsandboxed main process.
- * Containment is this module: lexical + symlink-aware paths and an allowlist for
- * workspace roots. Full parity with seatbelt would require routing fs IPC through
- * a confined subprocess — see issue #76.
+ * Containment: path checks in this module plus, on macOS when ASRT is active,
+ * `sandbox-fs-client` routes `fs:*` IPC through a seatbelt-wrapped worker subprocess.
  */
 export function canonicalWorkspaceRoot(root: string): string {
   const abs = resolve(root)
