@@ -1,8 +1,10 @@
 import * as fs from 'node:fs'
+import * as fsp from 'node:fs/promises'
 import { ipcMain, type BrowserWindow } from 'electron'
 import { assertMainFrameSender, parseIpcArgs, zPathString } from './ipc-guards.ts'
 import { resolveWorkspacePath } from '../services/workspace.ts'
 import { gatewayReadFile } from '../project-sandbox/sandbox-fs-client.ts'
+import { FS_WATCH_MAX_CONTENT_BYTES } from '../services/fs-watch-limits.ts'
 
 const watchers = new Map<string, fs.FSWatcher>()
 
@@ -16,9 +18,13 @@ export function initFsWatcher(win: BrowserWindow): void {
     const w = fs.watch(abs, { persistent: false }, () => {
       clearTimeout(debounce)
       debounce = setTimeout(() => {
+<<<<<<< HEAD
         gatewayReadFile(abs)
           .then((content) => win.webContents.send('fs:changed', rel, content))
           .catch(() => undefined)
+=======
+        void notifyFileChanged(win, rel, abs)
+>>>>>>> 11bd607 (Harden search fallback, fs watch IPC, and shell heuristics.)
       }, 200)
     })
     watchers.set(abs, w)
@@ -31,6 +37,25 @@ export function initFsWatcher(win: BrowserWindow): void {
     watchers.get(abs)?.close()
     watchers.delete(abs)
   })
+}
+
+async function notifyFileChanged(
+  win: BrowserWindow,
+  relPath: string,
+  absPath: string,
+): Promise<void> {
+  try {
+    const st = await fsp.stat(absPath)
+    if (!st.isFile()) return
+    if (st.size > FS_WATCH_MAX_CONTENT_BYTES) {
+      win.webContents.send('fs:changed', relPath, null)
+      return
+    }
+    const content = await gatewayReadFile(absPath)
+    win.webContents.send('fs:changed', relPath, content)
+  } catch {
+    /* ignore missing/unreadable files */
+  }
 }
 
 export function closeAllWatchers(): void {
