@@ -35,6 +35,7 @@ import {
   getAccumulatedSubagentUsage,
 } from './explore-subagent-runner.ts'
 import { isLocalModel } from '@shared/llm/estimate-cost.ts'
+import { buildSemanticSearchPromptBlock } from './semantic-search.ts'
 
 const abortMap = new Map<string, AbortController>()
 
@@ -68,7 +69,7 @@ Available tools:
 - read_file: Read a file from the workspace
 - write_file: Propose writing a file (user approves the diff before it's written)
 - list_dir: List directory contents
-- search_code: Search for text/regex patterns using ripgrep
+- search_code: Search for text/regex patterns (indexed grep when available, otherwise ripgrep)
 - find_files: Find files by name or glob pattern
 - git_status: Show working tree status
 - git_diff: Show unstaged or staged changes
@@ -248,6 +249,7 @@ export async function runAgent(
       .replace('{WORKSPACE_ROOT}', getWorkspaceRoot() ?? '(none)') +
     buildSkillsCatalogBlock() +
     (await buildInvokedSkillsBlock(invokedSkills)) +
+    buildSemanticSearchPromptBlock(registry) +
     (projectInstructions ? `\n\n---\n\n## Project instructions\n\n${projectInstructions}` : '')
 
   const messages: LLMMessage[] = [
