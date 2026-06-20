@@ -12,7 +12,7 @@ interface McpStatus {
 }
 
 test('discovers and connects a stdio MCP server from project config', async () => {
-  const workspaceRoot = await mkdtemp(join(tmpdir(), 'agent-pane-mcp-'))
+  const workspaceRoot = await mkdtemp(join(tmpdir(), 'copse-panel-mcp-'))
   await mkdir(join(workspaceRoot, '.cursor'), { recursive: true })
 
   const mockServer = join(process.cwd(), 'tests', 'e2e', 'fixtures', 'mock-mcp-server.mts')
@@ -36,7 +36,7 @@ test('discovers and connects a stdio MCP server from project config', async () =
 
   const app = await electron.launch({
     args: ['dist/main/index.js', '--disable-gpu'],
-    env: { ...process.env, AGENT_WINDOW_MOCK_LLM: '1' },
+    env: { ...process.env, COPSE_PANEL_MOCK_LLM: '1' },
   })
 
   try {

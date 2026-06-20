@@ -1,9 +1,9 @@
 ---
 name: screenshot-validate
-description: Validate a UI fix in agent-pane with WebdriverIO Electron e2e screenshots. Use when asked to prove a renderer change works, capture before/after screenshots, or visually evaluate whether a fix landed correctly.
+description: Validate a UI fix in copse-panel with WebdriverIO Electron e2e screenshots. Use when asked to prove a renderer change works, capture before/after screenshots, or visually evaluate whether a fix landed correctly.
 ---
 
-# Screenshot validate (agent-pane)
+# Screenshot validate (copse-panel)
 
 Use this skill to **prove a UI change works** and **judge whether it looks correct**.
 
@@ -14,7 +14,7 @@ Use this skill to **prove a UI change works** and **judge whether it looks corre
 3. **Seed state** — Add or extend a fixture in `tests/e2e/helpers/seed-config.ts` so the app opens in the target state without a real LLM.
 4. **Write a focused spec** under `tests/e2e/` that:
    - Relies on `wdio.conf.ts` to launch Electron (`appEntryPoint: dist/main/index.js`, `--disable-gpu`)
-   - Sets mock LLM env in `beforeEach`: `AGENT_WINDOW_MOCK_LLM=1`, empty API keys
+   - Sets mock LLM env in `beforeEach`: `COPSE_PANEL_MOCK_LLM=1`, empty API keys
    - Asserts DOM structure (counts, text, attributes) — not just screenshots.
    - Saves PNGs to `tests/e2e/screenshots/` with descriptive names via `browser.saveScreenshot(...)`.
 5. **Run**:
@@ -28,10 +28,10 @@ Use this skill to **prove a UI change works** and **judge whether it looks corre
    - **Visual check** — what you see in each screenshot (structure intact, no stray elements, readable args)
    - **Verdict** — whether the fix worked well or what still looks wrong
 
-## agent-pane conventions
+## copse-panel conventions
 
-- Mock LLM: `AGENT_WINDOW_MOCK_LLM=1` with empty API keys.
-- User data: `~/.config/agent-pane/config.json` (Linux); use `resetUserData()` in tests.
+- Mock LLM: `COPSE_PANEL_MOCK_LLM=1` with empty API keys.
+- User data: `~/.config/copse-panel/config.json` (Linux); use `resetUserData()` in tests.
 - Existing examples: `tests/e2e/tool-display.e2e.ts`, `tests/e2e/innerhtml-tool-args.e2e.ts`.
 - Full CI gate after renderer changes: `npm run check && npm run build && npm run test:e2e`.
 

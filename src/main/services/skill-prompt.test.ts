@@ -61,7 +61,7 @@ describe('buildInvokedSkillsBlock', () => {
   let restoreWorkspace: (() => void) | undefined
 
   beforeEach(async () => {
-    tempRoot = await mkdtemp(join(tmpdir(), 'agent-pane-skill-prompt-'))
+    tempRoot = await mkdtemp(join(tmpdir(), 'copse-panel-skill-prompt-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
     await mkdir(join(tempRoot, '.cursor', 'skills', 'demo-skill'), { recursive: true })
     await writeFile(

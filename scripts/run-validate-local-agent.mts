@@ -20,7 +20,7 @@ const result = spawnSync('node', [out], {
     ...process.env,
     ANTHROPIC_API_KEY: '',
     OPENAI_API_KEY: '',
-    AGENT_WINDOW_MOCK_LLM: '',
+    COPSE_PANEL_MOCK_LLM: '',
   },
 })
 process.exit(result.status ?? 1)

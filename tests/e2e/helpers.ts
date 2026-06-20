@@ -2,20 +2,20 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { homedir, platform } from 'node:os'
 import { join } from 'node:path'
 
-/** Matches app-init.ts: join(app.getPath('appData'), 'agent-pane') */
-export function getAgentPaneUserDataDir(): string {
+/** Matches app-init.ts: join(app.getPath('appData'), 'copse-panel') */
+export function getCopseUserDataDir(): string {
   const home = homedir()
   if (platform() === 'darwin') {
-    return join(home, 'Library', 'Application Support', 'agent-pane')
+    return join(home, 'Library', 'Application Support', 'copse-panel')
   }
-  return join(home, '.config', 'agent-pane')
+  return join(home, '.config', 'copse-panel')
 }
 
 export async function seedProjectConfig(
   workspaceRoot: string,
   options?: { projectId?: string; threadId?: string },
 ): Promise<void> {
-  const configDir = getAgentPaneUserDataDir()
+  const configDir = getCopseUserDataDir()
   await mkdir(configDir, { recursive: true })
 
   const projectId = options?.projectId ?? 'e2e-project'

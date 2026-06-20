@@ -41,7 +41,7 @@ describe('skills', () => {
 
     const assistantText = await $('.msg-assistant .message-text')
     await expect(assistantText).toHaveText(
-      'Demo skill active — agent-pane skills support is working.',
+      'Demo skill active — Copse skills support is working.',
       { containing: true, wait: 20_000 },
     )
 
