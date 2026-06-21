@@ -28,6 +28,8 @@ import {
   reloadMcpServers,
   setMcpServerUserEnabled,
 } from '../services/mcp-registry.ts'
+import { applyAppIcon } from '../app-icon.ts'
+import { getMainWindow } from '../windows/create-main-window.ts'
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
   ipcMain.handle('workspace:open', async () => {
@@ -106,6 +108,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     anthropic: isProviderAvailable('anthropic'),
     openai: isProviderAvailable('openai'),
   }))
+  ipcMain.handle('app-icon:apply', () => {
+    const mainWin = getMainWindow()
+    applyAppIcon(mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
+  })
   ipcMain.handle('storage:get', (_e, key: string) => storageGet(key))
   ipcMain.handle('storage:set', (_e, key: string, value: unknown) => storageSet(key, value))
 
