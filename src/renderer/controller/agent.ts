@@ -11,6 +11,7 @@ import {
   addUsageDelta,
   recordContextTrim,
   updateContextSnapshot,
+  setThreadTodos,
 } from '@shared/store/thread-helpers.ts'
 import {
   initSubagent,
@@ -176,6 +177,16 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         if (st.msgId) {
           finishSubagent(store, st.msgId, chunk.parentToolCallId, chunk.error, 'error')
         }
+        activity(threadId)
+        break
+      }
+      case 'todo_update': {
+        setThreadTodos(store, threadId, chunk.todos)
+        activity(threadId)
+        break
+      }
+      case 'todo_worker_start':
+      case 'todo_worker_done': {
         activity(threadId)
         break
       }

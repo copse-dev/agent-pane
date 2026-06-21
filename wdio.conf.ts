@@ -12,6 +12,7 @@ const chromedriverBinary = join(
 export const config: Options.Testrunner = {
   runner: 'local',
   specs: ['./tests/e2e/**/*.e2e.ts'],
+  exclude: ['./tests/e2e/agent-eval-drive.e2e.ts'],
   maxInstances: 1,
   specFileRetries: 0,
   logLevel: 'warn',

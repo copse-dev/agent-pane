@@ -5,6 +5,7 @@ import { setProjectSandboxEnabled } from './spawn.ts'
 export {
   spawnInProjectSandbox,
   spawnShellInProjectSandbox,
+  spawnPtyInProjectSandbox,
   afterSandboxedCommand,
   isProjectSandboxEnabled,
 } from './spawn.ts'
