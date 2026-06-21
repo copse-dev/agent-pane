@@ -87,12 +87,7 @@ function createInnerToolCard(tc: ToolCall): HTMLElement {
     'data-tool-id': tc.id,
     'data-status': tc.status,
   })
-  appendStandardToolSections(
-    entry,
-    tc,
-    getToolDisplayName(tc.name),
-    'tool-group-item-header',
-  )
+  appendStandardToolSections(entry, tc, getToolDisplayName(tc.name), 'tool-group-item-header')
   return entry
 }
 

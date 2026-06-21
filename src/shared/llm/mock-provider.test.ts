@@ -3,11 +3,7 @@ import assert from 'node:assert/strict'
 import { MockLLMProvider } from './mock-provider.ts'
 import type { LLMMessage, LLMTool } from '@shared/types'
 
-async function collectChunks(
-  provider: MockLLMProvider,
-  messages: LLMMessage[],
-  tools: LLMTool[],
-) {
+async function collectChunks(provider: MockLLMProvider, messages: LLMMessage[], tools: LLMTool[]) {
   const chunks = []
   for await (const chunk of provider.stream(messages, tools)) {
     chunks.push(chunk)
@@ -37,7 +33,10 @@ describe('MockLLMProvider', () => {
       { role: 'tool', toolResults: [{ toolCallId: '1', result: 'ok' }] },
     ]
     const chunks = await collectChunks(provider, messages, tools)
-    const text = chunks.filter((c) => c.type === 'text').map((c) => c.text).join('')
+    const text = chunks
+      .filter((c) => c.type === 'text')
+      .map((c) => c.text)
+      .join('')
     assert.match(text, /Mock response to:/)
     assert.ok(!chunks.some((c) => c.type === 'tool_call'))
   })
