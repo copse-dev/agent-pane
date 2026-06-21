@@ -20,7 +20,7 @@ import {
   shouldForceTextAnswer,
   shouldInjectLoopNudge,
 } from './agent-loop-escalation.ts'
-import { recoverTextToolCalls } from './parse-text-tool-calls.ts'
+import { recoverTextToolCalls, type CoerceToolArgsFn } from './parse-text-tool-calls.ts'
 import {
   AGENT_RUN_TIMEOUT_MS,
   defaultMaxLlmCallsForSteps,
@@ -59,6 +59,8 @@ export interface AgentLoopOptions {
   maxLlmCalls?: number
   /** Wall-clock budget checked alongside maxLlmCalls. */
   runTimeoutMs?: number
+  /** Coerce recovered XML tool args against registered tool schemas. */
+  coerceTextToolCallArgs?: CoerceToolArgsFn
 }
 
 const FINALIZE_NUDGE =
@@ -172,6 +174,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     usageModel,
     maxLlmCalls = defaultMaxLlmCallsForSteps(maxSteps),
     runTimeoutMs = AGENT_RUN_TIMEOUT_MS,
+    coerceTextToolCallArgs,
   } = opts
   const budget: LlmCallBudget = {
     llmCalls: 0,
@@ -285,7 +288,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     if (signal?.aborted) break
 
     if (pendingToolCalls.length === 0 && /<\s*tool_call\s*>/i.test(assistantText)) {
-      const recovered = recoverTextToolCalls(assistantText)
+      const recovered = recoverTextToolCalls(assistantText, coerceTextToolCallArgs)
       if (recovered.toolCalls.length > 0) {
         assistantText = recovered.cleanedText
         onChunk({ type: 'text_replace', text: assistantText })
@@ -293,6 +296,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           pendingToolCalls.push(tc)
           onChunk({ type: 'tool_call', toolCall: tc })
         }
+      } else if (!recovered.keptRawBlocks) {
+        assistantText = recovered.cleanedText
+        onChunk({ type: 'text_replace', text: assistantText })
       }
     }
 
