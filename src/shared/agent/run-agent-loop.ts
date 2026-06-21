@@ -449,6 +449,15 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         }
         break
       }
+      // Provider could not parse the streamed tool-call arguments. Do not run
+      // the tool with empty/partial args — return an error so the model retries
+      // the call with well-formed JSON (#114).
+      if (tc.argsError) {
+        const result = `Error: ${tc.argsError}`
+        toolResults.push({ toolCallId: tc.id, result })
+        onChunk({ type: 'tool_result', toolCallId: tc.id, result, isError: true })
+        continue
+      }
       const normalizedArgs = normalizeExploreArgs(tc.name, tc.args)
       const fp = toolCallFingerprint(tc.name, normalizedArgs)
       const duplicate = isDuplicateExploreCall(tc.name, normalizedArgs, recentFingerprints)
