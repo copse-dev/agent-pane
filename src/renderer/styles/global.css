@@ -77,6 +77,29 @@ body {
   overflow-y: auto;
   padding: var(--spacing-xs) 0;
 }
+.project-line {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: var(--spacing-xs);
+}
+.project-line .project-row {
+  flex: 1;
+  min-width: 0;
+}
+.project-new-thread-btn {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius);
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text-secondary);
+}
+.project-new-thread-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
 .project-row {
   display: flex;
   align-items: center;
@@ -141,9 +164,6 @@ body {
 .chat-row:hover .chat-delete {
   opacity: 1;
 }
-.chat-new {
-  color: var(--text-muted);
-}
 .pane-chat {
   position: relative;
   flex: 1;
@@ -153,6 +173,27 @@ body {
   min-width: 0;
   min-height: 0;
   --chat-composer-height: 148px;
+}
+.pane-chat.composer-centered .conversation {
+  padding-bottom: 0;
+}
+.pane-chat.composer-centered #input-bar {
+  top: 50%;
+  bottom: auto;
+  left: 50%;
+  right: auto;
+  width: min(720px, calc(100% - 2 * var(--spacing-lg)));
+  transform: translate(-50%, -50%);
+  border-top: none;
+  border-radius: var(--radius);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.pane-chat.composer-centered .prompt-input {
+  border-top: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.pane-chat.composer-centered .input-footer {
+  border-radius: 0 0 var(--radius) var(--radius);
 }
 .conversation {
   flex: 1 1 0;

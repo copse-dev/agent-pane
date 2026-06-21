@@ -1,7 +1,7 @@
 import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { createThread, switchThread, deleteThread } from '@shared/store/thread-helpers.ts'
+import { openNewThread, switchThread, deleteThread } from '@shared/store/thread-helpers.ts'
 import { addProject, switchProject } from '../controller/projects.ts'
 
 export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
@@ -37,7 +37,32 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         el('span', { class: 'project-name' }, project.name),
       )
       projectRow.addEventListener('click', () => void switchProject(store, api, project.id))
-      list.append(projectRow)
+
+      if (isActive) {
+        const projectLine = el('div', { class: 'project-line' })
+        const newThreadBtn = el(
+          'button',
+          {
+            type: 'button',
+            class: 'project-new-thread-btn',
+            'aria-label': 'New thread',
+            title: 'New thread',
+          },
+          '+',
+        )
+        newThreadBtn.addEventListener('click', (e) => {
+          e.stopPropagation()
+          if (!store.getState().workspaceRoot) {
+            void addProject(store, api)
+            return
+          }
+          openNewThread(store)
+        })
+        projectLine.append(projectRow, newThreadBtn)
+        list.append(projectLine)
+      } else {
+        list.append(projectRow)
+      }
 
       if (!isActive) continue
 
@@ -64,10 +89,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         chatRow.append(del)
         chats.append(chatRow)
       }
-
-      const newChat = el('button', { class: 'chat-row chat-new' }, '+ New thread')
-      newChat.addEventListener('click', () => createThread(store))
-      chats.append(newChat)
 
       list.append(chats)
     }
