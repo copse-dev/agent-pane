@@ -82,7 +82,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
   const backBtn = overlay.querySelector('#onboarding-back') as HTMLButtonElement
   const nextBtn = overlay.querySelector('#onboarding-next') as HTMLButtonElement
 
-  const welcomePanel = overlay.querySelector('[data-step="welcome"]') as HTMLElement
+  const welcomePanel = overlay.querySelector('.onboarding-panel[data-step="welcome"]') as HTMLElement
   welcomePanel.innerHTML = `
     <h3>A different kind of coding assistant</h3>
     <p class="settings-section-desc">
@@ -98,7 +98,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
     <p class="field-hint">This setup takes a few minutes. You can revisit it anytime in Settings.</p>
   `
 
-  const cloudPanel = overlay.querySelector('[data-step="cloud"]') as HTMLElement
+  const cloudPanel = overlay.querySelector('.onboarding-panel[data-step="cloud"]') as HTMLElement
   const apiKeys = createApiKeysSection(api, { legend: 'Cloud API keys (optional)' })
   cloudPanel.append(
     Object.assign(document.createElement('p'), {
@@ -109,7 +109,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
     apiKeys.root,
   )
 
-  const localPanel = overlay.querySelector('[data-step="local"]') as HTMLElement
+  const localPanel = overlay.querySelector('.onboarding-panel[data-step="local"]') as HTMLElement
   const lmStudio = createLmStudioSection(api, { showInstallGuide: true })
   localPanel.append(
     Object.assign(document.createElement('p'), {
@@ -120,7 +120,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
     lmStudio.root,
   )
 
-  const routingPanel = overlay.querySelector('[data-step="routing"]') as HTMLElement
+  const routingPanel = overlay.querySelector('.onboarding-panel[data-step="routing"]') as HTMLElement
   const routing = createModelRoutingSection(api)
   routingPanel.append(
     Object.assign(document.createElement('p'), {

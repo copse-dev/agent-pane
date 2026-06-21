@@ -1764,7 +1764,16 @@ label {
 .settings-content,
 .settings-content button,
 .settings-content input,
-.settings-content select {
+.settings-content select,
+.onboarding-footer,
+.onboarding-footer button,
+.onboarding-steps,
+.onboarding-steps button,
+.onboarding-body,
+.onboarding-body button,
+.onboarding-body input,
+.onboarding-body select,
+.onboarding-body a {
   -webkit-app-region: no-drag;
 }
 .key-status {
@@ -1815,11 +1824,12 @@ label {
   padding: var(--spacing-lg);
   overflow-y: auto;
   max-height: 55vh;
+  display: block;
 }
-.onboarding-panel {
+.onboarding-body > .onboarding-panel {
   display: none;
 }
-.onboarding-panel.active {
+.onboarding-body > .onboarding-panel.active {
   display: block;
 }
 .onboarding-benefits {

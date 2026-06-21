@@ -26,6 +26,12 @@ export function resetUserData(): void {
   rmSync(SETTINGS_PATH, { force: true })
 }
 
+/** Fresh profile that triggers the first-run onboarding wizard. */
+export function seedOnboardingFixture(): void {
+  resetUserData()
+  writeSettings({ onboardingCompleted: false })
+}
+
 function writeSettings(settings: Record<string, unknown>): void {
   mkdirSync(USER_DATA, { recursive: true })
   writeFileSync(SETTINGS_PATH, JSON.stringify(settings), 'utf8')
