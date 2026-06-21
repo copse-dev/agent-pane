@@ -58,12 +58,20 @@ describe('parseMcpConfig', () => {
     assert.equal(servers[0]!.transport, 'stdio')
   })
 
-  it('captures disabled and trusted flags', () => {
+  it('captures the disabled flag', () => {
     const { servers } = parseMcpConfig(
-      JSON.stringify({ mcpServers: { s: { command: 'x', disabled: true, trusted: true } } }),
+      JSON.stringify({ mcpServers: { s: { command: 'x', disabled: true } } }),
     )
     assert.equal(servers[0]!.disabled, true)
-    assert.equal(servers[0]!.trusted, true)
+  })
+
+  it('ignores an unknown "trusted" flag (no blanket auto-run)', () => {
+    const { servers, errors } = parseMcpConfig(
+      JSON.stringify({ mcpServers: { s: { command: 'x', trusted: true } } }),
+    )
+    assert.equal(errors.length, 0)
+    assert.equal(servers.length, 1)
+    assert.equal('trusted' in servers[0]!, false)
   })
 
   it('reports an error for entries with neither command nor url', () => {

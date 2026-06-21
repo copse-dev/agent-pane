@@ -43,7 +43,6 @@ async function checkMcpPermission(toolName: string, args: unknown): Promise<bool
   const meta = getMcpToolMeta(toolName)
   const decision = decideMcpPermission({
     annotations: meta?.annotations,
-    trusted: meta?.trusted ?? false,
     remembered: isMcpToolRemembered(toolName),
     autoAllowReadOnly: getSetting<boolean>('mcpAutoAllowReadOnly', false),
   })
