@@ -18,13 +18,7 @@ export function initFsWatcher(win: BrowserWindow): void {
     const w = fs.watch(abs, { persistent: false }, () => {
       clearTimeout(debounce)
       debounce = setTimeout(() => {
-<<<<<<< HEAD
-        gatewayReadFile(abs)
-          .then((content) => win.webContents.send('fs:changed', rel, content))
-          .catch(() => undefined)
-=======
         void notifyFileChanged(win, rel, abs)
->>>>>>> 11bd607 (Harden search fallback, fs watch IPC, and shell heuristics.)
       }, 200)
     })
     watchers.set(abs, w)
