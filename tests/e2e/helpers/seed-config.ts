@@ -151,6 +151,48 @@ export function seedMarkdownListFixture(workspaceRoot: string): void {
   )
 }
 
+export function seedMermaidDiagramFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-mermaid-project'
+  const threadId = 'e2e-mermaid-thread'
+  const content = [
+    'Here is the agent loop:',
+    '',
+    '```mermaid',
+    'graph TD',
+    '  User --> Agent',
+    '  Agent --> Tools',
+    '  Tools --> Agent',
+    '```',
+  ].join('\n')
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Mermaid diagram',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-mermaid',
+              role: 'assistant',
+              content,
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
 /** Seeded thread with context snapshot and token usage for footer doughnut validation. */
 export function seedContextWheelFixture(workspaceRoot: string): void {
   const projectId = 'e2e-context-wheel-project'
@@ -373,9 +415,7 @@ export function seedScrollStreamingFixture(workspaceRoot: string): void {
     return {
       id: `msg-history-${i}`,
       role: isUser ? 'user' : 'assistant',
-      content: isUser
-        ? `Earlier question ${turn}`
-        : `Earlier answer ${turn}: `.repeat(10),
+      content: isUser ? `Earlier question ${turn}` : `Earlier answer ${turn}: `.repeat(10),
       toolCalls: [],
       createdAt: Date.now() + i,
     }

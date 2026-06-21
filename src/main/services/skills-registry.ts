@@ -15,6 +15,10 @@ import type {
   SkillSource,
   SkillSummary,
 } from '@shared/types/skills.ts'
+import { READ_FILE_LIMITS_CEILING } from '@shared/agent/read-file-limits.ts'
+
+/** Max bytes read from a skill file (auto-approved, outside workspace). */
+export const SKILL_READ_MAX_BYTES = READ_FILE_LIMITS_CEILING.maxChars * 4
 
 const SKILL_CONTAINER_DIRS = new Set(['.cursor', '.agents', '.claude'])
 const SKIP_DIRS = new Set(['node_modules', '.git'])
@@ -254,12 +258,28 @@ export async function readSkill(name: string, relativePath = 'SKILL.md'): Promis
     throw new Error(`Path outside skill root: ${relativePath}`)
   }
 
-  const body = await fsp.readFile(target, 'utf-8')
+  const stat = await fsp.stat(target)
+  if (stat.size > SKILL_READ_MAX_BYTES) {
+    throw new Error(
+      `Skill file too large (${stat.size} bytes; max ${SKILL_READ_MAX_BYTES}): ${relativePath}`,
+    )
+  }
+
+  const [realRoot, realTarget] = await Promise.all([
+    fsp.realpath(skill.skillRoot),
+    fsp.realpath(target),
+  ])
+  const realRel = relative(realRoot, realTarget)
+  if (realRel.startsWith('..') || realRel.split(/[/\\]/).includes('..')) {
+    throw new Error(`Path outside skill root: ${relativePath}`)
+  }
+
+  const body = await fsp.readFile(realTarget, 'utf-8')
   return {
     name: skill.name,
     description: skill.description,
     skillRoot: skill.skillRoot,
-    skillPath: target,
+    skillPath: realTarget,
     body,
     relativePath: normalized,
   }

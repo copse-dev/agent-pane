@@ -47,7 +47,11 @@ async function extract(archivePath: string, destDir: string): Promise<void> {
     if (process.platform === 'win32') {
       execFileSync(
         'powershell',
-        ['-NoProfile', '-Command', `Expand-Archive -Force -Path '${archivePath}' -DestinationPath '${destDir}'`],
+        [
+          '-NoProfile',
+          '-Command',
+          `Expand-Archive -Force -Path '${archivePath}' -DestinationPath '${destDir}'`,
+        ],
         { stdio: 'inherit' },
       )
     } else {
