@@ -8,7 +8,10 @@ describe('semantic-search', () => {
   it('builds native routing guidance when semantic backend is available', () => {
     setSemanticBackendForTest('codesearch')
     try {
-      assert.match(buildSemanticSearchPromptBlock(), /search_codebase \(auto\/semantic\) or semantic_search/)
+      assert.match(
+        buildSemanticSearchPromptBlock(),
+        /search_codebase \(auto\/semantic\) or semantic_search/,
+      )
     } finally {
       setSemanticBackendForTest(null)
     }
