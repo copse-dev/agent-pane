@@ -14,6 +14,7 @@ async function activate(store: AppStore, api: ApiClient, id: string, path: strin
   if (activeProjectId && activeProjectId !== id) {
     await saveThreads(api, activeProjectId, threads)
   }
+  await saveProjects(api, store.getState().projects, id)
   await api.workspace.set(path)
   const loaded = await loadThreads(api, id)
   store.setState({

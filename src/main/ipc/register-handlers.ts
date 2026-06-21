@@ -1,9 +1,14 @@
 import { dialog, ipcMain } from 'electron'
 import type { BrowserWindow } from 'electron'
-import { dirname } from 'node:path'
 import micromatch from 'micromatch'
-import * as fsp from 'node:fs/promises'
-import { getWorkspaceRoot, setWorkspaceRoot, resolveWorkspacePath } from '../services/workspace.ts'
+import {
+  assertAllowedWorkspaceRoot,
+  getWorkspaceRoot,
+  registerAllowedWorkspaceRoot,
+  resolveWorkspacePath,
+  seedAllowedWorkspaceRoots,
+  setWorkspaceRoot,
+} from '../services/workspace.ts'
 import { buildIndex, getIndex } from '../services/file-index.ts'
 import { ensureSemanticIndex } from '../services/semantic-index.ts'
 import {
@@ -30,12 +35,29 @@ import {
 } from '../services/mcp-registry.ts'
 import { applyAppIcon } from '../app-icon.ts'
 import { getMainWindow } from '../windows/create-main-window.ts'
+import {
+  gatewayListDir,
+  gatewayReadFile,
+  gatewayReaddir,
+  gatewayWriteFile,
+} from '../project-sandbox/sandbox-fs-client.ts'
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+  const storedProjects = (storageGet('projects') as { path: string }[] | null) ?? []
+  seedAllowedWorkspaceRoots(storedProjects.map((p) => p.path))
+  const persistedRoot = getWorkspaceRoot()
+  if (persistedRoot) {
+    try {
+      registerAllowedWorkspaceRoot(persistedRoot)
+    } catch {
+      // Stale workspaceRoot in config — ignore until user picks a folder.
+    }
+  }
+
   ipcMain.handle('workspace:open', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
     if (result.canceled || !result.filePaths[0]) return null
-    const root = result.filePaths[0]
+    const root = registerAllowedWorkspaceRoot(result.filePaths[0])
     setWorkspaceRoot(root)
     await buildIndex(root)
     void ensureSemanticIndex(root)
@@ -50,31 +72,32 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Switch to a known folder without a dialog (used when picking a saved
   // project from the left pane).
   ipcMain.handle('workspace:set', async (_e, root: string) => {
-    setWorkspaceRoot(root)
-    await buildIndex(root)
-    void ensureSemanticIndex(root)
-    startWorkspaceIndexWatcher(root)
+    const projects = (storageGet('projects') as { path: string }[] | null) ?? []
+    seedAllowedWorkspaceRoots(projects.map((p) => p.path))
+    const canonical = assertAllowedWorkspaceRoot(root)
+    setWorkspaceRoot(canonical)
+    await buildIndex(canonical)
+    void ensureSemanticIndex(canonical)
+    startWorkspaceIndexWatcher(canonical)
     await initSkillsRegistry()
     registerSkillTools(registry)
-    return root
+    return canonical
   })
 
   ipcMain.handle('fs:readFile', async (_e, path: string) => {
     const abs = resolveWorkspacePath(path)
-    return fsp.readFile(abs, 'utf-8')
+    return gatewayReadFile(abs)
   })
 
   ipcMain.handle('fs:writeFile', async (_e, path: string, content: string) => {
     const abs = resolveWorkspacePath(path)
-    await fsp.mkdir(dirname(abs), { recursive: true })
-    await fsp.writeFile(abs, content, 'utf-8')
+    await gatewayWriteFile(abs, content)
     scheduleIndexRebuild()
   })
 
   ipcMain.handle('fs:readdir', async (_e, path: string) => {
     const abs = resolveWorkspacePath(path)
-    const entries = await fsp.readdir(abs)
-    return entries
+    return gatewayReaddir(abs)
   })
 
   // Directory listing with type info, for the file-tree sidebar. Hides dotfiles
@@ -82,10 +105,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // relative to the workspace root ('' = root).
   ipcMain.handle('fs:listDir', async (_e, path: string) => {
     const abs = resolveWorkspacePath(path || '.')
-    const dirents = await fsp.readdir(abs, { withFileTypes: true })
+    const dirents = await gatewayListDir(abs)
     return dirents
       .filter((d) => !d.name.startsWith('.') && d.name !== 'node_modules')
-      .map((d) => ({ name: d.name, isDir: d.isDirectory() }))
       .sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1))
   })
 
