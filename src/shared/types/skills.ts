@@ -29,4 +29,6 @@ export interface AgentRunPayload {
   content: UserContent
   invokedSkills?: string[]
   priorTodos?: TodoItem[]
+  /** Thread working brief captured in renderer store before the run. */
+  workingBrief?: string
 }

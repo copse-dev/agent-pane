@@ -6,6 +6,7 @@ export function parseAgentRunPayload(rawPrompt: string): {
   userContent: UserContent
   invokedSkills: string[]
   priorTodos: TodoItem[]
+  workingBrief?: string
 } {
   try {
     const parsed = JSON.parse(rawPrompt) as AgentRunPayload | UserContent
@@ -15,6 +16,7 @@ export function parseAgentRunPayload(rawPrompt: string): {
         userContent: payload.content,
         invokedSkills: payload.invokedSkills ?? [],
         priorTodos: payload.priorTodos ?? [],
+        ...(payload.workingBrief !== undefined ? { workingBrief: payload.workingBrief } : {}),
       }
     }
     return { userContent: parsed as UserContent, invokedSkills: [], priorTodos: [] }

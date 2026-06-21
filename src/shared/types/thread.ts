@@ -30,6 +30,8 @@ export interface Thread {
   contextSnapshot?: ContextSnapshot
   /** Structured task plan for multi-step agent work (updated via update_todos). */
   todos?: TodoItem[]
+  /** Persisted parent/explore goal; set on the first user message in the thread. */
+  workingBrief?: string
   createdAt: number
   updatedAt: number
 }

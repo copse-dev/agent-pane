@@ -19,6 +19,7 @@ import {
   invalidateLmStudioModelsCache as invalidateLmStudioModelsCacheImpl,
 } from './lm-studio-models.ts'
 import { classifyAgentError } from './agent-errors.ts'
+import { resolveParentGoal } from '@shared/agent/working-brief.ts'
 import {
   BASE_SYSTEM_PROMPT,
   BASE_SYSTEM_PROMPT_DIRECT_READS,
@@ -167,13 +168,6 @@ function hasLastUsage(p: unknown): p is ProviderWithUsage {
   return typeof p === 'object' && p !== null && 'lastUsage' in p
 }
 
-function extractParentGoal(messages: LLMMessage[], userPrompt: UserContent): string {
-  const lastUser = [...messages].reverse().find((m) => m.role === 'user')
-  if (lastUser && typeof lastUser.content === 'string') return lastUser.content.slice(0, 2000)
-  if (typeof userPrompt === 'string') return userPrompt.slice(0, 2000)
-  return '(complex user input)'
-}
-
 function parentTools(registry: ToolRegistry, subagentsEnabled: boolean) {
   const tools = registry.toLLMTools()
   if (!subagentsEnabled) {
@@ -200,7 +194,7 @@ export async function runAgent(
   priorMessages: LLMMessage[],
   mainWindow: BrowserWindow,
   registry: ToolRegistry,
-  options?: { invokedSkills?: string[]; priorTodos?: TodoItem[] },
+  options?: { invokedSkills?: string[]; priorTodos?: TodoItem[]; workingBrief?: string },
 ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> {
   const skillsToolsLine = buildSkillsToolsPromptLine()
   const projectInstructions = await loadProjectInstructions()
@@ -237,10 +231,10 @@ export async function runAgent(
     { role: 'user', content: userPrompt },
   ]
 
-  const parentGoal = extractParentGoal(messages, userPrompt)
+  const parentGoal = resolveParentGoal(options?.workingBrief, messages, userPrompt)
 
   const userTextForSteering =
-    typeof userPrompt === 'string' ? userPrompt : extractParentGoal(messages, userPrompt)
+    typeof userPrompt === 'string' ? userPrompt : resolveParentGoal(undefined, messages, userPrompt)
   const todoSteering = shouldSteerTodos(userTextForSteering) ? `\n\n${TODO_STEERING_PROMPT}` : ''
   if (todoSteering && messages[0]?.role === 'system') {
     messages[0] = {
