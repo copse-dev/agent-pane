@@ -4,10 +4,11 @@ import type { RightPanelMode } from '@shared/types/state.ts'
 import { openRightPanelWithWorkspace, toggleFilesPaneWithWorkspace } from './controller/panels.ts'
 
 export function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-  const tag = target.tagName
+  if (!target || typeof target !== 'object') return false
+  const el = target as { tagName?: string; isContentEditable?: boolean }
+  const tag = el.tagName
   if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT') return true
-  if (target.isContentEditable) return true
+  if (el.isContentEditable) return true
   return false
 }
 
