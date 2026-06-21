@@ -52,6 +52,7 @@ import {
 } from '../services/mcp-registry.ts'
 import { applyAppIcon } from '../app-icon.ts'
 import { getMainWindow } from '../windows/create-main-window.ts'
+import { validateApiKey } from '../services/validate-api-key.ts'
 import {
   gatewayListDir,
   gatewayReadFile,
@@ -172,6 +173,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     anthropic: isProviderAvailable('anthropic'),
     openai: isProviderAvailable('openai'),
   }))
+  ipcMain.handle('settings:validateKey', async (event, provider: unknown, key: unknown) => {
+    assertMainFrameSender(event, win)
+    const p = parseIpcArgs(z.enum(['anthropic', 'openai']), [provider])
+    const apiKey = parseIpcArgs(z.string().max(8192), [key])
+    return validateApiKey(p, apiKey)
+  })
   ipcMain.handle('app-icon:apply', () => {
     const mainWin = getMainWindow()
     applyAppIcon(mainWin && !mainWin.isDestroyed() ? [mainWin] : [])

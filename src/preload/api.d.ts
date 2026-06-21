@@ -69,6 +69,41 @@ export interface ApiClient {
       apiKey?: string,
     ) => Promise<{ ok: boolean; models?: string[]; error?: string }>
     models: () => Promise<string[]>
+    detect: (
+      url?: string,
+      apiKey?: string,
+    ) => Promise<{
+      serverRunning: boolean
+      serverUrl: string
+      installDetected: boolean
+      models: string[]
+      preferredPresent: string[]
+      preferredMissing: string[]
+      error?: string
+    }>
+    download: (
+      modelId: string,
+      url?: string,
+      apiKey?: string,
+    ) => Promise<{
+      ok: boolean
+      jobId?: string
+      status?: string
+      totalSizeBytes?: number
+      error?: string
+    }>
+    downloadStatus: (
+      jobId: string,
+      url?: string,
+      apiKey?: string,
+    ) => Promise<{
+      ok: boolean
+      jobId: string
+      status?: string
+      totalSizeBytes?: number
+      downloadedBytes?: number
+      error?: string
+    }>
   }
   menu: {
     onSettings: (handler: () => void) => () => void
@@ -87,6 +122,10 @@ export interface ApiClient {
     getKey: (provider: 'anthropic' | 'openai' | 'lmstudio') => Promise<boolean>
     setKey: (provider: 'anthropic' | 'openai' | 'lmstudio', key: string) => Promise<void>
     availableProviders: () => Promise<{ anthropic: boolean; openai: boolean }>
+    validateKey: (
+      provider: 'anthropic' | 'openai',
+      key: string,
+    ) => Promise<{ ok: boolean; error?: string; formatOk?: boolean }>
   }
   appIcon: {
     apply: () => Promise<void>
