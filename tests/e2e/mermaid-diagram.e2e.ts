@@ -50,8 +50,10 @@ describe('mermaid diagram rendering', () => {
 
     const chrome = await browser.execute(() => {
       const input = document.querySelector('.prompt-input')
+      const composer = document.getElementById('input-bar')
       const pane = document.getElementById('pane-chat')
-      const rect = input?.getBoundingClientRect()
+      const inputRect = input?.getBoundingClientRect()
+      const composerRect = composer?.getBoundingClientRect()
       const paneRect = pane?.getBoundingClientRect()
       const composerHeight = pane
         ? Number.parseFloat(getComputedStyle(pane).getPropertyValue('--chat-composer-height'))
@@ -59,15 +61,20 @@ describe('mermaid diagram rendering', () => {
       return {
         inputExists: Boolean(input),
         inputInViewport:
-          rect != null && rect.height > 0 && rect.bottom <= window.innerHeight && rect.top >= 0,
-        inputNearPaneBottom:
-          rect != null && paneRect != null && Math.abs(rect.bottom - paneRect.bottom) < 4,
+          inputRect != null &&
+          inputRect.height > 0 &&
+          inputRect.bottom <= window.innerHeight &&
+          inputRect.top >= 0,
+        composerNearPaneBottom:
+          composerRect != null &&
+          paneRect != null &&
+          Math.abs(composerRect.bottom - paneRect.bottom) < 4,
         composerHeight,
       }
     })
     expect(chrome.inputExists).toBe(true)
     expect(chrome.inputInViewport).toBe(true)
-    expect(chrome.inputNearPaneBottom).toBe(true)
+    expect(chrome.composerNearPaneBottom).toBe(true)
     expect(chrome.composerHeight).toBeGreaterThan(72)
 
     await $('.mermaid-diagram--folded').waitForExist({ timeout: 5_000 })
