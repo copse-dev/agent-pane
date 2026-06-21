@@ -1,13 +1,15 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
   refreshSkillsRegistry,
   listSkills,
   readSkill,
+  getSkill,
   setSkillsForTest,
+  SKILL_READ_MAX_BYTES,
 } from './skills-registry.ts'
 import { setSetting } from './settings.test-shim.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
@@ -54,5 +56,26 @@ description: Demo skill for tests
     const result = await readSkill('demo-skill')
     assert.match(result.body, /# Demo/)
     assert.equal(result.relativePath, 'SKILL.md')
+  })
+
+  it('rejects symlink escape outside skill root', async () => {
+    await refreshSkillsRegistry()
+    const demo = getSkill('demo-skill')
+    assert.ok(demo)
+    const outside = await mkdtemp(join(tmpdir(), 'copse-skill-out-'))
+    await writeFile(join(outside, 'leak.txt'), 'leak', 'utf8')
+    await symlink(join(outside, 'leak.txt'), join(demo!.skillRoot, 'link.txt'))
+    try {
+      await assert.rejects(() => readSkill('demo-skill', 'link.txt'), /outside skill root/)
+    } finally {
+      await rm(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects skill files over the size cap', async () => {
+    await refreshSkillsRegistry()
+    const skillRoot = join(tempRoot, '.cursor', 'skills', 'demo-skill')
+    await writeFile(join(skillRoot, 'big.bin'), 'x'.repeat(SKILL_READ_MAX_BYTES + 1), 'utf8')
+    await assert.rejects(() => readSkill('demo-skill', 'big.bin'), /too large/)
   })
 })

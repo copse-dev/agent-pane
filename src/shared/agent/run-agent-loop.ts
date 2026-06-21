@@ -20,7 +20,7 @@ import {
   shouldForceTextAnswer,
   shouldInjectLoopNudge,
 } from './agent-loop-escalation.ts'
-import { recoverTextToolCalls } from './parse-text-tool-calls.ts'
+import { recoverTextToolCalls, type CoerceToolArgsFn } from './parse-text-tool-calls.ts'
 
 const RECENT_FINGERPRINT_WINDOW = 16
 /** Do not compact on the first tool round unless the transcript is critically full. */
@@ -50,6 +50,8 @@ export interface AgentLoopOptions {
   getLastUsage?: () => { inputTokens: number; outputTokens: number } | null
   /** Model id for usage/cost attribution on this loop's provider calls. */
   usageModel?: string
+  /** Coerce recovered XML tool args against registered tool schemas. */
+  coerceTextToolCallArgs?: CoerceToolArgsFn
 }
 
 const FINALIZE_NUDGE =
@@ -140,6 +142,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     onHistoryTrimmed,
     getLastUsage,
     usageModel,
+    coerceTextToolCallArgs,
   } = opts
   let steps = 0
   let finishedWithAnswer = false
@@ -238,7 +241,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     if (signal?.aborted) break
 
     if (pendingToolCalls.length === 0 && /<\s*tool_call\s*>/i.test(assistantText)) {
-      const recovered = recoverTextToolCalls(assistantText)
+      const recovered = recoverTextToolCalls(assistantText, coerceTextToolCallArgs)
       if (recovered.toolCalls.length > 0) {
         assistantText = recovered.cleanedText
         onChunk({ type: 'text_replace', text: assistantText })
@@ -246,6 +249,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           pendingToolCalls.push(tc)
           onChunk({ type: 'tool_call', toolCall: tc })
         }
+      } else if (!recovered.keptRawBlocks) {
+        assistantText = recovered.cleanedText
+        onChunk({ type: 'text_replace', text: assistantText })
       }
     }
 
