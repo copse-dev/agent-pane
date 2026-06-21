@@ -8,6 +8,7 @@ export {
   spawnPtyInProjectSandbox,
   afterSandboxedCommand,
   isProjectSandboxEnabled,
+  sandboxViolationCountForCommand,
 } from './spawn.ts'
 export {
   gatewayReadFile,

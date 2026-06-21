@@ -50,7 +50,9 @@ import {
   getMcpServerStatuses,
   reloadMcpServers,
   setMcpServerUserEnabled,
+  setWorkspaceTrustAndReload,
 } from '../services/mcp-registry.ts'
+import { isWorkspaceTrusted } from '../services/workspace-trust.ts'
 import { applyAppIcon } from '../app-icon.ts'
 import { getMainWindow } from '../windows/create-main-window.ts'
 import { validateApiKey } from '../services/validate-api-key.ts'
@@ -224,6 +226,18 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('mcp:setEnabled', async (_e, name: string, enabled: boolean) => {
     await setMcpServerUserEnabled(name, enabled)
     const statuses = await reloadMcpServers(registry)
+    win.webContents.send('mcp:status_changed', statuses)
+    return statuses
+  })
+  ipcMain.handle('workspace:isTrusted', () => isWorkspaceTrusted(getWorkspaceRoot()))
+  ipcMain.handle('workspace:setTrusted', async (event, trusted: unknown) => {
+    assertMainFrameSender(event, win)
+    const root = getWorkspaceRoot()
+    if (!root) throw new IpcValidationError('No workspace open')
+    if (typeof trusted !== 'boolean') throw new IpcValidationError('trusted must be a boolean')
+    // Spawning project MCP servers is the code-execution sink, so trusting a workspace
+    // is a privileged action — only the main frame may request it (issue #100).
+    const statuses = await setWorkspaceTrustAndReload(registry, root, trusted)
     win.webContents.send('mcp:status_changed', statuses)
     return statuses
   })

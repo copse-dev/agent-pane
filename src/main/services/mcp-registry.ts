@@ -22,6 +22,7 @@ import {
   isMcpServerEffectivelyDisabled,
 } from './mcp-config.ts'
 import { flattenMcpContent, sanitizeMcpInputSchema } from './mcp-schema.ts'
+import { isWorkspaceTrusted, setWorkspaceTrusted } from './workspace-trust.ts'
 
 const CONNECT_TIMEOUT_MS = 30_000
 const GRANTS_STORAGE_KEY = 'mcp-remembered-grants'
@@ -100,19 +101,52 @@ async function readConfigFile(path: string): Promise<McpServerConfig[]> {
   return servers
 }
 
-/** Gather and merge MCP server definitions from all known config locations. */
-async function collectConfigs(): Promise<McpServerConfig[]> {
-  const workspace = getWorkspaceRoot()
-  const sources: string[] = []
-  if (workspace) {
-    sources.push(join(workspace, '.cursor', 'mcp.json'))
-    sources.push(join(workspace, '.mcp.json'))
-  }
-  sources.push(join(homedir(), '.cursor', 'mcp.json'))
-  sources.push(join(app.getPath('userData'), 'mcp.json'))
+function projectMcpSourcePaths(workspace: string): string[] {
+  return [join(workspace, '.cursor', 'mcp.json'), join(workspace, '.mcp.json')]
+}
 
-  const perSource = await Promise.all(sources.map(readConfigFile))
-  return mergeMcpConfigs(perSource)
+function userMcpSourcePaths(): string[] {
+  return [join(homedir(), '.cursor', 'mcp.json'), join(app.getPath('userData'), 'mcp.json')]
+}
+
+/**
+ * Gather and merge MCP server definitions from all known config locations.
+ *
+ * Security (issue #100):
+ *  - Workspace/project sources (`.cursor/mcp.json`, `.mcp.json`) are attacker-controlled.
+ *    Their servers are only included when the user has explicitly trusted the workspace.
+ *    When untrusted they are returned separately so the UI can surface an "untrusted"
+ *    status (and a trust action) without spawning anything.
+ *  - User/global sources always win on duplicate server names, so a repo can never
+ *    shadow a trusted global server definition.
+ */
+async function collectConfigs(): Promise<{
+  active: McpServerConfig[]
+  untrusted: McpServerConfig[]
+}> {
+  const workspace = getWorkspaceRoot()
+  const projectSources = workspace ? projectMcpSourcePaths(workspace) : []
+  const userSources = userMcpSourcePaths()
+
+  const [projectPerSource, userPerSource] = await Promise.all([
+    Promise.all(projectSources.map(readConfigFile)),
+    Promise.all(userSources.map(readConfigFile)),
+  ])
+
+  // User/global sources first so they win over project sources on name collisions.
+  const userMerged = mergeMcpConfigs(userPerSource)
+  const trusted = isWorkspaceTrusted(workspace)
+
+  if (!trusted) {
+    // Project servers are not spawned; report only those whose name doesn't collide
+    // with an existing user/global server (a colliding name simply uses the global one).
+    const userNames = new Set(userMerged.map((c) => c.name))
+    const untrusted = mergeMcpConfigs(projectPerSource).filter((c) => !userNames.has(c.name))
+    return { active: userMerged, untrusted }
+  }
+
+  const active = mergeMcpConfigs([userMerged, ...projectPerSource])
+  return { active, untrusted: [] }
 }
 
 // Project/workspace configs are attacker-controlled (a cloned repo can ship a
@@ -261,18 +295,45 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
     return
   }
   const generation = ++loadGeneration
-  const configs = await collectConfigs()
+  const { active, untrusted } = await collectConfigs()
   if (generation !== loadGeneration) return // superseded while reading config
   const userDisabled = getUserDisabledServerNames()
-  if (configs.length === 0) {
+  if (active.length === 0 && untrusted.length === 0) {
     serverStatuses = []
     return
   }
-  const statuses = await Promise.all(
-    configs.map((cfg) => connectServer(registry, cfg, userDisabled, generation)),
+  const connected = await Promise.all(
+    active.map((cfg) => connectServer(registry, cfg, userDisabled, generation)),
   )
+  // Project servers in an untrusted workspace are never spawned — they're reported as
+  // `untrusted` so the UI can offer "trust this workspace" (issue #100).
+  const untrustedStatuses = untrusted.map((cfg) => untrustedStatus(cfg, userDisabled))
   // Only publish statuses if a newer load hasn't started in the meantime.
-  if (generation === loadGeneration) serverStatuses = statuses
+  if (generation === loadGeneration) serverStatuses = [...connected, ...untrustedStatuses]
+}
+
+function untrustedStatus(cfg: McpServerConfig, userDisabled: ReadonlySet<string>): McpServerStatus {
+  return {
+    name: cfg.name,
+    transport: cfg.transport,
+    state: 'untrusted',
+    toolCount: 0,
+    tools: [],
+    userEnabled: !userDisabled.has(cfg.name),
+    configDisabled: cfg.disabled === true,
+    error: 'Workspace not trusted — this server is defined by the project and was not started.',
+    ...(cfg.source !== undefined ? { source: cfg.source } : {}),
+  }
+}
+
+/** Re-load servers after trust changes; exposed for the trust IPC handler. */
+export async function setWorkspaceTrustAndReload(
+  registry: ToolRegistry,
+  root: string,
+  trusted: boolean,
+): Promise<McpServerStatus[]> {
+  setWorkspaceTrusted(root, trusted)
+  return reloadMcpServers(registry)
 }
 
 /** Tear down all MCP clients/tools and reconnect from current config. */

