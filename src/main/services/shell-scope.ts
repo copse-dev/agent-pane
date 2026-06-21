@@ -19,11 +19,22 @@ export interface ShellScopeAnalysis {
 const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: string }> = [
   { re: /\bcurl\b|\bwget\b|\bfetch\b/i, reason: 'network download (curl/wget/fetch)' },
   {
-    re: /\b(npm|yarn|pnpm)\s+(i|install|ci|update|publish|add)\b/i,
-    reason: 'package install/update (may fetch from network)',
+    re: /\b(npm|yarn|pnpm|bun)\s+(i|in|install|ci|update|upgrade|publish|add|dlx|exec|create)\b/i,
+    reason: 'package install/update (may fetch + run code from network)',
   },
-  { re: /\bpip3?\s+install\b/i, reason: 'pip install (may fetch from network)' },
+  // Ephemeral package runners auto-fetch and execute the *latest* (typo-squattable)
+  // package with no pinning or integrity check — a supply-chain RCE surface (#174).
+  {
+    re: /\bnpx\b|\bpnpm\s+dlx\b|\byarn\s+dlx\b|\bbunx\b|\buvx\b|\bpipx\s+run\b|\bpipx\s+install\b/i,
+    reason: 'ephemeral package runner (npx/dlx/bunx/uvx/pipx — fetches & runs unpinned code)',
+  },
+  { re: /\bcorepack\b/i, reason: 'corepack (downloads package-manager binaries)' },
+  {
+    re: /\bpip3?\s+install\b|\buv\s+pip\s+install\b|\buv\s+add\b/i,
+    reason: 'pip install (may fetch from network)',
+  },
   { re: /\bcargo\s+install\b/i, reason: 'cargo install (may fetch from network)' },
+  { re: /\bgo\s+(install|get)\b/i, reason: 'go install/get (may fetch + run code from network)' },
   { re: /\bgem\s+install\b/i, reason: 'gem install (may fetch from network)' },
   { re: /\bbrew\s+(install|update|upgrade)\b/i, reason: 'Homebrew install/update' },
   {
@@ -71,11 +82,33 @@ export function normalizeShellCommandForAnalysis(command: string): string {
   return command.replace(/\\(?=[a-zA-Z0-9])/g, '')
 }
 
+// Signals that a package command points at a non-default registry or carries
+// inline credentials — a classic vector for pulling from an attacker-controlled
+// mirror or leaking tokens (#174).
+const REGISTRY_REDIRECT_PATTERNS: Array<{ re: RegExp; reason: string }> = [
+  {
+    re: /--registry(=|\s)/i,
+    reason: 'custom package registry (--registry) — verify it is trusted',
+  },
+  { re: /\b_authToken\b|\bnpm_config_registry\b/i, reason: 'inline registry credentials/override' },
+  {
+    re: /\bpip\b[^\n|;&]*--(index-url|extra-index-url)(=|\s)/i,
+    reason: 'custom pip index URL — verify it is trusted',
+  },
+  {
+    re: /\bcargo\b[^\n|;&]*--registry(=|\s)/i,
+    reason: 'custom cargo registry — verify it is trusted',
+  },
+]
+
 function collectExternalReasons(command: string): string[] {
   const reasons: string[] = []
   const variants = [command, normalizeShellCommandForAnalysis(command)]
   for (const text of variants) {
     for (const { re, reason } of EXTERNAL_PATTERNS) {
+      if (re.test(text) && !reasons.includes(reason)) reasons.push(reason)
+    }
+    for (const { re, reason } of REGISTRY_REDIRECT_PATTERNS) {
       if (re.test(text) && !reasons.includes(reason)) reasons.push(reason)
     }
   }

