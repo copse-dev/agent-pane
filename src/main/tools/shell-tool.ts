@@ -1,5 +1,3 @@
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
 import { z } from 'zod'
 import type { ToolDefinition } from '@shared/types'
 import { getWorkspaceRoot } from '../services/workspace.ts'
@@ -12,7 +10,7 @@ import {
 import { detectLikelySandboxFailure } from '../services/sandbox-failure.ts'
 import { promptInstallSocketFirewall, promptUnsandboxedShell } from '../services/permission-gate.ts'
 import { getSetting } from '../services/settings.ts'
-import { rewriteInstallCommand } from '../services/safe-install.ts'
+import { detectPackageInstall, wrapWithSocketFirewall } from '../services/safe-install.ts'
 import { installSocketFirewall, isSocketFirewallAvailable } from '../services/socket-firewall.ts'
 
 interface ShellRunResult {
@@ -26,6 +24,7 @@ async function runShellOnce(
   timeout_ms: number,
   signal: AbortSignal,
   unsandboxed: boolean,
+  env: NodeJS.ProcessEnv,
 ): Promise<ShellRunResult> {
   const win = getMainWindow()
 
@@ -35,7 +34,7 @@ async function runShellOnce(
       try {
         proc = await spawnShellInProjectSandbox(command, {
           cwd,
-          env: process.env,
+          env,
           stdio: 'pipe',
           signal,
           unsandboxed,
@@ -99,42 +98,39 @@ async function maybeRetryUnsandboxed(
   signal: AbortSignal,
   output: string,
   exitCode: number | null,
+  env: NodeJS.ProcessEnv,
 ): Promise<ShellRunResult | 'declined' | null> {
   if (!isProjectSandboxEnabled()) return null
   const detection = detectLikelySandboxFailure(output, exitCode)
   if (!detection.likely) return null
   const approved = await promptUnsandboxedShell(command, detection.reasons)
   if (!approved) return 'declined'
-  return runShellOnce(command, cwd, timeout_ms, signal, true)
+  return runShellOnce(command, cwd, timeout_ms, signal, true, env)
 }
 
-const LOCKFILE_NAMES = [
-  'package-lock.json',
-  'npm-shrinkwrap.json',
-  'pnpm-lock.yaml',
-  'yarn.lock',
-] as const
+const SHELL_INVOCATION =
+  process.platform === 'win32' ? { path: 'cmd', cArg: '/c' } : { path: '/bin/sh', cArg: '-c' }
 
-function readLockfiles(cwd: string): Set<string> {
-  return new Set(LOCKFILE_NAMES.filter((name) => existsSync(join(cwd, name))))
-}
+const winQuote = (value: string): string => `"${value.replace(/"/g, '""')}"`
 
-type PreparedCommand = { command: string; banner: string } | { refused: string }
+type PreparedCommand =
+  | { command: string; env: NodeJS.ProcessEnv; banner: string }
+  | { refused: string }
 
 /**
- * Harden package-install commands before they run: route them through Socket
- * Firewall (installing it first if needed) and apply safe install defaults.
- * Non-install commands pass through untouched.
+ * When a command performs a package install, route the whole command through
+ * Socket Firewall once (installing sfw first if needed) so the package manager
+ * it invokes is proxied. JS managers additionally get `npm_config_ignore_scripts`
+ * to block install lifecycle scripts. Non-install commands pass through untouched.
  */
-async function prepareCommand(
-  command: string,
-  cwd: string,
-  signal: AbortSignal,
-): Promise<PreparedCommand> {
-  if (!getSetting<boolean>('safeInstallEnabled', true)) return { command, banner: '' }
+async function prepareCommand(command: string, signal: AbortSignal): Promise<PreparedCommand> {
+  const baseEnv = process.env
+  if (!getSetting<boolean>('safeInstallEnabled', true)) {
+    return { command, env: baseEnv, banner: '' }
+  }
 
-  const plan = rewriteInstallCommand(command, { lockfiles: readLockfiles(cwd) })
-  if (!plan.isInstall) return { command, banner: '' }
+  const detection = detectPackageInstall(command)
+  if (!detection.isInstall) return { command, env: baseEnv, banner: '' }
 
   if (!isSocketFirewallAvailable()) {
     const approved = await promptInstallSocketFirewall(command)
@@ -150,9 +146,18 @@ async function prepareCommand(
     }
   }
 
-  const banner = `[safe-install] ${plan.notes.join('; ')}\n$ ${plan.command}\n`
+  const quote = process.platform === 'win32' ? winQuote : undefined
+  const wrapped = wrapWithSocketFirewall(command, SHELL_INVOCATION, quote)
+  const env: NodeJS.ProcessEnv = detection.jsManager
+    ? { ...baseEnv, npm_config_ignore_scripts: 'true' }
+    : baseEnv
+  const notes = [
+    'scanned by Socket Firewall (sfw)',
+    ...(detection.jsManager ? ['install scripts disabled (npm_config_ignore_scripts)'] : []),
+  ]
+  const banner = `[safe-install] ${notes.join('; ')}\n$ ${wrapped}\n`
   getMainWindow()?.webContents.send('agent:shell_output', banner)
-  return { command: plan.command, banner }
+  return { command: wrapped, env, banner }
 }
 
 function formatShellSuccess(result: ShellRunResult): string {
@@ -168,7 +173,7 @@ function formatShellFailure(result: ShellRunResult): Error {
 export const runShellTool: ToolDefinition = {
   name: 'run_shell',
   description:
-    'Run a shell command in the workspace directory. Output is streamed to the conversation. Commands contained within the sandbox auto-run; network or outside-workspace access prompts for approval. If a sandboxed command fails because the sandbox blocks it (e.g. Playwright), the user may approve running it once outside the sandbox. Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) are automatically scanned by Socket Firewall and hardened (--ignore-scripts, lockfile-pinned installs).',
+    'Run a shell command in the workspace directory. Output is streamed to the conversation. Commands contained within the sandbox auto-run; network or outside-workspace access prompts for approval. If a sandboxed command fails because the sandbox blocks it (e.g. Playwright), the user may approve running it once outside the sandbox. Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) are automatically run through Socket Firewall to scan for malicious packages, with install lifecycle scripts disabled.',
   parameters: z.object({
     command: z.string().describe('Shell command to run'),
     timeout_ms: z.number().int().min(1000).max(300_000).optional().default(30_000),
@@ -177,14 +182,14 @@ export const runShellTool: ToolDefinition = {
     const cwd = getWorkspaceRoot()
     if (!cwd) return 'No workspace open.'
 
-    const prepared = await prepareCommand(command, cwd, signal)
+    const prepared = await prepareCommand(command, signal)
     if ('refused' in prepared) return prepared.refused
-    const { command: finalCommand, banner } = prepared
+    const { command: finalCommand, env, banner } = prepared
     const withBanner = (output: string) => (banner ? `${banner}\n${output}` : output)
 
     let result: ShellRunResult
     try {
-      result = await runShellOnce(finalCommand, cwd, timeout_ms, signal, false)
+      result = await runShellOnce(finalCommand, cwd, timeout_ms, signal, false, env)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       const retry = await maybeRetryUnsandboxed(
@@ -194,6 +199,7 @@ export const runShellTool: ToolDefinition = {
         signal,
         message,
         null,
+        env,
       )
       if (retry === 'declined') return 'User declined to run outside the sandbox.'
       if (retry) {
@@ -212,6 +218,7 @@ export const runShellTool: ToolDefinition = {
       signal,
       result.output,
       result.exitCode,
+      env,
     )
     if (retry === 'declined') return 'User declined to run outside the sandbox.'
     if (retry) {
