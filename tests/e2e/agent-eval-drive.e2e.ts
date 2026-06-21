@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import assert from 'node:assert/strict'
 import { $, browser } from '@wdio/globals'
 import { threadToJsonl } from '../../src/renderer/export-thread.ts'
 import type { Thread } from '@shared/types'
@@ -53,7 +54,11 @@ describe('agent eval drive', () => {
   before(async () => {
     mkdirSync(ARTIFACTS, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'agent-eval-project', { subagentsEnabled: true })
+    const useMock = process.env.COPSE_EVAL_USE_MOCK === '1'
+    seedEmptyProject(process.cwd(), 'agent-eval-project', {
+      subagentsEnabled: useMock ? false : true,
+      ...(useMock ? { model: 'claude-sonnet-4-6' } : {}),
+    })
     await browser.reloadSession()
   })
 
@@ -75,6 +80,9 @@ describe('agent eval drive', () => {
     }
 
     const thread = readActiveThread()
+    if (scenario.id === 'working-brief-eval') {
+      assert.equal(thread.workingBrief, scenario.prompts[0])
+    }
     const body = threadToJsonl(thread)
     const outPath = join(ARTIFACTS, `${scenario.id}-${Date.now()}.jsonl`)
     writeFileSync(outPath, body, 'utf8')

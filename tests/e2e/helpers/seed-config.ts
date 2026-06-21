@@ -41,7 +41,7 @@ function writeSettings(settings: Record<string, unknown>): void {
 export function seedEmptyProject(
   workspaceRoot: string,
   projectId: string,
-  options?: { subagentsEnabled?: boolean; mockFollowUps?: boolean },
+  options?: { subagentsEnabled?: boolean; mockFollowUps?: boolean; model?: string },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
   writeFileSync(
@@ -59,6 +59,9 @@ export function seedEmptyProject(
   }
   if (options?.mockFollowUps) {
     settings.mockFollowUps = true
+  }
+  if (options?.model) {
+    settings.model = options.model
   }
   if (Object.keys(settings).length > 0) {
     writeSettings(settings)
