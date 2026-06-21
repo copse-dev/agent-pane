@@ -18,7 +18,7 @@ export interface ApiClient {
     listDir: (path: string) => Promise<{ name: string; isDir: boolean }[]>
     watch: (path: string) => Promise<void>
     unwatch: (path: string) => Promise<void>
-    onChanged: (handler: (path: string, content: string) => void) => () => void
+    onChanged: (handler: (path: string, content: string | null) => void) => () => void
   }
   agent: {
     run: (threadId: string, prompt: string) => Promise<void>

@@ -18,8 +18,8 @@ contextBridge.exposeInMainWorld('api', {
     listDir: (path: string) => ipcRenderer.invoke('fs:listDir', path),
     watch: (path: string) => ipcRenderer.invoke('fs:watch', path),
     unwatch: (path: string) => ipcRenderer.invoke('fs:unwatch', path),
-    onChanged: (handler: (path: string, content: string) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, p: string, c: string) => handler(p, c)
+    onChanged: (handler: (path: string, content: string | null) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, p: string, c: string | null) => handler(p, c)
       ipcRenderer.on('fs:changed', listener)
       return () => ipcRenderer.off('fs:changed', listener)
     },
