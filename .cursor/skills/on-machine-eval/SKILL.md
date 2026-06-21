@@ -19,11 +19,11 @@ Prove a **feature PR** works on a real machine, then **commit into that branch**
 
 ## Which harness?
 
-| Change type | Skill / command |
-|-------------|-----------------|
+| Change type                          | Skill / command                                          |
+| ------------------------------------ | -------------------------------------------------------- |
 | DOM, panels, diffs, terminal, picker | [`screenshot-validate`](../screenshot-validate/SKILL.md) |
-| Agent loops, tool order, steering | [`agent-run-eval`](../agent-run-eval/SKILL.md) |
-| Pure logic | `npm run check` only |
+| Agent loops, tool order, steering    | [`agent-run-eval`](../agent-run-eval/SKILL.md)           |
+| Pure logic                           | `npm run check` only                                     |
 
 ## UI eval loop (most PRs)
 
@@ -48,10 +48,10 @@ Prove a **feature PR** works on a real machine, then **commit into that branch**
 
 **Verdict:** pass / fail
 
-| Check | Result |
-|-------|--------|
-| `npm run check` | … |
-| Focused e2e | … |
+| Check           | Result |
+| --------------- | ------ |
+| `npm run check` | …      |
+| Focused e2e     | …      |
 
 **Visual:** (what each screenshot shows)
 
