@@ -3,7 +3,7 @@ import './styles/global.css'
 import './styles/themes.css'
 
 import { createStore } from '@shared/store/store.ts'
-import { createThread, switchThread } from '@shared/store/thread-helpers.ts'
+import { openNewThread, switchThread } from '@shared/store/thread-helpers.ts'
 import { mountWelcome } from './views/welcome.ts'
 import { mountTitlebar } from './views/titlebar.ts'
 import { mountProjectsPane } from './views/projects-pane.ts'
@@ -29,10 +29,12 @@ import { mountApprovalDialog } from './views/approval-dialog.ts'
 import { startAgentController } from './controller/agent.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
 import { addProjectFromPath, restoreProject } from './controller/projects.ts'
+import { openRightPanelWithWorkspace, toggleFilesPaneWithWorkspace } from './controller/panels.ts'
 import { initMonaco } from './monaco/setup.ts'
 import { mountPaneResizers, parseSavedLayout } from './views/pane-resizer.ts'
 import { bindChatComposerLayout } from './views/chat-layout.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
+import { registerPanelKeyboardShortcuts } from './keyboard-shortcuts.ts'
 
 const store = createStore()
 const api = window.api
@@ -59,6 +61,23 @@ async function boot() {
   // File ▸ Settings… (Cmd+,) from the native menu opens the settings dialog.
   api.menu.onSettings(() => {
     if (!isSettingsDialogOpen()) openSettingsDialog()
+  })
+
+  api.menu.onTogglePanel(() => {
+    ensureLayout()
+    toggleFilesPaneWithWorkspace(store, api)
+  })
+  api.menu.onShowExplorer(() => {
+    ensureLayout()
+    openRightPanelWithWorkspace(store, api, 'explorer')
+  })
+  api.menu.onShowTerminal(() => {
+    ensureLayout()
+    openRightPanelWithWorkspace(store, api, 'terminal')
+  })
+  api.menu.onShowChanges(() => {
+    ensureLayout()
+    openRightPanelWithWorkspace(store, api, 'changes')
   })
 
   // File ▸ Open Folder… registers the chosen folder as a project and switches.
@@ -93,6 +112,7 @@ function ensureLayout() {
   layoutMounted = true
   updateFilesPane()
   registerKeyboardShortcuts()
+  registerPanelKeyboardShortcuts(store, api)
 }
 
 function mountFullLayout() {
@@ -104,7 +124,7 @@ function mountFullLayout() {
   if (!inputRoot.querySelector('.prompt-input')) {
     throw new Error('Chat composer failed to mount (#input-bar missing .prompt-input)')
   }
-  bindChatComposerLayout()
+  bindChatComposerLayout(store)
   mountFileTree(document.getElementById('file-tree-host')!, store, api)
   mountRightPanelTabs(document.getElementById('right-panel-tabs')!, store)
   mountTerminalsPane(
@@ -141,7 +161,7 @@ function registerKeyboardShortcuts() {
     const meta = e.ctrlKey || e.metaKey
     if (meta && e.key === 't') {
       e.preventDefault()
-      createThread(store)
+      openNewThread(store)
     }
     // Cmd/Ctrl+O is handled by the native File ▸ Open Folder… menu accelerator.
     if (meta && e.key === ',') {
@@ -172,8 +192,9 @@ function confirmDeleteThread() {
   const { activeThreadId, threads } = store.getState()
   if (!activeThreadId || threads.length <= 1) return
   if (confirm('Delete this thread?')) {
+    const index = threads.findIndex((t) => t.id === activeThreadId)
     const remaining = threads.filter((t) => t.id !== activeThreadId)
-    const newActive = remaining[remaining.length - 1]?.id ?? null
+    const newActive = remaining[Math.min(index, remaining.length - 1)]?.id ?? null
     store.setState({ threads: remaining, activeThreadId: newActive })
     store.emit('threads_changed')
   }

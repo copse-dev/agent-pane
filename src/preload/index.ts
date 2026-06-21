@@ -132,6 +132,26 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('menu:settings', listener)
       return () => ipcRenderer.off('menu:settings', listener)
     },
+    onTogglePanel: (handler: () => void) => {
+      const listener = () => handler()
+      ipcRenderer.on('menu:togglePanel', listener)
+      return () => ipcRenderer.off('menu:togglePanel', listener)
+    },
+    onShowExplorer: (handler: () => void) => {
+      const listener = () => handler()
+      ipcRenderer.on('menu:showExplorer', listener)
+      return () => ipcRenderer.off('menu:showExplorer', listener)
+    },
+    onShowTerminal: (handler: () => void) => {
+      const listener = () => handler()
+      ipcRenderer.on('menu:showTerminal', listener)
+      return () => ipcRenderer.off('menu:showTerminal', listener)
+    },
+    onShowChanges: (handler: () => void) => {
+      const listener = () => handler()
+      ipcRenderer.on('menu:showChanges', listener)
+      return () => ipcRenderer.off('menu:showChanges', listener)
+    },
   },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
@@ -185,5 +205,9 @@ contextBridge.exposeInMainWorld('api', {
     isAvailable: () => ipcRenderer.invoke('git:isAvailable'),
     status: () => ipcRenderer.invoke('git:status'),
     fileDiff: (path: string, staged: boolean) => ipcRenderer.invoke('git:fileDiff', path, staged),
+    branchStatus: (forBranch?: string) => ipcRenderer.invoke('git:branchStatus', forBranch),
+  },
+  shell: {
+    openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   },
 })

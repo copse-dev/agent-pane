@@ -1,15 +1,6 @@
 import type { ApiClient } from '../../preload/api.d.ts'
+import { CLOUD_MODELS } from '@shared/llm/model-catalog.ts'
 import { clear } from '../dom/helpers.ts'
-
-// Cloud models, each tagged with the provider key it needs. They're only shown
-// when that provider is available. LM Studio models are discovered at runtime.
-export const CLOUD_MODELS: Array<[value: string, label: string, provider: 'anthropic' | 'openai']> =
-  [
-    ['claude-sonnet-4-6', 'claude-sonnet-4-6', 'anthropic'],
-    ['claude-opus-4-8', 'claude-opus-4-8', 'anthropic'],
-    ['gpt-4o', 'gpt-4o', 'openai'],
-    ['gpt-4o-mini', 'gpt-4o-mini', 'openai'],
-  ]
 
 export interface ModelOption {
   value: string

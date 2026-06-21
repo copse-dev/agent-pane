@@ -1,5 +1,5 @@
 import type { StreamChunk } from './stream.ts'
-import type { GitFileDiff, GitStatusResult } from './git.ts'
+import type { GitFileDiff, GitStatusResult, GitBranchStatus } from './git.ts'
 import type { McpServerStatus } from './mcp.ts'
 import type { UsageDelta } from './thread.ts'
 
@@ -88,6 +88,10 @@ export interface IpcInvokeMap {
   'git:status': { args: []; result: GitStatusResult | null }
   'git:fileDiff': { args: [path: string, staged: boolean]; result: GitFileDiff | null }
   'git:isAvailable': { args: []; result: boolean }
+  'git:branchStatus': { args: [forBranch?: string]; result: GitBranchStatus }
+
+  // Shell
+  'shell:openExternal': { args: [url: string]; result: void }
 
   // LM Studio
   'lmstudio:test': {
@@ -145,6 +149,10 @@ export interface IpcEventMap {
   'diff:conflict': [paths: string[]]
   'fs:changed': [path: string, content: string | null]
   'menu:settings': []
+  'menu:togglePanel': []
+  'menu:showExplorer': []
+  'menu:showTerminal': []
+  'menu:showChanges': []
   'theme:changed': ['light' | 'dark']
   'terminal:output': [sessionId: string, data: string]
   'terminal:exit': [sessionId: string, code: number]
