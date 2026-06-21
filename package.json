@@ -58,6 +58,7 @@
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
     "electron-store": "^10.0.1",
+    "highlight.js": "^11.11.1",
     "mermaid": "^11.15.0",
     "micromatch": "^4.0.8",
     "monaco-editor": "^0.52.2",

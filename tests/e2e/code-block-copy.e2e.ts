@@ -24,6 +24,8 @@ describe('code block copy buttons', () => {
     const codeBlocks = await $$('[data-message-id="msg-assistant-code-blocks"] pre.code-block')
     await expect(codeBlocks).toHaveLength(2)
 
+    await expect($('[data-message-id="msg-assistant-code-blocks"] .hljs-keyword')).toExist()
+
     const copyButtons = await $$('[data-message-id="msg-assistant-code-blocks"] .code-block-copy')
     await expect(copyButtons).toHaveLength(2)
 
