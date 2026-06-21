@@ -1,52 +1,42 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { detectLikelySandboxFailure } from './sandbox-failure.ts'
+import { detectSandboxFailure } from './sandbox-failure.ts'
 
-describe('detectLikelySandboxFailure', () => {
-  it('returns false for successful commands', () => {
-    const r = detectLikelySandboxFailure('all tests passed', 0)
+describe('detectSandboxFailure', () => {
+  it('returns false for successful commands even if violations were logged', () => {
+    // exit 0 means it succeeded; never offer an unsandboxed escape.
+    const r = detectSandboxFailure({ exitCode: 0, violationCount: 3 })
     assert.equal(r.likely, false)
   })
 
-  it('returns false for ordinary test failures', () => {
-    const r = detectLikelySandboxFailure('AssertionError: expected true to be false', 1)
+  it('returns false for ordinary non-zero exits with no runner violations', () => {
+    const r = detectSandboxFailure({ exitCode: 1, violationCount: 0 })
     assert.equal(r.likely, false)
   })
 
-  it('detects macOS sandbox denial messages', () => {
-    const r = detectLikelySandboxFailure('sh: Operation not permitted\n', 126)
+  it('detects failure when the runner logged sandbox violations and exit is non-zero', () => {
+    const r = detectSandboxFailure({ exitCode: 1, violationCount: 2 })
     assert.equal(r.likely, true)
-    assert.ok(r.reasons.some((x) => x.includes('sandbox denied')))
+    assert.ok(r.reasons.some((x) => x.includes('blocked 2 operations')))
   })
 
-  it('detects playwright launch failures as likely sandbox issues', () => {
-    const output =
-      'browserType.launch: Failed to launch chromium because Operation not permitted\n' +
-      '  at playwright/lib/browserType.js:120'
-    const r = detectLikelySandboxFailure(output, 1)
+  it('reports a single blocked operation in the singular', () => {
+    const r = detectSandboxFailure({ exitCode: 126, violationCount: 1 })
     assert.equal(r.likely, true)
-    assert.ok(r.reasons.some((x) => x.includes('browser/test runner')))
+    assert.ok(r.reasons.some((x) => x.includes('blocked 1 operation')))
   })
 
-  it('detects network blocks', () => {
-    const r = detectLikelySandboxFailure('Error: network access blocked by sandbox policy', 1)
+  it('detects wrapper spawn failures (runner-side)', () => {
+    const r = detectSandboxFailure({ exitCode: -1, violationCount: 0, spawnFailed: true })
     assert.equal(r.likely, true)
+    assert.ok(r.reasons.some((x) => x.includes('failed to start')))
   })
 
-  it('detects missing node/npm inside sandbox shells', () => {
-    const r = detectLikelySandboxFailure('/bin/bash: npm: command not found\n', 127)
-    assert.equal(r.likely, true)
-    assert.ok(r.reasons.some((x) => x.includes('toolchain')))
-  })
-
-  it('detects node-pty spawn failures from unit tests in sandbox', () => {
-    const output = [
-      'not ok 21 - terminal-service',
-      '  Error: posix_spawnp failed.',
-      'not ok 1 - creates a session and streams output',
-    ].join('\n')
-    const r = detectLikelySandboxFailure(output, 1)
-    assert.equal(r.likely, true)
-    assert.ok(r.reasons.some((x) => x.includes('spawn blocked')))
+  it('ignores command-controlled output (issue #104): faked failure does not trigger', () => {
+    // A command that echoes a sandbox-denial string but never actually tripped the
+    // sandbox (violationCount 0, no spawn failure) must NOT be offered an unsandboxed
+    // re-run. The decision keys only off runner-side signals, never stdout/stderr.
+    const r = detectSandboxFailure({ exitCode: 1, violationCount: 0 })
+    assert.equal(r.likely, false)
   })
 })

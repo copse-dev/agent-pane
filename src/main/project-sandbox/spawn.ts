@@ -109,6 +109,24 @@ export async function spawnShellInProjectSandbox(
   })
 }
 
+/**
+ * Number of sandbox policy violations the runner (ASRT) recorded for a command.
+ * This is a runner/kernel-side signal — it is NOT derived from the command's own
+ * stdout/stderr, so a command cannot forge it by echoing "operation not permitted"
+ * to trick the user into an unsandboxed re-run (issue #104).
+ *
+ * Returns 0 when the sandbox is inactive or no violation log is available.
+ */
+export function sandboxViolationCountForCommand(command: string): number {
+  if (!isProjectSandboxEnabled()) return 0
+  try {
+    const store = SandboxManager.getSandboxViolationStore()
+    return store.getViolationsForCommand(command).length
+  } catch {
+    return 0
+  }
+}
+
 export function afterSandboxedCommand(): void {
   if (isProjectSandboxEnabled()) {
     SandboxManager.cleanupAfterCommand()
