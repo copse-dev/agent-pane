@@ -1,6 +1,7 @@
 import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { renderMarkdown } from '../markdown/renderer.ts'
+import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { renderStreamingMarkdown } from '../markdown/streaming.ts'
 import { stripTextToolCallBlocks } from '@shared/agent/parse-text-tool-calls.ts'
 import type { ToolCall } from '@shared/types'
@@ -94,10 +95,15 @@ function createInnerToolCard(tc: ToolCall): HTMLElement {
   return entry
 }
 
+function setAssistantMarkdown(el: HTMLElement, content: string, streaming: boolean): void {
+  const display = assistantDisplayText(content)
+  el.innerHTML = streaming ? renderStreamingMarkdown(display) : renderMarkdown(display)
+  if (!streaming) void renderMermaidIn(el)
+}
+
 function createSubagentMessageEl(content: string, streaming: boolean): HTMLElement {
   const textEl = el('div', { class: 'subagent-message subagent-message-assistant message-text' })
-  const display = assistantDisplayText(content)
-  textEl.innerHTML = streaming ? renderStreamingMarkdown(display) : renderMarkdown(display)
+  setAssistantMarkdown(textEl, content, streaming)
   return textEl
 }
 
@@ -121,7 +127,7 @@ function createSubagentToolCard(tc: ToolCall, label: string): HTMLElement {
 
   if (preview && status !== 'running') {
     const previewEl = el('div', { class: 'subagent-summary-preview message-text' })
-    previewEl.innerHTML = renderMarkdown(assistantDisplayText(summaryPreview(preview)))
+    setAssistantMarkdown(previewEl, summaryPreview(preview), false)
     card.append(previewEl)
   }
 
@@ -210,7 +216,7 @@ function appendMessageContent(
   }
   const textEl = el('div', { class: 'message-text' })
   if (msg.role === 'assistant' && msg.content) {
-    textEl.innerHTML = renderMarkdown(assistantDisplayText(msg.content))
+    setAssistantMarkdown(textEl, msg.content, false)
   } else {
     textEl.textContent = msg.content
   }
@@ -416,7 +422,7 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
       const msg = thread?.messages.find((m) => m.id === mid)
       const textEl = list.querySelector(`[data-message-id="${mid}"] .message-text`)
       if (textEl && msg?.role === 'assistant') {
-        textEl.innerHTML = renderStreamingMarkdown(assistantDisplayText(msg.content))
+        setAssistantMarkdown(textEl as HTMLElement, msg.content, true)
         scrollToBottom()
       }
     }),
@@ -426,7 +432,7 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
       const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
       const msg = thread?.messages.find((m) => m.id === mid)
       if (textEl && msg?.role === 'assistant') {
-        textEl.innerHTML = renderMarkdown(assistantDisplayText(msg.content))
+        setAssistantMarkdown(textEl as HTMLElement, msg.content, false)
       }
       if (msg?.role === 'assistant' && msg.content.trim()) {
         const body = msgEl?.querySelector('.message-body')
