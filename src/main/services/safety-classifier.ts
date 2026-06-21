@@ -1,4 +1,5 @@
-import { getApiKey, getSetting } from './settings.ts'
+import { getSetting, getLmStudioApiKey } from './settings.ts'
+import { LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
 import { isProjectSandboxEnabled } from '../project-sandbox/index.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 
@@ -26,7 +27,7 @@ Mark as "sandbox" only when you are confident the command stays within the works
 When uncertain, use "external" with lower confidence.`
 
 function lmStudioKey(): string {
-  return getApiKey('lmstudio') ?? 'lm-studio'
+  return getLmStudioApiKey()
 }
 
 function parseClassification(text: string): ClassificationResult | null {
@@ -52,9 +53,9 @@ function parseClassification(text: string): ClassificationResult | null {
 }
 
 async function resolveSafetyModel(url: string): Promise<string | null> {
-  const configured = getSetting<string>('lmStudioSafetyModel', '').trim()
+  const configured = getSetting<string>('lmStudioSafetyModel', LM_STUDIO_MODEL_IDS.safety).trim()
   if (configured) return configured
-  const fallback = getSetting<string>('lmStudioModel', '').trim()
+  const fallback = getSetting<string>('lmStudioModel', LM_STUDIO_MODEL_IDS.chat).trim()
   if (fallback) return fallback
   try {
     const res = await fetch(`${url.replace(/\/$/, '')}/models`, {
