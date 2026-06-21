@@ -2,11 +2,17 @@ import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
+import { switchThread } from '@shared/store/thread-helpers.ts'
 
 export interface FollowUpSuggestionsMount {
   root: HTMLElement
   clearSuggestions: () => void
   destroy: () => void
+}
+
+interface CachedSuggestions {
+  turnKey: string
+  suggestions: FollowUpSuggestion[]
 }
 
 export function mountFollowUpSuggestions(
@@ -22,17 +28,20 @@ export function mountFollowUpSuggestions(
   })
 
   let fetchToken = 0
-  let lastTurnKey: string | null = null
+  let displayedThreadId: string | null = null
+  const suggestionsByThread = new Map<string, CachedSuggestions>()
 
   function clearSuggestions() {
     clear(root)
     root.hidden = true
+    displayedThreadId = null
   }
 
-  function renderSuggestions(suggestions: FollowUpSuggestion[]) {
+  function renderSuggestions(threadId: string, suggestions: FollowUpSuggestion[]) {
     clear(root)
     if (suggestions.length === 0) {
       root.hidden = true
+      displayedThreadId = null
       return
     }
 
@@ -63,12 +72,17 @@ export function mountFollowUpSuggestions(
       }
 
       btn.addEventListener('click', () => {
+        const sourceThreadId = displayedThreadId ?? threadId
         clearSuggestions()
+        if (store.getState().activeThreadId !== sourceThreadId) {
+          switchThread(store, sourceThreadId)
+        }
         onSelect(suggestion.prompt)
       })
       root.append(btn)
     }
     root.hidden = false
+    displayedThreadId = threadId
   }
 
   function lastExchange(threadId: string) {
@@ -95,32 +109,71 @@ export function mountFollowUpSuggestions(
   async function maybeFetchSuggestions(threadId: string) {
     const exchange = lastExchange(threadId)
     if (!exchange) {
-      clearSuggestions()
+      suggestionsByThread.delete(threadId)
+      if (store.getState().activeThreadId === threadId) clearSuggestions()
       return
     }
-    if (exchange.turnKey === lastTurnKey) return
-    lastTurnKey = exchange.turnKey
+
+    const cached = suggestionsByThread.get(threadId)
+    if (cached?.turnKey === exchange.turnKey) {
+      if (store.getState().activeThreadId === threadId) {
+        renderSuggestions(threadId, cached.suggestions)
+      }
+      return
+    }
 
     const token = ++fetchToken
     try {
       const suggestions = await api.agent.suggestFollowUps(JSON.stringify(exchange.context))
       if (token !== fetchToken) return
-      renderSuggestions(suggestions)
+      suggestionsByThread.set(threadId, { turnKey: exchange.turnKey, suggestions })
+      if (store.getState().activeThreadId === threadId) {
+        renderSuggestions(threadId, suggestions)
+      }
     } catch {
       if (token !== fetchToken) return
-      clearSuggestions()
+      suggestionsByThread.delete(threadId)
+      if (store.getState().activeThreadId === threadId) clearSuggestions()
     }
+  }
+
+  function showForActiveThread() {
+    const activeId = store.getState().activeThreadId
+    if (!activeId) {
+      clearSuggestions()
+      return
+    }
+    if (displayedThreadId === activeId) return
+
+    const exchange = lastExchange(activeId)
+    if (!exchange) {
+      clearSuggestions()
+      return
+    }
+
+    const cached = suggestionsByThread.get(activeId)
+    if (cached?.turnKey === exchange.turnKey) {
+      renderSuggestions(activeId, cached.suggestions)
+      return
+    }
+
+    void maybeFetchSuggestions(activeId)
   }
 
   const unsubs = [
     store.on('thread_status_changed', (tid, status) => {
-      if (tid !== store.getState().activeThreadId) return
       if (status === 'running') {
-        fetchToken++
-        clearSuggestions()
+        suggestionsByThread.delete(tid)
+        if (tid === store.getState().activeThreadId) {
+          fetchToken++
+          clearSuggestions()
+        }
         return
       }
       if (status === 'idle') void maybeFetchSuggestions(tid)
+    }),
+    store.on('threads_changed', () => {
+      showForActiveThread()
     }),
   ]
 
@@ -130,6 +183,7 @@ export function mountFollowUpSuggestions(
     destroy: () => {
       fetchToken++
       unsubs.forEach((u) => u())
+      suggestionsByThread.clear()
       clearSuggestions()
     },
   }
