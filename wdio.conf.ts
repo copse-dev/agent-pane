@@ -1,5 +1,6 @@
 import type { Options } from '@wdio/types'
 import electronBinary from 'electron'
+import { randomInt } from 'node:crypto'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -39,7 +40,6 @@ export const config: Options.Testrunner = {
           '--disable-gpu',
           '--no-sandbox',
           '--disable-dev-shm-usage',
-          '--remote-debugging-port=9222',
         ],
       },
     },
@@ -68,9 +68,16 @@ export const config: Options.Testrunner = {
       'goog:chromeOptions'?: { args?: string[] }
     }
     const chromeOptions = cap['goog:chromeOptions'] ?? {}
+    const debugPort = randomInt(9300, 9999)
     cap['goog:chromeOptions'] = {
       ...chromeOptions,
-      args: [...new Set([...(chromeOptions.args ?? []), `--user-data-dir=${e2eUserDataDir}`])],
+      args: [
+        ...new Set([
+          ...(chromeOptions.args ?? []),
+          `--user-data-dir=${e2eUserDataDir}`,
+          `--remote-debugging-port=${debugPort}`,
+        ]),
+      ],
     }
   },
   onComplete() {

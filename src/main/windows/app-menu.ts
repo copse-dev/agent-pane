@@ -80,6 +80,27 @@ export function buildAppMenu(win: BrowserWindow): void {
     {
       label: 'View',
       submenu: [
+        {
+          label: 'Toggle Panel',
+          accelerator: 'CmdOrCtrl+B',
+          click: () => win.webContents.send('menu:togglePanel'),
+        },
+        {
+          label: 'Explorer',
+          accelerator: 'CmdOrCtrl+Shift+E',
+          click: () => win.webContents.send('menu:showExplorer'),
+        },
+        {
+          label: 'Terminal',
+          accelerator: 'CmdOrCtrl+`',
+          click: () => win.webContents.send('menu:showTerminal'),
+        },
+        {
+          label: 'Changes',
+          accelerator: 'CmdOrCtrl+Shift+G',
+          click: () => win.webContents.send('menu:showChanges'),
+        },
+        { type: 'separator' as const },
         { role: 'reload' as const },
         { role: 'toggleDevTools' as const },
         { type: 'separator' as const },
