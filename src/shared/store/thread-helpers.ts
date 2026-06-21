@@ -16,6 +16,36 @@ export function sortThreadsNewestFirst(threads: Thread[]): Thread[] {
   return [...threads].sort((a, b) => b.createdAt - a.createdAt)
 }
 
+/** Empty idle thread with no messages yet (unused "New Thread"). */
+export function isBlankThread(thread: Thread): boolean {
+  return thread.messages.length === 0 && thread.status === 'idle'
+}
+
+function pruneBlankThreads(store: AppStore, keepId: string | null): void {
+  const { threads, activeThreadId } = store.getState()
+  const remaining = threads.filter((t) => !isBlankThread(t) || t.id === keepId)
+  if (remaining.length === 0 || remaining.length === threads.length) return
+  const newActive =
+    keepId && remaining.some((t) => t.id === keepId)
+      ? keepId
+      : activeThreadId && remaining.some((t) => t.id === activeThreadId)
+        ? activeThreadId
+        : (remaining[0]?.id ?? null)
+  store.setState({ threads: remaining, activeThreadId: newActive })
+  store.emit('threads_changed')
+}
+
+/** Drop extra blank threads after load (keeps the active blank, or the newest). */
+export function normalizeBlankThreads(store: AppStore): void {
+  const { threads, activeThreadId } = store.getState()
+  const blanks = threads.filter(isBlankThread)
+  if (blanks.length <= 1) return
+  const keepId =
+    blanks.find((t) => t.id === activeThreadId)?.id ??
+    blanks.sort((a, b) => b.createdAt - a.createdAt)[0]!.id
+  pruneBlankThreads(store, keepId)
+}
+
 export function createThread(store: AppStore): string {
   const id = randomUUID()
   const threads = [
@@ -44,8 +74,32 @@ export function createThread(store: AppStore): string {
   return id
 }
 
+/** Open a fresh composer: reuse an unused blank thread or create one. */
+export function openNewThread(store: AppStore): string {
+  const { threads, activeThreadId } = store.getState()
+  const existing = threads.find((t) => isBlankThread(t))
+  if (existing) {
+    pruneBlankThreads(store, existing.id)
+    if (activeThreadId !== existing.id) {
+      store.setState({ activeThreadId: existing.id })
+      store.emit('threads_changed')
+    }
+    store.setState({
+      filesPaneOpen: false,
+      openFile: null,
+      activeDiff: null,
+      stagedDiffs: [],
+    })
+    store.emit('panel_changed')
+    store.emit('files_pane_changed')
+    return existing.id
+  }
+  return createThread(store)
+}
+
 export function switchThread(store: AppStore, id: string): void {
   store.setState({ activeThreadId: id })
+  pruneBlankThreads(store, id)
   store.emit('threads_changed')
 }
 
@@ -117,6 +171,12 @@ export function addMessage(
   )
   store.setState({ threads: updated })
   store.emit('message_added', threadId, id)
+
+  const thread = updated.find((t) => t.id === threadId)
+  if (thread && thread.messages.length === 1) {
+    pruneBlankThreads(store, threadId)
+  }
+
   return id
 }
 

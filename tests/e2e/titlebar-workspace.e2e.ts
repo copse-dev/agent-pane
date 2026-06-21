@@ -34,5 +34,10 @@ describe('titlebar workspace name', () => {
     await expect(newThreadBtn).toBeDisplayed()
     await newThreadBtn.click()
     await expect($('.chat-row.selected .chat-title')).toHaveText('New Thread')
+
+    await newThreadBtn.click()
+    const blankRows = await $$('.chats-list .chat-row:not(.chat-new) .chat-title')
+    const titles = await blankRows.map((el) => el.getText())
+    await expect(titles.filter((t) => t === 'New Thread').length).toBe(1)
   })
 })

@@ -1,6 +1,6 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { createThread } from '@shared/store/thread-helpers.ts'
+import { createThread, normalizeBlankThreads } from '@shared/store/thread-helpers.ts'
 import { loadThreads, saveThreads, saveProjects } from './persistence.ts'
 
 const uuid = () => globalThis.crypto.randomUUID()
@@ -27,6 +27,7 @@ async function activate(store: AppStore, api: ApiClient, id: string, path: strin
     filesPaneOpen: false,
   })
   if (loaded.length === 0) createThread(store)
+  else normalizeBlankThreads(store)
   await saveProjects(api, store.getState().projects, id)
   store.emit('projects_changed')
   store.emit('workspace_changed')
@@ -72,6 +73,7 @@ export async function restoreProject(store: AppStore, api: ApiClient, id: string
     activeThreadId: loaded[0]?.id ?? null,
   })
   if (loaded.length === 0) createThread(store)
+  else normalizeBlankThreads(store)
   store.emit('workspace_changed')
   store.emit('threads_changed')
 }

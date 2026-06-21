@@ -3,7 +3,7 @@ import './styles/global.css'
 import './styles/themes.css'
 
 import { createStore } from '@shared/store/store.ts'
-import { createThread, switchThread } from '@shared/store/thread-helpers.ts'
+import { openNewThread, switchThread } from '@shared/store/thread-helpers.ts'
 import { mountWelcome } from './views/welcome.ts'
 import { mountTitlebar } from './views/titlebar.ts'
 import { mountProjectsPane } from './views/projects-pane.ts'
@@ -141,7 +141,7 @@ function registerKeyboardShortcuts() {
     const meta = e.ctrlKey || e.metaKey
     if (meta && e.key === 't') {
       e.preventDefault()
-      createThread(store)
+      openNewThread(store)
     }
     // Cmd/Ctrl+O is handled by the native File ▸ Open Folder… menu accelerator.
     if (meta && e.key === ',') {

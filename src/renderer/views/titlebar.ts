@@ -1,7 +1,7 @@
 import { el } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { createThread } from '@shared/store/thread-helpers.ts'
+import { openNewThread } from '@shared/store/thread-helpers.ts'
 import { materialIconUrl, mountMaterialIcon } from '../icons/material-file-icons.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
 import { addProject } from '../controller/projects.ts'
@@ -138,7 +138,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
       void addProject(store, _api)
       return
     }
-    createThread(store)
+    openNewThread(store)
   })
 
   return () => unsubs.forEach((u) => u())
