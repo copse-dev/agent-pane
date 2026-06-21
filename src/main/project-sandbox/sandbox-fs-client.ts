@@ -1,9 +1,13 @@
 import { join } from 'node:path'
 import * as fsp from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { MAX_FS_WRITE_BYTES } from '../ipc/ipc-guards.ts'
 import { getWorkspaceRoot } from '../services/workspace.ts'
 import { runCommand } from '../services/command-runner.ts'
 import { isProjectSandboxEnabled } from './spawn.ts'
+
+/** JSON-wrapped readFile payloads can be ~2× raw bytes when heavily escaped. */
+export const SANDBOX_FS_WORKER_STDOUT_MAX_BYTES = MAX_FS_WRITE_BYTES * 2 + 4096
 
 /** Bundled next to `dist/main/index.js`. */
 export function sandboxFsWorkerPath(): string {
@@ -22,6 +26,7 @@ async function invokeWorker<T extends Record<string, unknown>>(
     {
       // Electron must run as Node inside seatbelt; otherwise MachPort rendezvous FATALs with empty stdout.
       env: { ELECTRON_RUN_AS_NODE: '1' },
+      stdoutMaxBytes: SANDBOX_FS_WORKER_STDOUT_MAX_BYTES,
     },
   )
 

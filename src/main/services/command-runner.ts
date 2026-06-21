@@ -20,6 +20,8 @@ export interface RunCommandOptions {
   env?: NodeJS.ProcessEnv
   /** Defaults to {@link COMMAND_RUNNER_DEFAULT_TIMEOUT_MS}; pass `0` to disable. */
   timeout_ms?: number
+  /** Defaults to {@link COMMAND_OUTPUT_MAX_BYTES}. */
+  stdoutMaxBytes?: number
 }
 
 function prepareGitInvocation(
@@ -39,6 +41,7 @@ export function runCommand(
 ): Promise<CommandResult> {
   const cwd = opts.cwd ?? getWorkspaceRoot() ?? process.cwd()
   const timeout_ms = opts.timeout_ms ?? COMMAND_RUNNER_DEFAULT_TIMEOUT_MS
+  const stdoutMaxBytes = opts.stdoutMaxBytes ?? COMMAND_OUTPUT_MAX_BYTES
 
   let spawnArgs = args
   let spawnEnv: NodeJS.ProcessEnv = { ...process.env }
@@ -90,7 +93,7 @@ export function runCommand(
       }
 
       proc.stdout?.on('data', (d: Buffer) => {
-        stdout = appendFlatCapped(stdout, d.toString(), COMMAND_OUTPUT_MAX_BYTES)
+        stdout = appendFlatCapped(stdout, d.toString(), stdoutMaxBytes)
       })
       proc.stderr?.on('data', (d: Buffer) => {
         stderr = appendFlatCapped(stderr, d.toString(), COMMAND_OUTPUT_MAX_BYTES)
