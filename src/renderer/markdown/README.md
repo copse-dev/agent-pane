@@ -25,6 +25,9 @@ list-style-position: outside`). Bullets should sit clearly inset from headings, 
   text.
 - **Fixtures over toy examples.** E2e seeds should mirror real agent summaries (multi-section
   headings + lists, explore subagent with `` `snake_case` `` tool names), not single-line `- foo`.
+- **Fenced code.** Non-mermaid fences are highlighted at render time via `highlight.js` (core +
+  per-language imports in `highlight.ts`). Unknown tags fall back to escaped plain text; empty
+  lang uses auto-detection. Theme tokens live in `global.css` (VS Code Dark+ inspired).
 - **Mermaid diagrams.** Fenced ` ```mermaid ` blocks render as SVG via lazy-loaded `mermaid`
   (`mermaid.ts`). Diagram rendering runs after final markdown insertion (`message_done`, thread
   restore) — not on every streaming token. Fenced blocks are extracted before HTML escaping; prose

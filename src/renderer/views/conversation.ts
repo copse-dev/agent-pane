@@ -1,5 +1,6 @@
 import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
+import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
 import { renderMarkdown } from '../markdown/renderer.ts'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { renderStreamingMarkdown } from '../markdown/streaming.ts'
@@ -94,6 +95,7 @@ function createInnerToolCard(tc: ToolCall): HTMLElement {
 function setAssistantMarkdown(el: HTMLElement, content: string, streaming: boolean): void {
   const display = assistantDisplayText(content)
   el.innerHTML = streaming ? renderStreamingMarkdown(display) : renderMarkdown(display)
+  attachCodeBlockCopyButtons(el)
   if (!streaming) void renderMermaidIn(el)
 }
 

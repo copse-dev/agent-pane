@@ -75,12 +75,24 @@ describe('renderMarkdown', () => {
 
   it('renders fenced code blocks', () => {
     const html = renderMarkdown('```ts\nconst x = 1\n```')
-    assert.match(html, /<pre><code class="lang-ts">const x = 1<\/code><\/pre>/)
+    assert.match(html, /<pre><code class="hljs lang-typescript">/)
+    assert.match(html, /hljs-keyword/)
+    assert.match(html, /hljs-number/)
+    assert.match(html, /const/)
+  })
+
+  it('strips leading and trailing blank lines inside fenced code blocks', () => {
+    const html = renderMarkdown('```ts\n\nconst x = 1\n\n```')
+    assert.match(html, /<pre><code class="hljs lang-typescript">/)
+    assert.match(html, /hljs-keyword/)
+    assert.match(html, /const/)
   })
 
   it('preserves comparison operators inside fenced code blocks', () => {
     const html = renderMarkdown('```ts\nif (a < b) return true\n```')
-    assert.match(html, /if \(a &lt; b\) return true/)
+    assert.match(html, /\(a &lt; b\)/)
+    assert.match(html, /hljs-keyword/)
+    assert.match(html, /hljs-literal/)
     assert.doesNotMatch(html, /&lt;\/code>/)
   })
 
@@ -110,9 +122,10 @@ describe('renderMarkdown', () => {
     assert.match(html, /<p>Outro<\/p>/)
   })
 
-  it('escapes HTML-like content inside fenced code blocks', () => {
+  it('highlights HTML-like fenced blocks without injecting raw tags', () => {
     const html = renderMarkdown('```html\n<script>alert(1)</script>\n```')
-    assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/)
+    assert.match(html, /hljs-tag/)
+    assert.match(html, /script/)
     assert.doesNotMatch(html, /<script>/)
   })
 

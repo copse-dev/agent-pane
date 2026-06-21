@@ -778,6 +778,10 @@ label {
 .message-body:hover .msg-copy {
   opacity: 1;
 }
+.message-body:hover:has(.code-block-shell:hover) .msg-copy,
+.message-body:hover:has(.code-block-shell:focus-within) .msg-copy {
+  opacity: 0;
+}
 .msg-user {
   background: var(--bg-elevated);
   border-left: 3px solid var(--accent);
@@ -861,10 +865,84 @@ label {
   padding: var(--spacing-sm);
   border-radius: var(--radius);
   overflow-x: auto;
+  white-space: pre;
+}
+.message-text pre code {
+  white-space: pre;
+}
+.message-text .code-block-shell {
+  position: relative;
+}
+.code-block-copy {
+  position: absolute;
+  top: var(--spacing-xs);
+  right: var(--spacing-xs);
+  opacity: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px 8px;
+  transition: opacity 0.1s;
+  z-index: 1;
+}
+.message-text .code-block-shell:hover .code-block-copy,
+.message-text .code-block-shell:focus-within .code-block-copy {
+  opacity: 1;
+}
+.message-text:has(.code-block-shell:hover)
+  .code-block-shell:not(:hover):not(:focus-within)
+  .code-block-copy,
+.message-text:has(.code-block-shell:focus-within)
+  .code-block-shell:not(:focus-within):not(:hover)
+  .code-block-copy {
+  opacity: 0;
 }
 .message-text pre code {
   background: none;
   padding: 0;
+}
+/* highlight.js tokens — VS Code Dark+ inspired, aligned with app tokens */
+.message-text pre code.hljs {
+  color: var(--text-primary);
+}
+.message-text .hljs-comment,
+.message-text .hljs-quote {
+  color: #6a9955;
+  font-style: italic;
+}
+.message-text .hljs-keyword,
+.message-text .hljs-selector-tag,
+.message-text .hljs-built_in {
+  color: #569cd6;
+}
+.message-text .hljs-string,
+.message-text .hljs-regexp {
+  color: #ce9178;
+}
+.message-text .hljs-number,
+.message-text .hljs-literal {
+  color: #b5cea8;
+}
+.message-text .hljs-title,
+.message-text .hljs-title\\.function_,
+.message-text .hljs-function .hljs-title {
+  color: #dcdcaa;
+}
+.message-text .hljs-type,
+.message-text .hljs-class .hljs-title {
+  color: #4ec9b0;
+}
+.message-text .hljs-attr,
+.message-text .hljs-attribute,
+.message-text .hljs-variable,
+.message-text .hljs-template-variable {
+  color: #9cdcfe;
+}
+.message-text .hljs-meta,
+.message-text .hljs-symbol {
+  color: #d4d4d4;
 }
 .message-text table {
   /* separated borders + overflow clip so the outer corners can be rounded */

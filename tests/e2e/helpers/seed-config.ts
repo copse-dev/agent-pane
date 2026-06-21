@@ -237,6 +237,53 @@ export function seedGitSummaryMarkdownFixture(workspaceRoot: string): void {
   )
 }
 
+export function seedCodeBlockCopyFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-code-block-copy-project'
+  const threadId = 'e2e-code-block-copy-thread'
+  const content = [
+    'Use this helper:',
+    '',
+    '```typescript',
+    'export function greet(name: string) {',
+    '  return `Hello, ${name}!`',
+    '}',
+    '```',
+    '',
+    'Then run:',
+    '',
+    '```bash',
+    'npm run check',
+    '```',
+  ].join('\n')
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Code block copy',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-code-blocks',
+              role: 'assistant',
+              content,
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
 export function seedMermaidDiagramFixture(workspaceRoot: string): void {
   const projectId = 'e2e-mermaid-project'
   const threadId = 'e2e-mermaid-thread'
