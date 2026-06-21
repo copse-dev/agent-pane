@@ -14,6 +14,16 @@ Requires Node ≥ 22.
 | `npm test`      | Unit tests                    |
 | `npm run check` | typecheck, lint, format, test |
 
+your `.gitignore` (this repo already does).
+
+## Shell command permissions
+
+When the macOS project sandbox (seatbelt) is active, shell commands run inside that
+confinement first. On other platforms, Copse uses a **regex heuristic** (`analyzeShellCommand`)
+plus an optional local safety model to decide whether to auto-run or prompt — this is a UX
+hint, not a security boundary (substitution, encoding, and uncommon tools can bypass it).
+Approve external commands explicitly when sandboxing is off.
+
 ## Layout
 
 ```

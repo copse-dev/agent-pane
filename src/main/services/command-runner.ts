@@ -55,7 +55,7 @@ export function runCommand(
           env: spawnEnv,
           stdio: 'pipe',
         }
-        if (opts.unsandboxed) spawnOpts.unsandboxed = true
+        if (opts.unsandboxed !== undefined) spawnOpts.unsandboxed = opts.unsandboxed
         if (opts.signal) spawnOpts.signal = opts.signal
         proc = await spawnInProjectSandbox(cmd, spawnArgs, spawnOpts)
       } catch (err) {
