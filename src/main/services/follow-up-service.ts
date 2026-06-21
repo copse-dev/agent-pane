@@ -8,19 +8,16 @@ import {
   buildFixMergeConflictsSuggestion,
 } from '@shared/follow-ups/presets.ts'
 import { createProvider, createLMStudioProvider } from '@shared/llm/create-provider.ts'
-import { getSetting, getApiKey } from './settings.ts'
+import { getSetting, getApiKey, getLmStudioApiKey } from './settings.ts'
+import { LM_STUDIO_MODEL_IDS, DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { fetchLmStudioModelsCached } from './lm-studio-models.ts'
 import { getPrWorkspaceContext } from './pr-context-service.ts'
 
 const DEFAULT_LM_STUDIO_URL = 'http://localhost:1234/v1'
 
 async function fetchFirstLocalModel(baseURL: string): Promise<string | null> {
-  const result = await fetchLmStudioModelsCached(baseURL, lmStudioKey())
+  const result = await fetchLmStudioModelsCached(baseURL, getLmStudioApiKey())
   return result.models[0]?.id ?? null
-}
-
-function lmStudioKey(): string {
-  return getApiKey('lmstudio') ?? 'lm-studio'
 }
 
 async function buildCloudProvider(model: string): Promise<LLMProvider> {
@@ -58,13 +55,13 @@ async function resolveSmallTaskProvider(): Promise<LLMProvider | null> {
 
   if (useLmStudio && lmUrl) {
     const configured =
-      getSetting<string>('lmStudioSmallTasksModel', '').trim() ||
-      getSetting<string>('lmStudioModel', '').trim()
+      getSetting<string>('lmStudioSmallTasksModel', LM_STUDIO_MODEL_IDS.smallTasks).trim() ||
+      getSetting<string>('lmStudioModel', LM_STUDIO_MODEL_IDS.chat).trim()
     const model = configured || (await fetchFirstLocalModel(lmUrl))
-    if (model) return createLMStudioProvider(lmUrl, model, lmStudioKey())
+    if (model) return createLMStudioProvider(lmUrl, model, getLmStudioApiKey())
   }
   if (process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY) {
-    return buildCloudProvider(getSetting<string>('model', 'claude-sonnet-4-6'))
+    return buildCloudProvider(getSetting<string>('model', DEFAULT_APP_CHAT_MODEL))
   }
   return null
 }

@@ -17,7 +17,9 @@ describe('settings-writable', () => {
 
   it('allows benign UI keys', () => {
     assert.equal(isRendererWritableSettingKey('model'), true)
+    assert.equal(isRendererWritableSettingKey('appIconVariant'), true)
     assert.equal(parseRendererWritableSetting('theme', 'dark'), 'dark')
+    assert.equal(parseRendererWritableSetting('appIconVariant', 'wave'), 'wave')
   })
 
   it('parses security settings bundle', () => {
