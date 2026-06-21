@@ -1,6 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { Project, Thread } from '@shared/types'
+import { sortThreadsNewestFirst } from '@shared/store/thread-helpers.ts'
 
 // On-disk persistence for projects and their chat threads, via the main-process
 // electron-store (storage:get/set IPC). Threads are stored per project so
@@ -47,7 +48,7 @@ export async function saveProjects(
 
 export async function loadThreads(api: ApiClient, projectId: string): Promise<Thread[]> {
   const threads = (await api.storage.get(threadsKey(projectId))) as Thread[] | null
-  return threads ?? []
+  return threads ? sortThreadsNewestFirst(threads) : []
 }
 
 export async function saveThreads(

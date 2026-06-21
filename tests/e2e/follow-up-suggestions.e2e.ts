@@ -54,6 +54,31 @@ describe('follow-up suggestion bubbles', () => {
 
       await browser.saveScreenshot(join(SCREENSHOT_DIR, 'follow-up-suggestions-demo.png'))
     })
+
+    it('restores follow-ups when returning to a thread and reopens it on prompt click', async () => {
+      await completeMockTurn()
+
+      const originalThreadTitle = await $('.chat-row.selected .chat-title').getText()
+      await $('.project-new-thread-btn').click()
+      await expect($('.follow-up-suggestions')).not.toBeDisplayed()
+
+      await browser.execute(() => {
+        const rows = [...document.querySelectorAll('.chats-list .chat-row')]
+        const previous = rows.find((row) => !row.classList.contains('selected'))
+        previous?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      await $('.follow-up-bubble').waitForDisplayed({ timeout: 10_000 })
+
+      await $('.project-new-thread-btn').click()
+      await browser.execute(() => {
+        const el = document.querySelector('.follow-up-suggestions')
+        if (el instanceof HTMLElement) el.hidden = false
+      })
+
+      await $('.follow-up-bubble[data-id="debug-ci"]').click()
+      await expect($('.chat-row.selected .chat-title')).toHaveText(originalThreadTitle)
+      await expect($('.messages-list .msg-user')).toBeDisplayed()
+    })
   })
 
   describe('deterministic git changes bubble', () => {
