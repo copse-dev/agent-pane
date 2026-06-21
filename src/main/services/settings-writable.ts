@@ -1,9 +1,11 @@
 import { z } from 'zod'
+import { APP_ICON_VARIANTS } from '@shared/app-icon-variants.ts'
 
 export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   model: z.string().max(256),
   theme: z.enum(['light', 'dark']),
   fontSize: z.number().int().min(8).max(32),
+  appIconVariant: z.enum(APP_ICON_VARIANTS),
   layout: z.object({
     projectsPaneWidth: z.number().int().min(180).max(400),
     filesPaneWidth: z.number().int().min(300).max(4000),

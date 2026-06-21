@@ -31,11 +31,7 @@ describe('todo steering prompt matrix', () => {
 
   for (const { id, prompt } of fixtures.mustNotSteerTodos) {
     it(`must not steer: ${id}`, () => {
-      assert.equal(
-        shouldSteerTodos(prompt),
-        false,
-        `expected no steering for: ${prompt}`,
-      )
+      assert.equal(shouldSteerTodos(prompt), false, `expected no steering for: ${prompt}`)
     })
   }
 })

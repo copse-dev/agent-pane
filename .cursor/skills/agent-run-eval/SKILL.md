@@ -34,12 +34,12 @@ Prerequisites:
 
 ### Avoid “Copse quit unexpectedly” during eval
 
-| Cause | Mitigation (built into harness) |
-|-------|----------------------------------|
+| Cause                                                                                                   | Mitigation (built into harness)                                                                                        |
+| ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | Eval Electron missing `COPSE_PANEL_USER_DATA` → writes same `~/Library/…/copse-panel` as your daily app | `wdio.eval.conf.ts` writes `tests/e2e/electron-shell/.eval-env.json`; `bootstrap.cjs` applies it **before** `app-init` |
-| Single-instance lock vs second Copse | `COPSE_AGENT_EVAL=1` skips `requestSingleInstanceLock()` |
-| Dozens of MCP stdio servers from `~/.cursor/mcp.json` on startup | MCP load is **skipped** when `COPSE_AGENT_EVAL=1` |
-| `ELECTRON_RUN_AS_NODE` in agent shells | WDIO inherits a normal Electron launch; for manual runs use `env -u ELECTRON_RUN_AS_NODE` |
+| Single-instance lock vs second Copse                                                                    | `COPSE_AGENT_EVAL=1` skips `requestSingleInstanceLock()`                                                               |
+| Dozens of MCP stdio servers from `~/.cursor/mcp.json` on startup                                        | MCP load is **skipped** when `COPSE_AGENT_EVAL=1`                                                                      |
+| `ELECTRON_RUN_AS_NODE` in agent shells                                                                  | WDIO inherits a normal Electron launch; for manual runs use `env -u ELECTRON_RUN_AS_NODE`                              |
 
 If it still crashes: check Console.app crash log for the eval PID, ensure LM Studio is up for non-mock runs, and retry with `COPSE_EVAL_USE_MOCK=1` to confirm the harness (not the model loop) is stable.
 
@@ -69,14 +69,14 @@ npm run analyze:thread -- tests/e2e/artifacts/<file>.jsonl tests/e2e/scenarios/m
 
 Optional `expect` block in scenario JSON:
 
-| Field | Meaning |
-|-------|---------|
-| `shouldSteerTodos` | User message should match `shouldSteerTodos()` |
-| `requireUpdateTodos` | At least one `update_todos` tool call |
-| `maxExplore` / `minExplore` | Explore count bounds |
-| `requireTools` | e.g. `["git_diff"]` for review tasks |
-| `forbidTools` | Tools that should not appear |
-| `maxInputTokens` | Token budget guard |
+| Field                        | Meaning                                          |
+| ---------------------------- | ------------------------------------------------ |
+| `shouldSteerTodos`           | User message should match `shouldSteerTodos()`   |
+| `requireUpdateTodos`         | At least one `update_todos` tool call            |
+| `maxExplore` / `minExplore`  | Explore count bounds                             |
+| `requireTools`               | e.g. `["git_diff"]` for review tasks             |
+| `forbidTools`                | Tools that should not appear                     |
+| `maxInputTokens`             | Token budget guard                               |
 | `forbidParallelExploreTurn1` | First assistant turn must not launch 2+ explores |
 
 ## LLM judge (you)
