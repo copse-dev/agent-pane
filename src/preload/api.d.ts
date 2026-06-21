@@ -48,6 +48,7 @@ export interface ApiClient {
       handler: (path: string, before: string, after: string, lang: string) => void,
     ) => () => void
     onQueued: (handler: (entries: { path: string; language: string }[]) => void) => () => void
+    onConflict: (handler: (paths: string[]) => void) => () => void
   }
   approval: {
     respond: (id: string, approved: boolean, remember?: boolean) => Promise<void>

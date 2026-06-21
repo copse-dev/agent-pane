@@ -1,6 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
 import { getToolDisplayName } from '@shared/tools/tool-display.ts'
+import { formatTodoProgress } from '@shared/todos/todo-logic.ts'
 
 export const CONTEXT_TRIM_ACTIVITY = 'Shortened earlier messages'
 
@@ -20,10 +21,14 @@ export function runningToolName(thread: Thread): string | null {
 
 export function agentActivityLabel(thread: Thread | undefined, writing: boolean): string | null {
   if (!thread || thread.status !== 'running') return null
+  const todoLabel = thread.todos?.length ? formatTodoProgress(thread.todos) : null
   const tool = runningToolName(thread)
-  if (tool) return `Running ${getToolDisplayName(tool)}…`
-  if (writing) return 'Writing…'
-  return 'Thinking…'
+  if (tool) {
+    const base = `Running ${getToolDisplayName(tool)}…`
+    return todoLabel ? `${base} (${todoLabel})` : base
+  }
+  if (writing) return todoLabel ? `Writing… (${todoLabel})` : 'Writing…'
+  return todoLabel ? `Thinking… (${todoLabel})` : 'Thinking…'
 }
 
 export function syncAgentActivity(store: AppStore, threadId: string, writing: boolean): void {
