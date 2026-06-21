@@ -820,6 +820,28 @@ label {
   border-radius: var(--radius);
   overflow-x: auto;
 }
+.message-text pre.code-block {
+  position: relative;
+  padding-top: calc(var(--spacing-sm) + 22px);
+}
+.code-block-copy {
+  position: absolute;
+  top: var(--spacing-xs);
+  right: var(--spacing-xs);
+  opacity: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px 8px;
+  transition: opacity 0.1s;
+  z-index: 1;
+}
+.message-text pre.code-block:hover .code-block-copy,
+.message-text pre.code-block:focus-within .code-block-copy {
+  opacity: 1;
+}
 .message-text pre code {
   background: none;
   padding: 0;
