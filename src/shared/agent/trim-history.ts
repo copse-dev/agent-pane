@@ -1,8 +1,51 @@
-import type { LLMMessage } from '@shared/types'
+import type { LLMMessage, UserContent } from '@shared/types'
+
+/** Flat estimate per image block (avoids counting base64 at ~4 chars/token). */
+export const ESTIMATED_IMAGE_TOKENS = 1600
+
+export const CANCELLED_TOOL_RESULT = 'Tool execution cancelled.'
+
+let lastMeasuredInputTokens: number | null = null
+
+export function setLastMeasuredInputTokens(tokens: number | null): void {
+  lastMeasuredInputTokens = tokens != null && tokens > 0 ? tokens : null
+}
+
+export function getLastMeasuredInputTokens(): number | null {
+  return lastMeasuredInputTokens
+}
+
+function estimateUserContentTokens(content: UserContent): number {
+  if (typeof content === 'string') return content.length / 4
+  let total = 0
+  for (const block of content) {
+    if (block.type === 'text') total += block.text.length / 4
+    else if (block.type === 'image') total += ESTIMATED_IMAGE_TOKENS
+  }
+  return total
+}
+
+function estimateSingleMessageTokens(message: LLMMessage): number {
+  switch (message.role) {
+    case 'system':
+      return message.content.length / 4
+    case 'user':
+      return estimateUserContentTokens(message.content)
+    case 'assistant':
+      if (typeof message.content === 'string') return message.content.length / 4
+      return JSON.stringify(message.content).length / 4
+    case 'tool':
+      return JSON.stringify(message.toolResults).length / 4
+    default:
+      return 0
+  }
+}
 
 /** Rough token estimate (~4 chars per token). Good enough for budget trimming. */
 export function estimateMessageTokens(messages: LLMMessage[]): number {
-  return JSON.stringify(messages).length / 4
+  let total = 0
+  for (const m of messages) total += estimateSingleMessageTokens(m)
+  return total
 }
 
 /** Tokens we aim to keep history under (below the model’s hard context cap). */
@@ -48,13 +91,66 @@ export function conversationTokenBudget(
 }
 
 export function estimateConversationTokens(messages: LLMMessage[]): number {
-  return estimateMessageTokens(conversationMessages(messages))
+  const conv = conversationMessages(messages)
+  let total = JSON.stringify(conv).length / 4
+  for (const m of conv) {
+    if (m.role === 'user' && Array.isArray(m.content)) {
+      for (const block of m.content) {
+        if (block.type === 'image') {
+          total -= block.dataUrl.length / 4
+          total += ESTIMATED_IMAGE_TOKENS
+        }
+      }
+    }
+  }
+  return total
+}
+
+/** Prefer provider-reported input size when available (#52). */
+export function effectiveConversationTokens(messages: LLMMessage[]): number {
+  if (lastMeasuredInputTokens != null) return lastMeasuredInputTokens
+  return estimateConversationTokens(messages)
+}
+
+/** Ensure every assistant tool_use block has matching tool_result rows (#54). */
+export function repairToolUseToolResultPairing(messages: LLMMessage[]): void {
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i]
+    if (m?.role !== 'assistant' || !Array.isArray(m.content)) continue
+
+    const toolIds = m.content.map((tc) => tc.id)
+    if (toolIds.length === 0) continue
+
+    const next = messages[i + 1]
+    if (next?.role === 'tool') {
+      const have = new Set(next.toolResults.map((r) => r.toolCallId))
+      for (const id of toolIds) {
+        if (!have.has(id)) {
+          next.toolResults.push({ toolCallId: id, result: CANCELLED_TOOL_RESULT })
+        }
+      }
+    } else {
+      messages.splice(i + 1, 0, {
+        role: 'tool',
+        toolResults: toolIds.map((id) => ({
+          toolCallId: id,
+          result: CANCELLED_TOOL_RESULT,
+        })),
+      })
+      i++
+    }
+  }
 }
 
 /** How many messages to remove at `index` (assistant+tool pairs drop together). */
 function droppableSpan(messages: LLMMessage[], index: number): number {
   const m = messages[index]
   if (!m || m.role === 'user') return 0
+  if (m.role === 'tool') {
+    const prev = messages[index - 1]
+    if (prev?.role === 'assistant' && Array.isArray(prev.content)) return 0
+    return 1
+  }
   if (m.role === 'assistant' && Array.isArray(m.content)) {
     const next = messages[index + 1]
     if (next?.role === 'tool') return 2
@@ -92,7 +188,9 @@ export function trimMessagesInPlace(
   const conversationBudget = conversationTokenBudget(messages, maxContextTokens, opts)
   let trimmed = false
 
-  while (messages.length > minTail && estimateConversationTokens(messages) > conversationBudget) {
+  repairToolUseToolResultPairing(messages)
+
+  while (messages.length > minTail && effectiveConversationTokens(messages) > conversationBudget) {
     const dropIndex = findOldestDroppableIndex(messages, minTail)
     if (dropIndex < 0) break
     const span = droppableSpan(messages, dropIndex)
