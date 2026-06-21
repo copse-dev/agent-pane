@@ -810,3 +810,132 @@ export function seedSemanticSearchExploreFixture(workspaceRoot: string): void {
     'utf8',
   )
 }
+
+export interface FooterBranchSeedIds {
+  projectId: string
+  matchThreadId: string
+  mismatchThreadId: string
+  currentBranch: string
+  mismatchBranch: string
+}
+
+/** Two threads bound to different branches for footer branch / mismatch screenshots. */
+export function seedFooterBranchFixture(workspaceRoot: string): FooterBranchSeedIds {
+  const projectId = 'e2e-footer-branch-project'
+  const matchThreadId = 'e2e-footer-branch-match'
+  const mismatchThreadId = 'e2e-footer-branch-mismatch'
+  const currentBranch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+    cwd: workspaceRoot,
+    encoding: 'utf8',
+  }).trim()
+  const mismatchBranch = currentBranch === 'main' ? 'feature-branch' : 'main'
+  const now = Date.now()
+
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: matchThreadId,
+          title: 'Matching branch',
+          status: 'idle',
+          gitBranch: currentBranch,
+          messages: [
+            {
+              id: 'msg-user-match',
+              role: 'user',
+              content: 'Thread on the checked-out branch.',
+              toolCalls: [],
+              createdAt: now,
+            },
+          ],
+          usage: { inputTokens: 1200, outputTokens: 400 },
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: mismatchThreadId,
+          title: 'Other branch',
+          status: 'idle',
+          gitBranch: mismatchBranch,
+          messages: [
+            {
+              id: 'msg-user-mismatch',
+              role: 'user',
+              content: 'Thread started on a different branch.',
+              toolCalls: [],
+              createdAt: now,
+            },
+          ],
+          usage: { inputTokens: 800, outputTokens: 200 },
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+      activeThreadId: matchThreadId,
+    }),
+    'utf8',
+  )
+
+  return {
+    projectId,
+    matchThreadId,
+    mismatchThreadId,
+    currentBranch,
+    mismatchBranch,
+  }
+}
+
+/** Single thread bound to a branch that differs from HEAD (mismatch footer screenshot). */
+export function seedFooterBranchMismatchFixture(workspaceRoot: string): FooterBranchSeedIds {
+  const projectId = 'e2e-footer-branch-project'
+  const matchThreadId = 'e2e-footer-branch-match'
+  const mismatchThreadId = 'e2e-footer-branch-mismatch'
+  const currentBranch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+    cwd: workspaceRoot,
+    encoding: 'utf8',
+  }).trim()
+  const mismatchBranch = currentBranch === 'main' ? 'feature-branch' : 'main'
+  const now = Date.now()
+
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: mismatchThreadId,
+          title: 'Other branch',
+          status: 'idle',
+          gitBranch: mismatchBranch,
+          messages: [
+            {
+              id: 'msg-user-mismatch',
+              role: 'user',
+              content: 'Thread started on a different branch.',
+              toolCalls: [],
+              createdAt: now,
+            },
+          ],
+          usage: { inputTokens: 800, outputTokens: 200 },
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    }),
+    'utf8',
+  )
+
+  return {
+    projectId,
+    matchThreadId,
+    mismatchThreadId,
+    currentBranch,
+    mismatchBranch,
+  }
+}
