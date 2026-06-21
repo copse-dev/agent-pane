@@ -30,4 +30,10 @@ augmentPathForGuiLaunch()
 // Without this, an unpackaged `electron .` run stores data under an "Electron"
 // directory and presents itself as "Electron" in the menu/About panel.
 app.setName('Copse')
-app.setPath('userData', join(app.getPath('appData'), 'copse-panel'))
+const evalUserData = process.env.COPSE_PANEL_USER_DATA?.trim()
+app.setPath(
+  'userData',
+  evalUserData && evalUserData.length > 0
+    ? evalUserData
+    : join(app.getPath('appData'), 'copse-panel'),
+)

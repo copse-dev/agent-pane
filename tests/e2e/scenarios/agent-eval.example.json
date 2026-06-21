@@ -1,0 +1,5 @@
+{
+  "id": "todo-deep-dive-review",
+  "description": "Review todo creation; expect steering heuristic to match deep-dive ask (does not require update_todos unless expect.requireUpdateTodos is set in a forked scenario).",
+  "prompts": ["Can you deep dive into reviewing the todo creation part?"]
+}
