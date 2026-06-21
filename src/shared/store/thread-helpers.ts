@@ -10,11 +10,15 @@ import type {
   ContextSnapshot,
 } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
+import type { Thread } from '@shared/types'
+
+export function sortThreadsNewestFirst(threads: Thread[]): Thread[] {
+  return [...threads].sort((a, b) => b.createdAt - a.createdAt)
+}
 
 export function createThread(store: AppStore): string {
   const id = randomUUID()
   const threads = [
-    ...store.getState().threads,
     {
       id,
       title: 'New Thread',
@@ -24,9 +28,19 @@ export function createThread(store: AppStore): string {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     },
+    ...store.getState().threads,
   ]
-  store.setState({ threads, activeThreadId: id })
+  store.setState({
+    threads,
+    activeThreadId: id,
+    filesPaneOpen: false,
+    openFile: null,
+    activeDiff: null,
+    stagedDiffs: [],
+  })
   store.emit('threads_changed')
+  store.emit('panel_changed')
+  store.emit('files_pane_changed')
   return id
 }
 
@@ -46,8 +60,11 @@ export function deleteThread(store: AppStore, id: string): void {
     })
     return
   }
+  const index = threads.findIndex((t) => t.id === id)
   const newActive =
-    activeThreadId === id ? (remaining[remaining.length - 1]?.id ?? null) : activeThreadId
+    activeThreadId === id
+      ? (remaining[Math.min(index, remaining.length - 1)]?.id ?? null)
+      : activeThreadId
   store.setState({ threads: remaining, activeThreadId: newActive })
   store.emit('threads_changed')
 }

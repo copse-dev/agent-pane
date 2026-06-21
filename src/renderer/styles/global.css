@@ -154,6 +154,27 @@ body {
   min-height: 0;
   --chat-composer-height: 148px;
 }
+.pane-chat.composer-centered .conversation {
+  padding-bottom: 0;
+}
+.pane-chat.composer-centered #input-bar {
+  top: 50%;
+  bottom: auto;
+  left: 50%;
+  right: auto;
+  width: min(720px, calc(100% - 2 * var(--spacing-lg)));
+  transform: translate(-50%, -50%);
+  border-top: none;
+  border-radius: var(--radius);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.pane-chat.composer-centered .prompt-input {
+  border-top: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.pane-chat.composer-centered .input-footer {
+  border-radius: 0 0 var(--radius) var(--radius);
+}
 .conversation {
   flex: 1 1 0;
   min-height: 0;

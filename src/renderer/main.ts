@@ -104,7 +104,7 @@ function mountFullLayout() {
   if (!inputRoot.querySelector('.prompt-input')) {
     throw new Error('Chat composer failed to mount (#input-bar missing .prompt-input)')
   }
-  bindChatComposerLayout()
+  bindChatComposerLayout(store)
   mountFileTree(document.getElementById('file-tree-host')!, store, api)
   mountRightPanelTabs(document.getElementById('right-panel-tabs')!, store)
   mountTerminalsPane(
@@ -172,8 +172,9 @@ function confirmDeleteThread() {
   const { activeThreadId, threads } = store.getState()
   if (!activeThreadId || threads.length <= 1) return
   if (confirm('Delete this thread?')) {
+    const index = threads.findIndex((t) => t.id === activeThreadId)
     const remaining = threads.filter((t) => t.id !== activeThreadId)
-    const newActive = remaining[remaining.length - 1]?.id ?? null
+    const newActive = remaining[Math.min(index, remaining.length - 1)]?.id ?? null
     store.setState({ threads: remaining, activeThreadId: newActive })
     store.emit('threads_changed')
   }
