@@ -1,4 +1,4 @@
-import { getApiKey } from './settings.ts'
+import { getLmStudioApiKey } from './settings.ts'
 
 const DEFAULT_LM_STUDIO_URL = 'http://localhost:1234/v1'
 
@@ -10,7 +10,7 @@ export interface LmStudioModelInfo {
 export function lmStudioApiKey(override?: string): string {
   const trimmed = override?.trim()
   if (trimmed) return trimmed
-  return getApiKey('lmstudio') ?? 'lm-studio'
+  return getLmStudioApiKey()
 }
 
 /** OpenAI base URL → server origin (strip trailing /v1). */

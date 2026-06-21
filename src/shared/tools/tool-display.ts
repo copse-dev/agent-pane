@@ -13,6 +13,7 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   git_log: 'Git log',
   write_file: 'Write file',
   run_shell: 'Run command',
+  update_todos: 'Update plan',
 }
 
 const TOOL_GROUPS: Record<string, { tools: string[]; label: string }> = {

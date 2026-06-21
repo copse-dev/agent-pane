@@ -13,6 +13,7 @@ export default ts.config(
       'eslint.config.mjs',
       'prettier.config.mjs',
       'wdio.conf.ts',
+      'wdio.eval.conf.ts',
       'tests/e2e/**',
     ],
   },
