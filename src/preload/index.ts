@@ -92,6 +92,11 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('diff:queued', listener)
       return () => ipcRenderer.off('diff:queued', listener)
     },
+    onConflict: (handler: (paths: string[]) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, paths: string[]) => handler(paths)
+      ipcRenderer.on('diff:conflict', listener)
+      return () => ipcRenderer.off('diff:conflict', listener)
+    },
   },
   approval: {
     respond: (id: string, approved: boolean, remember?: boolean) =>
