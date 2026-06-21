@@ -1,19 +1,18 @@
 import { getSetting } from './settings.ts'
+import { LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
+import { getModelInfo } from '@shared/llm/model-catalog.ts'
 import { contextLengthForModel, fetchLmStudioModelsCached } from './lm-studio-models.ts'
 
 const DEFAULT_LM_STUDIO_URL = 'http://localhost:1234/v1'
 const DEFAULT_LOCAL_CONTEXT = 8192
-
-const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
-  'claude-sonnet-4-6': 200_000,
-  'claude-opus-4-8': 200_000,
-  'gpt-4o': 128_000,
-  'gpt-4o-mini': 128_000,
-}
+// Fallback for unrecognized cloud models. 128K matches the broad floor used by
+// gpt-4o-class models — anything narrower would silently over-trim history.
+const DEFAULT_CLOUD_CONTEXT = 128_000
 
 function localModelId(model: string): string | null {
   if (model.startsWith('lmstudio:')) return model.slice('lmstudio:'.length)
-  if (model === 'lm-studio') return getSetting<string>('lmStudioModel', '').trim() || null
+  if (model === 'lm-studio')
+    return getSetting<string>('lmStudioModel', LM_STUDIO_MODEL_IDS.chat).trim() || null
   return null
 }
 
@@ -32,8 +31,8 @@ export async function fetchLmStudioModelContextLength(
  * per-model context (loaded length when exposed by the server), not a manual setting.
  */
 export async function resolveContextWindow(model: string): Promise<number> {
-  const mapped = MODEL_CONTEXT_WINDOWS[model]
-  if (mapped) return mapped
+  const cloud = getModelInfo(model)
+  if (cloud) return cloud.contextWindow
 
   if (model === 'lm-studio' || model.startsWith('lmstudio:')) {
     const url = getSetting<string>('lmStudioUrl', DEFAULT_LM_STUDIO_URL)
@@ -48,5 +47,5 @@ export async function resolveContextWindow(model: string): Promise<number> {
     return DEFAULT_LOCAL_CONTEXT
   }
 
-  return 128_000
+  return DEFAULT_CLOUD_CONTEXT
 }

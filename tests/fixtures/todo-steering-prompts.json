@@ -1,0 +1,81 @@
+{
+  "description": "Prompts for shouldSteerTodos() — mustSteer need length >= 20 and a heuristic match; mustNotSteer should stay false. Agent eval scenarios reference subsets of mustSteer.",
+  "mustSteerTodos": [
+    {
+      "id": "multi-then",
+      "category": "multiStep",
+      "prompt": "Refactor the auth module across several files and then run npm test."
+    },
+    {
+      "id": "multi-after-that",
+      "category": "multiStep",
+      "prompt": "Fix the parser bug, after that add a regression test for edge cases."
+    },
+    {
+      "id": "multi-step-number",
+      "category": "multiStep",
+      "prompt": "Step 1: read agent-service.ts. Step 2: document todo wiring."
+    },
+    {
+      "id": "complex-implement",
+      "category": "complex",
+      "prompt": "Implement todo steering tests and add coverage for failure modes."
+    },
+    {
+      "id": "complex-refactor",
+      "category": "complex",
+      "prompt": "Refactor todo-logic into smaller modules with the same public API."
+    },
+    {
+      "id": "complex-migrate",
+      "category": "complex",
+      "prompt": "Migrate thread todo persistence to a dedicated store module."
+    },
+    {
+      "id": "complex-multi-file",
+      "category": "complex",
+      "prompt": "Apply a multi-file rename from TodoItem to PlanItem across src/."
+    },
+    {
+      "id": "complex-several-files",
+      "category": "complex",
+      "prompt": "Update several files so update_todos always runs when steering fires."
+    },
+    {
+      "id": "audit-deep-dive",
+      "category": "audit",
+      "prompt": "Can you deep dive into reviewing the todo creation part?"
+    },
+    {
+      "id": "audit-deep-dive-hyphen",
+      "category": "audit",
+      "prompt": "Do a deep-dive on how verification gates completed todos."
+    },
+    {
+      "id": "audit-reviewing",
+      "category": "audit",
+      "prompt": "I am reviewing the todo worker routing — walk through the flow."
+    },
+    {
+      "id": "audit-review-module",
+      "category": "audit",
+      "prompt": "Please review the authentication module for edge cases."
+    },
+    {
+      "id": "audit-review-changes",
+      "category": "audit",
+      "prompt": "Can you review the current code changes and todo feature then propose fixes?"
+    },
+    {
+      "id": "complex-implement-and-test",
+      "category": "complex",
+      "prompt": "Implement stricter todo steering and add tests for the new prompts."
+    }
+  ],
+  "mustNotSteerTodos": [
+    { "id": "short", "prompt": "hi" },
+    { "id": "short-question", "prompt": "what is update_todos?" },
+    { "id": "under-20-chars", "prompt": "review auth.ts" },
+    { "id": "simple-explain", "prompt": "Explain what TodoItem.status means in one paragraph." }
+  ]
+}
