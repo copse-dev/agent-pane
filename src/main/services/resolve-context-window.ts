@@ -1,4 +1,5 @@
 import { getSetting } from './settings.ts'
+import { LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
 import { contextLengthForModel, fetchLmStudioModelsCached } from './lm-studio-models.ts'
 
 const DEFAULT_LM_STUDIO_URL = 'http://localhost:1234/v1'
@@ -16,7 +17,8 @@ const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
 
 function localModelId(model: string): string | null {
   if (model.startsWith('lmstudio:')) return model.slice('lmstudio:'.length)
-  if (model === 'lm-studio') return getSetting<string>('lmStudioModel', '').trim() || null
+  if (model === 'lm-studio')
+    return getSetting<string>('lmStudioModel', LM_STUDIO_MODEL_IDS.chat).trim() || null
   return null
 }
 

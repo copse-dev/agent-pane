@@ -56,6 +56,7 @@ export function attachAutosave(store: AppStore, api: ApiClient): void {
     'usage_updated',
     'thread_status_changed',
     'projects_changed',
+    'todos_changed',
   ] as const
   events.forEach((e) => store.on(e, save))
 

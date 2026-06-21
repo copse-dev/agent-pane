@@ -23,8 +23,10 @@ export interface SkillReadResult {
 }
 
 import type { UserContent } from './llm.ts'
+import type { TodoItem } from './todo.ts'
 
 export interface AgentRunPayload {
   content: UserContent
   invokedSkills?: string[]
+  priorTodos?: TodoItem[]
 }
