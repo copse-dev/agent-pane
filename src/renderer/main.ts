@@ -81,8 +81,8 @@ function ensureLayout() {
   if (layoutMounted) return
   mountFullLayout()
   layoutMounted = true
-  registerKeyboardShortcuts()
   updateFilesPane()
+  registerKeyboardShortcuts()
 }
 
 function mountFullLayout() {
@@ -116,6 +116,7 @@ function mountFullLayout() {
   if (body) mountPaneResizers(body, store, api)
 
   store.on('files_pane_changed', updateFilesPane)
+  updateFilesPane()
 }
 
 // The right pane (explorer + file viewer) is hidden by default so chat is
