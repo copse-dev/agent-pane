@@ -35,6 +35,11 @@ export function setRgAvailableForTest(value: boolean | null): void {
   rgAvail = value
 }
 
+/** Test hook — force git availability without probing PATH. */
+export function setGitAvailableForTest(value: boolean | null): void {
+  gitAvail = value
+}
+
 async function probe(cmd: string, args: string[]): Promise<boolean> {
   try {
     const pathPrefix = process.platform === 'win32' ? '' : '/usr/bin:/bin:'
