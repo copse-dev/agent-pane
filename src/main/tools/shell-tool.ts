@@ -9,6 +9,7 @@ import {
 } from '../project-sandbox/index.ts'
 import { detectLikelySandboxFailure } from '../services/sandbox-failure.ts'
 import { promptUnsandboxedShell } from '../services/permission-gate.ts'
+import { shellRequiresOutsideSandbox } from '../services/permission-policy.ts'
 import {
   CappedOutputAccumulator,
   stripTerminalControlSequences,
@@ -119,7 +120,7 @@ function formatShellFailure(result: ShellRunResult): Error {
 export const runShellTool: ToolDefinition = {
   name: 'run_shell',
   description:
-    'Run a shell command in the workspace directory. Output is streamed to the conversation. Commands contained within the sandbox auto-run; network or outside-workspace access prompts for approval. If a sandboxed command fails because the sandbox blocks it (e.g. Playwright), the user may approve running it once outside the sandbox.',
+    'Run a shell command in the workspace directory. Output is streamed to the conversation. Commands contained within the sandbox auto-run; network or outside-workspace access (e.g. gh, curl, git push) prompts for approval and runs outside the sandbox when the macOS project sandbox is active. If a sandbox-contained command fails because the sandbox blocks it (e.g. Playwright), the user may approve running it once outside the sandbox.',
   parameters: z.object({
     command: z.string().describe('Shell command to run'),
     timeout_ms: z.number().int().min(1000).max(300_000).optional().default(30_000),
@@ -128,9 +129,11 @@ export const runShellTool: ToolDefinition = {
     const cwd = getWorkspaceRoot()
     if (!cwd) return 'No workspace open.'
 
+    const outsideSandbox = shellRequiresOutsideSandbox(command, cwd, isProjectSandboxEnabled())
+
     let result: ShellRunResult
     try {
-      result = await runShellOnce(command, cwd, timeout_ms, signal, false)
+      result = await runShellOnce(command, cwd, timeout_ms, signal, outsideSandbox)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       const retry = await maybeRetryUnsandboxed(command, cwd, timeout_ms, signal, message, null)
