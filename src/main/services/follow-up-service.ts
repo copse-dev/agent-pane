@@ -24,7 +24,7 @@ function lmStudioKey(): string {
 }
 
 async function buildCloudProvider(model: string): Promise<LLMProvider> {
-  if (process.env.AGENT_WINDOW_MOCK_LLM === '1') return createProvider(model)
+  if (process.env.COPSE_PANEL_MOCK_LLM === '1') return createProvider(model)
   const anthropic = getApiKey('anthropic') ?? process.env.ANTHROPIC_API_KEY
   const openai = getApiKey('openai') ?? process.env.OPENAI_API_KEY
   if (model.startsWith('claude') && anthropic)
@@ -176,7 +176,7 @@ export function mockFollowUpSuggestions(): FollowUpSuggestion[] {
 /** Build follow-up bubbles: deterministic PR/git signals first, then model picks. */
 export async function suggestFollowUps(context: FollowUpContext): Promise<FollowUpSuggestion[]> {
   if (
-    process.env.AGENT_WINDOW_MOCK_FOLLOW_UPS === '1' ||
+    process.env.COPSE_PANEL_MOCK_FOLLOW_UPS === '1' ||
     getSetting<boolean>('mockFollowUps', false)
   ) {
     return mockFollowUpSuggestions()

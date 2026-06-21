@@ -1,7 +1,7 @@
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { PromptAttachmentHandlers } from './prompt-attachments.ts'
 
-export const WORKSPACE_PATH_MIME = 'application/x-agent-pane-path'
+export const WORKSPACE_PATH_MIME = 'application/x-copse-panel-path'
 
 type ElectronFile = File & { path?: string }
 

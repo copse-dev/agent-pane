@@ -29,5 +29,5 @@ augmentPathForGuiLaunch()
 //
 // Without this, an unpackaged `electron .` run stores data under an "Electron"
 // directory and presents itself as "Electron" in the menu/About panel.
-app.setName('agent-pane')
-app.setPath('userData', join(app.getPath('appData'), 'agent-pane'))
+app.setName('Copse')
+app.setPath('userData', join(app.getPath('appData'), 'copse-panel'))

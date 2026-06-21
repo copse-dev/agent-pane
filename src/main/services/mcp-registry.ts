@@ -51,7 +51,6 @@ interface ActiveServer {
 
 interface McpToolMeta {
   server: string
-  trusted: boolean
   annotations?: McpToolAnnotations | undefined
 }
 
@@ -156,7 +155,6 @@ async function connectServer(
     state: 'connecting',
     toolCount: 0,
     tools: [],
-    trusted: cfg.trusted === true,
     userEnabled,
     configDisabled,
     ...(cfg.source !== undefined ? { source: cfg.source } : {}),
@@ -168,7 +166,7 @@ async function connectServer(
 
   try {
     const transport = createTransport(cfg)
-    const client = new Client({ name: 'agent-pane', version: '0.1.0' }, { capabilities: {} })
+    const client = new Client({ name: 'copse-panel', version: '0.1.0' }, { capabilities: {} })
     await withTimeout(client.connect(transport), CONNECT_TIMEOUT_MS, `Connecting to "${cfg.name}"`)
     activeServers.push({ config: cfg, client })
 
@@ -178,7 +176,7 @@ async function connectServer(
     for (const tool of tools) {
       const fullName = mcpToolName(cfg.name, tool.name)
       toolNames.push(tool.name)
-      const meta: McpToolMeta = { server: cfg.name, trusted: cfg.trusted === true }
+      const meta: McpToolMeta = { server: cfg.name }
       if (tool.annotations) meta.annotations = tool.annotations as McpToolAnnotations
       toolMeta.set(fullName, meta)
       registry.register({
