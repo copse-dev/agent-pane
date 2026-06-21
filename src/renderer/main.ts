@@ -24,10 +24,12 @@ import { mountApprovalDialog } from './views/approval-dialog.ts'
 import { startAgentController } from './controller/agent.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
 import { addProjectFromPath, restoreProject } from './controller/projects.ts'
+import { openRightPanelWithWorkspace, toggleFilesPaneWithWorkspace } from './controller/panels.ts'
 import { initMonaco } from './monaco/setup.ts'
 import { mountPaneResizers, parseSavedLayout } from './views/pane-resizer.ts'
 import { bindChatComposerLayout } from './views/chat-layout.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
+import { registerPanelKeyboardShortcuts } from './keyboard-shortcuts.ts'
 
 const store = createStore()
 const api = window.api
@@ -53,6 +55,23 @@ async function boot() {
   // File ▸ Settings… (Cmd+,) from the native menu opens the settings dialog.
   api.menu.onSettings(() => {
     if (!isSettingsDialogOpen()) openSettingsDialog()
+  })
+
+  api.menu.onTogglePanel(() => {
+    ensureLayout()
+    toggleFilesPaneWithWorkspace(store, api)
+  })
+  api.menu.onShowExplorer(() => {
+    ensureLayout()
+    openRightPanelWithWorkspace(store, api, 'explorer')
+  })
+  api.menu.onShowTerminal(() => {
+    ensureLayout()
+    openRightPanelWithWorkspace(store, api, 'terminal')
+  })
+  api.menu.onShowChanges(() => {
+    ensureLayout()
+    openRightPanelWithWorkspace(store, api, 'changes')
   })
 
   // File ▸ Open Folder… registers the chosen folder as a project and switches.
@@ -83,6 +102,7 @@ function ensureLayout() {
   layoutMounted = true
   updateFilesPane()
   registerKeyboardShortcuts()
+  registerPanelKeyboardShortcuts(store, api)
 }
 
 function mountFullLayout() {

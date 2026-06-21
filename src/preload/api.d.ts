@@ -72,6 +72,10 @@ export interface ApiClient {
   }
   menu: {
     onSettings: (handler: () => void) => () => void
+    onTogglePanel: (handler: () => void) => () => void
+    onShowExplorer: (handler: () => void) => () => void
+    onShowTerminal: (handler: () => void) => () => void
+    onShowChanges: (handler: () => void) => () => void
   }
   settings: {
     get: (key: string) => Promise<unknown>
