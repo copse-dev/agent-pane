@@ -145,18 +145,23 @@ body {
   color: var(--text-muted);
 }
 .pane-chat {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   min-width: 0;
+  min-height: 0;
+  --chat-composer-height: 148px;
 }
 .conversation {
-  flex: 1;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  min-height: 0;
+  box-sizing: border-box;
+  padding-bottom: var(--chat-composer-height);
 }
 .pane-files {
   width: var(--files-width, 480px);
@@ -561,9 +566,14 @@ body {
   border-bottom: 1px solid var(--border);
 }
 #input-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
   flex-shrink: 0;
+  background: var(--bg-base);
   border-top: 1px solid var(--border);
-  position: relative;
 }
 .titlebar {
   -webkit-app-region: drag;
@@ -670,6 +680,7 @@ label {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
+  min-height: 0;
 }
 .conversation-scroll {
   position: relative;
@@ -860,6 +871,157 @@ label {
   border: none;
   border-top: 1px solid var(--border);
   margin: var(--spacing-md) 0;
+}
+.message-text .mermaid-diagram {
+  /* Cap height before/after mermaid.run so large source/SVG cannot blow flex layout. */
+  max-height: min(280px, 42vh);
+  overflow: auto;
+  margin: var(--spacing-sm) 0;
+}
+.message-text .mermaid-diagram.mermaid-diagram--folded {
+  cursor: zoom-in;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-xs);
+  background: var(--bg-elevated);
+}
+.message-text .mermaid-diagram.mermaid-diagram--folded:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.message-text .mermaid-diagram.mermaid-diagram--folded::after {
+  content: 'Click to expand';
+  display: block;
+  margin-top: var(--spacing-xs);
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  pointer-events: none;
+}
+.message-text .mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+.mermaid-expand-dialog {
+  width: min(96vw, 1200px);
+  max-width: 96vw;
+  height: min(92vh, 860px);
+  max-height: 92vh;
+  padding: var(--spacing-md);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+.mermaid-expand-dialog-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.mermaid-expand-viewport {
+  position: relative;
+  overflow: hidden;
+  flex: 1;
+  min-height: min(50vh, 320px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  cursor: grab;
+  touch-action: none;
+}
+.mermaid-expand-viewport.is-panning {
+  cursor: grabbing;
+}
+.mermaid-expand-stage {
+  transform-origin: 0 0;
+  display: inline-block;
+  padding: var(--spacing-md);
+}
+.mermaid-expand-stage svg {
+  display: block;
+  max-width: none;
+  height: auto;
+}
+.mermaid-expand-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+.mermaid-expand-tool {
+  min-width: 32px;
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.mermaid-expand-tool:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.mermaid-expand-zoom-label {
+  min-width: 3.5em;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.mermaid-expand-hint {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.mermaid-expand-close {
+  margin-top: var(--spacing-sm);
+  width: 100%;
+  padding: var(--spacing-sm);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.mermaid-expand-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.message-text .mermaid-diagram .error-icon {
+  fill: var(--error);
+}
+.mermaid-fallback-title {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-xs);
+}
+.mermaid-fallback-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: var(--spacing-sm);
+}
+.mermaid-fallback-source {
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--bg-elevated);
+}
+.mermaid-fallback-source summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-xs);
+}
+.mermaid-fallback-source pre {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  color: var(--text-muted);
+  max-height: 240px;
+  overflow: auto;
 }
 .tool-card {
   background: var(--bg-elevated);
@@ -1523,6 +1685,53 @@ label {
 }
 .settings-content fieldset {
   background: var(--bg-elevated);
+}
+.app-icon-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.app-icon-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+.app-icon-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.app-icon-preview {
+  display: block;
+  padding: 4px;
+  border: 2px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-base);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.app-icon-preview img {
+  display: block;
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+}
+.app-icon-option:hover .app-icon-preview {
+  border-color: var(--border-strong);
+}
+.app-icon-option:has(input:checked) .app-icon-preview {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.app-icon-option:has(input:checked) .app-icon-label {
+  color: var(--text-primary);
+}
+.app-icon-label {
+  font-size: 12px;
 }
 .settings-content label select,
 .settings-content label input[type='text'],

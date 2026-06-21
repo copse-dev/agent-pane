@@ -1,0 +1,36 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7C3AED"/>
+      <stop offset="100%" stop-color="#22D3EE"/>
+    </linearGradient>
+    <clipPath id="squircle">
+      <rect width="512" height="512" rx="110"/>
+    </clipPath>
+  </defs>
+
+  <g transform="translate(256, 256) scale(0.86) translate(-256, -256)">
+    <g clip-path="url(#squircle)">
+      <rect width="512" height="512" fill="#0F172A"/>
+
+      <g transform="translate(-8, 14)">
+        <g transform="translate(256, 256) scale(1.12) translate(-256, -256)">
+          <path
+            d="
+              M380 180
+              C380 110 290 90 225 125
+              C160 160 145 240 190 295
+              C235 350 320 340 345 280
+              C365 235 330 195 285 205
+              C250 213 240 255 268 275
+              C288 289 314 282 320 260"
+            fill="none"
+            stroke="url(#g1)"
+            stroke-width="40"
+            stroke-linecap="round"
+          />
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>
