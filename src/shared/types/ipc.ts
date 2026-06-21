@@ -105,6 +105,7 @@ export interface IpcEventMap {
   ]
   'mcp:status_changed': [statuses: McpServerStatus[]]
   'diff:queued': [entries: { path: string; language: string }[]]
+  'diff:conflict': [paths: string[]]
   'fs:changed': [path: string, content: string | null]
   'menu:settings': []
   'theme:changed': ['light' | 'dark']
