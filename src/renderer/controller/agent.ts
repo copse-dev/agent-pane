@@ -218,7 +218,9 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     store.emit('files_pane_changed')
   })
 
-  // When diff is queued from main, update staged diffs in store
+  // Diff IPC → store: `agent:show_diff` sets activeDiff + panel tab; `diff:queued`
+  // updates stagedDiffs (path/language only). The context panel caches full payloads
+  // from show_diff for multi-file switching; approve/reject use diff:* IPC handlers.
   api.diff.onQueued((entries) => {
     const { activeDiff } = store.getState()
     const stillQueued =
