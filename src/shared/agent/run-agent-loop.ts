@@ -519,5 +519,12 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     messages.push({ role: 'assistant', content: RUN_LIMIT_MESSAGE })
   }
 
+  // Final guarantee: never leave an assistant tool_use without a matching
+  // tool_result in the persisted history. Abort/run-limit breaks can exit the
+  // loop right after an assistant tool_use turn was pushed but before its
+  // results were appended; this keeps the saved history API-valid for the next
+  // turn or resume (#54, #113).
+  repairToolUseToolResultPairing(messages)
+
   onChunk({ type: 'done' })
 }
