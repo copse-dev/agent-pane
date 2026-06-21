@@ -3,11 +3,10 @@ import { conversationTokenBudget } from '@shared/agent/trim-history.ts'
 import { readFileLimitsForSubagent } from '@shared/agent/read-file-limits.ts'
 import type { LLMProvider, LLMMessage, StreamChunk } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
-import {
-  setAgentRunReadFileLimitsExplicit,
-  clearAgentRunReadFileLimits,
-} from './agent-run-read-limits.ts'
+import { runWithAgentRunReadFileLimits } from './agent-run-read-limits.ts'
 import { getWorkspaceRoot } from './workspace.ts'
+import { buildExploreSearchRoutingAddon } from '@shared/agent/search-routing.ts'
+import { isSemanticSearchAvailable } from './semantic-index.ts'
 
 interface ProviderWithUsage {
   lastUsage: { inputTokens: number; outputTokens: number } | null
@@ -78,9 +77,9 @@ export async function runExploreSubagent(
   const subagentBudget = conversationTokenBudget(subagentMessages, contextWindow, {
     reserveTokens: toolSchemaReserve,
   })
-  setAgentRunReadFileLimitsExplicit(readFileLimitsForSubagent(subagentBudget))
+  const subagentReadLimits = readFileLimitsForSubagent(subagentBudget)
 
-  try {
+  return runWithAgentRunReadFileLimits(subagentReadLimits, async () => {
     const { summary, session } = await runSubagent({
       provider,
       prompt,
@@ -92,6 +91,7 @@ export async function runExploreSubagent(
       toolSchemaReserveTokens: toolSchemaReserve,
       executeTool: (name, args, sig) => executeExploreTool(registry, name, args, sig),
       onSubagentChunk: onChunk,
+      systemPromptSuffix: buildExploreSearchRoutingAddon(isSemanticSearchAvailable()),
     })
 
     let inputTokens = 0
@@ -104,7 +104,5 @@ export async function runExploreSubagent(
     session.usage = { inputTokens, outputTokens }
 
     return { summary, usage: { inputTokens, outputTokens } }
-  } finally {
-    clearAgentRunReadFileLimits()
-  }
+  })
 }

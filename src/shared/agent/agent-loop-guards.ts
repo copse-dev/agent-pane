@@ -1,5 +1,11 @@
 /** Tools that only gather context — repeating them often indicates a stuck loop. */
-export const EXPLORE_TOOL_NAMES = new Set(['list_dir', 'read_file', 'find_files', 'search_code'])
+export const EXPLORE_TOOL_NAMES = new Set([
+  'list_dir',
+  'read_file',
+  'find_files',
+  'search_code',
+  'search_codebase',
+])
 
 export function toolCallFingerprint(name: string, args: unknown): string {
   return `${name}:${stableJson(args)}`

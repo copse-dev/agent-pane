@@ -10,14 +10,22 @@ import type {
 
 const randomUUID = () => globalThis.crypto.randomUUID()
 
-export const EXPLORE_TOOL_NAMES = ['read_file', 'list_dir', 'search_code', 'find_files'] as const
+export const EXPLORE_TOOL_NAMES = [
+  'read_file',
+  'list_dir',
+  'search_code',
+  'search_codebase',
+  'semantic_search',
+  'find_files',
+] as const
 
 export const SUBAGENT_SYSTEM_PROMPT = `You are an exploration subagent for a coding assistant.
 
 Your job is to read and search the workspace, then return a concise summary for the parent agent.
 
 Rules:
-- Use read_file, list_dir, search_code, and find_files as needed
+- Use read_file, list_dir, search_codebase, search_code, and find_files as needed
+- Prefer search_codebase (auto mode) or semantic_search over search_code alone — they combine regex and native semantic search
 - Do not write files or run shell commands
 - Cite file paths and line ranges when relevant
 - Be thorough in exploration but concise in your final summary
@@ -35,6 +43,7 @@ export interface RunSubagentOptions {
   toolSchemaReserveTokens?: number
   onSubagentChunk: (chunk: StreamChunk) => void
   parentToolCallId: string
+  systemPromptSuffix?: string
 }
 
 export interface RunSubagentResult {
@@ -64,6 +73,7 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
     toolSchemaReserveTokens = 0,
     onSubagentChunk,
     parentToolCallId,
+    systemPromptSuffix,
   } = opts
 
   const sessionId = randomUUID()
@@ -97,7 +107,12 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
   }
 
   const messages: LLMMessage[] = [
-    { role: 'system', content: SUBAGENT_SYSTEM_PROMPT },
+    {
+      role: 'system',
+      content: systemPromptSuffix
+        ? `${SUBAGENT_SYSTEM_PROMPT}\n\n${systemPromptSuffix}`
+        : SUBAGENT_SYSTEM_PROMPT,
+    },
     { role: 'user', content: buildUserTask(prompt, parentGoal) },
   ]
 

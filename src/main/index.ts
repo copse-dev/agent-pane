@@ -1,15 +1,20 @@
 import './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
 import { app, ipcMain } from 'electron'
+import { applyAppIcon } from './app-icon.ts'
 import type { LLMMessage } from '@shared/types'
 import { createMainWindow } from './windows/create-main-window.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
-import { getApiKey } from './services/settings.ts'
 import { checkToolAvailability } from './services/tool-availability.ts'
 import { createRegistry, registerSkillTools } from './services/registry-bootstrap.ts'
-import { loadMcpServers, shutdownMcpServers } from './services/mcp-registry.ts'
+import {
+  loadMcpServers,
+  shutdownMcpServers,
+  getMcpServerStatuses,
+} from './services/mcp-registry.ts'
 import { initApproval } from './services/approval.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
+import { stopWorkspaceIndexWatcher } from './services/workspace-index-watcher.ts'
 import { initTerminal } from './ipc/terminal.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
 import { initSkillsRegistry } from './services/skills-registry.ts'
@@ -22,6 +27,8 @@ import {
   listLmStudioModels,
   invalidateLmStudioModelsCache,
 } from './services/agent-service.ts'
+import { suggestFollowUps } from './services/follow-up-service.ts'
+import type { FollowUpContext } from '@shared/follow-ups/types.ts'
 import { storageGet, storageSet } from './services/storage.ts'
 import { getMainWindow } from './windows/create-main-window.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
@@ -44,18 +51,11 @@ if (!app.requestSingleInstanceLock()) {
 app
   .whenReady()
   .then(async () => {
-    // A key saved in Settings is an explicit user choice, so let it override any
-    // (possibly stale) ANTHROPIC_API_KEY / OPENAI_API_KEY inherited from the
-    // shell. Only fall back to the inherited env var when nothing is stored.
-    const storedAnthropic = getApiKey('anthropic')
-    if (storedAnthropic) process.env.ANTHROPIC_API_KEY = storedAnthropic
-    const storedOpenai = getApiKey('openai')
-    if (storedOpenai) process.env.OPENAI_API_KEY = storedOpenai
-
     await checkToolAvailability()
     await initProjectSandbox()
 
     const win = createMainWindow()
+    applyAppIcon([win])
     buildAppMenu(win)
     const registry = createRegistry()
 
@@ -68,6 +68,7 @@ app
     await initSkillsRegistry()
     registerSkillTools(registry)
     await loadMcpServers(registry)
+    win.webContents.send('mcp:status_changed', getMcpServerStatuses())
 
     const messageHistory = new Map<string, LLMMessage[]>()
 
@@ -101,6 +102,11 @@ app
 
     ipcMain.handle('agent:suggestTitle', (_e, text: string) => suggestThreadTitle(text))
 
+    ipcMain.handle('agent:suggestFollowUps', (_e, contextJson: string) => {
+      const context = JSON.parse(contextJson) as FollowUpContext
+      return suggestFollowUps(context)
+    })
+
     ipcMain.handle('lmstudio:test', async (_e, url: string, apiKey?: string) => {
       const result = await testLmStudio(url, apiKey)
       invalidateLmStudioModelsCache() // refetch the dropdown after a manual test
@@ -113,6 +119,7 @@ app
 
 app.on('before-quit', () => {
   closeAllWatchers()
+  stopWorkspaceIndexWatcher()
   void shutdownMcpServers()
   void shutdownProjectSandbox()
 })

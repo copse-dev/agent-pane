@@ -1,5 +1,7 @@
 import type { StreamChunk } from './stream.ts'
 import type { GitFileDiff, GitStatusResult } from './git.ts'
+import type { McpServerStatus } from './mcp.ts'
+import type { UsageDelta } from './thread.ts'
 
 type Provider = 'anthropic' | 'openai' | 'lmstudio'
 
@@ -23,6 +25,10 @@ export interface IpcInvokeMap {
   'agent:abort': { args: [threadId: string]; result: void }
   'agent:clearHistory': { args: [threadId: string]; result: void }
   'agent:suggestTitle': { args: [text: string]; result: string | null }
+  'agent:suggestFollowUps': {
+    args: [contextJson: string]
+    result: import('@shared/follow-ups/types.ts').FollowUpSuggestion[]
+  }
 
   // Diff approval
   'diff:approve': { args: [path: string]; result: void }
@@ -31,14 +37,35 @@ export interface IpcInvokeMap {
   'diff:rejectAll': { args: []; result: void }
 
   // Approval gate (shell / MCP)
-  'approval:respond': { args: [id: string, approved: boolean]; result: void }
+  'approval:respond': { args: [id: string, approved: boolean, remember?: boolean]; result: void }
+
+  // MCP servers
+  'mcp:list': { args: []; result: McpServerStatus[] }
+  'mcp:reload': { args: []; result: McpServerStatus[] }
+  'mcp:setEnabled': { args: [name: string, enabled: boolean]; result: McpServerStatus[] }
 
   // Settings
   'settings:get': { args: [key: string]; result: unknown }
   'settings:set': { args: [key: string, value: unknown]; result: void }
+  'settings:setSecurity': {
+    args: [
+      prefs: {
+        lmStudioUrl: string
+        lmStudioSafetyEnabled: boolean
+        lmStudioSafetyConfidenceThreshold: number
+        lmStudioSafetyModel: string
+        autoRunSandboxCommands: boolean
+        mcpAutoAllowReadOnly: boolean
+      },
+    ]
+    result: void
+  }
   'settings:getKey': { args: [provider: Provider]; result: boolean }
   'settings:setKey': { args: [provider: Provider, key: string]; result: void }
   'settings:availableProviders': { args: []; result: { anthropic: boolean; openai: boolean } }
+
+  // App icon
+  'app-icon:apply': { args: []; result: void }
 
   // Storage (generic electron-store access)
   'storage:get': { args: [key: string]; result: unknown }
@@ -70,12 +97,15 @@ export interface IpcInvokeMap {
 export interface IpcEventMap {
   'workspace:opened': [root: string]
   'agent:chunk': [threadId: string, chunk: StreamChunk]
-  'agent:usage': [threadId: string, usage: { inputTokens: number; outputTokens: number }]
+  'agent:usage': [threadId: string, usage: UsageDelta]
   'agent:show_diff': [path: string, before: string, after: string, language: string]
   'agent:shell_output': [data: string]
-  'agent:approval_request': [{ id: string; title: string; body: string; type: 'shell' | 'mcp' }]
+  'agent:approval_request': [
+    { id: string; title: string; body: string; type: 'shell' | 'mcp'; allowRemember?: boolean },
+  ]
+  'mcp:status_changed': [statuses: McpServerStatus[]]
   'diff:queued': [entries: { path: string; language: string }[]]
-  'fs:changed': [path: string, content: string]
+  'fs:changed': [path: string, content: string | null]
   'menu:settings': []
   'theme:changed': ['light' | 'dark']
   'terminal:output': [sessionId: string, data: string]

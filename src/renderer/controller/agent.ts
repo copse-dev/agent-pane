@@ -114,6 +114,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
       }
       case 'usage': {
         addUsageDelta(store, threadId, {
+          model: chunk.model,
           inputTokens: chunk.inputTokens,
           outputTokens: chunk.outputTokens,
         })

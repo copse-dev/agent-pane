@@ -1,6 +1,8 @@
-import type { StreamChunk } from '@shared/types'
+import type { StreamChunk, UsageDelta } from '@shared/types'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { GitFileDiff, GitStatusResult } from '@shared/types/git.ts'
+import type { McpServerStatus } from '@shared/types/mcp.ts'
+import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
 
 export interface ApiClient {
   workspace: {
@@ -16,21 +18,26 @@ export interface ApiClient {
     listDir: (path: string) => Promise<{ name: string; isDir: boolean }[]>
     watch: (path: string) => Promise<void>
     unwatch: (path: string) => Promise<void>
-    onChanged: (handler: (path: string, content: string) => void) => () => void
+    onChanged: (handler: (path: string, content: string | null) => void) => () => void
   }
   agent: {
     run: (threadId: string, prompt: string) => Promise<void>
     abort: (threadId: string) => Promise<void>
     clearHistory: (threadId: string) => Promise<void>
     suggestTitle: (text: string) => Promise<string | null>
+    suggestFollowUps: (contextJson: string) => Promise<FollowUpSuggestion[]>
     onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => () => void
     onApprovalRequest: (
-      handler: (req: { id: string; title: string; body: string; type: string }) => void,
+      handler: (req: {
+        id: string
+        title: string
+        body: string
+        type: string
+        allowRemember?: boolean
+      }) => void,
     ) => () => void
     onShellOutput: (handler: (data: string) => void) => () => void
-    onUsage: (
-      handler: (threadId: string, usage: { inputTokens: number; outputTokens: number }) => void,
-    ) => () => void
+    onUsage: (handler: (threadId: string, usage: UsageDelta) => void) => () => void
   }
   diff: {
     approve: (path: string) => Promise<void>
@@ -43,7 +50,13 @@ export interface ApiClient {
     onQueued: (handler: (entries: { path: string; language: string }[]) => void) => () => void
   }
   approval: {
-    respond: (id: string, approved: boolean) => Promise<void>
+    respond: (id: string, approved: boolean, remember?: boolean) => Promise<void>
+  }
+  mcp: {
+    list: () => Promise<McpServerStatus[]>
+    reload: () => Promise<McpServerStatus[]>
+    setEnabled: (name: string, enabled: boolean) => Promise<McpServerStatus[]>
+    onStatusChanged: (handler: (statuses: McpServerStatus[]) => void) => () => void
   }
   storage: {
     get: (key: string) => Promise<unknown>
@@ -62,9 +75,20 @@ export interface ApiClient {
   settings: {
     get: (key: string) => Promise<unknown>
     set: (key: string, value: unknown) => Promise<void>
+    setSecurity: (prefs: {
+      lmStudioUrl: string
+      lmStudioSafetyEnabled: boolean
+      lmStudioSafetyConfidenceThreshold: number
+      lmStudioSafetyModel: string
+      autoRunSandboxCommands: boolean
+      mcpAutoAllowReadOnly: boolean
+    }) => Promise<void>
     getKey: (provider: 'anthropic' | 'openai' | 'lmstudio') => Promise<boolean>
     setKey: (provider: 'anthropic' | 'openai' | 'lmstudio', key: string) => Promise<void>
     availableProviders: () => Promise<{ anthropic: boolean; openai: boolean }>
+  }
+  appIcon: {
+    apply: () => Promise<void>
   }
   index: {
     query: (pattern: string) => Promise<string[]>

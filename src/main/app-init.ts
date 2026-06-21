@@ -1,5 +1,25 @@
 import { app } from 'electron'
 import { join } from 'node:path'
+import { homedir } from 'node:os'
+
+function augmentPathForGuiLaunch(): void {
+  const pathKey = process.platform === 'win32' ? 'Path' : 'PATH'
+  const sep = process.platform === 'win32' ? ';' : ':'
+  const current = process.env[pathKey] ?? ''
+  const seen = new Set(current.split(sep).filter(Boolean))
+  const extra = [
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+    join(homedir(), '.local', 'bin'),
+    join(homedir(), '.vera', 'bin'),
+  ]
+  const missing = extra.filter((entry) => !seen.has(entry))
+  if (missing.length > 0) {
+    process.env[pathKey] = [...missing, current].filter(Boolean).join(sep)
+  }
+}
+
+augmentPathForGuiLaunch()
 
 // MUST be imported before any module that constructs electron-store (storage.ts,
 // settings.ts), because electron-store resolves its file path from
@@ -9,5 +29,5 @@ import { join } from 'node:path'
 //
 // Without this, an unpackaged `electron .` run stores data under an "Electron"
 // directory and presents itself as "Electron" in the menu/About panel.
-app.setName('agent-pane')
-app.setPath('userData', join(app.getPath('appData'), 'agent-pane'))
+app.setName('Copse')
+app.setPath('userData', join(app.getPath('appData'), 'copse-panel'))

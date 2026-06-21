@@ -1,5 +1,6 @@
 import { BrowserWindow, screen } from 'electron'
 import { join } from 'node:path'
+import { getAppIcon } from '../app-icon.ts'
 import { getSetting, setSetting } from '../services/settings.ts'
 
 let mainWin: BrowserWindow | null = null
@@ -39,8 +40,10 @@ function sanitizeBounds(saved: Bounds): Bounds {
 
 export function createMainWindow(): BrowserWindow {
   const saved = sanitizeBounds(getSetting<Bounds>('windowBounds', { width: 1200, height: 800 }))
+  const icon = getAppIcon()
   const win = new BrowserWindow({
     ...saved,
+    ...(icon ? { icon } : {}),
     minWidth: 800,
     minHeight: 600,
     frame: false,
@@ -52,6 +55,10 @@ export function createMainWindow(): BrowserWindow {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      // Run the renderer in a Chromium sandbox. The preload only uses
+      // contextBridge/ipcRenderer (no Node APIs), so it stays functional while
+      // a renderer compromise can no longer reach Node from the preload context.
+      sandbox: true,
       spellcheck: false,
       preload: join(__dirname, '../preload/index.js'),
     },

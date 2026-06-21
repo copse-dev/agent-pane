@@ -1,5 +1,6 @@
 import { analyzeShellCommand } from './shell-scope.ts'
 import type { ClassificationResult } from './safety-classifier.ts'
+import type { McpToolAnnotations } from '@shared/types/mcp.ts'
 
 /** Tools that always auto-run (writes still go through the diff queue). */
 export const SANDBOX_TOOLS = new Set([
@@ -8,6 +9,8 @@ export const SANDBOX_TOOLS = new Set([
   'write_file',
   'list_dir',
   'search_code',
+  'search_codebase',
+  'semantic_search',
   'find_files',
   'git_status',
   'git_diff',
@@ -38,7 +41,7 @@ export function decideShellPermission(
   }
 
   const analysis = analyzeShellCommand(command, opts.workspaceRoot)
-
+  // Heuristic only — see shell-scope.ts; macOS seatbelt is the real boundary when enabled.
   // With macOS seatbelt active, always try inside the project sandbox first.
   // If the command needs broader access, shell-tool offers a separate unsandboxed retry prompt.
   if (opts.sandboxEnabled) {
@@ -82,4 +85,47 @@ export function mcpToolLabel(toolName: string): string {
     return `${parts[1]}/${parts.slice(2).join('__')}`
   }
   return toolName
+}
+
+export type McpPermissionDecision =
+  | { action: 'allow'; reasons: string[] }
+  | { action: 'prompt'; reasons: string[] }
+
+export interface McpPermissionInput {
+  /** Server-reported annotation hints for the tool, if any. */
+  annotations?: McpToolAnnotations | undefined
+  /** The user previously chose "always allow" for this exact tool. */
+  remembered: boolean
+  /** Setting: auto-run tools the server flags as read-only. */
+  autoAllowReadOnly: boolean
+}
+
+/**
+ * Decide whether an MCP tool call may run without prompting. Destructive hints
+ * always win over read-only auto-allow; remembering is an explicit user opt-in.
+ */
+export function decideMcpPermission(input: McpPermissionInput): McpPermissionDecision {
+  if (input.remembered) {
+    return { action: 'allow', reasons: ['previously allowed for this tool'] }
+  }
+
+  const ann = input.annotations
+  if (ann?.destructiveHint) {
+    return { action: 'prompt', reasons: ['tool is flagged as destructive'] }
+  }
+  if (ann?.readOnlyHint && input.autoAllowReadOnly) {
+    return { action: 'allow', reasons: ['tool is flagged read-only'] }
+  }
+
+  return { action: 'prompt', reasons: ['external MCP tool requires approval'] }
+}
+
+/** Build a human-readable list of annotation hints for the approval dialog. */
+export function describeMcpAnnotations(ann: McpToolAnnotations | undefined): string[] {
+  if (!ann) return []
+  const hints: string[] = []
+  if (ann.readOnlyHint) hints.push('Read-only')
+  if (ann.destructiveHint) hints.push('Destructive')
+  if (ann.openWorldHint) hints.push('May access external systems')
+  return hints
 }

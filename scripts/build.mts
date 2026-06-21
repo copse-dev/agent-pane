@@ -1,6 +1,8 @@
 import * as esbuild from 'esbuild'
-import { cpSync, copyFileSync } from 'node:fs'
+import { accessSync, cpSync, copyFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+
+const bundledCodesearchName = process.platform === 'win32' ? 'codesearch.exe' : 'codesearch'
 
 const sharedAlias = { '@shared': resolve('./src/shared') }
 
@@ -21,6 +23,11 @@ await esbuild.build({
 })
 await esbuild.build({
   ...nodeOpts,
+  entryPoints: ['src/main/project-sandbox/sandbox-fs-worker.ts'],
+  outfile: 'dist/main/sandbox-fs-worker.js',
+})
+await esbuild.build({
+  ...nodeOpts,
   entryPoints: ['src/preload/index.ts'],
   outfile: 'dist/preload/index.js',
 })
@@ -35,7 +42,18 @@ await esbuild.build({
 })
 
 copyFileSync('src/renderer/index.html', 'dist/renderer/index.html')
+cpSync('assets', 'dist/assets', { recursive: true })
+copyFileSync('assets/icons/wave/icon-32.png', 'dist/renderer/favicon.png')
+cpSync('src/renderer/icon-previews', 'dist/renderer/icon-previews', { recursive: true })
 cpSync('node_modules/monaco-editor/min/vs', 'dist/renderer/monaco/vs', { recursive: true })
 cpSync('node_modules/vscode-material-icons/generated/icons', 'dist/renderer/material-icons', {
   recursive: true,
 })
+
+const bundledCodesearch = resolve('vendor/codesearch', bundledCodesearchName)
+try {
+  accessSync(bundledCodesearch)
+  cpSync('vendor/codesearch', 'dist/resources/codesearch', { recursive: true })
+} catch {
+  // Optional — postinstall may be skipped on unsupported platforms.
+}

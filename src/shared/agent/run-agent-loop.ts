@@ -20,7 +20,7 @@ import {
   shouldForceTextAnswer,
   shouldInjectLoopNudge,
 } from './agent-loop-escalation.ts'
-import { recoverTextToolCalls } from './parse-text-tool-calls.ts'
+import { recoverTextToolCalls, type CoerceToolArgsFn } from './parse-text-tool-calls.ts'
 
 const RECENT_FINGERPRINT_WINDOW = 16
 /** Do not compact on the first tool round unless the transcript is critically full. */
@@ -48,6 +48,10 @@ export interface AgentLoopOptions {
   onHistoryTrimmed?: () => void
   /** Called after each provider stream to read per-step token usage. */
   getLastUsage?: () => { inputTokens: number; outputTokens: number } | null
+  /** Model id for usage/cost attribution on this loop's provider calls. */
+  usageModel?: string
+  /** Coerce recovered XML tool args against registered tool schemas. */
+  coerceTextToolCallArgs?: CoerceToolArgsFn
 }
 
 const FINALIZE_NUDGE =
@@ -59,10 +63,16 @@ const INCOMPLETE_RUN_MESSAGE =
 function emitStepUsage(
   getLastUsage: (() => { inputTokens: number; outputTokens: number } | null) | undefined,
   onChunk: (chunk: StreamChunk) => void,
+  usageModel?: string,
 ): void {
   const usage = getLastUsage?.()
-  if (usage && (usage.inputTokens || usage.outputTokens)) {
-    onChunk({ type: 'usage', inputTokens: usage.inputTokens, outputTokens: usage.outputTokens })
+  if (usage && (usage.inputTokens || usage.outputTokens) && usageModel) {
+    onChunk({
+      type: 'usage',
+      model: usageModel,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+    })
   }
 }
 
@@ -93,6 +103,7 @@ async function streamTextOnlyTurn(
   signal?: AbortSignal,
   nudge = FINALIZE_NUDGE,
   getLastUsage?: () => { inputTokens: number; outputTokens: number } | null,
+  usageModel?: string,
 ): Promise<string> {
   const turnMessages: LLMMessage[] = [...messages, { role: 'user', content: nudge }]
   let assistantText = ''
@@ -110,7 +121,7 @@ async function streamTextOnlyTurn(
   if (trimmed) {
     messages.push({ role: 'assistant', content: assistantText })
   }
-  emitStepUsage(getLastUsage, onChunk)
+  emitStepUsage(getLastUsage, onChunk, usageModel)
   return trimmed
 }
 
@@ -126,6 +137,8 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     toolSchemaReserveTokens = 0,
     onHistoryTrimmed,
     getLastUsage,
+    usageModel,
+    coerceTextToolCallArgs,
   } = opts
   let steps = 0
   let finishedWithAnswer = false
@@ -162,6 +175,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           signal,
           STUCK_FINALIZE_NUDGE,
           getLastUsage,
+          usageModel,
         )
         if (forced.trim()) {
           finishedWithAnswer = true
@@ -203,7 +217,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       if (chunk.type === 'done') break
     }
 
-    emitStepUsage(getLastUsage, onChunk)
+    emitStepUsage(getLastUsage, onChunk, usageModel)
 
     if (maxContextTokens) {
       emitContextPressure(
@@ -221,7 +235,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     if (signal?.aborted) break
 
     if (pendingToolCalls.length === 0 && /<\s*tool_call\s*>/i.test(assistantText)) {
-      const recovered = recoverTextToolCalls(assistantText)
+      const recovered = recoverTextToolCalls(assistantText, coerceTextToolCallArgs)
       if (recovered.toolCalls.length > 0) {
         assistantText = recovered.cleanedText
         onChunk({ type: 'text_replace', text: assistantText })
@@ -229,6 +243,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           pendingToolCalls.push(tc)
           onChunk({ type: 'tool_call', toolCall: tc })
         }
+      } else if (!recovered.keptRawBlocks) {
+        assistantText = recovered.cleanedText
+        onChunk({ type: 'text_replace', text: assistantText })
       }
     }
 
@@ -293,6 +310,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       signal,
       FINALIZE_NUDGE,
       getLastUsage,
+      usageModel,
     )
     if (!finalText.trim()) {
       onChunk({ type: 'text', text: INCOMPLETE_RUN_MESSAGE })

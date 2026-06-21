@@ -1,31 +1,84 @@
 import { dialog, ipcMain } from 'electron'
 import type { BrowserWindow } from 'electron'
-import { dirname } from 'node:path'
+import { z } from 'zod'
 import micromatch from 'micromatch'
-import * as fsp from 'node:fs/promises'
-import { getWorkspaceRoot, setWorkspaceRoot, resolveWorkspacePath } from '../services/workspace.ts'
+import {
+  assertAllowedWorkspaceRoot,
+  getWorkspaceRoot,
+  registerAllowedWorkspaceRoot,
+  resolveWorkspacePath,
+  seedAllowedWorkspaceRoots,
+  setWorkspaceRoot,
+} from '../services/workspace.ts'
+import {
+  assertFsWriteContent,
+  assertIndexQueryPattern,
+  assertMainFrameSender,
+  assertStorageKey,
+  IpcValidationError,
+  parseIpcArgs,
+  providerSchema,
+  zNonEmptyString,
+  zPathString,
+} from './ipc-guards.ts'
 import { buildIndex, getIndex } from '../services/file-index.ts'
+import { ensureSemanticIndex } from '../services/semantic-index.ts'
+import {
+  scheduleIndexRebuild,
+  startWorkspaceIndexWatcher,
+} from '../services/workspace-index-watcher.ts'
 import {
   getSetting,
   setSetting,
-  getApiKey,
+  hasApiKey,
   setApiKey,
   isProviderAvailable,
 } from '../services/settings.ts'
+import {
+  isRendererWritableSettingKey,
+  parseRendererWritableSetting,
+  securitySettingsSchema,
+} from '../services/settings-writable.ts'
 import { storageGet, storageSet } from '../services/storage.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills-registry.ts'
 import { registerSkillTools } from '../services/registry-bootstrap.ts'
 import { getGitFileDiff, getGitStatus, isInsideGitWorkTree } from '../services/git-service.ts'
 import { isGitAvailable } from '../services/tool-availability.ts'
+import {
+  getMcpServerStatuses,
+  reloadMcpServers,
+  setMcpServerUserEnabled,
+} from '../services/mcp-registry.ts'
+import { applyAppIcon } from '../app-icon.ts'
+import { getMainWindow } from '../windows/create-main-window.ts'
+import {
+  gatewayListDir,
+  gatewayReadFile,
+  gatewayReaddir,
+  gatewayWriteFile,
+} from '../project-sandbox/sandbox-fs-client.ts'
 
-export function registerAllHandlers(_win: BrowserWindow, registry: ToolRegistry): void {
+export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+  const storedProjects = (storageGet('projects') as { path: string }[] | null) ?? []
+  seedAllowedWorkspaceRoots(storedProjects.map((p) => p.path))
+  const persistedRoot = getWorkspaceRoot()
+  if (persistedRoot) {
+    try {
+      registerAllowedWorkspaceRoot(persistedRoot)
+    } catch {
+      // Stale workspaceRoot in config — ignore until user picks a folder.
+    }
+  }
+
   ipcMain.handle('workspace:open', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
     if (result.canceled || !result.filePaths[0]) return null
-    const root = result.filePaths[0]
+    const root = registerAllowedWorkspaceRoot(result.filePaths[0])
     setWorkspaceRoot(root)
     await buildIndex(root)
+    void ensureSemanticIndex(root)
+    startWorkspaceIndexWatcher(root)
     await initSkillsRegistry()
     registerSkillTools(registry)
     return root
@@ -33,67 +86,107 @@ export function registerAllHandlers(_win: BrowserWindow, registry: ToolRegistry)
 
   ipcMain.handle('workspace:get', () => getWorkspaceRoot())
 
-  // Switch to a known folder without a dialog (used when picking a saved
-  // project from the left pane).
   ipcMain.handle('workspace:set', async (_e, root: string) => {
-    setWorkspaceRoot(root)
-    await buildIndex(root)
+    const projects = (storageGet('projects') as { path: string }[] | null) ?? []
+    seedAllowedWorkspaceRoots(projects.map((p) => p.path))
+    const canonical = assertAllowedWorkspaceRoot(root)
+    setWorkspaceRoot(canonical)
+    await buildIndex(canonical)
+    void ensureSemanticIndex(canonical)
+    startWorkspaceIndexWatcher(canonical)
     await initSkillsRegistry()
     registerSkillTools(registry)
-    return root
+    return canonical
   })
 
   ipcMain.handle('fs:readFile', async (_e, path: string) => {
     const abs = resolveWorkspacePath(path)
-    return fsp.readFile(abs, 'utf-8')
+    return gatewayReadFile(abs)
   })
 
-  ipcMain.handle('fs:writeFile', async (_e, path: string, content: string) => {
-    const abs = resolveWorkspacePath(path)
-    await fsp.mkdir(dirname(abs), { recursive: true })
-    await fsp.writeFile(abs, content, 'utf-8')
+  ipcMain.handle('fs:writeFile', async (event, path: unknown, content: unknown) => {
+    assertMainFrameSender(event, win)
+    const relPath = parseIpcArgs(zPathString, [path])
+    if (typeof content !== 'string') throw new IpcValidationError('File content must be a string')
+    assertFsWriteContent(content)
+    const abs = resolveWorkspacePath(relPath)
+    await gatewayWriteFile(abs, content)
+    scheduleIndexRebuild()
   })
 
   ipcMain.handle('fs:readdir', async (_e, path: string) => {
     const abs = resolveWorkspacePath(path)
-    const entries = await fsp.readdir(abs)
-    return entries
+    return gatewayReaddir(abs)
   })
 
-  // Directory listing with type info, for the file-tree sidebar. Hides dotfiles
-  // and node_modules, sorts directories first then alphabetically. `path` is
-  // relative to the workspace root ('' = root).
   ipcMain.handle('fs:listDir', async (_e, path: string) => {
     const abs = resolveWorkspacePath(path || '.')
-    const dirents = await fsp.readdir(abs, { withFileTypes: true })
+    const dirents = await gatewayListDir(abs)
     return dirents
       .filter((d) => !d.name.startsWith('.') && d.name !== 'node_modules')
-      .map((d) => ({ name: d.name, isDir: d.isDirectory() }))
       .sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1))
   })
 
-  ipcMain.handle('index:query', (_e, pattern: string) => {
+  ipcMain.handle('index:query', (event, pattern: unknown) => {
+    assertMainFrameSender(event, win)
+    if (pattern !== undefined && typeof pattern !== 'string') {
+      throw new IpcValidationError('Index query pattern must be a string')
+    }
+    const query = typeof pattern === 'string' ? pattern : ''
+    if (query) assertIndexQueryPattern(query)
     const idx = getIndex()
     if (!idx) return []
-    return pattern ? micromatch(idx.paths, `**/*${pattern}*`).slice(0, 20) : idx.paths.slice(0, 20)
+    return query ? micromatch(idx.paths, `**/*${query}*`).slice(0, 20) : idx.paths.slice(0, 20)
   })
 
-  ipcMain.handle('settings:get', (_e, key: string) => getSetting(key, null))
-  ipcMain.handle('settings:set', (_e, key: string, value: unknown) => setSetting(key, value))
-  ipcMain.handle(
-    'settings:getKey',
-    (_e, provider: 'anthropic' | 'openai' | 'lmstudio') => getApiKey(provider) !== null,
-  )
-  ipcMain.handle(
-    'settings:setKey',
-    (_e, provider: 'anthropic' | 'openai' | 'lmstudio', key: string) => setApiKey(provider, key),
-  )
+  ipcMain.handle('settings:get', (_e, key: unknown) => {
+    const k = parseIpcArgs(zNonEmptyString.max(128), [key])
+    return getSetting(k, null)
+  })
+  ipcMain.handle('settings:set', (event, key: unknown, value: unknown) => {
+    assertMainFrameSender(event, win)
+    const k = parseIpcArgs(zNonEmptyString.max(128), [key])
+    if (!isRendererWritableSettingKey(k)) {
+      throw new IpcValidationError(`Setting key not writable from renderer: ${k}`)
+    }
+    setSetting(k, parseRendererWritableSetting(k, value))
+  })
+  ipcMain.handle('settings:setSecurity', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    const prefs = securitySettingsSchema.parse(raw)
+    for (const [k, v] of Object.entries(prefs)) {
+      setSetting(k, v)
+    }
+  })
+  ipcMain.handle('settings:getKey', (_e, provider: unknown) => {
+    const p = parseIpcArgs(providerSchema, [provider])
+    return hasApiKey(p)
+  })
+  ipcMain.handle('settings:setKey', (event, provider: unknown, key: unknown) => {
+    assertMainFrameSender(event, win)
+    const p = parseIpcArgs(providerSchema, [provider])
+    const apiKey = parseIpcArgs(z.string().max(8192), [key])
+    setApiKey(p, apiKey)
+  })
   ipcMain.handle('settings:availableProviders', () => ({
     anthropic: isProviderAvailable('anthropic'),
     openai: isProviderAvailable('openai'),
   }))
-  ipcMain.handle('storage:get', (_e, key: string) => storageGet(key))
-  ipcMain.handle('storage:set', (_e, key: string, value: unknown) => storageSet(key, value))
+  ipcMain.handle('app-icon:apply', () => {
+    const mainWin = getMainWindow()
+    applyAppIcon(mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
+  })
+  ipcMain.handle('storage:get', (_e, key: unknown) => {
+    const k = parseIpcArgs(zNonEmptyString.max(256), [key])
+    assertStorageKey(k)
+    return storageGet(k)
+  })
+  ipcMain.handle('storage:set', (event, key: unknown, value: unknown) => {
+    assertMainFrameSender(event, win)
+    const k = parseIpcArgs(zNonEmptyString.max(256), [key])
+    assertStorageKey(k)
+    storageSet(k, value)
+  })
 
   ipcMain.handle('skills:list', () => listSkills())
 
@@ -102,4 +195,17 @@ export function registerAllHandlers(_win: BrowserWindow, registry: ToolRegistry)
   ipcMain.handle('git:fileDiff', (_e, path: string, staged: boolean) =>
     getGitFileDiff(path, staged),
   )
+
+  ipcMain.handle('mcp:list', () => getMcpServerStatuses())
+  ipcMain.handle('mcp:reload', async () => {
+    const statuses = await reloadMcpServers(registry)
+    win.webContents.send('mcp:status_changed', statuses)
+    return statuses
+  })
+  ipcMain.handle('mcp:setEnabled', async (_e, name: string, enabled: boolean) => {
+    setMcpServerUserEnabled(name, enabled)
+    const statuses = await reloadMcpServers(registry)
+    win.webContents.send('mcp:status_changed', statuses)
+    return statuses
+  })
 }

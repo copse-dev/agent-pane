@@ -6,11 +6,14 @@ import { getSetting } from './settings.ts'
 import {
   SANDBOX_TOOLS,
   decideShellPermission,
+  decideMcpPermission,
+  describeMcpAnnotations,
   shellCommandFromArgs,
   formatShellPromptBody,
   mcpToolLabel,
 } from './permission-policy.ts'
 import { formatUnsandboxedPromptBody } from './sandbox-failure.ts'
+import { getMcpToolMeta, isMcpToolRemembered, rememberMcpTool } from './mcp-registry.ts'
 
 export type { ShellPermissionDecision, PermissionCheck } from './permission-policy.ts'
 export { decideShellPermission } from './permission-policy.ts'
@@ -18,28 +21,45 @@ export { decideShellPermission } from './permission-policy.ts'
 import type { PermissionCheck } from './permission-policy.ts'
 
 async function promptShell(command: string, reasons: string[]): Promise<boolean> {
-  return requestApproval({
+  const { approved } = await requestApproval({
     title: 'Run shell command?',
     body: formatShellPromptBody(command, reasons),
     type: 'shell',
   })
+  return approved
 }
 
 /** Prompt when a sandboxed command failed and may succeed unsandboxed. */
 export async function promptUnsandboxedShell(command: string, reasons: string[]): Promise<boolean> {
-  return requestApproval({
+  const { approved } = await requestApproval({
     title: 'Run outside sandbox?',
     body: formatUnsandboxedPromptBody(command, reasons),
     type: 'shell',
   })
+  return approved
 }
 
-async function promptMcp(toolName: string, args: unknown): Promise<boolean> {
-  return requestApproval({
-    title: `MCP tool: ${mcpToolLabel(toolName)}`,
-    body: JSON.stringify(args, null, 2),
-    type: 'mcp',
+async function checkMcpPermission(toolName: string, args: unknown): Promise<boolean> {
+  const meta = getMcpToolMeta(toolName)
+  const decision = decideMcpPermission({
+    annotations: meta?.annotations,
+    remembered: isMcpToolRemembered(toolName),
+    autoAllowReadOnly: getSetting<boolean>('mcpAutoAllowReadOnly', false),
   })
+  if (decision.action === 'allow') return true
+
+  const hints = describeMcpAnnotations(meta?.annotations)
+  const bodyLines = [JSON.stringify(args, null, 2)]
+  if (hints.length) bodyLines.push('', `Hints: ${hints.join(', ')}`)
+
+  const { approved, remember } = await requestApproval({
+    title: `MCP tool: ${mcpToolLabel(toolName)}`,
+    body: bodyLines.join('\n'),
+    type: 'mcp',
+    allowRemember: true,
+  })
+  if (approved && remember) rememberMcpTool(toolName)
+  return approved
 }
 
 async function checkShellPermission(args: unknown): Promise<boolean> {
@@ -65,7 +85,7 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
   if (SANDBOX_TOOLS.has(toolName)) return true
 
   if (toolName.startsWith('mcp__')) {
-    return promptMcp(toolName, args)
+    return checkMcpPermission(toolName, args)
   }
 
   if (toolName === 'run_shell') {

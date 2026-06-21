@@ -19,6 +19,8 @@ import {
 } from '@shared/agent/build-text-with-attachments.ts'
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
+import { formatThreadUsageCost } from '@shared/llm/estimate-cost.ts'
+import { mountFollowUpSuggestions } from './follow-up-suggestions.ts'
 
 export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const chips = el('div', { class: 'attachment-chips' })
@@ -74,6 +76,14 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
 
   root.append(chips, inputRow, footer)
 
+  const followUps = mountFollowUpSuggestions(store, api, (prompt) => {
+    textarea.value = prompt
+    void submit()
+  })
+  root.insertBefore(followUps.root, inputRow)
+  const defaultPlaceholder = 'Message…'
+  const followUpPlaceholder = 'Send follow-up'
+
   let attachedFiles: { path: string; content: string }[] = []
   let attachedTextBlocks: { id: string; label: string; content: string }[] = []
   let attachedImages: { dataUrl: string; mimeType: string }[] = []
@@ -105,7 +115,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     } else {
       usageBtn.hidden = false
       usageBtn.textContent = costVisible
-        ? `${inputTokens} in / ${outputTokens} out · ${estimateCost(model, { inputTokens, outputTokens })}`
+        ? `${inputTokens} in / ${outputTokens} out · ${formatThreadUsageCost(thread?.usage ?? { inputTokens: 0, outputTokens: 0 }, model)}`
         : total
           ? `${(total / 1000).toFixed(1)}k tokens`
           : '0 tokens'
@@ -122,14 +132,21 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     }
   })
 
+  function isAutocompletePickerOpen() {
+    return root.querySelector('.mention-picker:not([hidden])') !== null
+  }
+
   textarea.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-      e.preventDefault()
-      void submit()
-    }
+    if (e.isComposing) return
+    if (e.key !== 'Enter' || e.shiftKey) return
+    if (isAutocompletePickerOpen()) return
+    e.preventDefault()
+    void submit()
   })
 
   async function submit() {
+    followUps.clearSuggestions()
+    textarea.placeholder = defaultPlaceholder
     const rawText = textarea.value.trim()
     if (
       !rawText &&
@@ -331,27 +348,20 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     }),
   ]
 
+  const observer = new MutationObserver(() => {
+    const hasSuggestions = !followUps.root.hidden
+    textarea.placeholder = hasSuggestions ? followUpPlaceholder : defaultPlaceholder
+  })
+  observer.observe(followUps.root, { attributes: true, attributeFilter: ['hidden'] })
+
   updateFooter()
   return () => {
     unsubs.forEach((u) => u())
+    observer.disconnect()
+    followUps.destroy()
     unbindDrop()
     unregisterAttachments()
     modelPicker.destroy()
     skillPicker()
   }
-}
-
-function estimateCost(model: string, usage: { inputTokens: number; outputTokens: number }): string {
-  const RATES: Record<string, [number, number]> = {
-    'claude-sonnet-4-6': [3.0, 15.0],
-    'claude-opus-4-8': [15.0, 75.0],
-    'gpt-4o': [2.5, 10.0],
-    'gpt-4o-mini': [0.15, 0.6],
-  }
-  if (model === 'lm-studio' || model.startsWith('lmstudio:')) return 'free (local)'
-  const rate = RATES[model]
-  if (!rate) return ''
-  const cost =
-    (usage.inputTokens / 1_000_000) * rate[0] + (usage.outputTokens / 1_000_000) * rate[1]
-  return cost < 0.01 ? '<$0.01' : `~$${cost.toFixed(2)}`
 }

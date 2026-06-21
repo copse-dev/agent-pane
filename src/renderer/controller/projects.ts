@@ -14,6 +14,7 @@ async function activate(store: AppStore, api: ApiClient, id: string, path: strin
   if (activeProjectId && activeProjectId !== id) {
     await saveThreads(api, activeProjectId, threads)
   }
+  await saveProjects(api, store.getState().projects, id)
   await api.workspace.set(path)
   const loaded = await loadThreads(api, id)
   store.setState({
@@ -71,6 +72,8 @@ export async function restoreProject(store: AppStore, api: ApiClient, id: string
     activeThreadId: loaded[0]?.id ?? null,
   })
   if (loaded.length === 0) createThread(store)
+  store.emit('workspace_changed')
+  store.emit('threads_changed')
 }
 
 export async function addProject(store: AppStore, api: ApiClient): Promise<boolean> {

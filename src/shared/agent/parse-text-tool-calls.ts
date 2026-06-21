@@ -3,7 +3,7 @@ import type { ToolCallChunk } from '@shared/types'
 /** Cursor / Qwen-style tool calls embedded in assistant text instead of native tool_calls. */
 const TOOL_CALL_BLOCK_RE = /<\s*tool_call\s*>([\s\S]*?)<\s*\/\s*tool_call\s*>/gi
 const FUNCTION_RE =
-  /<\s*function\s*=\s*([^>\s]+)\s*>([\s\S]*?)(?:<\s*\/\s*function\s*>|(?=<\s*\/\s*tool_call\s*>))/i
+  /<\s*function\s*=\s*([^>\s]+)\s*>([\s\S]*?)(?:<\s*\/\s*function\s*>|(?=<\s*function\s*=)|(?=<\s*\/\s*tool_call\s*>))/gi
 const PARAMETER_RE = /<\s*parameter\s*=\s*([^>\s]+)\s*>([\s\S]*?)<\s*\/\s*parameter\s*>/gi
 
 const TOOL_NAME_ALIASES: Record<string, string> = {
@@ -15,6 +15,8 @@ const TOOL_NAME_ALIASES: Record<string, string> = {
   list_dir: 'list_dir',
   searchcode: 'search_code',
   search_code: 'search_code',
+  searchcodebase: 'search_codebase',
+  search_codebase: 'search_codebase',
   findfiles: 'find_files',
   find_files: 'find_files',
   writefile: 'write_file',
@@ -38,33 +40,59 @@ function parseParameters(body: string): Record<string, unknown> {
   for (const match of body.matchAll(PARAMETER_RE)) {
     const name = match[1]?.trim()
     if (!name) continue
-    const value = (match[2] ?? '').trim()
-    if (name === 'timeout_ms') {
-      const n = Number(value)
-      if (Number.isFinite(n)) args[name] = n
-    } else {
-      args[name] = value
-    }
+    args[name] = (match[2] ?? '').trim()
   }
   return args
 }
 
-function parseSingleBlock(inner: string): ToolCallChunk | null {
-  const fnMatch = FUNCTION_RE.exec(inner)
-  if (!fnMatch) return null
-  const name = normalizeToolName(fnMatch[1] ?? '')
-  if (!name) return null
-  const args = parseParameters(fnMatch[2] ?? '')
-  return {
-    id: globalThis.crypto.randomUUID(),
-    name,
-    args,
+/** Coerce XML text parameter values before zod validation (e.g. line numbers as strings). */
+export function coerceStringlyTypedToolArgs(
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(args)) {
+    if (typeof value !== 'string') {
+      out[key] = value
+      continue
+    }
+    const t = value.trim()
+    if (t === 'true') out[key] = true
+    else if (t === 'false') out[key] = false
+    else if (/^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(t)) {
+      const n = Number(t)
+      out[key] = Number.isFinite(n) ? n : value
+    } else out[key] = value
   }
+  return out
+}
+
+export type CoerceToolArgsFn = (
+  name: string,
+  args: Record<string, unknown>,
+) => Record<string, unknown> | null
+
+function parseFunctionsInBlock(inner: string, coerceToolArgs?: CoerceToolArgsFn): ToolCallChunk[] {
+  const toolCalls: ToolCallChunk[] = []
+  for (const match of inner.matchAll(FUNCTION_RE)) {
+    const name = normalizeToolName(match[1] ?? '')
+    if (!name) continue
+    const coerced = coerceStringlyTypedToolArgs(parseParameters(match[2] ?? ''))
+    const args = coerceToolArgs ? coerceToolArgs(name, coerced) : coerced
+    if (coerceToolArgs && args === null) continue
+    toolCalls.push({
+      id: globalThis.crypto.randomUUID(),
+      name,
+      args: args ?? coerced,
+    })
+  }
+  return toolCalls
 }
 
 export interface TextToolCallRecovery {
   cleanedText: string
   toolCalls: ToolCallChunk[]
+  /** When true, `<tool_call>` was present but nothing valid was extracted — keep raw XML in the transcript. */
+  keptRawBlocks: boolean
 }
 
 /** Remove embedded pseudo tool-call blocks from assistant text (display / history). */
@@ -79,16 +107,31 @@ export function stripTextToolCallBlocks(text: string): string {
  * When the model emits Cursor-style `<tool_call>` XML in text with no native tool_calls,
  * extract executable tool calls and return prose without the XML blocks.
  */
-export function recoverTextToolCalls(text: string): TextToolCallRecovery {
+export function recoverTextToolCalls(
+  text: string,
+  coerceToolArgs?: CoerceToolArgsFn,
+): TextToolCallRecovery {
   const toolCalls: ToolCallChunk[] = []
+  let sawToolCallBlock = false
+  let anyBlockUnparsed = false
+
   for (const match of text.matchAll(TOOL_CALL_BLOCK_RE)) {
+    sawToolCallBlock = true
     const inner = match[1]
-    if (!inner) continue
-    const tc = parseSingleBlock(inner)
-    if (tc) toolCalls.push(tc)
+    if (!inner?.trim()) {
+      anyBlockUnparsed = true
+      continue
+    }
+    const fromBlock = parseFunctionsInBlock(inner, coerceToolArgs)
+    if (fromBlock.length === 0) anyBlockUnparsed = true
+    toolCalls.push(...fromBlock)
   }
+
+  const keptRawBlocks = sawToolCallBlock && toolCalls.length === 0 && anyBlockUnparsed
+
   return {
-    cleanedText: stripTextToolCallBlocks(text),
+    cleanedText: keptRawBlocks ? text : stripTextToolCallBlocks(text),
     toolCalls,
+    keptRawBlocks,
   }
 }

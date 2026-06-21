@@ -18,8 +18,8 @@ contextBridge.exposeInMainWorld('api', {
     listDir: (path: string) => ipcRenderer.invoke('fs:listDir', path),
     watch: (path: string) => ipcRenderer.invoke('fs:watch', path),
     unwatch: (path: string) => ipcRenderer.invoke('fs:unwatch', path),
-    onChanged: (handler: (path: string, content: string) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, p: string, c: string) => handler(p, c)
+    onChanged: (handler: (path: string, content: string | null) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, p: string, c: string | null) => handler(p, c)
       ipcRenderer.on('fs:changed', listener)
       return () => ipcRenderer.off('fs:changed', listener)
     },
@@ -29,6 +29,8 @@ contextBridge.exposeInMainWorld('api', {
     abort: (threadId: string) => ipcRenderer.invoke('agent:abort', threadId),
     clearHistory: (threadId: string) => ipcRenderer.invoke('agent:clearHistory', threadId),
     suggestTitle: (text: string) => ipcRenderer.invoke('agent:suggestTitle', text),
+    suggestFollowUps: (contextJson: string) =>
+      ipcRenderer.invoke('agent:suggestFollowUps', contextJson),
     onChunk: (handler: (threadId: string, chunk: unknown) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, tid: string, chunk: unknown) =>
         handler(tid, chunk)
@@ -36,11 +38,17 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.off('agent:chunk', listener)
     },
     onApprovalRequest: (
-      handler: (req: { id: string; title: string; body: string; type: string }) => void,
+      handler: (req: {
+        id: string
+        title: string
+        body: string
+        type: string
+        allowRemember?: boolean
+      }) => void,
     ) => {
       const listener = (
         _e: Electron.IpcRendererEvent,
-        req: { id: string; title: string; body: string; type: string },
+        req: { id: string; title: string; body: string; type: string; allowRemember?: boolean },
       ) => handler(req)
       ipcRenderer.on('agent:approval_request', listener)
       return () => ipcRenderer.off('agent:approval_request', listener)
@@ -50,13 +58,11 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('agent:shell_output', listener)
       return () => ipcRenderer.off('agent:shell_output', listener)
     },
-    onUsage: (
-      handler: (threadId: string, usage: { inputTokens: number; outputTokens: number }) => void,
-    ) => {
+    onUsage: (handler: (threadId: string, usage: import('@shared/types').UsageDelta) => void) => {
       const listener = (
         _e: Electron.IpcRendererEvent,
         threadId: string,
-        usage: { inputTokens: number; outputTokens: number },
+        usage: import('@shared/types').UsageDelta,
       ) => handler(threadId, usage)
       ipcRenderer.on('agent:usage', listener)
       return () => ipcRenderer.off('agent:usage', listener)
@@ -88,8 +94,19 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
   approval: {
-    respond: (id: string, approved: boolean) =>
-      ipcRenderer.invoke('approval:respond', id, approved),
+    respond: (id: string, approved: boolean, remember?: boolean) =>
+      ipcRenderer.invoke('approval:respond', id, approved, remember),
+  },
+  mcp: {
+    list: () => ipcRenderer.invoke('mcp:list'),
+    reload: () => ipcRenderer.invoke('mcp:reload'),
+    setEnabled: (name: string, enabled: boolean) =>
+      ipcRenderer.invoke('mcp:setEnabled', name, enabled),
+    onStatusChanged: (handler: (statuses: unknown) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, statuses: unknown) => handler(statuses)
+      ipcRenderer.on('mcp:status_changed', listener)
+      return () => ipcRenderer.off('mcp:status_changed', listener)
+    },
   },
   storage: {
     get: (key: string) => ipcRenderer.invoke('storage:get', key),
@@ -109,11 +126,22 @@ contextBridge.exposeInMainWorld('api', {
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),
+    setSecurity: (prefs: {
+      lmStudioUrl: string
+      lmStudioSafetyEnabled: boolean
+      lmStudioSafetyConfidenceThreshold: number
+      lmStudioSafetyModel: string
+      autoRunSandboxCommands: boolean
+      mcpAutoAllowReadOnly: boolean
+    }) => ipcRenderer.invoke('settings:setSecurity', prefs),
     getKey: (provider: 'anthropic' | 'openai' | 'lmstudio') =>
       ipcRenderer.invoke('settings:getKey', provider),
     setKey: (provider: 'anthropic' | 'openai' | 'lmstudio', key: string) =>
       ipcRenderer.invoke('settings:setKey', provider, key),
     availableProviders: () => ipcRenderer.invoke('settings:availableProviders'),
+  },
+  appIcon: {
+    apply: () => ipcRenderer.invoke('app-icon:apply'),
   },
   index: {
     query: (pattern: string) => ipcRenderer.invoke('index:query', pattern),

@@ -1,6 +1,7 @@
 import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { renderMarkdown } from '../markdown/renderer.ts'
+import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { renderStreamingMarkdown } from '../markdown/streaming.ts'
 import { stripTextToolCallBlocks } from '@shared/agent/parse-text-tool-calls.ts'
 import type { ToolCall } from '@shared/types'
@@ -83,6 +84,18 @@ function createInnerToolCard(tc: ToolCall): HTMLElement {
   return entry
 }
 
+function setAssistantMarkdown(el: HTMLElement, content: string, streaming: boolean): void {
+  const display = assistantDisplayText(content)
+  el.innerHTML = streaming ? renderStreamingMarkdown(display) : renderMarkdown(display)
+  if (!streaming) void renderMermaidIn(el)
+}
+
+function createSubagentMessageEl(content: string, streaming: boolean): HTMLElement {
+  const textEl = el('div', { class: 'subagent-message subagent-message-assistant message-text' })
+  setAssistantMarkdown(textEl, content, streaming)
+  return textEl
+}
+
 function createSubagentToolCard(tc: ToolCall, label: string): HTMLElement {
   const session = tc.subagent!
   const status =
@@ -102,17 +115,20 @@ function createSubagentToolCard(tc: ToolCall, label: string): HTMLElement {
   card.append(createToolHeader(label, status, 'tool-card-header'))
 
   if (preview && status !== 'running') {
-    card.append(el('div', { class: 'subagent-summary-preview' }, summaryPreview(preview)))
+    const previewEl = el('div', { class: 'subagent-summary-preview message-text' })
+    setAssistantMarkdown(previewEl, summaryPreview(preview), false)
+    card.append(previewEl)
   }
 
   card.append(createToolArgsSection(tc.args))
 
   const timeline = el('div', { class: 'subagent-timeline' })
-  for (const msg of session.messages) {
+  for (let i = 0; i < session.messages.length; i++) {
+    const msg = session.messages[i]
+    if (!msg) continue
     if (msg.content.trim()) {
-      timeline.append(
-        el('div', { class: 'subagent-message subagent-message-assistant' }, msg.content),
-      )
+      const isLast = i === session.messages.length - 1
+      timeline.append(createSubagentMessageEl(msg.content, status === 'running' && isLast))
     }
     if (msg.toolCalls.length > 0) {
       const toolsWrap = el('div', { class: 'subagent-inner-tools' })
@@ -189,22 +205,88 @@ function appendMessageContent(
   }
   const textEl = el('div', { class: 'message-text' })
   if (msg.role === 'assistant' && msg.content) {
-    textEl.innerHTML = renderMarkdown(assistantDisplayText(msg.content))
+    setAssistantMarkdown(textEl, msg.content, false)
   } else {
     textEl.textContent = msg.content
   }
   body.append(textEl)
 }
 
+const SCROLL_PIN_THRESHOLD_PX = 48
+/** Ignore auto-scroll briefly after the user scrolls up during streaming. */
+const USER_SCROLL_UP_DEBOUNCE_MS = 150
+
 export function mountConversation(root: HTMLElement, store: AppStore): () => void {
+  const scrollArea = el('div', { class: 'conversation-scroll' })
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
+  const scrollToBottomBtn = el(
+    'button',
+    {
+      class: 'scroll-to-bottom',
+      type: 'button',
+      'aria-label': 'Scroll to bottom',
+      hidden: true,
+    },
+    '↓',
+  )
+  scrollArea.append(list, scrollToBottomBtn)
+
   const activityBar = el('div', { class: 'agent-activity', role: 'status', 'aria-live': 'polite' })
   const activityLabel = el('span', { class: 'agent-activity-label' })
   activityBar.append(
     el('span', { class: 'agent-activity-pulse', 'aria-hidden': 'true' }),
     activityLabel,
   )
-  root.append(list, activityBar)
+  root.append(scrollArea, activityBar)
+
+  let pinnedToBottom = true
+  let lastScrollTop = 0
+  let suppressScrollPinUpdate = false
+  let userScrolledUpAt = 0
+
+  function isNearBottom(): boolean {
+    const distance = list.scrollHeight - list.scrollTop - list.clientHeight
+    return distance <= SCROLL_PIN_THRESHOLD_PX
+  }
+
+  function shouldAutoScroll(): boolean {
+    return pinnedToBottom && Date.now() - userScrolledUpAt > USER_SCROLL_UP_DEBOUNCE_MS
+  }
+
+  function updateScrollButton() {
+    scrollToBottomBtn.hidden = isNearBottom()
+  }
+
+  function handleUserScroll() {
+    if (suppressScrollPinUpdate) return
+
+    const scrollTop = list.scrollTop
+    if (scrollTop < lastScrollTop - 1) {
+      userScrolledUpAt = Date.now()
+      pinnedToBottom = false
+    } else if (isNearBottom()) {
+      pinnedToBottom = true
+    }
+    lastScrollTop = scrollTop
+    updateScrollButton()
+  }
+
+  list.addEventListener('scroll', handleUserScroll, { passive: true })
+  list.addEventListener(
+    'wheel',
+    (event) => {
+      if (event.deltaY < 0) {
+        userScrolledUpAt = Date.now()
+        pinnedToBottom = false
+        updateScrollButton()
+      }
+    },
+    { passive: true },
+  )
+  scrollToBottomBtn.addEventListener('click', () => {
+    userScrolledUpAt = 0
+    scrollToBottom(true)
+  })
 
   function setActivity(label: string | null) {
     if (!label) {
@@ -227,9 +309,20 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
     setActivity(agentActivityLabel(thread, false))
   }
 
-  function scrollToBottom() {
+  function scrollToBottom(force = false) {
+    if (!force && !shouldAutoScroll()) return
     // The scrollable element is the messages list, not the mount root.
+    suppressScrollPinUpdate = true
     list.scrollTop = list.scrollHeight
+    lastScrollTop = list.scrollTop
+    requestAnimationFrame(() => {
+      suppressScrollPinUpdate = false
+    })
+    if (force) {
+      userScrolledUpAt = 0
+      pinnedToBottom = true
+    }
+    updateScrollButton()
   }
 
   function renderToolCards(msgEl: HTMLElement, toolCalls: ToolCall[]) {
@@ -287,13 +380,17 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
     list.append(msgEl)
     // Re-render any tool cards this message already carries (restored threads).
     renderToolCards(msgEl, msg.toolCalls)
-    scrollToBottom()
+    scrollToBottom(msg.role === 'user')
   }
 
   function rebuildForThread() {
+    pinnedToBottom = true
+    userScrolledUpAt = 0
+    lastScrollTop = 0
     clear(list)
     const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
     thread?.messages.forEach((m) => appendMessageEl(store.getState().activeThreadId!, m.id))
+    updateScrollButton()
   }
 
   function refreshToolCards(msgId: string) {
@@ -314,7 +411,7 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
       const msg = thread?.messages.find((m) => m.id === mid)
       const textEl = list.querySelector(`[data-message-id="${mid}"] .message-text`)
       if (textEl && msg?.role === 'assistant') {
-        textEl.innerHTML = renderStreamingMarkdown(assistantDisplayText(msg.content))
+        setAssistantMarkdown(textEl as HTMLElement, msg.content, true)
         scrollToBottom()
       }
     }),
@@ -324,7 +421,7 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
       const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
       const msg = thread?.messages.find((m) => m.id === mid)
       if (textEl && msg?.role === 'assistant') {
-        textEl.innerHTML = renderMarkdown(assistantDisplayText(msg.content))
+        setAssistantMarkdown(textEl as HTMLElement, msg.content, false)
       }
       if (msg?.role === 'assistant' && msg.content.trim()) {
         const body = msgEl?.querySelector('.message-body')

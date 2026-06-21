@@ -10,7 +10,7 @@ export interface CommandResult {
 export function runCommand(
   cmd: string,
   args: string[],
-  opts: { cwd?: string; signal?: AbortSignal } = {},
+  opts: { cwd?: string; signal?: AbortSignal; unsandboxed?: boolean } = {},
 ): Promise<CommandResult> {
   const cwd = opts.cwd ?? getWorkspaceRoot() ?? process.cwd()
 
@@ -21,6 +21,7 @@ export function runCommand(
           cwd,
           stdio: 'pipe',
         }
+        if (opts.unsandboxed !== undefined) spawnOpts.unsandboxed = opts.unsandboxed
         if (opts.signal) spawnOpts.signal = opts.signal
         const proc = await spawnInProjectSandbox(cmd, args, spawnOpts)
         let stdout = '',

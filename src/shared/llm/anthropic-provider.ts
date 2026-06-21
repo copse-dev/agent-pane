@@ -5,8 +5,11 @@ export class AnthropicProvider implements LLMProvider {
   private client: Anthropic
   lastUsage: { inputTokens: number; outputTokens: number } | null = null
 
-  constructor(private readonly model: string) {
-    this.client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  constructor(
+    private readonly model: string,
+    opts: { apiKey?: string } = {},
+  ) {
+    this.client = new Anthropic({ apiKey: opts.apiKey ?? process.env.ANTHROPIC_API_KEY })
   }
 
   stream(

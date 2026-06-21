@@ -24,9 +24,9 @@ import {
   conversationTokenBudget,
 } from '@shared/agent/trim-history.ts'
 import {
-  clearAgentRunReadFileLimits,
-  setAgentRunReadFileLimits,
+  runWithAgentRunReadFileLimits,
   getAgentRunReadFileLimits,
+  readFileLimitsFromConversationBudget,
 } from './agent-run-read-limits.ts'
 import { formatReadFileLimitHint } from '@shared/agent/read-file-limits.ts'
 import {
@@ -34,10 +34,18 @@ import {
   resetSubagentUsage,
   getAccumulatedSubagentUsage,
 } from './explore-subagent-runner.ts'
+import { isLocalModel } from '@shared/llm/estimate-cost.ts'
+import { buildSemanticSearchPromptBlock } from './semantic-search.ts'
 
 const abortMap = new Map<string, AbortController>()
 
-const PARENT_DELEGATED_TOOLS = ['read_file', 'list_dir', 'search_code', 'find_files'] as const
+const PARENT_DELEGATED_TOOLS = [
+  'read_file',
+  'list_dir',
+  'search_code',
+  'search_codebase',
+  'find_files',
+] as const
 
 const BASE_SYSTEM_PROMPT = `You are a coding assistant with access to the user's local workspace.
 
@@ -47,7 +55,7 @@ Available tools:
 - git_status: Show working tree status
 - git_diff: Show unstaged or staged changes
 - git_log: Show recent commit history
-- run_shell: Run a shell command (auto-runs when contained in the sandbox; prompts for network/outside access)
+- run_shell: Run a shell command in the workspace (may prompt for approval)
 {SKILLS_TOOLS_LINE}
 Working directory: {WORKSPACE_ROOT}
 
@@ -67,12 +75,14 @@ Available tools:
 - read_file: Read a file from the workspace
 - write_file: Propose writing a file (user approves the diff before it's written)
 - list_dir: List directory contents
-- search_code: Search for text/regex patterns using ripgrep
+- search_codebase: Search by regex or meaning (auto-selects; prefer over search_code)
+- semantic_search: Search by meaning only (native codesearch/vera index)
+- search_code: Search for text/regex patterns (indexed grep when available, otherwise ripgrep)
 - find_files: Find files by name or glob pattern
 - git_status: Show working tree status
 - git_diff: Show unstaged or staged changes
 - git_log: Show recent commit history
-- run_shell: Run a shell command (auto-runs when contained in the sandbox; prompts for network/outside access)
+- run_shell: Run a shell command in the workspace (may prompt for approval)
 {SKILLS_TOOLS_LINE}
 Working directory: {WORKSPACE_ROOT}
 
@@ -92,6 +102,49 @@ function lmStudioKey(): string {
   return getApiKey('lmstudio') ?? 'lm-studio'
 }
 
+function storedOrEnvApiKey(provider: 'anthropic' | 'openai'): string | null {
+  if (provider === 'anthropic')
+    return getApiKey('anthropic') ?? process.env.ANTHROPIC_API_KEY ?? null
+  return getApiKey('openai') ?? process.env.OPENAI_API_KEY ?? null
+}
+
+export function isLocalChatModel(model: string): boolean {
+  return isLocalModel(model)
+}
+
+async function resolveSubagentLocalModelId(url: string): Promise<string | null> {
+  const configured = getSetting<string>('lmStudioSubagentModel', '').trim()
+  if (configured) return configured
+  const fallback = getSetting<string>('lmStudioModel', '').trim()
+  if (fallback) return fallback
+  return fetchFirstLocalModel(url)
+}
+
+interface SubagentRoute {
+  provider: LLMProvider
+  usageModel: string
+  contextWindow: number
+  toolSchemaReserve: number
+}
+
+/** When the parent chat uses a cloud model, route explore subagents to LM Studio. */
+export async function buildSubagentRoute(parentModel: string): Promise<SubagentRoute | null> {
+  if (isLocalChatModel(parentModel)) return null
+  if (!getSetting<boolean>('lmStudioForSubagents', true)) return null
+
+  const url = getSetting<string>('lmStudioUrl', DEFAULT_LM_STUDIO_URL)
+  const modelId = await resolveSubagentLocalModelId(url)
+  if (!modelId) return null
+
+  const contextWindow = await resolveContextWindow(`lmstudio:${modelId}`)
+  return {
+    provider: createLMStudioProvider(url, modelId, lmStudioKey()),
+    usageModel: `lmstudio:${modelId}`,
+    contextWindow,
+    toolSchemaReserve: 2_500,
+  }
+}
+
 // Builds the provider for the main agent loop. LM Studio models are encoded as
 // `lmstudio:<modelId>`; the legacy `lm-studio` value resolves to the configured
 // model or the first one the server has loaded (never the bogus "local-model").
@@ -109,7 +162,21 @@ async function buildProvider(model: string): Promise<LLMProvider> {
     }
     return createLMStudioProvider(url, id, lmStudioKey())
   }
-  return createProvider(model)
+  if (process.env.COPSE_PANEL_MOCK_LLM === '1') return createProvider(model)
+  if (model.startsWith('claude')) {
+    return createProvider(model, {
+      anthropicApiKey: storedOrEnvApiKey('anthropic'),
+    })
+  }
+  if (model.startsWith('gpt')) {
+    return createProvider(model, {
+      openAiApiKey: storedOrEnvApiKey('openai'),
+    })
+  }
+  return createProvider(model, {
+    anthropicApiKey: storedOrEnvApiKey('anthropic'),
+    openAiApiKey: storedOrEnvApiKey('openai'),
+  })
 }
 
 // List the model ids an LM Studio server currently exposes (using saved URL/key).
@@ -180,6 +247,8 @@ export async function runAgent(
   // Build the provider per run so a freshly-saved API key (now in process.env)
   // and the currently-selected model take effect without a restart.
   const provider = await buildProvider(model)
+  const subagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
+  const subagentUsageModel = subagentRoute?.usageModel ?? model
 
   const basePrompt = subagentsEnabled ? BASE_SYSTEM_PROMPT : BASE_SYSTEM_PROMPT_DIRECT_READS
   const systemPrompt =
@@ -188,6 +257,7 @@ export async function runAgent(
       .replace('{WORKSPACE_ROOT}', getWorkspaceRoot() ?? '(none)') +
     buildSkillsCatalogBlock() +
     (await buildInvokedSkillsBlock(invokedSkills)) +
+    buildSemanticSearchPromptBlock() +
     (projectInstructions ? `\n\n---\n\n## Project instructions\n\n${projectInstructions}` : '')
 
   const messages: LLMMessage[] = [
@@ -226,7 +296,7 @@ export async function runAgent(
     conversationTokens: initialConversationTokens,
     fillRatio: initialConversationTokens / conversationBudget,
   } satisfies StreamChunk)
-  setAgentRunReadFileLimits(conversationBudget)
+  const runReadLimits = readFileLimitsFromConversationBudget(conversationBudget)
 
   const controller = new AbortController()
   abortMap.set(threadId, controller)
@@ -240,53 +310,58 @@ export async function runAgent(
   }
 
   try {
-    await runAgentLoop({
-      provider,
-      messages: trimmed,
-      tools: parentTools(registry, subagentsEnabled),
-      executeTool: async (name, args, signal, toolCallId) => {
-        if (name === 'explore' && subagentsEnabled) {
-          setExploreSubagentContext({
-            parentToolCallId: toolCallId,
-            parentGoal,
-            provider,
-            registry,
-            contextWindow,
-            toolSchemaReserve,
-            onChunk: sendChunk,
-          })
-          try {
-            return await registry.execute(name, args, signal)
-          } finally {
-            setExploreSubagentContext(null)
+    await runWithAgentRunReadFileLimits(runReadLimits, async () => {
+      await runAgentLoop({
+        provider,
+        messages: trimmed,
+        tools: parentTools(registry, subagentsEnabled),
+        usageModel: model,
+        coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
+        executeTool: async (name, args, signal, toolCallId) => {
+          if (name === 'explore' && subagentsEnabled) {
+            setExploreSubagentContext({
+              parentToolCallId: toolCallId,
+              parentGoal,
+              provider: subagentRoute?.provider ?? provider,
+              registry,
+              contextWindow: subagentRoute?.contextWindow ?? contextWindow,
+              toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
+              onChunk: sendChunk,
+            })
+            try {
+              return await registry.execute(name, args, signal)
+            } finally {
+              setExploreSubagentContext(null)
+            }
           }
-        }
-        return registry.execute(name, args, signal)
-      },
-      signal: controller.signal,
-      maxContextTokens: contextWindow,
-      toolSchemaReserveTokens: toolSchemaReserve,
-      onHistoryTrimmed: notifyTrimmed,
-      getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
-      onChunk: (chunk) => {
-        sendChunk(chunk)
-        if (chunk.type === 'usage') {
-          inputTokens += chunk.inputTokens
-          outputTokens += chunk.outputTokens
-        }
-      },
-    })
-
-    const subUsage = getAccumulatedSubagentUsage()
-    if (subUsage.inputTokens || subUsage.outputTokens) {
-      inputTokens += subUsage.inputTokens
-      outputTokens += subUsage.outputTokens
-      sendChunk({
-        type: 'usage',
-        inputTokens: subUsage.inputTokens,
-        outputTokens: subUsage.outputTokens,
+          return registry.execute(name, args, signal)
+        },
+        signal: controller.signal,
+        maxContextTokens: contextWindow,
+        toolSchemaReserveTokens: toolSchemaReserve,
+        onHistoryTrimmed: notifyTrimmed,
+        getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
+        onChunk: (chunk) => {
+          sendChunk(chunk)
+          if (chunk.type === 'usage') {
+            inputTokens += chunk.inputTokens
+            outputTokens += chunk.outputTokens
+          }
+        },
       })
-    }
+
+      const subUsage = getAccumulatedSubagentUsage()
+      if (subUsage.inputTokens || subUsage.outputTokens) {
+        inputTokens += subUsage.inputTokens
+        outputTokens += subUsage.outputTokens
+        sendChunk({
+          type: 'usage',
+          model: subagentUsageModel,
+          inputTokens: subUsage.inputTokens,
+          outputTokens: subUsage.outputTokens,
+        })
+      }
+    })
   } catch (err) {
     const msg = classifyError(err)
     mainWindow.webContents.send('agent:chunk', threadId, {
@@ -295,7 +370,6 @@ export async function runAgent(
     } satisfies StreamChunk)
     mainWindow.webContents.send('agent:chunk', threadId, { type: 'done' } satisfies StreamChunk)
   } finally {
-    clearAgentRunReadFileLimits()
     abortMap.delete(threadId)
   }
 

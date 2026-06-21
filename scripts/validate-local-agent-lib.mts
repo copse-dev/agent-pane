@@ -38,7 +38,7 @@ function fail(msg: string): never {
 }
 
 function loadSettings(): Record<string, unknown> {
-  const settingsPath = join(homedir(), 'Library/Application Support/agent-pane/settings.json')
+  const settingsPath = join(homedir(), 'Library/Application Support/copse-panel/settings.json')
   return JSON.parse(readFileSync(settingsPath, 'utf8')) as Record<string, unknown>
 }
 
@@ -96,7 +96,7 @@ async function executeTool(workspace: string, name: string, args: unknown): Prom
 export async function validateLocalAgentFinalAnswer(): Promise<void> {
   delete process.env.ANTHROPIC_API_KEY
   delete process.env.OPENAI_API_KEY
-  process.env.AGENT_WINDOW_MOCK_LLM = ''
+  process.env.COPSE_PANEL_MOCK_LLM = ''
 
   const settings = loadSettings()
   const url =

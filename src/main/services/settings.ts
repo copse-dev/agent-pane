@@ -11,6 +11,11 @@ interface StoredKey {
 
 export type KeyProvider = 'anthropic' | 'openai' | 'lmstudio'
 
+export function hasApiKey(provider: KeyProvider): boolean {
+  const raw = store.get(`apiKey.${provider}`) as StoredKey | undefined
+  return !!raw && typeof raw === 'object' && typeof raw.enc === 'string' && raw.enc.length > 0
+}
+
 export function getApiKey(provider: KeyProvider): string | null {
   // electron-store JSON-serializes values, so a raw Buffer cannot round-trip.
   // We persist a base64 string instead. (Old Buffer-shaped records are ignored.)
@@ -41,8 +46,8 @@ export function setApiKey(provider: KeyProvider, key: string): void {
 // Whether a cloud provider can be used at all — a key is stored in Settings or
 // present in the environment.
 export function isProviderAvailable(provider: 'anthropic' | 'openai'): boolean {
-  if (provider === 'anthropic') return !!(getApiKey('anthropic') || process.env.ANTHROPIC_API_KEY)
-  return !!(getApiKey('openai') || process.env.OPENAI_API_KEY)
+  if (provider === 'anthropic') return !!(process.env.ANTHROPIC_API_KEY || hasApiKey('anthropic'))
+  return !!(process.env.OPENAI_API_KEY || hasApiKey('openai'))
 }
 
 export function getSetting<T>(key: string, fallback: T): T {

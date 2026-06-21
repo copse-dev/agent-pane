@@ -1,8 +1,15 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import {
+  APP_ICON_VARIANTS,
+  APP_ICON_VARIANT_LABELS,
+  DEFAULT_APP_ICON_VARIANT,
+  isAppIconVariant,
+  type AppIconVariant,
+} from '@shared/app-icon-variants.ts'
 import { populateLocalModelSelect, populateModelSelect } from './model-options.ts'
 
-type SettingsSection = 'general' | 'local-models' | 'appearance'
+type SettingsSection = 'general' | 'local-models' | 'mcp' | 'appearance'
 
 let overlayEl: HTMLElement | null = null
 
@@ -37,6 +44,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         <nav class="settings-nav" aria-label="Settings sections">
           <button type="button" class="settings-nav-btn active" data-section="general">General</button>
           <button type="button" class="settings-nav-btn" data-section="local-models">Local models</button>
+          <button type="button" class="settings-nav-btn" data-section="mcp">MCP servers</button>
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
         </nav>
 
@@ -113,6 +121,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <span class="field-hint">Thread title generation and other lightweight prompts</span>
               </label>
               <label>
+                Exploration subagent model
+                <select name="lmStudioSubagentModel"></select>
+                <span class="field-hint">File exploration when the chat model is a cloud API model</span>
+              </label>
+              <label>
                 Instruct / safety model
                 <select name="lmStudioSafetyModel"></select>
                 <span class="field-hint">Classifies shell commands when the OS sandbox is off</span>
@@ -124,6 +137,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <label class="checkbox-label">
                 <input type="checkbox" name="lmStudioForSmallTasks" />
                 Use local models for small tasks (e.g. naming threads)
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="lmStudioForSubagents" />
+                Use local models for exploration subagents when chat uses a cloud model
               </label>
               <label class="checkbox-label">
                 <input type="checkbox" name="lmStudioSafetyEnabled" />
@@ -147,9 +164,44 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
           </section>
 
+          <section class="settings-section" data-section="mcp">
+            <h3>MCP servers</h3>
+            <p class="settings-section-desc">
+              Model Context Protocol servers expose external tools to the agent. Define them in
+              <code>.cursor/mcp.json</code> (project), <code>.mcp.json</code> (project), or
+              <code>~/.cursor/mcp.json</code> (global) using the standard <code>mcpServers</code> format,
+              then reload.
+            </p>
+
+            <fieldset>
+              <legend>Connected servers</legend>
+              <div id="mcp-server-list" class="mcp-server-list">No servers loaded.</div>
+              <p class="field-hint">
+                Use the switch on each server to turn it off without editing your MCP config files.
+                Off servers are not started on reload.
+              </p>
+              <div class="lmstudio-test-row">
+                <button type="button" id="mcp-reload-btn">Reload servers</button>
+                <span class="lmstudio-test-status" id="mcp-reload-status"></span>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Tool approval</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="mcpAutoAllowReadOnly" />
+                Auto-run MCP tools the server flags as read-only
+              </label>
+              <p class="field-hint">
+                Destructive tools always prompt. Other tools prompt once; choose “always allow” to
+                remember a specific tool.
+              </p>
+            </fieldset>
+          </section>
+
           <section class="settings-section" data-section="appearance">
             <h3>Appearance</h3>
-            <p class="settings-section-desc">Theme and editor font size.</p>
+            <p class="settings-section-desc">Theme, app icon, and editor font size.</p>
 
             <fieldset>
               <legend>Display</legend>
@@ -164,6 +216,25 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Font size
                 <input type="number" name="fontSize" min="12" max="20" step="1" />
               </label>
+            </fieldset>
+
+            <fieldset>
+              <legend>App icon</legend>
+              <p class="settings-fieldset-desc">
+                Choose the icon shown in the Dock, taskbar, and window title bar.
+              </p>
+              <div class="app-icon-picker" role="radiogroup" aria-label="App icon">
+                ${APP_ICON_VARIANTS.map(
+                  (variant) => `
+                <label class="app-icon-option">
+                  <input type="radio" name="appIconVariant" value="${variant}" />
+                  <span class="app-icon-preview">
+                    <img src="./icon-previews/${variant}.png" alt="" width="64" height="64" />
+                  </span>
+                  <span class="app-icon-label">${APP_ICON_VARIANT_LABELS[variant]}</span>
+                </label>`,
+                ).join('')}
+              </div>
             </fieldset>
           </section>
 
@@ -204,6 +275,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
     const lmModel = (await api.settings.get('lmStudioModel')) as string | undefined
     const lmSmall = (await api.settings.get('lmStudioSmallTasksModel')) as string | undefined
+    const lmSubagent = (await api.settings.get('lmStudioSubagentModel')) as string | undefined
     const lmSafety = (await api.settings.get('lmStudioSafetyModel')) as string | undefined
 
     populateLocalModelSelect(
@@ -218,12 +290,127 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       '(auto — use default local model)',
     )
     populateLocalModelSelect(
+      form.elements.namedItem('lmStudioSubagentModel') as HTMLSelectElement,
+      models,
+      lmSubagent ?? '',
+      '(auto — use default local model)',
+    )
+    populateLocalModelSelect(
       form.elements.namedItem('lmStudioSafetyModel') as HTMLSelectElement,
       models,
       lmSafety ?? '',
       '(auto — use default local model)',
     )
   }
+
+  function renderMcpServers(statuses: import('@shared/types/mcp.ts').McpServerStatus[]): void {
+    const listEl = overlay.querySelector('#mcp-server-list') as HTMLElement
+    if (statuses.length === 0) {
+      listEl.textContent = 'No servers configured.'
+      return
+    }
+    listEl.innerHTML = ''
+    for (const s of statuses) {
+      const badge =
+        s.state === 'connected'
+          ? '● connected'
+          : s.state === 'error'
+            ? '✗ error'
+            : s.state === 'disabled'
+              ? '○ disabled'
+              : '… connecting'
+      const row = document.createElement('div')
+      row.className = `mcp-server-row mcp-state-${s.state}`
+
+      const header = document.createElement('div')
+      header.className = 'mcp-server-header'
+
+      const toggleLabel = document.createElement('label')
+      toggleLabel.className = 'toggle-switch mcp-server-toggle'
+      toggleLabel.title = s.configDisabled
+        ? 'This server is disabled in your MCP config file'
+        : s.userEnabled
+          ? 'Turn off this MCP server'
+          : 'Turn on this MCP server'
+      const toggle = document.createElement('input')
+      toggle.type = 'checkbox'
+      toggle.checked = s.userEnabled && !s.configDisabled
+      toggle.disabled = s.configDisabled
+      toggle.setAttribute('aria-label', `${s.name} MCP server enabled`)
+      const track = document.createElement('span')
+      track.className = 'toggle-switch-track'
+      track.setAttribute('aria-hidden', 'true')
+      toggle.addEventListener('change', () => {
+        toggle.disabled = true
+        void api.mcp
+          .setEnabled(s.name, toggle.checked)
+          .then((next) => {
+            renderMcpServers(next)
+          })
+          .catch(() => {
+            toggle.checked = !toggle.checked
+          })
+          .finally(() => {
+            if (!s.configDisabled) toggle.disabled = false
+          })
+      })
+      toggleLabel.append(toggle, track)
+
+      const title = document.createElement('div')
+      title.className = 'mcp-server-summary'
+      title.textContent = `${s.name} (${s.transport}) — ${badge}`
+
+      header.append(toggleLabel, title)
+      row.append(header)
+
+      let detailText =
+        s.state === 'connected'
+          ? `${s.toolCount} tool(s)${s.tools.length ? `: ${s.tools.join(', ')}` : ''}`
+          : (s.error ?? '')
+      if (s.configDisabled) {
+        detailText = detailText
+          ? `${detailText} · disabled in MCP config`
+          : 'Disabled in MCP config ("disabled": true)'
+      } else if (!s.userEnabled && s.state === 'disabled') {
+        detailText = 'Turned off in Settings'
+      }
+      if (detailText) {
+        row.append(
+          Object.assign(document.createElement('div'), {
+            className: 'mcp-server-detail',
+            textContent: detailText,
+          }),
+        )
+      }
+      listEl.append(row)
+    }
+  }
+
+  async function refreshMcpServers(): Promise<void> {
+    try {
+      renderMcpServers(await api.mcp.list())
+    } catch {
+      renderMcpServers([])
+    }
+  }
+
+  overlay.querySelector('#mcp-reload-btn')!.addEventListener('click', () => {
+    const statusEl = overlay.querySelector('#mcp-reload-status') as HTMLElement
+    statusEl.textContent = 'Reloading…'
+    statusEl.className = 'lmstudio-test-status'
+    void api.mcp
+      .reload()
+      .then((statuses) => {
+        renderMcpServers(statuses)
+        const ok = statuses.filter((s) => s.state === 'connected').length
+        statusEl.textContent = `✓ ${ok}/${statuses.length} server(s) connected`
+        statusEl.classList.add('ok')
+      })
+      .catch((err) => {
+        statusEl.textContent = `✗ ${err instanceof Error ? err.message : String(err)}`
+        statusEl.classList.add('err')
+      })
+  })
 
   overlay.addEventListener('settings-open', () => {
     showSection('general')
@@ -247,8 +434,20 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         store.getState().fontSize,
       )
 
+      const savedIconVariant = (await api.settings.get('appIconVariant')) as unknown
+      const appIconVariant = isAppIconVariant(savedIconVariant)
+        ? savedIconVariant
+        : DEFAULT_APP_ICON_VARIANT
+      const iconRadio = form.querySelector<HTMLInputElement>(
+        `input[name="appIconVariant"][value="${appIconVariant}"]`,
+      )
+      if (iconRadio) iconRadio.checked = true
+
       const lmUrl = (await api.settings.get('lmStudioUrl')) as string | undefined
       const lmSmallEnabled = (await api.settings.get('lmStudioForSmallTasks')) as
+        | boolean
+        | undefined
+      const lmSubagentsEnabled = (await api.settings.get('lmStudioForSubagents')) as
         | boolean
         | undefined
       const lmSafetyEnabled = (await api.settings.get('lmStudioSafetyEnabled')) as
@@ -264,6 +463,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         lmUrl ?? 'http://localhost:1234/v1'
       ;(form.elements.namedItem('lmStudioForSmallTasks') as HTMLInputElement).checked =
         lmSmallEnabled ?? true
+      ;(form.elements.namedItem('lmStudioForSubagents') as HTMLInputElement).checked =
+        lmSubagentsEnabled ?? true
       ;(form.elements.namedItem('lmStudioSafetyEnabled') as HTMLInputElement).checked =
         lmSafetyEnabled ?? true
       ;(form.elements.namedItem('autoRunSandboxCommands') as HTMLInputElement).checked =
@@ -271,7 +472,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       ;(form.elements.namedItem('lmStudioSafetyConfidenceThreshold') as HTMLInputElement).value =
         String(confidence ?? 0.85)
 
+      const mcpAutoAllow = (await api.settings.get('mcpAutoAllowReadOnly')) as boolean | undefined
+      ;(form.elements.namedItem('mcpAutoAllowReadOnly') as HTMLInputElement).checked =
+        mcpAutoAllow ?? false
+
       await refreshLocalModelSelects()
+      await refreshMcpServers()
     })()
   })
 
@@ -291,28 +497,35 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const model = data.get('model') as string
       const theme = data.get('theme') as 'light' | 'dark'
       const fontSize = parseInt(data.get('fontSize') as string, 10)
+      const appIconVariant = data.get('appIconVariant') as AppIconVariant
       const confidence = parseFloat(data.get('lmStudioSafetyConfidenceThreshold') as string)
 
       await api.settings.set('model', model)
       await api.settings.set('theme', theme)
       await api.settings.set('fontSize', fontSize)
-      await api.settings.set('lmStudioUrl', (data.get('lmStudioUrl') as string).trim())
+      if (isAppIconVariant(appIconVariant)) {
+        await api.settings.set('appIconVariant', appIconVariant)
+        await api.appIcon.apply()
+      }
       await api.settings.set('lmStudioModel', (data.get('lmStudioModel') as string).trim())
       await api.settings.set(
         'lmStudioSmallTasksModel',
         (data.get('lmStudioSmallTasksModel') as string).trim(),
       )
+      await api.settings.set(
+        'lmStudioSubagentModel',
+        (data.get('lmStudioSubagentModel') as string).trim(),
+      )
       await api.settings.set('lmStudioForSmallTasks', data.get('lmStudioForSmallTasks') === 'on')
-      await api.settings.set(
-        'lmStudioSafetyModel',
-        (data.get('lmStudioSafetyModel') as string).trim(),
-      )
-      await api.settings.set('lmStudioSafetyEnabled', data.get('lmStudioSafetyEnabled') === 'on')
-      await api.settings.set(
-        'lmStudioSafetyConfidenceThreshold',
-        Number.isFinite(confidence) ? confidence : 0.85,
-      )
-      await api.settings.set('autoRunSandboxCommands', data.get('autoRunSandboxCommands') === 'on')
+      await api.settings.set('lmStudioForSubagents', data.get('lmStudioForSubagents') === 'on')
+      await api.settings.setSecurity({
+        lmStudioUrl: (data.get('lmStudioUrl') as string).trim(),
+        lmStudioSafetyModel: (data.get('lmStudioSafetyModel') as string).trim(),
+        lmStudioSafetyEnabled: data.get('lmStudioSafetyEnabled') === 'on',
+        lmStudioSafetyConfidenceThreshold: Number.isFinite(confidence) ? confidence : 0.85,
+        autoRunSandboxCommands: data.get('autoRunSandboxCommands') === 'on',
+        mcpAutoAllowReadOnly: data.get('mcpAutoAllowReadOnly') === 'on',
+      })
 
       store.setState({ theme, fontSize, settings: { ...store.getState().settings, model } })
       store.emit('theme_changed', theme)

@@ -5,6 +5,7 @@ import type {
   Message,
   ToolCall,
   ThreadUsage,
+  UsageDelta,
   ContextTrimRecord,
   ContextSnapshot,
 } from '@shared/types'
@@ -167,16 +168,19 @@ export function updateUsage(store: AppStore, threadId: string, usage: ThreadUsag
   store.emit('usage_updated', threadId)
 }
 
-export function addUsageDelta(
-  store: AppStore,
-  threadId: string,
-  delta: { inputTokens: number; outputTokens: number },
-): void {
+export function addUsageDelta(store: AppStore, threadId: string, delta: UsageDelta): void {
   const thread = store.getState().threads.find((t) => t.id === threadId)
   if (!thread) return
+  const byModel = { ...(thread.usage.byModel ?? {}) }
+  const prev = byModel[delta.model] ?? { inputTokens: 0, outputTokens: 0 }
+  byModel[delta.model] = {
+    inputTokens: prev.inputTokens + delta.inputTokens,
+    outputTokens: prev.outputTokens + delta.outputTokens,
+  }
   updateUsage(store, threadId, {
     inputTokens: thread.usage.inputTokens + delta.inputTokens,
     outputTokens: thread.usage.outputTokens + delta.outputTokens,
+    byModel,
   })
 }
 
