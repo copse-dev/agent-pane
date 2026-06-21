@@ -2,8 +2,9 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { decideShellPermission, SANDBOX_TOOLS } from './permission-policy.ts'
 import { setPermissionGateForTests } from './tool-registry.ts'
-import { ensureToolPermitted } from './permission-gate.ts'
+import { ensureToolPermitted, ensureTerminalPermitted } from './permission-gate.ts'
 import { decideMcpPermission, describeMcpAnnotations } from './permission-policy.ts'
+import { setWorkspaceRootForTest } from './workspace.ts'
 
 describe('SANDBOX_TOOLS', () => {
   it('includes read_skill so skill reads auto-run without approval', () => {
@@ -18,6 +19,26 @@ describe('ensureToolPermitted', () => {
       await ensureToolPermitted({ toolName: 'read_skill', args: { name: 'demo-skill' } }),
       true,
     )
+  })
+})
+
+describe('ensureTerminalPermitted', () => {
+  it('allows integrated terminal without shell approval when workspace is open', async () => {
+    const restore = setWorkspaceRootForTest('/tmp/project')
+    try {
+      assert.equal(await ensureTerminalPermitted(), true)
+    } finally {
+      restore()
+    }
+  })
+
+  it('throws when no workspace is open', async () => {
+    const restore = setWorkspaceRootForTest(null)
+    try {
+      await assert.rejects(() => ensureTerminalPermitted(), /No workspace open/)
+    } finally {
+      restore()
+    }
   })
 })
 
