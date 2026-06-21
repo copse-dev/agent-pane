@@ -27,7 +27,7 @@ describe('staged diff approval UI', () => {
     this.timeout(120_000)
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), PROJECT_ID)
+    seedEmptyProject(process.cwd(), PROJECT_ID, { subagentsEnabled: false })
     await browser.reloadSession()
   })
 
@@ -41,8 +41,14 @@ describe('staged diff approval UI', () => {
 
     await runWriteFileDirective('src/e2e-staged-a.ts', 'export const a = 1\n')
 
-    await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
-    await $('.diff-stage').waitForDisplayed({ timeout: 10_000 })
+    await browser.waitUntil(
+      async () =>
+        (await $('.tool-card[data-status="done"], .tool-card[data-status="running"]').isExisting()),
+      { timeout: 30_000, timeoutMsg: 'expected write_file tool card' },
+    )
+    const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]')
+    if (!(await $('#pane-files').isDisplayed())) await panelBtn.click()
+    await $('.diff-stage').waitForDisplayed({ timeout: 15_000 })
     await $('#file-viewer .monaco-diff-editor').waitForDisplayed({ timeout: 15_000 })
 
     const acceptBtn = await $('#file-viewer .diff-accept-btn')
