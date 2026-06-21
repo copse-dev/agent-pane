@@ -51,4 +51,11 @@ export interface ToolCallChunk {
   id: string
   name: string
   args: unknown
+  /**
+   * Set when the provider could not parse the tool-call arguments JSON (e.g. a
+   * truncated or malformed streamed tool call). When present, `args` is not
+   * trustworthy and the agent loop must surface an error tool result instead of
+   * executing the tool with empty/partial args.
+   */
+  argsError?: string
 }

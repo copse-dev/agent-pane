@@ -60,6 +60,35 @@ describe('runAgentLoop', () => {
     assert.ok(chunks.some((c) => c.type === 'tool_result'))
   })
 
+  it('does not execute tools with unparseable args; returns an error result (#114)', async () => {
+    let executed = false
+    const chunks: StreamChunk[] = []
+    await runAgentLoop({
+      provider: mockProvider([
+        [
+          {
+            type: 'tool_call',
+            toolCall: { id: '1', name: 'write_file', args: {}, argsError: 'bad JSON' },
+          },
+          { type: 'done' },
+        ],
+        [{ type: 'text', text: 'recovered' }, { type: 'done' }],
+      ]),
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [],
+      onChunk: (c) => chunks.push(c),
+      executeTool: async (_name, _args, _signal, _toolCallId) => {
+        executed = true
+        return 'result'
+      },
+    })
+    assert.equal(executed, false, 'tool must not run with malformed args')
+    const errorResult = chunks.find((c) => c.type === 'tool_result')
+    assert.ok(errorResult)
+    assert.equal(errorResult.type === 'tool_result' && errorResult.isError, true)
+    assert.match(errorResult.type === 'tool_result' ? errorResult.result : '', /bad JSON/)
+  })
+
   it('stops after maxSteps', async () => {
     let steps = 0
     await runAgentLoop({
