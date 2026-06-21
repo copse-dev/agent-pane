@@ -5,7 +5,7 @@ const COPIED_LABEL = 'Copied'
 const FEEDBACK_MS = 1200
 
 function copyButtonText(code: HTMLElement): string {
-  return code.textContent ?? ''
+  return (code.textContent ?? '').trimStart()
 }
 
 export function attachCodeBlockCopyButtons(root: ParentNode): void {
@@ -14,11 +14,18 @@ export function attachCodeBlockCopyButtons(root: ParentNode): void {
     const pre = node as HTMLElement
     if (pre.closest('.mermaid-diagram')) continue
 
+    const code = pre.querySelector('code')
+    if (!code) continue
+
+    const parent = pre.parentNode
+    if (!parent) continue
+
     pre.dataset.copyAttached = 'true'
     pre.classList.add('code-block')
 
-    const code = pre.querySelector('code')
-    if (!code) continue
+    const shell = el('div', { class: 'code-block-shell' })
+    parent.insertBefore(shell, pre)
+    shell.append(pre)
 
     const copyBtn = el(
       'button',
@@ -35,6 +42,6 @@ export function attachCodeBlockCopyButtons(root: ParentNode): void {
         }, FEEDBACK_MS)
       })
     })
-    pre.prepend(copyBtn)
+    shell.prepend(copyBtn)
   }
 }

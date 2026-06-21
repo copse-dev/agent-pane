@@ -78,6 +78,11 @@ describe('renderMarkdown', () => {
     assert.match(html, /<pre><code class="lang-ts">const x = 1<\/code><\/pre>/)
   })
 
+  it('strips leading and trailing blank lines inside fenced code blocks', () => {
+    const html = renderMarkdown('```ts\n\nconst x = 1\n\n```')
+    assert.match(html, /<pre><code class="lang-ts">const x = 1<\/code><\/pre>/)
+  })
+
   it('preserves comparison operators inside fenced code blocks', () => {
     const html = renderMarkdown('```ts\nif (a < b) return true\n```')
     assert.match(html, /if \(a &lt; b\) return true/)

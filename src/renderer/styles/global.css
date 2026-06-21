@@ -858,10 +858,13 @@ label {
   padding: var(--spacing-sm);
   border-radius: var(--radius);
   overflow-x: auto;
+  white-space: pre;
 }
-.message-text pre.code-block {
+.message-text pre code {
+  white-space: pre;
+}
+.message-text .code-block-shell {
   position: relative;
-  padding-top: calc(var(--spacing-sm) + 22px);
 }
 .code-block-copy {
   position: absolute;
@@ -877,9 +880,17 @@ label {
   transition: opacity 0.1s;
   z-index: 1;
 }
-.message-text pre.code-block:hover .code-block-copy,
-.message-text pre.code-block:focus-within .code-block-copy {
+.message-text .code-block-shell:hover .code-block-copy,
+.message-text .code-block-shell:focus-within .code-block-copy {
   opacity: 1;
+}
+.message-text:has(.code-block-shell:hover)
+  .code-block-shell:not(:hover):not(:focus-within)
+  .code-block-copy,
+.message-text:has(.code-block-shell:focus-within)
+  .code-block-shell:not(:focus-within):not(:hover)
+  .code-block-copy {
+  opacity: 0;
 }
 .message-text pre code {
   background: none;

@@ -38,8 +38,16 @@ describe('code block copy buttons', () => {
     await expect(firstCopy).toHaveText('Copied')
 
     const clipboardText = await browser.execute(async () => navigator.clipboard.readText())
-    expect(clipboardText).toContain('export function greet')
+    expect(clipboardText).toMatch(/^export function greet/)
     expect(clipboardText).toContain('Hello, ${name}!')
+
+    const secondCopyOpacity = await browser.execute(() => {
+      const buttons = document.querySelectorAll(
+        '[data-message-id="msg-assistant-code-blocks"] .code-block-copy',
+      )
+      return buttons[1] ? getComputedStyle(buttons[1]).opacity : null
+    })
+    expect(secondCopyOpacity).toBe('0')
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'code-block-copy-copied.png'))
   })

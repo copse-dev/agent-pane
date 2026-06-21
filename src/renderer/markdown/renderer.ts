@@ -16,7 +16,7 @@ function renderFencedBlock(lang: string, code: string): string {
     const body = escapeMermaidHtml(code.trimEnd())
     return `<div class="mermaid-diagram mermaid-diagram--pending"><pre class="mermaid">${body}</pre></div>`
   }
-  const body = escapeHtml(code.trimEnd())
+  const body = escapeHtml(code.trim())
   return `<pre><code class="lang-${lang || 'text'}">${body}</code></pre>`
 }
 
