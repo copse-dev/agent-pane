@@ -1,7 +1,6 @@
 import { el } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { openNewThread } from '@shared/store/thread-helpers.ts'
 import { materialIconUrl, mountMaterialIcon } from '../icons/material-file-icons.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
 import { addProject } from '../controller/projects.ts'
@@ -29,18 +28,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
     'Settings',
   )
   const workspaceName = el('span', { class: 'workspace-name' }, 'No folder')
-  const newThreadBtn = el(
-    'button',
-    {
-      type: 'button',
-      class: 'titlebar-btn titlebar-new-thread-btn',
-      'aria-label': 'New thread',
-      title: 'New thread',
-    },
-    '+',
-  )
-  const workspaceCluster = el('div', { class: 'titlebar-workspace' }, workspaceName, newThreadBtn)
-  leftCluster.append(settingsBtn, workspaceCluster)
+  leftCluster.append(settingsBtn, workspaceName)
 
   const dragRegion = el('div', { class: 'titlebar-drag' })
   // Opening projects lives in the projects panel; the titlebar only toggles the
@@ -108,37 +96,18 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
     const r = store.getState().workspaceRoot
     workspaceName.textContent = r ? basename(r) : 'No folder'
   }
-
-  function syncNewThreadBtn() {
-    // Always show — click opens a folder first when no workspace is active.
-    newThreadBtn.hidden = false
-    newThreadBtn.disabled = false
-  }
-
   // Titlebar mounts before persisted projects restore on boot; sync on mount
   // for the no-project case, then again when restoreProject emits workspace_changed.
   syncName()
   syncPanelBtns()
-  syncNewThreadBtn()
   const unsubs = [
-    store.on('workspace_changed', () => {
-      syncName()
-      syncNewThreadBtn()
-    }),
+    store.on('workspace_changed', syncName),
     store.on('files_pane_changed', syncPanelBtns),
     store.on('right_panel_mode_changed', syncPanelBtns),
   ]
 
   settingsBtn.addEventListener('click', () => {
     openSettingsDialog()
-  })
-
-  newThreadBtn.addEventListener('click', () => {
-    if (!store.getState().workspaceRoot) {
-      void addProject(store, _api)
-      return
-    }
-    openNewThread(store)
   })
 
   return () => unsubs.forEach((u) => u())

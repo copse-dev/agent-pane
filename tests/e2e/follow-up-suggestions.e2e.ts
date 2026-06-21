@@ -59,7 +59,7 @@ describe('follow-up suggestion bubbles', () => {
       await completeMockTurn()
 
       const originalThreadTitle = await $('.chat-row.selected .chat-title').getText()
-      await $('.titlebar-workspace .titlebar-new-thread-btn').click()
+      await $('.project-new-thread-btn').click()
       await expect($('.follow-up-suggestions')).not.toBeDisplayed()
 
       await browser.execute(() => {
@@ -69,7 +69,7 @@ describe('follow-up suggestion bubbles', () => {
       })
       await $('.follow-up-bubble').waitForDisplayed({ timeout: 10_000 })
 
-      await $('.titlebar-workspace .titlebar-new-thread-btn').click()
+      await $('.project-new-thread-btn').click()
       await browser.execute(() => {
         const el = document.querySelector('.follow-up-suggestions')
         if (el instanceof HTMLElement) el.hidden = false
