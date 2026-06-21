@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import * as pty from 'node-pty'
 import type { BrowserWindow } from 'electron'
 import type { IPty } from 'node-pty'
+import { afterSandboxedCommand, spawnPtyInProjectSandbox } from '../project-sandbox/index.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 
 export interface TerminalSession {
@@ -29,21 +29,21 @@ function attachPtyHandlers(win: BrowserWindow, sessionId: string, ptyProcess: IP
   })
   ptyProcess.onExit(({ exitCode }) => {
     sessions.delete(sessionId)
+    afterSandboxedCommand()
     win.webContents.send('terminal:exit', sessionId, exitCode ?? 1)
   })
 }
 
-function spawnShell(win: BrowserWindow, cols: number, rows: number): TerminalSession {
+async function spawnShell(
+  win: BrowserWindow,
+  cols: number,
+  rows: number,
+): Promise<TerminalSession> {
   const shell = defaultShell()
-  const ptyProcess = pty.spawn(shell, [], {
-    name: 'xterm-256color',
+  const ptyProcess = await spawnPtyInProjectSandbox(shell, {
     cols,
     rows,
     cwd: sessionCwd(),
-    env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' } as Record<
-      string,
-      string
-    >,
   })
 
   const session: TerminalSession = { id: randomUUID(), pty: ptyProcess }
@@ -52,12 +52,12 @@ function spawnShell(win: BrowserWindow, cols: number, rows: number): TerminalSes
   return session
 }
 
-export function createTerminalSession(
+export async function createTerminalSession(
   win: BrowserWindow,
   cols = DEFAULT_COLS,
   rows = DEFAULT_ROWS,
-): string {
-  const session = spawnShell(win, cols, rows)
+): Promise<string> {
+  const session = await spawnShell(win, cols, rows)
   return session.id
 }
 
@@ -78,6 +78,7 @@ export function destroyTerminalSession(sessionId: string): void {
   if (!session) return
   session.pty.kill()
   sessions.delete(sessionId)
+  afterSandboxedCommand()
 }
 
 export function destroyAllTerminalSessions(): void {
@@ -85,4 +86,5 @@ export function destroyAllTerminalSessions(): void {
     session.pty.kill()
   }
   sessions.clear()
+  afterSandboxedCommand()
 }
