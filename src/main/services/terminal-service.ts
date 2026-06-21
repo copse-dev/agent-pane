@@ -1,10 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { BrowserWindow } from 'electron'
 import type { IPty } from 'node-pty'
-import {
-  afterSandboxedCommand,
-  spawnPtyInProjectSandbox,
-} from '../project-sandbox/index.ts'
+import { afterSandboxedCommand, spawnPtyInProjectSandbox } from '../project-sandbox/index.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 
 export interface TerminalSession {
