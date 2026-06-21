@@ -236,6 +236,10 @@ async function teardown(registry: ToolRegistry): Promise<void> {
 }
 
 export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
+  if (process.env.COPSE_AGENT_EVAL === '1') {
+    serverStatuses = []
+    return
+  }
   const configs = await collectConfigs()
   const userDisabled = getUserDisabledServerNames()
   if (configs.length === 0) {

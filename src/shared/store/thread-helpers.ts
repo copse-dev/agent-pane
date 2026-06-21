@@ -9,6 +9,7 @@ import type {
   ContextTrimRecord,
   ContextSnapshot,
 } from '@shared/types'
+import type { TodoItem } from '@shared/types/todo.ts'
 
 export function createThread(store: AppStore): string {
   const id = randomUUID()
@@ -210,6 +211,14 @@ export function clearContextSnapshot(store: AppStore, threadId: string): void {
   })
   store.setState({ threads })
   store.emit('context_updated', threadId)
+}
+
+export function setThreadTodos(store: AppStore, threadId: string, todos: TodoItem[]): void {
+  const threads = store
+    .getState()
+    .threads.map((t) => (t.id !== threadId ? t : { ...t, todos, updatedAt: Date.now() }))
+  store.setState({ threads })
+  store.emit('todos_changed', threadId)
 }
 
 export function setThreadStatus(

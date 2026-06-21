@@ -20,4 +20,5 @@ export interface StoreEvents {
   staged_diffs_changed: []
   usage_updated: [threadId: string]
   context_updated: [threadId: string]
+  todos_changed: [threadId: string]
 }

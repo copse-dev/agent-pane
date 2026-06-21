@@ -7,6 +7,7 @@ describe('parseAgentRunPayload', () => {
     assert.deepEqual(parseAgentRunPayload('hello'), {
       userContent: 'hello',
       invokedSkills: [],
+      priorTodos: [],
     })
   })
 
@@ -18,6 +19,17 @@ describe('parseAgentRunPayload', () => {
     assert.deepEqual(parseAgentRunPayload(JSON.stringify(payload)), {
       userContent: 'do the thing',
       invokedSkills: ['demo-skill'],
+      priorTodos: [],
     })
+  })
+
+  it('parses prior todos from payload', () => {
+    const payload = {
+      content: 'continue',
+      priorTodos: [{ id: 't1', content: 'Step one', status: 'completed' as const }],
+    }
+    const r = parseAgentRunPayload(JSON.stringify(payload))
+    assert.equal(r.priorTodos.length, 1)
+    assert.equal(r.priorTodos[0]?.content, 'Step one')
   })
 })
