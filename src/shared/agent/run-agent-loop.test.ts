@@ -149,6 +149,24 @@ describe('runAgentLoop', () => {
     assert.ok(chunks.some((c) => c.type === 'tool_result'))
   })
 
+  it('stops when max LLM call budget is exhausted', async () => {
+    const chunks: StreamChunk[] = []
+    await runAgentLoop({
+      provider: mockProvider([
+        [{ type: 'tool_call', toolCall: { id: '1', name: 'loop', args: {} } }, { type: 'done' }],
+        [{ type: 'text', text: 'never reached' }, { type: 'done' }],
+      ]),
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [],
+      maxSteps: 10,
+      maxLlmCalls: 1,
+      onChunk: (c) => chunks.push(c),
+      executeTool: async () => 'ok',
+    })
+    assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('LLM call limit')))
+    assert.equal(chunks.at(-1)?.type, 'done')
+  })
+
   it('surfaces a terminal message when finalize returns empty', async () => {
     const chunks: StreamChunk[] = []
     await runAgentLoop({
