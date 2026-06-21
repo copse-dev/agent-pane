@@ -1,12 +1,21 @@
 import * as fs from 'node:fs/promises'
+import { resolve } from 'node:path'
 import { z } from 'zod'
 import type { ToolDefinition } from '@shared/types'
-import { resolveWorkspacePath, toRelativePath } from '../services/workspace.ts'
+import { resolveWorkspacePath, toRelativePath, getWorkspaceRoot } from '../services/workspace.ts'
 import { runCommand } from '../services/command-runner.ts'
 import { getIndex } from '../services/file-index.ts'
 import micromatch from 'micromatch'
 import { getAgentRunReadFileLimits } from '../services/agent-run-read-limits.ts'
+import { readTextLineRange } from '../services/read-text-file.ts'
 import { buildReadFilePageMeta, formatReadFilePageFooter } from '@shared/agent/read-file-page.ts'
+
+export const LIST_DIR_MAX_ENTRIES = 1000
+
+function isPathUnderWorkspace(absPath: string): boolean {
+  const rel = toRelativePath(absPath)
+  return rel !== '..' && !rel.startsWith('..')
+}
 
 export const readFileTool: ToolDefinition = {
   name: 'read_file',
@@ -22,40 +31,23 @@ export const readFileTool: ToolDefinition = {
       getAgentRunReadFileLimits()
     const absPath = resolveWorkspacePath(path)
 
-    const handle = await fs.open(absPath, 'r')
-    try {
-      const buf = Buffer.alloc(8192)
-      const { bytesRead } = await handle.read(buf, 0, 8192, 0)
-      if (buf.slice(0, bytesRead).includes(0)) return '[Binary file — cannot display as text]'
-    } finally {
-      await handle.close()
-    }
+    const result = await readTextLineRange(absPath, {
+      startLine: start_line ?? 1,
+      endLine: end_line,
+      maxLines: READ_FILE_MAX_LINES,
+      maxChars: READ_FILE_MAX_CHARS,
+    })
 
-    const content = await fs.readFile(absPath, 'utf-8')
-    const lines = content.split('\n')
-    const startLine = start_line ?? 1
-    const start = startLine - 1
-    const maxEndByBudget = Math.min(lines.length, start + READ_FILE_MAX_LINES)
-    const requestedEnd = end_line ?? maxEndByBudget
-    const end = Math.min(lines.length, Math.max(start + 1, requestedEnd), maxEndByBudget)
-    const slice = lines.slice(start, end)
-    const lineTruncated = end < lines.length
-
-    let text = slice.join('\n')
-    let charTruncated = false
-    if (text.length > READ_FILE_MAX_CHARS) {
-      text = text.slice(0, READ_FILE_MAX_CHARS)
-      charTruncated = true
-    }
+    if (result.text === '[Binary file — cannot display as text]') return result.text
 
     const pageMeta = buildReadFilePageMeta(
       path,
-      lines.length,
-      startLine,
-      end,
-      lineTruncated || charTruncated,
+      result.totalLines,
+      result.startLine,
+      result.endLine,
+      result.lineTruncated || result.charTruncated,
     )
-    return text + formatReadFilePageFooter(pageMeta, charTruncated)
+    return result.text + formatReadFilePageFooter(pageMeta, result.charTruncated)
   },
 }
 
@@ -64,8 +56,6 @@ export const listDirTool: ToolDefinition = {
   description:
     'List files and directories at a path. Use recursive: true for a full tree (limited to 1000 entries, respects .gitignore).',
   parameters: z.object({
-    // Optional + default so models (esp. local ones) that omit it still work —
-    // it simply lists the workspace root.
     path: z
       .string()
       .optional()
@@ -75,25 +65,43 @@ export const listDirTool: ToolDefinition = {
   }),
   async execute({ path, recursive }) {
     const absPath = resolveWorkspacePath(path || '.')
+    const workspaceRoot = getWorkspaceRoot()
+    const absRoot = workspaceRoot ? resolve(workspaceRoot) : absPath
+
     if (recursive) {
       const idx = getIndex()
       let paths: string[]
       if (idx) {
         const glob = path && path !== '.' ? `${path.replace(/\/$/, '')}/**` : '**'
-        paths = micromatch(idx.paths, glob)
+        paths = micromatch(idx.paths, glob).filter((p) => isPathUnderWorkspace(resolve(absRoot, p)))
       } else {
-        const { stdout } = await runCommand('rg', ['--files', '--sort', 'path', absPath])
+        const { stdout } = await runCommand('rg', [
+          '--files',
+          '--sort',
+          'path',
+          '--no-follow',
+          absPath,
+        ])
         paths = stdout
           .split('\n')
           .filter(Boolean)
           .map((p) => toRelativePath(p))
+          .filter((p) => isPathUnderWorkspace(resolve(absRoot, p)))
       }
       return (
-        paths.slice(0, 1000).join('\n') +
-        (paths.length > 1000 ? '\n[Truncated at 1000 entries]' : '')
+        paths.slice(0, LIST_DIR_MAX_ENTRIES).join('\n') +
+        (paths.length > LIST_DIR_MAX_ENTRIES ? '\n[Truncated at 1000 entries]' : '')
       )
     }
     const entries = await fs.readdir(absPath, { withFileTypes: true })
-    return entries.map((e) => `${e.isDirectory() ? 'd' : 'f'} ${e.name}`).join('\n')
+    const lines: string[] = []
+    for (const e of entries) {
+      if (lines.length >= LIST_DIR_MAX_ENTRIES) break
+      lines.push(`${e.isDirectory() ? 'd' : 'f'} ${e.name}`)
+    }
+    return (
+      lines.join('\n') +
+      (entries.length > LIST_DIR_MAX_ENTRIES ? '\n[Truncated at 1000 entries]' : '')
+    )
   },
 }

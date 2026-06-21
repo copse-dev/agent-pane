@@ -47,9 +47,25 @@ export interface IpcInvokeMap {
   // Settings
   'settings:get': { args: [key: string]; result: unknown }
   'settings:set': { args: [key: string, value: unknown]; result: void }
+  'settings:setSecurity': {
+    args: [
+      prefs: {
+        lmStudioUrl: string
+        lmStudioSafetyEnabled: boolean
+        lmStudioSafetyConfidenceThreshold: number
+        lmStudioSafetyModel: string
+        autoRunSandboxCommands: boolean
+        mcpAutoAllowReadOnly: boolean
+      },
+    ]
+    result: void
+  }
   'settings:getKey': { args: [provider: Provider]; result: boolean }
   'settings:setKey': { args: [provider: Provider, key: string]; result: void }
   'settings:availableProviders': { args: []; result: { anthropic: boolean; openai: boolean } }
+
+  // App icon
+  'app-icon:apply': { args: []; result: void }
 
   // Storage (generic electron-store access)
   'storage:get': { args: [key: string]; result: unknown }
@@ -90,7 +106,7 @@ export interface IpcEventMap {
   'mcp:status_changed': [statuses: McpServerStatus[]]
   'diff:queued': [entries: { path: string; language: string }[]]
   'diff:apply_failed': [path: string, message: string]
-  'fs:changed': [path: string, content: string]
+  'fs:changed': [path: string, content: string | null]
   'menu:settings': []
   'theme:changed': ['light' | 'dark']
   'terminal:output': [sessionId: string, data: string]

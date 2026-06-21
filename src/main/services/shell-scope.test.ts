@@ -40,4 +40,30 @@ describe('analyzeShellCommand', () => {
     const r = analyzeShellCommand('cat src/index.ts', root)
     assert.equal(r.verdict, 'sandbox')
   })
+
+  it('flags rm -fr / variants', () => {
+    const r = analyzeShellCommand('rm -fr /', root)
+    assert.equal(r.verdict, 'external')
+  })
+
+  it('flags parent traversal', () => {
+    const r = analyzeShellCommand('cat ../outside/secret', root)
+    assert.equal(r.verdict, 'external')
+  })
+
+  it('flags command substitution', () => {
+    const r = analyzeShellCommand('$(printf curl) example.com', root)
+    assert.equal(r.verdict, 'external')
+    assert.ok(r.reasons.some((x) => x.includes('substitution')))
+  })
+
+  it('flags backslash-obfuscated network tools', () => {
+    const r = analyzeShellCommand('c\\url https://example.com', root)
+    assert.equal(r.verdict, 'external')
+  })
+
+  it('flags inline python network scripts', () => {
+    const r = analyzeShellCommand(`python3 -c 'import urllib'`, root)
+    assert.equal(r.verdict, 'external')
+  })
 })

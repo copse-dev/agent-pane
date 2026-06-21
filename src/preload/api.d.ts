@@ -19,7 +19,7 @@ export interface ApiClient {
     listDir: (path: string) => Promise<{ name: string; isDir: boolean }[]>
     watch: (path: string) => Promise<void>
     unwatch: (path: string) => Promise<void>
-    onChanged: (handler: (path: string, content: string) => void) => () => void
+    onChanged: (handler: (path: string, content: string | null) => void) => () => void
   }
   agent: {
     run: (threadId: string, prompt: string) => Promise<void>
@@ -77,9 +77,20 @@ export interface ApiClient {
   settings: {
     get: (key: string) => Promise<unknown>
     set: (key: string, value: unknown) => Promise<void>
+    setSecurity: (prefs: {
+      lmStudioUrl: string
+      lmStudioSafetyEnabled: boolean
+      lmStudioSafetyConfidenceThreshold: number
+      lmStudioSafetyModel: string
+      autoRunSandboxCommands: boolean
+      mcpAutoAllowReadOnly: boolean
+    }) => Promise<void>
     getKey: (provider: 'anthropic' | 'openai' | 'lmstudio') => Promise<boolean>
     setKey: (provider: 'anthropic' | 'openai' | 'lmstudio', key: string) => Promise<void>
     availableProviders: () => Promise<{ anthropic: boolean; openai: boolean }>
+  }
+  appIcon: {
+    apply: () => Promise<void>
   }
   index: {
     query: (pattern: string) => Promise<string[]>

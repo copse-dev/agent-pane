@@ -42,7 +42,7 @@ export function decideShellPermission(
   }
 
   const analysis = analyzeShellCommand(command, opts.workspaceRoot)
-
+  // Heuristic only — see shell-scope.ts; macOS seatbelt is the real boundary when enabled.
   // With macOS seatbelt active, always try inside the project sandbox first.
   // If the command needs broader access, shell-tool offers a separate unsandboxed retry prompt.
   if (opts.sandboxEnabled) {
@@ -95,8 +95,6 @@ export type McpPermissionDecision =
 export interface McpPermissionInput {
   /** Server-reported annotation hints for the tool, if any. */
   annotations?: McpToolAnnotations | undefined
-  /** The user explicitly marked the server as trusted in config. */
-  trusted: boolean
   /** The user previously chose "always allow" for this exact tool. */
   remembered: boolean
   /** Setting: auto-run tools the server flags as read-only. */
@@ -105,14 +103,11 @@ export interface McpPermissionInput {
 
 /**
  * Decide whether an MCP tool call may run without prompting. Destructive hints
- * always win over read-only auto-allow; trust/remember are explicit user opt-ins.
+ * always win over read-only auto-allow; remembering is an explicit user opt-in.
  */
 export function decideMcpPermission(input: McpPermissionInput): McpPermissionDecision {
   if (input.remembered) {
     return { action: 'allow', reasons: ['previously allowed for this tool'] }
-  }
-  if (input.trusted) {
-    return { action: 'allow', reasons: ['server marked trusted in config'] }
   }
 
   const ann = input.annotations
