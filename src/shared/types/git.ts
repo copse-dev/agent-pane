@@ -16,3 +16,15 @@ export interface GitFileDiff {
   after: string
   language: string
 }
+
+export interface GitOpenPr {
+  number: number
+  title: string
+  url: string
+}
+
+/** Current branch and optional open PR for the checked-out branch. */
+export interface GitBranchStatus {
+  branch: string | null
+  pr: GitOpenPr | null
+}

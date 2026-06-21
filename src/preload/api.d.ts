@@ -1,6 +1,6 @@
 import type { StreamChunk, UsageDelta } from '@shared/types'
 import type { SkillSummary } from '@shared/types/skills.ts'
-import type { GitFileDiff, GitStatusResult } from '@shared/types/git.ts'
+import type { GitFileDiff, GitStatusResult, GitBranchStatus } from '@shared/types/git.ts'
 import type { McpServerStatus } from '@shared/types/mcp.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
 
@@ -148,6 +148,10 @@ export interface ApiClient {
     isAvailable: () => Promise<boolean>
     status: () => Promise<GitStatusResult | null>
     fileDiff: (path: string, staged: boolean) => Promise<GitFileDiff | null>
+    branchStatus: () => Promise<GitBranchStatus>
+  }
+  shell: {
+    openExternal: (url: string) => Promise<void>
   }
 }
 

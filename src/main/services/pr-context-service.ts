@@ -3,9 +3,13 @@ import { getWorkspaceRoot } from './workspace.ts'
 import { isGitAvailable } from './tool-availability.ts'
 import { isInsideGitWorkTree } from './git-service.ts'
 import type { PrWorkspaceContext } from '@shared/follow-ups/types.ts'
+import type { GitBranchStatus, GitOpenPr } from '@shared/types/git.ts'
 
 interface GhPrView {
   state?: string
+  number?: number
+  title?: string
+  url?: string
   mergeable?: string
   mergeStateStatus?: string
   statusCheckRollup?: Array<{
@@ -56,6 +60,23 @@ export function ghPrHasMergeConflicts(pr: GhPrView): boolean {
   if (pr.mergeable === 'CONFLICTING') return true
   const status = (pr.mergeStateStatus ?? '').toUpperCase()
   return status === 'DIRTY' || status === 'CONFLICTING'
+}
+
+/** Parse `gh pr view --json` output into an open PR summary, or null. */
+export function parseGhOpenPr(raw: string): GitOpenPr | null {
+  if (!raw.trim()) return null
+  try {
+    const pr = JSON.parse(raw) as GhPrView
+    if (pr.state !== 'OPEN') return null
+    if (typeof pr.number !== 'number' || !pr.url) return null
+    return {
+      number: pr.number,
+      title: pr.title?.trim() || `PR #${pr.number}`,
+      url: pr.url,
+    }
+  } catch {
+    return null
+  }
 }
 
 async function runGit(args: string[]): Promise<{ stdout: string; code: number }> {
@@ -131,4 +152,18 @@ export async function getPrWorkspaceContext(): Promise<PrWorkspaceContext> {
     hasCiFailures,
     changeStats,
   }
+}
+
+/** Branch name and open PR (when `gh` is available) for the status bar. */
+export async function getGitBranchStatus(): Promise<GitBranchStatus> {
+  const empty: GitBranchStatus = { branch: null, pr: null }
+  if (!isGitAvailable() || !(await isInsideGitWorkTree())) return empty
+
+  const branchResult = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'])
+  const branch = branchResult.code === 0 ? branchResult.stdout.trim() || null : null
+
+  const ghResult = await runGh(['pr', 'view', '--json', 'state,number,title,url'])
+  const pr = ghResult.code === 0 ? parseGhOpenPr(ghResult.stdout) : null
+
+  return { branch, pr }
 }

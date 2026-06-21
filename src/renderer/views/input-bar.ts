@@ -9,6 +9,7 @@ import { buildSkillUserText } from '@shared/skills/build-skill-user-content.ts'
 import type { UserContent } from '@shared/types'
 import type { AgentRunPayload, SkillSummary } from '@shared/types/skills.ts'
 import { mountFooterModelPicker } from './footer-model-picker.ts'
+import { mountFooterBranchStatus } from './footer-branch-status.ts'
 import { createContextWheel } from './context-wheel.ts'
 import { downloadThreadJsonl } from '../export-thread.ts'
 import { syncAgentActivity } from '../agent-activity.ts'
@@ -36,6 +37,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const inputRow = el('div', { class: 'input-row' }, textarea, submitBtn)
   const footer = el('div', { class: 'input-footer' })
   const modelHost = el('div', { class: 'footer-model-host' })
+  const branchHost = el('div', { class: 'footer-branch-host' })
   const exportBtn = el(
     'button',
     {
@@ -51,7 +53,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const usageGroup = el('div', { class: 'footer-usage-group' })
   const contextWheel = createContextWheel()
   usageGroup.append(contextWheel.root, usageBtn)
-  footer.append(modelHost, exportBtn, usageGroup)
+  footer.append(modelHost, branchHost, exportBtn, usageGroup)
   let costVisible = false
 
   const modelPicker = mountFooterModelPicker(
@@ -64,6 +66,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       updateFooter()
     },
   )
+  const branchStatus = mountFooterBranchStatus(branchHost, store, api)
 
   exportBtn.addEventListener('click', () => {
     const thread = store.getState().threads.find((t) => t.id === getActiveThreadId())
@@ -364,6 +367,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     unbindDrop()
     unregisterAttachments()
     modelPicker.destroy()
+    branchStatus()
     skillPicker()
   }
 }

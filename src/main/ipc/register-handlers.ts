@@ -1,4 +1,4 @@
-import { dialog, ipcMain } from 'electron'
+import { dialog, ipcMain, shell } from 'electron'
 import type { BrowserWindow } from 'electron'
 import { z } from 'zod'
 import micromatch from 'micromatch'
@@ -44,6 +44,7 @@ import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills-registry.ts'
 import { registerSkillTools } from '../services/registry-bootstrap.ts'
 import { getGitFileDiff, getGitStatus, isInsideGitWorkTree } from '../services/git-service.ts'
+import { getGitBranchStatus } from '../services/pr-context-service.ts'
 import { isGitAvailable } from '../services/tool-availability.ts'
 import {
   getMcpServerStatuses,
@@ -202,6 +203,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('git:fileDiff', (_e, path: string, staged: boolean) =>
     getGitFileDiff(path, staged),
   )
+  ipcMain.handle('git:branchStatus', () => getGitBranchStatus())
+  ipcMain.handle('shell:openExternal', (event, url: unknown) => {
+    assertMainFrameSender(event, win)
+    const href = parseIpcArgs(z.string().url().max(2048), [url])
+    if (!href.startsWith('http://') && !href.startsWith('https://')) {
+      throw new IpcValidationError('URL must be http or https')
+    }
+    return shell.openExternal(href)
+  })
 
   ipcMain.handle('mcp:list', () => getMcpServerStatuses())
   ipcMain.handle('mcp:reload', async () => {
