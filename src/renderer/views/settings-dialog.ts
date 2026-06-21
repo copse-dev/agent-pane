@@ -464,7 +464,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         customInstructions ?? ''
       const externalApiSafety = (await api.settings.get('externalApiSafety')) as boolean | undefined
       ;(form.elements.namedItem('externalApiSafety') as HTMLInputElement).checked =
-        externalApiSafety ?? true
+        externalApiSafety ?? false
       ;(form.elements.namedItem('theme') as HTMLSelectElement).value = store.getState().theme
       ;(form.elements.namedItem('fontSize') as HTMLInputElement).value = String(
         store.getState().fontSize,

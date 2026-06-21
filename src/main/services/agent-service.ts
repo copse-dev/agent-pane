@@ -104,7 +104,7 @@ When modifying files:
 2. Use write_file to propose changes — the user sees a diff and must approve
 3. Do not assume file content; always ${v.inspectVerb} before writing
 4. Generated code must be runnable: include the imports, dependencies, and wiring it needs to run
-5. Propose edits with write_file rather than pasting large code blocks into the chat
+5. When you make an edit, use write_file rather than pasting the file's new contents into the chat
 6. If the same error persists after two attempts to fix it, stop and ask the user instead of trying again`
 }
 
@@ -294,7 +294,7 @@ export async function runAgent(
   const subagentUsageModel = subagentRoute?.usageModel ?? model
 
   const basePrompt = subagentsEnabled ? BASE_SYSTEM_PROMPT : BASE_SYSTEM_PROMPT_DIRECT_READS
-  const externalApiSafety = getSetting<boolean>('externalApiSafety', true)
+  const externalApiSafety = getSetting<boolean>('externalApiSafety', false)
   const customInstructions = getSetting<string>('customInstructions', '').trim()
   const systemPrompt =
     basePrompt
