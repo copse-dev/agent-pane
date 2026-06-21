@@ -30,6 +30,7 @@ export function getSetting<T>(key: string, fallback: T): T {
   return (settings.get(key) as T | undefined) ?? fallback
 }
 
-export function setSetting(key: string, value: unknown): void {
+export function setSetting(key: string, value: unknown): Promise<void> {
   settings.set(key, value)
+  return Promise.resolve()
 }

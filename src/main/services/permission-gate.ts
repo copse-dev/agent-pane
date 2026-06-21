@@ -86,7 +86,7 @@ async function checkMcpPermission(toolName: string, args: unknown): Promise<bool
     type: 'mcp',
     allowRemember: true,
   })
-  if (approved && remember) rememberMcpTool(toolName)
+  if (approved && remember) await rememberMcpTool(toolName)
   return approved
 }
 

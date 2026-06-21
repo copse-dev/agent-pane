@@ -72,7 +72,7 @@ export function createMainWindow(): BrowserWindow {
   setTimeout(() => {
     if (!win.isDestroyed() && !win.isVisible()) win.show()
   }, 3000)
-  win.on('close', () => setSetting('windowBounds', win.getBounds()))
+  win.on('close', () => void setSetting('windowBounds', win.getBounds()))
   void win.loadFile(join(__dirname, '../renderer/index.html'))
   return win
 }
