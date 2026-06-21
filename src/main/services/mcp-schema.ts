@@ -5,17 +5,59 @@
 
 const EMPTY_OBJECT_SCHEMA = { type: 'object', properties: {} } as const
 
+// MCP servers are untrusted: a hostile server can ship an input schema crafted
+// to blow up the provider request (deep recursion, `$ref` cycles, enormous
+// `enum`s / property maps). These bounds keep the schema we forward sane.
+const MAX_DEPTH = 8
+const MAX_ENUM_ENTRIES = 100
+const MAX_PROPERTIES = 200
+const MAX_ARRAY_ENTRIES = 200
+// Reference/expansion keywords are the recursion vector — drop them outright
+// rather than try to resolve attacker-controlled pointers.
+const STRIPPED_KEYS = new Set([
+  '$ref',
+  '$defs',
+  '$dynamicRef',
+  '$dynamicAnchor',
+  '$recursiveRef',
+  '$recursiveAnchor',
+  'definitions',
+])
+
+function sanitizeNode(value: unknown, depth: number): unknown {
+  if (depth >= MAX_DEPTH) return {}
+  if (Array.isArray(value)) {
+    return value.slice(0, MAX_ARRAY_ENTRIES).map((v) => sanitizeNode(v, depth + 1))
+  }
+  if (!value || typeof value !== 'object') return value
+
+  const out: Record<string, unknown> = {}
+  let propCount = 0
+  for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+    if (STRIPPED_KEYS.has(key)) continue
+    if (propCount >= MAX_PROPERTIES) break
+    propCount++
+    if (key === 'enum' && Array.isArray(v)) {
+      out.enum = v.slice(0, MAX_ENUM_ENTRIES)
+    } else {
+      out[key] = sanitizeNode(v, depth + 1)
+    }
+  }
+  return out
+}
+
 /**
  * MCP tool input schemas are JSON Schema objects. Most providers expect a
- * top-level `{ type: "object", properties: {...} }`. We pass the schema through
- * largely untouched but guarantee that shape so providers never reject the tool.
+ * top-level `{ type: "object", properties: {...} }`. We sanitize the schema —
+ * bounding depth/size and stripping reference keywords so an untrusted server
+ * can't inject recursion or oversized payloads — and guarantee that shape so
+ * providers never reject the tool.
  */
 export function sanitizeMcpInputSchema(inputSchema: unknown): Record<string, unknown> {
   if (!inputSchema || typeof inputSchema !== 'object') {
     return { ...EMPTY_OBJECT_SCHEMA }
   }
-  const schema = inputSchema as Record<string, unknown>
-  const out: Record<string, unknown> = { ...schema }
+  const out = sanitizeNode(inputSchema, 0) as Record<string, unknown>
 
   if (out.type !== 'object') out.type = 'object'
   if (!out.properties || typeof out.properties !== 'object') out.properties = {}
