@@ -4,6 +4,9 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } fr
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+/** Must match {@link DEFAULT_APP_ICON_VARIANT} in src/shared/app-icon-variants.ts */
+const RELEASE_ICON_VARIANT = 'wave'
+
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 interface IconVariant {
@@ -47,10 +50,6 @@ function generateVariant(variant: IconVariant): void {
   }
 
   writeFileSync(join(outDir, 'icon-dock-512.png'), renderPng(dockSvg, 512))
-
-  if (variant.id === 'classic') {
-    writeFileSync(join(root, 'assets/icon.png'), readFileSync(join(outDir, 'icon-256.png')))
-  }
 
   const iconsetDir = join(outDir, 'app.iconset')
   rmSync(iconsetDir, { recursive: true, force: true })
@@ -96,6 +95,17 @@ function generateVariant(variant: IconVariant): void {
 
 for (const variant of variants) {
   generateVariant(variant)
+}
+
+const defaultIconsDir =
+  RELEASE_ICON_VARIANT === 'classic'
+    ? join(root, 'assets/icons')
+    : join(root, 'assets/icons', RELEASE_ICON_VARIANT)
+writeFileSync(join(root, 'assets/icon.png'), readFileSync(join(defaultIconsDir, 'icon-256.png')))
+const defaultIcns = join(defaultIconsDir, 'app.icns')
+const releaseIcns = join(root, 'assets/icons/app.icns')
+if (existsSync(defaultIcns)) {
+  cpSync(defaultIcns, releaseIcns)
 }
 
 const distAssets = join(root, 'dist', 'assets')

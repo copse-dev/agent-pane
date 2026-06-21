@@ -1,7 +1,7 @@
 export const APP_ICON_VARIANTS = ['classic', 'wave'] as const
 export type AppIconVariant = (typeof APP_ICON_VARIANTS)[number]
 
-export const DEFAULT_APP_ICON_VARIANT: AppIconVariant = 'classic'
+export const DEFAULT_APP_ICON_VARIANT = 'wave'
 
 export const APP_ICON_VARIANT_LABELS: Record<AppIconVariant, string> = {
   classic: 'Classic',
