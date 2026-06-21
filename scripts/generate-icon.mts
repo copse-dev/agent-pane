@@ -3,9 +3,9 @@ import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { DEFAULT_APP_ICON_VARIANT } from '../src/shared/app-icon-variants.ts'
 
-/** Must match {@link DEFAULT_APP_ICON_VARIANT} in src/shared/app-icon-variants.ts */
-const RELEASE_ICON_VARIANT = 'wave'
+const RELEASE_ICON_VARIANT = DEFAULT_APP_ICON_VARIANT
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
