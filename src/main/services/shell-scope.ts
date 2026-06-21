@@ -36,7 +36,7 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: string }> = [
   { re: /\bdocker\s+(pull|push|run)\b/i, reason: 'docker network/container operation' },
   { re: /\bkubectl\b|\bhelm\s+install\b/i, reason: 'kubernetes remote operation' },
   { re: /\b(aws|gcloud|az)\s+/i, reason: 'cloud CLI (may reach external services)' },
-  { re: /\bgh\s+(auth|pr|repo)\b/i, reason: 'GitHub CLI (may reach GitHub)' },
+  { re: /\bgh\b/i, reason: 'GitHub CLI (may reach GitHub)' },
   { re: /\bopen\s+https?:|\bxdg-open\s+https?:/i, reason: 'open external URL' },
   { re: /\bnc\b|\bnetcat\b|\btelnet\b/i, reason: 'raw network utility' },
   {

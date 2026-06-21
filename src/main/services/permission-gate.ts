@@ -10,6 +10,8 @@ import {
   describeMcpAnnotations,
   shellCommandFromArgs,
   formatShellPromptBody,
+  formatExternalSandboxPromptBody,
+  shellRequiresOutsideSandbox,
   mcpToolLabel,
 } from './permission-policy.ts'
 import { formatUnsandboxedPromptBody } from './sandbox-failure.ts'
@@ -20,10 +22,16 @@ export { decideShellPermission } from './permission-policy.ts'
 
 import type { PermissionCheck } from './permission-policy.ts'
 
-async function promptShell(command: string, reasons: string[]): Promise<boolean> {
+async function promptShell(
+  command: string,
+  reasons: string[],
+  outsideSandbox: boolean,
+): Promise<boolean> {
   const { approved } = await requestApproval({
-    title: 'Run shell command?',
-    body: formatShellPromptBody(command, reasons),
+    title: outsideSandbox ? 'Run outside sandbox?' : 'Run shell command?',
+    body: outsideSandbox
+      ? formatExternalSandboxPromptBody(command, reasons)
+      : formatShellPromptBody(command, reasons),
     type: 'shell',
   })
   return approved
@@ -64,18 +72,24 @@ async function checkMcpPermission(toolName: string, args: unknown): Promise<bool
 
 async function checkShellPermission(args: unknown): Promise<boolean> {
   const command = shellCommandFromArgs(args)
-  if (!command) return promptShell('(invalid command)', ['missing command argument'])
+  if (!command) return promptShell('(invalid command)', ['missing command argument'], false)
 
+  const workspaceRoot = getWorkspaceRoot()
+  const sandboxEnabled = isProjectSandboxEnabled()
   const decision = decideShellPermission(command, {
-    workspaceRoot: getWorkspaceRoot(),
-    sandboxEnabled: isProjectSandboxEnabled(),
+    workspaceRoot,
+    sandboxEnabled,
     autoRun: getSetting<boolean>('autoRunSandboxCommands', true),
-    classification: isProjectSandboxEnabled() ? null : await classifyShellScope(command),
+    classification: sandboxEnabled ? null : await classifyShellScope(command),
     confidenceThreshold: getSetting<number>('lmStudioSafetyConfidenceThreshold', 0.85),
   })
 
   if (decision.action === 'allow') return true
-  return promptShell(command, decision.reasons)
+  return promptShell(
+    command,
+    decision.reasons,
+    shellRequiresOutsideSandbox(command, workspaceRoot, sandboxEnabled),
+  )
 }
 
 /** Returns true when the tool call may proceed, false when the user rejected. */

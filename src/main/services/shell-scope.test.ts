@@ -26,6 +26,12 @@ describe('analyzeShellCommand', () => {
     assert.equal(r.verdict, 'external')
   })
 
+  it('flags gh CLI', () => {
+    const r = analyzeShellCommand('gh pr view --json state', root)
+    assert.equal(r.verdict, 'external')
+    assert.ok(r.reasons.some((x) => x.includes('GitHub CLI')))
+  })
+
   it('flags home directory paths', () => {
     const r = analyzeShellCommand('cat ~/.ssh/id_rsa', root)
     assert.equal(r.verdict, 'external')
