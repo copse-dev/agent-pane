@@ -13,42 +13,45 @@ interface QueueEntry {
   language: string
 }
 
+export type ApplyResult =
+  | { status: 'written' }
+  | { status: 'conflict'; current: string }
+  | { status: 'error'; error: string }
+
 const queue: QueueEntry[] = []
 let mainWindow: BrowserWindow | null = null
 
-/** Write one staged file, creating any missing parent directories first (#120). */
-async function writeApprovedFile(workspacePath: string, contents: string): Promise<void> {
-  const abs = resolveWorkspacePath(workspacePath)
-  await fsp.mkdir(dirname(abs), { recursive: true })
-  await fsp.writeFile(abs, contents, 'utf-8')
-}
-
-export interface ApproveAllOutcome {
-  succeeded: string[]
-  failures: { path: string; error: string }[]
-}
-
 /**
- * Apply a batch of staged writes with per-entry failure isolation (#118): one
- * failing write must not abort the rest, and only entries that were actually
- * written are reported as succeeded. Pure (injected `write`) so it is testable
- * without Electron.
+ * Apply a staged diff entry to disk, guarding against stale-overwrite TOCTOU.
+ *
+ * `before` was snapshotted when the diff was staged. If the on-disk content no
+ * longer matches that snapshot, something else (a formatter from run_shell,
+ * another approval, an external editor) changed the file in between. Writing the
+ * agent's whole-file `after` would silently discard that change, so we refuse
+ * and report the conflict instead of overwriting (#117).
+ *
+ * Missing parent directories are created first so brand-new nested paths can be
+ * written (#120), and any write failure is captured as an `error` result rather
+ * than thrown so batch callers can isolate it from the rest (#118).
  */
-export async function applyApprovals(
-  entries: readonly QueueEntry[],
-  write: (path: string, contents: string) => Promise<void>,
-): Promise<ApproveAllOutcome> {
-  const succeeded: string[] = []
-  const failures: { path: string; error: string }[] = []
-  for (const entry of entries) {
-    try {
-      await write(entry.path, entry.after)
-      succeeded.push(entry.path)
-    } catch (err) {
-      failures.push({ path: entry.path, error: err instanceof Error ? err.message : String(err) })
-    }
+export async function applyDiffEntry(entry: QueueEntry): Promise<ApplyResult> {
+  const absPath = resolveWorkspacePath(entry.path)
+  let current = ''
+  try {
+    current = await fsp.readFile(absPath, 'utf-8')
+  } catch {
+    /* file absent on disk — treated as empty, matching staging snapshot for new files */
   }
-  return { succeeded, failures }
+  if (current !== entry.before) {
+    return { status: 'conflict', current }
+  }
+  try {
+    await fsp.mkdir(dirname(absPath), { recursive: true })
+    await fsp.writeFile(absPath, entry.after, 'utf-8')
+  } catch (err) {
+    return { status: 'error', error: err instanceof Error ? err.message : String(err) }
+  }
+  return { status: 'written' }
 }
 
 export function initDiffQueue(win: BrowserWindow): void {
@@ -57,7 +60,16 @@ export function initDiffQueue(win: BrowserWindow): void {
   ipcMain.handle('diff:approve', async (_e, path: string) => {
     const entry = queue.find((e) => e.path === path)
     if (!entry) return
-    await writeApprovedFile(entry.path, entry.after)
+    const result = await applyDiffEntry(entry)
+    if (result.status === 'conflict') {
+      restage(entry, result.current)
+      mainWindow?.webContents.send('diff:conflict', [entry.path])
+      return
+    }
+    if (result.status === 'error') {
+      // Leave the entry queued so the user can retry; surface the failure.
+      throw new Error(`Failed to write ${entry.path}: ${result.error}`)
+    }
     const root = getWorkspaceRoot()
     if (root) await buildIndex(root)
     removeEntry(path)
@@ -68,14 +80,32 @@ export function initDiffQueue(win: BrowserWindow): void {
   })
 
   ipcMain.handle('diff:approveAll', async () => {
-    const { succeeded, failures } = await applyApprovals([...queue], writeApprovedFile)
-    // Remove only the entries we actually wrote; leave failures queued for retry.
-    for (const path of succeeded) {
-      const idx = queue.findIndex((e) => e.path === path)
-      if (idx !== -1) queue.splice(idx, 1)
+    const conflicts: string[] = []
+    const failures: { path: string; error: string }[] = []
+    const remaining: QueueEntry[] = []
+    let wroteAny = false
+    for (const entry of queue) {
+      const result = await applyDiffEntry(entry)
+      if (result.status === 'conflict') {
+        restage(entry, result.current)
+        conflicts.push(entry.path)
+        remaining.push(entry)
+      } else if (result.status === 'error') {
+        // Per-entry failure isolation (#118): keep the failed entry queued for
+        // retry and continue applying the rest.
+        failures.push({ path: entry.path, error: result.error })
+        remaining.push(entry)
+      } else {
+        wroteAny = true
+      }
     }
-    const root = getWorkspaceRoot()
-    if (root) await buildIndex(root)
+    if (wroteAny) {
+      const root = getWorkspaceRoot()
+      if (root) await buildIndex(root)
+    }
+    queue.length = 0
+    queue.push(...remaining)
+    if (conflicts.length) mainWindow?.webContents.send('diff:conflict', conflicts)
     broadcastQueue()
     if (failures.length > 0) {
       throw new Error(
@@ -90,6 +120,22 @@ export function initDiffQueue(win: BrowserWindow): void {
     queue.length = 0
     broadcastQueue()
   })
+}
+
+/**
+ * Re-stage an entry after a conflict: refresh its `before` snapshot to the
+ * current on-disk content and re-emit the diff so the user reviews their change
+ * against the file's real state before re-approving.
+ */
+function restage(entry: QueueEntry, current: string): void {
+  entry.before = current
+  mainWindow?.webContents.send(
+    'agent:show_diff',
+    entry.path,
+    entry.before,
+    entry.after,
+    entry.language,
+  )
 }
 
 export function stageDiff(

@@ -1,43 +1,99 @@
-import { test } from 'node:test'
+import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { applyApprovals } from './diff-queue.ts'
+import { mkdtemp, readFile, writeFile, rm, mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { applyDiffEntry } from './diff-queue.ts'
+import { setWorkspaceRootForTest } from './workspace.ts'
 
-const entry = (path: string, after = `content of ${path}`) => ({
-  path,
-  before: '',
-  after,
-  language: 'typescript',
-})
+describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
+  let tempRoot = ''
+  let restoreWorkspace: (() => void) | undefined
 
-test('applyApprovals writes every entry and reports them as succeeded', async () => {
-  const written: Record<string, string> = {}
-  const { succeeded, failures } = await applyApprovals(
-    [entry('a.ts'), entry('nested/dir/b.ts')],
-    async (p, c) => {
-      written[p] = c
-    },
-  )
-  assert.deepEqual(succeeded, ['a.ts', 'nested/dir/b.ts'])
-  assert.equal(failures.length, 0)
-  assert.deepEqual(written, {
-    'a.ts': 'content of a.ts',
-    'nested/dir/b.ts': 'content of nested/dir/b.ts',
+  beforeEach(async () => {
+    tempRoot = await mkdtemp(join(tmpdir(), 'agent-pane-diff-queue-'))
+    restoreWorkspace = setWorkspaceRootForTest(tempRoot)
   })
-})
 
-test('applyApprovals isolates failures and still writes the rest (#118)', async () => {
-  const written: string[] = []
-  const { succeeded, failures } = await applyApprovals(
-    [entry('ok-1.ts'), entry('boom.ts'), entry('ok-2.ts')],
-    async (p) => {
-      if (p === 'boom.ts') throw new Error('ENOENT: no such directory')
-      written.push(p)
-    },
-  )
-  // One failure does not abort the batch.
-  assert.deepEqual(written, ['ok-1.ts', 'ok-2.ts'])
-  assert.deepEqual(succeeded, ['ok-1.ts', 'ok-2.ts'])
-  assert.equal(failures.length, 1)
-  assert.equal(failures[0]?.path, 'boom.ts')
-  assert.match(failures[0]?.error ?? '', /ENOENT/)
+  afterEach(async () => {
+    restoreWorkspace?.()
+    if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+  })
+
+  it('writes the after content when on-disk content still matches the staged before', async () => {
+    await writeFile(join(tempRoot, 'a.txt'), 'original\n', 'utf-8')
+    const result = await applyDiffEntry({
+      path: 'a.txt',
+      before: 'original\n',
+      after: 'updated\n',
+      language: 'plaintext',
+    })
+    assert.deepEqual(result, { status: 'written' })
+    assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'updated\n')
+  })
+
+  it('refuses to overwrite when the file changed since staging, preserving the intervening change', async () => {
+    // Staged against 'original', but something else wrote 'formatted' to disk.
+    await writeFile(join(tempRoot, 'a.txt'), 'formatted\n', 'utf-8')
+    const result = await applyDiffEntry({
+      path: 'a.txt',
+      before: 'original\n',
+      after: 'updated\n',
+      language: 'plaintext',
+    })
+    assert.deepEqual(result, { status: 'conflict', current: 'formatted\n' })
+    // The intervening change must NOT be discarded.
+    assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'formatted\n')
+  })
+
+  it('writes a brand new file when none existed at staging or approval', async () => {
+    const result = await applyDiffEntry({
+      path: 'new.txt',
+      before: '',
+      after: 'hello\n',
+      language: 'plaintext',
+    })
+    assert.deepEqual(result, { status: 'written' })
+    assert.equal(await readFile(join(tempRoot, 'new.txt'), 'utf-8'), 'hello\n')
+  })
+
+  it('reports a conflict when a file was created between staging and approval', async () => {
+    // Staged as a new file (before ''), but another writer created it first.
+    await writeFile(join(tempRoot, 'new.txt'), 'someone else\n', 'utf-8')
+    const result = await applyDiffEntry({
+      path: 'new.txt',
+      before: '',
+      after: 'hello\n',
+      language: 'plaintext',
+    })
+    assert.deepEqual(result, { status: 'conflict', current: 'someone else\n' })
+    assert.equal(await readFile(join(tempRoot, 'new.txt'), 'utf-8'), 'someone else\n')
+  })
+
+  it('creates missing parent directories for a new nested path (#120)', async () => {
+    const result = await applyDiffEntry({
+      path: 'src/feature/new/index.ts',
+      before: '',
+      after: 'export const x = 1\n',
+      language: 'typescript',
+    })
+    assert.deepEqual(result, { status: 'written' })
+    assert.equal(
+      await readFile(join(tempRoot, 'src/feature/new/index.ts'), 'utf-8'),
+      'export const x = 1\n',
+    )
+  })
+
+  it('reports an error result instead of throwing when the write fails (#118)', async () => {
+    // A directory occupies the target path, so writeFile fails (EISDIR).
+    await mkdir(join(tempRoot, 'busy'), { recursive: true })
+    const result = await applyDiffEntry({
+      path: 'busy',
+      before: '',
+      after: 'data\n',
+      language: 'plaintext',
+    })
+    assert.equal(result.status, 'error')
+    if (result.status === 'error') assert.match(result.error, /EISDIR|illegal|directory/i)
+  })
 })
