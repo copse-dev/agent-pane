@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { parsePorcelainV1 } from './git-service.ts'
+import { parsePorcelainV1, classifyGitBlob } from './git-service.ts'
 
 describe('parsePorcelainV1', () => {
   it('returns empty lists for clean tree', () => {
@@ -28,10 +28,28 @@ describe('parsePorcelainV1', () => {
     assert.deepEqual(result.staged, [{ path: 'old.ts', status: 'deleted' }])
   })
 
-  it('parses renames', () => {
-    const raw = 'R  old.ts\0new.ts\0'
+  it('parses renames (record path is the destination, paired token is the source)', () => {
+    // `-z` rename format: "R  <new>\0<old>\0". The destination is on the
+    // record line; the following token is the original path.
+    const raw = 'R  new.ts\0old.ts\0'
     const result = parsePorcelainV1(raw)
     assert.deepEqual(result.staged, [{ path: 'new.ts', status: 'renamed' }])
+  })
+
+  it('stays aligned after a rename when parsing subsequent records', () => {
+    const raw = 'R  new.ts\0old.ts\0 M after.ts\0'
+    const result = parsePorcelainV1(raw)
+    assert.deepEqual(result.staged, [{ path: 'new.ts', status: 'renamed' }])
+    assert.deepEqual(result.unstaged, [{ path: 'after.ts', status: 'modified' }])
+  })
+
+  it('does not mis-align when a rename record is missing its paired token (#130)', () => {
+    // Malformed/truncated: rename record without the trailing source token,
+    // followed by a normal record. The normal record must still parse.
+    const raw = 'R  new.ts\0 M after.ts\0'
+    const result = parsePorcelainV1(raw)
+    assert.deepEqual(result.staged, [{ path: 'new.ts', status: 'renamed' }])
+    assert.deepEqual(result.unstaged, [{ path: 'after.ts', status: 'modified' }])
   })
 
   it('parses both staged and unstaged on same file', () => {
@@ -39,5 +57,30 @@ describe('parsePorcelainV1', () => {
     const result = parsePorcelainV1(raw)
     assert.deepEqual(result.staged, [{ path: 'src/both.ts', status: 'modified' }])
     assert.deepEqual(result.unstaged, [{ path: 'src/both.ts', status: 'modified' }])
+  })
+})
+
+describe('classifyGitBlob (#130)', () => {
+  it('treats a non-zero exit as a missing blob, not an empty file', () => {
+    const result = classifyGitBlob('', 128)
+    assert.deepEqual(result, { content: '', exists: false, isBinary: false })
+  })
+
+  it('treats a clean exit with empty output as a genuinely empty file', () => {
+    const result = classifyGitBlob('', 0)
+    assert.deepEqual(result, { content: '', exists: true, isBinary: false })
+  })
+
+  it('detects binary content (NUL bytes) and substitutes a placeholder', () => {
+    const result = classifyGitBlob('abc\0def', 0)
+    assert.equal(result.exists, true)
+    assert.equal(result.isBinary, true)
+    assert.match(result.content, /Binary file/)
+    assert.doesNotMatch(result.content, /def/)
+  })
+
+  it('returns text content unchanged for a normal blob', () => {
+    const result = classifyGitBlob('hello\nworld\n', 0)
+    assert.deepEqual(result, { content: 'hello\nworld\n', exists: true, isBinary: false })
   })
 })
