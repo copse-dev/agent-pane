@@ -53,5 +53,4 @@ describe('MockLLMProvider', () => {
     const chunks = await collectChunks(provider, messages, tools)
     assert.ok(chunks.some((c) => c.type === 'tool_call' && c.toolCall.name === 'write_file'))
   })
-
 })

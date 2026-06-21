@@ -43,7 +43,7 @@ describe('staged diff approval UI', () => {
 
     await browser.waitUntil(
       async () =>
-        (await $('.tool-card[data-status="done"], .tool-card[data-status="running"]').isExisting()),
+        await $('.tool-card[data-status="done"], .tool-card[data-status="running"]').isExisting(),
       { timeout: 30_000, timeoutMsg: 'expected write_file tool card' },
     )
     const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]')
