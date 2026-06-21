@@ -20,6 +20,11 @@ import {
   isSettingsDialogOpen,
   closeSettingsDialog,
 } from './views/settings-dialog.ts'
+import {
+  mountOnboardingDialog,
+  openOnboardingDialog,
+  shouldShowOnboarding,
+} from './views/onboarding-dialog.ts'
 import { mountApprovalDialog } from './views/approval-dialog.ts'
 import { startAgentController } from './controller/agent.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
@@ -36,6 +41,7 @@ let layoutMounted = false
 
 async function boot() {
   mountSettingsDialog(store, api)
+  mountOnboardingDialog(store, api)
   mountApprovalDialog(api)
 
   // Load persisted user preferences before the main layout mounts.
@@ -74,6 +80,10 @@ async function boot() {
       unmountWelcome()
       ensureLayout()
     })
+  }
+
+  if (await shouldShowOnboarding(api)) {
+    openOnboardingDialog()
   }
 }
 

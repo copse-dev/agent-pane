@@ -7,7 +7,10 @@ import {
   isAppIconVariant,
   type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
-import { populateLocalModelSelect, populateModelSelect } from './model-options.ts'
+import { populateModelSelect } from './model-options.ts'
+import { createApiKeysSection } from './setup/api-keys-section.ts'
+import { createLmStudioSection } from './setup/lm-studio-section.ts'
+import { createModelRoutingSection } from './setup/model-routing-section.ts'
 
 type SettingsSection = 'general' | 'local-models' | 'mcp' | 'appearance'
 
@@ -53,19 +56,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <h3>General</h3>
             <p class="settings-section-desc">Cloud API keys and the default chat model for new conversations.</p>
 
-            <fieldset>
-              <legend>API Keys</legend>
-              <label>
-                Anthropic API key
-                <input type="password" name="anthropicKey" placeholder="sk-ant-…" autocomplete="off" />
-                <span class="key-status" data-key="anthropic"></span>
-              </label>
-              <label>
-                OpenAI API key
-                <input type="password" name="openaiKey" placeholder="sk-…" autocomplete="off" />
-                <span class="key-status" data-key="openai"></span>
-              </label>
-            </fieldset>
+            <div id="settings-api-keys-host"></div>
 
             <fieldset>
               <legend>Chat model</legend>
@@ -107,54 +98,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               specific local models.
             </p>
 
-            <fieldset>
-              <legend>Server connection</legend>
-              <label>
-                Server URL
-                <input type="text" name="lmStudioUrl" placeholder="http://localhost:1234/v1" autocomplete="off" />
-              </label>
-              <label>
-                API key (only if your server requires one)
-                <input type="password" name="lmStudioKey" placeholder="leave blank if disabled" autocomplete="off" />
-                <span class="key-status" data-key="lmstudio"></span>
-              </label>
-              <div class="lmstudio-test-row">
-                <button type="button" id="lmstudio-test-btn">Test connection</button>
-                <span class="lmstudio-test-status" id="lmstudio-test-status"></span>
-              </div>
-              <p class="field-hint">
-                Agent history trimming uses each loaded model’s context length when LM Studio reports it
-                via the models API; otherwise 8192 tokens.
-              </p>
-            </fieldset>
+            <div id="settings-lm-studio-host"></div>
 
-            <fieldset>
-              <legend>Model routing</legend>
-              <p class="settings-fieldset-desc">
-                Choose which loaded model handles each task. Leave a route on “auto” to use the first model
-                the server reports.
-              </p>
-              <label>
-                Default local model
-                <select name="lmStudioModel"></select>
-                <span class="field-hint">Fallback when a local model is selected in chat but not specified</span>
-              </label>
-              <label>
-                Small tasks model
-                <select name="lmStudioSmallTasksModel"></select>
-                <span class="field-hint">Thread title generation and other lightweight prompts</span>
-              </label>
-              <label>
-                Exploration subagent model
-                <select name="lmStudioSubagentModel"></select>
-                <span class="field-hint">File exploration when the chat model is a cloud API model</span>
-              </label>
-              <label>
-                Instruct / safety model
-                <select name="lmStudioSafetyModel"></select>
-                <span class="field-hint">Classifies shell commands when the OS sandbox is off</span>
-              </label>
-            </fieldset>
+            <div id="settings-model-routing-host"></div>
 
             <fieldset>
               <legend>Routing behavior</legend>
@@ -277,6 +223,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   document.body.append(overlay)
   overlayEl = overlay
 
+  const apiKeysSection = createApiKeysSection(api)
+  overlay.querySelector('#settings-api-keys-host')!.append(apiKeysSection.root)
+
+  const lmStudioSection = createLmStudioSection(api, { showInstallGuide: false })
+  overlay.querySelector('#settings-lm-studio-host')!.append(lmStudioSection.root)
+
+  const modelRoutingSection = createModelRoutingSection(api)
+  overlay.querySelector('#settings-model-routing-host')!.append(modelRoutingSection.root)
+
   const navBtns = overlay.querySelectorAll<HTMLButtonElement>('.settings-nav-btn')
   const sections = overlay.querySelectorAll<HTMLElement>('.settings-section')
 
@@ -293,42 +248,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   })
 
   async function refreshLocalModelSelects(): Promise<void> {
-    const form = overlay.querySelector('form') as HTMLFormElement
-    let models: string[] = []
-    try {
-      models = await api.lmStudio.models()
-    } catch {
-      models = []
-    }
-
-    const lmModel = (await api.settings.get('lmStudioModel')) as string | undefined
-    const lmSmall = (await api.settings.get('lmStudioSmallTasksModel')) as string | undefined
-    const lmSubagent = (await api.settings.get('lmStudioSubagentModel')) as string | undefined
-    const lmSafety = (await api.settings.get('lmStudioSafetyModel')) as string | undefined
-
-    populateLocalModelSelect(
-      form.elements.namedItem('lmStudioModel') as HTMLSelectElement,
-      models,
-      lmModel ?? '',
-    )
-    populateLocalModelSelect(
-      form.elements.namedItem('lmStudioSmallTasksModel') as HTMLSelectElement,
-      models,
-      lmSmall ?? '',
-      '(auto — use default local model)',
-    )
-    populateLocalModelSelect(
-      form.elements.namedItem('lmStudioSubagentModel') as HTMLSelectElement,
-      models,
-      lmSubagent ?? '',
-      '(auto — use default local model)',
-    )
-    populateLocalModelSelect(
-      form.elements.namedItem('lmStudioSafetyModel') as HTMLSelectElement,
-      models,
-      lmSafety ?? '',
-      '(auto — use default local model)',
-    )
+    await modelRoutingSection.refresh()
   }
 
   function renderMcpServers(statuses: import('@shared/types/mcp.ts').McpServerStatus[]): void {
@@ -443,12 +363,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   overlay.addEventListener('settings-open', () => {
     showSection('general')
     void (async () => {
-      const anthSet = await api.settings.getKey('anthropic')
-      const openSet = await api.settings.getKey('openai')
-      const lmSet = await api.settings.getKey('lmstudio')
-      overlay.querySelector('[data-key="anthropic"]')!.textContent = anthSet ? '● set' : '○ not set'
-      overlay.querySelector('[data-key="openai"]')!.textContent = openSet ? '● set' : '○ not set'
-      overlay.querySelector('[data-key="lmstudio"]')!.textContent = lmSet ? '● set' : '○ not set'
+      await apiKeysSection.refreshKeyStatus()
 
       const form = overlay.querySelector('form') as HTMLFormElement
       const model = (await api.settings.get('model')) as string | undefined
@@ -479,7 +394,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       )
       if (iconRadio) iconRadio.checked = true
 
-      const lmUrl = (await api.settings.get('lmStudioUrl')) as string | undefined
       const lmSmallEnabled = (await api.settings.get('lmStudioForSmallTasks')) as
         | boolean
         | undefined
@@ -498,8 +412,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const confidence = (await api.settings.get('lmStudioSafetyConfidenceThreshold')) as
         | number
         | undefined
-      ;(form.elements.namedItem('lmStudioUrl') as HTMLInputElement).value =
-        lmUrl ?? 'http://localhost:1234/v1'
       ;(form.elements.namedItem('lmStudioForSmallTasks') as HTMLInputElement).checked =
         lmSmallEnabled ?? true
       ;(form.elements.namedItem('lmStudioForSubagents') as HTMLInputElement).checked =
@@ -518,6 +430,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         mcpAutoAllow ?? false
 
       await refreshLocalModelSelects()
+      await lmStudioSection.refreshDetection()
       await refreshMcpServers()
     })()
   })
@@ -528,12 +441,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const form = overlay.querySelector('form') as HTMLFormElement
       const data = new FormData(form)
 
-      const anthKey = (data.get('anthropicKey') as string).trim()
-      const openKey = (data.get('openaiKey') as string).trim()
-      const lmKey = (data.get('lmStudioKey') as string).trim()
-      if (anthKey) await api.settings.setKey('anthropic', anthKey)
-      if (openKey) await api.settings.setKey('openai', openKey)
-      if (lmKey) await api.settings.setKey('lmstudio', lmKey)
+      await apiKeysSection.saveKeys()
+      await lmStudioSection.saveConnection()
+      const routingValues = modelRoutingSection.readValues()
 
       const model = data.get('model') as string
       const theme = data.get('theme') as 'light' | 'dark'
@@ -553,26 +463,20 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         await api.settings.set('appIconVariant', appIconVariant)
         await api.appIcon.apply()
       }
-      await api.settings.set('lmStudioModel', (data.get('lmStudioModel') as string).trim())
-      await api.settings.set(
-        'lmStudioSmallTasksModel',
-        (data.get('lmStudioSmallTasksModel') as string).trim(),
-      )
-      await api.settings.set(
-        'lmStudioSubagentModel',
-        (data.get('lmStudioSubagentModel') as string).trim(),
-      )
-      await api.settings.set('lmStudioForSmallTasks', data.get('lmStudioForSmallTasks') === 'on')
-      await api.settings.set('lmStudioForSubagents', data.get('lmStudioForSubagents') === 'on')
-      await api.settings.set('lmStudioForTodoItems', data.get('lmStudioForTodoItems') === 'on')
+      await api.settings.set('lmStudioModel', routingValues.lmStudioModel)
+      await api.settings.set('lmStudioSmallTasksModel', routingValues.lmStudioSmallTasksModel)
+      await api.settings.set('lmStudioSubagentModel', routingValues.lmStudioSubagentModel)
       await api.settings.setSecurity({
-        lmStudioUrl: (data.get('lmStudioUrl') as string).trim(),
-        lmStudioSafetyModel: (data.get('lmStudioSafetyModel') as string).trim(),
+        lmStudioUrl: lmStudioSection.getUrl(),
+        lmStudioSafetyModel: routingValues.lmStudioSafetyModel,
         lmStudioSafetyEnabled: data.get('lmStudioSafetyEnabled') === 'on',
         lmStudioSafetyConfidenceThreshold: Number.isFinite(confidence) ? confidence : 0.85,
         autoRunSandboxCommands: data.get('autoRunSandboxCommands') === 'on',
         mcpAutoAllowReadOnly: data.get('mcpAutoAllowReadOnly') === 'on',
       })
+      await api.settings.set('lmStudioForSmallTasks', data.get('lmStudioForSmallTasks') === 'on')
+      await api.settings.set('lmStudioForSubagents', data.get('lmStudioForSubagents') === 'on')
+      await api.settings.set('lmStudioForTodoItems', data.get('lmStudioForTodoItems') === 'on')
 
       store.setState({ theme, fontSize, settings: { ...store.getState().settings, model } })
       store.emit('theme_changed', theme)
@@ -580,27 +484,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       document.documentElement.dataset.theme = theme
       closeSettingsDialog()
     })()
-  })
-
-  overlay.querySelector('#lmstudio-test-btn')!.addEventListener('click', () => {
-    const form = overlay.querySelector('form') as HTMLFormElement
-    const url = (form.elements.namedItem('lmStudioUrl') as HTMLInputElement).value.trim()
-    const key = (form.elements.namedItem('lmStudioKey') as HTMLInputElement).value.trim()
-    const statusEl = overlay.querySelector('#lmstudio-test-status') as HTMLElement
-    statusEl.textContent = 'Testing…'
-    statusEl.className = 'lmstudio-test-status'
-    void api.lmStudio.test(url, key).then((r) => {
-      if (r.ok) {
-        const list =
-          r.models && r.models.length ? r.models.slice(0, 3).join(', ') : 'no models loaded'
-        statusEl.textContent = `✓ Connected — ${r.models?.length ?? 0} model(s): ${list}`
-        statusEl.classList.add('ok')
-        void refreshLocalModelSelects()
-      } else {
-        statusEl.textContent = `✗ ${r.error ?? 'Connection failed'}`
-        statusEl.classList.add('err')
-      }
-    })
   })
 
   overlay.querySelector('#settings-cancel')!.addEventListener('click', closeSettingsDialog)

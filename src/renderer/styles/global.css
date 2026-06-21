@@ -671,6 +671,9 @@ fieldset {
   padding: var(--spacing-md);
   margin-bottom: var(--spacing-md);
 }
+fieldset label {
+  margin-bottom: var(--spacing-md);
+}
 legend {
   padding: 0 var(--spacing-sm);
   color: var(--text-secondary);
@@ -1853,10 +1856,266 @@ label {
 .settings-content,
 .settings-content button,
 .settings-content input,
-.settings-content select {
+.settings-content select,
+.onboarding-footer,
+.onboarding-footer button,
+.onboarding-tagline,
+.onboarding-steps,
+.onboarding-steps button,
+.onboarding-body,
+.onboarding-body button,
+.onboarding-body input,
+.onboarding-body select,
+.onboarding-body a {
   -webkit-app-region: no-drag;
 }
 .key-status {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.key-status.ok {
+  color: var(--success);
+}
+.key-status.err {
+  color: var(--error);
+}
+
+/* Onboarding + shared setup sections */
+.onboarding-overlay {
+  z-index: 250;
+  display: flex;
+  justify-content: center;
+}
+.onboarding-shell {
+  width: min(720px, 100%);
+  margin: 0 auto;
+  flex: 1;
+  min-height: 0;
+  max-height: 100%;
+}
+.onboarding-header {
+  align-items: center;
+}
+.onboarding-tagline {
+  margin: 0;
+  padding: var(--spacing-md) var(--spacing-lg) calc(var(--spacing-md) + 2px);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.55;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-base);
+  flex-shrink: 0;
+}
+.onboarding-steps {
+  display: flex;
+  gap: var(--spacing-xs);
+  padding: 0 var(--spacing-lg);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg-base);
+}
+.onboarding-step-btn {
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  border-bottom: 2px solid transparent;
+}
+.onboarding-step-btn.active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}
+.onboarding-body {
+  flex: 1;
+  min-height: 0;
+  padding: var(--spacing-lg);
+  padding-bottom: calc(var(--spacing-xl) + var(--spacing-md));
+  overflow-y: auto;
+  display: block;
+}
+.onboarding-body > .onboarding-panel.active > :first-child {
+  margin-top: 0;
+}
+.onboarding-body > .onboarding-panel {
+  display: none;
+}
+.onboarding-body > .onboarding-panel.active {
+  display: block;
+}
+.onboarding-body h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 var(--spacing-xs);
+}
+.onboarding-panel .settings-section-desc {
+  margin-bottom: var(--spacing-md);
+}
+.onboarding-body fieldset,
+.onboarding-body .setup-lm-studio fieldset {
+  background: var(--bg-elevated);
+  margin-bottom: var(--spacing-lg);
+}
+.onboarding-body label,
+.onboarding-body .setup-lm-studio label {
+  margin-bottom: var(--spacing-md);
+}
+.onboarding-body label select,
+.onboarding-body label input[type='text'],
+.onboarding-body label input[type='password'],
+.onboarding-body label input[type='number'] {
+  width: 100%;
+  max-width: 480px;
+}
+.onboarding-body .field-hint {
+  margin-top: var(--spacing-xs);
+}
+.onboarding-body .key-status {
+  margin-top: 2px;
+}
+.onboarding-benefits {
+  margin: var(--spacing-md) 0;
+  padding-left: 1.25rem;
+  color: var(--text-secondary);
+}
+.onboarding-benefits li + li {
+  margin-top: var(--spacing-sm);
+}
+.onboarding-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg-elevated);
+}
+.onboarding-nav-buttons {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+.onboarding-primary {
+  background: var(--accent);
+  color: white;
+  border-radius: var(--radius);
+  padding: 8px 16px;
+}
+.onboarding-skip {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.setup-install-guide {
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+}
+.setup-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xl);
+  padding-bottom: var(--spacing-xs);
+}
+.setup-field + .setup-field {
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--border-subtle);
+}
+.setup-field:last-child {
+  margin-bottom: 0;
+}
+.setup-field-label {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+.setup-field select,
+.setup-field input[type='text'],
+.setup-field input[type='password'] {
+  width: 100%;
+  max-width: 480px;
+}
+.setup-field .field-hint {
+  margin: 0;
+  line-height: 1.5;
+  padding-top: 2px;
+}
+.setup-install-guide h4 {
+  margin: 0 0 var(--spacing-sm);
+}
+.setup-steps {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.setup-steps li + li {
+  margin-top: var(--spacing-xs);
+}
+.setup-detection-status {
+  font-size: var(--font-size-sm);
+  margin-top: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+  line-height: 1.45;
+}
+.setup-detection-status.ok {
+  color: var(--success);
+}
+.setup-detection-status.warn {
+  color: var(--warning, #c9a227);
+}
+.setup-detection-status.err {
+  color: var(--error);
+}
+.preferred-models-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.preferred-model-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--spacing-sm) var(--spacing-md);
+  align-items: start;
+  padding: var(--spacing-md) var(--spacing-md) calc(var(--spacing-md) + 2px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.preferred-model-row .field-hint {
+  line-height: 1.5;
+}
+.preferred-model-row .field-hint,
+.preferred-model-row .download-progress,
+.preferred-model-row .setup-download-btn {
+  grid-column: 1 / -1;
+}
+.preferred-model-meta {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.preferred-model-meta .field-hint {
+  line-height: 1.45;
+}
+.preferred-model-status {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.preferred-model-status.ok {
+  color: var(--success);
+}
+.setup-download-btn,
+.setup-test-btn {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  font-size: var(--font-size-sm);
+}
+.download-progress {
   font-size: 11px;
   color: var(--text-muted);
 }
