@@ -8,6 +8,7 @@ import { getIndex } from '../services/file-index.ts'
 import micromatch from 'micromatch'
 import { getAgentRunReadFileLimits } from '../services/agent-run-read-limits.ts'
 import { readTextLineRange } from '../services/read-text-file.ts'
+import { buildReadFilePageMeta, formatReadFilePageFooter } from '@shared/agent/read-file-page.ts'
 
 export const LIST_DIR_MAX_ENTRIES = 1000
 
@@ -39,18 +40,14 @@ export const readFileTool: ToolDefinition = {
 
     if (result.text === '[Binary file — cannot display as text]') return result.text
 
-    const parts = [result.text]
-    if (result.lineTruncated) {
-      parts.push(
-        `\n\n[File truncated at line ${result.endLine}. ${result.totalLines} total lines. Use start_line/end_line to read more.]`,
-      )
-    }
-    if (result.charTruncated) {
-      parts.push(
-        `\n\n[Output truncated at ${READ_FILE_MAX_CHARS} characters. Use start_line/end_line to read a smaller range.]`,
-      )
-    }
-    return parts.join('')
+    const pageMeta = buildReadFilePageMeta(
+      path,
+      result.totalLines,
+      result.startLine,
+      result.endLine,
+      result.lineTruncated || result.charTruncated,
+    )
+    return result.text + formatReadFilePageFooter(pageMeta, result.charTruncated)
   },
 }
 

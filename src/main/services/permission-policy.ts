@@ -7,6 +7,7 @@ export const SANDBOX_TOOLS = new Set([
   'read_file',
   'read_skill',
   'write_file',
+  'str_replace',
   'list_dir',
   'search_code',
   'search_codebase',
