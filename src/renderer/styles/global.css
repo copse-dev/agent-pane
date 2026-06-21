@@ -613,6 +613,29 @@ body {
   flex-shrink: 0;
   -webkit-app-region: no-drag;
 }
+.titlebar-workspace {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: min(240px, 28vw);
+}
+.titlebar-workspace .workspace-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.titlebar-workspace .new-thread-btn {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  line-height: 1;
+  color: var(--text-muted);
+}
+.titlebar-workspace .new-thread-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
 .titlebar-settings-btn {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);

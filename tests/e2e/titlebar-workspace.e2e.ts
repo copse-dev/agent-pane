@@ -29,5 +29,10 @@ describe('titlebar workspace name', () => {
     await expect(workspaceName).not.toHaveText('No folder')
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'titlebar-workspace-name.png'))
+
+    const newThreadBtn = await $('.titlebar-workspace .new-thread-btn')
+    await expect(newThreadBtn).toBeDisplayed()
+    await newThreadBtn.click()
+    await expect($('.chat-row.selected .chat-title')).toHaveText('New Thread')
   })
 })
