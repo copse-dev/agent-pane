@@ -94,7 +94,7 @@ Use the user’s exported JSONL from Downloads the same way: `npm run analyze:th
 ## Scenario authoring tips
 
 - **Prompt catalog:** `tests/fixtures/todo-steering-prompts.json` lists prompts that must / must not match `shouldSteerTodos()` (enforced by `src/shared/todos/todo-steering-prompts.test.ts`). Reuse these for agent eval scenarios.
-- **Strict todo evals:** `tests/e2e/scenarios/todo-steer-*.json` set `requireUpdateTodos: true` — most real runs today **fail** this until the model complies with `TODO_STEERING_PROMPT`.
+- **Strict todo evals:** `todo-steer-implement-test.json` and `todo-steer-refactor-several-files.json` set `requireUpdateTodos: true` for action prompts. Review/audit scenarios (`todo-steer-deep-dive`, `todo-steer-review-diff`) only assert steering + tool use — todos are optional there.
 - One scenario per issue; keep `prompts` short and realistic (what a user would type).
 - Multi-turn: add follow-up strings to `prompts` in order; the driver waits for idle between each.
 - For “review my diff” issues, set `expect.requireTools: ["git_diff"]`.
