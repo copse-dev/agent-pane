@@ -187,13 +187,21 @@ export function mountContextPanel(
 
   api.fs.onChanged((path, newContent) => {
     if (path !== store.getState().openFile?.path) return
-    const model = fileEditor.getModel()
-    if (model && !model.isDisposed() && !fileEditor.hasTextFocus()) {
-      model.setValue(newContent)
-    }
-    if (markdownViewMode === 'preview' && !previewContainer.hidden) {
-      renderMarkdownPreview(newContent)
-    }
+    void (async () => {
+      let content: string
+      try {
+        content = newContent ?? (await api.fs.readFile(path))
+      } catch {
+        return
+      }
+      const model = fileEditor.getModel()
+      if (model && !model.isDisposed() && !fileEditor.hasTextFocus()) {
+        model.setValue(content)
+      }
+      if (markdownViewMode === 'preview' && !previewContainer.hidden) {
+        renderMarkdownPreview(content)
+      }
+    })()
   })
 
   updatePanel()
