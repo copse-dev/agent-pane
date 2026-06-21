@@ -56,10 +56,28 @@ describe('renderMarkdown', () => {
 
   it('renders mermaid fenced blocks as diagram placeholders', () => {
     const html = renderMarkdown('```mermaid\ngraph TD\n  A --> B\n```')
-    assert.match(html, /<div class="mermaid-diagram">/)
+    assert.match(html, /<div class="mermaid-diagram mermaid-diagram--pending">/)
     assert.match(html, /<pre class="mermaid">graph TD/)
-    assert.match(html, /A --&gt; B/)
+    assert.match(html, /A --> B/)
     assert.doesNotMatch(html, /<p>(?:(?!<\/p>)[\s\S])*<div class="mermaid-diagram">/)
+  })
+
+  it('does not apply markdown formatting inside mermaid fenced blocks', () => {
+    const html = renderMarkdown(
+      '```mermaid\nflowchart TB\n  **bold** --> _italic_\n  Renderer[Renderer (20+ modules)]\n```',
+    )
+    assert.match(html, /\*\*bold\*\* --> _italic_/)
+    assert.match(html, /Renderer\[Renderer \(20\+ modules\)\]/)
+    assert.doesNotMatch(html, /<strong>bold<\/strong>/)
+    assert.doesNotMatch(html, /<em>italic<\/em>/)
+  })
+
+  it('keeps mermaid blocks intact when the diagram div has modifier classes', () => {
+    const html = renderMarkdown('Intro\n\n```mermaid\ngraph TD\n  A --> B\n```\n\nOutro')
+    assert.match(html, /<div class="mermaid-diagram mermaid-diagram--pending">/)
+    assert.doesNotMatch(html, /<p>(?:(?!<\/p>)[\s\S])*<strong>/)
+    assert.match(html, /<p>Intro<\/p>/)
+    assert.match(html, /<p>Outro<\/p>/)
   })
 
   it('escapes HTML-like content inside fenced code blocks', () => {

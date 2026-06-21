@@ -27,8 +27,11 @@ list-style-position: outside`). Bullets should sit clearly inset from headings, 
   headings + lists, explore subagent with `` `snake_case` `` tool names), not single-line `- foo`.
 - **Mermaid diagrams.** Fenced ` ```mermaid ` blocks render as SVG via lazy-loaded `mermaid`
   (`mermaid.ts`). Diagram rendering runs after final markdown insertion (`message_done`, thread
-  restore) — not on every streaming token. Fenced blocks are extracted before HTML escaping so
-  arrow syntax (`A --> B`) and code operators (`a < b`) stay intact.
+  restore) — not on every streaming token. Fenced blocks are extracted before HTML escaping; prose
+  markdown (bold, lists, headings) must not run inside diagram `<pre>` tags (`mapOutsideFencedHtml`).
+  Before render, `prepareMermaidSource` / `mermaidSourceCandidates` decode entities and quote brittle
+  `[labels]`. We call `mermaid.run` directly (no pre-parse gate — parse rejects some diagrams that
+  still render). On failure after an aggressive retry, show the inline source fallback.
 
 Prefer structural unit tests on HTML output plus WDIO geometry checks over pixel-diff screenshot CI.
 E2e specs live in `tests/e2e/*.e2e.ts` (WebdriverIO) — not Playwright.

@@ -1,16 +1,30 @@
 const FENCE_RE = /```(\w*)\n([\s\S]*?)```/g
-const FENCED_BLOCK_SPLIT_RE = /(<pre>[\s\S]*?<\/pre>|<div class="mermaid-diagram">[\s\S]*?<\/div>)/
+const FENCED_BLOCK_SPLIT_RE =
+  /(<pre>[\s\S]*?<\/pre>|<div class="mermaid-diagram[^>]*>[\s\S]*?<\/div>)/
 
 function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+/** Mermaid reads arrow syntax (`-->`); only escape what can break out of `<pre>`. */
+function escapeMermaidHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+}
+
 function renderFencedBlock(lang: string, code: string): string {
-  const body = escapeHtml(code.trimEnd())
   if (lang === 'mermaid') {
-    return `<div class="mermaid-diagram"><pre class="mermaid">${body}</pre></div>`
+    const body = escapeMermaidHtml(code.trimEnd())
+    return `<div class="mermaid-diagram mermaid-diagram--pending"><pre class="mermaid">${body}</pre></div>`
   }
+  const body = escapeHtml(code.trimEnd())
   return `<pre><code class="lang-${lang || 'text'}">${body}</code></pre>`
+}
+
+function mapOutsideFencedHtml(html: string, transform: (segment: string) => string): string {
+  return html
+    .split(FENCED_BLOCK_SPLIT_RE)
+    .map((seg, i) => (i % 2 === 1 ? seg : transform(seg)))
+    .join('')
 }
 
 /** Extract fenced blocks before prose escaping so code and diagram syntax stay intact. */
@@ -33,41 +47,30 @@ export function renderMarkdown(raw: string): string {
   let s = escapeHtml(withPlaceholders)
   s = restoreFencedBlocks(s, blocks)
 
-  // Tables (GFM). Parse only outside fenced blocks so code containing pipes is
-  // left alone. Cell contents keep their markdown — inline formatting runs after.
-  s = s
-    .split(FENCED_BLOCK_SPLIT_RE)
-    .map((seg, i) => (i % 2 === 1 ? seg : parseTables(seg)))
-    .join('')
+  // Tables + inline/block markdown only outside fenced code and mermaid diagrams.
+  s = mapOutsideFencedHtml(s, (seg) => parseTables(seg))
+  s = mapOutsideFencedHtml(s, (seg) => {
+    let t = seg
+    t = t.replace(/`([^`]+)`/g, '<code>$1</code>')
+    t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    t = applyOutsideCode(t, /_([^_\n]+)_/g, '<em>$1</em>')
+    t = applyOutsideCode(t, /(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
+    t = t.replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    t = t.replace(/^## (.+)$/gm, '<h4>$1</h4>')
+    t = t.replace(/^# (.+)$/gm, '<h4>$1</h4>')
+    t = t.replace(/^ {0,3}(-{3,}|\*{3,}|_{3,}) *$/gm, '\n\n<hr>\n\n')
+    t = t.replace(/^(?:[-*+] )(.+)$/gm, '<li>$1</li>')
+    t = t.replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`)
+    return t
+  })
 
-  // Inline code
-  s = s.replace(/`([^`]+)`/g, '<code>$1</code>')
-
-  // Bold
-  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-
-  // Italic — skip underscores/asterisks inside inline code (e.g. `search_codebase`)
-  s = applyOutsideCode(s, /_([^_\n]+)_/g, '<em>$1</em>')
-  s = applyOutsideCode(s, /(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
-
-  // Headings (h3/h4 — h1/h2 are too large in a narrow pane)
-  s = s.replace(/^### (.+)$/gm, '<h3>$1</h3>')
-  s = s.replace(/^## (.+)$/gm, '<h4>$1</h4>')
-  s = s.replace(/^# (.+)$/gm, '<h4>$1</h4>')
-
-  // Thematic breaks (---, ***, ___) — isolate as block elements before list/paragraph passes
-  s = s.replace(/^ {0,3}(-{3,}|\*{3,}|_{3,}) *$/gm, '\n\n<hr>\n\n')
-
-  // Unordered list items (-, *, +)
-  s = s.replace(/^(?:[-*+] )(.+)$/gm, '<li>$1</li>')
-  s = s.replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`)
-
-  // Paragraphs (blank-line separated)
-  s = s
-    .split(/\n\n+/)
-    .map((block) => wrapParagraphBlock(block))
-    .filter((block) => block !== '')
-    .join('\n')
+  s = mapOutsideFencedHtml(s, (seg) =>
+    seg
+      .split(/\n\n+/)
+      .map((block) => wrapParagraphBlock(block))
+      .filter((block) => block !== '')
+      .join('\n'),
+  )
 
   return s
 }
@@ -79,9 +82,9 @@ function applyOutsideCode(text: string, pattern: RegExp, replacement: string): s
     .join('')
 }
 
-const BLOCK_START_RE = /^<(pre|ul|ol|h[34]|table|hr|div class="mermaid-diagram")/
+const BLOCK_START_RE = /^<(pre|ul|ol|h[34]|table|hr|div class="mermaid-diagram\b)/
 const BLOCK_CLOSE_RE = /<\/(pre|ul|ol|h[34]|table|hr|div)>$/
-const CONTAINS_BLOCK_RE = /<(ul|ol|h[34]|pre|table|hr|div class="mermaid-diagram")[\s>]/
+const CONTAINS_BLOCK_RE = /<(ul|ol|h[34]|pre|table|hr|div class="mermaid-diagram\b)[\s>]/
 
 function splitBlockElements(block: string): string[] {
   const lines = block.split('\n')
