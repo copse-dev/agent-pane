@@ -1,3 +1,7 @@
+import { attachMermaidExpand } from './mermaid-expand.ts'
+import { renderMermaidFallback } from './mermaid-fallback.ts'
+import { mermaidSourceCandidates, prepareMermaidSource } from './mermaid-source.ts'
+
 type MermaidModule = typeof import('mermaid').default
 
 let mermaidPromise: Promise<MermaidModule> | null = null
@@ -15,9 +19,22 @@ function initMermaid(mermaid: MermaidModule): void {
   mermaid.initialize({
     startOnLoad: false,
     theme: 'dark',
-    securityLevel: 'strict',
+    securityLevel: 'loose',
   })
   initialized = true
+}
+
+function diagramRenderFailed(container: HTMLElement): boolean {
+  const svg = container.querySelector('svg')
+  if (svg && !container.querySelector('.error-icon')) return false
+  if (container.querySelector('.error-icon')) return true
+  if ((container.textContent ?? '').includes('Syntax error in text')) return true
+  return !svg
+}
+
+async function runMermaidNodes(mermaid: MermaidModule, nodes: HTMLElement[]): Promise<void> {
+  if (nodes.length === 0) return
+  await mermaid.run({ nodes, suppressErrors: true })
 }
 
 /** Render pending `.mermaid` blocks inside `root`. No-op when none are present. */
@@ -27,5 +44,37 @@ export async function renderMermaidIn(root: ParentNode): Promise<void> {
 
   const mermaid = await loadMermaid()
   initMermaid(mermaid)
-  await mermaid.run({ nodes: Array.from(nodes) as HTMLElement[] })
+
+  const elements = Array.from(nodes) as HTMLElement[]
+  const sourceByNode = new Map<HTMLElement, string>()
+
+  for (const node of elements) {
+    const raw = node.textContent ?? ''
+    const source = prepareMermaidSource(raw)
+    sourceByNode.set(node, source)
+    node.textContent = source
+  }
+
+  await runMermaidNodes(mermaid, elements)
+
+  for (const node of elements) {
+    const container = node.closest('.mermaid-diagram') as HTMLElement | null
+    if (!container || container.querySelector('.mermaid-fallback-title')) continue
+
+    if (!diagramRenderFailed(container)) continue
+
+    const candidates = mermaidSourceCandidates(sourceByNode.get(node) ?? node.textContent ?? '')
+    const retrySource = candidates.find((c) => c !== node.textContent)
+    if (retrySource) {
+      node.textContent = retrySource
+      node.removeAttribute('data-processed')
+      await runMermaidNodes(mermaid, [node])
+      if (!diagramRenderFailed(container)) continue
+    }
+
+    renderMermaidFallback(container, sourceByNode.get(node) ?? node.textContent ?? '')
+    node.remove()
+  }
+
+  attachMermaidExpand(root)
 }

@@ -26,6 +26,7 @@ import { loadProjects, attachAutosave } from './controller/persistence.ts'
 import { addProjectFromPath, restoreProject } from './controller/projects.ts'
 import { initMonaco } from './monaco/setup.ts'
 import { mountPaneResizers, parseSavedLayout } from './views/pane-resizer.ts'
+import { bindChatComposerLayout } from './views/chat-layout.ts'
 
 const store = createStore()
 const api = window.api
@@ -77,8 +78,8 @@ async function boot() {
 
 function ensureLayout() {
   if (layoutMounted) return
-  layoutMounted = true
   mountFullLayout()
+  layoutMounted = true
   registerKeyboardShortcuts()
   updateFilesPane()
 }
@@ -86,8 +87,13 @@ function ensureLayout() {
 function mountFullLayout() {
   const monaco = initMonaco()
   mountProjectsPane(document.getElementById('pane-projects')!, store, api)
+  const inputRoot = document.getElementById('input-bar')!
+  mountInputBar(inputRoot, store, api)
   mountConversation(document.getElementById('conversation')!, store)
-  mountInputBar(document.getElementById('input-bar')!, store, api)
+  if (!inputRoot.querySelector('.prompt-input')) {
+    throw new Error('Chat composer failed to mount (#input-bar missing .prompt-input)')
+  }
+  bindChatComposerLayout()
   mountFileTree(document.getElementById('file-tree-host')!, store, api)
   mountRightPanelTabs(document.getElementById('right-panel-tabs')!, store)
   mountTerminalsPane(
