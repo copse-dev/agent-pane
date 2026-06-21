@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import * as pty from 'node-pty'
 import type { BrowserWindow } from 'electron'
+import * as pty from 'node-pty'
 import type { IPty } from 'node-pty'
 import {
   afterSandboxedCommand,

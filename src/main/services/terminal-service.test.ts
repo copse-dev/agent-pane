@@ -20,12 +20,27 @@ function mockWindow() {
   } as unknown as import('electron').BrowserWindow & { sent: typeof sent }
 }
 
+async function ptySpawnAvailable(): Promise<boolean> {
+  try {
+    const win = mockWindow()
+    const sessionId = await createTerminalSession(win)
+    destroyTerminalSession(sessionId)
+    return true
+  } catch {
+    return false
+  }
+}
+
 describe('terminal-service', () => {
   afterEach(() => {
     destroyAllTerminalSessions()
   })
 
-  it('creates a session and streams output', async () => {
+  it('creates a session and streams output', async (t) => {
+    if (!(await ptySpawnAvailable())) {
+      t.skip('PTY spawn unavailable in this environment')
+      return
+    }
     const restore = setWorkspaceRootForTest('/tmp')
     const win = mockWindow()
     let sessionId = ''

@@ -143,6 +143,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Use local models for exploration subagents when chat uses a cloud model
               </label>
               <label class="checkbox-label">
+                <input type="checkbox" name="lmStudioForTodoItems" />
+                Use local models for todo items tagged local (requires acceptance check)
+              </label>
+              <label class="checkbox-label">
                 <input type="checkbox" name="lmStudioSafetyEnabled" />
                 Use instruct model to classify shell commands (when OS sandbox is off)
               </label>
@@ -450,6 +454,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const lmSubagentsEnabled = (await api.settings.get('lmStudioForSubagents')) as
         | boolean
         | undefined
+      const lmTodoItemsEnabled = (await api.settings.get('lmStudioForTodoItems')) as
+        | boolean
+        | undefined
       const lmSafetyEnabled = (await api.settings.get('lmStudioSafetyEnabled')) as
         | boolean
         | undefined
@@ -465,6 +472,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         lmSmallEnabled ?? true
       ;(form.elements.namedItem('lmStudioForSubagents') as HTMLInputElement).checked =
         lmSubagentsEnabled ?? true
+      ;(form.elements.namedItem('lmStudioForTodoItems') as HTMLInputElement).checked =
+        lmTodoItemsEnabled ?? true
       ;(form.elements.namedItem('lmStudioSafetyEnabled') as HTMLInputElement).checked =
         lmSafetyEnabled ?? true
       ;(form.elements.namedItem('autoRunSandboxCommands') as HTMLInputElement).checked =
@@ -518,6 +527,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       )
       await api.settings.set('lmStudioForSmallTasks', data.get('lmStudioForSmallTasks') === 'on')
       await api.settings.set('lmStudioForSubagents', data.get('lmStudioForSubagents') === 'on')
+      await api.settings.set('lmStudioForTodoItems', data.get('lmStudioForTodoItems') === 'on')
       await api.settings.setSecurity({
         lmStudioUrl: (data.get('lmStudioUrl') as string).trim(),
         lmStudioSafetyModel: (data.get('lmStudioSafetyModel') as string).trim(),

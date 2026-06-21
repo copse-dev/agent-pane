@@ -35,14 +35,16 @@ import { getMainWindow } from './windows/create-main-window.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
 
 // Prevent multiple instances stacking invisible windows at the same position.
-// A second launch focuses the existing window instead.
+// A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.
 app.on('web-contents-created', (_event, contents) => {
   attachWebContentsLockdown(contents)
 })
 
-if (!app.requestSingleInstanceLock()) {
+const agentEval = process.env.COPSE_AGENT_EVAL === '1'
+const gotSingleInstanceLock = agentEval ? true : app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
   app.quit()
-} else {
+} else if (!agentEval) {
   app.on('second-instance', () => {
     const win = getMainWindow()
     if (win) {
@@ -78,7 +80,7 @@ app
     const messageHistory = new Map<string, LLMMessage[]>()
 
     ipcMain.handle('agent:run', async (_e, threadId: string, rawPrompt: string) => {
-      const { userContent, invokedSkills } = parseAgentRunPayload(rawPrompt)
+      const { userContent, invokedSkills, priorTodos } = parseAgentRunPayload(rawPrompt)
 
       // Hydrate from persisted storage on first use after a restart
       if (!messageHistory.has(threadId)) {
@@ -91,6 +93,7 @@ app
       const priorMessages = messageHistory.get(threadId) ?? []
       const result = await runAgent(threadId, userContent, priorMessages, win, registry, {
         invokedSkills,
+        priorTodos,
       })
       messageHistory.set(threadId, result.messages)
       storageSet(`llm-history:${threadId}`, result.messages)
