@@ -141,9 +141,8 @@ export async function spawnPtyInProjectSandbox(
 
   const customConfig = { ...workspaceSandboxOverlay(opts.cwd), allowPty: true }
   const innerCommand = `exec ${quote.quote([shell])} -il`
-  const { argv, env } = await withWrapCwd(opts.cwd, () =>
-    SandboxManager.wrapWithSandboxArgv(innerCommand, shell, customConfig),
-  )
+  // cwd is handed to pty.spawn via ptyOpts; no main-process chdir during wrap (#74).
+  const { argv, env } = await SandboxManager.wrapWithSandboxArgv(innerCommand, shell, customConfig)
 
   const file = argv[0]
   if (!file) throw new Error('sandbox wrap produced empty argv')

@@ -26,6 +26,33 @@ describe('sanitizeMcpInputSchema', () => {
     assert.equal(out.type, 'object')
     assert.deepEqual(out.properties, {})
   })
+
+  it('strips $ref / $defs and other reference keywords (#107)', () => {
+    const out = sanitizeMcpInputSchema({
+      type: 'object',
+      $defs: { Node: { $ref: '#/$defs/Node' } },
+      properties: { child: { $ref: '#/$defs/Node' } },
+    })
+    assert.equal(out.$defs, undefined)
+    assert.deepEqual(out.properties, { child: {} })
+  })
+
+  it('caps oversized enum arrays (#107)', () => {
+    const big = Array.from({ length: 500 }, (_, i) => i)
+    const out = sanitizeMcpInputSchema({
+      type: 'object',
+      properties: { k: { type: 'number', enum: big } },
+    })
+    const props = out.properties as Record<string, { enum: number[] }>
+    assert.equal(props.k?.enum.length, 100)
+  })
+
+  it('truncates deeply nested schemas without throwing (#107)', () => {
+    let node: Record<string, unknown> = { type: 'string' }
+    for (let i = 0; i < 30; i++) node = { type: 'object', properties: { next: node } }
+    const out = sanitizeMcpInputSchema(node)
+    assert.equal(out.type, 'object')
+  })
 })
 
 describe('flattenMcpContent', () => {
