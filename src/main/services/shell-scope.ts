@@ -110,6 +110,46 @@ function referencesOutsideWorkspace(command: string, workspaceRoot: string | nul
   return null
 }
 
+/**
+ * Commands that are destructive or resource-exhausting even when fully contained
+ * inside the workspace sandbox. macOS seatbelt blocks network + out-of-workspace
+ * FS, but does nothing about `rm -rf` inside the repo, fork bombs, or piping a
+ * downloaded script straight into a shell. These must still prompt even when the
+ * OS sandbox is active (see issue #103: sandboxed auto-allow was a blanket bypass
+ * of the classifier).
+ */
+const DANGEROUS_IN_SANDBOX_PATTERNS: Array<{ re: RegExp; reason: string }> = [
+  { re: /\brm\s+-\S*[rf]/i, reason: 'recursive/forced delete (rm -rf)' },
+  { re: /\bgit\s+clean\s+-\S*[dfx]/i, reason: 'git clean removes untracked files' },
+  { re: /\bgit\s+reset\s+--hard\b/i, reason: 'git reset --hard discards changes' },
+  { re: /\bgit\s+checkout\s+--\s+\./i, reason: 'git checkout discards local changes' },
+  { re: />\s*\/dev\/(?:sda|disk|null\s+2>&1\s*&\s*$)/i, reason: 'raw device write' },
+  { re: /\bfind\b[^\n|;&]*\s-delete\b/i, reason: 'find -delete bulk removal' },
+  { re: /\btruncate\b|\bshred\b/i, reason: 'file truncation/shredding' },
+  // Pipe-to-shell: `curl … | sh`, `wget … | bash`, etc. (the curl is also caught
+  // as external, but this fires even for in-workspace scripts piped to a shell).
+  {
+    re: /\|\s*(?:sh|bash|zsh|python3?|node|ruby|perl)\b/i,
+    reason: 'piping output into an interpreter',
+  },
+  // Classic shell fork bomb and obvious busy-loop fork patterns.
+  { re: /:\(\)\s*\{\s*:\|:&\s*\}\s*;/, reason: 'fork bomb' },
+  { re: /\bwhile\s+(?:true|:)\s*;?\s*do\b/i, reason: 'unbounded loop (CPU exhaustion)' },
+  { re: /\byes\b\s*\|/i, reason: 'unbounded `yes` output' },
+]
+
+/** Destructive/resource-exhausting patterns that warrant a prompt even when sandboxed. */
+export function dangerousInSandboxReasons(command: string): string[] {
+  const reasons: string[] = []
+  const variants = [command, normalizeShellCommandForAnalysis(command)]
+  for (const text of variants) {
+    for (const { re, reason } of DANGEROUS_IN_SANDBOX_PATTERNS) {
+      if (re.test(text) && !reasons.includes(reason)) reasons.push(reason)
+    }
+  }
+  return reasons
+}
+
 export function analyzeShellCommand(
   command: string,
   workspaceRoot: string | null,

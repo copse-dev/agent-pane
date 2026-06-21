@@ -5,11 +5,13 @@ import { getMainWindow } from '../windows/create-main-window.ts'
 import {
   afterSandboxedCommand,
   isProjectSandboxEnabled,
+  sandboxViolationCountForCommand,
   spawnShellInProjectSandbox,
 } from '../project-sandbox/index.ts'
-import { detectLikelySandboxFailure } from '../services/sandbox-failure.ts'
+import { detectSandboxFailure } from '../services/sandbox-failure.ts'
 import { promptInstallSocketFirewall, promptUnsandboxedShell } from '../services/permission-gate.ts'
 import { shellRequiresOutsideSandbox } from '../services/permission-policy.ts'
+import { envForRendererChildProcess } from '../services/child-process-env.ts'
 import { getSetting } from '../services/settings.ts'
 import { detectPackageInstall, wrapWithSocketFirewall } from '../services/safe-install.ts'
 import { installSocketFirewall, isSocketFirewallAvailable } from '../services/socket-firewall.ts'
@@ -21,6 +23,8 @@ import {
 interface ShellRunResult {
   output: string
   exitCode: number
+  /** The sandbox wrapper process itself failed to start (child 'error' event). */
+  spawnFailed?: boolean
 }
 
 async function runShellOnce(
@@ -45,7 +49,15 @@ async function runShellOnce(
           unsandboxed,
         })
       } catch (err) {
-        reject(err instanceof Error ? err : new Error(String(err)))
+        // Wrapping the command in the sandbox failed (runner-side, not command
+        // output). For a sandboxed run, surface it as spawnFailed so an unsandboxed
+        // retry can be offered (issue #104); for an unsandboxed run it's a real error.
+        if (!unsandboxed) {
+          const message = err instanceof Error ? err.message : String(err)
+          resolve({ output: message, exitCode: -1, spawnFailed: true })
+        } else {
+          reject(err instanceof Error ? err : new Error(String(err)))
+        }
         return
       }
 
@@ -73,10 +85,18 @@ async function runShellOnce(
       proc.on('error', (err) => {
         clearTimeout(timer)
         finish()
-        if (!settled) {
-          settled = true
-          reject(err instanceof Error ? err : new Error(String(err)))
+        if (settled) return
+        settled = true
+        // A child 'error' (e.g. the sandbox wrapper binary failed to launch) is a
+        // runner-side failure, not command-controlled output. Surface it as a result
+        // with spawnFailed so an unsandboxed retry can be offered (issue #104), but
+        // only when this was a sandboxed run.
+        if (!unsandboxed) {
+          const message = err instanceof Error ? err.message : String(err)
+          resolve({ output: message, exitCode: -1, spawnFailed: true })
+          return
         }
+        reject(err instanceof Error ? err : new Error(String(err)))
       })
 
       proc.on('close', (code) => {
@@ -100,12 +120,17 @@ async function maybeRetryUnsandboxed(
   cwd: string,
   timeout_ms: number,
   signal: AbortSignal,
-  output: string,
-  exitCode: number | null,
+  result: ShellRunResult,
   env: NodeJS.ProcessEnv,
 ): Promise<ShellRunResult | 'declined' | null> {
   if (!isProjectSandboxEnabled()) return null
-  const detection = detectLikelySandboxFailure(output, exitCode)
+  // Decide purely from runner-side signals (recorded sandbox violations / wrapper
+  // spawn failure) — never from the command's own stdout/stderr (issue #104).
+  const detection = detectSandboxFailure({
+    exitCode: result.exitCode,
+    violationCount: sandboxViolationCountForCommand(command),
+    spawnFailed: result.spawnFailed ?? false,
+  })
   if (!detection.likely) return null
   const approved = await promptUnsandboxedShell(command, detection.reasons)
   if (!approved) return 'declined'
@@ -193,27 +218,20 @@ export const runShellTool: ToolDefinition = {
 
     const outsideSandbox = shellRequiresOutsideSandbox(finalCommand, cwd, isProjectSandboxEnabled())
 
-    let result: ShellRunResult
-    try {
-      result = await runShellOnce(finalCommand, cwd, timeout_ms, signal, outsideSandbox, env)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      const retry = await maybeRetryUnsandboxed(
-        finalCommand,
-        cwd,
-        timeout_ms,
-        signal,
-        message,
-        null,
-        env,
-      )
-      if (retry === 'declined') return 'User declined to run outside the sandbox.'
-      if (retry) {
-        if (retry.exitCode === 0) return withBanner(formatShellSuccess(retry))
-        throw formatShellFailure(retry)
-      }
-      throw err
-    }
+    // Strip LLM API keys (and other secrets) from the child env so a compromised
+    // command — especially an unsandboxed retry with full network — cannot exfiltrate
+    // them (issue #108). prepareCommand's own additions (e.g. npm_config_ignore_scripts)
+    // are preserved on top.
+    const childEnv = envForRendererChildProcess(env)
+
+    const result = await runShellOnce(
+      finalCommand,
+      cwd,
+      timeout_ms,
+      signal,
+      outsideSandbox,
+      childEnv,
+    )
 
     if (result.exitCode === 0) return withBanner(formatShellSuccess(result))
 
@@ -222,9 +240,8 @@ export const runShellTool: ToolDefinition = {
       cwd,
       timeout_ms,
       signal,
-      result.output,
-      result.exitCode,
-      env,
+      result,
+      childEnv,
     )
     if (retry === 'declined') return 'User declined to run outside the sandbox.'
     if (retry) {

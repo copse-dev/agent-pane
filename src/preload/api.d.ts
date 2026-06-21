@@ -9,6 +9,8 @@ export interface ApiClient {
     open: () => Promise<string | null>
     get: () => Promise<string | null>
     set: (root: string) => Promise<string>
+    isTrusted: () => Promise<boolean>
+    setTrusted: (trusted: boolean) => Promise<McpServerStatus[]>
     onOpened: (handler: (root: string) => void) => () => void
   }
   fs: {

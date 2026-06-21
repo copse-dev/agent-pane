@@ -258,6 +258,31 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       return
     }
     listEl.innerHTML = ''
+
+    // Project-defined servers in an untrusted workspace are not spawned (#100).
+    // Offer an explicit "trust this workspace" action before any are started.
+    if (statuses.some((s) => s.state === 'untrusted')) {
+      const banner = document.createElement('div')
+      banner.className = 'mcp-trust-banner'
+      const text = document.createElement('span')
+      text.textContent =
+        'This workspace defines its own MCP servers. They will not run until you trust this workspace.'
+      const trustBtn = document.createElement('button')
+      trustBtn.type = 'button'
+      trustBtn.textContent = 'Trust this workspace'
+      trustBtn.addEventListener('click', () => {
+        trustBtn.disabled = true
+        void api.workspace
+          .setTrusted(true)
+          .then((next) => renderMcpServers(next))
+          .catch(() => {
+            trustBtn.disabled = false
+          })
+      })
+      banner.append(text, trustBtn)
+      listEl.append(banner)
+    }
+
     for (const s of statuses) {
       const badge =
         s.state === 'connected'
@@ -266,7 +291,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             ? '✗ error'
             : s.state === 'disabled'
               ? '○ disabled'
-              : '… connecting'
+              : s.state === 'untrusted'
+                ? '⚠ not trusted'
+                : '… connecting'
       const row = document.createElement('div')
       row.className = `mcp-server-row mcp-state-${s.state}`
 
@@ -282,8 +309,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           : 'Turn on this MCP server'
       const toggle = document.createElement('input')
       toggle.type = 'checkbox'
-      toggle.checked = s.userEnabled && !s.configDisabled
-      toggle.disabled = s.configDisabled
+      toggle.checked = s.userEnabled && !s.configDisabled && s.state !== 'untrusted'
+      toggle.disabled = s.configDisabled || s.state === 'untrusted'
       toggle.setAttribute('aria-label', `${s.name} MCP server enabled`)
       const track = document.createElement('span')
       track.className = 'toggle-switch-track'
@@ -299,7 +326,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             toggle.checked = !toggle.checked
           })
           .finally(() => {
-            if (!s.configDisabled) toggle.disabled = false
+            if (!s.configDisabled && s.state !== 'untrusted') toggle.disabled = false
           })
       })
       toggleLabel.append(toggle, track)
