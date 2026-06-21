@@ -5,9 +5,9 @@ import { setProjectSandboxEnabled } from './spawn.ts'
 export {
   spawnInProjectSandbox,
   spawnShellInProjectSandbox,
+  spawnPtyInProjectSandbox,
   afterSandboxedCommand,
   isProjectSandboxEnabled,
-  resolvePtyShellSpawn,
 } from './spawn.ts'
 export {
   gatewayReadFile,

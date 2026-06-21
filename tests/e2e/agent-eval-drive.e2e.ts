@@ -50,10 +50,11 @@ function readActiveThread(): Thread {
 }
 
 describe('agent eval drive', () => {
-  before(() => {
+  before(async () => {
     mkdirSync(ARTIFACTS, { recursive: true })
     resetUserData()
     seedEmptyProject(process.cwd(), 'agent-eval-project', { subagentsEnabled: true })
+    await browser.reloadSession()
   })
 
   after(() => {
@@ -61,7 +62,6 @@ describe('agent eval drive', () => {
   })
 
   it('runs scenario prompts against the real agent and writes JSONL artifact', async () => {
-    await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     const scenario = loadScenario()

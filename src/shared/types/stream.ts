@@ -45,7 +45,7 @@ export type StreamChunk =
       content: string
     }
   | { type: 'todo_worker_done'; todoId: string; summary: string; passed: boolean }
-  | { type: 'done' }
+  | { type: 'done'; stopReason?: string }
 
 export interface ToolCallChunk {
   id: string

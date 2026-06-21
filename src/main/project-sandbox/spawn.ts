@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess, type SpawnOptionsWithoutStdio } from 'node:child_process'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
+import * as pty from 'node-pty'
+import type { IPty } from 'node-pty'
 import quote from 'shell-quote'
 import { workspaceSandboxOverlay } from './config.ts'
 
@@ -13,29 +15,13 @@ export function setProjectSandboxEnabled(active: boolean): void {
   enabled = active
 }
 
-let cwdChain: Promise<void> = Promise.resolve()
-
-/** ASRT resolves `./` paths and mandatory deny rules against `process.cwd()` at wrap time. */
-function withWrapCwd<T>(workspaceRoot: string, fn: () => Promise<T>): Promise<T> {
-  const run = async () => {
-    const prev = process.cwd()
-    try {
-      process.chdir(workspaceRoot)
-      return await fn()
-    } finally {
-      process.chdir(prev)
-    }
-  }
-  const next = cwdChain.then(run, run)
-  cwdChain = next.then(
-    () => {},
-    () => {},
-  )
-  return next
-}
-
 function shellCommand(executable: string, args: string[]): string {
   return quote.quote([executable, ...args])
+}
+
+function mergeSpawnEnv(base: NodeJS.ProcessEnv, override?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  if (!override) return base
+  return { ...base, ...override }
 }
 
 export async function spawnInProjectSandbox(
@@ -45,7 +31,6 @@ export async function spawnInProjectSandbox(
     cwd: string
     env?: NodeJS.ProcessEnv
     signal?: AbortSignal
-    /** When true, skip the macOS project sandbox even if it is active. */
     unsandboxed?: boolean
   } & Pick<SpawnOptionsWithoutStdio, 'stdio'>,
 ): Promise<ChildProcess> {
@@ -61,15 +46,18 @@ export async function spawnInProjectSandbox(
   const command = shellCommand(executable, args)
   const customConfig = workspaceSandboxOverlay(opts.cwd)
 
-  const { argv, env } = await withWrapCwd(opts.cwd, () =>
-    SandboxManager.wrapWithSandboxArgv(command, '/bin/bash', customConfig, opts.signal),
+  const { argv, env } = await SandboxManager.wrapWithSandboxArgv(
+    command,
+    '/bin/bash',
+    customConfig,
+    opts.signal,
   )
 
   const file = argv[0]
   if (!file) throw new Error('sandbox wrap produced empty argv')
   return spawn(file, argv.slice(1), {
     cwd: opts.cwd,
-    env: { ...env, ...opts.env },
+    env: mergeSpawnEnv(env, opts.env),
     stdio: opts.stdio,
     signal: opts.signal,
   })
@@ -81,7 +69,6 @@ export async function spawnShellInProjectSandbox(
     cwd: string
     env?: NodeJS.ProcessEnv
     signal?: AbortSignal
-    /** When true, skip the macOS project sandbox even if it is active. */
     unsandboxed?: boolean
   } & Pick<SpawnOptionsWithoutStdio, 'stdio'>,
 ): Promise<ChildProcess> {
@@ -98,15 +85,18 @@ export async function spawnShellInProjectSandbox(
   }
 
   const customConfig = workspaceSandboxOverlay(opts.cwd)
-  const { argv, env } = await withWrapCwd(opts.cwd, () =>
-    SandboxManager.wrapWithSandboxArgv(shellCommandLine, '/bin/bash', customConfig, opts.signal),
+  const { argv, env } = await SandboxManager.wrapWithSandboxArgv(
+    shellCommandLine,
+    '/bin/bash',
+    customConfig,
+    opts.signal,
   )
 
   const file = argv[0]
   if (!file) throw new Error('sandbox wrap produced empty argv')
   return spawn(file, argv.slice(1), {
     cwd: opts.cwd,
-    env: { ...env, ...opts.env },
+    env: mergeSpawnEnv(env, opts.env),
     stdio: opts.stdio,
     signal: opts.signal,
   })
@@ -118,27 +108,48 @@ export function afterSandboxedCommand(): void {
   }
 }
 
-/** Wrap an interactive shell executable for node-pty under the project seatbelt when active. */
-export async function resolvePtyShellSpawn(
+export interface SpawnPtyOptions {
+  cwd: string
+  cols: number
+  rows: number
+  env?: NodeJS.ProcessEnv
+  /** Integrated terminals are user-controlled; default is outside the project sandbox. */
+  unsandboxed?: boolean
+}
+
+/** Spawn an interactive shell PTY; optionally routed through ASRT when the project sandbox is active. */
+export async function spawnPtyInProjectSandbox(
   shell: string,
-  opts: { cwd: string; env: Record<string, string> },
-): Promise<{ file: string; args: string[]; env: Record<string, string> }> {
-  if (!isProjectSandboxEnabled()) {
-    return { file: shell, args: [], env: opts.env }
+  opts: SpawnPtyOptions,
+): Promise<IPty> {
+  const termEnv = {
+    ...process.env,
+    ...opts.env,
+    TERM: 'xterm-256color',
+    COLORTERM: 'truecolor',
+  } as Record<string, string>
+
+  const ptyOpts = {
+    name: 'xterm-256color',
+    cols: opts.cols,
+    rows: opts.rows,
+    cwd: opts.cwd,
+    env: termEnv,
   }
 
-  const command = shellCommand(shell, [])
-  const customConfig = workspaceSandboxOverlay(opts.cwd)
+  if (!isProjectSandboxEnabled() || opts.unsandboxed) {
+    return pty.spawn(shell, [], ptyOpts)
+  }
 
-  const { argv, env } = await withWrapCwd(opts.cwd, () =>
-    SandboxManager.wrapWithSandboxArgv(command, '/bin/bash', customConfig),
-  )
+  const customConfig = { ...workspaceSandboxOverlay(opts.cwd), allowPty: true }
+  const innerCommand = `exec ${quote.quote([shell])} -il`
+  // cwd is handed to pty.spawn via ptyOpts; no main-process chdir during wrap (#74).
+  const { argv, env } = await SandboxManager.wrapWithSandboxArgv(innerCommand, shell, customConfig)
 
   const file = argv[0]
   if (!file) throw new Error('sandbox wrap produced empty argv')
-  return {
-    file,
-    args: argv.slice(1),
-    env: { ...env, ...opts.env } as Record<string, string>,
-  }
+  return pty.spawn(file, argv.slice(1), {
+    ...ptyOpts,
+    env: { ...env, ...termEnv },
+  })
 }

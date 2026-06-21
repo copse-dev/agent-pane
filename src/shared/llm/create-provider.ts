@@ -19,10 +19,20 @@ export function createProvider(model?: string, keys: ProviderKeys = {}): LLMProv
   const m = model ?? ''
   const anthropicApiKey = keys.anthropicApiKey ?? process.env.ANTHROPIC_API_KEY
   const openAiApiKey = keys.openAiApiKey ?? process.env.OPENAI_API_KEY
-  if (m.startsWith('gpt') && openAiApiKey) {
+  if (m.startsWith('gpt')) {
+    if (!openAiApiKey) {
+      throw new Error(
+        'OpenAI is not configured. Add OPENAI_API_KEY in Settings or choose a Claude or LM Studio model.',
+      )
+    }
     return new OpenAIProvider(m, { apiKey: openAiApiKey })
   }
-  if (m.startsWith('claude') && anthropicApiKey) {
+  if (m.startsWith('claude')) {
+    if (!anthropicApiKey) {
+      throw new Error(
+        'Anthropic is not configured. Add ANTHROPIC_API_KEY in Settings or choose an OpenAI or LM Studio model.',
+      )
+    }
     return new AnthropicProvider(m, { apiKey: anthropicApiKey })
   }
   if (anthropicApiKey) {

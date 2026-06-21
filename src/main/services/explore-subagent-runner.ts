@@ -11,6 +11,7 @@ export interface ExploreSubagentRunnerContext {
   contextWindow: number
   toolSchemaReserve: number
   onChunk: (chunk: StreamChunk) => void
+  usageModel: string
 }
 
 export type ExploreSubagentRunner = (opts: {
@@ -49,6 +50,7 @@ export function getExploreSubagentRunner(): ExploreSubagentRunner | null {
       toolSchemaReserve: ctx.toolSchemaReserve,
       signal,
       onChunk: ctx.onChunk,
+      usageModel: ctx.usageModel,
     })
     accumulatedUsage.inputTokens += result.usage.inputTokens
     accumulatedUsage.outputTokens += result.usage.outputTokens

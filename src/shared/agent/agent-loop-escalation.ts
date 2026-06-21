@@ -1,5 +1,5 @@
 import type { LLMMessage } from '@shared/types'
-import { conversationTokenBudget, estimateConversationTokens } from './trim-history.ts'
+import { conversationTokenBudget, effectiveConversationTokens } from './trim-history.ts'
 
 export const SOFT_NUDGE_FILL_RATIO = 0.7
 export const FORCE_TEXT_FILL_RATIO = 0.85
@@ -37,7 +37,7 @@ export function measureConversationPressure(input: EscalationInput): Conversatio
   const conversationBudget = conversationTokenBudget(messages, maxContextTokens, {
     reserveTokens: toolSchemaReserveTokens,
   })
-  const conversationTokens = estimateConversationTokens(messages)
+  const conversationTokens = effectiveConversationTokens(messages)
   const fillRatio = conversationTokens / conversationBudget
   return {
     conversationBudget,

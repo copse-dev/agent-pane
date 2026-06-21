@@ -1,6 +1,7 @@
 import { resolve, sep } from 'node:path'
 import { getBundledCodesearchPath } from './bundled-semantic.ts'
 import { runCommand } from './command-runner.ts'
+import { COMMAND_RUNNER_LONG_TIMEOUT_MS } from './subprocess-output-cap.ts'
 import { toRelativePath } from './workspace.ts'
 
 export type SemanticBackend = 'codesearch' | 'vera'
@@ -27,7 +28,10 @@ let veraCommand = 'vera'
 let _indexedRoot: string | null = null
 const indexPromises = new Map<string, Promise<void>>()
 
-const SEMANTIC_CMD_OPTS = { unsandboxed: true } as const
+const SEMANTIC_CMD_OPTS = {
+  unsandboxed: true,
+  timeout_ms: COMMAND_RUNNER_LONG_TIMEOUT_MS,
+} as const
 let searchExecutorForTest:
   | ((
       opts: SemanticSearchOptions,
