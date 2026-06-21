@@ -16,6 +16,8 @@ export interface RunCommandOptions {
   cwd?: string
   signal?: AbortSignal
   unsandboxed?: boolean
+  /** Extra env vars merged on top of `process.env` (and any built-in tweaks like git's). */
+  env?: NodeJS.ProcessEnv
   /** Defaults to {@link COMMAND_RUNNER_DEFAULT_TIMEOUT_MS}; pass `0` to disable. */
   timeout_ms?: number
 }
@@ -44,6 +46,9 @@ export function runCommand(
     const git = prepareGitInvocation(args, spawnEnv)
     spawnArgs = git.args
     spawnEnv = git.env
+  }
+  if (opts.env) {
+    spawnEnv = { ...spawnEnv, ...opts.env }
   }
 
   return new Promise((resolve, reject) => {
