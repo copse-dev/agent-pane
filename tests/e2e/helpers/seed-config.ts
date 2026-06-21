@@ -5,6 +5,8 @@ import { join } from 'node:path'
 
 /** Mirrors `app.setPath('userData', …)` in `src/main/app-init.ts`. */
 function copsePanelUserDataDir(): string {
+  const override = process.env.COPSE_PANEL_USER_DATA?.trim()
+  if (override) return override
   if (process.platform === 'darwin') {
     return join(homedir(), 'Library', 'Application Support', 'copse-panel')
   }
