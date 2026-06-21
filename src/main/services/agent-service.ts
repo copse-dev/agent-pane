@@ -5,7 +5,8 @@ import { AGENT_RUN_TIMEOUT_MS, DEFAULT_MAX_LLM_CALLS } from '@shared/agent/agent
 import { loadProjectInstructions } from './project-instructions.ts'
 import type { LLMMessage, LLMProvider, StreamChunk, UserContent } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
-import { getSetting, getApiKey } from './settings.ts'
+import { LM_STUDIO_MODEL_IDS, DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
+import { getSetting, getApiKey, getLmStudioApiKey } from './settings.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import {
   buildInvokedSkillsBlock,
@@ -37,6 +38,20 @@ import {
 } from './explore-subagent-runner.ts'
 import { isLocalModel } from '@shared/llm/estimate-cost.ts'
 import { buildSemanticSearchPromptBlock } from './semantic-search.ts'
+import { setAgentRunTodoContext, clearAgentRunTodos, getAgentRunTodos } from './agent-run-todos.ts'
+import {
+  shouldSteerTodos,
+  formatTodosForPrompt,
+  findNewlyInProgressLocal,
+  findNewlyCompleted,
+  shouldRouteToLocal,
+  TODO_STEERING_PROMPT,
+} from '@shared/todos/todo-logic.ts'
+import { compactAtTodoBoundary } from '@shared/todos/todo-context.ts'
+import { setTodoToolPostProcess } from '../tools/todo-tool.ts'
+import { runTodoWorker } from './todo-worker-runner.ts'
+import { verifyTodoCheck } from './todo-verification.ts'
+import type { TodoItem } from '@shared/types/todo.ts'
 
 const abortMap = new Map<string, AbortController>()
 
@@ -57,6 +72,7 @@ Available tools:
 - git_diff: Show unstaged or staged changes
 - git_log: Show recent commit history
 - run_shell: Run a shell command in the workspace (may prompt for approval)
+- update_todos: Create or update a structured multi-step plan (use only for complex multi-step work)
 {SKILLS_TOOLS_LINE}
 Working directory: {WORKSPACE_ROOT}
 
@@ -84,6 +100,7 @@ Available tools:
 - git_diff: Show unstaged or staged changes
 - git_log: Show recent commit history
 - run_shell: Run a shell command in the workspace (may prompt for approval)
+- update_todos: Create or update a structured multi-step plan (use only for complex multi-step work)
 {SKILLS_TOOLS_LINE}
 Working directory: {WORKSPACE_ROOT}
 
@@ -99,10 +116,6 @@ When modifying files:
 
 const DEFAULT_LM_STUDIO_URL = 'http://localhost:1234/v1'
 
-function lmStudioKey(): string {
-  return getApiKey('lmstudio') ?? 'lm-studio'
-}
-
 function storedOrEnvApiKey(provider: 'anthropic' | 'openai'): string | null {
   if (provider === 'anthropic')
     return getApiKey('anthropic') ?? process.env.ANTHROPIC_API_KEY ?? null
@@ -116,7 +129,7 @@ export function isLocalChatModel(model: string): boolean {
 async function resolveSubagentLocalModelId(url: string): Promise<string | null> {
   const configured = getSetting<string>('lmStudioSubagentModel', '').trim()
   if (configured) return configured
-  const fallback = getSetting<string>('lmStudioModel', '').trim()
+  const fallback = getSetting<string>('lmStudioModel', LM_STUDIO_MODEL_IDS.chat).trim()
   if (fallback) return fallback
   return fetchFirstLocalModel(url)
 }
@@ -139,7 +152,7 @@ export async function buildSubagentRoute(parentModel: string): Promise<SubagentR
 
   const contextWindow = await resolveContextWindow(`lmstudio:${modelId}`)
   return {
-    provider: createLMStudioProvider(url, modelId, lmStudioKey()),
+    provider: createLMStudioProvider(url, modelId, getLmStudioApiKey()),
     usageModel: `lmstudio:${modelId}`,
     contextWindow,
     toolSchemaReserve: 2_500,
@@ -154,14 +167,14 @@ async function buildProvider(model: string): Promise<LLMProvider> {
     const url = getSetting<string>('lmStudioUrl', DEFAULT_LM_STUDIO_URL)
     let id = model.startsWith('lmstudio:')
       ? model.slice('lmstudio:'.length)
-      : getSetting<string>('lmStudioModel', '')
+      : getSetting<string>('lmStudioModel', LM_STUDIO_MODEL_IDS.chat)
     if (!id) id = (await fetchFirstLocalModel(url)) ?? ''
     if (!id) {
       throw new Error(
         'No LM Studio model available. Open Settings → LM Studio, check the server URL/API key, and pick a model.',
       )
     }
-    return createLMStudioProvider(url, id, lmStudioKey())
+    return createLMStudioProvider(url, id, getLmStudioApiKey())
   }
   if (process.env.COPSE_PANEL_MOCK_LLM === '1') return createProvider(model)
   if (model.startsWith('claude')) {
@@ -233,13 +246,13 @@ export async function runAgent(
   priorMessages: LLMMessage[],
   mainWindow: BrowserWindow,
   registry: ToolRegistry,
-  options?: { invokedSkills?: string[] },
+  options?: { invokedSkills?: string[]; priorTodos?: TodoItem[] },
 ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> {
   const skillsToolsLine = buildSkillsToolsPromptLine()
   const projectInstructions = await loadProjectInstructions()
   const invokedSkills = options?.invokedSkills ?? []
 
-  const model = getSetting<string>('model', 'claude-sonnet-4-6')
+  const model = getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
   const subagentsEnabled = getSetting<boolean>('subagentsEnabled', true)
   const contextWindow = await resolveContextWindow(model)
   const toolSchemaReserve = model === 'lm-studio' || model.startsWith('lmstudio:') ? 2_500 : 1_000
@@ -269,9 +282,27 @@ export async function runAgent(
 
   const parentGoal = extractParentGoal(messages, userPrompt)
 
+  const userTextForSteering =
+    typeof userPrompt === 'string' ? userPrompt : extractParentGoal(messages, userPrompt)
+  const todoSteering = shouldSteerTodos(userTextForSteering) ? `\n\n${TODO_STEERING_PROMPT}` : ''
+  if (todoSteering && messages[0]?.role === 'system') {
+    messages[0] = {
+      role: 'system',
+      content: (messages[0].content as string) + todoSteering,
+    }
+  }
+  const priorTodos = options?.priorTodos ?? []
+  if (priorTodos.length && messages[0]?.role === 'system') {
+    messages[0] = {
+      role: 'system',
+      content: (messages[0].content as string) + formatTodosForPrompt(priorTodos),
+    }
+  }
+
   const { messages: trimmed, trimmed: wasTrimmed } = trimHistory(messages, contextWindow, {
     reserveTokens: toolSchemaReserve,
   })
+  const loopMessages = trimmed
   let trimNoticeSent = wasTrimmed
   const notifyTrimmed = () => {
     if (trimNoticeSent) return
@@ -311,16 +342,96 @@ export async function runAgent(
     mainWindow.webContents.send('agent:chunk', threadId, chunk)
   }
 
+  setAgentRunTodoContext({
+    initial: priorTodos,
+    onUpdate: (todos) => {
+      sendChunk({ type: 'todo_update', todos })
+    },
+  })
+
+  setTodoToolPostProcess(async (before, after) => {
+    let todos = after
+    let extraMessage: string | undefined
+
+    const localItem = findNewlyInProgressLocal(before, after)
+    if (
+      localItem &&
+      shouldRouteToLocal(localItem, {
+        lmStudioForTodoItems: getSetting<boolean>('lmStudioForTodoItems', true),
+        parentIsLocal: isLocalChatModel(model),
+      }) &&
+      subagentRoute
+    ) {
+      sendChunk({ type: 'todo_worker_start', todoId: localItem.id, content: localItem.content })
+      try {
+        const worker = await runTodoWorker({
+          item: localItem,
+          provider: subagentRoute.provider,
+          registry,
+          contextWindow: subagentRoute.contextWindow,
+          toolSchemaReserve: subagentRoute.toolSchemaReserve,
+          signal: controller.signal,
+          onChunk: sendChunk,
+        })
+        inputTokens += worker.usage.inputTokens
+        outputTokens += worker.usage.outputTokens
+        sendChunk({
+          type: 'usage',
+          model: subagentUsageModel,
+          inputTokens: worker.usage.inputTokens,
+          outputTokens: worker.usage.outputTokens,
+        })
+
+        let passed = true
+        if (localItem.check) {
+          const check = await verifyTodoCheck(localItem.check, controller.signal)
+          passed = check.passed
+          extraMessage = passed
+            ? `Local worker completed "${localItem.content}" (${check.detail})`
+            : `Local worker finished but check failed: ${check.detail}`
+        }
+
+        todos = todos.map((t) =>
+          t.id === localItem.id ? { ...t, status: passed ? 'completed' : 'in_progress' } : t,
+        )
+        sendChunk({ type: 'todo_update', todos })
+        sendChunk({
+          type: 'todo_worker_done',
+          todoId: localItem.id,
+          summary: worker.summary,
+          passed,
+        })
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        extraMessage = `Local worker failed: ${msg}`
+        sendChunk({
+          type: 'todo_worker_done',
+          todoId: localItem.id,
+          summary: msg,
+          passed: false,
+        })
+      }
+    }
+
+    const completed = findNewlyCompleted(before, todos)
+    if (completed && compactAtTodoBoundary(loopMessages, todos)) {
+      notifyTrimmed()
+    }
+
+    return { todos, ...(extraMessage ? { extraMessage } : {}) }
+  })
+
   try {
     await runWithAgentRunReadFileLimits(runReadLimits, async () => {
       await runAgentLoop({
         provider,
-        messages: trimmed,
+        messages: loopMessages,
         tools: parentTools(registry, subagentsEnabled),
         usageModel: model,
         maxLlmCalls: DEFAULT_MAX_LLM_CALLS,
         runTimeoutMs: AGENT_RUN_TIMEOUT_MS,
         coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
+        getOpenTodos: () => getAgentRunTodos(),
         executeTool: async (name, args, signal, toolCallId) => {
           if (name === 'explore' && subagentsEnabled) {
             setExploreSubagentContext({
@@ -376,6 +487,8 @@ export async function runAgent(
     mainWindow.webContents.send('agent:chunk', threadId, { type: 'done' } satisfies StreamChunk)
   } finally {
     clearTimeout(runTimeoutTimer)
+    clearAgentRunTodos()
+    setTodoToolPostProcess(null)
     abortMap.delete(threadId)
   }
 
@@ -408,7 +521,7 @@ async function fetchFirstLocalModel(baseURL: string): Promise<string | null> {
   try {
     const res = await fetch(`${baseURL.replace(/\/$/, '')}/models`, {
       signal: AbortSignal.timeout(4000),
-      headers: { Authorization: `Bearer ${lmStudioKey()}` },
+      headers: { Authorization: `Bearer ${getLmStudioApiKey()}` },
     })
     if (!res.ok) return null
     const json = (await res.json()) as { data?: Array<{ id?: string }> }
@@ -444,14 +557,14 @@ export async function suggestThreadTitle(text: string): Promise<string | null> {
   let provider: LLMProvider | null = null
   if (useLmStudio && lmUrl) {
     const configured =
-      getSetting<string>('lmStudioSmallTasksModel', '').trim() ||
-      getSetting<string>('lmStudioModel', '').trim()
+      getSetting<string>('lmStudioSmallTasksModel', LM_STUDIO_MODEL_IDS.smallTasks).trim() ||
+      getSetting<string>('lmStudioModel', LM_STUDIO_MODEL_IDS.chat).trim()
     const model = configured || (await fetchFirstLocalModel(lmUrl))
-    if (model) provider = createLMStudioProvider(lmUrl, model, lmStudioKey())
+    if (model) provider = createLMStudioProvider(lmUrl, model, getLmStudioApiKey())
   }
   // Fall back to the main provider only if a real cloud key is configured.
   if (!provider && (process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY)) {
-    provider = await buildProvider(getSetting<string>('model', 'claude-sonnet-4-6'))
+    provider = await buildProvider(getSetting<string>('model', DEFAULT_APP_CHAT_MODEL))
   }
   if (!provider) return null
 

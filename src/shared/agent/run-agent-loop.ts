@@ -6,6 +6,7 @@ import type {
   ToolCallChunk,
   ToolResult,
 } from '@shared/types'
+import type { TodoItem } from '@shared/types/todo.ts'
 import { trimMessagesInPlace } from './trim-history.ts'
 import {
   DUPLICATE_TOOL_RESULT_PREFIX,
@@ -26,6 +27,7 @@ import {
   defaultMaxLlmCallsForSteps,
   isRunPastDeadline,
 } from './agent-loop-limits.ts'
+import { hasOpenTodos, OPEN_TODOS_FINALIZE_NUDGE } from '@shared/todos/todo-logic.ts'
 
 const RECENT_FINGERPRINT_WINDOW = 16
 /** Do not compact on the first tool round unless the transcript is critically full. */
@@ -61,6 +63,8 @@ export interface AgentLoopOptions {
   runTimeoutMs?: number
   /** Coerce recovered XML tool args against registered tool schemas. */
   coerceTextToolCallArgs?: CoerceToolArgsFn
+  /** When set, finalize is blocked while todos remain open. */
+  getOpenTodos?: () => readonly TodoItem[]
 }
 
 const FINALIZE_NUDGE =
@@ -175,6 +179,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     maxLlmCalls = defaultMaxLlmCallsForSteps(maxSteps),
     runTimeoutMs = AGENT_RUN_TIMEOUT_MS,
     coerceTextToolCallArgs,
+    getOpenTodos,
   } = opts
   const budget: LlmCallBudget = {
     llmCalls: 0,
@@ -356,12 +361,15 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   }
 
   if (!signal?.aborted && !finishedWithAnswer && !hitRunLimit) {
+    const openTodos = getOpenTodos?.() ?? []
+    const nudge =
+      openTodos.length > 0 && hasOpenTodos(openTodos) ? OPEN_TODOS_FINALIZE_NUDGE : FINALIZE_NUDGE
     const finalText = await streamTextOnlyTurn(
       provider,
       messages,
       onChunk,
       budget,
-      FINALIZE_NUDGE,
+      nudge,
       getLastUsage,
       usageModel,
     )
