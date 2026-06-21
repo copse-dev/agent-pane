@@ -33,7 +33,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
     'button',
     {
       type: 'button',
-      class: 'titlebar-btn new-thread-btn',
+      class: 'titlebar-btn titlebar-new-thread-btn',
       'aria-label': 'New thread',
       title: 'New thread',
     },
@@ -110,9 +110,9 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
   }
 
   function syncNewThreadBtn() {
-    const hasWorkspace = !!store.getState().workspaceRoot
-    newThreadBtn.hidden = !hasWorkspace
-    newThreadBtn.disabled = !hasWorkspace
+    // Always show — click opens a folder first when no workspace is active.
+    newThreadBtn.hidden = false
+    newThreadBtn.disabled = false
   }
 
   // Titlebar mounts before persisted projects restore on boot; sync on mount

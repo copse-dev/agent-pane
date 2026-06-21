@@ -30,7 +30,7 @@ describe('titlebar workspace name', () => {
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'titlebar-workspace-name.png'))
 
-    const newThreadBtn = await $('.titlebar-workspace .new-thread-btn')
+    const newThreadBtn = await $('.titlebar-workspace .titlebar-new-thread-btn')
     await expect(newThreadBtn).toBeDisplayed()
     await newThreadBtn.click()
     await expect($('.chat-row.selected .chat-title')).toHaveText('New Thread')
