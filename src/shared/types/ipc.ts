@@ -63,6 +63,10 @@ export interface IpcInvokeMap {
   'settings:getKey': { args: [provider: Provider]; result: boolean }
   'settings:setKey': { args: [provider: Provider, key: string]; result: void }
   'settings:availableProviders': { args: []; result: { anthropic: boolean; openai: boolean } }
+  'settings:validateKey': {
+    args: [provider: 'anthropic' | 'openai', key: string]
+    result: { ok: boolean; error?: string; formatOk?: boolean }
+  }
 
   // App icon
   'app-icon:apply': { args: []; result: void }
@@ -91,6 +95,39 @@ export interface IpcInvokeMap {
     result: { ok: boolean; models?: string[]; error?: string }
   }
   'lmstudio:models': { args: []; result: string[] }
+  'lmstudio:detect': {
+    args: [url?: string, apiKey?: string]
+    result: {
+      serverRunning: boolean
+      serverUrl: string
+      installDetected: boolean
+      models: string[]
+      preferredPresent: string[]
+      preferredMissing: string[]
+      error?: string
+    }
+  }
+  'lmstudio:download': {
+    args: [modelId: string, url?: string, apiKey?: string]
+    result: {
+      ok: boolean
+      jobId?: string
+      status?: string
+      totalSizeBytes?: number
+      error?: string
+    }
+  }
+  'lmstudio:downloadStatus': {
+    args: [jobId: string, url?: string, apiKey?: string]
+    result: {
+      ok: boolean
+      jobId: string
+      status?: string
+      totalSizeBytes?: number
+      downloadedBytes?: number
+      error?: string
+    }
+  }
 }
 
 // event channels (main → renderer, fire-and-forget)

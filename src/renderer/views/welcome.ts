@@ -10,7 +10,7 @@ export function mountWelcome(root: HTMLElement, store: AppStore, api: ApiClient)
   const keyHint = el(
     'p',
     { class: 'welcome-hint' },
-    'Set ANTHROPIC_API_KEY or OPENAI_API_KEY in Settings, or configure LM Studio, to connect to a model.',
+    'Configure cloud API keys and local models in Settings, or complete the setup guide when Copse opens.',
   )
   const agentHint = el(
     'p',

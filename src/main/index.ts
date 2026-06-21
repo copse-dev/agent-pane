@@ -28,6 +28,11 @@ import {
   listLmStudioModels,
   invalidateLmStudioModelsCache,
 } from './services/agent-service.ts'
+import {
+  detectLmStudio,
+  downloadLmStudioModel,
+  getLmStudioDownloadStatus,
+} from './services/lm-studio-setup.ts'
 import { suggestFollowUps } from './services/follow-up-service.ts'
 import type { FollowUpContext } from '@shared/follow-ups/types.ts'
 import { storageGet, storageSet } from './services/storage.ts'
@@ -122,6 +127,28 @@ app
     })
 
     ipcMain.handle('lmstudio:models', () => listLmStudioModels())
+
+    ipcMain.handle('lmstudio:detect', async (_e, url?: string, apiKey?: string) =>
+      detectLmStudio(url, apiKey),
+    )
+
+    ipcMain.handle(
+      'lmstudio:download',
+      async (_e, modelId: string, url?: string, apiKey?: string) => {
+        const baseUrl = url ?? 'http://localhost:1234/v1'
+        const result = await downloadLmStudioModel(modelId, baseUrl, apiKey)
+        if (result.ok) invalidateLmStudioModelsCache()
+        return result
+      },
+    )
+
+    ipcMain.handle(
+      'lmstudio:downloadStatus',
+      async (_e, jobId: string, url?: string, apiKey?: string) => {
+        const baseUrl = url ?? 'http://localhost:1234/v1'
+        return getLmStudioDownloadStatus(jobId, baseUrl, apiKey)
+      },
+    )
   })
   .catch(console.error)
 
