@@ -48,6 +48,44 @@ describe('renderMarkdown', () => {
     assert.match(html, /<pre><code class="lang-ts">const x = 1<\/code><\/pre>/)
   })
 
+  it('preserves comparison operators inside fenced code blocks', () => {
+    const html = renderMarkdown('```ts\nif (a < b) return true\n```')
+    assert.match(html, /if \(a &lt; b\) return true/)
+    assert.doesNotMatch(html, /&lt;\/code>/)
+  })
+
+  it('renders mermaid fenced blocks as diagram placeholders', () => {
+    const html = renderMarkdown('```mermaid\ngraph TD\n  A --> B\n```')
+    assert.match(html, /<div class="mermaid-diagram mermaid-diagram--pending">/)
+    assert.match(html, /<pre class="mermaid">graph TD/)
+    assert.match(html, /A --> B/)
+    assert.doesNotMatch(html, /<p>(?:(?!<\/p>)[\s\S])*<div class="mermaid-diagram">/)
+  })
+
+  it('does not apply markdown formatting inside mermaid fenced blocks', () => {
+    const html = renderMarkdown(
+      '```mermaid\nflowchart TB\n  **bold** --> _italic_\n  Renderer[Renderer (20+ modules)]\n```',
+    )
+    assert.match(html, /\*\*bold\*\* --> _italic_/)
+    assert.match(html, /Renderer\[Renderer \(20\+ modules\)\]/)
+    assert.doesNotMatch(html, /<strong>bold<\/strong>/)
+    assert.doesNotMatch(html, /<em>italic<\/em>/)
+  })
+
+  it('keeps mermaid blocks intact when the diagram div has modifier classes', () => {
+    const html = renderMarkdown('Intro\n\n```mermaid\ngraph TD\n  A --> B\n```\n\nOutro')
+    assert.match(html, /<div class="mermaid-diagram mermaid-diagram--pending">/)
+    assert.doesNotMatch(html, /<p>(?:(?!<\/p>)[\s\S])*<strong>/)
+    assert.match(html, /<p>Intro<\/p>/)
+    assert.match(html, /<p>Outro<\/p>/)
+  })
+
+  it('escapes HTML-like content inside fenced code blocks', () => {
+    const html = renderMarkdown('```html\n<script>alert(1)</script>\n```')
+    assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/)
+    assert.doesNotMatch(html, /<script>/)
+  })
+
   it('renders GFM tables on final render', () => {
     const html = renderMarkdown('| A | B |\n| - | - |\n| 1 | 2 |')
     assert.match(html, /<table>/)
