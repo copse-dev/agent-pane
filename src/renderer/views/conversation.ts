@@ -1,5 +1,6 @@
 import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
+import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
 import { renderMarkdown } from '../markdown/renderer.ts'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { renderStreamingMarkdown } from '../markdown/streaming.ts'
@@ -45,6 +46,20 @@ function createToolHeader(
   return el('summary', { class: summaryClass }, ...children)
 }
 
+function appendStandardToolSections(
+  card: HTMLElement,
+  tc: ToolCall,
+  label: string,
+  summaryClass: string,
+  count?: number,
+): void {
+  card.append(
+    createToolHeader(label, tc.status, summaryClass, count),
+    createToolArgsSection(tc.args),
+    el('div', { class: 'tool-result' }, ...(tc.result ? [tc.result] : [])),
+  )
+}
+
 function createIndividualToolCard(tc: ToolCall, label: string): HTMLElement {
   if (tc.subagent) return createSubagentToolCard(tc, label)
 
@@ -53,11 +68,7 @@ function createIndividualToolCard(tc: ToolCall, label: string): HTMLElement {
     'data-tool-id': tc.id,
     'data-status': tc.status,
   })
-  card.append(
-    createToolHeader(label, tc.status, 'tool-card-header'),
-    createToolArgsSection(tc.args),
-    el('div', { class: 'tool-result' }, ...(tc.result ? [tc.result] : [])),
-  )
+  appendStandardToolSections(card, tc, label, 'tool-card-header')
   return card
 }
 
@@ -77,17 +88,14 @@ function createInnerToolCard(tc: ToolCall): HTMLElement {
     'data-tool-id': tc.id,
     'data-status': tc.status,
   })
-  entry.append(
-    createToolHeader(getToolDisplayName(tc.name), tc.status, 'tool-group-item-header'),
-    createToolArgsSection(tc.args),
-    el('div', { class: 'tool-result' }, ...(tc.result ? [tc.result] : [])),
-  )
+  appendStandardToolSections(entry, tc, getToolDisplayName(tc.name), 'tool-group-item-header')
   return entry
 }
 
 function setAssistantMarkdown(el: HTMLElement, content: string, streaming: boolean): void {
   const display = assistantDisplayText(content)
   el.innerHTML = streaming ? renderStreamingMarkdown(display) : renderMarkdown(display)
+  attachCodeBlockCopyButtons(el)
   if (!streaming) void renderMermaidIn(el)
 }
 

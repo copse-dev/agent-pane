@@ -2,6 +2,7 @@ import type * as Monaco from 'monaco-editor'
 import type { AppStore } from '@shared/store/store.ts'
 import type { OpenFile } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
 import { renderMarkdown } from '../markdown/renderer.ts'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
@@ -56,6 +57,7 @@ export function mountContextPanel(
 
   function renderMarkdownPreview(content: string): void {
     previewContainer.innerHTML = renderMarkdown(content)
+    attachCodeBlockCopyButtons(previewContainer)
     void renderMermaidIn(previewContainer)
   }
 
@@ -153,7 +155,10 @@ export function mountContextPanel(
       })
       oldModels?.original.dispose()
       oldModels?.modified.dispose()
-      acceptBtn.onclick = () => void api.diff.approve(activeDiff.path)
+      acceptBtn.onclick = () => {
+        if (!activeDiff) return
+        void api.diff.approve(activeDiff.path)
+      }
       rejectBtn.onclick = () => void api.diff.reject(activeDiff.path)
     } else {
       fileToolbar.hidden = true

@@ -34,6 +34,36 @@ describe('renderMarkdown', () => {
     assert.match(html, /<li>beta<\/li>/)
   })
 
+  it('renders ordered lists with continuation paragraphs grouped into items', () => {
+    const html = renderMarkdown(
+      [
+        "Here's a summary of the three changed files:",
+        '',
+        '1. `src/main/foo.ts`',
+        '',
+        'Introduces **foo** handling.',
+        '',
+        '2. `src/main/bar.ts`',
+        '',
+        'Worker thread for bar.',
+      ].join('\n'),
+    )
+    assert.match(html, /<p>Here's a summary of the three changed files:<\/p>/)
+    assert.match(html, /<ol>/)
+    assert.match(
+      html,
+      /<li><code>src\/main\/foo\.ts<\/code><br><br>Introduces <strong>foo<\/strong> handling\.<\/li>/,
+    )
+    assert.match(html, /<li><code>src\/main\/bar\.ts<\/code><br><br>Worker thread for bar\.<\/li>/)
+    assert.doesNotMatch(html, /<p>1\./)
+    assert.doesNotMatch(html, /<p>2\./)
+  })
+
+  it('renders consecutive ordered items in one block', () => {
+    const html = renderMarkdown('1. alpha\n2. beta')
+    assert.match(html, /<ol><li>alpha<\/li><li>beta<\/li><\/ol>/)
+  })
+
   it('keeps lists and headings outside paragraph wrappers', () => {
     const html = renderMarkdown(
       '### Section\n\n**Subheading:**\n- first\n\n**Other:**\n- second\n\n### Next\n- third',
@@ -45,12 +75,24 @@ describe('renderMarkdown', () => {
 
   it('renders fenced code blocks', () => {
     const html = renderMarkdown('```ts\nconst x = 1\n```')
-    assert.match(html, /<pre><code class="lang-ts">const x = 1<\/code><\/pre>/)
+    assert.match(html, /<pre><code class="hljs lang-typescript">/)
+    assert.match(html, /hljs-keyword/)
+    assert.match(html, /hljs-number/)
+    assert.match(html, /const/)
+  })
+
+  it('strips leading and trailing blank lines inside fenced code blocks', () => {
+    const html = renderMarkdown('```ts\n\nconst x = 1\n\n```')
+    assert.match(html, /<pre><code class="hljs lang-typescript">/)
+    assert.match(html, /hljs-keyword/)
+    assert.match(html, /const/)
   })
 
   it('preserves comparison operators inside fenced code blocks', () => {
     const html = renderMarkdown('```ts\nif (a < b) return true\n```')
-    assert.match(html, /if \(a &lt; b\) return true/)
+    assert.match(html, /\(a &lt; b\)/)
+    assert.match(html, /hljs-keyword/)
+    assert.match(html, /hljs-literal/)
     assert.doesNotMatch(html, /&lt;\/code>/)
   })
 
@@ -80,9 +122,10 @@ describe('renderMarkdown', () => {
     assert.match(html, /<p>Outro<\/p>/)
   })
 
-  it('escapes HTML-like content inside fenced code blocks', () => {
+  it('highlights HTML-like fenced blocks without injecting raw tags', () => {
     const html = renderMarkdown('```html\n<script>alert(1)</script>\n```')
-    assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/)
+    assert.match(html, /hljs-tag/)
+    assert.match(html, /script/)
     assert.doesNotMatch(html, /<script>/)
   })
 

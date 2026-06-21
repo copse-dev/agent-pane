@@ -2,8 +2,9 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { decideShellPermission, SANDBOX_TOOLS } from './permission-policy.ts'
 import { setPermissionGateForTests } from './tool-registry.ts'
-import { ensureToolPermitted } from './permission-gate.ts'
+import { ensureToolPermitted, ensureTerminalPermitted } from './permission-gate.ts'
 import { decideMcpPermission, describeMcpAnnotations } from './permission-policy.ts'
+import { setWorkspaceRootForTest } from './workspace.ts'
 
 describe('SANDBOX_TOOLS', () => {
   it('includes read_skill so skill reads auto-run without approval', () => {
@@ -18,6 +19,26 @@ describe('ensureToolPermitted', () => {
       await ensureToolPermitted({ toolName: 'read_skill', args: { name: 'demo-skill' } }),
       true,
     )
+  })
+})
+
+describe('ensureTerminalPermitted', () => {
+  it('allows integrated terminal without shell approval when workspace is open', async () => {
+    const restore = setWorkspaceRootForTest('/tmp/project')
+    try {
+      assert.equal(await ensureTerminalPermitted(), true)
+    } finally {
+      restore()
+    }
+  })
+
+  it('throws when no workspace is open', async () => {
+    const restore = setWorkspaceRootForTest(null)
+    try {
+      await assert.rejects(() => ensureTerminalPermitted(), /No workspace open/)
+    } finally {
+      restore()
+    }
   })
 })
 
@@ -46,7 +67,7 @@ describe('decideShellPermission', () => {
     assert.equal(d.action, 'allow')
   })
 
-  it('auto-runs external commands inside OS sandbox (unsandboxed retry is separate)', () => {
+  it('prompts for external commands when OS sandbox is active', () => {
     const d = decideShellPermission('curl https://example.com', {
       workspaceRoot: root,
       sandboxEnabled: true,
@@ -54,10 +75,23 @@ describe('decideShellPermission', () => {
       classification: null,
       confidenceThreshold: 0.85,
     })
-    assert.equal(d.action, 'allow')
+    assert.equal(d.action, 'prompt')
+    assert.ok(d.reasons.some((x) => x.includes('curl')))
   })
 
-  it('auto-runs home-directory probes inside OS sandbox', () => {
+  it('prompts for gh CLI when OS sandbox is active', () => {
+    const d = decideShellPermission('gh pr view --json state', {
+      workspaceRoot: root,
+      sandboxEnabled: true,
+      autoRun: true,
+      classification: null,
+      confidenceThreshold: 0.85,
+    })
+    assert.equal(d.action, 'prompt')
+    assert.ok(d.reasons.some((x) => x.includes('GitHub CLI')))
+  })
+
+  it('prompts for home-directory paths when OS sandbox is active', () => {
     const d = decideShellPermission('ls ~/.nvm/nvm.sh', {
       workspaceRoot: root,
       sandboxEnabled: true,
@@ -65,7 +99,8 @@ describe('decideShellPermission', () => {
       classification: null,
       confidenceThreshold: 0.85,
     })
-    assert.equal(d.action, 'allow')
+    assert.equal(d.action, 'prompt')
+    assert.ok(d.reasons.some((x) => x.includes('home directory')))
   })
 
   it('uses safety model on unsandboxed platforms when confident', () => {

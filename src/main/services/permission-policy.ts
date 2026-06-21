@@ -7,6 +7,7 @@ export const SANDBOX_TOOLS = new Set([
   'read_file',
   'read_skill',
   'write_file',
+  'str_replace',
   'list_dir',
   'search_code',
   'search_codebase',
@@ -42,9 +43,13 @@ export function decideShellPermission(
 
   const analysis = analyzeShellCommand(command, opts.workspaceRoot)
   // Heuristic only — see shell-scope.ts; macOS seatbelt is the real boundary when enabled.
-  // With macOS seatbelt active, always try inside the project sandbox first.
-  // If the command needs broader access, shell-tool offers a separate unsandboxed retry prompt.
+  // With macOS seatbelt active, sandbox-contained commands auto-run inside the project sandbox.
+  // External commands (network, gh, git push, …) prompt first, then run outside the sandbox.
+  // If a sandbox-contained command still fails (e.g. Playwright), shell-tool offers a retry prompt.
   if (opts.sandboxEnabled) {
+    if (analysis.verdict === 'external') {
+      return { action: 'prompt', reasons: analysis.reasons }
+    }
     return { action: 'allow', reasons: analysis.reasons }
   }
 
@@ -77,6 +82,24 @@ export function shellCommandFromArgs(args: unknown): string | null {
 export function formatShellPromptBody(command: string, reasons: string[]): string {
   const detail = reasons.length ? `\n\nReason: ${reasons.join('; ')}` : ''
   return `${command}${detail}`
+}
+
+export function formatExternalSandboxPromptBody(command: string, reasons: string[]): string {
+  const detail = reasons.length ? reasons.join('; ') : 'network or outside-workspace access'
+  return (
+    `This command needs access the macOS project sandbox blocks (${detail}).\n\n` +
+    `${command}\n\n` +
+    `Allow running it once outside the sandbox?`
+  )
+}
+
+/** True when macOS seatbelt is active and the command heuristic is external (network, gh, …). */
+export function shellRequiresOutsideSandbox(
+  command: string,
+  workspaceRoot: string | null,
+  sandboxEnabled: boolean,
+): boolean {
+  return sandboxEnabled && analyzeShellCommand(command, workspaceRoot).verdict === 'external'
 }
 
 export function mcpToolLabel(toolName: string): string {

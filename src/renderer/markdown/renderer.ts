@@ -1,3 +1,5 @@
+import { fenceCodeClass, highlightFenceCode } from './highlight.ts'
+
 const FENCE_RE = /```(\w*)\n([\s\S]*?)```/g
 const FENCED_BLOCK_SPLIT_RE =
   /(<pre>[\s\S]*?<\/pre>|<div class="mermaid-diagram[^>]*>[\s\S]*?<\/div>)/
@@ -16,8 +18,8 @@ function renderFencedBlock(lang: string, code: string): string {
     const body = escapeMermaidHtml(code.trimEnd())
     return `<div class="mermaid-diagram mermaid-diagram--pending"><pre class="mermaid">${body}</pre></div>`
   }
-  const body = escapeHtml(code.trimEnd())
-  return `<pre><code class="lang-${lang || 'text'}">${body}</code></pre>`
+  const body = highlightFenceCode(code, lang)
+  return `<pre><code class="${fenceCodeClass(lang)}">${body}</code></pre>`
 }
 
 function mapOutsideFencedHtml(html: string, transform: (segment: string) => string): string {
@@ -64,13 +66,7 @@ export function renderMarkdown(raw: string): string {
     return t
   })
 
-  s = mapOutsideFencedHtml(s, (seg) =>
-    seg
-      .split(/\n\n+/)
-      .map((block) => wrapParagraphBlock(block))
-      .filter((block) => block !== '')
-      .join('\n'),
-  )
+  s = mapOutsideFencedHtml(s, (seg) => wrapProseBlocks(seg))
 
   return s
 }
@@ -85,6 +81,59 @@ function applyOutsideCode(text: string, pattern: RegExp, replacement: string): s
 const BLOCK_START_RE = /^<(pre|ul|ol|h[34]|table|hr|div class="mermaid-diagram\b)/
 const BLOCK_CLOSE_RE = /<\/(pre|ul|ol|h[34]|table|hr|div)>$/
 const CONTAINS_BLOCK_RE = /<(ul|ol|h[34]|pre|table|hr|div class="mermaid-diagram\b)[\s>]/
+const ORDERED_ITEM_RE = /^(\d+)\. (.+)$/
+
+function isOrderedItemLine(line: string): boolean {
+  return ORDERED_ITEM_RE.test(line.trim())
+}
+
+function orderedItemContent(line: string): string {
+  const m = line.trim().match(ORDERED_ITEM_RE)
+  return m?.[2] ?? line
+}
+
+/** Group `1. item` blocks and their following prose into a single `<ol>`. */
+function wrapProseBlocks(seg: string): string {
+  const rawBlocks = seg
+    .split(/\n\n+/)
+    .map((b) => b.trim())
+    .filter((b) => b !== '')
+  const out: string[] = []
+  let i = 0
+  while (i < rawBlocks.length) {
+    const block = rawBlocks[i]!
+    const lines = block.split('\n').map((l) => l.trim())
+    if (lines.length > 1 && lines.every(isOrderedItemLine)) {
+      out.push(`<ol>${lines.map((l) => `<li>${orderedItemContent(l)}</li>`).join('')}</ol>`)
+      i++
+      continue
+    }
+    if (isOrderedItemLine(block) && !block.includes('\n')) {
+      const items: string[] = []
+      while (i < rawBlocks.length) {
+        const b = rawBlocks[i]!
+        if (!isOrderedItemLine(b) || b.includes('\n')) break
+        let content = orderedItemContent(b)
+        i++
+        while (i < rawBlocks.length) {
+          const next = rawBlocks[i]!
+          const trimmed = next.trim()
+          if (isOrderedItemLine(trimmed)) break
+          if (BLOCK_START_RE.test(trimmed)) break
+          if (CONTAINS_BLOCK_RE.test(trimmed)) break
+          content += `<br><br>${next}`
+          i++
+        }
+        items.push(`<li>${content}</li>`)
+      }
+      out.push(`<ol>${items.join('')}</ol>`)
+      continue
+    }
+    out.push(wrapParagraphBlock(block))
+    i++
+  }
+  return out.join('\n')
+}
 
 function splitBlockElements(block: string): string[] {
   const lines = block.split('\n')

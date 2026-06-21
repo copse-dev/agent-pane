@@ -1,6 +1,7 @@
 import { el } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { materialIconUrl, mountMaterialIcon } from '../icons/material-file-icons.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
 import { addProject } from '../controller/projects.ts'
 
@@ -32,10 +33,13 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
   const dragRegion = el('div', { class: 'titlebar-drag' })
   // Opening projects lives in the projects panel; the titlebar only toggles the
   // file explorer and opens settings.
+  const filesBtnIcon = el('span', { class: 'titlebar-btn-icon' })
+  mountMaterialIcon(filesBtnIcon, materialIconUrl('folder'), 'Explorer')
   const filesBtn = el(
     'button',
     { class: 'titlebar-btn titlebar-text-btn', 'aria-label': 'Toggle right panel' },
-    '🗂 Panel',
+    filesBtnIcon,
+    'Panel',
   )
   const terminalBtn = el(
     'button',

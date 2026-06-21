@@ -153,6 +153,131 @@ export function seedMarkdownListFixture(workspaceRoot: string): void {
   )
 }
 
+/** Git tool cards followed by an ordered-list summary (typical post-tool agent reply). */
+export function seedGitSummaryMarkdownFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-git-summary-md-project'
+  const threadId = 'e2e-git-summary-md-thread'
+  const summary = [
+    "Here's a summary of the three changed files:",
+    '',
+    '1. `src/main/project-sandbox/sandbox-fs-client.ts`',
+    '',
+    'Introduces a **sandboxed filesystem client** that routes reads and writes through a worker thread when the project sandbox is active.',
+    '',
+    '2. `src/main/project-sandbox/sandbox-fs-worker.ts`',
+    '',
+    'Worker thread that handles file operations under seatbelt constraints and reports results back to the main process.',
+    '',
+    '3. `src/main/project-sandbox/spawn.ts`',
+    '',
+    'Adds sandbox spawn helpers and wires ASRT seatbelt initialization for macOS project commands.',
+  ].join('\n')
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Git summary markdown',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-user-git-summary',
+              role: 'user',
+              content: 'Can you summarise the git changes?',
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+            {
+              id: 'msg-assistant-git-tools',
+              role: 'assistant',
+              content: '',
+              toolCalls: [
+                {
+                  id: 'tc-git-status',
+                  name: 'git_status',
+                  args: {},
+                  status: 'done',
+                  result: 'M sandbox-fs-client.ts\nM sandbox-fs-worker.ts\nM spawn.ts',
+                },
+                {
+                  id: 'tc-git-diff',
+                  name: 'git_diff',
+                  args: {},
+                  status: 'done',
+                  result: 'diff --git a/src/main/project-sandbox/spawn.ts',
+                },
+              ],
+              createdAt: Date.now(),
+            },
+            {
+              id: 'msg-assistant-git-summary',
+              role: 'assistant',
+              content: summary,
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
+export function seedCodeBlockCopyFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-code-block-copy-project'
+  const threadId = 'e2e-code-block-copy-thread'
+  const content = [
+    'Use this helper:',
+    '',
+    '```typescript',
+    'export function greet(name: string) {',
+    '  return `Hello, ${name}!`',
+    '}',
+    '```',
+    '',
+    'Then run:',
+    '',
+    '```bash',
+    'npm run check',
+    '```',
+  ].join('\n')
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Code block copy',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-code-blocks',
+              role: 'assistant',
+              content,
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
 export function seedMermaidDiagramFixture(workspaceRoot: string): void {
   const projectId = 'e2e-mermaid-project'
   const threadId = 'e2e-mermaid-thread'

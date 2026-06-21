@@ -9,9 +9,14 @@ import {
 } from '../project-sandbox/index.ts'
 import { detectLikelySandboxFailure } from '../services/sandbox-failure.ts'
 import { promptInstallSocketFirewall, promptUnsandboxedShell } from '../services/permission-gate.ts'
+import { shellRequiresOutsideSandbox } from '../services/permission-policy.ts'
 import { getSetting } from '../services/settings.ts'
 import { detectPackageInstall, wrapWithSocketFirewall } from '../services/safe-install.ts'
 import { installSocketFirewall, isSocketFirewallAvailable } from '../services/socket-firewall.ts'
+import {
+  CappedOutputAccumulator,
+  stripTerminalControlSequences,
+} from '../services/subprocess-output-cap.ts'
 
 interface ShellRunResult {
   output: string
@@ -44,12 +49,11 @@ async function runShellOnce(
         return
       }
 
-      let output = ''
+      const outputAcc = new CappedOutputAccumulator()
       let settled = false
       const stream = (data: Buffer) => {
-        const text = data.toString()
-        output += text
-        win?.webContents.send('agent:shell_output', text)
+        const toStream = outputAcc.append(data.toString())
+        if (toStream) win?.webContents.send('agent:shell_output', toStream)
       }
       proc.stdout?.on('data', stream)
       proc.stderr?.on('data', stream)
@@ -80,7 +84,7 @@ async function runShellOnce(
         finish()
         if (settled) return
         settled = true
-        resolve({ output, exitCode: code ?? 0 })
+        resolve({ output: outputAcc.toString(), exitCode: code ?? 0 })
       })
 
       signal.addEventListener('abort', () => {
@@ -161,19 +165,19 @@ async function prepareCommand(command: string, signal: AbortSignal): Promise<Pre
 }
 
 function formatShellSuccess(result: ShellRunResult): string {
-  const clean = result.output.replace(/\[[0-9;]*m/g, '').trim()
+  const clean = stripTerminalControlSequences(result.output).trim()
   return clean || '(no output)'
 }
 
 function formatShellFailure(result: ShellRunResult): Error {
-  const clean = result.output.replace(/\[[0-9;]*m/g, '').trim()
+  const clean = stripTerminalControlSequences(result.output).trim()
   return new Error(`Exited with code ${result.exitCode}:\n${clean}`)
 }
 
 export const runShellTool: ToolDefinition = {
   name: 'run_shell',
   description:
-    'Run a shell command in the workspace directory. Output is streamed to the conversation. Commands contained within the sandbox auto-run; network or outside-workspace access prompts for approval. If a sandboxed command fails because the sandbox blocks it (e.g. Playwright), the user may approve running it once outside the sandbox. Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) are automatically run through Socket Firewall to scan for malicious packages, with install lifecycle scripts disabled.',
+    'Run a shell command in the workspace directory. Output is streamed to the conversation. Commands contained within the sandbox auto-run; network or outside-workspace access (e.g. gh, curl, git push) prompts for approval and runs outside the sandbox when the macOS project sandbox is active. If a sandbox-contained command fails because the sandbox blocks it (e.g. Playwright), the user may approve running it once outside the sandbox. Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) are automatically run through Socket Firewall to scan for malicious packages, with install lifecycle scripts disabled.',
   parameters: z.object({
     command: z.string().describe('Shell command to run'),
     timeout_ms: z.number().int().min(1000).max(300_000).optional().default(30_000),
@@ -187,9 +191,15 @@ export const runShellTool: ToolDefinition = {
     const { command: finalCommand, env, banner } = prepared
     const withBanner = (output: string) => (banner ? `${banner}\n${output}` : output)
 
+    const outsideSandbox = shellRequiresOutsideSandbox(
+      finalCommand,
+      cwd,
+      isProjectSandboxEnabled(),
+    )
+
     let result: ShellRunResult
     try {
-      result = await runShellOnce(finalCommand, cwd, timeout_ms, signal, false, env)
+      result = await runShellOnce(finalCommand, cwd, timeout_ms, signal, outsideSandbox, env)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       const retry = await maybeRetryUnsandboxed(

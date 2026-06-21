@@ -27,6 +27,10 @@ export function materialFolderIconUrl(relativePath: string, expanded: boolean): 
   return getIconUrlByName(name, MATERIAL_ICONS_BASE)
 }
 
+export function materialIconUrl(name: MaterialIcon): string {
+  return getIconUrlByName(name, MATERIAL_ICONS_BASE)
+}
+
 export function mountMaterialIcon(host: HTMLElement, url: string, label: string): void {
   host.replaceChildren(
     el('img', {

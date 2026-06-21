@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import type { BrowserWindow } from 'electron'
+import { ensureTerminalPermitted } from '../services/permission-gate.ts'
 import { z } from 'zod'
 import { assertMainFrameSender, parseIpcArgs, zSessionId } from './ipc-guards.ts'
 import {
@@ -16,9 +17,11 @@ const terminalCreateSchema = z.tuple([
 ])
 
 export function initTerminal(win: BrowserWindow): () => void {
-  ipcMain.handle('terminal:create', (event, ...rawArgs) => {
+  ipcMain.handle('terminal:create', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [cols, rows] = parseIpcArgs(terminalCreateSchema, rawArgs)
+    const permitted = await ensureTerminalPermitted()
+    if (!permitted) throw new Error('Terminal access was not approved')
     return createTerminalSession(win, cols, rows)
   })
 

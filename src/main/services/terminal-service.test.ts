@@ -59,14 +59,16 @@ describe('terminal-service', () => {
     }
   })
 
-  it('destroys a session', async (t) => {
-    if (!(await ptySpawnAvailable())) {
-      t.skip('PTY spawn unavailable in this environment')
-      return
-    }
+  it('destroys a session', async () => {
+    const restore = setWorkspaceRootForTest('/tmp')
     const win = mockWindow()
-    const sessionId = await createTerminalSession(win)
-    destroyTerminalSession(sessionId)
-    assert.throws(() => writeTerminalSession(sessionId, 'x'), /Unknown terminal session/)
+    let sessionId = ''
+    try {
+      sessionId = await createTerminalSession(win)
+      destroyTerminalSession(sessionId)
+      assert.throws(() => writeTerminalSession(sessionId, 'x'), /Unknown terminal session/)
+    } finally {
+      restore()
+    }
   })
 })
