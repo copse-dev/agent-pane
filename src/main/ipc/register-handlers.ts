@@ -1,5 +1,6 @@
 import { dialog, ipcMain } from 'electron'
 import type { BrowserWindow } from 'electron'
+import { z } from 'zod'
 import micromatch from 'micromatch'
 import {
   assertAllowedWorkspaceRoot,
@@ -9,6 +10,17 @@ import {
   seedAllowedWorkspaceRoots,
   setWorkspaceRoot,
 } from '../services/workspace.ts'
+import {
+  assertFsWriteContent,
+  assertIndexQueryPattern,
+  assertMainFrameSender,
+  assertStorageKey,
+  IpcValidationError,
+  parseIpcArgs,
+  providerSchema,
+  zNonEmptyString,
+  zPathString,
+} from './ipc-guards.ts'
 import { buildIndex, getIndex } from '../services/file-index.ts'
 import { ensureSemanticIndex } from '../services/semantic-index.ts'
 import {
@@ -22,6 +34,11 @@ import {
   setApiKey,
   isProviderAvailable,
 } from '../services/settings.ts'
+import {
+  isRendererWritableSettingKey,
+  parseRendererWritableSetting,
+  securitySettingsSchema,
+} from '../services/settings-writable.ts'
 import { storageGet, storageSet } from '../services/storage.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills-registry.ts'
@@ -69,8 +86,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   ipcMain.handle('workspace:get', () => getWorkspaceRoot())
 
-  // Switch to a known folder without a dialog (used when picking a saved
-  // project from the left pane).
   ipcMain.handle('workspace:set', async (_e, root: string) => {
     const projects = (storageGet('projects') as { path: string }[] | null) ?? []
     seedAllowedWorkspaceRoots(projects.map((p) => p.path))
@@ -89,8 +104,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return gatewayReadFile(abs)
   })
 
-  ipcMain.handle('fs:writeFile', async (_e, path: string, content: string) => {
-    const abs = resolveWorkspacePath(path)
+  ipcMain.handle('fs:writeFile', async (event, path: unknown, content: unknown) => {
+    assertMainFrameSender(event, win)
+    const relPath = parseIpcArgs(zPathString, [path])
+    if (typeof content !== 'string') throw new IpcValidationError('File content must be a string')
+    assertFsWriteContent(content)
+    const abs = resolveWorkspacePath(relPath)
     await gatewayWriteFile(abs, content)
     scheduleIndexRebuild()
   })
@@ -100,9 +119,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return gatewayReaddir(abs)
   })
 
-  // Directory listing with type info, for the file-tree sidebar. Hides dotfiles
-  // and node_modules, sorts directories first then alphabetically. `path` is
-  // relative to the workspace root ('' = root).
   ipcMain.handle('fs:listDir', async (_e, path: string) => {
     const abs = resolveWorkspacePath(path || '.')
     const dirents = await gatewayListDir(abs)
@@ -111,21 +127,47 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       .sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1))
   })
 
-  ipcMain.handle('index:query', (_e, pattern: string) => {
+  ipcMain.handle('index:query', (event, pattern: unknown) => {
+    assertMainFrameSender(event, win)
+    if (pattern !== undefined && typeof pattern !== 'string') {
+      throw new IpcValidationError('Index query pattern must be a string')
+    }
+    const query = typeof pattern === 'string' ? pattern : ''
+    if (query) assertIndexQueryPattern(query)
     const idx = getIndex()
     if (!idx) return []
-    return pattern ? micromatch(idx.paths, `**/*${pattern}*`).slice(0, 20) : idx.paths.slice(0, 20)
+    return query ? micromatch(idx.paths, `**/*${query}*`).slice(0, 20) : idx.paths.slice(0, 20)
   })
 
-  ipcMain.handle('settings:get', (_e, key: string) => getSetting(key, null))
-  ipcMain.handle('settings:set', (_e, key: string, value: unknown) => setSetting(key, value))
-  ipcMain.handle('settings:getKey', (_e, provider: 'anthropic' | 'openai' | 'lmstudio') =>
-    hasApiKey(provider),
-  )
-  ipcMain.handle(
-    'settings:setKey',
-    (_e, provider: 'anthropic' | 'openai' | 'lmstudio', key: string) => setApiKey(provider, key),
-  )
+  ipcMain.handle('settings:get', (_e, key: unknown) => {
+    const k = parseIpcArgs(zNonEmptyString.max(128), [key])
+    return getSetting(k, null)
+  })
+  ipcMain.handle('settings:set', (event, key: unknown, value: unknown) => {
+    assertMainFrameSender(event, win)
+    const k = parseIpcArgs(zNonEmptyString.max(128), [key])
+    if (!isRendererWritableSettingKey(k)) {
+      throw new IpcValidationError(`Setting key not writable from renderer: ${k}`)
+    }
+    setSetting(k, parseRendererWritableSetting(k, value))
+  })
+  ipcMain.handle('settings:setSecurity', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    const prefs = securitySettingsSchema.parse(raw)
+    for (const [k, v] of Object.entries(prefs)) {
+      setSetting(k, v)
+    }
+  })
+  ipcMain.handle('settings:getKey', (_e, provider: unknown) => {
+    const p = parseIpcArgs(providerSchema, [provider])
+    return hasApiKey(p)
+  })
+  ipcMain.handle('settings:setKey', (event, provider: unknown, key: unknown) => {
+    assertMainFrameSender(event, win)
+    const p = parseIpcArgs(providerSchema, [provider])
+    const apiKey = parseIpcArgs(z.string().max(8192), [key])
+    setApiKey(p, apiKey)
+  })
   ipcMain.handle('settings:availableProviders', () => ({
     anthropic: isProviderAvailable('anthropic'),
     openai: isProviderAvailable('openai'),
@@ -134,8 +176,17 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const mainWin = getMainWindow()
     applyAppIcon(mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
   })
-  ipcMain.handle('storage:get', (_e, key: string) => storageGet(key))
-  ipcMain.handle('storage:set', (_e, key: string, value: unknown) => storageSet(key, value))
+  ipcMain.handle('storage:get', (_e, key: unknown) => {
+    const k = parseIpcArgs(zNonEmptyString.max(256), [key])
+    assertStorageKey(k)
+    return storageGet(k)
+  })
+  ipcMain.handle('storage:set', (event, key: unknown, value: unknown) => {
+    assertMainFrameSender(event, win)
+    const k = parseIpcArgs(zNonEmptyString.max(256), [key])
+    assertStorageKey(k)
+    storageSet(k, value)
+  })
 
   ipcMain.handle('skills:list', () => listSkills())
 
