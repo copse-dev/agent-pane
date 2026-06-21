@@ -151,7 +151,7 @@ export function createLmStudioSection(
         'div',
         { class: 'preferred-model-meta' },
         el('strong', {}, model.id),
-        el('span', { class: 'field-hint' }, `${model.description} · ~${model.downloadGb} GB`),
+        el('span', { class: 'field-hint' }, model.description),
       )
 
       row.append(meta, status)

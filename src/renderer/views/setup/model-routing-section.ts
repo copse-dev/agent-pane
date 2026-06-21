@@ -14,6 +14,16 @@ export interface ModelRoutingSection {
   }
 }
 
+function routingField(label: string, control: HTMLElement, hint: string): HTMLDivElement {
+  return el(
+    'div',
+    { class: 'setup-field' },
+    el('span', { class: 'setup-field-label' }, label),
+    control,
+    el('span', { class: 'field-hint' }, hint),
+  )
+}
+
 export function createModelRoutingSection(api: ApiClient): ModelRoutingSection {
   const lmStudioModel = el('select', { name: 'lmStudioModel' }) as HTMLSelectElement
   const lmStudioSmallTasksModel = el('select', {
@@ -33,41 +43,25 @@ export function createModelRoutingSection(api: ApiClient): ModelRoutingSection {
       { class: 'settings-fieldset-desc' },
       'Choose which loaded model handles each task. Leave a route on “auto” to use the first model the server reports.',
     ),
-    el(
-      'label',
-      {},
+    routingField(
       'Default local model',
       lmStudioModel,
-      el(
-        'span',
-        { class: 'field-hint' },
-        'Fallback when a local model is selected in chat but not specified',
-      ),
+      'Fallback when a local model is selected in chat but not specified',
     ),
-    el(
-      'label',
-      {},
+    routingField(
       'Small tasks model',
       lmStudioSmallTasksModel,
-      el('span', { class: 'field-hint' }, 'Thread title generation and other lightweight prompts'),
+      'Thread title generation and other lightweight prompts',
     ),
-    el(
-      'label',
-      {},
+    routingField(
       'Exploration subagent model',
       lmStudioSubagentModel,
-      el(
-        'span',
-        { class: 'field-hint' },
-        'File exploration when the chat model is a cloud API model',
-      ),
+      'File exploration when the chat model is a cloud API model',
     ),
-    el(
-      'label',
-      {},
+    routingField(
       'Instruct / safety model',
       lmStudioSafetyModel,
-      el('span', { class: 'field-hint' }, 'Classifies shell commands when the OS sandbox is off'),
+      'Classifies shell commands when the OS sandbox is off',
     ),
   ) as HTMLFieldSetElement
 

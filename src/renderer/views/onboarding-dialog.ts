@@ -41,12 +41,13 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
   overlay.innerHTML = `
     <div class="onboarding-shell settings-shell">
       <header class="settings-header onboarding-header">
-        <div>
-          <h2>Welcome to Copse</h2>
-          <p class="onboarding-tagline">Set up models once — use local LLMs for everyday work and cloud models when you need them.</p>
-        </div>
+        <h2>Welcome to Copse</h2>
         <button type="button" class="settings-close-btn" id="onboarding-close" aria-label="Close setup">✕</button>
       </header>
+
+      <p class="onboarding-tagline">
+        Set up models once — use local LLMs for everyday work and cloud models when you need them.
+      </p>
 
       <nav class="onboarding-steps" aria-label="Setup steps">
         <button type="button" class="onboarding-step-btn active" data-step="welcome">1. Intro</button>
@@ -55,7 +56,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
         <button type="button" class="onboarding-step-btn" data-step="routing">4. Routing</button>
       </nav>
 
-      <div class="onboarding-body settings-content">
+      <div class="onboarding-body">
         <section class="onboarding-panel active" data-step="welcome"></section>
         <section class="onboarding-panel" data-step="cloud"></section>
         <section class="onboarding-panel" data-step="local"></section>
@@ -82,7 +83,9 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
   const backBtn = overlay.querySelector('#onboarding-back') as HTMLButtonElement
   const nextBtn = overlay.querySelector('#onboarding-next') as HTMLButtonElement
 
-  const welcomePanel = overlay.querySelector('.onboarding-panel[data-step="welcome"]') as HTMLElement
+  const welcomePanel = overlay.querySelector(
+    '.onboarding-panel[data-step="welcome"]',
+  ) as HTMLElement
   welcomePanel.innerHTML = `
     <h3>A different kind of coding assistant</h3>
     <p class="settings-section-desc">
@@ -120,7 +123,9 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
     lmStudio.root,
   )
 
-  const routingPanel = overlay.querySelector('.onboarding-panel[data-step="routing"]') as HTMLElement
+  const routingPanel = overlay.querySelector(
+    '.onboarding-panel[data-step="routing"]',
+  ) as HTMLElement
   const routing = createModelRoutingSection(api)
   routingPanel.append(
     Object.assign(document.createElement('p'), {
