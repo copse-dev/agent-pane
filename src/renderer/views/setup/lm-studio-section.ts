@@ -7,7 +7,7 @@ export interface LmStudioSection {
   getUrl: () => string
   getApiKey: () => string
   refreshDetection: () => Promise<void>
-  saveConnection: () => Promise<void>
+  saveConnection: (opts?: { lmStudioSafetyModel?: string }) => Promise<void>
   destroy: () => void
 }
 
@@ -263,7 +263,7 @@ export function createLmStudioSection(
     renderPreferredModels(detection)
   }
 
-  async function saveConnection(): Promise<void> {
+  async function saveConnection(opts?: { lmStudioSafetyModel?: string }): Promise<void> {
     const lmKey = keyInput.value.trim()
     if (lmKey) await api.settings.setKey('lmstudio', lmKey)
     const lmUrl = urlInput.value.trim()
@@ -280,7 +280,7 @@ export function createLmStudioSection(
       lmStudioUrl: lmUrl,
       lmStudioSafetyEnabled: currentSafetyEnabled ?? true,
       lmStudioSafetyConfidenceThreshold: currentThreshold ?? 0.85,
-      lmStudioSafetyModel: currentSafety ?? PREFERRED_MODELS[2]!.id,
+      lmStudioSafetyModel: opts?.lmStudioSafetyModel ?? currentSafety ?? PREFERRED_MODELS[2]!.id,
       autoRunSandboxCommands: currentAutoRun ?? true,
       mcpAutoAllowReadOnly: currentMcpAuto ?? false,
     })

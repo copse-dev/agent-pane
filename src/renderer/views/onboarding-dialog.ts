@@ -163,18 +163,16 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
 
   async function finishSetup(): Promise<void> {
     await apiKeys.saveKeys()
-    await lmStudio.saveConnection()
     const routingValues = routing.readValues()
+    await lmStudio.saveConnection({
+      lmStudioSafetyModel: routingValues.lmStudioSafetyModel || LM_STUDIO_MODEL_IDS.safety,
+    })
     await api.settings.set('lmStudioModel', routingValues.lmStudioModel || LM_STUDIO_MODEL_IDS.chat)
     await api.settings.set(
       'lmStudioSmallTasksModel',
       routingValues.lmStudioSmallTasksModel || LM_STUDIO_MODEL_IDS.smallTasks,
     )
     await api.settings.set('lmStudioSubagentModel', routingValues.lmStudioSubagentModel)
-    await api.settings.set(
-      'lmStudioSafetyModel',
-      routingValues.lmStudioSafetyModel || LM_STUDIO_MODEL_IDS.safety,
-    )
     await api.settings.set('lmStudioForSmallTasks', true)
     await api.settings.set('lmStudioForSubagents', true)
     await api.settings.set('lmStudioForTodoItems', true)
