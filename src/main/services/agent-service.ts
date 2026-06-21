@@ -18,13 +18,13 @@ import {
   fetchLmStudioModelsCached,
   invalidateLmStudioModelsCache as invalidateLmStudioModelsCacheImpl,
 } from './lm-studio-models.ts'
+import { classifyAgentError } from './agent-errors.ts'
 import {
-  trimHistory,
-  historyTokenBudget,
-  estimateMessageTokens,
-  estimateConversationTokens,
-  conversationTokenBudget,
-} from '@shared/agent/trim-history.ts'
+  prepareAgentHistory,
+  contextTrimmedChunk,
+  contextPressureChunk,
+  createTrimNotifier,
+} from './history-trimming.ts'
 import {
   runWithAgentRunReadFileLimits,
   getAgentRunReadFileLimits,
@@ -288,7 +288,6 @@ export async function runAgent(
   const subagentsEnabled = getSetting<boolean>('subagentsEnabled', true)
   const contextWindow = await resolveContextWindow(model)
   const toolSchemaReserve = model === 'lm-studio' || model.startsWith('lmstudio:') ? 2_500 : 1_000
-  const historyBudget = historyTokenBudget(contextWindow, { reserveTokens: toolSchemaReserve })
 
   // Build the provider per run so a freshly-saved API key (now in process.env)
   // and the currently-selected model take effect without a restart.
@@ -335,35 +334,23 @@ export async function runAgent(
     }
   }
 
-  const { messages: trimmed, trimmed: wasTrimmed } = trimHistory(messages, contextWindow, {
-    reserveTokens: toolSchemaReserve,
-  })
-  const loopMessages = trimmed
-  let trimNoticeSent = wasTrimmed
-  const notifyTrimmed = () => {
-    if (trimNoticeSent) return
-    trimNoticeSent = true
-    const estimatedTokens = Math.round(estimateMessageTokens(trimmed))
-    mainWindow.webContents.send('agent:chunk', threadId, {
-      type: 'context_trimmed',
-      contextWindow,
-      historyBudget,
-      estimatedTokens,
-    } satisfies StreamChunk)
+  const prepared = prepareAgentHistory(messages, contextWindow, toolSchemaReserve)
+  const { trimmed, wasTrimmed, conversationBudget } = prepared
+  const { notifyTrimmed } = createTrimNotifier(wasTrimmed)
+  const sendTrimNotice = () => {
+    mainWindow.webContents.send(
+      'agent:chunk',
+      threadId,
+      contextTrimmedChunk(trimmed, contextWindow, prepared.historyBudget),
+    )
   }
-  if (wasTrimmed) notifyTrimmed()
+  if (wasTrimmed) notifyTrimmed(sendTrimNotice)
 
-  const conversationBudget = conversationTokenBudget(trimmed, contextWindow, {
-    reserveTokens: toolSchemaReserve,
-  })
-  const initialConversationTokens = estimateConversationTokens(trimmed)
-  mainWindow.webContents.send('agent:chunk', threadId, {
-    type: 'context_pressure',
-    contextWindow,
-    conversationBudget,
-    conversationTokens: initialConversationTokens,
-    fillRatio: initialConversationTokens / conversationBudget,
-  } satisfies StreamChunk)
+  mainWindow.webContents.send(
+    'agent:chunk',
+    threadId,
+    contextPressureChunk(prepared, contextWindow),
+  )
   const runReadLimits = readFileLimitsFromConversationBudget(conversationBudget)
 
   const controller = new AbortController()
@@ -450,8 +437,8 @@ export async function runAgent(
     }
 
     const completed = findNewlyCompleted(before, todos)
-    if (completed && compactAtTodoBoundary(loopMessages, todos)) {
-      notifyTrimmed()
+    if (completed && compactAtTodoBoundary(trimmed, todos)) {
+      notifyTrimmed(sendTrimNotice)
     }
 
     return { todos, ...(extraMessage ? { extraMessage } : {}) }
@@ -461,7 +448,7 @@ export async function runAgent(
     await runWithAgentRunReadFileLimits(runReadLimits, async () => {
       await runAgentLoop({
         provider,
-        messages: loopMessages,
+        messages: trimmed,
         tools: parentTools(registry, subagentsEnabled),
         usageModel: model,
         maxLlmCalls: DEFAULT_MAX_LLM_CALLS,
@@ -491,7 +478,7 @@ export async function runAgent(
         signal: controller.signal,
         maxContextTokens: contextWindow,
         toolSchemaReserveTokens: toolSchemaReserve,
-        onHistoryTrimmed: notifyTrimmed,
+        onHistoryTrimmed: () => notifyTrimmed(sendTrimNotice),
         getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
         onChunk: (chunk) => {
           sendChunk(chunk)
@@ -515,7 +502,7 @@ export async function runAgent(
       }
     })
   } catch (err) {
-    const msg = classifyError(err)
+    const msg = classifyAgentError(err)
     mainWindow.webContents.send('agent:chunk', threadId, {
       type: 'text',
       text: msg,
@@ -619,21 +606,4 @@ export async function suggestThreadTitle(text: string): Promise<string | null> {
   } catch {
     return null
   }
-}
-
-function classifyError(err: unknown): string {
-  const s = String(err)
-  if (s.includes('401') || s.includes('Unauthorized'))
-    return 'The API key was rejected (401). The key reached the provider but was refused — check it is correct and current in Settings, and that no stale `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` is set in your shell.'
-  if (s.includes('429') || s.includes('rate_limit'))
-    return 'Rate limit reached. Please wait a moment and try again.'
-  if (
-    s.includes('context_length') ||
-    s.includes('context window') ||
-    s.includes('tokens to keep from the initial prompt')
-  )
-    return 'Conversation too long for the loaded model context. Reload the model in LM Studio with a larger context, start a new thread, or use smaller reads.'
-  if (s.includes('No user query found in messages') || s.includes('jinja template'))
-    return 'The local model prompt template failed after history was trimmed. Reload the model in LM Studio with enough context for the chat template, or use a model with a fixed chat template (e.g. under lmstudio-community).'
-  return `An error occurred: ${err instanceof Error ? err.message : s}`
 }
