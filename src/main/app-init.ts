@@ -13,6 +13,9 @@ function augmentPathForGuiLaunch(): void {
     join(homedir(), '.local', 'bin'),
     join(homedir(), '.vera', 'bin'),
   ]
+  if (process.platform !== 'win32') {
+    extra.push('/usr/bin', '/bin')
+  }
   const missing = extra.filter((entry) => !seen.has(entry))
   if (missing.length > 0) {
     process.env[pathKey] = [...missing, current].filter(Boolean).join(sep)

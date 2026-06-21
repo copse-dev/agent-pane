@@ -116,14 +116,22 @@ export function parseGhOpenPr(raw: string): GitOpenPr | null {
 async function runGit(args: string[]): Promise<{ stdout: string; code: number }> {
   const cwd = getWorkspaceRoot()
   if (!cwd) return { stdout: '', code: 1 }
-  const { stdout, code } = await runCommand('git', args, { cwd })
+  const pathPrefix = process.platform === 'win32' ? '' : '/usr/bin:/bin:'
+  const { stdout, code } = await runCommand('git', args, {
+    cwd,
+    env: { PATH: `${pathPrefix}${process.env.PATH ?? ''}` },
+  })
   return { stdout, code }
 }
 
 async function runGh(args: string[]): Promise<{ stdout: string; code: number }> {
   const cwd = getWorkspaceRoot()
   if (!cwd) return { stdout: '', code: 1 }
-  const { stdout, code } = await runCommand('gh', args, { cwd })
+  const pathPrefix = process.platform === 'win32' ? '' : '/usr/bin:/bin:/exec-daemon:'
+  const { stdout, code } = await runCommand('gh', args, {
+    cwd,
+    env: { PATH: `${pathPrefix}${process.env.PATH ?? ''}` },
+  })
   return { stdout, code }
 }
 
@@ -191,10 +199,11 @@ export async function getPrWorkspaceContext(): Promise<PrWorkspaceContext> {
 /** Branch name and open PR (when `gh` is available) for the status bar. */
 export async function getGitBranchStatus(forBranch?: string): Promise<GitBranchStatus> {
   const empty: GitBranchStatus = { currentBranch: null, pr: null }
-  if (!isGitAvailable() || !(await isInsideGitWorkTree())) return empty
+  if (!getWorkspaceRoot()) return empty
 
   const branchResult = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'])
   const currentBranch = branchResult.code === 0 ? branchResult.stdout.trim() || null : null
+  if (!currentBranch) return empty
 
   let pr: GitOpenPr | null = null
   if (forBranch && forBranch !== currentBranch) {
