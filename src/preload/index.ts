@@ -18,8 +18,8 @@ contextBridge.exposeInMainWorld('api', {
     listDir: (path: string) => ipcRenderer.invoke('fs:listDir', path),
     watch: (path: string) => ipcRenderer.invoke('fs:watch', path),
     unwatch: (path: string) => ipcRenderer.invoke('fs:unwatch', path),
-    onChanged: (handler: (path: string, content: string) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, p: string, c: string) => handler(p, c)
+    onChanged: (handler: (path: string, content: string | null) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, p: string, c: string | null) => handler(p, c)
       ipcRenderer.on('fs:changed', listener)
       return () => ipcRenderer.off('fs:changed', listener)
     },
@@ -126,11 +126,22 @@ contextBridge.exposeInMainWorld('api', {
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),
+    setSecurity: (prefs: {
+      lmStudioUrl: string
+      lmStudioSafetyEnabled: boolean
+      lmStudioSafetyConfidenceThreshold: number
+      lmStudioSafetyModel: string
+      autoRunSandboxCommands: boolean
+      mcpAutoAllowReadOnly: boolean
+    }) => ipcRenderer.invoke('settings:setSecurity', prefs),
     getKey: (provider: 'anthropic' | 'openai' | 'lmstudio') =>
       ipcRenderer.invoke('settings:getKey', provider),
     setKey: (provider: 'anthropic' | 'openai' | 'lmstudio', key: string) =>
       ipcRenderer.invoke('settings:setKey', provider, key),
     availableProviders: () => ipcRenderer.invoke('settings:availableProviders'),
+  },
+  appIcon: {
+    apply: () => ipcRenderer.invoke('app-icon:apply'),
   },
   index: {
     query: (pattern: string) => ipcRenderer.invoke('index:query', pattern),
