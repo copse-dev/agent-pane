@@ -1,12 +1,17 @@
 import type { BrowserWindow } from 'electron'
 import { ipcMain } from 'electron'
 import { randomUUID } from 'node:crypto'
+import {
+  approvalRespondSchema,
+  assertMainFrameSender,
+  IpcValidationError,
+  parseIpcArgs,
+} from '../ipc/ipc-guards.ts'
 
 export interface ApprovalRequest {
   title: string
   body: string
   type: 'shell' | 'mcp'
-  /** Show an "always allow" checkbox (used for MCP tools). */
   allowRemember?: boolean
 }
 
@@ -31,12 +36,17 @@ function settle(id: string, response: ApprovalResponse): void {
 
 export function initApproval(win: BrowserWindow): void {
   mainWindow = win
-  ipcMain.handle('approval:respond', (e, id: string, approved: boolean, remember?: boolean) => {
-    // Only the app's own top frame may answer an approval — otherwise a
-    // compromised/embedded frame could auto-approve (or set `remember`) for any
-    // pending id it can guess.
-    if (e.senderFrame !== win.webContents.mainFrame) return
-    settle(id, { approved, remember: remember === true })
+  ipcMain.handle('approval:respond', (event, ...rawArgs) => {
+    try {
+      // assertMainFrameSender rejects any frame other than the window's main
+      // frame, so a compromised/embedded frame can't answer an approval.
+      assertMainFrameSender(event, win)
+      const [id, approved, remember] = parseIpcArgs(approvalRespondSchema, rawArgs)
+      settle(id, { approved, remember: remember === true })
+    } catch (err) {
+      if (err instanceof IpcValidationError) return
+      throw err
+    }
   })
 
   // If the window goes away, deny everything still pending so callers unblock.

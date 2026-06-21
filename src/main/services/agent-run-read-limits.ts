@@ -1,23 +1,18 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import {
   readFileLimitsFromConversationBudget,
   READ_FILE_LIMITS_CEILING,
   type ReadFileLimits,
 } from '@shared/agent/read-file-limits.ts'
 
-let active: ReadFileLimits | null = null
+const store = new AsyncLocalStorage<ReadFileLimits>()
 
-export function setAgentRunReadFileLimits(conversationBudgetTokens: number): void {
-  active = readFileLimitsFromConversationBudget(conversationBudgetTokens)
-}
-
-export function setAgentRunReadFileLimitsExplicit(limits: ReadFileLimits): void {
-  active = limits
-}
-
-export function clearAgentRunReadFileLimits(): void {
-  active = null
+export function runWithAgentRunReadFileLimits<T>(limits: ReadFileLimits, fn: () => T): T {
+  return store.run(limits, fn)
 }
 
 export function getAgentRunReadFileLimits(): ReadFileLimits {
-  return active ?? READ_FILE_LIMITS_CEILING
+  return store.getStore() ?? READ_FILE_LIMITS_CEILING
 }
+
+export { readFileLimitsFromConversationBudget }
