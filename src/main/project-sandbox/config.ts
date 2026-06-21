@@ -3,6 +3,42 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 
+/** Mirrors ASRT macOS mandatory write denies, resolved against the workspace root. */
+const DANGEROUS_CONFIG_FILENAMES = [
+  '.gitconfig',
+  '.gitmodules',
+  '.bashrc',
+  '.bash_profile',
+  '.zshrc',
+  '.zprofile',
+  '.profile',
+  '.ripgreprc',
+  '.mcp.json',
+] as const
+
+const DANGEROUS_CONFIG_DIR_NAMES = [
+  '.vscode',
+  '.idea',
+  '.claude/commands',
+  '.claude/agents',
+] as const
+
+export function workspaceMandatoryWriteDenyPaths(workspaceRoot: string): string[] {
+  const root = resolve(workspaceRoot)
+  const denyPaths: string[] = []
+  for (const fileName of DANGEROUS_CONFIG_FILENAMES) {
+    denyPaths.push(join(root, fileName))
+    denyPaths.push(`**/${fileName}`)
+  }
+  for (const dirName of DANGEROUS_CONFIG_DIR_NAMES) {
+    denyPaths.push(join(root, dirName))
+    denyPaths.push(`**/${dirName}/**`)
+  }
+  denyPaths.push(join(root, '.git/hooks'))
+  denyPaths.push('**/.git/hooks/**')
+  return [...new Set(denyPaths)]
+}
+
 /**
  * User-level git config files git reads on every invocation. They live under
  * the home directory, which the workspace overlay otherwise denies. macOS
@@ -81,7 +117,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
       denyRead: [homedir()],
       allowRead: [root, `${root}/**`, ...toolchainRead, ...gitConfigReadPaths()],
       allowWrite: [root, `${root}/**`],
-      denyWrite: [],
+      denyWrite: workspaceMandatoryWriteDenyPaths(root),
       allowGitConfig: true,
     },
   }
