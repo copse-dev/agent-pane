@@ -165,6 +165,36 @@ describe('runAgentLoop', () => {
     )
   })
 
+  it('adds cancelled tool results when aborted mid-batch', async () => {
+    const controller = new AbortController()
+    const messages = [{ role: 'user', content: 'go' }] as const
+    const chunks: StreamChunk[] = []
+    await runAgentLoop({
+      provider: mockProvider([
+        [
+          { type: 'tool_call', toolCall: { id: '1', name: 'a', args: {} } },
+          { type: 'tool_call', toolCall: { id: '2', name: 'b', args: {} } },
+          { type: 'done' },
+        ],
+      ]),
+      messages: [...messages],
+      tools: [],
+      onChunk: (c) => chunks.push(c),
+      signal: controller.signal,
+      executeTool: async (_name, _args, _signal, id) => {
+        if (id === '1') {
+          controller.abort()
+          return 'ok'
+        }
+        return 'never'
+      },
+    })
+    const cancelled = chunks.filter(
+      (c) => c.type === 'tool_result' && c.result.includes('cancelled'),
+    )
+    assert.equal(cancelled.length, 1)
+  })
+
   it('nudges to close open todos before finalize', async () => {
     const chunks: StreamChunk[] = []
     let nudgeText = ''

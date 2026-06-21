@@ -6,8 +6,13 @@ import type {
   ToolCallChunk,
   ToolResult,
 } from '@shared/types'
+import {
+  trimMessagesInPlace,
+  repairToolUseToolResultPairing,
+  CANCELLED_TOOL_RESULT,
+  setLastMeasuredInputTokens,
+} from './trim-history.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
-import { trimMessagesInPlace } from './trim-history.ts'
 import {
   DUPLICATE_TOOL_RESULT_PREFIX,
   isDuplicateExploreCall,
@@ -70,6 +75,9 @@ function emitStepUsage(
   usageModel?: string,
 ): void {
   const usage = getLastUsage?.()
+  if (usage?.inputTokens) {
+    setLastMeasuredInputTokens(usage.inputTokens)
+  }
   if (usage && (usage.inputTokens || usage.outputTokens) && usageModel) {
     onChunk({
       type: 'usage',
@@ -130,6 +138,7 @@ async function streamTextOnlyTurn(
 }
 
 export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
+  setLastMeasuredInputTokens(null)
   const {
     provider,
     messages,
@@ -156,6 +165,8 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   while (steps < maxSteps) {
     if (signal?.aborted) break
     steps++
+
+    repairToolUseToolResultPairing(messages)
 
     if (maxContextTokens) {
       const escalationInput = {
@@ -271,8 +282,23 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
 
     // Execute tools and collect results
     const toolResults: ToolResult[] = []
-    for (const tc of pendingToolCalls) {
-      if (signal?.aborted) break
+    for (let ti = 0; ti < pendingToolCalls.length; ti++) {
+      const tc = pendingToolCalls[ti]
+      if (!tc) continue
+      if (signal?.aborted) {
+        for (let j = ti; j < pendingToolCalls.length; j++) {
+          const cancelled = pendingToolCalls[j]
+          if (!cancelled) continue
+          toolResults.push({ toolCallId: cancelled.id, result: CANCELLED_TOOL_RESULT })
+          onChunk({
+            type: 'tool_result',
+            toolCallId: cancelled.id,
+            result: CANCELLED_TOOL_RESULT,
+            isError: true,
+          })
+        }
+        break
+      }
       const normalizedArgs = normalizeExploreArgs(tc.name, tc.args)
       const fp = toolCallFingerprint(tc.name, normalizedArgs)
       const duplicate = isDuplicateExploreCall(tc.name, normalizedArgs, recentFingerprints)
@@ -301,10 +327,11 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
 
     toolOnlySteps++
 
-    if (signal?.aborted) break
+    if (toolResults.length > 0) {
+      messages.push({ role: 'tool', toolResults })
+    }
 
-    // Push tool results to history
-    messages.push({ role: 'tool', toolResults })
+    if (signal?.aborted) break
   }
 
   if (!signal?.aborted && !finishedWithAnswer) {

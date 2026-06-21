@@ -1,7 +1,20 @@
-import { describe, it } from 'node:test'
+import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import type { LLMMessage } from '@shared/types'
-import { estimateMessageTokens, trimMessagesInPlace, historyTokenBudget } from './trim-history.ts'
+import {
+  estimateMessageTokens,
+  trimMessagesInPlace,
+  historyTokenBudget,
+  repairToolUseToolResultPairing,
+  CANCELLED_TOOL_RESULT,
+  ESTIMATED_IMAGE_TOKENS,
+  setLastMeasuredInputTokens,
+  effectiveConversationTokens,
+} from './trim-history.ts'
+
+beforeEach(() => {
+  setLastMeasuredInputTokens(null)
+})
 
 describe('historyTokenBudget', () => {
   it('uses most of the context window minus tool and completion reserve', () => {
@@ -84,5 +97,45 @@ describe('trimMessagesInPlace', () => {
     assert.ok(messages.length < beforeLen)
     const user = messages.find((m) => m.role === 'user')
     assert.equal(user?.content, 'go')
+  })
+})
+
+describe('repairToolUseToolResultPairing', () => {
+  it('synthesizes tool results for assistant tool_use without a tool message', () => {
+    const messages: LLMMessage[] = [
+      {
+        role: 'assistant',
+        content: [{ id: 'a1', name: 'read_file', args: {} }],
+      },
+    ]
+    repairToolUseToolResultPairing(messages)
+    assert.equal(messages.length, 2)
+    assert.equal(messages[1]?.role, 'tool')
+    const results = messages[1]?.role === 'tool' ? messages[1].toolResults : []
+    assert.equal(results[0]?.result, CANCELLED_TOOL_RESULT)
+  })
+})
+
+describe('effectiveConversationTokens', () => {
+  it('uses measured input tokens when set', () => {
+    setLastMeasuredInputTokens(null)
+    const messages: LLMMessage[] = [{ role: 'user', content: 'hi' }]
+    assert.ok(effectiveConversationTokens(messages) < 100)
+    setLastMeasuredInputTokens(50_000)
+    assert.equal(effectiveConversationTokens(messages), 50_000)
+    setLastMeasuredInputTokens(null)
+  })
+
+  it('counts image blocks at flat token estimate', () => {
+    setLastMeasuredInputTokens(null)
+    const messages: LLMMessage[] = [
+      {
+        role: 'user',
+        content: [{ type: 'image', dataUrl: 'data:image/png;base64,' + 'A'.repeat(100_000) }],
+      },
+    ]
+    const tokens = estimateMessageTokens(messages)
+    assert.ok(tokens >= ESTIMATED_IMAGE_TOKENS)
+    assert.ok(tokens < 100_000 / 4)
   })
 })
