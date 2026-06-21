@@ -1,3 +1,5 @@
+import type { TodoItem } from './todo.ts'
+
 export type ThreadStatus = 'idle' | 'running' | 'error'
 
 export interface ContextTrimRecord {
@@ -26,6 +28,8 @@ export interface Thread {
   contextTrims?: ContextTrimRecord[]
   /** Latest context fill estimate while the agent is running (or after the last run). */
   contextSnapshot?: ContextSnapshot
+  /** Structured task plan for multi-step agent work (updated via update_todos). */
+  todos?: TodoItem[]
   createdAt: number
   updatedAt: number
 }

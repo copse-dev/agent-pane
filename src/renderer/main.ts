@@ -27,6 +27,7 @@ import { addProjectFromPath, restoreProject } from './controller/projects.ts'
 import { initMonaco } from './monaco/setup.ts'
 import { mountPaneResizers, parseSavedLayout } from './views/pane-resizer.ts'
 import { bindChatComposerLayout } from './views/chat-layout.ts'
+import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 
 const store = createStore()
 const api = window.api
@@ -41,7 +42,7 @@ async function boot() {
   const savedModel = (await api.settings.get('model')) as string | null
   const savedLayout = await api.settings.get('layout')
   store.setState({
-    settings: { model: savedModel ?? 'claude-sonnet-4-6' },
+    settings: { model: savedModel ?? DEFAULT_APP_CHAT_MODEL },
     layout: parseSavedLayout(savedLayout),
   })
   startAgentController(store, api)
