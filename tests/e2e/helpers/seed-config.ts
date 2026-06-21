@@ -29,10 +29,18 @@ function writeSettings(settings: Record<string, unknown>): void {
   writeFileSync(SETTINGS_PATH, JSON.stringify(settings), 'utf8')
 }
 
+function plainStoredApiKey(value: string): { v: 1; enc: string; plain: true } {
+  return { v: 1, enc: Buffer.from(value, 'utf8').toString('base64'), plain: true }
+}
+
 export function seedEmptyProject(
   workspaceRoot: string,
   projectId: string,
-  options?: { subagentsEnabled?: boolean; mockFollowUps?: boolean },
+  options?: {
+    subagentsEnabled?: boolean
+    mockFollowUps?: boolean
+    cloudProviders?: boolean
+  },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
   writeFileSync(
@@ -50,6 +58,12 @@ export function seedEmptyProject(
   }
   if (options?.mockFollowUps) {
     settings.mockFollowUps = true
+  }
+  if (options?.cloudProviders) {
+    settings.apiKey = {
+      anthropic: plainStoredApiKey('sk-ant-e2e'),
+      openai: plainStoredApiKey('sk-e2e'),
+    }
   }
   if (Object.keys(settings).length > 0) {
     writeSettings(settings)
