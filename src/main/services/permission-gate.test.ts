@@ -46,7 +46,7 @@ describe('decideShellPermission', () => {
     assert.equal(d.action, 'allow')
   })
 
-  it('auto-runs external commands inside OS sandbox (unsandboxed retry is separate)', () => {
+  it('prompts for external commands when OS sandbox is active', () => {
     const d = decideShellPermission('curl https://example.com', {
       workspaceRoot: root,
       sandboxEnabled: true,
@@ -54,10 +54,23 @@ describe('decideShellPermission', () => {
       classification: null,
       confidenceThreshold: 0.85,
     })
-    assert.equal(d.action, 'allow')
+    assert.equal(d.action, 'prompt')
+    assert.ok(d.reasons.some((x) => x.includes('curl')))
   })
 
-  it('auto-runs home-directory probes inside OS sandbox', () => {
+  it('prompts for gh CLI when OS sandbox is active', () => {
+    const d = decideShellPermission('gh pr view --json state', {
+      workspaceRoot: root,
+      sandboxEnabled: true,
+      autoRun: true,
+      classification: null,
+      confidenceThreshold: 0.85,
+    })
+    assert.equal(d.action, 'prompt')
+    assert.ok(d.reasons.some((x) => x.includes('GitHub CLI')))
+  })
+
+  it('prompts for home-directory paths when OS sandbox is active', () => {
     const d = decideShellPermission('ls ~/.nvm/nvm.sh', {
       workspaceRoot: root,
       sandboxEnabled: true,
@@ -65,7 +78,8 @@ describe('decideShellPermission', () => {
       classification: null,
       confidenceThreshold: 0.85,
     })
-    assert.equal(d.action, 'allow')
+    assert.equal(d.action, 'prompt')
+    assert.ok(d.reasons.some((x) => x.includes('home directory')))
   })
 
   it('uses safety model on unsandboxed platforms when confident', () => {
