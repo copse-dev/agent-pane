@@ -24,6 +24,7 @@ const SETTINGS_PATH = join(USER_DATA, 'settings.json')
 export function resetUserData(): void {
   rmSync(CONFIG_PATH, { force: true })
   rmSync(SETTINGS_PATH, { force: true })
+  writeSettings({})
 }
 
 /** Fresh profile that triggers the first-run onboarding wizard. */
@@ -34,7 +35,7 @@ export function seedOnboardingFixture(): void {
 
 function writeSettings(settings: Record<string, unknown>): void {
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(SETTINGS_PATH, JSON.stringify(settings), 'utf8')
+  writeFileSync(SETTINGS_PATH, JSON.stringify({ onboardingCompleted: true, ...settings }), 'utf8')
 }
 
 export function seedEmptyProject(
