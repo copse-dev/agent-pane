@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import type { LLMProvider, LLMMessage, LLMTool, StreamChunk } from '@shared/types'
+import { yieldStreamWithRetry } from './stream-retry.ts'
 
 export class OpenAIProvider implements LLMProvider {
   private client: OpenAI
@@ -25,77 +26,81 @@ export class OpenAIProvider implements LLMProvider {
   ): AsyncIterable<StreamChunk> {
     const { client, model } = this
     const self = this
-    return (async function* () {
-      const mappedTools = tools.length
-        ? tools.map((t) => ({
-            type: 'function' as const,
-            function: {
-              name: t.name,
-              description: t.description,
-              parameters: t.parameters as Record<string, unknown>,
-            },
-          }))
-        : undefined
-      const stream = await client.chat.completions.create(
-        {
-          model,
-          stream: true,
-          stream_options: { include_usage: true },
-          messages: toOpenAIMessages(messages),
-          ...(mappedTools ? { tools: mappedTools } : {}),
-        },
-        { signal },
-      )
+    return yieldStreamWithRetry(
+      async function* () {
+        const mappedTools = tools.length
+          ? tools.map((t) => ({
+              type: 'function' as const,
+              function: {
+                name: t.name,
+                description: t.description,
+                parameters: t.parameters as Record<string, unknown>,
+              },
+            }))
+          : undefined
+        const stream = await client.chat.completions.create(
+          {
+            model,
+            stream: true,
+            stream_options: { include_usage: true },
+            messages: toOpenAIMessages(messages),
+            ...(mappedTools ? { tools: mappedTools } : {}),
+          },
+          { signal },
+        )
 
-      const toolCallBuilders = new Map<number, { id: string; name: string; argsJson: string }>()
-      let finishReason: string | undefined
+        const toolCallBuilders = new Map<number, { id: string; name: string; argsJson: string }>()
+        let finishReason: string | undefined
 
-      for await (const event of stream) {
-        if (event.usage) {
-          self.lastUsage = {
-            inputTokens: event.usage.prompt_tokens,
-            outputTokens: event.usage.completion_tokens,
-          }
-        }
-        const choice = event.choices[0]
-        const reason = choice?.finish_reason
-        if (reason) finishReason = reason
-
-        const delta = choice?.delta
-        if (delta?.content) yield { type: 'text', text: delta.content }
-
-        if (delta?.tool_calls) {
-          for (const tc of delta.tool_calls) {
-            const idx = tc.index
-            if (!toolCallBuilders.has(idx)) {
-              toolCallBuilders.set(idx, {
-                id: tc.id ?? '',
-                name: tc.function?.name ?? '',
-                argsJson: '',
-              })
+        for await (const event of stream) {
+          if (event.usage) {
+            self.lastUsage = {
+              inputTokens: event.usage.prompt_tokens,
+              outputTokens: event.usage.completion_tokens,
             }
-            const builder = toolCallBuilders.get(idx)!
-            if (tc.id) builder.id = tc.id
-            if (tc.function?.name) builder.name = tc.function.name
-            if (tc.function?.arguments) builder.argsJson += tc.function.arguments
           }
-        }
+          const delta = event.choices[0]?.delta
+          if (!delta) continue
 
-        if (reason === 'tool_calls') {
-          for (const [, builder] of toolCallBuilders) {
-            let args: unknown = {}
-            try {
-              args = JSON.parse(builder.argsJson)
-            } catch {
-              args = {}
+          if (delta.content) yield { type: 'text', text: delta.content }
+
+          if (delta.tool_calls) {
+            for (const tc of delta.tool_calls) {
+              const idx = tc.index
+              if (!toolCallBuilders.has(idx)) {
+                toolCallBuilders.set(idx, {
+                  id: tc.id ?? '',
+                  name: tc.function?.name ?? '',
+                  argsJson: '',
+                })
+              }
+              const builder = toolCallBuilders.get(idx)!
+              if (tc.id) builder.id = tc.id
+              if (tc.function?.name) builder.name = tc.function.name
+              if (tc.function?.arguments) builder.argsJson += tc.function.arguments
             }
-            yield { type: 'tool_call', toolCall: { id: builder.id, name: builder.name, args } }
           }
-          toolCallBuilders.clear()
+
+          const reason = event.choices[0]?.finish_reason
+          if (reason) finishReason = reason
+
+          if (reason === 'tool_calls') {
+            for (const [, builder] of toolCallBuilders) {
+              let args: unknown = {}
+              try {
+                args = JSON.parse(builder.argsJson)
+              } catch {
+                args = {}
+              }
+              yield { type: 'tool_call', toolCall: { id: builder.id, name: builder.name, args } }
+            }
+            toolCallBuilders.clear()
+          }
         }
-      }
-      yield finishReason ? { type: 'done', stopReason: finishReason } : { type: 'done' }
-    })()
+        yield finishReason ? { type: 'done', stopReason: finishReason } : { type: 'done' }
+      },
+      { ...(signal ? { signal } : {}) },
+    )
   }
 }
 

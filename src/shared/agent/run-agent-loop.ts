@@ -6,8 +6,13 @@ import type {
   ToolCallChunk,
   ToolResult,
 } from '@shared/types'
+import {
+  trimMessagesInPlace,
+  repairToolUseToolResultPairing,
+  CANCELLED_TOOL_RESULT,
+  setLastMeasuredInputTokens,
+} from './trim-history.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
-import { trimMessagesInPlace } from './trim-history.ts'
 import {
   DUPLICATE_TOOL_RESULT_PREFIX,
   isDuplicateExploreCall,
@@ -30,6 +35,11 @@ import {
   REFUSAL_USER_MESSAGE,
   TRUNCATION_CONTINUE_NUDGE,
 } from '../llm/provider-stop-reason.ts'
+import {
+  AGENT_RUN_TIMEOUT_MS,
+  defaultMaxLlmCallsForSteps,
+  isRunPastDeadline,
+} from './agent-loop-limits.ts'
 import { hasOpenTodos, OPEN_TODOS_FINALIZE_NUDGE } from '@shared/todos/todo-logic.ts'
 
 const RECENT_FINGERPRINT_WINDOW = 16
@@ -60,6 +70,10 @@ export interface AgentLoopOptions {
   getLastUsage?: () => { inputTokens: number; outputTokens: number } | null
   /** Model id for usage/cost attribution on this loop's provider calls. */
   usageModel?: string
+  /** Max provider.stream calls (main loop + finalize / forced text). */
+  maxLlmCalls?: number
+  /** Wall-clock budget checked alongside maxLlmCalls. */
+  runTimeoutMs?: number
   /** Coerce recovered XML tool args against registered tool schemas. */
   coerceTextToolCallArgs?: CoerceToolArgsFn
   /** When set, finalize is blocked while todos remain open. */
@@ -72,12 +86,38 @@ const FINALIZE_NUDGE =
 const INCOMPLETE_RUN_MESSAGE =
   'The agent stopped before producing a final answer. Try a shorter question, reduce tool use, or switch models.'
 
+const RUN_LIMIT_MESSAGE =
+  'The agent run reached its time or LLM call limit before finishing. Try a shorter question or start a new turn.'
+
+type LlmCallBudget = {
+  llmCalls: number
+  maxLlmCalls: number
+  runStartedAt: number
+  runTimeoutMs: number
+  signal?: AbortSignal
+}
+
+function runBudgetExhausted(budget: LlmCallBudget): boolean {
+  if (isRunPastDeadline(budget.runStartedAt, budget.runTimeoutMs)) return true
+  if (budget.llmCalls >= budget.maxLlmCalls) return true
+  return false
+}
+
+function reserveLlmCall(budget: LlmCallBudget): boolean {
+  if (runBudgetExhausted(budget)) return false
+  budget.llmCalls++
+  return true
+}
+
 function emitStepUsage(
   getLastUsage: (() => { inputTokens: number; outputTokens: number } | null) | undefined,
   onChunk: (chunk: StreamChunk) => void,
   usageModel?: string,
 ): void {
   const usage = getLastUsage?.()
+  if (usage?.inputTokens) {
+    setLastMeasuredInputTokens(usage.inputTokens)
+  }
   if (usage && (usage.inputTokens || usage.outputTokens) && usageModel) {
     onChunk({
       type: 'usage',
@@ -112,11 +152,13 @@ async function streamTextOnlyTurn(
   provider: LLMProvider,
   messages: LLMMessage[],
   onChunk: (chunk: StreamChunk) => void,
-  signal?: AbortSignal,
+  budget: LlmCallBudget,
   nudge = FINALIZE_NUDGE,
   getLastUsage?: () => { inputTokens: number; outputTokens: number } | null,
   usageModel?: string,
 ): Promise<string> {
+  if (!reserveLlmCall(budget)) return ''
+  const signal = budget.signal
   const turnMessages: LLMMessage[] = [...messages, { role: 'user', content: nudge }]
   let assistantText = ''
   let stopReason: string | undefined
@@ -174,6 +216,7 @@ function handleContextOverflowInLoop(
 }
 
 export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
+  setLastMeasuredInputTokens(null)
   const {
     provider,
     messages,
@@ -186,11 +229,21 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     onHistoryTrimmed,
     getLastUsage,
     usageModel,
+    maxLlmCalls = defaultMaxLlmCallsForSteps(maxSteps),
+    runTimeoutMs = AGENT_RUN_TIMEOUT_MS,
     coerceTextToolCallArgs,
     getOpenTodos,
   } = opts
+  const budget: LlmCallBudget = {
+    llmCalls: 0,
+    maxLlmCalls,
+    runStartedAt: Date.now(),
+    runTimeoutMs,
+    ...(signal !== undefined ? { signal } : {}),
+  }
   let steps = 0
   let finishedWithAnswer = false
+  let hitRunLimit = false
   let toolOnlySteps = 0
   let loopNudgeSent = false
   let forceTextAttempted = false
@@ -198,8 +251,14 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   const recentFingerprints: string[] = []
 
   while (steps < maxSteps) {
+    if (runBudgetExhausted(budget)) {
+      hitRunLimit = true
+      break
+    }
     if (signal?.aborted) break
     steps++
+
+    repairToolUseToolResultPairing(messages)
 
     if (maxContextTokens) {
       const escalationInput = {
@@ -221,7 +280,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           provider,
           messages,
           onChunk,
-          signal,
+          budget,
           STUCK_FINALIZE_NUDGE,
           getLastUsage,
           usageModel,
@@ -253,6 +312,11 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     let assistantText = ''
     const pendingToolCalls: ToolCallChunk[] = []
     let stopReason: string | undefined
+
+    if (!reserveLlmCall(budget)) {
+      hitRunLimit = true
+      break
+    }
 
     for await (const chunk of provider.stream(messages, tools, signal)) {
       if (signal?.aborted) break
@@ -368,8 +432,23 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
 
     // Execute tools and collect results
     const toolResults: ToolResult[] = []
-    for (const tc of pendingToolCalls) {
-      if (signal?.aborted) break
+    for (let ti = 0; ti < pendingToolCalls.length; ti++) {
+      const tc = pendingToolCalls[ti]
+      if (!tc) continue
+      if (signal?.aborted) {
+        for (let j = ti; j < pendingToolCalls.length; j++) {
+          const cancelled = pendingToolCalls[j]
+          if (!cancelled) continue
+          toolResults.push({ toolCallId: cancelled.id, result: CANCELLED_TOOL_RESULT })
+          onChunk({
+            type: 'tool_result',
+            toolCallId: cancelled.id,
+            result: CANCELLED_TOOL_RESULT,
+            isError: true,
+          })
+        }
+        break
+      }
       const normalizedArgs = normalizeExploreArgs(tc.name, tc.args)
       const fp = toolCallFingerprint(tc.name, normalizedArgs)
       const duplicate = isDuplicateExploreCall(tc.name, normalizedArgs, recentFingerprints)
@@ -398,13 +477,14 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
 
     toolOnlySteps++
 
-    if (signal?.aborted) break
+    if (toolResults.length > 0) {
+      messages.push({ role: 'tool', toolResults })
+    }
 
-    // Push tool results to history
-    messages.push({ role: 'tool', toolResults })
+    if (signal?.aborted) break
   }
 
-  if (!signal?.aborted && !finishedWithAnswer) {
+  if (!signal?.aborted && !finishedWithAnswer && !hitRunLimit) {
     const openTodos = getOpenTodos?.() ?? []
     const nudge =
       openTodos.length > 0 && hasOpenTodos(openTodos) ? OPEN_TODOS_FINALIZE_NUDGE : FINALIZE_NUDGE
@@ -412,7 +492,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       provider,
       messages,
       onChunk,
-      signal,
+      budget,
       nudge,
       getLastUsage,
       usageModel,
@@ -423,6 +503,11 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     } else {
       finishedWithAnswer = true
     }
+  }
+
+  if (hitRunLimit && !finishedWithAnswer && !signal?.aborted) {
+    onChunk({ type: 'text', text: RUN_LIMIT_MESSAGE })
+    messages.push({ role: 'assistant', content: RUN_LIMIT_MESSAGE })
   }
 
   onChunk({ type: 'done' })

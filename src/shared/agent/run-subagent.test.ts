@@ -58,6 +58,45 @@ describe('runSubagent', () => {
     assert.ok(subagentChunks.some((c) => c.type === 'subagent_tool_result'))
   })
 
+  it('accumulates usage across inner agent steps', async () => {
+    let call = 0
+    const usages = [
+      { inputTokens: 100, outputTokens: 10 },
+      { inputTokens: 50, outputTokens: 5 },
+    ]
+    const provider = {
+      lastUsage: null as { inputTokens: number; outputTokens: number } | null,
+      async *stream() {
+        const u = usages[call]!
+        provider.lastUsage = u
+        const chunks =
+          call++ === 0
+            ? ([
+                {
+                  type: 'tool_call' as const,
+                  toolCall: { id: 'inner-1', name: 'read_file', args: { path: 'a.ts' } },
+                },
+                { type: 'done' as const },
+              ] as const)
+            : ([{ type: 'text' as const, text: 'Summary' }, { type: 'done' as const }] as const)
+        for (const chunk of chunks) yield chunk
+      },
+    } satisfies LLMProvider & { lastUsage: { inputTokens: number; outputTokens: number } | null }
+
+    const { session } = await runSubagent({
+      provider,
+      prompt: 'Read a.ts',
+      parentGoal: 'Review',
+      tools: [{ name: 'read_file', description: '', parameters: {} }],
+      parentToolCallId: 'parent-usage',
+      onSubagentChunk: () => {},
+      executeTool: async () => 'contents',
+      usageModel: 'test-model',
+    })
+
+    assert.deepEqual(session.usage, { inputTokens: 150, outputTokens: 15 })
+  })
+
   it('respects AbortSignal', async () => {
     const controller = new AbortController()
     controller.abort()

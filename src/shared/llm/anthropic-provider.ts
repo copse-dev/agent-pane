@@ -1,5 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { LLMProvider, LLMMessage, LLMTool, StreamChunk } from '@shared/types'
+import { anthropicMaxOutputTokens } from './model-metadata.ts'
+import { yieldStreamWithRetry } from './stream-retry.ts'
 
 export class AnthropicProvider implements LLMProvider {
   private client: Anthropic
@@ -19,78 +21,91 @@ export class AnthropicProvider implements LLMProvider {
   ): AsyncIterable<StreamChunk> {
     const { client, model } = this
     const self = this
-    return (async function* () {
-      const systemMsg = messages.find((m) => m.role === 'system')
-      const apiMessages = toAnthropicMessages(messages.filter((m) => m.role !== 'system'))
+    const systemMsg = messages.find((m) => m.role === 'system')
+    const apiMessages = toAnthropicMessages(messages.filter((m) => m.role !== 'system'))
+    const maxTokens = anthropicMaxOutputTokens(model)
 
-      const stream = client.messages.stream(
-        {
-          model,
-          max_tokens: 8096,
-          ...(systemMsg
-            ? {
-                system: [
-                  {
-                    type: 'text' as const,
-                    text: systemMsg.content as string,
-                    cache_control: { type: 'ephemeral' as const },
-                  },
-                ],
+    return yieldStreamWithRetry(
+      async function* () {
+        const stream = client.messages.stream(
+          {
+            model,
+            max_tokens: maxTokens,
+            ...(systemMsg
+              ? {
+                  system: [
+                    {
+                      type: 'text' as const,
+                      text: systemMsg.content as string,
+                      cache_control: { type: 'ephemeral' as const },
+                    },
+                  ],
+                }
+              : {}),
+            messages: apiMessages,
+            tools: tools.map((t) => ({
+              name: t.name,
+              description: t.description,
+              input_schema: t.parameters as Anthropic.Messages.Tool['input_schema'],
+            })),
+          },
+          { signal },
+        )
+
+        let currentToolId = ''
+        let currentToolName = ''
+        let toolJson = ''
+        let stopReason: Anthropic.Messages.StopReason | null = null
+
+        for await (const event of stream) {
+          if (event.type === 'content_block_start' && event.content_block.type === 'tool_use') {
+            currentToolId = event.content_block.id
+            currentToolName = event.content_block.name
+            toolJson = ''
+          }
+          if (event.type === 'content_block_delta') {
+            if (event.delta.type === 'text_delta') {
+              yield { type: 'text', text: event.delta.text }
+            }
+            if (event.delta.type === 'input_json_delta') {
+              toolJson += event.delta.partial_json
+            }
+          }
+          if (event.type === 'content_block_stop' && currentToolId) {
+            let args: unknown = {}
+            try {
+              args = JSON.parse(toolJson || '{}')
+            } catch {
+              args = {}
+            }
+            yield {
+              type: 'tool_call',
+              toolCall: { id: currentToolId, name: currentToolName, args },
+            }
+            currentToolId = ''
+            currentToolName = ''
+            toolJson = ''
+          }
+          if (event.type === 'message_delta') {
+            if (event.delta.stop_reason) stopReason = event.delta.stop_reason
+            if (event.usage) {
+              self.lastUsage = {
+                inputTokens: event.usage.input_tokens ?? 0,
+                outputTokens: event.usage.output_tokens ?? 0,
               }
-            : {}),
-          messages: apiMessages,
-          tools: tools.map((t) => ({
-            name: t.name,
-            description: t.description,
-            input_schema: t.parameters as Anthropic.Messages.Tool['input_schema'],
-          })),
-        },
-        { signal },
-      )
-
-      let currentToolId = ''
-      let currentToolName = ''
-      let toolJson = ''
-      let stopReason: string | undefined
-
-      for await (const event of stream) {
-        if (event.type === 'content_block_start' && event.content_block.type === 'tool_use') {
-          currentToolId = event.content_block.id
-          currentToolName = event.content_block.name
-          toolJson = ''
-        }
-        if (event.type === 'content_block_delta') {
-          if (event.delta.type === 'text_delta') {
-            yield { type: 'text', text: event.delta.text }
-          }
-          if (event.delta.type === 'input_json_delta') {
-            toolJson += event.delta.partial_json
-          }
-        }
-        if (event.type === 'content_block_stop' && currentToolId) {
-          let args: unknown = {}
-          try {
-            args = JSON.parse(toolJson || '{}')
-          } catch {
-            args = {}
-          }
-          yield { type: 'tool_call', toolCall: { id: currentToolId, name: currentToolName, args } }
-          currentToolId = ''
-          currentToolName = ''
-          toolJson = ''
-        }
-        if (event.type === 'message_delta') {
-          if (event.delta.stop_reason) stopReason = event.delta.stop_reason
-          if (event.usage) {
-            self.lastUsage = {
-              inputTokens: event.usage.input_tokens ?? 0,
-              outputTokens: event.usage.output_tokens ?? 0,
             }
           }
         }
-      }
-      yield stopReason ? { type: 'done', stopReason } : { type: 'done' }
-    })()
+        if (stopReason === 'max_tokens') {
+          yield {
+            type: 'text',
+            text: '\n\n(Response stopped: model output limit reached.)',
+          }
+        }
+        yield stopReason ? { type: 'done', stopReason } : { type: 'done' }
+      },
+      { ...(signal ? { signal } : {}) },
+    )
   }
 }
 
