@@ -1367,6 +1367,12 @@ label {
 .footer-branch-status.is-link:hover {
   color: var(--text-primary);
 }
+.footer-branch-status.is-mismatch {
+  color: var(--warning);
+}
+.footer-branch-status.is-mismatch.is-link {
+  color: var(--warning);
+}
 .footer-branch-label {
   overflow: hidden;
   text-overflow: ellipsis;

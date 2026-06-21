@@ -238,3 +238,23 @@ export function setThreadTitle(store: AppStore, threadId: string, title: string)
   store.setState({ threads: updated })
   store.emit('threads_changed')
 }
+
+export function setThreadGitBranch(store: AppStore, threadId: string, branch: string): void {
+  const { threads } = store.getState()
+  const updated = threads.map((t) =>
+    t.id !== threadId ? t : { ...t, gitBranch: branch, updatedAt: Date.now() },
+  )
+  store.setState({ threads: updated })
+  store.emit('threads_changed')
+}
+
+/** Bind a thread to the checked-out branch on first message; never overwrites. */
+export function bindThreadGitBranchIfUnset(
+  store: AppStore,
+  threadId: string,
+  branch: string,
+): void {
+  const thread = store.getState().threads.find((t) => t.id === threadId)
+  if (!thread || thread.gitBranch) return
+  setThreadGitBranch(store, threadId, branch)
+}

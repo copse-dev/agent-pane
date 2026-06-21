@@ -203,7 +203,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('git:fileDiff', (_e, path: string, staged: boolean) =>
     getGitFileDiff(path, staged),
   )
-  ipcMain.handle('git:branchStatus', () => getGitBranchStatus())
+  ipcMain.handle('git:branchStatus', (_e, forBranch: unknown) => {
+    const branch =
+      forBranch === undefined ? undefined : parseIpcArgs(z.string().max(256), [forBranch])
+    return getGitBranchStatus(branch)
+  })
   ipcMain.handle('shell:openExternal', (event, url: unknown) => {
     assertMainFrameSender(event, win)
     const href = parseIpcArgs(z.string().url().max(2048), [url])

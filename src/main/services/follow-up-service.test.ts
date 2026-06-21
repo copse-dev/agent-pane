@@ -6,6 +6,7 @@ import {
   ghPrHasCiFailures,
   ghPrHasMergeConflicts,
   parseGhOpenPr,
+  parseGhOpenPrList,
 } from './pr-context-service.ts'
 import { parseModelFollowUpIds } from './follow-up-service.ts'
 
@@ -77,6 +78,31 @@ describe('parseGhOpenPr', () => {
 
   it('returns null for invalid JSON', () => {
     assert.equal(parseGhOpenPr('not json'), null)
+  })
+})
+
+describe('parseGhOpenPrList', () => {
+  it('returns the first PR from a list response', () => {
+    assert.deepEqual(
+      parseGhOpenPrList(
+        JSON.stringify([
+          {
+            number: 7,
+            title: 'Feature branch PR',
+            url: 'https://github.com/org/repo/pull/7',
+          },
+        ]),
+      ),
+      {
+        number: 7,
+        title: 'Feature branch PR',
+        url: 'https://github.com/org/repo/pull/7',
+      },
+    )
+  })
+
+  it('returns null for an empty list', () => {
+    assert.equal(parseGhOpenPrList('[]'), null)
   })
 })
 

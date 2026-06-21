@@ -62,6 +62,40 @@ export function ghPrHasMergeConflicts(pr: GhPrView): boolean {
   return status === 'DIRTY' || status === 'CONFLICTING'
 }
 
+/** Parse `gh pr list --json` output for the first open PR entry. */
+export function parseGhOpenPrList(raw: string): GitOpenPr | null {
+  if (!raw.trim()) return null
+  try {
+    const list = JSON.parse(raw) as GhPrView[]
+    if (!Array.isArray(list) || list.length === 0) return null
+    const pr = list[0]!
+    if (typeof pr.number !== 'number' || !pr.url) return null
+    return {
+      number: pr.number,
+      title: pr.title?.trim() || `PR #${pr.number}`,
+      url: pr.url,
+    }
+  } catch {
+    return null
+  }
+}
+
+async function getOpenPrForBranch(branch: string): Promise<GitOpenPr | null> {
+  const ghResult = await runGh([
+    'pr',
+    'list',
+    '--head',
+    branch,
+    '--state',
+    'open',
+    '--json',
+    'number,title,url',
+    '--limit',
+    '1',
+  ])
+  return ghResult.code === 0 ? parseGhOpenPrList(ghResult.stdout) : null
+}
+
 /** Parse `gh pr view --json` output into an open PR summary, or null. */
 export function parseGhOpenPr(raw: string): GitOpenPr | null {
   if (!raw.trim()) return null
@@ -155,15 +189,20 @@ export async function getPrWorkspaceContext(): Promise<PrWorkspaceContext> {
 }
 
 /** Branch name and open PR (when `gh` is available) for the status bar. */
-export async function getGitBranchStatus(): Promise<GitBranchStatus> {
-  const empty: GitBranchStatus = { branch: null, pr: null }
+export async function getGitBranchStatus(forBranch?: string): Promise<GitBranchStatus> {
+  const empty: GitBranchStatus = { currentBranch: null, pr: null }
   if (!isGitAvailable() || !(await isInsideGitWorkTree())) return empty
 
   const branchResult = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'])
-  const branch = branchResult.code === 0 ? branchResult.stdout.trim() || null : null
+  const currentBranch = branchResult.code === 0 ? branchResult.stdout.trim() || null : null
 
-  const ghResult = await runGh(['pr', 'view', '--json', 'state,number,title,url'])
-  const pr = ghResult.code === 0 ? parseGhOpenPr(ghResult.stdout) : null
+  let pr: GitOpenPr | null = null
+  if (forBranch && forBranch !== currentBranch) {
+    pr = await getOpenPrForBranch(forBranch)
+  } else {
+    const ghResult = await runGh(['pr', 'view', '--json', 'state,number,title,url'])
+    pr = ghResult.code === 0 ? parseGhOpenPr(ghResult.stdout) : null
+  }
 
-  return { branch, pr }
+  return { currentBranch, pr }
 }

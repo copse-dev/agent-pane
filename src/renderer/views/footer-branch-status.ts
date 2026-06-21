@@ -2,6 +2,10 @@ import { el } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitBranchStatus } from '@shared/types/git.ts'
+import {
+  threadGitBranchMismatch,
+  threadGitBranchMismatchMessage,
+} from '@shared/git/thread-branch.ts'
 
 export function mountFooterBranchStatus(
   host: HTMLElement,
@@ -24,23 +28,43 @@ export function mountFooterBranchStatus(
   let status: GitBranchStatus | null = null
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
 
+  function getActiveThreadBranch(): string | undefined {
+    const id = store.getState().activeThreadId
+    const thread = store.getState().threads.find((t) => t.id === id)
+    return thread?.gitBranch
+  }
+
   function render() {
-    if (!status?.branch) {
+    const threadBranch = getActiveThreadBranch()
+    const currentBranch = status?.currentBranch ?? null
+    const displayBranch = threadBranch ?? currentBranch
+
+    if (!displayBranch) {
       root.hidden = true
       return
     }
 
+    const mismatch = threadGitBranchMismatch(threadBranch, currentBranch)
     root.hidden = false
-    if (status.pr) {
+    root.classList.toggle('is-mismatch', mismatch)
+
+    if (status?.pr) {
       label.textContent = `PR #${status.pr.number}`
-      root.title = status.pr.title
+      root.title = mismatch
+        ? `${threadGitBranchMismatchMessage(threadBranch!)} (${status.pr.title})`
+        : status.pr.title
       root.classList.add('is-link')
       root.setAttribute('aria-label', `Open pull request #${status.pr.number}`)
     } else {
-      label.textContent = status.branch
-      root.title = status.branch
+      label.textContent = displayBranch
+      root.title = mismatch ? threadGitBranchMismatchMessage(threadBranch!) : displayBranch
       root.classList.remove('is-link')
-      root.setAttribute('aria-label', `Current branch: ${status.branch}`)
+      root.setAttribute(
+        'aria-label',
+        mismatch
+          ? threadGitBranchMismatchMessage(threadBranch!)
+          : `Thread branch: ${displayBranch}`,
+      )
     }
   }
 
@@ -50,7 +74,8 @@ export function mountFooterBranchStatus(
       render()
       return
     }
-    status = await api.git.branchStatus()
+    const threadBranch = getActiveThreadBranch()
+    status = await api.git.branchStatus(threadBranch)
     render()
   }
 
@@ -66,6 +91,7 @@ export function mountFooterBranchStatus(
 
   const unsubs = [
     store.on('workspace_changed', () => void refresh()),
+    store.on('threads_changed', () => void refresh()),
     store.on('thread_status_changed', () => scheduleRefresh()),
     api.fs.onChanged(() => scheduleRefresh()),
   ]

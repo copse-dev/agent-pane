@@ -23,8 +23,8 @@ export interface GitOpenPr {
   url: string
 }
 
-/** Current branch and optional open PR for the checked-out branch. */
+/** Checked-out branch plus optional open PR (for HEAD or a named branch). */
 export interface GitBranchStatus {
-  branch: string | null
+  currentBranch: string | null
   pr: GitOpenPr | null
 }

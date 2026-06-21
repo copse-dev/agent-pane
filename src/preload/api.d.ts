@@ -148,7 +148,7 @@ export interface ApiClient {
     isAvailable: () => Promise<boolean>
     status: () => Promise<GitStatusResult | null>
     fileDiff: (path: string, staged: boolean) => Promise<GitFileDiff | null>
-    branchStatus: () => Promise<GitBranchStatus>
+    branchStatus: (forBranch?: string) => Promise<GitBranchStatus>
   }
   shell: {
     openExternal: (url: string) => Promise<void>

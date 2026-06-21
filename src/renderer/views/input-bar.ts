@@ -1,7 +1,12 @@
 import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { addMessage, setThreadStatus, clearContextSnapshot } from '@shared/store/thread-helpers.ts'
+import {
+  addMessage,
+  setThreadStatus,
+  clearContextSnapshot,
+  bindThreadGitBranchIfUnset,
+} from '@shared/store/thread-helpers.ts'
 import { initMentionPicker } from './mention-picker.ts'
 import { initSkillPicker } from './skill-picker.ts'
 import { resolveSkillInvocation } from '@shared/skills/parse-skill-invocation.ts'
@@ -22,6 +27,10 @@ import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
 import { formatThreadUsageCost } from '@shared/llm/estimate-cost.ts'
 import { mountFollowUpSuggestions } from './follow-up-suggestions.ts'
+import {
+  threadGitBranchMismatch,
+  threadGitBranchMismatchMessage,
+} from '@shared/git/thread-branch.ts'
 
 export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const chips = el('div', { class: 'attachment-chips' })
@@ -161,6 +170,15 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     const id = getActiveThreadId()
     if (!id) return
 
+    const branchStatus = await api.git.branchStatus()
+    const currentBranch = branchStatus.currentBranch
+    const thread = store.getState().threads.find((t) => t.id === id)
+    if (threadGitBranchMismatch(thread?.gitBranch, currentBranch)) {
+      textarea.setCustomValidity(threadGitBranchMismatchMessage(thread!.gitBranch!))
+      textarea.reportValidity()
+      return
+    }
+
     const skills = skillsCache ?? (await api.skills.list())
     skillsCache = skills
     const skillNames = skills.map((skill) => skill.name)
@@ -195,7 +213,6 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       fullContent = buildTextWithAttachments(text, attachedFiles, attachedTextBlocks)
     }
 
-    const thread = store.getState().threads.find((t) => t.id === id)
     const priorTodos = thread?.todos ?? []
     const payload: AgentRunPayload = { content: fullContent, invokedSkills, priorTodos }
 
@@ -208,6 +225,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     attachedTextBlocks.forEach((b) => displayParts.push(`📝 ${b.label}`))
     const imageUrls = attachedImages.map((img) => img.dataUrl)
     addMessage(store, id, 'user', displayParts.join('\n'), imageUrls.length ? imageUrls : undefined)
+    if (currentBranch) bindThreadGitBranchIfUnset(store, id, currentBranch)
     clearContextSnapshot(store, id)
     setThreadStatus(store, id, 'running')
     syncAgentActivity(store, id, false)

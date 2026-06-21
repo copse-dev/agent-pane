@@ -88,7 +88,7 @@ export interface IpcInvokeMap {
   'git:status': { args: []; result: GitStatusResult | null }
   'git:fileDiff': { args: [path: string, staged: boolean]; result: GitFileDiff | null }
   'git:isAvailable': { args: []; result: boolean }
-  'git:branchStatus': { args: []; result: GitBranchStatus }
+  'git:branchStatus': { args: [forBranch?: string]; result: GitBranchStatus }
 
   // Shell
   'shell:openExternal': { args: [url: string]; result: void }
