@@ -2,7 +2,7 @@ import { safeStorage } from 'electron'
 import ElectronStore from 'electron-store'
 import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
 
-const store = new ElectronStore({ name: 'settings' })
+const store = new ElectronStore<Record<string, unknown>>({ name: 'settings' })
 
 interface StoredKey {
   v: 1
@@ -60,5 +60,5 @@ export function getSetting<T>(key: string, fallback: T): T {
 }
 
 export function setSetting(key: string, value: unknown): void {
-  store.set(key, value as any)
+  store.set(key, value)
 }
