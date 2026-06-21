@@ -608,6 +608,17 @@ body {
   padding: 3px 10px;
   font-size: var(--font-size-sm);
 }
+.titlebar-btn-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  width: 14px;
+  height: 14px;
+}
+.titlebar-btn-icon .tree-icon-img {
+  width: 14px;
+  height: 14px;
+}
 .titlebar button,
 .titlebar input,
 .titlebar select {
