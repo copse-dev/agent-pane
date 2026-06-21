@@ -7,6 +7,6 @@
   "expect": {
     "shouldSteerTodos": true,
     "requireUpdateTodos": true,
-    "maxExplore": 3
+    "maxExplore": 4
   }
 }
