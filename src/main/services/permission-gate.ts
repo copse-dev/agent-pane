@@ -110,7 +110,11 @@ export async function ensureTerminalPermitted(): Promise<boolean> {
   })
 
   if (decision.action === 'allow') return true
-  return promptShell(INTERACTIVE_TERMINAL_COMMAND, decision.reasons)
+  return promptShell(
+    INTERACTIVE_TERMINAL_COMMAND,
+    decision.reasons,
+    shellRequiresOutsideSandbox(INTERACTIVE_TERMINAL_COMMAND, cwd, isProjectSandboxEnabled()),
+  )
 }
 
 /** Returns true when the tool call may proceed, false when the user rejected. */
