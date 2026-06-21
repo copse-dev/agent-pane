@@ -14,6 +14,7 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   write_file: 'Write file',
   str_replace: 'Replace in file',
   run_shell: 'Run command',
+  update_todos: 'Update plan',
 }
 
 const TOOL_GROUPS: Record<string, { tools: string[]; label: string }> = {

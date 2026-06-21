@@ -1,4 +1,3 @@
-import type { DiffApplyResult } from '@shared/types/diff.ts'
 import type { StreamChunk, UsageDelta } from '@shared/types'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { GitFileDiff, GitStatusResult } from '@shared/types/git.ts'
@@ -41,15 +40,15 @@ export interface ApiClient {
     onUsage: (handler: (threadId: string, usage: UsageDelta) => void) => () => void
   }
   diff: {
-    approve: (path: string) => Promise<DiffApplyResult>
+    approve: (path: string) => Promise<void>
     reject: (path: string) => Promise<void>
-    approveAll: () => Promise<DiffApplyResult[]>
+    approveAll: () => Promise<void>
     rejectAll: () => Promise<void>
     onShowDiff: (
       handler: (path: string, before: string, after: string, lang: string) => void,
     ) => () => void
     onQueued: (handler: (entries: { path: string; language: string }[]) => void) => () => void
-    onApplyFailed: (handler: (path: string, message: string) => void) => () => void
+    onConflict: (handler: (paths: string[]) => void) => () => void
   }
   approval: {
     respond: (id: string, approved: boolean, remember?: boolean) => Promise<void>

@@ -31,9 +31,9 @@ export interface IpcInvokeMap {
   }
 
   // Diff approval
-  'diff:approve': { args: [path: string]; result: import('./diff.ts').DiffApplyResult }
+  'diff:approve': { args: [path: string]; result: void }
   'diff:reject': { args: [path: string]; result: void }
-  'diff:approveAll': { args: []; result: import('./diff.ts').DiffApplyResult[] }
+  'diff:approveAll': { args: []; result: void }
   'diff:rejectAll': { args: []; result: void }
 
   // Approval gate (shell / MCP)
@@ -105,7 +105,7 @@ export interface IpcEventMap {
   ]
   'mcp:status_changed': [statuses: McpServerStatus[]]
   'diff:queued': [entries: { path: string; language: string }[]]
-  'diff:apply_failed': [path: string, message: string]
+  'diff:conflict': [paths: string[]]
   'fs:changed': [path: string, content: string | null]
   'menu:settings': []
   'theme:changed': ['light' | 'dark']

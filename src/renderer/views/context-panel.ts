@@ -153,10 +153,9 @@ export function mountContextPanel(
       })
       oldModels?.original.dispose()
       oldModels?.modified.dispose()
-      acceptBtn.onclick = async () => {
+      acceptBtn.onclick = () => {
         if (!activeDiff) return
-        const result = await api.diff.approve(activeDiff.path)
-        if (!result.ok) window.alert(result.message)
+        void api.diff.approve(activeDiff.path)
       }
       rejectBtn.onclick = () => void api.diff.reject(activeDiff.path)
     } else {

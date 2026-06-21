@@ -15,9 +15,6 @@ export function mountDiffQueuePanel(
   editorWrap.className = 'diff-editor-wrap'
   const toolbar = document.createElement('div')
   toolbar.className = 'diff-queue-toolbar'
-  const applyError = document.createElement('div')
-  applyError.className = 'diff-apply-error'
-  applyError.hidden = true
   const acceptAllBtn = document.createElement('button')
   acceptAllBtn.textContent = 'Accept all ✓'
   const rejectAllBtn = document.createElement('button')
@@ -29,19 +26,12 @@ export function mountDiffQueuePanel(
   rejectBtn.textContent = 'Reject ✕'
   rejectBtn.className = 'diff-reject-btn'
 
+  const conflictBanner = document.createElement('div')
+  conflictBanner.className = 'diff-conflict-banner'
+  conflictBanner.hidden = true
+
   toolbar.append(acceptAllBtn, rejectAllBtn)
-  root.append(toolbar, applyError, fileList, editorWrap, acceptBtn, rejectBtn)
-
-  function showApplyError(message: string) {
-    applyError.textContent = message
-    applyError.hidden = false
-  }
-
-  async function approvePath(path: string) {
-    const result = await api.diff.approve(path)
-    if (!result.ok) showApplyError(result.message)
-    else applyError.hidden = true
-  }
+  root.append(toolbar, conflictBanner, fileList, editorWrap, acceptBtn, rejectBtn)
 
   const diffEditor = monaco.editor.createDiffEditor(editorWrap, {
     readOnly: true,
@@ -79,7 +69,7 @@ export function mountDiffQueuePanel(
     })
     oldModels?.original.dispose()
     oldModels?.modified.dispose()
-    acceptBtn.onclick = () => void approvePath(path)
+    acceptBtn.onclick = () => void api.diff.approve(path)
     rejectBtn.onclick = () => void api.diff.reject(path)
   }
 
@@ -87,24 +77,30 @@ export function mountDiffQueuePanel(
   const diffData = new Map<string, { before: string; after: string; language: string }>()
   api.diff.onShowDiff((path, before, after, language) => {
     diffData.set(path, { before, after, language })
+    // A re-staged diff (e.g. after a conflict) must refresh the visible editor.
+    if (path === selectedPath) selectDiff(path)
   })
-  api.diff.onApplyFailed((_path, message) => showApplyError(message))
+  api.diff.onConflict((paths) => {
+    conflictBanner.hidden = false
+    conflictBanner.textContent =
+      paths.length === 1
+        ? `${paths[0]} changed on disk since this diff was staged. The diff was refreshed against the current file — review and re-approve to keep your changes.`
+        : `${paths.length} files changed on disk since they were staged. Their diffs were refreshed against the current files — review and re-approve.`
+    // Surface a refreshed file so the user lands on a conflicting diff.
+    if (paths[0]) selectDiff(paths[0])
+  })
   api.diff.onQueued((entries) => {
     // Remove entries that are no longer in the queue
     for (const key of diffData.keys()) {
       if (!entries.find((e) => e.path === key)) diffData.delete(key)
     }
+    if (entries.length === 0) conflictBanner.hidden = true
     store.setState({ stagedDiffs: entries })
     store.emit('staged_diffs_changed')
     renderFileList()
   })
 
-  acceptAllBtn.addEventListener('click', async () => {
-    const results = await api.diff.approveAll()
-    const failed = results.find((r) => !r.ok)
-    if (failed && !failed.ok) showApplyError(failed.message)
-    else applyError.hidden = true
-  })
+  acceptAllBtn.addEventListener('click', () => void api.diff.approveAll())
   rejectAllBtn.addEventListener('click', () => void api.diff.rejectAll())
 
   const unsub = store.on('staged_diffs_changed', renderFileList)
