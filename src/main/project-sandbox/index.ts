@@ -9,10 +9,21 @@ export {
   afterSandboxedCommand,
   isProjectSandboxEnabled,
 } from './spawn.ts'
+export {
+  gatewayReadFile,
+  gatewayWriteFile,
+  gatewayReaddir,
+  gatewayListDir,
+} from './sandbox-fs-client.ts'
 
 /**
  * Start Anthropic Sandbox Runtime for macOS project subprocesses (shell, git, rg, indexer).
  * No-op on non-macOS; falls back to unsandboxed spawns if init fails.
+ *
+ * Subprocesses inherit seatbelt filesystem rules from {@link workspaceSandboxOverlay}.
+ * When ASRT is active, renderer `fs:*` IPC is served by {@link sandbox-fs-client}
+ * (seatbelt-wrapped Node worker). `fs.watch` still uses main-process watchers; content
+ * reloads go through the same gateway.
  */
 export async function initProjectSandbox(): Promise<void> {
   if (process.platform !== 'darwin') {

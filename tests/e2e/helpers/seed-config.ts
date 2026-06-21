@@ -4,18 +4,18 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 /** Mirrors `app.setPath('userData', …)` in `src/main/app-init.ts`. */
-function agentPaneUserDataDir(): string {
+function copsePanelUserDataDir(): string {
   if (process.platform === 'darwin') {
-    return join(homedir(), 'Library', 'Application Support', 'agent-pane')
+    return join(homedir(), 'Library', 'Application Support', 'copse-panel')
   }
   if (process.platform === 'win32') {
     const appData = process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming')
-    return join(appData, 'agent-pane')
+    return join(appData, 'copse-panel')
   }
-  return join(homedir(), '.config', 'agent-pane')
+  return join(homedir(), '.config', 'copse-panel')
 }
 
-const USER_DATA = agentPaneUserDataDir()
+const USER_DATA = copsePanelUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
 const SETTINGS_PATH = join(USER_DATA, 'settings.json')
 
@@ -107,13 +107,20 @@ export function seedMarkdownListFixture(workspaceRoot: string): void {
   const projectId = 'e2e-markdown-list-project'
   const threadId = 'e2e-markdown-list-thread'
   const content = [
-    'The lint is already clean — no issues to fix. Here is the summary:',
+    '### ⚠️ Known Failures',
     '',
-    '- **Tests:** All 110 tests pass.',
-    '- **Lint:** `npm run lint` (which runs `eslint .`) exits with code 0 and reports zero errors or warnings.',
-    '- `npx eslint . --max-warnings 0`: Also exits cleanly with no violations.',
+    '**Unit tests (2 failures):**',
+    '- `terminal-service` — 2 subtests fail with posix spawnp failed',
     '',
-    'There are no lint errors in this codebase — ESLint is configured and passing.',
+    '**E2E tests (all 10 fail):**',
+    '- Every e2e test fails with listen EPERM: operation not permitted 0.0.0.0',
+    '',
+    '### 📦 Architecture Highlights',
+    '- Electron app — AI coding assistant with tool-executing agents',
+    '- No backend — Direct LLM provider calls (Anthropic, OpenAI, LM Studio)',
+    '- Mock LLM — `COPSE-PANEL-MOCK-LLM=1` enables full e2e testing without API keys',
+    '- MCP host — Per-server enable toggles in Settings',
+    '- Persistence — `electron-store` for projects, threads, settings',
   ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })
   writeFileSync(
@@ -129,6 +136,48 @@ export function seedMarkdownListFixture(workspaceRoot: string): void {
           messages: [
             {
               id: 'msg-assistant-list',
+              role: 'assistant',
+              content,
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
+export function seedMermaidDiagramFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-mermaid-project'
+  const threadId = 'e2e-mermaid-thread'
+  const content = [
+    'Here is the agent loop:',
+    '',
+    '```mermaid',
+    'graph TD',
+    '  User --> Agent',
+    '  Agent --> Tools',
+    '  Tools --> Agent',
+    '```',
+  ].join('\n')
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Mermaid diagram',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-mermaid',
               role: 'assistant',
               content,
               createdAt: Date.now(),
@@ -212,13 +261,13 @@ export function seedSubagentFixture(workspaceRoot: string): void {
                   name: 'explore',
                   args: { query: 'Find README' },
                   status: 'done',
-                  result: 'README describes agent-pane setup and dev workflow.',
+                  result: 'README describes Copse setup and dev workflow.',
                   subagent: {
                     id: 'sub-session-1',
                     kind: 'explore',
                     status: 'done',
                     prompt: 'Find README',
-                    summary: 'README describes agent-pane setup and dev workflow.',
+                    summary: 'README describes Copse setup and dev workflow.',
                     messages: [
                       {
                         id: 'sub-msg-1',
@@ -230,14 +279,14 @@ export function seedSubagentFixture(workspaceRoot: string): void {
                             name: 'read_file',
                             args: { path: 'README.md' },
                             status: 'done',
-                            result: '# Agent Pane\n',
+                            result: '# Copse\n',
                           },
                         ],
                       },
                       {
                         id: 'sub-msg-2',
                         role: 'assistant',
-                        content: 'README describes agent-pane setup and dev workflow.',
+                        content: 'README describes Copse setup and dev workflow.',
                         toolCalls: [],
                       },
                     ],
@@ -263,7 +312,7 @@ export function seedSubagentFixture(workspaceRoot: string): void {
  * as the active project. Returns the repo path so the spec can clean it up.
  */
 export function seedGitChangesFixture(): string {
-  const repoRoot = mkdtempSync(join(tmpdir(), 'agent-pane-git-'))
+  const repoRoot = mkdtempSync(join(tmpdir(), 'copse-panel-git-'))
   const git = (...args: string[]) => execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
 
   git('init', '-q')
@@ -316,6 +365,83 @@ export function cleanupGitChangesFixture(repoRoot: string): void {
   rmSync(repoRoot, { recursive: true, force: true })
 }
 
+/** Long thread so the messages list overflows and scroll-to-bottom can be exercised. */
+export function seedScrollToBottomFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-scroll-bottom-project'
+  const threadId = 'e2e-scroll-bottom-thread'
+  const messages = Array.from({ length: 24 }, (_, i) => {
+    const isUser = i % 2 === 0
+    const turn = Math.floor(i / 2) + 1
+    return {
+      id: `msg-scroll-${i}`,
+      role: isUser ? 'user' : 'assistant',
+      content: isUser
+        ? `Question ${turn}: Can you explain part ${turn} of this feature in detail?`
+        : `Answer ${turn}: Here is a detailed explanation for turn ${turn}. `.repeat(8),
+      toolCalls: [],
+      createdAt: Date.now() + i,
+    }
+  })
+
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Scroll to bottom test',
+          status: 'idle',
+          messages,
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
+/** One completed exchange plus a long history so scrolling up during streaming is meaningful. */
+export function seedScrollStreamingFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-scroll-stream-project'
+  const threadId = 'e2e-scroll-stream-thread'
+  const history = Array.from({ length: 20 }, (_, i) => {
+    const isUser = i % 2 === 0
+    const turn = Math.floor(i / 2) + 1
+    return {
+      id: `msg-history-${i}`,
+      role: isUser ? 'user' : 'assistant',
+      content: isUser ? `Earlier question ${turn}` : `Earlier answer ${turn}: `.repeat(10),
+      toolCalls: [],
+      createdAt: Date.now() + i,
+    }
+  })
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Scroll while streaming',
+          status: 'idle',
+          messages: history,
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
 export function seedToolDisplayFixture(workspaceRoot: string): void {
   const projectId = 'e2e-tool-display-project'
   const threadId = 'e2e-tool-display-thread'
@@ -341,7 +467,7 @@ export function seedToolDisplayFixture(workspaceRoot: string): void {
                   name: 'read_file',
                   args: { path: 'README.md' },
                   status: 'done',
-                  result: '# Agent Pane\n',
+                  result: '# Copse\n',
                 },
                 {
                   id: 'tc-list-1',
@@ -356,6 +482,132 @@ export function seedToolDisplayFixture(workspaceRoot: string): void {
                   args: { path: 'missing.txt' },
                   status: 'error',
                   result: 'Error: ENOENT',
+                },
+              ],
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
+/** Explore subagent thread with search-routing markdown matching semantic-search UI. */
+export function seedSemanticSearchExploreFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-semantic-search-project'
+  const threadId = 'e2e-semantic-search-thread'
+  const summary = [
+    'Here is the complete summary of how semantic search is classified, routed, and executed:',
+    '',
+    '---',
+    '',
+    "## Search Routing Summary ('search-routing.ts')",
+    '',
+    "### 1. Classification ('classifySearchQuery')",
+    '',
+    '**File:** `src/main/services/search-routing.ts`',
+    '',
+    'The router picks semantic vs grep based on query shape.',
+    '',
+    '- **Semantic path** — embedding search via `search_codebase`',
+    '- **Grep path** — ripgrep via `grep_search`',
+    '',
+    '### 2. Execution',
+    '',
+    'Let me find where this classification function is called.',
+    '',
+    '- Read `search-routing.ts`',
+    '- Search for `classifySearchQuery`',
+  ].join('\n')
+
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'copse-panel' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Mechanism Explained',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-user-1',
+              role: 'user',
+              content: 'is there semantic search',
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+            {
+              id: 'msg-assistant-1',
+              role: 'assistant',
+              content:
+                "Good find — there *is* semantic search, but it's not in the file path indexer. It's in the **agent's code search routing**. Let me explore it.",
+              toolCalls: [
+                {
+                  id: 'tc-explore-semantic',
+                  name: 'explore',
+                  args: { query: 'How is semantic search routed?' },
+                  status: 'done',
+                  result: summary,
+                  subagent: {
+                    id: 'sub-semantic-1',
+                    kind: 'explore',
+                    status: 'done',
+                    prompt: 'How is semantic search routed?',
+                    summary,
+                    messages: [
+                      {
+                        id: 'sub-msg-1',
+                        role: 'assistant',
+                        content: summary,
+                        toolCalls: [
+                          {
+                            id: 'inner-read-1',
+                            name: 'read_file',
+                            args: { path: 'src/main/services/search-routing.ts' },
+                            status: 'done',
+                            result: 'export function classifySearchQuery() {}',
+                          },
+                          {
+                            id: 'inner-search-1',
+                            name: 'search_codebase',
+                            args: { query: 'classifySearchQuery' },
+                            status: 'done',
+                            result: 'search-routing.ts:12',
+                          },
+                        ],
+                      },
+                      {
+                        id: 'sub-msg-2',
+                        role: 'assistant',
+                        content:
+                          'Let me find where this classification function is called and how semantic tools are passed in.',
+                        toolCalls: [
+                          {
+                            id: 'inner-search-2',
+                            name: 'search_codebase',
+                            args: { query: 'semantic search routing' },
+                            status: 'done',
+                            result: 'agent-service.ts:88',
+                          },
+                          {
+                            id: 'inner-read-2',
+                            name: 'read_file',
+                            args: { path: 'src/main/services/agent-service.ts' },
+                            status: 'done',
+                            result: 'const route = classifySearchQuery(query)',
+                          },
+                        ],
+                      },
+                    ],
+                  },
                 },
               ],
               createdAt: Date.now(),

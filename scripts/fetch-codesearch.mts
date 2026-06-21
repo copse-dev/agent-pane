@@ -47,7 +47,11 @@ async function extract(archivePath: string, destDir: string): Promise<void> {
     if (process.platform === 'win32') {
       execFileSync(
         'powershell',
-        ['-NoProfile', '-Command', `Expand-Archive -Force -Path '${archivePath}' -DestinationPath '${destDir}'`],
+        [
+          '-NoProfile',
+          '-Command',
+          `Expand-Archive -Force -Path '${archivePath}' -DestinationPath '${destDir}'`,
+        ],
         { stdio: 'inherit' },
       )
     } else {
@@ -102,7 +106,7 @@ async function main(): Promise<void> {
   }
 
   const url = `https://github.com/${REPO}/releases/download/${CODESEARCH_VERSION}/${asset}`
-  const tmpRoot = join(tmpdir(), `agent-pane-codesearch-${Date.now()}`)
+  const tmpRoot = join(tmpdir(), `copse-panel-codesearch-${Date.now()}`)
   const archivePath = join(tmpRoot, asset)
   const extractDir = join(tmpRoot, 'extract')
 

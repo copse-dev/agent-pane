@@ -1,52 +1,122 @@
-export function renderMarkdown(raw: string): string {
-  // Sanitise first — strip any literal HTML tags from model output
-  let s = raw.replace(/</g, '&lt;').replace(/>/g, '&gt;')
+const FENCE_RE = /```(\w*)\n([\s\S]*?)```/g
+const FENCED_BLOCK_SPLIT_RE =
+  /(<pre>[\s\S]*?<\/pre>|<div class="mermaid-diagram[^>]*>[\s\S]*?<\/div>)/
 
-  // Fenced code blocks
-  s = s.replace(
-    /```(\w*)\n([\s\S]*?)```/g,
-    (_, lang, code) => `<pre><code class="lang-${lang || 'text'}">${code.trimEnd()}</code></pre>`,
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+/** Mermaid reads arrow syntax (`-->`); only escape what can break out of `<pre>`. */
+function escapeMermaidHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+}
+
+function renderFencedBlock(lang: string, code: string): string {
+  if (lang === 'mermaid') {
+    const body = escapeMermaidHtml(code.trimEnd())
+    return `<div class="mermaid-diagram mermaid-diagram--pending"><pre class="mermaid">${body}</pre></div>`
+  }
+  const body = escapeHtml(code.trimEnd())
+  return `<pre><code class="lang-${lang || 'text'}">${body}</code></pre>`
+}
+
+function mapOutsideFencedHtml(html: string, transform: (segment: string) => string): string {
+  return html
+    .split(FENCED_BLOCK_SPLIT_RE)
+    .map((seg, i) => (i % 2 === 1 ? seg : transform(seg)))
+    .join('')
+}
+
+/** Extract fenced blocks before prose escaping so code and diagram syntax stay intact. */
+function extractFencedBlocks(raw: string): { text: string; blocks: string[] } {
+  const blocks: string[] = []
+  const text = raw.replace(FENCE_RE, (_, lang: string, code: string) => {
+    const idx = blocks.length
+    blocks.push(renderFencedBlock(lang, code))
+    return `\x00FENCE${idx}\x00`
+  })
+  return { text, blocks }
+}
+
+function restoreFencedBlocks(text: string, blocks: string[]): string {
+  return text.replace(/\x00FENCE(\d+)\x00/g, (_, i: string) => blocks[Number(i)] ?? '')
+}
+
+export function renderMarkdown(raw: string): string {
+  const { text: withPlaceholders, blocks } = extractFencedBlocks(raw)
+  let s = escapeHtml(withPlaceholders)
+  s = restoreFencedBlocks(s, blocks)
+
+  // Tables + inline/block markdown only outside fenced code and mermaid diagrams.
+  s = mapOutsideFencedHtml(s, (seg) => parseTables(seg))
+  s = mapOutsideFencedHtml(s, (seg) => {
+    let t = seg
+    t = t.replace(/`([^`]+)`/g, '<code>$1</code>')
+    t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    t = applyOutsideCode(t, /_([^_\n]+)_/g, '<em>$1</em>')
+    t = applyOutsideCode(t, /(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
+    t = t.replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    t = t.replace(/^## (.+)$/gm, '<h4>$1</h4>')
+    t = t.replace(/^# (.+)$/gm, '<h4>$1</h4>')
+    t = t.replace(/^ {0,3}(-{3,}|\*{3,}|_{3,}) *$/gm, '\n\n<hr>\n\n')
+    t = t.replace(/^(?:[-*+] )(.+)$/gm, '<li>$1</li>')
+    t = t.replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`)
+    return t
+  })
+
+  s = mapOutsideFencedHtml(s, (seg) =>
+    seg
+      .split(/\n\n+/)
+      .map((block) => wrapParagraphBlock(block))
+      .filter((block) => block !== '')
+      .join('\n'),
   )
 
-  // Tables (GFM). Parse only outside <pre> blocks so code containing pipes is
-  // left alone. Cell contents keep their markdown — inline formatting runs after.
-  s = s
-    .split(/(<pre>[\s\S]*?<\/pre>)/)
-    .map((seg, i) => (i % 2 === 1 ? seg : parseTables(seg)))
-    .join('')
-
-  // Inline code
-  s = s.replace(/`([^`]+)`/g, '<code>$1</code>')
-
-  // Bold
-  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-
-  // Italic
-  s = s.replace(/_([^_]+)_/g, '<em>$1</em>')
-
-  // Headings (h3/h4 — h1/h2 are too large in a narrow pane)
-  s = s.replace(/^### (.+)$/gm, '<h3>$1</h3>')
-  s = s.replace(/^## (.+)$/gm, '<h4>$1</h4>')
-  s = s.replace(/^# (.+)$/gm, '<h4>$1</h4>')
-
-  // Thematic breaks (---, ***, ___) — isolate as block elements before list/paragraph passes
-  s = s.replace(/^ {0,3}(-{3,}|\*{3,}|_{3,}) *$/gm, '\n\n<hr>\n\n')
-
-  // Unordered list items
-  s = s.replace(/^- (.+)$/gm, '<li>$1</li>')
-  s = s.replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`)
-
-  // Paragraphs (blank-line separated)
-  s = s
-    .split(/\n\n+/)
-    .map((block) => {
-      if (/^<(pre|ul|h[34]|table|hr)/.test(block.trim())) return block
-      if (block.trim() === '') return ''
-      return `<p>${block.replace(/\n/g, '<br>')}</p>`
-    })
-    .join('\n')
-
   return s
+}
+
+function applyOutsideCode(text: string, pattern: RegExp, replacement: string): string {
+  return text
+    .split(/(<code>[\s\S]*?<\/code>)/g)
+    .map((segment, index) => (index % 2 === 1 ? segment : segment.replace(pattern, replacement)))
+    .join('')
+}
+
+const BLOCK_START_RE = /^<(pre|ul|ol|h[34]|table|hr|div class="mermaid-diagram\b)/
+const BLOCK_CLOSE_RE = /<\/(pre|ul|ol|h[34]|table|hr|div)>$/
+const CONTAINS_BLOCK_RE = /<(ul|ol|h[34]|pre|table|hr|div class="mermaid-diagram\b)[\s>]/
+
+function splitBlockElements(block: string): string[] {
+  const lines = block.split('\n')
+  const parts: string[] = []
+  let current: string[] = []
+  for (const line of lines) {
+    const trimmed = line.trim()
+    const prev = current[current.length - 1]?.trim() ?? ''
+    if (BLOCK_START_RE.test(trimmed) && current.length > 0) {
+      parts.push(current.join('\n'))
+      current = [line]
+    } else if (prev && BLOCK_CLOSE_RE.test(prev) && trimmed && !BLOCK_START_RE.test(trimmed)) {
+      parts.push(current.join('\n'))
+      current = [line]
+    } else {
+      current.push(line)
+    }
+  }
+  if (current.length > 0) parts.push(current.join('\n'))
+  return parts
+}
+
+function wrapParagraphBlock(block: string): string {
+  const trimmed = block.trim()
+  if (trimmed === '') return ''
+  if (BLOCK_START_RE.test(trimmed)) return block
+  if (CONTAINS_BLOCK_RE.test(trimmed)) {
+    return splitBlockElements(block)
+      .map((part) => wrapParagraphBlock(part))
+      .join('\n')
+  }
+  return `<p>${block.replace(/\n/g, '<br>')}</p>`
 }
 
 function splitRow(line: string): string[] {

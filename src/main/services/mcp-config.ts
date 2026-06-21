@@ -5,7 +5,7 @@ import type { McpServerConfig, McpTransportKind } from '@shared/types/mcp.ts'
  *
  * Two on-disk shapes are accepted:
  *   1. Standard `mcpServers` object (Cursor / Claude Desktop / Claude Code).
- *   2. Legacy agent-pane `{ servers: [{ name, command, args, env }] }` array.
+ *   2. Legacy copse-panel `{ servers: [{ name, command, args, env }] }` array.
  */
 
 interface RawStdioOrHttp {
@@ -17,7 +17,6 @@ interface RawStdioOrHttp {
   headers?: unknown
   type?: unknown
   disabled?: unknown
-  trusted?: unknown
 }
 
 interface LegacyServerEntry extends RawStdioOrHttp {
@@ -80,7 +79,6 @@ function normalizeOne(
     name: trimmedName,
     transport,
     disabled: raw.disabled === true,
-    trusted: raw.trusted === true,
     ...(source !== undefined ? { source } : {}),
   }
 
@@ -129,7 +127,7 @@ export function parseMcpConfig(rawText: string, source?: string): McpConfigParse
       if (cfg) servers.push(cfg)
     }
   } else if (Array.isArray(parsed.servers)) {
-    // Legacy agent-pane shape.
+    // Legacy copse-panel shape.
     for (const entry of parsed.servers) {
       if (!entry || typeof entry !== 'object' || typeof entry.name !== 'string') {
         errors.push('Legacy server entry missing a string "name".')

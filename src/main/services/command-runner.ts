@@ -20,8 +20,8 @@ export function runCommand(
         const spawnOpts: Parameters<typeof spawnInProjectSandbox>[2] = {
           cwd,
           stdio: 'pipe',
-          unsandboxed: opts.unsandboxed,
         }
+        if (opts.unsandboxed !== undefined) spawnOpts.unsandboxed = opts.unsandboxed
         if (opts.signal) spawnOpts.signal = opts.signal
         const proc = await spawnInProjectSandbox(cmd, args, spawnOpts)
         let stdout = '',

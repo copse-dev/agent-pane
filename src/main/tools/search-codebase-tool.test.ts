@@ -19,7 +19,7 @@ describe('search_codebase tool', () => {
   let registry: ToolRegistry
 
   beforeEach(async () => {
-    tempRoot = await mkdtemp(join(tmpdir(), 'agent-pane-search-codebase-'))
+    tempRoot = await mkdtemp(join(tmpdir(), 'copse-panel-search-codebase-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
     await writeFile(join(tempRoot, 'auth.ts'), 'export function authenticate() {}\n', 'utf-8')
     registry = new ToolRegistry()

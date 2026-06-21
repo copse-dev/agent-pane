@@ -18,7 +18,7 @@ interface McpStatus {
 }
 
 async function makeWorkspace(mcpConfig: unknown): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'agent-pane-mcp-'))
+  const root = await mkdtemp(join(tmpdir(), 'copse-panel-mcp-'))
   await mkdir(join(root, '.cursor'), { recursive: true })
   await writeFile(join(root, '.cursor', 'mcp.json'), JSON.stringify(mcpConfig), 'utf8')
   return root
@@ -33,7 +33,7 @@ async function launch(workspaceRoot: string, env: Record<string, string> = {}) {
     args: ['dist/main/index.js', '--disable-gpu'],
     env: {
       ...process.env,
-      AGENT_WINDOW_MOCK_LLM: '1',
+      COPSE_PANEL_MOCK_LLM: '1',
       ANTHROPIC_API_KEY: '',
       OPENAI_API_KEY: '',
       ...env,
@@ -74,7 +74,7 @@ test.describe('MCP validation', () => {
 
   test('agent calls an MCP tool through chat and the result is shown', async () => {
     const ws = await makeWorkspace({
-      mcpServers: { mock: stdioServerEntry({ trusted: true }) },
+      mcpServers: { mock: stdioServerEntry() },
     })
     await seedProjectConfig(ws, { projectId: 'mcp-chat', threadId: 'mcp-chat-t' })
     const app = await launch(ws)
@@ -86,6 +86,11 @@ test.describe('MCP validation', () => {
         .locator('.prompt-input')
         .fill('echo this for me [[mcp:mcp__mock__echo {"text":"hello from MCP"}]]')
       await win.locator('.submit-btn').click()
+
+      // External MCP tools require approval before running.
+      const dialog = win.locator('#approval-dialog')
+      await expect(dialog).toBeVisible({ timeout: 15_000 })
+      await dialog.locator('.approval-approve').click()
 
       const toolCard = win.locator('.tool-card').first()
       await expect(toolCard.locator('.tool-name')).toHaveText('mock: Echo', { timeout: 15_000 })

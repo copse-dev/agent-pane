@@ -1,6 +1,6 @@
-# agent-pane
+# Copse
 
-Electron desktop app: chat with an LLM that can use tools (read/write/search files, shell, git, MCP) against opened project folders. UI includes conversation, file tree, Monaco editor, tool approvals, and a pending-diff queue.
+Electron desktop app (`copse-panel`): chat with an LLM that can use tools (read/write/search files, shell, git, MCP) against opened project folders. UI includes conversation, file tree, Monaco editor, tool approvals, and a pending-diff queue.
 
 Requires Node ≥ 22.
 
@@ -13,6 +13,16 @@ Requires Node ≥ 22.
 | `npm start`     | Run built app                 |
 | `npm test`      | Unit tests                    |
 | `npm run check` | typecheck, lint, format, test |
+
+your `.gitignore` (this repo already does).
+
+## Shell command permissions
+
+When the macOS project sandbox (seatbelt) is active, shell commands run inside that
+confinement first. On other platforms, Copse uses a **regex heuristic** (`analyzeShellCommand`)
+plus an optional local safety model to decide whether to auto-run or prompt — this is a UX
+hint, not a security boundary (substitution, encoding, and uncommon tools can bypass it).
+Approve external commands explicitly when sandboxing is off.
 
 ## Layout
 

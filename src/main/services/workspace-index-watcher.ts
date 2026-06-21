@@ -19,7 +19,7 @@ export function startWorkspaceIndexWatcher(root: string): void {
       scheduleIndexRebuild()
     })
   } catch (err) {
-    console.warn('[agent-pane] workspace index watcher unavailable:', err)
+    console.warn('[copse-panel] workspace index watcher unavailable:', err)
   }
 }
 
@@ -43,7 +43,7 @@ export function scheduleIndexRebuild(): void {
     rebuildInFlight = Promise.all([buildIndex(root), updateSemanticIndex(root)])
       .then(() => {})
       .catch((err) => {
-        console.warn('[agent-pane] workspace index rebuild failed:', err)
+        console.warn('[copse-panel] workspace index rebuild failed:', err)
       })
   }, REBUILD_DEBOUNCE_MS)
 }
