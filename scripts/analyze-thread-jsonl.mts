@@ -31,7 +31,9 @@ type JsonlRecord = {
     name: string
     status?: string
     args?: Record<string, unknown>
-    subagent?: { messages?: Array<{ toolCalls?: Array<{ name: string; args?: Record<string, unknown> }> }> }
+    subagent?: {
+      messages?: Array<{ toolCalls?: Array<{ name: string; args?: Record<string, unknown> }> }>
+    }
   }>
   usage?: { inputTokens?: number; outputTokens?: number }
   title?: string
@@ -111,7 +113,9 @@ function analyze(path: string, scenario?: Scenario): void {
   const violations: string[] = []
   const exp = scenario?.expect
   if (exp?.shouldSteerTodos === true && !steer) {
-    violations.push('expected shouldSteerTodos true for user message (check scenario prompt vs heuristic)')
+    violations.push(
+      'expected shouldSteerTodos true for user message (check scenario prompt vs heuristic)',
+    )
   }
   if (exp?.shouldSteerTodos === false && steer) {
     violations.push('shouldSteerTodos was true but scenario expected false')
@@ -153,7 +157,9 @@ function analyze(path: string, scenario?: Scenario): void {
     assistantTurns: assistants.length,
     finalAnswerChars: finalText.length,
     subagentReadCount: reads.length,
-    duplicateReadPaths: dupPaths.slice(0, 15).map(([p, ex]) => ({ path: p, count: ex.length, explores: [...new Set(ex)] })),
+    duplicateReadPaths: dupPaths
+      .slice(0, 15)
+      .map(([p, ex]) => ({ path: p, count: ex.length, explores: [...new Set(ex)] })),
     violations,
     pass: violations.length === 0,
   }

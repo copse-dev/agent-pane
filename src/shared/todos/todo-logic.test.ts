@@ -76,10 +76,7 @@ describe('todo-logic', () => {
       shouldSteerTodos('Refactor the renderer across several files and then run tests'),
       true,
     )
-    assert.equal(
-      shouldSteerTodos('Can you deep dive into reviewing the todo creation part?'),
-      true,
-    )
+    assert.equal(shouldSteerTodos('Can you deep dive into reviewing the todo creation part?'), true)
     assert.equal(shouldSteerTodos('Please review the authentication module'), true)
   })
 
