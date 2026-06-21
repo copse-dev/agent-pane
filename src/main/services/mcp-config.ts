@@ -17,7 +17,6 @@ interface RawStdioOrHttp {
   headers?: unknown
   type?: unknown
   disabled?: unknown
-  trusted?: unknown
 }
 
 interface LegacyServerEntry extends RawStdioOrHttp {
@@ -80,7 +79,6 @@ function normalizeOne(
     name: trimmedName,
     transport,
     disabled: raw.disabled === true,
-    trusted: raw.trusted === true,
     ...(source !== undefined ? { source } : {}),
   }
 
