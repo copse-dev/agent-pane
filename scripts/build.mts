@@ -23,6 +23,11 @@ await esbuild.build({
 })
 await esbuild.build({
   ...nodeOpts,
+  entryPoints: ['src/main/project-sandbox/sandbox-fs-worker.ts'],
+  outfile: 'dist/main/sandbox-fs-worker.js',
+})
+await esbuild.build({
+  ...nodeOpts,
   entryPoints: ['src/preload/index.ts'],
   outfile: 'dist/preload/index.js',
 })

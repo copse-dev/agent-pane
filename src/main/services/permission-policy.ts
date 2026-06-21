@@ -41,7 +41,7 @@ export function decideShellPermission(
   }
 
   const analysis = analyzeShellCommand(command, opts.workspaceRoot)
-
+  // Heuristic only — see shell-scope.ts; macOS seatbelt is the real boundary when enabled.
   // With macOS seatbelt active, always try inside the project sandbox first.
   // If the command needs broader access, shell-tool offers a separate unsandboxed retry prompt.
   if (opts.sandboxEnabled) {
