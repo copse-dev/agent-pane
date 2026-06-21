@@ -92,29 +92,10 @@ async function checkShellPermission(args: unknown): Promise<boolean> {
   )
 }
 
-const INTERACTIVE_TERMINAL_COMMAND = 'exec $SHELL'
-
-/** Gate renderer terminal sessions with the same shell policy as run_shell. */
+/** Integrated terminal is a direct user UI action; PTY always runs outside seatbelt (#180). */
 export async function ensureTerminalPermitted(): Promise<boolean> {
-  const cwd = getWorkspaceRoot()
-  if (!cwd) throw new Error('No workspace open.')
-
-  const decision = decideShellPermission(INTERACTIVE_TERMINAL_COMMAND, {
-    workspaceRoot: cwd,
-    sandboxEnabled: isProjectSandboxEnabled(),
-    autoRun: getSetting<boolean>('autoRunSandboxCommands', true),
-    classification: isProjectSandboxEnabled()
-      ? null
-      : await classifyShellScope(INTERACTIVE_TERMINAL_COMMAND),
-    confidenceThreshold: getSetting<number>('lmStudioSafetyConfidenceThreshold', 0.85),
-  })
-
-  if (decision.action === 'allow') return true
-  return promptShell(
-    INTERACTIVE_TERMINAL_COMMAND,
-    decision.reasons,
-    shellRequiresOutsideSandbox(INTERACTIVE_TERMINAL_COMMAND, cwd, isProjectSandboxEnabled()),
-  )
+  if (!getWorkspaceRoot()) throw new Error('No workspace open.')
+  return true
 }
 
 /** Returns true when the tool call may proceed, false when the user rejected. */
