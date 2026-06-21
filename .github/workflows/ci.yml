@@ -1,5 +1,13 @@
 name: CI
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -14,4 +22,19 @@ jobs:
       - run: npm run format:check
       - run: npm test
       - run: npm run build
-      - run: npm run test:e2e
+      # The Electron/Chromedriver e2e session occasionally fails to start on the
+      # runner ("DevToolsActivePort file doesn't exist" / "POST /session" timeout).
+      # The hang wedges the whole wdio run, so in-process retries don't recover —
+      # only a fresh xvfb+Electron launch does. Retry the entire command instead.
+      - name: e2e smoke (retry on flaky session startup)
+        run: |
+          for attempt in 1 2 3; do
+            echo "::group::e2e attempt $attempt"
+            if npm run test:e2e:ci; then
+              echo "::endgroup::"
+              exit 0
+            fi
+            echo "::endgroup::"
+            echo "e2e attempt $attempt failed"
+          done
+          exit 1

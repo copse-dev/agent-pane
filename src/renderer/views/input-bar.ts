@@ -192,7 +192,9 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       fullContent = buildTextWithAttachments(text, attachedFiles, attachedTextBlocks)
     }
 
-    const payload: AgentRunPayload = { content: fullContent, invokedSkills }
+    const thread = store.getState().threads.find((t) => t.id === id)
+    const priorTodos = thread?.todos ?? []
+    const payload: AgentRunPayload = { content: fullContent, invokedSkills, priorTodos }
 
     // Record the user's message in the conversation and mark the thread running
     // before dispatching to the agent — the controller only adds assistant
