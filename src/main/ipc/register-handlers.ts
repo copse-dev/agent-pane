@@ -145,20 +145,18 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const k = parseIpcArgs(zNonEmptyString.max(128), [key])
     return getSetting(k, null)
   })
-  ipcMain.handle('settings:set', (event, key: unknown, value: unknown) => {
+  ipcMain.handle('settings:set', async (event, key: unknown, value: unknown) => {
     assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(128), [key])
     if (!isRendererWritableSettingKey(k)) {
       throw new IpcValidationError(`Setting key not writable from renderer: ${k}`)
     }
-    setSetting(k, parseRendererWritableSetting(k, value))
+    await setSetting(k, parseRendererWritableSetting(k, value))
   })
-  ipcMain.handle('settings:setSecurity', (event, raw: unknown) => {
+  ipcMain.handle('settings:setSecurity', async (event, raw: unknown) => {
     assertMainFrameSender(event, win)
     const prefs = securitySettingsSchema.parse(raw)
-    for (const [k, v] of Object.entries(prefs)) {
-      setSetting(k, v)
-    }
+    await Promise.all(Object.entries(prefs).map(([k, v]) => setSetting(k, v)))
   })
   ipcMain.handle('settings:getKey', (_e, provider: unknown) => {
     const p = parseIpcArgs(providerSchema, [provider])
@@ -224,7 +222,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return statuses
   })
   ipcMain.handle('mcp:setEnabled', async (_e, name: string, enabled: boolean) => {
-    setMcpServerUserEnabled(name, enabled)
+    await setMcpServerUserEnabled(name, enabled)
     const statuses = await reloadMcpServers(registry)
     win.webContents.send('mcp:status_changed', statuses)
     return statuses

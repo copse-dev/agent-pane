@@ -10,7 +10,8 @@ import { z } from 'zod'
 import type { McpServerConfig, McpServerStatus, McpToolAnnotations } from '@shared/types/mcp.ts'
 import type { ToolRegistry } from './tool-registry.ts'
 import { getWorkspaceRoot } from './workspace.ts'
-import { storageGet, storageSet } from './storage.ts'
+import { storageGet, storageUpdate } from './storage.ts'
+import { parseStringList } from './storage-schema.ts'
 import {
   interpolateServerConfig,
   mcpToolName,
@@ -27,21 +28,21 @@ const GRANTS_STORAGE_KEY = 'mcp-remembered-grants'
 const USER_DISABLED_KEY = 'mcpDisabledServers'
 
 function getUserDisabledServerNames(): Set<string> {
-  const raw = storageGet(USER_DISABLED_KEY)
-  if (!Array.isArray(raw)) return new Set()
-  return new Set(raw.filter((n): n is string => typeof n === 'string' && n.length > 0))
+  return new Set(parseStringList(storageGet(USER_DISABLED_KEY)))
 }
 
-function persistUserDisabledServerNames(names: Set<string>): void {
-  storageSet(USER_DISABLED_KEY, [...names].sort())
-}
-
-/** Turn a server on/off from Settings without editing mcp.json (stored in app userData). */
-export function setMcpServerUserEnabled(name: string, enabled: boolean): void {
-  const disabled = getUserDisabledServerNames()
-  if (enabled) disabled.delete(name)
-  else disabled.add(name)
-  persistUserDisabledServerNames(disabled)
+/**
+ * Turn a server on/off from Settings without editing mcp.json (stored in app
+ * userData). Read-modify-write is serialized so two concurrent toggles can't
+ * drop each other's change.
+ */
+export function setMcpServerUserEnabled(name: string, enabled: boolean): Promise<void> {
+  return storageUpdate(USER_DISABLED_KEY, (raw) => {
+    const disabled = new Set(parseStringList(raw))
+    if (enabled) disabled.delete(name)
+    else disabled.add(name)
+    return [...disabled].sort()
+  })
 }
 
 interface ActiveServer {
@@ -72,16 +73,19 @@ export function getMcpToolMeta(toolName: string): McpToolMeta | undefined {
 }
 
 export function isMcpToolRemembered(toolName: string): boolean {
-  const grants = storageGet(GRANTS_STORAGE_KEY)
-  return Array.isArray(grants) && grants.includes(toolName)
+  return parseStringList(storageGet(GRANTS_STORAGE_KEY)).includes(toolName)
 }
 
-export function rememberMcpTool(toolName: string): void {
-  const grants = storageGet(GRANTS_STORAGE_KEY)
-  const list = Array.isArray(grants) ? (grants as string[]) : []
-  if (!list.includes(toolName)) {
-    storageSet(GRANTS_STORAGE_KEY, [...list, toolName])
-  }
+/**
+ * Persist a remembered permission grant. Serialized read-modify-write so two
+ * tools granted at once can't drop one grant; the validated read also discards
+ * any corrupt/non-string entries already on disk.
+ */
+export function rememberMcpTool(toolName: string): Promise<void> {
+  return storageUpdate(GRANTS_STORAGE_KEY, (raw) => {
+    const list = parseStringList(raw)
+    return list.includes(toolName) ? list : [...list, toolName]
+  })
 }
 
 async function readConfigFile(path: string): Promise<McpServerConfig[]> {
