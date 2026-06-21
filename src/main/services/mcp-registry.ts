@@ -234,6 +234,10 @@ async function teardown(registry: ToolRegistry): Promise<void> {
 }
 
 export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
+  if (process.env.COPSE_AGENT_EVAL === '1') {
+    serverStatuses = []
+    return
+  }
   const generation = ++loadGeneration
   const configs = await collectConfigs()
   if (generation !== loadGeneration) return // superseded while reading config

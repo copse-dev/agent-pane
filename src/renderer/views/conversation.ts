@@ -12,6 +12,7 @@ import {
   getToolDisplayName,
   type ToolCallDisplayItem,
 } from '@shared/tools/tool-display.ts'
+import { createTodoListEl } from './todo-panel.ts'
 
 function statusIcon(status: ToolCall['status']): string {
   return status === 'done' ? '✓' : status === 'error' ? '✕' : '⋯'
@@ -218,6 +219,7 @@ const USER_SCROLL_UP_DEBOUNCE_MS = 150
 
 export function mountConversation(root: HTMLElement, store: AppStore): () => void {
   const scrollArea = el('div', { class: 'conversation-scroll' })
+  const todoHost = el('div', { class: 'conversation-todos-host' })
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
   const scrollToBottomBtn = el(
     'button',
@@ -229,7 +231,7 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
     },
     '↓',
   )
-  scrollArea.append(list, scrollToBottomBtn)
+  scrollArea.append(todoHost, list, scrollToBottomBtn)
 
   const activityBar = el('div', { class: 'agent-activity', role: 'status', 'aria-live': 'polite' })
   const activityLabel = el('span', { class: 'agent-activity-label' })
@@ -383,6 +385,14 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
     scrollToBottom(msg.role === 'user')
   }
 
+  function syncTodoPanel() {
+    todoHost.replaceChildren()
+    const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
+    if (thread?.todos?.length) {
+      todoHost.append(createTodoListEl(thread.todos, { compact: true }))
+    }
+  }
+
   function rebuildForThread() {
     pinnedToBottom = true
     userScrolledUpAt = 0
@@ -390,6 +400,7 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
     clear(list)
     const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
     thread?.messages.forEach((m) => appendMessageEl(store.getState().activeThreadId!, m.id))
+    syncTodoPanel()
     updateScrollButton()
   }
 
@@ -434,6 +445,11 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
     store.on('threads_changed', () => {
       rebuildForThread()
       syncFromStore()
+    }),
+    store.on('todos_changed', () => {
+      syncTodoPanel()
+      syncFromStore()
+      scrollToBottom()
     }),
     store.on('thread_status_changed', (tid, status) => {
       if (tid !== store.getState().activeThreadId) return

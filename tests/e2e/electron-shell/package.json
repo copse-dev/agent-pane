@@ -1,4 +1,4 @@
 {
   "name": "copse-panel-e2e-shell",
-  "main": "../../../dist/main/index.js"
+  "main": "bootstrap.cjs"
 }
