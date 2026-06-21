@@ -1,5 +1,12 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import {
+  APP_ICON_VARIANTS,
+  APP_ICON_VARIANT_LABELS,
+  DEFAULT_APP_ICON_VARIANT,
+  isAppIconVariant,
+  type AppIconVariant,
+} from '@shared/app-icon-variants.ts'
 import { populateLocalModelSelect, populateModelSelect } from './model-options.ts'
 
 type SettingsSection = 'general' | 'local-models' | 'mcp' | 'appearance'
@@ -186,15 +193,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Auto-run MCP tools the server flags as read-only
               </label>
               <p class="field-hint">
-                Destructive tools always prompt. Servers marked <code>"trusted": true</code> in config
-                bypass approval entirely.
+                Destructive tools always prompt. Other tools prompt once; choose “always allow” to
+                remember a specific tool.
               </p>
             </fieldset>
           </section>
 
           <section class="settings-section" data-section="appearance">
             <h3>Appearance</h3>
-            <p class="settings-section-desc">Theme and editor font size.</p>
+            <p class="settings-section-desc">Theme, app icon, and editor font size.</p>
 
             <fieldset>
               <legend>Display</legend>
@@ -209,6 +216,25 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Font size
                 <input type="number" name="fontSize" min="12" max="20" step="1" />
               </label>
+            </fieldset>
+
+            <fieldset>
+              <legend>App icon</legend>
+              <p class="settings-fieldset-desc">
+                Choose the icon shown in the Dock, taskbar, and window title bar.
+              </p>
+              <div class="app-icon-picker" role="radiogroup" aria-label="App icon">
+                ${APP_ICON_VARIANTS.map(
+                  (variant) => `
+                <label class="app-icon-option">
+                  <input type="radio" name="appIconVariant" value="${variant}" />
+                  <span class="app-icon-preview">
+                    <img src="./icon-previews/${variant}.png" alt="" width="64" height="64" />
+                  </span>
+                  <span class="app-icon-label">${APP_ICON_VARIANT_LABELS[variant]}</span>
+                </label>`,
+                ).join('')}
+              </div>
             </fieldset>
           </section>
 
@@ -332,7 +358,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       const title = document.createElement('div')
       title.className = 'mcp-server-summary'
-      title.textContent = `${s.name} (${s.transport})${s.trusted ? ' · trusted' : ''} — ${badge}`
+      title.textContent = `${s.name} (${s.transport}) — ${badge}`
 
       header.append(toggleLabel, title)
       row.append(header)
@@ -408,6 +434,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         store.getState().fontSize,
       )
 
+      const savedIconVariant = (await api.settings.get('appIconVariant')) as unknown
+      const appIconVariant = isAppIconVariant(savedIconVariant)
+        ? savedIconVariant
+        : DEFAULT_APP_ICON_VARIANT
+      const iconRadio = form.querySelector<HTMLInputElement>(
+        `input[name="appIconVariant"][value="${appIconVariant}"]`,
+      )
+      if (iconRadio) iconRadio.checked = true
+
       const lmUrl = (await api.settings.get('lmStudioUrl')) as string | undefined
       const lmSmallEnabled = (await api.settings.get('lmStudioForSmallTasks')) as
         | boolean
@@ -462,12 +497,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const model = data.get('model') as string
       const theme = data.get('theme') as 'light' | 'dark'
       const fontSize = parseInt(data.get('fontSize') as string, 10)
+      const appIconVariant = data.get('appIconVariant') as AppIconVariant
       const confidence = parseFloat(data.get('lmStudioSafetyConfidenceThreshold') as string)
 
       await api.settings.set('model', model)
       await api.settings.set('theme', theme)
       await api.settings.set('fontSize', fontSize)
-      await api.settings.set('lmStudioUrl', (data.get('lmStudioUrl') as string).trim())
+      if (isAppIconVariant(appIconVariant)) {
+        await api.settings.set('appIconVariant', appIconVariant)
+        await api.appIcon.apply()
+      }
       await api.settings.set('lmStudioModel', (data.get('lmStudioModel') as string).trim())
       await api.settings.set(
         'lmStudioSmallTasksModel',
@@ -479,17 +518,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       )
       await api.settings.set('lmStudioForSmallTasks', data.get('lmStudioForSmallTasks') === 'on')
       await api.settings.set('lmStudioForSubagents', data.get('lmStudioForSubagents') === 'on')
-      await api.settings.set(
-        'lmStudioSafetyModel',
-        (data.get('lmStudioSafetyModel') as string).trim(),
-      )
-      await api.settings.set('lmStudioSafetyEnabled', data.get('lmStudioSafetyEnabled') === 'on')
-      await api.settings.set(
-        'lmStudioSafetyConfidenceThreshold',
-        Number.isFinite(confidence) ? confidence : 0.85,
-      )
-      await api.settings.set('autoRunSandboxCommands', data.get('autoRunSandboxCommands') === 'on')
-      await api.settings.set('mcpAutoAllowReadOnly', data.get('mcpAutoAllowReadOnly') === 'on')
+      await api.settings.setSecurity({
+        lmStudioUrl: (data.get('lmStudioUrl') as string).trim(),
+        lmStudioSafetyModel: (data.get('lmStudioSafetyModel') as string).trim(),
+        lmStudioSafetyEnabled: data.get('lmStudioSafetyEnabled') === 'on',
+        lmStudioSafetyConfidenceThreshold: Number.isFinite(confidence) ? confidence : 0.85,
+        autoRunSandboxCommands: data.get('autoRunSandboxCommands') === 'on',
+        mcpAutoAllowReadOnly: data.get('mcpAutoAllowReadOnly') === 'on',
+      })
 
       store.setState({ theme, fontSize, settings: { ...store.getState().settings, model } })
       store.emit('theme_changed', theme)

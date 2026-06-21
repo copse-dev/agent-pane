@@ -1,12 +1,17 @@
 import type { BrowserWindow } from 'electron'
 import { ipcMain } from 'electron'
 import { randomUUID } from 'node:crypto'
+import {
+  approvalRespondSchema,
+  assertMainFrameSender,
+  IpcValidationError,
+  parseIpcArgs,
+} from '../ipc/ipc-guards.ts'
 
 export interface ApprovalRequest {
   title: string
   body: string
   type: 'shell' | 'mcp'
-  /** Show an "always allow" checkbox (used for MCP tools). */
   allowRemember?: boolean
 }
 
@@ -20,9 +25,16 @@ let mainWindow: BrowserWindow | null = null
 
 export function initApproval(win: BrowserWindow): void {
   mainWindow = win
-  ipcMain.handle('approval:respond', (_e, id: string, approved: boolean, remember?: boolean) => {
-    pending.get(id)?.({ approved, remember: remember === true })
-    pending.delete(id)
+  ipcMain.handle('approval:respond', (event, ...rawArgs) => {
+    try {
+      assertMainFrameSender(event, win)
+      const [id, approved, remember] = parseIpcArgs(approvalRespondSchema, rawArgs)
+      pending.get(id)?.({ approved, remember: remember === true })
+      pending.delete(id)
+    } catch (err) {
+      if (err instanceof IpcValidationError) return
+      throw err
+    }
   })
 }
 
