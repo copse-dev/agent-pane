@@ -1912,6 +1912,15 @@ label {
   padding: var(--spacing-sm);
   border-bottom: 1px solid var(--border);
 }
+.diff-conflict-banner {
+  padding: var(--spacing-sm);
+  margin: var(--spacing-sm);
+  border: 1px solid var(--warning, #c2410c);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--warning, #c2410c) 12%, transparent);
+  color: var(--text);
+  font-size: var(--font-size-sm);
+}
 .diff-file-list {
   width: 200px;
   border-right: 1px solid var(--border);
