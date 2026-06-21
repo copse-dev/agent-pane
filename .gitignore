@@ -34,3 +34,4 @@ mcp.json
 
 # Claude Code local agent worktrees (linked checkouts)
 .claude/worktrees/
+dist-test-iso/
