@@ -3,9 +3,13 @@ import { getWorkspaceRoot } from './workspace.ts'
 import { isGitAvailable } from './tool-availability.ts'
 import { isInsideGitWorkTree } from './git-service.ts'
 import type { PrWorkspaceContext } from '@shared/follow-ups/types.ts'
+import type { GitBranchStatus, GitOpenPr } from '@shared/types/git.ts'
 
 interface GhPrView {
   state?: string
+  number?: number
+  title?: string
+  url?: string
   mergeable?: string
   mergeStateStatus?: string
   statusCheckRollup?: Array<{
@@ -58,17 +62,76 @@ export function ghPrHasMergeConflicts(pr: GhPrView): boolean {
   return status === 'DIRTY' || status === 'CONFLICTING'
 }
 
+/** Parse `gh pr list --json` output for the first open PR entry. */
+export function parseGhOpenPrList(raw: string): GitOpenPr | null {
+  if (!raw.trim()) return null
+  try {
+    const list = JSON.parse(raw) as GhPrView[]
+    if (!Array.isArray(list) || list.length === 0) return null
+    const pr = list[0]!
+    if (typeof pr.number !== 'number' || !pr.url) return null
+    return {
+      number: pr.number,
+      title: pr.title?.trim() || `PR #${pr.number}`,
+      url: pr.url,
+    }
+  } catch {
+    return null
+  }
+}
+
+async function getOpenPrForBranch(branch: string): Promise<GitOpenPr | null> {
+  const ghResult = await runGh([
+    'pr',
+    'list',
+    '--head',
+    branch,
+    '--state',
+    'open',
+    '--json',
+    'number,title,url',
+    '--limit',
+    '1',
+  ])
+  return ghResult.code === 0 ? parseGhOpenPrList(ghResult.stdout) : null
+}
+
+/** Parse `gh pr view --json` output into an open PR summary, or null. */
+export function parseGhOpenPr(raw: string): GitOpenPr | null {
+  if (!raw.trim()) return null
+  try {
+    const pr = JSON.parse(raw) as GhPrView
+    if (pr.state !== 'OPEN') return null
+    if (typeof pr.number !== 'number' || !pr.url) return null
+    return {
+      number: pr.number,
+      title: pr.title?.trim() || `PR #${pr.number}`,
+      url: pr.url,
+    }
+  } catch {
+    return null
+  }
+}
+
 async function runGit(args: string[]): Promise<{ stdout: string; code: number }> {
   const cwd = getWorkspaceRoot()
   if (!cwd) return { stdout: '', code: 1 }
-  const { stdout, code } = await runCommand('git', args, { cwd })
+  const pathPrefix = process.platform === 'win32' ? '' : '/usr/bin:/bin:'
+  const { stdout, code } = await runCommand('git', args, {
+    cwd,
+    env: { PATH: `${pathPrefix}${process.env.PATH ?? ''}` },
+  })
   return { stdout, code }
 }
 
 async function runGh(args: string[]): Promise<{ stdout: string; code: number }> {
   const cwd = getWorkspaceRoot()
   if (!cwd) return { stdout: '', code: 1 }
-  const { stdout, code } = await runCommand('gh', args, { cwd })
+  const pathPrefix = process.platform === 'win32' ? '' : '/usr/bin:/bin:/exec-daemon:'
+  const { stdout, code } = await runCommand('gh', args, {
+    cwd,
+    env: { PATH: `${pathPrefix}${process.env.PATH ?? ''}` },
+  })
   return { stdout, code }
 }
 
@@ -131,4 +194,24 @@ export async function getPrWorkspaceContext(): Promise<PrWorkspaceContext> {
     hasCiFailures,
     changeStats,
   }
+}
+
+/** Branch name and open PR (when `gh` is available) for the status bar. */
+export async function getGitBranchStatus(forBranch?: string): Promise<GitBranchStatus> {
+  const empty: GitBranchStatus = { currentBranch: null, pr: null }
+  if (!getWorkspaceRoot()) return empty
+
+  const branchResult = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'])
+  const currentBranch = branchResult.code === 0 ? branchResult.stdout.trim() || null : null
+  if (!currentBranch) return empty
+
+  let pr: GitOpenPr | null = null
+  if (forBranch && forBranch !== currentBranch) {
+    pr = await getOpenPrForBranch(forBranch)
+  } else {
+    const ghResult = await runGh(['pr', 'view', '--json', 'state,number,title,url'])
+    pr = ghResult.code === 0 ? parseGhOpenPr(ghResult.stdout) : null
+  }
+
+  return { currentBranch, pr }
 }
