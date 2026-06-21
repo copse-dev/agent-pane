@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { LLMProvider, LLMMessage, LLMTool, StreamChunk } from '@shared/types'
-import { anthropicMaxOutputTokens } from './model-metadata.ts'
+import { anthropicMaxOutputTokens } from './model-catalog.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 
 export class AnthropicProvider implements LLMProvider {
