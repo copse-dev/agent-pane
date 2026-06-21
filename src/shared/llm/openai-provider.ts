@@ -50,6 +50,7 @@ export class OpenAIProvider implements LLMProvider {
         )
 
         const toolCallBuilders = new Map<number, { id: string; name: string; argsJson: string }>()
+        let finishReason: string | undefined
 
         for await (const event of stream) {
           if (event.usage) {
@@ -80,7 +81,10 @@ export class OpenAIProvider implements LLMProvider {
             }
           }
 
-          if (event.choices[0]?.finish_reason === 'tool_calls') {
+          const reason = event.choices[0]?.finish_reason
+          if (reason) finishReason = reason
+
+          if (reason === 'tool_calls') {
             for (const [, builder] of toolCallBuilders) {
               let args: unknown = {}
               try {
@@ -93,7 +97,7 @@ export class OpenAIProvider implements LLMProvider {
             toolCallBuilders.clear()
           }
         }
-        yield { type: 'done' }
+        yield finishReason ? { type: 'done', stopReason: finishReason } : { type: 'done' }
       },
       { ...(signal ? { signal } : {}) },
     )

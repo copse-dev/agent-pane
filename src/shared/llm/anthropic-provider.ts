@@ -31,7 +31,17 @@ export class AnthropicProvider implements LLMProvider {
           {
             model,
             max_tokens: maxTokens,
-            ...(systemMsg ? { system: systemMsg.content as string } : {}),
+            ...(systemMsg
+              ? {
+                  system: [
+                    {
+                      type: 'text' as const,
+                      text: systemMsg.content as string,
+                      cache_control: { type: 'ephemeral' as const },
+                    },
+                  ],
+                }
+              : {}),
             messages: apiMessages,
             tools: tools.map((t) => ({
               name: t.name,
@@ -92,7 +102,7 @@ export class AnthropicProvider implements LLMProvider {
             text: '\n\n(Response stopped: model output limit reached.)',
           }
         }
-        yield { type: 'done' }
+        yield stopReason ? { type: 'done', stopReason } : { type: 'done' }
       },
       { ...(signal ? { signal } : {}) },
     )

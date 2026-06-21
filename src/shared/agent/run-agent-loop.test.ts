@@ -183,6 +183,44 @@ describe('runAgentLoop', () => {
     )
   })
 
+  it('surfaces refusal when provider reports stopReason refusal', async () => {
+    const chunks: StreamChunk[] = []
+    await runAgentLoop({
+      provider: mockProvider([[{ type: 'done', stopReason: 'refusal' }]]),
+      messages: [{ role: 'user', content: 'hello' }],
+      tools: [],
+      onChunk: (c) => chunks.push(c),
+      executeTool: async (_name, _args, _signal, _toolCallId) => '',
+    })
+    assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('declined')))
+  })
+
+  it('continues after max_tokens truncation with partial text', async () => {
+    let calls = 0
+    const provider: LLMProvider = {
+      async *stream() {
+        calls++
+        if (calls === 1) {
+          yield { type: 'text', text: 'partial ' }
+          yield { type: 'done', stopReason: 'max_tokens' }
+        } else {
+          yield { type: 'text', text: 'answer' }
+          yield { type: 'done', stopReason: 'end_turn' }
+        }
+      },
+    }
+    const chunks: StreamChunk[] = []
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'hello' }],
+      tools: [],
+      onChunk: (c) => chunks.push(c),
+      executeTool: async (_name, _args, _signal, _toolCallId) => '',
+    })
+    assert.equal(calls, 2)
+    assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('answer')))
+  })
+
   it('adds cancelled tool results when aborted mid-batch', async () => {
     const controller = new AbortController()
     const messages = [{ role: 'user', content: 'go' }] as const
