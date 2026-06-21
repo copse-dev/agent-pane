@@ -3,7 +3,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
 import { renderMarkdown } from '../markdown/renderer.ts'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
-import { renderStreamingMarkdown } from '../markdown/streaming.ts'
+import { StreamingMarkdownRenderer } from '../markdown/streaming.ts'
 import { stripTextToolCallBlocks } from '@shared/agent/parse-text-tool-calls.ts'
 import type { ToolCall } from '@shared/types'
 import { agentActivityLabel } from '../agent-activity.ts'
@@ -92,11 +92,28 @@ function createInnerToolCard(tc: ToolCall): HTMLElement {
   return entry
 }
 
+// Per-message incremental renderers for the active streaming pass. Keyed by the
+// `.message-text` element so re-entrant token events reuse the same DOM regions
+// instead of rebuilding the whole message innerHTML each token (O(n²)).
+const streamingRenderers = new WeakMap<HTMLElement, StreamingMarkdownRenderer>()
+
 function setAssistantMarkdown(el: HTMLElement, content: string, streaming: boolean): void {
   const display = assistantDisplayText(content)
-  el.innerHTML = streaming ? renderStreamingMarkdown(display) : renderMarkdown(display)
+  if (streaming) {
+    let renderer = streamingRenderers.get(el)
+    if (!renderer) {
+      renderer = new StreamingMarkdownRenderer(el)
+      streamingRenderers.set(el, renderer)
+    }
+    renderer.update(display)
+    attachCodeBlockCopyButtons(el)
+    return
+  }
+  // Final render: replace the incremental scaffold with the finished markdown.
+  streamingRenderers.delete(el)
+  el.innerHTML = renderMarkdown(display)
   attachCodeBlockCopyButtons(el)
-  if (!streaming) void renderMermaidIn(el)
+  void renderMermaidIn(el)
 }
 
 function createSubagentMessageEl(content: string, streaming: boolean): HTMLElement {

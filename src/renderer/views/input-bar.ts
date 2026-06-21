@@ -304,7 +304,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   }
   const unregisterAttachments = registerPromptAttachments(attachmentHandlers)
 
-  document.addEventListener('paste', (e) => {
+  const onPaste = (e: ClipboardEvent) => {
     const items = Array.from(e.clipboardData?.items ?? [])
     const img = items.find((i) => i.type.startsWith('image/'))
     if (img) {
@@ -320,7 +320,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     if (!isTextBlockAttachment(text)) return
     e.preventDefault()
     addTextChip(text)
-  })
+  }
+  document.addEventListener('paste', onPaste)
 
   const unbindDrop = bindFileDropTarget(
     root,
@@ -340,7 +341,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   refreshSkillsCache()
   // Skills are workspace-scoped; drop the stale list when the workspace changes
   // so inline /skill detection and validation use the new workspace's skills.
-  store.on('workspace_changed', () => {
+  const unsubWorkspace = store.on('workspace_changed', () => {
     skillsCache = null
     refreshSkillsCache()
   })
@@ -380,6 +381,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   updateFooter()
   return () => {
     unsubs.forEach((u) => u())
+    unsubWorkspace()
+    document.removeEventListener('paste', onPaste)
     observer.disconnect()
     followUps.destroy()
     unbindDrop()
