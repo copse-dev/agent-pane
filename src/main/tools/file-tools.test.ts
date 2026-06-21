@@ -6,10 +6,18 @@ import { tmpdir } from 'node:os'
 import { ToolRegistry, setPermissionGateForTests } from '../services/tool-registry.ts'
 import { readFileTool, listDirTool, LIST_DIR_MAX_ENTRIES } from './file-tools.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
-import {
-  clearAgentRunReadFileLimits,
-  setAgentRunReadFileLimitsExplicit,
-} from '../services/agent-run-read-limits.ts'
+import { runWithAgentRunReadFileLimits } from '../services/agent-run-read-limits.ts'
+
+const TEST_READ_LIMITS = { maxLines: 150, maxChars: 12_000 }
+
+function runTool(
+  registry: ToolRegistry,
+  name: string,
+  args: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<string> {
+  return runWithAgentRunReadFileLimits(TEST_READ_LIMITS, () => registry.execute(name, args, signal))
+}
 
 describe('file tools', () => {
   let tempRoot = ''
@@ -19,7 +27,6 @@ describe('file tools', () => {
   beforeEach(async () => {
     tempRoot = await mkdtemp(join(tmpdir(), 'copse-panel-file-tools-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
-    setAgentRunReadFileLimitsExplicit({ maxLines: 150, maxChars: 12_000 })
     registry = new ToolRegistry()
     registry.register(readFileTool)
     registry.register(listDirTool)
@@ -28,14 +35,14 @@ describe('file tools', () => {
 
   afterEach(async () => {
     setPermissionGateForTests(null)
-    clearAgentRunReadFileLimits()
     restoreWorkspace?.()
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
   })
 
   it('read_file strips UTF-8 BOM and normalizes CRLF', async () => {
     await writeFile(join(tempRoot, 'bom.txt'), '\ufeffline1\r\nline2\r\n', 'utf8')
-    const result = await registry.execute(
+    const result = await runTool(
+      registry,
       'read_file',
       { path: 'bom.txt' },
       new AbortController().signal,
@@ -49,7 +56,8 @@ describe('file tools', () => {
     for (let i = 0; i < LIST_DIR_MAX_ENTRIES + 5; i++) {
       await writeFile(join(tempRoot, 'many', `f-${i}.txt`), 'x', 'utf8')
     }
-    const result = await registry.execute(
+    const result = await runTool(
+      registry,
       'list_dir',
       { path: 'many' },
       new AbortController().signal,
@@ -65,7 +73,8 @@ describe('file tools', () => {
     await mkdir(join(tempRoot, 'linked'), { recursive: true })
     await symlink(outside, join(tempRoot, 'linked', 'escape'))
     try {
-      const result = await registry.execute(
+      const result = await runTool(
+        registry,
         'list_dir',
         { path: 'linked', recursive: true },
         new AbortController().signal,
