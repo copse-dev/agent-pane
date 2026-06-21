@@ -3,6 +3,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { OpenFile } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { renderMarkdown } from '../markdown/renderer.ts'
+import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 
@@ -53,11 +54,16 @@ export function mountContextPanel(
     sourceBtn.classList.toggle('is-active', markdownViewMode === 'source')
   }
 
+  function renderMarkdownPreview(content: string): void {
+    previewContainer.innerHTML = renderMarkdown(content)
+    void renderMermaidIn(previewContainer)
+  }
+
   previewBtn.addEventListener('click', () => {
     markdownViewMode = 'preview'
     const model = fileEditor.getModel()
     if (model && !model.isDisposed()) {
-      previewContainer.innerHTML = renderMarkdown(model.getValue())
+      renderMarkdownPreview(model.getValue())
     }
     syncToolbarActive()
     previewContainer.hidden = false
@@ -128,7 +134,7 @@ export function mountContextPanel(
       if (!md) lastMarkdownPath = null
 
       if (md && markdownViewMode === 'preview') {
-        previewContainer.innerHTML = renderMarkdown(openFile.content)
+        renderMarkdownPreview(openFile.content)
         previewContainer.hidden = false
         fileContainer.hidden = true
       } else {
@@ -193,7 +199,7 @@ export function mountContextPanel(
         model.setValue(content)
       }
       if (markdownViewMode === 'preview' && !previewContainer.hidden) {
-        previewContainer.innerHTML = renderMarkdown(content)
+        renderMarkdownPreview(content)
       }
     })()
   })
