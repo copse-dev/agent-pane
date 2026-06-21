@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { BrowserWindow } from 'electron'
 import type { IPty } from 'node-pty'
 import { spawnPtyInProjectSandbox } from '../project-sandbox/index.ts'
+import { envForRendererChildProcess } from './child-process-env.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 
 export interface TerminalSession {
@@ -43,6 +44,7 @@ async function spawnShell(
     cols,
     rows,
     cwd: sessionCwd(),
+    env: envForRendererChildProcess(),
     unsandboxed: true,
   })
 
