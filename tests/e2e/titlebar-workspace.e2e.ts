@@ -34,6 +34,8 @@ describe('titlebar workspace name', () => {
     await expect(newThreadBtn).toBeDisplayed()
     await newThreadBtn.click()
     await expect($('.chat-row.selected .chat-title')).toHaveText('New Thread')
+    await $('.pane-chat.composer-centered').waitForExist({ timeout: 10_000 })
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'new-thread-composer-centered.png'))
 
     await newThreadBtn.click()
     const blankRows = await $$('.chats-list .chat-row .chat-title')
