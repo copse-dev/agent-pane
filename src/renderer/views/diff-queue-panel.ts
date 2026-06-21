@@ -26,8 +26,12 @@ export function mountDiffQueuePanel(
   rejectBtn.textContent = 'Reject ✕'
   rejectBtn.className = 'diff-reject-btn'
 
+  const conflictBanner = document.createElement('div')
+  conflictBanner.className = 'diff-conflict-banner'
+  conflictBanner.hidden = true
+
   toolbar.append(acceptAllBtn, rejectAllBtn)
-  root.append(toolbar, fileList, editorWrap, acceptBtn, rejectBtn)
+  root.append(toolbar, conflictBanner, fileList, editorWrap, acceptBtn, rejectBtn)
 
   const diffEditor = monaco.editor.createDiffEditor(editorWrap, {
     readOnly: true,
@@ -73,12 +77,24 @@ export function mountDiffQueuePanel(
   const diffData = new Map<string, { before: string; after: string; language: string }>()
   api.diff.onShowDiff((path, before, after, language) => {
     diffData.set(path, { before, after, language })
+    // A re-staged diff (e.g. after a conflict) must refresh the visible editor.
+    if (path === selectedPath) selectDiff(path)
+  })
+  api.diff.onConflict((paths) => {
+    conflictBanner.hidden = false
+    conflictBanner.textContent =
+      paths.length === 1
+        ? `${paths[0]} changed on disk since this diff was staged. The diff was refreshed against the current file — review and re-approve to keep your changes.`
+        : `${paths.length} files changed on disk since they were staged. Their diffs were refreshed against the current files — review and re-approve.`
+    // Surface a refreshed file so the user lands on a conflicting diff.
+    if (paths[0]) selectDiff(paths[0])
   })
   api.diff.onQueued((entries) => {
     // Remove entries that are no longer in the queue
     for (const key of diffData.keys()) {
       if (!entries.find((e) => e.path === key)) diffData.delete(key)
     }
+    if (entries.length === 0) conflictBanner.hidden = true
     store.setState({ stagedDiffs: entries })
     store.emit('staged_diffs_changed')
     renderFileList()

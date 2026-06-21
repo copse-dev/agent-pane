@@ -1,0 +1,11 @@
+{
+  "id": "todo-steer-review-diff",
+  "description": "Review + code changes ask — steer heuristic matches; git_diff required; todos optional.",
+  "prompts": [
+    "Can you review the current code changes and todo feature then propose any changes that might be needed?"
+  ],
+  "expect": {
+    "shouldSteerTodos": true,
+    "requireTools": ["git_diff"]
+  }
+}

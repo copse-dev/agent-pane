@@ -164,4 +164,35 @@ describe('runAgentLoop', () => {
       ),
     )
   })
+
+  it('nudges to close open todos before finalize', async () => {
+    const chunks: StreamChunk[] = []
+    let nudgeText = ''
+    const provider: LLMProvider = {
+      async *stream(messages) {
+        const last = messages.at(-1)
+        if (
+          last &&
+          'content' in last &&
+          typeof last.content === 'string' &&
+          last.content.includes('open todos')
+        ) {
+          nudgeText = last.content
+          yield { type: 'text', text: 'All todos done.' }
+        }
+        yield { type: 'done' }
+      },
+    }
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'big task' }],
+      tools: [],
+      maxSteps: 1,
+      getOpenTodos: () => [{ id: '1', content: 'Pending step', status: 'pending' }],
+      onChunk: (c) => chunks.push(c),
+      executeTool: async () => '',
+    })
+    assert.match(nudgeText, /open todos/)
+    assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('All todos done')))
+  })
 })
