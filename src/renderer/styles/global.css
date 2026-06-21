@@ -789,6 +789,45 @@ label {
 .message-text {
   white-space: pre-wrap;
   word-break: break-word;
+  line-height: 1.55;
+}
+.message-text p {
+  margin: 0;
+}
+.message-text p + p,
+.message-text p + ul,
+.message-text p + ol,
+.message-text ul + p,
+.message-text ol + p,
+.message-text h3 + p,
+.message-text h4 + p,
+.message-text p + h3,
+.message-text p + h4 {
+  margin-top: var(--spacing-sm);
+}
+.message-text h3,
+.message-text h4 {
+  margin: var(--spacing-md) 0 var(--spacing-xs);
+  font-weight: 600;
+  line-height: 1.35;
+}
+.message-text > :first-child,
+.message-text h3:first-child,
+.message-text h4:first-child {
+  margin-top: 0;
+}
+.message-text ul,
+.message-text ol {
+  /* Global reset zeros list padding; restore a readable hanging indent. */
+  margin: var(--spacing-sm) 0;
+  padding-inline-start: 1.5em;
+  list-style-position: outside;
+}
+.message-text:empty {
+  display: none;
+}
+.msg-assistant:has(.tool-card) + .msg-assistant {
+  margin-block-start: calc(-1 * var(--spacing-xs));
 }
 .message-images {
   display: flex;
@@ -880,14 +919,11 @@ label {
 .message-text tbody tr:nth-child(even) td {
   background: rgba(255, 255, 255, 0.02);
 }
-.message-text ul,
-.message-text ol {
-  /* Global reset zeros list padding; restore a readable hanging indent. */
-  padding-inline-start: 1.5em;
-  list-style-position: outside;
-}
 .message-text li + li {
-  margin-top: var(--spacing-xs);
+  margin-top: var(--spacing-sm);
+}
+.message-text li > :first-child {
+  margin-top: 0;
 }
 .message-text hr {
   border: none;
@@ -1131,9 +1167,15 @@ label {
   color: var(--text-muted);
 }
 .tool-args pre {
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-muted);
   margin-top: var(--spacing-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow: auto;
 }
 .tool-card-subagent .subagent-summary-preview {
   font-size: var(--font-size-sm);

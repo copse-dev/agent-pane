@@ -2,6 +2,7 @@ import { BrowserWindow, screen } from 'electron'
 import { join } from 'node:path'
 import { getAppIcon } from '../app-icon.ts'
 import { getSetting, setSetting } from '../services/settings.ts'
+import { attachWebContentsLockdown } from './web-contents-lockdown.ts'
 
 let mainWin: BrowserWindow | null = null
 
@@ -64,6 +65,7 @@ export function createMainWindow(): BrowserWindow {
     },
   })
   mainWin = win
+  attachWebContentsLockdown(win.webContents)
   win.once('ready-to-show', () => win.show())
   // Fallback: if ready-to-show somehow never fires, force-show so the window
   // can never get stuck invisible.

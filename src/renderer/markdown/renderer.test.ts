@@ -34,6 +34,36 @@ describe('renderMarkdown', () => {
     assert.match(html, /<li>beta<\/li>/)
   })
 
+  it('renders ordered lists with continuation paragraphs grouped into items', () => {
+    const html = renderMarkdown(
+      [
+        "Here's a summary of the three changed files:",
+        '',
+        '1. `src/main/foo.ts`',
+        '',
+        'Introduces **foo** handling.',
+        '',
+        '2. `src/main/bar.ts`',
+        '',
+        'Worker thread for bar.',
+      ].join('\n'),
+    )
+    assert.match(html, /<p>Here's a summary of the three changed files:<\/p>/)
+    assert.match(html, /<ol>/)
+    assert.match(
+      html,
+      /<li><code>src\/main\/foo\.ts<\/code><br><br>Introduces <strong>foo<\/strong> handling\.<\/li>/,
+    )
+    assert.match(html, /<li><code>src\/main\/bar\.ts<\/code><br><br>Worker thread for bar\.<\/li>/)
+    assert.doesNotMatch(html, /<p>1\./)
+    assert.doesNotMatch(html, /<p>2\./)
+  })
+
+  it('renders consecutive ordered items in one block', () => {
+    const html = renderMarkdown('1. alpha\n2. beta')
+    assert.match(html, /<ol><li>alpha<\/li><li>beta<\/li><\/ol>/)
+  })
+
   it('keeps lists and headings outside paragraph wrappers', () => {
     const html = renderMarkdown(
       '### Section\n\n**Subheading:**\n- first\n\n**Other:**\n- second\n\n### Next\n- third',
