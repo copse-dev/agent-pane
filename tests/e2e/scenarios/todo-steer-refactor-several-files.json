@@ -1,0 +1,11 @@
+{
+  "id": "todo-steer-refactor-several-files",
+  "description": "Explicit several-files refactor — complex heuristic.",
+  "prompts": [
+    "Refactor todo verification across several files so shell parsing uses a real lexer, then run typecheck."
+  ],
+  "expect": {
+    "shouldSteerTodos": true,
+    "requireUpdateTodos": true
+  }
+}

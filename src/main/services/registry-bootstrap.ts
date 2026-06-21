@@ -10,6 +10,7 @@ import { runShellTool } from '../tools/shell-tool.ts'
 import { writeFileTool } from '../tools/write-file-tool.ts'
 import { exploreTool } from '../tools/explore-tool.ts'
 import { readSkillTool } from '../tools/read-skill-tool.ts'
+import { updateTodosTool } from '../tools/todo-tool.ts'
 import { listSkills } from './skills-registry.ts'
 import { getSetting } from './settings.ts'
 
@@ -27,6 +28,7 @@ export function createRegistry(): ToolRegistry {
   registry.register(gitLogTool)
   registry.register(runShellTool)
   registry.register(exploreTool)
+  registry.register(updateTodosTool)
   return registry
 }
 
