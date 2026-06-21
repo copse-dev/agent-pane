@@ -32,6 +32,11 @@ export function invalidateIndex(): void {
   index = null
 }
 
+/** Test hook — install a fixed file index without scanning a workspace. */
+export function setIndexForTest(paths: string[] | null): void {
+  index = paths ? { paths, lastBuilt: Date.now() } : null
+}
+
 async function walkPaths(root: string, dir: string): Promise<string[]> {
   const paths: string[] = []
   const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => [])

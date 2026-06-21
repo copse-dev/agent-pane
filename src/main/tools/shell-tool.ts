@@ -17,6 +17,7 @@ import {
   CappedOutputAccumulator,
   stripTerminalControlSequences,
 } from '../services/subprocess-output-cap.ts'
+import { terminateProcessTree } from '../services/subprocess-kill.ts'
 
 interface ShellRunResult {
   output: string
@@ -51,6 +52,7 @@ async function runShellOnce(
 
       const outputAcc = new CappedOutputAccumulator()
       let settled = false
+      let cancelKill: (() => void) | undefined
       const stream = (data: Buffer) => {
         const toStream = outputAcc.append(data.toString())
         if (toStream) win?.webContents.send('agent:shell_output', toStream)
@@ -58,10 +60,22 @@ async function runShellOnce(
       proc.stdout?.on('data', stream)
       proc.stderr?.on('data', stream)
 
+      const onAbort = () => {
+        clearTimeout(timer)
+        cancelKill = terminateProcessTree(proc)
+      }
+
+      const cleanup = () => {
+        clearTimeout(timer)
+        cancelKill?.()
+        signal.removeEventListener('abort', onAbort)
+      }
+
       const timer = setTimeout(() => {
-        proc.kill('SIGKILL')
+        cancelKill = terminateProcessTree(proc)
         if (!settled) {
           settled = true
+          signal.removeEventListener('abort', onAbort)
           reject(new Error(`Command timed out after ${timeout_ms}ms`))
         }
       }, timeout_ms)
@@ -71,7 +85,7 @@ async function runShellOnce(
       }
 
       proc.on('error', (err) => {
-        clearTimeout(timer)
+        cleanup()
         finish()
         if (!settled) {
           settled = true
@@ -80,17 +94,14 @@ async function runShellOnce(
       })
 
       proc.on('close', (code) => {
-        clearTimeout(timer)
+        cleanup()
         finish()
         if (settled) return
         settled = true
         resolve({ output: outputAcc.toString(), exitCode: code ?? 0 })
       })
 
-      signal.addEventListener('abort', () => {
-        clearTimeout(timer)
-        proc.kill('SIGKILL')
-      })
+      signal.addEventListener('abort', onAbort)
     })()
   })
 }
