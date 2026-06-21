@@ -67,7 +67,10 @@ When the user asks an open-ended question (review, explain, validate, summarize)
 When modifying files:
 1. Use explore to understand the file before changing it
 2. Use write_file to propose changes — the user sees a diff and must approve
-3. Do not assume file content; always explore before writing`
+3. Do not assume file content; always explore before writing
+4. Generated code must be runnable: include the imports, dependencies, and wiring it needs to run
+5. Propose edits with write_file rather than pasting large code blocks into the chat
+6. If the same error persists after two attempts to fix it, stop and ask the user instead of trying again`
 
 const BASE_SYSTEM_PROMPT_DIRECT_READS = `You are a coding assistant with access to the user's local workspace.
 
@@ -94,7 +97,19 @@ When the user asks an open-ended question (review, explain, validate, summarize)
 When modifying files:
 1. Read the file first
 2. Use write_file to propose changes — the user sees a diff and must approve
-3. Do not assume file content; always read before writing`
+3. Do not assume file content; always read before writing
+4. Generated code must be runnable: include the imports, dependencies, and wiring it needs to run
+5. Propose edits with write_file rather than pasting large code blocks into the chat
+6. If the same error persists after two attempts to fix it, stop and ask the user instead of trying again`
+
+// Optional steering, toggled by the `externalApiSafety` setting. Kept short and
+// appended near the top of the system prompt so it sits ahead of workspace- and
+// user-supplied instructions.
+const EXTERNAL_API_SAFETY_BLOCK = `
+
+When adding code that calls an external API or pulls in a dependency:
+- Choose a package or API version compatible with the project; check the existing manifest/lockfile before picking one.
+- Never hardcode, commit, or log secrets or API keys. Read them from environment variables or the project's existing config/secret store.`
 
 const DEFAULT_LM_STUDIO_URL = 'http://localhost:1234/v1'
 
@@ -251,13 +266,17 @@ export async function runAgent(
   const subagentUsageModel = subagentRoute?.usageModel ?? model
 
   const basePrompt = subagentsEnabled ? BASE_SYSTEM_PROMPT : BASE_SYSTEM_PROMPT_DIRECT_READS
+  const externalApiSafety = getSetting<boolean>('externalApiSafety', true)
+  const customInstructions = getSetting<string>('customInstructions', '').trim()
   const systemPrompt =
     basePrompt
       .replace('{SKILLS_TOOLS_LINE}', skillsToolsLine)
       .replace('{WORKSPACE_ROOT}', getWorkspaceRoot() ?? '(none)') +
+    (externalApiSafety ? EXTERNAL_API_SAFETY_BLOCK : '') +
     buildSkillsCatalogBlock() +
     (await buildInvokedSkillsBlock(invokedSkills)) +
     buildSemanticSearchPromptBlock() +
+    (customInstructions ? `\n\n---\n\n## Custom instructions\n\n${customInstructions}` : '') +
     (projectInstructions ? `\n\n---\n\n## Project instructions\n\n${projectInstructions}` : '')
 
   const messages: LLMMessage[] = [

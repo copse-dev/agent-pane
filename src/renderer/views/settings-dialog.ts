@@ -74,6 +74,30 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <select name="model"></select>
               </label>
             </fieldset>
+
+            <fieldset>
+              <legend>Agent behavior</legend>
+              <label>
+                Custom instructions
+                <textarea
+                  name="customInstructions"
+                  rows="4"
+                  placeholder="Always-on guidance added to every conversation (e.g. preferred style, conventions)."
+                ></textarea>
+                <span class="field-hint">
+                  Appended to the system prompt for every thread. A project <code>AGENT.md</code> adds
+                  per-project instructions on top of this.
+                </span>
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="externalApiSafety" />
+                External-API safety steering
+              </label>
+              <p class="field-hint">
+                Reminds the agent to pick compatible dependency versions and never hardcode or log
+                secrets when adding API calls.
+              </p>
+            </fieldset>
           </section>
 
           <section class="settings-section" data-section="local-models">
@@ -429,6 +453,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         api,
         model ?? 'claude-sonnet-4-6',
       )
+      const customInstructions = (await api.settings.get('customInstructions')) as
+        | string
+        | undefined
+      ;(form.elements.namedItem('customInstructions') as HTMLTextAreaElement).value =
+        customInstructions ?? ''
+      const externalApiSafety = (await api.settings.get('externalApiSafety')) as boolean | undefined
+      ;(form.elements.namedItem('externalApiSafety') as HTMLInputElement).checked =
+        externalApiSafety ?? true
       ;(form.elements.namedItem('theme') as HTMLSelectElement).value = store.getState().theme
       ;(form.elements.namedItem('fontSize') as HTMLInputElement).value = String(
         store.getState().fontSize,
@@ -501,6 +533,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const confidence = parseFloat(data.get('lmStudioSafetyConfidenceThreshold') as string)
 
       await api.settings.set('model', model)
+      await api.settings.set(
+        'customInstructions',
+        (data.get('customInstructions') as string).trim(),
+      )
+      await api.settings.set('externalApiSafety', data.get('externalApiSafety') === 'on')
       await api.settings.set('theme', theme)
       await api.settings.set('fontSize', fontSize)
       if (isAppIconVariant(appIconVariant)) {

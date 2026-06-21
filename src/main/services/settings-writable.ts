@@ -17,6 +17,8 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   skillsEnabled: z.boolean(),
   skillPluginPaths: z.array(z.string().max(4096)).max(64),
   subagentsEnabled: z.boolean(),
+  externalApiSafety: z.boolean(),
+  customInstructions: z.string().max(8192),
 } as const satisfies Record<string, z.ZodType>
 
 export type RendererWritableSettingKey = keyof typeof RENDERER_WRITABLE_SETTING_SCHEMAS
