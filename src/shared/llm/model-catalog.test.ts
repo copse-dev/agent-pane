@@ -1,7 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  ANTHROPIC_MAX_OUTPUT_TOKENS,
   CLOUD_MODELS,
   anthropicMaxOutputTokens,
   getModelInfo,
@@ -20,11 +19,12 @@ describe('model catalog', () => {
     )
   })
 
-  it('exposes positive prices and a positive context window for every entry', () => {
+  it('exposes positive prices, context window, and max output tokens for every entry', () => {
     for (const [model, info] of Object.entries(MODEL_CATALOG)) {
       assert.ok(info.inputPricePerMTok > 0, `${model}: inputPricePerMTok must be > 0`)
       assert.ok(info.outputPricePerMTok > 0, `${model}: outputPricePerMTok must be > 0`)
       assert.ok(info.contextWindow > 0, `${model}: contextWindow must be > 0`)
+      assert.ok(info.maxOutputTokens > 0, `${model}: maxOutputTokens must be > 0`)
     }
   })
 
@@ -50,16 +50,14 @@ describe('model catalog', () => {
     assert.throws(() => inferCloudModelProvider('llama-3'), /Unknown cloud model provider/)
   })
 
-  it('exposes Anthropic max output tokens for Sonnet and Opus', () => {
-    assert.equal(
-      anthropicMaxOutputTokens('claude-sonnet-4-6'),
-      ANTHROPIC_MAX_OUTPUT_TOKENS['claude-sonnet-4-6'],
-    )
-    assert.equal(
-      anthropicMaxOutputTokens('claude-opus-4-8'),
-      ANTHROPIC_MAX_OUTPUT_TOKENS['claude-opus-4-8'],
-    )
-    assert.equal(anthropicMaxOutputTokens('claude-haiku-4-5'), 8192)
+  it('returns the catalog maxOutputTokens for tracked Claude models', () => {
+    for (const model of TRACKED_MODELS) {
+      if (!model.startsWith('claude')) continue
+      assert.equal(anthropicMaxOutputTokens(model), MODEL_CATALOG[model]?.maxOutputTokens)
+    }
+  })
+
+  it('falls back to 8192 max output for unknown Anthropic models', () => {
     assert.equal(anthropicMaxOutputTokens('claude-unknown'), 8192)
   })
 })

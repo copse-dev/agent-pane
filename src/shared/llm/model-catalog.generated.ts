@@ -6,12 +6,38 @@ export interface CatalogEntry {
   inputPricePerMTok: number
   outputPricePerMTok: number
   contextWindow: number
+  maxOutputTokens: number
 }
 
 export const MODEL_CATALOG: Record<string, CatalogEntry> = {
-  'claude-haiku-4-5': { inputPricePerMTok: 1, outputPricePerMTok: 5, contextWindow: 200000 },
-  'claude-opus-4-8': { inputPricePerMTok: 5, outputPricePerMTok: 25, contextWindow: 1000000 },
-  'claude-sonnet-4-6': { inputPricePerMTok: 3, outputPricePerMTok: 15, contextWindow: 1000000 },
-  'gpt-4o': { inputPricePerMTok: 2.5, outputPricePerMTok: 10, contextWindow: 128000 },
-  'gpt-4o-mini': { inputPricePerMTok: 0.15, outputPricePerMTok: 0.6, contextWindow: 128000 },
+  'claude-haiku-4-5': {
+    inputPricePerMTok: 1,
+    outputPricePerMTok: 5,
+    contextWindow: 200000,
+    maxOutputTokens: 64000,
+  },
+  'claude-opus-4-8': {
+    inputPricePerMTok: 5,
+    outputPricePerMTok: 25,
+    contextWindow: 1000000,
+    maxOutputTokens: 128000,
+  },
+  'claude-sonnet-4-6': {
+    inputPricePerMTok: 3,
+    outputPricePerMTok: 15,
+    contextWindow: 1000000,
+    maxOutputTokens: 64000,
+  },
+  'gpt-4o': {
+    inputPricePerMTok: 2.5,
+    outputPricePerMTok: 10,
+    contextWindow: 128000,
+    maxOutputTokens: 16384,
+  },
+  'gpt-4o-mini': {
+    inputPricePerMTok: 0.15,
+    outputPricePerMTok: 0.6,
+    contextWindow: 128000,
+    maxOutputTokens: 16384,
+  },
 }

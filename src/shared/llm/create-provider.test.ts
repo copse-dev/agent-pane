@@ -1,15 +1,15 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import Anthropic from '@anthropic-ai/sdk'
-import { anthropicMaxOutputTokens, ANTHROPIC_MAX_OUTPUT_TOKENS } from './model-catalog.ts'
+import { anthropicMaxOutputTokens, getModelInfo } from './model-catalog.ts'
 import { isRetryableStreamError, streamRetryDelayMs } from './stream-retry.ts'
 import { createProvider } from './create-provider.ts'
 
 describe('anthropicMaxOutputTokens', () => {
-  it('uses per-model metadata', () => {
+  it('uses per-model catalog metadata', () => {
     assert.equal(
       anthropicMaxOutputTokens('claude-sonnet-4-6'),
-      ANTHROPIC_MAX_OUTPUT_TOKENS['claude-sonnet-4-6'],
+      getModelInfo('claude-sonnet-4-6')?.maxOutputTokens,
     )
   })
 

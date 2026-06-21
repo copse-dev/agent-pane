@@ -1,5 +1,5 @@
-// Public API of the cloud-model catalog (pricing, context windows, picker
-// options, Anthropic max output). Consumed by `estimate-cost.ts`,
+// Public API of the cloud-model catalog (pricing, context windows, max output
+// tokens, picker options). Consumed by `estimate-cost.ts`,
 // `resolve-context-window.ts`, `model-options.ts`, and `anthropic-provider.ts`.
 //
 // The data itself lives in `model-catalog.generated.ts`, which is rewritten by
@@ -22,6 +22,8 @@ export interface ModelInfo {
   outputPricePerMTok: number
   /** Max input tokens (context window) at standard pricing. */
   contextWindow: number
+  /** Max output tokens per response (Anthropic `max_tokens`, OpenAI completion cap). */
+  maxOutputTokens: number
 }
 
 export type CloudModelProvider = 'anthropic' | 'openai'
@@ -40,12 +42,9 @@ export const TRACKED_MODELS = [
 
 export type TrackedModel = (typeof TRACKED_MODELS)[number]
 
-/** Anthropic API max_tokens (output budget) for tracked Claude models. */
-export const ANTHROPIC_MAX_OUTPUT_TOKENS: Partial<Record<TrackedModel, number>> = {
-  'claude-sonnet-4-6': 64_000,
-  'claude-opus-4-8': 64_000,
-}
-
+// Fallback for Anthropic models we don't have catalog data for (e.g. a snapshot
+// id we haven't synced yet). 8192 is the documented floor across the Claude
+// Messages API.
 const DEFAULT_ANTHROPIC_MAX_OUTPUT = 8192
 
 export { MODEL_CATALOG }
@@ -66,5 +65,5 @@ export const CLOUD_MODELS: ReadonlyArray<
 > = TRACKED_MODELS.map((id) => [id, id, inferCloudModelProvider(id)] as const)
 
 export function anthropicMaxOutputTokens(model: string): number {
-  return ANTHROPIC_MAX_OUTPUT_TOKENS[model as TrackedModel] ?? DEFAULT_ANTHROPIC_MAX_OUTPUT
+  return getModelInfo(model)?.maxOutputTokens ?? DEFAULT_ANTHROPIC_MAX_OUTPUT
 }
