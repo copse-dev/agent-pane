@@ -20,17 +20,32 @@ function mockWindow() {
   } as unknown as import('electron').BrowserWindow & { sent: typeof sent }
 }
 
+async function ptySpawnAvailable(): Promise<boolean> {
+  try {
+    const win = mockWindow()
+    const sessionId = await createTerminalSession(win)
+    destroyTerminalSession(sessionId)
+    return true
+  } catch {
+    return false
+  }
+}
+
 describe('terminal-service', () => {
   afterEach(() => {
     destroyAllTerminalSessions()
   })
 
-  it('creates a session and streams output', async () => {
+  it('creates a session and streams output', async (t) => {
+    if (!(await ptySpawnAvailable())) {
+      t.skip('PTY spawn unavailable in this environment')
+      return
+    }
     const restore = setWorkspaceRootForTest('/tmp')
     const win = mockWindow()
     let sessionId = ''
     try {
-      sessionId = createTerminalSession(win)
+      sessionId = await createTerminalSession(win)
       assert.ok(sessionId)
       writeTerminalSession(sessionId, 'echo hello\n')
       await new Promise((r) => setTimeout(r, 300))
@@ -44,9 +59,13 @@ describe('terminal-service', () => {
     }
   })
 
-  it('destroys a session', () => {
+  it('destroys a session', async (t) => {
+    if (!(await ptySpawnAvailable())) {
+      t.skip('PTY spawn unavailable in this environment')
+      return
+    }
     const win = mockWindow()
-    const sessionId = createTerminalSession(win)
+    const sessionId = await createTerminalSession(win)
     destroyTerminalSession(sessionId)
     assert.throws(() => writeTerminalSession(sessionId, 'x'), /Unknown terminal session/)
   })

@@ -1,0 +1,12 @@
+{
+  "id": "todo-steer-implement-test",
+  "description": "Classic multi-step implement + test — must steer; agent should plan with update_todos.",
+  "prompts": [
+    "Implement a small CLI that prints todo progress from a JSON file, then add unit tests."
+  ],
+  "expect": {
+    "shouldSteerTodos": true,
+    "requireUpdateTodos": true,
+    "maxExplore": 3
+  }
+}
