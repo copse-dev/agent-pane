@@ -1,3 +1,5 @@
+import { fenceCodeClass, highlightFenceCode } from './highlight.ts'
+
 const FENCE_RE = /```(\w*)\n([\s\S]*?)```/g
 const FENCED_BLOCK_SPLIT_RE =
   /(<pre>[\s\S]*?<\/pre>|<div class="mermaid-diagram[^>]*>[\s\S]*?<\/div>)/
@@ -16,8 +18,8 @@ function renderFencedBlock(lang: string, code: string): string {
     const body = escapeMermaidHtml(code.trimEnd())
     return `<div class="mermaid-diagram mermaid-diagram--pending"><pre class="mermaid">${body}</pre></div>`
   }
-  const body = escapeHtml(code.trimEnd())
-  return `<pre><code class="lang-${lang || 'text'}">${body}</code></pre>`
+  const body = highlightFenceCode(code, lang)
+  return `<pre><code class="${fenceCodeClass(lang)}">${body}</code></pre>`
 }
 
 function mapOutsideFencedHtml(html: string, transform: (segment: string) => string): string {
