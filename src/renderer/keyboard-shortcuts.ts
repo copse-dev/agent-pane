@@ -6,6 +6,7 @@ import { openRightPanelWithWorkspace, toggleFilesPaneWithWorkspace } from './con
 export function isTypingTarget(target: EventTarget | null): boolean {
   if (!target || typeof target !== 'object') return false
   const el = target as { tagName?: string; isContentEditable?: boolean }
+  if (!('tagName' in el) || typeof el.tagName !== 'string') return false
   const tag = el.tagName
   if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT') return true
   if (el.isContentEditable) return true
