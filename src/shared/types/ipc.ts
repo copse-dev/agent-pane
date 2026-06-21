@@ -51,6 +51,9 @@ export interface IpcInvokeMap {
   'settings:setKey': { args: [provider: Provider, key: string]; result: void }
   'settings:availableProviders': { args: []; result: { anthropic: boolean; openai: boolean } }
 
+  // App icon
+  'app-icon:apply': { args: []; result: void }
+
   // Storage (generic electron-store access)
   'storage:get': { args: [key: string]; result: unknown }
   'storage:set': { args: [key: string, value: unknown]; result: void }
