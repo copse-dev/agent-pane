@@ -37,10 +37,7 @@ export function bindChatComposerLayout(store: AppStore): () => void {
 
   window.addEventListener('resize', sync, { passive: true })
 
-  const unsubs = [
-    store.on('threads_changed', sync),
-    store.on('message_added', sync),
-  ]
+  const unsubs = [store.on('threads_changed', sync), store.on('message_added', sync)]
 
   return () => {
     unsubs.forEach((u) => u())
