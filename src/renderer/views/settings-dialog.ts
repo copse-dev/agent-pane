@@ -14,6 +14,67 @@ import { createModelRoutingSection } from './setup/model-routing-section.ts'
 
 type SettingsSection = 'general' | 'local-models' | 'mcp' | 'appearance'
 
+/**
+ * Single source of truth for the simple form fields, so each setting's default
+ * is declared once instead of being duplicated across the load and save handlers
+ * (an open default-drift bug class). Fields needing bespoke wiring (model select,
+ * theme/fontSize from the store, app icon radios, the LM Studio security bundle
+ * saved via `setSecurity`) stay hand-coded below.
+ *
+ * `kind: 'checkbox'` reads/writes `.checked`; `'text'` reads/writes `.value`.
+ * `save: true` means the field round-trips through `api.settings.set(name, …)`
+ * symmetrically; security-bundle fields set `save: false` (loaded here, saved by
+ * the `setSecurity` call) so their defaults are still declared in one place.
+ */
+interface SettingField {
+  name: string
+  kind: 'checkbox' | 'text'
+  default: boolean | string
+  /** Whether the save handler writes this field via api.settings.set. */
+  save: boolean
+}
+
+const SIMPLE_FIELDS: readonly SettingField[] = [
+  { name: 'customInstructions', kind: 'text', default: '', save: true },
+  { name: 'externalApiSafety', kind: 'checkbox', default: false, save: true },
+  { name: 'lmStudioForSmallTasks', kind: 'checkbox', default: true, save: true },
+  { name: 'lmStudioForSubagents', kind: 'checkbox', default: true, save: true },
+  { name: 'lmStudioForTodoItems', kind: 'checkbox', default: true, save: true },
+  // Loaded here; saved as part of the setSecurity() bundle below.
+  { name: 'lmStudioSafetyEnabled', kind: 'checkbox', default: true, save: false },
+  { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
+  { name: 'mcpAutoAllowReadOnly', kind: 'checkbox', default: false, save: false },
+  { name: 'lmStudioSafetyConfidenceThreshold', kind: 'text', default: '0.85', save: false },
+]
+
+async function loadSimpleFields(form: HTMLFormElement, api: ApiClient): Promise<void> {
+  for (const field of SIMPLE_FIELDS) {
+    const input = form.elements.namedItem(field.name) as HTMLInputElement | HTMLTextAreaElement
+    const saved = await api.settings.get(field.name)
+    if (field.kind === 'checkbox') {
+      ;(input as HTMLInputElement).checked =
+        (saved as boolean | undefined) ?? (field.default as boolean)
+    } else {
+      input.value =
+        typeof saved === 'string' || typeof saved === 'number'
+          ? String(saved)
+          : String(field.default)
+    }
+  }
+}
+
+async function saveSimpleFields(data: FormData, api: ApiClient): Promise<void> {
+  for (const field of SIMPLE_FIELDS) {
+    if (!field.save) continue
+    if (field.kind === 'checkbox') {
+      await api.settings.set(field.name, data.get(field.name) === 'on')
+    } else {
+      const value = (data.get(field.name) as string) ?? ''
+      await api.settings.set(field.name, field.name === 'customInstructions' ? value.trim() : value)
+    }
+  }
+}
+
 let overlayEl: HTMLElement | null = null
 
 export function openSettingsDialog(): void {
@@ -372,14 +433,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         api,
         model ?? 'claude-sonnet-4-6',
       )
-      const customInstructions = (await api.settings.get('customInstructions')) as
-        | string
-        | undefined
-      ;(form.elements.namedItem('customInstructions') as HTMLTextAreaElement).value =
-        customInstructions ?? ''
-      const externalApiSafety = (await api.settings.get('externalApiSafety')) as boolean | undefined
-      ;(form.elements.namedItem('externalApiSafety') as HTMLInputElement).checked =
-        externalApiSafety ?? false
+      await loadSimpleFields(form, api)
       ;(form.elements.namedItem('theme') as HTMLSelectElement).value = store.getState().theme
       ;(form.elements.namedItem('fontSize') as HTMLInputElement).value = String(
         store.getState().fontSize,
@@ -393,41 +447,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         `input[name="appIconVariant"][value="${appIconVariant}"]`,
       )
       if (iconRadio) iconRadio.checked = true
-
-      const lmSmallEnabled = (await api.settings.get('lmStudioForSmallTasks')) as
-        | boolean
-        | undefined
-      const lmSubagentsEnabled = (await api.settings.get('lmStudioForSubagents')) as
-        | boolean
-        | undefined
-      const lmTodoItemsEnabled = (await api.settings.get('lmStudioForTodoItems')) as
-        | boolean
-        | undefined
-      const lmSafetyEnabled = (await api.settings.get('lmStudioSafetyEnabled')) as
-        | boolean
-        | undefined
-      const autoRunSandbox = (await api.settings.get('autoRunSandboxCommands')) as
-        | boolean
-        | undefined
-      const confidence = (await api.settings.get('lmStudioSafetyConfidenceThreshold')) as
-        | number
-        | undefined
-      ;(form.elements.namedItem('lmStudioForSmallTasks') as HTMLInputElement).checked =
-        lmSmallEnabled ?? true
-      ;(form.elements.namedItem('lmStudioForSubagents') as HTMLInputElement).checked =
-        lmSubagentsEnabled ?? true
-      ;(form.elements.namedItem('lmStudioForTodoItems') as HTMLInputElement).checked =
-        lmTodoItemsEnabled ?? true
-      ;(form.elements.namedItem('lmStudioSafetyEnabled') as HTMLInputElement).checked =
-        lmSafetyEnabled ?? true
-      ;(form.elements.namedItem('autoRunSandboxCommands') as HTMLInputElement).checked =
-        autoRunSandbox ?? true
-      ;(form.elements.namedItem('lmStudioSafetyConfidenceThreshold') as HTMLInputElement).value =
-        String(confidence ?? 0.85)
-
-      const mcpAutoAllow = (await api.settings.get('mcpAutoAllowReadOnly')) as boolean | undefined
-      ;(form.elements.namedItem('mcpAutoAllowReadOnly') as HTMLInputElement).checked =
-        mcpAutoAllow ?? false
 
       await refreshLocalModelSelects()
       await lmStudioSection.refreshDetection()
@@ -452,11 +471,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const confidence = parseFloat(data.get('lmStudioSafetyConfidenceThreshold') as string)
 
       await api.settings.set('model', model)
-      await api.settings.set(
-        'customInstructions',
-        (data.get('customInstructions') as string).trim(),
-      )
-      await api.settings.set('externalApiSafety', data.get('externalApiSafety') === 'on')
+      await saveSimpleFields(data, api)
       await api.settings.set('theme', theme)
       await api.settings.set('fontSize', fontSize)
       if (isAppIconVariant(appIconVariant)) {
@@ -474,9 +489,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         autoRunSandboxCommands: data.get('autoRunSandboxCommands') === 'on',
         mcpAutoAllowReadOnly: data.get('mcpAutoAllowReadOnly') === 'on',
       })
-      await api.settings.set('lmStudioForSmallTasks', data.get('lmStudioForSmallTasks') === 'on')
-      await api.settings.set('lmStudioForSubagents', data.get('lmStudioForSubagents') === 'on')
-      await api.settings.set('lmStudioForTodoItems', data.get('lmStudioForTodoItems') === 'on')
 
       store.setState({ theme, fontSize, settings: { ...store.getState().settings, model } })
       store.emit('theme_changed', theme)
