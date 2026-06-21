@@ -11,8 +11,8 @@ describe('app-icon-variants', () => {
     assert.deepEqual([...APP_ICON_VARIANTS], ['classic', 'wave'])
   })
 
-  it('defaults to classic', () => {
-    assert.equal(DEFAULT_APP_ICON_VARIANT, 'classic')
+  it('defaults to wave', () => {
+    assert.equal(DEFAULT_APP_ICON_VARIANT, 'wave')
   })
 
   it('validates known variants', () => {

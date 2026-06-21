@@ -9,7 +9,7 @@ cpSync('node_modules/vscode-material-icons/generated/icons', 'dist/renderer/mate
 })
 copyFileSync('src/renderer/index.html', 'dist/renderer/index.html')
 cpSync('assets', 'dist/assets', { recursive: true })
-copyFileSync('assets/icons/icon-32.png', 'dist/renderer/favicon.png')
+copyFileSync('assets/icons/wave/icon-32.png', 'dist/renderer/favicon.png')
 cpSync('src/renderer/icon-previews', 'dist/renderer/icon-previews', { recursive: true })
 
 let electron: ChildProcess | null = null
