@@ -17,8 +17,6 @@ export interface McpServerConfig {
   source?: string
   /** Whether the user has disabled this server. */
   disabled?: boolean
-  /** When true, tools from this server auto-run without per-call approval. */
-  trusted?: boolean
 
   // stdio
   command?: string
@@ -40,7 +38,6 @@ export interface McpServerStatus {
   toolCount: number
   /** Human tool names (without the mcp__server__ prefix). */
   tools: string[]
-  trusted: boolean
   source?: string
   error?: string
   /** User has not turned this server off in Settings (app-local override). */
