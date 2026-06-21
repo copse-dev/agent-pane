@@ -32,14 +32,11 @@ describe('code block copy buttons', () => {
     await firstBlock.moveTo()
     await expect(firstCopy).toHaveText('Copy')
 
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'code-block-copy-hover.png'))
-
-    await firstCopy.click()
-    await expect(firstCopy).toHaveText('Copied')
-
-    const clipboardText = await browser.execute(async () => navigator.clipboard.readText())
-    expect(clipboardText).toMatch(/^export function greet/)
-    expect(clipboardText).toContain('Hello, ${name}!')
+    const msgCopyOpacity = await browser.execute(() => {
+      const btn = document.querySelector('[data-message-id="msg-assistant-code-blocks"] .msg-copy')
+      return btn ? getComputedStyle(btn).opacity : null
+    })
+    expect(msgCopyOpacity).toBe('0')
 
     const secondCopyOpacity = await browser.execute(() => {
       const buttons = document.querySelectorAll(
@@ -48,6 +45,15 @@ describe('code block copy buttons', () => {
       return buttons[1] ? getComputedStyle(buttons[1]).opacity : null
     })
     expect(secondCopyOpacity).toBe('0')
+
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'code-block-copy-hover.png'))
+
+    await firstCopy.click()
+    await expect(firstCopy).toHaveText('Copied')
+
+    const clipboardText = await browser.execute(async () => navigator.clipboard.readText())
+    expect(clipboardText).toMatch(/^export function greet/)
+    expect(clipboardText).toContain('Hello, ${name}!')
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'code-block-copy-copied.png'))
   })

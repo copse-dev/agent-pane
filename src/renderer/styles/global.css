@@ -775,6 +775,10 @@ label {
 .message-body:hover .msg-copy {
   opacity: 1;
 }
+.message-body:hover:has(.code-block-shell:hover) .msg-copy,
+.message-body:hover:has(.code-block-shell:focus-within) .msg-copy {
+  opacity: 0;
+}
 .msg-user {
   background: var(--bg-elevated);
   border-left: 3px solid var(--accent);
