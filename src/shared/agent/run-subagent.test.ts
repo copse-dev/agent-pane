@@ -97,6 +97,47 @@ describe('runSubagent', () => {
     assert.deepEqual(session.usage, { inputTokens: 150, outputTokens: 15 })
   })
 
+  it('attributes per-stream usage chunks and ignores a stale shared lastUsage (#112)', async () => {
+    // Simulate the shared-provider race: lastUsage holds a wrong value (as if the
+    // parent stream overwrote it), but each subagent stream carries an
+    // authoritative usage chunk. Usage must come from the per-stream chunks.
+    let call = 0
+    const provider = {
+      lastUsage: { inputTokens: 99999, outputTokens: 88888 },
+      async *stream() {
+        const chunks =
+          call++ === 0
+            ? ([
+                {
+                  type: 'tool_call' as const,
+                  toolCall: { id: 'inner-1', name: 'read_file', args: { path: 'a.ts' } },
+                },
+                { type: 'usage' as const, model: 'sub', inputTokens: 100, outputTokens: 10 },
+                { type: 'done' as const },
+              ] as const)
+            : ([
+                { type: 'text' as const, text: 'Summary' },
+                { type: 'usage' as const, model: 'sub', inputTokens: 50, outputTokens: 5 },
+                { type: 'done' as const },
+              ] as const)
+        for (const chunk of chunks) yield chunk
+      },
+    } satisfies LLMProvider & { lastUsage: { inputTokens: number; outputTokens: number } | null }
+
+    const { session } = await runSubagent({
+      provider,
+      prompt: 'Read a.ts',
+      parentGoal: 'Review',
+      tools: [{ name: 'read_file', description: '', parameters: {} }],
+      parentToolCallId: 'parent-race',
+      onSubagentChunk: () => {},
+      executeTool: async () => 'contents',
+      usageModel: 'test-model',
+    })
+
+    assert.deepEqual(session.usage, { inputTokens: 150, outputTokens: 15 })
+  })
+
   it('respects AbortSignal', async () => {
     const controller = new AbortController()
     controller.abort()

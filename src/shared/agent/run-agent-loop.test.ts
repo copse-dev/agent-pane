@@ -281,4 +281,58 @@ describe('runAgentLoop', () => {
     assert.match(nudgeText, /open todos/)
     assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('All todos done')))
   })
+
+  it('prefers per-stream usage chunks over the shared lastUsage field (#112)', async () => {
+    // The provider yields an authoritative per-stream usage chunk while its
+    // shared lastUsage field is left stale/wrong (as if overwritten by another
+    // stream sharing the same provider). The loop must report the in-stream
+    // value, not the racy shared field.
+    const provider = {
+      lastUsage: { inputTokens: 99999, outputTokens: 88888 },
+      async *stream(): AsyncIterable<StreamChunk> {
+        yield { type: 'text', text: 'answer' }
+        yield { type: 'usage', model: 'real-model', inputTokens: 321, outputTokens: 12 }
+        yield { type: 'done' }
+      },
+    }
+    const chunks: StreamChunk[] = []
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'hi' }],
+      tools: [],
+      usageModel: 'attributed-model',
+      getLastUsage: () => provider.lastUsage,
+      onChunk: (c) => chunks.push(c),
+      executeTool: async () => '',
+    })
+    const usage = chunks.find((c) => c.type === 'usage')
+    assert.ok(usage && usage.type === 'usage')
+    assert.equal(usage.inputTokens, 321)
+    assert.equal(usage.outputTokens, 12)
+    assert.equal(usage.model, 'attributed-model')
+  })
+
+  it('falls back to getLastUsage when the stream emits no usage chunk', async () => {
+    const provider = {
+      lastUsage: { inputTokens: 120, outputTokens: 80 },
+      async *stream(): AsyncIterable<StreamChunk> {
+        yield { type: 'text', text: 'answer' }
+        yield { type: 'done' }
+      },
+    }
+    const chunks: StreamChunk[] = []
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'hi' }],
+      tools: [],
+      usageModel: 'attributed-model',
+      getLastUsage: () => provider.lastUsage,
+      onChunk: (c) => chunks.push(c),
+      executeTool: async () => '',
+    })
+    const usage = chunks.find((c) => c.type === 'usage')
+    assert.ok(usage && usage.type === 'usage')
+    assert.equal(usage.inputTokens, 120)
+    assert.equal(usage.outputTokens, 80)
+  })
 })
