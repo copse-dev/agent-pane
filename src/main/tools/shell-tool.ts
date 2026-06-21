@@ -191,11 +191,7 @@ export const runShellTool: ToolDefinition = {
     const { command: finalCommand, env, banner } = prepared
     const withBanner = (output: string) => (banner ? `${banner}\n${output}` : output)
 
-    const outsideSandbox = shellRequiresOutsideSandbox(
-      finalCommand,
-      cwd,
-      isProjectSandboxEnabled(),
-    )
+    const outsideSandbox = shellRequiresOutsideSandbox(finalCommand, cwd, isProjectSandboxEnabled())
 
     let result: ShellRunResult
     try {

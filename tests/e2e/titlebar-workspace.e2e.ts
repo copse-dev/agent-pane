@@ -29,5 +29,17 @@ describe('titlebar workspace name', () => {
     await expect(workspaceName).not.toHaveText('No folder')
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'titlebar-workspace-name.png'))
+
+    const newThreadBtn = await $('.project-new-thread-btn')
+    await expect(newThreadBtn).toBeDisplayed()
+    await newThreadBtn.click()
+    await expect($('.chat-row.selected .chat-title')).toHaveText('New Thread')
+    await $('.pane-chat.composer-centered').waitForExist({ timeout: 10_000 })
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'new-thread-composer-centered.png'))
+
+    await newThreadBtn.click()
+    const blankRows = await $$('.chats-list .chat-row .chat-title')
+    const titles = await blankRows.map((el) => el.getText())
+    await expect(titles.filter((t) => t === 'New Thread').length).toBe(1)
   })
 })

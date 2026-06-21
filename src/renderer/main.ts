@@ -3,7 +3,7 @@ import './styles/global.css'
 import './styles/themes.css'
 
 import { createStore } from '@shared/store/store.ts'
-import { createThread, switchThread } from '@shared/store/thread-helpers.ts'
+import { openNewThread, switchThread } from '@shared/store/thread-helpers.ts'
 import { mountWelcome } from './views/welcome.ts'
 import { mountTitlebar } from './views/titlebar.ts'
 import { mountProjectsPane } from './views/projects-pane.ts'
@@ -20,6 +20,11 @@ import {
   isSettingsDialogOpen,
   closeSettingsDialog,
 } from './views/settings-dialog.ts'
+import {
+  mountOnboardingDialog,
+  openOnboardingDialog,
+  shouldShowOnboarding,
+} from './views/onboarding-dialog.ts'
 import { mountApprovalDialog } from './views/approval-dialog.ts'
 import { startAgentController } from './controller/agent.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
@@ -38,6 +43,7 @@ let layoutMounted = false
 
 async function boot() {
   mountSettingsDialog(store, api)
+  mountOnboardingDialog(store, api)
   mountApprovalDialog(api)
 
   // Load persisted user preferences before the main layout mounts.
@@ -94,6 +100,10 @@ async function boot() {
       ensureLayout()
     })
   }
+
+  if (await shouldShowOnboarding(api)) {
+    openOnboardingDialog()
+  }
 }
 
 function ensureLayout() {
@@ -114,7 +124,7 @@ function mountFullLayout() {
   if (!inputRoot.querySelector('.prompt-input')) {
     throw new Error('Chat composer failed to mount (#input-bar missing .prompt-input)')
   }
-  bindChatComposerLayout()
+  bindChatComposerLayout(store)
   mountFileTree(document.getElementById('file-tree-host')!, store, api)
   mountRightPanelTabs(document.getElementById('right-panel-tabs')!, store)
   mountTerminalsPane(
@@ -151,7 +161,7 @@ function registerKeyboardShortcuts() {
     const meta = e.ctrlKey || e.metaKey
     if (meta && e.key === 't') {
       e.preventDefault()
-      createThread(store)
+      openNewThread(store)
     }
     // Cmd/Ctrl+O is handled by the native File ▸ Open Folder… menu accelerator.
     if (meta && e.key === ',') {
@@ -182,8 +192,9 @@ function confirmDeleteThread() {
   const { activeThreadId, threads } = store.getState()
   if (!activeThreadId || threads.length <= 1) return
   if (confirm('Delete this thread?')) {
+    const index = threads.findIndex((t) => t.id === activeThreadId)
     const remaining = threads.filter((t) => t.id !== activeThreadId)
-    const newActive = remaining[remaining.length - 1]?.id ?? null
+    const newActive = remaining[Math.min(index, remaining.length - 1)]?.id ?? null
     store.setState({ threads: remaining, activeThreadId: newActive })
     store.emit('threads_changed')
   }

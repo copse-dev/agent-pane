@@ -6,10 +6,7 @@ function keyEvent(init: KeyboardEventInit): KeyboardEvent {
   return { ...init } as KeyboardEvent
 }
 
-function fakeElement(
-  tagName: string,
-  contentEditable = false,
-): HTMLElement {
+function fakeElement(tagName: string, contentEditable = false): HTMLElement {
   return { tagName, isContentEditable: contentEditable } as HTMLElement
 }
 
@@ -17,22 +14,18 @@ describe('keyboard-shortcuts', () => {
   it('matchPanelShortcut follows VS Code panel chords', () => {
     assert.deepEqual(matchPanelShortcut(keyEvent({ ctrlKey: true, key: 'b' })), 'togglePanel')
     assert.deepEqual(matchPanelShortcut(keyEvent({ ctrlKey: true, key: 'j' })), 'togglePanel')
-    assert.deepEqual(
-      matchPanelShortcut(keyEvent({ metaKey: true, shiftKey: true, key: 'E' })),
-      { openPanel: 'explorer' },
-    )
-    assert.deepEqual(
-      matchPanelShortcut(keyEvent({ ctrlKey: true, shiftKey: true, key: 'g' })),
-      { openPanel: 'changes' },
-    )
-    assert.deepEqual(
-      matchPanelShortcut(keyEvent({ ctrlKey: true, key: '`' })),
-      { openPanel: 'terminal' },
-    )
-    assert.deepEqual(
-      matchPanelShortcut(keyEvent({ ctrlKey: true, code: 'Backquote' })),
-      { openPanel: 'terminal' },
-    )
+    assert.deepEqual(matchPanelShortcut(keyEvent({ metaKey: true, shiftKey: true, key: 'E' })), {
+      openPanel: 'explorer',
+    })
+    assert.deepEqual(matchPanelShortcut(keyEvent({ ctrlKey: true, shiftKey: true, key: 'g' })), {
+      openPanel: 'changes',
+    })
+    assert.deepEqual(matchPanelShortcut(keyEvent({ ctrlKey: true, key: '`' })), {
+      openPanel: 'terminal',
+    })
+    assert.deepEqual(matchPanelShortcut(keyEvent({ ctrlKey: true, code: 'Backquote' })), {
+      openPanel: 'terminal',
+    })
   })
 
   it('matchPanelShortcut ignores unrelated chords', () => {

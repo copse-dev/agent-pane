@@ -120,6 +120,11 @@ contextBridge.exposeInMainWorld('api', {
   lmStudio: {
     test: (url: string, apiKey?: string) => ipcRenderer.invoke('lmstudio:test', url, apiKey),
     models: () => ipcRenderer.invoke('lmstudio:models'),
+    detect: (url?: string, apiKey?: string) => ipcRenderer.invoke('lmstudio:detect', url, apiKey),
+    download: (modelId: string, url?: string, apiKey?: string) =>
+      ipcRenderer.invoke('lmstudio:download', modelId, url, apiKey),
+    downloadStatus: (jobId: string, url?: string, apiKey?: string) =>
+      ipcRenderer.invoke('lmstudio:downloadStatus', jobId, url, apiKey),
   },
   menu: {
     onSettings: (handler: () => void) => {
@@ -164,6 +169,8 @@ contextBridge.exposeInMainWorld('api', {
     setKey: (provider: 'anthropic' | 'openai' | 'lmstudio', key: string) =>
       ipcRenderer.invoke('settings:setKey', provider, key),
     availableProviders: () => ipcRenderer.invoke('settings:availableProviders'),
+    validateKey: (provider: 'anthropic' | 'openai', key: string) =>
+      ipcRenderer.invoke('settings:validateKey', provider, key),
   },
   appIcon: {
     apply: () => ipcRenderer.invoke('app-icon:apply'),

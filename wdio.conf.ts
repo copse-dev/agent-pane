@@ -1,15 +1,17 @@
 import type { Options } from '@wdio/types'
 import electronBinary from 'electron'
 import { randomInt } from 'node:crypto'
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const electronShell = join(process.cwd(), 'tests/e2e/electron-shell')
+const e2eEnvFile = join(electronShell, '.e2e-env.json')
 const chromedriverBinary = join(
   process.cwd(),
   'node_modules/electron-chromedriver/bin/chromedriver',
 )
+
+let e2eUserDataDir: string | null = null
 
 export const config: Options.Testrunner = {
   runner: 'local',
@@ -49,26 +51,48 @@ export const config: Options.Testrunner = {
     timeout: 30_000,
   },
   beforeSession(_config, capabilities) {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    e2eUserDataDir = mkdtempSync(join(process.cwd(), '.wdio-profile-'))
+
+    const e2eEnv: Record<string, string> = {
+      COPSE_PANEL_MOCK_LLM: '1',
+      COPSE_PANEL_USER_DATA: e2eUserDataDir,
+      ANTHROPIC_API_KEY: '',
+      OPENAI_API_KEY: '',
+    }
+    for (const [key, value] of Object.entries(e2eEnv)) {
+      process.env[key] = value
+    }
+    writeFileSync(e2eEnvFile, JSON.stringify(e2eEnv), 'utf8')
 
     const cap = capabilities as WebdriverIO.Capabilities & {
       'goog:chromeOptions'?: { args?: string[] }
     }
     const chromeOptions = cap['goog:chromeOptions'] ?? {}
-    const userDataDir = mkdtempSync(join(tmpdir(), 'copse-wdio-chrome-'))
-    process.env.COPSE_PANEL_USER_DATA = mkdtempSync(join(tmpdir(), 'copse-wdio-app-'))
     const debugPort = randomInt(9300, 9999)
     cap['goog:chromeOptions'] = {
       ...chromeOptions,
       args: [
         ...new Set([
           ...(chromeOptions.args ?? []),
-          `--user-data-dir=${userDataDir}`,
+          `--user-data-dir=${e2eUserDataDir}`,
           `--remote-debugging-port=${debugPort}`,
         ]),
       ],
+    }
+  },
+  onComplete() {
+    try {
+      rmSync(e2eEnvFile, { force: true })
+    } catch {
+      // ignore
+    }
+    if (e2eUserDataDir) {
+      try {
+        rmSync(e2eUserDataDir, { recursive: true, force: true })
+      } catch {
+        // ignore
+      }
+      e2eUserDataDir = null
     }
   },
 }
