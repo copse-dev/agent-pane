@@ -1,6 +1,12 @@
-import { describe, it } from 'node:test'
+import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { parsePorcelainV1 } from './git-service.ts'
+import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { spawnSync } from 'node:child_process'
+import { getGitDiffText, parsePorcelainV1 } from './git-service.ts'
+import { setWorkspaceRootForTest } from './workspace.ts'
+import { setGitAvailableForTest } from './tool-availability.ts'
 
 describe('parsePorcelainV1', () => {
   it('returns empty lists for clean tree', () => {
@@ -39,5 +45,45 @@ describe('parsePorcelainV1', () => {
     const result = parsePorcelainV1(raw)
     assert.deepEqual(result.staged, [{ path: 'src/both.ts', status: 'modified' }])
     assert.deepEqual(result.unstaged, [{ path: 'src/both.ts', status: 'modified' }])
+  })
+})
+
+const gitOk = spawnSync('git', ['--version']).status === 0
+
+describe('getGitDiffText untracked files', { skip: !gitOk && 'git not installed' }, () => {
+  let repo = ''
+  let restore: (() => void) | undefined
+
+  const git = (...args: string[]) => spawnSync('git', args, { cwd: repo })
+
+  before(async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-diff-'))
+    git('init', '-q')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    await writeFile(join(repo, 'tracked.txt'), 'one\n')
+    git('add', 'tracked.txt')
+    git('commit', '-qm', 'init')
+    restore = setWorkspaceRootForTest(repo)
+    setGitAvailableForTest(true)
+  })
+
+  after(async () => {
+    setGitAvailableForTest(null)
+    restore?.()
+    if (repo) await rm(repo, { recursive: true, force: true })
+  })
+
+  it('includes an untracked file in the diff for a specific path', async () => {
+    await writeFile(join(repo, 'fresh.txt'), 'brand new\n')
+    const diff = await getGitDiffText('fresh.txt')
+    assert.notEqual(diff, '(no output)')
+    assert.match(diff, /fresh\.txt/)
+    assert.match(diff, /brand new/)
+  })
+
+  it('includes untracked files when no path is given', async () => {
+    const diff = await getGitDiffText()
+    assert.match(diff, /fresh\.txt/)
   })
 })

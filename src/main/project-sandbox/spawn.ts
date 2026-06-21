@@ -24,6 +24,9 @@ function mergeSpawnEnv(base: NodeJS.ProcessEnv, override?: NodeJS.ProcessEnv): N
   return { ...base, ...override }
 }
 
+/** POSIX-only: run the child as its own process-group leader so the group can be killed together. */
+const detachForGroupKill = process.platform !== 'win32'
+
 export async function spawnInProjectSandbox(
   executable: string,
   args: string[],
@@ -40,6 +43,7 @@ export async function spawnInProjectSandbox(
       env: opts.env ?? process.env,
       stdio: opts.stdio,
       signal: opts.signal,
+      detached: detachForGroupKill,
     })
   }
 
@@ -60,6 +64,7 @@ export async function spawnInProjectSandbox(
     env: mergeSpawnEnv(env, opts.env),
     stdio: opts.stdio,
     signal: opts.signal,
+    detached: detachForGroupKill,
   })
 }
 
@@ -81,6 +86,7 @@ export async function spawnShellInProjectSandbox(
       env: opts.env ?? process.env,
       stdio: opts.stdio,
       signal: opts.signal,
+      detached: detachForGroupKill,
     })
   }
 
@@ -99,6 +105,7 @@ export async function spawnShellInProjectSandbox(
     env: mergeSpawnEnv(env, opts.env),
     stdio: opts.stdio,
     signal: opts.signal,
+    detached: detachForGroupKill,
   })
 }
 
