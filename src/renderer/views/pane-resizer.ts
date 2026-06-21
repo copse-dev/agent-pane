@@ -96,7 +96,15 @@ export function mountPaneResizers(body: HTMLElement, store: AppStore, api: ApiCl
   applyLayout(body, store.getState().layout)
 
   const commitLayout = () => {
-    void api.settings.set('layout', store.getState().layout)
+    const layout = store.getState().layout
+    const rounded: LayoutState = {
+      projectsPaneWidth: Math.round(layout.projectsPaneWidth),
+      filesPaneWidth: Math.round(layout.filesPaneWidth),
+      fileTreeWidth: Math.round(layout.fileTreeWidth),
+    }
+    store.setState({ layout: rounded })
+    applyLayout(body, rounded)
+    void api.settings.set('layout', rounded)
   }
 
   const setLayout = (partial: Partial<LayoutState>) => {

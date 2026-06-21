@@ -16,10 +16,14 @@ async function invokeWorker<T extends Record<string, unknown>>(
   const root = getWorkspaceRoot()
   if (!root) throw new Error('No workspace open. Use Open Folder first.')
 
-  const { stdout, stderr, code } = await runCommand(process.execPath, [
-    sandboxFsWorkerPath(),
-    JSON.stringify(request),
-  ])
+  const { stdout, stderr, code } = await runCommand(
+    process.execPath,
+    [sandboxFsWorkerPath(), JSON.stringify(request)],
+    {
+      // Electron must run as Node inside seatbelt; otherwise MachPort rendezvous FATALs with empty stdout.
+      env: { ELECTRON_RUN_AS_NODE: '1' },
+    },
+  )
 
   if (code !== 0) {
     throw new Error(stderr.trim() || stdout.trim() || `sandbox fs worker exited ${code}`)
