@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import Anthropic from '@anthropic-ai/sdk'
-import { anthropicMaxOutputTokens, ANTHROPIC_MAX_OUTPUT_TOKENS } from './model-metadata.ts'
+import { anthropicMaxOutputTokens, ANTHROPIC_MAX_OUTPUT_TOKENS } from './model-catalog.ts'
 import { isRetryableStreamError, streamRetryDelayMs } from './stream-retry.ts'
 import { createProvider } from './create-provider.ts'
 

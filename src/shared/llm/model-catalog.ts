@@ -1,5 +1,6 @@
-// Public API of the cloud-model catalog (pricing + context windows). Consumed
-// by `estimate-cost.ts` and `resolve-context-window.ts`.
+// Public API of the cloud-model catalog (pricing, context windows, picker
+// options, Anthropic max output). Consumed by `estimate-cost.ts`,
+// `resolve-context-window.ts`, `model-options.ts`, and `anthropic-provider.ts`.
 //
 // The data itself lives in `model-catalog.generated.ts`, which is rewritten by
 // `scripts/sync-model-catalog.mts` (and the `Sync model catalog` GitHub
@@ -23,6 +24,8 @@ export interface ModelInfo {
   contextWindow: number
 }
 
+export type CloudModelProvider = 'anthropic' | 'openai'
+
 /**
  * Cloud model ids this app ships. Each id must exist verbatim as a key in
  * LiteLLM's catalog so the sync script can resolve it.
@@ -37,8 +40,31 @@ export const TRACKED_MODELS = [
 
 export type TrackedModel = (typeof TRACKED_MODELS)[number]
 
+/** Anthropic API max_tokens (output budget) for tracked Claude models. */
+export const ANTHROPIC_MAX_OUTPUT_TOKENS: Partial<Record<TrackedModel, number>> = {
+  'claude-sonnet-4-6': 64_000,
+  'claude-opus-4-8': 64_000,
+}
+
+const DEFAULT_ANTHROPIC_MAX_OUTPUT = 8192
+
 export { MODEL_CATALOG }
 
 export function getModelInfo(model: string): ModelInfo | null {
   return MODEL_CATALOG[model] ?? null
+}
+
+export function inferCloudModelProvider(model: string): CloudModelProvider {
+  if (model.startsWith('claude')) return 'anthropic'
+  if (model.startsWith('gpt')) return 'openai'
+  throw new Error(`Unknown cloud model provider for '${model}'`)
+}
+
+/** Model picker entries derived from {@link TRACKED_MODELS}. */
+export const CLOUD_MODELS: ReadonlyArray<
+  readonly [value: TrackedModel, label: string, provider: CloudModelProvider]
+> = TRACKED_MODELS.map((id) => [id, id, inferCloudModelProvider(id)] as const)
+
+export function anthropicMaxOutputTokens(model: string): number {
+  return ANTHROPIC_MAX_OUTPUT_TOKENS[model as TrackedModel] ?? DEFAULT_ANTHROPIC_MAX_OUTPUT
 }
