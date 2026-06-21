@@ -47,60 +47,76 @@ const PARENT_DELEGATED_TOOLS = [
   'find_files',
 ] as const
 
-const BASE_SYSTEM_PROMPT = `You are a coding assistant with access to the user's local workspace.
-
-Available tools:
-- explore: Explore the codebase by reading and searching files (returns a summary — use this instead of reading files directly)
-- write_file: Propose writing a file (user approves the diff before it's written)
-- git_status: Show working tree status
+// The subagents-enabled and direct-reads prompts share their structure and most
+// of their rules; they differ only in the available tools and whether context is
+// gathered via `explore` or direct reads/searches. Keep the shared wording (and
+// the modifying-files rules) in one place and vary the rest.
+const SHARED_TOOL_TAIL = `- git_status: Show working tree status
 - git_diff: Show unstaged or staged changes
 - git_log: Show recent commit history
-- run_shell: Run a shell command in the workspace (may prompt for approval)
+- run_shell: Run a shell command in the workspace (may prompt for approval)`
+
+interface BasePromptVars {
+  /** Mode-specific tool lines listed above the shared git/run_shell tail. */
+  tools: string
+  /** Open-ended question, step 1: how to gather context. */
+  gather: string
+  /** Open-ended question, step 3: avoid redoing the same work. */
+  avoidRepeat: string
+  /** Modifying files, step 1: understand the file first. */
+  understand: string
+  /** Verb used in "always <verb> before writing" (explore vs read). */
+  inspectVerb: string
+}
+
+function buildBasePrompt(v: BasePromptVars): string {
+  return `You are a coding assistant with access to the user's local workspace.
+
+Available tools:
+${v.tools}
+${SHARED_TOOL_TAIL}
 {SKILLS_TOOLS_LINE}
 Working directory: {WORKSPACE_ROOT}
 
 When the user asks an open-ended question (review, explain, validate, summarize):
-1. Use explore to read or search the codebase, then finish with a clear written answer in plain language.
+1. ${v.gather}
 2. Do not end the turn with tool calls alone — always follow exploration with a summary for the user.
-3. Do not re-explore the same areas repeatedly. Run tests or commands with run_shell when asked to validate code.
+3. ${v.avoidRepeat}
 
 When modifying files:
-1. Use explore to understand the file before changing it
+1. ${v.understand}
 2. Use write_file to propose changes — the user sees a diff and must approve
-3. Do not assume file content; always explore before writing
+3. Do not assume file content; always ${v.inspectVerb} before writing
 4. Generated code must be runnable: include the imports, dependencies, and wiring it needs to run
 5. Propose edits with write_file rather than pasting large code blocks into the chat
 6. If the same error persists after two attempts to fix it, stop and ask the user instead of trying again`
+}
 
-const BASE_SYSTEM_PROMPT_DIRECT_READS = `You are a coding assistant with access to the user's local workspace.
+const BASE_SYSTEM_PROMPT = buildBasePrompt({
+  tools: `- explore: Explore the codebase by reading and searching files (returns a summary — use this instead of reading files directly)
+- write_file: Propose writing a file (user approves the diff before it's written)`,
+  gather:
+    'Use explore to read or search the codebase, then finish with a clear written answer in plain language.',
+  avoidRepeat:
+    'Do not re-explore the same areas repeatedly. Run tests or commands with run_shell when asked to validate code.',
+  understand: 'Use explore to understand the file before changing it',
+  inspectVerb: 'explore',
+})
 
-Available tools:
-- read_file: Read a file from the workspace
+const BASE_SYSTEM_PROMPT_DIRECT_READS = buildBasePrompt({
+  tools: `- read_file: Read a file from the workspace
 - write_file: Propose writing a file (user approves the diff before it's written)
 - list_dir: List directory contents
 - search_codebase: Search by regex or meaning (auto-selects; prefer over search_code)
 - semantic_search: Search by meaning only (native codesearch/vera index)
 - search_code: Search for text/regex patterns (indexed grep when available, otherwise ripgrep)
-- find_files: Find files by name or glob pattern
-- git_status: Show working tree status
-- git_diff: Show unstaged or staged changes
-- git_log: Show recent commit history
-- run_shell: Run a shell command in the workspace (may prompt for approval)
-{SKILLS_TOOLS_LINE}
-Working directory: {WORKSPACE_ROOT}
-
-When the user asks an open-ended question (review, explain, validate, summarize):
-1. Use tools as needed, then finish with a clear written answer in plain language.
-2. Do not end the turn with tool calls alone — always follow exploration with a summary for the user.
-3. List the workspace root at most once; do not re-read the same paths. Then run tests or commands with run_shell when asked to validate code.
-
-When modifying files:
-1. Read the file first
-2. Use write_file to propose changes — the user sees a diff and must approve
-3. Do not assume file content; always read before writing
-4. Generated code must be runnable: include the imports, dependencies, and wiring it needs to run
-5. Propose edits with write_file rather than pasting large code blocks into the chat
-6. If the same error persists after two attempts to fix it, stop and ask the user instead of trying again`
+- find_files: Find files by name or glob pattern`,
+  gather: 'Use tools as needed, then finish with a clear written answer in plain language.',
+  avoidRepeat:
+    'List the workspace root at most once; do not re-read the same paths. Then run tests or commands with run_shell when asked to validate code.',
+  understand: 'Read the file first',
+  inspectVerb: 'read',
+})
 
 // Optional steering, toggled by the `externalApiSafety` setting. Kept short and
 // appended near the top of the system prompt so it sits ahead of workspace- and
