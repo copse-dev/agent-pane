@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile, rm, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { applyDiffEntry } from './diff-queue.ts'
@@ -68,5 +68,32 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
     })
     assert.deepEqual(result, { status: 'conflict', current: 'someone else\n' })
     assert.equal(await readFile(join(tempRoot, 'new.txt'), 'utf-8'), 'someone else\n')
+  })
+
+  it('creates missing parent directories for a new nested path (#120)', async () => {
+    const result = await applyDiffEntry({
+      path: 'src/feature/new/index.ts',
+      before: '',
+      after: 'export const x = 1\n',
+      language: 'typescript',
+    })
+    assert.deepEqual(result, { status: 'written' })
+    assert.equal(
+      await readFile(join(tempRoot, 'src/feature/new/index.ts'), 'utf-8'),
+      'export const x = 1\n',
+    )
+  })
+
+  it('reports an error result instead of throwing when the write fails (#118)', async () => {
+    // A directory occupies the target path, so writeFile fails (EISDIR).
+    await mkdir(join(tempRoot, 'busy'), { recursive: true })
+    const result = await applyDiffEntry({
+      path: 'busy',
+      before: '',
+      after: 'data\n',
+      language: 'plaintext',
+    })
+    assert.equal(result.status, 'error')
+    if (result.status === 'error') assert.match(result.error, /EISDIR|illegal|directory/i)
   })
 })

@@ -24,23 +24,49 @@ export function mountApprovalDialog(api: ApiClient): void {
 
   const rememberInput = rememberLabel.querySelector('.approval-remember-input') as HTMLInputElement
 
-  let currentId = ''
+  interface PendingApproval {
+    id: string
+    title: string
+    body: string
+    allowRemember: boolean | undefined
+  }
+
+  // A single shared `currentId` mis-routed answers when a second request arrived
+  // while the first was still open: the second overwrote the id, so clicking
+  // Approve/Reject answered the wrong (second) request and the first hung.
+  // Queue requests and show them one at a time, binding each answer to the
+  // request actually on screen.
+  const queue: PendingApproval[] = []
+  let active: PendingApproval | null = null
+
+  function showNext(): void {
+    active = queue.shift() ?? null
+    if (!active) return
+    dialog.querySelector('.approval-title')!.textContent = active.title
+    dialog.querySelector('.approval-body')!.textContent = active.body
+    rememberInput.checked = false
+    rememberLabel.hidden = !active.allowRemember
+    dialog.showModal()
+  }
+
+  function resolve(approved: boolean, remember: boolean): void {
+    const current = active
+    if (!current) return
+    dialog.close()
+    active = null
+    void api.approval.respond(current.id, approved, remember)
+    showNext()
+  }
 
   api.agent.onApprovalRequest(({ id, title, body, allowRemember }) => {
-    currentId = id
-    dialog.querySelector('.approval-title')!.textContent = title
-    dialog.querySelector('.approval-body')!.textContent = body
-    rememberInput.checked = false
-    rememberLabel.hidden = !allowRemember
-    dialog.showModal()
+    queue.push({ id, title, body, allowRemember })
+    if (!active) showNext()
   })
 
   dialog.querySelector('.approval-approve')!.addEventListener('click', () => {
-    dialog.close()
-    void api.approval.respond(currentId, true, rememberInput.checked)
+    resolve(true, rememberInput.checked)
   })
   dialog.querySelector('.approval-reject')!.addEventListener('click', () => {
-    dialog.close()
-    void api.approval.respond(currentId, false, false)
+    resolve(false, false)
   })
 }
