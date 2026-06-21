@@ -1,6 +1,8 @@
 import { ipcMain } from 'electron'
 import type { BrowserWindow } from 'electron'
 import { ensureTerminalPermitted } from '../services/permission-gate.ts'
+import { z } from 'zod'
+import { assertMainFrameSender, parseIpcArgs, zSessionId } from './ipc-guards.ts'
 import {
   createTerminalSession,
   destroyAllTerminalSessions,
@@ -9,23 +11,38 @@ import {
   writeTerminalSession,
 } from '../services/terminal-service.ts'
 
+const terminalCreateSchema = z.tuple([
+  z.number().int().min(1).max(500),
+  z.number().int().min(1).max(200),
+])
+
 export function initTerminal(win: BrowserWindow): () => void {
-  ipcMain.handle('terminal:create', async (_e, cols: number, rows: number) => {
+  ipcMain.handle('terminal:create', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [cols, rows] = parseIpcArgs(terminalCreateSchema, rawArgs)
     const permitted = await ensureTerminalPermitted()
     if (!permitted) throw new Error('Terminal access was not approved')
     return createTerminalSession(win, cols, rows)
   })
 
-  ipcMain.handle('terminal:write', (_e, sessionId: string, data: string) => {
-    writeTerminalSession(sessionId, data)
+  ipcMain.handle('terminal:write', (event, sessionId: unknown, data: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zSessionId, [sessionId])
+    const payload = parseIpcArgs(z.string().max(65536), [data])
+    writeTerminalSession(id, payload)
   })
 
-  ipcMain.handle('terminal:resize', (_e, sessionId: string, cols: number, rows: number) => {
-    resizeTerminalSession(sessionId, cols, rows)
+  ipcMain.handle('terminal:resize', (event, sessionId: unknown, cols: unknown, rows: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zSessionId, [sessionId])
+    const [c, r] = parseIpcArgs(terminalCreateSchema, [cols, rows])
+    resizeTerminalSession(id, c, r)
   })
 
-  ipcMain.handle('terminal:destroy', (_e, sessionId: string) => {
-    destroyTerminalSession(sessionId)
+  ipcMain.handle('terminal:destroy', (event, sessionId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zSessionId, [sessionId])
+    destroyTerminalSession(id)
   })
 
   return () => {

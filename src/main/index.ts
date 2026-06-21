@@ -56,11 +56,11 @@ if (!app.requestSingleInstanceLock()) {
 app
   .whenReady()
   .then(async () => {
-    applyAppIcon()
     await checkToolAvailability()
     await initProjectSandbox()
 
     const win = createMainWindow()
+    applyAppIcon([win])
     buildAppMenu(win)
     const registry = createRegistry()
 
