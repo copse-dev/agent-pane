@@ -113,9 +113,11 @@ export interface SpawnPtyOptions {
   cols: number
   rows: number
   env?: NodeJS.ProcessEnv
+  /** Integrated terminals are user-controlled; default is outside the project sandbox. */
+  unsandboxed?: boolean
 }
 
-/** Spawn an interactive shell PTY, routed through ASRT when the project sandbox is active. */
+/** Spawn an interactive shell PTY; optionally routed through ASRT when the project sandbox is active. */
 export async function spawnPtyInProjectSandbox(
   shell: string,
   opts: SpawnPtyOptions,
@@ -135,7 +137,7 @@ export async function spawnPtyInProjectSandbox(
     env: termEnv,
   }
 
-  if (!isProjectSandboxEnabled()) {
+  if (!isProjectSandboxEnabled() || opts.unsandboxed) {
     return pty.spawn(shell, [], ptyOpts)
   }
 

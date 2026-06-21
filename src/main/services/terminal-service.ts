@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { BrowserWindow } from 'electron'
 import type { IPty } from 'node-pty'
-import { afterSandboxedCommand, spawnPtyInProjectSandbox } from '../project-sandbox/index.ts'
+import { spawnPtyInProjectSandbox } from '../project-sandbox/index.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 
 export interface TerminalSession {
@@ -29,7 +29,6 @@ function attachPtyHandlers(win: BrowserWindow, sessionId: string, ptyProcess: IP
   })
   ptyProcess.onExit(({ exitCode }) => {
     sessions.delete(sessionId)
-    afterSandboxedCommand()
     win.webContents.send('terminal:exit', sessionId, exitCode ?? 1)
   })
 }
@@ -44,6 +43,7 @@ async function spawnShell(
     cols,
     rows,
     cwd: sessionCwd(),
+    unsandboxed: true,
   })
 
   const session: TerminalSession = { id: randomUUID(), pty: ptyProcess }
@@ -78,7 +78,6 @@ export function destroyTerminalSession(sessionId: string): void {
   if (!session) return
   session.pty.kill()
   sessions.delete(sessionId)
-  afterSandboxedCommand()
 }
 
 export function destroyAllTerminalSessions(): void {
@@ -86,5 +85,4 @@ export function destroyAllTerminalSessions(): void {
     session.pty.kill()
   }
   sessions.clear()
-  afterSandboxedCommand()
 }
