@@ -11,6 +11,13 @@ describe('estimateUsageCost', () => {
     assert.equal(cost, '~$3.00 (+ local free)')
   })
 
+  it('prices Opus 4.8 at the current $5 / $25 per MTok rate', () => {
+    const cost = estimateUsageCost({
+      'claude-opus-4-8': { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+    })
+    assert.equal(cost, '~$30.00')
+  })
+
   it('returns free for all-local usage', () => {
     assert.equal(
       estimateUsageCost({ 'lmstudio:local': { inputTokens: 50_000, outputTokens: 10_000 } }),

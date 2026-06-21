@@ -1,4 +1,5 @@
 import type { SubagentSession } from './thread.ts'
+import type { TodoItem } from './todo.ts'
 
 export type StreamChunk =
   | { type: 'text'; text: string }
@@ -37,6 +38,13 @@ export type StreamChunk =
     }
   | { type: 'subagent_done'; parentToolCallId: string; summary: string }
   | { type: 'subagent_error'; parentToolCallId: string; error: string }
+  | { type: 'todo_update'; todos: TodoItem[] }
+  | {
+      type: 'todo_worker_start'
+      todoId: string
+      content: string
+    }
+  | { type: 'todo_worker_done'; todoId: string; summary: string; passed: boolean }
   | { type: 'done'; stopReason?: string }
 
 export interface ToolCallChunk {

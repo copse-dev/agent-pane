@@ -2,8 +2,10 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { homedir, platform } from 'node:os'
 import { join } from 'node:path'
 
-/** Matches app-init.ts: join(app.getPath('appData'), 'copse-panel') */
+/** Matches `app.setPath('userData', …)` in `src/main/app-init.ts`. */
 export function getCopseUserDataDir(): string {
+  const override = process.env.COPSE_PANEL_USER_DATA?.trim()
+  if (override) return override
   const home = homedir()
   if (platform() === 'darwin') {
     return join(home, 'Library', 'Application Support', 'copse-panel')
