@@ -141,9 +141,6 @@ body {
 .chat-row:hover .chat-delete {
   opacity: 1;
 }
-.chat-new {
-  color: var(--text-muted);
-}
 .pane-chat {
   position: relative;
   flex: 1;

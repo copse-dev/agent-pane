@@ -1,7 +1,7 @@
 import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { openNewThread, switchThread, deleteThread } from '@shared/store/thread-helpers.ts'
+import { switchThread, deleteThread } from '@shared/store/thread-helpers.ts'
 import { addProject, switchProject } from '../controller/projects.ts'
 
 export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
@@ -64,10 +64,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         chatRow.append(del)
         chats.append(chatRow)
       }
-
-      const newChat = el('button', { class: 'chat-row chat-new' }, '+ New thread')
-      newChat.addEventListener('click', () => openNewThread(store))
-      chats.append(newChat)
 
       list.append(chats)
     }

@@ -59,17 +59,17 @@ describe('follow-up suggestion bubbles', () => {
       await completeMockTurn()
 
       const originalThreadTitle = await $('.chat-row.selected .chat-title').getText()
-      await $('.chat-new').click()
+      await $('.titlebar-workspace .new-thread-btn').click()
       await expect($('.follow-up-suggestions')).not.toBeDisplayed()
 
       await browser.execute(() => {
-        const rows = [...document.querySelectorAll('.chats-list .chat-row:not(.chat-new)')]
+        const rows = [...document.querySelectorAll('.chats-list .chat-row')]
         const previous = rows.find((row) => !row.classList.contains('selected'))
         previous?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       })
       await $('.follow-up-bubble').waitForDisplayed({ timeout: 10_000 })
 
-      await $('.chat-new').click()
+      await $('.titlebar-workspace .new-thread-btn').click()
       await browser.execute(() => {
         const el = document.querySelector('.follow-up-suggestions')
         if (el instanceof HTMLElement) el.hidden = false
