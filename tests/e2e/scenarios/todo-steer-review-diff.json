@@ -1,0 +1,12 @@
+{
+  "id": "todo-steer-review-diff",
+  "description": "Review + code changes ask (matches real export) — steer true; want git_diff and ideally update_todos.",
+  "prompts": [
+    "Can you review the current code changes and todo feature then propose any changes that might be needed?"
+  ],
+  "expect": {
+    "shouldSteerTodos": true,
+    "requireUpdateTodos": true,
+    "requireTools": ["git_diff"]
+  }
+}

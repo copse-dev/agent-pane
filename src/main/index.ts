@@ -34,10 +34,12 @@ import { getMainWindow } from './windows/create-main-window.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
 
 // Prevent multiple instances stacking invisible windows at the same position.
-// A second launch focuses the existing window instead.
-if (!app.requestSingleInstanceLock()) {
+// A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.
+const agentEval = process.env.COPSE_AGENT_EVAL === '1'
+const gotSingleInstanceLock = agentEval ? true : app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
   app.quit()
-} else {
+} else if (!agentEval) {
   app.on('second-instance', () => {
     const win = getMainWindow()
     if (win) {

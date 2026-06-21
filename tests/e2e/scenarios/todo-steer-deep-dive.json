@@ -1,0 +1,11 @@
+{
+  "id": "todo-steer-deep-dive",
+  "description": "Audit-style deep dive — steering must inject TODO_STEERING_PROMPT; strict eval expects update_todos before heavy exploration.",
+  "prompts": ["Can you deep dive into reviewing the todo creation part?"],
+  "expect": {
+    "shouldSteerTodos": true,
+    "requireUpdateTodos": true,
+    "maxExplore": 2,
+    "forbidParallelExploreTurn1": true
+  }
+}

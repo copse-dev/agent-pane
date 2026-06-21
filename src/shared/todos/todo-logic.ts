@@ -28,7 +28,8 @@ export function shouldSteerTodos(userMessage: string): boolean {
     /\b(refactor|migrate|implement|add.*and.*test|fix.*across|multi-file|several files)\b/.test(
       text,
     )
-  return multiStep || complex
+  const audit = /\b(deep[- ]?dive|reviewing|review)\b/.test(text)
+  return multiStep || complex || audit
 }
 
 export function formatTodosForPrompt(todos: readonly TodoItem[]): string {
