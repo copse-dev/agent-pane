@@ -103,7 +103,7 @@ describe('decideShellPermission', () => {
 })
 
 describe('decideMcpPermission', () => {
-  const baseInput = { trusted: false, remembered: false, autoAllowReadOnly: false }
+  const baseInput = { remembered: false, autoAllowReadOnly: false }
 
   it('prompts for an unannotated external tool by default', () => {
     assert.equal(decideMcpPermission(baseInput).action, 'prompt')
@@ -111,10 +111,6 @@ describe('decideMcpPermission', () => {
 
   it('allows when the user remembered the tool', () => {
     assert.equal(decideMcpPermission({ ...baseInput, remembered: true }).action, 'allow')
-  })
-
-  it('allows tools from trusted servers', () => {
-    assert.equal(decideMcpPermission({ ...baseInput, trusted: true }).action, 'allow')
   })
 
   it('auto-allows read-only tools only when the setting is on', () => {

@@ -24,9 +24,9 @@ import {
   createTrimNotifier,
 } from './history-trimming.ts'
 import {
-  clearAgentRunReadFileLimits,
-  setAgentRunReadFileLimits,
+  runWithAgentRunReadFileLimits,
   getAgentRunReadFileLimits,
+  readFileLimitsFromConversationBudget,
 } from './agent-run-read-limits.ts'
 import { formatReadFileLimitHint } from '@shared/agent/read-file-limits.ts'
 import {
@@ -284,7 +284,7 @@ export async function runAgent(
     threadId,
     contextPressureChunk(prepared, contextWindow),
   )
-  setAgentRunReadFileLimits(conversationBudget)
+  const runReadLimits = readFileLimitsFromConversationBudget(conversationBudget)
 
   const controller = new AbortController()
   abortMap.set(threadId, controller)
@@ -298,55 +298,58 @@ export async function runAgent(
   }
 
   try {
-    await runAgentLoop({
-      provider,
-      messages: trimmed,
-      tools: parentTools(registry, subagentsEnabled),
-      usageModel: model,
-      executeTool: async (name, args, signal, toolCallId) => {
-        if (name === 'explore' && subagentsEnabled) {
-          setExploreSubagentContext({
-            parentToolCallId: toolCallId,
-            parentGoal,
-            provider: subagentRoute?.provider ?? provider,
-            registry,
-            contextWindow: subagentRoute?.contextWindow ?? contextWindow,
-            toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
-            onChunk: sendChunk,
-          })
-          try {
-            return await registry.execute(name, args, signal)
-          } finally {
-            setExploreSubagentContext(null)
+    await runWithAgentRunReadFileLimits(runReadLimits, async () => {
+      await runAgentLoop({
+        provider,
+        messages: trimmed,
+        tools: parentTools(registry, subagentsEnabled),
+        usageModel: model,
+        coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
+        executeTool: async (name, args, signal, toolCallId) => {
+          if (name === 'explore' && subagentsEnabled) {
+            setExploreSubagentContext({
+              parentToolCallId: toolCallId,
+              parentGoal,
+              provider: subagentRoute?.provider ?? provider,
+              registry,
+              contextWindow: subagentRoute?.contextWindow ?? contextWindow,
+              toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
+              onChunk: sendChunk,
+            })
+            try {
+              return await registry.execute(name, args, signal)
+            } finally {
+              setExploreSubagentContext(null)
+            }
           }
-        }
-        return registry.execute(name, args, signal)
-      },
-      signal: controller.signal,
-      maxContextTokens: contextWindow,
-      toolSchemaReserveTokens: toolSchemaReserve,
-      onHistoryTrimmed: () => notifyTrimmed(sendTrimNotice),
-      getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
-      onChunk: (chunk) => {
-        sendChunk(chunk)
-        if (chunk.type === 'usage') {
-          inputTokens += chunk.inputTokens
-          outputTokens += chunk.outputTokens
-        }
-      },
-    })
-
-    const subUsage = getAccumulatedSubagentUsage()
-    if (subUsage.inputTokens || subUsage.outputTokens) {
-      inputTokens += subUsage.inputTokens
-      outputTokens += subUsage.outputTokens
-      sendChunk({
-        type: 'usage',
-        model: subagentUsageModel,
-        inputTokens: subUsage.inputTokens,
-        outputTokens: subUsage.outputTokens,
+          return registry.execute(name, args, signal)
+        },
+        signal: controller.signal,
+        maxContextTokens: contextWindow,
+        toolSchemaReserveTokens: toolSchemaReserve,
+        onHistoryTrimmed: () => notifyTrimmed(sendTrimNotice),
+        getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
+        onChunk: (chunk) => {
+          sendChunk(chunk)
+          if (chunk.type === 'usage') {
+            inputTokens += chunk.inputTokens
+            outputTokens += chunk.outputTokens
+          }
+        },
       })
-    }
+
+      const subUsage = getAccumulatedSubagentUsage()
+      if (subUsage.inputTokens || subUsage.outputTokens) {
+        inputTokens += subUsage.inputTokens
+        outputTokens += subUsage.outputTokens
+        sendChunk({
+          type: 'usage',
+          model: subagentUsageModel,
+          inputTokens: subUsage.inputTokens,
+          outputTokens: subUsage.outputTokens,
+        })
+      }
+    })
   } catch (err) {
     const msg = classifyAgentError(err)
     mainWindow.webContents.send('agent:chunk', threadId, {
@@ -355,7 +358,6 @@ export async function runAgent(
     } satisfies StreamChunk)
     mainWindow.webContents.send('agent:chunk', threadId, { type: 'done' } satisfies StreamChunk)
   } finally {
-    clearAgentRunReadFileLimits()
     abortMap.delete(threadId)
   }
 

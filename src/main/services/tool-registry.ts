@@ -42,6 +42,15 @@ export class ToolRegistry {
     }))
   }
 
+  /** Validate/coerce recovered text-tool-call args; returns null when unknown or invalid. */
+  tryCoerceArgs(name: string, rawArgs: unknown): Record<string, unknown> | null {
+    const tool = this.tools.get(name)
+    if (!tool) return null
+    const parsed = tool.parameters.safeParse(rawArgs)
+    if (!parsed.success) return null
+    return parsed.data as Record<string, unknown>
+  }
+
   async execute(name: string, rawArgs: unknown, signal: AbortSignal): Promise<string> {
     const tool = this.tools.get(name)
     if (!tool) throw new Error(`Unknown tool: ${name}`)
