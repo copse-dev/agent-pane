@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess, type SpawnOptionsWithoutStdio } from 'node:child_process'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
+import * as pty from 'node-pty'
+import type { IPty } from 'node-pty'
 import quote from 'shell-quote'
 import { workspaceSandboxOverlay } from './config.ts'
 
@@ -104,4 +106,49 @@ export function afterSandboxedCommand(): void {
   if (isProjectSandboxEnabled()) {
     SandboxManager.cleanupAfterCommand()
   }
+}
+
+export interface SpawnPtyOptions {
+  cwd: string
+  cols: number
+  rows: number
+  env?: NodeJS.ProcessEnv
+}
+
+/** Spawn an interactive shell PTY, routed through ASRT when the project sandbox is active. */
+export async function spawnPtyInProjectSandbox(
+  shell: string,
+  opts: SpawnPtyOptions,
+): Promise<IPty> {
+  const termEnv = {
+    ...process.env,
+    ...opts.env,
+    TERM: 'xterm-256color',
+    COLORTERM: 'truecolor',
+  } as Record<string, string>
+
+  const ptyOpts = {
+    name: 'xterm-256color',
+    cols: opts.cols,
+    rows: opts.rows,
+    cwd: opts.cwd,
+    env: termEnv,
+  }
+
+  if (!isProjectSandboxEnabled()) {
+    return pty.spawn(shell, [], ptyOpts)
+  }
+
+  const customConfig = { ...workspaceSandboxOverlay(opts.cwd), allowPty: true }
+  const innerCommand = `exec ${quote.quote([shell])} -il`
+  const { argv, env } = await withWrapCwd(opts.cwd, () =>
+    SandboxManager.wrapWithSandboxArgv(innerCommand, shell, customConfig),
+  )
+
+  const file = argv[0]
+  if (!file) throw new Error('sandbox wrap produced empty argv')
+  return pty.spawn(file, argv.slice(1), {
+    ...ptyOpts,
+    env: { ...env, ...termEnv },
+  })
 }

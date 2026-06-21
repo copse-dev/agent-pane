@@ -1,9 +1,11 @@
 import type { UserContent } from '@shared/types'
 import type { AgentRunPayload } from '@shared/types/skills.ts'
+import type { TodoItem } from '@shared/types/todo.ts'
 
 export function parseAgentRunPayload(rawPrompt: string): {
   userContent: UserContent
   invokedSkills: string[]
+  priorTodos: TodoItem[]
 } {
   try {
     const parsed = JSON.parse(rawPrompt) as AgentRunPayload | UserContent
@@ -12,10 +14,11 @@ export function parseAgentRunPayload(rawPrompt: string): {
       return {
         userContent: payload.content,
         invokedSkills: payload.invokedSkills ?? [],
+        priorTodos: payload.priorTodos ?? [],
       }
     }
-    return { userContent: parsed as UserContent, invokedSkills: [] }
+    return { userContent: parsed as UserContent, invokedSkills: [], priorTodos: [] }
   } catch {
-    return { userContent: rawPrompt, invokedSkills: [] }
+    return { userContent: rawPrompt, invokedSkills: [], priorTodos: [] }
   }
 }
