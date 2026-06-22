@@ -15,6 +15,7 @@ import { setPermissionGateForTests } from './tool-registry.ts'
 import { ensureToolPermitted, ensureTerminalPermitted } from './permission-gate.ts'
 import { decideMcpPermission, describeMcpAnnotations } from './permission-policy.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
+import { runWithAgentRunReadonly } from './agent-run-readonly.ts'
 
 describe('SANDBOX_TOOLS', () => {
   it('includes read_skill so skill reads auto-run without approval', () => {
@@ -42,6 +43,16 @@ describe('ensureToolPermitted', () => {
       await ensureToolPermitted({ toolName: 'gh_pr_list', args: { state: 'open', limit: 20 } }),
       true,
     )
+  })
+
+  it('blocks mutating tools but allows reads during a read-only agent run', async () => {
+    setPermissionGateForTests(null)
+    await runWithAgentRunReadonly(true, async () => {
+      assert.equal(await ensureToolPermitted({ toolName: 'write_file', args: {} }), false)
+      assert.equal(await ensureToolPermitted({ toolName: 'run_shell', args: {} }), false)
+      assert.equal(await ensureToolPermitted({ toolName: 'str_replace', args: {} }), false)
+      assert.equal(await ensureToolPermitted({ toolName: 'read_file', args: {} }), true)
+    })
   })
 })
 

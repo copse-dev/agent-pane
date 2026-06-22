@@ -57,6 +57,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
   { name: 'mcpAutoAllowReadOnly', kind: 'checkbox', default: false, save: false },
+  { name: 'defaultReadonlyMode', kind: 'checkbox', default: false, save: false },
   { name: 'webAllowUserApproval', kind: 'checkbox', default: true, save: false },
   { name: 'safetyConfidenceThreshold', kind: 'text', default: '0.85', save: false },
 ]
@@ -385,6 +386,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <p class="field-hint">
                 Destructive tools always prompt. Other tools prompt once; choose “always allow” to
                 remember a specific tool.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="defaultReadonlyMode" />
+                Read-only agent mode
+              </label>
+              <p class="field-hint">
+                Agent runs can read and search the workspace but cannot write files, run shell
+                commands, or make network calls. MCP tools are limited to those the server flags as
+                read-only and non-destructive (which still prompt as usual).
               </p>
             </fieldset>
           </section>
@@ -798,6 +808,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         safetyConfidenceThreshold: Number.isFinite(confidence) ? confidence : 0.85,
         autoRunSandboxCommands: data.get('autoRunSandboxCommands') === 'on',
         mcpAutoAllowReadOnly: data.get('mcpAutoAllowReadOnly') === 'on',
+        defaultReadonlyMode: data.get('defaultReadonlyMode') === 'on',
         webAllowedOrigins: parseWebAllowedOrigins(data.get('webAllowedOrigins')),
         webAllowUserApproval: data.get(WEB_ALLOW_USER_APPROVAL_SETTING) === 'on',
       })

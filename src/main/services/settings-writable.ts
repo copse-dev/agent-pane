@@ -77,6 +77,7 @@ export const securitySettingsSchema = z.object({
   // Storage-only setting with no Settings UI yet (see docs/cursor-hooks.md). Optional so the
   // renderer's setSecurity bundle, which never sends it, doesn't fail validation or clobber it.
   cursorHooksEnabled: z.boolean().optional(),
+  defaultReadonlyMode: z.boolean(),
   webAllowedOrigins: webAllowedOriginsSchema,
   webAllowUserApproval: z.boolean(),
 })

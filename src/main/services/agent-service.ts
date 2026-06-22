@@ -24,6 +24,9 @@ import {
   getAgentRunReadFileLimits,
   readFileLimitsFromConversationBudget,
 } from './agent-run-read-limits.ts'
+import { runWithAgentRunReadonly } from './agent-run-readonly.ts'
+import { isToolAllowedInReadonlyMode } from '@shared/tools/readonly-tools.ts'
+import { getMcpToolMeta } from './mcp-registry.ts'
 import { formatReadFileLimitHint } from '@shared/agent/read-file-limits.ts'
 import {
   setExploreSubagentContext,
@@ -73,10 +76,10 @@ export const PARENT_DELEGATED_TOOLS = [
   'find_files',
 ] as const
 
-function parentTools(registry: ToolRegistry, subagentsEnabled: boolean) {
-  const tools = registry.toLLMTools()
+function parentTools(registry: ToolRegistry, subagentsEnabled: boolean, readonlyMode: boolean) {
+  let tools = registry.toLLMTools()
   if (!subagentsEnabled) {
-    return tools
+    tools = tools
       .filter((t) => t.name !== 'explore')
       .map((t) =>
         t.name === 'read_file'
@@ -88,9 +91,22 @@ function parentTools(registry: ToolRegistry, subagentsEnabled: boolean) {
             }
           : t,
       )
+  } else {
+    const excluded = new Set<string>(PARENT_DELEGATED_TOOLS)
+    tools = tools.filter((t) => !excluded.has(t.name))
   }
-  const excluded = new Set<string>(PARENT_DELEGATED_TOOLS)
-  return tools.filter((t) => !excluded.has(t.name))
+  // Keep the offered tool set equal to the allowed set so the model never wastes
+  // turns calling a tool that read-only enforcement would reject.
+  if (readonlyMode) {
+    tools = tools.filter((t) =>
+      isToolAllowedInReadonlyMode(t.name, {
+        mcpAnnotations: t.name.startsWith('mcp__')
+          ? getMcpToolMeta(t.name)?.annotations
+          : undefined,
+      }),
+    )
+  }
+  return tools
 }
 
 export async function runAgent(
@@ -214,6 +230,7 @@ export async function runAgent(
 
     sendChunk(contextPressureChunk(prepared, contextWindow))
     const runReadLimits = readFileLimitsFromConversationBudget(conversationBudget)
+    const readonlyMode = getSetting<boolean>('defaultReadonlyMode', false)
 
     resetSubagentUsage()
 
@@ -296,67 +313,69 @@ export async function runAgent(
       return { todos, ...(extraMessage ? { extraMessage } : {}) }
     })
 
-    await runWithAgentRunReadFileLimits(runReadLimits, async () => {
-      await runAgentLoop({
-        provider,
-        messages: trimmed,
-        tools: parentTools(registry, subagentsEnabled),
-        usageModel: model,
-        maxLlmCalls: DEFAULT_MAX_LLM_CALLS,
-        runTimeoutMs: AGENT_RUN_TIMEOUT_MS,
-        coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
-        getOpenTodos: () => getAgentRunTodos(),
-        executeTool: async (name, args, signal, toolCallId) => {
-          if (name === 'explore' && subagentsEnabled) {
-            setExploreSubagentContext({
-              parentToolCallId: toolCallId,
-              parentGoal,
-              provider: subagentRoute?.provider ?? provider,
-              registry,
-              contextWindow: subagentRoute?.contextWindow ?? contextWindow,
-              toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
-              onChunk: sendChunk,
-              usageModel: subagentUsageModel,
-            })
-            try {
-              return await registry.execute(name, args, signal)
-            } finally {
-              setExploreSubagentContext(null)
+    await runWithAgentRunReadonly(readonlyMode, async () => {
+      await runWithAgentRunReadFileLimits(runReadLimits, async () => {
+        await runAgentLoop({
+          provider,
+          messages: trimmed,
+          tools: parentTools(registry, subagentsEnabled, readonlyMode),
+          usageModel: model,
+          maxLlmCalls: DEFAULT_MAX_LLM_CALLS,
+          runTimeoutMs: AGENT_RUN_TIMEOUT_MS,
+          coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
+          getOpenTodos: () => getAgentRunTodos(),
+          executeTool: async (name, args, signal, toolCallId) => {
+            if (name === 'explore' && subagentsEnabled) {
+              setExploreSubagentContext({
+                parentToolCallId: toolCallId,
+                parentGoal,
+                provider: subagentRoute?.provider ?? provider,
+                registry,
+                contextWindow: subagentRoute?.contextWindow ?? contextWindow,
+                toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
+                onChunk: sendChunk,
+                usageModel: subagentUsageModel,
+              })
+              try {
+                return await registry.execute(name, args, signal)
+              } finally {
+                setExploreSubagentContext(null)
+              }
             }
-          }
-          return registry.executeNormalized(name, args, signal)
-        },
-        signal: controller.signal,
-        maxContextTokens: contextWindow,
-        toolSchemaReserveTokens: toolSchemaReserve,
-        onHistoryTrimmed: () => notifyTrimmed(sendTrimNotice),
-        getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
-        onChunk: (chunk) => {
-          sendChunk(chunk)
-          if (chunk.type === 'usage') {
-            inputTokens += chunk.inputTokens
-            outputTokens += chunk.outputTokens
-          }
-        },
-      })
-
-      const subUsage = getAccumulatedSubagentUsage()
-      if (subUsage.inputTokens || subUsage.outputTokens) {
-        inputTokens += subUsage.inputTokens
-        outputTokens += subUsage.outputTokens
-        sendChunk({
-          type: 'usage',
-          model: subagentUsageModel,
-          inputTokens: subUsage.inputTokens,
-          outputTokens: subUsage.outputTokens,
-          ...(subUsage.cacheReadTokens !== undefined
-            ? { cacheReadTokens: subUsage.cacheReadTokens }
-            : {}),
-          ...(subUsage.cacheCreationTokens !== undefined
-            ? { cacheCreationTokens: subUsage.cacheCreationTokens }
-            : {}),
+            return registry.executeNormalized(name, args, signal)
+          },
+          signal: controller.signal,
+          maxContextTokens: contextWindow,
+          toolSchemaReserveTokens: toolSchemaReserve,
+          onHistoryTrimmed: () => notifyTrimmed(sendTrimNotice),
+          getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
+          onChunk: (chunk) => {
+            sendChunk(chunk)
+            if (chunk.type === 'usage') {
+              inputTokens += chunk.inputTokens
+              outputTokens += chunk.outputTokens
+            }
+          },
         })
-      }
+
+        const subUsage = getAccumulatedSubagentUsage()
+        if (subUsage.inputTokens || subUsage.outputTokens) {
+          inputTokens += subUsage.inputTokens
+          outputTokens += subUsage.outputTokens
+          sendChunk({
+            type: 'usage',
+            model: subagentUsageModel,
+            inputTokens: subUsage.inputTokens,
+            outputTokens: subUsage.outputTokens,
+            ...(subUsage.cacheReadTokens !== undefined
+              ? { cacheReadTokens: subUsage.cacheReadTokens }
+              : {}),
+            ...(subUsage.cacheCreationTokens !== undefined
+              ? { cacheCreationTokens: subUsage.cacheCreationTokens }
+              : {}),
+          })
+        }
+      })
     })
   } catch (err) {
     const msg = classifyAgentError(err)
