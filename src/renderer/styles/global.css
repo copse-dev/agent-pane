@@ -302,6 +302,16 @@ body {
   flex: 1;
   min-width: 0;
 }
+.terminals-tab-rename {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--bg-input, var(--bg-primary));
+  border: 1px solid var(--border-focus, var(--accent));
+  border-radius: 3px;
+  padding: 0 2px;
+}
 .terminals-tab:hover {
   background: var(--bg-hover);
 }
