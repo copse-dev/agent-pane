@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
-import { classifyGitBlob, getGitDiffText, parsePorcelainV1 } from './git-service.ts'
+import { classifyGitBlob, getGitDiffText, getGitFileDiff, parsePorcelainV1 } from './git-service.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 import { setGitAvailableForTest } from './tool-availability.ts'
 
@@ -131,5 +131,69 @@ describe('getGitDiffText untracked files', { skip: !gitOk && 'git not installed'
   it('includes untracked files when no path is given', async () => {
     const diff = await getGitDiffText()
     assert.match(diff, /fresh\.txt/)
+  })
+})
+
+describe('getGitFileDiff image preview', { skip: !gitOk && 'git not installed' }, () => {
+  let repo = ''
+  let restore: (() => void) | undefined
+
+  const git = (...args: string[]) => spawnSync('git', args, { cwd: repo })
+
+  before(async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-image-'))
+    git('init', '-q')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    await writeFile(
+      join(repo, 'logo.png'),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    )
+    git('add', 'logo.png')
+    git('commit', '-qm', 'init')
+    restore = setWorkspaceRootForTest(repo)
+    setGitAvailableForTest(true)
+  })
+
+  after(async () => {
+    setGitAvailableForTest(null)
+    restore?.()
+    if (repo) await rm(repo, { recursive: true, force: true })
+  })
+
+  it('returns data URLs for a modified image', async () => {
+    await writeFile(
+      join(repo, 'logo.png'),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0xff, 0xff, 0xff]),
+    )
+    const diff = await getGitFileDiff('logo.png', false)
+    assert.ok(diff)
+    assert.match(diff!.beforeImage ?? '', /^data:image\/png;base64,/)
+    assert.match(diff!.afterImage ?? '', /^data:image\/png;base64,/)
+    assert.notEqual(diff!.beforeImage, diff!.afterImage)
+  })
+
+  it('returns only the after image for an untracked image', async () => {
+    await writeFile(
+      join(repo, 'new.png'),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xaa, 0xbb, 0xcc, 0xdd]),
+    )
+    const diff = await getGitFileDiff('new.png', false)
+    assert.ok(diff)
+    assert.equal(diff!.beforeImage, null)
+    assert.match(diff!.afterImage ?? '', /^data:image\/png;base64,/)
+  })
+
+  it('returns before and after images for a staged modification', async () => {
+    await writeFile(
+      join(repo, 'logo.png'),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x11, 0x22, 0x33, 0x44]),
+    )
+    git('add', 'logo.png')
+    const diff = await getGitFileDiff('logo.png', true)
+    assert.ok(diff)
+    assert.match(diff!.beforeImage ?? '', /^data:image\/png;base64,/)
+    assert.match(diff!.afterImage ?? '', /^data:image\/png;base64,/)
+    assert.notEqual(diff!.beforeImage, diff!.afterImage)
   })
 })

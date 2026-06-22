@@ -23,6 +23,7 @@ export function matchPanelShortcut(e: KeyboardEvent): PanelShortcutAction | null
   if (!e.shiftKey && (e.key === 'j' || e.key === 'J')) return 'togglePanel'
   if (e.shiftKey && (e.key === 'e' || e.key === 'E')) return { openPanel: 'explorer' }
   if (e.shiftKey && (e.key === 'g' || e.key === 'G')) return { openPanel: 'changes' }
+  if (e.shiftKey && (e.key === 'b' || e.key === 'B')) return { openPanel: 'browser' }
   if (!e.shiftKey && (e.key === '`' || e.code === 'Backquote')) return { openPanel: 'terminal' }
 
   return null

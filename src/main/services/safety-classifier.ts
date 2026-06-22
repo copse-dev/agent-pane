@@ -2,6 +2,10 @@ import { getSetting, getLmStudioApiKey } from './settings.ts'
 import { LM_STUDIO_MODEL_IDS, DEFAULT_LM_STUDIO_URL } from '@shared/lm-studio-defaults.ts'
 import { isProjectSandboxEnabled } from '../project-sandbox/index.ts'
 import { getWorkspaceRoot } from './workspace.ts'
+import { resolveLocalModelId } from './provider-selection.ts'
+import { stripTrailingSlash } from './lm-studio-models.ts'
+import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
+import { safeJsonParse } from '@shared/safe-json.ts'
 
 export interface ClassificationResult {
   scope: 'sandbox' | 'external'
@@ -24,48 +28,27 @@ Mark as "external" if the command might: use the network, read/write outside the
 Mark as "sandbox" only when you are confident the command stays within the workspace with no network.
 When uncertain, use "external" with lower confidence.`
 
-function lmStudioKey(): string {
-  return getLmStudioApiKey()
-}
-
 function parseClassification(text: string): ClassificationResult | null {
   const jsonMatch = text.match(/\{[\s\S]*\}/)
   if (!jsonMatch) return null
-  try {
-    const parsed = JSON.parse(jsonMatch[0]) as {
-      scope?: string
-      confidence?: number
-      reason?: string
-    }
-    if (parsed.scope !== 'sandbox' && parsed.scope !== 'external') return null
-    const confidence =
-      typeof parsed.confidence === 'number' && Number.isFinite(parsed.confidence)
-        ? Math.min(1, Math.max(0, parsed.confidence))
-        : 0
-    const reason = typeof parsed.reason === 'string' ? parsed.reason.trim() : ''
-    if (!reason) return null
-    return { scope: parsed.scope, confidence, reason }
-  } catch {
-    return null
-  }
+  const parsed = safeJsonParse<{
+    scope?: string
+    confidence?: number
+    reason?: string
+  }>(jsonMatch[0])
+  if (!parsed) return null
+  if (parsed.scope !== 'sandbox' && parsed.scope !== 'external') return null
+  const confidence =
+    typeof parsed.confidence === 'number' && Number.isFinite(parsed.confidence)
+      ? Math.min(1, Math.max(0, parsed.confidence))
+      : 0
+  const reason = typeof parsed.reason === 'string' ? parsed.reason.trim() : ''
+  if (!reason) return null
+  return { scope: parsed.scope, confidence, reason }
 }
 
-async function resolveSafetyModel(url: string): Promise<string | null> {
-  const configured = getSetting<string>('safetyModel', LM_STUDIO_MODEL_IDS.safety).trim()
-  if (configured) return configured
-  const fallback = getSetting<string>('localDefaultModel', LM_STUDIO_MODEL_IDS.chat).trim()
-  if (fallback) return fallback
-  try {
-    const res = await fetch(`${url.replace(/\/$/, '')}/models`, {
-      signal: AbortSignal.timeout(4000),
-      headers: { Authorization: `Bearer ${lmStudioKey()}` },
-    })
-    if (!res.ok) return null
-    const json = (await res.json()) as { data?: Array<{ id?: string }> }
-    return json.data?.[0]?.id ?? null
-  } catch {
-    return null
-  }
+function resolveSafetyModel(url: string): Promise<string | null> {
+  return resolveLocalModelId('safetyModel', url, LM_STUDIO_MODEL_IDS.safety)
 }
 
 export async function classifyShellScope(command: string): Promise<ClassificationResult | null> {
@@ -88,14 +71,14 @@ export async function classifyShellScope(command: string): Promise<Classificatio
     },
   }
 
-  const base = url.replace(/\/$/, '')
+  const base = stripTrailingSlash(url)
   try {
     const res = await fetch(`${base}/chat/completions`, {
       method: 'POST',
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(FETCH_TIMEOUTS.safetyClassification),
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${lmStudioKey()}`,
+        Authorization: `Bearer ${getLmStudioApiKey()}`,
       },
       body: JSON.stringify({
         model,

@@ -83,14 +83,24 @@ function isPathInsideRoot(resolved: string, absRoot: string): boolean {
 
 export function resolveWorkspacePath(path: string): string {
   if (!workspaceRoot) throw new Error('No workspace open. Use Open Folder first.')
-  if (isAbsolute(path)) {
-    throw new Error(`Absolute paths are not allowed: ${path}`)
-  }
   const absRoot = realpathSync.native(resolve(workspaceRoot))
-  const absTarget = resolve(absRoot, path)
+  let relPath = path
+  if (isAbsolute(path)) {
+    const absInput = resolve(path)
+    const fromRoot = relative(absRoot, absInput)
+    if (fromRoot.startsWith('..') || fromRoot.split(sep).includes('..')) {
+      throw new Error(
+        `Path outside workspace: ${path}. File tools require paths relative to the workspace root.`,
+      )
+    }
+    relPath = fromRoot === '' ? '.' : fromRoot
+  }
+  const absTarget = resolve(absRoot, relPath)
 
   if (!isPathInsideRoot(absTarget, absRoot)) {
-    throw new Error(`Path outside workspace: ${path}`)
+    throw new Error(
+      `Path outside workspace: ${path}. File tools require paths relative to the workspace root.`,
+    )
   }
 
   let probe = absTarget
@@ -100,7 +110,9 @@ export function resolveWorkspacePath(path: string): string {
       const suffix = relative(probe, absTarget)
       const resolved = suffix ? resolve(realProbe, suffix) : realProbe
       if (!isPathInsideRoot(resolved, absRoot)) {
-        throw new Error(`Path outside workspace: ${path}`)
+        throw new Error(
+          `Path outside workspace: ${path}. File tools require paths relative to the workspace root.`,
+        )
       }
       return resolved
     }

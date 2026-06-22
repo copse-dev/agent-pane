@@ -25,6 +25,7 @@ export interface IpcInvokeMap {
   'agent:abort': { args: [threadId: string]; result: void }
   'agent:clearHistory': { args: [threadId: string]; result: void }
   'agent:suggestTitle': { args: [text: string]; result: string | null }
+  'agent:suggestTerminalTitle': { args: [text: string]; result: string | null }
   'agent:suggestFollowUps': {
     args: [contextJson: string]
     result: import('@shared/follow-ups/types.ts').FollowUpSuggestion[]
@@ -153,6 +154,7 @@ export interface IpcEventMap {
   'menu:showExplorer': []
   'menu:showTerminal': []
   'menu:showChanges': []
+  'menu:showBrowser': []
   'theme:changed': ['light' | 'dark']
   'terminal:output': [sessionId: string, data: string]
   'terminal:exit': [sessionId: string, code: number]

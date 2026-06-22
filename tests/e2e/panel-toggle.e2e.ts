@@ -77,6 +77,7 @@ describe('right panel toggle and shortcuts', () => {
     await panelBtn.click()
     await pane.waitForDisplayed({ timeout: 5_000 })
     await expect($('.right-panel-tab[aria-label="Explorer"]')).toHaveElementClass('is-active')
+    await expect($('.right-panel-tab[aria-label="Plan"]')).not.toBeDisplayed()
 
     await panelBtn.click()
     await browser.waitUntil(async () => !(await pane.isDisplayed()), {

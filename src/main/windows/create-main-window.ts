@@ -61,6 +61,7 @@ export function createMainWindow(): BrowserWindow {
       // a renderer compromise can no longer reach Node from the preload context.
       sandbox: true,
       spellcheck: false,
+      webviewTag: true,
       preload: join(__dirname, '../preload/index.js'),
     },
   })

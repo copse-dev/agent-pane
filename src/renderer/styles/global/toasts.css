@@ -1,0 +1,28 @@
+/* Transient error/notice toasts (renderer IPC failures, save errors). */
+.toast-host {
+  position: fixed;
+  bottom: var(--spacing-md, 12px);
+  right: var(--spacing-md, 12px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 300;
+  pointer-events: none;
+  max-width: 360px;
+}
+.toast {
+  pointer-events: auto;
+  padding: 10px 12px;
+  border-radius: var(--radius, 4px);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  line-height: 1.4;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  word-break: break-word;
+}
+.toast-error {
+  border-color: var(--error);
+}

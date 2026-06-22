@@ -23,6 +23,7 @@ import {
 } from '@shared/store/subagent-helpers.ts'
 import { planAgentTextChunk } from '@shared/agent/agent-text-chunk.ts'
 import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY } from '../agent-activity.ts'
+import { drainMessageQueue } from './message-queue.ts'
 
 export function startAgentController(store: AppStore, api: ApiClient): () => void {
   // Per-thread streaming state: the message currently accumulating text, and
@@ -197,6 +198,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         setThreadStatus(store, threadId, 'idle')
         store.emit('agent_activity', threadId, null)
         void maybeNameThread(store, api, threadId)
+        drainMessageQueue(store, api, threadId)
         break
       }
     }

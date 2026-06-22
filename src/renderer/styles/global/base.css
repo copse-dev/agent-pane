@@ -1,0 +1,55 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+/* A class like .panel-empty { display: flex } outranks the UA [hidden] rule,
+   so el.hidden = true silently fails to hide it. Force it. */
+[hidden] {
+  display: none !important;
+}
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  background: var(--bg-base);
+  /* Desktop-app chrome (tabs, sidebars, footers) should not highlight on drag. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  position: relative;
+}
+/* Regions where copying text is intentional */
+input,
+textarea,
+select,
+[contenteditable='true'],
+.message-text,
+.tool-result,
+.tool-args pre,
+.approval-body,
+.terminal-container,
+.monaco-editor .view-lines {
+  user-select: text;
+  -webkit-user-select: text;
+}
+/* Monaco gutter chrome stays non-selectable even inside editors */
+.monaco-editor .margin,
+.monaco-editor .line-numbers {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.split-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}

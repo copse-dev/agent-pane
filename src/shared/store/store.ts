@@ -28,6 +28,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     layout: { ...DEFAULT_LAYOUT },
     theme: 'dark',
     fontSize: 14,
+    autoPortraitRightPanel: true,
     ...initial,
   }
 

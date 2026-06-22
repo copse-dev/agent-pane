@@ -1,7 +1,29 @@
-import { accessSync } from 'node:fs'
+import { accessSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
+
+/**
+ * Resolve the workspace root to its canonical, symlink-free path.
+ *
+ * macOS seatbelt enforces filesystem rules against the kernel's canonical path,
+ * but `resolve()` leaves symlinks intact. Temp workspaces live under
+ * `/var/folders/...`, where `/var` is a symlink to `/private/var`; without
+ * canonicalization the allow/deny rules say `/var/folders/...` while the kernel
+ * sees `/private/var/folders/...`, so writes to `.git` during `git commit` are
+ * denied as EPERM. `realpathSync` collapses the symlink so the rules match.
+ *
+ * Falls back to `resolve()` when the path can't be canonicalized (e.g. it does
+ * not exist yet), preserving prior behaviour.
+ */
+function canonicalizeWorkspaceRoot(workspaceRoot: string): string {
+  const resolved = resolve(workspaceRoot)
+  try {
+    return realpathSync.native(resolved)
+  } catch {
+    return resolved
+  }
+}
 
 /** Mirrors ASRT macOS mandatory write denies, resolved against the workspace root. */
 const DANGEROUS_CONFIG_FILENAMES = [
@@ -24,7 +46,7 @@ const DANGEROUS_CONFIG_DIR_NAMES = [
 ] as const
 
 export function workspaceMandatoryWriteDenyPaths(workspaceRoot: string): string[] {
-  const root = resolve(workspaceRoot)
+  const root = canonicalizeWorkspaceRoot(workspaceRoot)
   const denyPaths: string[] = []
   for (const fileName of DANGEROUS_CONFIG_FILENAMES) {
     denyPaths.push(join(root, fileName))
@@ -143,7 +165,7 @@ export function fsWorkerSandboxOverlay(
 }
 
 export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxRuntimeConfig> {
-  const root = resolve(workspaceRoot)
+  const root = canonicalizeWorkspaceRoot(workspaceRoot)
   const toolchainRead = resolveNodeToolchainAllowRead()
   return {
     network: {

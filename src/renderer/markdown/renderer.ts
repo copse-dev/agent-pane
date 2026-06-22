@@ -49,7 +49,11 @@ export function renderMarkdown(raw: string): string {
     let t = seg
     t = t.replace(/`([^`]+)`/g, '<code>$1</code>')
     t = renderMarkdownLinks(t)
-    t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    // Bold around inline code first (`**` + <code> + `**`); then prose bold outside
+    // code spans. A single [^*]+ pass breaks on globs like src/**/*.test.ts inside
+    // <code> and can pair ** across table rows, leaving stray markers (e.g. MCP host**:).
+    t = t.replace(/\*\*(<code>[\s\S]*?<\/code>)\*\*/g, '<strong>$1</strong>')
+    t = applyOutsideCode(t, /\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
     t = applyOutsideCode(t, /_([^_\n]+)_/g, '<em>$1</em>')
     t = applyOutsideCode(t, /(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
     t = t.replace(/^### (.+)$/gm, '<h3>$1</h3>')
@@ -57,13 +61,21 @@ export function renderMarkdown(raw: string): string {
     t = t.replace(/^# (.+)$/gm, '<h4>$1</h4>')
     t = t.replace(/^ {0,3}(-{3,}|\*{3,}|_{3,}) *$/gm, '\n\n<hr>\n\n')
     t = t.replace(/^(?:[-*+] )(.+)$/gm, '<li>$1</li>')
-    t = t.replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`)
+    t = wrapLooseListItems(t)
     return t
   })
 
   s = mapOutsideFencedHtml(s, (seg) => wrapProseBlocks(seg))
 
   return s
+}
+
+/** Group consecutive `<li>` blocks (including blank-line gaps) into a tight `<ul>`. */
+function wrapLooseListItems(text: string): string {
+  return text.replace(/(?:<li>[\s\S]*?<\/li>\s*)+/g, (match) => {
+    const items = match.match(/<li>[\s\S]*?<\/li>/g) ?? []
+    return `<ul>${items.join('')}</ul>`
+  })
 }
 
 function applyOutsideCode(text: string, pattern: RegExp, replacement: string): string {

@@ -1,0 +1,68 @@
+#titlebar {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 60;
+}
+#thread-tabs {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+#input-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  flex-shrink: 0;
+  background: var(--bg-base);
+  border-top: 1px solid var(--border);
+}
+.titlebar {
+  -webkit-app-region: drag;
+  height: var(--titlebar-height);
+  display: flex;
+  align-items: center;
+  /* Left padding clears the macOS traffic-light buttons. */
+  padding: 0 var(--spacing-lg) 0 var(--traffic-light-inset);
+  background: var(--bg-elevated);
+  gap: var(--spacing-sm);
+}
+.titlebar-left {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+.titlebar-settings-btn {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  padding: 0;
+  line-height: 1;
+}
+.titlebar-text-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px 10px;
+  font-size: var(--font-size-sm);
+}
+.titlebar-btn-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  width: 14px;
+  height: 14px;
+}
+.titlebar-btn-icon .tree-icon-img {
+  width: 14px;
+  height: 14px;
+}
+.titlebar button,
+.titlebar input,
+.titlebar select {
+  -webkit-app-region: no-drag;
+}
