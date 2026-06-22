@@ -1442,6 +1442,21 @@ label {
   /* leave room for the absolutely-positioned Send button */
   padding-right: 84px;
 }
+.prompt-input.with-stop {
+  padding-right: 148px;
+}
+.stop-btn {
+  position: absolute;
+  right: 84px;
+  bottom: var(--spacing-md);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+.stop-btn:hover {
+  color: var(--text-primary);
+}
 .submit-btn {
   position: absolute;
   right: var(--spacing-md);
@@ -1450,6 +1465,29 @@ label {
   color: white;
   border-radius: var(--radius);
   padding: 6px 16px;
+}
+.submit-btn.with-stop {
+  right: var(--spacing-md);
+}
+.footer-queue {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.message-queued-badge {
+  display: inline-block;
+  margin-bottom: var(--spacing-xs);
+  padding: 1px 6px;
+  border-radius: var(--radius);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--bg-hover);
+}
+.msg-queued .message-body {
+  opacity: 0.85;
 }
 .input-footer {
   display: flex;
