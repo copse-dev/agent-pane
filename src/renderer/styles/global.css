@@ -1413,6 +1413,9 @@ label {
   text-underline-offset: 2px;
   cursor: pointer;
 }
+.footer-branch-status.is-copyable {
+  cursor: pointer;
+}
 .footer-branch-status.is-link:hover {
   color: var(--text-primary);
 }
