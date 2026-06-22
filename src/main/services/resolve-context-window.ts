@@ -1,4 +1,4 @@
-import { getSetting } from './settings.ts'
+import { getSetting, getSettingTrimmed } from './settings.ts'
 import { LM_STUDIO_MODEL_IDS, DEFAULT_LM_STUDIO_URL } from '@shared/lm-studio-defaults.ts'
 import { getModelInfo } from '@shared/llm/model-catalog.ts'
 import { contextLengthForModel, fetchLmStudioModelsCached } from './lm-studio-models.ts'
@@ -11,7 +11,7 @@ const DEFAULT_CLOUD_CONTEXT = 128_000
 function localModelId(model: string): string | null {
   if (model.startsWith('lmstudio:')) return model.slice('lmstudio:'.length)
   if (model === 'lm-studio')
-    return getSetting<string>('localDefaultModel', LM_STUDIO_MODEL_IDS.chat).trim() || null
+    return getSettingTrimmed('localDefaultModel', LM_STUDIO_MODEL_IDS.chat) || null
   return null
 }
 

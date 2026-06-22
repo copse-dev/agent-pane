@@ -1,5 +1,6 @@
 import { getLmStudioApiKey } from './settings.ts'
 import { DEFAULT_LM_STUDIO_URL } from '@shared/lm-studio-defaults.ts'
+import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
 
 export interface LmStudioModelInfo {
   id: string
@@ -12,9 +13,14 @@ export function lmStudioApiKey(override?: string): string {
   return getLmStudioApiKey()
 }
 
-/** OpenAI base URL → server origin (strip trailing /v1). */
+/** Drop a single trailing slash, preserving the path (e.g. keeps `/v1`). */
+export function stripTrailingSlash(url: string): string {
+  return url.replace(/\/$/, '')
+}
+
+/** OpenAI base URL → server origin (strip trailing slash and `/v1`). */
 export function lmStudioOrigin(openAiBaseUrl: string): string {
-  const trimmed = (openAiBaseUrl || DEFAULT_LM_STUDIO_URL).replace(/\/$/, '')
+  const trimmed = stripTrailingSlash(openAiBaseUrl || DEFAULT_LM_STUDIO_URL)
   return trimmed.replace(/\/v1$/i, '')
 }
 
@@ -128,7 +134,7 @@ async function fetchJson(
 ): Promise<{ ok: boolean; json?: unknown; status?: number; statusText?: string }> {
   try {
     const res = await fetch(url, {
-      signal: AbortSignal.timeout(4000),
+      signal: AbortSignal.timeout(FETCH_TIMEOUTS.modelList),
       headers: { Authorization: `Bearer ${apiKey}` },
     })
     if (!res.ok) {
@@ -148,7 +154,7 @@ export async function fetchLmStudioModels(
   openAiBaseUrl: string,
   apiKey?: string,
 ): Promise<{ ok: boolean; models: LmStudioModelInfo[]; error?: string }> {
-  const base = (openAiBaseUrl || DEFAULT_LM_STUDIO_URL).replace(/\/$/, '')
+  const base = stripTrailingSlash(openAiBaseUrl || DEFAULT_LM_STUDIO_URL)
   const key = lmStudioApiKey(apiKey)
   const origin = lmStudioOrigin(base)
 
@@ -200,7 +206,7 @@ export async function fetchLmStudioModelsCached(
   openAiBaseUrl: string,
   apiKey?: string,
 ): Promise<{ ok: boolean; models: LmStudioModelInfo[]; error?: string }> {
-  const url = (openAiBaseUrl || DEFAULT_LM_STUDIO_URL).replace(/\/$/, '')
+  const url = stripTrailingSlash(openAiBaseUrl || DEFAULT_LM_STUDIO_URL)
   const key = lmStudioApiKey(apiKey)
   const cacheKey = `${url}${key}`
   const now = Date.now()
