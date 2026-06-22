@@ -17,6 +17,14 @@ function changesModeActive(store: AppStore): boolean {
   return filesPaneOpen && rightPanelMode === 'changes'
 }
 
+function getFirstChange(status: GitStatusResult): { path: string; staged: boolean } | null {
+  const staged = status.staged[0]
+  if (staged) return { path: staged.path, staged: true }
+  const unstaged = status.unstaged[0]
+  if (unstaged) return { path: unstaged.path, staged: false }
+  return null
+}
+
 export function mountGitChangesPane(
   listRoot: HTMLElement,
   viewerRoot: HTMLElement,
@@ -51,6 +59,12 @@ export function mountGitChangesPane(
     scrollBeyondLastLine: false,
     fontSize: store.getState().fontSize,
     theme: store.getState().theme === 'dark' ? 'vs-dark' : 'vs',
+    hideUnchangedRegions: {
+      enabled: true,
+      contextLineCount: 3,
+      minimumLineCount: 3,
+      revealLineCount: 20,
+    },
   })
 
   let status: GitStatusResult | null = null
@@ -150,6 +164,9 @@ export function mountGitChangesPane(
     renderList()
     if (selected) {
       await selectChange(selected.path, selected.staged)
+    } else {
+      const first = status ? getFirstChange(status) : null
+      if (first) await selectChange(first.path, first.staged)
     }
   }
 

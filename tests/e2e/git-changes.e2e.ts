@@ -63,11 +63,11 @@ describe('git changes viewer', () => {
     const untrackedBadge = await $('.git-change-status-untracked')
     await expect(untrackedBadge).toHaveText('?')
 
-    // Click the staged file and confirm the Monaco diff editor renders.
+    // Opening the panel auto-selects the first changed file (staged.ts).
     const stagedRow = await rows.find(
       async (r) => (await r.$('.git-change-path').getText()) === 'staged.ts',
     )
-    await stagedRow!.click()
+    await expect(stagedRow).toHaveElementClass('is-selected')
 
     const diffViewer = await $('#git-diff-viewer-host .monaco-diff-editor')
     await diffViewer.waitForDisplayed({ timeout: 15_000 })
