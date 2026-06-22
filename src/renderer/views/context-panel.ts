@@ -7,6 +7,7 @@ import { renderMarkdown } from '../markdown/renderer.ts'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
+import { showErrorToast } from './toast.ts'
 
 type MarkdownViewMode = 'preview' | 'source'
 
@@ -106,7 +107,11 @@ export function mountContextPanel(
 
   fileEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
     const { openFile } = store.getState()
-    if (openFile) void api.fs.writeFile(openFile.path, fileEditor.getValue())
+    if (openFile) {
+      void api.fs.writeFile(openFile.path, fileEditor.getValue()).catch((err) => {
+        showErrorToast(`Failed to save ${openFile.path}`, err)
+      })
+    }
   })
 
   function updatePanel() {
@@ -190,13 +195,14 @@ export function mountContextPanel(
     store.on('staged_diffs_changed', () => updatePanel()),
   ]
 
-  api.fs.onChanged((path, newContent) => {
+  const unsubFsChanged = api.fs.onChanged((path, newContent) => {
     if (path !== store.getState().openFile?.path) return
     void (async () => {
       let content: string
       try {
         content = newContent ?? (await api.fs.readFile(path))
-      } catch {
+      } catch (err) {
+        showErrorToast(`Failed to reload ${path}`, err)
         return
       }
       const model = fileEditor.getModel()
@@ -220,6 +226,7 @@ export function mountContextPanel(
 
   return () => {
     unsubs.forEach((u) => u())
+    unsubFsChanged()
     unbindDrop()
     fileEditor.dispose()
     diffEditor.dispose()

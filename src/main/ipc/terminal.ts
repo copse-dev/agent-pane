@@ -22,27 +22,27 @@ export function initTerminal(win: BrowserWindow): () => void {
     const [cols, rows] = parseIpcArgs(terminalCreateSchema, rawArgs)
     const permitted = await ensureTerminalPermitted()
     if (!permitted) throw new Error('Terminal access was not approved')
-    return createTerminalSession(win, cols, rows)
+    return createTerminalSession(win, event.sender.id, cols, rows)
   })
 
   ipcMain.handle('terminal:write', (event, sessionId: unknown, data: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zSessionId, [sessionId])
     const payload = parseIpcArgs(z.string().max(65536), [data])
-    writeTerminalSession(id, payload)
+    writeTerminalSession(id, event.sender.id, payload)
   })
 
   ipcMain.handle('terminal:resize', (event, sessionId: unknown, cols: unknown, rows: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zSessionId, [sessionId])
     const [c, r] = parseIpcArgs(terminalCreateSchema, [cols, rows])
-    resizeTerminalSession(id, c, r)
+    resizeTerminalSession(id, event.sender.id, c, r)
   })
 
   ipcMain.handle('terminal:destroy', (event, sessionId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zSessionId, [sessionId])
-    destroyTerminalSession(id)
+    destroyTerminalSession(id, event.sender.id)
   })
 
   return () => {
