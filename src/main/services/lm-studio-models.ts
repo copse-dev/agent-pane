@@ -1,6 +1,5 @@
 import { getLmStudioApiKey } from './settings.ts'
-
-const DEFAULT_LM_STUDIO_URL = 'http://localhost:1234/v1'
+import { DEFAULT_LM_STUDIO_URL } from '@shared/lm-studio-defaults.ts'
 
 export interface LmStudioModelInfo {
   id: string

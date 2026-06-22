@@ -44,6 +44,8 @@ export interface Thread {
   gitBranch?: string
   /** Prompts submitted while the agent is running; drained FIFO when idle. */
   pendingMessages?: QueuedUserMessage[]
+  /** Unsubmitted composer text; keeps blank threads visible across switches. */
+  draftPrompt?: string
   createdAt: number
   updatedAt: number
 }
