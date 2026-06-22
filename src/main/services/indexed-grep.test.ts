@@ -29,6 +29,50 @@ describe('indexed-grep parsing', () => {
     }
   })
 
+  it('includes context lines with a "-" separator and caps by match count (#122)', () => {
+    const stdout = [
+      JSON.stringify({
+        type: 'context',
+        data: {
+          path: { text: '/tmp/repo/src/main.ts' },
+          line_number: 11,
+          lines: { text: 'before\n' },
+        },
+      }),
+      JSON.stringify({
+        type: 'match',
+        data: {
+          path: { text: '/tmp/repo/src/main.ts' },
+          line_number: 12,
+          lines: { text: 'export function main() {}\n' },
+        },
+      }),
+      JSON.stringify({
+        type: 'context',
+        data: {
+          path: { text: '/tmp/repo/src/main.ts' },
+          line_number: 13,
+          lines: { text: 'after\n' },
+        },
+      }),
+    ].join('\n')
+
+    const restore = setWorkspaceRootForTest('/tmp/repo')
+    try {
+      const lines = parseRipgrepJson(stdout, 5)
+      assert.deepEqual(lines, [
+        'src/main.ts-11- before',
+        'src/main.ts:12: export function main() {}',
+        'src/main.ts-13- after',
+      ])
+      // One match (under the cap of 5) plus two context lines must not register
+      // as "truncated" even though there are three output lines total.
+      assert.doesNotMatch(formatCodeSearchResults(lines, 5, 'rg'), /Truncated/)
+    } finally {
+      restore()
+    }
+  })
+
   it('parses grep-style stdout lines', () => {
     const restore = setWorkspaceRootForTest('/tmp/repo')
     try {

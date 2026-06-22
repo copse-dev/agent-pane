@@ -3,7 +3,12 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile, writeFile, rm, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { applyDiffEntry } from './diff-queue.ts'
+import {
+  applyDiffEntry,
+  stageDiff,
+  getDiffQueueForTest,
+  clearDiffQueueForTest,
+} from './diff-queue.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 
 describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
@@ -95,5 +100,28 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
     })
     assert.equal(result.status, 'error')
     if (result.status === 'error') assert.match(result.error, /EISDIR|illegal|directory/i)
+  })
+})
+
+describe('stageDiff same-path coalescing (#118)', () => {
+  beforeEach(() => clearDiffQueueForTest())
+  afterEach(() => clearDiffQueueForTest())
+
+  it('keeps a single queue entry for a path and preserves the original before snapshot', async () => {
+    await stageDiff('a.txt', 'orig\n', 'v1\n', 'plaintext')
+    await stageDiff('a.txt', 'v1\n', 'v2\n', 'plaintext')
+    const queue = getDiffQueueForTest()
+    const entries = queue.filter((e) => e.path === 'a.txt')
+    assert.equal(entries.length, 1, 'duplicate same-path entries must be coalesced')
+    // Baseline stays the first staged `before`; content is the latest proposal.
+    assert.equal(entries[0]!.before, 'orig\n')
+    assert.equal(entries[0]!.after, 'v2\n')
+  })
+
+  it('keeps distinct entries for distinct paths', async () => {
+    await stageDiff('a.txt', '', 'a\n', 'plaintext')
+    await stageDiff('b.txt', '', 'b\n', 'plaintext')
+    const queue = getDiffQueueForTest()
+    assert.equal(queue.length, 2)
   })
 })

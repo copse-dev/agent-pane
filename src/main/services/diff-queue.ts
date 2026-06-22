@@ -6,11 +6,17 @@ import { resolveWorkspacePath } from './workspace.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import { buildIndex } from './file-index.ts'
 
+export type DiffOp = 'write' | 'delete' | 'rename' | 'mkdir'
+
 interface QueueEntry {
   path: string
   before: string
   after: string
   language: string
+  /** Defaults to 'write'. */
+  op?: DiffOp
+  /** Destination path for 'rename'. */
+  renameTo?: string
 }
 
 export type ApplyResult =
@@ -33,8 +39,20 @@ let mainWindow: BrowserWindow | null = null
  * Missing parent directories are created first so brand-new nested paths can be
  * written (#120), and any write failure is captured as an `error` result rather
  * than thrown so batch callers can isolate it from the rest (#118).
+ *
+ * Non-content operations (delete, rename, mkdir) flow through the same approval
+ * model (#122): they are staged as queue entries and applied here so they share
+ * the user-approval safety guarantees instead of bypassing them via run_shell.
  */
 export async function applyDiffEntry(entry: QueueEntry): Promise<ApplyResult> {
+  const op = entry.op ?? 'write'
+  if (op === 'mkdir') return applyMkdir(entry)
+  if (op === 'delete') return applyDelete(entry)
+  if (op === 'rename') return applyRename(entry)
+  return applyWrite(entry)
+}
+
+async function applyWrite(entry: QueueEntry): Promise<ApplyResult> {
   const absPath = resolveWorkspacePath(entry.path)
   let current = ''
   try {
@@ -48,6 +66,65 @@ export async function applyDiffEntry(entry: QueueEntry): Promise<ApplyResult> {
   try {
     await fsp.mkdir(dirname(absPath), { recursive: true })
     await fsp.writeFile(absPath, entry.after, 'utf-8')
+  } catch (err) {
+    return { status: 'error', error: err instanceof Error ? err.message : String(err) }
+  }
+  return { status: 'written' }
+}
+
+async function applyDelete(entry: QueueEntry): Promise<ApplyResult> {
+  const absPath = resolveWorkspacePath(entry.path)
+  let current = ''
+  try {
+    current = await fsp.readFile(absPath, 'utf-8')
+  } catch {
+    return { status: 'error', error: `File not found: ${entry.path}` }
+  }
+  // Same stale-overwrite guard as writes: refuse if the file changed since staging.
+  if (current !== entry.before) {
+    return { status: 'conflict', current }
+  }
+  try {
+    await fsp.rm(absPath)
+  } catch (err) {
+    return { status: 'error', error: err instanceof Error ? err.message : String(err) }
+  }
+  return { status: 'written' }
+}
+
+async function applyRename(entry: QueueEntry): Promise<ApplyResult> {
+  if (!entry.renameTo) return { status: 'error', error: 'rename target missing' }
+  const fromAbs = resolveWorkspacePath(entry.path)
+  const toAbs = resolveWorkspacePath(entry.renameTo)
+  let current = ''
+  try {
+    current = await fsp.readFile(fromAbs, 'utf-8')
+  } catch {
+    return { status: 'error', error: `File not found: ${entry.path}` }
+  }
+  if (current !== entry.before) {
+    return { status: 'conflict', current }
+  }
+  // Don't clobber an existing destination.
+  try {
+    await fsp.access(toAbs)
+    return { status: 'error', error: `Destination already exists: ${entry.renameTo}` }
+  } catch {
+    /* destination is free */
+  }
+  try {
+    await fsp.mkdir(dirname(toAbs), { recursive: true })
+    await fsp.rename(fromAbs, toAbs)
+  } catch (err) {
+    return { status: 'error', error: err instanceof Error ? err.message : String(err) }
+  }
+  return { status: 'written' }
+}
+
+async function applyMkdir(entry: QueueEntry): Promise<ApplyResult> {
+  const absPath = resolveWorkspacePath(entry.path)
+  try {
+    await fsp.mkdir(absPath, { recursive: true })
   } catch (err) {
     return { status: 'error', error: err instanceof Error ? err.message : String(err) }
   }
@@ -144,13 +221,86 @@ export function stageDiff(
   after: string,
   language: string,
 ): Promise<string> {
-  queue.push({ path, before, after, language })
+  // Coalesce by path so two staged diffs on the same file don't sit in the
+  // queue as separate entries that silently clobber each other on approval
+  // (#118). The first entry's `before` snapshot is preserved as the baseline so
+  // the displayed/approved diff spans the full change since staging began; only
+  // the target content is updated to the latest proposal.
+  const existing = queue.find((e) => e.path === path)
+  let effectiveBefore = before
+  if (existing) {
+    effectiveBefore = existing.before
+    existing.after = after
+    existing.language = language
+    existing.op = 'write'
+    delete existing.renameTo
+  } else {
+    queue.push({ path, before, after, language, op: 'write' })
+  }
   // Payload before queue broadcast so the renderer can populate activeDiff first.
-  mainWindow?.webContents.send('agent:show_diff', path, before, after, language)
+  mainWindow?.webContents.send('agent:show_diff', path, effectiveBefore, after, language)
   broadcastQueue()
   return Promise.resolve(
     `Diff staged for ${path}. Approve or reject in the diff panel — the file is not written until accepted.`,
   )
+}
+
+/**
+ * Stage a non-content file operation (delete, rename, mkdir) through the diff
+ * approval queue (#122) so it inherits the same user-approval safety model as
+ * writes. Coalesces by path like {@link stageDiff}. The operation is shown to
+ * the user as a before/after diff (delete: full removal; rename: content moved;
+ * mkdir: directory marker) and is not applied until approved.
+ */
+export function stageFileOp(entry: {
+  op: DiffOp
+  path: string
+  before: string
+  after: string
+  language: string
+  renameTo?: string
+}): Promise<string> {
+  const existingIdx = queue.findIndex((e) => e.path === entry.path)
+  const queued: QueueEntry = {
+    path: entry.path,
+    before: entry.before,
+    after: entry.after,
+    language: entry.language,
+    op: entry.op,
+    ...(entry.renameTo ? { renameTo: entry.renameTo } : {}),
+  }
+  if (existingIdx !== -1) {
+    queue[existingIdx] = queued
+  } else {
+    queue.push(queued)
+  }
+  mainWindow?.webContents.send(
+    'agent:show_diff',
+    entry.path,
+    entry.before,
+    entry.after,
+    entry.language,
+  )
+  broadcastQueue()
+  const verb =
+    entry.op === 'delete'
+      ? `Deletion of ${entry.path}`
+      : entry.op === 'rename'
+        ? `Rename of ${entry.path} → ${entry.renameTo}`
+        : `Creation of directory ${entry.path}`
+  return Promise.resolve(
+    `${verb} staged. Approve or reject in the diff panel — nothing changes on disk until accepted.`,
+  )
+}
+
+/** @internal test helper — snapshot the current queue. */
+export function getDiffQueueForTest(): ReadonlyArray<Readonly<QueueEntry>> {
+  return queue.map((e) => ({ ...e }))
+}
+
+/** @internal test helper — reset queue state between tests. */
+export function clearDiffQueueForTest(): void {
+  queue.length = 0
 }
 
 function removeEntry(path: string): void {
