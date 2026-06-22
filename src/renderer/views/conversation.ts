@@ -6,6 +6,7 @@ import { renderMarkdown } from '../markdown/renderer.ts'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { StreamingMarkdownRenderer } from '../markdown/streaming.ts'
 import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
+import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { stripTextToolCallBlocks } from '@shared/agent/parse-text-tool-calls.ts'
 import type { ToolCall } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -529,10 +530,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   ]
 
   const unbindFileLinks = bindFileReferenceClicks(root, store, api)
+  const unbindBrowserLinks = bindBrowserLinkClicks(root, store)
   rebuildForThread()
   syncFromStore()
   return () => {
     unbindFileLinks()
+    unbindBrowserLinks()
     unsubs.forEach((u) => u())
   }
 }
