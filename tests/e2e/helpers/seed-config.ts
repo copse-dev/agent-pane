@@ -38,6 +38,13 @@ function writeSettings(settings: Record<string, unknown>): void {
   writeFileSync(SETTINGS_PATH, JSON.stringify({ onboardingCompleted: true, ...settings }), 'utf8')
 }
 
+/** Pin Electron window size for deterministic e2e reference screenshots. Call before reloadSession(). */
+export function seedE2eViewport(
+  bounds: { width: number; height: number } = { width: 1280, height: 800 },
+): void {
+  writeSettings({ windowBounds: bounds })
+}
+
 export function seedEmptyProject(
   workspaceRoot: string,
   projectId: string,
@@ -656,9 +663,15 @@ export function seedScrollStreamingFixture(workspaceRoot: string): void {
   )
 }
 
-export function seedTodoDisplayFixture(workspaceRoot: string): void {
+export function seedTodoPlanFixtures(workspaceRoot: string): {
+  planThreadTitle: string
+  noPlanThreadTitle: string
+} {
   const projectId = 'e2e-todo-project'
-  const threadId = 'e2e-todo-thread'
+  const planThreadId = 'e2e-todo-thread'
+  const noPlanThreadId = 'e2e-todo-no-plan-thread'
+  const planThreadTitle = 'Todo display test'
+  const noPlanThreadTitle = 'No plan thread'
   const todos = [
     { id: 'todo-1', content: 'Refactor renderer.ts fence extraction', status: 'completed' },
     { id: 'todo-2', content: 'Add mermaid lazy loader + post-render hook', status: 'in_progress' },
@@ -680,8 +693,8 @@ export function seedTodoDisplayFixture(workspaceRoot: string): void {
       activeProjectId: projectId,
       [`threads:${projectId}`]: [
         {
-          id: threadId,
-          title: 'Todo display test',
+          id: planThreadId,
+          title: planThreadTitle,
           status: 'idle',
           messages: [
             {
@@ -701,13 +714,43 @@ export function seedTodoDisplayFixture(workspaceRoot: string): void {
           ],
           todos,
           usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
+          createdAt: Date.now() + 2,
+          updatedAt: Date.now() + 2,
+        },
+        {
+          id: noPlanThreadId,
+          title: noPlanThreadTitle,
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-user-no-plan',
+              role: 'user',
+              content: 'What files are in src/?',
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+            {
+              id: 'msg-assistant-no-plan',
+              role: 'assistant',
+              content: 'I can list the src directory for you.',
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now() + 1,
+          updatedAt: Date.now() + 1,
         },
       ],
     }),
     'utf8',
   )
+  return { planThreadTitle, noPlanThreadTitle }
+}
+
+/** @deprecated Use seedTodoPlanFixtures — kept for older specs that only need the plan thread. */
+export function seedTodoDisplayFixture(workspaceRoot: string): void {
+  seedTodoPlanFixtures(workspaceRoot)
 }
 
 export function seedToolDisplayFixture(workspaceRoot: string): void {
