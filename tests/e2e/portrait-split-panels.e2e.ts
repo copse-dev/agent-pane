@@ -8,12 +8,31 @@ const PROJECT_ID = 'e2e-portrait-split-project'
 const PORTRAIT_WIDTH = 760
 const PORTRAIT_HEIGHT = 1180
 
-async function bootPortraitProject(portraitSplitPanelsEnabled?: boolean): Promise<void> {
-  resetUserData()
-  seedEmptyProject(process.cwd(), PROJECT_ID, { portraitSplitPanelsEnabled })
-  await browser.reloadSession()
-  await browser.setWindowSize(PORTRAIT_WIDTH, PORTRAIT_HEIGHT)
+async function waitForComposer(): Promise<void> {
   await $('.prompt-input').waitForExist({ timeout: 30_000 })
+}
+
+async function setPortraitWindow(): Promise<void> {
+  await browser.execute(
+    (width, height) => {
+      window.resizeTo(width, height)
+    },
+    PORTRAIT_WIDTH,
+    PORTRAIT_HEIGHT,
+  )
+  await browser.waitUntil(
+    async () => {
+      const size = await browser.execute(() => ({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      }))
+      return size.height >= 700 && size.width / size.height <= 0.8
+    },
+    {
+      timeout: 5_000,
+      timeoutMsg: 'expected Electron window to resize to a tall portrait aspect ratio',
+    },
+  )
 }
 
 async function openTerminalPanel(): Promise<void> {
@@ -23,16 +42,20 @@ async function openTerminalPanel(): Promise<void> {
 }
 
 describe('portrait split panels', () => {
-  before(() => {
+  before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
+    resetUserData()
+    seedEmptyProject(process.cwd(), PROJECT_ID)
+    await browser.reloadSession()
+    await setPortraitWindow()
+    await waitForComposer()
   })
 
   after(() => {
     resetUserData()
   })
 
-  it('splits projects/chat above sidebar/right-panel content by default in portrait', async () => {
-    await bootPortraitProject()
+  it('splits by default, exposes the setting, and disables the split when toggled off', async () => {
     await openTerminalPanel()
 
     const layout = await browser.execute(() => {
@@ -79,13 +102,27 @@ describe('portrait split panels', () => {
     expect(Math.abs(layout.files!.top - layout.windowHeight / 2)).toBeLessThanOrEqual(48)
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'portrait-split-panels-enabled.png'))
-  })
 
-  it('keeps the traditional side-by-side layout when disabled', async () => {
-    await bootPortraitProject(false)
-    await openTerminalPanel()
+    await $('.titlebar-settings-btn').click()
+    const checkbox = await $('input[name="portraitSplitPanelsEnabled"]')
+    await checkbox.waitForDisplayed({ timeout: 5_000 })
+    await expect(checkbox).toBeChecked()
 
-    const layout = await browser.execute(() => {
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'portrait-split-panels-setting.png'))
+    await checkbox.click()
+    await $('.settings-buttons button[type="submit"]').click()
+    await browser.waitUntil(
+      async () =>
+        !(await browser.execute(() =>
+          document.body.classList.contains('portrait-split-panels-enabled'),
+        )),
+      {
+        timeout: 5_000,
+        timeoutMsg: 'expected portrait split class to be removed after saving setting',
+      },
+    )
+
+    const disabledLayout = await browser.execute(() => {
       const rect = (selector: string) => {
         const bounds = document.querySelector(selector)?.getBoundingClientRect()
         return bounds
@@ -107,27 +144,16 @@ describe('portrait split panels', () => {
       }
     })
 
-    expect(layout.bodyHasClass).toBe(false)
-    expect(layout.chat).toBeDefined()
-    expect(layout.files).toBeDefined()
-    expect(layout.sidebar).toBeDefined()
-    expect(layout.terminal).toBeDefined()
+    expect(disabledLayout.bodyHasClass).toBe(false)
+    expect(disabledLayout.chat).toBeDefined()
+    expect(disabledLayout.files).toBeDefined()
+    expect(disabledLayout.sidebar).toBeDefined()
+    expect(disabledLayout.terminal).toBeDefined()
 
-    expect(layout.files!.top).toBe(layout.chat!.top)
-    expect(layout.files!.left).toBeGreaterThan(layout.chat!.left)
-    expect(layout.terminal!.left).toBeGreaterThan(layout.sidebar!.right)
+    expect(disabledLayout.files!.top).toBe(disabledLayout.chat!.top)
+    expect(disabledLayout.files!.left).toBeGreaterThan(disabledLayout.chat!.left)
+    expect(disabledLayout.terminal!.left).toBeGreaterThan(disabledLayout.sidebar!.right)
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'portrait-split-panels-disabled.png'))
-  })
-
-  it('shows the setting as enabled by default', async () => {
-    await bootPortraitProject()
-
-    await $('.titlebar-settings-btn').click()
-    const checkbox = await $('input[name="portraitSplitPanelsEnabled"]')
-    await checkbox.waitForDisplayed({ timeout: 5_000 })
-    await expect(checkbox).toBeChecked()
-
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'portrait-split-panels-setting.png'))
   })
 })
