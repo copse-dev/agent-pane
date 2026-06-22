@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -618,6 +618,62 @@ export function seedGitChangesFixture(): string {
 
 export function cleanupGitChangesFixture(repoRoot: string): void {
   rmSync(repoRoot, { recursive: true, force: true })
+}
+
+const GIT_IMAGE_FIXTURES = join(process.cwd(), 'tests/e2e/fixtures')
+
+/**
+ * Git repo with staged/unstaged/untracked image changes for the Changes panel
+ * image preview e2e. Returns the repo path for cleanup.
+ */
+export function seedGitImageChangesFixture(): string {
+  const repoRoot = mkdtempSync(join(tmpdir(), 'copse-panel-git-img-'))
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
+
+  git('init', '-q')
+  git('config', 'user.email', 'e2e@example.com')
+  git('config', 'user.name', 'E2E')
+  git('config', 'commit.gpgsign', 'false')
+
+  copyFileSync(join(GIT_IMAGE_FIXTURES, 'git-changes-red.png'), join(repoRoot, 'staged.png'))
+  copyFileSync(join(GIT_IMAGE_FIXTURES, 'git-changes-blue.png'), join(repoRoot, 'unstaged.png'))
+  git('add', '.')
+  git('commit', '-q', '-m', 'baseline')
+
+  // Staged: red → blue.
+  copyFileSync(join(GIT_IMAGE_FIXTURES, 'git-changes-blue.png'), join(repoRoot, 'staged.png'))
+  git('add', 'staged.png')
+
+  // Unstaged: blue → red.
+  copyFileSync(join(GIT_IMAGE_FIXTURES, 'git-changes-red.png'), join(repoRoot, 'unstaged.png'))
+
+  // Untracked new image.
+  copyFileSync(join(GIT_IMAGE_FIXTURES, 'git-changes-red.png'), join(repoRoot, 'new.png'))
+
+  const projectId = 'e2e-git-image-changes-project'
+  const threadId = 'e2e-git-image-changes-thread'
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: repoRoot, name: 'git-image-workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Git image changes test',
+          status: 'idle',
+          messages: [],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+
+  return repoRoot
 }
 
 /** Long thread so the messages list overflows and scroll-to-bottom can be exercised. */

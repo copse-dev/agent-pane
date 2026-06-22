@@ -173,8 +173,12 @@ export function classifyGitBlob(stdout: string, code: number): GitBlobResult {
   return { content: stdout, exists: true, isBinary: false }
 }
 
+function gitObjectSpec(ref: string, path: string): string {
+  return ref === ':' ? `:${path}` : `${ref}:${path}`
+}
+
 async function readGitBlob(ref: string, path: string): Promise<GitBlobResult> {
-  const { stdout, code } = await runGit(['show', `${ref}:${path}`])
+  const { stdout, code } = await runGit(['show', gitObjectSpec(ref, path)])
   return classifyGitBlob(stdout, code)
 }
 
@@ -214,7 +218,7 @@ function bufferToDataUrl(buf: Buffer, mime: string): string {
 }
 
 async function readGitBlobImage(ref: string, path: string, mime: string): Promise<string | null> {
-  const { stdout, code } = runGitBuffer(['show', `${ref}:${path}`])
+  const { stdout, code } = runGitBuffer(['show', gitObjectSpec(ref, path)])
   if (code !== 0 || stdout.length === 0) return null
   return bufferToDataUrl(stdout, mime)
 }

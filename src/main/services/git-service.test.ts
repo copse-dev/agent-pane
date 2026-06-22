@@ -183,4 +183,17 @@ describe('getGitFileDiff image preview', { skip: !gitOk && 'git not installed' }
     assert.equal(diff!.beforeImage, null)
     assert.match(diff!.afterImage ?? '', /^data:image\/png;base64,/)
   })
+
+  it('returns before and after images for a staged modification', async () => {
+    await writeFile(
+      join(repo, 'logo.png'),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x11, 0x22, 0x33, 0x44]),
+    )
+    git('add', 'logo.png')
+    const diff = await getGitFileDiff('logo.png', true)
+    assert.ok(diff)
+    assert.match(diff!.beforeImage ?? '', /^data:image\/png;base64,/)
+    assert.match(diff!.afterImage ?? '', /^data:image\/png;base64,/)
+    assert.notEqual(diff!.beforeImage, diff!.afterImage)
+  })
 })
