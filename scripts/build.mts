@@ -19,7 +19,6 @@ const nodeOpts = {
     'jsdom',
     '@mozilla/readability',
     'turndown',
-    'duck-duck-scrape',
   ],
   sourcemap: true,
   target: 'node22',
