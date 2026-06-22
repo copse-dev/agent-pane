@@ -63,7 +63,10 @@
 }
 .composer-branch-warning-text {
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .composer-branch-checkout-btn {
   flex: 0 0 auto;

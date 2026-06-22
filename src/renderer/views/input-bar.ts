@@ -60,7 +60,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const checkoutBranchBtn = el(
     'button',
     { type: 'button', class: 'composer-branch-checkout-btn' },
-    'Check out branch',
+    'Check out',
   )
   const branchWarning = el(
     'div',
@@ -195,16 +195,18 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     textarea.setCustomValidity('')
     branchWarning.hidden = false
     branchWarningText.textContent = threadGitBranchMismatchMessage(branch)
+    branchWarningText.title = threadGitBranchMismatchMessage(branch)
     checkoutBranchBtn.disabled = checkoutInProgress
-    checkoutBranchBtn.textContent = checkoutInProgress ? 'Checking out...' : 'Check out branch'
+    checkoutBranchBtn.textContent = checkoutInProgress ? 'Checking out...' : 'Check out'
   }
 
   function hideBranchMismatch(): void {
     mismatchBranch = null
     checkoutInProgress = false
     branchWarning.hidden = true
+    branchWarningText.title = ''
     checkoutBranchBtn.disabled = false
-    checkoutBranchBtn.textContent = 'Check out branch'
+    checkoutBranchBtn.textContent = 'Check out'
   }
 
   function updateQueueIndicator() {
