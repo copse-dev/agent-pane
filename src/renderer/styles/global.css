@@ -47,13 +47,24 @@ body {
 }
 .pane-resizer {
   flex-shrink: 0;
-  width: 4px;
+  width: 5px;
   cursor: col-resize;
-  background: var(--border);
+  background: transparent;
   touch-action: none;
+  position: relative;
 }
-.pane-resizer:hover,
-.pane-resizer.is-dragging {
+.pane-resizer::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: var(--pane-divider-width, 1px);
+  background: var(--border);
+  pointer-events: none;
+}
+.pane-resizer:hover::before,
+.pane-resizer.is-dragging::before {
   background: var(--accent);
 }
 .pane-projects-header {
@@ -173,6 +184,18 @@ body {
   min-width: 0;
   min-height: 0;
   --chat-composer-height: 148px;
+  background:
+    radial-gradient(
+      ellipse 90% 55% at 50% -10%,
+      color-mix(in srgb, var(--bg-elevated) 28%, transparent),
+      transparent 72%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--bg-elevated) 14%, var(--bg-base)) 0%,
+      var(--bg-base) 48%,
+      color-mix(in srgb, var(--bg-elevated) 10%, var(--bg-base)) 100%
+    );
 }
 .pane-chat.composer-centered .conversation {
   padding-bottom: 0;
