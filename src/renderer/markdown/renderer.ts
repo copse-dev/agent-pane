@@ -61,13 +61,21 @@ export function renderMarkdown(raw: string): string {
     t = t.replace(/^# (.+)$/gm, '<h4>$1</h4>')
     t = t.replace(/^ {0,3}(-{3,}|\*{3,}|_{3,}) *$/gm, '\n\n<hr>\n\n')
     t = t.replace(/^(?:[-*+] )(.+)$/gm, '<li>$1</li>')
-    t = t.replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`)
+    t = wrapLooseListItems(t)
     return t
   })
 
   s = mapOutsideFencedHtml(s, (seg) => wrapProseBlocks(seg))
 
   return s
+}
+
+/** Group consecutive `<li>` blocks (including blank-line gaps) into a tight `<ul>`. */
+function wrapLooseListItems(text: string): string {
+  return text.replace(/(?:<li>[\s\S]*?<\/li>\s*)+/g, (match) => {
+    const items = match.match(/<li>[\s\S]*?<\/li>/g) ?? []
+    return `<ul>${items.join('')}</ul>`
+  })
 }
 
 function applyOutsideCode(text: string, pattern: RegExp, replacement: string): string {

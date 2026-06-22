@@ -40,8 +40,14 @@ describe('markdown list indentation', () => {
 
       const architectureList = architectureHeading?.nextElementSibling ?? null
       const knownFailuresList = knownFailuresSubheading?.closest('p')?.nextElementSibling ?? null
-      const architectureItem = architectureList?.querySelector('li')
+      const architectureItems = architectureList ? [...architectureList.querySelectorAll('li')] : []
+      const architectureItem = architectureItems[0]
       const knownFailuresItem = knownFailuresList?.querySelector('li')
+
+      const gap = (a: Element | null | undefined, b: Element | null | undefined) => {
+        if (!a || !b) return 0
+        return b.getBoundingClientRect().top - a.getBoundingClientRect().bottom
+      }
 
       return {
         innerHTML: root.innerHTML.slice(0, 500),
@@ -55,6 +61,7 @@ describe('markdown list indentation', () => {
         architectureItemLeft: architectureItem?.getBoundingClientRect().left ?? 0,
         subheadingLeft: knownFailuresSubheading?.getBoundingClientRect().left ?? 0,
         knownFailuresItemLeft: knownFailuresItem?.getBoundingClientRect().left ?? 0,
+        architectureItemGap: gap(architectureItems[0], architectureItems[1]),
       }
     })
 
@@ -64,6 +71,8 @@ describe('markdown list indentation', () => {
     expect(layout.knownFailuresHeadingIsFollowedByUl).toBe(true)
     expect(layout.architectureItemLeft).toBeGreaterThan(layout.architectureHeadingLeft + 4)
     expect(layout.knownFailuresItemLeft).toBeGreaterThan(layout.subheadingLeft + 4)
+    // Bullets should be compact — not double-spaced by pre-wrap newlines or li margins.
+    expect(layout.architectureItemGap).toBeLessThan(12)
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'markdown-list-indent-multi-section.png'))
 
