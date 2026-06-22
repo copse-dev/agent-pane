@@ -89,7 +89,7 @@
     "c8": "^11.0.0",
     "electron": "^35.5.0",
     "electron-builder": "^26.15.3",
-    "electron-chromedriver": "^35.7.5",
+    "electron-chromedriver": "^42.4.0",
     "electron-rebuild": "^3.2.9",
     "esbuild": "^0.28.1",
     "eslint": "^10.5.0",
