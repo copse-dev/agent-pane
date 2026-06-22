@@ -55,7 +55,7 @@ export function createModelRoutingSection(api: ApiClient): ModelRoutingSection {
   ) as HTMLFieldSetElement
 
   async function refresh(): Promise<void> {
-    let models: string[] = []
+    let models: string[]
     try {
       models = await api.lmStudio.models()
     } catch {
