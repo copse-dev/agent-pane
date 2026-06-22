@@ -18,8 +18,19 @@ export const searchCodeTool: ToolDefinition = {
     fixed_string: z.boolean().optional().default(false).describe('Treat pattern as literal string'),
     case_sensitive: z.boolean().optional().default(false),
     max_results: z.number().int().min(1).max(500).optional().default(50),
+    context_lines: z
+      .number()
+      .int()
+      .min(0)
+      .max(20)
+      .optional()
+      .default(0)
+      .describe('Lines of surrounding context to show before and after each match (like rg -C)'),
   }),
-  async execute({ pattern, path, file_glob, fixed_string, case_sensitive, max_results }, signal) {
+  async execute(
+    { pattern, path, file_glob, fixed_string, case_sensitive, max_results, context_lines },
+    signal,
+  ) {
     const root = getWorkspaceRoot()
     if (!root) return 'No workspace open.'
     const searchRoot = path ? resolveWorkspacePath(path) : root
@@ -42,6 +53,7 @@ export const searchCodeTool: ToolDefinition = {
       caseSensitive: case_sensitive,
       fileGlob: file_glob,
       maxResults: max_results,
+      contextLines: context_lines,
       signal,
     })
 
