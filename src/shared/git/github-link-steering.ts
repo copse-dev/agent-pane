@@ -11,4 +11,31 @@ export function shouldSteerGithubLinks(userMessage: string): boolean {
   )
 }
 
-export const GITHUB_LINK_STEERING_PROMPT = `When discussing pull requests or GitHub issues, link them in markdown ([#N](url) or [PR #N](url)). Use \`gh\` or the git remote to resolve URLs when you only have numbers.`
+/** Parse `org/repo` from a GitHub remote URL, or null when not GitHub. */
+export function parseGithubRepoSlug(remoteUrl: string): string | null {
+  const trimmed = remoteUrl.trim()
+  if (!trimmed) return null
+
+  const scp = trimmed.match(/^git@github\.com:([^/\s]+)\/([^/\s]+?)(?:\.git)?$/i)
+  if (scp) return `${scp[1]}/${scp[2]!.replace(/\.git$/i, '')}`
+
+  try {
+    const url = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`)
+    if (url.hostname.replace(/^www\./i, '').toLowerCase() !== 'github.com') return null
+    const [owner, repoRaw] = url.pathname.replace(/^\/+/, '').split('/')
+    if (!owner || !repoRaw) return null
+    const repo = repoRaw.replace(/\.git$/i, '')
+    return repo ? `${owner}/${repo}` : null
+  } catch {
+    return null
+  }
+}
+
+export function buildGithubLinkSteeringPrompt(repoSlug: string | null): string {
+  const base =
+    'When discussing pull requests or GitHub issues, link them in markdown with full GitHub URLs.'
+  if (repoSlug) {
+    return `${base} Repo: ${repoSlug}. Use \`gh\` when you only have numbers.`
+  }
+  return `${base} Use \`gh\` or the git remote when you only have numbers.`
+}

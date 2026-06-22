@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { shouldSteerGithubLinks } from './github-link-steering.ts'
+import {
+  buildGithubLinkSteeringPrompt,
+  parseGithubRepoSlug,
+  shouldSteerGithubLinks,
+} from './github-link-steering.ts'
 
 describe('shouldSteerGithubLinks', () => {
   it('matches PR and issue discussion', () => {
@@ -16,5 +20,30 @@ describe('shouldSteerGithubLinks', () => {
     assert.equal(shouldSteerGithubLinks('Explain the parser'), false)
     assert.equal(shouldSteerGithubLinks('Review my diff'), false)
     assert.equal(shouldSteerGithubLinks('Fix the auth bug'), false)
+  })
+})
+
+describe('parseGithubRepoSlug', () => {
+  it('parses common GitHub remote URL forms', () => {
+    assert.equal(parseGithubRepoSlug('https://github.com/org/repo.git'), 'org/repo')
+    assert.equal(parseGithubRepoSlug('git@github.com:org/repo.git'), 'org/repo')
+    assert.equal(parseGithubRepoSlug('ssh://git@github.com/org/repo'), 'org/repo')
+  })
+
+  it('returns null for non-GitHub remotes', () => {
+    assert.equal(parseGithubRepoSlug('git@gitlab.com:org/repo.git'), null)
+    assert.equal(parseGithubRepoSlug(''), null)
+  })
+})
+
+describe('buildGithubLinkSteeringPrompt', () => {
+  it('includes repo slug when available', () => {
+    assert.match(buildGithubLinkSteeringPrompt('org/repo'), /Repo: org\/repo/)
+    assert.doesNotMatch(buildGithubLinkSteeringPrompt('org/repo'), /\[/)
+  })
+
+  it('falls back to git remote hint without a slug', () => {
+    assert.match(buildGithubLinkSteeringPrompt(null), /git remote/)
+    assert.doesNotMatch(buildGithubLinkSteeringPrompt(null), /\[/)
   })
 })

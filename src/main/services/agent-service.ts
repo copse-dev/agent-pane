@@ -29,9 +29,10 @@ import {
 } from './explore-subagent-runner.ts'
 import { setAgentRunTodoContext, clearAgentRunTodos, getAgentRunTodos } from './agent-run-todos.ts'
 import {
+  buildGithubLinkSteeringPrompt,
   shouldSteerGithubLinks,
-  GITHUB_LINK_STEERING_PROMPT,
 } from '@shared/git/github-link-steering.ts'
+import { getGithubRepoSlug } from './git-service.ts'
 import {
   shouldSteerTodos,
   formatTodosForPrompt,
@@ -129,7 +130,10 @@ export async function runAgent(
     typeof userPrompt === 'string' ? userPrompt : extractParentGoal(messages, userPrompt)
   const steeringBlocks: string[] = []
   if (shouldSteerTodos(userTextForSteering)) steeringBlocks.push(TODO_STEERING_PROMPT)
-  if (shouldSteerGithubLinks(userTextForSteering)) steeringBlocks.push(GITHUB_LINK_STEERING_PROMPT)
+  if (shouldSteerGithubLinks(userTextForSteering)) {
+    const repoSlug = await getGithubRepoSlug()
+    steeringBlocks.push(buildGithubLinkSteeringPrompt(repoSlug))
+  }
   if (steeringBlocks.length && messages[0]?.role === 'system') {
     messages[0] = {
       role: 'system',
