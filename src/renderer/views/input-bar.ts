@@ -438,9 +438,14 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
 
   let skillsCache: SkillSummary[] | null = null
   const refreshSkillsCache = (): void => {
-    void api.skills.list().then((skills) => {
-      skillsCache = skills
-    })
+    void api.skills.list().then(
+      (skills) => {
+        skillsCache = skills
+      },
+      () => {
+        skillsCache = []
+      },
+    )
   }
   refreshSkillsCache()
   // Skills are workspace-scoped; drop the stale list when the workspace changes
