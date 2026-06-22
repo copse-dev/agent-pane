@@ -1,10 +1,34 @@
 # Computer-use / browser automation tools
 
-Design note for adding Cursor-style browser tools to Copse: navigate pages,
-capture accessibility snapshots, take screenshots, and interact (click, type,
-scroll). This document records the current gaps, trust boundaries, and a phased
-implementation plan. **No implementation code exists yet** — this PR is the
-planning artifact from an architecture exploration.
+Design note plus the shipped v1 for Cursor-style browser tools in Copse:
+navigate pages, capture accessibility snapshots, take screenshots, and interact
+(click, type). This document records the gaps, trust boundaries, and the phased
+plan.
+
+## Status
+
+**v1 implemented (Phase 2, accessibility-first).** The agent has six browser
+tools backed by a main-process `BrowserSessionManager` that drives Electron
+`BrowserWindow`s on the shared in-app browser session partition
+(`persist:copse-browser`). Tools are off by default and enabled via the
+`browserToolsEnabled` setting. Navigation is origin-gated (loopback auto-runs,
+public origins prompt, private/link-local/metadata denied). Validated live on
+macOS via `npm run validate:browser-tools` (navigate → snapshot → type → click →
+screenshot) and in the UI via `tests/e2e/browser-tools.e2e.ts`.
+
+Not yet done: multimodal tool results (screenshots return a file path, not an
+inline image to the model — Phase 1) and mirroring automation into the visible
+browser pane (Phase 3).
+
+### Implemented files
+
+- `src/main/services/browser/browser-origin-policy.ts` — pure navigation policy (+ test)
+- `src/main/services/browser/snapshot-format.ts` — DOM-walk script + snapshot renderer (+ test)
+- `src/main/services/browser/session-manager.ts` — Electron session/tab manager
+- `src/main/tools/browser-tools.ts` — the six tool definitions (+ registration test)
+- Wiring: `registry-bootstrap.ts`, `permission-gate.ts`, `settings-writable.ts`,
+  `agent-prompt.ts`, `tool-display.ts`, `index.ts` (shutdown)
+- `scripts/validate-browser-tools.mts` — live Electron end-to-end harness
 
 Related existing surfaces:
 
@@ -31,14 +55,14 @@ Non-goals for v1:
 
 ## Current architecture gaps
 
-| Layer | Today | Needed for computer use |
-| --- | --- | --- |
-| `ToolResult` | `{ result: string }` | Content blocks: text + optional image |
-| Anthropic provider | `tool_result.content` is a string | Array with `image` + `text` blocks |
-| OpenAI provider | `tool` role string content | Multimodal tool messages where supported |
-| MCP flattening | Images → `[image omitted]` | Pass images through or base64-encode |
-| Permissions | `SANDBOX_TOOLS`, shell, MCP tiers | Browser tier: localhost auto, external prompt |
-| UI | No browser surface | Optional right-panel “Browser” tab |
+| Layer              | Today                             | Needed for computer use                       |
+| ------------------ | --------------------------------- | --------------------------------------------- |
+| `ToolResult`       | `{ result: string }`              | Content blocks: text + optional image         |
+| Anthropic provider | `tool_result.content` is a string | Array with `image` + `text` blocks            |
+| OpenAI provider    | `tool` role string content        | Multimodal tool messages where supported      |
+| MCP flattening     | Images → `[image omitted]`        | Pass images through or base64-encode          |
+| Permissions        | `SANDBOX_TOOLS`, shell, MCP tiers | Browser tier: localhost auto, external prompt |
+| UI                 | No browser surface                | Optional right-panel “Browser” tab            |
 
 Key types today (`src/shared/types/llm.ts`):
 
@@ -58,16 +82,16 @@ Providers map tool results to plain text only (`anthropic-provider.ts`,
 Align naming with Cursor’s `cursor-ide-browser` MCP so prompts and skills
 transfer:
 
-| Tool | Purpose |
-| --- | --- |
-| `browser_tabs` | List / create / close / select tabs |
-| `browser_navigate` | Open URL; optional new tab |
-| `browser_snapshot` | Accessibility tree as compact YAML with opaque refs |
-| `browser_take_screenshot` | PNG of current viewport |
-| `browser_click` | Act on element ref (or coordinates as fallback) |
-| `browser_type` / `browser_fill` | Text entry |
-| `browser_scroll` / `browser_press_key` | Navigation within page |
-| `browser_wait` | Poll for navigation / selector (optional v1.1) |
+| Tool                                   | Purpose                                             |
+| -------------------------------------- | --------------------------------------------------- |
+| `browser_tabs`                         | List / create / close / select tabs                 |
+| `browser_navigate`                     | Open URL; optional new tab                          |
+| `browser_snapshot`                     | Accessibility tree as compact YAML with opaque refs |
+| `browser_take_screenshot`              | PNG of current viewport                             |
+| `browser_click`                        | Act on element ref (or coordinates as fallback)     |
+| `browser_type` / `browser_fill`        | Text entry                                          |
+| `browser_scroll` / `browser_press_key` | Navigation within page                              |
+| `browser_wait`                         | Poll for navigation / selector (optional v1.1)      |
 
 **Accessibility-first:** `browser_snapshot` is the primary page model (cheap,
 structured). Screenshots supplement visual/layout verification.
@@ -104,14 +128,14 @@ browser). Phase 4 optionally documents an MCP wrapper for power users.
 
 ## Trust boundaries
 
-| Action | Policy |
-| --- | --- |
-| Navigate to `localhost` / `127.0.0.1` / `[::1]` | Auto-allow (primary dev workflow) |
-| Navigate to arbitrary HTTPS origin | Prompt once per origin; “remember” in settings |
-| `file://`, `javascript:`, data URLs | Deny |
-| Private IPs, link-local, metadata endpoints | Deny without prompt (SSRF) |
-| Click / type / submit on non-localhost | Prompt unless origin remembered |
-| Screenshot | Auto-allow (read-only) |
+| Action                                          | Policy                                         |
+| ----------------------------------------------- | ---------------------------------------------- |
+| Navigate to `localhost` / `127.0.0.1` / `[::1]` | Auto-allow (primary dev workflow)              |
+| Navigate to arbitrary HTTPS origin              | Prompt once per origin; “remember” in settings |
+| `file://`, `javascript:`, data URLs             | Deny                                           |
+| Private IPs, link-local, metadata endpoints     | Deny without prompt (SSRF)                     |
+| Click / type / submit on non-localhost          | Prompt unless origin remembered                |
+| Screenshot                                      | Auto-allow (read-only)                         |
 
 Reuse patterns from:
 
@@ -189,10 +213,12 @@ a fixture HTTP server in tests.
   always return screenshot as optional attachment?
 - Single shared browser session per thread vs per agent run?
 
-## Test plan (when implemented)
+## Test plan
 
-- [ ] `npm run check` — provider mapping unit tests (Phase 1)
-- [ ] Browser origin policy unit tests (Phase 2)
-- [ ] Snapshot ref stability on simple HTML fixture (Phase 2)
-- [ ] Manual: mock LLM navigates localhost Vite/Next dev server (Phase 2)
-- [ ] `npm run test:e2e` browser panel screenshots (Phase 3)
+- [x] Browser origin policy unit tests (`browser-origin-policy.test.ts`)
+- [x] Snapshot renderer unit tests (`snapshot-format.test.ts`)
+- [x] Tool registration gated by setting (`browser-tools.test.ts`)
+- [x] Live Electron end-to-end: `npm run validate:browser-tools`
+- [x] `npm run test:e2e -- --spec tests/e2e/browser-tools.e2e.ts` (tool-card UI)
+- [ ] Phase 1: provider mapping unit tests for multimodal tool results
+- [ ] Phase 3: mirror automation into the visible browser pane

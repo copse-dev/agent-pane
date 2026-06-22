@@ -2,7 +2,7 @@ import { getWorkspaceRoot } from './workspace.ts'
 import { isProjectSandboxEnabled } from '../project-sandbox/index.ts'
 import { classifyShellScope } from './safety-classifier.ts'
 import { requestApproval } from './approval.ts'
-import { getSetting } from './settings.ts'
+import { getSetting, setSetting } from './settings.ts'
 import {
   SANDBOX_TOOLS,
   decideShellPermission,
@@ -14,6 +14,12 @@ import {
   shellRequiresOutsideSandbox,
   mcpToolLabel,
 } from './permission-policy.ts'
+import {
+  BROWSER_TOOLS,
+  READ_ONLY_BROWSER_TOOLS,
+  decideBrowserNavigation,
+  formatBrowserPromptBody,
+} from './browser/browser-origin-policy.ts'
 import { formatUnsandboxedPromptBody } from './sandbox-failure.ts'
 import { getMcpToolMeta, isMcpToolRemembered, rememberMcpTool } from './mcp-registry.ts'
 
@@ -112,6 +118,43 @@ async function checkShellPermission(args: unknown): Promise<boolean> {
   )
 }
 
+function browserUrlFromArgs(args: unknown): string | null {
+  if (typeof args !== 'object' || args === null || !('url' in args)) return null
+  const url = (args as { url?: unknown }).url
+  return typeof url === 'string' ? url : null
+}
+
+async function rememberBrowserOrigin(origin: string): Promise<void> {
+  const saved = getSetting<string[]>('browserAllowedOrigins', [])
+  if (!saved.includes(origin)) {
+    await setSetting('browserAllowedOrigins', [...saved, origin])
+  }
+}
+
+async function checkBrowserNavigatePermission(args: unknown): Promise<boolean> {
+  const url = browserUrlFromArgs(args)
+  if (!url) throw new Error('browser_navigate requires a url argument')
+
+  const decision = decideBrowserNavigation({
+    url,
+    allowedOrigins: getSetting<string[]>('browserAllowedOrigins', []),
+    allowUserApproval: getSetting<boolean>('autoRunSandboxCommands', true),
+  })
+  if (decision.action === 'allow') return true
+  if (decision.action === 'deny') {
+    throw new Error(`Browser navigation denied: ${decision.reasons.join('; ')}`)
+  }
+
+  const { approved, remember } = await requestApproval({
+    title: 'Allow browser navigation?',
+    body: formatBrowserPromptBody(decision.origin, url),
+    type: 'mcp',
+    allowRemember: true,
+  })
+  if (approved && remember) await rememberBrowserOrigin(decision.origin)
+  return approved
+}
+
 /** Integrated terminal is a direct user UI action; PTY always runs outside seatbelt (#180). */
 export async function ensureTerminalPermitted(): Promise<boolean> {
   if (!getWorkspaceRoot()) throw new Error('No workspace open.')
@@ -123,6 +166,14 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
   const { toolName, args } = check
 
   if (SANDBOX_TOOLS.has(toolName)) return true
+
+  if (toolName === 'browser_navigate') {
+    return checkBrowserNavigatePermission(args)
+  }
+  // Snapshot/screenshot/click/type act on the already-approved page; auto-run.
+  if (BROWSER_TOOLS.has(toolName) || READ_ONLY_BROWSER_TOOLS.has(toolName)) {
+    return true
+  }
 
   if (toolName.startsWith('mcp__')) {
     return checkMcpPermission(toolName, args)

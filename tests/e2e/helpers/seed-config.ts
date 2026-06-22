@@ -949,6 +949,71 @@ export function seedToolDisplayFixture(workspaceRoot: string): void {
   )
 }
 
+/** Thread showing built-in browser tool cards (navigate/snapshot/screenshot/interact). */
+export function seedBrowserToolsFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-browser-tools-project'
+  const threadId = 'e2e-browser-tools-thread'
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Browser tools test',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-user-browser',
+              role: 'user',
+              content: 'Open the local dev server and check the heading renders.',
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+            {
+              id: 'msg-assistant-browser',
+              role: 'assistant',
+              content:
+                'Opened the page, read its accessibility snapshot, and captured a screenshot.',
+              toolCalls: [
+                {
+                  id: 'tc-browser-navigate',
+                  name: 'browser_navigate',
+                  args: { url: 'http://localhost:3000/' },
+                  status: 'done',
+                  result: 'Opened tab-1: Computer Use Demo\nhttp://localhost:3000/',
+                },
+                {
+                  id: 'tc-browser-snapshot',
+                  name: 'browser_snapshot',
+                  args: {},
+                  status: 'done',
+                  result:
+                    'page: "Computer Use Demo"\nurl: http://localhost:3000/\n\n- heading "Welcome"\n- link "Docs" [ref=e1]\n- textbox "Search" [ref=e2]',
+                },
+                {
+                  id: 'tc-browser-screenshot',
+                  name: 'browser_screenshot',
+                  args: {},
+                  status: 'done',
+                  result: 'Saved screenshot of tab-1 to /tmp/browser-screenshots/tab-1.png',
+                },
+              ],
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
 /** Explore subagent thread with search-routing markdown matching semantic-search UI. */
 export function seedSemanticSearchExploreFixture(workspaceRoot: string): void {
   const projectId = 'e2e-semantic-search-project'
