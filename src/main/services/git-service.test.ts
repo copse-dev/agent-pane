@@ -28,6 +28,13 @@ describe('parsePorcelainV1', () => {
     assert.equal(result.staged.length, 0)
   })
 
+  it('ignores local codesearch database status entries', () => {
+    const raw = '?? .codesearch.db/\0 M .codesearch.db/index\0?? src/file.ts\0'
+    const result = parsePorcelainV1(raw)
+    assert.deepEqual(result.unstaged, [{ path: 'src/file.ts', status: 'untracked' }])
+    assert.equal(result.staged.length, 0)
+  })
+
   it('parses staged deletion', () => {
     const raw = 'D  old.ts\0'
     const result = parsePorcelainV1(raw)

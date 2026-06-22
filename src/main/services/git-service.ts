@@ -6,10 +6,44 @@ import { detectLanguage } from './language.ts'
 import { parseGithubRepoSlug } from '@shared/git/github-link-steering.ts'
 import type { GitChange, GitChangeStatus, GitFileDiff, GitStatusResult } from '@shared/types/git.ts'
 
+const CODESEARCH_DB_DIR = '.codesearch.db'
+const GIT_STATUS_EXCLUDE_PATHSPECS = [`:!${CODESEARCH_DB_DIR}`]
+
 async function runGit(args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
   const cwd = getWorkspaceRoot()
   if (!cwd) return { stdout: '', stderr: 'No workspace open.', code: 1 }
   return runCommand('git', args, { cwd })
+}
+
+function isAutoIgnoredGitStatusPath(path: string): boolean {
+  const normalized = path.replace(/\/+$/, '')
+  return normalized === CODESEARCH_DB_DIR || normalized.startsWith(`${CODESEARCH_DB_DIR}/`)
+}
+
+function toWorkspaceRelativeGitPath(path: string, workspacePrefix: string): string | null {
+  const prefix = workspacePrefix.replace(/\/+$/, '')
+  if (!prefix) return path
+  if (path === prefix) return ''
+  const prefixWithSlash = `${prefix}/`
+  if (!path.startsWith(prefixWithSlash)) return null
+  return path.slice(prefixWithSlash.length)
+}
+
+function normalizeGitStatusForWorkspace(
+  status: GitStatusResult,
+  workspacePrefix: string,
+): GitStatusResult {
+  const normalize = (change: GitChange): GitChange | null => {
+    const path = toWorkspaceRelativeGitPath(change.path, workspacePrefix)
+    if (!path || isAutoIgnoredGitStatusPath(path)) return null
+    return { ...change, path }
+  }
+  return {
+    staged: status.staged.map(normalize).filter((change): change is GitChange => change !== null),
+    unstaged: status.unstaged
+      .map(normalize)
+      .filter((change): change is GitChange => change !== null),
+  }
 }
 
 function mapStatus(code: string): GitChangeStatus {
@@ -61,7 +95,9 @@ export function parsePorcelainV1(raw: string): GitStatusResult {
     const pathPart = entry.slice(3)
 
     if (x === '?' && y === '?') {
-      unstaged.push({ path: pathPart, status: 'untracked' })
+      if (!isAutoIgnoredGitStatusPath(pathPart)) {
+        unstaged.push({ path: pathPart, status: 'untracked' })
+      }
       i++
       continue
     }
@@ -76,6 +112,10 @@ export function parsePorcelainV1(raw: string): GitStatusResult {
       //   not itself look like a status record; otherwise advance by one.
       const next = entries[i + 1]
       const pairedIsSource = next !== undefined && !looksLikeStatusRecord(next)
+      if (isAutoIgnoredGitStatusPath(pathPart)) {
+        i += pairedIsSource ? 2 : 1
+        continue
+      }
       if (x !== ' ' && x !== '?') {
         staged.push({ path: pathPart, status: x === 'R' ? 'renamed' : 'added' })
       }
@@ -86,6 +126,10 @@ export function parsePorcelainV1(raw: string): GitStatusResult {
       continue
     }
 
+    if (isAutoIgnoredGitStatusPath(pathPart)) {
+      i++
+      continue
+    }
     if (x !== ' ' && x !== '?') {
       staged.push({ path: pathPart, status: mapStatus(x) })
     }
@@ -158,9 +202,17 @@ export async function getGithubRepoSlug(): Promise<string | null> {
 
 export async function getGitStatus(): Promise<GitStatusResult | null> {
   if (!isGitAvailable() || !(await isInsideGitWorkTree())) return null
-  const { stdout, code } = await runGit(['status', '--porcelain=v1', '-z'])
+  const { stdout: prefix, code: prefixCode } = await runGit(['rev-parse', '--show-prefix'])
+  if (prefixCode !== 0) return null
+  const { stdout, code } = await runGit([
+    'status',
+    '--porcelain=v1',
+    '-z',
+    '--',
+    ...GIT_STATUS_EXCLUDE_PATHSPECS,
+  ])
   if (code !== 0) return null
-  return parsePorcelainV1(stdout)
+  return normalizeGitStatusForWorkspace(parsePorcelainV1(stdout), prefix.trim())
 }
 
 export async function getGitFileDiff(path: string, staged: boolean): Promise<GitFileDiff | null> {
@@ -205,7 +257,12 @@ export async function getGitFileDiff(path: string, staged: boolean): Promise<Git
 
 export async function getGitStatusText(): Promise<string> {
   if (!isGitAvailable()) return 'git is not available on this system.'
-  const { stdout, stderr, code } = await runGit(['status', '--short'])
+  const { stdout, stderr, code } = await runGit([
+    'status',
+    '--short',
+    '--',
+    ...GIT_STATUS_EXCLUDE_PATHSPECS,
+  ])
   if (code !== 0) return stderr.trim() || `git exited with code ${code}`
   return stdout.trim() || '(no output)'
 }
@@ -214,8 +271,9 @@ export async function getGitStatusText(): Promise<string> {
 async function getUntrackedDiff(paths: string[]): Promise<string> {
   const diffs: string[] = []
   for (const p of paths) {
+    const rhs = p.startsWith('-') ? `./${p}` : p
     // --no-index always exits 1 when files differ; ignore the code, use the output.
-    const { stdout } = await runGit(['diff', '--no-index', '--', '/dev/null', p])
+    const { stdout } = await runGit(['diff', '--no-index', '/dev/null', rhs])
     if (stdout.trim()) diffs.push(stdout.trimEnd())
   }
   return diffs.join('\n')

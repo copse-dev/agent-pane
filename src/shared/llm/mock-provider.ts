@@ -23,10 +23,21 @@ export class MockLLMProvider implements LLMProvider {
       : `Mock response to: ${userText}`
 
     const isFirstTurn = messages.filter((m) => m.role === 'assistant').length === 0
+    let lastUserIdx = -1
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i]?.role === 'user') {
+        lastUserIdx = i
+        break
+      }
+    }
+    const awaitingAssistantReply =
+      lastUserIdx !== -1 && !messages.slice(lastUserIdx + 1).some((m) => m.role === 'assistant')
 
     // Test directive: `[[mcp:<toolName> {json args}]]` drives a specific tool
     // call (used by e2e to exercise the MCP path). Real prompts never contain it.
-    if (isFirstTurn && !demoSkillLoaded) {
+    // Only honor it for the current user turn — not on later agent-loop passes
+    // that still see the same user message in history.
+    if (awaitingAssistantReply && !demoSkillLoaded) {
       const directive = fullUserText.match(/\[\[mcp:([^\s\]]+)(\s+\{[^]*?\})?\]\]/)
       if (directive && tools.some((t) => t.name === directive[1])) {
         if (signal?.aborted) return

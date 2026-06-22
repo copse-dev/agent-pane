@@ -21,6 +21,18 @@ export function openRightPanel(store: AppStore, mode: RightPanelMode): void {
   store.emit('right_panel_mode_changed')
 }
 
+export function toggleRightPanel(store: AppStore, mode: RightPanelMode): void {
+  const { filesPaneOpen, rightPanelMode } = store.getState()
+  if (filesPaneOpen && rightPanelMode === mode) {
+    store.setState({ filesPaneOpen: false })
+    store.emit('files_pane_changed')
+    return
+  }
+  store.setState({ filesPaneOpen: true, rightPanelMode: mode })
+  store.emit('files_pane_changed')
+  store.emit('right_panel_mode_changed')
+}
+
 export function ensureWorkspaceForPanel(api: ApiClient, store: AppStore): boolean {
   if (store.getState().workspaceRoot) return true
   void addProject(store, api)
@@ -34,6 +46,15 @@ export function openRightPanelWithWorkspace(
 ): void {
   if (!ensureWorkspaceForPanel(api, store)) return
   openRightPanel(store, mode)
+}
+
+export function toggleRightPanelWithWorkspace(
+  store: AppStore,
+  api: ApiClient,
+  mode: RightPanelMode,
+): void {
+  if (!ensureWorkspaceForPanel(api, store)) return
+  toggleRightPanel(store, mode)
 }
 
 export function toggleFilesPaneWithWorkspace(store: AppStore, api: ApiClient): void {
