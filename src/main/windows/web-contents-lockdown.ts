@@ -1,4 +1,5 @@
 import type { WebContents } from 'electron'
+import { shell } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 
@@ -6,6 +7,11 @@ const lockedDown = new WeakSet<WebContents>()
 
 function rendererRootDir(): string {
   return join(__dirname, '../renderer')
+}
+
+/** http(s) links clicked in the renderer should open in the system browser. */
+export function isExternalHttpUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url)
 }
 
 /** Allow only file:// URLs under the packaged renderer directory (plus about:blank). */
@@ -27,11 +33,15 @@ export function attachWebContentsLockdown(contents: WebContents): void {
   if (lockedDown.has(contents)) return
   lockedDown.add(contents)
 
-  contents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  contents.setWindowOpenHandler(({ url }) => {
+    if (isExternalHttpUrl(url)) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
 
   const blockIfDisallowed = (event: Electron.Event, url: string) => {
     if (!isAllowedRendererNavigation(url)) {
       event.preventDefault()
+      if (isExternalHttpUrl(url)) void shell.openExternal(url)
     }
   }
 
