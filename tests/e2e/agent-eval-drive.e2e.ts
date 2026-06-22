@@ -7,6 +7,7 @@ import type { Thread } from '@shared/types'
 import { getCopseUserDataDir } from './helpers.ts'
 import { DEFAULT_APP_CHAT_MODEL, LM_STUDIO_MODEL_IDS } from '../../src/shared/lm-studio-defaults.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
 
 const ARTIFACTS = join(process.cwd(), 'tests/e2e/artifacts')
 const DEFAULT_SCENARIO = join(process.cwd(), 'tests/e2e/scenarios/agent-eval.example.json')
@@ -20,27 +21,6 @@ interface EvalScenario {
 function loadScenario(): EvalScenario {
   const path = process.env.COPSE_EVAL_SCENARIO?.trim() || DEFAULT_SCENARIO
   return JSON.parse(readFileSync(path, 'utf8')) as EvalScenario
-}
-
-async function waitForPromptReady(timeoutMs = 60_000): Promise<void> {
-  await browser.waitUntil(
-    async () => {
-      const textarea = await $('.prompt-input')
-      if (!(await textarea.isExisting())) return false
-      const disabled = await textarea.getProperty('disabled')
-      return disabled !== true
-    },
-    { timeout: timeoutMs, interval: 300, timeoutMsg: 'Prompt input not enabled' },
-  )
-}
-
-async function waitForAgentIdle(timeoutMs: number): Promise<void> {
-  await browser.waitUntil(async () => (await $('.submit-btn').getText()) === 'Send', {
-    timeout: timeoutMs,
-    interval: 500,
-    timeoutMsg: 'Agent did not return to idle (submit button Send)',
-  })
-  await waitForPromptReady()
 }
 
 async function typePrompt(text: string): Promise<void> {
