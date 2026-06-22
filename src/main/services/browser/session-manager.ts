@@ -91,7 +91,9 @@ export class BrowserSessionManager {
       // Client-side redirects abort the original load; surface other failures.
       const code = (err as { code?: string })?.code
       if (code !== 'ERR_ABORTED') {
-        throw new Error(`navigation failed: ${err instanceof Error ? err.message : String(err)}`)
+        throw new Error(`navigation failed: ${err instanceof Error ? err.message : String(err)}`, {
+          cause: err,
+        })
       }
     }
     const wc = tab.window.webContents
