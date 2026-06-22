@@ -1,9 +1,7 @@
 {
   "id": "github-link-steering-pr",
   "description": "User asks about an open PR — shouldSteerGithubLinks matches; reply should include GitHub markdown links.",
-  "prompts": [
-    "Are there other open PRs that would benefit from manual review?"
-  ],
+  "prompts": ["Are there other open PRs that would benefit from manual review?"],
   "expect": {
     "shouldSteerGithubLinks": true,
     "requireGithubLinksInReply": true

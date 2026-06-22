@@ -7,30 +7,9 @@ import {
   buildDebugCiSuggestion,
   buildFixMergeConflictsSuggestion,
 } from '@shared/follow-ups/presets.ts'
-import { createProvider, createLMStudioProvider } from '@shared/llm/create-provider.ts'
-import { getSetting, getApiKey, getLmStudioApiKey } from './settings.ts'
-import { LM_STUDIO_MODEL_IDS, DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
-import { fetchLmStudioModelsCached } from './lm-studio-models.ts'
+import { resolveSmallTasksProvider } from './small-tasks-provider.ts'
+import { getSetting } from './settings.ts'
 import { getPrWorkspaceContext } from './pr-context-service.ts'
-
-const DEFAULT_LM_STUDIO_URL = 'http://localhost:1234/v1'
-
-async function fetchFirstLocalModel(baseURL: string): Promise<string | null> {
-  const result = await fetchLmStudioModelsCached(baseURL, getLmStudioApiKey())
-  return result.models[0]?.id ?? null
-}
-
-async function buildCloudProvider(model: string): Promise<LLMProvider> {
-  if (process.env.COPSE_PANEL_MOCK_LLM === '1') return createProvider(model)
-  const anthropic = getApiKey('anthropic') ?? process.env.ANTHROPIC_API_KEY
-  const openai = getApiKey('openai') ?? process.env.OPENAI_API_KEY
-  if (model.startsWith('claude') && anthropic)
-    return createProvider(model, { anthropicApiKey: anthropic })
-  if (model.startsWith('gpt') && openai) return createProvider(model, { openAiApiKey: openai })
-  if (anthropic) return createProvider(model, { anthropicApiKey: anthropic })
-  if (openai) return createProvider(model, { openAiApiKey: openai })
-  return createProvider(model)
-}
 
 const MAX_SUGGESTIONS = 3
 
@@ -47,23 +26,6 @@ async function completeText(provider: LLMProvider, prompt: string): Promise<stri
     clearTimeout(timer)
   }
   return out
-}
-
-async function resolveSmallTaskProvider(): Promise<LLMProvider | null> {
-  const useLmStudio = getSetting<boolean>('lmStudioForSmallTasks', true)
-  const lmUrl = getSetting<string>('lmStudioUrl', DEFAULT_LM_STUDIO_URL)
-
-  if (useLmStudio && lmUrl) {
-    const configured =
-      getSetting<string>('lmStudioSmallTasksModel', LM_STUDIO_MODEL_IDS.smallTasks).trim() ||
-      getSetting<string>('lmStudioModel', LM_STUDIO_MODEL_IDS.chat).trim()
-    const model = configured || (await fetchFirstLocalModel(lmUrl))
-    if (model) return createLMStudioProvider(lmUrl, model, getLmStudioApiKey())
-  }
-  if (process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY) {
-    return buildCloudProvider(getSetting<string>('model', DEFAULT_APP_CHAT_MODEL))
-  }
-  return null
 }
 
 /** Parse a JSON array of preset ids from model output. */
@@ -84,7 +46,7 @@ export function parseModelFollowUpIds(raw: string): string[] {
 }
 
 async function pickModelFollowUps(context: FollowUpContext): Promise<FollowUpSuggestion[]> {
-  const provider = await resolveSmallTaskProvider()
+  const provider = await resolveSmallTasksProvider()
   if (!provider) return []
 
   const presetLines = MODEL_FOLLOW_UP_PRESETS.map((p) => `- ${p.id}: ${p.label}`).join('\n')

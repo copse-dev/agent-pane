@@ -9,8 +9,7 @@ export function shouldSteerGithubLinks(userMessage: string): boolean {
     /\b(?:gh|github)\s+(?:pr|issue)\b/.test(text) ||
     /\b(?:pr|issue)\s+#?\d+\b/.test(text) ||
     /\b(?:this|the|my|our|open|review|merge|close|create|file)\s+prs?\b/.test(text) ||
-    (/\blinks?\b/.test(text) &&
-      /\b(?:for them|pull request|prs?|issues?|github)\b/.test(text))
+    (/\blinks?\b/.test(text) && /\b(?:for them|pull request|prs?|issues?|github)\b/.test(text))
   )
 }
 

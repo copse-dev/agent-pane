@@ -23,7 +23,7 @@ export const PREFERRED_MODELS: PreferredModel[] = [
     role: 'smallTasks',
     id: LM_STUDIO_MODEL_IDS.smallTasks,
     label: 'Small tasks model',
-    description: 'Thread titles and other lightweight prompts',
+    description: 'Thread titles and other lightweight prompts (local default)',
     downloadGb: 4,
   },
   {
@@ -40,10 +40,10 @@ export const PREFERRED_MODEL_IDS = PREFERRED_MODELS.map((m) => m.id)
 export function preferredModelSettingKey(role: PreferredModelRole): string {
   switch (role) {
     case 'chat':
-      return 'lmStudioModel'
+      return 'localDefaultModel'
     case 'smallTasks':
-      return 'lmStudioSmallTasksModel'
+      return 'smallTasksModel'
     case 'safety':
-      return 'lmStudioSafetyModel'
+      return 'safetyModel'
   }
 }

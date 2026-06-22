@@ -5,8 +5,10 @@ import {
   addMessage,
   setThreadStatus,
   clearContextSnapshot,
+  setThreadWorkingBrief,
   bindThreadGitBranchIfUnset,
 } from '@shared/store/thread-helpers.ts'
+import { nextWorkingBrief } from '@shared/agent/working-brief.ts'
 import { initMentionPicker } from './mention-picker.ts'
 import { initSkillPicker } from './skill-picker.ts'
 import { resolveSkillInvocation } from '@shared/skills/parse-skill-invocation.ts'
@@ -214,7 +216,16 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     }
 
     const priorTodos = thread?.todos ?? []
-    const payload: AgentRunPayload = { content: fullContent, invokedSkills, priorTodos }
+    const workingBrief = nextWorkingBrief(thread?.workingBrief, fullContent)
+    if (workingBrief && workingBrief !== thread?.workingBrief) {
+      setThreadWorkingBrief(store, id, workingBrief)
+    }
+    const payload: AgentRunPayload = {
+      content: fullContent,
+      invokedSkills,
+      priorTodos,
+      ...(workingBrief !== undefined ? { workingBrief } : {}),
+    }
 
     // Record the user's message in the conversation and mark the thread running
     // before dispatching to the agent — the controller only adds assistant

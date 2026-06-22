@@ -32,4 +32,13 @@ describe('parseAgentRunPayload', () => {
     assert.equal(r.priorTodos.length, 1)
     assert.equal(r.priorTodos[0]?.content, 'Step one')
   })
+
+  it('parses workingBrief from payload', () => {
+    const payload = {
+      content: 'follow up',
+      workingBrief: 'refactor authentication',
+    }
+    const r = parseAgentRunPayload(JSON.stringify(payload))
+    assert.equal(r.workingBrief, 'refactor authentication')
+  })
 })

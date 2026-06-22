@@ -95,9 +95,9 @@ export function gateCompletedStatus(
 
 export function shouldRouteToLocal(
   item: TodoItem,
-  opts: { lmStudioForTodoItems: boolean; parentIsLocal: boolean },
+  opts: { localTodoItemsEnabled: boolean; parentIsLocal: boolean },
 ): boolean {
-  if (!opts.lmStudioForTodoItems || opts.parentIsLocal) return false
+  if (!opts.localTodoItemsEnabled || opts.parentIsLocal) return false
   if (item.assignedModel !== 'local') return false
   if (item.status !== 'in_progress') return false
   return !!item.check

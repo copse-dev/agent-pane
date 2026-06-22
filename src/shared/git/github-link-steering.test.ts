@@ -14,9 +14,7 @@ describe('shouldSteerGithubLinks', () => {
     assert.equal(shouldSteerGithubLinks('Please merge this PR when CI passes'), true)
     assert.equal(shouldSteerGithubLinks('Link issue #118 in your reply'), true)
     assert.equal(
-      shouldSteerGithubLinks(
-        'Are there other open PRs that would benefit from manual review?',
-      ),
+      shouldSteerGithubLinks('Are there other open PRs that would benefit from manual review?'),
       true,
     )
     assert.equal(shouldSteerGithubLinks('Can you make links for them?'), true)
