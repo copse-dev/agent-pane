@@ -5,6 +5,7 @@ import {
   WEB_ALLOWED_ORIGINS_SETTING,
   WEB_ALLOW_USER_APPROVAL_SETTING,
 } from '@shared/web-origins.ts'
+import { LM_STUDIO_DOWNLOAD_URL } from '@shared/lm-studio-defaults.ts'
 import { el } from '../../dom/helpers.ts'
 
 export interface LmStudioSection {
@@ -79,7 +80,7 @@ export function createLmStudioSection(
             'Download ',
             el(
               'a',
-              { href: 'https://lmstudio.ai', target: '_blank', rel: 'noopener' },
+              { href: LM_STUDIO_DOWNLOAD_URL, target: '_blank', rel: 'noopener' },
               'LM Studio',
             ),
             ' for your platform.',

@@ -1,6 +1,9 @@
 /** Default LM Studio server URL (OpenAI-compatible /v1 endpoint). */
 export const DEFAULT_LM_STUDIO_URL = 'http://localhost:1234/v1'
 
+/** Official LM Studio download page (install guide link in Settings / onboarding). */
+export const LM_STUDIO_DOWNLOAD_URL = 'https://lmstudio.ai/download'
+
 /** Default LM Studio model ids (OpenAI-compatible /v1/models ids). */
 export const LM_STUDIO_MODEL_IDS = {
   chat: 'qwen/qwen3.6-35b-a3b',
