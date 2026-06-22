@@ -21,6 +21,11 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   skillPluginPaths: z.array(z.string().max(4096)).max(64),
   subagentsEnabled: z.boolean(),
   externalApiSafety: z.boolean(),
+  remoteAgentBaseUrl: z.string().max(2048),
+  remoteAgentRepository: z.string().max(2048),
+  remoteAgentStartingRef: z.string().max(256),
+  remoteAgentAutoCreatePR: z.boolean(),
+  remoteAgentWorkOnCurrentBranch: z.boolean(),
   customInstructions: z.string().max(8192),
   onboardingCompleted: z.boolean(),
 } as const satisfies Record<string, z.ZodType>

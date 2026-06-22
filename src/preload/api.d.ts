@@ -127,11 +127,11 @@ export interface ApiClient {
       autoRunSandboxCommands: boolean
       mcpAutoAllowReadOnly: boolean
     }) => Promise<void>
-    getKey: (provider: 'anthropic' | 'openai' | 'lmstudio') => Promise<boolean>
-    setKey: (provider: 'anthropic' | 'openai' | 'lmstudio', key: string) => Promise<void>
-    availableProviders: () => Promise<{ anthropic: boolean; openai: boolean }>
+    getKey: (provider: 'anthropic' | 'openai' | 'lmstudio' | 'cursor') => Promise<boolean>
+    setKey: (provider: 'anthropic' | 'openai' | 'lmstudio' | 'cursor', key: string) => Promise<void>
+    availableProviders: () => Promise<{ anthropic: boolean; openai: boolean; cursor: boolean }>
     validateKey: (
-      provider: 'anthropic' | 'openai',
+      provider: 'anthropic' | 'openai' | 'cursor',
       key: string,
     ) => Promise<{ ok: boolean; error?: string; formatOk?: boolean }>
   }

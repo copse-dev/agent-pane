@@ -172,12 +172,12 @@ contextBridge.exposeInMainWorld('api', {
       autoRunSandboxCommands: boolean
       mcpAutoAllowReadOnly: boolean
     }) => ipcRenderer.invoke('settings:setSecurity', prefs),
-    getKey: (provider: 'anthropic' | 'openai' | 'lmstudio') =>
+    getKey: (provider: 'anthropic' | 'openai' | 'lmstudio' | 'cursor') =>
       ipcRenderer.invoke('settings:getKey', provider),
-    setKey: (provider: 'anthropic' | 'openai' | 'lmstudio', key: string) =>
+    setKey: (provider: 'anthropic' | 'openai' | 'lmstudio' | 'cursor', key: string) =>
       ipcRenderer.invoke('settings:setKey', provider, key),
     availableProviders: () => ipcRenderer.invoke('settings:availableProviders'),
-    validateKey: (provider: 'anthropic' | 'openai', key: string) =>
+    validateKey: (provider: 'anthropic' | 'openai' | 'cursor', key: string) =>
       ipcRenderer.invoke('settings:validateKey', provider, key),
   },
   appIcon: {

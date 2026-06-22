@@ -8,6 +8,7 @@ import {
   type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
 import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
+import { DEFAULT_CURSOR_AGENT_BASE_URL } from '@shared/remote-agent.ts'
 import { populateModelSelect, populateSmallTasksModelSelect } from './model-options.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
@@ -38,6 +39,11 @@ interface SettingField {
 const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'customInstructions', kind: 'text', default: '', save: true },
   { name: 'externalApiSafety', kind: 'checkbox', default: false, save: true },
+  { name: 'remoteAgentBaseUrl', kind: 'text', default: DEFAULT_CURSOR_AGENT_BASE_URL, save: true },
+  { name: 'remoteAgentRepository', kind: 'text', default: '', save: true },
+  { name: 'remoteAgentStartingRef', kind: 'text', default: '', save: true },
+  { name: 'remoteAgentAutoCreatePR', kind: 'checkbox', default: true, save: true },
+  { name: 'remoteAgentWorkOnCurrentBranch', kind: 'checkbox', default: false, save: true },
   { name: 'localSubagentsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'localTodoItemsEnabled', kind: 'checkbox', default: true, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
@@ -124,6 +130,53 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <label>
                 Default model
                 <select name="model"></select>
+              </label>
+            </fieldset>
+
+            <fieldset>
+              <legend>Remote agents</legend>
+              <p class="settings-fieldset-desc">
+                Run chat turns on a remote agent machine. Cursor Cloud Agent uses
+                <code>https://api.cursor.com</code>; Copse-compatible APIs can expose the same v1 agent
+                endpoints at another base URL.
+              </p>
+              <label>
+                Agent API base URL
+                <input
+                  type="url"
+                  name="remoteAgentBaseUrl"
+                  placeholder="https://api.cursor.com"
+                  autocomplete="off"
+                />
+                <span class="field-hint">
+                  Leave as Cursor's API URL for Cursor Cloud Agent, or set a Copse-compatible server.
+                </span>
+              </label>
+              <label>
+                Repository
+                <input
+                  type="text"
+                  name="remoteAgentRepository"
+                  placeholder="https://github.com/owner/repo (defaults to workspace origin)"
+                  autocomplete="off"
+                />
+              </label>
+              <label>
+                Starting ref
+                <input
+                  type="text"
+                  name="remoteAgentStartingRef"
+                  placeholder="main (optional)"
+                  autocomplete="off"
+                />
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="remoteAgentAutoCreatePR" />
+                Ask the remote agent to create a PR when it finishes
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="remoteAgentWorkOnCurrentBranch" />
+                Let the remote agent push to the configured starting ref
               </label>
             </fieldset>
 

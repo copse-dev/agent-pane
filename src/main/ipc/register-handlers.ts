@@ -185,10 +185,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('settings:availableProviders', () => ({
     anthropic: isProviderAvailable('anthropic'),
     openai: isProviderAvailable('openai'),
+    cursor: isProviderAvailable('cursor'),
   }))
   ipcMain.handle('settings:validateKey', async (event, provider: unknown, key: unknown) => {
     assertMainFrameSender(event, win)
-    const p = parseIpcArgs(z.enum(['anthropic', 'openai']), [provider])
+    const p = parseIpcArgs(z.enum(['anthropic', 'openai', 'cursor']), [provider])
     const apiKey = parseIpcArgs(z.string().max(8192), [key])
     return validateApiKey(p, apiKey)
   })

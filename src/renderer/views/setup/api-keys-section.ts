@@ -34,6 +34,13 @@ export function createApiKeysSection(
     autocomplete: 'off',
   }) as HTMLInputElement
   const openaiStatus = el('span', { class: 'key-status', 'data-key': 'openai' })
+  const cursorInput = el('input', {
+    type: 'password',
+    name: 'cursorKey',
+    placeholder: 'cur_…',
+    autocomplete: 'off',
+  }) as HTMLInputElement
+  const cursorStatus = el('span', { class: 'key-status', 'data-key': 'cursor' })
 
   const fieldset = el(
     'fieldset',
@@ -63,12 +70,24 @@ export function createApiKeysSection(
         'For GPT-4o models. Validated via a free models request — no tokens charged.',
       ),
     ),
+    el(
+      'label',
+      {},
+      'Cursor API key',
+      cursorInput,
+      cursorStatus,
+      el(
+        'span',
+        { class: 'field-hint' },
+        'For Cursor Cloud Agent remote runs. Validated via a free models request.',
+      ),
+    ),
   ) as HTMLFieldSetElement
 
   const validationTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   async function validateField(
-    provider: 'anthropic' | 'openai',
+    provider: 'anthropic' | 'openai' | 'cursor',
     input: HTMLInputElement,
     statusEl: HTMLElement,
   ): Promise<void> {
@@ -91,7 +110,7 @@ export function createApiKeysSection(
   }
 
   function bindValidation(
-    provider: 'anthropic' | 'openai',
+    provider: 'anthropic' | 'openai' | 'cursor',
     input: HTMLInputElement,
     statusEl: HTMLElement,
   ): void {
@@ -110,10 +129,12 @@ export function createApiKeysSection(
 
   bindValidation('anthropic', anthropicInput, anthropicStatus)
   bindValidation('openai', openaiInput, openaiStatus)
+  bindValidation('cursor', cursorInput, cursorStatus)
 
   async function refreshKeyStatus(): Promise<void> {
     const anthSet = await api.settings.getKey('anthropic')
     const openSet = await api.settings.getKey('openai')
+    const cursorSet = await api.settings.getKey('cursor')
     if (!anthropicInput.value.trim()) {
       anthropicStatus.textContent = anthSet ? '● saved' : '○ not set'
       anthropicStatus.className = 'key-status'
@@ -122,15 +143,22 @@ export function createApiKeysSection(
       openaiStatus.textContent = openSet ? '● saved' : '○ not set'
       openaiStatus.className = 'key-status'
     }
+    if (!cursorInput.value.trim()) {
+      cursorStatus.textContent = cursorSet ? '● saved' : '○ not set'
+      cursorStatus.className = 'key-status'
+    }
   }
 
   async function saveKeys(): Promise<void> {
     const anthKey = anthropicInput.value.trim()
     const openKey = openaiInput.value.trim()
+    const cursorKey = cursorInput.value.trim()
     if (anthKey) await api.settings.setKey('anthropic', anthKey)
     if (openKey) await api.settings.setKey('openai', openKey)
+    if (cursorKey) await api.settings.setKey('cursor', cursorKey)
     anthropicInput.value = ''
     openaiInput.value = ''
+    cursorInput.value = ''
     await refreshKeyStatus()
   }
 
