@@ -24,9 +24,10 @@ describe('browser pane requested URLs', () => {
     const ResizeObserverCtor = globalThis.ResizeObserver
     class NoopResizeObserver {
       observe() {}
+      unobserve() {}
       disconnect() {}
     }
-    globalThis.ResizeObserver = NoopResizeObserver as typeof ResizeObserver
+    globalThis.ResizeObserver = NoopResizeObserver as unknown as typeof ResizeObserver
 
     const { list, viewer } = mountBrowserHosts()
     const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
