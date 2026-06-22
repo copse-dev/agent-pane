@@ -68,6 +68,15 @@ function readActiveThread(): Thread {
   return thread
 }
 
+function assertExploreSubagentCompleted(thread: Thread): void {
+  const exploreCalls = thread.messages.flatMap((m) => m.toolCalls).filter((tc) => tc.name === 'explore')
+  assert.ok(exploreCalls.length > 0, 'expected at least one explore tool call')
+  const completed = exploreCalls.filter(
+    (tc) => tc.status === 'done' && typeof tc.result === 'string' && tc.result.trim().length > 20,
+  )
+  assert.ok(completed.length > 0, 'expected explore to complete with a non-empty summary result')
+}
+
 describe('agent eval drive', () => {
   before(async () => {
     mkdirSync(ARTIFACTS, { recursive: true })
@@ -75,7 +84,11 @@ describe('agent eval drive', () => {
     const useMock = process.env.COPSE_EVAL_USE_MOCK === '1'
     const lmStudioUrl = process.env.COPSE_EVAL_LM_STUDIO_URL?.trim() || 'http://localhost:1234/v1'
     const subagentsEnabled =
-      process.env.COPSE_EVAL_SUBAGENTS === '0' ? false : useMock ? false : true
+      process.env.COPSE_EVAL_SUBAGENTS === '0'
+        ? false
+        : process.env.COPSE_EVAL_SUBAGENTS === '1'
+          ? true
+          : !useMock
     seedEmptyProject(process.cwd(), 'agent-eval-project', {
       subagentsEnabled,
       ...(useMock
@@ -108,8 +121,15 @@ describe('agent eval drive', () => {
     }
 
     const thread = readActiveThread()
-    if (scenario.id === 'working-brief-eval' || scenario.id === 'working-brief-eval-lmstudio') {
+    if (
+      scenario.id === 'working-brief-eval' ||
+      scenario.id === 'working-brief-eval-lmstudio' ||
+      scenario.id === 'working-brief-subagent-eval'
+    ) {
       assert.equal(thread.workingBrief, scenario.prompts[0])
+    }
+    if (scenario.id === 'working-brief-subagent-eval' || scenario.id === 'todo-steer-deep-dive') {
+      assertExploreSubagentCompleted(thread)
     }
     const body = threadToJsonl(thread)
     const outPath = join(ARTIFACTS, `${scenario.id}-${Date.now()}.jsonl`)
