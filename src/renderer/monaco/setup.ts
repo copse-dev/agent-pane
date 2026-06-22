@@ -5,22 +5,32 @@ declare global {
   var _VSCODE_FILE_ROOT: string | undefined
 }
 
+function monacoVsRoot(): string {
+  return new URL('./monaco/', window.location.href).href
+}
+
 function configureMonacoFileRoot(): void {
-  globalThis._VSCODE_FILE_ROOT = new URL('./monaco/', window.location.href).href
+  globalThis._VSCODE_FILE_ROOT = monacoVsRoot()
+}
+
+function createMonacoWorker(label: string): Worker {
+  const editorWorker = new URL('./monaco/vs/editor/editor.worker.js', window.location.href).href
+  const root = globalThis._VSCODE_FILE_ROOT!
+  const bootstrap = [
+    `globalThis._VSCODE_FILE_ROOT = ${JSON.stringify(root)};`,
+    `await import(${JSON.stringify(editorWorker)});`,
+  ].join('')
+  const blobUrl = URL.createObjectURL(new Blob([bootstrap], { type: 'application/javascript' }))
+  return new Worker(blobUrl, { name: label, type: 'module' })
 }
 
 export function initMonaco(): typeof monaco {
   configureMonacoFileRoot()
-  // Point Monaco workers at the copied vs/ directory
+  // createWebWorker hosts language services in editor.worker.js; foreign modules
+  // are imported from the copied ESM `vs/` tree at runtime.
   window.MonacoEnvironment = {
-    getWorkerUrl(_moduleId: string, label: string) {
-      if (label === 'json') return './monaco/vs/language/json/json.worker.js'
-      if (label === 'css' || label === 'scss' || label === 'less')
-        return './monaco/vs/language/css/css.worker.js'
-      if (label === 'html') return './monaco/vs/language/html/html.worker.js'
-      if (label === 'typescript' || label === 'javascript')
-        return './monaco/vs/language/typescript/ts.worker.js'
-      return './monaco/vs/editor/editor.worker.js'
+    getWorker(_workerId: string, label: string) {
+      return createMonacoWorker(label)
     },
   }
   return monaco
