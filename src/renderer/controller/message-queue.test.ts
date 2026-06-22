@@ -1,12 +1,18 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { createThread, setThreadStatus, setThreadTodos } from '@shared/store/thread-helpers.ts'
+import {
+  addMessage,
+  createThread,
+  setThreadStatus,
+  setThreadTodos,
+} from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
   dispatchAgentRun,
   drainMessageQueue,
   enqueueUserMessage,
+  movePendingUserMessagesToEnd,
   queuedMessageIds,
   resumePendingQueues,
 } from './message-queue.ts'
@@ -62,6 +68,47 @@ test('drainMessageQueue dispatches the next payload when idle', () => {
   assert.equal(api.runs.length, 1)
   assert.equal(api.runs[0]![0], threadId)
   assert.match(api.runs[0]![1], /queued prompt/)
+})
+
+test('drainMessageQueue moves pending user messages after the completed turn', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  const firstMessageId = addMessage(store, threadId, 'user', 'first prompt')
+  const queuedMessageId = addMessage(store, threadId, 'user', 'queued follow up')
+  const assistantMessageId = addMessage(store, threadId, 'assistant', 'first response')
+  enqueueUserMessage(store, threadId, {
+    messageId: queuedMessageId,
+    payload: { content: 'queued follow up' },
+    createdAt: 1,
+  })
+
+  drainMessageQueue(store, api, threadId)
+
+  const thread = store.getState().threads.find((t) => t.id === threadId)!
+  assert.deepEqual(
+    thread.messages.map((message) => message.id),
+    [firstMessageId, assistantMessageId, queuedMessageId],
+  )
+})
+
+test('movePendingUserMessagesToEnd preserves queued FIFO order', () => {
+  const messages = [
+    { id: 'user-1', role: 'user', content: 'first', toolCalls: [], createdAt: 1 },
+    { id: 'queued-1', role: 'user', content: 'queued 1', toolCalls: [], createdAt: 2 },
+    { id: 'queued-2', role: 'user', content: 'queued 2', toolCalls: [], createdAt: 3 },
+    { id: 'assistant-1', role: 'assistant', content: 'response', toolCalls: [], createdAt: 4 },
+  ] as const
+
+  const reordered = movePendingUserMessagesToEnd([...messages], [
+    { messageId: 'queued-1', payload: { content: 'queued 1' }, createdAt: 2 },
+    { messageId: 'queued-2', payload: { content: 'queued 2' }, createdAt: 3 },
+  ])
+
+  assert.deepEqual(
+    reordered.map((message) => message.id),
+    ['user-1', 'assistant-1', 'queued-1', 'queued-2'],
+  )
 })
 
 test('drainMessageQueue refreshes priorTodos from the live thread state', () => {
