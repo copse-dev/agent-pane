@@ -8,17 +8,20 @@ export class OpenAIProvider implements LLMProvider {
   lastUsage: { inputTokens: number; outputTokens: number } | null = null
 
   // `baseURL` lets this provider talk to any OpenAI-compatible server (e.g.
-  // LM Studio at http://localhost:1234/v1). Such servers ignore the API key but
-  // the SDK requires a non-empty value.
+  // LM Studio at http://localhost:1234/v1). Such servers often ignore the API
+  // key but the SDK requires a non-empty value.
   constructor(
     private readonly model: string,
-    opts: { baseURL?: string; apiKey?: string } = {},
+    opts: { baseURL?: string; apiKey?: string; includeUsage?: boolean } = {},
   ) {
+    this.includeUsage = opts.includeUsage ?? !opts.baseURL
     this.client = new OpenAI({
       apiKey: opts.apiKey ?? process.env.OPENAI_API_KEY ?? 'not-needed',
       ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
     })
   }
+
+  private readonly includeUsage: boolean
 
   stream(
     messages: LLMMessage[],
@@ -43,8 +46,8 @@ export class OpenAIProvider implements LLMProvider {
           {
             model,
             stream: true,
-            stream_options: { include_usage: true },
             messages: toOpenAIMessages(messages),
+            ...(self.includeUsage ? { stream_options: { include_usage: true } } : {}),
             ...(mappedTools ? { tools: mappedTools } : {}),
           },
           { signal },
