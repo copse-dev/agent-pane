@@ -12,6 +12,7 @@ import sql from 'highlight.js/lib/languages/sql'
 import typescript from 'highlight.js/lib/languages/typescript'
 import xml from 'highlight.js/lib/languages/xml'
 import yaml from 'highlight.js/lib/languages/yaml'
+import { escapeHtml } from './escape.ts'
 
 hljs.registerLanguage('typescript', typescript)
 hljs.registerLanguage('javascript', javascript)
@@ -45,10 +46,6 @@ const LANG_ALIASES: Record<string, string> = {
   rs: 'rust',
   text: 'plaintext',
   plaintext: 'plaintext',
-}
-
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 function resolveLanguage(lang: string): string | null {

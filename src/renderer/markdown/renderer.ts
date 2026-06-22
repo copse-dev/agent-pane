@@ -1,17 +1,11 @@
 import { fenceCodeClass, highlightFenceCode } from './highlight.ts'
+import { escapeHtml, escapeMermaidHtml } from './escape.ts'
+
+export { escapeHtml } from './escape.ts'
 
 const FENCE_RE = /```(\w*)\n([\s\S]*?)```/g
 const FENCED_BLOCK_SPLIT_RE =
   /(<pre>[\s\S]*?<\/pre>|<div class="mermaid-diagram[^>]*>[\s\S]*?<\/div>)/
-
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
-
-/** Mermaid reads arrow syntax (`-->`); only escape what can break out of `<pre>`. */
-function escapeMermaidHtml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;')
-}
 
 function renderFencedBlock(lang: string, code: string): string {
   if (lang === 'mermaid') {

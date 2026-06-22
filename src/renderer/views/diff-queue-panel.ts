@@ -75,12 +75,12 @@ export function mountDiffQueuePanel(
 
   // Store diff data as it arrives from main
   const diffData = new Map<string, { before: string; after: string; language: string }>()
-  api.diff.onShowDiff((path, before, after, language) => {
+  const unsubShowDiff = api.diff.onShowDiff((path, before, after, language) => {
     diffData.set(path, { before, after, language })
     // A re-staged diff (e.g. after a conflict) must refresh the visible editor.
     if (path === selectedPath) selectDiff(path)
   })
-  api.diff.onConflict((paths) => {
+  const unsubConflict = api.diff.onConflict((paths) => {
     conflictBanner.hidden = false
     conflictBanner.textContent =
       paths.length === 1
@@ -89,7 +89,7 @@ export function mountDiffQueuePanel(
     // Surface a refreshed file so the user lands on a conflicting diff.
     if (paths[0]) selectDiff(paths[0])
   })
-  api.diff.onQueued((entries) => {
+  const unsubQueued = api.diff.onQueued((entries) => {
     // Remove entries that are no longer in the queue
     for (const key of diffData.keys()) {
       if (!entries.find((e) => e.path === key)) diffData.delete(key)
@@ -108,6 +108,9 @@ export function mountDiffQueuePanel(
 
   return () => {
     unsub()
+    unsubShowDiff()
+    unsubConflict()
+    unsubQueued()
     diffEditor.dispose()
   }
 }
