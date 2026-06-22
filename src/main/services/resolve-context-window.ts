@@ -11,7 +11,7 @@ const DEFAULT_CLOUD_CONTEXT = 128_000
 function localModelId(model: string): string | null {
   if (model.startsWith('lmstudio:')) return model.slice('lmstudio:'.length)
   if (model === 'lm-studio')
-    return getSetting<string>('lmStudioModel', LM_STUDIO_MODEL_IDS.chat).trim() || null
+    return getSetting<string>('localDefaultModel', LM_STUDIO_MODEL_IDS.chat).trim() || null
   return null
 }
 
@@ -34,7 +34,7 @@ export async function resolveContextWindow(model: string): Promise<number> {
   if (cloud) return cloud.contextWindow
 
   if (model === 'lm-studio' || model.startsWith('lmstudio:')) {
-    const url = getSetting<string>('lmStudioUrl', DEFAULT_LM_STUDIO_URL)
+    const url = getSetting<string>('localServerUrl', DEFAULT_LM_STUDIO_URL)
     const id = localModelId(model)
     if (id) {
       const r = await fetchLmStudioModelsCached(url)

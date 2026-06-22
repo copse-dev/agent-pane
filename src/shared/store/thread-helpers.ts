@@ -32,29 +32,38 @@ export function isBlankThread(thread: Thread): boolean {
   return thread.messages.length === 0 && thread.status === 'idle'
 }
 
-function pruneBlankThreads(store: AppStore, keepId: string | null): void {
+export function hasUnsubmittedPrompt(thread: Thread): boolean {
+  return Boolean(thread.draftPrompt?.trim())
+}
+
+/** Blank thread with no draft — safe to collapse when switching away. */
+function isPrunableBlankThread(thread: Thread): boolean {
+  return isBlankThread(thread) && !hasUnsubmittedPrompt(thread)
+}
+
+function pruneBlankThreads(store: AppStore, keepIds: ReadonlySet<string>): void {
   const { threads, activeThreadId } = store.getState()
-  const remaining = threads.filter((t) => !isBlankThread(t) || t.id === keepId)
+  const remaining = threads.filter((t) => !isPrunableBlankThread(t) || keepIds.has(t.id))
   if (remaining.length === 0 || remaining.length === threads.length) return
   const newActive =
-    keepId && remaining.some((t) => t.id === keepId)
-      ? keepId
-      : activeThreadId && remaining.some((t) => t.id === activeThreadId)
-        ? activeThreadId
-        : (remaining[0]?.id ?? null)
+    activeThreadId && remaining.some((t) => t.id === activeThreadId)
+      ? activeThreadId
+      : (remaining[0]?.id ?? null)
   store.setState({ threads: remaining, activeThreadId: newActive })
   store.emit('threads_changed')
 }
 
-/** Drop extra blank threads after load (keeps the active blank, or the newest). */
+/** Drop extra blank threads after load (keeps drafts and one empty blank). */
 export function normalizeBlankThreads(store: AppStore): void {
   const { threads, activeThreadId } = store.getState()
   const blanks = threads.filter(isBlankThread)
-  if (blanks.length <= 1) return
-  const keepId =
-    blanks.find((t) => t.id === activeThreadId)?.id ??
-    blanks.sort((a, b) => b.createdAt - a.createdAt)[0]!.id
-  pruneBlankThreads(store, keepId)
+  const emptyBlanks = blanks.filter((t) => !hasUnsubmittedPrompt(t))
+  if (emptyBlanks.length <= 1) return
+  const keepEmptyId =
+    emptyBlanks.find((t) => t.id === activeThreadId)?.id ??
+    emptyBlanks.sort((a, b) => b.createdAt - a.createdAt)[0]!.id
+  const keepIds = new Set([...blanks.filter(hasUnsubmittedPrompt).map((t) => t.id), keepEmptyId])
+  pruneBlankThreads(store, keepIds)
 }
 
 export function createThread(store: AppStore): string {
@@ -88,13 +97,15 @@ export function createThread(store: AppStore): string {
 /** Open a fresh composer: reuse an unused blank thread or create one. */
 export function openNewThread(store: AppStore): string {
   const { threads, activeThreadId } = store.getState()
-  const existing = threads.find((t) => isBlankThread(t))
+  const existing = threads.find((t) => isBlankThread(t) && !hasUnsubmittedPrompt(t))
   if (existing) {
-    pruneBlankThreads(store, existing.id)
     if (activeThreadId !== existing.id) {
+      store.emit('composer_draft_flush')
       store.setState({ activeThreadId: existing.id })
       store.emit('threads_changed')
     }
+    pruneBlankThreads(store, new Set([existing.id]))
+    store.emit('threads_changed')
     store.setState({
       filesPaneOpen: false,
       openFile: null,
@@ -105,12 +116,16 @@ export function openNewThread(store: AppStore): string {
     store.emit('files_pane_changed')
     return existing.id
   }
+  store.emit('composer_draft_flush')
   return createThread(store)
 }
 
 export function switchThread(store: AppStore, id: string): void {
+  if (id === store.getState().activeThreadId) return
+  store.emit('composer_draft_flush')
   store.setState({ activeThreadId: id })
-  pruneBlankThreads(store, id)
+  store.emit('threads_changed')
+  pruneBlankThreads(store, new Set([id]))
   store.emit('threads_changed')
 }
 
@@ -185,10 +200,34 @@ export function addMessage(
 
   const thread = updated.find((t) => t.id === threadId)
   if (thread && thread.messages.length === 1) {
-    pruneBlankThreads(store, threadId)
+    pruneBlankThreads(store, new Set([threadId]))
   }
 
   return id
+}
+
+export function setThreadDraftPrompt(store: AppStore, threadId: string, draftPrompt: string): void {
+  const trimmed = draftPrompt.trim()
+  const { threads } = store.getState()
+  const thread = threads.find((t) => t.id === threadId)
+  if (!thread) return
+  if (trimmed.length > 0) {
+    if (thread.draftPrompt === draftPrompt) return
+    const updated = threads.map((t) =>
+      t.id !== threadId ? t : { ...t, draftPrompt, updatedAt: Date.now() },
+    )
+    store.setState({ threads: updated })
+    store.emit('threads_changed')
+    return
+  }
+  if (thread.draftPrompt === undefined) return
+  const updated = threads.map((t) => {
+    if (t.id !== threadId) return t
+    const { draftPrompt: _removed, ...rest } = t
+    return { ...rest, updatedAt: Date.now() }
+  })
+  store.setState({ threads: updated })
+  store.emit('threads_changed')
 }
 
 export function appendToken(store: AppStore, messageId: string, text: string): void {
@@ -323,6 +362,19 @@ export function setThreadStatus(
 export function setThreadTitle(store: AppStore, threadId: string, title: string): void {
   const { threads } = store.getState()
   const updated = threads.map((t) => (t.id !== threadId ? t : { ...t, title }))
+  store.setState({ threads: updated })
+  store.emit('threads_changed')
+}
+
+export function setThreadWorkingBrief(
+  store: AppStore,
+  threadId: string,
+  workingBrief: string,
+): void {
+  const { threads } = store.getState()
+  const updated = threads.map((t) =>
+    t.id !== threadId ? t : { ...t, workingBrief, updatedAt: Date.now() },
+  )
   store.setState({ threads: updated })
   store.emit('threads_changed')
 }

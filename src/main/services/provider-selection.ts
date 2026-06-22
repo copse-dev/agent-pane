@@ -29,9 +29,9 @@ export async function fetchFirstLocalModel(baseURL: string): Promise<string | nu
 }
 
 async function resolveSubagentLocalModelId(url: string): Promise<string | null> {
-  const configured = getSetting<string>('lmStudioSubagentModel', '').trim()
+  const configured = getSetting<string>('subagentModel', '').trim()
   if (configured) return configured
-  const fallback = getSetting<string>('lmStudioModel', LM_STUDIO_MODEL_IDS.chat).trim()
+  const fallback = getSetting<string>('localDefaultModel', LM_STUDIO_MODEL_IDS.chat).trim()
   if (fallback) return fallback
   return fetchFirstLocalModel(url)
 }
@@ -46,9 +46,9 @@ export interface SubagentRoute {
 /** When the parent chat uses a cloud model, route explore subagents to LM Studio. */
 export async function buildSubagentRoute(parentModel: string): Promise<SubagentRoute | null> {
   if (isLocalChatModel(parentModel)) return null
-  if (!getSetting<boolean>('lmStudioForSubagents', true)) return null
+  if (!getSetting<boolean>('localSubagentsEnabled', true)) return null
 
-  const url = getSetting<string>('lmStudioUrl', DEFAULT_LM_STUDIO_URL)
+  const url = getSetting<string>('localServerUrl', DEFAULT_LM_STUDIO_URL)
   const modelId = await resolveSubagentLocalModelId(url)
   if (!modelId) return null
 
@@ -66,10 +66,10 @@ export async function buildSubagentRoute(parentModel: string): Promise<SubagentR
 // model or the first one the server has loaded (never the bogus "local-model").
 export async function buildProvider(model: string): Promise<LLMProvider> {
   if (model === 'lm-studio' || model.startsWith('lmstudio:')) {
-    const url = getSetting<string>('lmStudioUrl', DEFAULT_LM_STUDIO_URL)
+    const url = getSetting<string>('localServerUrl', DEFAULT_LM_STUDIO_URL)
     let id = model.startsWith('lmstudio:')
       ? model.slice('lmstudio:'.length)
-      : getSetting<string>('lmStudioModel', LM_STUDIO_MODEL_IDS.chat)
+      : getSetting<string>('localDefaultModel', LM_STUDIO_MODEL_IDS.chat)
     if (!id) id = (await fetchFirstLocalModel(url)) ?? ''
     if (!id) {
       throw new Error(
@@ -97,7 +97,7 @@ export async function buildProvider(model: string): Promise<LLMProvider> {
 
 // List the model ids an LM Studio server currently exposes (using saved URL/key).
 export async function listLmStudioModels(): Promise<string[]> {
-  const url = getSetting<string>('lmStudioUrl', DEFAULT_LM_STUDIO_URL)
+  const url = getSetting<string>('localServerUrl', DEFAULT_LM_STUDIO_URL)
   const r = await fetchLmStudioModelsCached(url)
   return r.ok ? r.models.map((m) => m.id) : []
 }

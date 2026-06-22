@@ -51,9 +51,9 @@ function parseClassification(text: string): ClassificationResult | null {
 }
 
 async function resolveSafetyModel(url: string): Promise<string | null> {
-  const configured = getSetting<string>('lmStudioSafetyModel', LM_STUDIO_MODEL_IDS.safety).trim()
+  const configured = getSetting<string>('safetyModel', LM_STUDIO_MODEL_IDS.safety).trim()
   if (configured) return configured
-  const fallback = getSetting<string>('lmStudioModel', LM_STUDIO_MODEL_IDS.chat).trim()
+  const fallback = getSetting<string>('localDefaultModel', LM_STUDIO_MODEL_IDS.chat).trim()
   if (fallback) return fallback
   try {
     const res = await fetch(`${url.replace(/\/$/, '')}/models`, {
@@ -69,9 +69,9 @@ async function resolveSafetyModel(url: string): Promise<string | null> {
 }
 
 export async function classifyShellScope(command: string): Promise<ClassificationResult | null> {
-  if (!getSetting<boolean>('lmStudioSafetyEnabled', true)) return null
+  if (!getSetting<boolean>('safetyClassifierEnabled', true)) return null
 
-  const url = getSetting<string>('lmStudioUrl', DEFAULT_LM_STUDIO_URL)
+  const url = getSetting<string>('localServerUrl', DEFAULT_LM_STUDIO_URL)
   const model = await resolveSafetyModel(url)
   if (!model) return null
 

@@ -7,10 +7,9 @@ export interface ModelRoutingSection {
   root: HTMLFieldSetElement
   refresh: () => Promise<void>
   readValues: () => {
-    lmStudioModel: string
-    lmStudioSmallTasksModel: string
-    lmStudioSubagentModel: string
-    lmStudioSafetyModel: string
+    localDefaultModel: string
+    subagentModel: string
+    safetyModel: string
   }
 }
 
@@ -25,14 +24,9 @@ function routingField(label: string, control: HTMLElement, hint: string): HTMLDi
 }
 
 export function createModelRoutingSection(api: ApiClient): ModelRoutingSection {
-  const lmStudioModel = el('select', { name: 'lmStudioModel' }) as HTMLSelectElement
-  const lmStudioSmallTasksModel = el('select', {
-    name: 'lmStudioSmallTasksModel',
-  }) as HTMLSelectElement
-  const lmStudioSubagentModel = el('select', {
-    name: 'lmStudioSubagentModel',
-  }) as HTMLSelectElement
-  const lmStudioSafetyModel = el('select', { name: 'lmStudioSafetyModel' }) as HTMLSelectElement
+  const localDefaultModel = el('select', { name: 'localDefaultModel' }) as HTMLSelectElement
+  const subagentModel = el('select', { name: 'subagentModel' }) as HTMLSelectElement
+  const safetyModel = el('select', { name: 'safetyModel' }) as HTMLSelectElement
 
   const fieldset = el(
     'fieldset',
@@ -41,26 +35,21 @@ export function createModelRoutingSection(api: ApiClient): ModelRoutingSection {
     el(
       'p',
       { class: 'settings-fieldset-desc' },
-      'Choose which loaded model handles each task. Leave a route on “auto” to use the first model the server reports.',
+      'Choose which loaded local model handles each task. Leave a route on “auto” to use the first model the server reports.',
     ),
     routingField(
       'Default local model',
-      lmStudioModel,
+      localDefaultModel,
       'Fallback when a local model is selected in chat but not specified',
     ),
     routingField(
-      'Small tasks model',
-      lmStudioSmallTasksModel,
-      'Thread title generation and other lightweight prompts',
-    ),
-    routingField(
       'Exploration subagent model',
-      lmStudioSubagentModel,
+      subagentModel,
       'File exploration when the chat model is a cloud API model',
     ),
     routingField(
       'Instruct / safety model',
-      lmStudioSafetyModel,
+      safetyModel,
       'Classifies shell commands when the OS sandbox is off',
     ),
   ) as HTMLFieldSetElement
@@ -73,38 +62,30 @@ export function createModelRoutingSection(api: ApiClient): ModelRoutingSection {
       models = []
     }
 
-    const lmModel = (await api.settings.get('lmStudioModel')) as string | undefined
-    const lmSmall = (await api.settings.get('lmStudioSmallTasksModel')) as string | undefined
-    const lmSubagent = (await api.settings.get('lmStudioSubagentModel')) as string | undefined
-    const lmSafety = (await api.settings.get('lmStudioSafetyModel')) as string | undefined
+    const localModel = (await api.settings.get('localDefaultModel')) as string | undefined
+    const subagent = (await api.settings.get('subagentModel')) as string | undefined
+    const safety = (await api.settings.get('safetyModel')) as string | undefined
 
-    populateLocalModelSelect(lmStudioModel, models, lmModel ?? PREFERRED_MODELS[0]!.id)
+    populateLocalModelSelect(localDefaultModel, models, localModel ?? PREFERRED_MODELS[0]!.id)
     populateLocalModelSelect(
-      lmStudioSmallTasksModel,
+      subagentModel,
       models,
-      lmSmall ?? PREFERRED_MODELS[1]!.id,
+      subagent ?? '',
       '(auto — use default local model)',
     )
     populateLocalModelSelect(
-      lmStudioSubagentModel,
+      safetyModel,
       models,
-      lmSubagent ?? '',
-      '(auto — use default local model)',
-    )
-    populateLocalModelSelect(
-      lmStudioSafetyModel,
-      models,
-      lmSafety ?? PREFERRED_MODELS[2]!.id,
+      safety ?? PREFERRED_MODELS[2]!.id,
       '(auto — use default local model)',
     )
   }
 
   function readValues() {
     return {
-      lmStudioModel: lmStudioModel.value.trim(),
-      lmStudioSmallTasksModel: lmStudioSmallTasksModel.value.trim(),
-      lmStudioSubagentModel: lmStudioSubagentModel.value.trim(),
-      lmStudioSafetyModel: lmStudioSafetyModel.value.trim(),
+      localDefaultModel: localDefaultModel.value.trim(),
+      subagentModel: subagentModel.value.trim(),
+      safetyModel: safetyModel.value.trim(),
     }
   }
 

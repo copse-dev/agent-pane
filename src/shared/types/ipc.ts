@@ -50,10 +50,10 @@ export interface IpcInvokeMap {
   'settings:setSecurity': {
     args: [
       prefs: {
-        lmStudioUrl: string
-        lmStudioSafetyEnabled: boolean
-        lmStudioSafetyConfidenceThreshold: number
-        lmStudioSafetyModel: string
+        localServerUrl: string
+        safetyClassifierEnabled: boolean
+        safetyConfidenceThreshold: number
+        safetyModel: string
         autoRunSandboxCommands: boolean
         mcpAutoAllowReadOnly: boolean
       },

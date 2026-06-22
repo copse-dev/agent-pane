@@ -11,12 +11,11 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
     filesPaneWidth: z.number().int().min(300).max(4000),
     fileTreeWidth: z.number().int().min(120).max(400),
   }),
-  lmStudioModel: z.string().max(256),
-  lmStudioSmallTasksModel: z.string().max(256),
-  lmStudioSubagentModel: z.string().max(256),
-  lmStudioForSmallTasks: z.boolean(),
-  lmStudioForSubagents: z.boolean(),
-  lmStudioForTodoItems: z.boolean(),
+  localDefaultModel: z.string().max(256),
+  smallTasksModel: z.string().max(256),
+  subagentModel: z.string().max(256),
+  localSubagentsEnabled: z.boolean(),
+  localTodoItemsEnabled: z.boolean(),
   skillsEnabled: z.boolean(),
   skillPluginPaths: z.array(z.string().max(4096)).max(64),
   subagentsEnabled: z.boolean(),
@@ -39,10 +38,10 @@ export function parseRendererWritableSetting(
 }
 
 export const securitySettingsSchema = z.object({
-  lmStudioUrl: z.string().max(2048),
-  lmStudioSafetyEnabled: z.boolean(),
-  lmStudioSafetyConfidenceThreshold: z.number().min(0).max(1),
-  lmStudioSafetyModel: z.string().max(256),
+  localServerUrl: z.string().max(2048),
+  safetyClassifierEnabled: z.boolean(),
+  safetyConfidenceThreshold: z.number().min(0).max(1),
+  safetyModel: z.string().max(256),
   autoRunSandboxCommands: z.boolean(),
   mcpAutoAllowReadOnly: z.boolean(),
 })

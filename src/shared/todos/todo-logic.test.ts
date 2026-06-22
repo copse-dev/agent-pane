@@ -89,17 +89,17 @@ describe('todo-logic', () => {
       check: { kind: 'typecheck' },
     }
     assert.equal(
-      shouldRouteToLocal(item, { lmStudioForTodoItems: true, parentIsLocal: false }),
+      shouldRouteToLocal(item, { localTodoItemsEnabled: true, parentIsLocal: false }),
       true,
     )
     assert.equal(
-      shouldRouteToLocal(item, { lmStudioForTodoItems: false, parentIsLocal: false }),
+      shouldRouteToLocal(item, { localTodoItemsEnabled: false, parentIsLocal: false }),
       false,
     )
     assert.equal(
       shouldRouteToLocal(
         { id: '2', content: 'No check', status: 'in_progress', assignedModel: 'local' },
-        { lmStudioForTodoItems: true, parentIsLocal: false },
+        { localTodoItemsEnabled: true, parentIsLocal: false },
       ),
       false,
     )

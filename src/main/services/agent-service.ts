@@ -7,6 +7,7 @@ import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { getSetting } from './settings.ts'
 import { resolveContextWindow } from './resolve-context-window.ts'
 import { classifyAgentError } from './agent-errors.ts'
+import { resolveParentGoal } from '@shared/agent/working-brief.ts'
 import { buildSystemPrompt } from './agent-system-prompt.ts'
 import { hasLastUsage } from './provider-usage.ts'
 import { buildProvider, buildSubagentRoute, isLocalChatModel } from './provider-selection.ts'
@@ -28,6 +29,11 @@ import {
   getAccumulatedSubagentUsage,
 } from './explore-subagent-runner.ts'
 import { setAgentRunTodoContext, clearAgentRunTodos, getAgentRunTodos } from './agent-run-todos.ts'
+import {
+  buildGithubLinkSteeringPrompt,
+  shouldSteerGithubLinks,
+} from '@shared/git/github-link-steering.ts'
+import { getGithubRepoSlug } from './git-service.ts'
 import {
   shouldSteerTodos,
   formatTodosForPrompt,
@@ -63,13 +69,6 @@ const PARENT_DELEGATED_TOOLS = [
   'find_files',
 ] as const
 
-function extractParentGoal(messages: LLMMessage[], userPrompt: UserContent): string {
-  const lastUser = [...messages].reverse().find((m) => m.role === 'user')
-  if (lastUser && typeof lastUser.content === 'string') return lastUser.content.slice(0, 2000)
-  if (typeof userPrompt === 'string') return userPrompt.slice(0, 2000)
-  return '(complex user input)'
-}
-
 function parentTools(registry: ToolRegistry, subagentsEnabled: boolean) {
   const tools = registry.toLLMTools()
   if (!subagentsEnabled) {
@@ -96,7 +95,7 @@ export async function runAgent(
   priorMessages: LLMMessage[],
   mainWindow: BrowserWindow,
   registry: ToolRegistry,
-  options?: { invokedSkills?: string[]; priorTodos?: TodoItem[] },
+  options?: { invokedSkills?: string[]; priorTodos?: TodoItem[]; workingBrief?: string },
 ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> {
   const invokedSkills = options?.invokedSkills ?? []
 
@@ -119,15 +118,20 @@ export async function runAgent(
     { role: 'user', content: userPrompt },
   ]
 
-  const parentGoal = extractParentGoal(messages, userPrompt)
+  const parentGoal = resolveParentGoal(options?.workingBrief, messages, userPrompt)
 
   const userTextForSteering =
-    typeof userPrompt === 'string' ? userPrompt : extractParentGoal(messages, userPrompt)
-  const todoSteering = shouldSteerTodos(userTextForSteering) ? `\n\n${TODO_STEERING_PROMPT}` : ''
-  if (todoSteering && messages[0]?.role === 'system') {
+    typeof userPrompt === 'string' ? userPrompt : resolveParentGoal(undefined, messages, userPrompt)
+  const steeringBlocks: string[] = []
+  if (shouldSteerTodos(userTextForSteering)) steeringBlocks.push(TODO_STEERING_PROMPT)
+  if (shouldSteerGithubLinks(userTextForSteering)) {
+    const repoSlug = await getGithubRepoSlug()
+    steeringBlocks.push(buildGithubLinkSteeringPrompt(repoSlug))
+  }
+  if (steeringBlocks.length && messages[0]?.role === 'system') {
     messages[0] = {
       role: 'system',
-      content: (messages[0].content as string) + todoSteering,
+      content: (messages[0].content as string) + `\n\n${steeringBlocks.join('\n\n')}`,
     }
   }
   const priorTodos = options?.priorTodos ?? []
@@ -184,7 +188,7 @@ export async function runAgent(
     if (
       localItem &&
       shouldRouteToLocal(localItem, {
-        lmStudioForTodoItems: getSetting<boolean>('lmStudioForTodoItems', true),
+        localTodoItemsEnabled: getSetting<boolean>('localTodoItemsEnabled', true),
         parentIsLocal: isLocalChatModel(model),
       }) &&
       subagentRoute

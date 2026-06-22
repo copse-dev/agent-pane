@@ -49,10 +49,10 @@ describe('subagent local model routing', () => {
   afterEach(() => {
     restoreFetch?.()
     restoreFetch = undefined
-    setSetting('lmStudioForSubagents', true)
-    setSetting('lmStudioSubagentModel', '')
-    setSetting('lmStudioModel', '')
-    setSetting('lmStudioUrl', 'http://127.0.0.1:1234/v1')
+    setSetting('localSubagentsEnabled', true)
+    setSetting('subagentModel', '')
+    setSetting('localDefaultModel', '')
+    setSetting('localServerUrl', 'http://127.0.0.1:1234/v1')
   })
 
   it('detects local chat models', () => {
@@ -68,13 +68,13 @@ describe('subagent local model routing', () => {
   })
 
   it('returns null when local subagent routing is disabled', async () => {
-    setSetting('lmStudioForSubagents', false)
+    setSetting('localSubagentsEnabled', false)
     const route = await buildSubagentRoute('claude-sonnet-4-6')
     assert.equal(route, null)
   })
 
   it('routes cloud chat models to the configured subagent local model', async () => {
-    setSetting('lmStudioSubagentModel', 'explore-model')
+    setSetting('subagentModel', 'explore-model')
     restoreFetch = stubFetch(
       async () =>
         ({
@@ -94,7 +94,7 @@ describe('subagent local model routing', () => {
   })
 
   it('falls back to the default local model when subagent model is auto', async () => {
-    setSetting('lmStudioModel', 'default-local')
+    setSetting('localDefaultModel', 'default-local')
     restoreFetch = stubFetch(
       async () =>
         ({
@@ -158,7 +158,7 @@ describe('listLmStudioModels cache', () => {
 
   beforeEach(() => {
     invalidateLmStudioModelsCache()
-    setSetting('lmStudioUrl', 'http://127.0.0.1:1234/v1')
+    setSetting('localServerUrl', 'http://127.0.0.1:1234/v1')
     setApiKey('lmstudio', 'cache-test-key')
     fetchMock = mock.fn(async () => ({
       ok: true,

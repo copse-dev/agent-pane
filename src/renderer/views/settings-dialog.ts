@@ -7,7 +7,7 @@ import {
   isAppIconVariant,
   type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
-import { populateModelSelect } from './model-options.ts'
+import { populateModelSelect, populateSmallTasksModelSelect } from './model-options.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
@@ -37,14 +37,13 @@ interface SettingField {
 const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'customInstructions', kind: 'text', default: '', save: true },
   { name: 'externalApiSafety', kind: 'checkbox', default: false, save: true },
-  { name: 'lmStudioForSmallTasks', kind: 'checkbox', default: true, save: true },
-  { name: 'lmStudioForSubagents', kind: 'checkbox', default: true, save: true },
-  { name: 'lmStudioForTodoItems', kind: 'checkbox', default: true, save: true },
+  { name: 'localSubagentsEnabled', kind: 'checkbox', default: true, save: true },
+  { name: 'localTodoItemsEnabled', kind: 'checkbox', default: true, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
-  { name: 'lmStudioSafetyEnabled', kind: 'checkbox', default: true, save: false },
+  { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
   { name: 'mcpAutoAllowReadOnly', kind: 'checkbox', default: false, save: false },
-  { name: 'lmStudioSafetyConfidenceThreshold', kind: 'text', default: '0.85', save: false },
+  { name: 'safetyConfidenceThreshold', kind: 'text', default: '0.85', save: false },
 ]
 
 async function loadSimpleFields(form: HTMLFormElement, api: ApiClient): Promise<void> {
@@ -128,6 +127,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset>
+              <legend>Small tasks</legend>
+              <p class="settings-fieldset-desc">
+                Lightweight prompts such as thread titles and follow-up suggestions. Use any cloud or
+                local model — not limited to LM Studio.
+              </p>
+              <label>
+                Model
+                <select name="smallTasksModel"></select>
+              </label>
+            </fieldset>
+
+            <fieldset>
               <legend>Agent behavior</legend>
               <label>
                 Custom instructions
@@ -166,26 +177,22 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <fieldset>
               <legend>Routing behavior</legend>
               <label class="checkbox-label">
-                <input type="checkbox" name="lmStudioForSmallTasks" />
-                Use local models for small tasks (e.g. naming threads)
-              </label>
-              <label class="checkbox-label">
-                <input type="checkbox" name="lmStudioForSubagents" />
+                <input type="checkbox" name="localSubagentsEnabled" />
                 Use local models for exploration subagents when chat uses a cloud model
               </label>
               <label class="checkbox-label">
-                <input type="checkbox" name="lmStudioForTodoItems" />
+                <input type="checkbox" name="localTodoItemsEnabled" />
                 Use local models for todo items tagged local (requires acceptance check)
               </label>
               <label class="checkbox-label">
-                <input type="checkbox" name="lmStudioSafetyEnabled" />
+                <input type="checkbox" name="safetyClassifierEnabled" />
                 Use instruct model to classify shell commands (when OS sandbox is off)
               </label>
               <label>
                 Safety confidence threshold
                 <input
                   type="number"
-                  name="lmStudioSafetyConfidenceThreshold"
+                  name="safetyConfidenceThreshold"
                   min="0"
                   max="1"
                   step="0.05"
@@ -460,6 +467,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         api,
         model ?? 'claude-sonnet-4-6',
       )
+      const smallTasksModel = (await api.settings.get('smallTasksModel')) as string | undefined
+      await populateSmallTasksModelSelect(
+        form.elements.namedItem('smallTasksModel') as HTMLSelectElement,
+        api,
+        smallTasksModel ?? '',
+      )
       await loadSimpleFields(form, api)
       ;(form.elements.namedItem('theme') as HTMLSelectElement).value = store.getState().theme
       ;(form.elements.namedItem('fontSize') as HTMLInputElement).value = String(
@@ -495,9 +508,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const theme = data.get('theme') as 'light' | 'dark'
       const fontSize = parseInt(data.get('fontSize') as string, 10)
       const appIconVariant = data.get('appIconVariant') as AppIconVariant
-      const confidence = parseFloat(data.get('lmStudioSafetyConfidenceThreshold') as string)
+      const confidence = parseFloat(data.get('safetyConfidenceThreshold') as string)
 
       await api.settings.set('model', model)
+      await api.settings.set(
+        'smallTasksModel',
+        ((data.get('smallTasksModel') as string) ?? '').trim(),
+      )
       await saveSimpleFields(data, api)
       await api.settings.set('theme', theme)
       await api.settings.set('fontSize', fontSize)
@@ -505,14 +522,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         await api.settings.set('appIconVariant', appIconVariant)
         await api.appIcon.apply()
       }
-      await api.settings.set('lmStudioModel', routingValues.lmStudioModel)
-      await api.settings.set('lmStudioSmallTasksModel', routingValues.lmStudioSmallTasksModel)
-      await api.settings.set('lmStudioSubagentModel', routingValues.lmStudioSubagentModel)
+      await api.settings.set('localDefaultModel', routingValues.localDefaultModel)
+      await api.settings.set('subagentModel', routingValues.subagentModel)
       await api.settings.setSecurity({
-        lmStudioUrl: lmStudioSection.getUrl(),
-        lmStudioSafetyModel: routingValues.lmStudioSafetyModel,
-        lmStudioSafetyEnabled: data.get('lmStudioSafetyEnabled') === 'on',
-        lmStudioSafetyConfidenceThreshold: Number.isFinite(confidence) ? confidence : 0.85,
+        localServerUrl: lmStudioSection.getUrl(),
+        safetyModel: routingValues.safetyModel,
+        safetyClassifierEnabled: data.get('safetyClassifierEnabled') === 'on',
+        safetyConfidenceThreshold: Number.isFinite(confidence) ? confidence : 0.85,
         autoRunSandboxCommands: data.get('autoRunSandboxCommands') === 'on',
         mcpAutoAllowReadOnly: data.get('mcpAutoAllowReadOnly') === 'on',
       })
