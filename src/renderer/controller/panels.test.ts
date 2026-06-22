@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { openRightPanel, toggleFilesPane, toggleRightPanel } from './panels.ts'
+import { openBrowserUrl, openRightPanel, toggleFilesPane, toggleRightPanel } from './panels.ts'
 
 describe('panels controller', () => {
   it('toggleFilesPane opens explorer and closes without changing mode', () => {
@@ -40,6 +40,18 @@ describe('panels controller', () => {
     openRightPanel(store, 'changes')
     assert.equal(store.getState().rightPanelMode, 'changes')
     assert.equal(modeEvents, 2)
+  })
+
+  it('openBrowserUrl opens the browser panel and emits the URL request', () => {
+    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    const requested: string[] = []
+    store.on('browser_url_requested', (url) => requested.push(url))
+
+    openBrowserUrl(store, 'https://example.com/docs')
+
+    assert.equal(store.getState().filesPaneOpen, true)
+    assert.equal(store.getState().rightPanelMode, 'browser')
+    assert.deepEqual(requested, ['https://example.com/docs'])
   })
 
   it('toggleRightPanel switches to requested mode before closing active mode', () => {

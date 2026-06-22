@@ -49,6 +49,7 @@ export function renderMarkdown(raw: string): string {
     let t = seg
     t = t.replace(/`([^`]+)`/g, '<code>$1</code>')
     t = renderMarkdownLinks(t)
+    t = renderBareHttpLinks(t)
     // Bold around inline code first (`**` + <code> + `**`); then prose bold outside
     // code spans. A single [^*]+ pass breaks on globs like src/**/*.test.ts inside
     // <code> and can pair ** across table rows, leaving stray markers (e.g. MCP host**:).
@@ -87,9 +88,22 @@ function applyOutsideCode(text: string, pattern: RegExp, replacement: string): s
 
 /** Only allow safe URL schemes in rendered links. */
 function safeLinkHref(raw: string): string | null {
-  const href = raw.trim()
+  const href = decodeEscapedHref(raw).trim()
   if (/^https?:\/\//i.test(href)) return href
   return null
+}
+
+function decodeEscapedHref(raw: string): string {
+  return raw
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+}
+
+function renderedLink(label: string, href: string): string {
+  return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" data-browser-link="true">${label}</a>`
 }
 
 function renderMarkdownLinks(text: string): string {
@@ -100,8 +114,30 @@ function renderMarkdownLinks(text: string): string {
       return segment.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label: string, url: string) => {
         const href = safeLinkHref(url)
         if (!href) return `[${label}](${url})`
-        return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${label}</a>`
+        return renderedLink(label, href)
       })
+    })
+    .join('')
+}
+
+const BARE_HTTP_URL_RE = /(^|[\s(])((?:https?:\/\/)[^\s<]+)/gi
+const TRAILING_URL_PUNCTUATION_RE = /[),.;:!?]+$/
+
+function renderBareHttpLinks(text: string): string {
+  return text
+    .split(/(<code>[\s\S]*?<\/code>|<a\b[\s\S]*?<\/a>)/g)
+    .map((segment, index) => {
+      if (index % 2 === 1) return segment
+      return segment.replace(
+        BARE_HTTP_URL_RE,
+        (_match, prefix: string, rawUrl: string) => {
+          const trailing = rawUrl.match(TRAILING_URL_PUNCTUATION_RE)?.[0] ?? ''
+          const url = trailing ? rawUrl.slice(0, -trailing.length) : rawUrl
+          const href = safeLinkHref(url)
+          if (!href) return `${prefix}${rawUrl}`
+          return `${prefix}${renderedLink(url, href)}${trailing}`
+        },
+      )
     })
     .join('')
 }

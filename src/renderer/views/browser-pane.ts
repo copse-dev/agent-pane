@@ -407,6 +407,7 @@ export function mountBrowserPane(
   const unsubs = [
     store.on('right_panel_mode_changed', onBrowserModeChange),
     store.on('files_pane_changed', onBrowserModeChange),
+    store.on('browser_url_requested', (url) => addTab({ url, activate: true })),
   ]
 
   return () => {
