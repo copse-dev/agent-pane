@@ -8,6 +8,7 @@ const FILE_REFERENCE_RE =
 
 const SKIP_SELECTOR = 'a, button, textarea, select, pre, svg, .mermaid-diagram'
 const TREE_WALKER_SHOW_TEXT = 4
+const TRAILING_PROSE_PUNCTUATION_RE = /[.,;:!?]+$/
 
 interface FileReferenceMatch {
   candidate: string
@@ -15,21 +16,31 @@ interface FileReferenceMatch {
   end: number
 }
 
+/**
+ * The filename regex runs over prose, so it can consume punctuation from text
+ * like `renderer.ts.`. Keep that punctuation outside the link by shortening
+ * the matched range while leaving the surrounding text node intact.
+ */
+function trimTrailingProsePunctuation(candidate: string, start: number): FileReferenceMatch {
+  const trimmed = candidate.replace(TRAILING_PROSE_PUNCTUATION_RE, '')
+  return {
+    candidate: trimmed,
+    start,
+    end: start + trimmed.length,
+  }
+}
+
 function fileReferenceMatches(text: string): FileReferenceMatch[] {
   const matches: FileReferenceMatch[] = []
   FILE_REFERENCE_RE.lastIndex = 0
   for (let match = FILE_REFERENCE_RE.exec(text); match; match = FILE_REFERENCE_RE.exec(text)) {
     const prefix = match[1] ?? ''
-    let candidate = match[2]
+    const candidate = match[2]
     if (!candidate) continue
     const start = match.index + prefix.length
-    let end = start + candidate.length
-    while (/[.,;:!?]$/.test(candidate)) {
-      candidate = candidate.slice(0, -1)
-      end--
-    }
-    if (candidate === '') continue
-    matches.push({ candidate, start, end })
+    const trimmed = trimTrailingProsePunctuation(candidate, start)
+    if (trimmed.candidate === '') continue
+    matches.push(trimmed)
   }
   return matches
 }
