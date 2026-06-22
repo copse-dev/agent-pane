@@ -13,15 +13,24 @@ function configureMonacoFileRoot(): void {
   globalThis._VSCODE_FILE_ROOT = monacoVsRoot()
 }
 
-function createMonacoWorker(label: string): Worker {
+function createMonacoWorker(label: string): Promise<Worker> {
   const editorWorker = new URL('./monaco/vs/editor/editor.worker.js', window.location.href).href
   const root = globalThis._VSCODE_FILE_ROOT!
   const bootstrap = [
     `globalThis._VSCODE_FILE_ROOT = ${JSON.stringify(root)};`,
     `await import(${JSON.stringify(editorWorker)});`,
+    `globalThis.postMessage({ type: 'copse-monaco-worker-ready' });`,
   ].join('')
   const blobUrl = URL.createObjectURL(new Blob([bootstrap], { type: 'application/javascript' }))
-  return new Worker(blobUrl, { name: label, type: 'module' })
+  const worker = new Worker(blobUrl, { name: label, type: 'module' })
+  return new Promise((resolve, reject) => {
+    worker.onmessage = (event) => {
+      if (event.data?.type !== 'copse-monaco-worker-ready') return
+      worker.onmessage = null
+      resolve(worker)
+    }
+    worker.onerror = reject
+  })
 }
 
 export function initMonaco(): typeof monaco {

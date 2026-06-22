@@ -1,0 +1,55 @@
+// Copyright notice
+// Baseline module used by git changes e2e
+
+export const metadata = { version: 1, kind: "demo" }
+export function helper1(): number { return 1; }
+export function helper2(): number { return 2; }
+export function helper3(): number { return 3; }
+export function helper4(): number { return 4; }
+export function helper5(): number { return 5; }
+export function helper6(): number { return 6; }
+export function helper7(): number { return 7; }
+export function helper8(): number { return 8; }
+export function helper9(): number { return 9; }
+export function helper10(): number { return 10; }
+export function helper11(): number { return 11; }
+export function helper12(): number { return 12; }
+export function helper13(): number { return 13; }
+export function helper14(): number { return 14; }
+export function helper15(): number { return 15; }
+export function helper16(): number { return 16; }
+export function helper17(): number { return 17; }
+export function helper18(): number { return 18; }
+export function helper19(): number { return 19; }
+export function helper20(): number { return 20; }
+export function helper21(): number { return 21; }
+export function helper22(): number { return 22; }
+export function helper23(): number { return 23; }
+export function helper24(): number { return 24; }
+export function helper25(): number { return 25; }
+export const value = 2
+export function helper26(): number { return 26; }
+export function helper27(): number { return 27; }
+export function helper28(): number { return 28; }
+export function helper29(): number { return 29; }
+export function helper30(): number { return 30; }
+export function helper31(): number { return 31; }
+export function helper32(): number { return 32; }
+export function helper33(): number { return 33; }
+export function helper34(): number { return 34; }
+export function helper35(): number { return 35; }
+export function helper36(): number { return 36; }
+export function helper37(): number { return 37; }
+export function helper38(): number { return 38; }
+export function helper39(): number { return 39; }
+export function helper40(): number { return 40; }
+export function helper41(): number { return 41; }
+export function helper42(): number { return 42; }
+export function helper43(): number { return 43; }
+export function helper44(): number { return 44; }
+export function helper45(): number { return 45; }
+export function helper46(): number { return 46; }
+export function helper47(): number { return 47; }
+export function helper48(): number { return 48; }
+export function helper49(): number { return 49; }
+export function helper50(): number { return 50; }
