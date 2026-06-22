@@ -128,7 +128,8 @@ export function classifyGitBlob(stdout: string, code: number): GitBlobResult {
 }
 
 async function readGitBlob(ref: string, path: string): Promise<GitBlobResult> {
-  const { stdout, code } = await runGit(['show', `${ref}:${path}`])
+  const revision = ref === ':' ? `:${path}` : `${ref}:${path}`
+  const { stdout, code } = await runGit(['show', revision])
   return classifyGitBlob(stdout, code)
 }
 

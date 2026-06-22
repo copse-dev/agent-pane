@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
-import { classifyGitBlob, getGitDiffText, parsePorcelainV1 } from './git-service.ts'
+import { classifyGitBlob, getGitDiffText, getGitFileDiff, parsePorcelainV1 } from './git-service.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 import { setGitAvailableForTest } from './tool-availability.ts'
 
@@ -124,5 +124,41 @@ describe('getGitDiffText untracked files', { skip: !gitOk && 'git not installed'
   it('includes untracked files when no path is given', async () => {
     const diff = await getGitDiffText()
     assert.match(diff, /fresh\.txt/)
+  })
+})
+
+describe('getGitFileDiff staged blob', { skip: !gitOk && 'git not installed' }, () => {
+  let repo = ''
+  let restore: (() => void) | undefined
+
+  const git = (...args: string[]) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
+
+  before(async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-file-diff-'))
+    git('init', '-q')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    const lines = ['// header', 'export const value = 1']
+    await writeFile(join(repo, 'staged.ts'), `${lines.join('\n')}\n`)
+    git('add', '.')
+    git('commit', '-qm', 'init')
+    await writeFile(join(repo, 'staged.ts'), '// header\nexport const value = 2\n')
+    git('add', 'staged.ts')
+    restore = setWorkspaceRootForTest(repo)
+    setGitAvailableForTest(true)
+  })
+
+  after(async () => {
+    setGitAvailableForTest(null)
+    restore?.()
+    if (repo) await rm(repo, { recursive: true, force: true })
+  })
+
+  it('reads HEAD and index blobs for a staged file', async () => {
+    const diff = await getGitFileDiff('staged.ts', true)
+    assert.ok(diff)
+    assert.match(diff!.before, /value = 1/)
+    assert.match(diff!.after, /value = 2/)
+    assert.notEqual(diff!.before, diff!.after)
   })
 })

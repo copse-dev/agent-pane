@@ -132,6 +132,12 @@ export function mountGitChangesPane(
     })
     oldModels?.original.dispose()
     oldModels?.modified.dispose()
+    await new Promise<void>((resolve) => {
+      const disposable = diffEditor.onDidUpdateDiff(() => {
+        disposable.dispose()
+        resolve()
+      })
+    })
     diffEditor.layout()
   }
 

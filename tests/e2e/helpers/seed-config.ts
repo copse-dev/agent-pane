@@ -479,13 +479,30 @@ export function seedGitChangesFixture(): string {
   git('config', 'user.name', 'E2E')
   git('config', 'commit.gpgsign', 'false')
 
-  writeFileSync(join(repoRoot, 'staged.ts'), 'export const value = 1\n', 'utf8')
+  const buildLargeStagedFile = (value: number) => {
+    const lines = [
+      '// Copyright notice',
+      '// Baseline module used by git changes e2e',
+      '',
+      'export const metadata = { version: 1, kind: "demo" }',
+    ]
+    for (let i = 1; i <= 25; i++) {
+      lines.push(`export function helper${i}(): number { return ${i}; }`)
+    }
+    lines.push(`export const value = ${value}`)
+    for (let i = 26; i <= 50; i++) {
+      lines.push(`export function helper${i}(): number { return ${i}; }`)
+    }
+    return `${lines.join('\n')}\n`
+  }
+
+  writeFileSync(join(repoRoot, 'staged.ts'), buildLargeStagedFile(1), 'utf8')
   writeFileSync(join(repoRoot, 'unstaged.ts'), 'export const name = "old"\n', 'utf8')
   git('add', '.')
   git('commit', '-q', '-m', 'baseline')
 
-  // Staged modification.
-  writeFileSync(join(repoRoot, 'staged.ts'), 'export const value = 2\n', 'utf8')
+  // Staged modification in the middle of a large file (collapsed unchanged regions).
+  writeFileSync(join(repoRoot, 'staged.ts'), buildLargeStagedFile(2), 'utf8')
   git('add', 'staged.ts')
 
   // Unstaged modification to a tracked file.
