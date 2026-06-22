@@ -56,14 +56,14 @@ async function dragSelectFirstMonacoLine(): Promise<void> {
       height: bounds.height,
     }
   })
-  const startX = Math.round(rect.left + 4)
-  const endX = Math.round(rect.left + Math.max(12, rect.width - 4))
-  const y = Math.round(rect.top + rect.height / 2)
+  const halfWidth = rect.width / 2
+  const startX = Math.round(-halfWidth + 4)
+  const endX = Math.round(halfWidth - 4)
   await browser
     .action('pointer')
-    .move({ duration: 0, origin: 'viewport', x: startX, y })
+    .move({ duration: 0, origin: firstLine, x: startX, y: 0 })
     .down({ button: 0 })
-    .move({ duration: 250, origin: 'viewport', x: endX, y })
+    .move({ duration: 250, origin: firstLine, x: endX, y: 0 })
     .up({ button: 0 })
     .perform()
 }
