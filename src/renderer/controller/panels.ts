@@ -21,6 +21,11 @@ export function openRightPanel(store: AppStore, mode: RightPanelMode): void {
   store.emit('right_panel_mode_changed')
 }
 
+export function openBrowserUrl(store: AppStore, url: string): void {
+  openRightPanel(store, 'browser')
+  store.emit('browser_url_requested', url)
+}
+
 export function toggleRightPanel(store: AppStore, mode: RightPanelMode): void {
   const { filesPaneOpen, rightPanelMode } = store.getState()
   if (filesPaneOpen && rightPanelMode === mode) {
