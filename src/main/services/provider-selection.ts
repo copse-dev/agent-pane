@@ -1,4 +1,4 @@
-import { createProvider, createLMStudioProvider } from '@shared/llm/create-provider.ts'
+import { createProvider, createLocalOpenAIProvider } from '@shared/llm/create-provider.ts'
 import type { LLMProvider } from '@shared/types'
 import { DEFAULT_LM_STUDIO_URL, LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
 import { getSetting, getApiKey, getLmStudioApiKey } from './settings.ts'
@@ -43,7 +43,7 @@ export interface SubagentRoute {
   toolSchemaReserve: number
 }
 
-/** When the parent chat uses a cloud model, route explore subagents to LM Studio. */
+/** When the parent chat uses a cloud model, route explore subagents to the local server. */
 export async function buildSubagentRoute(parentModel: string): Promise<SubagentRoute | null> {
   if (isLocalChatModel(parentModel)) return null
   if (!getSetting<boolean>('localSubagentsEnabled', true)) return null
@@ -54,7 +54,7 @@ export async function buildSubagentRoute(parentModel: string): Promise<SubagentR
 
   const contextWindow = await resolveContextWindow(`lmstudio:${modelId}`)
   return {
-    provider: createLMStudioProvider(url, modelId, getLmStudioApiKey()),
+    provider: createLocalOpenAIProvider(url, modelId, getLmStudioApiKey()),
     usageModel: `lmstudio:${modelId}`,
     contextWindow,
     toolSchemaReserve: 2_500,
@@ -73,10 +73,10 @@ export async function buildProvider(model: string): Promise<LLMProvider> {
     if (!id) id = (await fetchFirstLocalModel(url)) ?? ''
     if (!id) {
       throw new Error(
-        'No LM Studio model available. Open Settings → LM Studio, check the server URL/API key, and pick a model.',
+        'No local model available. Open Settings → Local models, check the server URL/API key, and pick a model.',
       )
     }
-    return createLMStudioProvider(url, id, getLmStudioApiKey())
+    return createLocalOpenAIProvider(url, id, getLmStudioApiKey())
   }
   if (process.env.COPSE_PANEL_MOCK_LLM === '1') return createProvider(model)
   if (model.startsWith('claude')) {

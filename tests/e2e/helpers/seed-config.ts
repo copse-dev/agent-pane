@@ -45,10 +45,10 @@ export function seedEmptyProject(
     subagentsEnabled?: boolean
     mockFollowUps?: boolean
     model?: string
-    lmStudioUrl?: string
-    lmStudioModel?: string
-    lmStudioSubagentModel?: string
-    lmStudioForSubagents?: boolean
+    localServerUrl?: string
+    localDefaultModel?: string
+    subagentModel?: string
+    localSubagentsEnabled?: boolean
   },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
@@ -71,17 +71,17 @@ export function seedEmptyProject(
   if (options?.model) {
     settings.model = options.model
   }
-  if (options?.lmStudioUrl) {
-    settings.lmStudioUrl = options.lmStudioUrl
+  if (options?.localServerUrl) {
+    settings.localServerUrl = options.localServerUrl
   }
-  if (options?.lmStudioModel) {
-    settings.lmStudioModel = options.lmStudioModel
+  if (options?.localDefaultModel) {
+    settings.localDefaultModel = options.localDefaultModel
   }
-  if (options?.lmStudioSubagentModel) {
-    settings.lmStudioSubagentModel = options.lmStudioSubagentModel
+  if (options?.subagentModel) {
+    settings.subagentModel = options.subagentModel
   }
-  if (options?.lmStudioForSubagents !== undefined) {
-    settings.lmStudioForSubagents = options.lmStudioForSubagents
+  if (options?.localSubagentsEnabled !== undefined) {
+    settings.localSubagentsEnabled = options.localSubagentsEnabled
   }
   if (Object.keys(settings).length > 0) {
     writeSettings(settings)
