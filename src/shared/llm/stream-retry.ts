@@ -68,7 +68,7 @@ export function sleepMs(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 export async function* yieldStreamWithRetry<T>(
-  run: () => AsyncGenerator<T, void, unknown>,
+  run: () => AsyncIterable<T>,
   opts: { signal?: AbortSignal; maxAttempts?: number } = {},
 ): AsyncGenerator<T, void, unknown> {
   const maxAttempts = opts.maxAttempts ?? DEFAULT_STREAM_MAX_ATTEMPTS
