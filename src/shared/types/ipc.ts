@@ -57,6 +57,8 @@ export interface IpcInvokeMap {
         safetyModel: string
         autoRunSandboxCommands: boolean
         mcpAutoAllowReadOnly: boolean
+        webAllowedOrigins: string[]
+        webAllowUserApproval: boolean
       },
     ]
     result: void
@@ -144,7 +146,14 @@ export interface IpcEventMap {
   'agent:show_diff': [path: string, before: string, after: string, language: string]
   'agent:shell_output': [data: string]
   'agent:approval_request': [
-    { id: string; title: string; body: string; type: 'shell' | 'mcp'; allowRemember?: boolean },
+    {
+      id: string
+      title: string
+      body: string
+      type: 'shell' | 'mcp' | 'web'
+      allowRemember?: boolean
+      rememberLabel?: string
+    },
   ]
   'mcp:status_changed': [statuses: McpServerStatus[]]
   'diff:queued': [entries: { path: string; language: string }[]]

@@ -29,6 +29,7 @@ export function mountApprovalDialog(api: ApiClient): void {
     title: string
     body: string
     allowRemember: boolean | undefined
+    rememberLabel: string | undefined
   }
 
   // A single shared `currentId` mis-routed answers when a second request arrived
@@ -44,6 +45,7 @@ export function mountApprovalDialog(api: ApiClient): void {
     if (!active) return
     dialog.querySelector('.approval-title')!.textContent = active.title
     dialog.querySelector('.approval-body')!.textContent = active.body
+    rememberLabel.childNodes[1]!.textContent = active.rememberLabel ?? 'Always allow this tool'
     rememberInput.checked = false
     rememberLabel.hidden = !active.allowRemember
     dialog.showModal()
@@ -58,8 +60,8 @@ export function mountApprovalDialog(api: ApiClient): void {
     showNext()
   }
 
-  api.agent.onApprovalRequest(({ id, title, body, allowRemember }) => {
-    queue.push({ id, title, body, allowRemember })
+  api.agent.onApprovalRequest(({ id, title, body, allowRemember, rememberLabel }) => {
+    queue.push({ id, title, body, allowRemember, rememberLabel })
     if (!active) showNext()
   })
 

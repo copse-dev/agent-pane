@@ -12,6 +12,11 @@ import { populateModelSelect, populateSmallTasksModelSelect } from './model-opti
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
+import {
+  DEFAULT_WEB_ALLOWED_ORIGINS,
+  WEB_ALLOWED_ORIGINS_SETTING,
+  WEB_ALLOW_USER_APPROVAL_SETTING,
+} from '@shared/web-origins.ts'
 
 type SettingsSection = 'general' | 'local-models' | 'mcp' | 'appearance'
 
@@ -44,6 +49,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
   { name: 'mcpAutoAllowReadOnly', kind: 'checkbox', default: false, save: false },
+  { name: 'webAllowUserApproval', kind: 'checkbox', default: true, save: false },
   { name: 'safetyConfidenceThreshold', kind: 'text', default: '0.85', save: false },
 ]
 
@@ -73,6 +79,14 @@ async function saveSimpleFields(data: FormData, api: ApiClient): Promise<void> {
       await api.settings.set(field.name, field.name === 'customInstructions' ? value.trim() : value)
     }
   }
+}
+
+function parseWebAllowedOrigins(value: FormDataEntryValue | null): string[] {
+  const text = typeof value === 'string' ? value : ''
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
 }
 
 let overlayEl: HTMLElement | null = null
@@ -161,6 +175,31 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Reminds the agent to pick compatible dependency versions and never hardcode or log
                 secrets when adding API calls.
               </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Web access</legend>
+              <p class="settings-fieldset-desc">
+                Agent web tools are limited to these origins. New origins require approval before
+                <code>fetch_url</code> can access them.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="webAllowUserApproval" />
+                Ask before allowing new web origins
+              </label>
+              <label>
+                Allowed web origins
+                <textarea
+                  name="webAllowedOrigins"
+                  rows="6"
+                  spellcheck="false"
+                  placeholder="https://example.com"
+                ></textarea>
+                <span class="field-hint">
+                  One per line. Supports exact origins and wildcard subdomains such as
+                  <code>https://*.duckduckgo.com</code>. Defaults include localhost and DuckDuckGo.
+                </span>
+              </label>
             </fieldset>
           </section>
 
@@ -483,6 +522,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         smallTasksModel ?? '',
       )
       await loadSimpleFields(form, api)
+      const savedWebOrigins = (await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING)) as
+        | string[]
+        | undefined
+        | null
+      ;(form.elements.namedItem('webAllowedOrigins') as HTMLTextAreaElement).value = (
+        savedWebOrigins?.length ? savedWebOrigins : DEFAULT_WEB_ALLOWED_ORIGINS
+      ).join('\n')
       ;(form.elements.namedItem('theme') as HTMLSelectElement).value = store.getState().theme
       ;(form.elements.namedItem('fontSize') as HTMLInputElement).value = String(
         store.getState().fontSize,
@@ -544,6 +590,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         safetyConfidenceThreshold: Number.isFinite(confidence) ? confidence : 0.85,
         autoRunSandboxCommands: data.get('autoRunSandboxCommands') === 'on',
         mcpAutoAllowReadOnly: data.get('mcpAutoAllowReadOnly') === 'on',
+        webAllowedOrigins: parseWebAllowedOrigins(data.get('webAllowedOrigins')),
+        webAllowUserApproval: data.get(WEB_ALLOW_USER_APPROVAL_SETTING) === 'on',
       })
 
       store.setState({
