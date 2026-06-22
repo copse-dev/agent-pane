@@ -55,6 +55,37 @@ JSON named `config.json` under the app userData directory (`copse-panel` in
 without driving that dialog, pre-seed `config.json` with a `projects` entry and `activeProjectId`
 before launching.
 
+### Shell / tool permissions across platforms
+
+Shell command auto-run is gated by a single pure decision function,
+`decideShellPermission` (`src/main/services/permission-policy.ts`), called from
+`permission-gate.ts`. The OS sandbox is **macOS-only**; other platforms rely on
+static analysis plus an optional classifier. This is intentional, not a fallback
+ambiguity — the per-platform behavior is:
+
+| Situation                                                        | Sandbox-contained command                                                                                                                                                                                                             | External command (network, `gh`, `git push`, `~/...`)                                                                                                           |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **macOS, ASRT sandbox active**                                   | Auto-runs **inside** the seatbelt sandbox. The classifier is not consulted; seatbelt is the real boundary.                                                                                                                            | Prompts first, then runs **outside** the sandbox. If a sandbox-contained command later fails (e.g. Playwright), `shell-tool` offers a retry-unsandboxed prompt. |
+| **macOS sandbox init failure / Linux / Windows (no OS sandbox)** | Auto-runs **only** if the optional LM Studio safety classifier returns `scope: "sandbox"` with confidence ≥ `lmStudioSafetyConfidenceThreshold` (default `0.85`); otherwise prompts. With the classifier off/unavailable, it prompts. | Always prompts (static analysis flags `external` before the classifier is consulted).                                                                           |
+| **Auto-run disabled in Settings** (`autoRunSandboxCommands` off) | Prompts.                                                                                                                                                                                                                              | Prompts.                                                                                                                                                        |
+
+Key components:
+
+- `permission-policy.ts` — `decideShellPermission` (pure; the table above),
+  `shellRequiresOutsideSandbox`, MCP-tool decisions, and the prompt-body
+  formatters that explain _why_ a command is being prompted.
+- `shell-scope.ts` — static `analyzeShellCommand` heuristic (`sandbox` vs
+  `external`), with human-readable `reasons`.
+- `safety-classifier.ts` — optional LM Studio classifier (`classifyShellScope`),
+  used **only** when the OS sandbox is unavailable; returns `null` when disabled
+  or unreachable.
+- `project-sandbox/` — macOS ASRT integration. `isProjectSandboxEnabled()`
+  returns `false` on any non-`darwin` platform regardless of the stored flag, so
+  non-macOS code paths never assume a sandbox boundary exists.
+
+Tests pinning the documented matrix: `permission-platform.test.ts` (per-platform
+decisions) and `permission-gate.test.ts` (gate wiring + MCP decisions).
+
 ### Tests
 
 - `npm test` runs Node's test runner over `src/**/*.test.ts` (esbuild-bundled into `dist-test/`).

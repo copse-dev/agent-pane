@@ -449,6 +449,15 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         }
         break
       }
+      // Provider could not parse the streamed tool-call arguments. Do not run
+      // the tool with empty/partial args — return an error so the model retries
+      // the call with well-formed JSON (#114).
+      if (tc.argsError) {
+        const result = `Error: ${tc.argsError}`
+        toolResults.push({ toolCallId: tc.id, result })
+        onChunk({ type: 'tool_result', toolCallId: tc.id, result, isError: true })
+        continue
+      }
       const normalizedArgs = normalizeExploreArgs(tc.name, tc.args)
       const fp = toolCallFingerprint(tc.name, normalizedArgs)
       const duplicate = isDuplicateExploreCall(tc.name, normalizedArgs, recentFingerprints)
@@ -509,6 +518,13 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     onChunk({ type: 'text', text: RUN_LIMIT_MESSAGE })
     messages.push({ role: 'assistant', content: RUN_LIMIT_MESSAGE })
   }
+
+  // Final guarantee: never leave an assistant tool_use without a matching
+  // tool_result in the persisted history. Abort/run-limit breaks can exit the
+  // loop right after an assistant tool_use turn was pushed but before its
+  // results were appended; this keeps the saved history API-valid for the next
+  // turn or resume (#54, #113).
+  repairToolUseToolResultPairing(messages)
 
   onChunk({ type: 'done' })
 }

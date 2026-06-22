@@ -50,7 +50,9 @@ import {
   getMcpServerStatuses,
   reloadMcpServers,
   setMcpServerUserEnabled,
+  setWorkspaceTrustAndReload,
 } from '../services/mcp-registry.ts'
+import { isWorkspaceTrusted } from '../services/workspace-trust.ts'
 import { applyAppIcon } from '../app-icon.ts'
 import { getMainWindow } from '../windows/create-main-window.ts'
 import { validateApiKey } from '../services/validate-api-key.ts'
@@ -145,20 +147,18 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const k = parseIpcArgs(zNonEmptyString.max(128), [key])
     return getSetting(k, null)
   })
-  ipcMain.handle('settings:set', (event, key: unknown, value: unknown) => {
+  ipcMain.handle('settings:set', async (event, key: unknown, value: unknown) => {
     assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(128), [key])
     if (!isRendererWritableSettingKey(k)) {
       throw new IpcValidationError(`Setting key not writable from renderer: ${k}`)
     }
-    setSetting(k, parseRendererWritableSetting(k, value))
+    await setSetting(k, parseRendererWritableSetting(k, value))
   })
-  ipcMain.handle('settings:setSecurity', (event, raw: unknown) => {
+  ipcMain.handle('settings:setSecurity', async (event, raw: unknown) => {
     assertMainFrameSender(event, win)
     const prefs = securitySettingsSchema.parse(raw)
-    for (const [k, v] of Object.entries(prefs)) {
-      setSetting(k, v)
-    }
+    await Promise.all(Object.entries(prefs).map(([k, v]) => setSetting(k, v)))
   })
   ipcMain.handle('settings:getKey', (_e, provider: unknown) => {
     const p = parseIpcArgs(providerSchema, [provider])
@@ -224,8 +224,20 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return statuses
   })
   ipcMain.handle('mcp:setEnabled', async (_e, name: string, enabled: boolean) => {
-    setMcpServerUserEnabled(name, enabled)
+    await setMcpServerUserEnabled(name, enabled)
     const statuses = await reloadMcpServers(registry)
+    win.webContents.send('mcp:status_changed', statuses)
+    return statuses
+  })
+  ipcMain.handle('workspace:isTrusted', () => isWorkspaceTrusted(getWorkspaceRoot()))
+  ipcMain.handle('workspace:setTrusted', async (event, trusted: unknown) => {
+    assertMainFrameSender(event, win)
+    const root = getWorkspaceRoot()
+    if (!root) throw new IpcValidationError('No workspace open')
+    if (typeof trusted !== 'boolean') throw new IpcValidationError('trusted must be a boolean')
+    // Spawning project MCP servers is the code-execution sink, so trusting a workspace
+    // is a privileged action — only the main frame may request it (issue #100).
+    const statuses = await setWorkspaceTrustAndReload(registry, root, trusted)
     win.webContents.send('mcp:status_changed', statuses)
     return statuses
   })

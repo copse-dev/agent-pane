@@ -10,7 +10,8 @@ import { z } from 'zod'
 import type { McpServerConfig, McpServerStatus, McpToolAnnotations } from '@shared/types/mcp.ts'
 import type { ToolRegistry } from './tool-registry.ts'
 import { getWorkspaceRoot } from './workspace.ts'
-import { storageGet, storageSet } from './storage.ts'
+import { storageGet, storageUpdate } from './storage.ts'
+import { parseStringList } from './storage-schema.ts'
 import {
   interpolateServerConfig,
   mcpToolName,
@@ -21,27 +22,28 @@ import {
   isMcpServerEffectivelyDisabled,
 } from './mcp-config.ts'
 import { flattenMcpContent, sanitizeMcpInputSchema } from './mcp-schema.ts'
+import { isWorkspaceTrusted, setWorkspaceTrusted } from './workspace-trust.ts'
 
 const CONNECT_TIMEOUT_MS = 30_000
 const GRANTS_STORAGE_KEY = 'mcp-remembered-grants'
 const USER_DISABLED_KEY = 'mcpDisabledServers'
 
 function getUserDisabledServerNames(): Set<string> {
-  const raw = storageGet(USER_DISABLED_KEY)
-  if (!Array.isArray(raw)) return new Set()
-  return new Set(raw.filter((n): n is string => typeof n === 'string' && n.length > 0))
+  return new Set(parseStringList(storageGet(USER_DISABLED_KEY)))
 }
 
-function persistUserDisabledServerNames(names: Set<string>): void {
-  storageSet(USER_DISABLED_KEY, [...names].sort())
-}
-
-/** Turn a server on/off from Settings without editing mcp.json (stored in app userData). */
-export function setMcpServerUserEnabled(name: string, enabled: boolean): void {
-  const disabled = getUserDisabledServerNames()
-  if (enabled) disabled.delete(name)
-  else disabled.add(name)
-  persistUserDisabledServerNames(disabled)
+/**
+ * Turn a server on/off from Settings without editing mcp.json (stored in app
+ * userData). Read-modify-write is serialized so two concurrent toggles can't
+ * drop each other's change.
+ */
+export function setMcpServerUserEnabled(name: string, enabled: boolean): Promise<void> {
+  return storageUpdate(USER_DISABLED_KEY, (raw) => {
+    const disabled = new Set(parseStringList(raw))
+    if (enabled) disabled.delete(name)
+    else disabled.add(name)
+    return [...disabled].sort()
+  })
 }
 
 interface ActiveServer {
@@ -72,16 +74,19 @@ export function getMcpToolMeta(toolName: string): McpToolMeta | undefined {
 }
 
 export function isMcpToolRemembered(toolName: string): boolean {
-  const grants = storageGet(GRANTS_STORAGE_KEY)
-  return Array.isArray(grants) && grants.includes(toolName)
+  return parseStringList(storageGet(GRANTS_STORAGE_KEY)).includes(toolName)
 }
 
-export function rememberMcpTool(toolName: string): void {
-  const grants = storageGet(GRANTS_STORAGE_KEY)
-  const list = Array.isArray(grants) ? (grants as string[]) : []
-  if (!list.includes(toolName)) {
-    storageSet(GRANTS_STORAGE_KEY, [...list, toolName])
-  }
+/**
+ * Persist a remembered permission grant. Serialized read-modify-write so two
+ * tools granted at once can't drop one grant; the validated read also discards
+ * any corrupt/non-string entries already on disk.
+ */
+export function rememberMcpTool(toolName: string): Promise<void> {
+  return storageUpdate(GRANTS_STORAGE_KEY, (raw) => {
+    const list = parseStringList(raw)
+    return list.includes(toolName) ? list : [...list, toolName]
+  })
 }
 
 async function readConfigFile(path: string): Promise<McpServerConfig[]> {
@@ -96,19 +101,52 @@ async function readConfigFile(path: string): Promise<McpServerConfig[]> {
   return servers
 }
 
-/** Gather and merge MCP server definitions from all known config locations. */
-async function collectConfigs(): Promise<McpServerConfig[]> {
-  const workspace = getWorkspaceRoot()
-  const sources: string[] = []
-  if (workspace) {
-    sources.push(join(workspace, '.cursor', 'mcp.json'))
-    sources.push(join(workspace, '.mcp.json'))
-  }
-  sources.push(join(homedir(), '.cursor', 'mcp.json'))
-  sources.push(join(app.getPath('userData'), 'mcp.json'))
+function projectMcpSourcePaths(workspace: string): string[] {
+  return [join(workspace, '.cursor', 'mcp.json'), join(workspace, '.mcp.json')]
+}
 
-  const perSource = await Promise.all(sources.map(readConfigFile))
-  return mergeMcpConfigs(perSource)
+function userMcpSourcePaths(): string[] {
+  return [join(homedir(), '.cursor', 'mcp.json'), join(app.getPath('userData'), 'mcp.json')]
+}
+
+/**
+ * Gather and merge MCP server definitions from all known config locations.
+ *
+ * Security (issue #100):
+ *  - Workspace/project sources (`.cursor/mcp.json`, `.mcp.json`) are attacker-controlled.
+ *    Their servers are only included when the user has explicitly trusted the workspace.
+ *    When untrusted they are returned separately so the UI can surface an "untrusted"
+ *    status (and a trust action) without spawning anything.
+ *  - User/global sources always win on duplicate server names, so a repo can never
+ *    shadow a trusted global server definition.
+ */
+async function collectConfigs(): Promise<{
+  active: McpServerConfig[]
+  untrusted: McpServerConfig[]
+}> {
+  const workspace = getWorkspaceRoot()
+  const projectSources = workspace ? projectMcpSourcePaths(workspace) : []
+  const userSources = userMcpSourcePaths()
+
+  const [projectPerSource, userPerSource] = await Promise.all([
+    Promise.all(projectSources.map(readConfigFile)),
+    Promise.all(userSources.map(readConfigFile)),
+  ])
+
+  // User/global sources first so they win over project sources on name collisions.
+  const userMerged = mergeMcpConfigs(userPerSource)
+  const trusted = isWorkspaceTrusted(workspace)
+
+  if (!trusted) {
+    // Project servers are not spawned; report only those whose name doesn't collide
+    // with an existing user/global server (a colliding name simply uses the global one).
+    const userNames = new Set(userMerged.map((c) => c.name))
+    const untrusted = mergeMcpConfigs(projectPerSource).filter((c) => !userNames.has(c.name))
+    return { active: userMerged, untrusted }
+  }
+
+  const active = mergeMcpConfigs([userMerged, ...projectPerSource])
+  return { active, untrusted: [] }
 }
 
 // Project/workspace configs are attacker-controlled (a cloned repo can ship a
@@ -257,18 +295,45 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
     return
   }
   const generation = ++loadGeneration
-  const configs = await collectConfigs()
+  const { active, untrusted } = await collectConfigs()
   if (generation !== loadGeneration) return // superseded while reading config
   const userDisabled = getUserDisabledServerNames()
-  if (configs.length === 0) {
+  if (active.length === 0 && untrusted.length === 0) {
     serverStatuses = []
     return
   }
-  const statuses = await Promise.all(
-    configs.map((cfg) => connectServer(registry, cfg, userDisabled, generation)),
+  const connected = await Promise.all(
+    active.map((cfg) => connectServer(registry, cfg, userDisabled, generation)),
   )
+  // Project servers in an untrusted workspace are never spawned — they're reported as
+  // `untrusted` so the UI can offer "trust this workspace" (issue #100).
+  const untrustedStatuses = untrusted.map((cfg) => untrustedStatus(cfg, userDisabled))
   // Only publish statuses if a newer load hasn't started in the meantime.
-  if (generation === loadGeneration) serverStatuses = statuses
+  if (generation === loadGeneration) serverStatuses = [...connected, ...untrustedStatuses]
+}
+
+function untrustedStatus(cfg: McpServerConfig, userDisabled: ReadonlySet<string>): McpServerStatus {
+  return {
+    name: cfg.name,
+    transport: cfg.transport,
+    state: 'untrusted',
+    toolCount: 0,
+    tools: [],
+    userEnabled: !userDisabled.has(cfg.name),
+    configDisabled: cfg.disabled === true,
+    error: 'Workspace not trusted — this server is defined by the project and was not started.',
+    ...(cfg.source !== undefined ? { source: cfg.source } : {}),
+  }
+}
+
+/** Re-load servers after trust changes; exposed for the trust IPC handler. */
+export async function setWorkspaceTrustAndReload(
+  registry: ToolRegistry,
+  root: string,
+  trusted: boolean,
+): Promise<McpServerStatus[]> {
+  setWorkspaceTrusted(root, trusted)
+  return reloadMcpServers(registry)
 }
 
 /** Tear down all MCP clients/tools and reconnect from current config. */

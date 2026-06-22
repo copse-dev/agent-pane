@@ -73,10 +73,11 @@ export const findFilesTool: ToolDefinition = {
   async execute({ pattern, max_results }) {
     const idx = getIndex()
     if (!idx) return 'File index not available. Try opening the workspace again.'
-    const matches = micromatch(idx.paths, pattern).slice(0, max_results)
-    if (matches.length === 0) return `No files match: ${pattern}`
-    return (
-      matches.join('\n') + (matches.length >= max_results ? `\n[Truncated at ${max_results}]` : '')
-    )
+    // Take one extra so we can tell "exactly max_results total" from "more were dropped".
+    const found = micromatch(idx.paths, pattern).slice(0, max_results + 1)
+    if (found.length === 0) return `No files match: ${pattern}`
+    const truncated = found.length > max_results
+    const matches = truncated ? found.slice(0, max_results) : found
+    return matches.join('\n') + (truncated ? `\n[Truncated at ${max_results}]` : '')
   },
 }

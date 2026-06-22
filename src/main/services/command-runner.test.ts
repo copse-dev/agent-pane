@@ -31,3 +31,25 @@ describe('runCommand stdoutMaxBytes', () => {
     assert.equal(stdout, 'a'.repeat(size))
   })
 })
+
+describe('runCommand timeout', () => {
+  it('rejects a command that exceeds timeout_ms and kills the process', async () => {
+    await assert.rejects(
+      runCommand(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+        unsandboxed: true,
+        timeout_ms: 150,
+      }),
+      /timed out after 150ms/,
+    )
+  })
+
+  it('completes normally when well under the timeout', async () => {
+    const { stdout, code } = await runCommand(
+      process.execPath,
+      ['-e', "process.stdout.write('ok')"],
+      { unsandboxed: true, timeout_ms: 5_000 },
+    )
+    assert.equal(code, 0)
+    assert.equal(stdout, 'ok')
+  })
+})

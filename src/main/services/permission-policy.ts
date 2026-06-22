@@ -1,4 +1,4 @@
-import { analyzeShellCommand } from './shell-scope.ts'
+import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts'
 import type { ClassificationResult } from './safety-classifier.ts'
 import type { McpToolAnnotations } from '@shared/types/mcp.ts'
 
@@ -45,19 +45,31 @@ export function decideShellPermission(
   }
 
   const analysis = analyzeShellCommand(command, opts.workspaceRoot)
+  // Destructive/resource-exhausting commands still prompt even when the OS sandbox
+  // is active: seatbelt is containment (no network, no out-of-workspace FS), not a
+  // licence to silently `rm -rf` the repo or fork-bomb the host (issue #103).
+  const dangerous = dangerousInSandboxReasons(command)
+
   // Heuristic only — see shell-scope.ts; macOS seatbelt is the real boundary when enabled.
-  // With macOS seatbelt active, sandbox-contained commands auto-run inside the project sandbox.
-  // External commands (network, gh, git push, …) prompt first, then run outside the sandbox.
-  // If a sandbox-contained command still fails (e.g. Playwright), shell-tool offers a retry prompt.
+  // With macOS seatbelt active, sandbox-contained, non-destructive commands auto-run
+  // inside the project sandbox. External commands (network, gh, git push, …) prompt
+  // first, then run outside the sandbox. Destructive in-workspace commands also prompt.
+  // If a sandbox-contained command still fails (e.g. Playwright), shell-tool offers a retry.
   if (opts.sandboxEnabled) {
     if (analysis.verdict === 'external') {
       return { action: 'prompt', reasons: analysis.reasons }
+    }
+    if (dangerous.length > 0) {
+      return { action: 'prompt', reasons: dangerous }
     }
     return { action: 'allow', reasons: analysis.reasons }
   }
 
   if (analysis.verdict === 'external') {
     return { action: 'prompt', reasons: analysis.reasons }
+  }
+  if (dangerous.length > 0) {
+    return { action: 'prompt', reasons: dangerous }
   }
 
   const { classification, confidenceThreshold } = opts

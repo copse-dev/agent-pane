@@ -29,7 +29,13 @@ export interface McpServerConfig {
   headers?: Record<string, string>
 }
 
-export type McpServerState = 'connected' | 'error' | 'disabled' | 'connecting'
+export type McpServerState =
+  | 'connected'
+  | 'error'
+  | 'disabled'
+  | 'connecting'
+  /** Project-defined server in a workspace the user has not trusted; not spawned. */
+  | 'untrusted'
 
 export interface McpServerStatus {
   name: string

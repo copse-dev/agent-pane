@@ -200,12 +200,40 @@ export async function getGitStatusText(): Promise<string> {
   return stdout.trim() || '(no output)'
 }
 
+/** Untracked files don't appear in `git diff`; synthesize an add-all diff via --no-index. */
+async function getUntrackedDiff(paths: string[]): Promise<string> {
+  const diffs: string[] = []
+  for (const p of paths) {
+    // --no-index always exits 1 when files differ; ignore the code, use the output.
+    const { stdout } = await runGit(['diff', '--no-index', '--', '/dev/null', p])
+    if (stdout.trim()) diffs.push(stdout.trimEnd())
+  }
+  return diffs.join('\n')
+}
+
 export async function getGitDiffText(path?: string, staged = false): Promise<string> {
   if (!isGitAvailable()) return 'git is not available on this system.'
   const args = ['diff', ...(staged ? ['--cached'] : []), '--', ...(path ? [path] : [])]
   const { stdout, stderr, code } = await runGit(args)
   if (code !== 0) return stderr.trim() || `git exited with code ${code}`
-  return stdout.trim() || '(no output)'
+
+  let combined = stdout.trimEnd()
+
+  // `git diff` omits untracked files entirely; include them so `git_diff path=newfile`
+  // doesn't misreport "(no output)" for a brand-new file (only for the working-tree view).
+  if (!staged) {
+    const status = await getGitStatus()
+    let untracked = (status?.unstaged ?? [])
+      .filter((c) => c.status === 'untracked')
+      .map((c) => c.path)
+    if (path) untracked = untracked.filter((p) => p === path)
+    if (untracked.length) {
+      const extra = await getUntrackedDiff(untracked)
+      if (extra) combined = combined ? `${combined}\n${extra}` : extra
+    }
+  }
+
+  return combined || '(no output)'
 }
 
 export async function getGitLogText(maxCount: number, path?: string): Promise<string> {

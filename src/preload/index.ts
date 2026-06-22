@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('api', {
     open: () => ipcRenderer.invoke('workspace:open'),
     get: () => ipcRenderer.invoke('workspace:get'),
     set: (root: string) => ipcRenderer.invoke('workspace:set', root),
+    isTrusted: () => ipcRenderer.invoke('workspace:isTrusted'),
+    setTrusted: (trusted: boolean) => ipcRenderer.invoke('workspace:setTrusted', trusted),
     onOpened: (handler: (root: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, root: string) => handler(root)
       ipcRenderer.on('workspace:opened', listener)
