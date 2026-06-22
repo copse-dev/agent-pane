@@ -38,6 +38,8 @@ export const TRACKED_MODELS = [
   DEFAULT_CLOUD_MODEL,
   'claude-opus-4-8',
   'claude-haiku-4-5',
+  'gpt-5',
+  'gpt-5-mini',
   'gpt-4o',
   'gpt-4o-mini',
 ] as const
