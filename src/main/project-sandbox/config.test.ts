@@ -3,7 +3,12 @@ import assert from 'node:assert/strict'
 import { accessSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { resolveNodeToolchainAllowRead, workspaceSandboxOverlay } from './config.ts'
+import {
+  electronRuntimeAllowReadPaths,
+  fsWorkerSandboxOverlay,
+  resolveNodeToolchainAllowRead,
+  workspaceSandboxOverlay,
+} from './config.ts'
 
 describe('resolveNodeToolchainAllowRead', () => {
   it('includes the active node binary and its install tree', () => {
@@ -61,5 +66,21 @@ describe('workspaceSandboxOverlay', () => {
     const denyWrite = overlay.filesystem?.denyWrite ?? []
     assert.ok(denyWrite.includes('/Users/me/project/.git/hooks'))
     assert.ok(denyWrite.some((p) => p === '**/.git/hooks/**'))
+  })
+})
+
+describe('fsWorkerSandboxOverlay', () => {
+  it('extends workspace allowRead with the worker script dir and Electron runtime', () => {
+    const worker = join(
+      '/Applications/Copse.app/Contents/Resources/app/dist/main',
+      'sandbox-fs-worker.js',
+    )
+    const overlay = fsWorkerSandboxOverlay('/Users/me/project', worker)
+    const allowRead = overlay.filesystem?.allowRead ?? []
+    assert.ok(allowRead.includes('/Users/me/project'))
+    assert.ok(allowRead.includes(dirname(resolve(worker))))
+    for (const p of electronRuntimeAllowReadPaths()) {
+      assert.ok(allowRead.includes(p))
+    }
   })
 })

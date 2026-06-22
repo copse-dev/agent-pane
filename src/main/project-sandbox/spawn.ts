@@ -3,6 +3,7 @@ import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import * as pty from 'node-pty'
 import type { IPty } from 'node-pty'
 import quote from 'shell-quote'
+import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { workspaceSandboxOverlay } from './config.ts'
 
 let enabled = false
@@ -35,6 +36,7 @@ export async function spawnInProjectSandbox(
     env?: NodeJS.ProcessEnv
     signal?: AbortSignal
     unsandboxed?: boolean
+    sandboxConfig?: Partial<SandboxRuntimeConfig>
   } & Pick<SpawnOptionsWithoutStdio, 'stdio'>,
 ): Promise<ChildProcess> {
   if (!isProjectSandboxEnabled() || opts.unsandboxed) {
@@ -48,7 +50,7 @@ export async function spawnInProjectSandbox(
   }
 
   const command = shellCommand(executable, args)
-  const customConfig = workspaceSandboxOverlay(opts.cwd)
+  const customConfig = opts.sandboxConfig ?? workspaceSandboxOverlay(opts.cwd)
 
   const { argv, env } = await SandboxManager.wrapWithSandboxArgv(
     command,
