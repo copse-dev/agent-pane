@@ -7,6 +7,7 @@ import {
   seedEmptyProject,
   seedGitChangesFixture,
 } from './helpers/seed-config.ts'
+import { waitForAgentIdle } from './helpers.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -15,10 +16,7 @@ async function completeMockTurn(): Promise<void> {
   await $('.prompt-input').setValue('review my changes')
   await $('.submit-btn').click()
 
-  await browser.waitUntil(async () => (await $('.submit-btn').getText()) === 'Send', {
-    timeout: 20_000,
-    timeoutMsg: 'expected agent turn to finish',
-  })
+  await waitForAgentIdle(20_000)
 
   await $('.follow-up-bubble').waitForExist({ timeout: 15_000 })
 }
