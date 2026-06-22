@@ -6,8 +6,7 @@ import { formatArgvForShell } from './spawn.ts'
 describe('formatArgvForShell', () => {
   it('keeps workspace and Electron paths with spaces as single shell words', () => {
     const exec = '/Users/me/debugging/e research/agent-pane/node_modules/electron/dist/Electron'
-    const worker =
-      '/Users/me/debugging/e research/agent-pane/dist/main/sandbox-fs-worker.js'
+    const worker = '/Users/me/debugging/e research/agent-pane/dist/main/sandbox-fs-worker.js'
     const command = formatArgvForShell(exec, [worker])
     assert.match(command, /^'\/Users\/me\/debugging\/e research\/agent-pane/)
   })

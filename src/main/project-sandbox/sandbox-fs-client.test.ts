@@ -13,7 +13,11 @@ import {
   COMMAND_OUTPUT_MAX_BYTES,
   COMMAND_OUTPUT_TRUNCATED_MARKER,
 } from '../services/subprocess-output-cap.ts'
-import { gatewayReadFile, SANDBOX_FS_WORKER_STDOUT_MAX_BYTES, gatewayListDir } from './sandbox-fs-client.ts'
+import {
+  gatewayReadFile,
+  SANDBOX_FS_WORKER_STDOUT_MAX_BYTES,
+  gatewayListDir,
+} from './sandbox-fs-client.ts'
 
 describe('sandbox-fs-client', () => {
   it('reads via direct fs when project sandbox is inactive', async () => {

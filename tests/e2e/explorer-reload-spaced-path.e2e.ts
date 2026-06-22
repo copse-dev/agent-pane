@@ -39,7 +39,9 @@ describe('explorer reload with spaced workspace path', () => {
     const errorPane = await $('.file-tree .sidebar-empty')
     if (await errorPane.isExisting()) {
       const message = await errorPane.getText()
-      await expect(message).not.toMatch(/Error invoking remote method|No such file or directory|\/bin\/bash:/i)
+      await expect(message).not.toMatch(
+        /Error invoking remote method|No such file or directory|\/bin\/bash:/i,
+      )
     }
 
     await saveElementScreenshot('#file-tree-host', 'explorer-reload-spaced-path.png')
