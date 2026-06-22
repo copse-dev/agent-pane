@@ -56,10 +56,15 @@ async function boot() {
   // Load persisted user preferences before the main layout mounts.
   const savedModel = (await api.settings.get('model')) as string | null
   const savedLayout = await api.settings.get('layout')
+  const savedPortraitSplitPanels = (await api.settings.get('portraitSplitPanelsEnabled')) as
+    | boolean
+    | null
   store.setState({
     settings: { model: savedModel ?? DEFAULT_APP_CHAT_MODEL },
     layout: parseSavedLayout(savedLayout),
+    portraitSplitPanelsEnabled: savedPortraitSplitPanels ?? true,
   })
+  applyPortraitSplitPreference()
   startAgentController(store, api)
   attachAutosave(store, api)
 
@@ -153,6 +158,7 @@ function mountFullLayout() {
   if (body) mountPaneResizers(body, store, api)
 
   store.on('files_pane_changed', updateFilesPane)
+  store.on('settings_changed', applyPortraitSplitPreference)
   updateFilesPane()
 }
 
@@ -161,6 +167,13 @@ function mountFullLayout() {
 function updateFilesPane() {
   const pane = document.getElementById('pane-files')
   if (pane) pane.hidden = !store.getState().filesPaneOpen
+}
+
+function applyPortraitSplitPreference() {
+  document.body.classList.toggle(
+    'portrait-split-panels-enabled',
+    store.getState().portraitSplitPanelsEnabled,
+  )
 }
 
 function registerKeyboardShortcuts() {

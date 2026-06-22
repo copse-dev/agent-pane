@@ -39,6 +39,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'externalApiSafety', kind: 'checkbox', default: false, save: true },
   { name: 'localSubagentsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'localTodoItemsEnabled', kind: 'checkbox', default: true, save: true },
+  { name: 'portraitSplitPanelsEnabled', kind: 'checkbox', default: true, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
@@ -258,6 +259,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Font size
                 <input type="number" name="fontSize" min="12" max="20" step="1" />
               </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="portraitSplitPanelsEnabled" />
+                Split panels vertically in tall portrait windows
+              </label>
+              <p class="field-hint">
+                When enabled, very thin and tall windows place Projects + Chat above
+                Explorer/Terminal/Changes.
+              </p>
             </fieldset>
 
             <fieldset>
@@ -533,7 +542,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         mcpAutoAllowReadOnly: data.get('mcpAutoAllowReadOnly') === 'on',
       })
 
-      store.setState({ theme, fontSize, settings: { ...store.getState().settings, model } })
+      store.setState({
+        theme,
+        fontSize,
+        portraitSplitPanelsEnabled: data.get('portraitSplitPanelsEnabled') === 'on',
+        settings: { ...store.getState().settings, model },
+      })
       store.emit('theme_changed', theme)
       store.emit('settings_changed')
       document.documentElement.dataset.theme = theme

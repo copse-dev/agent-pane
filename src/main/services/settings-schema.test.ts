@@ -24,6 +24,11 @@ describe('settings-schema', () => {
     assert.equal(fontSize.safeParse(14).success, true)
     assert.equal(fontSize.safeParse(999).success, false)
     assert.equal(fontSize.safeParse('14').success, false)
+
+    const portraitSplit = getSettingSchema('portraitSplitPanelsEnabled')
+    assert.ok(portraitSplit)
+    assert.equal(portraitSplit.safeParse(true).success, true)
+    assert.equal(portraitSplit.safeParse('true').success, false)
   })
 
   it('returns undefined for keys without a registered schema', () => {

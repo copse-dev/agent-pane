@@ -49,6 +49,7 @@ export function seedEmptyProject(
     lmStudioModel?: string
     lmStudioSubagentModel?: string
     lmStudioForSubagents?: boolean
+    portraitSplitPanelsEnabled?: boolean
   },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
@@ -82,6 +83,9 @@ export function seedEmptyProject(
   }
   if (options?.lmStudioForSubagents !== undefined) {
     settings.lmStudioForSubagents = options.lmStudioForSubagents
+  }
+  if (options?.portraitSplitPanelsEnabled !== undefined) {
+    settings.portraitSplitPanelsEnabled = options.portraitSplitPanelsEnabled
   }
   if (Object.keys(settings).length > 0) {
     writeSettings(settings)

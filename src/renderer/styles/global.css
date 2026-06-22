@@ -218,6 +218,74 @@ body {
   overflow: hidden;
   min-height: 0;
 }
+@media (min-height: 700px) and (max-aspect-ratio: 4 / 5) {
+  body.portrait-split-panels-enabled:has(#pane-files:not([hidden])) .three-pane {
+    flex-wrap: wrap;
+    align-content: stretch;
+  }
+
+  body.portrait-split-panels-enabled:has(#pane-files:not([hidden])) .pane-projects {
+    height: 50%;
+    border-bottom: 1px solid var(--border);
+  }
+
+  body.portrait-split-panels-enabled:has(#pane-files:not([hidden])) #resizer-projects {
+    height: 50%;
+  }
+
+  body.portrait-split-panels-enabled:has(#pane-files:not([hidden])) .pane-chat {
+    flex: 1 1 calc(100% - var(--projects-width, 240px) - 4px);
+    height: 50%;
+    border-bottom: 1px solid var(--border);
+  }
+
+  body.portrait-split-panels-enabled:has(#pane-files:not([hidden])) #resizer-files {
+    display: none !important;
+  }
+
+  body.portrait-split-panels-enabled:has(#pane-files:not([hidden])) .pane-files {
+    width: 100%;
+    height: 50%;
+    flex: 0 0 100%;
+  }
+
+  body.portrait-split-panels-enabled:has(#pane-files:not([hidden])) .right-sidebar {
+    width: var(--projects-width, 240px);
+  }
+
+  body.portrait-split-panels-enabled:has(#pane-files:not([hidden]))
+    .pane-chat.composer-centered
+    .conversation {
+    padding-bottom: 0;
+  }
+
+  body.portrait-split-panels-enabled:has(#pane-files:not([hidden]))
+    .pane-chat.composer-centered
+    #input-bar {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: auto;
+    transform: none;
+    border-top: 1px solid var(--border);
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  body.portrait-split-panels-enabled:has(#pane-files:not([hidden]))
+    .pane-chat.composer-centered
+    .prompt-input {
+    border-top: 1px solid var(--border);
+    border-radius: var(--radius) var(--radius) 0 0;
+  }
+
+  body.portrait-split-panels-enabled:has(#pane-files:not([hidden]))
+    .pane-chat.composer-centered
+    .input-footer {
+    border-radius: 0;
+  }
+}
 .right-panel-tabs {
   display: flex;
   gap: 2px;

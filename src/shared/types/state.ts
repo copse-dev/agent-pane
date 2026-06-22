@@ -39,6 +39,7 @@ export interface AppState {
   layout: LayoutState
   theme: Theme
   fontSize: number // 12–20, applied to app + Monaco
+  portraitSplitPanelsEnabled: boolean
   settings?: { model: string }
 }
 
