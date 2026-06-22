@@ -21,7 +21,9 @@ async function openBrowserMode(): Promise<void> {
   })
 
   await browser.execute(() => {
-    const tab = document.querySelector('.right-panel-tab[aria-label="Browser"]') as HTMLButtonElement | null
+    const tab = document.querySelector(
+      '.right-panel-tab[aria-label="Browser"]',
+    ) as HTMLButtonElement | null
     tab?.click()
   })
 
@@ -38,27 +40,27 @@ async function navigateActiveTab(url: string): Promise<void> {
     if (!input) return
     input.value = targetUrl
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    const goBtn = document.querySelector('.browser-tab-panel.is-active .browser-go-btn') as
-      | HTMLButtonElement
-      | null
+    const goBtn = document.querySelector(
+      '.browser-tab-panel.is-active .browser-go-btn',
+    ) as HTMLButtonElement | null
     goBtn?.click()
   }, url)
 }
 
-async function waitForActiveUrl(expected: string, timeoutMs = 25_000): Promise<void> {
+async function waitForWebviewTitle(expected: string, timeoutMs = 25_000): Promise<void> {
   await browser.waitUntil(
     async () => {
-      const value = await browser.execute(() => {
-        const input = document.querySelector(
-          '.browser-tab-panel.is-active .browser-url-input',
-        ) as HTMLInputElement | null
-        return input?.value ?? ''
+      const title = await browser.execute(() => {
+        const webview = document.querySelector('.browser-tab-panel.is-active webview') as {
+          getTitle?: () => string
+        } | null
+        return webview?.getTitle?.() ?? ''
       })
-      return value.includes(expected)
+      return title.toLowerCase().includes(expected.toLowerCase())
     },
     {
       timeout: timeoutMs,
-      timeoutMsg: `expected browser address bar to contain ${expected}`,
+      timeoutMsg: `expected webview title to contain ${expected}`,
     },
   )
 }
@@ -88,16 +90,16 @@ describe('browser panel display', () => {
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'browser-mode-empty.png'))
 
     await navigateActiveTab('https://example.com')
-    await waitForActiveUrl('example.com')
-    await browser.pause(1500)
+    await waitForWebviewTitle('Example Domain')
+    await browser.pause(500)
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'browser-mode-example-com.png'))
 
     const newTabBtn = await $('.browser-tabs-new-btn')
     await newTabBtn.click()
-    await browser.waitUntil(
-      async () => (await $$('.browser-tabs-tab')).length >= 2,
-      { timeout: 5_000, timeoutMsg: 'expected second browser tab after clicking +' },
-    )
+    await browser.waitUntil(async () => (await $$('.browser-tabs-tab')).length >= 2, {
+      timeout: 5_000,
+      timeoutMsg: 'expected second browser tab after clicking +',
+    })
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'browser-mode-two-tabs.png'))
   })
 })

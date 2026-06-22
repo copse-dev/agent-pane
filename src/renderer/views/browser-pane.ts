@@ -1,6 +1,7 @@
 import { el } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { browserTabLabel, normalizeBrowserUrl } from '@shared/browser-url.ts'
+import { BROWSER_SESSION_PARTITION } from '@shared/browser-session.ts'
 
 /** Minimal typing for Electron's guest `<webview>` element. */
 interface BrowserWebviewElement extends HTMLElement {
@@ -22,6 +23,7 @@ interface BrowserTab {
   panel: HTMLElement
   webviewHost: HTMLElement
   webview: BrowserWebviewElement | null
+  webviewReady: boolean
   tabBtn: HTMLButtonElement
   tabLabelEl: HTMLElement
   urlInput: HTMLInputElement
@@ -29,10 +31,10 @@ interface BrowserTab {
   forwardBtn: HTMLButtonElement
   reloadBtn: HTMLButtonElement
   pendingUrl: string | null
+  loadError: string | null
 }
 
-const WEBVIEW_PARTITION = 'persist:copse-browser'
-const WEBVIEW_PREFS = 'contextIsolation=true, sandbox=true'
+const WEBVIEW_PREFS = 'contextIsolation=true'
 
 function browserModeActive(store: AppStore): boolean {
   const { filesPaneOpen, rightPanelMode } = store.getState()
@@ -41,10 +43,12 @@ function browserModeActive(store: AppStore): boolean {
 
 function createWebview(): BrowserWebviewElement {
   const webview = document.createElement('webview') as BrowserWebviewElement
-  webview.setAttribute('partition', WEBVIEW_PARTITION)
+  webview.setAttribute('partition', BROWSER_SESSION_PARTITION)
   webview.setAttribute('webpreferences', WEBVIEW_PREFS)
   webview.setAttribute('allowpopups', 'false')
   webview.className = 'browser-webview'
+  // Attach the guest immediately; navigation waits for dom-ready.
+  webview.src = 'about:blank'
   return webview
 }
 
@@ -74,10 +78,11 @@ export function mountBrowserPane(
 
   const tabs = new Map<string, BrowserTab>()
   let activeTabId: string | null = null
+  let resizeObserver: ResizeObserver | null = null
 
   function updateNavButtons(tab: BrowserTab) {
     const webview = tab.webview
-    if (!webview) {
+    if (!webview || !tab.webviewReady) {
       tab.backBtn.disabled = true
       tab.forwardBtn.disabled = true
       return
@@ -102,6 +107,44 @@ export function mountBrowserPane(
     syncTabLabel(tab)
   }
 
+  function syncWebviewSize(tab: BrowserTab) {
+    const webview = tab.webview
+    if (!webview || !tab.panel.classList.contains('is-active')) return
+    const { width, height } = tab.webviewHost.getBoundingClientRect()
+    if (width <= 0 || height <= 0) return
+    webview.style.width = `${Math.round(width)}px`
+    webview.style.height = `${Math.round(height)}px`
+  }
+
+  function whenWebviewReady(tab: BrowserTab, fn: () => void) {
+    const webview = tab.webview
+    if (!webview) return
+    if (tab.webviewReady) {
+      fn()
+      return
+    }
+    webview.addEventListener(
+      'dom-ready',
+      () => {
+        tab.webviewReady = true
+        fn()
+      },
+      { once: true },
+    )
+  }
+
+  function navigateWebview(tab: BrowserTab, url: string) {
+    tab.loadError = null
+    tab.urlInput.classList.remove('has-error')
+    whenWebviewReady(tab, () => {
+      const webview = tab.webview!
+      const current = webview.getURL()
+      if (current === url && url !== 'about:blank') webview.reload()
+      else webview.src = url
+      syncWebviewSize(tab)
+    })
+  }
+
   function ensureWebview(tab: BrowserTab): BrowserWebviewElement {
     if (tab.webview) return tab.webview
 
@@ -117,12 +160,20 @@ export function mountBrowserPane(
     webview.addEventListener('did-navigate-in-page', onNavigate)
     webview.addEventListener('page-title-updated', onNavigate)
     webview.addEventListener('dom-ready', () => {
+      tab.webviewReady = true
       syncAddressBar(tab)
+      syncWebviewSize(tab)
       if (tab.pendingUrl) {
         const url = tab.pendingUrl
         tab.pendingUrl = null
-        webview.loadURL(url)
+        navigateWebview(tab, url)
       }
+    })
+    webview.addEventListener('did-fail-load', (event: Event) => {
+      const detail = event as Event & { errorDescription?: string; validatedURL?: string }
+      tab.loadError = detail.errorDescription ?? 'Failed to load page'
+      tab.urlInput.classList.add('has-error')
+      tab.urlInput.title = tab.loadError
     })
     webview.addEventListener('new-window', (event: Event) => {
       const detail = event as Event & { url?: string }
@@ -136,12 +187,8 @@ export function mountBrowserPane(
     const url = normalizeBrowserUrl(rawUrl)
     tab.urlInput.value = url === 'about:blank' ? '' : url
     if (browserModeActive(store)) {
-      const webview = ensureWebview(tab)
-      if (webview.getURL() === url && url !== 'about:blank') {
-        webview.reload()
-      } else {
-        webview.loadURL(url)
-      }
+      ensureWebview(tab)
+      navigateWebview(tab, url)
     } else {
       tab.pendingUrl = url
     }
@@ -156,7 +203,7 @@ export function mountBrowserPane(
       tab.webview?.goForward()
     })
     tab.reloadBtn.addEventListener('click', () => {
-      if (tab.webview) tab.webview.reload()
+      if (tab.webview && tab.webviewReady) tab.webview.reload()
       else navigateTab(tab, tab.urlInput.value)
     })
     const submitUrl = () => navigateTab(tab, tab.urlInput.value)
@@ -179,14 +226,17 @@ export function mountBrowserPane(
     const tab = tabs.get(tabId)
     if (!tab) return
     if (browserModeActive(store)) {
-      const webview = ensureWebview(tab)
+      ensureWebview(tab)
       if (tab.pendingUrl) {
         const url = tab.pendingUrl
         tab.pendingUrl = null
-        webview.loadURL(url)
+        navigateWebview(tab, url)
       }
       syncAddressBar(tab)
-      requestAnimationFrame(() => tab.urlInput.focus())
+      requestAnimationFrame(() => {
+        syncWebviewSize(tab)
+        tab.urlInput.focus()
+      })
     }
   }
 
@@ -270,6 +320,7 @@ export function mountBrowserPane(
       panel,
       webviewHost,
       webview: null,
+      webviewReady: false,
       tabBtn,
       tabLabelEl,
       urlInput,
@@ -277,6 +328,7 @@ export function mountBrowserPane(
       forwardBtn,
       reloadBtn,
       pendingUrl: initialUrl !== 'about:blank' ? initialUrl : null,
+      loadError: null,
     }
 
     goBtn.addEventListener('click', () => navigateTab(tab, tab.urlInput.value))
@@ -328,11 +380,23 @@ export function mountBrowserPane(
         if (tab.pendingUrl) {
           const url = tab.pendingUrl
           tab.pendingUrl = null
-          tab.webview!.loadURL(url)
+          navigateWebview(tab, url)
         }
         syncAddressBar(tab)
-        requestAnimationFrame(() => tab.urlInput.focus())
+        requestAnimationFrame(() => {
+          syncWebviewSize(tab)
+          tab.urlInput.focus()
+        })
+        if (!resizeObserver) {
+          resizeObserver = new ResizeObserver(() => {
+            const current = activeTabId ? tabs.get(activeTabId) : null
+            if (current) syncWebviewSize(current)
+          })
+        }
+        resizeObserver.observe(tab.webviewHost)
       }
+    } else if (resizeObserver) {
+      resizeObserver.disconnect()
     }
   }
 
@@ -347,6 +411,7 @@ export function mountBrowserPane(
 
   return () => {
     unsubs.forEach((u) => u())
+    resizeObserver?.disconnect()
     for (const tab of tabs.values()) {
       tab.webview?.remove()
       tab.tabBtn.remove()
