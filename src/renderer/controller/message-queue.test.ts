@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
+import type { Message } from '@shared/types'
 import {
   addMessage,
   createThread,
@@ -93,12 +94,12 @@ test('drainMessageQueue moves pending user messages after the completed turn', (
 })
 
 test('movePendingUserMessagesToEnd preserves queued FIFO order', () => {
-  const messages = [
+  const messages: Message[] = [
     { id: 'user-1', role: 'user', content: 'first', toolCalls: [], createdAt: 1 },
     { id: 'queued-1', role: 'user', content: 'queued 1', toolCalls: [], createdAt: 2 },
     { id: 'queued-2', role: 'user', content: 'queued 2', toolCalls: [], createdAt: 3 },
     { id: 'assistant-1', role: 'assistant', content: 'response', toolCalls: [], createdAt: 4 },
-  ] as const
+  ]
 
   const reordered = movePendingUserMessagesToEnd([...messages], [
     { messageId: 'queued-1', payload: { content: 'queued 1' }, createdAt: 2 },
