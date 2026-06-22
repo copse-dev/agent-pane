@@ -8,7 +8,6 @@ export interface ModelRoutingSection {
   refresh: () => Promise<void>
   readValues: () => {
     lmStudioModel: string
-    lmStudioSmallTasksModel: string
     lmStudioSubagentModel: string
     lmStudioSafetyModel: string
   }
@@ -26,9 +25,6 @@ function routingField(label: string, control: HTMLElement, hint: string): HTMLDi
 
 export function createModelRoutingSection(api: ApiClient): ModelRoutingSection {
   const lmStudioModel = el('select', { name: 'lmStudioModel' }) as HTMLSelectElement
-  const lmStudioSmallTasksModel = el('select', {
-    name: 'lmStudioSmallTasksModel',
-  }) as HTMLSelectElement
   const lmStudioSubagentModel = el('select', {
     name: 'lmStudioSubagentModel',
   }) as HTMLSelectElement
@@ -41,17 +37,12 @@ export function createModelRoutingSection(api: ApiClient): ModelRoutingSection {
     el(
       'p',
       { class: 'settings-fieldset-desc' },
-      'Choose which loaded model handles each task. Leave a route on “auto” to use the first model the server reports.',
+      'Choose which loaded local model handles each task. Leave a route on “auto” to use the first model the server reports.',
     ),
     routingField(
       'Default local model',
       lmStudioModel,
       'Fallback when a local model is selected in chat but not specified',
-    ),
-    routingField(
-      'Small tasks model',
-      lmStudioSmallTasksModel,
-      'Thread title generation and other lightweight prompts',
     ),
     routingField(
       'Exploration subagent model',
@@ -74,17 +65,10 @@ export function createModelRoutingSection(api: ApiClient): ModelRoutingSection {
     }
 
     const lmModel = (await api.settings.get('lmStudioModel')) as string | undefined
-    const lmSmall = (await api.settings.get('lmStudioSmallTasksModel')) as string | undefined
     const lmSubagent = (await api.settings.get('lmStudioSubagentModel')) as string | undefined
     const lmSafety = (await api.settings.get('lmStudioSafetyModel')) as string | undefined
 
     populateLocalModelSelect(lmStudioModel, models, lmModel ?? PREFERRED_MODELS[0]!.id)
-    populateLocalModelSelect(
-      lmStudioSmallTasksModel,
-      models,
-      lmSmall ?? PREFERRED_MODELS[1]!.id,
-      '(auto — use default local model)',
-    )
     populateLocalModelSelect(
       lmStudioSubagentModel,
       models,
@@ -102,7 +86,6 @@ export function createModelRoutingSection(api: ApiClient): ModelRoutingSection {
   function readValues() {
     return {
       lmStudioModel: lmStudioModel.value.trim(),
-      lmStudioSmallTasksModel: lmStudioSmallTasksModel.value.trim(),
       lmStudioSubagentModel: lmStudioSubagentModel.value.trim(),
       lmStudioSafetyModel: lmStudioSafetyModel.value.trim(),
     }

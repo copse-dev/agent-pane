@@ -116,11 +116,34 @@ export function populateLocalModelSelect(
     o.textContent = id
     select.append(o)
   }
-  if (current && !models.includes(current)) {
-    const o = document.createElement('option')
-    o.value = current
-    o.textContent = `${current} (offline)`
-    select.append(o)
+  select.value = current
+}
+
+/** Model picker for background tasks — cloud, local, or auto (empty value). */
+export async function populateBackgroundTasksModelSelect(
+  select: HTMLSelectElement,
+  api: ApiClient,
+  current: string,
+): Promise<void> {
+  clear(select)
+  select.append(opt('', '(auto — prefer local, fall back to chat model)'))
+  const options = await fetchModelOptions(api, current)
+  let lastGroup: string | undefined
+  let groupEl: HTMLOptGroupElement | null = null
+  for (const item of options) {
+    if (item.group !== lastGroup) {
+      lastGroup = item.group
+      if (item.group) {
+        groupEl = document.createElement('optgroup')
+        groupEl.label = item.group
+        select.append(groupEl)
+      } else {
+        groupEl = null
+      }
+    }
+    const node = opt(item.value, item.label, item.disabled)
+    if (groupEl) groupEl.append(node)
+    else select.append(node)
   }
   select.value = current
 }

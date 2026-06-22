@@ -1,6 +1,6 @@
 import { LM_STUDIO_MODEL_IDS } from './lm-studio-defaults.ts'
 
-export type PreferredModelRole = 'chat' | 'smallTasks' | 'safety'
+export type PreferredModelRole = 'chat' | 'backgroundTasks' | 'safety'
 
 export interface PreferredModel {
   role: PreferredModelRole
@@ -20,10 +20,10 @@ export const PREFERRED_MODELS: PreferredModel[] = [
     downloadGb: 22,
   },
   {
-    role: 'smallTasks',
+    role: 'backgroundTasks',
     id: LM_STUDIO_MODEL_IDS.smallTasks,
-    label: 'Small tasks model',
-    description: 'Thread titles and other lightweight prompts',
+    label: 'Background tasks model',
+    description: 'Thread titles and other lightweight prompts (local default)',
     downloadGb: 4,
   },
   {
@@ -41,8 +41,8 @@ export function preferredModelSettingKey(role: PreferredModelRole): string {
   switch (role) {
     case 'chat':
       return 'lmStudioModel'
-    case 'smallTasks':
-      return 'lmStudioSmallTasksModel'
+    case 'backgroundTasks':
+      return 'backgroundTasksModel'
     case 'safety':
       return 'lmStudioSafetyModel'
   }

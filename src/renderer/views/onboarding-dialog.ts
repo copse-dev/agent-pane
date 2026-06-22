@@ -131,7 +131,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
     Object.assign(document.createElement('p'), {
       className: 'settings-section-desc',
       textContent:
-        'These are the models we recommend. Adjust routing now or later in Settings → Local models.',
+        'Choose local models for chat, exploration, and safety. Background tasks (titles, follow-ups) can use any model — configure them later in Settings → General.',
     }),
     routing.root,
     Object.assign(document.createElement('p'), {
@@ -169,11 +169,10 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
     })
     await api.settings.set('lmStudioModel', routingValues.lmStudioModel || LM_STUDIO_MODEL_IDS.chat)
     await api.settings.set(
-      'lmStudioSmallTasksModel',
-      routingValues.lmStudioSmallTasksModel || LM_STUDIO_MODEL_IDS.smallTasks,
+      'backgroundTasksModel',
+      lmStudioChatModelValue(LM_STUDIO_MODEL_IDS.smallTasks),
     )
     await api.settings.set('lmStudioSubagentModel', routingValues.lmStudioSubagentModel)
-    await api.settings.set('lmStudioForSmallTasks', true)
     await api.settings.set('lmStudioForSubagents', true)
     await api.settings.set('lmStudioForTodoItems', true)
     await api.settings.set('model', lmStudioChatModelValue(LM_STUDIO_MODEL_IDS.chat))

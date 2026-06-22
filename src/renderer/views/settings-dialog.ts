@@ -7,7 +7,7 @@ import {
   isAppIconVariant,
   type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
-import { populateModelSelect } from './model-options.ts'
+import { populateModelSelect, populateBackgroundTasksModelSelect } from './model-options.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
@@ -37,7 +37,6 @@ interface SettingField {
 const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'customInstructions', kind: 'text', default: '', save: true },
   { name: 'externalApiSafety', kind: 'checkbox', default: false, save: true },
-  { name: 'lmStudioForSmallTasks', kind: 'checkbox', default: true, save: true },
   { name: 'lmStudioForSubagents', kind: 'checkbox', default: true, save: true },
   { name: 'lmStudioForTodoItems', kind: 'checkbox', default: true, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
@@ -128,6 +127,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset>
+              <legend>Background tasks</legend>
+              <p class="settings-fieldset-desc">
+                Lightweight prompts such as thread titles and follow-up suggestions. Use any cloud or
+                local model — not limited to LM Studio.
+              </p>
+              <label>
+                Model
+                <select name="backgroundTasksModel"></select>
+              </label>
+            </fieldset>
+
+            <fieldset>
               <legend>Agent behavior</legend>
               <label>
                 Custom instructions
@@ -165,10 +176,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
             <fieldset>
               <legend>Routing behavior</legend>
-              <label class="checkbox-label">
-                <input type="checkbox" name="lmStudioForSmallTasks" />
-                Use local models for small tasks (e.g. naming threads)
-              </label>
               <label class="checkbox-label">
                 <input type="checkbox" name="lmStudioForSubagents" />
                 Use local models for exploration subagents when chat uses a cloud model
@@ -460,6 +467,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         api,
         model ?? 'claude-sonnet-4-6',
       )
+      const backgroundTasksModel = (await api.settings.get('backgroundTasksModel')) as
+        | string
+        | undefined
+      await populateBackgroundTasksModelSelect(
+        form.elements.namedItem('backgroundTasksModel') as HTMLSelectElement,
+        api,
+        backgroundTasksModel ?? '',
+      )
       await loadSimpleFields(form, api)
       ;(form.elements.namedItem('theme') as HTMLSelectElement).value = store.getState().theme
       ;(form.elements.namedItem('fontSize') as HTMLInputElement).value = String(
@@ -498,6 +513,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const confidence = parseFloat(data.get('lmStudioSafetyConfidenceThreshold') as string)
 
       await api.settings.set('model', model)
+      await api.settings.set(
+        'backgroundTasksModel',
+        ((data.get('backgroundTasksModel') as string) ?? '').trim(),
+      )
       await saveSimpleFields(data, api)
       await api.settings.set('theme', theme)
       await api.settings.set('fontSize', fontSize)
@@ -506,7 +525,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         await api.appIcon.apply()
       }
       await api.settings.set('lmStudioModel', routingValues.lmStudioModel)
-      await api.settings.set('lmStudioSmallTasksModel', routingValues.lmStudioSmallTasksModel)
       await api.settings.set('lmStudioSubagentModel', routingValues.lmStudioSubagentModel)
       await api.settings.setSecurity({
         lmStudioUrl: lmStudioSection.getUrl(),
