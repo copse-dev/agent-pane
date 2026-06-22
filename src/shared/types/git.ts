@@ -15,6 +15,10 @@ export interface GitFileDiff {
   before: string
   after: string
   language: string
+  /** Data URL for the pre-change image, when the file is an image. */
+  beforeImage?: string | null
+  /** Data URL for the post-change image, when the file is an image. */
+  afterImage?: string | null
 }
 
 export interface GitOpenPr {

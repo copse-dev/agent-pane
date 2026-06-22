@@ -2,8 +2,51 @@ import type * as Monaco from 'monaco-editor'
 import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { GitChange, GitChangeStatus, GitStatusResult } from '@shared/types/git.ts'
+import type { GitChange, GitChangeStatus, GitFileDiff, GitStatusResult } from '@shared/types/git.ts'
 import { revealFirstDiffChangeOnNextUpdate } from '../monaco/diff-scroll.ts'
+
+function isImageDiff(diff: GitFileDiff): boolean {
+  return diff.beforeImage != null || diff.afterImage != null
+}
+
+function renderImageDiff(container: HTMLElement, diff: GitFileDiff): void {
+  clear(container)
+  const grid = el('div', { class: 'git-image-diff' })
+
+  if (diff.beforeImage) {
+    const pane = el('div', { class: 'git-image-diff-pane' })
+    pane.append(
+      el('div', { class: 'git-image-diff-label' }, 'Before'),
+      el('img', {
+        class: 'git-image-diff-img',
+        src: diff.beforeImage,
+        alt: `${diff.path} (before)`,
+        loading: 'lazy',
+      }),
+    )
+    grid.append(pane)
+  }
+
+  if (diff.afterImage) {
+    const pane = el('div', { class: 'git-image-diff-pane' })
+    pane.append(
+      el('div', { class: 'git-image-diff-label' }, 'After'),
+      el('img', {
+        class: 'git-image-diff-img',
+        src: diff.afterImage,
+        alt: `${diff.path} (after)`,
+        loading: 'lazy',
+      }),
+    )
+    grid.append(pane)
+  }
+
+  if (!diff.beforeImage && !diff.afterImage) {
+    grid.append(el('div', { class: 'panel-empty' }, 'Could not load image'))
+  }
+
+  container.append(grid)
+}
 
 const STATUS_LABEL: Record<GitChangeStatus, string> = {
   modified: 'M',
@@ -43,8 +86,9 @@ export function mountGitChangesPane(
   listRoot.append(listHeader, listBody)
 
   const diffWrap = el('div', { class: 'git-diff-editor-wrap' })
+  const imageWrap = el('div', { class: 'git-image-diff-wrap' })
   const emptyState = el('div', { class: 'panel-empty' }, 'Select a changed file')
-  viewerRoot.append(diffWrap, emptyState)
+  viewerRoot.append(diffWrap, imageWrap, emptyState)
 
   const diffEditor = monaco.editor.createDiffEditor(diffWrap, {
     readOnly: true,
@@ -108,10 +152,23 @@ export function mountGitChangesPane(
     if (!diff) {
       emptyState.hidden = false
       diffWrap.hidden = true
+      imageWrap.hidden = true
       emptyState.textContent = 'Could not load diff'
       return
     }
     emptyState.hidden = true
+    if (isImageDiff(diff)) {
+      diffWrap.hidden = true
+      imageWrap.hidden = false
+      cancelPendingDiffReveal?.()
+      cancelPendingDiffReveal = null
+      const oldModels = diffEditor.getModel()
+      if (oldModels?.original) oldModels.original.dispose()
+      if (oldModels?.modified) oldModels.modified.dispose()
+      renderImageDiff(imageWrap, diff)
+      return
+    }
+    imageWrap.hidden = true
     diffWrap.hidden = false
     const oldModels = diffEditor.getModel()
     cancelPendingDiffReveal?.()
@@ -130,6 +187,8 @@ export function mountGitChangesPane(
     emptyState.hidden = false
     emptyState.textContent = 'Select a changed file'
     diffWrap.hidden = true
+    imageWrap.hidden = true
+    clear(imageWrap)
     cancelPendingDiffReveal?.()
     cancelPendingDiffReveal = null
     const oldModels = diffEditor.getModel()
