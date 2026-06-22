@@ -45,27 +45,7 @@ async function focusMonacoInput(): Promise<void> {
 async function dragSelectFirstMonacoLine(): Promise<void> {
   const firstLine = await $('#file-viewer .monaco-editor .view-line')
   await firstLine.waitForDisplayed({ timeout: 5_000 })
-  const rect = await browser.execute(() => {
-    const line = document.querySelector('#file-viewer .monaco-editor .view-line')
-    if (!line) throw new Error('Monaco line not found')
-    const bounds = line.getBoundingClientRect()
-    return {
-      left: bounds.left,
-      top: bounds.top,
-      width: bounds.width,
-      height: bounds.height,
-    }
-  })
-  const halfWidth = rect.width / 2
-  const startX = Math.round(-halfWidth + 4)
-  const endX = Math.round(halfWidth - 4)
-  await browser
-    .action('pointer')
-    .move({ duration: 0, origin: firstLine, x: startX, y: 0 })
-    .down({ button: 0 })
-    .move({ duration: 250, origin: firstLine, x: endX, y: 0 })
-    .up({ button: 0 })
-    .perform()
+  await firstLine.dragAndDrop({ x: 80, y: 0 }, { duration: 300 })
 }
 
 describe('Monaco selection to chat attachment', () => {
