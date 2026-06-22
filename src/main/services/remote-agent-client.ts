@@ -16,9 +16,12 @@ import {
 import { getApiKey, getSetting } from './settings.ts'
 import { getGithubRepoSlug } from './git-service.ts'
 import { storageGet, storageSet } from './storage.ts'
+import { getActiveProjectRoot, getWorkspaceRoot } from './workspace.ts'
 
 const REMOTE_AGENT_SESSION_PREFIX = 'remote-agent-session:'
 const REMOTE_AGENT_MODE = 'agent'
+const MAX_REMOTE_ARTIFACT_IMAGE_BYTES = 15 * 1024 * 1024
+const artifactImageDataUrlCache = new Map<string, string>()
 
 interface RemoteAgentSession {
   v: 1
@@ -64,6 +67,25 @@ interface CursorUsageResponse {
   }>
 }
 
+export interface RemoteAgentArtifact {
+  path: string
+  sizeBytes?: number
+  updatedAt?: string
+}
+
+interface CursorArtifactsResponse {
+  items?: Array<{
+    path?: string
+    sizeBytes?: number
+    updatedAt?: string
+  }>
+}
+
+interface CursorArtifactDownloadResponse {
+  url?: string
+  expiresAt?: string
+}
+
 function sessionKey(threadId: string): string {
   return `${REMOTE_AGENT_SESSION_PREFIX}${threadId}`
 }
@@ -99,6 +121,11 @@ function cursorAuthHeader(apiKey: string): string {
 
 function joinUrl(baseUrl: string, path: string): string {
   return `${baseUrl.replace(/\/+$/, '')}${path}`
+}
+
+function remoteArtifactDownloadEndpoint(baseUrl: string, agentId: string, path: string): string {
+  const params = new URLSearchParams({ path })
+  return joinUrl(baseUrl, `/v1/agents/${encodeURIComponent(agentId)}/artifacts/download?${params}`)
 }
 
 function assertRunId(response: CursorCreateAgentResponse | CursorCreateRunResponse): string {
@@ -145,6 +172,19 @@ function resolveApiKey(): string {
   return apiKey
 }
 
+function assertArtifactPath(path: string): string {
+  if (!path.startsWith('artifacts/') || path.includes('\0') || path.includes('..')) {
+    throw new Error('Artifact path must be a relative artifacts/ path.')
+  }
+  return path
+}
+
+function artifactCacheKey(agentId: string, path: string): string {
+  return `${agentId}\0${path}`
+}
+
+type GithubRepoSlugResolver = (root: string | null) => Promise<string | null>
+
 function normalizeRepository(raw: string): string {
   const value = raw.trim()
   if (!value) return value
@@ -153,13 +193,16 @@ function normalizeRepository(raw: string): string {
   return value
 }
 
-async function resolveRepository(): Promise<string> {
+export async function resolveRemoteAgentRepository(
+  options: { getGithubRepoSlug?: GithubRepoSlugResolver } = {},
+): Promise<string> {
   const configured = normalizeRepository(getSetting<string>('remoteAgentRepository', ''))
   if (configured) return configured
-  const slug = await getGithubRepoSlug()
+  const resolveSlug = options.getGithubRepoSlug ?? getGithubRepoSlug
+  const slug = await resolveSlug(getActiveProjectRoot() ?? getWorkspaceRoot())
   if (slug) return `https://github.com/${slug}`
   throw new Error(
-    'Could not infer a GitHub repository from the workspace. Configure Settings → Remote agents → Repository.',
+    'Could not infer a GitHub repository from the active project. Configure Settings → Remote agents → Repository.',
   )
 }
 
@@ -169,7 +212,7 @@ async function createRemoteAgent(input: {
   apiKey: string
   prompt: PromptPayload
 }): Promise<{ agentId: string; runId: string; url?: string }> {
-  const repository = await resolveRepository()
+  const repository = await resolveRemoteAgentRepository()
   const startingRef = getSetting<string>('remoteAgentStartingRef', '').trim()
   const body = {
     prompt: input.prompt,
@@ -288,6 +331,126 @@ async function fetchRunUsage(input: {
     inputTokens: usage?.inputTokens ?? 0,
     outputTokens: usage?.outputTokens ?? 0,
   }
+}
+
+export async function listRemoteArtifacts(input: {
+  fetchImpl?: typeof fetch
+  baseUrl: string
+  apiKey: string
+  agentId: string
+}): Promise<RemoteAgentArtifact[]> {
+  const fetchImpl = input.fetchImpl ?? fetch
+  const response = await fetchImpl(
+    joinUrl(input.baseUrl, `/v1/agents/${encodeURIComponent(input.agentId)}/artifacts`),
+    {
+      headers: { Authorization: cursorAuthHeader(input.apiKey) },
+    },
+  )
+  const json = await readJsonResponse<CursorArtifactsResponse>(response, 'Remote agent artifacts')
+  return (json.items ?? [])
+    .filter((item): item is RemoteAgentArtifact => typeof item.path === 'string')
+    .map((item) => ({
+      path: item.path,
+      ...(typeof item.sizeBytes === 'number' ? { sizeBytes: item.sizeBytes } : {}),
+      ...(typeof item.updatedAt === 'string' ? { updatedAt: item.updatedAt } : {}),
+    }))
+}
+
+export async function resolveRemoteArtifactDownloadUrl(input: {
+  fetchImpl?: typeof fetch
+  baseUrl?: string
+  apiKey?: string
+  agentId: string
+  path: string
+}): Promise<string> {
+  const fetchImpl = input.fetchImpl ?? fetch
+  const baseUrl =
+    input.baseUrl ?? getSetting<string>('remoteAgentBaseUrl', DEFAULT_CURSOR_AGENT_BASE_URL).trim()
+  const apiKey = input.apiKey ?? resolveApiKey()
+  const path = assertArtifactPath(input.path)
+  const response = await fetchImpl(remoteArtifactDownloadEndpoint(baseUrl, input.agentId, path), {
+    headers: { Authorization: cursorAuthHeader(apiKey) },
+  })
+  const json = await readJsonResponse<CursorArtifactDownloadResponse>(
+    response,
+    'Remote agent artifact download',
+  )
+  if (!json.url) throw new Error('Remote agent artifact download response did not include a URL')
+  return json.url
+}
+
+function imageMimeTypeForPath(path: string): string | null {
+  const lower = path.toLowerCase()
+  if (lower.endsWith('.png')) return 'image/png'
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
+  if (lower.endsWith('.gif')) return 'image/gif'
+  if (lower.endsWith('.webp')) return 'image/webp'
+  return null
+}
+
+export async function fetchRemoteArtifactImageDataUrl(input: {
+  fetchImpl?: typeof fetch
+  baseUrl?: string
+  apiKey?: string
+  agentId: string
+  path: string
+}): Promise<string> {
+  const fetchImpl = input.fetchImpl ?? fetch
+  const path = assertArtifactPath(input.path)
+  const cacheKey = artifactCacheKey(input.agentId, path)
+  const cached = artifactImageDataUrlCache.get(cacheKey)
+  if (cached) return cached
+
+  const url = await resolveRemoteArtifactDownloadUrl({ ...input, path, fetchImpl })
+  const response = await fetchImpl(url)
+  if (!response.ok) {
+    const details = await response.text()
+    throw new Error(
+      `Remote agent artifact image fetch failed with HTTP ${response.status}${details ? `: ${details}` : ''}`,
+    )
+  }
+  const contentLength = Number(response.headers.get('content-length') ?? 0)
+  if (contentLength > MAX_REMOTE_ARTIFACT_IMAGE_BYTES) {
+    throw new Error(`Remote agent artifact image is too large (${contentLength} bytes).`)
+  }
+  const mimeType =
+    response.headers.get('content-type')?.split(';')[0]?.trim() || imageMimeTypeForPath(path)
+  if (!mimeType?.startsWith('image/')) {
+    throw new Error('Remote agent artifact is not an image.')
+  }
+  const buffer = Buffer.from(await response.arrayBuffer())
+  if (buffer.byteLength > MAX_REMOTE_ARTIFACT_IMAGE_BYTES) {
+    throw new Error(`Remote agent artifact image is too large (${buffer.byteLength} bytes).`)
+  }
+  const dataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`
+  artifactImageDataUrlCache.set(cacheKey, dataUrl)
+  return dataUrl
+}
+
+function formatBytes(bytes: number | undefined): string {
+  if (bytes === undefined) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function escapeInlineCode(value: string): string {
+  return value.replace(/`/g, '\\`')
+}
+
+export function formatRemoteArtifactsSummary(input: {
+  artifacts: RemoteAgentArtifact[]
+  baseUrl: string
+  agentId: string
+}): string {
+  if (input.artifacts.length === 0) return ''
+  const lines = input.artifacts.map((artifact) => {
+    const size = formatBytes(artifact.sizeBytes)
+    const meta = size ? ` (${size})` : ''
+    const url = remoteArtifactDownloadEndpoint(input.baseUrl, input.agentId, artifact.path)
+    return `- \`${escapeInlineCode(artifact.path)}\`${meta} — [Open](${url})`
+  })
+  return `\n\n---\n_Remote agent artifacts:_\n${lines.join('\n')}`
 }
 
 async function streamRemoteRun(input: {
@@ -428,6 +591,18 @@ export async function runRemoteAgentFromSettings(
       }
     } catch (err) {
       console.warn('[remote-agent] usage fetch failed:', err)
+    }
+    try {
+      const artifacts = await listRemoteArtifacts({
+        fetchImpl,
+        baseUrl,
+        apiKey,
+        agentId: run.agentId,
+      })
+      const summary = formatRemoteArtifactsSummary({ artifacts, baseUrl, agentId: run.agentId })
+      if (summary) options.onChunk({ type: 'text', text: summary })
+    } catch (err) {
+      console.warn('[remote-agent] artifacts fetch failed:', err)
     }
     options.onChunk(
       state.terminalStatus ? { type: 'done', stopReason: state.terminalStatus } : { type: 'done' },

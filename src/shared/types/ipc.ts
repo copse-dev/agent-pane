@@ -95,6 +95,10 @@ export interface IpcInvokeMap {
   'git:branchStatus': { args: [forBranch?: string]; result: GitBranchStatus }
   'git:checkoutBranch': { args: [branch: string]; result: void }
 
+  // Remote agent artifacts
+  'remoteAgent:downloadArtifact': { args: [agentId: string, path: string]; result: string }
+  'remoteAgent:artifactImageDataUrl': { args: [agentId: string, path: string]; result: string }
+
   // Shell
   'shell:openExternal': { args: [url: string]; result: void }
 

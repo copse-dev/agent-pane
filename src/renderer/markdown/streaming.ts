@@ -10,17 +10,31 @@ export function splitAtLastNewline(content: string): { complete: string; pending
   }
 }
 
+const PENDING_BLOCK_START_RE =
+  /^\s{0,3}(?:#{1,6}\s|[-*+]\s|\d+\.\s|>|```|~~~|\|)|^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/
+
+function stripParagraphWrapper(html: string): string {
+  const trimmed = html.trim()
+  const match = trimmed.match(/^<p>([\s\S]*)<\/p>$/)
+  return match?.[1] ?? html
+}
+
+function renderPendingInlineMarkdown(pending: string): string {
+  if (!pending || PENDING_BLOCK_START_RE.test(pending)) return escapeHtml(pending)
+  return stripParagraphWrapper(renderMarkdown(pending))
+}
+
 /**
  * Render assistant text while it is still streaming.
  * Completed lines (up to the last newline) are markdown-rendered; the
- * in-progress tail stays as plain escaped text until its line ends.
- * Full constructs like tables are finalized on message_done via renderMarkdown().
+ * in-progress tail only renders safe inline markdown. Block constructs like
+ * lists and tables are finalized on message_done via renderMarkdown().
  */
 export function renderStreamingMarkdown(content: string): string {
   const { complete, pending } = splitAtLastNewline(content)
   const rendered = complete ? renderMarkdown(complete) : ''
   if (!pending) return rendered
-  return `${rendered}<span class="stream-pending">${escapeHtml(pending)}</span>`
+  return `${rendered}<span class="stream-pending">${renderPendingInlineMarkdown(pending)}</span>`
 }
 
 /**
@@ -50,9 +64,9 @@ export class StreamingMarkdownRenderer {
       this.lastComplete = complete
     }
 
-    // textContent assignment escapes implicitly and only touches the tail node,
-    // so the completed region (and any selection within it) is untouched.
-    this.pendingEl!.textContent = pending
+    // The completed region (and any selection within it) is untouched. Pending
+    // content is still rendered through the markdown sanitizer before insertion.
+    this.pendingEl!.innerHTML = pending ? renderPendingInlineMarkdown(pending) : ''
     this.pendingEl!.hidden = pending === ''
   }
 

@@ -146,8 +146,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 happens on a remote machine: the agent runs its own tools, pushes commits to a
                 branch, and (optionally) opens a pull request. It does <strong>not</strong> edit the
                 files in this local workspace — review its changes in the branch / PR it links in the
-                reply. Needs a Cursor API key (added under API Keys above).
+                reply.
               </p>
+              <div id="settings-cursor-key-host"></div>
               <label>
                 Agent API base URL
                 <input
@@ -157,8 +158,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   autocomplete="off"
                 />
                 <span class="field-hint">
-                  Keep <code>https://api.cursor.com</code> for Cursor Cloud Agent. Point this at a
-                  Copse-compatible server (same v1 agent API) to use that instead.
+                  Usually leave this as <code>https://api.cursor.com</code>. Change it only for
+                  Cursor API development or testing.
                 </span>
               </label>
               <label>
@@ -166,11 +167,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <input
                   type="text"
                   name="remoteAgentRepository"
-                  placeholder="https://github.com/owner/repo (defaults to workspace origin)"
+                  placeholder="https://github.com/owner/repo (defaults to project origin)"
                   autocomplete="off"
                 />
                 <span class="field-hint">
-                  Which GitHub repo the remote agent works on. Leave blank to use this workspace's
+                  Which GitHub repo the remote agent works on. Leave blank to use this project's
                   <code>origin</code> remote.
                 </span>
               </label>
@@ -367,8 +368,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   document.body.append(overlay)
   overlayEl = overlay
 
-  const apiKeysSection = createApiKeysSection(api)
+  const apiKeysSection = createApiKeysSection(api, { providers: ['anthropic', 'openai'] })
   overlay.querySelector('#settings-api-keys-host')!.append(apiKeysSection.root)
+
+  const cursorKeySection = createApiKeysSection(api, {
+    legend: 'Cursor authentication',
+    providers: ['cursor'],
+  })
+  overlay.querySelector('#settings-cursor-key-host')!.append(cursorKeySection.root)
 
   const lmStudioSection = createLmStudioSection(api, { showInstallGuide: false })
   overlay.querySelector('#settings-lm-studio-host')!.append(lmStudioSection.root)
@@ -535,6 +542,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     showSection('general')
     void (async () => {
       await apiKeysSection.refreshKeyStatus()
+      await cursorKeySection.refreshKeyStatus()
 
       const form = overlay.querySelector('form') as HTMLFormElement
       const model = (await api.settings.get('model')) as string | undefined
@@ -579,6 +587,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const data = new FormData(form)
 
       await apiKeysSection.saveKeys()
+      await cursorKeySection.saveKeys()
       await lmStudioSection.saveConnection()
       const routingValues = modelRoutingSection.readValues()
 

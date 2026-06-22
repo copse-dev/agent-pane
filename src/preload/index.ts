@@ -161,6 +161,12 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.off('menu:showBrowser', listener)
     },
   },
+  remoteAgent: {
+    downloadArtifact: (agentId: string, path: string) =>
+      ipcRenderer.invoke('remoteAgent:downloadArtifact', agentId, path),
+    artifactImageDataUrl: (agentId: string, path: string) =>
+      ipcRenderer.invoke('remoteAgent:artifactImageDataUrl', agentId, path),
+  },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),

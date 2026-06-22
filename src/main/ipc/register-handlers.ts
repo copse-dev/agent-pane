@@ -63,6 +63,10 @@ import { applyAppIcon } from '../app-icon.ts'
 import { getMainWindow } from '../windows/create-main-window.ts'
 import { validateApiKey } from '../services/validate-api-key.ts'
 import {
+  fetchRemoteArtifactImageDataUrl,
+  resolveRemoteArtifactDownloadUrl,
+} from '../services/remote-agent-client.ts'
+import {
   gatewayListDir,
   gatewayReadFile,
   gatewayReaddir,
@@ -226,6 +230,21 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const targetBranch = parseIpcArgs(z.string().min(1).max(256), [branch])
     await checkoutGitBranch(targetBranch)
   })
+  ipcMain.handle('remoteAgent:downloadArtifact', async (event, agentId: unknown, path: unknown) => {
+    assertMainFrameSender(event, win)
+    const parsedAgentId = parseIpcArgs(z.string().min(1).max(128), [agentId])
+    const parsedPath = parseIpcArgs(z.string().min(1).max(4096), [path])
+    return resolveRemoteArtifactDownloadUrl({ agentId: parsedAgentId, path: parsedPath })
+  })
+  ipcMain.handle(
+    'remoteAgent:artifactImageDataUrl',
+    async (event, agentId: unknown, path: unknown) => {
+      assertMainFrameSender(event, win)
+      const parsedAgentId = parseIpcArgs(z.string().min(1).max(128), [agentId])
+      const parsedPath = parseIpcArgs(z.string().min(1).max(4096), [path])
+      return fetchRemoteArtifactImageDataUrl({ agentId: parsedAgentId, path: parsedPath })
+    },
+  )
   ipcMain.handle('shell:openExternal', (event, url: unknown) => {
     assertMainFrameSender(event, win)
     const href = parseIpcArgs(z.string().url().max(2048), [url])

@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test'
+import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { StreamChunk } from '@shared/types'
 import {
@@ -8,6 +8,20 @@ import {
   remoteStreamEventToChunks,
   type RemoteStreamState,
 } from '@shared/remote-agent-stream.ts'
+import {
+  fetchRemoteArtifactImageDataUrl,
+  formatRemoteArtifactsSummary,
+  resolveRemoteAgentRepository,
+} from './remote-agent-client.ts'
+import { setSetting } from './settings.ts'
+import { storageSet } from './storage.ts'
+import { setWorkspaceRootForTest } from './workspace.ts'
+
+afterEach(async () => {
+  storageSet('projects', [])
+  storageSet('activeProjectId', null)
+  await setSetting('remoteAgentRepository', '')
+})
 
 function state(): RemoteStreamState {
   return {
@@ -17,6 +31,32 @@ function state(): RemoteStreamState {
     terminalStatus: null,
   }
 }
+
+describe('resolveRemoteAgentRepository', () => {
+  it('uses the active project origin when the repository setting is blank', async () => {
+    const workspaceRoot = '/workspace-root'
+    const projectRoot = '/project-root'
+    const restoreWorkspace = setWorkspaceRootForTest(workspaceRoot)
+    let resolvedRoot: string | null = null
+
+    await setSetting('remoteAgentRepository', '')
+    storageSet('projects', [{ id: 'project-1', path: projectRoot, name: 'project' }])
+    storageSet('activeProjectId', 'project-1')
+
+    try {
+      const repository = await resolveRemoteAgentRepository({
+        getGithubRepoSlug: async (root) => {
+          resolvedRoot = root
+          return 'acme/project'
+        },
+      })
+      assert.equal(resolvedRoot, projectRoot)
+      assert.equal(repository, 'https://github.com/acme/project')
+    } finally {
+      restoreWorkspace()
+    }
+  })
+})
 
 describe('remote agent SSE parsing', () => {
   it('parses event, id, and multiline data fields', () => {
@@ -146,6 +186,97 @@ describe('formatRemoteGitSummary', () => {
     })
 
     assert.match(summary, /https:\/\/github\.com\/acme\/repo\/pull\/7/)
+  })
+})
+
+describe('formatRemoteArtifactsSummary', () => {
+  it('lists remote artifacts with API download links', () => {
+    const summary = formatRemoteArtifactsSummary({
+      agentId: 'bc-00000000-0000-0000-0000-000000000001',
+      baseUrl: 'https://api.cursor.com',
+      artifacts: [
+        {
+          path: 'artifacts/screenshot.png',
+          sizeBytes: 12_345,
+          updatedAt: '2026-04-13T18:45:00.000Z',
+        },
+      ],
+    })
+
+    assert.match(summary, /Remote agent artifacts/)
+    assert.match(summary, /`artifacts\/screenshot\.png` \(12\.1 KB\)/)
+    assert.match(
+      summary,
+      /https:\/\/api\.cursor\.com\/v1\/agents\/bc-00000000-0000-0000-0000-000000000001\/artifacts\/download\?path=artifacts%2Fscreenshot\.png/,
+    )
+  })
+})
+
+describe('fetchRemoteArtifactImageDataUrl', () => {
+  it('resolves the artifact download URL and returns image data', async () => {
+    const calls: string[] = []
+    const fetchImpl = async (url: string) => {
+      calls.push(url)
+      if (url.includes('/artifacts/download')) {
+        return new Response(
+          JSON.stringify({
+            url: 'https://cloud-agent-artifacts.s3.us-east-1.amazonaws.com/screenshot.png',
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      return new Response(Uint8Array.from([1, 2, 3]), {
+        status: 200,
+        headers: { 'content-type': 'image/png', 'content-length': '3' },
+      })
+    }
+
+    const dataUrl = await fetchRemoteArtifactImageDataUrl({
+      fetchImpl: fetchImpl as typeof fetch,
+      baseUrl: 'https://api.cursor.com',
+      apiKey: 'key',
+      agentId: 'bc-00000000-0000-0000-0000-000000000001',
+      path: 'artifacts/screenshot.png',
+    })
+
+    assert.equal(dataUrl, 'data:image/png;base64,AQID')
+    assert.deepEqual(calls, [
+      'https://api.cursor.com/v1/agents/bc-00000000-0000-0000-0000-000000000001/artifacts/download?path=artifacts%2Fscreenshot.png',
+      'https://cloud-agent-artifacts.s3.us-east-1.amazonaws.com/screenshot.png',
+    ])
+  })
+
+  it('caches artifact image data by agent and path for the app session', async () => {
+    let calls = 0
+    const fetchImpl = async (url: string) => {
+      calls++
+      if (url.includes('/artifacts/download')) {
+        return new Response(
+          JSON.stringify({
+            url: 'https://cloud-agent-artifacts.s3.us-east-1.amazonaws.com/cached.png',
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      return new Response(Uint8Array.from([4, 5, 6]), {
+        status: 200,
+        headers: { 'content-type': 'image/png', 'content-length': '3' },
+      })
+    }
+
+    const input = {
+      fetchImpl: fetchImpl as typeof fetch,
+      baseUrl: 'https://api.cursor.com',
+      apiKey: 'key',
+      agentId: 'bc-00000000-0000-0000-0000-000000000002',
+      path: 'artifacts/cached.png',
+    }
+    const first = await fetchRemoteArtifactImageDataUrl(input)
+    const second = await fetchRemoteArtifactImageDataUrl(input)
+
+    assert.equal(first, 'data:image/png;base64,BAUG')
+    assert.equal(second, first)
+    assert.equal(calls, 2)
   })
 })
 

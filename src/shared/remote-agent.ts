@@ -1,12 +1,8 @@
 export const REMOTE_AGENT_MODEL_PREFIX = 'remote-agent:'
 
 export const REMOTE_AGENT_PROVIDER_CURSOR = 'cursor'
-export const REMOTE_AGENT_PROVIDER_COPSE = 'copse'
 
-export const REMOTE_AGENT_PROVIDERS = [
-  REMOTE_AGENT_PROVIDER_CURSOR,
-  REMOTE_AGENT_PROVIDER_COPSE,
-] as const
+export const REMOTE_AGENT_PROVIDERS = [REMOTE_AGENT_PROVIDER_CURSOR] as const
 
 export type RemoteAgentProvider = (typeof REMOTE_AGENT_PROVIDERS)[number]
 
@@ -23,11 +19,6 @@ export const REMOTE_AGENT_MODELS: readonly RemoteAgentModelOption[] = [
     provider: REMOTE_AGENT_PROVIDER_CURSOR,
     value: `${REMOTE_AGENT_MODEL_PREFIX}${REMOTE_AGENT_PROVIDER_CURSOR}`,
     label: 'Cursor Cloud Agent',
-  },
-  {
-    provider: REMOTE_AGENT_PROVIDER_COPSE,
-    value: `${REMOTE_AGENT_MODEL_PREFIX}${REMOTE_AGENT_PROVIDER_COPSE}`,
-    label: 'Copse-compatible Agent API',
   },
 ]
 

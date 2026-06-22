@@ -108,6 +108,10 @@ export interface ApiClient {
       error?: string
     }>
   }
+  remoteAgent: {
+    downloadArtifact: (agentId: string, path: string) => Promise<string>
+    artifactImageDataUrl: (agentId: string, path: string) => Promise<string>
+  }
   menu: {
     onSettings: (handler: () => void) => () => void
     onTogglePanel: (handler: () => void) => () => void

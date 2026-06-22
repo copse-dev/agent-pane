@@ -38,6 +38,15 @@ describe('renderStreamingMarkdown', () => {
     assert.doesNotMatch(html, /<li>- item<\/li>/)
   })
 
+  it('renders complete inline bold markup on the pending line', () => {
+    const html = renderStreamingMarkdown(
+      'Review intro\n**Recent commits to main (all auto-bump PRs):**',
+    )
+    assert.match(html, /<span class="stream-pending">/)
+    assert.match(html, /<strong>Recent commits to main \(all auto-bump PRs\):<\/strong>/)
+    assert.doesNotMatch(html, /\*\*Recent commits/)
+  })
+
   it('formats each completed line as newlines arrive', () => {
     const first = renderStreamingMarkdown('## Title\n')
     const second = renderStreamingMarkdown('## Title\n- item one\n')
@@ -77,6 +86,15 @@ describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
     assert.match(completed.innerHTML, /<h4>Title<\/h4>/)
     assert.equal(pending.textContent, '- item')
     assert.equal(pending.hidden, false)
+  })
+
+  it('renders inline markdown in the live tail without rebuilding completed content', () => {
+    const host = document.createElement('div')
+    const r = new StreamingMarkdownRenderer(host)
+    r.update('done\n**Recent commits:**')
+    const pending = host.querySelector('.stream-pending') as HTMLElement
+    assert.equal(pending.textContent, 'Recent commits:')
+    assert.match(pending.innerHTML, /<strong>Recent commits:<\/strong>/)
   })
 
   it('reuses the same completed node across tokens (no full rebuild)', () => {

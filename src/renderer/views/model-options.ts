@@ -1,10 +1,8 @@
 import type { ApiClient } from '../../preload/api.d.ts'
 import { CLOUD_MODELS } from '@shared/llm/model-catalog.ts'
 import {
-  DEFAULT_CURSOR_AGENT_BASE_URL,
   REMOTE_AGENT_MODELS,
   REMOTE_AGENT_MODEL_PREFIX,
-  REMOTE_AGENT_PROVIDER_COPSE,
   REMOTE_AGENT_PROVIDER_CURSOR,
   parseRemoteAgentModel,
 } from '@shared/remote-agent.ts'
@@ -40,14 +38,6 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
   }
 
   const remoteGroup = 'Remote agents'
-  const remoteBaseUrl = await (async () => {
-    try {
-      const saved = await api.settings.get('remoteAgentBaseUrl')
-      return typeof saved === 'string' ? saved.trim() : ''
-    } catch {
-      return ''
-    }
-  })()
   for (const remote of REMOTE_AGENT_MODELS) {
     if (remote.provider === REMOTE_AGENT_PROVIDER_CURSOR) {
       options.push(
@@ -61,19 +51,6 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
             },
       )
       continue
-    }
-    if (remote.provider === REMOTE_AGENT_PROVIDER_COPSE) {
-      const configured = remoteBaseUrl && remoteBaseUrl !== DEFAULT_CURSOR_AGENT_BASE_URL
-      options.push(
-        available.cursor && configured
-          ? { value: remote.value, label: remote.label, group: remoteGroup }
-          : {
-              value: remote.value,
-              label: `${remote.label} — configure remote API URL and key`,
-              group: remoteGroup,
-              disabled: true,
-            },
-      )
     }
   }
 
