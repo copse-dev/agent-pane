@@ -1,7 +1,7 @@
 import { createProvider, createLMStudioProvider } from '@shared/llm/create-provider.ts'
 import type { LLMProvider } from '@shared/types'
 import { DEFAULT_LM_STUDIO_URL, LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
-import { getSetting, getApiKey, getLmStudioApiKey } from './settings.ts'
+import { getSetting, getSettingTrimmed, getApiKey, getLmStudioApiKey } from './settings.ts'
 import { resolveContextWindow } from './resolve-context-window.ts'
 import {
   fetchLmStudioModelsCached,
@@ -28,12 +28,24 @@ export async function fetchFirstLocalModel(baseURL: string): Promise<string | nu
   return result.models[0]?.id ?? null
 }
 
-async function resolveSubagentLocalModelId(url: string): Promise<string | null> {
-  const configured = getSetting<string>('subagentModel', '').trim()
+/**
+ * Resolve an LM Studio model id for a given role: the role's configured setting,
+ * else the shared `localDefaultModel`, else the first model the server has loaded.
+ */
+export async function resolveLocalModelId(
+  roleKey: string,
+  url: string,
+  roleDefault = '',
+): Promise<string | null> {
+  const configured = getSettingTrimmed(roleKey, roleDefault)
   if (configured) return configured
-  const fallback = getSetting<string>('localDefaultModel', LM_STUDIO_MODEL_IDS.chat).trim()
+  const fallback = getSettingTrimmed('localDefaultModel', LM_STUDIO_MODEL_IDS.chat)
   if (fallback) return fallback
   return fetchFirstLocalModel(url)
+}
+
+function resolveSubagentLocalModelId(url: string): Promise<string | null> {
+  return resolveLocalModelId('subagentModel', url)
 }
 
 export interface SubagentRoute {
@@ -65,6 +77,7 @@ export async function buildSubagentRoute(parentModel: string): Promise<SubagentR
 // `lmstudio:<modelId>`; the legacy `lm-studio` value resolves to the configured
 // model or the first one the server has loaded (never the bogus "local-model").
 export async function buildProvider(model: string): Promise<LLMProvider> {
+  if (process.env.COPSE_PANEL_MOCK_LLM === '1') return createProvider(model)
   if (model === 'lm-studio' || model.startsWith('lmstudio:')) {
     const url = getSetting<string>('localServerUrl', DEFAULT_LM_STUDIO_URL)
     let id = model.startsWith('lmstudio:')
@@ -78,7 +91,6 @@ export async function buildProvider(model: string): Promise<LLMProvider> {
     }
     return createLMStudioProvider(url, id, getLmStudioApiKey())
   }
-  if (process.env.COPSE_PANEL_MOCK_LLM === '1') return createProvider(model)
   if (model.startsWith('claude')) {
     return createProvider(model, {
       anthropicApiKey: storedOrEnvApiKey('anthropic'),

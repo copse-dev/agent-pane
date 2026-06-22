@@ -24,6 +24,7 @@ import {
   runAgent,
   abortAgent,
   suggestThreadTitle,
+  suggestTerminalTitle,
   testLmStudio,
   listLmStudioModels,
   invalidateLmStudioModelsCache,
@@ -147,6 +148,8 @@ app
     })
 
     ipcMain.handle('agent:suggestTitle', (_e, text: string) => suggestThreadTitle(text))
+
+    ipcMain.handle('agent:suggestTerminalTitle', (_e, text: string) => suggestTerminalTitle(text))
 
     ipcMain.handle('agent:suggestFollowUps', (_e, contextJson: string) => {
       const context = JSON.parse(contextJson) as FollowUpContext

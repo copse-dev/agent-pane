@@ -3,15 +3,21 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
   addMessage,
-  setThreadStatus,
-  clearContextSnapshot,
   setThreadWorkingBrief,
   bindThreadGitBranchIfUnset,
   getThreadById,
   getActiveThread,
   setThreadDraftPrompt,
 } from '@shared/store/thread-helpers.ts'
+import { dispatchAgentRun, enqueueUserMessage } from '../controller/message-queue.ts'
 import { nextWorkingBrief } from '@shared/agent/working-brief.ts'
+import {
+  buildTextWithAttachments,
+  isTextBlockAttachment,
+  textBlockLabel,
+} from '@shared/agent/build-text-with-attachments.ts'
+import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
+import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
 import { initMentionPicker } from './mention-picker.ts'
 import { initSkillPicker } from './skill-picker.ts'
 import { resolveSkillInvocation } from '@shared/skills/parse-skill-invocation.ts'
@@ -21,16 +27,11 @@ import type { AgentRunPayload, SkillSummary } from '@shared/types/skills.ts'
 import { mountFooterModelPicker } from './footer-model-picker.ts'
 import { mountFooterBranchStatus } from './footer-branch-status.ts'
 import { createContextWheel } from './context-wheel.ts'
+import { bindFooterCompactLayout } from './footer-compact.ts'
+import { mountFooterOverflow } from './footer-overflow.ts'
 import { downloadThreadJsonl } from '../export-thread.ts'
-import { syncAgentActivity } from '../agent-activity.ts'
-import {
-  buildTextWithAttachments,
-  isTextBlockAttachment,
-  textBlockLabel,
-} from '@shared/agent/build-text-with-attachments.ts'
-import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
-import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
 import { formatThreadUsageCost } from '@shared/llm/estimate-cost.ts'
+import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
 import { mountFollowUpSuggestions } from './follow-up-suggestions.ts'
 import {
   threadGitBranchMismatch,
@@ -45,10 +46,15 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     'aria-label': 'Message',
     placeholder: 'Message…',
   })
-  const submitBtn = el('button', { class: 'submit-btn' }, 'Send')
+  const submitBtn = el('button', { class: 'submit-btn', type: 'button' }, 'Send')
+  const stopBtn = el(
+    'button',
+    { class: 'stop-btn', type: 'button', hidden: '', 'aria-label': 'Stop agent' },
+    'Stop',
+  )
   // The Send button is positioned relative to this row (not the whole input
   // bar), so it sits inside the textarea box and never overlaps the footer.
-  const inputRow = el('div', { class: 'input-row' }, textarea, submitBtn)
+  const inputRow = el('div', { class: 'input-row' }, textarea, stopBtn, submitBtn)
   const footer = el('div', { class: 'input-footer' })
   const modelHost = el('div', { class: 'footer-model-host' })
   const branchHost = el('div', { class: 'footer-branch-host' })
@@ -65,15 +71,27 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   // into the in/out breakdown and cost.
   const usageBtn = el('button', { class: 'footer-usage', 'aria-label': 'Toggle cost details' })
   const usageGroup = el('div', { class: 'footer-usage-group' })
+  const queueIndicator = el('span', { class: 'footer-queue', hidden: '', 'aria-live': 'polite' })
   const contextWheel = createContextWheel()
-  usageGroup.append(contextWheel.root, usageBtn)
-  footer.append(modelHost, branchHost, exportBtn, usageGroup)
+  usageGroup.append(contextWheel.root, queueIndicator, usageBtn)
+  footer.append(modelHost, branchHost, exportBtn)
+  const footerOverflow = mountFooterOverflow(footer, [
+    {
+      label: 'Export',
+      onClick: () => {
+        const thread = getActiveThread(store)
+        if (thread) downloadThreadJsonl(thread)
+      },
+    },
+  ])
+  footer.append(usageGroup)
+  const footerCompact = bindFooterCompactLayout(footer, () => updateFooter())
   let costVisible = false
 
   const modelPicker = mountFooterModelPicker(
     modelHost,
     api,
-    () => store.getState().settings?.model ?? 'claude-sonnet-4-6',
+    () => store.getState().settings?.model ?? DEFAULT_CLOUD_MODEL,
     (model) => {
       void api.settings.set('model', model)
       store.setState({ settings: { ...store.getState().settings, model } })
@@ -87,6 +105,11 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     if (thread) downloadThreadJsonl(thread)
   })
   usageBtn.addEventListener('click', () => {
+    costVisible = !costVisible
+    updateFooter()
+  })
+  contextWheel.root.addEventListener('click', () => {
+    if (!footerCompact.isCompact() || contextWheel.root.hidden || !usageSummaryText()) return
     costVisible = !costVisible
     updateFooter()
   })
@@ -145,38 +168,63 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
 
   function updateState() {
     const running = isRunning()
-    textarea.disabled = running
-    submitBtn.textContent = running ? 'Stop' : 'Send'
-    submitBtn.dataset.action = running ? 'abort' : 'submit'
+    stopBtn.hidden = !running
+    submitBtn.classList.toggle('with-stop', running)
+    textarea.classList.toggle('with-stop', running)
   }
 
-  function updateFooter() {
-    const model = store.getState().settings?.model ?? 'claude-sonnet-4-6'
+  function updateQueueIndicator() {
+    const thread = store.getState().threads.find((t) => t.id === getActiveThreadId())
+    const count = thread?.pendingMessages?.length ?? 0
+    if (count === 0) {
+      queueIndicator.hidden = true
+      queueIndicator.textContent = ''
+      return
+    }
+    queueIndicator.hidden = false
+    queueIndicator.textContent = count === 1 ? '1 queued' : `${count} queued`
+  }
+
+  function usageSummaryText(): string | null {
+    const model = store.getState().settings?.model ?? DEFAULT_CLOUD_MODEL
     const thread = getActiveThread(store)
     const { inputTokens, outputTokens } = thread?.usage ?? { inputTokens: 0, outputTokens: 0 }
     const total = inputTokens + outputTokens
     const running = thread?.status === 'running'
-    contextWheel.update(thread?.contextSnapshot, running)
-    if (!total && !running) {
+    if (!total && !running) return null
+    if (costVisible) {
+      return `${inputTokens} in / ${outputTokens} out · ${formatThreadUsageCost(thread?.usage ?? { inputTokens: 0, outputTokens: 0 }, model)}`
+    }
+    return total ? `${(total / 1000).toFixed(1)}k tokens` : '0 tokens'
+  }
+
+  function updateFooter() {
+    const thread = getActiveThread(store)
+    const running = thread?.status === 'running'
+    const usageText = usageSummaryText()
+    const compact = footerCompact.isCompact()
+    const tuckUsageIntoWheel = compact && !contextWheel.root.hidden
+    contextWheel.update(thread?.contextSnapshot, running, {
+      usageLine: tuckUsageIntoWheel ? usageText : null,
+    })
+    contextWheel.root.classList.toggle('is-interactive', tuckUsageIntoWheel)
+    if (!usageText) {
       usageBtn.hidden = true
     } else {
-      usageBtn.hidden = false
-      usageBtn.textContent = costVisible
-        ? `${inputTokens} in / ${outputTokens} out · ${formatThreadUsageCost(thread?.usage ?? { inputTokens: 0, outputTokens: 0 }, model)}`
-        : total
-          ? `${(total / 1000).toFixed(1)}k tokens`
-          : '0 tokens'
+      usageBtn.hidden = tuckUsageIntoWheel
+      usageBtn.textContent = usageText
     }
     updateState()
+    updateQueueIndicator()
   }
 
   submitBtn.addEventListener('click', () => {
-    if (submitBtn.dataset.action === 'abort') {
-      const id = getActiveThreadId()
-      if (id) void api.agent.abort(id)
-    } else {
-      void submit()
-    }
+    void submit()
+  })
+
+  stopBtn.addEventListener('click', () => {
+    const id = getActiveThreadId()
+    if (id) void api.agent.abort(id)
   })
 
   function isAutocompletePickerOpen() {
@@ -268,13 +316,24 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     attachedFiles.forEach((f) => displayParts.push(`📎 ${f.path.split('/').pop() ?? f.path}`))
     attachedTextBlocks.forEach((b) => displayParts.push(`📝 ${b.label}`))
     const imageUrls = attachedImages.map((img) => img.dataUrl)
-    addMessage(store, id, 'user', displayParts.join('\n'), imageUrls.length ? imageUrls : undefined)
+    const messageId = addMessage(
+      store,
+      id,
+      'user',
+      displayParts.join('\n'),
+      imageUrls.length ? imageUrls : undefined,
+    )
     if (currentBranch) bindThreadGitBranchIfUnset(store, id, currentBranch)
-    clearContextSnapshot(store, id)
-    setThreadStatus(store, id, 'running')
-    syncAgentActivity(store, id, false)
 
-    void api.agent.run(id, JSON.stringify(payload))
+    if (isRunning()) {
+      enqueueUserMessage(store, id, {
+        messageId,
+        payload,
+        createdAt: Date.now(),
+      })
+    } else {
+      dispatchAgentRun(store, api, id, payload)
+    }
     textarea.value = ''
     setThreadDraftPrompt(store, id, '')
     attachedFiles = []
@@ -400,7 +459,10 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const unsubs = [
     store.on('composer_draft_flush', persistComposerDraft),
     store.on('thread_status_changed', (tid) => {
-      if (tid === getActiveThreadId()) updateState()
+      if (tid === getActiveThreadId()) updateFooter()
+    }),
+    store.on('message_queued', (tid) => {
+      if (tid === getActiveThreadId()) updateQueueIndicator()
     }),
     store.on('threads_changed', () => {
       syncComposerThread()
@@ -440,6 +502,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     unbindDrop()
     unregisterAttachments()
     modelPicker.destroy()
+    footerOverflow.destroy()
+    footerCompact.destroy()
     branchStatus()
     skillPicker()
   }

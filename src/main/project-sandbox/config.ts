@@ -125,6 +125,45 @@ export function resolveNodeToolchainAllowRead(env: NodeJS.ProcessEnv = process.e
   return [...allow]
 }
 
+/** Paths the bundled sandbox-fs worker must read to exec under ASRT (outside the workspace). */
+export function electronRuntimeAllowReadPaths(): string[] {
+  const exec = resolve(process.execPath)
+  const paths = [exec, dirname(exec), `${dirname(exec)}/**`]
+  if (process.platform === 'darwin' && exec.includes('.app/')) {
+    const appRoot = `${exec.split('.app/')[0]!}.app`
+    paths.push(resolve(appRoot), `${resolve(appRoot)}/**`)
+  }
+  return [...new Set(paths)]
+}
+
+/** Workspace seatbelt rules plus read access for the fs worker script and Electron runtime. */
+export function fsWorkerSandboxOverlay(
+  workspaceRoot: string,
+  workerJsPath: string,
+): Partial<SandboxRuntimeConfig> {
+  const workspace = workspaceSandboxOverlay(workspaceRoot)
+  const workerDir = dirname(resolve(workerJsPath))
+  const fs = workspace.filesystem!
+  const allowRead = [
+    ...new Set([
+      ...(fs.allowRead ?? []),
+      workerDir,
+      `${workerDir}/**`,
+      ...electronRuntimeAllowReadPaths(),
+    ]),
+  ]
+  return {
+    ...workspace,
+    filesystem: {
+      denyRead: fs.denyRead ?? [],
+      allowWrite: fs.allowWrite ?? [],
+      denyWrite: fs.denyWrite ?? [],
+      allowGitConfig: fs.allowGitConfig,
+      allowRead,
+    },
+  }
+}
+
 export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxRuntimeConfig> {
   const root = canonicalizeWorkspaceRoot(workspaceRoot)
   const toolchainRead = resolveNodeToolchainAllowRead()

@@ -22,6 +22,7 @@ import {
   zPathString,
 } from './ipc-guards.ts'
 import { buildIndex, getIndex } from '../services/file-index.ts'
+import { resolveFileReferences } from '../services/file-reference-resolver.ts'
 import { ensureSemanticIndex } from '../services/semantic-index.ts'
 import {
   scheduleIndexRebuild,
@@ -141,6 +142,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const idx = getIndex()
     if (!idx) return []
     return query ? micromatch(idx.paths, `**/*${query}*`).slice(0, 20) : idx.paths.slice(0, 20)
+  })
+
+  ipcMain.handle('index:resolveFileReferences', (event, rawCandidates: unknown) => {
+    assertMainFrameSender(event, win)
+    const candidates = parseIpcArgs(z.array(z.string().min(1).max(4096)).max(200), [rawCandidates])
+    return resolveFileReferences(candidates)
   })
 
   ipcMain.handle('settings:get', (_e, key: unknown) => {

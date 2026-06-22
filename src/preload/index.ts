@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('api', {
     abort: (threadId: string) => ipcRenderer.invoke('agent:abort', threadId),
     clearHistory: (threadId: string) => ipcRenderer.invoke('agent:clearHistory', threadId),
     suggestTitle: (text: string) => ipcRenderer.invoke('agent:suggestTitle', text),
+    suggestTerminalTitle: (text: string) => ipcRenderer.invoke('agent:suggestTerminalTitle', text),
     suggestFollowUps: (contextJson: string) =>
       ipcRenderer.invoke('agent:suggestFollowUps', contextJson),
     onChunk: (handler: (threadId: string, chunk: unknown) => void) => {
@@ -179,6 +180,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   index: {
     query: (pattern: string) => ipcRenderer.invoke('index:query', pattern),
+    resolveFileReferences: (candidates: string[]) =>
+      ipcRenderer.invoke('index:resolveFileReferences', candidates),
   },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),

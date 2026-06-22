@@ -2,13 +2,13 @@ import * as fsp from 'node:fs/promises'
 import { z } from 'zod'
 import type { ToolDefinition } from '@shared/types'
 import { resolveWorkspacePath } from '../services/workspace.ts'
-import { stageDiff } from '../services/diff-queue.ts'
+import { applyOrStageDiff } from '../services/diff-queue.ts'
 import { detectLanguage } from '../services/language.ts'
 
 export const writeFileTool: ToolDefinition = {
   name: 'write_file',
   description:
-    'Propose writing content to a file. Shows a diff to the user who must approve before the file is saved. For new files, shows the full content as an addition.',
+    'Write a complete file. Applies directly when the git worktree is clean or only contains Copse-applied edits from this session; otherwise stages a proposed diff for user approval.',
   parameters: z.object({
     path: z.string().describe('File path relative to workspace root'),
     content: z.string().describe('Complete new file content'),
@@ -23,6 +23,6 @@ export const writeFileTool: ToolDefinition = {
     }
 
     const language = detectLanguage(path)
-    return stageDiff(path, before, content, language)
+    return applyOrStageDiff(path, before, content, language)
   },
 }

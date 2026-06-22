@@ -47,6 +47,7 @@ export const config: Options.Testrunner = {
     timeout: Number(process.env.COPSE_EVAL_MOCHA_TIMEOUT_MS ?? 45 * 60_000),
   },
   beforeSession(_config, capabilities) {
+    delete process.env.ELECTRON_RUN_AS_NODE
     if (process.env.COPSE_EVAL_USE_MOCK === '1') {
       process.env.COPSE_PANEL_MOCK_LLM = '1'
     } else {

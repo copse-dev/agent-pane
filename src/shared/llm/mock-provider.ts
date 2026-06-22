@@ -1,5 +1,20 @@
 import type { LLMProvider, LLMMessage, LLMTool, StreamChunk } from '@shared/types'
 const randomUUID = () => globalThis.crypto.randomUUID()
+const MAX_MOCK_DELAY_MS = 5_000
+
+async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const timeout = setTimeout(resolve, ms)
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timeout)
+        resolve()
+      },
+      { once: true },
+    )
+  })
+}
 
 export class MockLLMProvider implements LLMProvider {
   lastUsage = { inputTokens: 120, outputTokens: 80 }
@@ -23,10 +38,29 @@ export class MockLLMProvider implements LLMProvider {
       : `Mock response to: ${userText}`
 
     const isFirstTurn = messages.filter((m) => m.role === 'assistant').length === 0
+    let lastUserIdx = -1
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i]?.role === 'user') {
+        lastUserIdx = i
+        break
+      }
+    }
+    const awaitingAssistantReply =
+      lastUserIdx !== -1 && !messages.slice(lastUserIdx + 1).some((m) => m.role === 'assistant')
+
+    const delayDirective = fullUserText.match(/\[\[mock:delay_ms\s+(\d+)\]\]/)
+    if (delayDirective) {
+      const requestedDelay = Number.parseInt(delayDirective[1]!, 10)
+      const delayMs = Math.min(requestedDelay, MAX_MOCK_DELAY_MS)
+      await sleep(delayMs, signal)
+      if (signal?.aborted) return
+    }
 
     // Test directive: `[[mcp:<toolName> {json args}]]` drives a specific tool
     // call (used by e2e to exercise the MCP path). Real prompts never contain it.
-    if (isFirstTurn && !demoSkillLoaded) {
+    // Only honor it for the current user turn — not on later agent-loop passes
+    // that still see the same user message in history.
+    if (awaitingAssistantReply && !demoSkillLoaded) {
       const directive = fullUserText.match(/\[\[mcp:([^\s\]]+)(\s+\{[^]*?\})?\]\]/)
       if (directive && tools.some((t) => t.name === directive[1])) {
         if (signal?.aborted) return

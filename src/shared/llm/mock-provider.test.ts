@@ -40,4 +40,24 @@ describe('MockLLMProvider', () => {
     assert.match(text, /Mock response to:/)
     assert.ok(!chunks.some((c) => c.type === 'tool_call'))
   })
+  it('honors [[mcp:write_file]] on a later user turn', async () => {
+    const provider = new MockLLMProvider()
+    const tools: LLMTool[] = [{ name: 'write_file', description: 'write', parameters: {} }]
+    const messages: LLMMessage[] = [
+      { role: 'user', content: 'hello' },
+      { role: 'assistant', content: [{ id: '1', name: 'list_dir', args: { path: '.' } }] },
+      { role: 'tool', toolResults: [{ toolCallId: '1', result: 'ok' }] },
+      { role: 'assistant', content: 'done' },
+      { role: 'user', content: '[[mcp:write_file {"path":"a.ts","content":"x"}]]' },
+    ]
+    const chunks = await collectChunks(provider, messages, tools)
+    assert.ok(chunks.some((c) => c.type === 'tool_call' && c.toolCall.name === 'write_file'))
+  })
+
+  it('honors a bounded delay directive for e2e timing', async () => {
+    const provider = new MockLLMProvider()
+    const startedAt = Date.now()
+    await collectChunks(provider, [{ role: 'user', content: 'hello [[mock:delay_ms 5]]' }], [])
+    assert.ok(Date.now() - startedAt >= 5)
+  })
 })

@@ -4,6 +4,7 @@ import { dirname } from 'node:path'
 import { MAX_FS_WRITE_BYTES } from '../ipc/ipc-guards.ts'
 import { getWorkspaceRoot } from '../services/workspace.ts'
 import { runCommand } from '../services/command-runner.ts'
+import { fsWorkerSandboxOverlay } from './config.ts'
 import { isProjectSandboxEnabled } from './spawn.ts'
 
 /** JSON-wrapped readFile payloads can be ~2× raw bytes when heavily escaped. */
@@ -20,13 +21,16 @@ async function invokeWorker<T extends Record<string, unknown>>(
   const root = getWorkspaceRoot()
   if (!root) throw new Error('No workspace open. Use Open Folder first.')
 
+  const workerPath = sandboxFsWorkerPath()
   const { stdout, stderr, code } = await runCommand(
     process.execPath,
-    [sandboxFsWorkerPath(), JSON.stringify(request)],
+    [workerPath, JSON.stringify(request)],
     {
+      cwd: root,
       // Electron must run as Node inside seatbelt; otherwise MachPort rendezvous FATALs with empty stdout.
       env: { ELECTRON_RUN_AS_NODE: '1' },
       stdoutMaxBytes: SANDBOX_FS_WORKER_STDOUT_MAX_BYTES,
+      sandboxConfig: fsWorkerSandboxOverlay(root, workerPath),
     },
   )
 
@@ -38,7 +42,8 @@ async function invokeWorker<T extends Record<string, unknown>>(
   try {
     parsed = JSON.parse(stdout.trim()) as { ok: boolean; error?: string } & T
   } catch {
-    throw new Error(`sandbox fs worker returned invalid JSON: ${stdout.slice(0, 200)}`)
+    const detail = stderr.trim() || stdout.trim() || '(empty output)'
+    throw new Error(`sandbox fs worker returned invalid JSON: ${detail.slice(0, 200)}`)
   }
 
   if (!parsed.ok) {

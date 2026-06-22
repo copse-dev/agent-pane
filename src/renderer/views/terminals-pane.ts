@@ -23,6 +23,7 @@ const XTERM_THEME = {
 interface TerminalTab {
   id: string
   label: string
+  labelSpan: HTMLElement
   panel: HTMLElement
   container: HTMLElement
   tabBtn: HTMLButtonElement
@@ -32,6 +33,15 @@ interface TerminalTab {
   creating: boolean
   pendingInput: string[]
   termOpened: boolean
+  /** True once the user has submitted a command, gating auto-naming. */
+  commandRan: boolean
+  /** True once the LLM has produced a label (don't auto-name again). */
+  autoNamed: boolean
+  /** True once the user manually renamed the tab (never auto-name after). */
+  renamed: boolean
+  /** True while a naming request is in flight. */
+  naming: boolean
+  nameTimer: ReturnType<typeof setTimeout> | null
 }
 
 function terminalModeActive(store: AppStore): boolean {
@@ -70,7 +80,10 @@ export function mountTerminalsPane(
 
   const unsubOutput = api.terminal.onOutput((id, data) => {
     for (const tab of tabs.values()) {
-      if (tab.sessionId === id) tab.term.write(data)
+      if (tab.sessionId === id) {
+        tab.term.write(data)
+        if (tab.commandRan) scheduleAutoName(tab)
+      }
     }
   })
 
@@ -91,6 +104,94 @@ export function mountTerminalsPane(
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
     return { term, fitAddon }
+  }
+
+  function setTabLabel(tab: TerminalTab, label: string) {
+    tab.label = label
+    tab.labelSpan.textContent = label
+    tab.tabBtn.title = label
+  }
+
+  // Read the recent visible/scrollback text from the xterm buffer (ANSI-free),
+  // for handing to the small-tasks model when auto-naming.
+  function readTerminalText(tab: TerminalTab): string {
+    const buf = tab.term.buffer.active
+    const end = buf.length
+    const start = Math.max(0, end - 200)
+    const lines: string[] = []
+    for (let i = start; i < end; i++) {
+      lines.push(buf.getLine(i)?.translateToString(true) ?? '')
+    }
+    return lines.join('\n').trim()
+  }
+
+  async function autoNameTab(tab: TerminalTab) {
+    if (tab.renamed || tab.autoNamed || tab.naming) return
+    const text = readTerminalText(tab)
+    if (text.length < 8) return
+    tab.naming = true
+    try {
+      const title = await api.agent.suggestTerminalTitle(text)
+      if (title && !tab.renamed) {
+        setTabLabel(tab, title)
+        tab.autoNamed = true
+      }
+    } catch {
+      // Leave the default "Terminal N" label in place.
+    } finally {
+      tab.naming = false
+    }
+  }
+
+  // Debounce naming until terminal output settles after a command.
+  function scheduleAutoName(tab: TerminalTab) {
+    if (tab.renamed || tab.autoNamed || tab.naming) return
+    if (tab.nameTimer != null) clearTimeout(tab.nameTimer)
+    tab.nameTimer = setTimeout(() => {
+      tab.nameTimer = null
+      void autoNameTab(tab)
+    }, 2500)
+  }
+
+  // Replace the tab label with an inline text field for manual renaming.
+  function beginRename(tab: TerminalTab) {
+    if (tab.nameTimer != null) {
+      clearTimeout(tab.nameTimer)
+      tab.nameTimer = null
+    }
+    const input = el('input', {
+      type: 'text',
+      class: 'terminals-tab-rename',
+    }) as HTMLInputElement
+    input.value = tab.label
+    let done = false
+    const finish = (save: boolean) => {
+      if (done) return
+      done = true
+      const next = input.value.trim()
+      input.replaceWith(tab.labelSpan)
+      if (save && next) {
+        setTabLabel(tab, next)
+        tab.renamed = true
+      }
+    }
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation()
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        finish(true)
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        finish(false)
+      }
+    })
+    input.addEventListener('blur', () => finish(true))
+    for (const evt of ['click', 'dblclick', 'mousedown'] as const) {
+      input.addEventListener(evt, (e) => e.stopPropagation())
+    }
+    tab.labelSpan.replaceWith(input)
+    input.focus()
+    input.select()
   }
 
   function openTerminalSurface(tab: TerminalTab) {
@@ -172,6 +273,10 @@ export function mountTerminalsPane(
 
   function wireTabInput(tab: TerminalTab) {
     tab.term.onData((data) => {
+      if (data.includes('\r')) {
+        tab.commandRan = true
+        scheduleAutoName(tab)
+      }
       if (!tab.sessionId) {
         tab.pendingInput.push(data)
         void ensureSession(tab)
@@ -198,10 +303,11 @@ export function mountTerminalsPane(
       },
       '×',
     )
+    const labelSpan = el('span', { class: 'terminals-tab-label' }, label)
     const tabBtn = el(
       'button',
-      { type: 'button', class: 'terminals-tab', 'data-tab-id': id },
-      el('span', { class: 'terminals-tab-label' }, label),
+      { type: 'button', class: 'terminals-tab', 'data-tab-id': id, title: label },
+      labelSpan,
       closeBtn,
     ) as HTMLButtonElement
 
@@ -213,6 +319,7 @@ export function mountTerminalsPane(
     const tab: TerminalTab = {
       id,
       label,
+      labelSpan,
       panel,
       container,
       tabBtn,
@@ -222,11 +329,20 @@ export function mountTerminalsPane(
       creating: false,
       pendingInput: [],
       termOpened: false,
+      commandRan: false,
+      autoNamed: false,
+      renamed: false,
+      naming: false,
+      nameTimer: null,
     }
 
     tabBtn.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest('.terminals-tab-close')) return
       setActiveTab(id)
+    })
+    labelSpan.addEventListener('dblclick', (e) => {
+      e.stopPropagation()
+      beginRename(tab)
     })
     closeBtn.addEventListener('click', (e) => {
       e.stopPropagation()
@@ -246,6 +362,7 @@ export function mountTerminalsPane(
   async function removeTab(tabId: string) {
     const tab = tabs.get(tabId)
     if (!tab) return
+    if (tab.nameTimer != null) clearTimeout(tab.nameTimer)
     await destroySession(tab)
     tab.term.dispose()
     tab.tabBtn.remove()
@@ -330,6 +447,7 @@ export function mountTerminalsPane(
     unsubExit()
     void (async () => {
       for (const tab of tabs.values()) {
+        if (tab.nameTimer != null) clearTimeout(tab.nameTimer)
         await destroySession(tab)
         tab.term.dispose()
       }

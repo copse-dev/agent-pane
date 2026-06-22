@@ -1,6 +1,7 @@
 import { AnthropicProvider } from './anthropic-provider.ts'
 import { OpenAIProvider } from './openai-provider.ts'
 import { MockLLMProvider } from './mock-provider.ts'
+import { DEFAULT_CLOUD_MODEL } from './model-catalog.ts'
 import type { LLMProvider } from './types.ts'
 
 interface ProviderKeys {
@@ -36,7 +37,7 @@ export function createProvider(model?: string, keys: ProviderKeys = {}): LLMProv
     return new AnthropicProvider(m, { apiKey: anthropicApiKey })
   }
   if (anthropicApiKey) {
-    return new AnthropicProvider(model ?? process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6', {
+    return new AnthropicProvider(model ?? process.env.ANTHROPIC_MODEL ?? DEFAULT_CLOUD_MODEL, {
       apiKey: anthropicApiKey,
     })
   }

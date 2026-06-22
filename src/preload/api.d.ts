@@ -27,6 +27,7 @@ export interface ApiClient {
     abort: (threadId: string) => Promise<void>
     clearHistory: (threadId: string) => Promise<void>
     suggestTitle: (text: string) => Promise<string | null>
+    suggestTerminalTitle: (text: string) => Promise<string | null>
     suggestFollowUps: (contextJson: string) => Promise<FollowUpSuggestion[]>
     onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => () => void
     onApprovalRequest: (
@@ -138,6 +139,7 @@ export interface ApiClient {
   }
   index: {
     query: (pattern: string) => Promise<string[]>
+    resolveFileReferences: (candidates: string[]) => Promise<{ candidate: string; path: string }[]>
   }
   skills: {
     list: () => Promise<SkillSummary[]>
