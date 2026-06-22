@@ -12,7 +12,7 @@
     "icons:mac": "node --experimental-strip-types scripts/generate-icon.mts && COPSE_PANEL_REFRESH_DOCK=1 node --experimental-strip-types scripts/patch-dev-name.mts",
     "start:mac": "npm run icons:mac && env -u ELECTRON_RUN_AS_NODE electron dist/main/index.js",
     "start": "electron dist/main/index.js",
-    "postinstall": "node --experimental-strip-types scripts/patch-dev-name.mts && node --experimental-strip-types scripts/postinstall-native.mts && node --experimental-strip-types scripts/fetch-codesearch.mts && node --experimental-strip-types scripts/fetch-search-mcp.mts",
+    "postinstall": "node --experimental-strip-types scripts/patch-dev-name.mts && node --experimental-strip-types scripts/postinstall-native.mts && node --experimental-strip-types scripts/fetch-codesearch.mts",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint .",
     "format": "prettier --write .",

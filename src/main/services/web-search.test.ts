@@ -1,8 +1,8 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { htmlToMarkdown } from '../../../vendor/search-mcp/src/markdown.ts'
+import { htmlToMarkdown } from './web-search/markdown.ts'
 
-describe('search-mcp markdown', () => {
+describe('web search markdown', () => {
   it('strips scripts and converts headings', () => {
     const md = htmlToMarkdown(`
       <html><body>

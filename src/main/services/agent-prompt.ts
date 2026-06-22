@@ -2,7 +2,7 @@
 // of their rules; they differ only in the available tools and whether context is
 // gathered via `explore` or direct reads/searches. Keep the shared wording (and
 // the modifying-files rules) in one place and vary the rest.
-const SHARED_WEB_TOOLS = `- web_search: Search the public web (DuckDuckGo, no API key)
+const SHARED_WEB_TOOLS = `- web_search: Search the public web
 - fetch_url: Fetch a URL and return readable Markdown`
 
 const SHARED_TOOL_TAIL = `- git_status: Show working tree status

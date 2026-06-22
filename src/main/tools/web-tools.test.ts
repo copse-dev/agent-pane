@@ -10,7 +10,7 @@ describe('web tools registration', () => {
     assert.equal(registry.has('fetch_url'), true)
   })
 
-  it('auto-runs web tools without MCP approval', () => {
+  it('auto-runs web tools as read-only built-ins', () => {
     assert.equal(SANDBOX_TOOLS.has('web_search'), true)
     assert.equal(SANDBOX_TOOLS.has('fetch_url'), true)
   })
