@@ -1,0 +1,8 @@
+{
+  "id": "working-brief-subagent-eval",
+  "description": "Turn 1 sets workingBrief; turn 2 explicitly requests explore so subagent parentGoal should use the brief.",
+  "prompts": [
+    "refactor the authentication module",
+    "Use the explore tool to find where validate-api-key.ts is imported and summarize the dependency graph."
+  ]
+}

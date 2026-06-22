@@ -1,0 +1,5 @@
+{
+  "id": "working-brief-eval",
+  "description": "Two-turn scenario: set workingBrief on first message; follow-up must not overwrite it.",
+  "prompts": ["refactor the authentication module", "now run the tests"]
+}
