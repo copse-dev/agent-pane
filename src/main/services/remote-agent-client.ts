@@ -8,6 +8,7 @@ import {
 } from '@shared/remote-agent-stream.ts'
 import {
   DEFAULT_CURSOR_AGENT_BASE_URL,
+  REMOTE_AGENT_MODELS,
   REMOTE_AGENT_MODEL_PREFIX,
   REMOTE_AGENT_PROVIDER_CURSOR,
   type RemoteAgentProvider,
@@ -24,6 +25,8 @@ interface RemoteAgentSession {
   provider: RemoteAgentProvider
   baseUrl: string
   agentId: string
+  /** Web URL for the remote run (e.g. cursor.com/agents/...), shown in the transcript. */
+  url?: string
 }
 
 interface RemoteAgentRunResult {
@@ -43,7 +46,7 @@ interface RemoteAgentRunOptions {
 }
 
 interface CursorCreateAgentResponse {
-  agent?: { id?: string }
+  agent?: { id?: string; url?: string }
   run?: { id?: string; agentId?: string }
 }
 
@@ -165,7 +168,7 @@ async function createRemoteAgent(input: {
   baseUrl: string
   apiKey: string
   prompt: PromptPayload
-}): Promise<{ agentId: string; runId: string }> {
+}): Promise<{ agentId: string; runId: string; url?: string }> {
   const repository = await resolveRepository()
   const startingRef = getSetting<string>('remoteAgentStartingRef', '').trim()
   const body = {
@@ -190,7 +193,30 @@ async function createRemoteAgent(input: {
     body: JSON.stringify(body),
   })
   const json = await readJsonResponse<CursorCreateAgentResponse>(response, 'Remote agent create')
-  return { agentId: assertAgentId(json), runId: assertRunId(json) }
+  return {
+    agentId: assertAgentId(json),
+    runId: assertRunId(json),
+    ...(json.agent?.url ? { url: json.agent.url } : {}),
+  }
+}
+
+function remoteAgentLabel(provider: RemoteAgentProvider): string {
+  return REMOTE_AGENT_MODELS.find((option) => option.provider === provider)?.label ?? 'remote agent'
+}
+
+/**
+ * Opening status line so users can see the turn was handed off to the remote
+ * machine (and follow along in the web UI) instead of running locally.
+ */
+function buildLaunchNotice(input: {
+  provider: RemoteAgentProvider
+  reused: boolean
+  url?: string
+}): string {
+  const label = remoteAgentLabel(input.provider)
+  const verb = input.reused ? 'Continuing on' : 'Running on'
+  const link = input.url ? ` — follow along at ${input.url}` : ''
+  return `_${verb} ${label}${link}_\n\n`
 }
 
 async function createRemoteRun(input: {
@@ -327,7 +353,7 @@ export async function runRemoteAgentFromSettings(
   const canReuseSession =
     priorSession?.provider === options.provider && priorSession.baseUrl === baseUrl
 
-  const run = canReuseSession
+  const run: { agentId: string; runId: string; url?: string } = canReuseSession
     ? {
         agentId: priorSession.agentId,
         runId: await createRemoteRun({
@@ -337,6 +363,7 @@ export async function runRemoteAgentFromSettings(
           agentId: priorSession.agentId,
           prompt,
         }),
+        ...(priorSession.url ? { url: priorSession.url } : {}),
       }
     : await createRemoteAgent({ fetchImpl, baseUrl, apiKey, prompt })
 
@@ -345,6 +372,18 @@ export async function runRemoteAgentFromSettings(
     provider: options.provider,
     baseUrl,
     agentId: run.agentId,
+    ...(run.url ? { url: run.url } : {}),
+  })
+
+  // Make the remote hand-off explicit in the transcript (parity with how a local
+  // chat shows its activity inline).
+  options.onChunk({
+    type: 'text',
+    text: buildLaunchNotice({
+      provider: options.provider,
+      reused: canReuseSession,
+      ...(run.url ? { url: run.url } : {}),
+    }),
   })
 
   const abortCancel = () => {

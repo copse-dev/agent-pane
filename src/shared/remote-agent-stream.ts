@@ -30,6 +30,26 @@ interface CursorToolCallEvent {
   }
 }
 
+interface RemoteGitInfo {
+  branches?: Array<{ repoUrl?: string; branch?: string; prUrl?: string }>
+}
+
+/**
+ * Cursor Cloud agents push branches / open PRs rather than editing the local
+ * working tree, so the transcript surfaces that as the parity equivalent of the
+ * Changes pane for a local chat run.
+ */
+export function formatRemoteGitSummary(git: RemoteGitInfo | undefined): string {
+  const branches = git?.branches?.filter((b) => b.branch) ?? []
+  if (branches.length === 0) return ''
+  const lines = branches.map((b) => {
+    const repo = b.repoUrl ? ` on ${b.repoUrl}` : ''
+    const pr = b.prUrl ? ` — ${b.prUrl}` : ''
+    return `- Pushed branch \`${b.branch}\`${repo}${pr}`
+  })
+  return `\n\n---\n_Remote agent updated the repository:_\n${lines.join('\n')}`
+}
+
 function parseDataUrl(dataUrl: string): { mimeType: string; data: string } {
   const match = dataUrl.match(/^data:([^;,]+);base64,(.*)$/)
   if (!match) {
@@ -166,14 +186,19 @@ export function remoteStreamEventToChunks(
   }
 
   if (event.event === 'result') {
-    const payload = parseJsonEventData<{ status?: string; text?: string }>(event)
+    const payload = parseJsonEventData<{ status?: string; text?: string; git?: RemoteGitInfo }>(
+      event,
+    )
     state.terminalStatus = payload.status ?? null
     state.resultText = payload.text ?? ''
+    const chunks: StreamChunk[] = []
     if (!state.assistantText && payload.text) {
       state.assistantText = payload.text
-      return [{ type: 'text', text: payload.text }]
+      chunks.push({ type: 'text', text: payload.text })
     }
-    return []
+    const gitSummary = formatRemoteGitSummary(payload.git)
+    if (gitSummary) chunks.push({ type: 'text', text: gitSummary })
+    return chunks
   }
 
   if (event.event === 'error') {

@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { StreamChunk } from '@shared/types'
 import {
+  formatRemoteGitSummary,
   parseSseBlock,
   promptPayloadFromUserContent,
   remoteStreamEventToChunks,
@@ -99,6 +100,52 @@ describe('remoteStreamEventToChunks', () => {
     assert.deepEqual(chunks, [{ type: 'text', text: 'Final answer' }])
     assert.equal(current.assistantText, 'Final answer')
     assert.equal(current.terminalStatus, 'FINISHED')
+  })
+
+  it('appends a pushed-branch summary after already-streamed assistant text', () => {
+    const current = state()
+    current.assistantText = 'Done.'
+    const chunks = remoteStreamEventToChunks(
+      {
+        event: 'result',
+        data: JSON.stringify({
+          status: 'FINISHED',
+          text: 'Done.',
+          git: {
+            branches: [{ repoUrl: 'github.com/acme/repo', branch: 'cursor/add-readme-a1b2' }],
+          },
+        }),
+      },
+      current,
+    )
+
+    assert.equal(chunks.length, 1)
+    assert.equal(chunks[0]?.type, 'text')
+    assert.match(
+      (chunks[0] as { text: string }).text,
+      /Pushed branch `cursor\/add-readme-a1b2` on github\.com\/acme\/repo/,
+    )
+  })
+})
+
+describe('formatRemoteGitSummary', () => {
+  it('returns an empty string when there are no pushed branches', () => {
+    assert.equal(formatRemoteGitSummary(undefined), '')
+    assert.equal(formatRemoteGitSummary({ branches: [] }), '')
+  })
+
+  it('includes the PR url when the remote agent opened one', () => {
+    const summary = formatRemoteGitSummary({
+      branches: [
+        {
+          repoUrl: 'github.com/acme/repo',
+          branch: 'cursor/fix',
+          prUrl: 'https://github.com/acme/repo/pull/7',
+        },
+      ],
+    })
+
+    assert.match(summary, /https:\/\/github\.com\/acme\/repo\/pull\/7/)
   })
 })
 

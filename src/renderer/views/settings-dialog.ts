@@ -131,14 +131,22 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Default model
                 <select name="model"></select>
               </label>
+              <span class="field-hint">
+                Pick a cloud, local, or remote-agent model here (or from the model picker beside the
+                chat box). Selecting <strong>Cursor Cloud Agent</strong> sends each turn to Cursor
+                Cloud instead of running it on this machine — configure it below.
+              </span>
             </fieldset>
 
             <fieldset>
-              <legend>Remote agents</legend>
+              <legend>Remote agents (Cursor Cloud)</legend>
               <p class="settings-fieldset-desc">
-                Run chat turns on a remote agent machine. Cursor Cloud Agent uses
-                <code>https://api.cursor.com</code>; Copse-compatible APIs can expose the same v1 agent
-                endpoints at another base URL.
+                Choose <strong>Cursor Cloud Agent</strong> as your model to run chat turns on Cursor
+                Cloud. The conversation streams back here just like a normal chat, but the work
+                happens on a remote machine: the agent runs its own tools, pushes commits to a
+                branch, and (optionally) opens a pull request. It does <strong>not</strong> edit the
+                files in this local workspace — review its changes in the branch / PR it links in the
+                reply. Needs a Cursor API key (added under API Keys above).
               </p>
               <label>
                 Agent API base URL
@@ -149,7 +157,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   autocomplete="off"
                 />
                 <span class="field-hint">
-                  Leave as Cursor's API URL for Cursor Cloud Agent, or set a Copse-compatible server.
+                  Keep <code>https://api.cursor.com</code> for Cursor Cloud Agent. Point this at a
+                  Copse-compatible server (same v1 agent API) to use that instead.
                 </span>
               </label>
               <label>
@@ -160,6 +169,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   placeholder="https://github.com/owner/repo (defaults to workspace origin)"
                   autocomplete="off"
                 />
+                <span class="field-hint">
+                  Which GitHub repo the remote agent works on. Leave blank to use this workspace's
+                  <code>origin</code> remote.
+                </span>
               </label>
               <label>
                 Starting ref
@@ -169,14 +182,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   placeholder="main (optional)"
                   autocomplete="off"
                 />
+                <span class="field-hint">Branch or commit the remote agent branches from.</span>
               </label>
               <label class="checkbox-label">
                 <input type="checkbox" name="remoteAgentAutoCreatePR" />
-                Ask the remote agent to create a PR when it finishes
+                Open a pull request automatically when the remote agent finishes
               </label>
               <label class="checkbox-label">
                 <input type="checkbox" name="remoteAgentWorkOnCurrentBranch" />
-                Let the remote agent push to the configured starting ref
+                Push directly to the starting ref instead of a new <code>cursor/…</code> branch
               </label>
             </fieldset>
 

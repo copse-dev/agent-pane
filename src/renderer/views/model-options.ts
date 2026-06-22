@@ -54,7 +54,7 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
         available.cursor
           ? { value: remote.value, label: remote.label, group: remoteGroup }
           : {
-              value: '',
+              value: remote.value,
               label: `${remote.label} — configure Cursor API key`,
               group: remoteGroup,
               disabled: true,
@@ -68,7 +68,7 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
         available.cursor && configured
           ? { value: remote.value, label: remote.label, group: remoteGroup }
           : {
-              value: '',
+              value: remote.value,
               label: `${remote.label} — configure remote API URL and key`,
               group: remoteGroup,
               disabled: true,
