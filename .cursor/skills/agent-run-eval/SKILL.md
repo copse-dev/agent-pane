@@ -55,6 +55,8 @@ COPSE_EVAL_USE_MOCK=1 npm run test:e2e:agent-eval
 ```
 
 The spec prints `COPSE_EVAL_ARTIFACT=/path/to/tests/e2e/artifacts/<id>-<ts>.jsonl`.
+WDIO eval user-data/profile directories are removed after the session; set
+`COPSE_EVAL_KEEP_WDIO=1` to keep `.wdio-eval-*` directories for crash debugging.
 
 On macOS in Cursor’s agent shell, unset `ELECTRON_RUN_AS_NODE` when launching Electron manually; the WDIO wrapper handles this.
 

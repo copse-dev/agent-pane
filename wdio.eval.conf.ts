@@ -6,6 +6,7 @@ import { randomBytes } from 'node:crypto'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
 
 const EVAL_ENV_FILE = join(process.cwd(), 'tests/e2e/electron-shell/.eval-env.json')
+const KEEP_EVAL_WDIO = process.env.COPSE_EVAL_KEEP_WDIO === '1'
 
 /** WDIO config for real local-model agent evals (not mock LLM). */
 const electronShell = join(process.cwd(), 'tests/e2e/electron-shell')
@@ -13,6 +14,21 @@ const chromedriverBinary = join(
   process.cwd(),
   'node_modules/electron-chromedriver/bin/chromedriver',
 )
+
+let evalUserDataDir: string | null = null
+let evalChromeProfileDir: string | null = null
+
+function cleanupEvalRunDirs(): void {
+  if (KEEP_EVAL_WDIO) return
+  if (evalUserDataDir) {
+    rmSync(evalUserDataDir, { recursive: true, force: true })
+    evalUserDataDir = null
+  }
+  if (evalChromeProfileDir) {
+    rmSync(evalChromeProfileDir, { recursive: true, force: true })
+    evalChromeProfileDir = null
+  }
+}
 
 export const config: Options.Testrunner = {
   runner: 'local',
@@ -61,15 +77,15 @@ export const config: Options.Testrunner = {
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
 
-    const evalUserData = mkdtempSync(
+    evalUserDataDir = mkdtempSync(
       join(process.cwd(), `.wdio-eval-userdata-${randomBytes(4).toString('hex')}-`),
     )
-    process.env.COPSE_PANEL_USER_DATA = evalUserData
+    process.env.COPSE_PANEL_USER_DATA = evalUserDataDir
 
     const evalEnv: Record<string, string> = {
       COPSE_E2E: '1',
       COPSE_AGENT_EVAL: '1',
-      COPSE_PANEL_USER_DATA: evalUserData,
+      COPSE_PANEL_USER_DATA: evalUserDataDir,
       ANTHROPIC_API_KEY: '',
       OPENAI_API_KEY: '',
     }
@@ -87,17 +103,21 @@ export const config: Options.Testrunner = {
     }
     const chromeOptions = cap['goog:chromeOptions'] ?? {}
     const debugPort = 19200 + Math.floor(Math.random() * 200)
-    const chromeProfile = mkdtempSync(
+    evalChromeProfileDir = mkdtempSync(
       join(process.cwd(), `.wdio-eval-chrome-${randomBytes(4).toString('hex')}-`),
     )
     cap['goog:chromeOptions'] = {
       ...chromeOptions,
       args: (chromeOptions.args ?? [])
         .filter((a) => !a.startsWith('--remote-debugging-port='))
-        .concat([`--user-data-dir=${chromeProfile}`, `--remote-debugging-port=${debugPort}`]),
+        .concat([
+          `--user-data-dir=${evalChromeProfileDir}`,
+          `--remote-debugging-port=${debugPort}`,
+        ]),
     }
   },
   afterSession() {
     rmSync(EVAL_ENV_FILE, { force: true })
+    cleanupEvalRunDirs()
   },
 }
