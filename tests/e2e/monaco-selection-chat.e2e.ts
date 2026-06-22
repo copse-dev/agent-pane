@@ -45,11 +45,25 @@ async function focusMonacoInput(): Promise<void> {
 async function dragSelectFirstMonacoLine(): Promise<void> {
   const firstLine = await $('#file-viewer .monaco-editor .view-line')
   await firstLine.waitForDisplayed({ timeout: 5_000 })
+  const rect = await browser.execute(() => {
+    const line = document.querySelector('#file-viewer .monaco-editor .view-line')
+    if (!line) throw new Error('Monaco line not found')
+    const bounds = line.getBoundingClientRect()
+    return {
+      left: bounds.left,
+      top: bounds.top,
+      width: bounds.width,
+      height: bounds.height,
+    }
+  })
+  const startX = Math.round(rect.left + 4)
+  const endX = Math.round(rect.left + Math.max(12, rect.width - 4))
+  const y = Math.round(rect.top + rect.height / 2)
   await browser
     .action('pointer')
-    .move({ duration: 0, origin: firstLine, x: 4, y: 8 })
+    .move({ duration: 0, origin: 'viewport', x: startX, y })
     .down({ button: 0 })
-    .move({ duration: 250, origin: firstLine, x: 260, y: 8 })
+    .move({ duration: 250, origin: 'viewport', x: endX, y })
     .up({ button: 0 })
     .perform()
 }
