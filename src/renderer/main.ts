@@ -34,7 +34,11 @@ import {
   attachProjectThreadCache,
   restoreProject,
 } from './controller/projects.ts'
-import { openRightPanelWithWorkspace, toggleFilesPaneWithWorkspace } from './controller/panels.ts'
+import {
+  openRightPanelWithWorkspace,
+  toggleFilesPaneWithWorkspace,
+  syncFilesPaneDom,
+} from './controller/panels.ts'
 import { initMonaco } from './monaco/setup.ts'
 import { mountPaneResizers, parseSavedLayout } from './views/pane-resizer.ts'
 import { bindChatComposerLayout } from './views/chat-layout.ts'
@@ -181,8 +185,7 @@ function mountFullLayout() {
 // The right pane (explorer + file viewer) is hidden by default so chat is
 // full width; it shows when filesPaneOpen is set (toggle, or auto on file open).
 function updateFilesPane() {
-  const pane = document.getElementById('pane-files')
-  if (pane) pane.hidden = !store.getState().filesPaneOpen
+  syncFilesPaneDom(store)
 }
 
 function registerKeyboardShortcuts() {

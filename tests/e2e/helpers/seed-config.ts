@@ -207,6 +207,38 @@ export function seedMarkdownListFixture(workspaceRoot: string): void {
   )
 }
 
+export function seedBrowserLinkChatFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-browser-link-chat-project'
+  const threadId = 'e2e-browser-link-chat-thread'
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Browser link chat',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-link',
+              role: 'assistant',
+              content: 'See [Example Domain](https://example.com) for details.',
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
 /** Git tool cards followed by an ordered-list summary (typical post-tool agent reply). */
 export function seedGitSummaryMarkdownFixture(workspaceRoot: string): void {
   const projectId = 'e2e-git-summary-md-project'
