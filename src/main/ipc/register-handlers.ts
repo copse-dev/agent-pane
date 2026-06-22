@@ -44,7 +44,12 @@ import { storageGet, storageSet } from '../services/storage.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills-registry.ts'
 import { registerSkillTools } from '../services/registry-bootstrap.ts'
-import { getGitFileDiff, getGitStatus, isInsideGitWorkTree } from '../services/git-service.ts'
+import {
+  checkoutGitBranch,
+  getGitFileDiff,
+  getGitStatus,
+  isInsideGitWorkTree,
+} from '../services/git-service.ts'
 import { getGitBranchStatus } from '../services/pr-context-service.ts'
 import { isGitAvailable } from '../services/tool-availability.ts'
 import {
@@ -214,6 +219,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const branch =
       forBranch === undefined ? undefined : parseIpcArgs(z.string().max(256), [forBranch])
     return getGitBranchStatus(branch)
+  })
+  ipcMain.handle('git:checkoutBranch', async (event, branch: unknown) => {
+    assertMainFrameSender(event, win)
+    const targetBranch = parseIpcArgs(z.string().min(1).max(256), [branch])
+    await checkoutGitBranch(targetBranch)
   })
   ipcMain.handle('shell:openExternal', (event, url: unknown) => {
     assertMainFrameSender(event, win)

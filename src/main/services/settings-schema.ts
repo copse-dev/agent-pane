@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { RENDERER_WRITABLE_SETTING_SCHEMAS } from './settings-writable.ts'
+import { RENDERER_WRITABLE_SETTING_SCHEMAS, webAllowedOriginsSchema } from './settings-writable.ts'
 
 // Schema registry for keys persisted in the `settings` electron-store. Reads
 // validate against the matching schema (corrupt values fall back to the default)
@@ -24,6 +24,8 @@ const MAIN_ONLY_SETTING_SCHEMAS = {
   mcpAutoAllowReadOnly: z.boolean(),
   safeInstallEnabled: z.boolean(),
   mockFollowUps: z.boolean(),
+  webAllowedOrigins: webAllowedOriginsSchema,
+  webAllowUserApproval: z.boolean(),
 } as const satisfies Record<string, z.ZodType>
 
 const SETTING_SCHEMAS: Record<string, z.ZodType> = {

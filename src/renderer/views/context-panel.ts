@@ -11,6 +11,7 @@ import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/fil
 import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { revealFirstDiffChangeOnNextUpdate } from '../monaco/diff-scroll.ts'
+import { registerMonacoSelectionToChatShortcut } from '../monaco/selection-to-chat.ts'
 import { showErrorToast } from './toast.ts'
 
 type MarkdownViewMode = 'preview' | 'source'
@@ -141,6 +142,7 @@ export function mountContextPanel(
   const diffCache = new Map<string, ActiveDiff>()
   let selectedDiffPath: string | null = null
   let cancelPendingDiffReveal: (() => void) | null = null
+  let currentDiffView: ActiveDiff | null = null
 
   api.diff.onShowDiff((path, before, after, language) => {
     diffCache.set(path, { path, before, after, language })
@@ -176,6 +178,7 @@ export function mountContextPanel(
     const oldModels = diffEditor.getModel()
     cancelPendingDiffReveal?.()
     cancelPendingDiffReveal = revealFirstDiffChangeOnNextUpdate(diffEditor)
+    currentDiffView = view
     diffEditor.setModel({
       original: monaco.editor.createModel(view.before, view.language),
       modified: monaco.editor.createModel(view.after, view.language),
@@ -195,6 +198,17 @@ export function mountContextPanel(
     }
   })
 
+  registerMonacoSelectionToChatShortcut(fileEditor, monaco, () => {
+    const { openFile } = store.getState()
+    return openFile ? { path: openFile.path } : null
+  })
+  registerMonacoSelectionToChatShortcut(diffEditor.getOriginalEditor(), monaco, () =>
+    currentDiffView ? { path: currentDiffView.path, detail: 'before' } : null,
+  )
+  registerMonacoSelectionToChatShortcut(diffEditor.getModifiedEditor(), monaco, () =>
+    currentDiffView ? { path: currentDiffView.path, detail: 'after' } : null,
+  )
+
   function updatePanel() {
     const { openFile, activeDiff, panelTab, stagedDiffs } = store.getState()
     const queue = stagedDiffs ?? []
@@ -209,6 +223,7 @@ export function mountContextPanel(
     if (panelTab === 'file' && openFile) {
       emptyContainer.hidden = true
       diffStage.hidden = true
+      currentDiffView = null
       cancelPendingDiffReveal?.()
       cancelPendingDiffReveal = null
 
@@ -250,6 +265,7 @@ export function mountContextPanel(
         showDiffView(view)
       } else {
         selectedDiffPath = null
+        currentDiffView = null
         fileToolbar.hidden = true
         previewContainer.hidden = true
         fileContainer.hidden = true
@@ -259,6 +275,7 @@ export function mountContextPanel(
         emptyContainer.hidden = false
       }
     } else {
+      currentDiffView = null
       fileToolbar.hidden = true
       previewContainer.hidden = true
       fileContainer.hidden = true

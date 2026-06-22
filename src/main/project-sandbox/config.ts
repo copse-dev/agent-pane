@@ -1,7 +1,13 @@
-import { accessSync, realpathSync } from 'node:fs'
+import { accessSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
+import { getSetting } from '../services/settings.ts'
+import {
+  WEB_ALLOWED_ORIGINS_SETTING,
+  sandboxAllowedDomainsFromOrigins,
+  webAllowedOriginsWithDefaults,
+} from '../services/web-origin-policy.ts'
 
 /**
  * Resolve the workspace root to its canonical, symlink-free path.
@@ -78,13 +84,32 @@ function gitConfigReadPaths(): string[] {
   ]
 }
 
+function sandboxAllowedDomainsFromSettings(): string[] {
+  return sandboxAllowedDomainsFromOrigins(
+    webAllowedOriginsWithDefaults(getSetting<string[] | null>(WEB_ALLOWED_ORIGINS_SETTING, null)),
+  )
+}
+
+export function sandboxNetworkConfig(
+  allowedOrigins: readonly string[] | null | undefined = null,
+): NonNullable<SandboxRuntimeConfig['network']> {
+  const allowedDomains =
+    allowedOrigins === null
+      ? sandboxAllowedDomainsFromSettings()
+      : sandboxAllowedDomainsFromOrigins(webAllowedOriginsWithDefaults(allowedOrigins))
+  return {
+    allowedDomains,
+    deniedDomains: [],
+    allowLocalBinding: allowedDomains.some((domain) =>
+      ['localhost', '127.0.0.1', '::1'].includes(domain),
+    ),
+  }
+}
+
 /** Base ASRT config; workspace-specific paths are passed per spawn via `customConfig`. */
 export function baseSandboxConfig(): SandboxRuntimeConfig {
   return {
-    network: {
-      allowedDomains: [],
-      deniedDomains: ['*'],
-    },
+    network: sandboxNetworkConfig(),
     filesystem: {
       denyRead: [],
       allowWrite: [],
@@ -127,11 +152,25 @@ export function resolveNodeToolchainAllowRead(env: NodeJS.ProcessEnv = process.e
 
 /** Paths the bundled sandbox-fs worker must read to exec under ASRT (outside the workspace). */
 export function electronRuntimeAllowReadPaths(): string[] {
-  const exec = resolve(process.execPath)
+  let exec = resolve(process.execPath)
+  try {
+    exec = realpathSync.native(exec)
+  } catch {
+    // Keep resolve() result when the binary is not stat-able yet.
+  }
   const paths = [exec, dirname(exec), `${dirname(exec)}/**`]
   if (process.platform === 'darwin' && exec.includes('.app/')) {
     const appRoot = `${exec.split('.app/')[0]!}.app`
-    paths.push(resolve(appRoot), `${resolve(appRoot)}/**`)
+    try {
+      const realAppRoot = realpathSync.native(resolve(appRoot))
+      paths.push(realAppRoot, `${realAppRoot}/**`)
+      const macOsDir = join(realAppRoot, 'Contents', 'MacOS')
+      if (statSync(macOsDir).isDirectory()) {
+        paths.push(macOsDir, `${macOsDir}/**`)
+      }
+    } catch {
+      paths.push(resolve(appRoot), `${resolve(appRoot)}/**`)
+    }
   }
   return [...new Set(paths)]
 }
@@ -168,10 +207,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   const root = canonicalizeWorkspaceRoot(workspaceRoot)
   const toolchainRead = resolveNodeToolchainAllowRead()
   return {
-    network: {
-      allowedDomains: [],
-      deniedDomains: ['*'],
-    },
+    network: sandboxNetworkConfig(),
     filesystem: {
       // Deny home reads, re-allow only this project plus the user's git config
       // files (ASRT deny-then-allow; a more-specific allow overrides the deny).

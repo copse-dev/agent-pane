@@ -207,6 +207,38 @@ export function seedMarkdownListFixture(workspaceRoot: string): void {
   )
 }
 
+export function seedBrowserLinkChatFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-browser-link-chat-project'
+  const threadId = 'e2e-browser-link-chat-thread'
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Browser link chat',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-link',
+              role: 'assistant',
+              content: 'See [Example Domain](https://example.com) for details.',
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
 /** Git tool cards followed by an ordered-list summary (typical post-tool agent reply). */
 export function seedGitSummaryMarkdownFixture(workspaceRoot: string): void {
   const projectId = 'e2e-git-summary-md-project'
@@ -1256,6 +1288,50 @@ export function seedFooterBranchMismatchFixture(workspaceRoot: string): FooterBr
     currentBranch,
     mismatchBranch,
   }
+}
+
+export function seedComposerBranchWarningFixture(workspaceRoot: string): {
+  projectId: string
+  threadId: string
+  mismatchBranch: string
+} {
+  const projectId = 'e2e-composer-branch-warning-project'
+  const threadId = 'e2e-composer-branch-warning-thread'
+  const mismatchBranch = 'feature/thread-branch'
+  const now = Date.now()
+
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Thread branch warning',
+          status: 'idle',
+          gitBranch: mismatchBranch,
+          messages: [
+            {
+              id: 'msg-user-branch-warning',
+              role: 'user',
+              content: 'Continue this branch.',
+              toolCalls: [],
+              createdAt: now,
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+      activeThreadId: threadId,
+    }),
+    'utf8',
+  )
+
+  return { projectId, threadId, mismatchBranch }
 }
 
 /** Table with glob paths in inline code + architecture list (Repo Core Files repro). */

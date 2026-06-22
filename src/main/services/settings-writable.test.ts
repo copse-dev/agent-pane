@@ -32,7 +32,25 @@ describe('settings-writable', () => {
       safetyModel: '',
       autoRunSandboxCommands: false,
       mcpAutoAllowReadOnly: true,
+      webAllowedOrigins: ['https://duckduckgo.com', 'http://localhost:*'],
+      webAllowUserApproval: true,
     })
     assert.equal(parsed.localServerUrl, 'http://127.0.0.1:1234/v1')
+    assert.deepEqual(parsed.webAllowedOrigins, ['https://duckduckgo.com', 'http://localhost:*'])
+  })
+
+  it('rejects malformed web origins in the security bundle', () => {
+    assert.throws(() =>
+      securitySettingsSchema.parse({
+        localServerUrl: '',
+        safetyClassifierEnabled: true,
+        safetyConfidenceThreshold: 0.85,
+        safetyModel: '',
+        autoRunSandboxCommands: true,
+        mcpAutoAllowReadOnly: false,
+        webAllowedOrigins: ['https://example.com/path'],
+        webAllowUserApproval: true,
+      }),
+    )
   })
 })

@@ -1,6 +1,6 @@
 export interface PromptAttachmentHandlers {
   attachFile(file: { path: string; content: string }): void
-  attachTextBlock(content: string): void
+  attachTextBlock(content: string, label?: string): void
   attachImage(dataUrl: string, mimeType: string): void
 }
 

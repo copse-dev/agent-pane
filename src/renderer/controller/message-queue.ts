@@ -1,7 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { AgentRunPayload } from '@shared/types/skills.ts'
-import type { QueuedUserMessage } from '@shared/types'
+import type { Message, QueuedUserMessage } from '@shared/types'
 import { clearContextSnapshot, setThreadStatus } from '@shared/store/thread-helpers.ts'
 import { syncAgentActivity } from '../agent-activity.ts'
 
@@ -60,13 +60,35 @@ export function drainMessageQueue(store: AppStore, api: ApiClient, threadId: str
   const threads = store.getState().threads.map((t) => {
     if (t.id !== threadId) return t
     const { pendingMessages: _removed, ...restThread } = t
+    const messages = movePendingUserMessagesToEnd(t.messages, pending)
     return rest.length > 0
-      ? { ...restThread, pendingMessages: rest, updatedAt: Date.now() }
-      : { ...restThread, updatedAt: Date.now() }
+      ? { ...restThread, messages, pendingMessages: rest, updatedAt: Date.now() }
+      : { ...restThread, messages, updatedAt: Date.now() }
   })
   store.setState({ threads })
   store.emit('threads_changed')
   dispatchAgentRun(store, api, threadId, next.payload)
+}
+
+export function movePendingUserMessagesToEnd(
+  messages: Message[],
+  pending: QueuedUserMessage[],
+): Message[] {
+  const messagesById = new Map(messages.map((message) => [message.id, message]))
+  const pendingMessages: Message[] = []
+  const movedIds = new Set<string>()
+  for (const item of pending) {
+    const message = messagesById.get(item.messageId)
+    if (!message || message.role !== 'user' || movedIds.has(message.id)) continue
+    pendingMessages.push(message)
+    movedIds.add(message.id)
+  }
+  if (pendingMessages.length === 0) return messages
+
+  const settledMessages = messages.filter((message) => !movedIds.has(message.id))
+  const nextMessages = [...settledMessages, ...pendingMessages]
+  const alreadyInOrder = nextMessages.every((message, index) => message === messages[index])
+  return alreadyInOrder ? messages : nextMessages
 }
 
 export function resumePendingQueues(store: AppStore, api: ApiClient): void {
