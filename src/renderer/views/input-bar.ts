@@ -415,9 +415,9 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     chips.append(chip)
   }
 
-  function addTextChip(content: string) {
+  function addTextChip(content: string, explicitLabel?: string) {
     const id = crypto.randomUUID()
-    const label = textBlockLabel(content)
+    const label = explicitLabel ?? textBlockLabel(content)
     attachedTextBlocks.push({ id, label, content })
     const chip = document.createElement('span')
     chip.className = 'attachment-chip text-chip'
