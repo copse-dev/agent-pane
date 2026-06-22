@@ -1,6 +1,12 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { decideShellPermission, SANDBOX_TOOLS } from './permission-policy.ts'
+import {
+  decideShellPermission,
+  decideWebFetchPermission,
+  decideWebSearchPermission,
+  SANDBOX_TOOLS,
+} from './permission-policy.ts'
+import { DEFAULT_WEB_ALLOWED_ORIGINS } from './web-origin-policy.ts'
 import { setPermissionGateForTests } from './tool-registry.ts'
 import { ensureToolPermitted, ensureTerminalPermitted } from './permission-gate.ts'
 import { decideMcpPermission, describeMcpAnnotations } from './permission-policy.ts'
@@ -189,6 +195,44 @@ describe('decideMcpPermission', () => {
       autoAllowReadOnly: true,
     })
     assert.equal(d.action, 'prompt')
+  })
+})
+
+describe('web tool permission decisions', () => {
+  it('allows default DuckDuckGo web search', () => {
+    const d = decideWebSearchPermission({
+      allowedOrigins: DEFAULT_WEB_ALLOWED_ORIGINS,
+      allowUserApproval: true,
+    })
+    assert.equal(d.action, 'allow')
+  })
+
+  it('prompts for fetch_url to a new public origin', () => {
+    const d = decideWebFetchPermission({
+      url: 'https://example.com/docs',
+      allowedOrigins: DEFAULT_WEB_ALLOWED_ORIGINS,
+      allowUserApproval: true,
+    })
+    assert.equal(d.action, 'prompt')
+    assert.equal(d.origin, 'https://example.com:443')
+  })
+
+  it('denies fetch_url to private network targets without prompting', () => {
+    const d = decideWebFetchPermission({
+      url: 'http://169.254.169.254/latest/meta-data',
+      allowedOrigins: DEFAULT_WEB_ALLOWED_ORIGINS,
+      allowUserApproval: true,
+    })
+    assert.equal(d.action, 'deny')
+  })
+
+  it('denies new origins when user approvals are disabled', () => {
+    const d = decideWebFetchPermission({
+      url: 'https://example.com',
+      allowedOrigins: DEFAULT_WEB_ALLOWED_ORIGINS,
+      allowUserApproval: false,
+    })
+    assert.equal(d.action, 'deny')
   })
 })
 

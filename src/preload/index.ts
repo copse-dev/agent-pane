@@ -47,11 +47,19 @@ contextBridge.exposeInMainWorld('api', {
         body: string
         type: string
         allowRemember?: boolean
+        rememberLabel?: string
       }) => void,
     ) => {
       const listener = (
         _e: Electron.IpcRendererEvent,
-        req: { id: string; title: string; body: string; type: string; allowRemember?: boolean },
+        req: {
+          id: string
+          title: string
+          body: string
+          type: string
+          allowRemember?: boolean
+          rememberLabel?: string
+        },
       ) => handler(req)
       ipcRenderer.on('agent:approval_request', listener)
       return () => ipcRenderer.off('agent:approval_request', listener)
@@ -171,6 +179,8 @@ contextBridge.exposeInMainWorld('api', {
       safetyModel: string
       autoRunSandboxCommands: boolean
       mcpAutoAllowReadOnly: boolean
+      webAllowedOrigins: string[]
+      webAllowUserApproval: boolean
     }) => ipcRenderer.invoke('settings:setSecurity', prefs),
     getKey: (provider: 'anthropic' | 'openai' | 'lmstudio') =>
       ipcRenderer.invoke('settings:getKey', provider),

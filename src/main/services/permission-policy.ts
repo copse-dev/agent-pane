@@ -1,6 +1,7 @@
 import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts'
 import type { ClassificationResult } from './safety-classifier.ts'
 import type { McpToolAnnotations } from '@shared/types/mcp.ts'
+import { isWebOriginAllowed, parseFetchUrl, webOriginKey } from './web-origin-policy.ts'
 
 /** Tools that always auto-run (writes still go through the diff queue). */
 export const SANDBOX_TOOLS = new Set([
@@ -16,8 +17,6 @@ export const SANDBOX_TOOLS = new Set([
   'search_codebase',
   'semantic_search',
   'find_files',
-  'web_search',
-  'fetch_url',
   'git_status',
   'git_diff',
   'git_log',
@@ -168,4 +167,64 @@ export function describeMcpAnnotations(ann: McpToolAnnotations | undefined): str
   if (ann.destructiveHint) hints.push('Destructive')
   if (ann.openWorldHint) hints.push('May access external systems')
   return hints
+}
+
+export type WebPermissionDecision =
+  | { action: 'allow'; origin: string; reasons: string[] }
+  | { action: 'prompt'; origin: string; reasons: string[] }
+  | { action: 'deny'; origin: string | null; reasons: string[] }
+
+export function decideWebFetchPermission(input: {
+  url: string
+  allowedOrigins: readonly string[]
+  allowUserApproval: boolean
+}): WebPermissionDecision {
+  let parsed: URL
+  try {
+    parsed = parseFetchUrl(input.url)
+  } catch (error) {
+    return {
+      action: 'deny',
+      origin: null,
+      reasons: [error instanceof Error ? error.message : 'invalid URL'],
+    }
+  }
+
+  const origin = webOriginKey(parsed)
+  if (isWebOriginAllowed(parsed, input.allowedOrigins)) {
+    return { action: 'allow', origin, reasons: ['origin is already allowed'] }
+  }
+  if (!input.allowUserApproval) {
+    return { action: 'deny', origin, reasons: ['new web origin approvals are disabled'] }
+  }
+  return { action: 'prompt', origin, reasons: ['web origin requires approval'] }
+}
+
+export function decideWebSearchPermission(input: {
+  allowedOrigins: readonly string[]
+  allowUserApproval: boolean
+}): WebPermissionDecision {
+  return decideWebFetchPermission({
+    url: 'https://duckduckgo.com/',
+    allowedOrigins: input.allowedOrigins,
+    allowUserApproval: input.allowUserApproval,
+  })
+}
+
+export function fetchUrlFromArgs(args: unknown): string | null {
+  if (typeof args !== 'object' || args === null || !('url' in args)) return null
+  const url = (args as { url?: unknown }).url
+  return typeof url === 'string' ? url : null
+}
+
+export function formatWebPromptBody(origin: string, detail: string): string {
+  return [
+    `The agent wants to access a web origin that is not in the allowlist:`,
+    '',
+    origin,
+    '',
+    detail,
+    '',
+    'Approve once, or check "Always allow" to add this origin to Settings.',
+  ].join('\n')
 }
