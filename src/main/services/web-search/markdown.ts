@@ -1,6 +1,16 @@
 import Turndown from 'turndown'
 import { JSDOM } from 'jsdom'
 import { Readability } from '@mozilla/readability'
+import { getSetting } from '../settings.ts'
+import {
+  WEB_ALLOWED_ORIGINS_SETTING,
+  clearWebOriginGrant,
+  fetchWithWebOriginPolicy,
+  parseFetchUrl,
+  readWebResponseText,
+  webAllowedOriginsWithDefaults,
+  webOriginKey,
+} from '../web-origin-policy.ts'
 
 const turndown = new Turndown({
   headingStyle: 'atx',
@@ -64,10 +74,19 @@ export function htmlToMarkdown(html: string): string {
 }
 
 export async function fetchUrlMarkdown(url: string, signal?: AbortSignal): Promise<string> {
+  const parsed = parseFetchUrl(url)
+  const origin = webOriginKey(parsed)
+  const allowedOrigins = webAllowedOriginsWithDefaults(
+    getSetting<string[] | null>(WEB_ALLOWED_ORIGINS_SETTING, null),
+  )
   const init: RequestInit = { headers: { 'User-Agent': FETCH_USER_AGENT } }
   if (signal) init.signal = signal
-  const res = await fetch(url, init)
-  if (!res.ok) throw new Error(`Fetch failed (${res.status}): ${url}`)
-  const html = await res.text()
-  return htmlToMarkdown(html)
+  try {
+    const res = await fetchWithWebOriginPolicy(parsed, init, allowedOrigins)
+    if (!res.ok) throw new Error(`Fetch failed (${res.status}): ${url}`)
+    const html = await readWebResponseText(res)
+    return htmlToMarkdown(html)
+  } finally {
+    clearWebOriginGrant(origin)
+  }
 }

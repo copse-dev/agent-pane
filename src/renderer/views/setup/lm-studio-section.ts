@@ -1,5 +1,10 @@
 import type { ApiClient } from '../../../preload/api.d.ts'
 import { PREFERRED_MODELS } from '@shared/preferred-models.ts'
+import {
+  DEFAULT_WEB_ALLOWED_ORIGINS,
+  WEB_ALLOWED_ORIGINS_SETTING,
+  WEB_ALLOW_USER_APPROVAL_SETTING,
+} from '@shared/web-origins.ts'
 import { el } from '../../dom/helpers.ts'
 
 export interface LmStudioSection {
@@ -276,6 +281,13 @@ export function createLmStudioSection(
       | undefined
     const currentAutoRun = (await api.settings.get('autoRunSandboxCommands')) as boolean | undefined
     const currentMcpAuto = (await api.settings.get('mcpAutoAllowReadOnly')) as boolean | undefined
+    const currentWebOrigins = (await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING)) as
+      | string[]
+      | undefined
+      | null
+    const currentWebApproval = (await api.settings.get(WEB_ALLOW_USER_APPROVAL_SETTING)) as
+      | boolean
+      | undefined
     await api.settings.setSecurity({
       localServerUrl: lmUrl,
       safetyClassifierEnabled: currentSafetyEnabled ?? true,
@@ -283,6 +295,10 @@ export function createLmStudioSection(
       safetyModel: opts?.safetyModel ?? currentSafety ?? PREFERRED_MODELS[2]!.id,
       autoRunSandboxCommands: currentAutoRun ?? true,
       mcpAutoAllowReadOnly: currentMcpAuto ?? false,
+      webAllowedOrigins: currentWebOrigins?.length
+        ? currentWebOrigins
+        : [...DEFAULT_WEB_ALLOWED_ORIGINS],
+      webAllowUserApproval: currentWebApproval ?? true,
     })
     keyInput.value = ''
     const lmSet = await api.settings.getKey('lmstudio')
