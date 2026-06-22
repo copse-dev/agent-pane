@@ -25,9 +25,16 @@ async function pressControlChord(key: string): Promise<void> {
 }
 
 async function focusMonacoInput(): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      await browser.execute(
+        () => document.querySelector('#file-viewer .monaco-editor textarea') !== null,
+      ),
+    { timeout: 5_000, timeoutMsg: 'expected Monaco textarea to exist' },
+  )
   await browser.execute(() => {
     const input = document.querySelector(
-      '#file-viewer .monaco-editor textarea.inputarea',
+      '#file-viewer .monaco-editor textarea',
     ) as HTMLTextAreaElement | null
     if (!input) throw new Error('Monaco input textarea not found')
     input.focus()
