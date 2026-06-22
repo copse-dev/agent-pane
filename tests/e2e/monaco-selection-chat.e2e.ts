@@ -21,7 +21,7 @@ async function waitForWorkspace(): Promise<void> {
 }
 
 async function pressControlChord(key: string): Promise<void> {
-  await browser.action('key').down(CONTROL_KEY).press(key).up(CONTROL_KEY).perform()
+  await browser.keys([CONTROL_KEY, key, CONTROL_KEY])
 }
 
 async function focusMonacoInput(): Promise<void> {
