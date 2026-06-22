@@ -33,6 +33,7 @@ import {
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
 import { formatThreadUsageCost } from '@shared/llm/estimate-cost.ts'
+import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
 import { mountFollowUpSuggestions } from './follow-up-suggestions.ts'
 import {
   threadGitBranchMismatch,
@@ -86,7 +87,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const modelPicker = mountFooterModelPicker(
     modelHost,
     api,
-    () => store.getState().settings?.model ?? 'claude-sonnet-4-6',
+    () => store.getState().settings?.model ?? DEFAULT_CLOUD_MODEL,
     (model) => {
       void api.settings.set('model', model)
       store.setState({ settings: { ...store.getState().settings, model } })
@@ -169,7 +170,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   }
 
   function usageSummaryText(): string | null {
-    const model = store.getState().settings?.model ?? 'claude-sonnet-4-6'
+    const model = store.getState().settings?.model ?? DEFAULT_CLOUD_MODEL
     const thread = getActiveThread(store)
     const { inputTokens, outputTokens } = thread?.usage ?? { inputTokens: 0, outputTokens: 0 }
     const total = inputTokens + outputTokens
