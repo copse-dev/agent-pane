@@ -1,8 +1,4 @@
-import {
-  getIconUrlByName,
-  getIconUrlForFilePath,
-  type MaterialIcon,
-} from 'vscode-material-icons'
+import { getIconUrlByName, getIconUrlForFilePath, type MaterialIcon } from 'vscode-material-icons'
 import { el } from '../dom/helpers.ts'
 
 /** Copied to `dist/renderer/material-icons` by build/dev scripts. */
