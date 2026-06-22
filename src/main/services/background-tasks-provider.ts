@@ -9,21 +9,10 @@ import { buildProvider } from './provider-selection.ts'
 
 const AUTO_LOCAL_DEFAULT = lmStudioChatModelValue(LM_STUDIO_MODEL_IDS.smallTasks)
 
-/** Resolve the configured background-tasks model, migrating legacy LM-Studio-only settings. */
+/** Resolve the configured background-tasks model (empty = auto local default). */
 export function resolveBackgroundTasksModelId(): string {
   const configured = getSetting<string>('backgroundTasksModel', '').trim()
-  if (configured) return configured
-
-  if (!getSetting<boolean>('lmStudioForSmallTasks', true)) {
-    return getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
-  }
-
-  const legacyLocal = getSetting<string>('lmStudioSmallTasksModel', '').trim()
-  if (legacyLocal) {
-    return legacyLocal.includes(':') ? legacyLocal : lmStudioChatModelValue(legacyLocal)
-  }
-
-  return AUTO_LOCAL_DEFAULT
+  return configured || AUTO_LOCAL_DEFAULT
 }
 
 /** Provider for thread titles, follow-ups, and other lightweight prompts. */
