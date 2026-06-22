@@ -216,6 +216,7 @@ contextBridge.exposeInMainWorld('api', {
     status: () => ipcRenderer.invoke('git:status'),
     fileDiff: (path: string, staged: boolean) => ipcRenderer.invoke('git:fileDiff', path, staged),
     branchStatus: (forBranch?: string) => ipcRenderer.invoke('git:branchStatus', forBranch),
+    checkoutBranch: (branch: string) => ipcRenderer.invoke('git:checkoutBranch', branch),
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),

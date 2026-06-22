@@ -37,6 +37,7 @@ import {
   threadGitBranchMismatch,
   threadGitBranchMismatchMessage,
 } from '@shared/git/thread-branch.ts'
+import { showErrorToast, showToast } from './toast.ts'
 
 export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const chips = el('div', { class: 'attachment-chips' })
@@ -55,6 +56,19 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   // The Send button is positioned relative to this row (not the whole input
   // bar), so it sits inside the textarea box and never overlaps the footer.
   const inputRow = el('div', { class: 'input-row' }, textarea, stopBtn, submitBtn)
+  const branchWarningText = el('span', { class: 'composer-branch-warning-text' })
+  const checkoutBranchBtn = el(
+    'button',
+    { type: 'button', class: 'composer-branch-checkout-btn' },
+    'Check out',
+  )
+  const branchWarning = el(
+    'div',
+    { class: 'composer-branch-warning', role: 'status', 'aria-live': 'polite', hidden: '' },
+    el('span', { class: 'composer-branch-warning-icon', 'aria-hidden': 'true' }, '!'),
+    branchWarningText,
+    checkoutBranchBtn,
+  )
   const footer = el('div', { class: 'input-footer' })
   const modelHost = el('div', { class: 'footer-model-host' })
   const branchHost = el('div', { class: 'footer-branch-host' })
@@ -99,7 +113,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       updateFooter()
     },
   )
-  const branchStatus = mountFooterBranchStatus(branchHost, store, api)
+  const destroyBranchStatus = mountFooterBranchStatus(branchHost, store, api)
 
   exportBtn.addEventListener('click', () => {
     const thread = getActiveThread(store)
@@ -115,7 +129,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     updateFooter()
   })
 
-  root.append(chips, inputRow, footer)
+  root.append(chips, branchWarning, inputRow, footer)
 
   const followUps = mountFollowUpSuggestions(store, api, (prompt) => {
     textarea.value = prompt
@@ -128,6 +142,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   let attachedFiles: { path: string; content: string }[] = []
   let attachedTextBlocks: { id: string; label: string; content: string }[] = []
   let attachedImages: { dataUrl: string; mimeType: string }[] = []
+  let mismatchBranch: string | null = null
+  let checkoutInProgress = false
 
   function getActiveThreadId() {
     return store.getState().activeThreadId
@@ -172,6 +188,25 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     stopBtn.hidden = !running
     submitBtn.classList.toggle('with-stop', running)
     textarea.classList.toggle('with-stop', running)
+  }
+
+  function showBranchMismatch(branch: string): void {
+    mismatchBranch = branch
+    textarea.setCustomValidity('')
+    branchWarning.hidden = false
+    branchWarningText.textContent = threadGitBranchMismatchMessage(branch)
+    branchWarningText.title = threadGitBranchMismatchMessage(branch)
+    checkoutBranchBtn.disabled = checkoutInProgress
+    checkoutBranchBtn.textContent = checkoutInProgress ? 'Checking out...' : 'Check out'
+  }
+
+  function hideBranchMismatch(): void {
+    mismatchBranch = null
+    checkoutInProgress = false
+    branchWarning.hidden = true
+    branchWarningText.title = ''
+    checkoutBranchBtn.disabled = false
+    checkoutBranchBtn.textContent = 'Check out'
   }
 
   function updateQueueIndicator() {
@@ -230,6 +265,26 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     if (id) void api.agent.abort(id)
   })
 
+  checkoutBranchBtn.addEventListener('click', () => {
+    if (!mismatchBranch || checkoutInProgress) return
+    const branch = mismatchBranch
+    checkoutInProgress = true
+    showBranchMismatch(branch)
+
+    void api.git
+      .checkoutBranch(branch)
+      .then(() => {
+        hideBranchMismatch()
+        showToast(`Checked out ${branch}`)
+        store.emit('git_branch_changed')
+      })
+      .catch((error: unknown) => {
+        checkoutInProgress = false
+        showBranchMismatch(branch)
+        showErrorToast(`Failed to check out ${branch}`, error)
+      })
+  })
+
   function isAutocompletePickerOpen() {
     return root.querySelector('.mention-picker:not([hidden])') !== null
   }
@@ -260,10 +315,10 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     const currentBranch = branchStatus.currentBranch
     const thread = getThreadById(store, id)
     if (threadGitBranchMismatch(thread?.gitBranch, currentBranch)) {
-      textarea.setCustomValidity(threadGitBranchMismatchMessage(thread!.gitBranch!))
-      textarea.reportValidity()
+      showBranchMismatch(thread!.gitBranch!)
       return
     }
+    hideBranchMismatch()
 
     const skills = skillsCache ?? (await api.skills.list())
     skillsCache = skills
@@ -477,6 +532,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     }),
     store.on('threads_changed', () => {
       syncComposerThread()
+      hideBranchMismatch()
       updateState()
       updateFooter()
     }),
@@ -515,7 +571,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     modelPicker.destroy()
     footerOverflow.destroy()
     footerCompact.destroy()
-    branchStatus()
+    destroyBranchStatus()
     skillPicker()
   }
 }

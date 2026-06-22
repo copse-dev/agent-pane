@@ -90,6 +90,7 @@ export interface IpcInvokeMap {
   'git:fileDiff': { args: [path: string, staged: boolean]; result: GitFileDiff | null }
   'git:isAvailable': { args: []; result: boolean }
   'git:branchStatus': { args: [forBranch?: string]; result: GitBranchStatus }
+  'git:checkoutBranch': { args: [branch: string]; result: void }
 
   // Shell
   'shell:openExternal': { args: [url: string]; result: void }

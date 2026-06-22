@@ -1,0 +1,122 @@
+import '../../../tests/setup-dom.ts'
+import { afterEach, describe, it } from 'node:test'
+import assert from 'node:assert/strict'
+import { createStore } from '@shared/store/store.ts'
+import type { Thread } from '@shared/types'
+import type { ApiClient } from '../../preload/api.d.ts'
+import { mountInputBar } from './input-bar.ts'
+
+class TestResizeObserver {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
+
+;(globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver =
+  TestResizeObserver as typeof ResizeObserver
+;(globalThis as { requestAnimationFrame?: typeof requestAnimationFrame }).requestAnimationFrame = (
+  callback,
+) => setTimeout(() => callback(Date.now()), 0) as unknown as number
+;(globalThis as { cancelAnimationFrame?: typeof cancelAnimationFrame }).cancelAnimationFrame = (
+  id,
+) => clearTimeout(id)
+;(globalThis as { MutationObserver?: typeof MutationObserver }).MutationObserver =
+  window.MutationObserver
+
+function thread(branch?: string): Thread {
+  const value: Thread = {
+    id: 'thread-1',
+    title: 'Test thread',
+    status: 'idle',
+    messages: [],
+    usage: { inputTokens: 0, outputTokens: 0 },
+    createdAt: 1,
+    updatedAt: 1,
+  }
+  if (branch) value.gitBranch = branch
+  return value
+}
+
+function createApi(options: {
+  currentBranch: string
+  onCheckoutBranch?: (branch: string) => Promise<void>
+}): ApiClient {
+  return {
+    agent: {
+      abort: async () => {},
+      run: async () => {},
+      suggestFollowUps: async () => [],
+    },
+    fs: {
+      onChanged: () => () => {},
+    },
+    git: {
+      branchStatus: async () => ({ currentBranch: options.currentBranch, pr: null }),
+      checkoutBranch: options.onCheckoutBranch ?? (async () => {}),
+    },
+    lmStudio: {
+      models: async () => [],
+    },
+    settings: {
+      availableProviders: async () => ({ anthropic: true, openai: true }),
+      set: async () => {},
+    },
+    skills: {
+      list: async () => [],
+    },
+  } as unknown as ApiClient
+}
+
+async function settle(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
+afterEach(() => {
+  document.body.replaceChildren()
+})
+
+describe('input bar branch mismatch warning', () => {
+  it('shows an inline checkout action instead of native validation', async () => {
+    let checkedOutBranch: string | null = null
+    let branchRefreshes = 0
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeThreadId: 'thread-1',
+      threads: [thread('feature/thread-branch')],
+    })
+    store.on('git_branch_changed', () => {
+      branchRefreshes += 1
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onCheckoutBranch: async (branch) => {
+          checkedOutBranch = branch
+        },
+      }),
+    )
+    await settle()
+
+    const textarea = host.querySelector<HTMLTextAreaElement>('.prompt-input')!
+    textarea.value = 'Continue'
+    host.querySelector<HTMLButtonElement>('.submit-btn')!.click()
+    await settle()
+
+    const warning = host.querySelector<HTMLElement>('.composer-branch-warning')!
+    assert.equal(warning.hidden, false)
+    assert.match(warning.textContent ?? '', /This thread is for branch "feature\/thread-branch"/)
+
+    host.querySelector<HTMLButtonElement>('.composer-branch-checkout-btn')!.click()
+    await settle()
+
+    assert.equal(checkedOutBranch, 'feature/thread-branch')
+    assert.equal(branchRefreshes, 1)
+    assert.equal(warning.hidden, true)
+  })
+})
