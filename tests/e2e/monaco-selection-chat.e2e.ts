@@ -55,6 +55,47 @@ async function focusMonacoInput(): Promise<void> {
   })
 }
 
+async function selectFullMonacoFile(): Promise<void> {
+  const selected = await browser.execute(() => {
+    interface MonacoRange {
+      startLineNumber: number
+      endLineNumber: number
+    }
+    interface MonacoModel {
+      getFullModelRange(): MonacoRange
+    }
+    interface MonacoEditor {
+      getDomNode(): HTMLElement | null
+      getModel(): MonacoModel | null
+      setSelection(range: MonacoRange): void
+      focus(): void
+    }
+    interface MonacoGlobal {
+      editor?: {
+        getEditors?: () => MonacoEditor[]
+      }
+    }
+
+    const monacoApi = (window as unknown as { monaco?: MonacoGlobal }).monaco
+    const editors = monacoApi?.editor?.getEditors?.() ?? []
+    const editor = editors.find((candidate) =>
+      candidate.getDomNode()?.closest('#file-viewer .monaco-editor'),
+    )
+    const model = editor?.getModel()
+    if (!editor || !model) return null
+
+    const range = model.getFullModelRange()
+    editor.setSelection(range)
+    editor.focus()
+    return {
+      startLineNumber: range.startLineNumber,
+      endLineNumber: range.endLineNumber,
+    }
+  })
+
+  if (!selected) throw new Error('Could not select Monaco file editor contents')
+}
+
 describe('Monaco selection to chat attachment', () => {
   let workspaceRoot = ''
 
@@ -93,8 +134,7 @@ describe('Monaco selection to chat attachment', () => {
     await editor.waitForDisplayed({ timeout: 15_000 })
     await $('#file-viewer .monaco-editor .view-line').click()
     await focusMonacoInput()
-
-    await pressControlChord('a')
+    await selectFullMonacoFile()
     await pressControlChord('l')
 
     const chip = await $('.attachment-chip.text-chip')
