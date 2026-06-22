@@ -2,7 +2,7 @@ import * as fsp from 'node:fs/promises'
 import { z } from 'zod'
 import type { ToolDefinition } from '@shared/types'
 import { resolveWorkspacePath } from '../services/workspace.ts'
-import { stageDiff } from '../services/diff-queue.ts'
+import { getPendingAfterContent, applyOrStageDiff } from '../services/diff-queue.ts'
 import { detectLanguage } from '../services/language.ts'
 
 function countOccurrences(haystack: string, needle: string): number {
@@ -19,7 +19,7 @@ function countOccurrences(haystack: string, needle: string): number {
 export const strReplaceTool: ToolDefinition = {
   name: 'str_replace',
   description:
-    'Replace text in an existing file (partial edit). Stages a diff for user approval — prefer this over write_file for small changes.',
+    'Replace text in an existing file. Applies directly when the git worktree is clean or only contains Copse-applied edits from this session; otherwise stages a proposed diff for user approval. If the file already has a pending staged diff, the replacement is applied to that pending proposed content so edits compose.',
   parameters: z.object({
     path: z.string().describe('File path relative to workspace root'),
     old_string: z.string().describe('Exact text to find in the file'),
@@ -34,11 +34,13 @@ export const strReplaceTool: ToolDefinition = {
     if (!old_string) return 'old_string must not be empty'
 
     const absPath = resolveWorkspacePath(path)
-    let before: string
-    try {
-      before = await fsp.readFile(absPath, 'utf-8')
-    } catch {
-      return `File not found: ${path}`
+    let before = getPendingAfterContent(path)
+    if (before === null) {
+      try {
+        before = await fsp.readFile(absPath, 'utf-8')
+      } catch {
+        return `File not found: ${path}`
+      }
     }
 
     const occurrences = countOccurrences(before, old_string)
@@ -58,6 +60,6 @@ export const strReplaceTool: ToolDefinition = {
     }
 
     const language = detectLanguage(path)
-    return stageDiff(path, before, after, language)
+    return applyOrStageDiff(path, before, after, language)
   },
 }

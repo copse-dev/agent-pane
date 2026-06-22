@@ -7,6 +7,7 @@ import {
   threadGitBranchMismatchMessage,
 } from '@shared/git/thread-branch.ts'
 import { showErrorToast, showToast } from './toast.ts'
+import { getThreadById } from '@shared/store/thread-helpers.ts'
 
 const COPIED_BRANCH_TOAST = 'Copied branch name'
 const COPY_FEEDBACK_MS = 1600
@@ -35,7 +36,7 @@ export function mountFooterBranchStatus(
 
   function getActiveThreadBranch(): string | undefined {
     const id = store.getState().activeThreadId
-    const thread = store.getState().threads.find((t) => t.id === id)
+    const thread = getThreadById(store, id)
     return thread?.gitBranch
   }
 

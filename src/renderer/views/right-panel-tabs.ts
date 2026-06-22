@@ -1,5 +1,6 @@
 import { el } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
+import { getActiveThread } from '@shared/store/thread-helpers.ts'
 import { mountPlanPane } from './todo-panel.ts'
 
 export function mountRightPanelTabs(root: HTMLElement, store: AppStore): () => void {
@@ -45,7 +46,7 @@ export function mountRightPanelTabs(root: HTMLElement, store: AppStore): () => v
   const planHost = document.getElementById('plan-viewer-host')
   if (planHost) {
     renderPlanPane = mountPlanPane(planHost, () => {
-      const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
+      const thread = getActiveThread(store)
       return thread?.todos
     })
   }

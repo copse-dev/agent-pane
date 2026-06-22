@@ -9,6 +9,7 @@ import micromatch from 'micromatch'
 import { getAgentRunReadFileLimits } from '../services/agent-run-read-limits.ts'
 import { readTextLineRange } from '../services/read-text-file.ts'
 import { buildReadFilePageMeta, formatReadFilePageFooter } from '@shared/agent/read-file-page.ts'
+import { getStagedDiffEntry } from '../services/diff-queue.ts'
 
 export const LIST_DIR_MAX_ENTRIES = 1000
 
@@ -76,7 +77,11 @@ export const readFileTool: ToolDefinition = {
       result.endLine,
       result.lineTruncated || result.charTruncated,
     )
-    return result.text + formatReadFilePageFooter(pageMeta, result.charTruncated)
+    const pending = getStagedDiffEntry(path)
+    const pendingNote = pending
+      ? `\n\n[Note: ${path} has a pending Copse staged diff that is not written to disk yet. This read_file output is the on-disk content only. Use read_staged_diff with this path to inspect the proposed after content, or wait for user approval before validating.]`
+      : ''
+    return result.text + formatReadFilePageFooter(pageMeta, result.charTruncated) + pendingNote
   },
 }
 

@@ -3,7 +3,7 @@ import './styles/global.css'
 import './styles/themes.css'
 
 import { createStore } from '@shared/store/store.ts'
-import { openNewThread, switchThread } from '@shared/store/thread-helpers.ts'
+import { openNewThread, switchThread, getActiveThread } from '@shared/store/thread-helpers.ts'
 import { mountWelcome } from './views/welcome.ts'
 import { mountTitlebar } from './views/titlebar.ts'
 import { mountProjectsPane } from './views/projects-pane.ts'
@@ -127,7 +127,7 @@ function mountFullLayout() {
   mountProjectsPane(document.getElementById('pane-projects')!, store, api)
   const inputRoot = document.getElementById('input-bar')!
   mountInputBar(inputRoot, store, api)
-  mountConversation(document.getElementById('conversation')!, store)
+  mountConversation(document.getElementById('conversation')!, store, api)
   if (!inputRoot.querySelector('.prompt-input')) {
     throw new Error('Chat composer failed to mount (#input-bar missing .prompt-input)')
   }
@@ -184,7 +184,7 @@ function registerKeyboardShortcuts() {
         closeSettingsDialog()
         return
       }
-      const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
+      const thread = getActiveThread(store)
       if (thread?.status === 'running') {
         const id = store.getState().activeThreadId
         if (id) void api.agent.abort(id)

@@ -1,11 +1,14 @@
 import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
+import { getThreadById, getActiveThread } from '@shared/store/thread-helpers.ts'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
 import { renderMarkdown } from '../markdown/renderer.ts'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { StreamingMarkdownRenderer } from '../markdown/streaming.ts'
+import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
 import { stripTextToolCallBlocks } from '@shared/agent/parse-text-tool-calls.ts'
 import type { ToolCall } from '@shared/types'
+import type { ApiClient } from '../../preload/api.d.ts'
 import { agentActivityLabel } from '../agent-activity.ts'
 import {
   aggregateToolStatus,
@@ -60,8 +63,8 @@ function appendStandardToolSections(
   )
 }
 
-function createIndividualToolCard(tc: ToolCall, label: string): HTMLElement {
-  if (tc.subagent) return createSubagentToolCard(tc, label)
+function createIndividualToolCard(tc: ToolCall, label: string, api: ApiClient): HTMLElement {
+  if (tc.subagent) return createSubagentToolCard(tc, label, api)
 
   const card = el('details', {
     class: 'tool-card',
@@ -97,7 +100,12 @@ function createInnerToolCard(tc: ToolCall): HTMLElement {
 // instead of rebuilding the whole message innerHTML each token (O(n²)).
 const streamingRenderers = new WeakMap<HTMLElement, StreamingMarkdownRenderer>()
 
-function setAssistantMarkdown(el: HTMLElement, content: string, streaming: boolean): void {
+function setAssistantMarkdown(
+  el: HTMLElement,
+  content: string,
+  streaming: boolean,
+  api: ApiClient,
+): void {
   const display = assistantDisplayText(content)
   if (streaming) {
     let renderer = streamingRenderers.get(el)
@@ -113,16 +121,17 @@ function setAssistantMarkdown(el: HTMLElement, content: string, streaming: boole
   streamingRenderers.delete(el)
   el.innerHTML = renderMarkdown(display)
   attachCodeBlockCopyButtons(el)
+  void annotateFileReferences(el, api)
   void renderMermaidIn(el)
 }
 
-function createSubagentMessageEl(content: string, streaming: boolean): HTMLElement {
+function createSubagentMessageEl(content: string, streaming: boolean, api: ApiClient): HTMLElement {
   const textEl = el('div', { class: 'subagent-message subagent-message-assistant message-text' })
-  setAssistantMarkdown(textEl, content, streaming)
+  setAssistantMarkdown(textEl, content, streaming, api)
   return textEl
 }
 
-function createSubagentToolCard(tc: ToolCall, label: string): HTMLElement {
+function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HTMLElement {
   const session = tc.subagent!
   const status =
     tc.status === 'running' || session.status === 'running'
@@ -142,7 +151,7 @@ function createSubagentToolCard(tc: ToolCall, label: string): HTMLElement {
 
   if (preview && status !== 'running') {
     const previewEl = el('div', { class: 'subagent-summary-preview message-text' })
-    setAssistantMarkdown(previewEl, summaryPreview(preview), false)
+    setAssistantMarkdown(previewEl, summaryPreview(preview), false, api)
     card.append(previewEl)
   }
 
@@ -154,7 +163,7 @@ function createSubagentToolCard(tc: ToolCall, label: string): HTMLElement {
     if (!msg) continue
     if (msg.content.trim()) {
       const isLast = i === session.messages.length - 1
-      timeline.append(createSubagentMessageEl(msg.content, status === 'running' && isLast))
+      timeline.append(createSubagentMessageEl(msg.content, status === 'running' && isLast, api))
     }
     if (msg.toolCalls.length > 0) {
       const toolsWrap = el('div', { class: 'subagent-inner-tools' })
@@ -202,9 +211,9 @@ function createGroupToolCard(item: Extract<ToolCallDisplayItem, { type: 'group' 
   return card
 }
 
-function createToolCard(item: ToolCallDisplayItem): HTMLElement {
+function createToolCard(item: ToolCallDisplayItem, api: ApiClient): HTMLElement {
   if (item.type === 'group') return createGroupToolCard(item)
-  return createIndividualToolCard(item.toolCall, item.label)
+  return createIndividualToolCard(item.toolCall, item.label, api)
 }
 
 function createMessageImages(images: string[]): HTMLElement {
@@ -225,13 +234,14 @@ function createMessageImages(images: string[]): HTMLElement {
 function appendMessageContent(
   body: HTMLElement,
   msg: { role: string; content: string; images?: string[] },
+  api: ApiClient,
 ) {
   if (msg.role === 'user' && msg.images?.length) {
     body.append(createMessageImages(msg.images))
   }
   const textEl = el('div', { class: 'message-text' })
   if (msg.role === 'assistant' && msg.content) {
-    setAssistantMarkdown(textEl, msg.content, false)
+    setAssistantMarkdown(textEl, msg.content, false, api)
   } else {
     textEl.textContent = msg.content
   }
@@ -242,7 +252,7 @@ const SCROLL_PIN_THRESHOLD_PX = 48
 /** Ignore auto-scroll briefly after the user scrolls up during streaming. */
 const USER_SCROLL_UP_DEBOUNCE_MS = 150
 
-export function mountConversation(root: HTMLElement, store: AppStore): () => void {
+export function mountConversation(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const scrollArea = el('div', { class: 'conversation-scroll' })
   const todoHost = el('div', { class: 'conversation-todos-host' })
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
@@ -331,7 +341,7 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
       setActivity(null)
       return
     }
-    const thread = store.getState().threads.find((t) => t.id === tid)
+    const thread = getThreadById(store, tid)
     // Writing state lives in the agent controller; agent_activity events carry the label.
     setActivity(agentActivityLabel(thread, false))
   }
@@ -374,7 +384,7 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
     msgEl.querySelectorAll('.tool-card').forEach((node) => node.remove())
 
     for (const item of buildToolCallDisplayItems(toolCalls)) {
-      const card = createToolCard(item) as HTMLDetailsElement
+      const card = createToolCard(item, api) as HTMLDetailsElement
       if (item.type === 'group') {
         const status = aggregateToolStatus(item.toolCalls)
         card.open = status === 'running' || userExpandedGroups.has(item.key)
@@ -390,13 +400,13 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
 
   function appendMessageEl(threadId: string, msgId: string) {
     if (threadId !== store.getState().activeThreadId) return
-    const thread = store.getState().threads.find((t) => t.id === threadId)
+    const thread = getThreadById(store, threadId)
     const msg = thread?.messages.find((m) => m.id === msgId)
     if (!msg) return
 
     const msgEl = el('div', { class: `msg msg-${msg.role}`, 'data-message-id': msgId })
     const body = el('div', { class: 'message-body' })
-    appendMessageContent(body, msg)
+    appendMessageContent(body, msg, api)
     msgEl.append(body)
 
     // Copy only when there is reply text — tool-only bubbles stay compact.
@@ -412,7 +422,7 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
 
   function syncTodoPanel() {
     todoHost.replaceChildren()
-    const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
+    const thread = getActiveThread(store)
     if (thread?.todos?.length) {
       todoHost.append(createTodoListEl(thread.todos, { compact: true }))
     }
@@ -423,7 +433,7 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
     userScrolledUpAt = 0
     lastScrollTop = 0
     clear(list)
-    const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
+    const thread = getActiveThread(store)
     thread?.messages.forEach((m) => appendMessageEl(store.getState().activeThreadId!, m.id))
     syncTodoPanel()
     updateScrollButton()
@@ -443,21 +453,21 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
   const unsubs = [
     store.on('message_added', (tid, mid) => appendMessageEl(tid, mid)),
     store.on('message_token', (mid) => {
-      const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
+      const thread = getActiveThread(store)
       const msg = thread?.messages.find((m) => m.id === mid)
       const textEl = list.querySelector(`[data-message-id="${mid}"] .message-text`)
       if (textEl && msg?.role === 'assistant') {
-        setAssistantMarkdown(textEl as HTMLElement, msg.content, true)
+        setAssistantMarkdown(textEl as HTMLElement, msg.content, true, api)
         scrollToBottom()
       }
     }),
     store.on('message_done', (mid) => {
       const msgEl = list.querySelector(`[data-message-id="${mid}"]`)
       const textEl = msgEl?.querySelector('.message-text')
-      const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
+      const thread = getActiveThread(store)
       const msg = thread?.messages.find((m) => m.id === mid)
       if (textEl && msg?.role === 'assistant') {
-        setAssistantMarkdown(textEl as HTMLElement, msg.content, false)
+        setAssistantMarkdown(textEl as HTMLElement, msg.content, false, api)
       }
       if (msg?.role === 'assistant' && msg.content.trim()) {
         const body = msgEl?.querySelector('.message-body')
@@ -486,9 +496,13 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
     }),
   ]
 
+  const unbindFileLinks = bindFileReferenceClicks(root, store, api)
   rebuildForThread()
   syncFromStore()
-  return () => unsubs.forEach((u) => u())
+  return () => {
+    unbindFileLinks()
+    unsubs.forEach((u) => u())
+  }
 }
 
 function attachCopyButton(body: HTMLElement, msgId: string, store: AppStore) {

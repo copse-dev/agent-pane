@@ -34,6 +34,8 @@ export interface Thread {
   workingBrief?: string
   /** Git branch this thread was started on; set on first message and persisted. */
   gitBranch?: string
+  /** Unsubmitted composer text; keeps blank threads visible across switches. */
+  draftPrompt?: string
   createdAt: number
   updatedAt: number
 }
