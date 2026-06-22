@@ -7,6 +7,11 @@
   --text-secondary: #999999;
   --text-muted: #666666;
   --border: #3c3c3c;
+  --pane-divider-width: 1px;
+  --chat-gradient-top: color-mix(in srgb, var(--bg-elevated) 42%, var(--bg-base));
+  --chat-gradient-mid: var(--bg-base);
+  --chat-gradient-bottom: color-mix(in srgb, var(--bg-elevated) 24%, var(--bg-base));
+  --chat-gradient-glow: color-mix(in srgb, var(--accent) 6%, var(--bg-elevated));
   --accent: #007acc;
   --accent-hover: #1177bb;
   --error: #f48771;
