@@ -7,7 +7,7 @@ export interface LmStudioSection {
   getUrl: () => string
   getApiKey: () => string
   refreshDetection: () => Promise<void>
-  saveConnection: (opts?: { lmStudioSafetyModel?: string }) => Promise<void>
+  saveConnection: (opts?: { safetyModel?: string }) => Promise<void>
   destroy: () => void
 }
 
@@ -31,7 +31,7 @@ export function createLmStudioSection(
 
   const urlInput = el('input', {
     type: 'text',
-    name: 'lmStudioUrl',
+    name: 'localServerUrl',
     placeholder: 'http://localhost:1234/v1',
     autocomplete: 'off',
   }) as HTMLInputElement
@@ -263,24 +263,24 @@ export function createLmStudioSection(
     renderPreferredModels(detection)
   }
 
-  async function saveConnection(opts?: { lmStudioSafetyModel?: string }): Promise<void> {
+  async function saveConnection(opts?: { safetyModel?: string }): Promise<void> {
     const lmKey = keyInput.value.trim()
     if (lmKey) await api.settings.setKey('lmstudio', lmKey)
     const lmUrl = urlInput.value.trim()
-    const currentSafety = (await api.settings.get('lmStudioSafetyModel')) as string | undefined
-    const currentThreshold = (await api.settings.get('lmStudioSafetyConfidenceThreshold')) as
+    const currentSafety = (await api.settings.get('safetyModel')) as string | undefined
+    const currentThreshold = (await api.settings.get('safetyConfidenceThreshold')) as
       | number
       | undefined
-    const currentSafetyEnabled = (await api.settings.get('lmStudioSafetyEnabled')) as
+    const currentSafetyEnabled = (await api.settings.get('safetyClassifierEnabled')) as
       | boolean
       | undefined
     const currentAutoRun = (await api.settings.get('autoRunSandboxCommands')) as boolean | undefined
     const currentMcpAuto = (await api.settings.get('mcpAutoAllowReadOnly')) as boolean | undefined
     await api.settings.setSecurity({
-      lmStudioUrl: lmUrl,
-      lmStudioSafetyEnabled: currentSafetyEnabled ?? true,
-      lmStudioSafetyConfidenceThreshold: currentThreshold ?? 0.85,
-      lmStudioSafetyModel: opts?.lmStudioSafetyModel ?? currentSafety ?? PREFERRED_MODELS[2]!.id,
+      localServerUrl: lmUrl,
+      safetyClassifierEnabled: currentSafetyEnabled ?? true,
+      safetyConfidenceThreshold: currentThreshold ?? 0.85,
+      safetyModel: opts?.safetyModel ?? currentSafety ?? PREFERRED_MODELS[2]!.id,
       autoRunSandboxCommands: currentAutoRun ?? true,
       mcpAutoAllowReadOnly: currentMcpAuto ?? false,
     })
@@ -291,7 +291,7 @@ export function createLmStudioSection(
   }
 
   void (async () => {
-    const lmUrl = (await api.settings.get('lmStudioUrl')) as string | undefined
+    const lmUrl = (await api.settings.get('localServerUrl')) as string | undefined
     urlInput.value = lmUrl ?? 'http://localhost:1234/v1'
     const lmSet = await api.settings.getKey('lmstudio')
     keyStatus.textContent = lmSet ? '● saved' : '○ not set'

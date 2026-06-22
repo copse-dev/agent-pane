@@ -118,10 +118,10 @@ export interface ApiClient {
     get: (key: string) => Promise<unknown>
     set: (key: string, value: unknown) => Promise<void>
     setSecurity: (prefs: {
-      lmStudioUrl: string
-      lmStudioSafetyEnabled: boolean
-      lmStudioSafetyConfidenceThreshold: number
-      lmStudioSafetyModel: string
+      localServerUrl: string
+      safetyClassifierEnabled: boolean
+      safetyConfidenceThreshold: number
+      safetyModel: string
       autoRunSandboxCommands: boolean
       mcpAutoAllowReadOnly: boolean
     }) => Promise<void>

@@ -9,9 +9,9 @@ import {
 describe('settings-writable', () => {
   it('rejects security keys on the renderer allowlist', () => {
     assert.equal(isRendererWritableSettingKey('autoRunSandboxCommands'), false)
-    assert.equal(isRendererWritableSettingKey('lmStudioUrl'), false)
-    assert.equal(isRendererWritableSettingKey('lmStudioSafetyEnabled'), false)
-    assert.equal(isRendererWritableSettingKey('lmStudioSafetyConfidenceThreshold'), false)
+    assert.equal(isRendererWritableSettingKey('localServerUrl'), false)
+    assert.equal(isRendererWritableSettingKey('safetyClassifierEnabled'), false)
+    assert.equal(isRendererWritableSettingKey('safetyConfidenceThreshold'), false)
     assert.equal(isRendererWritableSettingKey('mcpAutoAllowReadOnly'), false)
   })
 
@@ -24,13 +24,13 @@ describe('settings-writable', () => {
 
   it('parses security settings bundle', () => {
     const parsed = securitySettingsSchema.parse({
-      lmStudioUrl: 'http://127.0.0.1:1234/v1',
-      lmStudioSafetyEnabled: true,
-      lmStudioSafetyConfidenceThreshold: 0.85,
-      lmStudioSafetyModel: '',
+      localServerUrl: 'http://127.0.0.1:1234/v1',
+      safetyClassifierEnabled: true,
+      safetyConfidenceThreshold: 0.85,
+      safetyModel: '',
       autoRunSandboxCommands: false,
       mcpAutoAllowReadOnly: true,
     })
-    assert.equal(parsed.lmStudioUrl, 'http://127.0.0.1:1234/v1')
+    assert.equal(parsed.localServerUrl, 'http://127.0.0.1:1234/v1')
   })
 })
