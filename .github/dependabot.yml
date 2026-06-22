@@ -17,6 +17,15 @@ updates:
     cooldown:
       default-days: 7
     groups:
+      # electron and electron-chromedriver must move in lockstep — ChromeDriver's
+      # Chromium major has to match Electron's bundled Chromium, or the wdio e2e
+      # session fails to start. Group them so every bump (incl. majors) lands in
+      # a single PR. Listed before npm-minor-patch so it also captures their
+      # minor/patch updates.
+      electron:
+        patterns:
+          - 'electron'
+          - 'electron-chromedriver'
       npm-minor-patch:
         patterns:
           - '*'
