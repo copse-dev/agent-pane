@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 const REPO = 'jonathankingston/search-mcp'
+const DEFAULT_GIT_URL = `https://github.com/${REPO}.git`
 const OUT_DIR = resolve('vendor/search-mcp')
 const MIN_FILES = ['src/index.ts', 'src/duckduck.ts', 'src/markdown.ts']
 
@@ -42,8 +43,9 @@ async function main(): Promise<void> {
 
   try {
     await mkdir(tmpRoot, { recursive: true })
+    const gitUrl = process.env.SEARCH_MCP_GIT_URL?.trim() || DEFAULT_GIT_URL
     console.log(`[fetch-search-mcp] cloning ${REPO}`)
-    execFileSync('git', ['clone', '--depth', '1', `https://github.com/${REPO}.git`, cloneDir], {
+    execFileSync('git', ['clone', '--depth', '1', gitUrl, cloneDir], {
       stdio: 'inherit',
     })
 
@@ -55,7 +57,7 @@ async function main(): Promise<void> {
   } catch (err) {
     if (await vendorReady()) {
       console.warn(
-        `[fetch-search-mcp] could not update from ${REPO}; using bundled vendor/search-mcp`,
+        `[fetch-search-mcp] could not clone ${REPO} (private repo or missing credentials); using bundled vendor/search-mcp`,
       )
       if (err instanceof Error) console.warn(`[fetch-search-mcp] ${err.message}`)
       return
