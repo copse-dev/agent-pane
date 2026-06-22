@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Copse — AI coding assistant for your desktop</title>
+    <meta
+      name="description"
+      content="Copse is a desktop AI coding assistant with agent tools, Monaco editor, git integration, MCP, semantic search, and local or cloud models."
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <div class="logo">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect width="48" height="48" rx="12" fill="#0F172A" />
+            <path
+              d="M34 18C34 12 28 10 23 13C18 16 17 22 20 26C23 30 28 29 30 25C31 22 29 19 26 20C24 21 23 24 25 25C26 26 28 25 29 24"
+              fill="none"
+              stroke="url(#wave)"
+              stroke-width="3"
+              stroke-linecap="round"
+            />
+            <defs>
+              <linearGradient id="wave" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#7C3AED" />
+                <stop offset="100%" stop-color="#22D3EE" />
+              </linearGradient>
+            </defs>
+          </svg>
+          <h1>Copse</h1>
+        </div>
+        <p class="tagline">AI coding assistant for your desktop</p>
+      </header>
+
+      <main>
+        <section class="hero">
+          <h2>Code with an agent that lives in your project</h2>
+          <p>
+            Copse is an Electron desktop app that chats with LLMs, runs tools against your workspace,
+            and keeps you in the loop with approvals, diffs, and a full three-pane IDE layout. Use local
+            models via LM Studio or cloud providers — no backend required.
+          </p>
+          <div class="hero-cta">
+            <a class="btn btn-primary" href="#download">Download &amp; build</a>
+            <a class="btn btn-secondary" href="https://github.com/jonathanKingston/agent-pane">View on GitHub</a>
+          </div>
+          <figure class="hero-shot">
+            <img
+              src="screenshots/chat-layout-three-pane.png"
+              alt="Copse three-pane layout with projects sidebar, agent chat, and right panel"
+              width="1280"
+              height="800"
+              loading="eager"
+            />
+          </figure>
+        </section>
+
+        <section class="features" aria-label="Core features">
+          <div class="feature">
+            <div class="feature-icon" style="background: var(--color-accent)">
+              <span>💬</span>
+            </div>
+            <h3>Agent chat</h3>
+            <p>Multi-turn conversations with tool calls, follow-up suggestions, and message queuing</p>
+          </div>
+
+          <div class="feature">
+            <div class="feature-icon" style="background: var(--color-secondary)">
+              <span>📁</span>
+            </div>
+            <h3>Workspace tools</h3>
+            <p>Read, write, search, and refactor files with grouped tool cards and expandable details</p>
+          </div>
+
+          <div class="feature">
+            <div class="feature-icon" style="background: var(--color-purple)">
+              <span>🔍</span>
+            </div>
+            <h3>Semantic search</h3>
+            <p>Find code by meaning with bundled codesearch indexing and explore results in chat</p>
+          </div>
+
+          <div class="feature">
+            <div class="feature-icon" style="background: var(--color-success)">
+              <span>⎇</span>
+            </div>
+            <h3>Git built in</h3>
+            <p>Review changes, inline diffs, image diffs, and branch warnings in the composer</p>
+          </div>
+
+          <div class="feature">
+            <div class="feature-icon" style="background: var(--color-warning)">
+              <span>$</span>
+            </div>
+            <h3>Shell with guardrails</h3>
+            <p>Run commands with permission prompts; macOS seatbelt sandbox for contained commands</p>
+          </div>
+
+          <div class="feature">
+            <div class="feature-icon" style="background: var(--color-accent)">
+              <span>🔌</span>
+            </div>
+            <h3>MCP host</h3>
+            <p>Connect MCP servers from <span class="inline-code">.cursor/mcp.json</span> with approval controls</p>
+          </div>
+
+          <div class="feature">
+            <div class="feature-icon" style="background: var(--color-secondary)">
+              <span>🧠</span>
+            </div>
+            <h3>Local + cloud models</h3>
+            <p>LM Studio for on-device inference; Anthropic and OpenAI when you need cloud models</p>
+          </div>
+
+          <div class="feature">
+            <div class="feature-icon" style="background: var(--color-purple)">
+              <span>🌿</span>
+            </div>
+            <h3>Subagents</h3>
+            <p>Delegate exploration to nested agents with their own tool timelines</p>
+          </div>
+
+          <div class="feature">
+            <div class="feature-icon" style="background: var(--color-success)">
+              <span>📝</span>
+            </div>
+            <h3>Monaco editor</h3>
+            <p>Edit files, preview markdown, attach selections to chat, and approve staged diffs</p>
+          </div>
+
+          <div class="feature">
+            <div class="feature-icon" style="background: var(--color-warning)">
+              <span>⌨</span>
+            </div>
+            <h3>Terminal</h3>
+            <p>Integrated xterm shell in the right panel, alongside explorer and git views</p>
+          </div>
+
+          <div class="feature">
+            <div class="feature-icon" style="background: var(--color-accent)">
+              <span>🌐</span>
+            </div>
+            <h3>In-app browser</h3>
+            <p>Browse documentation and test web UIs without leaving the workspace</p>
+          </div>
+
+          <div class="feature">
+            <div class="feature-icon" style="background: var(--color-secondary)">
+              <span>✦</span>
+            </div>
+            <h3>Skills</h3>
+            <p>Slash commands and <span class="inline-code">.cursor/skills/</span> for reusable agent workflows</p>
+          </div>
+        </section>
+
+        <section class="showcase" aria-label="Feature tour">
+          <h2>See it in action</h2>
+          <p class="showcase-intro">
+            Screenshots captured from automated UI runs in this repository — the same views you get when
+            running Copse locally.
+          </p>
+
+          <div class="showcase-grid">
+            <article class="showcase-item">
+              <div class="showcase-copy">
+                <h3>Transparent tool use</h3>
+                <p>
+                  Every agent action appears as a human-readable tool card. Related calls group together
+                  so a burst of file reads stays compact; expand any group to inspect individual steps.
+                </p>
+                <ul>
+                  <li>Grouped labels like “Reading files ×2”</li>
+                  <li>Expandable argument details</li>
+                  <li>Clear error states for failed tools</li>
+                </ul>
+              </div>
+              <figure class="showcase-image">
+                <img
+                  src="screenshots/tool-display-group-expanded.png"
+                  alt="Expanded tool group showing Read file and List directory steps"
+                  width="1280"
+                  height="800"
+                  loading="lazy"
+                />
+              </figure>
+            </article>
+
+            <article class="showcase-item">
+              <div class="showcase-copy">
+                <h3>Subagents for deep exploration</h3>
+                <p>
+                  When the main agent needs to explore broadly, it can spawn subagents that run their own
+                  tool loops. Collapsed cards keep the timeline tidy; expand to follow nested work.
+                </p>
+              </div>
+              <figure class="showcase-image">
+                <img
+                  src="screenshots/subagent-display-expanded.png"
+                  alt="Expanded subagent card with nested tool calls"
+                  width="1280"
+                  height="800"
+                  loading="lazy"
+                />
+              </figure>
+            </article>
+
+            <article class="showcase-item">
+              <div class="showcase-copy">
+                <h3>Git changes at a glance</h3>
+                <p>
+                  The Changes panel lists staged, unstaged, and untracked files. Open inline diffs —
+                  including images — without switching to another app. Branch status appears in the footer
+                  and composer when your thread and git branch diverge.
+                </p>
+              </div>
+              <figure class="showcase-image">
+                <img
+                  src="screenshots/git-changes-diff-expanded.png"
+                  alt="Git changes panel with an expanded inline diff"
+                  width="1280"
+                  height="800"
+                  loading="lazy"
+                />
+              </figure>
+            </article>
+
+            <article class="showcase-item">
+              <div class="showcase-copy">
+                <h3>Approve edits before they land</h3>
+                <p>
+                  Agent-proposed file changes enter a staged-diff queue. Review hunks in Monaco, then
+                  accept or reject each change — nothing writes to disk until you approve it.
+                </p>
+              </div>
+              <figure class="showcase-image">
+                <img
+                  src="screenshots/staged-diff-single.png"
+                  alt="Staged diff approval queue with a single pending change"
+                  width="1280"
+                  height="800"
+                  loading="lazy"
+                />
+              </figure>
+            </article>
+
+            <article class="showcase-item">
+              <div class="showcase-copy">
+                <h3>Monaco ↔ chat bridge</h3>
+                <p>
+                  Select code in the editor and attach it directly to your prompt. Copse keeps file
+                  context, line ranges, and attachments visible in the composer.
+                </p>
+              </div>
+              <figure class="showcase-image">
+                <img
+                  src="screenshots/monaco-selection-chat-attachment.png"
+                  alt="Monaco editor selection attached to the chat composer"
+                  width="1280"
+                  height="800"
+                  loading="lazy"
+                />
+              </figure>
+            </article>
+
+            <article class="showcase-item">
+              <div class="showcase-copy">
+                <h3>Semantic code search</h3>
+                <p>
+                  Ask questions in natural language and get ranked code hits from a project index. Results
+                  render as rich markdown explore cards inside the conversation.
+                </p>
+              </div>
+              <figure class="showcase-image">
+                <img
+                  src="screenshots/semantic-search-explore-expanded.png"
+                  alt="Semantic search explore results expanded in chat"
+                  width="1280"
+                  height="800"
+                  loading="lazy"
+                />
+              </figure>
+            </article>
+
+            <article class="showcase-item">
+              <div class="showcase-copy">
+                <h3>Terminal &amp; browser panes</h3>
+                <p>
+                  The right panel switches between Explorer, Changes, Plan, Terminal, and Browser. Run
+                  shell commands beside the agent, or load a local dev server in the embedded browser.
+                </p>
+              </div>
+              <div class="showcase-image">
+                <img
+                  src="screenshots/terminal-echo-hello.png"
+                  alt="Integrated terminal running a shell command"
+                  width="1280"
+                  height="800"
+                  loading="lazy"
+                />
+              </div>
+            </article>
+
+            <article class="showcase-item">
+              <div class="showcase-copy">
+                <h3>In-app browser tabs</h3>
+                <p>
+                  Open multiple browser tabs inside Copse for docs, staging sites, or quick visual checks
+                  while the agent keeps working in chat.
+                </p>
+              </div>
+              <figure class="showcase-image">
+                <img
+                  src="screenshots/browser-mode-two-tabs.png"
+                  alt="In-app browser with two tabs open"
+                  width="1280"
+                  height="800"
+                  loading="lazy"
+                />
+              </figure>
+            </article>
+
+            <article class="showcase-item">
+              <div class="showcase-copy">
+                <h3>Plan &amp; todos</h3>
+                <p>
+                  The agent maintains a todo list and optional plan tab so you can track multi-step work
+                  across long sessions without losing the thread.
+                </p>
+              </div>
+              <figure class="showcase-image">
+                <img
+                  src="screenshots/todo-plan-tab.png"
+                  alt="Plan tab showing agent todos and progress"
+                  width="1280"
+                  height="800"
+                  loading="lazy"
+                />
+              </figure>
+            </article>
+
+            <article class="showcase-item">
+              <div class="showcase-copy">
+                <h3>MCP servers on your terms</h3>
+                <p>
+                  Copse is an MCP host: add servers in project or global config, see connection status in
+                  Settings, and approve tool calls before they run.
+                </p>
+              </div>
+              <figure class="showcase-image">
+                <img
+                  src="screenshots/mcp-settings-connected.png"
+                  alt="MCP server connected in Settings"
+                  width="1280"
+                  height="800"
+                  loading="lazy"
+                />
+              </figure>
+            </article>
+
+            <article class="showcase-item">
+              <div class="showcase-copy">
+                <h3>Model routing</h3>
+                <p>
+                  Route everyday tasks to a fast local model and reserve cloud models for harder work. The
+                  onboarding wizard walks through API keys, LM Studio, and routing in a few steps.
+                </p>
+              </div>
+              <figure class="showcase-image">
+                <img
+                  src="screenshots/onboarding-step-routing.png"
+                  alt="Onboarding wizard model routing step"
+                  width="1280"
+                  height="800"
+                  loading="lazy"
+                />
+              </figure>
+            </article>
+
+            <article class="showcase-item">
+              <div class="showcase-copy">
+                <h3>Rich conversation UI</h3>
+                <p>
+                  Mermaid diagrams, code blocks with copy buttons, follow-up suggestion chips, and a
+                  message queue while the agent is still running — polish that keeps long sessions usable.
+                </p>
+                <ul>
+                  <li>Queue messages without interrupting the current turn</li>
+                  <li>Context usage wheel in the footer</li>
+                  <li>Export threads as JSONL for review</li>
+                </ul>
+              </div>
+              <figure class="showcase-image">
+                <img
+                  src="screenshots/mermaid-diagram-agent-loop.png"
+                  alt="Mermaid diagram rendered in agent chat"
+                  width="1280"
+                  height="800"
+                  loading="lazy"
+                />
+              </figure>
+            </article>
+          </div>
+        </section>
+
+        <section class="install" id="download">
+          <h2>Get started</h2>
+          <div class="install-steps">
+            <div class="step">
+              <div class="step-number">1</div>
+              <div class="step-content">
+                <h4>Prerequisites</h4>
+                <p>
+                  Node.js 22 or newer. For the packaged macOS app, you need macOS and Xcode command-line
+                  tools. Optional: LM Studio for local models; Anthropic or OpenAI API keys for cloud
+                  models.
+                </p>
+              </div>
+            </div>
+
+            <div class="step">
+              <div class="step-number">2</div>
+              <div class="step-content">
+                <h4>Clone &amp; install</h4>
+                <div class="code-block">
+                  <code>git clone https://github.com/jonathanKingston/agent-pane.git &amp;&amp; cd agent-pane &amp;&amp; npm install</code>
+                  <button class="copy-btn" onclick="copyToClipboard('git clone https://github.com/jonathanKingston/agent-pane.git && cd agent-pane && npm install')">Copy</button>
+                </div>
+                <p class="alt-text">
+                  <code>npm install</code> also fetches the bundled semantic-search binary on supported
+                  platforms.
+                </p>
+              </div>
+            </div>
+
+            <div class="step">
+              <div class="step-number">3</div>
+              <div class="step-content">
+                <h4>Run in development</h4>
+                <div class="code-block">
+                  <code>npm run dev</code>
+                  <button class="copy-btn" onclick="copyToClipboard('npm run dev')">Copy</button>
+                </div>
+                <p class="alt-text">
+                  Opens the Electron app with hot rebuild. Use <span class="inline-code">npm run build &amp;&amp; npm start</span>
+                  for a production bundle.
+                </p>
+              </div>
+            </div>
+
+            <div class="step">
+              <div class="step-number">4</div>
+              <div class="step-content">
+                <h4>Build for macOS</h4>
+                <div class="code-block">
+                  <code>npm run pack:mac</code>
+                  <button class="copy-btn" onclick="copyToClipboard('npm run pack:mac')">Copy</button>
+                </div>
+                <p class="alt-text">
+                  Produces an unpacked <span class="inline-code">.app</span> under
+                  <span class="inline-code">release/</span>. Open a project folder from the welcome screen
+                  or seed <span class="inline-code">~/.config/copse-panel/config.json</span> on Linux.
+                </p>
+                <p class="download-note">
+                  Signed macOS and Windows installers are coming soon. For now, build from source with the
+                  commands above.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="why">
+          <h2>Why Copse?</h2>
+          <div class="why-grid">
+            <div class="why-item">
+              <h4>Desktop-native</h4>
+              <p>
+                A real IDE layout — projects, chat, editor, terminal, and git — not a browser tab lost
+                among dozens of others.
+              </p>
+            </div>
+            <div class="why-item">
+              <h4>No backend</h4>
+              <p>
+                The Electron main process talks directly to LLM providers. Your code stays on your machine;
+                API keys live in local settings.
+              </p>
+            </div>
+            <div class="why-item">
+              <h4>You stay in control</h4>
+              <p>
+                Shell commands, MCP tools, and file writes go through approval gates. Staged diffs mean
+                the agent proposes — you decide.
+              </p>
+            </div>
+            <div class="why-item">
+              <h4>Hybrid models</h4>
+              <p>
+                Run everyday tasks on local hardware with LM Studio, then route complex work to cloud
+                models when you need them.
+              </p>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <p>
+          <a href="https://github.com/jonathanKingston/agent-pane">GitHub</a>
+          <span class="separator">•</span>
+          <a href="supply-chain-security.md">Security</a>
+        </p>
+        <p class="copyright">Made for developers who pair with agents every day</p>
+      </footer>
+    </div>
+
+    <script>
+      function copyToClipboard(text) {
+        navigator.clipboard
+          .writeText(text)
+          .then(() => {
+            const btn = event.target
+            const originalText = btn.textContent
+            btn.textContent = 'Copied!'
+            btn.classList.add('copied')
+            setTimeout(() => {
+              btn.textContent = originalText
+              btn.classList.remove('copied')
+            }, 2000)
+          })
+          .catch((err) => {
+            console.error('Failed to copy:', err)
+          })
+      }
+    </script>
+  </body>
+</html>
