@@ -29,7 +29,7 @@ import { mountFooterBranchStatus } from './footer-branch-status.ts'
 import { createContextWheel } from './context-wheel.ts'
 import { bindFooterCompactLayout } from './footer-compact.ts'
 import { mountFooterOverflow } from './footer-overflow.ts'
-import { downloadThreadJsonl } from '../export-thread.ts'
+import { downloadThreadJsonl, threadHasExportableContent } from '../export-thread.ts'
 import { formatThreadUsageCost } from '@shared/llm/estimate-cost.ts'
 import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
 import { mountFollowUpSuggestions } from './follow-up-suggestions.ts'
@@ -78,9 +78,10 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const footerOverflow = mountFooterOverflow(footer, [
     {
       label: 'Export',
+      hidden: () => !threadHasExportableContent(getActiveThread(store)),
       onClick: () => {
         const thread = getActiveThread(store)
-        if (thread) downloadThreadJsonl(thread)
+        if (threadHasExportableContent(thread)) downloadThreadJsonl(thread)
       },
     },
   ])
@@ -102,7 +103,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
 
   exportBtn.addEventListener('click', () => {
     const thread = getActiveThread(store)
-    if (thread) downloadThreadJsonl(thread)
+    if (threadHasExportableContent(thread)) downloadThreadJsonl(thread)
   })
   usageBtn.addEventListener('click', () => {
     costVisible = !costVisible
@@ -214,6 +215,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       usageBtn.hidden = tuckUsageIntoWheel
       usageBtn.textContent = usageText
     }
+    exportBtn.hidden = !threadHasExportableContent(thread)
+    footerOverflow.update()
     updateState()
     updateQueueIndicator()
   }
@@ -468,6 +471,9 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     }),
     store.on('message_queued', (tid) => {
       if (tid === getActiveThreadId()) updateQueueIndicator()
+    }),
+    store.on('message_added', (tid) => {
+      if (tid === getActiveThreadId()) updateFooter()
     }),
     store.on('threads_changed', () => {
       syncComposerThread()
