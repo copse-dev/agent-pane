@@ -21,6 +21,8 @@ import type { AgentRunPayload, SkillSummary } from '@shared/types/skills.ts'
 import { mountFooterModelPicker } from './footer-model-picker.ts'
 import { mountFooterBranchStatus } from './footer-branch-status.ts'
 import { createContextWheel } from './context-wheel.ts'
+import { bindFooterCompactLayout } from './footer-compact.ts'
+import { mountFooterOverflow } from './footer-overflow.ts'
 import { downloadThreadJsonl } from '../export-thread.ts'
 import { syncAgentActivity } from '../agent-activity.ts'
 import {
@@ -67,7 +69,18 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const usageGroup = el('div', { class: 'footer-usage-group' })
   const contextWheel = createContextWheel()
   usageGroup.append(contextWheel.root, usageBtn)
-  footer.append(modelHost, branchHost, exportBtn, usageGroup)
+  footer.append(modelHost, branchHost, exportBtn)
+  const footerOverflow = mountFooterOverflow(footer, [
+    {
+      label: 'Export',
+      onClick: () => {
+        const thread = getActiveThread(store)
+        if (thread) downloadThreadJsonl(thread)
+      },
+    },
+  ])
+  footer.append(usageGroup)
+  const footerCompact = bindFooterCompactLayout(footer, () => updateFooter())
   let costVisible = false
 
   const modelPicker = mountFooterModelPicker(
@@ -87,6 +100,11 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     if (thread) downloadThreadJsonl(thread)
   })
   usageBtn.addEventListener('click', () => {
+    costVisible = !costVisible
+    updateFooter()
+  })
+  contextWheel.root.addEventListener('click', () => {
+    if (!footerCompact.isCompact() || contextWheel.root.hidden || !usageSummaryText()) return
     costVisible = !costVisible
     updateFooter()
   })
@@ -150,22 +168,34 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     submitBtn.dataset.action = running ? 'abort' : 'submit'
   }
 
-  function updateFooter() {
+  function usageSummaryText(): string | null {
     const model = store.getState().settings?.model ?? 'claude-sonnet-4-6'
     const thread = getActiveThread(store)
     const { inputTokens, outputTokens } = thread?.usage ?? { inputTokens: 0, outputTokens: 0 }
     const total = inputTokens + outputTokens
     const running = thread?.status === 'running'
-    contextWheel.update(thread?.contextSnapshot, running)
-    if (!total && !running) {
+    if (!total && !running) return null
+    if (costVisible) {
+      return `${inputTokens} in / ${outputTokens} out · ${formatThreadUsageCost(thread?.usage ?? { inputTokens: 0, outputTokens: 0 }, model)}`
+    }
+    return total ? `${(total / 1000).toFixed(1)}k tokens` : '0 tokens'
+  }
+
+  function updateFooter() {
+    const thread = getActiveThread(store)
+    const running = thread?.status === 'running'
+    const usageText = usageSummaryText()
+    const compact = footerCompact.isCompact()
+    const tuckUsageIntoWheel = compact && !contextWheel.root.hidden
+    contextWheel.update(thread?.contextSnapshot, running, {
+      usageLine: tuckUsageIntoWheel ? usageText : null,
+    })
+    contextWheel.root.classList.toggle('is-interactive', tuckUsageIntoWheel)
+    if (!usageText) {
       usageBtn.hidden = true
     } else {
-      usageBtn.hidden = false
-      usageBtn.textContent = costVisible
-        ? `${inputTokens} in / ${outputTokens} out · ${formatThreadUsageCost(thread?.usage ?? { inputTokens: 0, outputTokens: 0 }, model)}`
-        : total
-          ? `${(total / 1000).toFixed(1)}k tokens`
-          : '0 tokens'
+      usageBtn.hidden = tuckUsageIntoWheel
+      usageBtn.textContent = usageText
     }
     updateState()
   }
@@ -440,6 +470,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     unbindDrop()
     unregisterAttachments()
     modelPicker.destroy()
+    footerOverflow.destroy()
+    footerCompact.destroy()
     branchStatus()
     skillPicker()
   }

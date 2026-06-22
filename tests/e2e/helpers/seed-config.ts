@@ -395,6 +395,61 @@ export function seedContextWheelFixture(workspaceRoot: string): void {
   )
 }
 
+/** Footer with long model/branch labels plus context wheel + token usage for compact layout e2e. */
+export function seedFooterCompactFixture(workspaceRoot: string): {
+  model: string
+  branch: string
+  tokenLabel: string
+} {
+  const projectId = 'e2e-footer-compact-project'
+  const threadId = 'e2e-footer-compact-thread'
+  const model = 'lmstudio:qwen/qwen3.6-35b-a3b'
+  const branch = 'jkt/auto/markdown-file-links-3d2c'
+  const conversationBudget = 180_000
+  const conversationTokens = 9_000
+  const inputTokens = 50_000
+  const outputTokens = 1_800
+  const tokenLabel = `${((inputTokens + outputTokens) / 1000).toFixed(1)}k tokens`
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Footer compact layout',
+          status: 'idle',
+          gitBranch: branch,
+          messages: [
+            {
+              id: 'msg-user-compact',
+              role: 'user',
+              content: 'Check footer layout at narrow widths.',
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens, outputTokens },
+          contextSnapshot: {
+            contextWindow: 200_000,
+            conversationBudget,
+            conversationTokens,
+            fillRatio: conversationTokens / conversationBudget,
+            updatedAt: Date.now(),
+          },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+  writeSettings({ model })
+  return { model: 'qwen/qwen3.6-35b-a3b', branch, tokenLabel }
+}
+
 export function seedSubagentFixture(workspaceRoot: string): void {
   const projectId = 'e2e-subagent-project'
   const threadId = 'e2e-subagent-thread'
