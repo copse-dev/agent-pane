@@ -25,6 +25,9 @@ function mergeSpawnEnv(base: NodeJS.ProcessEnv, override?: NodeJS.ProcessEnv): N
   return { ...base, ...override }
 }
 
+/** POSIX-only: run the child as its own process-group leader so the group can be killed together. */
+const detachForGroupKill = process.platform !== 'win32'
+
 export async function spawnInProjectSandbox(
   executable: string,
   args: string[],
@@ -42,6 +45,7 @@ export async function spawnInProjectSandbox(
       env: opts.env ?? process.env,
       stdio: opts.stdio,
       signal: opts.signal,
+      detached: detachForGroupKill,
     })
   }
 
@@ -62,6 +66,7 @@ export async function spawnInProjectSandbox(
     env: mergeSpawnEnv(env, opts.env),
     stdio: opts.stdio,
     signal: opts.signal,
+    detached: detachForGroupKill,
   })
 }
 
@@ -83,6 +88,7 @@ export async function spawnShellInProjectSandbox(
       env: opts.env ?? process.env,
       stdio: opts.stdio,
       signal: opts.signal,
+      detached: detachForGroupKill,
     })
   }
 
@@ -101,7 +107,26 @@ export async function spawnShellInProjectSandbox(
     env: mergeSpawnEnv(env, opts.env),
     stdio: opts.stdio,
     signal: opts.signal,
+    detached: detachForGroupKill,
   })
+}
+
+/**
+ * Number of sandbox policy violations the runner (ASRT) recorded for a command.
+ * This is a runner/kernel-side signal — it is NOT derived from the command's own
+ * stdout/stderr, so a command cannot forge it by echoing "operation not permitted"
+ * to trick the user into an unsandboxed re-run (issue #104).
+ *
+ * Returns 0 when the sandbox is inactive or no violation log is available.
+ */
+export function sandboxViolationCountForCommand(command: string): number {
+  if (!isProjectSandboxEnabled()) return 0
+  try {
+    const store = SandboxManager.getSandboxViolationStore()
+    return store.getViolationsForCommand(command).length
+  } catch {
+    return 0
+  }
 }
 
 export function afterSandboxedCommand(): void {

@@ -10,6 +10,8 @@ export interface CodeContentSearchOptions {
   caseSensitive?: boolean
   fileGlob?: string
   maxResults: number
+  /** Lines of surrounding context to show around each match (rg -C). */
+  contextLines?: number
   signal?: AbortSignal
 }
 
@@ -131,6 +133,7 @@ async function searchWithRipgrep(opts: CodeContentSearchOptions): Promise<string
     '--max-count',
     String(opts.maxResults),
     '--json',
+    ...(opts.contextLines && opts.contextLines > 0 ? ['--context', String(opts.contextLines)] : []),
     ...(opts.fixedString ? ['--fixed-strings'] : []),
     ...(opts.caseSensitive ? [] : ['--ignore-case']),
     ...(opts.fileGlob ? ['--glob', opts.fileGlob] : []),
@@ -144,7 +147,7 @@ async function searchWithRipgrep(opts: CodeContentSearchOptions): Promise<string
 }
 
 export function parseRipgrepJson(stdout: string, maxResults: number): string[] {
-  const matches = stdout
+  const entries = stdout
     .split('\n')
     .filter(Boolean)
     .map((line) => {
@@ -154,19 +157,36 @@ export function parseRipgrepJson(stdout: string, maxResults: number): string[] {
         return null
       }
     })
-    .filter(
-      (entry): entry is Record<string, unknown> => entry !== null && entry['type'] === 'match',
-    )
-    .map((entry) => {
-      const data = entry['data'] as {
-        path: { text: string }
-        line_number: number
-        lines: { text: string }
-      }
-      return `${toRelativePath(data.path.text)}:${data.line_number}: ${data.lines.text.trimEnd()}`
-    })
+    .filter((entry): entry is Record<string, unknown> => entry !== null)
 
-  return matches.slice(0, maxResults)
+  // Context lines (rg --context) arrive as separate `context` events; render
+  // them with a `-` separator (like rg's own output) so the model sees the
+  // surrounding code, and cap by the number of *matches* rather than total
+  // lines so context never eats the result budget (#122).
+  const out: string[] = []
+  let matchCount = 0
+  for (const entry of entries) {
+    const type = entry['type']
+    if (type !== 'match' && type !== 'context') continue
+    const data = entry['data'] as {
+      path: { text: string }
+      line_number: number
+      lines: { text: string }
+    }
+    if (type === 'match') {
+      if (matchCount >= maxResults) break
+      matchCount++
+      out.push(
+        `${toRelativePath(data.path.text)}:${data.line_number}: ${data.lines.text.trimEnd()}`,
+      )
+    } else {
+      out.push(
+        `${toRelativePath(data.path.text)}-${data.line_number}- ${data.lines.text.trimEnd()}`,
+      )
+    }
+  }
+
+  return out
 }
 
 export function parseGrepStdout(stdout: string, maxResults: number): string[] {
@@ -195,8 +215,13 @@ export function formatCodeSearchResults(
   backend: IndexedGrepBackend,
 ): string {
   if (lines.length === 0) return 'No matches found.'
+  // Context lines (rendered with a `-N-` separator) must not count toward the
+  // result cap, otherwise a few matches with context look "truncated" (#122).
+  const matchLineCount = lines.filter((l) => /:\d+: /.test(l)).length || lines.length
   const suffix =
-    lines.length >= maxResults ? `\n[Truncated at ${maxResults} results. Narrow your search.]` : ''
+    matchLineCount >= maxResults
+      ? `\n[Truncated at ${maxResults} results. Narrow your search.]`
+      : ''
   const backendNote = backend === 'rg' ? '' : `\n[Searched via indexed ${backend} backend.]`
   return lines.join('\n') + suffix + backendNote
 }

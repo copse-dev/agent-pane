@@ -1,9 +1,11 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import assert from 'node:assert/strict'
 import { $, browser } from '@wdio/globals'
 import { threadToJsonl } from '../../src/renderer/export-thread.ts'
 import type { Thread } from '@shared/types'
 import { getCopseUserDataDir } from './helpers.ts'
+import { DEFAULT_APP_CHAT_MODEL, LM_STUDIO_MODEL_IDS } from '../../src/shared/lm-studio-defaults.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
 const ARTIFACTS = join(process.cwd(), 'tests/e2e/artifacts')
@@ -20,19 +22,69 @@ function loadScenario(): EvalScenario {
   return JSON.parse(readFileSync(path, 'utf8')) as EvalScenario
 }
 
-async function waitForAgentIdle(timeoutMs: number): Promise<void> {
-  await browser.waitUntil(async () => (await $('.submit-btn').getText()) === 'Send', {
-    timeout: timeoutMs,
-    interval: 500,
-    timeoutMsg: 'Agent did not return to idle (submit button Send)',
-  })
+/** macOS seatbelt prompts before `gh`, network, etc. Auto-approve so evals don't hang. */
+async function approvePendingApprovalDialogs(): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const open = await browser.execute(() => {
+      const dialog = document.querySelector('#approval-dialog')
+      return dialog instanceof HTMLDialogElement && dialog.open
+    })
+    if (!open) return
+    await $('.approval-approve').click()
+    await browser.pause(100)
+  }
+}
+
+async function waitForPromptReady(timeoutMs = 60_000): Promise<void> {
   await browser.waitUntil(
     async () => {
-      const disabled = await $('.prompt-input').getProperty('disabled')
+      const textarea = await $('.prompt-input')
+      if (!(await textarea.isExisting())) return false
+      const disabled = await textarea.getProperty('disabled')
       return disabled !== true
     },
-    { timeout: 30_000, interval: 200 },
+    { timeout: timeoutMs, interval: 300, timeoutMsg: 'Prompt input not enabled' },
   )
+}
+
+async function waitForAgentIdle(timeoutMs: number): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      await approvePendingApprovalDialogs()
+      return (await $('.submit-btn').getText()) === 'Stop'
+    },
+    {
+      timeout: 60_000,
+      interval: 100,
+      timeoutMsg: 'Agent did not start (submit button Stop)',
+    },
+  )
+  await browser.waitUntil(
+    async () => {
+      await approvePendingApprovalDialogs()
+      return (await $('.submit-btn').getText()) === 'Send'
+    },
+    {
+      timeout: timeoutMs,
+      interval: 500,
+      timeoutMsg: 'Agent did not return to idle (submit button Send)',
+    },
+  )
+  await waitForPromptReady()
+  await $('.msg-assistant').waitForExist({ timeout: 30_000 })
+  // Autosave debounces thread writes (~250ms); give persistence a beat before export.
+  await browser.pause(500)
+}
+
+async function typePrompt(text: string): Promise<void> {
+  await waitForPromptReady()
+  await browser.execute((value) => {
+    const el = document.querySelector('.prompt-input') as HTMLTextAreaElement | null
+    if (!el) throw new Error('.prompt-input not found')
+    el.focus()
+    el.value = value
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  }, text)
 }
 
 function readActiveThread(): Thread {
@@ -49,11 +101,41 @@ function readActiveThread(): Thread {
   return thread
 }
 
+function assertExploreSubagentCompleted(thread: Thread): void {
+  const exploreCalls = thread.messages
+    .flatMap((m) => m.toolCalls)
+    .filter((tc) => tc.name === 'explore')
+  assert.ok(exploreCalls.length > 0, 'expected at least one explore tool call')
+  const completed = exploreCalls.filter(
+    (tc) => tc.status === 'done' && typeof tc.result === 'string' && tc.result.trim().length > 20,
+  )
+  assert.ok(completed.length > 0, 'expected explore to complete with a non-empty summary result')
+}
+
 describe('agent eval drive', () => {
   before(async () => {
     mkdirSync(ARTIFACTS, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'agent-eval-project', { subagentsEnabled: true })
+    const useMock = process.env.COPSE_EVAL_USE_MOCK === '1'
+    const lmStudioUrl = process.env.COPSE_EVAL_LM_STUDIO_URL?.trim() || 'http://localhost:1234/v1'
+    const subagentsEnabled =
+      process.env.COPSE_EVAL_SUBAGENTS === '0'
+        ? false
+        : process.env.COPSE_EVAL_SUBAGENTS === '1'
+          ? true
+          : !useMock
+    seedEmptyProject(process.cwd(), 'agent-eval-project', {
+      subagentsEnabled,
+      ...(useMock
+        ? { model: 'claude-sonnet-4-6' }
+        : {
+            model: DEFAULT_APP_CHAT_MODEL,
+            lmStudioUrl,
+            lmStudioModel: LM_STUDIO_MODEL_IDS.chat,
+            lmStudioSubagentModel: LM_STUDIO_MODEL_IDS.smallTasks,
+            lmStudioForSubagents: true,
+          }),
+    })
     await browser.reloadSession()
   })
 
@@ -68,13 +150,22 @@ describe('agent eval drive', () => {
     const idleTimeout = Number(process.env.COPSE_EVAL_IDLE_MS ?? 15 * 60_000)
 
     for (const prompt of scenario.prompts) {
-      const textarea = await $('.prompt-input')
-      await textarea.setValue(prompt)
+      await typePrompt(prompt)
       await $('.submit-btn').click()
       await waitForAgentIdle(idleTimeout)
     }
 
     const thread = readActiveThread()
+    if (
+      scenario.id === 'working-brief-eval' ||
+      scenario.id === 'working-brief-eval-lmstudio' ||
+      scenario.id === 'working-brief-subagent-eval'
+    ) {
+      assert.equal(thread.workingBrief, scenario.prompts[0])
+    }
+    if (scenario.id === 'working-brief-subagent-eval' || scenario.id === 'todo-steer-deep-dive') {
+      assertExploreSubagentCompleted(thread)
+    }
     const body = threadToJsonl(thread)
     const outPath = join(ARTIFACTS, `${scenario.id}-${Date.now()}.jsonl`)
     writeFileSync(outPath, body, 'utf8')

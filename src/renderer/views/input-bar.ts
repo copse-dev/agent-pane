@@ -5,8 +5,11 @@ import {
   addMessage,
   setThreadStatus,
   clearContextSnapshot,
+  setThreadWorkingBrief,
   bindThreadGitBranchIfUnset,
+  setThreadDraftPrompt,
 } from '@shared/store/thread-helpers.ts'
+import { nextWorkingBrief } from '@shared/agent/working-brief.ts'
 import { initMentionPicker } from './mention-picker.ts'
 import { initSkillPicker } from './skill-picker.ts'
 import { resolveSkillInvocation } from '@shared/skills/parse-skill-invocation.ts'
@@ -107,6 +110,36 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     const t = store.getState().threads.find((tt) => tt.id === getActiveThreadId())
     return t?.status === 'running'
   }
+
+  let activeComposerThreadId = getActiveThreadId()
+
+  function persistComposerDraft(): void {
+    const id = activeComposerThreadId
+    if (!id) return
+    setThreadDraftPrompt(store, id, textarea.value)
+  }
+
+  function syncComposerThread(): void {
+    const id = getActiveThreadId()
+    if (id === activeComposerThreadId) return
+    if (activeComposerThreadId) {
+      setThreadDraftPrompt(store, activeComposerThreadId, textarea.value)
+    }
+    const thread = store.getState().threads.find((t) => t.id === id)
+    textarea.value = thread?.draftPrompt ?? ''
+    activeComposerThreadId = id
+  }
+
+  let draftSaveTimer: ReturnType<typeof setTimeout> | null = null
+  textarea.addEventListener('input', () => {
+    const id = getActiveThreadId()
+    if (!id) return
+    if (draftSaveTimer !== null) clearTimeout(draftSaveTimer)
+    draftSaveTimer = setTimeout(() => {
+      draftSaveTimer = null
+      setThreadDraftPrompt(store, id, textarea.value)
+    }, 250)
+  })
 
   function updateState() {
     const running = isRunning()
@@ -214,7 +247,16 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     }
 
     const priorTodos = thread?.todos ?? []
-    const payload: AgentRunPayload = { content: fullContent, invokedSkills, priorTodos }
+    const workingBrief = nextWorkingBrief(thread?.workingBrief, fullContent)
+    if (workingBrief && workingBrief !== thread?.workingBrief) {
+      setThreadWorkingBrief(store, id, workingBrief)
+    }
+    const payload: AgentRunPayload = {
+      content: fullContent,
+      invokedSkills,
+      priorTodos,
+      ...(workingBrief !== undefined ? { workingBrief } : {}),
+    }
 
     // Record the user's message in the conversation and mark the thread running
     // before dispatching to the agent — the controller only adds assistant
@@ -232,6 +274,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
 
     void api.agent.run(id, JSON.stringify(payload))
     textarea.value = ''
+    setThreadDraftPrompt(store, id, '')
     attachedFiles = []
     attachedTextBlocks = []
     attachedImages = []
@@ -304,7 +347,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   }
   const unregisterAttachments = registerPromptAttachments(attachmentHandlers)
 
-  document.addEventListener('paste', (e) => {
+  const onPaste = (e: ClipboardEvent) => {
     const items = Array.from(e.clipboardData?.items ?? [])
     const img = items.find((i) => i.type.startsWith('image/'))
     if (img) {
@@ -320,7 +363,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     if (!isTextBlockAttachment(text)) return
     e.preventDefault()
     addTextChip(text)
-  })
+  }
+  document.addEventListener('paste', onPaste)
 
   const unbindDrop = bindFileDropTarget(
     root,
@@ -340,7 +384,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   refreshSkillsCache()
   // Skills are workspace-scoped; drop the stale list when the workspace changes
   // so inline /skill detection and validation use the new workspace's skills.
-  store.on('workspace_changed', () => {
+  const unsubWorkspace = store.on('workspace_changed', () => {
     skillsCache = null
     refreshSkillsCache()
   })
@@ -352,10 +396,12 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   })
 
   const unsubs = [
+    store.on('composer_draft_flush', persistComposerDraft),
     store.on('thread_status_changed', (tid) => {
       if (tid === getActiveThreadId()) updateState()
     }),
     store.on('threads_changed', () => {
+      syncComposerThread()
       updateState()
       updateFooter()
     }),
@@ -378,8 +424,15 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   observer.observe(followUps.root, { attributes: true, attributeFilter: ['hidden'] })
 
   updateFooter()
+  syncComposerThread()
   return () => {
+    if (draftSaveTimer !== null) clearTimeout(draftSaveTimer)
+    if (activeComposerThreadId) {
+      setThreadDraftPrompt(store, activeComposerThreadId, textarea.value)
+    }
     unsubs.forEach((u) => u())
+    unsubWorkspace()
+    document.removeEventListener('paste', onPaste)
     observer.disconnect()
     followUps.destroy()
     unbindDrop()

@@ -41,7 +41,15 @@ function writeSettings(settings: Record<string, unknown>): void {
 export function seedEmptyProject(
   workspaceRoot: string,
   projectId: string,
-  options?: { subagentsEnabled?: boolean; mockFollowUps?: boolean },
+  options?: {
+    subagentsEnabled?: boolean
+    mockFollowUps?: boolean
+    model?: string
+    lmStudioUrl?: string
+    lmStudioModel?: string
+    lmStudioSubagentModel?: string
+    lmStudioForSubagents?: boolean
+  },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
   writeFileSync(
@@ -60,8 +68,25 @@ export function seedEmptyProject(
   if (options?.mockFollowUps) {
     settings.mockFollowUps = true
   }
+  if (options?.model) {
+    settings.model = options.model
+  }
+  if (options?.lmStudioUrl) {
+    settings.lmStudioUrl = options.lmStudioUrl
+  }
+  if (options?.lmStudioModel) {
+    settings.lmStudioModel = options.lmStudioModel
+  }
+  if (options?.lmStudioSubagentModel) {
+    settings.lmStudioSubagentModel = options.lmStudioSubagentModel
+  }
+  if (options?.lmStudioForSubagents !== undefined) {
+    settings.lmStudioForSubagents = options.lmStudioForSubagents
+  }
   if (Object.keys(settings).length > 0) {
     writeSettings(settings)
+  } else {
+    writeSettings({})
   }
 }
 
@@ -817,6 +842,59 @@ export interface FooterBranchSeedIds {
   mismatchThreadId: string
   currentBranch: string
   mismatchBranch: string
+}
+
+/** Used thread plus a blank composer for draft-prompt preservation e2e. */
+export function seedDraftPromptFixture(workspaceRoot: string): {
+  usedThreadTitle: string
+  blankThreadTitle: string
+} {
+  const projectId = 'e2e-draft-prompt-project'
+  const usedThreadId = 'e2e-draft-used'
+  const blankThreadId = 'e2e-draft-blank'
+  const usedThreadTitle = 'Used thread'
+  const blankThreadTitle = 'New Thread'
+  const now = Date.now()
+
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: blankThreadId,
+          title: blankThreadTitle,
+          status: 'idle',
+          messages: [],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: now + 1,
+          updatedAt: now + 1,
+        },
+        {
+          id: usedThreadId,
+          title: usedThreadTitle,
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-user-used',
+              role: 'user',
+              content: 'hello from used thread',
+              toolCalls: [],
+              createdAt: now,
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    }),
+    'utf8',
+  )
+
+  return { usedThreadTitle, blankThreadTitle }
 }
 
 /** Two threads bound to different branches for footer branch / mismatch screenshots. */

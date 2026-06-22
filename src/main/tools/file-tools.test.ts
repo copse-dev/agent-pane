@@ -51,6 +51,56 @@ describe('file tools', () => {
     assert.doesNotMatch(result, /^\uFEFF/)
   })
 
+  it('read_file returns a friendly error without leaking errno or absolute path (#123)', async () => {
+    const result = await runTool(
+      registry,
+      'read_file',
+      { path: 'does-not-exist.txt' },
+      new AbortController().signal,
+    )
+    assert.match(result, /File not found: does-not-exist\.txt/)
+    assert.doesNotMatch(result, /ENOENT/)
+    assert.doesNotMatch(result, new RegExp(tempRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  })
+
+  it('read_file rejects an end_line below start_line (#123)', async () => {
+    await writeFile(join(tempRoot, 'r.txt'), 'a\nb\nc\n', 'utf8')
+    const result = await runTool(
+      registry,
+      'read_file',
+      { path: 'r.txt', start_line: 3, end_line: 1 },
+      new AbortController().signal,
+    )
+    assert.match(result, /Invalid range/)
+  })
+
+  it('read_file enforces the line cap even with an explicit end_line (#123)', async () => {
+    const lines = Array.from({ length: 500 }, (_, i) => `line${i + 1}`).join('\n')
+    await writeFile(join(tempRoot, 'big.txt'), lines + '\n', 'utf8')
+    const result = await runTool(
+      registry,
+      'read_file',
+      { path: 'big.txt', start_line: 1, end_line: 500 },
+      new AbortController().signal,
+    )
+    const body = result.split('\n').filter((l) => /^line\d+$/.test(l))
+    assert.ok(
+      body.length <= TEST_READ_LIMITS.maxLines,
+      `expected <= ${TEST_READ_LIMITS.maxLines} lines, got ${body.length}`,
+    )
+  })
+
+  it('list_dir returns a friendly error for a missing directory (#123)', async () => {
+    const result = await runTool(
+      registry,
+      'list_dir',
+      { path: 'no/such/dir' },
+      new AbortController().signal,
+    )
+    assert.match(result, /Directory not found: no\/such\/dir/)
+    assert.doesNotMatch(result, /ENOENT/)
+  })
+
   it('list_dir caps non-recursive entries', async () => {
     await mkdir(join(tempRoot, 'many'), { recursive: true })
     for (let i = 0; i < LIST_DIR_MAX_ENTRIES + 5; i++) {

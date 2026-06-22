@@ -34,6 +34,38 @@ describe('renderMarkdown', () => {
     assert.match(html, /<li>beta<\/li>/)
   })
 
+  it('renders markdown links in prose and ordered lists', () => {
+    const html = renderMarkdown(
+      'See [PR #204](https://github.com/org/repo/pull/204) for details.\n\n' +
+        '1. [PR #205](https://github.com/org/repo/pull/205) — draft fix\n' +
+        '2. [PR #188](https://github.com/org/repo/pull/188) — UI change',
+    )
+    assert.match(
+      html,
+      /<a href="https:\/\/github\.com\/org\/repo\/pull\/204" target="_blank" rel="noopener noreferrer">PR #204<\/a>/,
+    )
+    assert.match(
+      html,
+      /<li><a href="https:\/\/github\.com\/org\/repo\/pull\/205"[^>]*>PR #205<\/a> — draft fix<\/li>/,
+    )
+    assert.match(
+      html,
+      /<li><a href="https:\/\/github\.com\/org\/repo\/pull\/188"[^>]*>PR #188<\/a> — UI change<\/li>/,
+    )
+  })
+
+  it('leaves unsafe link schemes as literal markdown', () => {
+    const html = renderMarkdown('[click me](javascript:alert(1))')
+    assert.doesNotMatch(html, /<a /)
+    assert.match(html, /\[click me\]\(javascript:alert\(1\)\)/)
+  })
+
+  it('does not render links inside inline code', () => {
+    const html = renderMarkdown('Use `[text](http://x)` literally')
+    assert.match(html, /<code>\[text\]\(http:\/\/x\)<\/code>/)
+    assert.doesNotMatch(html, /<a /)
+  })
+
   it('renders ordered lists with continuation paragraphs grouped into items', () => {
     const html = renderMarkdown(
       [
@@ -48,7 +80,8 @@ describe('renderMarkdown', () => {
         'Worker thread for bar.',
       ].join('\n'),
     )
-    assert.match(html, /<p>Here's a summary of the three changed files:<\/p>/)
+    // Apostrophes are HTML-encoded by the order-independent text encoder (#115).
+    assert.match(html, /<p>Here&#39;s a summary of the three changed files:<\/p>/)
     assert.match(html, /<ol>/)
     assert.match(
       html,
@@ -190,5 +223,51 @@ describe('renderMarkdown', () => {
     assert.match(html, /<h3>1\. Classification/)
     assert.match(html, /<code>search_codebase<\/code>/)
     assert.match(html, /<h3>2\. Execution<\/h3>\s*<ul>/)
+  })
+})
+
+describe('renderMarkdown sanitization (#115)', () => {
+  it('escapes raw HTML tags from untrusted text so no live element is emitted', () => {
+    const html = renderMarkdown('<img src=x onerror=alert(1)>')
+    assert.doesNotMatch(html, /<img/)
+    assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/)
+  })
+
+  it('escapes script tags rather than executing them', () => {
+    const html = renderMarkdown('<script>alert(document.cookie)</script>')
+    assert.doesNotMatch(html, /<script>/)
+    assert.match(html, /&lt;script&gt;/)
+  })
+
+  it('encodes ampersands so entity injection cannot reconstruct markup', () => {
+    // &lt;script&gt; in the source must stay literal, not decode to a tag.
+    const html = renderMarkdown('AT&T &lt;script&gt; &amp; more')
+    assert.match(html, /AT&amp;T &amp;lt;script&amp;gt; &amp;amp; more/)
+    assert.doesNotMatch(html, /<script>/)
+  })
+
+  it('encodes quotes so untrusted text cannot break out into an attribute', () => {
+    const html = renderMarkdown(`say "hi" and 'bye'`)
+    assert.match(html, /&quot;hi&quot;/)
+    assert.match(html, /&#39;bye&#39;/)
+  })
+
+  it('keeps injected markup escaped inside table cells', () => {
+    const html = renderMarkdown(['| H |', '| - |', '| <b>x</b> |'].join('\n'))
+    assert.match(html, /<td>&lt;b&gt;x&lt;\/b&gt;<\/td>/)
+    assert.doesNotMatch(html, /<td><b>/)
+  })
+
+  it('keeps injected markup escaped inside inline code spans', () => {
+    const html = renderMarkdown('`<svg onload=alert(1)>`')
+    assert.match(html, /<code>&lt;svg onload=alert\(1\)&gt;<\/code>/)
+    assert.doesNotMatch(html, /<svg/)
+  })
+
+  it('is order-independent: escaping & before < produces no decodable markup', () => {
+    // A naive ordered encoder that runs < before & could double-process; ensure
+    // the single-pass encoder leaves exactly one level of encoding.
+    const html = renderMarkdown('5 < 6 && 7 > 3')
+    assert.match(html, /5 &lt; 6 &amp;&amp; 7 &gt; 3/)
   })
 })

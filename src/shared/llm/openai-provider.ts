@@ -1,6 +1,7 @@
 import OpenAI from 'openai'
 import type { LLMProvider, LLMMessage, LLMTool, StreamChunk } from '@shared/types'
 import { yieldStreamWithRetry } from './stream-retry.ts'
+import { parseToolArgs } from './parse-tool-args.ts'
 
 export class OpenAIProvider implements LLMProvider {
   private client: OpenAI
@@ -51,13 +52,15 @@ export class OpenAIProvider implements LLMProvider {
 
         const toolCallBuilders = new Map<number, { id: string; name: string; argsJson: string }>()
         let finishReason: string | undefined
+        let streamUsage: { inputTokens: number; outputTokens: number } | null = null
 
         for await (const event of stream) {
           if (event.usage) {
-            self.lastUsage = {
+            streamUsage = {
               inputTokens: event.usage.prompt_tokens,
               outputTokens: event.usage.completion_tokens,
             }
+            self.lastUsage = streamUsage
           }
           const delta = event.choices[0]?.delta
           if (!delta) continue
@@ -86,15 +89,28 @@ export class OpenAIProvider implements LLMProvider {
 
           if (reason === 'tool_calls') {
             for (const [, builder] of toolCallBuilders) {
-              let args: unknown = {}
-              try {
-                args = JSON.parse(builder.argsJson)
-              } catch {
-                args = {}
+              const parsed = parseToolArgs(builder.argsJson)
+              yield {
+                type: 'tool_call',
+                toolCall: {
+                  id: builder.id,
+                  name: builder.name,
+                  args: parsed.args,
+                  ...(parsed.error ? { argsError: parsed.error } : {}),
+                },
               }
-              yield { type: 'tool_call', toolCall: { id: builder.id, name: builder.name, args } }
             }
             toolCallBuilders.clear()
+          }
+        }
+        // Emit usage per-stream so consumers attribute it to this exact stream
+        // rather than racing on the shared lastUsage field (#112).
+        if (streamUsage && (streamUsage.inputTokens || streamUsage.outputTokens)) {
+          yield {
+            type: 'usage',
+            model,
+            inputTokens: streamUsage.inputTokens,
+            outputTokens: streamUsage.outputTokens,
           }
         }
         yield finishReason ? { type: 'done', stopReason: finishReason } : { type: 'done' }

@@ -10,6 +10,7 @@ import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { revealFirstDiffChangeOnNextUpdate } from '../monaco/diff-scroll.ts'
+import { showErrorToast } from './toast.ts'
 
 type MarkdownViewMode = 'preview' | 'source'
 
@@ -49,6 +50,9 @@ export function mountContextPanel(
   const diffToolbar = document.createElement('div')
   diffToolbar.className = 'diff-stage-toolbar'
   diffToolbar.hidden = true
+  const conflictBanner = document.createElement('div')
+  conflictBanner.className = 'diff-conflict-banner'
+  conflictBanner.hidden = true
   const acceptAllBtn = document.createElement('button')
   acceptAllBtn.type = 'button'
   acceptAllBtn.textContent = 'Accept all'
@@ -65,7 +69,7 @@ export function mountContextPanel(
   const diffContainer = document.createElement('div')
   diffContainer.className = 'monaco-container diff-container'
   diffBody.append(diffFileList, diffContainer)
-  diffStage.append(diffToolbar, diffBody)
+  diffStage.append(conflictBanner, diffToolbar, diffBody)
   const emptyContainer = document.createElement('div')
   emptyContainer.className = 'panel-empty'
   emptyContainer.textContent = 'Open a file or run a task to see content here'
@@ -182,12 +186,17 @@ export function mountContextPanel(
 
   fileEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
     const { openFile } = store.getState()
-    if (openFile) void api.fs.writeFile(openFile.path, fileEditor.getValue())
+    if (openFile) {
+      void api.fs.writeFile(openFile.path, fileEditor.getValue()).catch((err) => {
+        showErrorToast(`Failed to save ${openFile.path}`, err)
+      })
+    }
   })
 
   function updatePanel() {
     const { openFile, activeDiff, panelTab, stagedDiffs } = store.getState()
     const queue = stagedDiffs ?? []
+    if (queue.length === 0) conflictBanner.hidden = true
 
     if (queue.length > 0 && panelTab !== 'diff') {
       store.setState({ panelTab: 'diff' })
@@ -279,13 +288,14 @@ export function mountContextPanel(
     store.on('staged_diffs_changed', () => updatePanel()),
   ]
 
-  api.fs.onChanged((path, newContent) => {
+  const unsubFsChanged = api.fs.onChanged((path, newContent) => {
     if (path !== store.getState().openFile?.path) return
     void (async () => {
       let content: string
       try {
         content = newContent ?? (await api.fs.readFile(path))
-      } catch {
+      } catch (err) {
+        showErrorToast(`Failed to reload ${path}`, err)
         return
       }
       const model = fileEditor.getModel()
@@ -296,6 +306,21 @@ export function mountContextPanel(
         renderMarkdownPreview(content)
       }
     })()
+  })
+
+  const unsubDiffConflict = api.diff.onConflict((paths) => {
+    conflictBanner.hidden = false
+    conflictBanner.textContent =
+      paths.length === 1
+        ? `${paths[0]} changed on disk since this diff was staged. The diff was refreshed against the current file — review and re-approve to keep your changes.`
+        : `${paths.length} files changed on disk since they were staged. Their diffs were refreshed against the current files — review and re-approve.`
+    if (paths[0]) {
+      selectedDiffPath = paths[0]
+      store.setState({ panelTab: 'diff', rightPanelMode: 'explorer', filesPaneOpen: true })
+      store.emit('panel_changed')
+      store.emit('right_panel_mode_changed')
+      store.emit('files_pane_changed')
+    }
   })
 
   updatePanel()
@@ -310,6 +335,8 @@ export function mountContextPanel(
   return () => {
     unsubs.forEach((u) => u())
     cancelPendingDiffReveal?.()
+    unsubFsChanged()
+    unsubDiffConflict()
     unbindDrop()
     fileEditor.dispose()
     diffEditor.dispose()

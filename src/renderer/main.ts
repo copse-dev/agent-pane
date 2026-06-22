@@ -35,9 +35,16 @@ import { mountPaneResizers, parseSavedLayout } from './views/pane-resizer.ts'
 import { bindChatComposerLayout } from './views/chat-layout.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { registerPanelKeyboardShortcuts } from './keyboard-shortcuts.ts'
+import { showErrorToast } from './views/toast.ts'
 
 const store = createStore()
 const api = window.api
+
+// Catch-all for IPC/promise failures that would otherwise vanish silently
+// (many call sites dispatch with `void api.…()`). Surface them to the user.
+window.addEventListener('unhandledrejection', (event) => {
+  showErrorToast('Unexpected error', event.reason)
+})
 
 let layoutMounted = false
 

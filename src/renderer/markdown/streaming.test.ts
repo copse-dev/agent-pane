@@ -1,6 +1,11 @@
+import '../../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { renderStreamingMarkdown, splitAtLastNewline } from './streaming.ts'
+import {
+  renderStreamingMarkdown,
+  splitAtLastNewline,
+  StreamingMarkdownRenderer,
+} from './streaming.ts'
 
 describe('splitAtLastNewline', () => {
   it('keeps all content pending when no newline has arrived yet', () => {
@@ -46,5 +51,73 @@ describe('renderStreamingMarkdown', () => {
     assert.match(streaming, /<li>item one<\/li>/)
     assert.match(streaming, /<li>item two<\/li>/)
     assert.doesNotMatch(streaming, /stream-pending/)
+  })
+
+  it('fully escapes the in-progress tail, including & and quotes (#115)', () => {
+    const html = renderStreamingMarkdown('done\n<img src=x onerror=alert(1)> "a" & b')
+    assert.match(html, /<span class="stream-pending">/)
+    assert.doesNotMatch(html, /<img/)
+    assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt; &quot;a&quot; &amp; b/)
+  })
+
+  it('escapes raw HTML in completed lines while streaming', () => {
+    const html = renderStreamingMarkdown('<script>alert(1)</script>\n')
+    assert.doesNotMatch(html, /<script>/)
+    assert.match(html, /&lt;script&gt;/)
+  })
+})
+
+describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
+  it('renders completed markdown and keeps the live tail in a separate span', () => {
+    const host = document.createElement('div')
+    const r = new StreamingMarkdownRenderer(host)
+    r.update('## Title\n- item')
+    const completed = host.querySelector('.stream-complete')!
+    const pending = host.querySelector('.stream-pending')! as HTMLElement
+    assert.match(completed.innerHTML, /<h4>Title<\/h4>/)
+    assert.equal(pending.textContent, '- item')
+    assert.equal(pending.hidden, false)
+  })
+
+  it('reuses the same completed node across tokens (no full rebuild)', () => {
+    const host = document.createElement('div')
+    const r = new StreamingMarkdownRenderer(host)
+    r.update('Hello')
+    const firstPending = host.querySelector('.stream-pending')
+    r.update('Hello wor')
+    r.update('Hello world')
+    // Same nodes are mutated in place; no newline yet so completed stays empty.
+    assert.strictEqual(host.querySelector('.stream-pending'), firstPending)
+    assert.equal((firstPending as HTMLElement).textContent, 'Hello world')
+    assert.equal(host.querySelectorAll('.stream-complete').length, 1)
+  })
+
+  it('only re-renders the completed region when a newline arrives', () => {
+    const host = document.createElement('div')
+    const r = new StreamingMarkdownRenderer(host)
+    r.update('line one')
+    const completed = host.querySelector('.stream-complete') as HTMLElement
+    assert.equal(completed.innerHTML, '')
+    r.update('line one\n')
+    assert.match(completed.innerHTML, /line one/)
+    assert.strictEqual(host.querySelector('.stream-complete'), completed)
+  })
+
+  it('escapes the live tail rather than injecting markup', () => {
+    const host = document.createElement('div')
+    const r = new StreamingMarkdownRenderer(host)
+    r.update('safe\n<img src=x onerror=alert(1)>')
+    assert.equal(host.querySelectorAll('img').length, 0)
+    const pending = host.querySelector('.stream-pending') as HTMLElement
+    assert.equal(pending.textContent, '<img src=x onerror=alert(1)>')
+  })
+
+  it('hides the pending span when the tail is empty', () => {
+    const host = document.createElement('div')
+    const r = new StreamingMarkdownRenderer(host)
+    r.update('done\n')
+    const pending = host.querySelector('.stream-pending') as HTMLElement
+    assert.equal(pending.hidden, true)
+    assert.equal(pending.textContent, '')
   })
 })

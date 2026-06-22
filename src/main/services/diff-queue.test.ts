@@ -1,10 +1,40 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, writeFile, rm, mkdir } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { applyDiffEntry, upsertStagedDiffEntry } from './diff-queue.ts'
+import {
+  applyDiffEntry,
+  applyOrStageDiff,
+  clearDiffQueueForTest,
+  getDiffQueueForTest,
+  getRecentStagedDiffDecision,
+  getStagedDiffEntry,
+  stageDiff,
+  upsertStagedDiffEntry,
+} from './diff-queue.ts'
+import { setGitAvailableForTest } from './tool-availability.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
+
+function git(cwd: string, args: string[]): void {
+  execFileSync('git', args, {
+    cwd,
+    stdio: 'pipe',
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: 'Copse Test',
+      GIT_AUTHOR_EMAIL: 'copse@example.invalid',
+      GIT_COMMITTER_NAME: 'Copse Test',
+      GIT_COMMITTER_EMAIL: 'copse@example.invalid',
+    },
+  })
+}
+
+function initCommittedRepo(root: string): void {
+  git(root, ['init'])
+  git(root, ['commit', '--allow-empty', '-m', 'initial'])
+}
 
 describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
   let tempRoot = ''
@@ -98,6 +128,67 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
   })
 })
 
+describe('applyOrStageDiff direct-apply policy', () => {
+  let tempRoot = ''
+  let workspaceRoot = ''
+  let restoreWorkspace: (() => void) | undefined
+
+  beforeEach(async () => {
+    clearDiffQueueForTest()
+    setGitAvailableForTest(true)
+    tempRoot = await mkdtemp(join(tmpdir(), 'agent-pane-diff-direct-'))
+    workspaceRoot = join(tempRoot, 'packages/app')
+    await mkdir(workspaceRoot, { recursive: true })
+    initCommittedRepo(tempRoot)
+    restoreWorkspace = setWorkspaceRootForTest(workspaceRoot)
+  })
+
+  afterEach(async () => {
+    clearDiffQueueForTest()
+    setGitAvailableForTest(null)
+    restoreWorkspace?.()
+    if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+  })
+
+  it('continues applying directly when the workspace is below the git root', async () => {
+    await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
+    git(tempRoot, ['add', 'packages/app/a.txt'])
+    git(tempRoot, ['commit', '-m', 'add workspace file'])
+
+    const first = await applyOrStageDiff('a.txt', 'one\n', 'two\n', 'plaintext')
+    assert.match(first, /Applied edit directly/)
+
+    const second = await applyOrStageDiff('a.txt', 'two\n', 'three\n', 'plaintext')
+    assert.match(second, /Applied edit directly/)
+    assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf-8'), 'three\n')
+    assert.equal(getDiffQueueForTest().length, 0)
+  })
+
+  it('stages for approval when git already has unowned changes', async () => {
+    await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
+    git(tempRoot, ['add', 'packages/app/a.txt'])
+    git(tempRoot, ['commit', '-m', 'add workspace file'])
+    await writeFile(join(workspaceRoot, 'dirty.txt'), 'dirty\n', 'utf-8')
+
+    const result = await applyOrStageDiff('a.txt', 'one\n', 'two\n', 'plaintext')
+    assert.match(result, /Reason approval is required: git already has unowned changes: dirty\.txt/)
+    assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf-8'), 'one\n')
+    assert.equal(getStagedDiffEntry('a.txt')?.after, 'two\n')
+  })
+
+  it('records a conflict decision when direct apply sees stale content', async () => {
+    await writeFile(join(workspaceRoot, 'a.txt'), 'current\n', 'utf-8')
+    git(tempRoot, ['add', 'packages/app/a.txt'])
+    git(tempRoot, ['commit', '-m', 'add workspace file'])
+
+    const result = await applyOrStageDiff('a.txt', 'stale\n', 'next\n', 'plaintext')
+    assert.match(result, /Direct apply was skipped because the file changed after it was read/)
+    assert.equal(getRecentStagedDiffDecision('a.txt')?.status, 'conflict')
+    assert.equal(getStagedDiffEntry('a.txt')?.before, 'current\n')
+    assert.equal(getStagedDiffEntry('a.txt')?.after, 'next\n')
+  })
+})
+
 describe('upsertStagedDiffEntry', () => {
   it('replaces after content for the same path while preserving the original before snapshot', () => {
     const queue = [{ path: 'index.html', before: 'v1', after: 'v2', language: 'html' }]
@@ -113,6 +204,7 @@ describe('upsertStagedDiffEntry', () => {
       before: 'v1',
       after: 'v3',
       language: 'html',
+      op: 'write',
     })
   })
 
@@ -124,6 +216,29 @@ describe('upsertStagedDiffEntry', () => {
       after: 'b',
       language: 'typescript',
     })
+    assert.equal(queue.length, 2)
+  })
+})
+
+describe('stageDiff same-path coalescing (#118)', () => {
+  beforeEach(() => clearDiffQueueForTest())
+  afterEach(() => clearDiffQueueForTest())
+
+  it('keeps a single queue entry for a path and preserves the original before snapshot', async () => {
+    await stageDiff('a.txt', 'orig\n', 'v1\n', 'plaintext')
+    await stageDiff('a.txt', 'v1\n', 'v2\n', 'plaintext')
+    const queue = getDiffQueueForTest()
+    const entries = queue.filter((e) => e.path === 'a.txt')
+    assert.equal(entries.length, 1, 'duplicate same-path entries must be coalesced')
+    // Baseline stays the first staged `before`; content is the latest proposal.
+    assert.equal(entries[0]!.before, 'orig\n')
+    assert.equal(entries[0]!.after, 'v2\n')
+  })
+
+  it('keeps distinct entries for distinct paths', async () => {
+    await stageDiff('a.txt', '', 'a\n', 'plaintext')
+    await stageDiff('b.txt', '', 'b\n', 'plaintext')
+    const queue = getDiffQueueForTest()
     assert.equal(queue.length, 2)
   })
 })

@@ -67,6 +67,31 @@ describe('decideShellPermission', () => {
     assert.equal(d.action, 'allow')
   })
 
+  it('prompts for destructive commands even when OS sandbox is active (#103)', () => {
+    // Seatbelt contains network + out-of-workspace FS, but not in-workspace deletes,
+    // so the classifier must still run and prompt rather than blanket auto-allow.
+    const d = decideShellPermission('rm -rf src', {
+      workspaceRoot: root,
+      sandboxEnabled: true,
+      autoRun: true,
+      classification: null,
+      confidenceThreshold: 0.85,
+    })
+    assert.equal(d.action, 'prompt')
+    assert.ok(d.reasons.some((x) => x.includes('delete')))
+  })
+
+  it('prompts for fork bombs even when OS sandbox is active (#103)', () => {
+    const d = decideShellPermission(':(){ :|:& };:', {
+      workspaceRoot: root,
+      sandboxEnabled: true,
+      autoRun: true,
+      classification: null,
+      confidenceThreshold: 0.85,
+    })
+    assert.equal(d.action, 'prompt')
+  })
+
   it('prompts for external commands when OS sandbox is active', () => {
     const d = decideShellPermission('curl https://example.com', {
       workspaceRoot: root,

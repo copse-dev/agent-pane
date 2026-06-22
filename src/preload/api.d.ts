@@ -9,6 +9,8 @@ export interface ApiClient {
     open: () => Promise<string | null>
     get: () => Promise<string | null>
     set: (root: string) => Promise<string>
+    isTrusted: () => Promise<boolean>
+    setTrusted: (trusted: boolean) => Promise<McpServerStatus[]>
     onOpened: (handler: (root: string) => void) => () => void
   }
   fs: {
@@ -116,10 +118,10 @@ export interface ApiClient {
     get: (key: string) => Promise<unknown>
     set: (key: string, value: unknown) => Promise<void>
     setSecurity: (prefs: {
-      lmStudioUrl: string
-      lmStudioSafetyEnabled: boolean
-      lmStudioSafetyConfidenceThreshold: number
-      lmStudioSafetyModel: string
+      localServerUrl: string
+      safetyClassifierEnabled: boolean
+      safetyConfidenceThreshold: number
+      safetyModel: string
       autoRunSandboxCommands: boolean
       mcpAutoAllowReadOnly: boolean
     }) => Promise<void>

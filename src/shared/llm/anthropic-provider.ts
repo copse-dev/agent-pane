@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { LLMProvider, LLMMessage, LLMTool, StreamChunk } from '@shared/types'
 import { anthropicMaxOutputTokens } from './model-catalog.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
+import { parseToolArgs } from './parse-tool-args.ts'
 
 export class AnthropicProvider implements LLMProvider {
   private client: Anthropic
@@ -56,8 +57,22 @@ export class AnthropicProvider implements LLMProvider {
         let currentToolName = ''
         let toolJson = ''
         let stopReason: Anthropic.Messages.StopReason | null = null
+        // Authoritative input/cache counts arrive on message_start; the final
+        // output_tokens arrives on message_delta (#111). Accumulate both into a
+        // single per-stream usage value so we never depend on a shared field.
+        let inputTokens = 0
+        let outputTokens = 0
 
         for await (const event of stream) {
+          if (event.type === 'message_start') {
+            const u = event.message.usage
+            // Total input = fresh input + cache-creation + cache-read tokens.
+            inputTokens =
+              (u.input_tokens ?? 0) +
+              (u.cache_creation_input_tokens ?? 0) +
+              (u.cache_read_input_tokens ?? 0)
+            outputTokens = u.output_tokens ?? 0
+          }
           if (event.type === 'content_block_start' && event.content_block.type === 'tool_use') {
             currentToolId = event.content_block.id
             currentToolName = event.content_block.name
@@ -72,15 +87,15 @@ export class AnthropicProvider implements LLMProvider {
             }
           }
           if (event.type === 'content_block_stop' && currentToolId) {
-            let args: unknown = {}
-            try {
-              args = JSON.parse(toolJson || '{}')
-            } catch {
-              args = {}
-            }
+            const parsed = parseToolArgs(toolJson)
             yield {
               type: 'tool_call',
-              toolCall: { id: currentToolId, name: currentToolName, args },
+              toolCall: {
+                id: currentToolId,
+                name: currentToolName,
+                args: parsed.args,
+                ...(parsed.error ? { argsError: parsed.error } : {}),
+              },
             }
             currentToolId = ''
             currentToolName = ''
@@ -89,12 +104,21 @@ export class AnthropicProvider implements LLMProvider {
           if (event.type === 'message_delta') {
             if (event.delta.stop_reason) stopReason = event.delta.stop_reason
             if (event.usage) {
-              self.lastUsage = {
-                inputTokens: event.usage.input_tokens ?? 0,
-                outputTokens: event.usage.output_tokens ?? 0,
+              // message_delta carries the final output_tokens; input_tokens is
+              // usually null/0 here, so keep the message_start value if larger.
+              outputTokens = event.usage.output_tokens ?? outputTokens
+              if (event.usage.input_tokens) {
+                inputTokens = Math.max(inputTokens, event.usage.input_tokens)
               }
             }
           }
+        }
+        const usage = { inputTokens, outputTokens }
+        self.lastUsage = usage
+        // Emit usage per-stream so consumers can attribute it to this exact
+        // stream rather than racing on the shared lastUsage field (#112).
+        if (inputTokens || outputTokens) {
+          yield { type: 'usage', model, inputTokens, outputTokens }
         }
         if (stopReason === 'max_tokens') {
           yield {

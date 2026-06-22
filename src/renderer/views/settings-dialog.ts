@@ -7,12 +7,72 @@ import {
   isAppIconVariant,
   type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
-import { populateModelSelect } from './model-options.ts'
+import { populateModelSelect, populateSmallTasksModelSelect } from './model-options.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
 
 type SettingsSection = 'general' | 'local-models' | 'mcp' | 'appearance'
+
+/**
+ * Single source of truth for the simple form fields, so each setting's default
+ * is declared once instead of being duplicated across the load and save handlers
+ * (an open default-drift bug class). Fields needing bespoke wiring (model select,
+ * theme/fontSize from the store, app icon radios, the LM Studio security bundle
+ * saved via `setSecurity`) stay hand-coded below.
+ *
+ * `kind: 'checkbox'` reads/writes `.checked`; `'text'` reads/writes `.value`.
+ * `save: true` means the field round-trips through `api.settings.set(name, …)`
+ * symmetrically; security-bundle fields set `save: false` (loaded here, saved by
+ * the `setSecurity` call) so their defaults are still declared in one place.
+ */
+interface SettingField {
+  name: string
+  kind: 'checkbox' | 'text'
+  default: boolean | string
+  /** Whether the save handler writes this field via api.settings.set. */
+  save: boolean
+}
+
+const SIMPLE_FIELDS: readonly SettingField[] = [
+  { name: 'customInstructions', kind: 'text', default: '', save: true },
+  { name: 'externalApiSafety', kind: 'checkbox', default: false, save: true },
+  { name: 'localSubagentsEnabled', kind: 'checkbox', default: true, save: true },
+  { name: 'localTodoItemsEnabled', kind: 'checkbox', default: true, save: true },
+  // Loaded here; saved as part of the setSecurity() bundle below.
+  { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
+  { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
+  { name: 'mcpAutoAllowReadOnly', kind: 'checkbox', default: false, save: false },
+  { name: 'safetyConfidenceThreshold', kind: 'text', default: '0.85', save: false },
+]
+
+async function loadSimpleFields(form: HTMLFormElement, api: ApiClient): Promise<void> {
+  for (const field of SIMPLE_FIELDS) {
+    const input = form.elements.namedItem(field.name) as HTMLInputElement | HTMLTextAreaElement
+    const saved = await api.settings.get(field.name)
+    if (field.kind === 'checkbox') {
+      ;(input as HTMLInputElement).checked =
+        (saved as boolean | undefined) ?? (field.default as boolean)
+    } else {
+      input.value =
+        typeof saved === 'string' || typeof saved === 'number'
+          ? String(saved)
+          : String(field.default)
+    }
+  }
+}
+
+async function saveSimpleFields(data: FormData, api: ApiClient): Promise<void> {
+  for (const field of SIMPLE_FIELDS) {
+    if (!field.save) continue
+    if (field.kind === 'checkbox') {
+      await api.settings.set(field.name, data.get(field.name) === 'on')
+    } else {
+      const value = (data.get(field.name) as string) ?? ''
+      await api.settings.set(field.name, field.name === 'customInstructions' ? value.trim() : value)
+    }
+  }
+}
 
 let overlayEl: HTMLElement | null = null
 
@@ -67,6 +127,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset>
+              <legend>Small tasks</legend>
+              <p class="settings-fieldset-desc">
+                Lightweight prompts such as thread titles and follow-up suggestions. Use any cloud or
+                local model — not limited to LM Studio.
+              </p>
+              <label>
+                Model
+                <select name="smallTasksModel"></select>
+              </label>
+            </fieldset>
+
+            <fieldset>
               <legend>Agent behavior</legend>
               <label>
                 Custom instructions
@@ -105,26 +177,22 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <fieldset>
               <legend>Routing behavior</legend>
               <label class="checkbox-label">
-                <input type="checkbox" name="lmStudioForSmallTasks" />
-                Use local models for small tasks (e.g. naming threads)
-              </label>
-              <label class="checkbox-label">
-                <input type="checkbox" name="lmStudioForSubagents" />
+                <input type="checkbox" name="localSubagentsEnabled" />
                 Use local models for exploration subagents when chat uses a cloud model
               </label>
               <label class="checkbox-label">
-                <input type="checkbox" name="lmStudioForTodoItems" />
+                <input type="checkbox" name="localTodoItemsEnabled" />
                 Use local models for todo items tagged local (requires acceptance check)
               </label>
               <label class="checkbox-label">
-                <input type="checkbox" name="lmStudioSafetyEnabled" />
+                <input type="checkbox" name="safetyClassifierEnabled" />
                 Use instruct model to classify shell commands (when OS sandbox is off)
               </label>
               <label>
                 Safety confidence threshold
                 <input
                   type="number"
-                  name="lmStudioSafetyConfidenceThreshold"
+                  name="safetyConfidenceThreshold"
                   min="0"
                   max="1"
                   step="0.05"
@@ -258,6 +326,31 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       return
     }
     listEl.innerHTML = ''
+
+    // Project-defined servers in an untrusted workspace are not spawned (#100).
+    // Offer an explicit "trust this workspace" action before any are started.
+    if (statuses.some((s) => s.state === 'untrusted')) {
+      const banner = document.createElement('div')
+      banner.className = 'mcp-trust-banner'
+      const text = document.createElement('span')
+      text.textContent =
+        'This workspace defines its own MCP servers. They will not run until you trust this workspace.'
+      const trustBtn = document.createElement('button')
+      trustBtn.type = 'button'
+      trustBtn.textContent = 'Trust this workspace'
+      trustBtn.addEventListener('click', () => {
+        trustBtn.disabled = true
+        void api.workspace
+          .setTrusted(true)
+          .then((next) => renderMcpServers(next))
+          .catch(() => {
+            trustBtn.disabled = false
+          })
+      })
+      banner.append(text, trustBtn)
+      listEl.append(banner)
+    }
+
     for (const s of statuses) {
       const badge =
         s.state === 'connected'
@@ -266,7 +359,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             ? '✗ error'
             : s.state === 'disabled'
               ? '○ disabled'
-              : '… connecting'
+              : s.state === 'untrusted'
+                ? '⚠ not trusted'
+                : '… connecting'
       const row = document.createElement('div')
       row.className = `mcp-server-row mcp-state-${s.state}`
 
@@ -282,8 +377,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           : 'Turn on this MCP server'
       const toggle = document.createElement('input')
       toggle.type = 'checkbox'
-      toggle.checked = s.userEnabled && !s.configDisabled
-      toggle.disabled = s.configDisabled
+      toggle.checked = s.userEnabled && !s.configDisabled && s.state !== 'untrusted'
+      toggle.disabled = s.configDisabled || s.state === 'untrusted'
       toggle.setAttribute('aria-label', `${s.name} MCP server enabled`)
       const track = document.createElement('span')
       track.className = 'toggle-switch-track'
@@ -299,7 +394,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             toggle.checked = !toggle.checked
           })
           .finally(() => {
-            if (!s.configDisabled) toggle.disabled = false
+            if (!s.configDisabled && s.state !== 'untrusted') toggle.disabled = false
           })
       })
       toggleLabel.append(toggle, track)
@@ -372,14 +467,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         api,
         model ?? 'claude-sonnet-4-6',
       )
-      const customInstructions = (await api.settings.get('customInstructions')) as
-        | string
-        | undefined
-      ;(form.elements.namedItem('customInstructions') as HTMLTextAreaElement).value =
-        customInstructions ?? ''
-      const externalApiSafety = (await api.settings.get('externalApiSafety')) as boolean | undefined
-      ;(form.elements.namedItem('externalApiSafety') as HTMLInputElement).checked =
-        externalApiSafety ?? false
+      const smallTasksModel = (await api.settings.get('smallTasksModel')) as string | undefined
+      await populateSmallTasksModelSelect(
+        form.elements.namedItem('smallTasksModel') as HTMLSelectElement,
+        api,
+        smallTasksModel ?? '',
+      )
+      await loadSimpleFields(form, api)
       ;(form.elements.namedItem('theme') as HTMLSelectElement).value = store.getState().theme
       ;(form.elements.namedItem('fontSize') as HTMLInputElement).value = String(
         store.getState().fontSize,
@@ -393,41 +487,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         `input[name="appIconVariant"][value="${appIconVariant}"]`,
       )
       if (iconRadio) iconRadio.checked = true
-
-      const lmSmallEnabled = (await api.settings.get('lmStudioForSmallTasks')) as
-        | boolean
-        | undefined
-      const lmSubagentsEnabled = (await api.settings.get('lmStudioForSubagents')) as
-        | boolean
-        | undefined
-      const lmTodoItemsEnabled = (await api.settings.get('lmStudioForTodoItems')) as
-        | boolean
-        | undefined
-      const lmSafetyEnabled = (await api.settings.get('lmStudioSafetyEnabled')) as
-        | boolean
-        | undefined
-      const autoRunSandbox = (await api.settings.get('autoRunSandboxCommands')) as
-        | boolean
-        | undefined
-      const confidence = (await api.settings.get('lmStudioSafetyConfidenceThreshold')) as
-        | number
-        | undefined
-      ;(form.elements.namedItem('lmStudioForSmallTasks') as HTMLInputElement).checked =
-        lmSmallEnabled ?? true
-      ;(form.elements.namedItem('lmStudioForSubagents') as HTMLInputElement).checked =
-        lmSubagentsEnabled ?? true
-      ;(form.elements.namedItem('lmStudioForTodoItems') as HTMLInputElement).checked =
-        lmTodoItemsEnabled ?? true
-      ;(form.elements.namedItem('lmStudioSafetyEnabled') as HTMLInputElement).checked =
-        lmSafetyEnabled ?? true
-      ;(form.elements.namedItem('autoRunSandboxCommands') as HTMLInputElement).checked =
-        autoRunSandbox ?? true
-      ;(form.elements.namedItem('lmStudioSafetyConfidenceThreshold') as HTMLInputElement).value =
-        String(confidence ?? 0.85)
-
-      const mcpAutoAllow = (await api.settings.get('mcpAutoAllowReadOnly')) as boolean | undefined
-      ;(form.elements.namedItem('mcpAutoAllowReadOnly') as HTMLInputElement).checked =
-        mcpAutoAllow ?? false
 
       await refreshLocalModelSelects()
       await lmStudioSection.refreshDetection()
@@ -449,34 +508,30 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const theme = data.get('theme') as 'light' | 'dark'
       const fontSize = parseInt(data.get('fontSize') as string, 10)
       const appIconVariant = data.get('appIconVariant') as AppIconVariant
-      const confidence = parseFloat(data.get('lmStudioSafetyConfidenceThreshold') as string)
+      const confidence = parseFloat(data.get('safetyConfidenceThreshold') as string)
 
       await api.settings.set('model', model)
       await api.settings.set(
-        'customInstructions',
-        (data.get('customInstructions') as string).trim(),
+        'smallTasksModel',
+        ((data.get('smallTasksModel') as string) ?? '').trim(),
       )
-      await api.settings.set('externalApiSafety', data.get('externalApiSafety') === 'on')
+      await saveSimpleFields(data, api)
       await api.settings.set('theme', theme)
       await api.settings.set('fontSize', fontSize)
       if (isAppIconVariant(appIconVariant)) {
         await api.settings.set('appIconVariant', appIconVariant)
         await api.appIcon.apply()
       }
-      await api.settings.set('lmStudioModel', routingValues.lmStudioModel)
-      await api.settings.set('lmStudioSmallTasksModel', routingValues.lmStudioSmallTasksModel)
-      await api.settings.set('lmStudioSubagentModel', routingValues.lmStudioSubagentModel)
+      await api.settings.set('localDefaultModel', routingValues.localDefaultModel)
+      await api.settings.set('subagentModel', routingValues.subagentModel)
       await api.settings.setSecurity({
-        lmStudioUrl: lmStudioSection.getUrl(),
-        lmStudioSafetyModel: routingValues.lmStudioSafetyModel,
-        lmStudioSafetyEnabled: data.get('lmStudioSafetyEnabled') === 'on',
-        lmStudioSafetyConfidenceThreshold: Number.isFinite(confidence) ? confidence : 0.85,
+        localServerUrl: lmStudioSection.getUrl(),
+        safetyModel: routingValues.safetyModel,
+        safetyClassifierEnabled: data.get('safetyClassifierEnabled') === 'on',
+        safetyConfidenceThreshold: Number.isFinite(confidence) ? confidence : 0.85,
         autoRunSandboxCommands: data.get('autoRunSandboxCommands') === 'on',
         mcpAutoAllowReadOnly: data.get('mcpAutoAllowReadOnly') === 'on',
       })
-      await api.settings.set('lmStudioForSmallTasks', data.get('lmStudioForSmallTasks') === 'on')
-      await api.settings.set('lmStudioForSubagents', data.get('lmStudioForSubagents') === 'on')
-      await api.settings.set('lmStudioForTodoItems', data.get('lmStudioForTodoItems') === 'on')
 
       store.setState({ theme, fontSize, settings: { ...store.getState().settings, model } })
       store.emit('theme_changed', theme)

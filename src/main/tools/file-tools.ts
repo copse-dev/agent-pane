@@ -18,6 +18,27 @@ function isPathUnderWorkspace(absPath: string): boolean {
   return rel !== '..' && !rel.startsWith('..')
 }
 
+/**
+ * Map a node:fs error to a friendly, workspace-relative message so raw errnos
+ * and absolute filesystem paths never leak to the model (#123).
+ */
+function friendlyFsError(err: unknown, relPath: string, op: 'read' | 'list'): string {
+  const code = (err as NodeJS.ErrnoException | undefined)?.code
+  switch (code) {
+    case 'ENOENT':
+      return op === 'list' ? `Directory not found: ${relPath}` : `File not found: ${relPath}`
+    case 'EISDIR':
+      return `${relPath} is a directory, not a file.`
+    case 'ENOTDIR':
+      return `${relPath} is not a directory.`
+    case 'EACCES':
+    case 'EPERM':
+      return `Permission denied: ${relPath}`
+    default:
+      return op === 'list' ? `Could not list ${relPath}.` : `Could not read ${relPath}.`
+  }
+}
+
 export const readFileTool: ToolDefinition = {
   name: 'read_file',
   description:
@@ -28,16 +49,24 @@ export const readFileTool: ToolDefinition = {
     end_line: z.number().int().min(1).optional().describe('Last line to read (inclusive)'),
   }),
   async execute({ path, start_line, end_line }) {
+    if (start_line !== undefined && end_line !== undefined && end_line < start_line) {
+      return `Invalid range: end_line (${end_line}) must be >= start_line (${start_line}).`
+    }
     const { maxLines: READ_FILE_MAX_LINES, maxChars: READ_FILE_MAX_CHARS } =
       getAgentRunReadFileLimits()
     const absPath = resolveWorkspacePath(path)
 
-    const result = await readTextLineRange(absPath, {
-      startLine: start_line ?? 1,
-      endLine: end_line,
-      maxLines: READ_FILE_MAX_LINES,
-      maxChars: READ_FILE_MAX_CHARS,
-    })
+    let result
+    try {
+      result = await readTextLineRange(absPath, {
+        startLine: start_line ?? 1,
+        endLine: end_line,
+        maxLines: READ_FILE_MAX_LINES,
+        maxChars: READ_FILE_MAX_CHARS,
+      })
+    } catch (err) {
+      return friendlyFsError(err, path, 'read')
+    }
 
     if (result.text === '[Binary file — cannot display as text]') return result.text
 
@@ -98,7 +127,12 @@ export const listDirTool: ToolDefinition = {
         (paths.length > LIST_DIR_MAX_ENTRIES ? '\n[Truncated at 1000 entries]' : '')
       )
     }
-    const entries = await fs.readdir(absPath, { withFileTypes: true })
+    let entries
+    try {
+      entries = await fs.readdir(absPath, { withFileTypes: true })
+    } catch (err) {
+      return friendlyFsError(err, path || '.', 'list')
+    }
     const lines: string[] = []
     for (const e of entries) {
       if (lines.length >= LIST_DIR_MAX_ENTRIES) break

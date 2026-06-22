@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('api', {
     open: () => ipcRenderer.invoke('workspace:open'),
     get: () => ipcRenderer.invoke('workspace:get'),
     set: (root: string) => ipcRenderer.invoke('workspace:set', root),
+    isTrusted: () => ipcRenderer.invoke('workspace:isTrusted'),
+    setTrusted: (trusted: boolean) => ipcRenderer.invoke('workspace:setTrusted', trusted),
     onOpened: (handler: (root: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, root: string) => handler(root)
       ipcRenderer.on('workspace:opened', listener)
@@ -157,10 +159,10 @@ contextBridge.exposeInMainWorld('api', {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),
     setSecurity: (prefs: {
-      lmStudioUrl: string
-      lmStudioSafetyEnabled: boolean
-      lmStudioSafetyConfidenceThreshold: number
-      lmStudioSafetyModel: string
+      localServerUrl: string
+      safetyClassifierEnabled: boolean
+      safetyConfidenceThreshold: number
+      safetyModel: string
       autoRunSandboxCommands: boolean
       mcpAutoAllowReadOnly: boolean
     }) => ipcRenderer.invoke('settings:setSecurity', prefs),

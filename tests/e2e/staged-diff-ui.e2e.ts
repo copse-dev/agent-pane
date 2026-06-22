@@ -1,10 +1,11 @@
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const PROJECT_ID = 'e2e-staged-diff-project'
+const DIRTY_TREE_SENTINEL = join(process.cwd(), 'tests/e2e/.staged-diff-dirty')
 
 async function waitForAgentIdle(timeoutMs = 60_000): Promise<void> {
   await browser.waitUntil(async () => (await $('.submit-btn').getText()) === 'Send', {
@@ -26,12 +27,14 @@ describe('staged diff approval UI', () => {
   before(async function () {
     this.timeout(120_000)
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
+    writeFileSync(DIRTY_TREE_SENTINEL, 'force staged-diff approval path\n')
     resetUserData()
     seedEmptyProject(process.cwd(), PROJECT_ID, { subagentsEnabled: false })
     await browser.reloadSession()
   })
 
   after(() => {
+    rmSync(DIRTY_TREE_SENTINEL, { force: true })
     resetUserData()
   })
 

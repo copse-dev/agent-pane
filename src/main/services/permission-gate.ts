@@ -86,7 +86,7 @@ async function checkMcpPermission(toolName: string, args: unknown): Promise<bool
     type: 'mcp',
     allowRemember: true,
   })
-  if (approved && remember) rememberMcpTool(toolName)
+  if (approved && remember) await rememberMcpTool(toolName)
   return approved
 }
 
@@ -101,7 +101,7 @@ async function checkShellPermission(args: unknown): Promise<boolean> {
     sandboxEnabled,
     autoRun: getSetting<boolean>('autoRunSandboxCommands', true),
     classification: sandboxEnabled ? null : await classifyShellScope(command),
-    confidenceThreshold: getSetting<number>('lmStudioSafetyConfidenceThreshold', 0.85),
+    confidenceThreshold: getSetting<number>('safetyConfidenceThreshold', 0.85),
   })
 
   if (decision.action === 'allow') return true

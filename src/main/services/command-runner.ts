@@ -6,6 +6,7 @@ import {
   COMMAND_OUTPUT_MAX_BYTES,
   COMMAND_RUNNER_DEFAULT_TIMEOUT_MS,
 } from './subprocess-output-cap.ts'
+import { terminateProcessTree } from './subprocess-kill.ts'
 
 export interface CommandResult {
   stdout: string
@@ -32,8 +33,18 @@ function prepareGitInvocation(
   env: NodeJS.ProcessEnv,
 ): { args: string[]; env: NodeJS.ProcessEnv } {
   return {
-    args: ['-c', 'core.pager=cat', '-c', 'color.ui=false', ...args],
-    env: { ...env, GIT_OPTIONAL_LOCKS: '0' },
+    // --no-pager: never invoke a pager (which would hang waiting on a terminal).
+    // core.pager=cat: belt-and-suspenders for subcommands that bypass --no-pager.
+    // color.ui=false: disable color globally (`git --no-color` is not a valid global flag).
+    args: ['--no-pager', '-c', 'core.pager=cat', '-c', 'color.ui=false', ...args],
+    env: {
+      ...env,
+      GIT_OPTIONAL_LOCKS: '0',
+      GIT_PAGER: 'cat',
+      // Never block on credential / SSH host-key prompts.
+      GIT_TERMINAL_PROMPT: '0',
+      GIT_SSH_COMMAND: env.GIT_SSH_COMMAND ?? 'ssh -oBatchMode=yes',
+    },
   }
 }
 
@@ -78,13 +89,20 @@ export function runCommand(
       let stdout = ''
       let stderr = ''
       let settled = false
+      let cancelKill: (() => void) | undefined
+
+      const onAbort = () => {
+        if (timer) clearTimeout(timer)
+        cancelKill = terminateProcessTree(proc)
+      }
 
       const timer =
         timeout_ms > 0
           ? setTimeout(() => {
-              proc.kill('SIGKILL')
+              cancelKill = terminateProcessTree(proc)
               if (!settled) {
                 settled = true
+                opts.signal?.removeEventListener('abort', onAbort)
                 reject(new Error(`Command timed out after ${timeout_ms}ms: ${cmd}`))
               }
             }, timeout_ms)
@@ -92,6 +110,8 @@ export function runCommand(
 
       const finish = (fn: () => void) => {
         if (timer) clearTimeout(timer)
+        cancelKill?.()
+        opts.signal?.removeEventListener('abort', onAbort)
         if (!opts.unsandboxed) afterSandboxedCommand()
         fn()
       }
@@ -115,9 +135,7 @@ export function runCommand(
         finish(() => reject(err instanceof Error ? err : new Error(String(err))))
       })
 
-      opts.signal?.addEventListener('abort', () => {
-        proc.kill('SIGKILL')
-      })
+      opts.signal?.addEventListener('abort', onAbort)
     })()
   })
 }
