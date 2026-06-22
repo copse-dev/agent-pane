@@ -116,7 +116,8 @@ app
     const messageHistory = new Map<string, LLMMessage[]>()
 
     ipcMain.handle('agent:run', async (_e, threadId: string, rawPrompt: string) => {
-      const { userContent, invokedSkills, priorTodos } = parseAgentRunPayload(rawPrompt)
+      const { userContent, invokedSkills, priorTodos, workingBrief } =
+        parseAgentRunPayload(rawPrompt)
 
       // Hydrate from persisted storage on first use after a restart
       if (!messageHistory.has(threadId)) {
@@ -130,6 +131,7 @@ app
       const result = await runAgent(threadId, userContent, priorMessages, win, registry, {
         invokedSkills,
         priorTodos,
+        ...(workingBrief !== undefined ? { workingBrief } : {}),
       })
       messageHistory.set(threadId, result.messages)
       storageSet(`llm-history:${threadId}`, result.messages)
