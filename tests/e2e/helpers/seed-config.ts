@@ -38,6 +38,24 @@ function writeSettings(settings: Record<string, unknown>): void {
   writeFileSync(SETTINGS_PATH, JSON.stringify({ onboardingCompleted: true, ...settings }), 'utf8')
 }
 
+/** Pin Electron window size for deterministic e2e reference screenshots. Call before reloadSession(). */
+export function seedE2eViewport(
+  bounds: { width: number; height: number } = { width: 1280, height: 800 },
+): void {
+  writeSettings({ windowBounds: bounds })
+}
+
+/** Layout for three-pane todo plan reference screenshots. Call before reloadSession(). */
+export function seedE2eThreePaneLayout(): void {
+  writeSettings({
+    layout: {
+      projectsPaneWidth: 260,
+      filesPaneWidth: 480,
+      fileTreeWidth: 200,
+    },
+  })
+}
+
 export function seedEmptyProject(
   workspaceRoot: string,
   projectId: string,
@@ -49,6 +67,7 @@ export function seedEmptyProject(
     lmStudioModel?: string
     lmStudioSubagentModel?: string
     lmStudioForSubagents?: boolean
+    autoPortraitRightPanel?: boolean
   },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
@@ -82,6 +101,9 @@ export function seedEmptyProject(
   }
   if (options?.lmStudioForSubagents !== undefined) {
     settings.lmStudioForSubagents = options.lmStudioForSubagents
+  }
+  if (options?.autoPortraitRightPanel !== undefined) {
+    settings.autoPortraitRightPanel = options.autoPortraitRightPanel
   }
   if (Object.keys(settings).length > 0) {
     writeSettings(settings)
@@ -450,6 +472,43 @@ export function seedFooterCompactFixture(workspaceRoot: string): {
   return { model: 'qwen/qwen3.6-35b-a3b', branch, tokenLabel }
 }
 
+export function seedPortraitRightPanelFixture(
+  workspaceRoot: string,
+  autoPortraitRightPanel: boolean,
+): void {
+  const projectId = 'e2e-portrait-right-panel-project'
+  const threadId = 'e2e-portrait-right-panel-thread'
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Portrait right panel layout',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-user-portrait-layout',
+              role: 'user',
+              content: 'Open the right panel in a portrait window.',
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+  writeSettings({ autoPortraitRightPanel })
+}
+
 export function seedSubagentFixture(workspaceRoot: string): void {
   const projectId = 'e2e-subagent-project'
   const threadId = 'e2e-subagent-thread'
@@ -689,9 +748,15 @@ export function seedScrollStreamingFixture(workspaceRoot: string): void {
   )
 }
 
-export function seedTodoDisplayFixture(workspaceRoot: string): void {
+export function seedTodoPlanFixtures(workspaceRoot: string): {
+  planThreadTitle: string
+  noPlanThreadTitle: string
+} {
   const projectId = 'e2e-todo-project'
-  const threadId = 'e2e-todo-thread'
+  const planThreadId = 'e2e-todo-thread'
+  const noPlanThreadId = 'e2e-todo-no-plan-thread'
+  const planThreadTitle = 'Todo display test'
+  const noPlanThreadTitle = 'No plan thread'
   const todos = [
     { id: 'todo-1', content: 'Refactor renderer.ts fence extraction', status: 'completed' },
     { id: 'todo-2', content: 'Add mermaid lazy loader + post-render hook', status: 'in_progress' },
@@ -713,8 +778,8 @@ export function seedTodoDisplayFixture(workspaceRoot: string): void {
       activeProjectId: projectId,
       [`threads:${projectId}`]: [
         {
-          id: threadId,
-          title: 'Todo display test',
+          id: planThreadId,
+          title: planThreadTitle,
           status: 'idle',
           messages: [
             {
@@ -734,13 +799,43 @@ export function seedTodoDisplayFixture(workspaceRoot: string): void {
           ],
           todos,
           usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
+          createdAt: Date.now() + 2,
+          updatedAt: Date.now() + 2,
+        },
+        {
+          id: noPlanThreadId,
+          title: noPlanThreadTitle,
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-user-no-plan',
+              role: 'user',
+              content: 'What files are in src/?',
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+            {
+              id: 'msg-assistant-no-plan',
+              role: 'assistant',
+              content: 'I can list the src directory for you.',
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now() + 1,
+          updatedAt: Date.now() + 1,
         },
       ],
     }),
     'utf8',
   )
+  return { planThreadTitle, noPlanThreadTitle }
+}
+
+/** @deprecated Use seedTodoPlanFixtures — kept for older specs that only need the plan thread. */
+export function seedTodoDisplayFixture(workspaceRoot: string): void {
+  seedTodoPlanFixtures(workspaceRoot)
 }
 
 export function seedToolDisplayFixture(workspaceRoot: string): void {
@@ -1104,4 +1199,61 @@ export function seedFooterBranchMismatchFixture(workspaceRoot: string): FooterBr
     currentBranch,
     mismatchBranch,
   }
+}
+
+/** Table with glob paths in inline code + architecture list (Repo Core Files repro). */
+export function seedMarkdownBoldGlobFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-markdown-bold-glob-project'
+  const threadId = 'e2e-markdown-bold-glob-thread'
+  const content = [
+    '## Tests',
+    '',
+    '| Path | Role |',
+    '| --- | --- |',
+    '| **`src/**/*.test.ts`** | Unit tests (bundled by esbuild into `dist-test/`) |',
+    '| **`tests/e2e/`** | WebdriverIO e2e tests (tool display, markdown rendering, etc.) |',
+    '| **`tests/fixtures/`** | E2E test fixtures |',
+    '',
+    '## Key Supporting Files',
+    '',
+    '- **`README.md`** — Project overview, commands, layout',
+    '- **`AGENTS.md`** — Detailed agent instructions: running headless, mock LLM, permission policy',
+    '- **`vendor/`** — Bundled `codesearch` binary (downloaded on `npm install`)',
+    '',
+    '## Architecture Notes',
+    '',
+    '- **No backend** — main process talks directly to LLM providers',
+    '- **Persistence** via `electron-store` (JSON config under `~/Library/Application Support/copse-panel/` on macOS)',
+    '- **LLM fallback**: `MockLLMProvider` when no API keys are set',
+    '- **Shell permissions**: `src/main/services/permission-policy.ts` — macOS-only sandbox; other platforms use static analysis',
+    '- **MCP host**: connects to MCP servers via `.cursor/mcp.json` or `~/.cursor/mcp.json`',
+  ].join('\n')
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Repo core files overview',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-bold-glob',
+              role: 'assistant',
+              content,
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
 }

@@ -2,7 +2,7 @@ import type { Thread } from './thread.ts'
 import type { LayoutState } from './layout.ts'
 
 export type PanelTab = 'file' | 'diff'
-export type RightPanelMode = 'explorer' | 'terminal' | 'changes' | 'plan'
+export type RightPanelMode = 'explorer' | 'terminal' | 'changes' | 'plan' | 'browser'
 export type Theme = 'light' | 'dark'
 
 export interface OpenFile {
@@ -39,6 +39,7 @@ export interface AppState {
   layout: LayoutState
   theme: Theme
   fontSize: number // 12–20, applied to app + Monaco
+  autoPortraitRightPanel: boolean // Auto-stack the right panel below chat on portrait windows.
   settings?: { model: string }
 }
 

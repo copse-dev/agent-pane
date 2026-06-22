@@ -9,8 +9,9 @@ export const CONTEXT_TRIM_ACTIVITY = 'Shortened earlier messages'
 export function runningToolName(thread: Thread): string | null {
   for (let i = thread.messages.length - 1; i >= 0; i--) {
     const m = thread.messages[i]!
-    for (let j = m.toolCalls.length - 1; j >= 0; j--) {
-      const tc = m.toolCalls[j]!
+    const toolCalls = m.toolCalls ?? []
+    for (let j = toolCalls.length - 1; j >= 0; j--) {
+      const tc = toolCalls[j]!
       if (tc.status === 'running') {
         return tc.name === 'explore' ? 'explore' : tc.name
       }

@@ -1,5 +1,6 @@
 import { runCommand } from './command-runner.ts'
 import { toRelativePath } from './workspace.ts'
+import { safeJsonParse } from '@shared/safe-json.ts'
 
 export type IndexedGrepBackend = 'ig' | 'trigrep' | 'instant-grep' | 'rg'
 
@@ -150,13 +151,7 @@ export function parseRipgrepJson(stdout: string, maxResults: number): string[] {
   const entries = stdout
     .split('\n')
     .filter(Boolean)
-    .map((line) => {
-      try {
-        return JSON.parse(line) as Record<string, unknown>
-      } catch {
-        return null
-      }
-    })
+    .map((line) => safeJsonParse<Record<string, unknown>>(line))
     .filter((entry): entry is Record<string, unknown> => entry !== null)
 
   // Context lines (rg --context) arrive as separate `context` events; render

@@ -14,6 +14,7 @@ import { mountContextPanel } from './views/context-panel.ts'
 import { mountRightPanelTabs } from './views/right-panel-tabs.ts'
 import { mountTerminalsPane } from './views/terminals-pane.ts'
 import { mountGitChangesPane } from './views/git-changes-pane.ts'
+import { mountBrowserPane } from './views/browser-pane.ts'
 import {
   mountSettingsDialog,
   openSettingsDialog,
@@ -36,6 +37,7 @@ import { bindChatComposerLayout } from './views/chat-layout.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { registerPanelKeyboardShortcuts } from './keyboard-shortcuts.ts'
 import { showErrorToast } from './views/toast.ts'
+import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layout.ts'
 
 const store = createStore()
 const api = window.api
@@ -56,9 +58,12 @@ async function boot() {
   // Load persisted user preferences before the main layout mounts.
   const savedModel = (await api.settings.get('model')) as string | null
   const savedLayout = await api.settings.get('layout')
+  const savedAutoPortraitRightPanel = await api.settings.get('autoPortraitRightPanel')
   store.setState({
     settings: { model: savedModel ?? DEFAULT_APP_CHAT_MODEL },
     layout: parseSavedLayout(savedLayout),
+    autoPortraitRightPanel:
+      typeof savedAutoPortraitRightPanel === 'boolean' ? savedAutoPortraitRightPanel : true,
   })
   startAgentController(store, api)
   attachAutosave(store, api)
@@ -85,6 +90,10 @@ async function boot() {
   api.menu.onShowChanges(() => {
     ensureLayout()
     openRightPanelWithWorkspace(store, api, 'changes')
+  })
+  api.menu.onShowBrowser(() => {
+    ensureLayout()
+    openRightPanelWithWorkspace(store, api, 'browser')
   })
 
   // File ▸ Open Folder… registers the chosen folder as a project and switches.
@@ -147,10 +156,18 @@ function mountFullLayout() {
     api,
     monaco,
   )
+  mountBrowserPane(
+    document.getElementById('browser-tabs-host')!,
+    document.getElementById('browser-viewer-host')!,
+    store,
+  )
   mountContextPanel(document.getElementById('file-viewer')!, store, api, monaco)
 
   const body = document.getElementById('body')
-  if (body) mountPaneResizers(body, store, api)
+  if (body) {
+    mountPaneResizers(body, store, api)
+    mountPortraitRightPanelLayout(body, store)
+  }
 
   store.on('files_pane_changed', updateFilesPane)
   updateFilesPane()

@@ -4,6 +4,7 @@ import { isGitAvailable } from './tool-availability.ts'
 import { isInsideGitWorkTree } from './git-service.ts'
 import type { PrWorkspaceContext } from '@shared/follow-ups/types.ts'
 import type { GitBranchStatus, GitOpenPr } from '@shared/types/git.ts'
+import { safeJsonParse } from '@shared/safe-json.ts'
 
 interface GhPrView {
   state?: string
@@ -65,18 +66,14 @@ export function ghPrHasMergeConflicts(pr: GhPrView): boolean {
 /** Parse `gh pr list --json` output for the first open PR entry. */
 export function parseGhOpenPrList(raw: string): GitOpenPr | null {
   if (!raw.trim()) return null
-  try {
-    const list = JSON.parse(raw) as GhPrView[]
-    if (!Array.isArray(list) || list.length === 0) return null
-    const pr = list[0]!
-    if (typeof pr.number !== 'number' || !pr.url) return null
-    return {
-      number: pr.number,
-      title: pr.title?.trim() || `PR #${pr.number}`,
-      url: pr.url,
-    }
-  } catch {
-    return null
+  const list = safeJsonParse<GhPrView[]>(raw)
+  if (!Array.isArray(list) || list.length === 0) return null
+  const pr = list[0]!
+  if (typeof pr.number !== 'number' || !pr.url) return null
+  return {
+    number: pr.number,
+    title: pr.title?.trim() || `PR #${pr.number}`,
+    url: pr.url,
   }
 }
 
@@ -99,17 +96,13 @@ async function getOpenPrForBranch(branch: string): Promise<GitOpenPr | null> {
 /** Parse `gh pr view --json` output into an open PR summary, or null. */
 export function parseGhOpenPr(raw: string): GitOpenPr | null {
   if (!raw.trim()) return null
-  try {
-    const pr = JSON.parse(raw) as GhPrView
-    if (pr.state !== 'OPEN') return null
-    if (typeof pr.number !== 'number' || !pr.url) return null
-    return {
-      number: pr.number,
-      title: pr.title?.trim() || `PR #${pr.number}`,
-      url: pr.url,
-    }
-  } catch {
-    return null
+  const pr = safeJsonParse<GhPrView>(raw)
+  if (!pr || pr.state !== 'OPEN') return null
+  if (typeof pr.number !== 'number' || !pr.url) return null
+  return {
+    number: pr.number,
+    title: pr.title?.trim() || `PR #${pr.number}`,
+    url: pr.url,
   }
 }
 

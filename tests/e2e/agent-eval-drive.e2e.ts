@@ -18,6 +18,7 @@ import type { Thread } from '@shared/types'
 import { getCopseUserDataDir } from './helpers.ts'
 import { DEFAULT_APP_CHAT_MODEL, LM_STUDIO_MODEL_IDS } from '../../src/shared/lm-studio-defaults.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 
 const ARTIFACTS = join(process.cwd(), 'tests/e2e/artifacts')
 const DEFAULT_SCENARIO = join(process.cwd(), 'tests/e2e/scenarios/agent-eval.example.json')
@@ -120,48 +121,26 @@ async function approvePendingDiffs(): Promise<void> {
   if (approved > 0) await browser.pause(200)
 }
 
-async function waitForPromptReady(timeoutMs = 60_000): Promise<void> {
-  await browser.waitUntil(
-    async () => {
-      const textarea = await $('.prompt-input')
-      if (!(await textarea.isExisting())) return false
-      const disabled = await textarea.getProperty('disabled')
-      return disabled !== true
-    },
-    { timeout: timeoutMs, interval: 300, timeoutMsg: 'Prompt input not enabled' },
-  )
-}
-
-async function waitForAgentIdle(timeoutMs: number): Promise<void> {
+async function waitForEvalAgentIdle(timeoutMs: number): Promise<void> {
   await browser.waitUntil(
     async () => {
       await approvePendingApprovalDialogs()
       await approvePendingDiffs()
-      return (await $('.submit-btn').getText()) === 'Stop'
+      const stopBtn = await $('.stop-btn')
+      return (await stopBtn.isExisting()) && (await stopBtn.getProperty('hidden')) !== true
     },
     {
       timeout: 60_000,
       interval: 100,
-      timeoutMsg: 'Agent did not start (submit button Stop)',
+      timeoutMsg: 'Agent did not start (Stop button visible)',
     },
   )
-  await browser.waitUntil(
-    async () => {
-      await approvePendingApprovalDialogs()
-      await approvePendingDiffs()
-      return (await $('.submit-btn').getText()) === 'Send'
-    },
-    {
-      timeout: timeoutMs,
-      interval: 500,
-      timeoutMsg: 'Agent did not return to idle (submit button Send)',
-    },
-  )
-  await waitForPromptReady()
+  await waitForAgentIdle(timeoutMs)
   await approvePendingDiffs()
   await $('.msg-assistant').waitForExist({ timeout: 30_000 })
   // Autosave debounces thread writes (~250ms); give persistence a beat before export.
   await browser.pause(500)
+  await assertNoErrorToasts('agent eval idle')
 }
 
 async function attachPromptFiles(attachments: PromptAttachment[]): Promise<void> {
@@ -379,7 +358,7 @@ describe('agent eval drive', () => {
     for (const prompt of scenario.prompts) {
       await typePrompt(prompt)
       await $('.submit-btn').click()
-      await waitForAgentIdle(idleTimeout)
+      await waitForEvalAgentIdle(idleTimeout)
     }
 
     assertWorkspaceExpectations(workspaceRoot, scenario)
