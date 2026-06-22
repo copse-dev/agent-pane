@@ -169,3 +169,67 @@ describe('getGitFileDiff staged blob', { skip: !gitOk && 'git not installed' }, 
     assert.notEqual(diff!.before, diff!.after)
   })
 })
+
+describe('getGitFileDiff image preview', { skip: !gitOk && 'git not installed' }, () => {
+  let repo = ''
+  let restore: (() => void) | undefined
+
+  const git = (...args: string[]) => spawnSync('git', args, { cwd: repo })
+
+  before(async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-image-'))
+    git('init', '-q')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    await writeFile(
+      join(repo, 'logo.png'),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    )
+    git('add', 'logo.png')
+    git('commit', '-qm', 'init')
+    restore = setWorkspaceRootForTest(repo)
+    setGitAvailableForTest(true)
+  })
+
+  after(async () => {
+    setGitAvailableForTest(null)
+    restore?.()
+    if (repo) await rm(repo, { recursive: true, force: true })
+  })
+
+  it('returns data URLs for a modified image', async () => {
+    await writeFile(
+      join(repo, 'logo.png'),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0xff, 0xff, 0xff]),
+    )
+    const diff = await getGitFileDiff('logo.png', false)
+    assert.ok(diff)
+    assert.match(diff!.beforeImage ?? '', /^data:image\/png;base64,/)
+    assert.match(diff!.afterImage ?? '', /^data:image\/png;base64,/)
+    assert.notEqual(diff!.beforeImage, diff!.afterImage)
+  })
+
+  it('returns only the after image for an untracked image', async () => {
+    await writeFile(
+      join(repo, 'new.png'),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xaa, 0xbb, 0xcc, 0xdd]),
+    )
+    const diff = await getGitFileDiff('new.png', false)
+    assert.ok(diff)
+    assert.equal(diff!.beforeImage, null)
+    assert.match(diff!.afterImage ?? '', /^data:image\/png;base64,/)
+  })
+
+  it('returns before and after images for a staged modification', async () => {
+    await writeFile(
+      join(repo, 'logo.png'),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x11, 0x22, 0x33, 0x44]),
+    )
+    git('add', 'logo.png')
+    const diff = await getGitFileDiff('logo.png', true)
+    assert.ok(diff)
+    assert.match(diff!.beforeImage ?? '', /^data:image\/png;base64,/)
+    assert.match(diff!.afterImage ?? '', /^data:image\/png;base64,/)
+    assert.notEqual(diff!.beforeImage, diff!.afterImage)
+  })
+})

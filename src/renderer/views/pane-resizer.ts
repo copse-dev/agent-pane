@@ -1,6 +1,7 @@
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { DEFAULT_LAYOUT, LAYOUT_LIMITS, type LayoutState } from '@shared/types/layout.ts'
+import { PORTRAIT_RIGHT_PANEL_CLASS } from './portrait-right-panel-layout.ts'
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n))
@@ -27,6 +28,12 @@ export function parseSavedLayout(raw: unknown): LayoutState {
       LAYOUT_LIMITS.files.min,
       4000,
     ),
+    filesPaneHeight: clampNumber(
+      saved.filesPaneHeight,
+      DEFAULT_LAYOUT.filesPaneHeight,
+      LAYOUT_LIMITS.filesStacked.min,
+      4000,
+    ),
     fileTreeWidth: clampNumber(
       saved.fileTreeWidth,
       DEFAULT_LAYOUT.fileTreeWidth,
@@ -39,6 +46,7 @@ export function parseSavedLayout(raw: unknown): LayoutState {
 export function applyLayout(body: HTMLElement, layout: LayoutState): void {
   body.style.setProperty('--projects-width', `${layout.projectsPaneWidth}px`)
   body.style.setProperty('--files-width', `${layout.filesPaneWidth}px`)
+  body.style.setProperty('--files-height', `${layout.filesPaneHeight}px`)
   body.style.setProperty('--tree-width', `${layout.fileTreeWidth}px`)
 }
 
@@ -46,14 +54,19 @@ function maxFilesWidth(body: HTMLElement): number {
   return Math.floor(body.clientWidth * LAYOUT_LIMITS.files.maxRatio)
 }
 
+function maxStackedFilesHeight(body: HTMLElement): number {
+  return Math.floor(body.clientHeight * LAYOUT_LIMITS.filesStacked.maxRatio)
+}
+
 function mountResizeHandle(
   handle: HTMLElement,
   opts: {
-    startWidth: () => number
-    deltaToWidth: (startWidth: number, deltaX: number) => number
-    applyWidth: (width: number) => void
-    min: number
+    startSize: () => number
+    deltaToSize: (startSize: number, deltaX: number, deltaY: number) => number
+    applySize: (size: number) => void
+    min: () => number
     max: () => number
+    cursor: () => string
     onCommit: () => void
   },
 ): void {
@@ -64,11 +77,17 @@ function mountResizeHandle(
     handle.classList.add('is-dragging')
 
     const startX = e.clientX
-    const initial = opts.startWidth()
+    const startY = e.clientY
+    const initial = opts.startSize()
+    const cursor = opts.cursor()
 
     const onMove = (ev: PointerEvent) => {
-      const width = clamp(opts.deltaToWidth(initial, ev.clientX - startX), opts.min, opts.max())
-      opts.applyWidth(width)
+      const size = clamp(
+        opts.deltaToSize(initial, ev.clientX - startX, ev.clientY - startY),
+        opts.min(),
+        opts.max(),
+      )
+      opts.applySize(size)
     }
 
     const onUp = () => {
@@ -80,7 +99,7 @@ function mountResizeHandle(
       opts.onCommit()
     }
 
-    document.body.style.cursor = 'col-resize'
+    document.body.style.cursor = cursor
     document.body.style.userSelect = 'none'
     document.addEventListener('pointermove', onMove)
     document.addEventListener('pointerup', onUp)
@@ -100,6 +119,7 @@ export function mountPaneResizers(body: HTMLElement, store: AppStore, api: ApiCl
     const rounded: LayoutState = {
       projectsPaneWidth: Math.round(layout.projectsPaneWidth),
       filesPaneWidth: Math.round(layout.filesPaneWidth),
+      filesPaneHeight: Math.round(layout.filesPaneHeight),
       fileTreeWidth: Math.round(layout.fileTreeWidth),
     }
     store.setState({ layout: rounded })
@@ -114,29 +134,37 @@ export function mountPaneResizers(body: HTMLElement, store: AppStore, api: ApiCl
   }
 
   mountResizeHandle(projectsResizer, {
-    startWidth: () => store.getState().layout.projectsPaneWidth,
-    deltaToWidth: (start, delta) => start + delta,
-    applyWidth: (width) => setLayout({ projectsPaneWidth: width }),
-    min: LAYOUT_LIMITS.projects.min,
+    startSize: () => store.getState().layout.projectsPaneWidth,
+    deltaToSize: (start, deltaX) => start + deltaX,
+    applySize: (width) => setLayout({ projectsPaneWidth: width }),
+    min: () => LAYOUT_LIMITS.projects.min,
     max: () => LAYOUT_LIMITS.projects.max,
+    cursor: () => 'col-resize',
     onCommit: commitLayout,
   })
 
+  const filesPanelStacked = () => body.classList.contains(PORTRAIT_RIGHT_PANEL_CLASS)
   mountResizeHandle(filesResizer, {
-    startWidth: () => store.getState().layout.filesPaneWidth,
-    deltaToWidth: (start, delta) => start - delta,
-    applyWidth: (width) => setLayout({ filesPaneWidth: width }),
-    min: LAYOUT_LIMITS.files.min,
-    max: () => maxFilesWidth(body),
+    startSize: () =>
+      filesPanelStacked()
+        ? store.getState().layout.filesPaneHeight
+        : store.getState().layout.filesPaneWidth,
+    deltaToSize: (start, deltaX, deltaY) => start + (filesPanelStacked() ? -deltaY : -deltaX),
+    applySize: (size) =>
+      setLayout(filesPanelStacked() ? { filesPaneHeight: size } : { filesPaneWidth: size }),
+    min: () => (filesPanelStacked() ? LAYOUT_LIMITS.filesStacked.min : LAYOUT_LIMITS.files.min),
+    max: () => (filesPanelStacked() ? maxStackedFilesHeight(body) : maxFilesWidth(body)),
+    cursor: () => (filesPanelStacked() ? 'row-resize' : 'col-resize'),
     onCommit: commitLayout,
   })
 
   mountResizeHandle(treeResizer, {
-    startWidth: () => store.getState().layout.fileTreeWidth,
-    deltaToWidth: (start, delta) => start + delta,
-    applyWidth: (width) => setLayout({ fileTreeWidth: width }),
-    min: LAYOUT_LIMITS.tree.min,
+    startSize: () => store.getState().layout.fileTreeWidth,
+    deltaToSize: (start, deltaX) => start + deltaX,
+    applySize: (width) => setLayout({ fileTreeWidth: width }),
+    min: () => LAYOUT_LIMITS.tree.min,
     max: () => LAYOUT_LIMITS.tree.max,
+    cursor: () => 'col-resize',
     onCommit: commitLayout,
   })
 
