@@ -1,4 +1,5 @@
 import type { AppStore } from '@shared/store/store.ts'
+import { getThreadById } from '@shared/store/thread-helpers.ts'
 import type { Thread } from '@shared/types'
 import { getToolDisplayName } from '@shared/tools/tool-display.ts'
 import { formatTodoProgress } from '@shared/todos/todo-logic.ts'
@@ -32,6 +33,6 @@ export function agentActivityLabel(thread: Thread | undefined, writing: boolean)
 }
 
 export function syncAgentActivity(store: AppStore, threadId: string, writing: boolean): void {
-  const thread = store.getState().threads.find((t) => t.id === threadId)
+  const thread = getThreadById(store, threadId)
   store.emit('agent_activity', threadId, agentActivityLabel(thread, writing))
 }
