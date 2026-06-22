@@ -208,7 +208,7 @@
 .three-pane.is-right-panel-horizontal {
   display: grid;
   grid-template-columns: var(--projects-width, 240px) 4px minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) 4px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) 4px minmax(0, var(--files-height, 360px));
 }
 .three-pane.is-right-panel-horizontal .pane-projects {
   grid-column: 1;
@@ -232,7 +232,6 @@
   width: auto;
   height: 4px;
   cursor: row-resize;
-  pointer-events: none;
 }
 .three-pane.is-right-panel-horizontal .pane-files {
   grid-column: 1 / -1;
