@@ -167,7 +167,7 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
     }
     if ((msg.toolCalls ?? []).length > 0) {
       const toolsWrap = el('div', { class: 'subagent-inner-tools' })
-      for (const inner of msg.toolCalls) {
+      for (const inner of msg.toolCalls ?? []) {
         toolsWrap.append(createInnerToolCard(inner))
       }
       timeline.append(toolsWrap)
@@ -446,7 +446,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       .find((m) => m.id === msgId)
     const msgEl = list.querySelector(`[data-message-id="${msgId}"]`)
     if (!msg || !msgEl) return
-    renderToolCards(msgEl as HTMLElement, msg.toolCalls)
+    renderToolCards(msgEl as HTMLElement, msg.toolCalls ?? [])
     scrollToBottom()
   }
 
