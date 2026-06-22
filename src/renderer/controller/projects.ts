@@ -66,8 +66,12 @@ async function dropMissingProject(store: AppStore, api: ApiClient, id: string): 
   store.emit('files_pane_changed')
 }
 
-function expandProject(store: AppStore, id: string): void {
+function setExpandedProject(store: AppStore, id: string): void {
   store.setState({ expandedProjectId: id })
+}
+
+function expandProject(store: AppStore, id: string): void {
+  setExpandedProject(store, id)
   store.emit('projects_changed')
 }
 
@@ -207,7 +211,6 @@ async function waitForProjectActivation(store: AppStore, projectId: string): Pro
 export async function restoreProject(store: AppStore, api: ApiClient, id: string): Promise<void> {
   const proj = store.getState().projects.find((p) => p.id === id)
   if (!proj) return
-  expandProject(store, id)
   if (!(await trySetWorkspace(api, proj.path))) {
     await dropMissingProject(store, api, id)
     if (store.getState().activeProjectId) {
@@ -226,6 +229,7 @@ export async function restoreProject(store: AppStore, api: ApiClient, id: string
   })
   if (loaded.length === 0) createThread(store)
   else normalizeBlankThreads(store)
+  store.emit('projects_changed')
   store.emit('workspace_changed')
   store.emit('threads_changed')
   resumePendingQueues(store, api)

@@ -8,6 +8,7 @@ import {
   getSidebarThreads,
   isProjectSwitchInFlight,
   resetProjectSwitchStateForTest,
+  restoreProject,
   setThreadCacheForTest,
   switchProject,
   switchProjectThread,
@@ -198,4 +199,39 @@ test('a superseded project switch does not apply stale workspace state', async (
   assert.equal(store.getState().activeThreadId, 't-c')
   assert.ok(workspaceSets.includes('/c'))
   assert.equal(workspaceSets.at(-1), '/c')
+})
+
+test('restoreProject does not emit projects_changed before threads are loaded', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [{ id: 'a', path: '/a', name: 'A' }],
+    activeProjectId: 'a',
+    threads: [],
+  })
+  const events: string[] = []
+  store.on('projects_changed', () => events.push('projects_changed'))
+  store.on('workspace_changed', () => events.push('workspace_changed'))
+  store.on('threads_changed', () => events.push('threads_changed'))
+
+  let releaseWorkspace!: () => void
+  const workspaceGate = new Promise<string>((resolve) => {
+    releaseWorkspace = () => resolve('/a')
+  })
+
+  const api = makeApi({
+    workspaceSet: () => workspaceGate,
+    storageGet: async (key) => {
+      if (key === 'threads:a') return [thread('t-a')]
+      return null
+    },
+  })
+
+  const pending = restoreProject(store, api, 'a')
+  assert.deepEqual(events, [])
+  releaseWorkspace()
+  await pending
+
+  assert.equal(store.getState().expandedProjectId, 'a')
+  assert.equal(store.getState().threads.length, 1)
+  assert.deepEqual(events, ['projects_changed', 'workspace_changed', 'threads_changed'])
 })
