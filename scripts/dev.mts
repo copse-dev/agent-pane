@@ -1,9 +1,10 @@
 import * as esbuild from 'esbuild'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { cpSync, copyFileSync } from 'node:fs'
+import { copyMonacoWorkers } from './copy-monaco-workers.mts'
 
 // Copy static renderer assets once at start
-cpSync('node_modules/monaco-editor/min/vs', 'dist/renderer/monaco/vs', { recursive: true })
+copyMonacoWorkers('dist/renderer')
 cpSync('node_modules/vscode-material-icons/generated/icons', 'dist/renderer/material-icons', {
   recursive: true,
 })

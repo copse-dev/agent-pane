@@ -3,7 +3,7 @@ import './styles/global.css'
 import './styles/themes.css'
 
 import { createStore } from '@shared/store/store.ts'
-import { openNewThread, switchThread } from '@shared/store/thread-helpers.ts'
+import { openNewThread, switchThread, getActiveThread } from '@shared/store/thread-helpers.ts'
 import { mountWelcome } from './views/welcome.ts'
 import { mountTitlebar } from './views/titlebar.ts'
 import { mountProjectsPane } from './views/projects-pane.ts'
@@ -36,6 +36,7 @@ import { bindChatComposerLayout } from './views/chat-layout.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { registerPanelKeyboardShortcuts } from './keyboard-shortcuts.ts'
 import { showErrorToast } from './views/toast.ts'
+import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layout.ts'
 
 const store = createStore()
 const api = window.api
@@ -56,9 +57,12 @@ async function boot() {
   // Load persisted user preferences before the main layout mounts.
   const savedModel = (await api.settings.get('model')) as string | null
   const savedLayout = await api.settings.get('layout')
+  const savedAutoPortraitRightPanel = await api.settings.get('autoPortraitRightPanel')
   store.setState({
     settings: { model: savedModel ?? DEFAULT_APP_CHAT_MODEL },
     layout: parseSavedLayout(savedLayout),
+    autoPortraitRightPanel:
+      typeof savedAutoPortraitRightPanel === 'boolean' ? savedAutoPortraitRightPanel : true,
   })
   startAgentController(store, api)
   attachAutosave(store, api)
@@ -127,7 +131,7 @@ function mountFullLayout() {
   mountProjectsPane(document.getElementById('pane-projects')!, store, api)
   const inputRoot = document.getElementById('input-bar')!
   mountInputBar(inputRoot, store, api)
-  mountConversation(document.getElementById('conversation')!, store)
+  mountConversation(document.getElementById('conversation')!, store, api)
   if (!inputRoot.querySelector('.prompt-input')) {
     throw new Error('Chat composer failed to mount (#input-bar missing .prompt-input)')
   }
@@ -150,7 +154,10 @@ function mountFullLayout() {
   mountContextPanel(document.getElementById('file-viewer')!, store, api, monaco)
 
   const body = document.getElementById('body')
-  if (body) mountPaneResizers(body, store, api)
+  if (body) {
+    mountPaneResizers(body, store, api)
+    mountPortraitRightPanelLayout(body, store)
+  }
 
   store.on('files_pane_changed', updateFilesPane)
   updateFilesPane()
@@ -184,7 +191,7 @@ function registerKeyboardShortcuts() {
         closeSettingsDialog()
         return
       }
-      const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
+      const thread = getActiveThread(store)
       if (thread?.status === 'running') {
         const id = store.getState().activeThreadId
         if (id) void api.agent.abort(id)

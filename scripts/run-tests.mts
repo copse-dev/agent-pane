@@ -1,5 +1,5 @@
 import * as esbuild from 'esbuild'
-import { glob } from 'node:fs/promises'
+import { glob, rm } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 
@@ -8,6 +8,7 @@ const storageShim = resolve('src/main/services/storage.test-shim.ts')
 
 const testFiles: string[] = []
 for await (const f of glob('src/**/*.test.ts')) testFiles.push(f)
+await rm('dist-test', { recursive: true, force: true })
 await esbuild.build({
   entryPoints: testFiles,
   outdir: 'dist-test',
