@@ -8,6 +8,7 @@ import { saveAppScreenshot } from './helpers/screenshot.ts'
 const PROJECT_ID = 'e2e-monaco-selection-project'
 const SAMPLE_FILE = 'selection-sample.txt'
 const SCREENSHOT = 'monaco-selection-chat-attachment.png'
+const CONTROL_KEY = '\uE009'
 
 async function waitForWorkspace(): Promise<void> {
   await browser.waitUntil(
@@ -20,22 +21,7 @@ async function waitForWorkspace(): Promise<void> {
 }
 
 async function pressControlChord(key: string): Promise<void> {
-  await browser.execute((pressedKey) => {
-    const target =
-      document.querySelector('#file-viewer .monaco-editor textarea') ?? document.activeElement
-    if (!target) throw new Error('No target for Monaco shortcut')
-    for (const type of ['keydown', 'keyup']) {
-      target.dispatchEvent(
-        new KeyboardEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          ctrlKey: true,
-          key: pressedKey,
-          code: `Key${pressedKey.toUpperCase()}`,
-        }),
-      )
-    }
-  }, key)
+  await browser.action('key').down(CONTROL_KEY).down(key).up(key).up(CONTROL_KEY).perform()
 }
 
 async function focusMonacoInput(): Promise<void> {
@@ -53,47 +39,6 @@ async function focusMonacoInput(): Promise<void> {
     if (!input) throw new Error('Monaco input textarea not found')
     input.focus()
   })
-}
-
-async function selectFullMonacoFile(): Promise<void> {
-  const selected = await browser.execute(() => {
-    interface MonacoRange {
-      startLineNumber: number
-      endLineNumber: number
-    }
-    interface MonacoModel {
-      getFullModelRange(): MonacoRange
-    }
-    interface MonacoEditor {
-      getDomNode(): HTMLElement | null
-      getModel(): MonacoModel | null
-      setSelection(range: MonacoRange): void
-      focus(): void
-    }
-    interface MonacoGlobal {
-      editor?: {
-        getEditors?: () => MonacoEditor[]
-      }
-    }
-
-    const monacoApi = (window as unknown as { monaco?: MonacoGlobal }).monaco
-    const editors = monacoApi?.editor?.getEditors?.() ?? []
-    const editor = editors.find((candidate) =>
-      candidate.getDomNode()?.closest('#file-viewer .monaco-editor'),
-    )
-    const model = editor?.getModel()
-    if (!editor || !model) return null
-
-    const range = model.getFullModelRange()
-    editor.setSelection(range)
-    editor.focus()
-    return {
-      startLineNumber: range.startLineNumber,
-      endLineNumber: range.endLineNumber,
-    }
-  })
-
-  if (!selected) throw new Error('Could not select Monaco file editor contents')
 }
 
 describe('Monaco selection to chat attachment', () => {
@@ -134,7 +79,8 @@ describe('Monaco selection to chat attachment', () => {
     await editor.waitForDisplayed({ timeout: 15_000 })
     await $('#file-viewer .monaco-editor .view-line').click()
     await focusMonacoInput()
-    await selectFullMonacoFile()
+
+    await pressControlChord('a')
     await pressControlChord('l')
 
     const chip = await $('.attachment-chip.text-chip')
