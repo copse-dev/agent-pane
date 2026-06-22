@@ -9,15 +9,15 @@ import { buildProvider } from './provider-selection.ts'
 
 const AUTO_LOCAL_DEFAULT = lmStudioChatModelValue(LM_STUDIO_MODEL_IDS.smallTasks)
 
-/** Resolve the configured background-tasks model (empty = auto local default). */
-export function resolveBackgroundTasksModelId(): string {
-  const configured = getSetting<string>('backgroundTasksModel', '').trim()
+/** Resolve the configured small-tasks model (empty = auto local default). */
+export function resolveSmallTasksModelId(): string {
+  const configured = getSetting<string>('smallTasksModel', '').trim()
   return configured || AUTO_LOCAL_DEFAULT
 }
 
 /** Provider for thread titles, follow-ups, and other lightweight prompts. */
-export async function resolveBackgroundTasksProvider(): Promise<LLMProvider | null> {
-  const modelId = resolveBackgroundTasksModelId()
+export async function resolveSmallTasksProvider(): Promise<LLMProvider | null> {
+  const modelId = resolveSmallTasksModelId()
   try {
     return await buildProvider(modelId)
   } catch {

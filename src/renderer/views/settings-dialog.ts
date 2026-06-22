@@ -7,7 +7,7 @@ import {
   isAppIconVariant,
   type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
-import { populateModelSelect, populateBackgroundTasksModelSelect } from './model-options.ts'
+import { populateModelSelect, populateSmallTasksModelSelect } from './model-options.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
@@ -127,14 +127,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset>
-              <legend>Background tasks</legend>
+              <legend>Small tasks</legend>
               <p class="settings-fieldset-desc">
                 Lightweight prompts such as thread titles and follow-up suggestions. Use any cloud or
                 local model — not limited to LM Studio.
               </p>
               <label>
                 Model
-                <select name="backgroundTasksModel"></select>
+                <select name="smallTasksModel"></select>
               </label>
             </fieldset>
 
@@ -467,13 +467,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         api,
         model ?? 'claude-sonnet-4-6',
       )
-      const backgroundTasksModel = (await api.settings.get('backgroundTasksModel')) as
-        | string
-        | undefined
-      await populateBackgroundTasksModelSelect(
-        form.elements.namedItem('backgroundTasksModel') as HTMLSelectElement,
+      const smallTasksModel = (await api.settings.get('smallTasksModel')) as string | undefined
+      await populateSmallTasksModelSelect(
+        form.elements.namedItem('smallTasksModel') as HTMLSelectElement,
         api,
-        backgroundTasksModel ?? '',
+        smallTasksModel ?? '',
       )
       await loadSimpleFields(form, api)
       ;(form.elements.namedItem('theme') as HTMLSelectElement).value = store.getState().theme
@@ -514,8 +512,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       await api.settings.set('model', model)
       await api.settings.set(
-        'backgroundTasksModel',
-        ((data.get('backgroundTasksModel') as string) ?? '').trim(),
+        'smallTasksModel',
+        ((data.get('smallTasksModel') as string) ?? '').trim(),
       )
       await saveSimpleFields(data, api)
       await api.settings.set('theme', theme)

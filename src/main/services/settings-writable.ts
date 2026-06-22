@@ -12,7 +12,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
     fileTreeWidth: z.number().int().min(120).max(400),
   }),
   lmStudioModel: z.string().max(256),
-  backgroundTasksModel: z.string().max(256),
+  smallTasksModel: z.string().max(256),
   lmStudioSubagentModel: z.string().max(256),
   lmStudioForSubagents: z.boolean(),
   lmStudioForTodoItems: z.boolean(),

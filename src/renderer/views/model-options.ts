@@ -119,8 +119,8 @@ export function populateLocalModelSelect(
   select.value = current
 }
 
-/** Model picker for background tasks — cloud, local, or auto (empty value). */
-export async function populateBackgroundTasksModelSelect(
+/** Model picker for small tasks — cloud, local, or auto (empty value). */
+export async function populateSmallTasksModelSelect(
   select: HTMLSelectElement,
   api: ApiClient,
   current: string,

@@ -247,7 +247,7 @@ function firstWords(text: string, n = 6): string {
 }
 
 // After a thread's first exchange completes, derive a title from the first user
-// message — using the configured background-tasks model, with a plain word-slice
+// message — using the configured small-tasks model, with a plain word-slice
 // fallback.
 async function maybeNameThread(store: AppStore, api: ApiClient, threadId: string): Promise<void> {
   if (namedThreads.has(threadId)) return

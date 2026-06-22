@@ -7,7 +7,7 @@ import {
   buildDebugCiSuggestion,
   buildFixMergeConflictsSuggestion,
 } from '@shared/follow-ups/presets.ts'
-import { resolveBackgroundTasksProvider } from './background-tasks-provider.ts'
+import { resolveSmallTasksProvider } from './small-tasks-provider.ts'
 import { getSetting } from './settings.ts'
 import { getPrWorkspaceContext } from './pr-context-service.ts'
 
@@ -46,7 +46,7 @@ export function parseModelFollowUpIds(raw: string): string[] {
 }
 
 async function pickModelFollowUps(context: FollowUpContext): Promise<FollowUpSuggestion[]> {
-  const provider = await resolveBackgroundTasksProvider()
+  const provider = await resolveSmallTasksProvider()
   if (!provider) return []
 
   const presetLines = MODEL_FOLLOW_UP_PRESETS.map((p) => `- ${p.id}: ${p.label}`).join('\n')

@@ -1,5 +1,5 @@
 import type { LLMMessage, LLMProvider } from '@shared/types'
-import { resolveBackgroundTasksProvider } from './background-tasks-provider.ts'
+import { resolveSmallTasksProvider } from './small-tasks-provider.ts'
 
 // Collect a non-streaming-ish completion as plain text from any provider.
 async function completeText(provider: LLMProvider, prompt: string): Promise<string> {
@@ -18,10 +18,10 @@ async function completeText(provider: LLMProvider, prompt: string): Promise<stri
 }
 
 // Generate a short thread title from the first user message. Uses the
-// configured background-tasks model; returns null on failure so the caller can
+// configured small-tasks model; returns null on failure so the caller can
 // fall back to a heuristic.
 export async function suggestThreadTitle(text: string): Promise<string | null> {
-  const provider = await resolveBackgroundTasksProvider()
+  const provider = await resolveSmallTasksProvider()
   if (!provider) return null
 
   const prompt =
