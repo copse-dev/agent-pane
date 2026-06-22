@@ -224,6 +224,29 @@ describe('renderMarkdown', () => {
     assert.match(html, /<code>search_codebase<\/code>/)
     assert.match(html, /<h3>2\. Execution<\/h3>\s*<ul>/)
   })
+
+  it('bolds list labels after table cells with glob paths in inline code', () => {
+    const html = renderMarkdown(
+      [
+        '## Tests',
+        '',
+        '| Path | Role |',
+        '| --- | --- |',
+        '| **`src/**/*.test.ts`** | Unit tests (bundled into `dist-test/`) |',
+        '| **`tests/e2e/`** | WebdriverIO e2e tests (tool display, markdown rendering, etc.) |',
+        '',
+        '## Architecture Notes',
+        '',
+        '- **Shell permissions**: `src/main/services/permission-policy.ts` — sandbox policy',
+        '- **MCP host**: connects via `.cursor/mcp.json` or `~/.cursor/mcp.json`',
+      ].join('\n'),
+    )
+    assert.match(html, /<strong><code>src\/\*\*\/\*\.test\.ts<\/code><\/strong>/)
+    assert.match(html, /<li><strong>Shell permissions<\/strong>:/)
+    assert.match(html, /<li><strong>MCP host<\/strong>:/)
+    assert.doesNotMatch(html, /MCP host\*\*:/)
+    assert.doesNotMatch(html, /<li><\/strong>/)
+  })
 })
 
 describe('renderMarkdown sanitization (#115)', () => {
