@@ -10,6 +10,7 @@ import {
 import { resolveSmallTasksProvider } from './small-tasks-provider.ts'
 import { getSetting } from './settings.ts'
 import { getPrWorkspaceContext } from './pr-context-service.ts'
+import { safeJsonParse } from '@shared/safe-json.ts'
 
 const MAX_SUGGESTIONS = 3
 
@@ -33,16 +34,12 @@ export function parseModelFollowUpIds(raw: string): string[] {
   const trimmed = raw.trim()
   const jsonMatch = trimmed.match(/\[[\s\S]*\]/)
   if (!jsonMatch) return []
-  try {
-    const parsed = JSON.parse(jsonMatch[0]) as unknown
-    if (!Array.isArray(parsed)) return []
-    return parsed
-      .filter((id): id is string => typeof id === 'string')
-      .map((id) => id.trim())
-      .filter(Boolean)
-  } catch {
-    return []
-  }
+  const parsed = safeJsonParse(jsonMatch[0])
+  if (!Array.isArray(parsed)) return []
+  return parsed
+    .filter((id): id is string => typeof id === 'string')
+    .map((id) => id.trim())
+    .filter(Boolean)
 }
 
 async function pickModelFollowUps(context: FollowUpContext): Promise<FollowUpSuggestion[]> {
