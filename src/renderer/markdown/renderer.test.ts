@@ -25,6 +25,13 @@ describe('renderMarkdown', () => {
     assert.match(html, /<ul>/)
     assert.match(html, /<li>alpha<\/li>/)
     assert.match(html, /<li>beta<\/li>/)
+    assert.match(html, /<ul><li>alpha<\/li><li>beta<\/li><\/ul>/)
+  })
+
+  it('groups unordered list items separated by blank lines into one list', () => {
+    const html = renderMarkdown('- alpha\n\n- beta\n\n- gamma')
+    assert.match(html, /<ul><li>alpha<\/li><li>beta<\/li><li>gamma<\/li><\/ul>/)
+    assert.doesNotMatch(html, /<\/ul>\s*<ul>/)
   })
 
   it('renders asterisk unordered lists', () => {
