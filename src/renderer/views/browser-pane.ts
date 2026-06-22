@@ -1,0 +1,357 @@
+import { el } from '../dom/helpers.ts'
+import type { AppStore } from '@shared/store/store.ts'
+import { browserTabLabel, normalizeBrowserUrl } from '@shared/browser-url.ts'
+
+/** Minimal typing for Electron's guest `<webview>` element. */
+interface BrowserWebviewElement extends HTMLElement {
+  src: string
+  canGoBack(): boolean
+  canGoForward(): boolean
+  goBack(): void
+  goForward(): void
+  reload(): void
+  stop(): void
+  loadURL(url: string): void
+  getURL(): string
+  getTitle(): string
+}
+
+interface BrowserTab {
+  id: string
+  label: string
+  panel: HTMLElement
+  webviewHost: HTMLElement
+  webview: BrowserWebviewElement | null
+  tabBtn: HTMLButtonElement
+  tabLabelEl: HTMLElement
+  urlInput: HTMLInputElement
+  backBtn: HTMLButtonElement
+  forwardBtn: HTMLButtonElement
+  reloadBtn: HTMLButtonElement
+  pendingUrl: string | null
+}
+
+const WEBVIEW_PARTITION = 'persist:copse-browser'
+const WEBVIEW_PREFS = 'contextIsolation=true, sandbox=true'
+
+function browserModeActive(store: AppStore): boolean {
+  const { filesPaneOpen, rightPanelMode } = store.getState()
+  return filesPaneOpen && rightPanelMode === 'browser'
+}
+
+function createWebview(): BrowserWebviewElement {
+  const webview = document.createElement('webview') as BrowserWebviewElement
+  webview.setAttribute('partition', WEBVIEW_PARTITION)
+  webview.setAttribute('webpreferences', WEBVIEW_PREFS)
+  webview.setAttribute('allowpopups', 'false')
+  webview.className = 'browser-webview'
+  return webview
+}
+
+export function mountBrowserPane(
+  listRoot: HTMLElement,
+  viewerRoot: HTMLElement,
+  store: AppStore,
+): () => void {
+  const listHeader = el('div', { class: 'browser-tabs-list-header' }, 'Tabs')
+  const newBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'browser-tabs-new-btn',
+      'aria-label': 'New browser tab',
+      title: 'New tab',
+    },
+    '+',
+  )
+  listHeader.append(newBtn)
+
+  const tabsWrap = el('div', { class: 'browser-tabs-list' })
+  listRoot.append(listHeader, tabsWrap)
+
+  const body = el('div', { class: 'browser-body' })
+  viewerRoot.append(body)
+
+  const tabs = new Map<string, BrowserTab>()
+  let activeTabId: string | null = null
+
+  function updateNavButtons(tab: BrowserTab) {
+    const webview = tab.webview
+    if (!webview) {
+      tab.backBtn.disabled = true
+      tab.forwardBtn.disabled = true
+      return
+    }
+    tab.backBtn.disabled = !webview.canGoBack()
+    tab.forwardBtn.disabled = !webview.canGoForward()
+  }
+
+  function syncTabLabel(tab: BrowserTab) {
+    const url = tab.webview?.getURL() ?? tab.pendingUrl ?? 'about:blank'
+    const title = tab.webview?.getTitle()
+    tab.label = browserTabLabel(url, title)
+    tab.tabLabelEl.textContent = tab.label
+  }
+
+  function syncAddressBar(tab: BrowserTab) {
+    const url = tab.webview?.getURL() ?? tab.pendingUrl ?? ''
+    if (document.activeElement !== tab.urlInput) {
+      tab.urlInput.value = url === 'about:blank' ? '' : url
+    }
+    updateNavButtons(tab)
+    syncTabLabel(tab)
+  }
+
+  function ensureWebview(tab: BrowserTab): BrowserWebviewElement {
+    if (tab.webview) return tab.webview
+
+    const webview = createWebview()
+    tab.webviewHost.append(webview)
+    tab.webview = webview
+
+    const onNavigate = () => {
+      if (activeTabId === tab.id) syncAddressBar(tab)
+    }
+
+    webview.addEventListener('did-navigate', onNavigate)
+    webview.addEventListener('did-navigate-in-page', onNavigate)
+    webview.addEventListener('page-title-updated', onNavigate)
+    webview.addEventListener('dom-ready', () => {
+      syncAddressBar(tab)
+      if (tab.pendingUrl) {
+        const url = tab.pendingUrl
+        tab.pendingUrl = null
+        webview.loadURL(url)
+      }
+    })
+    webview.addEventListener('new-window', (event: Event) => {
+      const detail = event as Event & { url?: string }
+      if (detail.url) addTab({ url: detail.url, activate: true })
+    })
+
+    return webview
+  }
+
+  function navigateTab(tab: BrowserTab, rawUrl: string) {
+    const url = normalizeBrowserUrl(rawUrl)
+    tab.urlInput.value = url === 'about:blank' ? '' : url
+    if (browserModeActive(store)) {
+      const webview = ensureWebview(tab)
+      if (webview.getURL() === url && url !== 'about:blank') {
+        webview.reload()
+      } else {
+        webview.loadURL(url)
+      }
+    } else {
+      tab.pendingUrl = url
+    }
+    syncTabLabel(tab)
+  }
+
+  function wireToolbar(tab: BrowserTab) {
+    tab.backBtn.addEventListener('click', () => {
+      tab.webview?.goBack()
+    })
+    tab.forwardBtn.addEventListener('click', () => {
+      tab.webview?.goForward()
+    })
+    tab.reloadBtn.addEventListener('click', () => {
+      if (tab.webview) tab.webview.reload()
+      else navigateTab(tab, tab.urlInput.value)
+    })
+    const submitUrl = () => navigateTab(tab, tab.urlInput.value)
+    tab.urlInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        submitUrl()
+      }
+    })
+  }
+
+  function setActiveTab(tabId: string) {
+    if (activeTabId === tabId) return
+    activeTabId = tabId
+    for (const tab of tabs.values()) {
+      const active = tab.id === tabId
+      tab.panel.classList.toggle('is-active', active)
+      tab.tabBtn.classList.toggle('is-active', active)
+    }
+    const tab = tabs.get(tabId)
+    if (!tab) return
+    if (browserModeActive(store)) {
+      const webview = ensureWebview(tab)
+      if (tab.pendingUrl) {
+        const url = tab.pendingUrl
+        tab.pendingUrl = null
+        webview.loadURL(url)
+      }
+      syncAddressBar(tab)
+      requestAnimationFrame(() => tab.urlInput.focus())
+    }
+  }
+
+  function addTab(options?: { url?: string; activate?: boolean }): string {
+    const id = crypto.randomUUID()
+    const initialUrl = options?.url ? normalizeBrowserUrl(options.url) : 'about:blank'
+    const label = browserTabLabel(initialUrl)
+
+    const tabLabelEl = el('span', { class: 'browser-tabs-tab-label' }, label)
+    const closeBtn = el(
+      'span',
+      {
+        class: 'browser-tabs-tab-close',
+        role: 'button',
+        'aria-label': 'Close tab',
+        title: 'Close',
+      },
+      '×',
+    )
+    const tabBtn = el(
+      'button',
+      { type: 'button', class: 'browser-tabs-tab', 'data-tab-id': id },
+      tabLabelEl,
+      closeBtn,
+    ) as HTMLButtonElement
+
+    const backBtn = el(
+      'button',
+      {
+        type: 'button',
+        class: 'browser-nav-btn',
+        'aria-label': 'Back',
+        title: 'Back',
+        disabled: true,
+      },
+      '←',
+    ) as HTMLButtonElement
+    const forwardBtn = el(
+      'button',
+      {
+        type: 'button',
+        class: 'browser-nav-btn',
+        'aria-label': 'Forward',
+        title: 'Forward',
+        disabled: true,
+      },
+      '→',
+    ) as HTMLButtonElement
+    const reloadBtn = el(
+      'button',
+      { type: 'button', class: 'browser-nav-btn', 'aria-label': 'Reload', title: 'Reload' },
+      '↻',
+    ) as HTMLButtonElement
+    const urlInput = el('input', {
+      type: 'text',
+      class: 'browser-url-input',
+      placeholder: 'Enter URL or search',
+      spellcheck: 'false',
+    }) as HTMLInputElement
+    const goBtn = el(
+      'button',
+      { type: 'button', class: 'browser-go-btn', 'aria-label': 'Go', title: 'Go' },
+      'Go',
+    )
+
+    const toolbar = el(
+      'div',
+      { class: 'browser-toolbar' },
+      backBtn,
+      forwardBtn,
+      reloadBtn,
+      urlInput,
+      goBtn,
+    )
+    const webviewHost = el('div', { class: 'browser-webview-host' })
+    const panel = el('div', { class: 'browser-tab-panel', 'data-tab-id': id }, toolbar, webviewHost)
+
+    const tab: BrowserTab = {
+      id,
+      label,
+      panel,
+      webviewHost,
+      webview: null,
+      tabBtn,
+      tabLabelEl,
+      urlInput,
+      backBtn,
+      forwardBtn,
+      reloadBtn,
+      pendingUrl: initialUrl !== 'about:blank' ? initialUrl : null,
+    }
+
+    goBtn.addEventListener('click', () => navigateTab(tab, tab.urlInput.value))
+    wireToolbar(tab)
+
+    tabBtn.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('.browser-tabs-tab-close')) return
+      setActiveTab(id)
+    })
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      removeTab(id)
+    })
+
+    tabs.set(id, tab)
+    tabsWrap.append(tabBtn)
+    body.append(panel)
+
+    if (options?.activate !== false || !activeTabId) setActiveTab(id)
+    if (browserModeActive(store) && tab.pendingUrl) ensureWebview(tab)
+    return id
+  }
+
+  function removeTab(tabId: string) {
+    const tab = tabs.get(tabId)
+    if (!tab) return
+    tab.webview?.remove()
+    tab.tabBtn.remove()
+    tab.panel.remove()
+    tabs.delete(tabId)
+
+    if (activeTabId !== tabId) return
+    const remaining = [...tabs.keys()]
+    if (remaining.length > 0) {
+      setActiveTab(remaining[remaining.length - 1]!)
+    } else {
+      activeTabId = null
+      if (browserModeActive(store)) addTab()
+    }
+  }
+
+  function onBrowserModeChange() {
+    const active = browserModeActive(store)
+    if (active) {
+      if (tabs.size === 0) addTab()
+      const tab = activeTabId ? tabs.get(activeTabId) : null
+      if (tab) {
+        ensureWebview(tab)
+        if (tab.pendingUrl) {
+          const url = tab.pendingUrl
+          tab.pendingUrl = null
+          tab.webview!.loadURL(url)
+        }
+        syncAddressBar(tab)
+        requestAnimationFrame(() => tab.urlInput.focus())
+      }
+    }
+  }
+
+  newBtn.addEventListener('click', () => addTab())
+
+  onBrowserModeChange()
+
+  const unsubs = [
+    store.on('right_panel_mode_changed', onBrowserModeChange),
+    store.on('files_pane_changed', onBrowserModeChange),
+  ]
+
+  return () => {
+    unsubs.forEach((u) => u())
+    for (const tab of tabs.values()) {
+      tab.webview?.remove()
+      tab.tabBtn.remove()
+      tab.panel.remove()
+    }
+    tabs.clear()
+  }
+}
