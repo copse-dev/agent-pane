@@ -178,7 +178,7 @@ export async function runAgent(
     if (
       localItem &&
       shouldRouteToLocal(localItem, {
-        lmStudioForTodoItems: getSetting<boolean>('lmStudioForTodoItems', true),
+        localTodoItemsEnabled: getSetting<boolean>('localTodoItemsEnabled', true),
         parentIsLocal: isLocalChatModel(model),
       }) &&
       subagentRoute

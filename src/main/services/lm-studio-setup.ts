@@ -52,7 +52,7 @@ export function detectLmStudioInstall(): boolean {
 }
 
 export async function detectLmStudio(url?: string, apiKey?: string): Promise<LmStudioDetection> {
-  const serverUrl = (url ?? getSetting<string>('lmStudioUrl', DEFAULT_LM_STUDIO_URL)).replace(
+  const serverUrl = (url ?? getSetting<string>('localServerUrl', DEFAULT_LM_STUDIO_URL)).replace(
     /\/$/,
     '',
   )

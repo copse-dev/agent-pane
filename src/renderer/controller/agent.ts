@@ -247,8 +247,8 @@ function firstWords(text: string, n = 6): string {
 }
 
 // After a thread's first exchange completes, derive a title from the first user
-// message — preferring a local model (LM Studio) for this small task, with a
-// plain word-slice fallback.
+// message — using the configured small-tasks model, with a plain word-slice
+// fallback.
 async function maybeNameThread(store: AppStore, api: ApiClient, threadId: string): Promise<void> {
   if (namedThreads.has(threadId)) return
   const thread = store.getState().threads.find((t) => t.id === threadId)

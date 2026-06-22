@@ -57,7 +57,7 @@ function loadModel(settings: Record<string, unknown>): string {
   if (process.env.LM_STUDIO_MODEL?.trim()) return process.env.LM_STUDIO_MODEL.trim()
   const modelSetting = settingString(settings, 'model')
   if (modelSetting.startsWith('lmstudio:')) return modelSetting.slice('lmstudio:'.length)
-  const configured = settingString(settings, 'lmStudioModel')
+  const configured = settingString(settings, 'localDefaultModel')
   if (configured) return configured
   fail('Set LM_STUDIO_MODEL or choose lmstudio:<id> in app settings.')
 }
@@ -101,7 +101,7 @@ export async function validateLocalAgentFinalAnswer(): Promise<void> {
   const settings = loadSettings()
   const url =
     process.env.LM_STUDIO_URL?.trim() ||
-    settingString(settings, 'lmStudioUrl', 'http://localhost:1234/v1')
+    settingString(settings, 'localServerUrl', 'http://localhost:1234/v1')
   const model = loadModel(settings)
   const apiKey = loadLmStudioKey()
   const workspace = process.cwd()
