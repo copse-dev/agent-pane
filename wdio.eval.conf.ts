@@ -44,7 +44,7 @@ export const config: Options.Testrunner = {
   reporters: ['spec'],
   mochaOpts: {
     ui: 'bdd',
-    timeout: 20 * 60_000,
+    timeout: Number(process.env.COPSE_EVAL_MOCHA_TIMEOUT_MS ?? 45 * 60_000),
   },
   beforeSession(_config, capabilities) {
     if (process.env.COPSE_EVAL_USE_MOCK === '1') {

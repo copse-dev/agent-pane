@@ -41,7 +41,15 @@ function writeSettings(settings: Record<string, unknown>): void {
 export function seedEmptyProject(
   workspaceRoot: string,
   projectId: string,
-  options?: { subagentsEnabled?: boolean; mockFollowUps?: boolean; model?: string },
+  options?: {
+    subagentsEnabled?: boolean
+    mockFollowUps?: boolean
+    model?: string
+    lmStudioUrl?: string
+    lmStudioModel?: string
+    lmStudioSubagentModel?: string
+    lmStudioForSubagents?: boolean
+  },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
   writeFileSync(
@@ -62,6 +70,18 @@ export function seedEmptyProject(
   }
   if (options?.model) {
     settings.model = options.model
+  }
+  if (options?.lmStudioUrl) {
+    settings.lmStudioUrl = options.lmStudioUrl
+  }
+  if (options?.lmStudioModel) {
+    settings.lmStudioModel = options.lmStudioModel
+  }
+  if (options?.lmStudioSubagentModel) {
+    settings.lmStudioSubagentModel = options.lmStudioSubagentModel
+  }
+  if (options?.lmStudioForSubagents !== undefined) {
+    settings.lmStudioForSubagents = options.lmStudioForSubagents
   }
   if (Object.keys(settings).length > 0) {
     writeSettings(settings)

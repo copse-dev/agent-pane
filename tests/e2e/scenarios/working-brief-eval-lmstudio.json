@@ -1,0 +1,8 @@
+{
+  "id": "working-brief-eval-lmstudio",
+  "description": "Two-turn LM Studio scenario: persist workingBrief on turn 1; turn 2 uses a short follow-up (avoids long shell/test loops).",
+  "prompts": [
+    "refactor the authentication module",
+    "give a one-sentence summary of your plan"
+  ]
+}
