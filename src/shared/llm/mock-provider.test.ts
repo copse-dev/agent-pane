@@ -40,4 +40,11 @@ describe('MockLLMProvider', () => {
     assert.match(text, /Mock response to:/)
     assert.ok(!chunks.some((c) => c.type === 'tool_call'))
   })
+
+  it('honors a bounded delay directive for e2e timing', async () => {
+    const provider = new MockLLMProvider()
+    const startedAt = Date.now()
+    await collectChunks(provider, [{ role: 'user', content: 'hello [[mock:delay_ms 5]]' }], [])
+    assert.ok(Date.now() - startedAt >= 5)
+  })
 })
