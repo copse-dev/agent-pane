@@ -127,7 +127,7 @@ function mountFullLayout() {
   mountProjectsPane(document.getElementById('pane-projects')!, store, api)
   const inputRoot = document.getElementById('input-bar')!
   mountInputBar(inputRoot, store, api)
-  mountConversation(document.getElementById('conversation')!, store)
+  mountConversation(document.getElementById('conversation')!, store, api)
   if (!inputRoot.querySelector('.prompt-input')) {
     throw new Error('Chat composer failed to mount (#input-bar missing .prompt-input)')
   }
