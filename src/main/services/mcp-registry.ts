@@ -23,6 +23,7 @@ import {
 } from './mcp-config.ts'
 import { flattenMcpContent, sanitizeMcpInputSchema } from './mcp-schema.ts'
 import { isWorkspaceTrusted, setWorkspaceTrusted } from './workspace-trust.ts'
+import { appendFlatCapped, COMMAND_OUTPUT_MAX_BYTES } from './subprocess-output-cap.ts'
 
 const CONNECT_TIMEOUT_MS = 30_000
 const GRANTS_STORAGE_KEY = 'mcp-remembered-grants'
@@ -54,6 +55,11 @@ interface ActiveServer {
 interface McpToolMeta {
   server: string
   annotations?: McpToolAnnotations | undefined
+}
+
+interface CreatedTransport {
+  transport: Transport
+  stderrOutput: () => string
 }
 
 const activeServers: ActiveServer[] = []
@@ -183,23 +189,30 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   })
 }
 
-function createTransport(cfg: McpServerConfig): Transport {
+function createTransport(cfg: McpServerConfig): CreatedTransport {
   if (cfg.transport === 'http') {
     const transport = new StreamableHTTPClientTransport(
       new URL(cfg.url!),
       cfg.headers ? { requestInit: { headers: cfg.headers } } : undefined,
     )
-    return transport as unknown as Transport
+    return { transport: transport as unknown as Transport, stderrOutput: () => '' }
   }
   const cwd = cfg.cwd ?? getWorkspaceRoot() ?? undefined
   const transport = new StdioClientTransport({
     command: cfg.command!,
     args: cfg.args ?? [],
     env: { ...(process.env as Record<string, string>), ...(cfg.env ?? {}) },
-    stderr: 'inherit',
+    stderr: 'pipe',
     ...(cwd ? { cwd } : {}),
   })
-  return transport as unknown as Transport
+  let stderr = ''
+  transport.stderr?.on('data', (chunk: Buffer | string) => {
+    stderr = appendFlatCapped(stderr, chunk.toString(), COMMAND_OUTPUT_MAX_BYTES)
+  })
+  return {
+    transport: transport as unknown as Transport,
+    stderrOutput: () => stderr.trim(),
+  }
 }
 
 async function connectServer(
@@ -226,10 +239,16 @@ async function connectServer(
     return { ...base, state: 'disabled' }
   }
 
+  let stderrOutput = () => ''
   try {
-    const transport = createTransport(cfg)
+    const created = createTransport(cfg)
+    stderrOutput = created.stderrOutput
     const client = new Client({ name: 'copse-panel', version: '0.1.0' }, { capabilities: {} })
-    await withTimeout(client.connect(transport), CONNECT_TIMEOUT_MS, `Connecting to "${cfg.name}"`)
+    await withTimeout(
+      client.connect(created.transport),
+      CONNECT_TIMEOUT_MS,
+      `Connecting to "${cfg.name}"`,
+    )
 
     // A newer load/teardown superseded us while connecting — close this client
     // instead of pushing it (and its child process) into the live set.
@@ -271,9 +290,12 @@ async function connectServer(
     console.log(`[MCP] Connected to "${cfg.name}" (${cfg.transport}) — ${tools.length} tool(s)`)
     return { ...base, state: 'connected', toolCount: tools.length, tools: toolNames }
   } catch (err) {
+    const stderr = stderrOutput()
     const message = err instanceof Error ? err.message : String(err)
+    const error = stderr ? `${message}\n${stderr}` : message
     console.error(`[MCP] Failed to connect "${cfg.name}":`, message)
-    return { ...base, state: 'error', error: message }
+    if (stderr) console.error(`[MCP] "${cfg.name}" stderr:\n${stderr}`)
+    return { ...base, state: 'error', error }
   }
 }
 
