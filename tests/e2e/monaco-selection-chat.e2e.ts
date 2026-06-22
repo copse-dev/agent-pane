@@ -21,7 +21,17 @@ async function waitForWorkspace(): Promise<void> {
 }
 
 async function pressControlChord(key: string): Promise<void> {
-  await browser.keys([CONTROL_KEY, key, CONTROL_KEY])
+  await browser.action('key').down(CONTROL_KEY).press(key).up(CONTROL_KEY).perform()
+}
+
+async function focusMonacoInput(): Promise<void> {
+  await browser.execute(() => {
+    const input = document.querySelector(
+      '#file-viewer .monaco-editor textarea.inputarea',
+    ) as HTMLTextAreaElement | null
+    if (!input) throw new Error('Monaco input textarea not found')
+    input.focus()
+  })
 }
 
 describe('Monaco selection to chat attachment', () => {
@@ -61,6 +71,7 @@ describe('Monaco selection to chat attachment', () => {
     const editor = await $('#file-viewer .monaco-editor')
     await editor.waitForDisplayed({ timeout: 15_000 })
     await $('#file-viewer .monaco-editor .view-line').click()
+    await focusMonacoInput()
 
     await pressControlChord('a')
     await pressControlChord('l')
