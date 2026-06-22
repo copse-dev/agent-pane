@@ -117,6 +117,7 @@ export function mountFooterBranchStatus(
     store.on('workspace_changed', () => void refresh()),
     store.on('threads_changed', () => void refresh()),
     store.on('thread_status_changed', () => scheduleRefresh()),
+    store.on('git_branch_changed', () => void refresh()),
     api.fs.onChanged(() => scheduleRefresh()),
   ]
 
