@@ -155,9 +155,11 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
       for (const entry of entries) {
         target.append(renderRow(entry, join(dirPath, entry.name), depth))
       }
-    } catch {
+    } catch (err) {
       clear(target)
-      target.append(el('div', { class: 'sidebar-empty' }, 'Could not read folder'))
+      const message =
+        err instanceof Error ? err.message : typeof err === 'string' ? err : 'Could not read folder'
+      target.append(el('div', { class: 'sidebar-empty' }, message))
     }
   }
 

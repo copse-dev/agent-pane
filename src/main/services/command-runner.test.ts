@@ -31,3 +31,14 @@ describe('runCommand stdoutMaxBytes', () => {
     assert.equal(stdout, 'a'.repeat(size))
   })
 })
+
+describe('runCommand git wrapper', () => {
+  it('runs rev-parse without passing invalid global git flags', async () => {
+    const result = await runCommand('git', ['rev-parse', '--is-inside-work-tree'], {
+      cwd: process.cwd(),
+      unsandboxed: true,
+    })
+    assert.equal(result.code, 0, result.stderr || result.stdout)
+    assert.equal(result.stdout.trim(), 'true')
+  })
+})

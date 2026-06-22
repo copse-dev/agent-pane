@@ -9,6 +9,7 @@ import { gitStatusTool, gitDiffTool, gitLogTool } from '../tools/git-tools.ts'
 import { runShellTool } from '../tools/shell-tool.ts'
 import { writeFileTool } from '../tools/write-file-tool.ts'
 import { strReplaceTool } from '../tools/str-replace-tool.ts'
+import { readStagedDiffTool, stagedDiffsTool } from '../tools/staged-diff-tools.ts'
 import { exploreTool } from '../tools/explore-tool.ts'
 import { readSkillTool } from '../tools/read-skill-tool.ts'
 import { updateTodosTool } from '../tools/todo-tool.ts'
@@ -20,6 +21,8 @@ export function createRegistry(): ToolRegistry {
   registry.register(readFileTool)
   registry.register(writeFileTool)
   registry.register(strReplaceTool)
+  registry.register(stagedDiffsTool)
+  registry.register(readStagedDiffTool)
   registry.register(listDirTool)
   registry.register(searchCodeTool)
   registry.register(findFilesTool)

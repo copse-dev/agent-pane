@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile, writeFile, rm, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { applyDiffEntry } from './diff-queue.ts'
+import { applyDiffEntry, upsertStagedDiffEntry } from './diff-queue.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 
 describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
@@ -95,5 +95,35 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
     })
     assert.equal(result.status, 'error')
     if (result.status === 'error') assert.match(result.error, /EISDIR|illegal|directory/i)
+  })
+})
+
+describe('upsertStagedDiffEntry', () => {
+  it('replaces after content for the same path while preserving the original before snapshot', () => {
+    const queue = [{ path: 'index.html', before: 'v1', after: 'v2', language: 'html' }]
+    upsertStagedDiffEntry(queue, {
+      path: 'index.html',
+      before: 'v1',
+      after: 'v3',
+      language: 'html',
+    })
+    assert.equal(queue.length, 1)
+    assert.deepEqual(queue[0], {
+      path: 'index.html',
+      before: 'v1',
+      after: 'v3',
+      language: 'html',
+    })
+  })
+
+  it('appends when the path is new', () => {
+    const queue = [{ path: 'a.ts', before: '', after: 'a', language: 'typescript' }]
+    upsertStagedDiffEntry(queue, {
+      path: 'b.ts',
+      before: '',
+      after: 'b',
+      language: 'typescript',
+    })
+    assert.equal(queue.length, 2)
   })
 })

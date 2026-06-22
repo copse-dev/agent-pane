@@ -5,10 +5,18 @@ import { isGitAvailable } from './tool-availability.ts'
 import { detectLanguage } from './language.ts'
 import type { GitChange, GitChangeStatus, GitFileDiff, GitStatusResult } from '@shared/types/git.ts'
 
+const CODESEARCH_DB_DIR = '.codesearch.db'
+const GIT_STATUS_EXCLUDE_PATHSPECS = [`:!${CODESEARCH_DB_DIR}`]
+
 async function runGit(args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
   const cwd = getWorkspaceRoot()
   if (!cwd) return { stdout: '', stderr: 'No workspace open.', code: 1 }
   return runCommand('git', args, { cwd })
+}
+
+function isAutoIgnoredGitStatusPath(path: string): boolean {
+  const normalized = path.replace(/\/+$/, '')
+  return normalized === CODESEARCH_DB_DIR || normalized.startsWith(`${CODESEARCH_DB_DIR}/`)
 }
 
 function mapStatus(code: string): GitChangeStatus {
@@ -48,7 +56,9 @@ export function parsePorcelainV1(raw: string): GitStatusResult {
     const pathPart = entry.slice(3)
 
     if (x === '?' && y === '?') {
-      unstaged.push({ path: pathPart, status: 'untracked' })
+      if (!isAutoIgnoredGitStatusPath(pathPart)) {
+        unstaged.push({ path: pathPart, status: 'untracked' })
+      }
       i++
       continue
     }
@@ -57,6 +67,10 @@ export function parsePorcelainV1(raw: string): GitStatusResult {
       const newPath = entries[i + 1]
       if (!newPath) {
         i++
+        continue
+      }
+      if (isAutoIgnoredGitStatusPath(newPath)) {
+        i += 2
         continue
       }
       if (x !== ' ' && x !== '?') {
@@ -69,6 +83,10 @@ export function parsePorcelainV1(raw: string): GitStatusResult {
       continue
     }
 
+    if (isAutoIgnoredGitStatusPath(pathPart)) {
+      i++
+      continue
+    }
     if (x !== ' ' && x !== '?') {
       staged.push({ path: pathPart, status: mapStatus(x) })
     }
@@ -104,7 +122,13 @@ export async function isInsideGitWorkTree(): Promise<boolean> {
 
 export async function getGitStatus(): Promise<GitStatusResult | null> {
   if (!isGitAvailable() || !(await isInsideGitWorkTree())) return null
-  const { stdout, code } = await runGit(['status', '--porcelain=v1', '-z'])
+  const { stdout, code } = await runGit([
+    'status',
+    '--porcelain=v1',
+    '-z',
+    '--',
+    ...GIT_STATUS_EXCLUDE_PATHSPECS,
+  ])
   if (code !== 0) return null
   return parsePorcelainV1(stdout)
 }
@@ -143,7 +167,12 @@ export async function getGitFileDiff(path: string, staged: boolean): Promise<Git
 
 export async function getGitStatusText(): Promise<string> {
   if (!isGitAvailable()) return 'git is not available on this system.'
-  const { stdout, stderr, code } = await runGit(['status', '--short'])
+  const { stdout, stderr, code } = await runGit([
+    'status',
+    '--short',
+    '--',
+    ...GIT_STATUS_EXCLUDE_PATHSPECS,
+  ])
   if (code !== 0) return stderr.trim() || `git exited with code ${code}`
   return stdout.trim() || '(no output)'
 }

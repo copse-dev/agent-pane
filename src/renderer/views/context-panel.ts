@@ -9,6 +9,7 @@ import { renderMarkdown } from '../markdown/renderer.ts'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
+import { revealFirstDiffChangeOnNextUpdate } from '../monaco/diff-scroll.ts'
 
 type MarkdownViewMode = 'preview' | 'source'
 
@@ -133,6 +134,7 @@ export function mountContextPanel(
 
   const diffCache = new Map<string, ActiveDiff>()
   let selectedDiffPath: string | null = null
+  let cancelPendingDiffReveal: (() => void) | null = null
 
   api.diff.onShowDiff((path, before, after, language) => {
     diffCache.set(path, { path, before, after, language })
@@ -140,11 +142,18 @@ export function mountContextPanel(
 
   function renderDiffFileList(entries: { path: string }[], highlightPath: string) {
     diffFileList.replaceChildren()
-    const multi = entries.length > 1
+    const seen = new Set<string>()
+    const unique: { path: string }[] = []
+    for (const entry of entries) {
+      if (seen.has(entry.path)) continue
+      seen.add(entry.path)
+      unique.push(entry)
+    }
+    const multi = unique.length > 1
     diffFileList.hidden = !multi
     diffToolbar.hidden = !multi
     if (!multi) return
-    for (const entry of entries) {
+    for (const entry of unique) {
       const btn = document.createElement('button')
       btn.type = 'button'
       btn.className = `diff-file-btn${entry.path === highlightPath ? ' selected' : ''}`
@@ -159,6 +168,8 @@ export function mountContextPanel(
 
   function showDiffView(view: ActiveDiff) {
     const oldModels = diffEditor.getModel()
+    cancelPendingDiffReveal?.()
+    cancelPendingDiffReveal = revealFirstDiffChangeOnNextUpdate(diffEditor)
     diffEditor.setModel({
       original: monaco.editor.createModel(view.before, view.language),
       modified: monaco.editor.createModel(view.after, view.language),
@@ -187,6 +198,8 @@ export function mountContextPanel(
     if (panelTab === 'file' && openFile) {
       emptyContainer.hidden = true
       diffStage.hidden = true
+      cancelPendingDiffReveal?.()
+      cancelPendingDiffReveal = null
 
       const old = fileEditor.getModel()
       fileEditor.setModel(monaco.editor.createModel(openFile.content, openFile.language))
@@ -230,6 +243,8 @@ export function mountContextPanel(
         previewContainer.hidden = true
         fileContainer.hidden = true
         diffStage.hidden = true
+        cancelPendingDiffReveal?.()
+        cancelPendingDiffReveal = null
         emptyContainer.hidden = false
       }
     } else {
@@ -237,6 +252,8 @@ export function mountContextPanel(
       previewContainer.hidden = true
       fileContainer.hidden = true
       diffStage.hidden = true
+      cancelPendingDiffReveal?.()
+      cancelPendingDiffReveal = null
       emptyContainer.hidden = false
     }
   }
@@ -292,6 +309,7 @@ export function mountContextPanel(
 
   return () => {
     unsubs.forEach((u) => u())
+    cancelPendingDiffReveal?.()
     unbindDrop()
     fileEditor.dispose()
     diffEditor.dispose()

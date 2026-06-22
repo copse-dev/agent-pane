@@ -1,4 +1,5 @@
 import { getWorkspaceRoot } from './workspace.ts'
+import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { afterSandboxedCommand, spawnInProjectSandbox } from '../project-sandbox/index.ts'
 import {
   appendFlatCapped,
@@ -22,6 +23,8 @@ export interface RunCommandOptions {
   timeout_ms?: number
   /** Defaults to {@link COMMAND_OUTPUT_MAX_BYTES}. */
   stdoutMaxBytes?: number
+  /** Overrides workspace seatbelt rules for this spawn (e.g. sandbox-fs worker). */
+  sandboxConfig?: Partial<SandboxRuntimeConfig>
 }
 
 function prepareGitInvocation(
@@ -29,7 +32,7 @@ function prepareGitInvocation(
   env: NodeJS.ProcessEnv,
 ): { args: string[]; env: NodeJS.ProcessEnv } {
   return {
-    args: ['-c', 'core.pager=cat', '--no-color', ...args],
+    args: ['-c', 'core.pager=cat', '-c', 'color.ui=false', ...args],
     env: { ...env, GIT_OPTIONAL_LOCKS: '0' },
   }
 }
@@ -64,6 +67,7 @@ export function runCommand(
           stdio: 'pipe',
         }
         if (opts.unsandboxed !== undefined) spawnOpts.unsandboxed = opts.unsandboxed
+        if (opts.sandboxConfig) spawnOpts.sandboxConfig = opts.sandboxConfig
         if (opts.signal) spawnOpts.signal = opts.signal
         proc = await spawnInProjectSandbox(cmd, spawnArgs, spawnOpts)
       } catch (err) {
