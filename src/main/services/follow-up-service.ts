@@ -9,16 +9,13 @@ import {
 } from '@shared/follow-ups/presets.ts'
 import { createProvider, createLMStudioProvider } from '@shared/llm/create-provider.ts'
 import { getSetting, getApiKey, getLmStudioApiKey } from './settings.ts'
-import { LM_STUDIO_MODEL_IDS, DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
-import { fetchLmStudioModelsCached } from './lm-studio-models.ts'
+import {
+  LM_STUDIO_MODEL_IDS,
+  DEFAULT_APP_CHAT_MODEL,
+  DEFAULT_LM_STUDIO_URL,
+} from '@shared/lm-studio-defaults.ts'
+import { fetchFirstLocalModel } from './provider-selection.ts'
 import { getPrWorkspaceContext } from './pr-context-service.ts'
-
-const DEFAULT_LM_STUDIO_URL = 'http://localhost:1234/v1'
-
-async function fetchFirstLocalModel(baseURL: string): Promise<string | null> {
-  const result = await fetchLmStudioModelsCached(baseURL, getLmStudioApiKey())
-  return result.models[0]?.id ?? null
-}
 
 async function buildCloudProvider(model: string): Promise<LLMProvider> {
   if (process.env.COPSE_PANEL_MOCK_LLM === '1') return createProvider(model)

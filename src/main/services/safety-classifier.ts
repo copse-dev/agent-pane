@@ -1,9 +1,7 @@
 import { getSetting, getLmStudioApiKey } from './settings.ts'
-import { LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
+import { LM_STUDIO_MODEL_IDS, DEFAULT_LM_STUDIO_URL } from '@shared/lm-studio-defaults.ts'
 import { isProjectSandboxEnabled } from '../project-sandbox/index.ts'
 import { getWorkspaceRoot } from './workspace.ts'
-
-const DEFAULT_LM_STUDIO_URL = 'http://localhost:1234/v1'
 
 export interface ClassificationResult {
   scope: 'sandbox' | 'external'

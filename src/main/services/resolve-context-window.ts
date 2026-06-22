@@ -1,9 +1,8 @@
 import { getSetting } from './settings.ts'
-import { LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
+import { LM_STUDIO_MODEL_IDS, DEFAULT_LM_STUDIO_URL } from '@shared/lm-studio-defaults.ts'
 import { getModelInfo } from '@shared/llm/model-catalog.ts'
 import { contextLengthForModel, fetchLmStudioModelsCached } from './lm-studio-models.ts'
 
-const DEFAULT_LM_STUDIO_URL = 'http://localhost:1234/v1'
 const DEFAULT_LOCAL_CONTEXT = 8192
 // Fallback for unrecognized cloud models. 128K matches the broad floor used by
 // gpt-4o-class models — anything narrower would silently over-trim history.

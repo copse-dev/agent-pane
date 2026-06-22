@@ -4,8 +4,7 @@ import { join } from 'node:path'
 import { PREFERRED_MODEL_IDS } from '@shared/preferred-models.ts'
 import { fetchLmStudioModelsCached, lmStudioApiKey, lmStudioOrigin } from './lm-studio-models.ts'
 import { getSetting } from './settings.ts'
-
-const DEFAULT_LM_STUDIO_URL = 'http://localhost:1234/v1'
+import { DEFAULT_LM_STUDIO_URL } from '@shared/lm-studio-defaults.ts'
 
 export interface LmStudioDetection {
   serverRunning: boolean

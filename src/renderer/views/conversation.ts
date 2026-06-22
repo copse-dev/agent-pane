@@ -1,5 +1,6 @@
 import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
+import { getThreadById, getActiveThread } from '@shared/store/thread-helpers.ts'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
 import { renderMarkdown } from '../markdown/renderer.ts'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
@@ -331,7 +332,7 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
       setActivity(null)
       return
     }
-    const thread = store.getState().threads.find((t) => t.id === tid)
+    const thread = getThreadById(store, tid)
     // Writing state lives in the agent controller; agent_activity events carry the label.
     setActivity(agentActivityLabel(thread, false))
   }
@@ -390,7 +391,7 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
 
   function appendMessageEl(threadId: string, msgId: string) {
     if (threadId !== store.getState().activeThreadId) return
-    const thread = store.getState().threads.find((t) => t.id === threadId)
+    const thread = getThreadById(store, threadId)
     const msg = thread?.messages.find((m) => m.id === msgId)
     if (!msg) return
 
@@ -412,7 +413,7 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
 
   function syncTodoPanel() {
     todoHost.replaceChildren()
-    const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
+    const thread = getActiveThread(store)
     if (thread?.todos?.length) {
       todoHost.append(createTodoListEl(thread.todos, { compact: true }))
     }
@@ -423,7 +424,7 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
     userScrolledUpAt = 0
     lastScrollTop = 0
     clear(list)
-    const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
+    const thread = getActiveThread(store)
     thread?.messages.forEach((m) => appendMessageEl(store.getState().activeThreadId!, m.id))
     syncTodoPanel()
     updateScrollButton()
@@ -443,7 +444,7 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
   const unsubs = [
     store.on('message_added', (tid, mid) => appendMessageEl(tid, mid)),
     store.on('message_token', (mid) => {
-      const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
+      const thread = getActiveThread(store)
       const msg = thread?.messages.find((m) => m.id === mid)
       const textEl = list.querySelector(`[data-message-id="${mid}"] .message-text`)
       if (textEl && msg?.role === 'assistant') {
@@ -454,7 +455,7 @@ export function mountConversation(root: HTMLElement, store: AppStore): () => voi
     store.on('message_done', (mid) => {
       const msgEl = list.querySelector(`[data-message-id="${mid}"]`)
       const textEl = msgEl?.querySelector('.message-text')
-      const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
+      const thread = getActiveThread(store)
       const msg = thread?.messages.find((m) => m.id === mid)
       if (textEl && msg?.role === 'assistant') {
         setAssistantMarkdown(textEl as HTMLElement, msg.content, false)
