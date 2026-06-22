@@ -191,6 +191,9 @@ contextBridge.exposeInMainWorld('api', {
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
   },
+  plugins: {
+    list: () => ipcRenderer.invoke('plugins:list'),
+  },
   terminal: {
     create: (cols: number, rows: number) => ipcRenderer.invoke('terminal:create', cols, rows),
     write: (sessionId: string, data: string) =>

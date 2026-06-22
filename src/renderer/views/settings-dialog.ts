@@ -211,9 +211,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <h3>MCP servers</h3>
             <p class="settings-section-desc">
               Model Context Protocol servers expose external tools to the agent. Define them in
-              <code>.cursor/mcp.json</code> (project), <code>.mcp.json</code> (project), or
-              <code>~/.cursor/mcp.json</code> (global) using the standard <code>mcpServers</code> format,
-              then reload.
+              <code>.cursor/mcp.json</code> (project), <code>.mcp.json</code> (project),
+              <code>~/.cursor/mcp.json</code> (global), or a Cursor marketplace plugin's
+              <code>.mcp.json</code> (via <code>plugin.json</code> <code>mcpServers</code>), then
+              reload.
             </p>
 
             <fieldset>

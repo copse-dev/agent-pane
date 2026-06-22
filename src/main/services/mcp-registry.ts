@@ -24,6 +24,11 @@ import {
 import { flattenMcpContent, sanitizeMcpInputSchema } from './mcp-schema.ts'
 import { isWorkspaceTrusted, setWorkspaceTrusted } from './workspace-trust.ts'
 import { appendFlatCapped, COMMAND_OUTPUT_MAX_BYTES } from './subprocess-output-cap.ts'
+import {
+  discoverCursorPluginRoots,
+  isCursorPluginMcpSource,
+  resolvePluginMcpConfigPath,
+} from './cursor-plugins.ts'
 
 const CONNECT_TIMEOUT_MS = 30_000
 const GRANTS_STORAGE_KEY = 'mcp-remembered-grants'
@@ -115,6 +120,18 @@ function userMcpSourcePaths(): string[] {
   return [join(homedir(), '.cursor', 'mcp.json'), join(app.getPath('userData'), 'mcp.json')]
 }
 
+async function readPluginMcpConfigs(): Promise<McpServerConfig[]> {
+  const pluginRoots = await discoverCursorPluginRoots()
+  const perPlugin = await Promise.all(
+    pluginRoots.map(async (root) => {
+      const configPath = await resolvePluginMcpConfigPath(root)
+      if (!configPath) return []
+      return readConfigFile(configPath)
+    }),
+  )
+  return mergeMcpConfigs(perPlugin)
+}
+
 /**
  * Gather and merge MCP server definitions from all known config locations.
  *
@@ -123,8 +140,8 @@ function userMcpSourcePaths(): string[] {
  *    Their servers are only included when the user has explicitly trusted the workspace.
  *    When untrusted they are returned separately so the UI can surface an "untrusted"
  *    status (and a trust action) without spawning anything.
- *  - User/global sources always win on duplicate server names, so a repo can never
- *    shadow a trusted global server definition.
+ *  - User/global sources and Cursor marketplace plugins always win over project sources
+ *    on duplicate server names, so a repo can never shadow a trusted definition.
  */
 async function collectConfigs(): Promise<{
   active: McpServerConfig[]
@@ -134,20 +151,21 @@ async function collectConfigs(): Promise<{
   const projectSources = workspace ? projectMcpSourcePaths(workspace) : []
   const userSources = userMcpSourcePaths()
 
-  const [projectPerSource, userPerSource] = await Promise.all([
+  const [projectPerSource, userPerSource, pluginMerged] = await Promise.all([
     Promise.all(projectSources.map(readConfigFile)),
     Promise.all(userSources.map(readConfigFile)),
+    readPluginMcpConfigs(),
   ])
 
-  // User/global sources first so they win over project sources on name collisions.
-  const userMerged = mergeMcpConfigs(userPerSource)
+  // User/global and Cursor plugins first so they win over project sources on name collisions.
+  const userMerged = mergeMcpConfigs([...userPerSource, pluginMerged])
   const trusted = isWorkspaceTrusted(workspace)
 
   if (!trusted) {
     // Project servers are not spawned; report only those whose name doesn't collide
-    // with an existing user/global server (a colliding name simply uses the global one).
-    const userNames = new Set(userMerged.map((c) => c.name))
-    const untrusted = mergeMcpConfigs(projectPerSource).filter((c) => !userNames.has(c.name))
+    // with an existing user/global/plugin server (a colliding name simply uses the trusted one).
+    const trustedNames = new Set(userMerged.map((c) => c.name))
+    const untrusted = mergeMcpConfigs(projectPerSource).filter((c) => !trustedNames.has(c.name))
     return { active: userMerged, untrusted }
   }
 
@@ -164,7 +182,8 @@ function isUserMcpSource(source: string | undefined): boolean {
   if (!source) return false
   return (
     source === join(homedir(), '.cursor', 'mcp.json') ||
-    source === join(app.getPath('userData'), 'mcp.json')
+    source === join(app.getPath('userData'), 'mcp.json') ||
+    isCursorPluginMcpSource(source)
   )
 }
 
