@@ -4,6 +4,7 @@ import {
   decideShellPermission,
   decideWebFetchPermission,
   decideWebSearchPermission,
+  shellRequiresOutsideSandbox,
   shellSandboxFailureShouldOfferUnsandboxedRetry,
   SANDBOX_TOOLS,
 } from './permission-policy.ts'
@@ -109,6 +110,10 @@ describe('decideShellPermission', () => {
     })
     assert.equal(d.action, 'prompt')
     assert.ok(d.reasons.some((x) => x.includes('curl')))
+  })
+
+  it('runs approved git network commands outside the OS sandbox', () => {
+    assert.equal(shellRequiresOutsideSandbox('git pull origin main', root, true), true)
   })
 
   it('prompts for gh CLI when OS sandbox is active', () => {

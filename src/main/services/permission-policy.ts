@@ -109,15 +109,14 @@ export function formatExternalSandboxPromptBody(command: string, reasons: string
   )
 }
 
-/** True when macOS seatbelt is active and the command needs filesystem/system access outside ASRT. */
+/** True when macOS seatbelt is active and an approved shell command should bypass ASRT. */
 export function shellRequiresOutsideSandbox(
   command: string,
   workspaceRoot: string | null,
   sandboxEnabled: boolean,
 ): boolean {
   if (!sandboxEnabled) return false
-  const analysis = analyzeShellCommand(command, workspaceRoot)
-  return analysis.reasons.some((reason) => shellReasonRequiresOutsideSandbox(reason))
+  return analyzeShellCommand(command, workspaceRoot).verdict === 'external'
 }
 
 export function shellSandboxFailureShouldOfferUnsandboxedRetry(

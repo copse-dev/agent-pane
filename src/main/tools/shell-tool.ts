@@ -27,6 +27,7 @@ import { terminateProcessTree } from '../services/subprocess-kill.ts'
 interface ShellRunResult {
   output: string
   exitCode: number
+  sandboxViolationCount?: number
   /** The sandbox wrapper process itself failed to start (child 'error' event). */
   spawnFailed?: boolean
 }
@@ -95,12 +96,16 @@ async function runShellOnce(
         }
       }, timeout_ms)
 
+      const sandboxViolationCount = () =>
+        unsandboxed ? 0 : sandboxViolationCountForCommand(command)
+
       const finish = () => {
         if (!unsandboxed) afterSandboxedCommand()
       }
 
       proc.on('error', (err) => {
         cleanup()
+        const violationCount = sandboxViolationCount()
         finish()
         if (settled) return
         settled = true
@@ -110,7 +115,12 @@ async function runShellOnce(
         // only when this was a sandboxed run.
         if (!unsandboxed) {
           const message = err instanceof Error ? err.message : String(err)
-          resolve({ output: message, exitCode: -1, spawnFailed: true })
+          resolve({
+            output: message,
+            exitCode: -1,
+            sandboxViolationCount: violationCount,
+            spawnFailed: true,
+          })
           return
         }
         reject(err instanceof Error ? err : new Error(String(err)))
@@ -118,10 +128,15 @@ async function runShellOnce(
 
       proc.on('close', (code) => {
         cleanup()
+        const violationCount = sandboxViolationCount()
         finish()
         if (settled) return
         settled = true
-        resolve({ output: outputAcc.toString(), exitCode: code ?? 0 })
+        resolve({
+          output: outputAcc.toString(),
+          exitCode: code ?? 0,
+          sandboxViolationCount: violationCount,
+        })
       })
 
       signal.addEventListener('abort', onAbort)
@@ -145,7 +160,7 @@ async function maybeRetryUnsandboxed(
   // spawn failure) — never from the command's own stdout/stderr (issue #104).
   const detection = detectSandboxFailure({
     exitCode: result.exitCode,
-    violationCount: sandboxViolationCountForCommand(command),
+    violationCount: result.sandboxViolationCount ?? sandboxViolationCountForCommand(command),
     spawnFailed: result.spawnFailed ?? false,
   })
   if (!detection.likely) return null
@@ -219,7 +234,7 @@ function formatShellFailure(result: ShellRunResult): Error {
 export const runShellTool: ToolDefinition = {
   name: 'run_shell',
   description:
-    'Run a shell command in the workspace directory. Output is streamed to the conversation. Commands contained within the sandbox auto-run; network access (e.g. curl, git fetch, gh) prompts for approval and still runs inside the sandbox network allowlist when the macOS project sandbox is active. Outside-workspace access prompts before running outside the sandbox. If a sandbox-contained command fails because the sandbox blocks filesystem/process access (e.g. Playwright), the user may approve running it once outside the sandbox. Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) are automatically run through Socket Firewall to scan for malicious packages, with install lifecycle scripts disabled.',
+    'Run a shell command in the workspace directory. Output is streamed to the conversation. Commands contained within the sandbox auto-run; network or outside-workspace access (e.g. gh, curl, git push) prompts for approval and runs outside the sandbox when the macOS project sandbox is active. If a sandbox-contained command fails because the sandbox blocks filesystem/process access (e.g. Playwright), the user may approve running it once outside the sandbox. Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) are automatically run through Socket Firewall to scan for malicious packages, with install lifecycle scripts disabled.',
   parameters: z.object({
     command: z.string().describe('Shell command to run'),
     timeout_ms: z.number().int().min(1000).max(300_000).optional().default(30_000),

@@ -4,8 +4,7 @@
  * INTENDED behavior for each platform so it can't silently drift:
  *
  * - macOS + ASRT sandbox active  → sandbox-contained commands auto-run,
- *   network commands prompt and still run inside the sandbox network allowlist;
- *   outside-filesystem commands prompt before running outside the sandbox.
+ *   network and outside-filesystem commands prompt before running outside the sandbox.
  * - Any platform, sandbox unavailable (Linux/Windows, or macOS init failure)
  *   → static analysis decides; the optional LM Studio classifier can upgrade a
  *   prompt to auto-run only when confident enough.
@@ -33,10 +32,10 @@ describe('shell permissions: macOS with ASRT sandbox active', () => {
     assert.equal(d.action, 'allow')
   })
 
-  it('prompts before network commands while keeping them inside the sandbox', () => {
+  it('runs network commands outside the sandbox after approval', () => {
     const d = decideShellPermission(EXTERNAL, { ...opts, classification: null })
     assert.equal(d.action, 'prompt')
-    assert.equal(shellRequiresOutsideSandbox(EXTERNAL, root, true), false)
+    assert.equal(shellRequiresOutsideSandbox(EXTERNAL, root, true), true)
     assert.equal(shellRequiresOutsideSandbox(SANDBOXED, root, true), false)
   })
 
