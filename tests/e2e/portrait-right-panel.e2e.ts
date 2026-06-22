@@ -1,16 +1,28 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedPortraitRightPanelFixture } from './helpers/seed-config.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
+async function simulateViewport(width: number, height: number): Promise<void> {
+  await browser.execute(
+    (nextWidth, nextHeight) => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: nextWidth })
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: nextHeight })
+      window.dispatchEvent(new Event('resize'))
+    },
+    width,
+    height,
+  )
+}
+
 async function openExplorerInPortraitWindow(autoPortraitRightPanel: boolean): Promise<void> {
   resetUserData()
-  seedEmptyProject(process.cwd(), 'e2e-portrait-right-panel', { autoPortraitRightPanel })
+  seedPortraitRightPanelFixture(process.cwd(), autoPortraitRightPanel)
   await browser.reloadSession()
-  await browser.setWindowSize(640, 1000)
-  await $('.input-footer').waitForExist({ timeout: 15_000 })
+  await $('.prompt-input').waitForExist({ timeout: 30_000 })
+  await simulateViewport(640, 1000)
   await $('[aria-label="Toggle right panel"]').click()
   await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
 }

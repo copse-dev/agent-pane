@@ -454,6 +454,43 @@ export function seedFooterCompactFixture(workspaceRoot: string): {
   return { model: 'qwen/qwen3.6-35b-a3b', branch, tokenLabel }
 }
 
+export function seedPortraitRightPanelFixture(
+  workspaceRoot: string,
+  autoPortraitRightPanel: boolean,
+): void {
+  const projectId = 'e2e-portrait-right-panel-project'
+  const threadId = 'e2e-portrait-right-panel-thread'
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Portrait right panel layout',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-user-portrait-layout',
+              role: 'user',
+              content: 'Open the right panel in a portrait window.',
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+  writeSettings({ autoPortraitRightPanel })
+}
+
 export function seedSubagentFixture(workspaceRoot: string): void {
   const projectId = 'e2e-subagent-project'
   const threadId = 'e2e-subagent-thread'
