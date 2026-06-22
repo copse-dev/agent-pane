@@ -104,6 +104,7 @@ describe('portrait split panels', () => {
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'portrait-split-panels-enabled.png'))
 
     await $('.titlebar-settings-btn').click()
+    await $('.settings-nav-btn[data-section="appearance"]').click()
     const checkbox = await $('input[name="portraitSplitPanelsEnabled"]')
     await checkbox.waitForDisplayed({ timeout: 5_000 })
     await expect(checkbox).toBeChecked()
