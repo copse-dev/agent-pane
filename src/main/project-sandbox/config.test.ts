@@ -7,6 +7,7 @@ import {
   electronRuntimeAllowReadPaths,
   fsWorkerSandboxOverlay,
   resolveNodeToolchainAllowRead,
+  sandboxNetworkConfig,
   workspaceMandatoryWriteDenyPaths,
   workspaceSandboxOverlay,
 } from './config.ts'
@@ -38,6 +39,19 @@ describe('resolveNodeToolchainAllowRead', () => {
 })
 
 describe('workspaceSandboxOverlay', () => {
+  it('uses the default web-origin allowlist as ASRT allowed domains', () => {
+    const overlay = workspaceSandboxOverlay('/tmp/project')
+    assert.deepEqual(overlay.network?.allowedDomains, [
+      'localhost',
+      '127.0.0.1',
+      '::1',
+      'duckduckgo.com',
+      '*.duckduckgo.com',
+    ])
+    assert.deepEqual(overlay.network?.deniedDomains, [])
+    assert.equal(overlay.network?.allowLocalBinding, true)
+  })
+
   it('re-allows node toolchain paths alongside the workspace', () => {
     const overlay = workspaceSandboxOverlay('/tmp/project')
     const allowRead = overlay.filesystem?.allowRead ?? []
@@ -100,6 +114,19 @@ describe('workspaceSandboxOverlay', () => {
     const overlay = workspaceSandboxOverlay(ghost)
     const allowWrite = overlay.filesystem?.allowWrite ?? []
     assert.ok(allowWrite.includes(resolve(ghost)))
+  })
+})
+
+describe('sandboxNetworkConfig', () => {
+  it('maps allowed origins to Claude-style sandbox domains', () => {
+    const network = sandboxNetworkConfig([
+      'https://example.com:8443',
+      'https://*.example.com',
+      'http://localhost:*',
+    ])
+    assert.deepEqual(network.allowedDomains, ['example.com', '*.example.com', 'localhost'])
+    assert.deepEqual(network.deniedDomains, [])
+    assert.equal(network.allowLocalBinding, true)
   })
 })
 

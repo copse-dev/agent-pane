@@ -1322,6 +1322,50 @@ export function seedFooterBranchMismatchFixture(workspaceRoot: string): FooterBr
   }
 }
 
+export function seedComposerBranchWarningFixture(workspaceRoot: string): {
+  projectId: string
+  threadId: string
+  mismatchBranch: string
+} {
+  const projectId = 'e2e-composer-branch-warning-project'
+  const threadId = 'e2e-composer-branch-warning-thread'
+  const mismatchBranch = 'feature/thread-branch'
+  const now = Date.now()
+
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Thread branch warning',
+          status: 'idle',
+          gitBranch: mismatchBranch,
+          messages: [
+            {
+              id: 'msg-user-branch-warning',
+              role: 'user',
+              content: 'Continue this branch.',
+              toolCalls: [],
+              createdAt: now,
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+      activeThreadId: threadId,
+    }),
+    'utf8',
+  )
+
+  return { projectId, threadId, mismatchBranch }
+}
+
 /** Table with glob paths in inline code + architecture list (Repo Core Files repro). */
 export function seedMarkdownBoldGlobFixture(workspaceRoot: string): void {
   const projectId = 'e2e-markdown-bold-glob-project'

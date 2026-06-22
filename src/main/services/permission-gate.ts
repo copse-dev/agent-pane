@@ -7,7 +7,11 @@ import {
   SANDBOX_TOOLS,
   decideShellPermission,
   decideMcpPermission,
+  decideWebFetchPermission,
+  decideWebSearchPermission,
   describeMcpAnnotations,
+  fetchUrlFromArgs,
+  formatWebPromptBody,
   shellCommandFromArgs,
   formatShellPromptBody,
   formatExternalSandboxPromptBody,
@@ -20,6 +24,14 @@ import {
   decideBrowserNavigation,
   formatBrowserPromptBody,
 } from './browser/browser-origin-policy.ts'
+import {
+  DEFAULT_WEB_ALLOWED_ORIGINS,
+  WEB_ALLOWED_ORIGINS_SETTING,
+  WEB_ALLOW_USER_APPROVAL_SETTING,
+  grantWebOriginForNextFetch,
+  normalizeWebAllowedOrigins,
+  webAllowedOriginsWithDefaults,
+} from './web-origin-policy.ts'
 import { formatUnsandboxedPromptBody } from './sandbox-failure.ts'
 import { getMcpToolMeta, isMcpToolRemembered, rememberMcpTool } from './mcp-registry.ts'
 
@@ -94,6 +106,61 @@ async function checkMcpPermission(toolName: string, args: unknown): Promise<bool
   })
   if (approved && remember) await rememberMcpTool(toolName)
   return approved
+}
+
+async function rememberWebOrigin(origin: string): Promise<void> {
+  const saved = getSetting<string[] | null>(WEB_ALLOWED_ORIGINS_SETTING, null)
+  const allowed = webAllowedOriginsWithDefaults(saved)
+  if (!allowed.includes(origin)) {
+    await setSetting(WEB_ALLOWED_ORIGINS_SETTING, normalizeWebAllowedOrigins([...allowed, origin]))
+  }
+}
+
+async function promptWebOrigin(origin: string, detail: string): Promise<boolean> {
+  const { approved, remember } = await requestApproval({
+    title: 'Allow web origin?',
+    body: formatWebPromptBody(origin, detail),
+    type: 'web',
+    allowRemember: true,
+    rememberLabel: 'Always allow this web origin',
+  })
+  if (!approved) return false
+  if (remember) await rememberWebOrigin(origin)
+  else grantWebOriginForNextFetch(origin)
+  return true
+}
+
+async function checkFetchUrlPermission(args: unknown): Promise<boolean> {
+  const url = fetchUrlFromArgs(args)
+  if (!url) throw new Error('fetch_url requires a URL argument')
+
+  const saved = getSetting<string[] | null>(WEB_ALLOWED_ORIGINS_SETTING, null)
+  const decision = decideWebFetchPermission({
+    url,
+    allowedOrigins: webAllowedOriginsWithDefaults(saved),
+    allowUserApproval: getSetting<boolean>(WEB_ALLOW_USER_APPROVAL_SETTING, true),
+  })
+  if (decision.action === 'allow') return true
+  if (decision.action === 'deny') {
+    throw new Error(`Web access denied: ${decision.reasons.join('; ')}`)
+  }
+  return promptWebOrigin(decision.origin, url)
+}
+
+async function checkWebSearchPermission(): Promise<boolean> {
+  const saved = getSetting<string[] | null>(WEB_ALLOWED_ORIGINS_SETTING, null)
+  const decision = decideWebSearchPermission({
+    allowedOrigins: webAllowedOriginsWithDefaults(saved),
+    allowUserApproval: getSetting<boolean>(WEB_ALLOW_USER_APPROVAL_SETTING, true),
+  })
+  if (decision.action === 'allow') return true
+  if (decision.action === 'deny') {
+    throw new Error(`Web search denied: ${decision.reasons.join('; ')}`)
+  }
+  return promptWebOrigin(
+    decision.origin,
+    `DuckDuckGo search is allowed by default through: ${DEFAULT_WEB_ALLOWED_ORIGINS.join(', ')}`,
+  )
 }
 
 async function checkShellPermission(args: unknown): Promise<boolean> {
@@ -173,6 +240,14 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
   // Snapshot/screenshot/click/type act on the already-approved page; auto-run.
   if (BROWSER_TOOLS.has(toolName) || READ_ONLY_BROWSER_TOOLS.has(toolName)) {
     return true
+  }
+
+  if (toolName === 'fetch_url') {
+    return checkFetchUrlPermission(args)
+  }
+
+  if (toolName === 'web_search') {
+    return checkWebSearchPermission()
   }
 
   if (toolName.startsWith('mcp__')) {

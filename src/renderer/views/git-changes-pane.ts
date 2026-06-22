@@ -9,6 +9,7 @@ import {
   observeDiffHostLayout,
   setGitFileDiffModel,
 } from '../monaco/git-diff-viewer.ts'
+import { registerMonacoSelectionToChatShortcut } from '../monaco/selection-to-chat.ts'
 
 function isImageDiff(diff: GitFileDiff): boolean {
   return diff.beforeImage != null || diff.afterImage != null
@@ -107,19 +108,24 @@ export function mountGitChangesPane(
   let pendingSelect: { path: string; staged: boolean } | null = null
   let selectRequestId = 0
   let diffLoadQueue: Promise<void> = Promise.resolve()
+  let status: GitStatusResult | null = null
+  let gitAvailable = false
+  let selected: { path: string; staged: boolean } | null = null
+  let refreshTimer: ReturnType<typeof setTimeout> | null = null
 
   function ensureDiffEditor(): Monaco.editor.IStandaloneDiffEditor {
     if (!diffEditor) {
       const theme = store.getState().theme === 'dark' ? 'vs-dark' : 'vs'
       diffEditor = createGitChangesDiffEditor(diffWrap, monaco, store.getState().fontSize, theme)
+      registerMonacoSelectionToChatShortcut(diffEditor.getOriginalEditor(), monaco, () =>
+        selected ? { path: selected.path, detail: 'before' } : null,
+      )
+      registerMonacoSelectionToChatShortcut(diffEditor.getModifiedEditor(), monaco, () =>
+        selected ? { path: selected.path, detail: 'after' } : null,
+      )
     }
     return diffEditor
   }
-
-  let status: GitStatusResult | null = null
-  let gitAvailable = false
-  let selected: { path: string; staged: boolean } | null = null
-  let refreshTimer: ReturnType<typeof setTimeout> | null = null
 
   function renderSection(title: string, changes: GitChange[], staged: boolean) {
     if (changes.length === 0) return

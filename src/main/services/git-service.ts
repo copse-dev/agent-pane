@@ -306,6 +306,18 @@ export async function getGitStatus(): Promise<GitStatusResult | null> {
   return normalizeGitStatusForWorkspace(parsePorcelainV1(stdout), prefix.trim())
 }
 
+export async function checkoutGitBranch(branch: string): Promise<void> {
+  if (!isGitAvailable() || !(await isInsideGitWorkTree())) {
+    throw new Error('No git repository is open.')
+  }
+
+  const { stdout, stderr, code } = await runGit(['switch', '--', branch])
+  if (code !== 0) {
+    const message = (stderr || stdout).trim()
+    throw new Error(message || `git switch exited with code ${code}`)
+  }
+}
+
 export async function getGitFileDiff(path: string, staged: boolean): Promise<GitFileDiff | null> {
   if (!isGitAvailable() || !(await isInsideGitWorkTree())) return null
 

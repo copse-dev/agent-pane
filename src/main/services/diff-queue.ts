@@ -181,7 +181,7 @@ async function applyWrite(entry: QueueEntry): Promise<ApplyResult> {
 
 async function applyDelete(entry: QueueEntry): Promise<ApplyResult> {
   const absPath = resolveWorkspacePath(entry.path)
-  let current = ''
+  let current: string
   try {
     current = await fsp.readFile(absPath, 'utf-8')
   } catch {
@@ -203,7 +203,7 @@ async function applyRename(entry: QueueEntry): Promise<ApplyResult> {
   if (!entry.renameTo) return { status: 'error', error: 'rename target missing' }
   const fromAbs = resolveWorkspacePath(entry.path)
   const toAbs = resolveWorkspacePath(entry.renameTo)
-  let current = ''
+  let current: string
   try {
     current = await fsp.readFile(fromAbs, 'utf-8')
   } catch {

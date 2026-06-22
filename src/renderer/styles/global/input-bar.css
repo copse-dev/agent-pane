@@ -36,6 +36,58 @@
 .input-row {
   position: relative;
 }
+.composer-branch-warning {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  border-top: 1px solid var(--border);
+  padding: 8px var(--spacing-md);
+  background: color-mix(in srgb, var(--warning) 12%, var(--bg-base));
+  color: var(--text-primary);
+  font-size: 12px;
+  overflow: hidden;
+}
+.composer-branch-warning[hidden] {
+  display: none;
+}
+.composer-branch-warning-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--warning);
+  color: var(--bg-base);
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.composer-branch-warning-text {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-branch-checkout-btn {
+  flex: 0 0 84px;
+  width: 84px;
+  border: 1px solid color-mix(in srgb, var(--warning) 60%, var(--border));
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 12px;
+  text-align: center;
+  white-space: nowrap;
+}
+.composer-branch-checkout-btn:hover:not(:disabled) {
+  border-color: var(--warning);
+}
+.composer-branch-checkout-btn:disabled {
+  opacity: 0.65;
+  cursor: progress;
+}
 .prompt-input {
   /* leave room for the absolutely-positioned Send button */
   padding-right: 84px;

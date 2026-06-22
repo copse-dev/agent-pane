@@ -37,6 +37,7 @@ export interface ApiClient {
         body: string
         type: string
         allowRemember?: boolean
+        rememberLabel?: string
       }) => void,
     ) => () => void
     onShellOutput: (handler: (data: string) => void) => () => void
@@ -126,6 +127,8 @@ export interface ApiClient {
       safetyModel: string
       autoRunSandboxCommands: boolean
       mcpAutoAllowReadOnly: boolean
+      webAllowedOrigins: string[]
+      webAllowUserApproval: boolean
     }) => Promise<void>
     getKey: (provider: 'anthropic' | 'openai' | 'lmstudio') => Promise<boolean>
     setKey: (provider: 'anthropic' | 'openai' | 'lmstudio', key: string) => Promise<void>
@@ -158,6 +161,7 @@ export interface ApiClient {
     status: () => Promise<GitStatusResult | null>
     fileDiff: (path: string, staged: boolean) => Promise<GitFileDiff | null>
     branchStatus: (forBranch?: string) => Promise<GitBranchStatus>
+    checkoutBranch: (branch: string) => Promise<void>
   }
   shell: {
     openExternal: (url: string) => Promise<void>
