@@ -20,10 +20,16 @@ function fileReferenceMatches(text: string): FileReferenceMatch[] {
   FILE_REFERENCE_RE.lastIndex = 0
   for (let match = FILE_REFERENCE_RE.exec(text); match; match = FILE_REFERENCE_RE.exec(text)) {
     const prefix = match[1] ?? ''
-    const candidate = match[2]
+    let candidate = match[2]
     if (!candidate) continue
     const start = match.index + prefix.length
-    matches.push({ candidate, start, end: start + candidate.length })
+    let end = start + candidate.length
+    while (/[.,;:!?]$/.test(candidate)) {
+      candidate = candidate.slice(0, -1)
+      end--
+    }
+    if (candidate === '') continue
+    matches.push({ candidate, start, end })
   }
   return matches
 }
