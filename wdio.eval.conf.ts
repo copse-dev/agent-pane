@@ -3,6 +3,7 @@ import electronBinary from 'electron'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
+import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
 
 const EVAL_ENV_FILE = join(process.cwd(), 'tests/e2e/electron-shell/.eval-env.json')
 
@@ -46,6 +47,9 @@ export const config: Options.Testrunner = {
     ui: 'bdd',
     timeout: Number(process.env.COPSE_EVAL_MOCHA_TIMEOUT_MS ?? 45 * 60_000),
   },
+  afterTest: async (test) => {
+    await assertNoErrorToasts(typeof test.title === 'string' ? test.title : 'agent eval')
+  },
   beforeSession(_config, capabilities) {
     delete process.env.ELECTRON_RUN_AS_NODE
     if (process.env.COPSE_EVAL_USE_MOCK === '1') {
@@ -63,6 +67,7 @@ export const config: Options.Testrunner = {
     process.env.COPSE_PANEL_USER_DATA = evalUserData
 
     const evalEnv: Record<string, string> = {
+      COPSE_E2E: '1',
       COPSE_AGENT_EVAL: '1',
       COPSE_PANEL_USER_DATA: evalUserData,
       ANTHROPIC_API_KEY: '',

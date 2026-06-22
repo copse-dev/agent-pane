@@ -166,9 +166,9 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
       const isLast = i === session.messages.length - 1
       timeline.append(createSubagentMessageEl(msg.content, status === 'running' && isLast, api))
     }
-    if (msg.toolCalls.length > 0) {
+    if ((msg.toolCalls ?? []).length > 0) {
       const toolsWrap = el('div', { class: 'subagent-inner-tools' })
-      for (const inner of msg.toolCalls) {
+      for (const inner of msg.toolCalls ?? []) {
         toolsWrap.append(createInnerToolCard(inner))
       }
       timeline.append(toolsWrap)
@@ -446,7 +446,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       appendQueuedBadge(msgEl)
     }
     // Re-render any tool cards this message already carries (restored threads).
-    renderToolCards(msgEl, msg.toolCalls)
+    renderToolCards(msgEl, msg.toolCalls ?? [])
     scrollToBottom(msg.role === 'user')
   }
 
@@ -477,7 +477,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       .find((m) => m.id === msgId)
     const msgEl = list.querySelector(`[data-message-id="${msgId}"]`)
     if (!msg || !msgEl) return
-    renderToolCards(msgEl as HTMLElement, msg.toolCalls)
+    renderToolCards(msgEl as HTMLElement, msg.toolCalls ?? [])
     scrollToBottom()
   }
 

@@ -923,6 +923,9 @@ label {
   word-break: break-word;
   line-height: 1.55;
 }
+.message-text strong {
+  font-weight: 600;
+}
 .message-text p {
   margin: 0;
 }
