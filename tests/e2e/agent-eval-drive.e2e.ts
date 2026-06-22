@@ -18,6 +18,7 @@ import type { Thread } from '@shared/types'
 import { getCopseUserDataDir } from './helpers.ts'
 import { DEFAULT_APP_CHAT_MODEL, LM_STUDIO_MODEL_IDS } from '../../src/shared/lm-studio-defaults.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 
 const ARTIFACTS = join(process.cwd(), 'tests/e2e/artifacts')
 const DEFAULT_SCENARIO = join(process.cwd(), 'tests/e2e/scenarios/agent-eval.example.json')
@@ -162,6 +163,7 @@ async function waitForAgentIdle(timeoutMs: number): Promise<void> {
   await $('.msg-assistant').waitForExist({ timeout: 30_000 })
   // Autosave debounces thread writes (~250ms); give persistence a beat before export.
   await browser.pause(500)
+  await assertNoErrorToasts('agent eval idle')
 }
 
 async function attachPromptFiles(attachments: PromptAttachment[]): Promise<void> {

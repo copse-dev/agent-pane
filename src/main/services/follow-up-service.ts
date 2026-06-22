@@ -51,7 +51,9 @@ async function pickModelFollowUps(context: FollowUpContext): Promise<FollowUpSug
 
   const presetLines = MODEL_FOLLOW_UP_PRESETS.map((p) => `- ${p.id}: ${p.label}`).join('\n')
   const toolSummary =
-    context.toolNames.length > 0 ? `\nTools used: ${context.toolNames.join(', ')}` : ''
+    (context.toolNames ?? []).length > 0
+      ? `\nTools used: ${(context.toolNames ?? []).join(', ')}`
+      : ''
 
   const prompt =
     'You suggest follow-up actions after an AI coding assistant finishes a turn.\n' +

@@ -165,7 +165,7 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
       const isLast = i === session.messages.length - 1
       timeline.append(createSubagentMessageEl(msg.content, status === 'running' && isLast, api))
     }
-    if (msg.toolCalls.length > 0) {
+    if ((msg.toolCalls ?? []).length > 0) {
       const toolsWrap = el('div', { class: 'subagent-inner-tools' })
       for (const inner of msg.toolCalls) {
         toolsWrap.append(createInnerToolCard(inner))
@@ -416,7 +416,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
     list.append(msgEl)
     // Re-render any tool cards this message already carries (restored threads).
-    renderToolCards(msgEl, msg.toolCalls)
+    renderToolCards(msgEl, msg.toolCalls ?? [])
     scrollToBottom(msg.role === 'user')
   }
 

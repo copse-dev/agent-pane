@@ -216,3 +216,15 @@ contextBridge.exposeInMainWorld('api', {
     openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   },
 })
+
+if (process.env.COPSE_E2E === '1') {
+  const errorToasts: string[] = []
+  contextBridge.exposeInMainWorld('__copseE2e', {
+    pushErrorToast(message: string) {
+      errorToasts.push(message)
+    },
+    getErrorToasts() {
+      return [...errorToasts]
+    },
+  })
+}

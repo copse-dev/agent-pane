@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedMarkdownBoldGlobFixture } from './helpers/seed-config.ts'
+import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -48,6 +49,8 @@ describe('markdown bold after glob table cells', () => {
     expect(metrics.hasMalformedStrong).toBe(false)
     expect(metrics.globCellText).toBe('src/**/*.test.ts')
     expect(metrics.architectureListLabels).toBe(5)
+
+    await assertNoErrorToasts('markdown bold glob fixture')
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'markdown-bold-glob-full.png'))
 

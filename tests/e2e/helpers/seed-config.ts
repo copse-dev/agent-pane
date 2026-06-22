@@ -1157,6 +1157,7 @@ export function seedMarkdownBoldGlobFixture(workspaceRoot: string): void {
               id: 'msg-assistant-bold-glob',
               role: 'assistant',
               content,
+              toolCalls: [],
               createdAt: Date.now(),
             },
           ],
