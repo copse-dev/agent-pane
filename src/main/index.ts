@@ -160,9 +160,34 @@ app
   })
   .catch(console.error)
 
-app.on('before-quit', () => {
+let quitCleanupStarted = false
+let quitCleanupFinished = false
+
+async function cleanupBeforeQuit(): Promise<void> {
   closeAllWatchers()
   stopWorkspaceIndexWatcher()
-  void shutdownMcpServers()
-  void shutdownProjectSandbox()
+  await Promise.allSettled([shutdownMcpServers(), shutdownProjectSandbox()])
+}
+
+app.on('before-quit', (event) => {
+  if (quitCleanupFinished) return
+  event.preventDefault()
+  if (quitCleanupStarted) return
+  quitCleanupStarted = true
+  void cleanupBeforeQuit()
+    .catch((err: unknown) => {
+      console.error('[shutdown] Cleanup failed:', err)
+    })
+    .finally(() => {
+      quitCleanupFinished = true
+      app.quit()
+    })
 })
+
+function quitFromSignal(signal: NodeJS.Signals): void {
+  console.log(`[shutdown] Received ${signal}; quitting`)
+  app.quit()
+}
+
+process.on('SIGINT', quitFromSignal)
+process.on('SIGTERM', quitFromSignal)

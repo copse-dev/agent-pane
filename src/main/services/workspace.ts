@@ -81,34 +81,49 @@ function isPathInsideRoot(resolved: string, absRoot: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !rel.split(sep).includes('..'))
 }
 
-export function resolveWorkspacePath(path: string): string {
-  if (!workspaceRoot) throw new Error('No workspace open. Use Open Folder first.')
-  if (isAbsolute(path)) {
-    throw new Error(`Absolute paths are not allowed: ${path}`)
-  }
-  const absRoot = realpathSync.native(resolve(workspaceRoot))
-  const absTarget = resolve(absRoot, path)
-
-  if (!isPathInsideRoot(absTarget, absRoot)) {
-    throw new Error(`Path outside workspace: ${path}`)
-  }
-
-  let probe = absTarget
+function resolveThroughExistingPrefix(absPath: string): string {
+  let probe = absPath
   while (true) {
     if (existsSync(probe)) {
       const realProbe = realpathSync.native(probe)
-      const suffix = relative(probe, absTarget)
-      const resolved = suffix ? resolve(realProbe, suffix) : realProbe
-      if (!isPathInsideRoot(resolved, absRoot)) {
-        throw new Error(`Path outside workspace: ${path}`)
-      }
-      return resolved
+      const suffix = relative(probe, absPath)
+      return suffix ? resolve(realProbe, suffix) : realProbe
     }
-    if (probe === absRoot) {
-      return absTarget
-    }
-    probe = dirname(probe)
+    const parent = dirname(probe)
+    if (parent === probe) return absPath
+    probe = parent
   }
+}
+
+export function resolveWorkspacePath(path: string): string {
+  if (!workspaceRoot) throw new Error('No workspace open. Use Open Folder first.')
+  const absRoot = realpathSync.native(resolve(workspaceRoot))
+  let relPath = path
+  if (isAbsolute(path)) {
+    const absInput = resolveThroughExistingPrefix(resolve(path))
+    const fromRoot = relative(absRoot, absInput)
+    if (!isPathInsideRoot(absInput, absRoot)) {
+      throw new Error(
+        `Path outside workspace: ${path}. File tools require paths relative to the workspace root.`,
+      )
+    }
+    relPath = fromRoot === '' ? '.' : fromRoot
+  }
+  const absTarget = resolve(absRoot, relPath)
+
+  if (!isPathInsideRoot(absTarget, absRoot)) {
+    throw new Error(
+      `Path outside workspace: ${path}. File tools require paths relative to the workspace root.`,
+    )
+  }
+
+  const resolved = resolveThroughExistingPrefix(absTarget)
+  if (!isPathInsideRoot(resolved, absRoot)) {
+    throw new Error(
+      `Path outside workspace: ${path}. File tools require paths relative to the workspace root.`,
+    )
+  }
+  return resolved
 }
 
 export function toRelativePath(absPath: string): string {

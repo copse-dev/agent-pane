@@ -8,10 +8,16 @@ const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 async function setChatPaneWidth(px: number): Promise<void> {
   await browser.execute((width) => {
     const pane = document.getElementById('pane-chat')
-    if (!pane) return
-    pane.style.flex = '0 0 auto'
-    pane.style.width = `${width}px`
-    pane.style.maxWidth = `${width}px`
+    const inputBar = document.getElementById('input-bar')
+    if (pane) {
+      pane.style.flex = '0 0 auto'
+      pane.style.width = `${width}px`
+      pane.style.maxWidth = `${width}px`
+    }
+    if (inputBar) {
+      inputBar.style.width = `${width}px`
+      inputBar.style.maxWidth = `${width}px`
+    }
     window.dispatchEvent(new Event('resize'))
   }, px)
   await browser.waitUntil(

@@ -100,9 +100,9 @@ export function mountRightPanelTabs(root: HTMLElement, store: AppStore): () => v
   function setMode(mode: import('@shared/types/state.ts').RightPanelMode) {
     if (store.getState().rightPanelMode === mode) return
     store.setState({ rightPanelMode: mode, filesPaneOpen: true })
+    sync()
     store.emit('right_panel_mode_changed')
     store.emit('files_pane_changed')
-    sync()
   }
 
   function sync() {

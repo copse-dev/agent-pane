@@ -16,6 +16,7 @@ export interface StoreEvents {
   projects_changed: []
   files_pane_changed: []
   right_panel_mode_changed: []
+  browser_url_requested: [url: string]
   settings_changed: []
   theme_changed: ['light' | 'dark']
   staged_diffs_changed: []

@@ -1,0 +1,49 @@
+# Automated dependency updates for npm and GitHub Actions.
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '11:00'
+      timezone: Etc/UTC
+    labels:
+      - dependencies
+    commit-message:
+      prefix: chore(deps)
+    cooldown:
+      default-days: 7
+    groups:
+      # electron and electron-chromedriver must move in lockstep — ChromeDriver's
+      # Chromium major has to match Electron's bundled Chromium, or the wdio e2e
+      # session fails to start. Group them so every bump (incl. majors) lands in
+      # a single PR. Listed before npm-minor-patch so it also captures their
+      # minor/patch updates.
+      electron:
+        patterns:
+          - 'electron'
+          - 'electron-chromedriver'
+      npm-minor-patch:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '11:00'
+      timezone: Etc/UTC
+    labels:
+      - dependencies
+    commit-message:
+      prefix: chore(deps)
+    cooldown:
+      default-days: 7

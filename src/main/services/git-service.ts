@@ -1,9 +1,11 @@
 import * as fsp from 'node:fs/promises'
+import { spawnSync } from 'node:child_process'
 import { getWorkspaceRoot, resolveWorkspacePath } from './workspace.ts'
 import { runCommand } from './command-runner.ts'
 import { isGitAvailable } from './tool-availability.ts'
 import { detectLanguage } from './language.ts'
 import { parseGithubRepoSlug } from '@shared/git/github-link-steering.ts'
+import { imageMimeType } from '@shared/fs/image-path.ts'
 import type { GitChange, GitChangeStatus, GitFileDiff, GitStatusResult } from '@shared/types/git.ts'
 
 const CODESEARCH_DB_DIR = '.codesearch.db'
@@ -27,6 +29,12 @@ function toWorkspaceRelativeGitPath(path: string, workspacePrefix: string): stri
   const prefixWithSlash = `${prefix}/`
   if (!path.startsWith(prefixWithSlash)) return null
   return path.slice(prefixWithSlash.length)
+}
+
+/** Path for `git show ref:path` when cwd is the workspace root (may be a repo subdirectory). */
+export function toGitShowPath(workspaceRelativePath: string): string {
+  if (workspaceRelativePath.startsWith('./')) return workspaceRelativePath
+  return `./${workspaceRelativePath}`
 }
 
 function normalizeGitStatusForWorkspace(
@@ -171,8 +179,13 @@ export function classifyGitBlob(stdout: string, code: number): GitBlobResult {
   return { content: stdout, exists: true, isBinary: false }
 }
 
+function gitObjectSpec(ref: string, path: string): string {
+  const gitPath = toGitShowPath(path)
+  return ref === ':' ? `:${gitPath}` : `${ref}:${gitPath}`
+}
+
 async function readGitBlob(ref: string, path: string): Promise<GitBlobResult> {
-  const { stdout, code } = await runGit(['show', `${ref}:${path}`])
+  const { stdout, code } = await runGit(['show', gitObjectSpec(ref, path)])
   return classifyGitBlob(stdout, code)
 }
 
@@ -182,6 +195,85 @@ async function readWorkingTree(path: string): Promise<string> {
     return await fsp.readFile(abs, 'utf-8')
   } catch {
     return ''
+  }
+}
+
+const GIT_IMAGE_MAX_BYTES = 50 * 1024 * 1024
+
+function runGitBuffer(args: string[]): { stdout: Buffer; code: number } {
+  const cwd = getWorkspaceRoot()
+  if (!cwd) return { stdout: Buffer.alloc(0), code: 1 }
+  const prepared = ['--no-pager', '-c', 'core.pager=cat', '-c', 'color.ui=false', ...args]
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    GIT_OPTIONAL_LOCKS: '0',
+    GIT_PAGER: 'cat',
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -oBatchMode=yes',
+  }
+  const result = spawnSync('git', prepared, {
+    cwd,
+    env,
+    encoding: 'buffer',
+    maxBuffer: GIT_IMAGE_MAX_BYTES,
+  })
+  return { stdout: result.stdout ?? Buffer.alloc(0), code: result.status ?? 1 }
+}
+
+function bufferToDataUrl(buf: Buffer, mime: string): string {
+  return `data:${mime};base64,${buf.toString('base64')}`
+}
+
+async function readGitBlobImage(ref: string, path: string, mime: string): Promise<string | null> {
+  const { stdout, code } = runGitBuffer(['show', gitObjectSpec(ref, path)])
+  if (code !== 0 || stdout.length === 0) return null
+  return bufferToDataUrl(stdout, mime)
+}
+
+async function readWorkingTreeImage(path: string, mime: string): Promise<string | null> {
+  try {
+    const abs = resolveWorkspacePath(path)
+    const buf = await fsp.readFile(abs)
+    if (buf.length === 0) return null
+    return bufferToDataUrl(buf, mime)
+  } catch {
+    return null
+  }
+}
+
+async function blobWithFallbackImage(path: string, mime: string): Promise<string | null> {
+  const index = await readGitBlobImage(':', path, mime)
+  if (index) return index
+  return readGitBlobImage('HEAD', path, mime)
+}
+
+async function getGitImageDiff(path: string, staged: boolean, mime: string): Promise<GitFileDiff> {
+  let beforeImage: string | null = null
+  let afterImage: string | null = null
+
+  if (staged) {
+    beforeImage = await readGitBlobImage('HEAD', path, mime)
+    afterImage = await readGitBlobImage(':', path, mime)
+  } else {
+    const status = await getGitStatus()
+    const change = status?.unstaged.find((c) => c.path === path)
+    if (change?.status === 'untracked') {
+      afterImage = await readWorkingTreeImage(path, mime)
+    } else if (change?.status === 'deleted') {
+      beforeImage = await blobWithFallbackImage(path, mime)
+    } else {
+      beforeImage = await blobWithFallbackImage(path, mime)
+      afterImage = await readWorkingTreeImage(path, mime)
+    }
+  }
+
+  return {
+    path,
+    before: '',
+    after: '',
+    language: detectLanguage(path),
+    beforeImage,
+    afterImage,
   }
 }
 
@@ -217,6 +309,9 @@ export async function getGitStatus(): Promise<GitStatusResult | null> {
 export async function getGitFileDiff(path: string, staged: boolean): Promise<GitFileDiff | null> {
   if (!isGitAvailable() || !(await isInsideGitWorkTree())) return null
 
+  const mime = imageMimeType(path)
+  if (mime) return getGitImageDiff(path, staged, mime)
+
   let before = ''
   let after = ''
 
@@ -246,12 +341,33 @@ export async function getGitFileDiff(path: string, staged: boolean): Promise<Git
     }
   }
 
+  before = normalizeGitDiffText(before)
+  after = normalizeGitDiffText(after)
+
+  if (before === after) {
+    const diffArgs = ['diff', ...(staged ? ['--cached'] : []), '--', path]
+    const { stdout } = await runGit(diffArgs)
+    if (stdout.trim()) {
+      if (staged) {
+        before = normalizeGitDiffText((await readGitBlob('HEAD', path)).content)
+        after = normalizeGitDiffText((await readGitBlob(':', path)).content)
+      } else {
+        before = normalizeGitDiffText((await readGitBlob(':', path)).content)
+        after = normalizeGitDiffText(await readWorkingTree(path))
+      }
+    }
+  }
+
   return {
     path,
     before,
     after,
     language: detectLanguage(path),
   }
+}
+
+function normalizeGitDiffText(text: string): string {
+  return text.replace(/\r\n/g, '\n')
 }
 
 export async function getGitStatusText(): Promise<string> {

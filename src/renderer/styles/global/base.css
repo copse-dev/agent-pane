@@ -18,12 +18,35 @@ body {
   font-size: var(--font-size-base);
   color: var(--text-primary);
   background: var(--bg-base);
+  /* Desktop-app chrome (tabs, sidebars, footers) should not highlight on drag. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 #app {
   display: flex;
   flex-direction: column;
   height: 100vh;
   position: relative;
+}
+/* Regions where copying text is intentional */
+input,
+textarea,
+select,
+[contenteditable='true'],
+.message-text,
+.tool-result,
+.tool-args pre,
+.approval-body,
+.terminal-container,
+.monaco-editor .view-lines {
+  user-select: text;
+  -webkit-user-select: text;
+}
+/* Monaco gutter chrome stays non-selectable even inside editors */
+.monaco-editor .margin,
+.monaco-editor .line-numbers {
+  user-select: none;
+  -webkit-user-select: none;
 }
 .split-body {
   display: flex;

@@ -25,6 +25,13 @@ describe('renderMarkdown', () => {
     assert.match(html, /<ul>/)
     assert.match(html, /<li>alpha<\/li>/)
     assert.match(html, /<li>beta<\/li>/)
+    assert.match(html, /<ul><li>alpha<\/li><li>beta<\/li><\/ul>/)
+  })
+
+  it('groups unordered list items separated by blank lines into one list', () => {
+    const html = renderMarkdown('- alpha\n\n- beta\n\n- gamma')
+    assert.match(html, /<ul><li>alpha<\/li><li>beta<\/li><li>gamma<\/li><\/ul>/)
+    assert.doesNotMatch(html, /<\/ul>\s*<ul>/)
   })
 
   it('renders asterisk unordered lists', () => {
@@ -42,7 +49,7 @@ describe('renderMarkdown', () => {
     )
     assert.match(
       html,
-      /<a href="https:\/\/github\.com\/org\/repo\/pull\/204" target="_blank" rel="noopener noreferrer">PR #204<\/a>/,
+      /<a href="https:\/\/github\.com\/org\/repo\/pull\/204" target="_blank" rel="noopener noreferrer" data-browser-link="true">PR #204<\/a>/,
     )
     assert.match(
       html,
@@ -64,6 +71,15 @@ describe('renderMarkdown', () => {
     const html = renderMarkdown('Use `[text](http://x)` literally')
     assert.match(html, /<code>\[text\]\(http:\/\/x\)<\/code>/)
     assert.doesNotMatch(html, /<a /)
+  })
+
+  it('auto-links bare HTTP URLs outside code spans', () => {
+    const html = renderMarkdown('Open https://example.com/docs, not `https://example.com/raw`.')
+    assert.match(
+      html,
+      /<a href="https:\/\/example\.com\/docs" target="_blank" rel="noopener noreferrer" data-browser-link="true">https:\/\/example\.com\/docs<\/a>,/,
+    )
+    assert.match(html, /<code>https:\/\/example\.com\/raw<\/code>/)
   })
 
   it('renders ordered lists with continuation paragraphs grouped into items', () => {

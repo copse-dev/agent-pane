@@ -1,10 +1,16 @@
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
-import { classifyGitBlob, getGitDiffText, parsePorcelainV1 } from './git-service.ts'
+import {
+  classifyGitBlob,
+  getGitDiffText,
+  getGitFileDiff,
+  parsePorcelainV1,
+  toGitShowPath,
+} from './git-service.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 import { setGitAvailableForTest } from './tool-availability.ts'
 
@@ -131,5 +137,194 @@ describe('getGitDiffText untracked files', { skip: !gitOk && 'git not installed'
   it('includes untracked files when no path is given', async () => {
     const diff = await getGitDiffText()
     assert.match(diff, /fresh\.txt/)
+  })
+})
+
+describe('getGitFileDiff staged blob', { skip: !gitOk && 'git not installed' }, () => {
+  let repo = ''
+  let restore: (() => void) | undefined
+
+  const git = (...args: string[]) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
+
+  before(async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-file-diff-'))
+    git('init', '-q')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    const lines = ['// header', 'export const value = 1']
+    await writeFile(join(repo, 'staged.ts'), `${lines.join('\n')}\n`)
+    git('add', '.')
+    git('commit', '-qm', 'init')
+    await writeFile(join(repo, 'staged.ts'), '// header\nexport const value = 2\n')
+    git('add', 'staged.ts')
+    restore = setWorkspaceRootForTest(repo)
+    setGitAvailableForTest(true)
+  })
+
+  after(async () => {
+    setGitAvailableForTest(null)
+    restore?.()
+    if (repo) await rm(repo, { recursive: true, force: true })
+  })
+
+  it('reads HEAD and index blobs for a staged file', async () => {
+    const diff = await getGitFileDiff('staged.ts', true)
+    assert.ok(diff)
+    assert.match(diff!.before, /value = 1/)
+    assert.match(diff!.after, /value = 2/)
+    assert.notEqual(diff!.before, diff!.after)
+  })
+})
+
+describe('getGitFileDiff image preview', { skip: !gitOk && 'git not installed' }, () => {
+  let repo = ''
+  let restore: (() => void) | undefined
+
+  const git = (...args: string[]) => spawnSync('git', args, { cwd: repo })
+
+  before(async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-image-'))
+    git('init', '-q')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    await writeFile(
+      join(repo, 'logo.png'),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    )
+    git('add', 'logo.png')
+    git('commit', '-qm', 'init')
+    restore = setWorkspaceRootForTest(repo)
+    setGitAvailableForTest(true)
+  })
+
+  after(async () => {
+    setGitAvailableForTest(null)
+    restore?.()
+    if (repo) await rm(repo, { recursive: true, force: true })
+  })
+
+  it('returns data URLs for a modified image', async () => {
+    await writeFile(
+      join(repo, 'logo.png'),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0xff, 0xff, 0xff]),
+    )
+    const diff = await getGitFileDiff('logo.png', false)
+    assert.ok(diff)
+    assert.match(diff!.beforeImage ?? '', /^data:image\/png;base64,/)
+    assert.match(diff!.afterImage ?? '', /^data:image\/png;base64,/)
+    assert.notEqual(diff!.beforeImage, diff!.afterImage)
+  })
+
+  it('returns only the after image for an untracked image', async () => {
+    await writeFile(
+      join(repo, 'new.png'),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xaa, 0xbb, 0xcc, 0xdd]),
+    )
+    const diff = await getGitFileDiff('new.png', false)
+    assert.ok(diff)
+    assert.equal(diff!.beforeImage, null)
+    assert.match(diff!.afterImage ?? '', /^data:image\/png;base64,/)
+  })
+
+  it('returns before and after images for a staged modification', async () => {
+    await writeFile(
+      join(repo, 'logo.png'),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x11, 0x22, 0x33, 0x44]),
+    )
+    git('add', 'logo.png')
+    const diff = await getGitFileDiff('logo.png', true)
+    assert.ok(diff)
+    assert.match(diff!.beforeImage ?? '', /^data:image\/png;base64,/)
+    assert.match(diff!.afterImage ?? '', /^data:image\/png;base64,/)
+    assert.notEqual(diff!.beforeImage, diff!.afterImage)
+  })
+})
+
+describe('getGitFileDiff unstaged blob', { skip: !gitOk && 'git not installed' }, () => {
+  let repo = ''
+  let restore: (() => void) | undefined
+
+  const git = (...args: string[]) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
+
+  before(async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-unstaged-diff-'))
+    git('init', '-q')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    await writeFile(
+      join(repo, 'README.md'),
+      ['# Title', '', 'Intro paragraph.', '', '## Section', ''].join('\n'),
+    )
+    git('add', '.')
+    git('commit', '-qm', 'init')
+    await writeFile(
+      join(repo, 'README.md'),
+      ['# Title', '', 'Intro paragraph.', '', '', '', '', '', '## Section', ''].join('\n'),
+    )
+    restore = setWorkspaceRootForTest(repo)
+    setGitAvailableForTest(true)
+  })
+
+  after(async () => {
+    setGitAvailableForTest(null)
+    restore?.()
+    if (repo) await rm(repo, { recursive: true, force: true })
+  })
+
+  it('returns index content as before and working tree as after for unstaged edits', async () => {
+    const diff = await getGitFileDiff('README.md', false)
+    assert.ok(diff)
+    assert.match(diff!.before, /Intro paragraph\.\n\n## Section/)
+    assert.match(diff!.after, /Intro paragraph\.\n\n\n\n\n\n## Section/)
+    assert.notEqual(diff!.before, diff!.after)
+  })
+})
+
+describe('toGitShowPath', () => {
+  it('prefixes workspace-relative paths for git show', () => {
+    assert.equal(toGitShowPath('README.md'), './README.md')
+    assert.equal(toGitShowPath('./README.md'), './README.md')
+    assert.equal(toGitShowPath('src/foo.ts'), './src/foo.ts')
+  })
+})
+
+describe('getGitFileDiff subdirectory workspace', { skip: !gitOk && 'git not installed' }, () => {
+  let repo = ''
+  let restore: (() => void) | undefined
+
+  const git = (...args: string[]) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
+
+  before(async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-subdir-diff-'))
+    git('init', '-q')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    await mkdir(join(repo, 'widget'), { recursive: true })
+    await writeFile(
+      join(repo, 'widget', 'README.md'),
+      ['# Title', '', 'Intro paragraph.', '', '## Section', ''].join('\n'),
+    )
+    git('add', '.')
+    git('commit', '-qm', 'init')
+    await writeFile(
+      join(repo, 'widget', 'README.md'),
+      ['# Title', '', 'Intro paragraph.', '', '', '', '', '', '## Section', ''].join('\n'),
+    )
+    restore = setWorkspaceRootForTest(join(repo, 'widget'))
+    setGitAvailableForTest(true)
+  })
+
+  after(async () => {
+    setGitAvailableForTest(null)
+    restore?.()
+    if (repo) await rm(repo, { recursive: true, force: true })
+  })
+
+  it('reads index/HEAD blobs when the workspace is a repo subdirectory', async () => {
+    const diff = await getGitFileDiff('README.md', false)
+    assert.ok(diff)
+    assert.match(diff!.before, /Intro paragraph\.\n\n## Section/)
+    assert.match(diff!.after, /Intro paragraph\.\n\n\n\n\n\n## Section/)
+    assert.notEqual(diff!.before, diff!.after)
   })
 })

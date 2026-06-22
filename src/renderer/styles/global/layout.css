@@ -207,8 +207,8 @@
 }
 .three-pane.is-right-panel-horizontal {
   display: grid;
-  grid-template-columns: var(--projects-width, 240px) 4px minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) 4px minmax(0, 1fr);
+  grid-template-columns: var(--projects-width, 240px) var(--pane-divider-width) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) var(--pane-divider-width) minmax(0, var(--files-height, 360px));
 }
 .three-pane.is-right-panel-horizontal .pane-projects {
   grid-column: 1;
@@ -219,7 +219,7 @@
 .three-pane.is-right-panel-horizontal #resizer-projects {
   grid-column: 2;
   grid-row: 1;
-  width: 4px;
+  width: var(--pane-divider-width);
   height: auto;
 }
 .three-pane.is-right-panel-horizontal .pane-chat {
@@ -230,9 +230,13 @@
   grid-column: 1 / -1;
   grid-row: 2;
   width: auto;
-  height: 4px;
+  height: var(--pane-divider-width);
   cursor: row-resize;
-  pointer-events: none;
+}
+.three-pane.is-right-panel-horizontal #resizer-files::after {
+  inset-block: -2px;
+  left: 0;
+  right: 0;
 }
 .three-pane.is-right-panel-horizontal .pane-files {
   grid-column: 1 / -1;
@@ -477,6 +481,57 @@
 .git-diff-editor-wrap {
   flex: 1;
   min-height: 0;
+}
+.git-diff-editor-wrap .line-insert,
+.git-diff-editor-wrap .char-insert {
+  background-color: color-mix(in srgb, #2ea043 28%, transparent) !important;
+}
+.git-diff-editor-wrap .line-delete,
+.git-diff-editor-wrap .char-delete,
+.git-diff-editor-wrap .inline-deleted-text {
+  background-color: color-mix(in srgb, #f85149 26%, transparent) !important;
+}
+.git-diff-editor-wrap .gutter-insert,
+.git-diff-editor-wrap .inline-added-margin-view-zone {
+  background-color: color-mix(in srgb, #2ea043 22%, transparent) !important;
+}
+.git-diff-editor-wrap .gutter-delete,
+.git-diff-editor-wrap .inline-deleted-margin-view-zone {
+  background-color: color-mix(in srgb, #f85149 22%, transparent) !important;
+}
+.git-image-diff-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--spacing-sm);
+}
+.git-image-diff {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: flex-start;
+  justify-content: center;
+  min-height: 100%;
+}
+.git-image-diff-pane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.git-image-diff-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.git-image-diff-img {
+  width: 100%;
+  max-height: min(70vh, 640px);
+  object-fit: contain;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-base);
 }
 .terminals-body {
   flex: 1;

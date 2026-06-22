@@ -27,8 +27,8 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
     if (available[provider]) options.push({ value, label })
   }
 
-  const lmGroup = 'LM Studio (local)'
-  let models: string[] = []
+  const lmGroup = 'Local models'
+  let models: string[]
   try {
     models = await api.lmStudio.models()
   } catch {
@@ -68,8 +68,8 @@ function opt(value: string, label: string, disabled = false): HTMLOptionElement 
   return o
 }
 
-// Fill a <select> with the cloud models plus an "LM Studio" optgroup of the
-// models the local server actually exposes (value `lmstudio:<id>`). Keeps the
+// Fill a <select> with the cloud models plus a local optgroup of the models the
+// configured local server exposes (value `lmstudio:<id>`). Keeps the
 // `current` value selectable even if the server is offline.
 export async function populateModelSelect(
   select: HTMLSelectElement,
@@ -98,7 +98,7 @@ export async function populateModelSelect(
   select.value = current
 }
 
-/** Fill a <select> with LM Studio model ids for routing settings (blank = auto). */
+/** Fill a <select> with local model ids for routing settings (blank = auto). */
 export function populateLocalModelSelect(
   select: HTMLSelectElement,
   models: string[],

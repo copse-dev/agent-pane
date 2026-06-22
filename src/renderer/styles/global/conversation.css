@@ -154,6 +154,8 @@
   margin: var(--spacing-sm) 0;
   padding-inline-start: 1.5em;
   list-style-position: outside;
+  /* pre-wrap on .message-text would otherwise render source newlines between items. */
+  white-space: normal;
 }
 .message-text:empty {
   display: none;

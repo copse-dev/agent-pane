@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync, existsSync, copyFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -63,10 +63,10 @@ export function seedEmptyProject(
     subagentsEnabled?: boolean
     mockFollowUps?: boolean
     model?: string
-    lmStudioUrl?: string
-    lmStudioModel?: string
-    lmStudioSubagentModel?: string
-    lmStudioForSubagents?: boolean
+    localServerUrl?: string
+    localDefaultModel?: string
+    subagentModel?: string
+    localSubagentsEnabled?: boolean
     autoPortraitRightPanel?: boolean
   },
 ): void {
@@ -90,17 +90,17 @@ export function seedEmptyProject(
   if (options?.model) {
     settings.model = options.model
   }
-  if (options?.lmStudioUrl) {
-    settings.lmStudioUrl = options.lmStudioUrl
+  if (options?.localServerUrl) {
+    settings.localServerUrl = options.localServerUrl
   }
-  if (options?.lmStudioModel) {
-    settings.lmStudioModel = options.lmStudioModel
+  if (options?.localDefaultModel) {
+    settings.localDefaultModel = options.localDefaultModel
   }
-  if (options?.lmStudioSubagentModel) {
-    settings.lmStudioSubagentModel = options.lmStudioSubagentModel
+  if (options?.subagentModel) {
+    settings.subagentModel = options.subagentModel
   }
-  if (options?.lmStudioForSubagents !== undefined) {
-    settings.lmStudioForSubagents = options.lmStudioForSubagents
+  if (options?.localSubagentsEnabled !== undefined) {
+    settings.localSubagentsEnabled = options.localSubagentsEnabled
   }
   if (options?.autoPortraitRightPanel !== undefined) {
     settings.autoPortraitRightPanel = options.autoPortraitRightPanel
@@ -580,35 +580,61 @@ export function seedSubagentFixture(workspaceRoot: string): void {
   )
 }
 
-/**
- * Creates a throwaway git repo with a committed baseline plus a staged
- * modification, an unstaged modification, and an untracked file, then seeds it
- * as the active project. Returns the repo path so the spec can clean it up.
- */
-export function seedGitChangesFixture(): string {
-  const repoRoot = mkdtempSync(join(tmpdir(), 'copse-panel-git-'))
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
+const GIT_CHANGES_FIXTURE_ROOT = join(process.cwd(), 'tests/fixtures/git-changes-repo')
 
+function buildLargeStagedFile(value: number): string {
+  const lines = [
+    '// Copyright notice',
+    '// Baseline module used by git changes e2e',
+    '',
+    'export const metadata = { version: 1, kind: "demo" }',
+  ]
+  for (let i = 1; i <= 25; i++) {
+    lines.push(`export function helper${i}(): number { return ${i}; }`)
+  }
+  lines.push(`export const value = ${value}`)
+  for (let i = 26; i <= 50; i++) {
+    lines.push(`export function helper${i}(): number { return ${i}; }`)
+  }
+  return `${lines.join('\n')}\n`
+}
+
+function initGitChangesFixtureRepo(): void {
+  const repoRoot = GIT_CHANGES_FIXTURE_ROOT
+  mkdirSync(repoRoot, { recursive: true })
+  rmSync(join(repoRoot, 'untracked.ts'), { force: true })
+  writeFileSync(join(repoRoot, 'staged.ts'), buildLargeStagedFile(1), 'utf8')
+  writeFileSync(join(repoRoot, 'unstaged.ts'), 'export const name = "old"\n', 'utf8')
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
   git('init', '-q')
   git('config', 'user.email', 'e2e@example.com')
   git('config', 'user.name', 'E2E')
   git('config', 'commit.gpgsign', 'false')
-
-  writeFileSync(join(repoRoot, 'staged.ts'), 'export const value = 1\n', 'utf8')
-  writeFileSync(join(repoRoot, 'unstaged.ts'), 'export const name = "old"\n', 'utf8')
   git('add', '.')
   git('commit', '-q', '-m', 'baseline')
+}
 
-  // Staged modification.
-  writeFileSync(join(repoRoot, 'staged.ts'), 'export const value = 2\n', 'utf8')
+/** Reset the committed git-changes fixture to staged + unstaged + untracked state. */
+export function resetGitChangesFixtureState(): void {
+  const repoRoot = GIT_CHANGES_FIXTURE_ROOT
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
+  git('checkout', '-f', 'HEAD')
+  git('clean', '-fd')
+  writeFileSync(join(repoRoot, 'staged.ts'), buildLargeStagedFile(2), 'utf8')
   git('add', 'staged.ts')
-
-  // Unstaged modification to a tracked file.
   writeFileSync(join(repoRoot, 'unstaged.ts'), 'export const name = "new"\n', 'utf8')
-
-  // Untracked file.
   writeFileSync(join(repoRoot, 'untracked.ts'), 'export const fresh = true\n', 'utf8')
+}
 
+/**
+ * Seeds the stable git-changes fixture as the active project. Returns the repo path.
+ */
+export function seedGitChangesFixture(): string {
+  if (!existsSync(join(GIT_CHANGES_FIXTURE_ROOT, '.git'))) {
+    initGitChangesFixtureRepo()
+  }
+  resetGitChangesFixtureState()
+  const repoRoot = GIT_CHANGES_FIXTURE_ROOT
   const projectId = 'e2e-git-changes-project'
   const threadId = 'e2e-git-changes-thread'
   mkdirSync(USER_DATA, { recursive: true })
@@ -617,6 +643,7 @@ export function seedGitChangesFixture(): string {
     JSON.stringify({
       projects: [{ id: projectId, path: repoRoot, name: 'git-workspace' }],
       activeProjectId: projectId,
+      workspaceRoot: repoRoot,
       [`threads:${projectId}`]: [
         {
           id: threadId,
@@ -632,11 +659,73 @@ export function seedGitChangesFixture(): string {
     'utf8',
   )
 
+  writeSettings({})
+
   return repoRoot
 }
 
 export function cleanupGitChangesFixture(repoRoot: string): void {
+  if (repoRoot === GIT_CHANGES_FIXTURE_ROOT) {
+    resetGitChangesFixtureState()
+    return
+  }
   rmSync(repoRoot, { recursive: true, force: true })
+}
+
+const GIT_IMAGE_FIXTURES = join(process.cwd(), 'tests/e2e/fixtures')
+
+/**
+ * Git repo with staged/unstaged/untracked image changes for the Changes panel
+ * image preview e2e. Returns the repo path for cleanup.
+ */
+export function seedGitImageChangesFixture(): string {
+  const repoRoot = mkdtempSync(join(tmpdir(), 'copse-panel-git-img-'))
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
+
+  git('init', '-q')
+  git('config', 'user.email', 'e2e@example.com')
+  git('config', 'user.name', 'E2E')
+  git('config', 'commit.gpgsign', 'false')
+
+  copyFileSync(join(GIT_IMAGE_FIXTURES, 'git-changes-red.png'), join(repoRoot, 'staged.png'))
+  copyFileSync(join(GIT_IMAGE_FIXTURES, 'git-changes-blue.png'), join(repoRoot, 'unstaged.png'))
+  git('add', '.')
+  git('commit', '-q', '-m', 'baseline')
+
+  // Staged: red → blue.
+  copyFileSync(join(GIT_IMAGE_FIXTURES, 'git-changes-blue.png'), join(repoRoot, 'staged.png'))
+  git('add', 'staged.png')
+
+  // Unstaged: blue → red.
+  copyFileSync(join(GIT_IMAGE_FIXTURES, 'git-changes-red.png'), join(repoRoot, 'unstaged.png'))
+
+  // Untracked new image.
+  copyFileSync(join(GIT_IMAGE_FIXTURES, 'git-changes-red.png'), join(repoRoot, 'new.png'))
+
+  const projectId = 'e2e-git-image-changes-project'
+  const threadId = 'e2e-git-image-changes-thread'
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: repoRoot, name: 'git-image-workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Git image changes test',
+          status: 'idle',
+          messages: [],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+
+  return repoRoot
 }
 
 /** Long thread so the messages list overflows and scroll-to-bottom can be exercised. */

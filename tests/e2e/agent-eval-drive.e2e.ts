@@ -15,7 +15,7 @@ import assert from 'node:assert/strict'
 import { $, browser } from '@wdio/globals'
 import { threadToJsonl } from '../../src/renderer/export-thread.ts'
 import type { Thread } from '@shared/types'
-import { getCopseUserDataDir } from './helpers.ts'
+import { getCopseUserDataDir, waitForAgentIdle, waitForPromptReady } from './helpers.ts'
 import { DEFAULT_APP_CHAT_MODEL, LM_STUDIO_MODEL_IDS } from '../../src/shared/lm-studio-defaults.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
@@ -323,7 +323,10 @@ describe('agent eval drive', () => {
     workspaceRoot = project.root
     cleanupWorkspace = project.cleanup
     const useMock = process.env.COPSE_EVAL_USE_MOCK === '1'
-    const lmStudioUrl = process.env.COPSE_EVAL_LM_STUDIO_URL?.trim() || 'http://localhost:1234/v1'
+    const localServerUrl =
+      process.env.COPSE_EVAL_LOCAL_SERVER_URL?.trim() ||
+      process.env.COPSE_EVAL_LM_STUDIO_URL?.trim() ||
+      'http://localhost:1234/v1'
     const subagentsEnabled =
       process.env.COPSE_EVAL_SUBAGENTS === '0'
         ? false
@@ -336,10 +339,10 @@ describe('agent eval drive', () => {
         ? { model: 'claude-sonnet-4-6' }
         : {
             model: DEFAULT_APP_CHAT_MODEL,
-            lmStudioUrl,
-            lmStudioModel: LM_STUDIO_MODEL_IDS.chat,
-            lmStudioSubagentModel: LM_STUDIO_MODEL_IDS.smallTasks,
-            lmStudioForSubagents: true,
+            localServerUrl,
+            localDefaultModel: LM_STUDIO_MODEL_IDS.chat,
+            subagentModel: LM_STUDIO_MODEL_IDS.smallTasks,
+            localSubagentsEnabled: true,
           }),
     })
     await browser.reloadSession()

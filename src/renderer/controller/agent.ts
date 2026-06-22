@@ -262,7 +262,7 @@ async function maybeNameThread(store: AppStore, api: ApiClient, threadId: string
   if (!firstUser || !firstUser.content.trim()) return
   namedThreads.add(threadId)
 
-  let title: string | null = null
+  let title: string | null
   try {
     title = await api.agent.suggestTitle(firstUser.content)
   } catch {

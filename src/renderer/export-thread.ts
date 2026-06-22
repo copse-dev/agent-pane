@@ -1,5 +1,9 @@
 import type { Thread } from '@shared/types'
 
+export function threadHasExportableContent(thread: Thread | undefined): thread is Thread {
+  return (thread?.messages.length ?? 0) > 0
+}
+
 // JSONL: one JSON object per line — easy to stream, grep, and re-import; each
 // assistant line carries full toolCalls (args + results) inline.
 export function threadToJsonl(thread: Thread): string {
