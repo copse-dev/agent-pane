@@ -6,6 +6,7 @@ import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
 const LOCAL_MODELS = ['qwen/qwen3.6-35b-a3b', 'google/gemma-4-e4b', 'qwen/qwen3-4b-2507']
+const LM_STUDIO_FIXTURE_PORT = 51234
 
 async function startLmStudioModelServer(): Promise<{ url: string; close: () => Promise<void> }> {
   const server = createServer((req, res) => {
@@ -26,13 +27,8 @@ async function startLmStudioModelServer(): Promise<{ url: string; close: () => P
 
   const url = await new Promise<string>((resolve, reject) => {
     server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address()
-      if (!address || typeof address === 'string') {
-        reject(new Error('LM Studio model fixture did not bind to a TCP port'))
-        return
-      }
-      resolve(`http://127.0.0.1:${address.port}/v1`)
+    server.listen(LM_STUDIO_FIXTURE_PORT, '127.0.0.1', () => {
+      resolve(`http://127.0.0.1:${LM_STUDIO_FIXTURE_PORT}/v1`)
     })
   })
 
