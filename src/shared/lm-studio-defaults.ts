@@ -1,3 +1,6 @@
+/** Default LM Studio server URL (OpenAI-compatible /v1 endpoint). */
+export const DEFAULT_LM_STUDIO_URL = 'http://localhost:1234/v1'
+
 /** Default LM Studio model ids (OpenAI-compatible /v1/models ids). */
 export const LM_STUDIO_MODEL_IDS = {
   chat: 'qwen/qwen3.6-35b-a3b',

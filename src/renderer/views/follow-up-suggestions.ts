@@ -2,7 +2,7 @@ import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
-import { switchThread } from '@shared/store/thread-helpers.ts'
+import { switchThread, getThreadById } from '@shared/store/thread-helpers.ts'
 
 export interface FollowUpSuggestionsMount {
   root: HTMLElement
@@ -86,7 +86,7 @@ export function mountFollowUpSuggestions(
   }
 
   function lastExchange(threadId: string) {
-    const thread = store.getState().threads.find((t) => t.id === threadId)
+    const thread = getThreadById(store, threadId)
     if (!thread) return null
 
     const userMessages = thread.messages.filter((m) => m.role === 'user')

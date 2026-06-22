@@ -6,6 +6,7 @@ import {
   threadGitBranchMismatch,
   threadGitBranchMismatchMessage,
 } from '@shared/git/thread-branch.ts'
+import { getThreadById } from '@shared/store/thread-helpers.ts'
 
 export function mountFooterBranchStatus(
   host: HTMLElement,
@@ -30,7 +31,7 @@ export function mountFooterBranchStatus(
 
   function getActiveThreadBranch(): string | undefined {
     const id = store.getState().activeThreadId
-    const thread = store.getState().threads.find((t) => t.id === id)
+    const thread = getThreadById(store, id)
     return thread?.gitBranch
   }
 

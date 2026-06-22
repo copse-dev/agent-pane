@@ -16,6 +16,17 @@ export function sortThreadsNewestFirst(threads: Thread[]): Thread[] {
   return [...threads].sort((a, b) => b.createdAt - a.createdAt)
 }
 
+/** Look up a thread by id (undefined for null/unknown ids). */
+export function getThreadById(store: AppStore, id: string | null | undefined): Thread | undefined {
+  if (!id) return undefined
+  return store.getState().threads.find((t) => t.id === id)
+}
+
+/** The currently active thread, if any. */
+export function getActiveThread(store: AppStore): Thread | undefined {
+  return getThreadById(store, store.getState().activeThreadId)
+}
+
 /** Empty idle thread with no messages yet (unused "New Thread"). */
 export function isBlankThread(thread: Thread): boolean {
   return thread.messages.length === 0 && thread.status === 'idle'
@@ -286,7 +297,7 @@ export function updateUsage(store: AppStore, threadId: string, usage: ThreadUsag
 }
 
 export function addUsageDelta(store: AppStore, threadId: string, delta: UsageDelta): void {
-  const thread = store.getState().threads.find((t) => t.id === threadId)
+  const thread = getThreadById(store, threadId)
   if (!thread) return
   const byModel = { ...(thread.usage.byModel ?? {}) }
   const prev = byModel[delta.model] ?? { inputTokens: 0, outputTokens: 0 }
@@ -383,7 +394,7 @@ export function bindThreadGitBranchIfUnset(
   threadId: string,
   branch: string,
 ): void {
-  const thread = store.getState().threads.find((t) => t.id === threadId)
+  const thread = getThreadById(store, threadId)
   if (!thread || thread.gitBranch) return
   setThreadGitBranch(store, threadId, branch)
 }
