@@ -1,0 +1,60 @@
+.monaco-container {
+  flex: 1;
+  overflow: hidden;
+}
+.diff-container {
+  position: relative;
+
+  flex: 1;
+  min-width: 0;
+}
+.diff-stage {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.diff-stage-toolbar {
+  display: flex;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.diff-stage-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.panel-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  text-align: center;
+  padding: var(--spacing-xl);
+}
+.diff-accept-btn {
+  position: absolute;
+  bottom: var(--spacing-md);
+  right: var(--spacing-md);
+  background: var(--success);
+  color: #000;
+  border-radius: var(--radius);
+  padding: 6px 14px;
+  z-index: 10;
+}
+.diff-reject-btn {
+  position: absolute;
+  bottom: var(--spacing-md);
+  right: calc(var(--spacing-md) + 80px);
+  background: var(--error);
+  color: #fff;
+  border-radius: var(--radius);
+  padding: 6px 14px;
+  z-index: 10;
+}
