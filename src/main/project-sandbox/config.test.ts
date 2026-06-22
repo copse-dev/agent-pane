@@ -1,12 +1,13 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { accessSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { accessSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import {
   electronRuntimeAllowReadPaths,
   fsWorkerSandboxOverlay,
   resolveNodeToolchainAllowRead,
+  workspaceMandatoryWriteDenyPaths,
   workspaceSandboxOverlay,
 } from './config.ts'
 
@@ -66,6 +67,39 @@ describe('workspaceSandboxOverlay', () => {
     const denyWrite = overlay.filesystem?.denyWrite ?? []
     assert.ok(denyWrite.includes('/Users/me/project/.git/hooks'))
     assert.ok(denyWrite.some((p) => p === '**/.git/hooks/**'))
+  })
+
+  it('canonicalizes the workspace root through symlinks (macOS /var vs /private/var)', () => {
+    // macOS temp dirs live under /var/folders, where /var -> /private/var. The
+    // seatbelt sandbox enforces against the canonical path, so allow/deny rules
+    // built from the symlinked path would never match and git commit fails with
+    // EPERM on .git. Reproduce cross-platform with an explicit symlink.
+    const tmpRoot = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-sandbox-')))
+    try {
+      const realWorkspace = join(tmpRoot, 'workspace')
+      const linkedWorkspace = join(tmpRoot, 'linked')
+      mkdirSync(realWorkspace)
+      symlinkSync(realWorkspace, linkedWorkspace, 'dir')
+
+      const overlay = workspaceSandboxOverlay(linkedWorkspace)
+      const allowWrite = overlay.filesystem?.allowWrite ?? []
+      // Rules must use the canonical target, never the symlink path.
+      assert.ok(allowWrite.includes(realWorkspace))
+      assert.ok(allowWrite.some((p) => p === `${realWorkspace}/**`))
+      assert.ok(!allowWrite.includes(linkedWorkspace))
+
+      const denyWrite = workspaceMandatoryWriteDenyPaths(linkedWorkspace)
+      assert.ok(denyWrite.includes(join(realWorkspace, '.git/hooks')))
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('falls back to resolve for a non-existent workspace root', () => {
+    const ghost = join(tmpdir(), 'copse-nonexistent-workspace-xyz')
+    const overlay = workspaceSandboxOverlay(ghost)
+    const allowWrite = overlay.filesystem?.allowWrite ?? []
+    assert.ok(allowWrite.includes(resolve(ghost)))
   })
 })
 
