@@ -109,13 +109,30 @@ export function formatExternalSandboxPromptBody(command: string, reasons: string
   )
 }
 
-/** True when macOS seatbelt is active and the command heuristic is external (network, gh, …). */
+/** True when macOS seatbelt is active and the command needs filesystem/system access outside ASRT. */
 export function shellRequiresOutsideSandbox(
   command: string,
   workspaceRoot: string | null,
   sandboxEnabled: boolean,
 ): boolean {
-  return sandboxEnabled && analyzeShellCommand(command, workspaceRoot).verdict === 'external'
+  if (!sandboxEnabled) return false
+  const analysis = analyzeShellCommand(command, workspaceRoot)
+  return analysis.reasons.some((reason) => shellReasonRequiresOutsideSandbox(reason))
+}
+
+export function shellSandboxFailureShouldOfferUnsandboxedRetry(
+  command: string,
+  workspaceRoot: string | null,
+): boolean {
+  const analysis = analyzeShellCommand(command, workspaceRoot)
+  if (analysis.verdict !== 'external') return true
+  return analysis.reasons.some((reason) => shellReasonRequiresOutsideSandbox(reason))
+}
+
+function shellReasonRequiresOutsideSandbox(reason: string): boolean {
+  return /outside workspace|home directory|\$HOME|system path|global temp|parent directory|privilege escalation|process kill|system package manager|Homebrew/i.test(
+    reason,
+  )
 }
 
 export function mcpToolLabel(toolName: string): string {

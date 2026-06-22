@@ -2,6 +2,12 @@ import { accessSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
+import { getSetting } from '../services/settings.ts'
+import {
+  WEB_ALLOWED_ORIGINS_SETTING,
+  sandboxAllowedDomainsFromOrigins,
+  webAllowedOriginsWithDefaults,
+} from '../services/web-origin-policy.ts'
 
 /**
  * Resolve the workspace root to its canonical, symlink-free path.
@@ -78,13 +84,32 @@ function gitConfigReadPaths(): string[] {
   ]
 }
 
+function sandboxAllowedDomainsFromSettings(): string[] {
+  return sandboxAllowedDomainsFromOrigins(
+    webAllowedOriginsWithDefaults(getSetting<string[] | null>(WEB_ALLOWED_ORIGINS_SETTING, null)),
+  )
+}
+
+export function sandboxNetworkConfig(
+  allowedOrigins: readonly string[] | null | undefined = null,
+): NonNullable<SandboxRuntimeConfig['network']> {
+  const allowedDomains =
+    allowedOrigins === null
+      ? sandboxAllowedDomainsFromSettings()
+      : sandboxAllowedDomainsFromOrigins(webAllowedOriginsWithDefaults(allowedOrigins))
+  return {
+    allowedDomains,
+    deniedDomains: [],
+    allowLocalBinding: allowedDomains.some((domain) =>
+      ['localhost', '127.0.0.1', '::1'].includes(domain),
+    ),
+  }
+}
+
 /** Base ASRT config; workspace-specific paths are passed per spawn via `customConfig`. */
 export function baseSandboxConfig(): SandboxRuntimeConfig {
   return {
-    network: {
-      allowedDomains: [],
-      deniedDomains: ['*'],
-    },
+    network: sandboxNetworkConfig(),
     filesystem: {
       denyRead: [],
       allowWrite: [],
@@ -168,10 +193,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   const root = canonicalizeWorkspaceRoot(workspaceRoot)
   const toolchainRead = resolveNodeToolchainAllowRead()
   return {
-    network: {
-      allowedDomains: [],
-      deniedDomains: ['*'],
-    },
+    network: sandboxNetworkConfig(),
     filesystem: {
       // Deny home reads, re-allow only this project plus the user's git config
       // files (ASRT deny-then-allow; a more-specific allow overrides the deny).

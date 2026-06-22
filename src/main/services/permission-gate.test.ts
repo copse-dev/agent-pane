@@ -4,6 +4,7 @@ import {
   decideShellPermission,
   decideWebFetchPermission,
   decideWebSearchPermission,
+  shellSandboxFailureShouldOfferUnsandboxedRetry,
   SANDBOX_TOOLS,
 } from './permission-policy.ts'
 import { DEFAULT_WEB_ALLOWED_ORIGINS } from './web-origin-policy.ts'
@@ -120,6 +121,17 @@ describe('decideShellPermission', () => {
     })
     assert.equal(d.action, 'prompt')
     assert.ok(d.reasons.some((x) => x.includes('GitHub CLI')))
+  })
+
+  it('does not offer unsandboxed retries for network-only sandbox failures', () => {
+    assert.equal(
+      shellSandboxFailureShouldOfferUnsandboxedRetry('curl https://example.com', root),
+      false,
+    )
+  })
+
+  it('still offers unsandboxed retries for outside-filesystem sandbox failures', () => {
+    assert.equal(shellSandboxFailureShouldOfferUnsandboxedRetry('ls ~/.ssh', root), true)
   })
 
   it('prompts for home-directory paths when OS sandbox is active', () => {

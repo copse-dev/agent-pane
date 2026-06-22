@@ -4,7 +4,8 @@
  * INTENDED behavior for each platform so it can't silently drift:
  *
  * - macOS + ASRT sandbox active  → sandbox-contained commands auto-run,
- *   external commands prompt (then run outside the sandbox).
+ *   network commands prompt and still run inside the sandbox network allowlist;
+ *   outside-filesystem commands prompt before running outside the sandbox.
  * - Any platform, sandbox unavailable (Linux/Windows, or macOS init failure)
  *   → static analysis decides; the optional LM Studio classifier can upgrade a
  *   prompt to auto-run only when confident enough.
@@ -17,6 +18,7 @@ import { decideShellPermission, shellRequiresOutsideSandbox } from './permission
 const root = '/Users/me/project'
 const SANDBOXED = 'npm test' // stays within the workspace, no network
 const EXTERNAL = 'curl https://example.com' // network access
+const OUTSIDE_FS = 'ls ~/.ssh'
 
 describe('shell permissions: macOS with ASRT sandbox active', () => {
   const opts = {
@@ -31,11 +33,17 @@ describe('shell permissions: macOS with ASRT sandbox active', () => {
     assert.equal(d.action, 'allow')
   })
 
-  it('prompts before external commands (which then run outside the sandbox)', () => {
+  it('prompts before network commands while keeping them inside the sandbox', () => {
     const d = decideShellPermission(EXTERNAL, { ...opts, classification: null })
     assert.equal(d.action, 'prompt')
-    assert.equal(shellRequiresOutsideSandbox(EXTERNAL, root, true), true)
+    assert.equal(shellRequiresOutsideSandbox(EXTERNAL, root, true), false)
     assert.equal(shellRequiresOutsideSandbox(SANDBOXED, root, true), false)
+  })
+
+  it('runs outside the sandbox only for outside-filesystem access after approval', () => {
+    const d = decideShellPermission(OUTSIDE_FS, { ...opts, classification: null })
+    assert.equal(d.action, 'prompt')
+    assert.equal(shellRequiresOutsideSandbox(OUTSIDE_FS, root, true), true)
   })
 
   it('ignores the safety classifier when the OS sandbox is the boundary', () => {

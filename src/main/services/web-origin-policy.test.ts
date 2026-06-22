@@ -5,6 +5,7 @@ import {
   isWebOriginAllowed,
   normalizeWebAllowedOrigins,
   parseFetchUrl,
+  sandboxAllowedDomainsFromOrigins,
   validateWebOriginPattern,
   webAllowedOriginsWithDefaults,
   webOriginKey,
@@ -54,5 +55,17 @@ describe('web-origin-policy', () => {
 
   it('uses defaults when no allowlist is saved', () => {
     assert.deepEqual(webAllowedOriginsWithDefaults(null), [...DEFAULT_WEB_ALLOWED_ORIGINS])
+  })
+
+  it('converts origins to sandbox proxy domain rules', () => {
+    assert.deepEqual(
+      sandboxAllowedDomainsFromOrigins([
+        'https://example.com:8443',
+        'https://*.example.com',
+        'http://localhost:*',
+        'https://example.com',
+      ]),
+      ['example.com', '*.example.com', 'localhost'],
+    )
   })
 })

@@ -90,6 +90,11 @@ export function normalizeWebAllowedOrigins(input: readonly string[]): string[] {
   return [...new Set(input.map(validateWebOriginPattern))]
 }
 
+export function sandboxAllowedDomainsFromOrigins(input: readonly string[]): string[] {
+  const domains = input.map((entry) => parseOriginPattern(entry).hostname)
+  return [...new Set(domains)]
+}
+
 export function parseFetchUrl(input: string): URL {
   const url = new URL(input)
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
