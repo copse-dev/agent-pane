@@ -418,4 +418,54 @@ describe('runAgentLoop', () => {
     assert.equal(chunks.at(-1)?.type, 'done')
     assertToolPairingValid(messages)
   })
+
+  it('prefers per-stream usage chunks over the shared lastUsage field (#112)', async () => {
+    const provider = {
+      lastUsage: { inputTokens: 99999, outputTokens: 88888 },
+      async *stream(): AsyncIterable<StreamChunk> {
+        yield { type: 'text', text: 'answer' }
+        yield { type: 'usage', model: 'real-model', inputTokens: 321, outputTokens: 12 }
+        yield { type: 'done' }
+      },
+    }
+    const chunks: StreamChunk[] = []
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'hi' }],
+      tools: [],
+      usageModel: 'attributed-model',
+      getLastUsage: () => provider.lastUsage,
+      onChunk: (c) => chunks.push(c),
+      executeTool: async () => '',
+    })
+    const usage = chunks.find((c) => c.type === 'usage')
+    assert.ok(usage && usage.type === 'usage')
+    assert.equal(usage.inputTokens, 321)
+    assert.equal(usage.outputTokens, 12)
+    assert.equal(usage.model, 'attributed-model')
+  })
+
+  it('falls back to getLastUsage when the stream emits no usage chunk', async () => {
+    const provider = {
+      lastUsage: { inputTokens: 120, outputTokens: 80 },
+      async *stream(): AsyncIterable<StreamChunk> {
+        yield { type: 'text', text: 'answer' }
+        yield { type: 'done' }
+      },
+    }
+    const chunks: StreamChunk[] = []
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'hi' }],
+      tools: [],
+      usageModel: 'attributed-model',
+      getLastUsage: () => provider.lastUsage,
+      onChunk: (c) => chunks.push(c),
+      executeTool: async () => '',
+    })
+    const usage = chunks.find((c) => c.type === 'usage')
+    assert.ok(usage && usage.type === 'usage')
+    assert.equal(usage.inputTokens, 120)
+    assert.equal(usage.outputTokens, 80)
+  })
 })

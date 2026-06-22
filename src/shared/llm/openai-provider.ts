@@ -52,13 +52,15 @@ export class OpenAIProvider implements LLMProvider {
 
         const toolCallBuilders = new Map<number, { id: string; name: string; argsJson: string }>()
         let finishReason: string | undefined
+        let streamUsage: { inputTokens: number; outputTokens: number } | null = null
 
         for await (const event of stream) {
           if (event.usage) {
-            self.lastUsage = {
+            streamUsage = {
               inputTokens: event.usage.prompt_tokens,
               outputTokens: event.usage.completion_tokens,
             }
+            self.lastUsage = streamUsage
           }
           const delta = event.choices[0]?.delta
           if (!delta) continue
@@ -99,6 +101,16 @@ export class OpenAIProvider implements LLMProvider {
               }
             }
             toolCallBuilders.clear()
+          }
+        }
+        // Emit usage per-stream so consumers attribute it to this exact stream
+        // rather than racing on the shared lastUsage field (#112).
+        if (streamUsage && (streamUsage.inputTokens || streamUsage.outputTokens)) {
+          yield {
+            type: 'usage',
+            model,
+            inputTokens: streamUsage.inputTokens,
+            outputTokens: streamUsage.outputTokens,
           }
         }
         yield finishReason ? { type: 'done', stopReason: finishReason } : { type: 'done' }
