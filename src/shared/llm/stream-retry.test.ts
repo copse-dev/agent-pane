@@ -13,6 +13,23 @@ function httpError(status: number): Error {
   return Object.assign(new Error(`HTTP ${status}`), { status })
 }
 
+/**
+ * Builds a stream factory whose iterator runs `onPull` (expected to throw) on
+ * the first pull — i.e. a stream that fails before yielding anything. Modeled
+ * as a plain async iterable rather than an empty `async function*`, which would
+ * otherwise be a generator with no `yield`.
+ */
+function failingStream(onPull: () => void): () => AsyncIterable<string> {
+  return () => ({
+    [Symbol.asyncIterator]: (): AsyncIterator<string> => ({
+      async next(): Promise<IteratorResult<string>> {
+        onPull()
+        return { done: true, value: undefined }
+      },
+    }),
+  })
+}
+
 describe('isRetryableStreamError', () => {
   it('never retries user aborts (DOMException AbortError)', () => {
     assert.equal(isRetryableStreamError(new DOMException('Aborted', 'AbortError')), false)
@@ -138,11 +155,10 @@ describe('yieldStreamWithRetry', () => {
 
   it('does not retry a non-retryable error', async () => {
     let attempts = 0
-    // eslint-disable-next-line require-yield -- intentionally throws without yielding
-    async function* run() {
+    const run = failingStream(() => {
       attempts++
       throw httpError(400)
-    }
+    })
     await assert.rejects(async () => {
       for await (const _ of yieldStreamWithRetry(run, { maxAttempts: 3 })) void _
     })
@@ -151,11 +167,10 @@ describe('yieldStreamWithRetry', () => {
 
   it('gives up after maxAttempts retryable failures', async () => {
     let attempts = 0
-    // eslint-disable-next-line require-yield -- intentionally throws without yielding
-    async function* run() {
+    const run = failingStream(() => {
       attempts++
       throw httpError(503)
-    }
+    })
     await assert.rejects(async () => {
       for await (const _ of yieldStreamWithRetry(run, { maxAttempts: 2 })) void _
     })
@@ -165,12 +180,11 @@ describe('yieldStreamWithRetry', () => {
   it('stops retrying when the signal is aborted', async () => {
     const ac = new AbortController()
     let attempts = 0
-    // eslint-disable-next-line require-yield -- intentionally throws without yielding
-    async function* run() {
+    const run = failingStream(() => {
       attempts++
       ac.abort()
       throw httpError(503)
-    }
+    })
     await assert.rejects(async () => {
       for await (const _ of yieldStreamWithRetry(run, { maxAttempts: 5, signal: ac.signal })) void _
     })
