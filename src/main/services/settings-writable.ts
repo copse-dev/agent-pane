@@ -4,17 +4,20 @@ import { validateWebOriginPattern } from './web-origin-policy.ts'
 
 export const webAllowedOriginsSchema = z
   .array(
-    z.string().max(256).transform((value, ctx) => {
-      try {
-        return validateWebOriginPattern(value)
-      } catch (error) {
-        ctx.addIssue({
-          code: 'custom',
-          message: error instanceof Error ? error.message : 'Invalid web origin',
-        })
-        return z.NEVER
-      }
-    }),
+    z
+      .string()
+      .max(256)
+      .transform((value, ctx) => {
+        try {
+          return validateWebOriginPattern(value)
+        } catch (error) {
+          ctx.addIssue({
+            code: 'custom',
+            message: error instanceof Error ? error.message : 'Invalid web origin',
+          })
+          return z.NEVER
+        }
+      }),
   )
   .max(128)
 

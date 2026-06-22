@@ -50,7 +50,13 @@ function parseOriginPattern(input: string): OriginPattern {
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     throw new Error(`Web origin must use http or https: ${input}`)
   }
-  if (parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) {
+  if (
+    parsed.username ||
+    parsed.password ||
+    parsed.pathname !== '/' ||
+    parsed.search ||
+    parsed.hash
+  ) {
     throw new Error(`Web origin must not include credentials, path, query, or fragment: ${input}`)
   }
 
@@ -131,8 +137,8 @@ function assertLowRiskHost(hostname: string): void {
     return
   }
 
-  // Single-label names other than localhost commonly resolve on local networks.
-  if (!host.includes('.')) {
+  // Single-label and mDNS names commonly resolve on local networks.
+  if (!host.includes('.') || host.endsWith('.local')) {
     throw new Error(`fetch_url blocks local network hostnames: ${host}`)
   }
 }
@@ -173,7 +179,9 @@ export function clearWebOriginGrant(origin: string): void {
   temporaryAllowedOrigins.delete(origin)
 }
 
-export function webAllowedOriginsWithDefaults(saved: readonly string[] | null | undefined): string[] {
+export function webAllowedOriginsWithDefaults(
+  saved: readonly string[] | null | undefined,
+): string[] {
   return normalizeWebAllowedOrigins(saved?.length ? saved : DEFAULT_WEB_ALLOWED_ORIGINS)
 }
 

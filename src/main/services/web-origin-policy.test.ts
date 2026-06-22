@@ -13,7 +13,10 @@ import {
 describe('web-origin-policy', () => {
   it('allows default low-risk origins only', () => {
     assert.equal(
-      isWebOriginAllowed(new URL('https://duckduckgo.com/html?q=test'), DEFAULT_WEB_ALLOWED_ORIGINS),
+      isWebOriginAllowed(
+        new URL('https://duckduckgo.com/html?q=test'),
+        DEFAULT_WEB_ALLOWED_ORIGINS,
+      ),
       true,
     )
     assert.equal(
