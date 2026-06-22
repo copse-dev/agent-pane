@@ -207,8 +207,8 @@
 }
 .three-pane.is-right-panel-horizontal {
   display: grid;
-  grid-template-columns: var(--projects-width, 240px) 4px minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) 4px minmax(0, var(--files-height, 360px));
+  grid-template-columns: var(--projects-width, 240px) var(--pane-divider-width) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) var(--pane-divider-width) minmax(0, var(--files-height, 360px));
 }
 .three-pane.is-right-panel-horizontal .pane-projects {
   grid-column: 1;
@@ -219,7 +219,7 @@
 .three-pane.is-right-panel-horizontal #resizer-projects {
   grid-column: 2;
   grid-row: 1;
-  width: 4px;
+  width: var(--pane-divider-width);
   height: auto;
 }
 .three-pane.is-right-panel-horizontal .pane-chat {
@@ -230,8 +230,13 @@
   grid-column: 1 / -1;
   grid-row: 2;
   width: auto;
-  height: 4px;
+  height: var(--pane-divider-width);
   cursor: row-resize;
+}
+.three-pane.is-right-panel-horizontal #resizer-files::after {
+  inset-block: -2px;
+  left: 0;
+  right: 0;
 }
 .three-pane.is-right-panel-horizontal .pane-files {
   grid-column: 1 / -1;
