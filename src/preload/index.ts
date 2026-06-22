@@ -159,10 +159,10 @@ contextBridge.exposeInMainWorld('api', {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),
     setSecurity: (prefs: {
-      lmStudioUrl: string
-      lmStudioSafetyEnabled: boolean
-      lmStudioSafetyConfidenceThreshold: number
-      lmStudioSafetyModel: string
+      localServerUrl: string
+      safetyClassifierEnabled: boolean
+      safetyConfidenceThreshold: number
+      safetyModel: string
       autoRunSandboxCommands: boolean
       mcpAutoAllowReadOnly: boolean
     }) => ipcRenderer.invoke('settings:setSecurity', prefs),

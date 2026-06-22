@@ -40,10 +40,10 @@ export const PREFERRED_MODEL_IDS = PREFERRED_MODELS.map((m) => m.id)
 export function preferredModelSettingKey(role: PreferredModelRole): string {
   switch (role) {
     case 'chat':
-      return 'lmStudioModel'
+      return 'localDefaultModel'
     case 'smallTasks':
       return 'smallTasksModel'
     case 'safety':
-      return 'lmStudioSafetyModel'
+      return 'safetyModel'
   }
 }

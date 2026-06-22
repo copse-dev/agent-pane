@@ -16,10 +16,10 @@ const windowBoundsSchema = z.object({
 const MAIN_ONLY_SETTING_SCHEMAS = {
   windowBounds: windowBoundsSchema,
   // Security / safety toggles read in the main process.
-  lmStudioUrl: z.string().max(2048),
-  lmStudioSafetyEnabled: z.boolean(),
-  lmStudioSafetyConfidenceThreshold: z.number().min(0).max(1),
-  lmStudioSafetyModel: z.string().max(256),
+  localServerUrl: z.string().max(2048),
+  safetyClassifierEnabled: z.boolean(),
+  safetyConfidenceThreshold: z.number().min(0).max(1),
+  safetyModel: z.string().max(256),
   autoRunSandboxCommands: z.boolean(),
   mcpAutoAllowReadOnly: z.boolean(),
   safeInstallEnabled: z.boolean(),

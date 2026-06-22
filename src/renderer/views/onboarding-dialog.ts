@@ -165,16 +165,19 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
     await apiKeys.saveKeys()
     const routingValues = routing.readValues()
     await lmStudio.saveConnection({
-      lmStudioSafetyModel: routingValues.lmStudioSafetyModel || LM_STUDIO_MODEL_IDS.safety,
+      safetyModel: routingValues.safetyModel || LM_STUDIO_MODEL_IDS.safety,
     })
-    await api.settings.set('lmStudioModel', routingValues.lmStudioModel || LM_STUDIO_MODEL_IDS.chat)
+    await api.settings.set(
+      'localDefaultModel',
+      routingValues.localDefaultModel || LM_STUDIO_MODEL_IDS.chat,
+    )
     await api.settings.set(
       'smallTasksModel',
       lmStudioChatModelValue(LM_STUDIO_MODEL_IDS.smallTasks),
     )
-    await api.settings.set('lmStudioSubagentModel', routingValues.lmStudioSubagentModel)
-    await api.settings.set('lmStudioForSubagents', true)
-    await api.settings.set('lmStudioForTodoItems', true)
+    await api.settings.set('subagentModel', routingValues.subagentModel)
+    await api.settings.set('localSubagentsEnabled', true)
+    await api.settings.set('localTodoItemsEnabled', true)
     await api.settings.set('model', lmStudioChatModelValue(LM_STUDIO_MODEL_IDS.chat))
     await api.settings.set('onboardingCompleted', true)
     store.setState({
