@@ -5,6 +5,7 @@ import { PREFERRED_MODEL_IDS } from '@shared/preferred-models.ts'
 import { fetchLmStudioModelsCached, lmStudioApiKey, lmStudioOrigin } from './lm-studio-models.ts'
 import { getSetting } from './settings.ts'
 import { DEFAULT_LM_STUDIO_URL } from '@shared/lm-studio-defaults.ts'
+import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
 
 export interface LmStudioDetection {
   serverRunning: boolean
@@ -102,7 +103,7 @@ export async function downloadLmStudioModel(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ model: modelId }),
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(FETCH_TIMEOUTS.downloadStart),
     })
     if (!res.ok) {
       let detail = `HTTP ${res.status}`
@@ -135,7 +136,7 @@ export async function getLmStudioDownloadStatus(
       `${origin}/api/v1/models/download/status/${encodeURIComponent(jobId)}`,
       {
         headers: { Authorization: `Bearer ${key}` },
-        signal: AbortSignal.timeout(8_000),
+        signal: AbortSignal.timeout(FETCH_TIMEOUTS.downloadStatus),
       },
     )
     if (!res.ok) {
