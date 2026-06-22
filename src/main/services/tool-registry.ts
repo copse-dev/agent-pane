@@ -1,4 +1,4 @@
-import { zodToJsonSchema } from 'zod-to-json-schema'
+import { z } from 'zod'
 import type { ToolDefinition, LLMTool } from '@shared/types'
 import type { PermissionCheck } from './permission-policy.ts'
 
@@ -38,7 +38,7 @@ export class ToolRegistry {
       description: t.description,
       parameters:
         t.rawParameters ??
-        (zodToJsonSchema(t.parameters, { target: 'openApi3' }) as Record<string, unknown>),
+        (z.toJSONSchema(t.parameters, { target: 'openapi-3.0' }) as Record<string, unknown>),
     }))
   }
 
