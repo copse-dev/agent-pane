@@ -316,6 +316,19 @@ export function setThreadTitle(store: AppStore, threadId: string, title: string)
   store.emit('threads_changed')
 }
 
+export function setThreadWorkingBrief(
+  store: AppStore,
+  threadId: string,
+  workingBrief: string,
+): void {
+  const { threads } = store.getState()
+  const updated = threads.map((t) =>
+    t.id !== threadId ? t : { ...t, workingBrief, updatedAt: Date.now() },
+  )
+  store.setState({ threads: updated })
+  store.emit('threads_changed')
+}
+
 export function setThreadGitBranch(store: AppStore, threadId: string, branch: string): void {
   const { threads } = store.getState()
   const updated = threads.map((t) =>
