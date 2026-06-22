@@ -4,16 +4,29 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedPortraitRightPanelFixture } from './helpers/seed-config.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
+const PORTRAIT_WIDTH = 760
+const PORTRAIT_HEIGHT = 1180
 
-async function simulateViewport(width: number, height: number): Promise<void> {
+async function setPortraitWindow(): Promise<void> {
   await browser.execute(
-    (nextWidth, nextHeight) => {
-      Object.defineProperty(window, 'innerWidth', { configurable: true, value: nextWidth })
-      Object.defineProperty(window, 'innerHeight', { configurable: true, value: nextHeight })
-      window.dispatchEvent(new Event('resize'))
+    (width, height) => {
+      window.resizeTo(width, height)
     },
-    width,
-    height,
+    PORTRAIT_WIDTH,
+    PORTRAIT_HEIGHT,
+  )
+  await browser.waitUntil(
+    async () => {
+      const size = await browser.execute(() => ({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      }))
+      return size.height >= 700 && size.height / size.width >= 1.35
+    },
+    {
+      timeout: 5_000,
+      timeoutMsg: 'expected Electron window to resize to a tall portrait viewport',
+    },
   )
 }
 
@@ -22,7 +35,7 @@ async function openExplorerInPortraitWindow(autoPortraitRightPanel: boolean): Pr
   seedPortraitRightPanelFixture(process.cwd(), autoPortraitRightPanel)
   await browser.reloadSession()
   await $('.prompt-input').waitForExist({ timeout: 30_000 })
-  await simulateViewport(640, 1000)
+  await setPortraitWindow()
   await $('[aria-label="Toggle right panel"]').click()
   await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
 }
