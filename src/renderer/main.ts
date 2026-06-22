@@ -29,7 +29,11 @@ import {
 import { mountApprovalDialog } from './views/approval-dialog.ts'
 import { startAgentController } from './controller/agent.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
-import { addProjectFromPath, restoreProject } from './controller/projects.ts'
+import {
+  addProjectFromPath,
+  attachProjectThreadCache,
+  restoreProject,
+} from './controller/projects.ts'
 import {
   openRightPanelWithWorkspace,
   toggleFilesPaneWithWorkspace,
@@ -71,6 +75,7 @@ async function boot() {
   })
   startAgentController(store, api)
   attachAutosave(store, api)
+  attachProjectThreadCache(store)
 
   mountTitlebar(document.getElementById('titlebar')!, store, api)
 

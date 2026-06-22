@@ -935,6 +935,8 @@ export function seedToolDisplayFixture(workspaceRoot: string): void {
     JSON.stringify({
       projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
       activeProjectId: projectId,
+      expandedProjectId: projectId,
+      activeThreadId: threadId,
       [`threads:${projectId}`]: [
         {
           id: threadId,
