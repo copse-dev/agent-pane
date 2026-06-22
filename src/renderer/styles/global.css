@@ -77,6 +77,29 @@ body {
   overflow-y: auto;
   padding: var(--spacing-xs) 0;
 }
+.project-line {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: var(--spacing-xs);
+}
+.project-line .project-row {
+  flex: 1;
+  min-width: 0;
+}
+.project-new-thread-btn {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius);
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text-secondary);
+}
+.project-new-thread-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
 .project-row {
   display: flex;
   align-items: center;
@@ -141,9 +164,6 @@ body {
 .chat-row:hover .chat-delete {
   opacity: 1;
 }
-.chat-new {
-  color: var(--text-muted);
-}
 .pane-chat {
   position: relative;
   flex: 1;
@@ -153,6 +173,27 @@ body {
   min-width: 0;
   min-height: 0;
   --chat-composer-height: 148px;
+}
+.pane-chat.composer-centered .conversation {
+  padding-bottom: 0;
+}
+.pane-chat.composer-centered #input-bar {
+  top: 50%;
+  bottom: auto;
+  left: 50%;
+  right: auto;
+  width: min(720px, calc(100% - 2 * var(--spacing-lg)));
+  transform: translate(-50%, -50%);
+  border-top: none;
+  border-radius: var(--radius);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.pane-chat.composer-centered .prompt-input {
+  border-top: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.pane-chat.composer-centered .input-footer {
+  border-radius: 0 0 var(--radius) var(--radius);
 }
 .conversation {
   flex: 1 1 0;
@@ -1342,6 +1383,43 @@ label {
   min-width: 0;
   max-width: min(220px, 40vw);
 }
+.footer-branch-host {
+  min-width: 0;
+  flex-shrink: 1;
+}
+.footer-branch-status {
+  display: inline-flex;
+  align-items: center;
+  max-width: min(200px, 30vw);
+  font-size: 11px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  padding: 0 4px;
+  cursor: default;
+  min-width: 0;
+}
+.footer-branch-status.is-link {
+  color: var(--accent);
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.footer-branch-status.is-link:hover {
+  color: var(--text-primary);
+}
+.footer-branch-status.is-mismatch {
+  color: var(--warning);
+}
+.footer-branch-status.is-mismatch.is-link {
+  color: var(--warning);
+}
+.footer-branch-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
 .model-picker {
   position: relative;
 }
@@ -2193,6 +2271,24 @@ label {
 .mcp-server-row.mcp-state-connected .mcp-server-summary {
   color: var(--success);
 }
+.mcp-server-row.mcp-state-untrusted .mcp-server-summary {
+  color: var(--warning, #d29922);
+}
+.mcp-trust-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border: 1px solid var(--warning, #d29922);
+  border-radius: 6px;
+  background: rgba(210, 153, 34, 0.08);
+  font-size: 12px;
+}
+.mcp-trust-banner button {
+  flex: none;
+}
 .mention-picker {
   position: absolute;
   bottom: 100%;
@@ -2448,4 +2544,33 @@ label {
   color: var(--text-muted);
   font-size: 13px;
   margin: 0;
+}
+
+/* Transient error/notice toasts (renderer IPC failures, save errors). */
+.toast-host {
+  position: fixed;
+  bottom: var(--spacing-md, 12px);
+  right: var(--spacing-md, 12px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 300;
+  pointer-events: none;
+  max-width: 360px;
+}
+.toast {
+  pointer-events: auto;
+  padding: 10px 12px;
+  border-radius: var(--radius, 4px);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  line-height: 1.4;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  word-break: break-word;
+}
+.toast-error {
+  border-color: var(--error);
 }

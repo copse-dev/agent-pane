@@ -1,6 +1,12 @@
-import { describe, it } from 'node:test'
+import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { parsePorcelainV1 } from './git-service.ts'
+import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { spawnSync } from 'node:child_process'
+import { classifyGitBlob, getGitDiffText, parsePorcelainV1 } from './git-service.ts'
+import { setWorkspaceRootForTest } from './workspace.ts'
+import { setGitAvailableForTest } from './tool-availability.ts'
 
 describe('parsePorcelainV1', () => {
   it('returns empty lists for clean tree', () => {
@@ -28,10 +34,24 @@ describe('parsePorcelainV1', () => {
     assert.deepEqual(result.staged, [{ path: 'old.ts', status: 'deleted' }])
   })
 
-  it('parses renames', () => {
-    const raw = 'R  old.ts\0new.ts\0'
+  it('parses renames (record path is the destination, paired token is the source)', () => {
+    const raw = 'R  new.ts\0old.ts\0'
     const result = parsePorcelainV1(raw)
     assert.deepEqual(result.staged, [{ path: 'new.ts', status: 'renamed' }])
+  })
+
+  it('stays aligned after a rename when parsing subsequent records', () => {
+    const raw = 'R  new.ts\0old.ts\0 M after.ts\0'
+    const result = parsePorcelainV1(raw)
+    assert.deepEqual(result.staged, [{ path: 'new.ts', status: 'renamed' }])
+    assert.deepEqual(result.unstaged, [{ path: 'after.ts', status: 'modified' }])
+  })
+
+  it('does not mis-align when a rename record is missing its paired token (#130)', () => {
+    const raw = 'R  new.ts\0 M after.ts\0'
+    const result = parsePorcelainV1(raw)
+    assert.deepEqual(result.staged, [{ path: 'new.ts', status: 'renamed' }])
+    assert.deepEqual(result.unstaged, [{ path: 'after.ts', status: 'modified' }])
   })
 
   it('parses both staged and unstaged on same file', () => {
@@ -39,5 +59,70 @@ describe('parsePorcelainV1', () => {
     const result = parsePorcelainV1(raw)
     assert.deepEqual(result.staged, [{ path: 'src/both.ts', status: 'modified' }])
     assert.deepEqual(result.unstaged, [{ path: 'src/both.ts', status: 'modified' }])
+  })
+})
+
+describe('classifyGitBlob (#130)', () => {
+  it('treats a non-zero exit as a missing blob, not an empty file', () => {
+    const result = classifyGitBlob('', 128)
+    assert.deepEqual(result, { content: '', exists: false, isBinary: false })
+  })
+
+  it('treats a clean exit with empty output as a genuinely empty file', () => {
+    const result = classifyGitBlob('', 0)
+    assert.deepEqual(result, { content: '', exists: true, isBinary: false })
+  })
+
+  it('detects binary content (NUL bytes) and substitutes a placeholder', () => {
+    const result = classifyGitBlob('abc\0def', 0)
+    assert.equal(result.exists, true)
+    assert.equal(result.isBinary, true)
+    assert.match(result.content, /Binary file/)
+    assert.doesNotMatch(result.content, /def/)
+  })
+
+  it('returns text content unchanged for a normal blob', () => {
+    const result = classifyGitBlob('hello\nworld\n', 0)
+    assert.deepEqual(result, { content: 'hello\nworld\n', exists: true, isBinary: false })
+  })
+})
+
+const gitOk = spawnSync('git', ['--version']).status === 0
+
+describe('getGitDiffText untracked files', { skip: !gitOk && 'git not installed' }, () => {
+  let repo = ''
+  let restore: (() => void) | undefined
+
+  const git = (...args: string[]) => spawnSync('git', args, { cwd: repo })
+
+  before(async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-diff-'))
+    git('init', '-q')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    await writeFile(join(repo, 'tracked.txt'), 'one\n')
+    git('add', 'tracked.txt')
+    git('commit', '-qm', 'init')
+    restore = setWorkspaceRootForTest(repo)
+    setGitAvailableForTest(true)
+  })
+
+  after(async () => {
+    setGitAvailableForTest(null)
+    restore?.()
+    if (repo) await rm(repo, { recursive: true, force: true })
+  })
+
+  it('includes an untracked file in the diff for a specific path', async () => {
+    await writeFile(join(repo, 'fresh.txt'), 'brand new\n')
+    const diff = await getGitDiffText('fresh.txt')
+    assert.notEqual(diff, '(no output)')
+    assert.match(diff, /fresh\.txt/)
+    assert.match(diff, /brand new/)
+  })
+
+  it('includes untracked files when no path is given', async () => {
+    const diff = await getGitDiffText()
+    assert.match(diff, /fresh\.txt/)
   })
 })

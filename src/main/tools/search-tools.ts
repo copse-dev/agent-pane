@@ -18,8 +18,19 @@ export const searchCodeTool: ToolDefinition = {
     fixed_string: z.boolean().optional().default(false).describe('Treat pattern as literal string'),
     case_sensitive: z.boolean().optional().default(false),
     max_results: z.number().int().min(1).max(500).optional().default(50),
+    context_lines: z
+      .number()
+      .int()
+      .min(0)
+      .max(20)
+      .optional()
+      .default(0)
+      .describe('Lines of surrounding context to show before and after each match (like rg -C)'),
   }),
-  async execute({ pattern, path, file_glob, fixed_string, case_sensitive, max_results }, signal) {
+  async execute(
+    { pattern, path, file_glob, fixed_string, case_sensitive, max_results, context_lines },
+    signal,
+  ) {
     const root = getWorkspaceRoot()
     if (!root) return 'No workspace open.'
     const searchRoot = path ? resolveWorkspacePath(path) : root
@@ -42,6 +53,7 @@ export const searchCodeTool: ToolDefinition = {
       caseSensitive: case_sensitive,
       fileGlob: file_glob,
       maxResults: max_results,
+      contextLines: context_lines,
       signal,
     })
 
@@ -61,10 +73,11 @@ export const findFilesTool: ToolDefinition = {
   async execute({ pattern, max_results }) {
     const idx = getIndex()
     if (!idx) return 'File index not available. Try opening the workspace again.'
-    const matches = micromatch(idx.paths, pattern).slice(0, max_results)
-    if (matches.length === 0) return `No files match: ${pattern}`
-    return (
-      matches.join('\n') + (matches.length >= max_results ? `\n[Truncated at ${max_results}]` : '')
-    )
+    // Take one extra so we can tell "exactly max_results total" from "more were dropped".
+    const found = micromatch(idx.paths, pattern).slice(0, max_results + 1)
+    if (found.length === 0) return `No files match: ${pattern}`
+    const truncated = found.length > max_results
+    const matches = truncated ? found.slice(0, max_results) : found
+    return matches.join('\n') + (truncated ? `\n[Truncated at ${max_results}]` : '')
   },
 }

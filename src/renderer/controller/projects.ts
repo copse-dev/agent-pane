@@ -1,10 +1,39 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { createThread } from '@shared/store/thread-helpers.ts'
+import { createThread, normalizeBlankThreads } from '@shared/store/thread-helpers.ts'
 import { loadThreads, saveThreads, saveProjects } from './persistence.ts'
 
 const uuid = () => globalThis.crypto.randomUUID()
 const basename = (p: string) => p.split('/').pop() ?? p
+
+async function trySetWorkspace(api: ApiClient, path: string): Promise<boolean> {
+  try {
+    await api.workspace.set(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function dropMissingProject(store: AppStore, api: ApiClient, id: string): Promise<void> {
+  const projects = store.getState().projects.filter((p) => p.id !== id)
+  const nextActiveId = projects[0]?.id ?? null
+  await saveProjects(api, projects, nextActiveId)
+  store.setState({
+    projects,
+    activeProjectId: nextActiveId,
+    workspaceRoot: null,
+    threads: [],
+    activeThreadId: null,
+    openFile: null,
+    filesPaneOpen: false,
+  })
+  store.emit('projects_changed')
+  store.emit('workspace_changed')
+  store.emit('threads_changed')
+  store.emit('panel_changed')
+  store.emit('files_pane_changed')
+}
 
 // Core project switch: persist the outgoing project's threads, point the
 // workspace at the new path, load the new project's threads, and broadcast the
@@ -15,7 +44,10 @@ async function activate(store: AppStore, api: ApiClient, id: string, path: strin
     await saveThreads(api, activeProjectId, threads)
   }
   await saveProjects(api, store.getState().projects, id)
-  await api.workspace.set(path)
+  if (!(await trySetWorkspace(api, path))) {
+    await dropMissingProject(store, api, id)
+    return
+  }
   const loaded = await loadThreads(api, id)
   store.setState({
     activeProjectId: id,
@@ -27,6 +59,7 @@ async function activate(store: AppStore, api: ApiClient, id: string, path: strin
     filesPaneOpen: false,
   })
   if (loaded.length === 0) createThread(store)
+  else normalizeBlankThreads(store)
   await saveProjects(api, store.getState().projects, id)
   store.emit('projects_changed')
   store.emit('workspace_changed')
@@ -63,7 +96,13 @@ export async function addProjectFromPath(
 export async function restoreProject(store: AppStore, api: ApiClient, id: string): Promise<void> {
   const proj = store.getState().projects.find((p) => p.id === id)
   if (!proj) return
-  await api.workspace.set(proj.path)
+  if (!(await trySetWorkspace(api, proj.path))) {
+    await dropMissingProject(store, api, id)
+    if (store.getState().activeProjectId) {
+      await restoreProject(store, api, store.getState().activeProjectId!)
+    }
+    return
+  }
   const loaded = await loadThreads(api, id)
   store.setState({
     activeProjectId: id,
@@ -72,6 +111,7 @@ export async function restoreProject(store: AppStore, api: ApiClient, id: string
     activeThreadId: loaded[0]?.id ?? null,
   })
   if (loaded.length === 0) createThread(store)
+  else normalizeBlankThreads(store)
   store.emit('workspace_changed')
   store.emit('threads_changed')
 }

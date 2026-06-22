@@ -1,56 +1,45 @@
-/** Heuristics for detecting when a shell command failed due to macOS project sandbox limits. */
+/**
+ * Detect when a shell command failed because the macOS project sandbox blocked it.
+ *
+ * SECURITY (issue #104): this detection must NOT use command-controlled stdout/stderr.
+ * A command can trivially `echo "operation not permitted"` to fake a sandbox failure
+ * and socially-engineer the user into approving an unsandboxed re-run (full env, full
+ * network). We therefore key the decision off runner/exit signals only:
+ *   - `violationCount`: how many sandbox policy violations the ASRT runner/kernel logged
+ *     for this exact command (a side channel the command cannot write to), and
+ *   - `spawnFailed`: the sandbox wrapper process itself failed to start (e.g. the ASRT
+ *     binary errored), surfaced from the child-process 'error' event, not from output.
+ */
+
+export interface SandboxFailureSignals {
+  /** Exit code of the (sandboxed) command; null if it never exited cleanly. */
+  exitCode: number | null
+  /** Sandbox policy violations the runner recorded for this command (runner-side). */
+  violationCount: number
+  /** The sandbox wrapper process failed to spawn/start (child 'error' event). */
+  spawnFailed?: boolean
+}
 
 export interface SandboxFailureDetection {
   likely: boolean
   reasons: string[]
 }
 
-const SANDBOX_FAILURE_PATTERNS: Array<{ re: RegExp; reason: string }> = [
-  { re: /operation not permitted/i, reason: 'OS sandbox denied the operation' },
-  {
-    re: /(?:syscall|system call).*(?:denied|not permitted)/i,
-    reason: 'system call blocked by sandbox',
-  },
-  { re: /\bdeny\b.*\b(?:network|file|process|mach)/i, reason: 'sandbox policy violation logged' },
-  { re: /network.*(?:denied|blocked|not allowed|unavailable)/i, reason: 'network access blocked' },
-  {
-    re: /(?:EPERM|EACCES).*(?:connect|open|read|write|spawn|launch)/i,
-    reason: 'permission error (EPERM/EACCES)',
-  },
-  { re: /seatbelt|sandbox.*denied/i, reason: 'sandbox restriction reported' },
-  { re: /posix_spawnp failed/i, reason: 'process spawn blocked by sandbox' },
-  {
-    re: /Failed to spawn (?:shell|process|pty)/i,
-    reason: 'shell/PTY spawn blocked by sandbox',
-  },
-]
-
-const BROWSER_RUNNER_HINT = /\b(playwright|puppeteer|cypress|chromedriver|geckodriver|selenium)\b/i
-
-const BROWSER_LAUNCH_FAILURE =
-  /(?:browser(?:type)?\.launch|failed to launch|executable (?:doesn't|does not) exist|spawn.*ENOENT|connect ECONNREFUSED)/i
-
-const DEV_TOOL_NOT_FOUND =
-  /\/bin\/(?:ba)?sh: (?:node|npm|npx|pnpm|yarn|corepack): command not found/i
-
-export function detectLikelySandboxFailure(
-  output: string,
-  exitCode: number | null,
-): SandboxFailureDetection {
-  if (exitCode === 0) return { likely: false, reasons: [] }
-
+export function detectSandboxFailure(signals: SandboxFailureSignals): SandboxFailureDetection {
   const reasons: string[] = []
-  for (const { re, reason } of SANDBOX_FAILURE_PATTERNS) {
-    if (re.test(output)) reasons.push(reason)
+
+  if (signals.spawnFailed) {
+    reasons.push('the sandbox wrapper failed to start the command')
   }
 
-  if (BROWSER_RUNNER_HINT.test(output) && BROWSER_LAUNCH_FAILURE.test(output)) {
-    reasons.push('browser/test runner likely needs network or paths outside the workspace')
-  }
-
-  if (exitCode === 127 && DEV_TOOL_NOT_FOUND.test(output)) {
+  // A non-zero exit combined with one or more runner-logged policy violations is a
+  // trustworthy "the sandbox blocked this" signal. A zero exit means the command
+  // succeeded regardless of any incidental violations, so never offer an escape.
+  if (signals.exitCode !== 0 && signals.violationCount > 0) {
     reasons.push(
-      'Node.js toolchain unavailable inside sandbox (often blocked home-directory installs)',
+      signals.violationCount === 1
+        ? 'the OS sandbox blocked 1 operation this command attempted'
+        : `the OS sandbox blocked ${signals.violationCount} operations this command attempted`,
     )
   }
 

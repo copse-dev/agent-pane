@@ -10,6 +10,7 @@ import {
   ESTIMATED_IMAGE_TOKENS,
   setLastMeasuredInputTokens,
   effectiveConversationTokens,
+  estimateConversationTokens,
 } from './trim-history.ts'
 
 beforeEach(() => {
@@ -114,6 +115,36 @@ describe('repairToolUseToolResultPairing', () => {
     const results = messages[1]?.role === 'tool' ? messages[1].toolResults : []
     assert.equal(results[0]?.result, CANCELLED_TOOL_RESULT)
   })
+
+  it('fills in only the unanswered tool_use ids of an existing tool message', () => {
+    const messages: LLMMessage[] = [
+      {
+        role: 'assistant',
+        content: [
+          { id: 'a1', name: 'read_file', args: {} },
+          { id: 'a2', name: 'list_dir', args: {} },
+        ],
+      },
+      { role: 'tool', toolResults: [{ toolCallId: 'a1', result: 'done' }] },
+    ]
+    repairToolUseToolResultPairing(messages)
+    assert.equal(messages.length, 2)
+    const results = messages[1]?.role === 'tool' ? messages[1].toolResults : []
+    assert.equal(results.length, 2)
+    assert.equal(results.find((r) => r.toolCallId === 'a1')?.result, 'done')
+    assert.equal(results.find((r) => r.toolCallId === 'a2')?.result, CANCELLED_TOOL_RESULT)
+  })
+
+  it('leaves fully paired tool_use/tool_result history untouched', () => {
+    const messages: LLMMessage[] = [
+      { role: 'user', content: 'go' },
+      { role: 'assistant', content: [{ id: 'a1', name: 'read_file', args: {} }] },
+      { role: 'tool', toolResults: [{ toolCallId: 'a1', result: 'done' }] },
+    ]
+    const before = JSON.stringify(messages)
+    repairToolUseToolResultPairing(messages)
+    assert.equal(JSON.stringify(messages), before)
+  })
 })
 
 describe('effectiveConversationTokens', () => {
@@ -137,5 +168,23 @@ describe('effectiveConversationTokens', () => {
     const tokens = estimateMessageTokens(messages)
     assert.ok(tokens >= ESTIMATED_IMAGE_TOKENS)
     assert.ok(tokens < 100_000 / 4)
+  })
+
+  it('excludes base64 image data from estimateConversationTokens (#53)', () => {
+    setLastMeasuredInputTokens(null)
+    const big = 'A'.repeat(200_000)
+    const withImage: LLMMessage[] = [
+      { role: 'user', content: [{ type: 'image', dataUrl: 'data:image/png;base64,' + big }] },
+    ]
+    const tokens = estimateConversationTokens(withImage)
+    // A 200K-char base64 image must not be counted at ~4 chars/token.
+    assert.ok(tokens < 200_000 / 4)
+    assert.ok(tokens >= ESTIMATED_IMAGE_TOKENS)
+  })
+
+  it('prefers measured input tokens over the estimate for trimming (#52)', () => {
+    const messages: LLMMessage[] = [{ role: 'user', content: 'short' }]
+    setLastMeasuredInputTokens(75_000)
+    assert.equal(effectiveConversationTokens(messages), 75_000)
   })
 })

@@ -47,6 +47,26 @@ export async function promptUnsandboxedShell(command: string, reasons: string[])
   return approved
 }
 
+/**
+ * Prompt to install Socket Firewall before running a package install. Declining
+ * cancels the install rather than running it unscanned.
+ */
+export async function promptInstallSocketFirewall(command: string): Promise<boolean> {
+  const { approved } = await requestApproval({
+    title: 'Install Socket Firewall?',
+    body: [
+      'This command installs packages and will be scanned by Socket Firewall (sfw)',
+      'to block known-malicious packages — but sfw is not installed yet.',
+      '',
+      'Install it now (npm install -g sfw) and continue? Declining cancels the install.',
+      '',
+      command,
+    ].join('\n'),
+    type: 'shell',
+  })
+  return approved
+}
+
 async function checkMcpPermission(toolName: string, args: unknown): Promise<boolean> {
   const meta = getMcpToolMeta(toolName)
   const decision = decideMcpPermission({
@@ -66,7 +86,7 @@ async function checkMcpPermission(toolName: string, args: unknown): Promise<bool
     type: 'mcp',
     allowRemember: true,
   })
-  if (approved && remember) rememberMcpTool(toolName)
+  if (approved && remember) await rememberMcpTool(toolName)
   return approved
 }
 

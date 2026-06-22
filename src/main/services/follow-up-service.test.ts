@@ -5,6 +5,8 @@ import {
   porcelainHasMergeConflicts,
   ghPrHasCiFailures,
   ghPrHasMergeConflicts,
+  parseGhOpenPr,
+  parseGhOpenPrList,
 } from './pr-context-service.ts'
 import { parseModelFollowUpIds } from './follow-up-service.ts'
 
@@ -45,6 +47,62 @@ describe('gh PR helpers', () => {
   it('detects merge conflicts from mergeable', () => {
     assert.equal(ghPrHasMergeConflicts({ mergeable: 'CONFLICTING' }), true)
     assert.equal(ghPrHasMergeConflicts({ mergeable: 'MERGEABLE' }), false)
+  })
+})
+
+describe('parseGhOpenPr', () => {
+  it('returns PR details for an open PR', () => {
+    assert.deepEqual(
+      parseGhOpenPr(
+        JSON.stringify({
+          state: 'OPEN',
+          number: 42,
+          title: 'Add feature',
+          url: 'https://github.com/org/repo/pull/42',
+        }),
+      ),
+      {
+        number: 42,
+        title: 'Add feature',
+        url: 'https://github.com/org/repo/pull/42',
+      },
+    )
+  })
+
+  it('returns null for closed PRs', () => {
+    assert.equal(
+      parseGhOpenPr(JSON.stringify({ state: 'MERGED', number: 1, url: 'https://x' })),
+      null,
+    )
+  })
+
+  it('returns null for invalid JSON', () => {
+    assert.equal(parseGhOpenPr('not json'), null)
+  })
+})
+
+describe('parseGhOpenPrList', () => {
+  it('returns the first PR from a list response', () => {
+    assert.deepEqual(
+      parseGhOpenPrList(
+        JSON.stringify([
+          {
+            number: 7,
+            title: 'Feature branch PR',
+            url: 'https://github.com/org/repo/pull/7',
+          },
+        ]),
+      ),
+      {
+        number: 7,
+        title: 'Feature branch PR',
+        url: 'https://github.com/org/repo/pull/7',
+      },
+    )
+  })
+
+  it('returns null for an empty list', () => {
+    assert.equal(parseGhOpenPrList('[]'), null)
   })
 })
 

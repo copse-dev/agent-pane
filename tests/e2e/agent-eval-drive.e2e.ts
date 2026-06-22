@@ -69,7 +69,9 @@ function readActiveThread(): Thread {
 }
 
 function assertExploreSubagentCompleted(thread: Thread): void {
-  const exploreCalls = thread.messages.flatMap((m) => m.toolCalls).filter((tc) => tc.name === 'explore')
+  const exploreCalls = thread.messages
+    .flatMap((m) => m.toolCalls)
+    .filter((tc) => tc.name === 'explore')
   assert.ok(exploreCalls.length > 0, 'expected at least one explore tool call')
   const completed = exploreCalls.filter(
     (tc) => tc.status === 'done' && typeof tc.result === 'string' && tc.result.trim().length > 20,

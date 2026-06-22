@@ -1,8 +1,14 @@
 import { safeStorage } from 'electron'
 import ElectronStore from 'electron-store'
 import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
+import { runSerialized } from './write-queue.ts'
+import { getSettingSchema } from './settings-schema.ts'
 
 const store = new ElectronStore<Record<string, unknown>>({ name: 'settings' })
+
+// Distinct write-queue namespace so settings keys can't collide with the shared
+// electron-store keys serialized elsewhere.
+const queueKey = (key: string) => `settings:${key}`
 
 interface StoredKey {
   v: 1
@@ -94,9 +100,28 @@ export function getLmStudioApiKey(): string {
 }
 
 export function getSetting<T>(key: string, fallback: T): T {
-  return (store.get(key) as T | undefined) ?? fallback
+  const raw = store.get(key)
+  if (raw === undefined || raw === null) return fallback
+  // If we have a schema for this key, validate on read so a corrupt/wrong-typed
+  // persisted value degrades to the fallback instead of being trusted blindly.
+  const schema = getSettingSchema(key)
+  if (schema) {
+    const result = schema.safeParse(raw)
+    return result.success ? (result.data as T) : fallback
+  }
+  return raw as T
 }
 
-export function setSetting(key: string, value: unknown): void {
-  store.set(key, value)
+/**
+ * Persist a setting. Writes are serialized per key (electron-store's file write
+ * is non-atomic, so concurrent writers could otherwise drop an update). When the
+ * key has a registered schema, the value is validated first and a bad value is
+ * rejected rather than silently corrupting the store.
+ */
+export function setSetting(key: string, value: unknown): Promise<void> {
+  const schema = getSettingSchema(key)
+  const toStore = schema ? schema.parse(value) : value
+  return runSerialized(queueKey(key), () => {
+    store.set(key, toStore)
+  })
 }

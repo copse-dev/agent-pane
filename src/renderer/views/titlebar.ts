@@ -3,13 +3,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { materialIconUrl, mountMaterialIcon } from '../icons/material-file-icons.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
-import { addProject } from '../controller/projects.ts'
-
-function ensureWorkspaceForPanel(api: ApiClient, store: AppStore): boolean {
-  if (store.getState().workspaceRoot) return true
-  void addProject(store, api)
-  return false
-}
+import { openRightPanelWithWorkspace, toggleFilesPaneWithWorkspace } from '../controller/panels.ts'
 
 function basename(p: string) {
   return p.split('/').pop() ?? p
@@ -55,33 +49,17 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
   root.append(leftCluster, dragRegion, filesBtn, terminalBtn, changesBtn)
 
   filesBtn.addEventListener('click', () => {
-    if (!store.getState().workspaceRoot) {
-      void addProject(store, _api)
-      return
-    }
-    const open = !store.getState().filesPaneOpen
-    store.setState({
-      filesPaneOpen: open,
-      ...(open ? { rightPanelMode: 'explorer' as const } : {}),
-    })
-    store.emit('files_pane_changed')
-    if (open) store.emit('right_panel_mode_changed')
+    toggleFilesPaneWithWorkspace(store, _api)
     syncPanelBtns()
   })
 
   terminalBtn.addEventListener('click', () => {
-    if (!ensureWorkspaceForPanel(_api, store)) return
-    store.setState({ filesPaneOpen: true, rightPanelMode: 'terminal' })
-    store.emit('files_pane_changed')
-    store.emit('right_panel_mode_changed')
+    openRightPanelWithWorkspace(store, _api, 'terminal')
     syncPanelBtns()
   })
 
   changesBtn.addEventListener('click', () => {
-    if (!ensureWorkspaceForPanel(_api, store)) return
-    store.setState({ filesPaneOpen: true, rightPanelMode: 'changes' })
-    store.emit('files_pane_changed')
-    store.emit('right_panel_mode_changed')
+    openRightPanelWithWorkspace(store, _api, 'changes')
     syncPanelBtns()
   })
 

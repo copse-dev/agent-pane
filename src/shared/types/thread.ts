@@ -32,6 +32,8 @@ export interface Thread {
   todos?: TodoItem[]
   /** Persisted parent/explore goal; set on the first user message in the thread. */
   workingBrief?: string
+  /** Git branch this thread was started on; set on first message and persisted. */
+  gitBranch?: string
   createdAt: number
   updatedAt: number
 }

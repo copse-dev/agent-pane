@@ -8,9 +8,25 @@ import { getWorkspaceRoot } from './workspace.ts'
 export interface TerminalSession {
   id: string
   pty: IPty
+  /** Identifies the renderer that created the session, for ownership checks. */
+  ownerId: number
 }
 
 const sessions = new Map<string, TerminalSession>()
+
+/**
+ * Resolve a session only if `ownerId` matches the one that created it. Returns
+ * `undefined` for unknown sessions; throws on an ownership mismatch so a renderer
+ * can never write to / resize / destroy a session it does not own.
+ */
+function ownedSession(sessionId: string, ownerId: number): TerminalSession | undefined {
+  const session = sessions.get(sessionId)
+  if (!session) return undefined
+  if (session.ownerId !== ownerId) {
+    throw new Error(`Terminal session ${sessionId} is not owned by the caller`)
+  }
+  return session
+}
 
 const DEFAULT_COLS = 80
 const DEFAULT_ROWS = 24
@@ -36,6 +52,7 @@ function attachPtyHandlers(win: BrowserWindow, sessionId: string, ptyProcess: IP
 
 async function spawnShell(
   win: BrowserWindow,
+  ownerId: number,
   cols: number,
   rows: number,
 ): Promise<TerminalSession> {
@@ -48,7 +65,7 @@ async function spawnShell(
     unsandboxed: true,
   })
 
-  const session: TerminalSession = { id: randomUUID(), pty: ptyProcess }
+  const session: TerminalSession = { id: randomUUID(), pty: ptyProcess, ownerId }
   sessions.set(session.id, session)
   attachPtyHandlers(win, session.id, ptyProcess)
   return session
@@ -56,27 +73,33 @@ async function spawnShell(
 
 export async function createTerminalSession(
   win: BrowserWindow,
+  ownerId: number,
   cols = DEFAULT_COLS,
   rows = DEFAULT_ROWS,
 ): Promise<string> {
-  const session = await spawnShell(win, cols, rows)
+  const session = await spawnShell(win, ownerId, cols, rows)
   return session.id
 }
 
-export function writeTerminalSession(sessionId: string, data: string): void {
-  const session = sessions.get(sessionId)
+export function writeTerminalSession(sessionId: string, ownerId: number, data: string): void {
+  const session = ownedSession(sessionId, ownerId)
   if (!session) throw new Error(`Unknown terminal session: ${sessionId}`)
   session.pty.write(data)
 }
 
-export function resizeTerminalSession(sessionId: string, cols: number, rows: number): void {
-  const session = sessions.get(sessionId)
+export function resizeTerminalSession(
+  sessionId: string,
+  ownerId: number,
+  cols: number,
+  rows: number,
+): void {
+  const session = ownedSession(sessionId, ownerId)
   if (!session) throw new Error(`Unknown terminal session: ${sessionId}`)
   if (cols > 0 && rows > 0) session.pty.resize(cols, rows)
 }
 
-export function destroyTerminalSession(sessionId: string): void {
-  const session = sessions.get(sessionId)
+export function destroyTerminalSession(sessionId: string, ownerId: number): void {
+  const session = ownedSession(sessionId, ownerId)
   if (!session) return
   session.pty.kill()
   sessions.delete(sessionId)

@@ -1,6 +1,6 @@
 import type { StreamChunk, UsageDelta } from '@shared/types'
 import type { SkillSummary } from '@shared/types/skills.ts'
-import type { GitFileDiff, GitStatusResult } from '@shared/types/git.ts'
+import type { GitFileDiff, GitStatusResult, GitBranchStatus } from '@shared/types/git.ts'
 import type { McpServerStatus } from '@shared/types/mcp.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
 
@@ -9,6 +9,8 @@ export interface ApiClient {
     open: () => Promise<string | null>
     get: () => Promise<string | null>
     set: (root: string) => Promise<string>
+    isTrusted: () => Promise<boolean>
+    setTrusted: (trusted: boolean) => Promise<McpServerStatus[]>
     onOpened: (handler: (root: string) => void) => () => void
   }
   fs: {
@@ -107,6 +109,10 @@ export interface ApiClient {
   }
   menu: {
     onSettings: (handler: () => void) => () => void
+    onTogglePanel: (handler: () => void) => () => void
+    onShowExplorer: (handler: () => void) => () => void
+    onShowTerminal: (handler: () => void) => () => void
+    onShowChanges: (handler: () => void) => () => void
   }
   settings: {
     get: (key: string) => Promise<unknown>
@@ -148,6 +154,10 @@ export interface ApiClient {
     isAvailable: () => Promise<boolean>
     status: () => Promise<GitStatusResult | null>
     fileDiff: (path: string, staged: boolean) => Promise<GitFileDiff | null>
+    branchStatus: (forBranch?: string) => Promise<GitBranchStatus>
+  }
+  shell: {
+    openExternal: (url: string) => Promise<void>
   }
 }
 

@@ -109,12 +109,21 @@ function reserveLlmCall(budget: LlmCallBudget): boolean {
   return true
 }
 
+type StepUsage = { inputTokens: number; outputTokens: number }
+
+/**
+ * Resolve a single step's usage, preferring usage captured from the stream
+ * itself (`streamUsage`) over the shared mutable `provider.lastUsage`. Reading
+ * per-stream usage avoids cross-stream races and mis-attribution when a
+ * subagent reuses the parent provider (#112).
+ */
 function emitStepUsage(
-  getLastUsage: (() => { inputTokens: number; outputTokens: number } | null) | undefined,
+  streamUsage: StepUsage | null,
+  getLastUsage: (() => StepUsage | null) | undefined,
   onChunk: (chunk: StreamChunk) => void,
   usageModel?: string,
 ): void {
-  const usage = getLastUsage?.()
+  const usage = streamUsage ?? getLastUsage?.()
   if (usage?.inputTokens) {
     setLastMeasuredInputTokens(usage.inputTokens)
   }
@@ -162,12 +171,16 @@ async function streamTextOnlyTurn(
   const turnMessages: LLMMessage[] = [...messages, { role: 'user', content: nudge }]
   let assistantText = ''
   let stopReason: string | undefined
+  let streamUsage: StepUsage | null = null
 
   for await (const chunk of provider.stream(turnMessages, [], signal)) {
     if (signal?.aborted) break
     if (chunk.type === 'text') {
       assistantText += chunk.text
       onChunk(chunk)
+    }
+    if (chunk.type === 'usage') {
+      streamUsage = { inputTokens: chunk.inputTokens, outputTokens: chunk.outputTokens }
     }
     if (chunk.type === 'done') {
       stopReason = chunk.stopReason
@@ -180,7 +193,7 @@ async function streamTextOnlyTurn(
     const text = trimmed || REFUSAL_USER_MESSAGE
     if (!trimmed) onChunk({ type: 'text', text })
     messages.push({ role: 'assistant', content: text })
-    emitStepUsage(getLastUsage, onChunk, usageModel)
+    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
     return text
   }
   if (trimmed) {
@@ -188,7 +201,7 @@ async function streamTextOnlyTurn(
   } else if (isTruncationStopReason(stopReason)) {
     messages.push({ role: 'user', content: TRUNCATION_CONTINUE_NUDGE })
   }
-  emitStepUsage(getLastUsage, onChunk, usageModel)
+  emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
   return trimmed
 }
 
@@ -312,6 +325,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     let assistantText = ''
     const pendingToolCalls: ToolCallChunk[] = []
     let stopReason: string | undefined
+    let streamUsage: StepUsage | null = null
 
     if (!reserveLlmCall(budget)) {
       hitRunLimit = true
@@ -328,13 +342,16 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         pendingToolCalls.push(chunk.toolCall)
         onChunk(chunk)
       }
+      if (chunk.type === 'usage') {
+        streamUsage = { inputTokens: chunk.inputTokens, outputTokens: chunk.outputTokens }
+      }
       if (chunk.type === 'done') {
         stopReason = chunk.stopReason
         break
       }
     }
 
-    emitStepUsage(getLastUsage, onChunk, usageModel)
+    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
 
     if (maxContextTokens) {
       emitContextPressure(
@@ -449,6 +466,15 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         }
         break
       }
+      // Provider could not parse the streamed tool-call arguments. Do not run
+      // the tool with empty/partial args — return an error so the model retries
+      // the call with well-formed JSON (#114).
+      if (tc.argsError) {
+        const result = `Error: ${tc.argsError}`
+        toolResults.push({ toolCallId: tc.id, result })
+        onChunk({ type: 'tool_result', toolCallId: tc.id, result, isError: true })
+        continue
+      }
       const normalizedArgs = normalizeExploreArgs(tc.name, tc.args)
       const fp = toolCallFingerprint(tc.name, normalizedArgs)
       const duplicate = isDuplicateExploreCall(tc.name, normalizedArgs, recentFingerprints)
@@ -509,6 +535,13 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     onChunk({ type: 'text', text: RUN_LIMIT_MESSAGE })
     messages.push({ role: 'assistant', content: RUN_LIMIT_MESSAGE })
   }
+
+  // Final guarantee: never leave an assistant tool_use without a matching
+  // tool_result in the persisted history. Abort/run-limit breaks can exit the
+  // loop right after an assistant tool_use turn was pushed but before its
+  // results were appended; this keeps the saved history API-valid for the next
+  // turn or resume (#54, #113).
+  repairToolUseToolResultPairing(messages)
 
   onChunk({ type: 'done' })
 }

@@ -6,6 +6,7 @@ import {
   setThreadStatus,
   clearContextSnapshot,
   setThreadWorkingBrief,
+  bindThreadGitBranchIfUnset,
 } from '@shared/store/thread-helpers.ts'
 import { nextWorkingBrief } from '@shared/agent/working-brief.ts'
 import { initMentionPicker } from './mention-picker.ts'
@@ -15,6 +16,7 @@ import { buildSkillUserText } from '@shared/skills/build-skill-user-content.ts'
 import type { UserContent } from '@shared/types'
 import type { AgentRunPayload, SkillSummary } from '@shared/types/skills.ts'
 import { mountFooterModelPicker } from './footer-model-picker.ts'
+import { mountFooterBranchStatus } from './footer-branch-status.ts'
 import { createContextWheel } from './context-wheel.ts'
 import { downloadThreadJsonl } from '../export-thread.ts'
 import { syncAgentActivity } from '../agent-activity.ts'
@@ -27,6 +29,10 @@ import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
 import { formatThreadUsageCost } from '@shared/llm/estimate-cost.ts'
 import { mountFollowUpSuggestions } from './follow-up-suggestions.ts'
+import {
+  threadGitBranchMismatch,
+  threadGitBranchMismatchMessage,
+} from '@shared/git/thread-branch.ts'
 
 export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const chips = el('div', { class: 'attachment-chips' })
@@ -42,6 +48,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const inputRow = el('div', { class: 'input-row' }, textarea, submitBtn)
   const footer = el('div', { class: 'input-footer' })
   const modelHost = el('div', { class: 'footer-model-host' })
+  const branchHost = el('div', { class: 'footer-branch-host' })
   const exportBtn = el(
     'button',
     {
@@ -57,7 +64,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const usageGroup = el('div', { class: 'footer-usage-group' })
   const contextWheel = createContextWheel()
   usageGroup.append(contextWheel.root, usageBtn)
-  footer.append(modelHost, exportBtn, usageGroup)
+  footer.append(modelHost, branchHost, exportBtn, usageGroup)
   let costVisible = false
 
   const modelPicker = mountFooterModelPicker(
@@ -70,6 +77,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       updateFooter()
     },
   )
+  const branchStatus = mountFooterBranchStatus(branchHost, store, api)
 
   exportBtn.addEventListener('click', () => {
     const thread = store.getState().threads.find((t) => t.id === getActiveThreadId())
@@ -164,6 +172,15 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     const id = getActiveThreadId()
     if (!id) return
 
+    const branchStatus = await api.git.branchStatus()
+    const currentBranch = branchStatus.currentBranch
+    const thread = store.getState().threads.find((t) => t.id === id)
+    if (threadGitBranchMismatch(thread?.gitBranch, currentBranch)) {
+      textarea.setCustomValidity(threadGitBranchMismatchMessage(thread!.gitBranch!))
+      textarea.reportValidity()
+      return
+    }
+
     const skills = skillsCache ?? (await api.skills.list())
     skillsCache = skills
     const skillNames = skills.map((skill) => skill.name)
@@ -198,7 +215,6 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       fullContent = buildTextWithAttachments(text, attachedFiles, attachedTextBlocks)
     }
 
-    const thread = store.getState().threads.find((t) => t.id === id)
     const priorTodos = thread?.todos ?? []
     const workingBrief = nextWorkingBrief(thread?.workingBrief, fullContent)
     if (workingBrief && workingBrief !== thread?.workingBrief) {
@@ -220,6 +236,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     attachedTextBlocks.forEach((b) => displayParts.push(`📝 ${b.label}`))
     const imageUrls = attachedImages.map((img) => img.dataUrl)
     addMessage(store, id, 'user', displayParts.join('\n'), imageUrls.length ? imageUrls : undefined)
+    if (currentBranch) bindThreadGitBranchIfUnset(store, id, currentBranch)
     clearContextSnapshot(store, id)
     setThreadStatus(store, id, 'running')
     syncAgentActivity(store, id, false)
@@ -298,7 +315,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   }
   const unregisterAttachments = registerPromptAttachments(attachmentHandlers)
 
-  document.addEventListener('paste', (e) => {
+  const onPaste = (e: ClipboardEvent) => {
     const items = Array.from(e.clipboardData?.items ?? [])
     const img = items.find((i) => i.type.startsWith('image/'))
     if (img) {
@@ -314,7 +331,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     if (!isTextBlockAttachment(text)) return
     e.preventDefault()
     addTextChip(text)
-  })
+  }
+  document.addEventListener('paste', onPaste)
 
   const unbindDrop = bindFileDropTarget(
     root,
@@ -334,7 +352,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   refreshSkillsCache()
   // Skills are workspace-scoped; drop the stale list when the workspace changes
   // so inline /skill detection and validation use the new workspace's skills.
-  store.on('workspace_changed', () => {
+  const unsubWorkspace = store.on('workspace_changed', () => {
     skillsCache = null
     refreshSkillsCache()
   })
@@ -374,11 +392,14 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   updateFooter()
   return () => {
     unsubs.forEach((u) => u())
+    unsubWorkspace()
+    document.removeEventListener('paste', onPaste)
     observer.disconnect()
     followUps.destroy()
     unbindDrop()
     unregisterAttachments()
     modelPicker.destroy()
+    branchStatus()
     skillPicker()
   }
 }

@@ -1,6 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { Project, Thread } from '@shared/types'
+import { sortThreadsNewestFirst } from '@shared/store/thread-helpers.ts'
 
 // On-disk persistence for projects and their chat threads, via the main-process
 // electron-store (storage:get/set IPC). Threads are stored per project so
@@ -47,7 +48,7 @@ export async function saveProjects(
 
 export async function loadThreads(api: ApiClient, projectId: string): Promise<Thread[]> {
   const threads = (await api.storage.get(threadsKey(projectId))) as Thread[] | null
-  return threads ?? []
+  return threads ? sortThreadsNewestFirst(threads) : []
 }
 
 export async function saveThreads(
@@ -58,16 +59,52 @@ export async function saveThreads(
   await serializedSet(api, threadsKey(projectId), threads)
 }
 
+export const AUTOSAVE_DEBOUNCE_MS = 250
+
+export interface Autosave {
+  /** Persist any pending changes immediately and await the writes. */
+  flush(): Promise<void>
+  /** Remove listeners and cancel the pending timer (mainly for tests). */
+  detach(): void
+}
+
 // Autosave: persists the active project's threads (and the project list) on
-// every meaningful change. These events fire at most a few times per turn (not
-// per token), so saving immediately — rather than debouncing — avoids losing
-// the latest message if the app is closed right after a reply.
-export function attachAutosave(store: AppStore, api: ApiClient): void {
-  const save = () => {
+// every meaningful change. Several events fire per turn, so writes are debounced
+// to coalesce a burst into one save instead of issuing redundant writes.
+//
+// Stale-save protection: the save reads the *current* active project at flush
+// time and writes that project's threads under that project's key. A late
+// `message_done`/`usage_updated` from an outgoing thread that arrives after a
+// project switch only schedules another debounced save, which then re-reads the
+// now-current state — it can never write the outgoing thread's data under the
+// new project's key. (Per-key write chaining in `serializedSet` additionally
+// guarantees writes to a given key apply in submission order.)
+export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
+  let timer: ReturnType<typeof setTimeout> | null = null
+
+  const writeNow = (): Promise<void> => {
     const { activeProjectId, threads, projects } = store.getState()
-    if (activeProjectId) void saveThreads(api, activeProjectId, threads)
-    void saveProjects(api, projects, activeProjectId)
+    const writes: Array<Promise<void>> = [saveProjects(api, projects, activeProjectId)]
+    if (activeProjectId) writes.push(saveThreads(api, activeProjectId, threads))
+    return Promise.all(writes).then(() => undefined)
   }
+
+  const flush = (): Promise<void> => {
+    if (timer !== null) {
+      clearTimeout(timer)
+      timer = null
+    }
+    return writeNow()
+  }
+
+  const scheduleSave = () => {
+    if (timer !== null) return // a save is already pending; coalesce into it
+    timer = setTimeout(() => {
+      timer = null
+      void writeNow()
+    }, AUTOSAVE_DEBOUNCE_MS)
+  }
+
   const events = [
     'threads_changed',
     'message_done',
@@ -76,8 +113,24 @@ export function attachAutosave(store: AppStore, api: ApiClient): void {
     'projects_changed',
     'todos_changed',
   ] as const
-  events.forEach((e) => store.on(e, save))
+  const unsubscribes = events.map((e) => store.on(e, scheduleSave))
 
-  // Safety net: flush once more as the window is torn down.
-  window.addEventListener('pagehide', save)
+  // Safety net on window teardown. `pagehide` can't await an async callback, but
+  // electron-store IPC is dispatched synchronously when the call is made, so
+  // kicking the (debounced) write here — bypassing the timer via flush() — gives
+  // the final save the best chance to be delivered before the window dies.
+  const onPagehide = () => void flush()
+  window.addEventListener('pagehide', onPagehide)
+
+  return {
+    flush,
+    detach() {
+      if (timer !== null) {
+        clearTimeout(timer)
+        timer = null
+      }
+      unsubscribes.forEach((u) => u())
+      window.removeEventListener('pagehide', onPagehide)
+    },
+  }
 }
