@@ -29,6 +29,10 @@ import {
 } from './explore-subagent-runner.ts'
 import { setAgentRunTodoContext, clearAgentRunTodos, getAgentRunTodos } from './agent-run-todos.ts'
 import {
+  shouldSteerGithubLinks,
+  GITHUB_LINK_STEERING_PROMPT,
+} from '@shared/git/github-link-steering.ts'
+import {
   shouldSteerTodos,
   formatTodosForPrompt,
   findNewlyInProgressLocal,
@@ -123,11 +127,13 @@ export async function runAgent(
 
   const userTextForSteering =
     typeof userPrompt === 'string' ? userPrompt : extractParentGoal(messages, userPrompt)
-  const todoSteering = shouldSteerTodos(userTextForSteering) ? `\n\n${TODO_STEERING_PROMPT}` : ''
-  if (todoSteering && messages[0]?.role === 'system') {
+  const steeringBlocks: string[] = []
+  if (shouldSteerTodos(userTextForSteering)) steeringBlocks.push(TODO_STEERING_PROMPT)
+  if (shouldSteerGithubLinks(userTextForSteering)) steeringBlocks.push(GITHUB_LINK_STEERING_PROMPT)
+  if (steeringBlocks.length && messages[0]?.role === 'system') {
     messages[0] = {
       role: 'system',
-      content: (messages[0].content as string) + todoSteering,
+      content: (messages[0].content as string) + `\n\n${steeringBlocks.join('\n\n')}`,
     }
   }
   const priorTodos = options?.priorTodos ?? []
