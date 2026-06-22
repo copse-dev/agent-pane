@@ -1,0 +1,136 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { createStore } from '@shared/store/store.ts'
+import { createThread, setThreadStatus, setThreadTodos } from '@shared/store/thread-helpers.ts'
+import type { ApiClient } from '../../preload/api.d.ts'
+import {
+  dispatchAgentRun,
+  drainMessageQueue,
+  enqueueUserMessage,
+  queuedMessageIds,
+  resumePendingQueues,
+} from './message-queue.ts'
+
+function fakeApi(): ApiClient & { runs: Array<[string, string]> } {
+  const runs: Array<[string, string]> = []
+  return {
+    runs,
+    agent: {
+      run: (threadId: string, payload: string) => {
+        runs.push([threadId, payload])
+        return Promise.resolve()
+      },
+    },
+  } as unknown as ApiClient & { runs: Array<[string, string]> }
+}
+
+test('enqueueUserMessage appends to thread.pendingMessages and emits message_queued', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  const queued: string[] = []
+  store.on('message_queued', (_tid, messageId) => queued.push(messageId))
+
+  enqueueUserMessage(store, threadId, {
+    messageId: 'msg-1',
+    payload: { content: 'follow up' },
+    createdAt: 1,
+  })
+
+  const thread = store.getState().threads.find((t) => t.id === threadId)!
+  assert.equal(thread.pendingMessages?.length, 1)
+  assert.equal(thread.pendingMessages?.[0]?.messageId, 'msg-1')
+  assert.deepEqual(queued, ['msg-1'])
+  assert.equal(api.runs.length, 0)
+})
+
+test('drainMessageQueue dispatches the next payload when idle', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  enqueueUserMessage(store, threadId, {
+    messageId: 'msg-1',
+    payload: { content: 'queued prompt', priorTodos: [] },
+    createdAt: 1,
+  })
+
+  drainMessageQueue(store, api, threadId)
+
+  const thread = store.getState().threads.find((t) => t.id === threadId)!
+  assert.equal(thread.status, 'running')
+  assert.equal(thread.pendingMessages, undefined)
+  assert.equal(api.runs.length, 1)
+  assert.equal(api.runs[0]![0], threadId)
+  assert.match(api.runs[0]![1], /queued prompt/)
+})
+
+test('drainMessageQueue refreshes priorTodos from the live thread state', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  enqueueUserMessage(store, threadId, {
+    messageId: 'msg-1',
+    payload: { content: 'next', priorTodos: [{ id: 'old', content: 'old', status: 'pending' }] },
+    createdAt: 1,
+  })
+  setThreadTodos(store, threadId, [{ id: 'live', content: 'live', status: 'pending' }])
+
+  drainMessageQueue(store, api, threadId)
+
+  const payload = JSON.parse(api.runs[0]![1]) as { priorTodos: Array<{ id: string }> }
+  assert.deepEqual(payload.priorTodos, [{ id: 'live', content: 'live', status: 'pending' }])
+})
+
+test('drainMessageQueue does nothing while the thread is running', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  setThreadStatus(store, threadId, 'running')
+  enqueueUserMessage(store, threadId, {
+    messageId: 'msg-1',
+    payload: { content: 'wait' },
+    createdAt: 1,
+  })
+
+  drainMessageQueue(store, api, threadId)
+
+  assert.equal(api.runs.length, 0)
+  assert.equal(store.getState().threads.find((t) => t.id === threadId)?.pendingMessages?.length, 1)
+})
+
+test('dispatchAgentRun marks the thread running and sends payload', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+
+  dispatchAgentRun(store, api, threadId, { content: 'go' })
+
+  assert.equal(store.getState().threads.find((t) => t.id === threadId)?.status, 'running')
+  assert.equal(api.runs.length, 1)
+})
+
+test('resumePendingQueues drains idle threads with pending messages', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  enqueueUserMessage(store, threadId, {
+    messageId: 'msg-1',
+    payload: { content: 'resume me' },
+    createdAt: 1,
+  })
+
+  resumePendingQueues(store, api)
+
+  assert.equal(api.runs.length, 1)
+  assert.equal(store.getState().threads.find((t) => t.id === threadId)?.status, 'running')
+})
+
+test('queuedMessageIds returns pending message ids', () => {
+  const thread = {
+    pendingMessages: [
+      { messageId: 'a', payload: { content: '1' }, createdAt: 1 },
+      { messageId: 'b', payload: { content: '2' }, createdAt: 2 },
+    ],
+  }
+  assert.deepEqual([...queuedMessageIds(thread)].sort(), ['a', 'b'])
+})

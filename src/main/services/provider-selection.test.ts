@@ -8,8 +8,10 @@ import {
   invalidateLmStudioModelsCache,
   isLocalChatModel,
   buildSubagentRoute,
+  buildProvider,
 } from './provider-selection.ts'
 import { setSetting, setApiKey } from './settings.test-shim.ts'
+import { MockLLMProvider } from '@shared/llm/mock-provider.ts'
 
 const SOURCE_PATH = resolve(process.cwd(), 'src/main/services/lm-studio-models.ts')
 
@@ -108,6 +110,20 @@ describe('subagent local model routing', () => {
     const route = await buildSubagentRoute('gpt-4o')
     assert.ok(route)
     assert.equal(route.contextWindow, 8192)
+  })
+})
+
+describe('buildProvider', () => {
+  it('uses the mock provider before LM Studio routing when mock mode is enabled', async () => {
+    const prevMock = process.env.COPSE_PANEL_MOCK_LLM
+    process.env.COPSE_PANEL_MOCK_LLM = '1'
+    try {
+      const provider = await buildProvider('lm-studio')
+      assert.ok(provider instanceof MockLLMProvider)
+    } finally {
+      if (prevMock === undefined) delete process.env.COPSE_PANEL_MOCK_LLM
+      else process.env.COPSE_PANEL_MOCK_LLM = prevMock
+    }
   })
 })
 
