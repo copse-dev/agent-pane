@@ -22,6 +22,19 @@ function loadScenario(): EvalScenario {
   return JSON.parse(readFileSync(path, 'utf8')) as EvalScenario
 }
 
+/** macOS seatbelt prompts before `gh`, network, etc. Auto-approve so evals don't hang. */
+async function approvePendingApprovalDialogs(): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const open = await browser.execute(() => {
+      const dialog = document.querySelector('#approval-dialog')
+      return dialog instanceof HTMLDialogElement && dialog.open
+    })
+    if (!open) return
+    await $('.approval-approve').click()
+    await browser.pause(100)
+  }
+}
+
 async function waitForPromptReady(timeoutMs = 60_000): Promise<void> {
   await browser.waitUntil(
     async () => {
@@ -35,12 +48,32 @@ async function waitForPromptReady(timeoutMs = 60_000): Promise<void> {
 }
 
 async function waitForAgentIdle(timeoutMs: number): Promise<void> {
-  await browser.waitUntil(async () => (await $('.submit-btn').getText()) === 'Send', {
-    timeout: timeoutMs,
-    interval: 500,
-    timeoutMsg: 'Agent did not return to idle (submit button Send)',
-  })
+  await browser.waitUntil(
+    async () => {
+      await approvePendingApprovalDialogs()
+      return (await $('.submit-btn').getText()) === 'Stop'
+    },
+    {
+      timeout: 60_000,
+      interval: 100,
+      timeoutMsg: 'Agent did not start (submit button Stop)',
+    },
+  )
+  await browser.waitUntil(
+    async () => {
+      await approvePendingApprovalDialogs()
+      return (await $('.submit-btn').getText()) === 'Send'
+    },
+    {
+      timeout: timeoutMs,
+      interval: 500,
+      timeoutMsg: 'Agent did not return to idle (submit button Send)',
+    },
+  )
   await waitForPromptReady()
+  await $('.msg-assistant').waitForExist({ timeout: 30_000 })
+  // Autosave debounces thread writes (~250ms); give persistence a beat before export.
+  await browser.pause(500)
 }
 
 async function typePrompt(text: string): Promise<void> {

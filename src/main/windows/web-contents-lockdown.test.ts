@@ -2,7 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { isAllowedRendererNavigation } from './web-contents-lockdown.ts'
+import { isAllowedRendererNavigation, isExternalHttpUrl } from './web-contents-lockdown.ts'
 
 describe('isAllowedRendererNavigation', () => {
   it('allows about:blank and renderer file URLs', () => {
@@ -16,5 +16,14 @@ describe('isAllowedRendererNavigation', () => {
     assert.equal(isAllowedRendererNavigation('http://localhost:3000/'), false)
     const outside = pathToFileURL('/etc/passwd').href
     assert.equal(isAllowedRendererNavigation(outside), false)
+  })
+})
+
+describe('isExternalHttpUrl', () => {
+  it('matches http and https only', () => {
+    assert.equal(isExternalHttpUrl('https://github.com/org/repo/pull/1'), true)
+    assert.equal(isExternalHttpUrl('http://localhost:3000/'), true)
+    assert.equal(isExternalHttpUrl('javascript:alert(1)'), false)
+    assert.equal(isExternalHttpUrl('file:///etc/passwd'), false)
   })
 })

@@ -3,6 +3,7 @@ import { getWorkspaceRoot, resolveWorkspacePath } from './workspace.ts'
 import { runCommand } from './command-runner.ts'
 import { isGitAvailable } from './tool-availability.ts'
 import { detectLanguage } from './language.ts'
+import { parseGithubRepoSlug } from '@shared/git/github-link-steering.ts'
 import type { GitChange, GitChangeStatus, GitFileDiff, GitStatusResult } from '@shared/types/git.ts'
 
 async function runGit(args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
@@ -144,6 +145,14 @@ export async function isInsideGitWorkTree(): Promise<boolean> {
   if (!isGitAvailable() || !getWorkspaceRoot()) return false
   const { stdout, code } = await runGit(['rev-parse', '--is-inside-work-tree'])
   return code === 0 && stdout.trim() === 'true'
+}
+
+/** `org/repo` from `origin` when the workspace remote is GitHub. */
+export async function getGithubRepoSlug(): Promise<string | null> {
+  if (!isGitAvailable() || !(await isInsideGitWorkTree())) return null
+  const { stdout, code } = await runGit(['remote', 'get-url', 'origin'])
+  if (code !== 0 || !stdout.trim()) return null
+  return parseGithubRepoSlug(stdout.trim())
 }
 
 export async function getGitStatus(): Promise<GitStatusResult | null> {

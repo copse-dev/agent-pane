@@ -85,6 +85,8 @@ export function seedEmptyProject(
   }
   if (Object.keys(settings).length > 0) {
     writeSettings(settings)
+  } else {
+    writeSettings({})
   }
 }
 
