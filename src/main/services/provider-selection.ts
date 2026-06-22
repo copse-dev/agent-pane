@@ -1,6 +1,10 @@
 import { createProvider, createLMStudioProvider } from '@shared/llm/create-provider.ts'
 import type { LLMProvider } from '@shared/types'
-import { DEFAULT_LM_STUDIO_URL, LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
+import {
+  DEFAULT_LM_STUDIO_URL,
+  LM_STUDIO_MODEL_IDS,
+  resolveLocalServerUrl,
+} from '@shared/lm-studio-defaults.ts'
 import { getSetting, getApiKey, getLmStudioApiKey } from './settings.ts'
 import { resolveContextWindow } from './resolve-context-window.ts'
 import {
@@ -10,6 +14,10 @@ import {
 import { isLocalModel } from '@shared/llm/estimate-cost.ts'
 
 export { DEFAULT_LM_STUDIO_URL }
+
+function localServerUrl(): string {
+  return resolveLocalServerUrl(getSetting<string>('localServerUrl', ''), process.env)
+}
 
 function storedOrEnvApiKey(provider: 'anthropic' | 'openai'): string | null {
   if (provider === 'anthropic')
@@ -48,7 +56,7 @@ export async function buildSubagentRoute(parentModel: string): Promise<SubagentR
   if (isLocalChatModel(parentModel)) return null
   if (!getSetting<boolean>('localSubagentsEnabled', true)) return null
 
-  const url = getSetting<string>('localServerUrl', DEFAULT_LM_STUDIO_URL)
+  const url = localServerUrl()
   const modelId = await resolveSubagentLocalModelId(url)
   if (!modelId) return null
 
@@ -66,7 +74,7 @@ export async function buildSubagentRoute(parentModel: string): Promise<SubagentR
 // model or the first one the server has loaded (never the bogus "local-model").
 export async function buildProvider(model: string): Promise<LLMProvider> {
   if (model === 'lm-studio' || model.startsWith('lmstudio:')) {
-    const url = getSetting<string>('localServerUrl', DEFAULT_LM_STUDIO_URL)
+    const url = localServerUrl()
     let id = model.startsWith('lmstudio:')
       ? model.slice('lmstudio:'.length)
       : getSetting<string>('localDefaultModel', LM_STUDIO_MODEL_IDS.chat)
@@ -97,7 +105,7 @@ export async function buildProvider(model: string): Promise<LLMProvider> {
 
 // List the model ids an LM Studio server currently exposes (using saved URL/key).
 export async function listLmStudioModels(): Promise<string[]> {
-  const url = getSetting<string>('localServerUrl', DEFAULT_LM_STUDIO_URL)
+  const url = localServerUrl()
   const r = await fetchLmStudioModelsCached(url)
   return r.ok ? r.models.map((m) => m.id) : []
 }

@@ -72,16 +72,16 @@ export function seedEmptyProject(
     settings.model = options.model
   }
   if (options?.lmStudioUrl) {
-    settings.lmStudioUrl = options.lmStudioUrl
+    settings.localServerUrl = options.lmStudioUrl
   }
   if (options?.lmStudioModel) {
-    settings.lmStudioModel = options.lmStudioModel
+    settings.localDefaultModel = options.lmStudioModel
   }
   if (options?.lmStudioSubagentModel) {
-    settings.lmStudioSubagentModel = options.lmStudioSubagentModel
+    settings.subagentModel = options.lmStudioSubagentModel
   }
   if (options?.lmStudioForSubagents !== undefined) {
-    settings.lmStudioForSubagents = options.lmStudioForSubagents
+    settings.localSubagentsEnabled = options.lmStudioForSubagents
   }
   if (Object.keys(settings).length > 0) {
     writeSettings(settings)

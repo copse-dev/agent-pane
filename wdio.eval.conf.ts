@@ -70,7 +70,7 @@ export const config: Options.Testrunner = {
     if (process.env.COPSE_PANEL_MOCK_LLM === '1') {
       evalEnv.COPSE_PANEL_MOCK_LLM = '1'
     }
-    for (const key of ['LM_STUDIO_API_KEY', 'LM_API_TOKEN'] as const) {
+    for (const key of ['LM_STUDIO_API_KEY', 'LM_API_TOKEN', 'COPSE_EVAL_LM_STUDIO_URL'] as const) {
       const v = process.env[key]?.trim()
       if (v) evalEnv[key] = v
     }
