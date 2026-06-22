@@ -71,7 +71,7 @@ export const BASE_SYSTEM_PROMPT_DIRECT_READS = buildBasePrompt({
 - find_files: Find files by name or glob pattern`,
   gather: 'Use tools as needed, then finish with a clear written answer in plain language.',
   avoidRepeat:
-    'List the workspace root at most once; do not re-read the same paths. File tools (read_file, list_dir, etc.) take paths relative to the workspace root — e.g. README.md, not absolute paths copied from shell output. Then run tests or commands with run_shell when asked to validate code.',
+    'List the workspace root at most once; do not re-read the same paths. Then run tests or commands with run_shell when asked to validate code.',
   understand: 'Read the file first',
   inspectVerb: 'read',
 })
