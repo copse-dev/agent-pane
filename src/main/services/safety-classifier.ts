@@ -5,6 +5,7 @@ import { getWorkspaceRoot } from './workspace.ts'
 import { resolveLocalModelId } from './provider-selection.ts'
 import { stripTrailingSlash } from './lm-studio-models.ts'
 import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
+import { safeJsonParse } from '@shared/safe-json.ts'
 
 export interface ClassificationResult {
   scope: 'sandbox' | 'external'
@@ -30,23 +31,20 @@ When uncertain, use "external" with lower confidence.`
 function parseClassification(text: string): ClassificationResult | null {
   const jsonMatch = text.match(/\{[\s\S]*\}/)
   if (!jsonMatch) return null
-  try {
-    const parsed = JSON.parse(jsonMatch[0]) as {
-      scope?: string
-      confidence?: number
-      reason?: string
-    }
-    if (parsed.scope !== 'sandbox' && parsed.scope !== 'external') return null
-    const confidence =
-      typeof parsed.confidence === 'number' && Number.isFinite(parsed.confidence)
-        ? Math.min(1, Math.max(0, parsed.confidence))
-        : 0
-    const reason = typeof parsed.reason === 'string' ? parsed.reason.trim() : ''
-    if (!reason) return null
-    return { scope: parsed.scope, confidence, reason }
-  } catch {
-    return null
-  }
+  const parsed = safeJsonParse<{
+    scope?: string
+    confidence?: number
+    reason?: string
+  }>(jsonMatch[0])
+  if (!parsed) return null
+  if (parsed.scope !== 'sandbox' && parsed.scope !== 'external') return null
+  const confidence =
+    typeof parsed.confidence === 'number' && Number.isFinite(parsed.confidence)
+      ? Math.min(1, Math.max(0, parsed.confidence))
+      : 0
+  const reason = typeof parsed.reason === 'string' ? parsed.reason.trim() : ''
+  if (!reason) return null
+  return { scope: parsed.scope, confidence, reason }
 }
 
 function resolveSafetyModel(url: string): Promise<string | null> {

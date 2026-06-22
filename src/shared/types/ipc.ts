@@ -154,6 +154,7 @@ export interface IpcEventMap {
   'menu:showExplorer': []
   'menu:showTerminal': []
   'menu:showChanges': []
+  'menu:showBrowser': []
   'theme:changed': ['light' | 'dark']
   'terminal:output': [sessionId: string, data: string]
   'terminal:exit': [sessionId: string, code: number]

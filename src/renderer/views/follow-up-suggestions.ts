@@ -124,7 +124,7 @@ export function mountFollowUpSuggestions(
 
     const token = ++fetchToken
     try {
-      const suggestions = await api.agent.suggestFollowUps(JSON.stringify(exchange.context))
+      const suggestions = (await api.agent.suggestFollowUps(JSON.stringify(exchange.context))) ?? []
       if (token !== fetchToken) return
       suggestionsByThread.set(threadId, { turnKey: exchange.turnKey, suggestions })
       if (store.getState().activeThreadId === threadId) {

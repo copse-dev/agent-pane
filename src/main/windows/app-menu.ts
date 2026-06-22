@@ -100,6 +100,11 @@ export function buildAppMenu(win: BrowserWindow): void {
           accelerator: 'CmdOrCtrl+Shift+G',
           click: () => win.webContents.send('menu:showChanges'),
         },
+        {
+          label: 'Browser',
+          accelerator: 'CmdOrCtrl+Shift+B',
+          click: () => win.webContents.send('menu:showBrowser'),
+        },
         { type: 'separator' as const },
         { role: 'reload' as const },
         { role: 'toggleDevTools' as const },

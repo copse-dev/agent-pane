@@ -114,6 +114,7 @@ export interface ApiClient {
     onShowExplorer: (handler: () => void) => () => void
     onShowTerminal: (handler: () => void) => () => void
     onShowChanges: (handler: () => void) => () => void
+    onShowBrowser: (handler: () => void) => () => void
   }
   settings: {
     get: (key: string) => Promise<unknown>
