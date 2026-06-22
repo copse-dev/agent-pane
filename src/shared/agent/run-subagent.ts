@@ -127,7 +127,7 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
     { role: 'user', content: buildUserTask(prompt, parentGoal) },
   ]
 
-  let summary = ''
+  let summary: string
 
   // Accumulate usage across all subagent steps from the per-step `usage` chunks
   // the loop emits (#58). Each chunk reflects exactly one stream, so subagent

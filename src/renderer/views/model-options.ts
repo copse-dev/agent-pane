@@ -28,7 +28,7 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
   }
 
   const lmGroup = 'Local models'
-  let models: string[] = []
+  let models: string[]
   try {
     models = await api.lmStudio.models()
   } catch {

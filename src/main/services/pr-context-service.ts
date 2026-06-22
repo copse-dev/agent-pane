@@ -198,7 +198,7 @@ export async function getGitBranchStatus(forBranch?: string): Promise<GitBranchS
   const currentBranch = branchResult.code === 0 ? branchResult.stdout.trim() || null : null
   if (!currentBranch) return empty
 
-  let pr: GitOpenPr | null = null
+  let pr: GitOpenPr | null
   if (forBranch && forBranch !== currentBranch) {
     pr = await getOpenPrForBranch(forBranch)
   } else {

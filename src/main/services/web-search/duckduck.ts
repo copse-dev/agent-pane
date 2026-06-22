@@ -42,7 +42,7 @@ export async function webSearch(query: string, limit = 10): Promise<WebHit[]> {
       }))
       .filter((hit) => hit.url.length > 0)
   } catch (error) {
-    if (isDdgBlockedError(error)) throw new Error(DDG_BLOCKED_HELP)
+    if (isDdgBlockedError(error)) throw new Error(DDG_BLOCKED_HELP, { cause: error })
     throw error
   }
 }
