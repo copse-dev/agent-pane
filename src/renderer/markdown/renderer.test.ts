@@ -34,6 +34,38 @@ describe('renderMarkdown', () => {
     assert.match(html, /<li>beta<\/li>/)
   })
 
+  it('renders markdown links in prose and ordered lists', () => {
+    const html = renderMarkdown(
+      'See [PR #204](https://github.com/org/repo/pull/204) for details.\n\n' +
+        '1. [PR #205](https://github.com/org/repo/pull/205) — draft fix\n' +
+        '2. [PR #188](https://github.com/org/repo/pull/188) — UI change',
+    )
+    assert.match(
+      html,
+      /<a href="https:\/\/github\.com\/org\/repo\/pull\/204" target="_blank" rel="noopener noreferrer">PR #204<\/a>/,
+    )
+    assert.match(
+      html,
+      /<li><a href="https:\/\/github\.com\/org\/repo\/pull\/205"[^>]*>PR #205<\/a> — draft fix<\/li>/,
+    )
+    assert.match(
+      html,
+      /<li><a href="https:\/\/github\.com\/org\/repo\/pull\/188"[^>]*>PR #188<\/a> — UI change<\/li>/,
+    )
+  })
+
+  it('leaves unsafe link schemes as literal markdown', () => {
+    const html = renderMarkdown('[click me](javascript:alert(1))')
+    assert.doesNotMatch(html, /<a /)
+    assert.match(html, /\[click me\]\(javascript:alert\(1\)\)/)
+  })
+
+  it('does not render links inside inline code', () => {
+    const html = renderMarkdown('Use `[text](http://x)` literally')
+    assert.match(html, /<code>\[text\]\(http:\/\/x\)<\/code>/)
+    assert.doesNotMatch(html, /<a /)
+  })
+
   it('renders ordered lists with continuation paragraphs grouped into items', () => {
     const html = renderMarkdown(
       [

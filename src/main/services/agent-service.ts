@@ -30,6 +30,11 @@ import {
 } from './explore-subagent-runner.ts'
 import { setAgentRunTodoContext, clearAgentRunTodos, getAgentRunTodos } from './agent-run-todos.ts'
 import {
+  buildGithubLinkSteeringPrompt,
+  shouldSteerGithubLinks,
+} from '@shared/git/github-link-steering.ts'
+import { getGithubRepoSlug } from './git-service.ts'
+import {
   shouldSteerTodos,
   formatTodosForPrompt,
   findNewlyInProgressLocal,
@@ -117,11 +122,16 @@ export async function runAgent(
 
   const userTextForSteering =
     typeof userPrompt === 'string' ? userPrompt : resolveParentGoal(undefined, messages, userPrompt)
-  const todoSteering = shouldSteerTodos(userTextForSteering) ? `\n\n${TODO_STEERING_PROMPT}` : ''
-  if (todoSteering && messages[0]?.role === 'system') {
+  const steeringBlocks: string[] = []
+  if (shouldSteerTodos(userTextForSteering)) steeringBlocks.push(TODO_STEERING_PROMPT)
+  if (shouldSteerGithubLinks(userTextForSteering)) {
+    const repoSlug = await getGithubRepoSlug()
+    steeringBlocks.push(buildGithubLinkSteeringPrompt(repoSlug))
+  }
+  if (steeringBlocks.length && messages[0]?.role === 'system') {
     messages[0] = {
       role: 'system',
-      content: (messages[0].content as string) + todoSteering,
+      content: (messages[0].content as string) + `\n\n${steeringBlocks.join('\n\n')}`,
     }
   }
   const priorTodos = options?.priorTodos ?? []

@@ -12,6 +12,7 @@ import {
   recordContextTrim,
   updateContextSnapshot,
   setThreadTodos,
+  getThreadById,
 } from '@shared/store/thread-helpers.ts'
 import {
   initSubagent,
@@ -253,7 +254,7 @@ function firstWords(text: string, n = 6): string {
 // fallback.
 async function maybeNameThread(store: AppStore, api: ApiClient, threadId: string): Promise<void> {
   if (namedThreads.has(threadId)) return
-  const thread = store.getState().threads.find((t) => t.id === threadId)
+  const thread = getThreadById(store, threadId)
   if (!thread || thread.title !== 'New Thread') return
   const firstUser = thread.messages.find((m) => m.role === 'user')
   if (!firstUser || !firstUser.content.trim()) return
