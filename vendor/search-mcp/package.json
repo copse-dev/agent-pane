@@ -1,0 +1,10 @@
+{
+  "name": "@copse/search-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Web search and URL fetch helpers (vendored from search-mcp)",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

@@ -2,6 +2,9 @@
 // of their rules; they differ only in the available tools and whether context is
 // gathered via `explore` or direct reads/searches. Keep the shared wording (and
 // the modifying-files rules) in one place and vary the rest.
+const SHARED_WEB_TOOLS = `- web_search: Search the public web (DuckDuckGo, no API key)
+- fetch_url: Fetch a URL and return readable Markdown`
+
 const SHARED_TOOL_TAIL = `- git_status: Show working tree status
 - git_diff: Show unstaged or staged changes
 - git_log: Show recent commit history
@@ -51,7 +54,8 @@ When modifying files:
 export const BASE_SYSTEM_PROMPT = buildBasePrompt({
   tools: `- explore: Explore the codebase by reading and searching files (returns a summary — use this instead of reading files directly)
 - write_file: Write a complete file directly when safe; otherwise stage a proposed diff for approval
-- str_replace: Replace a substring directly when safe; otherwise stage a proposed diff for approval`,
+- str_replace: Replace a substring directly when safe; otherwise stage a proposed diff for approval
+${SHARED_WEB_TOOLS}`,
   gather:
     'Use explore to read or search the codebase, then finish with a clear written answer in plain language.',
   avoidRepeat:
@@ -68,7 +72,8 @@ export const BASE_SYSTEM_PROMPT_DIRECT_READS = buildBasePrompt({
 - search_codebase: Search by regex or meaning (auto-selects; prefer over search_code)
 - semantic_search: Search by meaning only (native codesearch/vera index)
 - search_code: Search for text/regex patterns (indexed grep when available, otherwise ripgrep)
-- find_files: Find files by name or glob pattern`,
+- find_files: Find files by name or glob pattern
+${SHARED_WEB_TOOLS}`,
   gather: 'Use tools as needed, then finish with a clear written answer in plain language.',
   avoidRepeat:
     'List the workspace root at most once; do not re-read the same paths. Then run tests or commands with run_shell when asked to validate code.',

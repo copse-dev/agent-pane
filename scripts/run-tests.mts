@@ -16,7 +16,14 @@ await esbuild.build({
   platform: 'node',
   format: 'cjs',
   sourcemap: true,
-  external: ['electron', 'node-pty'],
+  external: [
+    'electron',
+    'node-pty',
+    'jsdom',
+    '@mozilla/readability',
+    'turndown',
+    'duck-duck-scrape',
+  ],
   alias: { '@shared': resolve('./src/shared') },
   plugins: [
     {
