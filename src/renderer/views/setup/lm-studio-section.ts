@@ -1,5 +1,6 @@
 import type { ApiClient } from '../../../preload/api.d.ts'
 import { PREFERRED_MODELS } from '@shared/preferred-models.ts'
+import { LM_STUDIO_DOWNLOAD_URL } from '@shared/lm-studio-defaults.ts'
 import { el } from '../../dom/helpers.ts'
 
 export interface LmStudioSection {
@@ -74,7 +75,7 @@ export function createLmStudioSection(
             'Download ',
             el(
               'a',
-              { href: 'https://lmstudio.ai', target: '_blank', rel: 'noopener' },
+              { href: LM_STUDIO_DOWNLOAD_URL, target: '_blank', rel: 'noopener' },
               'LM Studio',
             ),
             ' for your platform.',
