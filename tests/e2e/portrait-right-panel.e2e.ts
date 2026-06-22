@@ -84,5 +84,7 @@ describe('portrait right panel layout', () => {
 
     expect(Math.abs(layout.filesTop - layout.chatTop)).toBeLessThan(2)
     expect(layout.filesLeft).toBeGreaterThan(layout.chatRight)
+
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'portrait-right-panel-disabled.png'))
   })
 })
