@@ -2,7 +2,7 @@ name: E2E Screenshots
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, labeled]
 
 permissions:
   contents: write
@@ -13,9 +13,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  update-screenshots:
-    # Cannot push to fork PR branches with the default token.
+  changes:
     if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      ui: ${{ steps.filter.outputs.ui }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            ui:
+              - 'src/renderer/**'
+              - 'tests/e2e/**'
+              - 'wdio*.conf.ts'
+              - 'assets/**'
+              - '.github/workflows/e2e-screenshots.yml'
+
+  update-screenshots:
+    needs: changes
+    if: |
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (
+        needs.changes.outputs.ui == 'true' ||
+        contains(github.event.pull_request.labels.*.name, 'update-screenshots') ||
+        (github.event.action == 'labeled' && github.event.label.name == 'update-screenshots')
+      )
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

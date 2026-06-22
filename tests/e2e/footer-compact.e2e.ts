@@ -37,18 +37,21 @@ describe('footer compact layout', () => {
 
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
+  })
+
+  beforeEach(async () => {
     resetUserData()
     seed = seedFooterCompactFixture(process.cwd())
     seedE2eViewport()
     await browser.reloadSession()
+    await $('.input-footer').waitForExist({ timeout: 15_000 })
   })
 
-  after(() => {
+  afterEach(() => {
     resetUserData()
   })
 
   it('shows export and token count when the footer is wide enough', async () => {
-    await $('.input-footer').waitForExist({ timeout: 15_000 })
     await setChatPaneWidth(720)
 
     await browser.waitUntil(

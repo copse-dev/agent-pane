@@ -475,6 +475,7 @@ export function seedFooterCompactFixture(workspaceRoot: string): {
 export function seedPortraitRightPanelFixture(
   workspaceRoot: string,
   autoPortraitRightPanel: boolean,
+  windowBounds: { width: number; height: number } = { width: 760, height: 1180 },
 ): void {
   const projectId = 'e2e-portrait-right-panel-project'
   const threadId = 'e2e-portrait-right-panel-thread'
@@ -506,7 +507,7 @@ export function seedPortraitRightPanelFixture(
     }),
     'utf8',
   )
-  writeSettings({ autoPortraitRightPanel })
+  writeSettings({ autoPortraitRightPanel, windowBounds })
 }
 
 export function seedSubagentFixture(workspaceRoot: string): void {
