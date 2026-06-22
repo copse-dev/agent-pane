@@ -20,6 +20,9 @@ describe('keyboard-shortcuts', () => {
     assert.deepEqual(matchPanelShortcut(keyEvent({ ctrlKey: true, shiftKey: true, key: 'g' })), {
       openPanel: 'changes',
     })
+    assert.deepEqual(matchPanelShortcut(keyEvent({ ctrlKey: true, shiftKey: true, key: 'b' })), {
+      openPanel: 'browser',
+    })
     assert.deepEqual(matchPanelShortcut(keyEvent({ ctrlKey: true, key: '`' })), {
       openPanel: 'terminal',
     })

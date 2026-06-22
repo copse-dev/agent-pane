@@ -77,6 +77,7 @@ export async function buildSubagentRoute(parentModel: string): Promise<SubagentR
 // `lmstudio:<modelId>`; the legacy `lm-studio` value resolves to the configured
 // model or the first one the server has loaded (never the bogus "local-model").
 export async function buildProvider(model: string): Promise<LLMProvider> {
+  if (process.env.COPSE_PANEL_MOCK_LLM === '1') return createProvider(model)
   if (model === 'lm-studio' || model.startsWith('lmstudio:')) {
     const url = getSetting<string>('localServerUrl', DEFAULT_LM_STUDIO_URL)
     let id = model.startsWith('lmstudio:')
@@ -90,7 +91,6 @@ export async function buildProvider(model: string): Promise<LLMProvider> {
     }
     return createLocalOpenAIProvider(url, id, getLmStudioApiKey())
   }
-  if (process.env.COPSE_PANEL_MOCK_LLM === '1') return createProvider(model)
   if (model.startsWith('claude')) {
     return createProvider(model, {
       anthropicApiKey: storedOrEnvApiKey('anthropic'),

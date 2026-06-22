@@ -155,6 +155,11 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('menu:showChanges', listener)
       return () => ipcRenderer.off('menu:showChanges', listener)
     },
+    onShowBrowser: (handler: () => void) => {
+      const listener = () => handler()
+      ipcRenderer.on('menu:showBrowser', listener)
+      return () => ipcRenderer.off('menu:showBrowser', listener)
+    },
   },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
@@ -216,3 +221,15 @@ contextBridge.exposeInMainWorld('api', {
     openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   },
 })
+
+if (process.env.COPSE_E2E === '1') {
+  const errorToasts: string[] = []
+  contextBridge.exposeInMainWorld('__copseE2e', {
+    pushErrorToast(message: string) {
+      errorToasts.push(message)
+    },
+    getErrorToasts() {
+      return [...errorToasts]
+    },
+  })
+}

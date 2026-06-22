@@ -20,7 +20,7 @@ describe('markdown ordered list spacing', () => {
     resetUserData()
   })
 
-  it('renders git summary as a spaced ordered list after tool cards', async () => {
+  it('renders git summary as a compact ordered list after tool cards', async () => {
     await $('.tool-card-group .tool-name').waitForExist({ timeout: 15_000 })
     await expect($('.tool-card-group .tool-name')).toHaveText('Git')
     await expect($('.tool-card-group .tool-count')).toHaveText('×2')
@@ -39,6 +39,8 @@ describe('markdown ordered list spacing', () => {
       const intro = root.querySelector('p')
       const firstItem = items[0]
       const secondItem = items[1]
+      const firstItemCode = firstItem?.querySelector('code')
+      const firstItemStrong = firstItem?.querySelector('strong')
 
       const gap = (a: Element | null | undefined, b: Element | null | undefined) => {
         if (!a || !b) return 0
@@ -52,8 +54,9 @@ describe('markdown ordered list spacing', () => {
         hasNumberedParagraph: /^\d+\./.test(root.textContent?.trim() ?? ''),
         introToListGap: gap(intro, ol),
         itemGap: gap(firstItem, secondItem),
-        firstItemHasCode: !!firstItem?.querySelector('code'),
-        firstItemHasBold: !!firstItem?.querySelector('strong'),
+        firstItemInternalGap: gap(firstItemCode, firstItemStrong),
+        firstItemHasCode: !!firstItemCode,
+        firstItemHasBold: !!firstItemStrong,
       }
     })
 
@@ -64,7 +67,8 @@ describe('markdown ordered list spacing', () => {
       expect(layout.numberedParagraphs).toBe(1)
       expect(layout.hasNumberedParagraph).toBe(false)
       expect(layout.introToListGap).toBeGreaterThan(4)
-      expect(layout.itemGap).toBeGreaterThan(4)
+      expect(layout.itemGap).toBeLessThan(12)
+      expect(layout.firstItemInternalGap).toBeGreaterThan(4)
       expect(layout.firstItemHasCode).toBe(true)
       expect(layout.firstItemHasBold).toBe(true)
     }

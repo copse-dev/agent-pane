@@ -32,8 +32,10 @@ export type CloudModelProvider = 'anthropic' | 'openai'
  * Cloud model ids this app ships. Each id must exist verbatim as a key in
  * LiteLLM's catalog so the sync script can resolve it.
  */
+export const DEFAULT_CLOUD_MODEL = 'claude-sonnet-4-6'
+
 export const TRACKED_MODELS = [
-  'claude-sonnet-4-6',
+  DEFAULT_CLOUD_MODEL,
   'claude-opus-4-8',
   'claude-haiku-4-5',
   'gpt-4o',

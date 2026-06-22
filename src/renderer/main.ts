@@ -14,6 +14,7 @@ import { mountContextPanel } from './views/context-panel.ts'
 import { mountRightPanelTabs } from './views/right-panel-tabs.ts'
 import { mountTerminalsPane } from './views/terminals-pane.ts'
 import { mountGitChangesPane } from './views/git-changes-pane.ts'
+import { mountBrowserPane } from './views/browser-pane.ts'
 import {
   mountSettingsDialog,
   openSettingsDialog,
@@ -90,6 +91,10 @@ async function boot() {
     ensureLayout()
     openRightPanelWithWorkspace(store, api, 'changes')
   })
+  api.menu.onShowBrowser(() => {
+    ensureLayout()
+    openRightPanelWithWorkspace(store, api, 'browser')
+  })
 
   // File ▸ Open Folder… registers the chosen folder as a project and switches.
   api.workspace.onOpened((root) => {
@@ -150,6 +155,11 @@ function mountFullLayout() {
     store,
     api,
     monaco,
+  )
+  mountBrowserPane(
+    document.getElementById('browser-tabs-host')!,
+    document.getElementById('browser-viewer-host')!,
+    store,
   )
   mountContextPanel(document.getElementById('file-viewer')!, store, api, monaco)
 

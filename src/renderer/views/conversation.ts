@@ -17,6 +17,7 @@ import {
   type ToolCallDisplayItem,
 } from '@shared/tools/tool-display.ts'
 import { createTodoListEl } from './todo-panel.ts'
+import { queuedMessageIds } from '../controller/message-queue.ts'
 
 function statusIcon(status: ToolCall['status']): string {
   return status === 'done' ? '✓' : status === 'error' ? '✕' : '⋯'
@@ -165,9 +166,9 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
       const isLast = i === session.messages.length - 1
       timeline.append(createSubagentMessageEl(msg.content, status === 'running' && isLast, api))
     }
-    if (msg.toolCalls.length > 0) {
+    if ((msg.toolCalls ?? []).length > 0) {
       const toolsWrap = el('div', { class: 'subagent-inner-tools' })
-      for (const inner of msg.toolCalls) {
+      for (const inner of msg.toolCalls ?? []) {
         toolsWrap.append(createInnerToolCard(inner))
       }
       timeline.append(toolsWrap)
@@ -275,6 +276,32 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     activityLabel,
   )
   root.append(scrollArea, activityBar)
+
+  function appendQueuedBadge(msgEl: HTMLElement) {
+    if (msgEl.querySelector('.message-queued-badge')) return
+    msgEl.classList.add('msg-queued')
+    const body = msgEl.querySelector('.message-body')
+    if (!body) return
+    body.insertBefore(el('span', { class: 'message-queued-badge' }, 'Queued'), body.firstChild)
+  }
+
+  function clearQueuedBadge(msgEl: HTMLElement) {
+    msgEl.classList.remove('msg-queued')
+    msgEl.querySelector('.message-queued-badge')?.remove()
+  }
+
+  function syncQueuedBadges(threadId: string) {
+    if (threadId !== store.getState().activeThreadId) return
+    const thread = store.getState().threads.find((t) => t.id === threadId)
+    if (!thread) return
+    const queued = queuedMessageIds(thread)
+    for (const msg of thread.messages) {
+      const msgEl = list.querySelector(`[data-message-id="${msg.id}"]`) as HTMLElement | null
+      if (!msgEl || msg.role !== 'user') continue
+      if (queued.has(msg.id)) appendQueuedBadge(msgEl)
+      else clearQueuedBadge(msgEl)
+    }
+  }
 
   let pinnedToBottom = true
   let lastScrollTop = 0
@@ -415,8 +442,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
 
     list.append(msgEl)
+    if (msg.role === 'user' && thread && queuedMessageIds(thread).has(msgId)) {
+      appendQueuedBadge(msgEl)
+    }
     // Re-render any tool cards this message already carries (restored threads).
-    renderToolCards(msgEl, msg.toolCalls)
+    renderToolCards(msgEl, msg.toolCalls ?? [])
     scrollToBottom(msg.role === 'user')
   }
 
@@ -436,6 +466,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const thread = getActiveThread(store)
     thread?.messages.forEach((m) => appendMessageEl(store.getState().activeThreadId!, m.id))
     syncTodoPanel()
+    syncQueuedBadges(store.getState().activeThreadId!)
     updateScrollButton()
   }
 
@@ -446,12 +477,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       .find((m) => m.id === msgId)
     const msgEl = list.querySelector(`[data-message-id="${msgId}"]`)
     if (!msg || !msgEl) return
-    renderToolCards(msgEl as HTMLElement, msg.toolCalls)
+    renderToolCards(msgEl as HTMLElement, msg.toolCalls ?? [])
     scrollToBottom()
   }
 
   const unsubs = [
     store.on('message_added', (tid, mid) => appendMessageEl(tid, mid)),
+    store.on('message_queued', (tid) => syncQueuedBadges(tid)),
     store.on('message_token', (mid) => {
       const thread = getActiveThread(store)
       const msg = thread?.messages.find((m) => m.id === mid)

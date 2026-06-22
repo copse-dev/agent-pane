@@ -1,0 +1,66 @@
+#welcome {
+  position: absolute;
+  inset: 38px 0 0 0;
+  z-index: 50;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-base);
+  /* Titlebar stays visible above the welcome card; interactive elements opt out below. */
+  -webkit-app-region: drag;
+}
+#welcome.visible {
+  display: flex;
+}
+#welcome button,
+#welcome a,
+#welcome input {
+  -webkit-app-region: no-drag;
+}
+.welcome-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-xl) * 3;
+  max-width: 480px;
+  margin: 0 auto;
+  margin-top: 100px;
+  text-align: center;
+}
+.welcome-heading {
+  font-size: 24px;
+  font-weight: 600;
+}
+.welcome-sub {
+  color: var(--text-secondary);
+}
+.welcome-open-btn {
+  background: var(--accent);
+  color: white;
+  padding: var(--spacing-sm) var(--spacing-xl);
+  border-radius: var(--radius);
+  font-size: var(--font-size-lg);
+}
+.welcome-hint {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  max-width: 360px;
+}
+.titlebar-drag {
+  flex: 1;
+  height: 100%;
+  -webkit-app-region: drag;
+}
+.workspace-name {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  line-height: var(--titlebar-height);
+}
+.titlebar-btn {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: var(--radius);
+}

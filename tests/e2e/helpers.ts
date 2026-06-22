@@ -1,6 +1,33 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { homedir, platform } from 'node:os'
 import { join } from 'node:path'
+import { $, browser } from '@wdio/globals'
+
+/** Wait until the agent is not running and no prompts remain queued. */
+export async function waitForAgentIdle(timeoutMs = 15_000): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      const stopBtn = await $('.stop-btn')
+      const stopVisible =
+        (await stopBtn.isExisting()) && (await stopBtn.getProperty('hidden')) !== true
+      if (stopVisible) return false
+
+      const queue = await $('.footer-queue')
+      if (await queue.isExisting()) {
+        const queueHidden = await queue.getProperty('hidden')
+        if (queueHidden !== true) return false
+      }
+
+      return true
+    },
+    { timeout: timeoutMs, interval: 100, timeoutMsg: 'Agent did not return to idle' },
+  )
+}
+
+/** Composer is always enabled; wait until it is mounted. */
+export async function waitForPromptReady(timeoutMs = 15_000): Promise<void> {
+  await $('.prompt-input').waitForExist({ timeout: timeoutMs })
+}
 
 /** Matches `app.setPath('userData', …)` in `src/main/app-init.ts`. */
 export function getCopseUserDataDir(): string {

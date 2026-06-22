@@ -40,7 +40,16 @@ export function mountRightPanelTabs(root: HTMLElement, store: AppStore): () => v
     },
     'Plan',
   )
-  root.append(explorerBtn, terminalBtn, changesBtn, planBtn)
+  const browserBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'right-panel-tab',
+      'aria-label': 'Browser',
+    },
+    'Browser',
+  )
+  root.append(explorerBtn, terminalBtn, changesBtn, planBtn, browserBtn)
 
   let renderPlanPane: (() => void) | null = null
   const planHost = document.getElementById('plan-viewer-host')
@@ -51,29 +60,39 @@ export function mountRightPanelTabs(root: HTMLElement, store: AppStore): () => v
     })
   }
 
+  function hasActivePlan(): boolean {
+    const thread = getActiveThread(store)
+    return (thread?.todos?.length ?? 0) > 0
+  }
+
   function syncLayout() {
     const mode = store.getState().rightPanelMode
     const isExplorer = mode === 'explorer'
     const isTerminal = mode === 'terminal'
     const isChanges = mode === 'changes'
     const isPlan = mode === 'plan'
+    const isBrowser = mode === 'browser'
 
     const treeHost = document.getElementById('file-tree-host')
     const terminalsList = document.getElementById('terminals-list-host')
     const gitChangesHost = document.getElementById('git-changes-host')
+    const browserTabsHost = document.getElementById('browser-tabs-host')
     const treeResizer = document.getElementById('resizer-tree')
     const fileViewer = document.getElementById('file-viewer')
     const planViewer = document.getElementById('plan-viewer-host')
     const terminalsViewer = document.getElementById('terminals-viewer-host')
     const gitDiffViewer = document.getElementById('git-diff-viewer-host')
+    const browserViewer = document.getElementById('browser-viewer-host')
 
     if (treeHost) treeHost.hidden = !isExplorer
     if (terminalsList) terminalsList.hidden = !isTerminal
     if (gitChangesHost) gitChangesHost.hidden = !isChanges
+    if (browserTabsHost) browserTabsHost.hidden = !isBrowser
     if (fileViewer) fileViewer.hidden = !isExplorer
     if (planViewer) planViewer.hidden = !isPlan
     if (terminalsViewer) terminalsViewer.hidden = !isTerminal
     if (gitDiffViewer) gitDiffViewer.hidden = !isChanges
+    if (browserViewer) browserViewer.hidden = !isBrowser
     if (treeResizer) treeResizer.hidden = !store.getState().filesPaneOpen || isPlan
     if (isPlan) renderPlanPane?.()
   }
@@ -87,11 +106,22 @@ export function mountRightPanelTabs(root: HTMLElement, store: AppStore): () => v
   }
 
   function sync() {
-    const mode = store.getState().rightPanelMode
+    let mode = store.getState().rightPanelMode
+    const showPlan = hasActivePlan()
+    planBtn.hidden = !showPlan
+
+    if (!showPlan && mode === 'plan') {
+      store.setState({ rightPanelMode: 'explorer' })
+      store.emit('right_panel_mode_changed')
+      store.emit('files_pane_changed')
+      mode = 'explorer'
+    }
+
     explorerBtn.classList.toggle('is-active', mode === 'explorer')
     terminalBtn.classList.toggle('is-active', mode === 'terminal')
     changesBtn.classList.toggle('is-active', mode === 'changes')
     planBtn.classList.toggle('is-active', mode === 'plan')
+    browserBtn.classList.toggle('is-active', mode === 'browser')
     syncLayout()
   }
 
@@ -99,17 +129,14 @@ export function mountRightPanelTabs(root: HTMLElement, store: AppStore): () => v
   terminalBtn.addEventListener('click', () => setMode('terminal'))
   changesBtn.addEventListener('click', () => setMode('changes'))
   planBtn.addEventListener('click', () => setMode('plan'))
+  browserBtn.addEventListener('click', () => setMode('browser'))
 
   sync()
   const unsubs = [
     store.on('right_panel_mode_changed', sync),
     store.on('files_pane_changed', syncLayout),
-    store.on('todos_changed', () => {
-      if (store.getState().rightPanelMode === 'plan') renderPlanPane?.()
-    }),
-    store.on('threads_changed', () => {
-      if (store.getState().rightPanelMode === 'plan') renderPlanPane?.()
-    }),
+    store.on('todos_changed', sync),
+    store.on('threads_changed', sync),
   ]
 
   return () => unsubs.forEach((u) => u())

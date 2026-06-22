@@ -1,0 +1,126 @@
+.tool-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-sm);
+  margin-top: 2px;
+  font-size: var(--font-size-sm);
+}
+.msg .tool-card:first-of-type {
+  margin-top: var(--spacing-xs);
+}
+.tool-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+  list-style-position: inside;
+}
+.tool-card[open] .tool-card-header {
+  margin-bottom: var(--spacing-xs);
+}
+.tool-card > .tool-args,
+.tool-card > .tool-result {
+  margin-top: var(--spacing-xs);
+}
+.tool-name {
+  font-weight: 600;
+}
+.tool-count {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.tool-card-group > .tool-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.tool-card-group[data-status='done'] > .tool-group-items {
+  margin-top: var(--spacing-xs);
+}
+.tool-card-group:not([open]) {
+  padding-block: 6px;
+}
+.tool-group-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--bg-base);
+}
+.tool-group-item-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+  list-style-position: inside;
+  font-size: var(--font-size-sm);
+}
+.tool-group-item[open] .tool-group-item-header {
+  margin-bottom: var(--spacing-xs);
+}
+.tool-group-item > .tool-args,
+.tool-group-item > .tool-result {
+  margin-top: var(--spacing-xs);
+}
+.tool-status-icon {
+  color: var(--text-muted);
+}
+.tool-card[data-status='done'] .tool-status-icon {
+  color: var(--success);
+}
+.tool-card[data-status='error'] .tool-status-icon {
+  color: var(--error);
+}
+.tool-result {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  white-space: pre-wrap;
+  max-height: 200px;
+  overflow-y: auto;
+  color: var(--text-secondary);
+}
+.tool-args details summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.tool-args pre {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: var(--spacing-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow: auto;
+}
+.tool-card-subagent .subagent-summary-preview {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin-top: var(--spacing-xs);
+}
+.tool-card-subagent[open] .subagent-summary-preview {
+  display: none;
+}
+.tool-card-subagent .subagent-timeline {
+  margin-top: var(--spacing-sm);
+  padding-left: var(--spacing-sm);
+  border-left: 2px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.tool-card-subagent .subagent-message-assistant.message-text {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+.tool-card-subagent .subagent-inner-tools {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.tool-card-subagent:not([open]) .subagent-timeline,
+.tool-card-subagent:not([open]) .subagent-summary-preview,
+.tool-card-subagent:not([open]) .subagent-parent-result {
+  display: none;
+}
