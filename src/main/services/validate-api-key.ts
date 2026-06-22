@@ -1,3 +1,5 @@
+import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
+
 export interface ApiKeyValidationResult {
   ok: boolean
   error?: string
@@ -25,7 +27,7 @@ export async function validateAnthropicApiKey(key: string): Promise<ApiKeyValida
         'x-api-key': trimmed,
         'anthropic-version': '2023-06-01',
       },
-      signal: AbortSignal.timeout(8_000),
+      signal: AbortSignal.timeout(FETCH_TIMEOUTS.apiKeyValidation),
     })
     if (res.status === 401 || res.status === 403) {
       return { ok: false, error: 'Key rejected by Anthropic', formatOk: true }
@@ -53,7 +55,7 @@ export async function validateOpenAiApiKey(key: string): Promise<ApiKeyValidatio
   try {
     const res = await fetch('https://api.openai.com/v1/models', {
       headers: { Authorization: `Bearer ${trimmed}` },
-      signal: AbortSignal.timeout(8_000),
+      signal: AbortSignal.timeout(FETCH_TIMEOUTS.apiKeyValidation),
     })
     if (res.status === 401 || res.status === 403) {
       return { ok: false, error: 'Key rejected by OpenAI', formatOk: true }

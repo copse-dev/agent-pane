@@ -30,6 +30,10 @@ export function getSetting<T>(key: string, fallback: T): T {
   return (settings.get(key) as T | undefined) ?? fallback
 }
 
+export function getSettingTrimmed(key: string, fallback = ''): string {
+  return getSetting<string>(key, fallback).trim()
+}
+
 export function setSetting(key: string, value: unknown): Promise<void> {
   settings.set(key, value)
   return Promise.resolve()
