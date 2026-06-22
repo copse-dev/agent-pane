@@ -51,6 +51,11 @@ export function mountRightPanelTabs(root: HTMLElement, store: AppStore): () => v
     })
   }
 
+  function hasActivePlan(): boolean {
+    const thread = getActiveThread(store)
+    return (thread?.todos?.length ?? 0) > 0
+  }
+
   function syncLayout() {
     const mode = store.getState().rightPanelMode
     const isExplorer = mode === 'explorer'
@@ -87,7 +92,17 @@ export function mountRightPanelTabs(root: HTMLElement, store: AppStore): () => v
   }
 
   function sync() {
-    const mode = store.getState().rightPanelMode
+    let mode = store.getState().rightPanelMode
+    const showPlan = hasActivePlan()
+    planBtn.hidden = !showPlan
+
+    if (!showPlan && mode === 'plan') {
+      store.setState({ rightPanelMode: 'explorer' })
+      store.emit('right_panel_mode_changed')
+      store.emit('files_pane_changed')
+      mode = 'explorer'
+    }
+
     explorerBtn.classList.toggle('is-active', mode === 'explorer')
     terminalBtn.classList.toggle('is-active', mode === 'terminal')
     changesBtn.classList.toggle('is-active', mode === 'changes')
@@ -104,12 +119,8 @@ export function mountRightPanelTabs(root: HTMLElement, store: AppStore): () => v
   const unsubs = [
     store.on('right_panel_mode_changed', sync),
     store.on('files_pane_changed', syncLayout),
-    store.on('todos_changed', () => {
-      if (store.getState().rightPanelMode === 'plan') renderPlanPane?.()
-    }),
-    store.on('threads_changed', () => {
-      if (store.getState().rightPanelMode === 'plan') renderPlanPane?.()
-    }),
+    store.on('todos_changed', sync),
+    store.on('threads_changed', sync),
   ]
 
   return () => unsubs.forEach((u) => u())

@@ -40,6 +40,7 @@ describe('todo plan display', () => {
     const togglePanel = await $('.titlebar-btn[aria-label="Toggle right panel"]')
     await togglePanel.click()
 
+    await $('.right-panel-tab[aria-label="Plan"]').waitForDisplayed({ timeout: 5_000 })
     await $('.right-panel-tab[aria-label="Plan"]').click()
     await browser.waitUntil(async () => (await $$('#plan-viewer-host .todo-item')).length === 5, {
       timeout: 10_000,
