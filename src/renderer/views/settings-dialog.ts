@@ -7,6 +7,7 @@ import {
   isAppIconVariant,
   type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
+import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
 import { populateModelSelect, populateSmallTasksModelSelect } from './model-options.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
@@ -473,7 +474,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await populateModelSelect(
         form.elements.namedItem('model') as HTMLSelectElement,
         api,
-        model ?? 'claude-sonnet-4-6',
+        model ?? DEFAULT_CLOUD_MODEL,
       )
       const smallTasksModel = (await api.settings.get('smallTasksModel')) as string | undefined
       await populateSmallTasksModelSelect(
