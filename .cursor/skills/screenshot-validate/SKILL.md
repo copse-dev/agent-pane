@@ -16,7 +16,7 @@ Use this skill to **prove a UI change works** and **judge whether it looks corre
    - Relies on `wdio.conf.ts` to launch Electron (`appEntryPoint: dist/main/index.js`, `--disable-gpu`)
    - Sets mock LLM env in `beforeEach`: `COPSE_PANEL_MOCK_LLM=1`, empty API keys
    - Asserts DOM structure (counts, text, attributes) — not just screenshots.
-   - Saves PNGs to `tests/e2e/screenshots/` with descriptive names via `browser.saveScreenshot(...)`.
+   - Saves PNGs via `tests/e2e/helpers/screenshot.ts` (`saveAppScreenshot` / `saveElementScreenshot`) so committed reference shots share a fixed 1280×800 `#app` frame; use `browser.saveScreenshot` only when the whole OS window matters.
 5. **Run**:
    ```bash
    npm run build
