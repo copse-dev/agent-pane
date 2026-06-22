@@ -2,10 +2,14 @@ import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import {
   E2E_SCREENSHOT_DIR,
-  prepareE2eScreenshot,
   saveAppScreenshot,
+  saveThreePaneScreenshot,
 } from './helpers/screenshot.ts'
-import { resetUserData, seedTodoPlanFixtures } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedE2eThreePaneLayout,
+  seedTodoPlanFixtures,
+} from './helpers/seed-config.ts'
 
 async function openRightPanel(): Promise<void> {
   const pane = await $('#pane-files')
@@ -29,6 +33,7 @@ describe('todo plan display', () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     ;({ noPlanThreadTitle } = seedTodoPlanFixtures(process.cwd()))
+    seedE2eThreePaneLayout()
     await browser.reloadSession()
   })
 
@@ -82,9 +87,13 @@ describe('todo plan display', () => {
     )
 
     await openRightPanel()
+    await (await $('.right-panel-tab[aria-label="Explorer"]')).click()
     await expect($('.right-panel-tab[aria-label="Explorer"]')).toHaveElementClass('is-active')
     await expect($('.right-panel-tab[aria-label="Plan"]')).not.toBeDisplayed()
+    await expect($('#pane-projects .chats-list')).toBeDisplayed()
+    await expect($('#file-tree-host')).toBeDisplayed()
+    await expect($('#plan-viewer-host')).not.toBeDisplayed()
 
-    await saveAppScreenshot('todo-no-plan.png')
+    await saveThreePaneScreenshot('todo-no-plan.png')
   })
 })

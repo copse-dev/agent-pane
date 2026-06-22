@@ -45,6 +45,17 @@ export function seedE2eViewport(
   writeSettings({ windowBounds: bounds })
 }
 
+/** Layout for three-pane todo plan reference screenshots. Call before reloadSession(). */
+export function seedE2eThreePaneLayout(): void {
+  writeSettings({
+    layout: {
+      projectsPaneWidth: 260,
+      filesPaneWidth: 480,
+      fileTreeWidth: 200,
+    },
+  })
+}
+
 export function seedEmptyProject(
   workspaceRoot: string,
   projectId: string,
