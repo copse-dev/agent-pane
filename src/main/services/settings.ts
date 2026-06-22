@@ -112,6 +112,11 @@ export function getSetting<T>(key: string, fallback: T): T {
   return raw as T
 }
 
+/** Read a string setting and trim it (empty string when unset/blank). */
+export function getSettingTrimmed(key: string, fallback = ''): string {
+  return getSetting<string>(key, fallback).trim()
+}
+
 /**
  * Persist a setting. Writes are serialized per key (electron-store's file write
  * is non-atomic, so concurrent writers could otherwise drop an update). When the

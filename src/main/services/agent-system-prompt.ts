@@ -1,5 +1,5 @@
 import { loadProjectInstructions } from './project-instructions.ts'
-import { getSetting } from './settings.ts'
+import { getSetting, getSettingTrimmed } from './settings.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import {
   buildInvokedSkillsBlock,
@@ -24,7 +24,7 @@ export async function buildSystemPrompt(opts: {
 
   const basePrompt = subagentsEnabled ? BASE_SYSTEM_PROMPT : BASE_SYSTEM_PROMPT_DIRECT_READS
   const externalApiSafety = getSetting<boolean>('externalApiSafety', false)
-  const customInstructions = getSetting<string>('customInstructions', '').trim()
+  const customInstructions = getSettingTrimmed('customInstructions')
   return (
     basePrompt
       .replace('{SKILLS_TOOLS_LINE}', skillsToolsLine)
