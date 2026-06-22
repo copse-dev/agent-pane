@@ -1,4 +1,4 @@
-import { accessSync, realpathSync } from 'node:fs'
+import { accessSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
@@ -127,11 +127,25 @@ export function resolveNodeToolchainAllowRead(env: NodeJS.ProcessEnv = process.e
 
 /** Paths the bundled sandbox-fs worker must read to exec under ASRT (outside the workspace). */
 export function electronRuntimeAllowReadPaths(): string[] {
-  const exec = resolve(process.execPath)
+  let exec = resolve(process.execPath)
+  try {
+    exec = realpathSync.native(exec)
+  } catch {
+    // Keep resolve() result when the binary is not stat-able yet.
+  }
   const paths = [exec, dirname(exec), `${dirname(exec)}/**`]
   if (process.platform === 'darwin' && exec.includes('.app/')) {
     const appRoot = `${exec.split('.app/')[0]!}.app`
-    paths.push(resolve(appRoot), `${resolve(appRoot)}/**`)
+    try {
+      const realAppRoot = realpathSync.native(resolve(appRoot))
+      paths.push(realAppRoot, `${realAppRoot}/**`)
+      const macOsDir = join(realAppRoot, 'Contents', 'MacOS')
+      if (statSync(macOsDir).isDirectory()) {
+        paths.push(macOsDir, `${macOsDir}/**`)
+      }
+    } catch {
+      paths.push(resolve(appRoot), `${resolve(appRoot)}/**`)
+    }
   }
   return [...new Set(paths)]
 }
