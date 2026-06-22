@@ -47,24 +47,23 @@ body {
 }
 .pane-resizer {
   flex-shrink: 0;
-  width: 5px;
+  width: var(--pane-divider-width, 1px);
+  background-color: var(--border);
   cursor: col-resize;
-  background: transparent;
   touch-action: none;
   position: relative;
+  z-index: 2;
 }
-.pane-resizer::before {
+.pane-resizer::after {
   content: '';
   position: absolute;
   inset-block: 0;
-  left: 0;
-  width: var(--pane-divider-width, 1px);
-  background: var(--border);
-  pointer-events: none;
+  left: -2px;
+  right: -2px;
 }
-.pane-resizer:hover::before,
-.pane-resizer.is-dragging::before {
-  background: var(--accent);
+.pane-resizer:hover,
+.pane-resizer.is-dragging {
+  background-color: var(--accent);
 }
 .pane-projects-header {
   display: flex;
@@ -185,16 +184,21 @@ body {
   --chat-composer-height: 148px;
   background:
     radial-gradient(
-      ellipse 90% 55% at 50% -10%,
-      color-mix(in srgb, var(--bg-elevated) 28%, transparent),
-      transparent 72%
+      ellipse 85% 50% at 50% -5%,
+      color-mix(in srgb, var(--chat-gradient-glow) 60%, transparent),
+      transparent 68%
     ),
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--bg-elevated) 14%, var(--bg-base)) 0%,
-      var(--bg-base) 48%,
-      color-mix(in srgb, var(--bg-elevated) 10%, var(--bg-base)) 100%
+      var(--chat-gradient-top) 0%,
+      var(--chat-gradient-mid) 52%,
+      var(--chat-gradient-bottom) 100%
     );
+}
+.conversation,
+.conversation-scroll,
+.messages-list {
+  background: transparent;
 }
 .pane-chat.composer-centered .conversation {
   padding-bottom: 0;
