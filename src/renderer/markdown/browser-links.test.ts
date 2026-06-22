@@ -25,7 +25,8 @@ describe('markdown browser links', () => {
 
   it('leaves generated file reference links to the file link handler', () => {
     const root = document.createElement('div')
-    root.innerHTML = '<a href="#" data-file-reference-path="src/main/index.ts">src/main/index.ts</a>'
+    root.innerHTML =
+      '<a href="#" data-file-reference-path="src/main/index.ts">src/main/index.ts</a>'
     const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
     let requested = false
     store.on('browser_url_requested', () => (requested = true))

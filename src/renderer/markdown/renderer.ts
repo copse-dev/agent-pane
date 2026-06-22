@@ -128,16 +128,13 @@ function renderBareHttpLinks(text: string): string {
     .split(/(<code>[\s\S]*?<\/code>|<a\b[\s\S]*?<\/a>)/g)
     .map((segment, index) => {
       if (index % 2 === 1) return segment
-      return segment.replace(
-        BARE_HTTP_URL_RE,
-        (_match, prefix: string, rawUrl: string) => {
-          const trailing = rawUrl.match(TRAILING_URL_PUNCTUATION_RE)?.[0] ?? ''
-          const url = trailing ? rawUrl.slice(0, -trailing.length) : rawUrl
-          const href = safeLinkHref(url)
-          if (!href) return `${prefix}${rawUrl}`
-          return `${prefix}${renderedLink(url, href)}${trailing}`
-        },
-      )
+      return segment.replace(BARE_HTTP_URL_RE, (_match, prefix: string, rawUrl: string) => {
+        const trailing = rawUrl.match(TRAILING_URL_PUNCTUATION_RE)?.[0] ?? ''
+        const url = trailing ? rawUrl.slice(0, -trailing.length) : rawUrl
+        const href = safeLinkHref(url)
+        if (!href) return `${prefix}${rawUrl}`
+        return `${prefix}${renderedLink(url, href)}${trailing}`
+      })
     })
     .join('')
 }
