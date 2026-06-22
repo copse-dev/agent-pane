@@ -129,7 +129,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         <form class="settings-content">
           <section class="settings-section active" data-section="general">
             <h3>General</h3>
-            <p class="settings-section-desc">Cloud API keys and the default chat model for new conversations.</p>
+            <p class="settings-section-desc">
+              Cloud API keys, default chat model, and task-specific model choices.
+            </p>
 
             <div id="settings-api-keys-host"></div>
 
@@ -152,6 +154,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <select name="smallTasksModel"></select>
               </label>
             </fieldset>
+
+            <div id="settings-model-routing-host"></div>
 
             <fieldset>
               <legend>Agent behavior</legend>
@@ -206,13 +210,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <section class="settings-section" data-section="local-models">
             <h3>Local models</h3>
             <p class="settings-section-desc">
-              Connect to an LM Studio (or other OpenAI-compatible) server and route different tasks to
-              specific local models.
+              Connect to an LM Studio (or other OpenAI-compatible) server.
             </p>
 
             <div id="settings-lm-studio-host"></div>
-
-            <div id="settings-model-routing-host"></div>
 
             <fieldset>
               <legend>Routing behavior</legend>
