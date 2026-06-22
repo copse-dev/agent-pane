@@ -41,15 +41,15 @@ async function collect(provider: OpenAIProvider): Promise<void> {
 describe('OpenAIProvider request options', () => {
   it('asks OpenAI cloud streams to include usage', async () => {
     const provider = new OpenAIProvider('gpt-test', { apiKey: 'test-openai-key' })
-    let captured: CapturedChatCompletionRequest | null = null
+    const captured: { request?: CapturedChatCompletionRequest } = {}
     ;(provider as unknown as OpenAIProviderForTest).client.chat.completions.create = (request) => {
-      captured = request
+      captured.request = request
       return oneTextChunk()
     }
 
     await collect(provider)
 
-    assert.equal(captured?.stream_options?.include_usage, true)
+    assert.equal(captured.request?.stream_options?.include_usage, true)
   })
 
   it('omits stream_options for custom base URLs by default', async () => {
@@ -57,14 +57,14 @@ describe('OpenAIProvider request options', () => {
       baseURL: 'http://localhost:11434/v1',
       apiKey: 'local-key',
     })
-    let captured: CapturedChatCompletionRequest | null = null
+    const captured: { request?: CapturedChatCompletionRequest } = {}
     ;(provider as unknown as OpenAIProviderForTest).client.chat.completions.create = (request) => {
-      captured = request
+      captured.request = request
       return oneTextChunk()
     }
 
     await collect(provider)
 
-    assert.equal(captured?.stream_options, undefined)
+    assert.equal(captured.request?.stream_options, undefined)
   })
 })
