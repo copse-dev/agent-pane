@@ -1,0 +1,63 @@
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: inherit;
+}
+button:hover {
+  opacity: 0.8;
+}
+input,
+textarea,
+select {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-sm);
+  font-family: inherit;
+  font-size: inherit;
+  outline: none;
+}
+input:focus,
+textarea:focus {
+  border-color: var(--accent);
+}
+dialog {
+  /* The global `* { margin: 0 }` reset removes the UA `margin: auto` that
+     centers a modal <dialog>, jamming it into the top-left. Restore it. */
+  margin: auto;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-xl);
+  min-width: 400px;
+}
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.5);
+}
+fieldset {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+fieldset label {
+  margin-bottom: var(--spacing-md);
+}
+legend {
+  padding: 0 var(--spacing-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
