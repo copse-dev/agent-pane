@@ -15,6 +15,7 @@ vendor/codesearch/
 test-results/
 .wdio-profile-*/
 .wdio-git-fixture-*/
+tests/fixtures/git-changes-repo/.git/
 .wdio-eval-profile-*/
 .wdio-eval-userdata-*/
 .wdio-eval-chrome-*/
