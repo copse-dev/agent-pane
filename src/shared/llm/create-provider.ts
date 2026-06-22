@@ -51,13 +51,15 @@ export function createProvider(model?: string, keys: ProviderKeys = {}): LLMProv
   )
 }
 
-// LM Studio (and other OpenAI-compatible local servers) speak the OpenAI API,
-// so we reuse OpenAIProvider with a custom base URL. apiKey is whatever the
-// local server expects (LM Studio may require one if auth is enabled).
-export function createLMStudioProvider(
+// OpenAI-compatible local servers speak the same chat API, so we reuse
+// OpenAIProvider with a custom base URL. apiKey is whatever the local server
+// expects (many require any non-empty value, even when auth is disabled).
+export function createLocalOpenAIProvider(
   baseURL: string,
   model: string,
   apiKey = 'lm-studio',
 ): LLMProvider {
   return new OpenAIProvider(model, { baseURL, apiKey: apiKey || 'lm-studio' })
 }
+
+export const createLMStudioProvider = createLocalOpenAIProvider

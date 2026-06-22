@@ -1,7 +1,52 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { OpenAIProvider } from './openai-provider.ts'
 import type { StreamChunk } from '@shared/types'
+import { OpenAIProvider } from './openai-provider.ts'
+
+interface CapturedChatCompletionRequest {
+  model: string
+  stream?: boolean
+  stream_options?: { include_usage?: boolean }
+}
+
+interface ChatCompletionChunk {
+  choices: Array<{
+    delta?: {
+      content?: string
+      tool_calls?: Array<{
+        index: number
+        id?: string
+        function?: { name?: string; arguments?: string }
+      }>
+    }
+    finish_reason?: string | null
+  }>
+  usage?: { prompt_tokens: number; completion_tokens: number }
+}
+
+interface OpenAIProviderForTest {
+  client: {
+    chat: {
+      completions: {
+        create: (
+          request: CapturedChatCompletionRequest,
+          opts?: unknown,
+        ) => AsyncIterable<ChatCompletionChunk>
+      }
+    }
+  }
+}
+
+async function* streamEvents(events: ChatCompletionChunk[]): AsyncIterable<ChatCompletionChunk> {
+  for (const event of events) yield event
+}
+
+function withFakeCreate(
+  provider: OpenAIProvider,
+  create: OpenAIProviderForTest['client']['chat']['completions']['create'],
+): void {
+  ;(provider as unknown as OpenAIProviderForTest).client.chat.completions.create = create
+}
 
 /**
  * Inject a fake OpenAI SDK stream into the provider's private client so we can
@@ -10,21 +55,8 @@ import type { StreamChunk } from '@shared/types'
  * `client.chat.completions.create(...)`, which returns an async-iterable of
  * streamed events.
  */
-function withFakeStream(provider: OpenAIProvider, events: unknown[]): void {
-  const fakeClient = {
-    chat: {
-      completions: {
-        create() {
-          return {
-            async *[Symbol.asyncIterator]() {
-              for (const e of events) yield e
-            },
-          }
-        },
-      },
-    },
-  }
-  ;(provider as unknown as { client: unknown }).client = fakeClient
+function withFakeStream(provider: OpenAIProvider, events: ChatCompletionChunk[]): void {
+  withFakeCreate(provider, () => streamEvents(events))
 }
 
 async function collect(provider: OpenAIProvider): Promise<StreamChunk[]> {
@@ -34,6 +66,37 @@ async function collect(provider: OpenAIProvider): Promise<StreamChunk[]> {
   }
   return out
 }
+
+describe('OpenAIProvider request options', () => {
+  it('asks OpenAI cloud streams to include usage', async () => {
+    const provider = new OpenAIProvider('gpt-test', { apiKey: 'test-openai-key' })
+    const captured: { request?: CapturedChatCompletionRequest } = {}
+    withFakeCreate(provider, (request) => {
+      captured.request = request
+      return streamEvents([{ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }])
+    })
+
+    await collect(provider)
+
+    assert.equal(captured.request?.stream_options?.include_usage, true)
+  })
+
+  it('omits stream_options for custom base URLs by default', async () => {
+    const provider = new OpenAIProvider('local-model', {
+      baseURL: 'http://localhost:11434/v1',
+      apiKey: 'local-key',
+    })
+    const captured: { request?: CapturedChatCompletionRequest } = {}
+    withFakeCreate(provider, (request) => {
+      captured.request = request
+      return streamEvents([{ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }])
+    })
+
+    await collect(provider)
+
+    assert.equal(captured.request?.stream_options, undefined)
+  })
+})
 
 describe('OpenAIProvider stream parsing', () => {
   it('emits text deltas, a usage chunk, and a done chunk with the finish reason', async () => {
