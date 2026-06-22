@@ -101,10 +101,13 @@ test('movePendingUserMessagesToEnd preserves queued FIFO order', () => {
     { id: 'assistant-1', role: 'assistant', content: 'response', toolCalls: [], createdAt: 4 },
   ]
 
-  const reordered = movePendingUserMessagesToEnd([...messages], [
-    { messageId: 'queued-1', payload: { content: 'queued 1' }, createdAt: 2 },
-    { messageId: 'queued-2', payload: { content: 'queued 2' }, createdAt: 3 },
-  ])
+  const reordered = movePendingUserMessagesToEnd(
+    [...messages],
+    [
+      { messageId: 'queued-1', payload: { content: 'queued 1' }, createdAt: 2 },
+      { messageId: 'queued-2', payload: { content: 'queued 2' }, createdAt: 3 },
+    ],
+  )
 
   assert.deepEqual(
     reordered.map((message) => message.id),
