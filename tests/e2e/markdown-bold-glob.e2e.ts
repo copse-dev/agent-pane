@@ -30,6 +30,16 @@ describe('markdown bold after glob table cells', () => {
       )
       const mcpStrong = mcpItem?.querySelector('strong')
       const globCell = root.querySelector('td strong code')
+      const supportingHeading = [...root.querySelectorAll('h4')].find((h) =>
+        h.textContent?.includes('Key Supporting Files'),
+      )
+      const supportingList = supportingHeading?.nextElementSibling
+      const supportingItems = supportingList ? [...supportingList.querySelectorAll('li')] : []
+
+      const gap = (a: Element | null | undefined, b: Element | null | undefined) => {
+        if (!a || !b) return 0
+        return b.getBoundingClientRect().top - a.getBoundingClientRect().bottom
+      }
 
       return {
         mcpItemHtml: mcpItem?.innerHTML ?? '',
@@ -40,6 +50,8 @@ describe('markdown bold after glob table cells', () => {
         architectureListLabels: [...(root.querySelectorAll('h4') ?? [])]
           .filter((h) => h.textContent?.includes('Architecture Notes'))[0]
           ?.nextElementSibling?.querySelectorAll('li strong').length,
+        supportingListItemCount: supportingItems.length,
+        supportingItemGap: gap(supportingItems[0], supportingItems[1]),
       }
     })
 
@@ -49,6 +61,8 @@ describe('markdown bold after glob table cells', () => {
     expect(metrics.hasMalformedStrong).toBe(false)
     expect(metrics.globCellText).toBe('src/**/*.test.ts')
     expect(metrics.architectureListLabels).toBe(5)
+    expect(metrics.supportingListItemCount).toBe(3)
+    expect(metrics.supportingItemGap).toBeLessThan(12)
 
     await assertNoErrorToasts('markdown bold glob fixture')
 

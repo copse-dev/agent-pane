@@ -1122,6 +1122,8 @@ label {
   margin: var(--spacing-sm) 0;
   padding-inline-start: 1.5em;
   list-style-position: outside;
+  /* pre-wrap on .message-text would otherwise render source newlines between items. */
+  white-space: normal;
 }
 .message-text:empty {
   display: none;
@@ -1279,9 +1281,6 @@ label {
 }
 .message-text tbody tr:nth-child(even) td {
   background: rgba(255, 255, 255, 0.02);
-}
-.message-text li + li {
-  margin-top: var(--spacing-sm);
 }
 .message-text li > :first-child {
   margin-top: 0;
