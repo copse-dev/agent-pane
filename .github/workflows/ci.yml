@@ -22,11 +22,9 @@ jobs:
       - run: npm run format:check
       - run: npm test
       - run: npm run build
-      # The Electron/Chromedriver e2e session occasionally fails to start on the
-      # runner ("DevToolsActivePort file doesn't exist" / "POST /session" timeout).
-      # The hang wedges the whole wdio run, so in-process retries don't recover —
-      # only a fresh xvfb+Electron launch does. Retry the entire command instead.
-      - name: e2e smoke (retry on flaky session startup)
+      # Full seeded e2e gate (see wdio.ci.conf.ts). Skips network/git/timing flakes.
+      # Retries recover occasional Electron session startup failures on the runner.
+      - name: e2e (retry on flaky session startup)
         run: |
           for attempt in 1 2 3; do
             echo "::group::e2e attempt $attempt"

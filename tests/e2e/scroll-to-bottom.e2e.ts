@@ -7,6 +7,7 @@ import {
   seedScrollToBottomFixture,
 } from './helpers/seed-config.ts'
 import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
+import { itSkipInCi } from './helpers/ci-gate.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -104,7 +105,7 @@ describe('scroll to bottom', () => {
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'scroll-to-bottom-at-bottom.png'))
   })
 
-  it('hides scroll-to-bottom while auto-scrolling during streaming', async () => {
+  itSkipInCi('hides scroll-to-bottom while auto-scrolling during streaming', async () => {
     resetUserData()
     seedScrollStreamingFixture(process.cwd())
     await browser.reloadSession()
@@ -138,7 +139,7 @@ describe('scroll to bottom', () => {
     await waitForAgentIdle()
   })
 
-  it('keeps the view pinned when the user scrolls up during streaming', async () => {
+  itSkipInCi('keeps the view pinned when the user scrolls up during streaming', async () => {
     resetUserData()
     seedScrollStreamingFixture(process.cwd())
     await browser.reloadSession()

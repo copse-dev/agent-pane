@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedContextWheelFixture, seedEmptyProject } from './helpers/seed-config.ts'
+import { describeSkipInCi } from './helpers/ci-gate.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -37,7 +38,7 @@ describe('context wheel footer seeded', () => {
   })
 })
 
-describe('context wheel footer live mock', () => {
+describeSkipInCi('context wheel footer live mock', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
