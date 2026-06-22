@@ -8,7 +8,6 @@ import { saveAppScreenshot } from './helpers/screenshot.ts'
 const PROJECT_ID = 'e2e-monaco-selection-project'
 const SAMPLE_FILE = 'selection-sample.txt'
 const SCREENSHOT = 'monaco-selection-chat-attachment.png'
-const CONTROL_KEY = '\uE009'
 
 async function waitForWorkspace(): Promise<void> {
   await browser.waitUntil(
@@ -21,7 +20,22 @@ async function waitForWorkspace(): Promise<void> {
 }
 
 async function pressControlChord(key: string): Promise<void> {
-  await browser.keys([CONTROL_KEY, key, CONTROL_KEY])
+  await browser.execute((pressedKey) => {
+    const target =
+      document.querySelector('#file-viewer .monaco-editor textarea') ?? document.activeElement
+    if (!target) throw new Error('No target for Monaco shortcut')
+    for (const type of ['keydown', 'keyup']) {
+      target.dispatchEvent(
+        new KeyboardEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          ctrlKey: true,
+          key: pressedKey,
+          code: `Key${pressedKey.toUpperCase()}`,
+        }),
+      )
+    }
+  }, key)
 }
 
 async function focusMonacoInput(): Promise<void> {
