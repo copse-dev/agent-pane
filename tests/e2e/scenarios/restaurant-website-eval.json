@@ -1,0 +1,65 @@
+{
+  "id": "restaurant-website-eval",
+  "description": "Multi-turn agent eval: create a simple restaurant website from an uploaded misformatted menu, initialize git, then commit each requested improvement.",
+  "workspace": {
+    "type": "tempProject",
+    "prefix": "copse-restaurant-site-"
+  },
+  "prompts": [
+    {
+      "text": "Create a simple static website for a restaurant called Juniper & Rye in this empty project. Use git for the project: initialize the repository if it is not already a git repo. Use the attached chaotic-menu.txt as the source for a clean menu page; normalize the formatting into readable menu sections instead of copying the messy text. Add a simple home page that lists these contact details: 42 Cedar Lane, Portland, OR; hello@juniper-rye.example; (503) 555-0198. The home page must link to the menu page. Keep it plain HTML/CSS with no package manager dependencies. Commit the finished initial site with a clear git commit message.",
+      "attachments": [
+        {
+          "path": "chaotic-menu.txt",
+          "fixture": "tests/e2e/fixtures/restaurant-menu-misformatted.txt"
+        }
+      ]
+    },
+    "Improve the site with a warm visual design: add responsive CSS, pleasant colors, and shared navigation between the home and menu pages. Commit this improvement.",
+    "Add an About or Story section to the home page that mentions the chef and local seasonal ingredients. Commit this improvement.",
+    "Add opening hours and a reservations/contact call-to-action to the home page. Commit this improvement."
+  ],
+  "expect": {
+    "shouldSteerTodos": true,
+    "requireUpdateTodos": true
+  },
+  "assertWorkspace": {
+    "git": {
+      "minCommits": 4
+    },
+    "homePage": {
+      "path": "index.html",
+      "contains": [
+        "Juniper & Rye",
+        "42 Cedar Lane",
+        "Portland, OR",
+        "hello@juniper-rye.example",
+        "(503) 555-0198",
+        "chef",
+        "local",
+        "seasonal ingredients",
+        "hours",
+        "reservation"
+      ],
+      "linksTo": "menu.html"
+    },
+    "menuPage": {
+      "path": "menu.html",
+      "contains": [
+        "Smoked Peach Salad",
+        "Crispy Potato Stack",
+        "Cedar Plank Salmon",
+        "Charred Lemon Chicken",
+        "Wild Mushroom Risotto",
+        "Olive Oil Cake",
+        "Elderflower Spritz"
+      ]
+    },
+    "filesContain": [
+      {
+        "glob": "*.html",
+        "contains": ["menu.html"]
+      }
+    ]
+  }
+}

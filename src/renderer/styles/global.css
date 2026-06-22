@@ -912,11 +912,14 @@ label {
   border-radius: 2px;
   font-size: var(--font-size-sm);
 }
-.message-text .file-reference-link {
+.message-text a {
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
+}
+.message-text a:hover {
+  opacity: 0.85;
 }
 .message-text pre {
   background: var(--bg-elevated);

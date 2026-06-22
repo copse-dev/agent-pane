@@ -48,6 +48,7 @@ export function renderMarkdown(raw: string): string {
   s = mapOutsideFencedHtml(s, (seg) => {
     let t = seg
     t = t.replace(/`([^`]+)`/g, '<code>$1</code>')
+    t = renderMarkdownLinks(t)
     t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     t = applyOutsideCode(t, /_([^_\n]+)_/g, '<em>$1</em>')
     t = applyOutsideCode(t, /(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
@@ -69,6 +70,27 @@ function applyOutsideCode(text: string, pattern: RegExp, replacement: string): s
   return text
     .split(/(<code>[\s\S]*?<\/code>)/g)
     .map((segment, index) => (index % 2 === 1 ? segment : segment.replace(pattern, replacement)))
+    .join('')
+}
+
+/** Only allow safe URL schemes in rendered links. */
+function safeLinkHref(raw: string): string | null {
+  const href = raw.trim()
+  if (/^https?:\/\//i.test(href)) return href
+  return null
+}
+
+function renderMarkdownLinks(text: string): string {
+  return text
+    .split(/(<code>[\s\S]*?<\/code>)/g)
+    .map((segment, index) => {
+      if (index % 2 === 1) return segment
+      return segment.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label: string, url: string) => {
+        const href = safeLinkHref(url)
+        if (!href) return `[${label}](${url})`
+        return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${label}</a>`
+      })
+    })
     .join('')
 }
 
