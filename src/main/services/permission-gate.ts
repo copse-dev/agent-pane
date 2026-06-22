@@ -45,6 +45,8 @@ import { formatUnsandboxedPromptBody } from './sandbox-failure.ts'
 import { getMcpToolMeta, isMcpToolRemembered, rememberMcpTool } from './mcp-registry.ts'
 import { CUSTOM_TOOL_PREFIX, customToolLabel } from './custom-tools-config.ts'
 import { isCustomToolRemembered, rememberCustomTool } from './custom-tools-registry.ts'
+import { isAgentRunReadonly } from './agent-run-readonly.ts'
+import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
 
 export type { ShellPermissionDecision, PermissionCheck } from './permission-policy.ts'
 export { decideShellPermission } from './permission-policy.ts'
@@ -361,6 +363,18 @@ async function cursorHooksAllow(check: PermissionCheck): Promise<boolean> {
  */
 export async function ensureToolPermitted(check: PermissionCheck): Promise<boolean> {
   const { toolName, args } = check
+
+  // Read-only runs block mutating tools and any MCP tool not provably read-only.
+  // Allowed tools fall through to the normal gates below — read-only mode never
+  // auto-approves a tool that would otherwise prompt.
+  if (isAgentRunReadonly()) {
+    const blocked = getReadonlyToolBlockReason(toolName, {
+      mcpAnnotations: toolName.startsWith('mcp__')
+        ? getMcpToolMeta(toolName)?.annotations
+        : undefined,
+    })
+    if (blocked) return false
+  }
 
   if (!(await cursorHooksAllow(check))) return false
 

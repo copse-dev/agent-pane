@@ -7,6 +7,8 @@ import { getWorkspaceRoot } from './workspace.ts'
 import { buildIndex } from './file-index.ts'
 import { getGitStatus } from './git-service.ts'
 import { assertMainFrameSender } from '../ipc/ipc-guards.ts'
+import { isAgentRunReadonly } from './agent-run-readonly.ts'
+import { READONLY_MODE_BLOCK_MESSAGE } from '@shared/tools/readonly-tools.ts'
 
 export type DiffOp = 'write' | 'delete' | 'rename' | 'mkdir'
 
@@ -502,6 +504,7 @@ export function stageDiff(
   after: string,
   language: string,
 ): Promise<string> {
+  if (isAgentRunReadonly()) return Promise.resolve(READONLY_MODE_BLOCK_MESSAGE)
   const hadPending = queue.some((e) => e.path === path)
   upsertStagedDiffEntry(queue, { path, before, after, language, op: 'write' })
   const entry = queue.find((e) => e.path === path)!
@@ -522,6 +525,7 @@ export async function applyOrStageDiff(
   after: string,
   language: string,
 ): Promise<string> {
+  if (isAgentRunReadonly()) return READONLY_MODE_BLOCK_MESSAGE
   const direct = await canApplyDirectly(path)
   if (!direct.ok) {
     const staged = await stageDiff(path, before, after, language)
@@ -560,6 +564,7 @@ export function stageFileOp(entry: {
   language: string
   renameTo?: string
 }): Promise<string> {
+  if (isAgentRunReadonly()) return Promise.resolve(READONLY_MODE_BLOCK_MESSAGE)
   const existingIdx = queue.findIndex((e) => e.path === entry.path)
   const queued: QueueEntry = {
     path: entry.path,
