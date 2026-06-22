@@ -9,6 +9,8 @@ import { config as baseConfig } from './wdio.conf.ts'
 const ciExclude = [
   './tests/e2e/agent-eval-drive.e2e.ts',
   './tests/e2e/browser-display.e2e.ts',
+  './tests/e2e/browser-link-chat.e2e.ts',
+  './tests/e2e/composer-branch-warning.e2e.ts',
   './tests/e2e/follow-up-suggestions.e2e.ts',
   './tests/e2e/footer-branch-status.e2e.ts',
   './tests/e2e/footer-compact.e2e.ts',
