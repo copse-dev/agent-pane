@@ -155,6 +155,11 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('menu:showChanges', listener)
       return () => ipcRenderer.off('menu:showChanges', listener)
     },
+    onShowBrowser: (handler: () => void) => {
+      const listener = () => handler()
+      ipcRenderer.on('menu:showBrowser', listener)
+      return () => ipcRenderer.off('menu:showBrowser', listener)
+    },
   },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),

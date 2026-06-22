@@ -1,6 +1,7 @@
 import './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
 import { app, ipcMain } from 'electron'
 import { attachWebContentsLockdown } from './windows/web-contents-lockdown.ts'
+import { isBrowserWebContents } from './windows/browser-web-contents.ts'
 import { applyAppIcon } from './app-icon.ts'
 import type { LLMMessage } from '@shared/types'
 import { createMainWindow } from './windows/create-main-window.ts'
@@ -43,6 +44,7 @@ import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/in
 // Prevent multiple instances stacking invisible windows at the same position.
 // A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.
 app.on('web-contents-created', (_event, contents) => {
+  if (isBrowserWebContents(contents)) return
   attachWebContentsLockdown(contents)
 })
 
