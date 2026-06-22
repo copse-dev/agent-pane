@@ -92,7 +92,7 @@
     "electron-chromedriver": "^35.7.5",
     "electron-rebuild": "^3.2.9",
     "esbuild": "^0.28.1",
-    "eslint": "^9.28.0",
+    "eslint": "^10.5.0",
     "eslint-config-prettier": "^10.1.5",
     "expect-webdriverio": "^5.6.8",
     "fast-check": "^4.1.1",
