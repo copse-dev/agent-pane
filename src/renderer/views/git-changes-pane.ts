@@ -105,6 +105,8 @@ export function mountGitChangesPane(
 
   let diffEditor: Monaco.editor.IStandaloneDiffEditor | null = null
   let pendingSelect: { path: string; staged: boolean } | null = null
+  let selectRequestId = 0
+  let diffLoadQueue: Promise<void> = Promise.resolve()
 
   function ensureDiffEditor(): Monaco.editor.IStandaloneDiffEditor {
     if (!diffEditor) {
@@ -166,11 +168,18 @@ export function mountGitChangesPane(
   }
 
   async function selectChange(path: string, staged: boolean) {
+    const requestId = ++selectRequestId
     selected = { path, staged }
     pendingSelect = { path, staged }
     renderList()
     const diff = await api.git.fileDiff(path, staged)
-    if (pendingSelect?.path !== path || pendingSelect.staged !== staged) return
+    if (
+      requestId !== selectRequestId ||
+      pendingSelect?.path !== path ||
+      pendingSelect.staged !== staged
+    ) {
+      return
+    }
     if (!diff) {
       emptyState.hidden = false
       diffWrap.hidden = true
@@ -178,21 +187,33 @@ export function mountGitChangesPane(
       emptyState.textContent = 'Could not load diff'
       return
     }
-    emptyState.hidden = true
-    if (isImageDiff(diff)) {
-      diffWrap.hidden = true
-      imageWrap.hidden = false
-      if (diffEditor) disposeDiffModels(diffEditor)
-      renderImageDiff(imageWrap, diff)
-      return
-    }
-    imageWrap.hidden = true
-    diffWrap.hidden = false
-    if (pendingSelect?.path !== path || pendingSelect.staged !== staged) return
-    await setGitFileDiffModel(ensureDiffEditor(), monaco, diff, viewerRoot)
+    diffLoadQueue = diffLoadQueue
+      .catch(() => undefined)
+      .then(async () => {
+        if (
+          requestId !== selectRequestId ||
+          pendingSelect?.path !== path ||
+          pendingSelect.staged !== staged
+        ) {
+          return
+        }
+        emptyState.hidden = true
+        if (isImageDiff(diff)) {
+          diffWrap.hidden = true
+          imageWrap.hidden = false
+          if (diffEditor) disposeDiffModels(diffEditor)
+          renderImageDiff(imageWrap, diff)
+          return
+        }
+        imageWrap.hidden = true
+        diffWrap.hidden = false
+        await setGitFileDiffModel(ensureDiffEditor(), monaco, diff, viewerRoot)
+      })
+    await diffLoadQueue
   }
 
   function clearSelection() {
+    selectRequestId++
     selected = null
     pendingSelect = null
     emptyState.hidden = false
