@@ -4,10 +4,13 @@ export function shouldSteerGithubLinks(userMessage: string): boolean {
   if (text.length < 15) return false
   return (
     /\bpull requests?\b/.test(text) ||
+    /\bprs\b/.test(text) ||
     /\bgithub issues?\b/.test(text) ||
     /\b(?:gh|github)\s+(?:pr|issue)\b/.test(text) ||
     /\b(?:pr|issue)\s+#?\d+\b/.test(text) ||
-    /\b(?:this|the|my|our|open|review|merge|close|create|file)\s+pr\b/.test(text)
+    /\b(?:this|the|my|our|open|review|merge|close|create|file)\s+prs?\b/.test(text) ||
+    (/\blinks?\b/.test(text) &&
+      /\b(?:for them|pull request|prs?|issues?|github)\b/.test(text))
   )
 }
 
@@ -33,7 +36,7 @@ export function parseGithubRepoSlug(remoteUrl: string): string | null {
 
 export function buildGithubLinkSteeringPrompt(repoSlug: string | null): string {
   const base =
-    'When discussing pull requests or GitHub issues, link them in markdown with full GitHub URLs.'
+    'Markdown-link every PR/issue mention (tables and lists too) as `[text](full GitHub URL)`.'
   if (repoSlug) {
     return `${base} Repo: ${repoSlug}. Use \`gh\` when you only have numbers.`
   }

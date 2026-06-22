@@ -13,6 +13,13 @@ describe('shouldSteerGithubLinks', () => {
     assert.equal(shouldSteerGithubLinks('Run gh pr view and summarize'), true)
     assert.equal(shouldSteerGithubLinks('Please merge this PR when CI passes'), true)
     assert.equal(shouldSteerGithubLinks('Link issue #118 in your reply'), true)
+    assert.equal(
+      shouldSteerGithubLinks(
+        'Are there other open PRs that would benefit from manual review?',
+      ),
+      true,
+    )
+    assert.equal(shouldSteerGithubLinks('Can you make links for them?'), true)
   })
 
   it('does not match unrelated prompts', () => {
@@ -39,11 +46,11 @@ describe('parseGithubRepoSlug', () => {
 describe('buildGithubLinkSteeringPrompt', () => {
   it('includes repo slug when available', () => {
     assert.match(buildGithubLinkSteeringPrompt('org/repo'), /Repo: org\/repo/)
-    assert.doesNotMatch(buildGithubLinkSteeringPrompt('org/repo'), /\[/)
+    assert.match(buildGithubLinkSteeringPrompt('org/repo'), /tables and lists/)
   })
 
   it('falls back to git remote hint without a slug', () => {
     assert.match(buildGithubLinkSteeringPrompt(null), /git remote/)
-    assert.doesNotMatch(buildGithubLinkSteeringPrompt(null), /\[/)
+    assert.match(buildGithubLinkSteeringPrompt(null), /tables and lists/)
   })
 })
