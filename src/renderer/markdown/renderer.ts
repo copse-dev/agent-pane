@@ -49,7 +49,11 @@ export function renderMarkdown(raw: string): string {
     let t = seg
     t = t.replace(/`([^`]+)`/g, '<code>$1</code>')
     t = renderMarkdownLinks(t)
-    t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    // Bold around inline code first (`**` + <code> + `**`); then prose bold outside
+    // code spans. A single [^*]+ pass breaks on globs like src/**/*.test.ts inside
+    // <code> and can pair ** across table rows, leaving stray markers (e.g. MCP host**:).
+    t = t.replace(/\*\*(<code>[\s\S]*?<\/code>)\*\*/g, '<strong>$1</strong>')
+    t = applyOutsideCode(t, /\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
     t = applyOutsideCode(t, /_([^_\n]+)_/g, '<em>$1</em>')
     t = applyOutsideCode(t, /(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
     t = t.replace(/^### (.+)$/gm, '<h3>$1</h3>')

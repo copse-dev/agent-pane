@@ -1,6 +1,14 @@
+import type { AgentRunPayload } from './skills.ts'
 import type { TodoItem } from './todo.ts'
 
 export type ThreadStatus = 'idle' | 'running' | 'error'
+
+/** User message waiting for the current agent run to finish. */
+export interface QueuedUserMessage {
+  messageId: string
+  payload: AgentRunPayload
+  createdAt: number
+}
 
 export interface ContextTrimRecord {
   at: number
@@ -34,6 +42,8 @@ export interface Thread {
   workingBrief?: string
   /** Git branch this thread was started on; set on first message and persisted. */
   gitBranch?: string
+  /** Prompts submitted while the agent is running; drained FIFO when idle. */
+  pendingMessages?: QueuedUserMessage[]
   /** Unsubmitted composer text; keeps blank threads visible across switches. */
   draftPrompt?: string
   createdAt: number

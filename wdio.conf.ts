@@ -3,6 +3,7 @@ import electronBinary from 'electron'
 import { randomInt } from 'node:crypto'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
 
 const electronShell = join(process.cwd(), 'tests/e2e/electron-shell')
 const e2eEnvFile = join(electronShell, '.e2e-env.json')
@@ -50,10 +51,15 @@ export const config: Options.Testrunner = {
     ui: 'bdd',
     timeout: 30_000,
   },
+  afterTest: async (test) => {
+    await assertNoErrorToasts(typeof test.title === 'string' ? test.title : 'e2e test')
+  },
   beforeSession(_config, capabilities) {
+    delete process.env.ELECTRON_RUN_AS_NODE
     e2eUserDataDir = mkdtempSync(join(process.cwd(), '.wdio-profile-'))
 
     const e2eEnv: Record<string, string> = {
+      COPSE_E2E: '1',
       COPSE_PANEL_MOCK_LLM: '1',
       COPSE_PANEL_USER_DATA: e2eUserDataDir,
       ANTHROPIC_API_KEY: '',

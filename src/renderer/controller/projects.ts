@@ -2,6 +2,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createThread, normalizeBlankThreads } from '@shared/store/thread-helpers.ts'
 import { loadThreads, saveThreads, saveProjects } from './persistence.ts'
+import { resumePendingQueues } from './message-queue.ts'
 
 const uuid = () => globalThis.crypto.randomUUID()
 const basename = (p: string) => p.split('/').pop() ?? p
@@ -66,6 +67,7 @@ async function activate(store: AppStore, api: ApiClient, id: string, path: strin
   store.emit('threads_changed')
   store.emit('panel_changed')
   store.emit('files_pane_changed')
+  resumePendingQueues(store, api)
 }
 
 export async function switchProject(store: AppStore, api: ApiClient, id: string): Promise<void> {
@@ -114,6 +116,7 @@ export async function restoreProject(store: AppStore, api: ApiClient, id: string
   else normalizeBlankThreads(store)
   store.emit('workspace_changed')
   store.emit('threads_changed')
+  resumePendingQueues(store, api)
 }
 
 export async function addProject(store: AppStore, api: ApiClient): Promise<boolean> {

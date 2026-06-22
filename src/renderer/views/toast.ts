@@ -52,5 +52,8 @@ export function showToast(
 export function showErrorToast(prefix: string, error: unknown): void {
   const message = `${prefix}: ${normalizeMessage(error)}`
   console.error(message, error)
+  const e2e = (window as Window & { __copseE2e?: { pushErrorToast?: (m: string) => void } })
+    .__copseE2e
+  e2e?.pushErrorToast?.(message)
   showToast(message, { variant: 'error' })
 }

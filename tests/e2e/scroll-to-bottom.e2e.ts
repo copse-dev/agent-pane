@@ -6,6 +6,7 @@ import {
   seedScrollStreamingFixture,
   seedScrollToBottomFixture,
 } from './helpers/seed-config.ts'
+import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -50,24 +51,6 @@ async function isScrollToBottomVisible(): Promise<boolean> {
     const btn = document.querySelector('.scroll-to-bottom')
     return btn instanceof HTMLElement && !btn.hidden
   })
-}
-
-async function waitForPromptReady(): Promise<void> {
-  await browser.waitUntil(
-    async () => {
-      const disabled = await $('.prompt-input').getProperty('disabled')
-      return disabled !== true
-    },
-    { timeout: 15_000, interval: 100 },
-  )
-}
-
-async function waitForAgentIdle(): Promise<void> {
-  await browser.waitUntil(async () => (await $('.submit-btn').getText()) === 'Send', {
-    timeout: 15_000,
-    interval: 100,
-  })
-  await waitForPromptReady()
 }
 
 describe('scroll to bottom', () => {

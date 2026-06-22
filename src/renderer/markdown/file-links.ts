@@ -109,7 +109,7 @@ export async function annotateFileReferences(root: HTMLElement, api: ApiClient):
   const candidates = findFileReferenceCandidates(root)
   if (candidates.length === 0) return
 
-  const resolved = await api.index.resolveFileReferences(candidates)
+  const resolved = (await api.index.resolveFileReferences(candidates)) ?? []
   if (resolved.length === 0) return
 
   const resolutions = new Map(resolved.map(({ candidate, path }) => [candidate, path]))
