@@ -45,6 +45,7 @@
   background: color-mix(in srgb, var(--warning) 12%, var(--bg-base));
   color: var(--text-primary);
   font-size: 12px;
+  overflow: hidden;
 }
 .composer-branch-warning[hidden] {
   display: none;
@@ -63,19 +64,22 @@
 }
 .composer-branch-warning-text {
   min-width: 0;
-  flex: 1 1 0;
+  flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .composer-branch-checkout-btn {
-  flex: 0 0 auto;
+  flex: 0 0 84px;
+  width: 84px;
   border: 1px solid color-mix(in srgb, var(--warning) 60%, var(--border));
   border-radius: var(--radius);
   padding: 4px 10px;
   background: var(--bg-elevated);
   color: var(--text-primary);
   font-size: 12px;
+  text-align: center;
+  white-space: nowrap;
 }
 .composer-branch-checkout-btn:hover:not(:disabled) {
   border-color: var(--warning);

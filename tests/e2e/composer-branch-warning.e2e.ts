@@ -1,7 +1,8 @@
 import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedComposerBranchWarningFixture } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, prepareE2eScreenshot } from './helpers/screenshot.ts'
 
 describe('composer branch warning', () => {
   let seed: ReturnType<typeof seedComposerBranchWarningFixture>
@@ -30,6 +31,7 @@ describe('composer branch warning', () => {
     )
     await expect(warning.$('.composer-branch-checkout-btn')).toHaveText('Check out')
 
-    await saveElementScreenshot('#input-bar', 'composer-branch-warning-checkout.png')
+    await prepareE2eScreenshot()
+    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'composer-branch-warning-checkout.png'))
   })
 })
