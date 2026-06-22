@@ -14,6 +14,7 @@ import { deleteFileTool, renameFileTool, makeDirectoryTool } from '../tools/file
 import { exploreTool } from '../tools/explore-tool.ts'
 import { readSkillTool } from '../tools/read-skill-tool.ts'
 import { updateTodosTool } from '../tools/todo-tool.ts'
+import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
 import { listSkills } from './skills-registry.ts'
 import { getSetting } from './settings.ts'
 
@@ -37,6 +38,8 @@ export function createRegistry(): ToolRegistry {
   registry.register(gitLogTool)
   registry.register(runShellTool)
   registry.register(exploreTool)
+  registry.register(webSearchTool)
+  registry.register(fetchUrlTool)
   registry.register(updateTodosTool)
   return registry
 }

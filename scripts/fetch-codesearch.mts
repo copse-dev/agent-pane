@@ -1,7 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { createWriteStream } from 'node:fs'
-import { access, chmod, mkdir, rm, stat } from 'node:fs/promises'
-import { pipeline } from 'node:stream/promises'
+import { access, chmod, mkdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -38,7 +36,7 @@ async function download(url: string, dest: string): Promise<void> {
   const res = await fetch(url)
   if (!res.ok) throw new Error(`download failed (${res.status}): ${url}`)
   if (!res.body) throw new Error(`empty response body: ${url}`)
-  await pipeline(res.body, createWriteStream(dest))
+  await writeFile(dest, Buffer.from(await res.arrayBuffer()))
 }
 
 async function extract(archivePath: string, destDir: string): Promise<void> {
