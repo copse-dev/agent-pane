@@ -6,6 +6,11 @@ export interface MonacoSelectionAttachment {
   content: string
 }
 
+export interface MonacoSelectionContext {
+  path: string
+  detail?: string
+}
+
 export function selectionLineRangeLabel(startLineNumber: number, endLineNumber: number): string {
   return startLineNumber === endLineNumber
     ? String(startLineNumber)
@@ -45,4 +50,29 @@ export function attachMonacoSelectionToChat(
 
   handlers.attachTextBlock(attachment.content, attachment.label)
   return true
+}
+
+export function registerMonacoSelectionToChatShortcut(
+  editor: Monaco.editor.IStandaloneCodeEditor,
+  monaco: typeof Monaco,
+  getContext: () => MonacoSelectionContext | null,
+): Monaco.IDisposable {
+  return editor.onKeyDown((event) => {
+    const browserEvent = event.browserEvent
+    const meta = browserEvent.ctrlKey || browserEvent.metaKey
+    if (
+      !meta ||
+      browserEvent.altKey ||
+      browserEvent.shiftKey ||
+      event.keyCode !== monaco.KeyCode.KeyL
+    )
+      return
+
+    const context = getContext()
+    if (!context) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    attachMonacoSelectionToChat(editor, context.path, context.detail)
+  })
 }

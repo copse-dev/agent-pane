@@ -11,7 +11,7 @@ import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/fil
 import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { revealFirstDiffChangeOnNextUpdate } from '../monaco/diff-scroll.ts'
-import { attachMonacoSelectionToChat } from '../monaco/selection-to-chat.ts'
+import { registerMonacoSelectionToChatShortcut } from '../monaco/selection-to-chat.ts'
 import { showErrorToast } from './toast.ts'
 
 type MarkdownViewMode = 'preview' | 'source'
@@ -198,18 +198,16 @@ export function mountContextPanel(
     }
   })
 
-  fileEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyL, () => {
+  registerMonacoSelectionToChatShortcut(fileEditor, monaco, () => {
     const { openFile } = store.getState()
-    if (openFile) attachMonacoSelectionToChat(fileEditor, openFile.path)
+    return openFile ? { path: openFile.path } : null
   })
-  diffEditor.getOriginalEditor().addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyL, () => {
-    const view = currentDiffView
-    if (view) attachMonacoSelectionToChat(diffEditor.getOriginalEditor(), view.path, 'before')
-  })
-  diffEditor.getModifiedEditor().addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyL, () => {
-    const view = currentDiffView
-    if (view) attachMonacoSelectionToChat(diffEditor.getModifiedEditor(), view.path, 'after')
-  })
+  registerMonacoSelectionToChatShortcut(diffEditor.getOriginalEditor(), monaco, () =>
+    currentDiffView ? { path: currentDiffView.path, detail: 'before' } : null,
+  )
+  registerMonacoSelectionToChatShortcut(diffEditor.getModifiedEditor(), monaco, () =>
+    currentDiffView ? { path: currentDiffView.path, detail: 'after' } : null,
+  )
 
   function updatePanel() {
     const { openFile, activeDiff, panelTab, stagedDiffs } = store.getState()

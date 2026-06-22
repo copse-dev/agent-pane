@@ -9,7 +9,7 @@ import {
   observeDiffHostLayout,
   setGitFileDiffModel,
 } from '../monaco/git-diff-viewer.ts'
-import { attachMonacoSelectionToChat } from '../monaco/selection-to-chat.ts'
+import { registerMonacoSelectionToChatShortcut } from '../monaco/selection-to-chat.ts'
 
 function isImageDiff(diff: GitFileDiff): boolean {
   return diff.beforeImage != null || diff.afterImage != null
@@ -117,14 +117,12 @@ export function mountGitChangesPane(
     if (!diffEditor) {
       const theme = store.getState().theme === 'dark' ? 'vs-dark' : 'vs'
       diffEditor = createGitChangesDiffEditor(diffWrap, monaco, store.getState().fontSize, theme)
-      diffEditor.getOriginalEditor().addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyL, () => {
-        const path = selected?.path
-        if (path) attachMonacoSelectionToChat(diffEditor!.getOriginalEditor(), path, 'before')
-      })
-      diffEditor.getModifiedEditor().addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyL, () => {
-        const path = selected?.path
-        if (path) attachMonacoSelectionToChat(diffEditor!.getModifiedEditor(), path, 'after')
-      })
+      registerMonacoSelectionToChatShortcut(diffEditor.getOriginalEditor(), monaco, () =>
+        selected ? { path: selected.path, detail: 'before' } : null,
+      )
+      registerMonacoSelectionToChatShortcut(diffEditor.getModifiedEditor(), monaco, () =>
+        selected ? { path: selected.path, detail: 'after' } : null,
+      )
     }
     return diffEditor
   }
