@@ -54,5 +54,5 @@ On supported platforms, `npm install` downloads a bundled `codesearch` binary to
 `vendor/codesearch/` (postinstall; skip with `SKIP_CODESEARCH_FETCH=1`). Native tools
 (`semantic_search`, `search_codebase` semantic mode) use codesearch or vera on PATH,
 preferring a system install over the bundled copy, and keep the index in sync with the
-workspace. Index data is stored in `.codesearch.db/` at the project root — add that to
-your `.gitignore` (this repo already does).
+workspace. Index data is stored globally under Copse app data (`codesearch/` inside the
+`copse-panel` userData directory), not in the project tree.

@@ -1,8 +1,12 @@
-import { resolve, sep } from 'node:path'
+import * as fsp from 'node:fs/promises'
+import { join, resolve, sep } from 'node:path'
+import { app } from 'electron'
 import { getBundledCodesearchPath } from './bundled-semantic.ts'
-import { runCommand } from './command-runner.ts'
+import { runCommand, type RunCommandOptions } from './command-runner.ts'
 import { COMMAND_RUNNER_LONG_TIMEOUT_MS } from './subprocess-output-cap.ts'
 import { toRelativePath } from './workspace.ts'
+
+const LEGACY_CODESEARCH_DB_DIR = '.codesearch.db'
 
 export type SemanticBackend = 'codesearch' | 'vera'
 
@@ -104,6 +108,31 @@ function codesearchCmd(): string {
   return codesearchCommand
 }
 
+/** Synthetic HOME so codesearch global indexes live under Copse userData, not the workspace. */
+export function codesearchHomeDir(): string {
+  return join(app.getPath('userData'), 'codesearch')
+}
+
+function codesearchRunOpts(
+  workspaceRoot: string,
+  extra: Omit<RunCommandOptions, 'cwd' | 'env'> = {},
+): RunCommandOptions {
+  return {
+    cwd: workspaceRoot,
+    ...SEMANTIC_CMD_OPTS,
+    env: { HOME: codesearchHomeDir() },
+    ...extra,
+  }
+}
+
+async function removeLegacyCodesearchDb(workspaceRoot: string): Promise<void> {
+  try {
+    await fsp.rm(join(workspaceRoot, LEGACY_CODESEARCH_DB_DIR), { recursive: true, force: true })
+  } catch {
+    /* best-effort migration from pre-global local indexes */
+  }
+}
+
 /** Resolve a semantic search scope path without breaking on "." or absolute paths. */
 export function resolveSemanticSearchRoot(workspaceRoot: string, filterPath?: string): string {
   if (!filterPath || filterPath === '.') return workspaceRoot
@@ -159,10 +188,11 @@ export async function updateSemanticIndex(workspaceRoot: string): Promise<void> 
   try {
     switch (backend) {
       case 'codesearch':
-        await runCommand(codesearchCmd(), ['index', workspaceRoot], {
-          cwd: workspaceRoot,
-          ...SEMANTIC_CMD_OPTS,
-        })
+        await runCommand(
+          codesearchCmd(),
+          ['index', workspaceRoot],
+          codesearchRunOpts(workspaceRoot),
+        )
         break
       case 'vera':
         await runCommand(veraCommand, ['update', workspaceRoot], {
@@ -196,12 +226,13 @@ export async function searchSemanticContent(
 
 async function ensureCodesearchIndex(workspaceRoot: string): Promise<void> {
   const cmd = codesearchCmd()
-  const opts = { cwd: workspaceRoot, ...SEMANTIC_CMD_OPTS }
+  const opts = codesearchRunOpts(workspaceRoot)
   try {
-    await runCommand(cmd, ['index', 'add', workspaceRoot], opts)
+    await runCommand(cmd, ['index', 'add', '-g', workspaceRoot], opts)
   } catch {
     await runCommand(cmd, ['index', workspaceRoot], opts)
   }
+  await removeLegacyCodesearchDb(workspaceRoot)
 }
 
 async function ensureVeraIndex(workspaceRoot: string): Promise<void> {
@@ -227,11 +258,11 @@ async function searchWithCodesearch(
     searchRoot,
   ]
 
-  const { stdout } = await runCommand(codesearchCmd(), args, {
-    cwd: opts.workspaceRoot,
-    ...SEMANTIC_CMD_OPTS,
-    ...(opts.signal ? { signal: opts.signal } : {}),
-  })
+  const { stdout } = await runCommand(
+    codesearchCmd(),
+    args,
+    codesearchRunOpts(opts.workspaceRoot, opts.signal ? { signal: opts.signal } : {}),
+  )
 
   return { hits: parseCodesearchJson(stdout, opts.maxResults), backend: 'codesearch' }
 }
