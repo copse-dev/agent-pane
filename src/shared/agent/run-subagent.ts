@@ -129,6 +129,10 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
 
   let summary = ''
 
+  // Accumulate usage across all subagent steps from the per-step `usage` chunks
+  // the loop emits (#58). Each chunk reflects exactly one stream, so subagent
+  // usage is attributed once and never read from the shared mutable
+  // provider.lastUsage that the parent also writes to (#112).
   const recordUsage = (input: number, output: number) => {
     const prev = session.usage ?? { inputTokens: 0, outputTokens: 0 }
     session.usage = {
@@ -145,6 +149,8 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
       maxSteps,
       maxLlmCalls: defaultMaxLlmCallsForSteps(maxSteps),
       toolSchemaReserveTokens,
+      // Fallback only: used when a provider does not emit per-stream usage
+      // chunks. The loop prefers in-stream usage to avoid the shared-field race.
       getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
       executeTool: (name: string, args: unknown, signal: AbortSignal, _toolCallId: string) =>
         executeTool(name, args, signal),

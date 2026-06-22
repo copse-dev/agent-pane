@@ -10,6 +10,7 @@ import {
   ESTIMATED_IMAGE_TOKENS,
   setLastMeasuredInputTokens,
   effectiveConversationTokens,
+  estimateConversationTokens,
 } from './trim-history.ts'
 
 beforeEach(() => {
@@ -167,5 +168,23 @@ describe('effectiveConversationTokens', () => {
     const tokens = estimateMessageTokens(messages)
     assert.ok(tokens >= ESTIMATED_IMAGE_TOKENS)
     assert.ok(tokens < 100_000 / 4)
+  })
+
+  it('excludes base64 image data from estimateConversationTokens (#53)', () => {
+    setLastMeasuredInputTokens(null)
+    const big = 'A'.repeat(200_000)
+    const withImage: LLMMessage[] = [
+      { role: 'user', content: [{ type: 'image', dataUrl: 'data:image/png;base64,' + big }] },
+    ]
+    const tokens = estimateConversationTokens(withImage)
+    // A 200K-char base64 image must not be counted at ~4 chars/token.
+    assert.ok(tokens < 200_000 / 4)
+    assert.ok(tokens >= ESTIMATED_IMAGE_TOKENS)
+  })
+
+  it('prefers measured input tokens over the estimate for trimming (#52)', () => {
+    const messages: LLMMessage[] = [{ role: 'user', content: 'short' }]
+    setLastMeasuredInputTokens(75_000)
+    assert.equal(effectiveConversationTokens(messages), 75_000)
   })
 })
