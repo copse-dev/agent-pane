@@ -5,6 +5,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
 import { renderMarkdown } from '../markdown/renderer.ts'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
+import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
 import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { showErrorToast } from './toast.ts'
@@ -59,6 +60,7 @@ export function mountContextPanel(
   function renderMarkdownPreview(content: string): void {
     previewContainer.innerHTML = renderMarkdown(content)
     attachCodeBlockCopyButtons(previewContainer)
+    void annotateFileReferences(previewContainer, api)
     void renderMermaidIn(previewContainer)
   }
 
@@ -223,11 +225,13 @@ export function mountContextPanel(
     api,
     () => store.getState().workspaceRoot,
   )
+  const unbindFileLinks = bindFileReferenceClicks(previewContainer, store, api)
 
   return () => {
     unsubs.forEach((u) => u())
     unsubFsChanged()
     unbindDrop()
+    unbindFileLinks()
     fileEditor.dispose()
     diffEditor.dispose()
   }

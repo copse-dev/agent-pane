@@ -912,6 +912,12 @@ label {
   border-radius: 2px;
   font-size: var(--font-size-sm);
 }
+.message-text .file-reference-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
 .message-text pre {
   background: var(--bg-elevated);
   padding: var(--spacing-sm);
