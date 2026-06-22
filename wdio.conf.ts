@@ -51,6 +51,7 @@ export const config: Options.Testrunner = {
     timeout: 30_000,
   },
   beforeSession(_config, capabilities) {
+    delete process.env.ELECTRON_RUN_AS_NODE
     e2eUserDataDir = mkdtempSync(join(process.cwd(), '.wdio-profile-'))
 
     const e2eEnv: Record<string, string> = {
