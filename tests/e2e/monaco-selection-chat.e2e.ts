@@ -2,13 +2,14 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
+import { Key } from 'webdriverio'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-monaco-selection-project'
 const SAMPLE_FILE = 'selection-sample.txt'
 const SCREENSHOT = 'monaco-selection-chat-attachment.png'
-const CONTROL_KEY = '\uE009'
+const CONTROL_KEY = Key.Ctrl
 
 async function waitForWorkspace(): Promise<void> {
   await browser.waitUntil(
@@ -39,6 +40,18 @@ async function focusMonacoInput(): Promise<void> {
     if (!input) throw new Error('Monaco input textarea not found')
     input.focus()
   })
+}
+
+async function dragSelectFirstMonacoLine(): Promise<void> {
+  const firstLine = await $('#file-viewer .monaco-editor .view-line')
+  await firstLine.waitForDisplayed({ timeout: 5_000 })
+  await browser
+    .action('pointer')
+    .move({ duration: 0, origin: firstLine, x: 4, y: 8 })
+    .down({ button: 0 })
+    .move({ duration: 250, origin: firstLine, x: 260, y: 8 })
+    .up({ button: 0 })
+    .perform()
 }
 
 describe('Monaco selection to chat attachment', () => {
@@ -80,7 +93,7 @@ describe('Monaco selection to chat attachment', () => {
     await $('#file-viewer .monaco-editor .view-line').click()
     await focusMonacoInput()
 
-    await pressControlChord('a')
+    await dragSelectFirstMonacoLine()
     await pressControlChord('l')
 
     const chip = await $('.attachment-chip.text-chip')
