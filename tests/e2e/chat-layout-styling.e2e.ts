@@ -29,6 +29,13 @@ describe('chat layout styling', () => {
     })
     expect(dividerWidth).toBe('1px')
 
+    const dividerLeft = await browser.execute(() => {
+      const resizer = document.getElementById('resizer-projects')
+      if (!resizer) return null
+      return getComputedStyle(resizer, '::before').left
+    })
+    expect(dividerLeft).toBe('0px')
+
     const chatBackground = await browser.execute(() => {
       const pane = document.getElementById('pane-chat')
       if (!pane) return null

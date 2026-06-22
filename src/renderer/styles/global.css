@@ -57,8 +57,7 @@ body {
   content: '';
   position: absolute;
   inset-block: 0;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
   width: var(--pane-divider-width, 1px);
   background: var(--border);
   pointer-events: none;
