@@ -15,6 +15,9 @@ export function sandboxFsWorkerPath(): string {
   return join(__dirname, 'sandbox-fs-worker.js')
 }
 
+/** Passed via spawn env when the worker is launched through a shell / ASRT wrap (paths may contain spaces). */
+export const SANDBOX_FS_REQUEST_ENV = 'COPSE_SANDBOX_FS_REQUEST'
+
 async function invokeWorker<T extends Record<string, unknown>>(
   request: Record<string, unknown>,
 ): Promise<T> {
@@ -22,13 +25,18 @@ async function invokeWorker<T extends Record<string, unknown>>(
   if (!root) throw new Error('No workspace open. Use Open Folder first.')
 
   const workerPath = sandboxFsWorkerPath()
+  const requestJson = JSON.stringify(request)
+  const sandboxed = useSandboxFsGateway()
   const { stdout, stderr, code } = await runCommand(
     process.execPath,
-    [workerPath, JSON.stringify(request)],
+    sandboxed ? [workerPath] : [workerPath, requestJson],
     {
       cwd: root,
       // Electron must run as Node inside seatbelt; otherwise MachPort rendezvous FATALs with empty stdout.
-      env: { ELECTRON_RUN_AS_NODE: '1' },
+      env: {
+        ELECTRON_RUN_AS_NODE: '1',
+        ...(sandboxed ? { [SANDBOX_FS_REQUEST_ENV]: requestJson } : {}),
+      },
       stdoutMaxBytes: SANDBOX_FS_WORKER_STDOUT_MAX_BYTES,
       sandboxConfig: fsWorkerSandboxOverlay(root, workerPath),
     },
