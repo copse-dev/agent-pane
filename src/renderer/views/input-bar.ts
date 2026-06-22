@@ -113,6 +113,12 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
 
   let activeComposerThreadId = getActiveThreadId()
 
+  function persistComposerDraft(): void {
+    const id = activeComposerThreadId
+    if (!id) return
+    setThreadDraftPrompt(store, id, textarea.value)
+  }
+
   function syncComposerThread(): void {
     const id = getActiveThreadId()
     if (id === activeComposerThreadId) return
@@ -390,6 +396,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   })
 
   const unsubs = [
+    store.on('composer_draft_flush', persistComposerDraft),
     store.on('thread_status_changed', (tid) => {
       if (tid === getActiveThreadId()) updateState()
     }),

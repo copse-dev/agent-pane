@@ -21,4 +21,5 @@ export interface StoreEvents {
   usage_updated: [threadId: string]
   context_updated: [threadId: string]
   todos_changed: [threadId: string]
+  composer_draft_flush: []
 }

@@ -88,11 +88,13 @@ export function openNewThread(store: AppStore): string {
   const { threads, activeThreadId } = store.getState()
   const existing = threads.find((t) => isBlankThread(t) && !hasUnsubmittedPrompt(t))
   if (existing) {
-    pruneBlankThreads(store, new Set([existing.id]))
     if (activeThreadId !== existing.id) {
+      store.emit('composer_draft_flush')
       store.setState({ activeThreadId: existing.id })
       store.emit('threads_changed')
     }
+    pruneBlankThreads(store, new Set([existing.id]))
+    store.emit('threads_changed')
     store.setState({
       filesPaneOpen: false,
       openFile: null,
@@ -103,11 +105,15 @@ export function openNewThread(store: AppStore): string {
     store.emit('files_pane_changed')
     return existing.id
   }
+  store.emit('composer_draft_flush')
   return createThread(store)
 }
 
 export function switchThread(store: AppStore, id: string): void {
+  if (id === store.getState().activeThreadId) return
+  store.emit('composer_draft_flush')
   store.setState({ activeThreadId: id })
+  store.emit('threads_changed')
   pruneBlankThreads(store, new Set([id]))
   store.emit('threads_changed')
 }
