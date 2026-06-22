@@ -243,7 +243,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
           <section class="settings-section" data-section="appearance">
             <h3>Appearance</h3>
-            <p class="settings-section-desc">Theme, app icon, and editor font size.</p>
+            <p class="settings-section-desc">Theme, app icon, editor font size, and window layout.</p>
 
             <fieldset>
               <legend>Display</legend>
@@ -258,6 +258,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Font size
                 <input type="number" name="fontSize" min="12" max="20" step="1" />
               </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="autoPortraitRightPanel" />
+                Move the right panel below chat on tall portrait windows
+              </label>
+              <p class="field-hint">
+                Automatically splits portrait windows horizontally so Projects + chat stay above
+                Explorer, Terminal, Changes, and Plan.
+              </p>
             </fieldset>
 
             <fieldset>
@@ -478,6 +486,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       ;(form.elements.namedItem('fontSize') as HTMLInputElement).value = String(
         store.getState().fontSize,
       )
+      ;(form.elements.namedItem('autoPortraitRightPanel') as HTMLInputElement).checked =
+        store.getState().autoPortraitRightPanel
 
       const savedIconVariant = (await api.settings.get('appIconVariant')) as unknown
       const appIconVariant = isAppIconVariant(savedIconVariant)
@@ -507,6 +517,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const model = data.get('model') as string
       const theme = data.get('theme') as 'light' | 'dark'
       const fontSize = parseInt(data.get('fontSize') as string, 10)
+      const autoPortraitRightPanel = data.get('autoPortraitRightPanel') === 'on'
       const appIconVariant = data.get('appIconVariant') as AppIconVariant
       const confidence = parseFloat(data.get('safetyConfidenceThreshold') as string)
 
@@ -518,6 +529,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await saveSimpleFields(data, api)
       await api.settings.set('theme', theme)
       await api.settings.set('fontSize', fontSize)
+      await api.settings.set('autoPortraitRightPanel', autoPortraitRightPanel)
       if (isAppIconVariant(appIconVariant)) {
         await api.settings.set('appIconVariant', appIconVariant)
         await api.appIcon.apply()
@@ -533,7 +545,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         mcpAutoAllowReadOnly: data.get('mcpAutoAllowReadOnly') === 'on',
       })
 
-      store.setState({ theme, fontSize, settings: { ...store.getState().settings, model } })
+      store.setState({
+        theme,
+        fontSize,
+        autoPortraitRightPanel,
+        settings: { ...store.getState().settings, model },
+      })
       store.emit('theme_changed', theme)
       store.emit('settings_changed')
       document.documentElement.dataset.theme = theme

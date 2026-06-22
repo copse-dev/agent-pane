@@ -26,6 +26,13 @@ describe('settings-schema', () => {
     assert.equal(fontSize.safeParse('14').success, false)
   })
 
+  it('validates portrait layout toggle settings', () => {
+    const autoPortraitRightPanel = getSettingSchema('autoPortraitRightPanel')
+    assert.ok(autoPortraitRightPanel)
+    assert.equal(autoPortraitRightPanel.safeParse(true).success, true)
+    assert.equal(autoPortraitRightPanel.safeParse('true').success, false)
+  })
+
   it('returns undefined for keys without a registered schema', () => {
     assert.equal(getSettingSchema('someUnknownKey'), undefined)
   })
