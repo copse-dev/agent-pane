@@ -3,7 +3,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { materialIconUrl, mountMaterialIcon } from '../icons/material-file-icons.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
-import { openRightPanelWithWorkspace, toggleFilesPaneWithWorkspace } from '../controller/panels.ts'
+import { toggleRightPanelWithWorkspace } from '../controller/panels.ts'
 
 function basename(p: string) {
   return p.split('/').pop() ?? p
@@ -49,17 +49,17 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
   root.append(leftCluster, dragRegion, filesBtn, terminalBtn, changesBtn)
 
   filesBtn.addEventListener('click', () => {
-    toggleFilesPaneWithWorkspace(store, _api)
+    toggleRightPanelWithWorkspace(store, _api, 'explorer')
     syncPanelBtns()
   })
 
   terminalBtn.addEventListener('click', () => {
-    openRightPanelWithWorkspace(store, _api, 'terminal')
+    toggleRightPanelWithWorkspace(store, _api, 'terminal')
     syncPanelBtns()
   })
 
   changesBtn.addEventListener('click', () => {
-    openRightPanelWithWorkspace(store, _api, 'changes')
+    toggleRightPanelWithWorkspace(store, _api, 'changes')
     syncPanelBtns()
   })
 

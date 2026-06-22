@@ -179,6 +179,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   index: {
     query: (pattern: string) => ipcRenderer.invoke('index:query', pattern),
+    resolveFileReferences: (candidates: string[]) =>
+      ipcRenderer.invoke('index:resolveFileReferences', candidates),
   },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
