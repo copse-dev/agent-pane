@@ -40,9 +40,7 @@ export function createGitChangesDiffEditor(
   })
 }
 
-export function disposeDiffModels(
-  diffEditor: Monaco.editor.IStandaloneDiffEditor,
-): void {
+export function disposeDiffModels(diffEditor: Monaco.editor.IStandaloneDiffEditor): void {
   const oldModels = diffEditor.getModel()
   if (!oldModels) return
   diffEditor.setModel(null)

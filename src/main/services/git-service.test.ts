@@ -4,7 +4,13 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
-import { classifyGitBlob, getGitDiffText, getGitFileDiff, parsePorcelainV1, toGitShowPath } from './git-service.ts'
+import {
+  classifyGitBlob,
+  getGitDiffText,
+  getGitFileDiff,
+  parsePorcelainV1,
+  toGitShowPath,
+} from './git-service.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 import { setGitAvailableForTest } from './tool-availability.ts'
 

@@ -111,12 +111,7 @@ export function mountGitChangesPane(
   function ensureDiffEditor(): Monaco.editor.IStandaloneDiffEditor {
     if (!diffEditor) {
       const theme = store.getState().theme === 'dark' ? 'vs-dark' : 'vs'
-      diffEditor = createGitChangesDiffEditor(
-        diffWrap,
-        monaco,
-        store.getState().fontSize,
-        theme,
-      )
+      diffEditor = createGitChangesDiffEditor(diffWrap, monaco, store.getState().fontSize, theme)
     }
     return diffEditor
   }
