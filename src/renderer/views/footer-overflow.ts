@@ -1,9 +1,15 @@
 import { el, on } from '../dom/helpers.ts'
 
+export interface FooterOverflowItem {
+  label: string
+  onClick: () => void
+  hidden?: () => boolean
+}
+
 export function mountFooterOverflow(
   root: HTMLElement,
-  items: Array<{ label: string; onClick: () => void }>,
-): { destroy: () => void } {
+  items: FooterOverflowItem[],
+): { update: () => void; destroy: () => void } {
   const wrap = el('div', { class: 'footer-overflow' })
   const trigger = el(
     'button',
@@ -31,8 +37,11 @@ export function mountFooterOverflow(
   }
 
   function renderMenu() {
+    const visibleItems = items.filter((item) => !item.hidden?.())
+    wrap.hidden = visibleItems.length === 0
+    if (visibleItems.length === 0) setOpen(false)
     menu.replaceChildren(
-      ...items.map(({ label, onClick }) => {
+      ...visibleItems.map(({ label, onClick }) => {
         const item = el(
           'button',
           { type: 'button', class: 'footer-overflow-item', role: 'menuitem' },
@@ -48,7 +57,10 @@ export function mountFooterOverflow(
   }
 
   renderMenu()
-  trigger.addEventListener('click', () => setOpen(!open))
+  trigger.addEventListener('click', () => {
+    renderMenu()
+    if (!wrap.hidden) setOpen(!open)
+  })
 
   cleanups.push(
     on(document, 'click', (e) => {
@@ -61,6 +73,7 @@ export function mountFooterOverflow(
   )
 
   return {
+    update: renderMenu,
     destroy: () => cleanups.forEach((u) => u()),
   }
 }
