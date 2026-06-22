@@ -4,6 +4,7 @@ import * as pty from 'node-pty'
 import type { IPty } from 'node-pty'
 import quote from 'shell-quote'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
+import { posixQuote } from '../services/safe-install.ts'
 import { workspaceSandboxOverlay } from './config.ts'
 
 let enabled = false
@@ -16,8 +17,13 @@ export function setProjectSandboxEnabled(active: boolean): void {
   enabled = active
 }
 
+/** Join argv for `/bin/sh -c` / ASRT wrap. Uses POSIX single quotes so paths with spaces stay one word. */
+export function formatArgvForShell(executable: string, args: string[]): string {
+  return [executable, ...args].map(posixQuote).join(' ')
+}
+
 function shellCommand(executable: string, args: string[]): string {
-  return quote.quote([executable, ...args])
+  return formatArgvForShell(executable, args)
 }
 
 function mergeSpawnEnv(base: NodeJS.ProcessEnv, override?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

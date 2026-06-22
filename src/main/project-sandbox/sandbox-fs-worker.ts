@@ -22,8 +22,10 @@ function fail(message: string): never {
   process.exit(1)
 }
 
+const REQUEST_ENV = 'COPSE_SANDBOX_FS_REQUEST'
+
 async function main(): Promise<void> {
-  const raw = process.argv[2]
+  const raw = process.argv[2] ?? process.env[REQUEST_ENV]
   if (!raw) fail('missing request argument')
 
   let req: Request

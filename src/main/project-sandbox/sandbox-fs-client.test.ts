@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, writeFile, rm, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -13,7 +13,7 @@ import {
   COMMAND_OUTPUT_MAX_BYTES,
   COMMAND_OUTPUT_TRUNCATED_MARKER,
 } from '../services/subprocess-output-cap.ts'
-import { gatewayReadFile, SANDBOX_FS_WORKER_STDOUT_MAX_BYTES } from './sandbox-fs-client.ts'
+import { gatewayReadFile, SANDBOX_FS_WORKER_STDOUT_MAX_BYTES, gatewayListDir } from './sandbox-fs-client.ts'
 
 describe('sandbox-fs-client', () => {
   it('reads via direct fs when project sandbox is inactive', async () => {
@@ -33,6 +33,23 @@ describe('sandbox-fs-client', () => {
 
   it('uses a stdout budget above the default command output cap', () => {
     assert.ok(SANDBOX_FS_WORKER_STDOUT_MAX_BYTES > COMMAND_OUTPUT_MAX_BYTES)
+  })
+
+  it('lists directories when the workspace root path contains spaces', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'copse-spaced-parent-'))
+    const dir = join(parent, 'e research workspace')
+    try {
+      await mkdir(dir, { recursive: true })
+      clearAllowedWorkspaceRootsForTest()
+      const root = registerAllowedWorkspaceRoot(dir)
+      const restore = setWorkspaceRootForTest(root)
+      await writeFile(join(dir, 'visible.txt'), 'ok', 'utf-8')
+      const dirents = await gatewayListDir(root)
+      assert.ok(dirents.some((d) => d.name === 'visible.txt' && !d.isDir))
+      restore()
+    } finally {
+      await rm(parent, { recursive: true, force: true })
+    }
   })
 
   it('parses worker-shaped JSON above the default stdout cap', async () => {
