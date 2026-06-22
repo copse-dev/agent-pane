@@ -24,6 +24,7 @@ export function copyMonacoWorkers(rendererOutDir: string): void {
     if (!existsSync(src)) {
       throw new Error(`Missing Monaco ESM worker source: ${srcRel}`)
     }
+    if (existsSync(dest)) continue
     copyFileSync(src, dest)
   }
 }
