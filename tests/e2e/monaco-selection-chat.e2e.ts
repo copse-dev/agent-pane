@@ -6,8 +6,9 @@ import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-monaco-selection-project'
-const SAMPLE_FILE = 'selection-sample.ts'
+const SAMPLE_FILE = 'selection-sample.txt'
 const SCREENSHOT = 'monaco-selection-chat-attachment.png'
+const CONTROL_KEY = '\uE009'
 
 async function waitForWorkspace(): Promise<void> {
   await browser.waitUntil(
@@ -20,7 +21,7 @@ async function waitForWorkspace(): Promise<void> {
 }
 
 async function pressControlChord(key: string): Promise<void> {
-  await browser.action('key').down('Control').press(key).up('Control').perform()
+  await browser.keys([CONTROL_KEY, key, CONTROL_KEY])
 }
 
 describe('Monaco selection to chat attachment', () => {
@@ -31,7 +32,7 @@ describe('Monaco selection to chat attachment', () => {
     workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-monaco-selection-'))
     writeFileSync(
       join(workspaceRoot, SAMPLE_FILE),
-      ['export function selectedGreeting() {', "  return 'hello from Monaco'", '}', ''].join('\n'),
+      ['Selected greeting from Monaco', 'Line two of the selected chat context', ''].join('\n'),
       'utf8',
     )
     mkdirSync(join(process.cwd(), 'tests/e2e/screenshots'), { recursive: true })
