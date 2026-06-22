@@ -19,6 +19,7 @@ cpSync('src/renderer/icon-previews', 'dist/renderer/icon-previews', { recursive:
 
 let electron: ChildProcess | null = null
 let shuttingDown = false
+let restartOnBuild = false
 let restartSerial = 0
 const buildContexts: esbuild.BuildContext[] = []
 
@@ -80,7 +81,9 @@ const sharedAlias = { '@shared': new URL('../src/shared', import.meta.url).pathn
 const onEndPlugin = (cb: () => void): esbuild.Plugin => ({
   name: 'on-end',
   setup(build) {
-    build.onEnd(cb)
+    build.onEnd(() => {
+      if (restartOnBuild) cb()
+    })
   },
 })
 
@@ -113,6 +116,7 @@ buildContexts.push(rendererCtx)
 
 await Promise.all([mainCtx.rebuild(), preloadCtx.rebuild(), rendererCtx.rebuild()])
 startElectron()
+restartOnBuild = true
 
 // Watch for changes
 await mainCtx.watch()
