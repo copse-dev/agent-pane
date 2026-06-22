@@ -1113,3 +1113,59 @@ export function seedFooterBranchMismatchFixture(workspaceRoot: string): FooterBr
     mismatchBranch,
   }
 }
+
+/** Table with glob paths in inline code + architecture list (Repo Core Files repro). */
+export function seedMarkdownBoldGlobFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-markdown-bold-glob-project'
+  const threadId = 'e2e-markdown-bold-glob-thread'
+  const content = [
+    '## Tests',
+    '',
+    '| Path | Role |',
+    '| --- | --- |',
+    '| **`src/**/*.test.ts`** | Unit tests (bundled by esbuild into `dist-test/`) |',
+    '| **`tests/e2e/`** | WebdriverIO e2e tests (tool display, markdown rendering, etc.) |',
+    '| **`tests/fixtures/`** | E2E test fixtures |',
+    '',
+    '## Key Supporting Files',
+    '',
+    '- **`README.md`** — Project overview, commands, layout',
+    '- **`AGENTS.md`** — Detailed agent instructions: running headless, mock LLM, permission policy',
+    '- **`vendor/`** — Bundled `codesearch` binary (downloaded on `npm install`)',
+    '',
+    '## Architecture Notes',
+    '',
+    '- **No backend** — main process talks directly to LLM providers',
+    '- **Persistence** via `electron-store` (JSON config under `~/Library/Application Support/copse-panel/` on macOS)',
+    '- **LLM fallback**: `MockLLMProvider` when no API keys are set',
+    '- **Shell permissions**: `src/main/services/permission-policy.ts` — macOS-only sandbox; other platforms use static analysis',
+    '- **MCP host**: connects to MCP servers via `.cursor/mcp.json` or `~/.cursor/mcp.json`',
+  ].join('\n')
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Repo core files overview',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-bold-glob',
+              role: 'assistant',
+              content,
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
