@@ -1512,6 +1512,56 @@ label {
 .footer-export:hover {
   color: var(--text-secondary);
 }
+.footer-overflow {
+  display: none;
+  position: relative;
+  flex-shrink: 0;
+}
+.input-footer.is-compact .footer-overflow {
+  display: block;
+}
+.input-footer.is-compact .footer-export {
+  display: none;
+}
+.input-footer.is-compact .footer-usage {
+  display: none;
+}
+.footer-overflow-trigger {
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-muted);
+  padding: 0 4px;
+}
+.footer-overflow-trigger:hover {
+  color: var(--text-secondary);
+}
+.footer-overflow-menu {
+  position: absolute;
+  z-index: 20;
+  bottom: calc(100% + 4px);
+  right: 0;
+  width: max-content;
+  min-width: 120px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-xs) 0;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.footer-overflow-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-size: 11px;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  padding: 6px var(--spacing-md);
+  cursor: pointer;
+}
+.footer-overflow-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
 .footer-usage-group {
   display: flex;
   align-items: center;
@@ -1536,6 +1586,12 @@ label {
   font-size: 11px;
   color: var(--text-muted);
   min-width: 2.5ch;
+}
+.context-wheel.is-interactive {
+  cursor: pointer;
+}
+.context-wheel.is-interactive:hover .context-wheel-label {
+  color: var(--text-secondary);
 }
 .footer-usage {
   font-size: 11px;
