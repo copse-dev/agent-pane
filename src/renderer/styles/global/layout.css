@@ -477,6 +477,23 @@
   flex: 1;
   min-height: 0;
 }
+.git-diff-editor-wrap .line-insert,
+.git-diff-editor-wrap .char-insert {
+  background-color: color-mix(in srgb, #2ea043 28%, transparent) !important;
+}
+.git-diff-editor-wrap .line-delete,
+.git-diff-editor-wrap .char-delete,
+.git-diff-editor-wrap .inline-deleted-text {
+  background-color: color-mix(in srgb, #f85149 26%, transparent) !important;
+}
+.git-diff-editor-wrap .gutter-insert,
+.git-diff-editor-wrap .inline-added-margin-view-zone {
+  background-color: color-mix(in srgb, #2ea043 22%, transparent) !important;
+}
+.git-diff-editor-wrap .gutter-delete,
+.git-diff-editor-wrap .inline-deleted-margin-view-zone {
+  background-color: color-mix(in srgb, #f85149 22%, transparent) !important;
+}
 .git-image-diff-wrap {
   flex: 1;
   min-height: 0;

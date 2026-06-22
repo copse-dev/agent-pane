@@ -3,7 +3,12 @@ import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitChange, GitChangeStatus, GitFileDiff, GitStatusResult } from '@shared/types/git.ts'
-import { revealFirstDiffChangeOnNextUpdate } from '../monaco/diff-scroll.ts'
+import {
+  createGitChangesDiffEditor,
+  disposeDiffModels,
+  observeDiffHostLayout,
+  setGitFileDiffModel,
+} from '../monaco/git-diff-viewer.ts'
 
 function isImageDiff(diff: GitFileDiff): boolean {
   return diff.beforeImage != null || diff.afterImage != null
@@ -98,25 +103,26 @@ export function mountGitChangesPane(
   const emptyState = el('div', { class: 'panel-empty' }, 'Select a changed file')
   viewerRoot.append(diffWrap, imageWrap, emptyState)
 
-  const diffEditor = monaco.editor.createDiffEditor(diffWrap, {
-    readOnly: true,
-    automaticLayout: true,
-    scrollBeyondLastLine: false,
-    fontSize: store.getState().fontSize,
-    theme: store.getState().theme === 'dark' ? 'vs-dark' : 'vs',
-    hideUnchangedRegions: {
-      enabled: true,
-      contextLineCount: 3,
-      minimumLineCount: 3,
-      revealLineCount: 20,
-    },
-  })
+  let diffEditor: Monaco.editor.IStandaloneDiffEditor | null = null
+  let pendingSelect: { path: string; staged: boolean } | null = null
+
+  function ensureDiffEditor(): Monaco.editor.IStandaloneDiffEditor {
+    if (!diffEditor) {
+      const theme = store.getState().theme === 'dark' ? 'vs-dark' : 'vs'
+      diffEditor = createGitChangesDiffEditor(
+        diffWrap,
+        monaco,
+        store.getState().fontSize,
+        theme,
+      )
+    }
+    return diffEditor
+  }
 
   let status: GitStatusResult | null = null
   let gitAvailable = false
   let selected: { path: string; staged: boolean } | null = null
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
-  let cancelPendingDiffReveal: (() => void) | null = null
 
   function renderSection(title: string, changes: GitChange[], staged: boolean) {
     if (changes.length === 0) return
@@ -161,8 +167,10 @@ export function mountGitChangesPane(
 
   async function selectChange(path: string, staged: boolean) {
     selected = { path, staged }
+    pendingSelect = { path, staged }
     renderList()
     const diff = await api.git.fileDiff(path, staged)
+    if (pendingSelect?.path !== path || pendingSelect.staged !== staged) return
     if (!diff) {
       emptyState.hidden = false
       diffWrap.hidden = true
@@ -174,46 +182,27 @@ export function mountGitChangesPane(
     if (isImageDiff(diff)) {
       diffWrap.hidden = true
       imageWrap.hidden = false
-      cancelPendingDiffReveal?.()
-      cancelPendingDiffReveal = null
-      const oldModels = diffEditor.getModel()
-      if (oldModels?.original) oldModels.original.dispose()
-      if (oldModels?.modified) oldModels.modified.dispose()
+      if (diffEditor) disposeDiffModels(diffEditor)
       renderImageDiff(imageWrap, diff)
       return
     }
     imageWrap.hidden = true
     diffWrap.hidden = false
-    const oldModels = diffEditor.getModel()
-    cancelPendingDiffReveal?.()
-    cancelPendingDiffReveal = revealFirstDiffChangeOnNextUpdate(diffEditor)
-    diffEditor.setModel({
-      original: monaco.editor.createModel(diff.before, diff.language),
-      modified: monaco.editor.createModel(diff.after, diff.language),
-    })
-    oldModels?.original.dispose()
-    oldModels?.modified.dispose()
-    await new Promise<void>((resolve) => {
-      const disposable = diffEditor.onDidUpdateDiff(() => {
-        disposable.dispose()
-        resolve()
-      })
-    })
-    diffEditor.layout()
+    if (pendingSelect?.path !== path || pendingSelect.staged !== staged) return
+    await setGitFileDiffModel(ensureDiffEditor(), monaco, diff, viewerRoot)
   }
 
   function clearSelection() {
     selected = null
+    pendingSelect = null
     emptyState.hidden = false
     emptyState.textContent = 'Select a changed file'
     diffWrap.hidden = true
     imageWrap.hidden = true
     clear(imageWrap)
-    cancelPendingDiffReveal?.()
-    cancelPendingDiffReveal = null
-    const oldModels = diffEditor.getModel()
-    if (oldModels?.original) oldModels.original.dispose()
-    if (oldModels?.modified) oldModels.modified.dispose()
+    const editor = diffEditor
+    if (!editor) return
+    disposeDiffModels(editor)
   }
 
   async function refresh() {
@@ -249,6 +238,8 @@ export function mountGitChangesPane(
 
   refreshBtn.addEventListener('click', () => void refresh())
 
+  const stopObservingLayout = observeDiffHostLayout(viewerRoot, () => diffEditor)
+
   const unsubs = [
     store.on('right_panel_mode_changed', () => {
       if (changesModeActive(store)) void refresh()
@@ -273,8 +264,9 @@ export function mountGitChangesPane(
 
   return () => {
     if (refreshTimer) clearTimeout(refreshTimer)
+    stopObservingLayout()
     unsubs.forEach((u) => u())
-    cancelPendingDiffReveal?.()
-    diffEditor.dispose()
+    diffEditor?.dispose()
+    diffEditor = null
   }
 }

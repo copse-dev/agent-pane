@@ -1,10 +1,10 @@
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
-import { classifyGitBlob, getGitDiffText, getGitFileDiff, parsePorcelainV1 } from './git-service.ts'
+import { classifyGitBlob, getGitDiffText, getGitFileDiff, parsePorcelainV1, toGitShowPath } from './git-service.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 import { setGitAvailableForTest } from './tool-availability.ts'
 
@@ -231,5 +231,94 @@ describe('getGitFileDiff image preview', { skip: !gitOk && 'git not installed' }
     assert.match(diff!.beforeImage ?? '', /^data:image\/png;base64,/)
     assert.match(diff!.afterImage ?? '', /^data:image\/png;base64,/)
     assert.notEqual(diff!.beforeImage, diff!.afterImage)
+  })
+})
+
+describe('getGitFileDiff unstaged blob', { skip: !gitOk && 'git not installed' }, () => {
+  let repo = ''
+  let restore: (() => void) | undefined
+
+  const git = (...args: string[]) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
+
+  before(async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-unstaged-diff-'))
+    git('init', '-q')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    await writeFile(
+      join(repo, 'README.md'),
+      ['# Title', '', 'Intro paragraph.', '', '## Section', ''].join('\n'),
+    )
+    git('add', '.')
+    git('commit', '-qm', 'init')
+    await writeFile(
+      join(repo, 'README.md'),
+      ['# Title', '', 'Intro paragraph.', '', '', '', '', '', '## Section', ''].join('\n'),
+    )
+    restore = setWorkspaceRootForTest(repo)
+    setGitAvailableForTest(true)
+  })
+
+  after(async () => {
+    setGitAvailableForTest(null)
+    restore?.()
+    if (repo) await rm(repo, { recursive: true, force: true })
+  })
+
+  it('returns index content as before and working tree as after for unstaged edits', async () => {
+    const diff = await getGitFileDiff('README.md', false)
+    assert.ok(diff)
+    assert.match(diff!.before, /Intro paragraph\.\n\n## Section/)
+    assert.match(diff!.after, /Intro paragraph\.\n\n\n\n\n\n## Section/)
+    assert.notEqual(diff!.before, diff!.after)
+  })
+})
+
+describe('toGitShowPath', () => {
+  it('prefixes workspace-relative paths for git show', () => {
+    assert.equal(toGitShowPath('README.md'), './README.md')
+    assert.equal(toGitShowPath('./README.md'), './README.md')
+    assert.equal(toGitShowPath('src/foo.ts'), './src/foo.ts')
+  })
+})
+
+describe('getGitFileDiff subdirectory workspace', { skip: !gitOk && 'git not installed' }, () => {
+  let repo = ''
+  let restore: (() => void) | undefined
+
+  const git = (...args: string[]) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
+
+  before(async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-subdir-diff-'))
+    git('init', '-q')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    await mkdir(join(repo, 'widget'), { recursive: true })
+    await writeFile(
+      join(repo, 'widget', 'README.md'),
+      ['# Title', '', 'Intro paragraph.', '', '## Section', ''].join('\n'),
+    )
+    git('add', '.')
+    git('commit', '-qm', 'init')
+    await writeFile(
+      join(repo, 'widget', 'README.md'),
+      ['# Title', '', 'Intro paragraph.', '', '', '', '', '', '## Section', ''].join('\n'),
+    )
+    restore = setWorkspaceRootForTest(join(repo, 'widget'))
+    setGitAvailableForTest(true)
+  })
+
+  after(async () => {
+    setGitAvailableForTest(null)
+    restore?.()
+    if (repo) await rm(repo, { recursive: true, force: true })
+  })
+
+  it('reads index/HEAD blobs when the workspace is a repo subdirectory', async () => {
+    const diff = await getGitFileDiff('README.md', false)
+    assert.ok(diff)
+    assert.match(diff!.before, /Intro paragraph\.\n\n## Section/)
+    assert.match(diff!.after, /Intro paragraph\.\n\n\n\n\n\n## Section/)
+    assert.notEqual(diff!.before, diff!.after)
   })
 })
