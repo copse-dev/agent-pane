@@ -3,4 +3,7 @@ dist-test/
 dist-types/
 node_modules/
 test-results/
-.claude/
+tests/e2e/electron-shell/.e2e-env.json
+.wdio-profile-*
+.wdio-git-fixture-*
+tests/fixtures/git-changes-repo/

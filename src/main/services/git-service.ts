@@ -31,6 +31,12 @@ function toWorkspaceRelativeGitPath(path: string, workspacePrefix: string): stri
   return path.slice(prefixWithSlash.length)
 }
 
+/** Path for `git show ref:path` when cwd is the workspace root (may be a repo subdirectory). */
+export function toGitShowPath(workspaceRelativePath: string): string {
+  if (workspaceRelativePath.startsWith('./')) return workspaceRelativePath
+  return `./${workspaceRelativePath}`
+}
+
 function normalizeGitStatusForWorkspace(
   status: GitStatusResult,
   workspacePrefix: string,
@@ -174,7 +180,8 @@ export function classifyGitBlob(stdout: string, code: number): GitBlobResult {
 }
 
 function gitObjectSpec(ref: string, path: string): string {
-  return ref === ':' ? `:${path}` : `${ref}:${path}`
+  const gitPath = toGitShowPath(path)
+  return ref === ':' ? `:${gitPath}` : `${ref}:${gitPath}`
 }
 
 async function readGitBlob(ref: string, path: string): Promise<GitBlobResult> {
@@ -334,12 +341,33 @@ export async function getGitFileDiff(path: string, staged: boolean): Promise<Git
     }
   }
 
+  before = normalizeGitDiffText(before)
+  after = normalizeGitDiffText(after)
+
+  if (before === after) {
+    const diffArgs = ['diff', ...(staged ? ['--cached'] : []), '--', path]
+    const { stdout } = await runGit(diffArgs)
+    if (stdout.trim()) {
+      if (staged) {
+        before = normalizeGitDiffText((await readGitBlob('HEAD', path)).content)
+        after = normalizeGitDiffText((await readGitBlob(':', path)).content)
+      } else {
+        before = normalizeGitDiffText((await readGitBlob(':', path)).content)
+        after = normalizeGitDiffText(await readWorkingTree(path))
+      }
+    }
+  }
+
   return {
     path,
     before,
     after,
     language: detectLanguage(path),
   }
+}
+
+function normalizeGitDiffText(text: string): string {
+  return text.replace(/\r\n/g, '\n')
 }
 
 export async function getGitStatusText(): Promise<string> {
