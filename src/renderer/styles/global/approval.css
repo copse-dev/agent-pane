@@ -1,0 +1,37 @@
+.approval-title {
+  margin-bottom: var(--spacing-md);
+}
+.approval-body {
+  background: var(--bg-base);
+  padding: var(--spacing-md);
+  border-radius: var(--radius);
+  margin-bottom: var(--spacing-md);
+  white-space: pre-wrap;
+  max-height: 200px;
+  overflow-y: auto;
+  font-size: var(--font-size-sm);
+}
+.approval-buttons {
+  display: flex;
+  gap: var(--spacing-sm);
+  justify-content: flex-end;
+}
+.approval-approve {
+  background: var(--success);
+  color: #000;
+  border-radius: var(--radius);
+  padding: 6px 16px;
+}
+.approval-reject {
+  background: var(--error);
+  color: white;
+  border-radius: var(--radius);
+  padding: 6px 16px;
+}
+.approval-remember {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
