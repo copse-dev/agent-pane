@@ -31,11 +31,22 @@ describe('workspace path containment', () => {
     clearAllowedWorkspaceRootsForTest()
   })
 
-  it('rejects absolute paths from the renderer', () => {
+  it('rejects absolute paths outside the workspace', () => {
     const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
     registerAllowedWorkspaceRoot(ws)
     cleanupRoot = setWorkspaceRootForTest(ws)
-    assert.throws(() => resolveWorkspacePath('/etc/passwd'), /Absolute paths are not allowed/)
+    assert.throws(() => resolveWorkspacePath('/etc/passwd'), /outside workspace/)
+  })
+
+  it('accepts absolute paths under the workspace root', () => {
+    const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+    mkdirSync(join(ws, 'src'))
+    writeFileSync(join(ws, 'src', 'a.ts'), 'ok')
+    registerAllowedWorkspaceRoot(ws)
+    cleanupRoot = setWorkspaceRootForTest(ws)
+    const abs = join(ws, 'src', 'a.ts')
+    const resolved = resolveWorkspacePath(abs)
+    assert.equal(resolved, realpathSync.native(abs))
   })
 
   it('rejects paths that lexically escape the workspace', () => {
