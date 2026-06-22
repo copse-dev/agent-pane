@@ -65,6 +65,7 @@
     }
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "^0.29.0",
     "@anthropic-ai/sandbox-runtime": "^0.0.56",
     "@anthropic-ai/sdk": "^0.104.2",
     "@modelcontextprotocol/sdk": "^1.12.1",
