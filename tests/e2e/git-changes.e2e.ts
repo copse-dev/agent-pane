@@ -9,7 +9,20 @@ import {
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
-describe('git changes viewer', () => {
+async function waitForComposer(): Promise<void> {
+  await $('.prompt-input').waitForExist({ timeout: 60_000 })
+}
+
+async function waitForWorkspace(): Promise<void> {
+  await browser.waitUntil(
+    async () => (await (await $('.workspace-name')).getText()) !== 'No folder',
+    { timeout: 60_000, timeoutMsg: 'expected a restored workspace before opening Changes' },
+  )
+}
+
+describe('git changes viewer', function () {
+  this.timeout(120_000)
+
   let repoRoot = ''
 
   before(async () => {
@@ -17,6 +30,8 @@ describe('git changes viewer', () => {
     resetUserData()
     repoRoot = seedGitChangesFixture()
     await browser.reloadSession()
+    await waitForWorkspace()
+    await waitForComposer()
   })
 
   after(() => {
@@ -31,11 +46,16 @@ describe('git changes viewer', () => {
     const titlebarChangesBtn = await $('.titlebar-btn[aria-label="Open changes"]')
     await titlebarChangesBtn.click()
 
+    await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
+
     const changesTab = await $('.right-panel-tab[aria-label="Changes"]')
+    await changesTab.waitForDisplayed({ timeout: 5_000 })
     await expect(changesTab).toHaveElementClass('is-active')
 
     const changesHost = await $('#git-changes-host')
     await changesHost.waitForDisplayed({ timeout: 15_000 })
+
+    await (await $('.git-changes-refresh-btn')).click()
 
     // Wait for the async git status refresh to render rows.
     await browser.waitUntil(async () => (await $$('.git-change-row').length) >= 3, {

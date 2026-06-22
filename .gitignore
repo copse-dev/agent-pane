@@ -14,6 +14,7 @@ vendor/codesearch/
 # Test artifacts
 test-results/
 .wdio-profile-*/
+.wdio-git-fixture-*/
 .wdio-eval-profile-*/
 .wdio-eval-userdata-*/
 .wdio-eval-chrome-*/

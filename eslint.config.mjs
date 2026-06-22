@@ -15,6 +15,7 @@ export default ts.config(
       'wdio.conf.ts',
       'wdio.eval.conf.ts',
       'tests/e2e/**',
+      'tests/fixtures/git-changes-repo/**',
     ],
   },
   js.configs.recommended,
