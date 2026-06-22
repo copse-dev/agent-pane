@@ -12,6 +12,7 @@ import {
   recordContextTrim,
   updateContextSnapshot,
   setThreadTodos,
+  getThreadById,
 } from '@shared/store/thread-helpers.ts'
 import {
   initSubagent,
@@ -220,7 +221,9 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     store.emit('files_pane_changed')
   })
 
-  // When diff is queued from main, update staged diffs in store
+  // Diff IPC → store: `agent:show_diff` sets activeDiff + panel tab; `diff:queued`
+  // updates stagedDiffs (path/language only). The context panel caches full payloads
+  // from show_diff for multi-file switching; approve/reject use diff:* IPC handlers.
   api.diff.onQueued((entries) => {
     const { activeDiff } = store.getState()
     const stillQueued =
@@ -253,7 +256,7 @@ function firstWords(text: string, n = 6): string {
 // fallback.
 async function maybeNameThread(store: AppStore, api: ApiClient, threadId: string): Promise<void> {
   if (namedThreads.has(threadId)) return
-  const thread = store.getState().threads.find((t) => t.id === threadId)
+  const thread = getThreadById(store, threadId)
   if (!thread || thread.title !== 'New Thread') return
   const firstUser = thread.messages.find((m) => m.role === 'user')
   if (!firstUser || !firstUser.content.trim()) return

@@ -3,6 +3,7 @@ import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitChange, GitChangeStatus, GitStatusResult } from '@shared/types/git.ts'
+import { revealFirstDiffChangeOnNextUpdate } from '../monaco/diff-scroll.ts'
 
 const STATUS_LABEL: Record<GitChangeStatus, string> = {
   modified: 'M',
@@ -57,6 +58,7 @@ export function mountGitChangesPane(
   let gitAvailable = false
   let selected: { path: string; staged: boolean } | null = null
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
+  let cancelPendingDiffReveal: (() => void) | null = null
 
   function renderSection(title: string, changes: GitChange[], staged: boolean) {
     if (changes.length === 0) return
@@ -112,6 +114,8 @@ export function mountGitChangesPane(
     emptyState.hidden = true
     diffWrap.hidden = false
     const oldModels = diffEditor.getModel()
+    cancelPendingDiffReveal?.()
+    cancelPendingDiffReveal = revealFirstDiffChangeOnNextUpdate(diffEditor)
     diffEditor.setModel({
       original: monaco.editor.createModel(diff.before, diff.language),
       modified: monaco.editor.createModel(diff.after, diff.language),
@@ -126,6 +130,8 @@ export function mountGitChangesPane(
     emptyState.hidden = false
     emptyState.textContent = 'Select a changed file'
     diffWrap.hidden = true
+    cancelPendingDiffReveal?.()
+    cancelPendingDiffReveal = null
     const oldModels = diffEditor.getModel()
     if (oldModels?.original) oldModels.original.dispose()
     if (oldModels?.modified) oldModels.modified.dispose()
@@ -186,6 +192,7 @@ export function mountGitChangesPane(
   return () => {
     if (refreshTimer) clearTimeout(refreshTimer)
     unsubs.forEach((u) => u())
+    cancelPendingDiffReveal?.()
     diffEditor.dispose()
   }
 }

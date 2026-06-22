@@ -3,9 +3,12 @@
  * Usage: node --experimental-strip-types scripts/analyze-thread-jsonl.mts <file.jsonl> [scenario.json]
  */
 import { readFileSync } from 'node:fs'
+import { shouldSteerGithubLinks } from '@shared/git/github-link-steering.ts'
 import { shouldSteerTodos } from '@shared/todos/todo-logic.ts'
 
 interface ScenarioExpect {
+  shouldSteerGithubLinks?: boolean
+  requireGithubLinksInReply?: boolean
   shouldSteerTodos?: boolean
   maxExplore?: number
   minExplore?: number
@@ -104,7 +107,8 @@ function analyze(path: string, scenario?: Scenario): void {
     .filter(([, ex]) => ex.length > 1)
     .sort((a, b) => b[1].length - a[1].length)
 
-  const steer = shouldSteerTodos(userText)
+  const steerTodos = shouldSteerTodos(userText)
+  const steerGithubLinks = shouldSteerGithubLinks(userText)
   const usage = thread?.usage ?? {}
   const assistants = records.filter((r) => r.role === 'assistant')
   const finalText =
@@ -112,12 +116,23 @@ function analyze(path: string, scenario?: Scenario): void {
 
   const violations: string[] = []
   const exp = scenario?.expect
-  if (exp?.shouldSteerTodos === true && !steer) {
+  if (exp?.shouldSteerGithubLinks === true && !steerGithubLinks) {
+    violations.push(
+      'expected shouldSteerGithubLinks true for user message (check scenario prompt vs heuristic)',
+    )
+  }
+  if (exp?.shouldSteerGithubLinks === false && steerGithubLinks) {
+    violations.push('shouldSteerGithubLinks was true but scenario expected false')
+  }
+  if (exp?.requireGithubLinksInReply && !/https?:\/\/github\.com\//i.test(finalText)) {
+    violations.push('expected at least one github.com URL in the final assistant reply')
+  }
+  if (exp?.shouldSteerTodos === true && !steerTodos) {
     violations.push(
       'expected shouldSteerTodos true for user message (check scenario prompt vs heuristic)',
     )
   }
-  if (exp?.shouldSteerTodos === false && steer) {
+  if (exp?.shouldSteerTodos === false && steerTodos) {
     violations.push('shouldSteerTodos was true but scenario expected false')
   }
   if (exp?.requireUpdateTodos && updateTodos === 0) {
@@ -149,7 +164,8 @@ function analyze(path: string, scenario?: Scenario): void {
     scenarioId: scenario?.id ?? null,
     title: thread?.title,
     userMessage: userText.slice(0, 500),
-    shouldSteerTodos: steer,
+    shouldSteerGithubLinks: steerGithubLinks,
+    shouldSteerTodos: steerTodos,
     usage,
     toolHistogram: toolHist,
     exploreCount,

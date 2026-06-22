@@ -49,6 +49,7 @@ export function seedEmptyProject(
     lmStudioModel?: string
     lmStudioSubagentModel?: string
     lmStudioForSubagents?: boolean
+    autoPortraitRightPanel?: boolean
   },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
@@ -83,8 +84,13 @@ export function seedEmptyProject(
   if (options?.lmStudioForSubagents !== undefined) {
     settings.lmStudioForSubagents = options.lmStudioForSubagents
   }
+  if (options?.autoPortraitRightPanel !== undefined) {
+    settings.autoPortraitRightPanel = options.autoPortraitRightPanel
+  }
   if (Object.keys(settings).length > 0) {
     writeSettings(settings)
+  } else {
+    writeSettings({})
   }
 }
 
@@ -391,6 +397,98 @@ export function seedContextWheelFixture(workspaceRoot: string): void {
     }),
     'utf8',
   )
+}
+
+/** Footer with long model/branch labels plus context wheel + token usage for compact layout e2e. */
+export function seedFooterCompactFixture(workspaceRoot: string): {
+  model: string
+  branch: string
+  tokenLabel: string
+} {
+  const projectId = 'e2e-footer-compact-project'
+  const threadId = 'e2e-footer-compact-thread'
+  const model = 'lmstudio:qwen/qwen3.6-35b-a3b'
+  const branch = 'jkt/auto/markdown-file-links-3d2c'
+  const conversationBudget = 180_000
+  const conversationTokens = 9_000
+  const inputTokens = 50_000
+  const outputTokens = 1_800
+  const tokenLabel = `${((inputTokens + outputTokens) / 1000).toFixed(1)}k tokens`
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Footer compact layout',
+          status: 'idle',
+          gitBranch: branch,
+          messages: [
+            {
+              id: 'msg-user-compact',
+              role: 'user',
+              content: 'Check footer layout at narrow widths.',
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens, outputTokens },
+          contextSnapshot: {
+            contextWindow: 200_000,
+            conversationBudget,
+            conversationTokens,
+            fillRatio: conversationTokens / conversationBudget,
+            updatedAt: Date.now(),
+          },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+  writeSettings({ model })
+  return { model: 'qwen/qwen3.6-35b-a3b', branch, tokenLabel }
+}
+
+export function seedPortraitRightPanelFixture(
+  workspaceRoot: string,
+  autoPortraitRightPanel: boolean,
+): void {
+  const projectId = 'e2e-portrait-right-panel-project'
+  const threadId = 'e2e-portrait-right-panel-thread'
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Portrait right panel layout',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-user-portrait-layout',
+              role: 'user',
+              content: 'Open the right panel in a portrait window.',
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+  writeSettings({ autoPortraitRightPanel })
 }
 
 export function seedSubagentFixture(workspaceRoot: string): void {
@@ -840,6 +938,59 @@ export interface FooterBranchSeedIds {
   mismatchThreadId: string
   currentBranch: string
   mismatchBranch: string
+}
+
+/** Used thread plus a blank composer for draft-prompt preservation e2e. */
+export function seedDraftPromptFixture(workspaceRoot: string): {
+  usedThreadTitle: string
+  blankThreadTitle: string
+} {
+  const projectId = 'e2e-draft-prompt-project'
+  const usedThreadId = 'e2e-draft-used'
+  const blankThreadId = 'e2e-draft-blank'
+  const usedThreadTitle = 'Used thread'
+  const blankThreadTitle = 'New Thread'
+  const now = Date.now()
+
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: blankThreadId,
+          title: blankThreadTitle,
+          status: 'idle',
+          messages: [],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: now + 1,
+          updatedAt: now + 1,
+        },
+        {
+          id: usedThreadId,
+          title: usedThreadTitle,
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-user-used',
+              role: 'user',
+              content: 'hello from used thread',
+              toolCalls: [],
+              createdAt: now,
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    }),
+    'utf8',
+  )
+
+  return { usedThreadTitle, blankThreadTitle }
 }
 
 /** Two threads bound to different branches for footer branch / mismatch screenshots. */

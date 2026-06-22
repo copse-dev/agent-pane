@@ -5,6 +5,9 @@ import {
   addMessage,
   setThreadWorkingBrief,
   bindThreadGitBranchIfUnset,
+  getThreadById,
+  getActiveThread,
+  setThreadDraftPrompt,
 } from '@shared/store/thread-helpers.ts'
 import { dispatchAgentRun, enqueueUserMessage } from '../controller/message-queue.ts'
 import { nextWorkingBrief } from '@shared/agent/working-brief.ts'
@@ -24,6 +27,8 @@ import type { AgentRunPayload, SkillSummary } from '@shared/types/skills.ts'
 import { mountFooterModelPicker } from './footer-model-picker.ts'
 import { mountFooterBranchStatus } from './footer-branch-status.ts'
 import { createContextWheel } from './context-wheel.ts'
+import { bindFooterCompactLayout } from './footer-compact.ts'
+import { mountFooterOverflow } from './footer-overflow.ts'
 import { downloadThreadJsonl } from '../export-thread.ts'
 import { formatThreadUsageCost } from '@shared/llm/estimate-cost.ts'
 import { mountFollowUpSuggestions } from './follow-up-suggestions.ts'
@@ -68,7 +73,18 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const queueIndicator = el('span', { class: 'footer-queue', hidden: '', 'aria-live': 'polite' })
   const contextWheel = createContextWheel()
   usageGroup.append(contextWheel.root, queueIndicator, usageBtn)
-  footer.append(modelHost, branchHost, exportBtn, usageGroup)
+  footer.append(modelHost, branchHost, exportBtn)
+  const footerOverflow = mountFooterOverflow(footer, [
+    {
+      label: 'Export',
+      onClick: () => {
+        const thread = getActiveThread(store)
+        if (thread) downloadThreadJsonl(thread)
+      },
+    },
+  ])
+  footer.append(usageGroup)
+  const footerCompact = bindFooterCompactLayout(footer, () => updateFooter())
   let costVisible = false
 
   const modelPicker = mountFooterModelPicker(
@@ -84,10 +100,15 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const branchStatus = mountFooterBranchStatus(branchHost, store, api)
 
   exportBtn.addEventListener('click', () => {
-    const thread = store.getState().threads.find((t) => t.id === getActiveThreadId())
+    const thread = getActiveThread(store)
     if (thread) downloadThreadJsonl(thread)
   })
   usageBtn.addEventListener('click', () => {
+    costVisible = !costVisible
+    updateFooter()
+  })
+  contextWheel.root.addEventListener('click', () => {
+    if (!footerCompact.isCompact() || contextWheel.root.hidden || !usageSummaryText()) return
     costVisible = !costVisible
     updateFooter()
   })
@@ -110,9 +131,39 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     return store.getState().activeThreadId
   }
   function isRunning() {
-    const t = store.getState().threads.find((tt) => tt.id === getActiveThreadId())
+    const t = getActiveThread(store)
     return t?.status === 'running'
   }
+
+  let activeComposerThreadId = getActiveThreadId()
+
+  function persistComposerDraft(): void {
+    const id = activeComposerThreadId
+    if (!id) return
+    setThreadDraftPrompt(store, id, textarea.value)
+  }
+
+  function syncComposerThread(): void {
+    const id = getActiveThreadId()
+    if (id === activeComposerThreadId) return
+    if (activeComposerThreadId) {
+      setThreadDraftPrompt(store, activeComposerThreadId, textarea.value)
+    }
+    const thread = getThreadById(store, id)
+    textarea.value = thread?.draftPrompt ?? ''
+    activeComposerThreadId = id
+  }
+
+  let draftSaveTimer: ReturnType<typeof setTimeout> | null = null
+  textarea.addEventListener('input', () => {
+    const id = getActiveThreadId()
+    if (!id) return
+    if (draftSaveTimer !== null) clearTimeout(draftSaveTimer)
+    draftSaveTimer = setTimeout(() => {
+      draftSaveTimer = null
+      setThreadDraftPrompt(store, id, textarea.value)
+    }, 250)
+  })
 
   function updateState() {
     const running = isRunning()
@@ -133,22 +184,34 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     queueIndicator.textContent = count === 1 ? '1 queued' : `${count} queued`
   }
 
-  function updateFooter() {
+  function usageSummaryText(): string | null {
     const model = store.getState().settings?.model ?? 'claude-sonnet-4-6'
-    const thread = store.getState().threads.find((t) => t.id === getActiveThreadId())
+    const thread = getActiveThread(store)
     const { inputTokens, outputTokens } = thread?.usage ?? { inputTokens: 0, outputTokens: 0 }
     const total = inputTokens + outputTokens
     const running = thread?.status === 'running'
-    contextWheel.update(thread?.contextSnapshot, running)
-    if (!total && !running) {
+    if (!total && !running) return null
+    if (costVisible) {
+      return `${inputTokens} in / ${outputTokens} out · ${formatThreadUsageCost(thread?.usage ?? { inputTokens: 0, outputTokens: 0 }, model)}`
+    }
+    return total ? `${(total / 1000).toFixed(1)}k tokens` : '0 tokens'
+  }
+
+  function updateFooter() {
+    const thread = getActiveThread(store)
+    const running = thread?.status === 'running'
+    const usageText = usageSummaryText()
+    const compact = footerCompact.isCompact()
+    const tuckUsageIntoWheel = compact && !contextWheel.root.hidden
+    contextWheel.update(thread?.contextSnapshot, running, {
+      usageLine: tuckUsageIntoWheel ? usageText : null,
+    })
+    contextWheel.root.classList.toggle('is-interactive', tuckUsageIntoWheel)
+    if (!usageText) {
       usageBtn.hidden = true
     } else {
-      usageBtn.hidden = false
-      usageBtn.textContent = costVisible
-        ? `${inputTokens} in / ${outputTokens} out · ${formatThreadUsageCost(thread?.usage ?? { inputTokens: 0, outputTokens: 0 }, model)}`
-        : total
-          ? `${(total / 1000).toFixed(1)}k tokens`
-          : '0 tokens'
+      usageBtn.hidden = tuckUsageIntoWheel
+      usageBtn.textContent = usageText
     }
     updateState()
     updateQueueIndicator()
@@ -191,7 +254,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
 
     const branchStatus = await api.git.branchStatus()
     const currentBranch = branchStatus.currentBranch
-    const thread = store.getState().threads.find((t) => t.id === id)
+    const thread = getThreadById(store, id)
     if (threadGitBranchMismatch(thread?.gitBranch, currentBranch)) {
       textarea.setCustomValidity(threadGitBranchMismatchMessage(thread!.gitBranch!))
       textarea.reportValidity()
@@ -271,6 +334,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       dispatchAgentRun(store, api, id, payload)
     }
     textarea.value = ''
+    setThreadDraftPrompt(store, id, '')
     attachedFiles = []
     attachedTextBlocks = []
     attachedImages = []
@@ -392,6 +456,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   })
 
   const unsubs = [
+    store.on('composer_draft_flush', persistComposerDraft),
     store.on('thread_status_changed', (tid) => {
       if (tid === getActiveThreadId()) updateFooter()
     }),
@@ -399,6 +464,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       if (tid === getActiveThreadId()) updateQueueIndicator()
     }),
     store.on('threads_changed', () => {
+      syncComposerThread()
       updateState()
       updateFooter()
     }),
@@ -421,7 +487,12 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   observer.observe(followUps.root, { attributes: true, attributeFilter: ['hidden'] })
 
   updateFooter()
+  syncComposerThread()
   return () => {
+    if (draftSaveTimer !== null) clearTimeout(draftSaveTimer)
+    if (activeComposerThreadId) {
+      setThreadDraftPrompt(store, activeComposerThreadId, textarea.value)
+    }
     unsubs.forEach((u) => u())
     unsubWorkspace()
     document.removeEventListener('paste', onPaste)
@@ -430,6 +501,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     unbindDrop()
     unregisterAttachments()
     modelPicker.destroy()
+    footerOverflow.destroy()
+    footerCompact.destroy()
     branchStatus()
     skillPicker()
   }

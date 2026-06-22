@@ -7,57 +7,7 @@ import {
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { WORKSPACE_PATH_MIME } from '../attachments/handle-file-drop.ts'
-
-// Minimal renderer-side language detection for Monaco. Mirrors the main-process
-// language service for the common cases; unknown extensions fall back to
-// plaintext and Monaco still renders the text fine.
-const LANG: Record<string, string> = {
-  ts: 'typescript',
-  tsx: 'typescript',
-  mts: 'typescript',
-  cts: 'typescript',
-  js: 'javascript',
-  jsx: 'javascript',
-  mjs: 'javascript',
-  cjs: 'javascript',
-  py: 'python',
-  rs: 'rust',
-  go: 'go',
-  java: 'java',
-  rb: 'ruby',
-  php: 'php',
-  c: 'c',
-  h: 'c',
-  cpp: 'cpp',
-  cc: 'cpp',
-  hpp: 'cpp',
-  cs: 'csharp',
-  swift: 'swift',
-  kt: 'kotlin',
-  md: 'markdown',
-  mdx: 'markdown',
-  json: 'json',
-  html: 'html',
-  css: 'css',
-  scss: 'scss',
-  less: 'less',
-  yaml: 'yaml',
-  yml: 'yaml',
-  sh: 'shell',
-  bash: 'shell',
-  zsh: 'shell',
-  toml: 'ini',
-  xml: 'xml',
-  sql: 'sql',
-  graphql: 'graphql',
-}
-
-function detectLanguage(name: string): string {
-  const lower = name.toLowerCase()
-  if (lower === 'dockerfile') return 'dockerfile'
-  if (lower === 'makefile') return 'makefile'
-  return LANG[lower.split('.').pop() ?? ''] ?? 'plaintext'
-}
+import { openWorkspaceFile } from '../controller/files.ts'
 
 function join(parent: string, child: string): string {
   return parent ? `${parent}/${child}` : child
@@ -70,22 +20,44 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
   root.append(header, treeEl)
 
   let selectedRow: HTMLElement | null = null
+  let rootLoad: Promise<void> | null = null
+  const rowByPath = new Map<string, HTMLElement>()
+  const dirByPath = new Map<
+    string,
+    {
+      expand: () => Promise<void>
+    }
+  >()
 
-  async function openFile(path: string, name: string) {
+  function selectRow(row: HTMLElement): void {
+    if (selectedRow === row) return
+    selectedRow?.classList.remove('selected')
+    row.classList.add('selected')
+    selectedRow = row
+  }
+
+  async function openFile(path: string) {
     try {
-      const content = await api.fs.readFile(path)
-      store.setState({
-        openFile: { path, content, language: detectLanguage(name) },
-        panelTab: 'file',
-        rightPanelMode: 'explorer',
-        filesPaneOpen: true,
-      })
-      store.emit('panel_changed')
-      store.emit('right_panel_mode_changed')
-      store.emit('files_pane_changed')
+      await openWorkspaceFile(store, api, path)
     } catch {
       // ignore read errors (binary files, permissions, etc.)
     }
+  }
+
+  async function revealPath(path: string): Promise<void> {
+    await rootLoad
+    const segments = path.split('/').filter(Boolean)
+    let dir = ''
+    for (let i = 0; i < segments.length - 1; i++) {
+      dir = join(dir, segments[i]!)
+      const controller = dirByPath.get(dir)
+      if (!controller) return
+      await controller.expand()
+    }
+    const row = rowByPath.get(path)
+    if (!row) return
+    selectRow(row)
+    row.scrollIntoView({ block: 'nearest' })
   }
 
   function renderRow(
@@ -108,6 +80,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
       el('span', {}, entry.name),
     )
     row.style.paddingLeft = `${8 + depth * 14}px`
+    rowByPath.set(path, row)
 
     const container = el('div', {})
     container.append(row)
@@ -118,15 +91,27 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
       container.append(childrenEl)
       let loaded = false
       let expanded = false
-      row.addEventListener('click', () => {
+      const expand = async () => {
+        if (expanded) return
         expanded = !expanded
         twisty.textContent = expanded ? '▼' : '▶'
         mountMaterialIcon(icon, materialFolderIconUrl(path, expanded), `${entry.name} folder`)
         childrenEl.hidden = !expanded
         if (expanded && !loaded) {
           loaded = true
-          void loadInto(childrenEl, path, depth + 1)
+          await loadInto(childrenEl, path, depth + 1)
         }
+      }
+      dirByPath.set(path, { expand })
+      row.addEventListener('click', () => {
+        if (expanded) {
+          expanded = false
+          twisty.textContent = '▶'
+          mountMaterialIcon(icon, materialFolderIconUrl(path, false), `${entry.name} folder`)
+          childrenEl.hidden = true
+          return
+        }
+        void expand()
       })
     } else {
       row.draggable = true
@@ -135,10 +120,8 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
         if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy'
       })
       row.addEventListener('click', () => {
-        if (selectedRow) selectedRow.classList.remove('selected')
-        row.classList.add('selected')
-        selectedRow = row
-        void openFile(path, entry.name)
+        selectRow(row)
+        void openFile(path)
       })
     }
     return container
@@ -155,9 +138,11 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
       for (const entry of entries) {
         target.append(renderRow(entry, join(dirPath, entry.name), depth))
       }
-    } catch {
+    } catch (err) {
       clear(target)
-      target.append(el('div', { class: 'sidebar-empty' }, 'Could not read folder'))
+      const message =
+        err instanceof Error ? err.message : typeof err === 'string' ? err : 'Could not read folder'
+      target.append(el('div', { class: 'sidebar-empty' }, message))
     }
   }
 
@@ -168,12 +153,24 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
       return
     }
     selectedRow = null
-    void loadInto(treeEl, '', 0)
+    rowByPath.clear()
+    dirByPath.clear()
+    rootLoad = loadInto(treeEl, '', 0)
+    void rootLoad.then(() => {
+      const openPath = store.getState().openFile?.path
+      if (openPath) void revealPath(openPath)
+    })
   }
 
   refreshBtn.addEventListener('click', refresh)
-  const unsub = store.on('workspace_changed', refresh)
+  const unsubs = [
+    store.on('workspace_changed', refresh),
+    store.on('panel_changed', () => {
+      const path = store.getState().openFile?.path
+      if (path) void revealPath(path)
+    }),
+  ]
 
   refresh()
-  return unsub
+  return () => unsubs.forEach((unsub) => unsub())
 }

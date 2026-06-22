@@ -6,6 +6,11 @@ import {
   threadGitBranchMismatch,
   threadGitBranchMismatchMessage,
 } from '@shared/git/thread-branch.ts'
+import { showErrorToast, showToast } from './toast.ts'
+import { getThreadById } from '@shared/store/thread-helpers.ts'
+
+const COPIED_BRANCH_TOAST = 'Copied branch name'
+const COPY_FEEDBACK_MS = 1600
 
 export function mountFooterBranchStatus(
   host: HTMLElement,
@@ -27,10 +32,11 @@ export function mountFooterBranchStatus(
 
   let status: GitBranchStatus | null = null
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
+  let branchToCopy: string | null = null
 
   function getActiveThreadBranch(): string | undefined {
     const id = store.getState().activeThreadId
-    const thread = store.getState().threads.find((t) => t.id === id)
+    const thread = getThreadById(store, id)
     return thread?.gitBranch
   }
 
@@ -41,6 +47,7 @@ export function mountFooterBranchStatus(
 
     if (!displayBranch) {
       root.hidden = true
+      branchToCopy = null
       return
     }
 
@@ -54,16 +61,22 @@ export function mountFooterBranchStatus(
         ? `${threadGitBranchMismatchMessage(threadBranch!)} (${status.pr.title})`
         : status.pr.title
       root.classList.add('is-link')
+      root.classList.remove('is-copyable')
+      branchToCopy = null
       root.setAttribute('aria-label', `Open pull request #${status.pr.number}`)
     } else {
       label.textContent = displayBranch
-      root.title = mismatch ? threadGitBranchMismatchMessage(threadBranch!) : displayBranch
+      root.title = mismatch
+        ? `${threadGitBranchMismatchMessage(threadBranch!)} Click to copy branch name.`
+        : `Click to copy branch name: ${displayBranch}`
       root.classList.remove('is-link')
+      root.classList.add('is-copyable')
+      branchToCopy = displayBranch
       root.setAttribute(
         'aria-label',
         mismatch
-          ? threadGitBranchMismatchMessage(threadBranch!)
-          : `Thread branch: ${displayBranch}`,
+          ? `${threadGitBranchMismatchMessage(threadBranch!)} Copy branch name.`
+          : `Copy branch name: ${displayBranch}`,
       )
     }
   }
@@ -86,7 +99,18 @@ export function mountFooterBranchStatus(
 
   root.addEventListener('click', () => {
     const url = status?.pr?.url
-    if (url) void api.shell.openExternal(url)
+    if (url) {
+      void api.shell.openExternal(url)
+      return
+    }
+
+    const branch = branchToCopy
+    if (!branch) return
+
+    void navigator.clipboard
+      .writeText(branch)
+      .then(() => showToast(COPIED_BRANCH_TOAST, { durationMs: COPY_FEEDBACK_MS }))
+      .catch((error: unknown) => showErrorToast('Failed to copy branch name', error))
   })
 
   const unsubs = [

@@ -10,7 +10,11 @@ function formatTokenCount(n: number): string {
 
 export function createContextWheel(): {
   root: HTMLElement
-  update: (snapshot: ContextSnapshot | null | undefined, running: boolean) => void
+  update: (
+    snapshot: ContextSnapshot | null | undefined,
+    running: boolean,
+    options?: { usageLine?: string | null },
+  ) => void
 } {
   const root = document.createElement('div')
   root.className = 'context-wheel'
@@ -45,7 +49,11 @@ export function createContextWheel(): {
   svg.append(track, fill)
   root.append(svg, label)
 
-  function update(snapshot: ContextSnapshot | null | undefined, running: boolean): void {
+  function update(
+    snapshot: ContextSnapshot | null | undefined,
+    running: boolean,
+    options?: { usageLine?: string | null },
+  ): void {
     if (!snapshot || snapshot.conversationBudget <= 0) {
       root.hidden = true
       return
@@ -59,10 +67,13 @@ export function createContextWheel(): {
 
     fill.setAttribute('stroke-dasharray', `${ratio * CIRCUMFERENCE} ${CIRCUMFERENCE}`)
     label.textContent = `${pct}%`
-    root.title = `Context: ${formatTokenCount(snapshot.conversationTokens)} / ${formatTokenCount(snapshot.conversationBudget)} (${pct}%)`
+    const contextLine = `Context: ${formatTokenCount(snapshot.conversationTokens)} / ${formatTokenCount(snapshot.conversationBudget)} (${pct}%)`
+    const usageLine = options?.usageLine?.trim()
+    root.title = usageLine ? `${contextLine}\n${usageLine}` : contextLine
+    const ariaUsage = usageLine ? `; ${usageLine}` : ''
     root.setAttribute(
       'aria-label',
-      `Context ${pct}% used, ${formatTokenCount(snapshot.conversationTokens)} of ${formatTokenCount(snapshot.conversationBudget)} tokens`,
+      `Context ${pct}% used, ${formatTokenCount(snapshot.conversationTokens)} of ${formatTokenCount(snapshot.conversationBudget)} tokens${ariaUsage}`,
     )
   }
 

@@ -1,7 +1,7 @@
 import { createProvider, createLMStudioProvider } from '@shared/llm/create-provider.ts'
 import type { LLMProvider } from '@shared/types'
-import { LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
-import { getSetting, getApiKey, getLmStudioApiKey } from './settings.ts'
+import { DEFAULT_LM_STUDIO_URL, LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
+import { getSetting, getSettingTrimmed, getApiKey, getLmStudioApiKey } from './settings.ts'
 import { resolveContextWindow } from './resolve-context-window.ts'
 import {
   fetchLmStudioModelsCached,
@@ -9,7 +9,7 @@ import {
 } from './lm-studio-models.ts'
 import { isLocalModel } from '@shared/llm/estimate-cost.ts'
 
-export const DEFAULT_LM_STUDIO_URL = 'http://localhost:1234/v1'
+export { DEFAULT_LM_STUDIO_URL }
 
 function storedOrEnvApiKey(provider: 'anthropic' | 'openai'): string | null {
   if (provider === 'anthropic')
@@ -21,27 +21,31 @@ export function isLocalChatModel(model: string): boolean {
   return isLocalModel(model)
 }
 
-// Fetch the first model id a local OpenAI-compatible server has loaded.
+// Fetch the first model id a local OpenAI-compatible server has loaded. Routes
+// through the shared cache so repeated callers don't each pay a network round-trip.
 export async function fetchFirstLocalModel(baseURL: string): Promise<string | null> {
-  try {
-    const res = await fetch(`${baseURL.replace(/\/$/, '')}/models`, {
-      signal: AbortSignal.timeout(4000),
-      headers: { Authorization: `Bearer ${getLmStudioApiKey()}` },
-    })
-    if (!res.ok) return null
-    const json = (await res.json()) as { data?: Array<{ id?: string }> }
-    return json.data?.[0]?.id ?? null
-  } catch {
-    return null
-  }
+  const result = await fetchLmStudioModelsCached(baseURL)
+  return result.models[0]?.id ?? null
 }
 
-async function resolveSubagentLocalModelId(url: string): Promise<string | null> {
-  const configured = getSetting<string>('subagentModel', '').trim()
+/**
+ * Resolve an LM Studio model id for a given role: the role's configured setting,
+ * else the shared `localDefaultModel`, else the first model the server has loaded.
+ */
+export async function resolveLocalModelId(
+  roleKey: string,
+  url: string,
+  roleDefault = '',
+): Promise<string | null> {
+  const configured = getSettingTrimmed(roleKey, roleDefault)
   if (configured) return configured
-  const fallback = getSetting<string>('localDefaultModel', LM_STUDIO_MODEL_IDS.chat).trim()
+  const fallback = getSettingTrimmed('localDefaultModel', LM_STUDIO_MODEL_IDS.chat)
   if (fallback) return fallback
   return fetchFirstLocalModel(url)
+}
+
+function resolveSubagentLocalModelId(url: string): Promise<string | null> {
+  return resolveLocalModelId('subagentModel', url)
 }
 
 export interface SubagentRoute {

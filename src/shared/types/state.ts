@@ -39,6 +39,7 @@ export interface AppState {
   layout: LayoutState
   theme: Theme
   fontSize: number // 12–20, applied to app + Monaco
+  autoPortraitRightPanel: boolean // Auto-stack the right panel below chat on portrait windows.
   settings?: { model: string }
 }
 
