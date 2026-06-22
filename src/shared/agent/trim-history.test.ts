@@ -115,6 +115,36 @@ describe('repairToolUseToolResultPairing', () => {
     const results = messages[1]?.role === 'tool' ? messages[1].toolResults : []
     assert.equal(results[0]?.result, CANCELLED_TOOL_RESULT)
   })
+
+  it('fills in only the unanswered tool_use ids of an existing tool message', () => {
+    const messages: LLMMessage[] = [
+      {
+        role: 'assistant',
+        content: [
+          { id: 'a1', name: 'read_file', args: {} },
+          { id: 'a2', name: 'list_dir', args: {} },
+        ],
+      },
+      { role: 'tool', toolResults: [{ toolCallId: 'a1', result: 'done' }] },
+    ]
+    repairToolUseToolResultPairing(messages)
+    assert.equal(messages.length, 2)
+    const results = messages[1]?.role === 'tool' ? messages[1].toolResults : []
+    assert.equal(results.length, 2)
+    assert.equal(results.find((r) => r.toolCallId === 'a1')?.result, 'done')
+    assert.equal(results.find((r) => r.toolCallId === 'a2')?.result, CANCELLED_TOOL_RESULT)
+  })
+
+  it('leaves fully paired tool_use/tool_result history untouched', () => {
+    const messages: LLMMessage[] = [
+      { role: 'user', content: 'go' },
+      { role: 'assistant', content: [{ id: 'a1', name: 'read_file', args: {} }] },
+      { role: 'tool', toolResults: [{ toolCallId: 'a1', result: 'done' }] },
+    ]
+    const before = JSON.stringify(messages)
+    repairToolUseToolResultPairing(messages)
+    assert.equal(JSON.stringify(messages), before)
+  })
 })
 
 describe('effectiveConversationTokens', () => {

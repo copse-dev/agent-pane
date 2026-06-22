@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { LLMProvider, LLMMessage, LLMTool, StreamChunk } from '@shared/types'
 import { anthropicMaxOutputTokens } from './model-catalog.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
+import { parseToolArgs } from './parse-tool-args.ts'
 
 export class AnthropicProvider implements LLMProvider {
   private client: Anthropic
@@ -86,15 +87,15 @@ export class AnthropicProvider implements LLMProvider {
             }
           }
           if (event.type === 'content_block_stop' && currentToolId) {
-            let args: unknown = {}
-            try {
-              args = JSON.parse(toolJson || '{}')
-            } catch {
-              args = {}
-            }
+            const parsed = parseToolArgs(toolJson)
             yield {
               type: 'tool_call',
-              toolCall: { id: currentToolId, name: currentToolName, args },
+              toolCall: {
+                id: currentToolId,
+                name: currentToolName,
+                args: parsed.args,
+                ...(parsed.error ? { argsError: parsed.error } : {}),
+              },
             }
             currentToolId = ''
             currentToolName = ''

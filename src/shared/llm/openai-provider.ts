@@ -1,6 +1,7 @@
 import OpenAI from 'openai'
 import type { LLMProvider, LLMMessage, LLMTool, StreamChunk } from '@shared/types'
 import { yieldStreamWithRetry } from './stream-retry.ts'
+import { parseToolArgs } from './parse-tool-args.ts'
 
 export class OpenAIProvider implements LLMProvider {
   private client: OpenAI
@@ -88,13 +89,16 @@ export class OpenAIProvider implements LLMProvider {
 
           if (reason === 'tool_calls') {
             for (const [, builder] of toolCallBuilders) {
-              let args: unknown = {}
-              try {
-                args = JSON.parse(builder.argsJson)
-              } catch {
-                args = {}
+              const parsed = parseToolArgs(builder.argsJson)
+              yield {
+                type: 'tool_call',
+                toolCall: {
+                  id: builder.id,
+                  name: builder.name,
+                  args: parsed.args,
+                  ...(parsed.error ? { argsError: parsed.error } : {}),
+                },
               }
-              yield { type: 'tool_call', toolCall: { id: builder.id, name: builder.name, args } }
             }
             toolCallBuilders.clear()
           }
