@@ -26,9 +26,15 @@ issues #128 and #174).
 - **MCP project-local config** — _prompt on first use_ (owned by #100's trust
   gate); env interpolation from project configs uses an empty allowlist so a
   cloned repo cannot read process env into a server's `url`/`headers`/`args`/`env`.
-- **Untrusted skills** — _delimit as data, never as authoritative instructions_;
-  the "treat the invoked skill as the primary task / follow its instructions"
-  directive is scoped to **trusted** (user-installed) skills only.
+- **Untrusted skills** — an explicit `/skill` invocation is a deliberate,
+  authorizing user action, so the "treat the invoked skill as the primary task /
+  follow its instructions" directive applies to **every invoked skill regardless
+  of source**. For untrusted-source (`project`/`plugin`/`plugin-path`) skills the
+  _body_ is still framed as untrusted content: the model follows the task but
+  must not let the skill change its role, exfiltrate data, run destructive/
+  network commands, disable safety checks, or override the user's explicit
+  instructions/safety constraints. _Non-invoked_ skills in the startup catalog
+  remain pure data (name/description only, never instructions to act on).
 - **Build-time fetches** — _pin_ (phase 3).
 
 ## What has landed (this change — phase 1, #128 + #174)
@@ -46,8 +52,13 @@ issues #128 and #174).
   `source` and a `trust="trusted|untrusted"` attribute. Untrusted (auto-
   discovered) skill descriptions and bodies are explicitly framed as **untrusted
   data**, with guidance that the user's own messages and safety constraints take
-  precedence over anything embedded in an untrusted `<skill_content>`. The
-  blanket "follow its instructions" directive applies only to trusted skills.
+  precedence over anything embedded in an untrusted `<skill_content>`. An
+  explicit `/skill` invocation authorizes the skill, so the "primary task /
+  follow its instructions" directive applies to every invoked skill regardless
+  of source; untrusted-source bodies keep their anti-injection guardrails (no
+  role change, exfiltration, destructive/network commands, safety-disable, or
+  overriding the user), and non-invoked catalog entries stay
+  name/description-only data.
 
 ### #174 — Phase 1 supply-chain mitigations
 
