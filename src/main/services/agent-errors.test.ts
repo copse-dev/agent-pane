@@ -12,16 +12,24 @@ describe('classifyAgentError', () => {
     assert.match(classifyAgentError(new Error('429 rate_limit_exceeded')), /Rate limit/)
   })
 
-  it('maps billing / out-of-credit failures', () => {
+  it('surfaces the provider message for billing failures without JSON noise', () => {
     const anthropic = new Error(
       '400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CcKJeWmwCgZe7bhig1aQY"}',
     )
-    assert.match(classifyAgentError(anthropic), /out of credit/i)
-    assert.doesNotMatch(classifyAgentError(anthropic), /request_id|invalid_request_error|\{/)
-    assert.match(
-      classifyAgentError(new Error('429 {"error":{"code":"insufficient_quota"}}')),
-      /out of credit/i,
+    assert.equal(
+      classifyAgentError(anthropic),
+      'An error occurred: Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.',
     )
+    assert.doesNotMatch(classifyAgentError(anthropic), /request_id|invalid_request_error|[{}]/)
+  })
+
+  it('does not mislabel OpenAI insufficient_quota (HTTP 429) as a rate limit', () => {
+    const openai = new Error(
+      '429 {"error":{"message":"You exceeded your current quota, please check your plan and billing details.","type":"insufficient_quota","code":"insufficient_quota"}}',
+    )
+    const out = classifyAgentError(openai)
+    assert.doesNotMatch(out, /Rate limit/)
+    assert.match(out, /quota|billing/i)
   })
 
   it('extracts the provider message from JSON error blobs', () => {
