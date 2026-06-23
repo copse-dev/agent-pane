@@ -60,6 +60,9 @@ DOM/layout changes and `.cursor/skills/agent-run-eval/SKILL.md` only when the vi
 on an agent/tool loop. Do not rely on `npm run check`, a build, or manual VNC inspection alone as
 proof for a visual change.
 
+For appearance/layout taste — design-token usage, action-bar spacing, the sticky-footer-in-scroll
+gotcha, and other hard-won UI conventions — read and extend [`docs/ui-taste.md`](docs/ui-taste.md).
+
 ### App data / state
 
 Persistent state (projects, threads, selected model, workspace root) lives in an `electron-store`
