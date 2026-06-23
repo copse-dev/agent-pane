@@ -134,6 +134,10 @@ export function initSkillPicker(opts: SkillPickerOptions): () => void {
     if (!picker.contains(e.target as Node)) hidePicker()
   })
 
+  window.addEventListener('copse:skills-changed', () => {
+    allSkills = null
+  })
+
   return () => {
     hidePicker()
     allSkills = null
