@@ -30,7 +30,11 @@ export const config: Options.Testrunner = {
   capabilities: [
     {
       browserName: 'chrome',
-      browserVersion: '134.0.6998.205',
+      // Must match the Chromium shipped by the pinned Electron (electron ^42 →
+      // Chromium 148); the session reports 148.0.7778.265 at runtime. This was
+      // left at 134 (Electron 35's Chromium) across the Electron bump, so the
+      // requested vs actual browser version diverged.
+      browserVersion: '148.0.7778.265',
       'wdio:chromedriverOptions': { binary: chromedriverBinary },
       'wdio:enforceWebDriverClassic': true,
       'goog:chromeOptions': {
