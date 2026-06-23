@@ -34,12 +34,15 @@ const ciExclude = [
   // Drives a mock subagent/explore run and waits on `.tool-card-subagent`,
   // which is flaky to render in time on the constrained runner.
   './tests/e2e/semantic-search-markdown.e2e.ts',
-  // TRIAL: new-thread-keeps-panel, draft-prompt, and context-wheel (seeded)
-  // were quarantined during the shard/timeout debugging. Now that the gate runs
-  // at 8 shards with 30s waits, re-enable them to see which pass at this
-  // density. draft-prompt OOM-crashed at 7 shards and new-thread-keeps-panel
-  // has a real `$$` assertion race, so they may still fail — this PR is the
-  // experiment to find out before deciding what to fix vs re-quarantine.
+  // Genuinely flaky assertion (not the per-shard OOM): after creating a new
+  // thread it intermittently sees 1 `.chats-list .chat-row` instead of 2, and
+  // its app-ready wait also timed out in the un-quarantine trial (#345). It's a
+  // real spec race, not density — stays out until the `$$` wait is fixed.
+  './tests/e2e/new-thread-keeps-panel.e2e.ts',
+  // NOTE: draft-prompt was un-quarantined here — the #345 trial confirmed it
+  // passes at the 8-shard density (it only flaked at 7 shards from packing).
+  // context-wheel stays quarantined (describeSkipInCi in its spec): it hard-OOM
+  // crashes the runner on its first launch even in a 4-spec shard.
 ]
 
 export const config: Options.Testrunner = {

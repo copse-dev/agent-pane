@@ -6,9 +6,11 @@ import { describeSkipInCi } from './helpers/ci-gate.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
-// TRIAL: re-enabled in CI (was describeSkipInCi while debugging the per-shard
-// OOM) to check whether it passes at the 8-shard / 30s-wait density.
-describe('context wheel footer seeded', () => {
+// Heaviest seeded spec (seedContextWheelFixture + reloadSession). The #345
+// trial confirmed it hard-OOM-crashes the runner on its first launch even in a
+// 4-spec shard at 8 shards, so it stays skipped in CI until its fixture is
+// lightened (it runs fine locally).
+describeSkipInCi('context wheel footer seeded', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
