@@ -34,7 +34,6 @@ import {
   isFileSearchDialogOpen,
 } from './views/file-search-dialog.ts'
 import { startAgentController } from './controller/agent.ts'
-import { attachUsageLedger } from './controller/usage-ledger.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
 import {
   addProjectFromPath,
@@ -88,7 +87,6 @@ async function boot() {
       typeof savedAutoPortraitRightPanel === 'boolean' ? savedAutoPortraitRightPanel : true,
   })
   startAgentController(store, api)
-  attachUsageLedger(store, api)
   attachAutosave(store, api)
   attachProjectThreadCache(store)
 

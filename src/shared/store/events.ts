@@ -29,7 +29,6 @@ export interface StoreEvents {
   theme_changed: ['light' | 'dark']
   staged_diffs_changed: []
   usage_updated: [threadId: string]
-  usage_delta: [threadId: string, delta: import('@shared/types').UsageDelta]
   context_updated: [threadId: string]
   todos_changed: [threadId: string]
   git_branch_changed: []
