@@ -3,6 +3,25 @@ import type { LLMProvider, LLMMessage, LLMTool, StreamChunk } from '@shared/type
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
 
+type ToolCallBuilder = { id: string; name: string; argsJson: string }
+
+function* yieldAssembledToolCalls(
+  toolCallBuilders: Map<number, ToolCallBuilder>,
+): Generator<StreamChunk> {
+  for (const [, builder] of toolCallBuilders) {
+    const parsed = parseToolArgs(builder.argsJson)
+    yield {
+      type: 'tool_call',
+      toolCall: {
+        id: builder.id,
+        name: builder.name,
+        args: parsed.args,
+        ...(parsed.error ? { argsError: parsed.error } : {}),
+      },
+    }
+  }
+}
+
 export class OpenAIProvider implements LLMProvider {
   private client: OpenAI
   lastUsage: { inputTokens: number; outputTokens: number } | null = null
@@ -91,20 +110,14 @@ export class OpenAIProvider implements LLMProvider {
           if (reason) finishReason = reason
 
           if (reason === 'tool_calls') {
-            for (const [, builder] of toolCallBuilders) {
-              const parsed = parseToolArgs(builder.argsJson)
-              yield {
-                type: 'tool_call',
-                toolCall: {
-                  id: builder.id,
-                  name: builder.name,
-                  args: parsed.args,
-                  ...(parsed.error ? { argsError: parsed.error } : {}),
-                },
-              }
-            }
+            yield* yieldAssembledToolCalls(toolCallBuilders)
             toolCallBuilders.clear()
           }
+        }
+        // Some OpenAI-compatible servers finish with `stop` while still streaming tool deltas.
+        if (toolCallBuilders.size > 0) {
+          yield* yieldAssembledToolCalls(toolCallBuilders)
+          toolCallBuilders.clear()
         }
         // Emit usage per-stream so consumers attribute it to this exact stream
         // rather than racing on the shared lastUsage field (#112).
