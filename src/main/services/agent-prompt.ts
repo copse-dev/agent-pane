@@ -81,6 +81,19 @@ ${SHARED_WEB_TOOLS}`,
   inspectVerb: 'read',
 })
 
+// Appended when the `browserToolsEnabled` setting is on. Describes the built-in
+// headless browser tools so the agent prefers accessibility snapshots over blind
+// clicking and knows localhost is the primary supported target.
+export const BROWSER_TOOLS_BLOCK = `
+
+You also have built-in browser tools (loopback/localhost auto-runs; other origins prompt):
+- browser_navigate: Open a URL in a headless browser tab
+- browser_snapshot: Read the page as an accessibility outline with [ref=…] handles
+- browser_screenshot: Save a PNG of the page for visual checks
+- browser_click / browser_type: Interact with an element by its snapshot ref
+- browser_tabs: List or close tabs
+Prefer browser_snapshot over browser_screenshot for reading and interacting; take a fresh snapshot after navigation or a click before acting on refs.`
+
 // Optional steering, toggled by the `externalApiSafety` setting. Kept short and
 // appended near the top of the system prompt so it sits ahead of workspace- and
 // user-supplied instructions.
