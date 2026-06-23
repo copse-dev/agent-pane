@@ -40,6 +40,12 @@ const ciExclude = [
   // resource exhaustion. Candidate real bug; quarantined pending a wait-logic
   // fix.
   './tests/e2e/new-thread-keeps-panel.e2e.ts',
+  // Reliably hard-OOM-crashes its runner ("shutdown signal", not a timeout) on
+  // both whole-shard retry attempts — a heavy reloadSession spec that, paired
+  // with the also-heavy double-submit in its shard, exhausts the 2-core/7GB
+  // runner. The crash kills the job before the failure-artifact upload can run,
+  // so screenshots can't capture it. Same class as context-wheel.
+  './tests/e2e/draft-prompt.e2e.ts',
 ]
 
 export const config: Options.Testrunner = {
