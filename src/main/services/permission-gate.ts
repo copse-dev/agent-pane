@@ -24,6 +24,7 @@ import {
 import {
   BROWSER_TOOLS,
   READ_ONLY_BROWSER_TOOLS,
+  BROWSER_ALLOW_USER_APPROVAL_SETTING,
   decideBrowserNavigation,
   formatBrowserPromptBody,
 } from './browser/browser-origin-policy.ts'
@@ -208,7 +209,7 @@ async function checkBrowserNavigatePermission(args: unknown): Promise<boolean> {
   const decision = decideBrowserNavigation({
     url,
     allowedOrigins: getSetting<string[]>('browserAllowedOrigins', []),
-    allowUserApproval: getSetting<boolean>('autoRunSandboxCommands', true),
+    allowUserApproval: getSetting<boolean>(BROWSER_ALLOW_USER_APPROVAL_SETTING, true),
   })
   if (decision.action === 'allow') return true
   if (decision.action === 'deny') {
