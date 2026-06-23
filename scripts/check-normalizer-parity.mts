@@ -63,7 +63,11 @@ function die(message: string): never {
   process.exit(1)
 }
 
-if (!existsSync(NORMALIZE_PY)) die(`reference normalizer missing at ${NORMALIZE_PY}`)
+if (!existsSync(NORMALIZE_PY)) {
+  die(
+    `reference normalizer missing at ${NORMALIZE_PY}. Run 'node scripts/fetch-reference-normalizer.mts' first (or use 'npm run check:normalizer-parity', which fetches it).`,
+  )
+}
 const probe = spawnSync(PYTHON, ['--version'], { encoding: 'utf8' })
 if (probe.status !== 0) {
   die(

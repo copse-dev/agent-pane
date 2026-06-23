@@ -88,13 +88,15 @@ re-baseline; the version is read from the installed package and pinned in the
 baseline.
 
 The JS normalizer (`tests/commonmark/normalize.ts`) is differentially validated
-against the vendored reference `tests/commonmark/normalize.py` by
-`npm run check:normalizer-parity` (a CI step in the `check` job; needs python3).
-It asserts both that the conformance pass set is identical under either
-normalizer and that per-example normalized output matches byte-for-byte, except
-for a small documented allowlist of pathological raw-HTML cases. This is **not**
-in `npm run check`, so contributors without python can still run the default
-gates.
+against the reference `normalize.py` by `npm run check:normalizer-parity` (a CI
+step in the `check` job; needs python3). The reference normalizer is **not**
+checked in — `scripts/fetch-reference-normalizer.mts` fetches it from a pinned,
+SHA-256-verified upstream commit into `tests/commonmark/normalize.py`
+(gitignored) at check time. The parity check then asserts both that the
+conformance pass set is identical under either normalizer and that per-example
+normalized output matches byte-for-byte, except for a small documented allowlist
+of pathological raw-HTML cases. This is **not** in `npm run check`, so
+contributors without python can still run the default gates.
 
 ### E2e tests (seeded via `tests/e2e/helpers/seed-config.ts`)
 
