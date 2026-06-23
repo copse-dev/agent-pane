@@ -146,6 +146,9 @@ contextBridge.exposeInMainWorld('api', {
     downloadStatus: (jobId: string, url?: string, apiKey?: string) =>
       ipcRenderer.invoke('lmstudio:downloadStatus', jobId, url, apiKey),
   },
+  openRouter: {
+    models: () => ipcRenderer.invoke('openrouter:models'),
+  },
   menu: {
     onSettings: (handler: () => void) => {
       const listener = () => handler()
