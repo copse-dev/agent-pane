@@ -23,9 +23,11 @@ export const OPENROUTER_MODELS: readonly OpenRouterModelOption[] = [
   { id: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet' },
   { id: 'openai/gpt-4o', label: 'GPT-4o' },
   { id: 'openai/gpt-4o-mini', label: 'GPT-4o mini' },
+  { id: 'z-ai/glm-4.6', label: 'GLM-4.6' },
+  { id: 'qwen/qwen3-235b-a22b', label: 'Qwen3 235B A22B' },
   { id: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash' },
   { id: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B' },
-  { id: 'deepseek/deepseek-chat', label: 'DeepSeek V3' },
+  { id: 'deepseek/deepseek-chat-v3.1', label: 'DeepSeek V3.1' },
 ] as const
 
 export function isOpenRouterModel(model: string): boolean {
