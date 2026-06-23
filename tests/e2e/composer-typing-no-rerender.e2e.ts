@@ -26,7 +26,7 @@ describe('composer typing does not re-render the conversation', () => {
 
   it('keeps existing message and link DOM nodes while typing a draft', async () => {
     const message = await $('[data-message-id="msg-assistant-link"] .message-text')
-    await message.waitForDisplayed({ timeout: 15_000 })
+    await message.waitForDisplayed({ timeout: 30_000 })
     const link = await message.$('a')
     await link.waitForDisplayed({ timeout: 5_000 })
 

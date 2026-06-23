@@ -15,6 +15,9 @@ export interface ApiClient {
     setTrusted: (trusted: boolean) => Promise<McpServerStatus[]>
     onOpened: (handler: (root: string) => void) => () => void
   }
+  browser: {
+    onOpenTab: (handler: (url: string) => void) => () => void
+  }
   fs: {
     readFile: (path: string) => Promise<string>
     writeFile: (path: string, content: string) => Promise<void>
