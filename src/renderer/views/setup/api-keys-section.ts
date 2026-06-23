@@ -7,6 +7,40 @@ export interface ApiKeysSection {
   saveKeys: () => Promise<void>
 }
 
+type ApiKeyProvider = 'anthropic' | 'openai' | 'cursor'
+
+interface ApiKeyProviderConfig {
+  provider: ApiKeyProvider
+  name: string
+  label: string
+  placeholder: string
+  hint: string
+}
+
+const API_KEY_PROVIDER_CONFIGS: Record<ApiKeyProvider, ApiKeyProviderConfig> = {
+  anthropic: {
+    provider: 'anthropic',
+    name: 'anthropicKey',
+    label: 'Anthropic API key',
+    placeholder: 'sk-ant-…',
+    hint: 'For Claude Sonnet and Opus. Validated via a free models request — no tokens charged.',
+  },
+  openai: {
+    provider: 'openai',
+    name: 'openaiKey',
+    label: 'OpenAI API key',
+    placeholder: 'sk-…',
+    hint: 'For GPT-4o models. Validated via a free models request — no tokens charged.',
+  },
+  cursor: {
+    provider: 'cursor',
+    name: 'cursorKey',
+    label: 'Cursor API key',
+    placeholder: 'cur_…',
+    hint: 'For Cursor Cloud Agent remote runs. Validated via a free models request.',
+  },
+}
+
 function keyStatusClass(ok: boolean | null): string {
   if (ok === true) return 'key-status ok'
   if (ok === false) return 'key-status err'
@@ -15,60 +49,43 @@ function keyStatusClass(ok: boolean | null): string {
 
 export function createApiKeysSection(
   api: ApiClient,
-  opts: { legend?: string; validateOnInput?: boolean } = {},
+  opts: { legend?: string; providers?: ApiKeyProvider[]; validateOnInput?: boolean } = {},
 ): ApiKeysSection {
   const legend = opts.legend ?? 'API Keys'
+  const providers = opts.providers ?? ['anthropic', 'openai', 'cursor']
   const validateOnInput = opts.validateOnInput ?? true
 
-  const anthropicInput = el('input', {
-    type: 'password',
-    name: 'anthropicKey',
-    placeholder: 'sk-ant-…',
-    autocomplete: 'off',
-  }) as HTMLInputElement
-  const anthropicStatus = el('span', { class: 'key-status', 'data-key': 'anthropic' })
-  const openaiInput = el('input', {
-    type: 'password',
-    name: 'openaiKey',
-    placeholder: 'sk-…',
-    autocomplete: 'off',
-  }) as HTMLInputElement
-  const openaiStatus = el('span', { class: 'key-status', 'data-key': 'openai' })
+  const fields = providers.map((provider) => {
+    const config = API_KEY_PROVIDER_CONFIGS[provider]
+    const input = el('input', {
+      type: 'password',
+      name: config.name,
+      placeholder: config.placeholder,
+      autocomplete: 'off',
+    }) as HTMLInputElement
+    const status = el('span', { class: 'key-status', 'data-key': provider })
+    const label = el(
+      'label',
+      {},
+      config.label,
+      input,
+      status,
+      el('span', { class: 'field-hint' }, config.hint),
+    )
+    return { ...config, input, status, label }
+  })
 
   const fieldset = el(
     'fieldset',
     {},
     el('legend', {}, legend),
-    el(
-      'label',
-      {},
-      'Anthropic API key',
-      anthropicInput,
-      anthropicStatus,
-      el(
-        'span',
-        { class: 'field-hint' },
-        'For Claude Sonnet and Opus. Validated via a free models request — no tokens charged.',
-      ),
-    ),
-    el(
-      'label',
-      {},
-      'OpenAI API key',
-      openaiInput,
-      openaiStatus,
-      el(
-        'span',
-        { class: 'field-hint' },
-        'For GPT-4o models. Validated via a free models request — no tokens charged.',
-      ),
-    ),
+    ...fields.map((field) => field.label),
   ) as HTMLFieldSetElement
 
   const validationTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   async function validateField(
-    provider: 'anthropic' | 'openai',
+    provider: ApiKeyProvider,
     input: HTMLInputElement,
     statusEl: HTMLElement,
   ): Promise<void> {
@@ -91,7 +108,7 @@ export function createApiKeysSection(
   }
 
   function bindValidation(
-    provider: 'anthropic' | 'openai',
+    provider: ApiKeyProvider,
     input: HTMLInputElement,
     statusEl: HTMLElement,
   ): void {
@@ -108,29 +125,26 @@ export function createApiKeysSection(
     })
   }
 
-  bindValidation('anthropic', anthropicInput, anthropicStatus)
-  bindValidation('openai', openaiInput, openaiStatus)
+  for (const field of fields) {
+    bindValidation(field.provider, field.input, field.status)
+  }
 
   async function refreshKeyStatus(): Promise<void> {
-    const anthSet = await api.settings.getKey('anthropic')
-    const openSet = await api.settings.getKey('openai')
-    if (!anthropicInput.value.trim()) {
-      anthropicStatus.textContent = anthSet ? '● saved' : '○ not set'
-      anthropicStatus.className = 'key-status'
-    }
-    if (!openaiInput.value.trim()) {
-      openaiStatus.textContent = openSet ? '● saved' : '○ not set'
-      openaiStatus.className = 'key-status'
+    for (const field of fields) {
+      const saved = await api.settings.getKey(field.provider)
+      if (!field.input.value.trim()) {
+        field.status.textContent = saved ? '● saved' : '○ not set'
+        field.status.className = 'key-status'
+      }
     }
   }
 
   async function saveKeys(): Promise<void> {
-    const anthKey = anthropicInput.value.trim()
-    const openKey = openaiInput.value.trim()
-    if (anthKey) await api.settings.setKey('anthropic', anthKey)
-    if (openKey) await api.settings.setKey('openai', openKey)
-    anthropicInput.value = ''
-    openaiInput.value = ''
+    for (const field of fields) {
+      const key = field.input.value.trim()
+      if (key) await api.settings.setKey(field.provider, key)
+      field.input.value = ''
+    }
     await refreshKeyStatus()
   }
 

@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess, type SpawnOptionsWithoutStdio } from 'node:child_process'
+import { basename, dirname } from 'node:path'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import * as pty from 'node-pty'
 import type { IPty } from 'node-pty'
@@ -33,6 +34,23 @@ function mergeSpawnEnv(base: NodeJS.ProcessEnv, override?: NodeJS.ProcessEnv): N
 
 /** POSIX-only: run the child as its own process-group leader so the group can be killed together. */
 const detachForGroupKill = process.platform !== 'win32'
+const DEFAULT_SANDBOX_SHELL = '/bin/bash'
+
+function ensurePathIncludes(dirs: string[]): void {
+  if (process.platform === 'win32') return
+  const current = process.env.PATH ?? ''
+  const seen = new Set(current.split(':').filter(Boolean))
+  const missing = dirs.filter((dir) => !seen.has(dir))
+  if (missing.length > 0) {
+    process.env.PATH = [...missing, current].filter(Boolean).join(':')
+  }
+}
+
+export function shellForSandboxWrap(shellPath: string = DEFAULT_SANDBOX_SHELL): string {
+  if (process.platform === 'win32' || !shellPath.includes('/')) return shellPath
+  ensurePathIncludes([dirname(shellPath), '/usr/bin', '/bin'])
+  return basename(shellPath)
+}
 
 export async function spawnInProjectSandbox(
   executable: string,
@@ -60,7 +78,7 @@ export async function spawnInProjectSandbox(
 
   const { argv, env } = await SandboxManager.wrapWithSandboxArgv(
     command,
-    '/bin/bash',
+    shellForSandboxWrap(),
     customConfig,
     opts.signal,
   )
@@ -101,7 +119,7 @@ export async function spawnShellInProjectSandbox(
   const customConfig = workspaceSandboxOverlay(opts.cwd)
   const { argv, env } = await SandboxManager.wrapWithSandboxArgv(
     shellCommandLine,
-    '/bin/bash',
+    shellForSandboxWrap(),
     customConfig,
     opts.signal,
   )
@@ -177,7 +195,11 @@ export async function spawnPtyInProjectSandbox(
   const customConfig = { ...workspaceSandboxOverlay(opts.cwd), allowPty: true }
   const innerCommand = `exec ${quote.quote([shell])} -il`
   // cwd is handed to pty.spawn via ptyOpts; no main-process chdir during wrap (#74).
-  const { argv, env } = await SandboxManager.wrapWithSandboxArgv(innerCommand, shell, customConfig)
+  const { argv, env } = await SandboxManager.wrapWithSandboxArgv(
+    innerCommand,
+    shellForSandboxWrap(shell),
+    customConfig,
+  )
 
   const file = argv[0]
   if (!file) throw new Error('sandbox wrap produced empty argv')
