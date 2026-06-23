@@ -46,7 +46,7 @@ list-style-position: outside`). Bullets should sit clearly inset from headings, 
   still render). On failure after an aggressive retry, show the inline source fallback.
 - **Table layout.** Agent tables are unschema'd GFM — do not hardcode rem/% column widths for
   specific fixtures. Use shrink-to-fit edge columns (`width: 1%` + `nowrap`), `min-width: 0` on
-  cells, and wrapping lone `<code>` slugs. Full rules: [`docs/taste.md`](../../docs/taste.md).
+  cells, and wrapping lone `<code>` slugs. Full rules: [`docs/ui-taste.md`](../../docs/ui-taste.md).
 
 Prefer structural unit tests on HTML output plus WDIO geometry checks over pixel-diff screenshot CI.
 E2e specs live in `tests/e2e/*.e2e.ts` (WebdriverIO) — not Playwright.
@@ -75,7 +75,7 @@ npm run test:e2e:markdown
   rendered text, summary preview hidden when expanded, code spans intact
 - `tests/e2e/mermaid-diagram.e2e.ts` — seeded flowchart; asserts `.mermaid-diagram svg` renders
 - `tests/e2e/markdown-table-wrap.e2e.ts` — PR-style table; index/status stay single-line, branch
-  slugs wrap, table fits pane (see `docs/taste.md`)
+  slugs wrap, table fits pane (see `docs/ui-taste.md`)
 
 Screenshots under `tests/e2e/screenshots/` (`markdown-list-indent-*.png`, `semantic-search-*.png`)
 are updated by those specs for human review; CI asserts DOM layout, not pixels.
