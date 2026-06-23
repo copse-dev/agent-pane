@@ -48,6 +48,18 @@ build/e2e. If a file is intentionally unreferenced, add it to `ALLOWED_UNLINKED`
 changed renderer UI or e2e fixtures, also run **`npm run build && npm run test:e2e`** locally
 (macOS/Linux paths for seeded `electron-store` data must match `src/main/app-init.ts`).
 
+### Visual changes require evals
+
+Any change that affects what a user can see in the Electron app must include a focused visual eval
+unless the change is demonstrably invisible (for example, pure data plumbing with unchanged DOM).
+This includes edits to renderer components, styles, markdown rendering, tool cards, terminal/diff
+surfaces, screenshots fixtures, and visual copy/layout states. The eval should be a WebdriverIO
+Electron e2e spec that seeds the app into the target state, asserts the relevant DOM behavior, and
+saves screenshots for visual inspection. Use `.cursor/skills/screenshot-validate/SKILL.md` for
+DOM/layout changes and `.cursor/skills/agent-run-eval/SKILL.md` only when the visual change depends
+on an agent/tool loop. Do not rely on `npm run check`, a build, or manual VNC inspection alone as
+proof for a visual change.
+
 ### App data / state
 
 Persistent state (projects, threads, selected model, workspace root) lives in an `electron-store`
@@ -97,7 +109,9 @@ decisions) and `permission-gate.test.ts` (gate wiring + MCP decisions).
 
 ### Visual validation (tool UI / screenshots)
 
-Use WebdriverIO Electron e2e — do not hand-drive VNC unless debugging layout.
+Use WebdriverIO Electron e2e — do not hand-drive VNC unless debugging layout. For every visual
+change, add or update the smallest focused spec that exercises the changed state and captures at
+least one screenshot that reviewers can inspect.
 
 1. `npm run build`
 2. Seed `~/.config/copse-panel/config.json` before launch (see `tests/e2e/helpers/seed-config.ts`):

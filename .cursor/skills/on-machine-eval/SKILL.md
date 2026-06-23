@@ -17,13 +17,17 @@ Prove a **feature PR** works on a real machine, then **commit into that branch**
 2. Check out the **feature branch** (`gh pr view <n> --json headRefName`).
 3. Skip stacked validate PRs — merge their commits into the feature branch instead.
 
+Any PR that changes visible Electron output should either add/update a focused WDIO visual eval with
+screenshots or clearly explain why the changed path is not visually observable. Treat builds,
+typechecks, and manual inspection as supporting evidence, not replacements for the eval.
+
 ## Which harness?
 
-| Change type                          | Skill / command                                          |
-| ------------------------------------ | -------------------------------------------------------- |
-| DOM, panels, diffs, terminal, picker | [`screenshot-validate`](../screenshot-validate/SKILL.md) |
-| Agent loops, tool order, steering    | [`agent-run-eval`](../agent-run-eval/SKILL.md)           |
-| Pure logic                           | `npm run check` only                                     |
+| Change type                                            | Skill / command                                          |
+| ------------------------------------------------------ | -------------------------------------------------------- |
+| DOM, styles, panels, diffs, terminal, picker, markdown | [`screenshot-validate`](../screenshot-validate/SKILL.md) |
+| Agent loops, tool order, steering                      | [`agent-run-eval`](../agent-run-eval/SKILL.md)           |
+| Pure logic                                             | `npm run check` only                                     |
 
 ## UI eval loop (most PRs)
 
