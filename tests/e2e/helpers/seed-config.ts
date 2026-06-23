@@ -322,6 +322,7 @@ export function seedBrowserLinkChatFixture(workspaceRoot: string): void {
 export function seedPrPanelChatFixture(workspaceRoot: string): void {
   const projectId = 'e2e-pr-panel-project'
   const threadId = 'e2e-pr-panel-thread'
+  const mockPrUrl = 'https://github.com/copse-dev/copse-panel/pull/42'
   mkdirSync(USER_DATA, { recursive: true })
   writeFileSync(
     CONFIG_PATH,
@@ -337,8 +338,7 @@ export function seedPrPanelChatFixture(workspaceRoot: string): void {
             {
               id: 'msg-assistant-pr-link',
               role: 'assistant',
-              content:
-                'Track progress in [PR #2394](https://github.com/brshood/JobSeekrrr/pull/2394).',
+              content: `Track progress in [PR #42](${mockPrUrl}).`,
               createdAt: Date.now(),
             },
           ],

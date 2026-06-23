@@ -85,9 +85,13 @@ export const config: Options.Testrunner = {
     const e2eEnv: Record<string, string> = {
       COPSE_E2E: '1',
       COPSE_PANEL_MOCK_LLM: '1',
+      COPSE_PANEL_MOCK_GH: '1',
       COPSE_PANEL_USER_DATA: e2eUserDataDir,
       ANTHROPIC_API_KEY: '',
       OPENAI_API_KEY: '',
+    }
+    if (process.env.COPSE_PANEL_MOCK_GH_STATUS) {
+      e2eEnv.COPSE_PANEL_MOCK_GH_STATUS = process.env.COPSE_PANEL_MOCK_GH_STATUS
     }
     for (const [key, value] of Object.entries(e2eEnv)) {
       process.env[key] = value

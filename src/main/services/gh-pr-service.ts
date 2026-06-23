@@ -4,6 +4,13 @@ import { isGhAvailable } from './tool-availability.ts'
 import { detectLanguage } from './language.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
 import { parseGithubPrUrl } from '@shared/git/github-pr-url.ts'
+import {
+  isMockGhEnabled,
+  mockGetGhPrDetails,
+  mockGetGhPrFileDiff,
+  mockGhCliStatus,
+  mockListMyOpenPrs,
+} from './gh-pr-mock.ts'
 import type {
   GhCliStatus,
   GhPrChangedFile,
@@ -127,6 +134,7 @@ function toGhPrDetails(
 }
 
 export async function getGhCliStatus(): Promise<GhCliStatus> {
+  if (isMockGhEnabled()) return mockGhCliStatus()
   if (!isGhAvailable()) {
     return {
       installed: false,
@@ -165,6 +173,10 @@ export async function getGhCliStatus(): Promise<GhCliStatus> {
 }
 
 export async function listMyOpenPrs(limit = 30): Promise<GhPrSummary[] | null> {
+  if (isMockGhEnabled()) {
+    const status = mockGhCliStatus()
+    return status.authenticated ? mockListMyOpenPrs().slice(0, limit) : null
+  }
   if (!isGhAvailable()) return null
   const status = await getGhCliStatus()
   if (!status.authenticated) return null
@@ -207,6 +219,7 @@ export async function getGhPrDetails(ref: {
   repo: string
   number: number
 }): Promise<GhPrDetails | null> {
+  if (isMockGhEnabled()) return mockGetGhPrDetails(ref)
   if (!isGhAvailable()) return null
   const args = [
     'pr',
@@ -310,6 +323,7 @@ export async function getGhPrFileDiff(
   ref: { owner: string; repo: string; number: number },
   path: string,
 ): Promise<GhPrFileDiff | null> {
+  if (isMockGhEnabled()) return mockGetGhPrFileDiff(ref, path)
   if (!isGhAvailable()) return null
 
   const viewArgs = ['pr', 'view', ...prRefToArgs(ref), '--json', 'baseRefOid,headRefOid,files']

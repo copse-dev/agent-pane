@@ -387,7 +387,6 @@ export function mountPrPane(
     renderFiles()
     emptyState.hidden = false
     emptyState.textContent = 'Select a changed file'
-    if (prDetails.files[0]) await selectFile(prDetails.files[0].path)
   }
 
   async function refresh() {
