@@ -2,7 +2,11 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { isAllowedRendererNavigation, isExternalHttpUrl } from './web-contents-lockdown.ts'
+import {
+  hardenWebviewPreferences,
+  isAllowedRendererNavigation,
+  isExternalHttpUrl,
+} from './web-contents-lockdown.ts'
 
 describe('isAllowedRendererNavigation', () => {
   it('allows about:blank and renderer file URLs', () => {
@@ -16,6 +20,26 @@ describe('isAllowedRendererNavigation', () => {
     assert.equal(isAllowedRendererNavigation('http://localhost:3000/'), false)
     const outside = pathToFileURL('/etc/passwd').href
     assert.equal(isAllowedRendererNavigation(outside), false)
+  })
+})
+
+describe('hardenWebviewPreferences', () => {
+  it('forces secure preferences regardless of what the renderer requested', () => {
+    const prefs: Electron.WebPreferences = {
+      nodeIntegration: true,
+      nodeIntegrationInSubFrames: true,
+      contextIsolation: false,
+      sandbox: false,
+      webSecurity: false,
+      preload: '/tmp/evil-preload.js',
+    }
+    hardenWebviewPreferences(prefs)
+    assert.equal(prefs.nodeIntegration, false)
+    assert.equal(prefs.nodeIntegrationInSubFrames, false)
+    assert.equal(prefs.contextIsolation, true)
+    assert.equal(prefs.sandbox, true)
+    assert.equal(prefs.webSecurity, true)
+    assert.equal(prefs.preload, undefined)
   })
 })
 

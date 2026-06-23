@@ -14,6 +14,22 @@ export function isExternalHttpUrl(url: string): boolean {
   return /^https?:\/\//i.test(url)
 }
 
+/**
+ * Force secure webPreferences on any `<webview>` the renderer attaches. The
+ * renderer sets these via DOM attributes, so a compromised renderer could
+ * otherwise re-enable Node integration or inject a preload. Overriding them in
+ * the main process (where this runs) makes that escalation path unreachable.
+ */
+export function hardenWebviewPreferences(prefs: Electron.WebPreferences): void {
+  prefs.nodeIntegration = false
+  prefs.nodeIntegrationInSubFrames = false
+  prefs.contextIsolation = true
+  prefs.sandbox = true
+  prefs.webSecurity = true
+  // A renderer-supplied preload would run with the guest page's privileges.
+  delete prefs.preload
+}
+
 /** Allow only file:// URLs under the packaged renderer directory (plus about:blank). */
 export function isAllowedRendererNavigation(url: string): boolean {
   if (url === 'about:blank') return true
@@ -36,6 +52,10 @@ export function attachWebContentsLockdown(contents: WebContents): void {
   contents.setWindowOpenHandler(({ url }) => {
     if (isExternalHttpUrl(url)) void shell.openExternal(url)
     return { action: 'deny' }
+  })
+
+  contents.on('will-attach-webview', (_event, webPreferences) => {
+    hardenWebviewPreferences(webPreferences)
   })
 
   const blockIfDisallowed = (event: Electron.Event, url: string) => {
