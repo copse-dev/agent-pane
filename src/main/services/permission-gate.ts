@@ -226,6 +226,11 @@ async function checkBrowserNavigatePermission(args: unknown): Promise<boolean> {
   return approved
 }
 
+/** Gate a raw shell command string (todo verification, etc.) through the same policy as run_shell. */
+export async function ensureShellCommandPermitted(command: string): Promise<boolean> {
+  return checkShellPermission({ command })
+}
+
 /** Integrated terminal is a direct user UI action; PTY always runs outside seatbelt (#180). */
 export async function ensureTerminalPermitted(): Promise<boolean> {
   if (!getWorkspaceRoot()) throw new Error('No workspace open.')

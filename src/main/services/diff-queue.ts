@@ -6,6 +6,7 @@ import { resolveWorkspacePath } from './workspace.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import { buildIndex } from './file-index.ts'
 import { getGitStatus } from './git-service.ts'
+import { assertMainFrameSender } from '../ipc/ipc-guards.ts'
 
 export type DiffOp = 'write' | 'delete' | 'rename' | 'mkdir'
 
@@ -261,7 +262,8 @@ async function applyMkdir(entry: QueueEntry): Promise<ApplyResult> {
 export function initDiffQueue(win: BrowserWindow): void {
   mainWindow = win
 
-  ipcMain.handle('diff:approve', async (_e, path: string) => {
+  ipcMain.handle('diff:approve', async (event, path: string) => {
+    assertMainFrameSender(event, win)
     const entry = queue.find((e) => e.path === path)
     if (!entry) return
     const result = await applyDiffEntry(entry)
@@ -282,14 +284,19 @@ export function initDiffQueue(win: BrowserWindow): void {
     removeEntry(path)
   })
 
-  ipcMain.handle('diff:reject', (_e, path: string) => {
+  ipcMain.handle('diff:reject', (event, path: string) => {
+    assertMainFrameSender(event, win)
     if (queue.some((e) => e.path === path)) recordDecision({ path, status: 'rejected' })
     removeEntry(path)
   })
 
-  ipcMain.handle('diff:approveAll', () => approveAllStagedDiffs())
+  ipcMain.handle('diff:approveAll', (event) => {
+    assertMainFrameSender(event, win)
+    return approveAllStagedDiffs()
+  })
 
-  ipcMain.handle('diff:rejectAll', () => {
+  ipcMain.handle('diff:rejectAll', (event) => {
+    assertMainFrameSender(event, win)
     for (const entry of queue) recordDecision({ path: entry.path, status: 'rejected' })
     queue.length = 0
     broadcastQueue()
