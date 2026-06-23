@@ -7,6 +7,11 @@ import {
 } from '../tools/search-codebase-tool.ts'
 import { gitStatusTool, gitDiffTool, gitLogTool } from '../tools/git-tools.ts'
 import { ghPrListTool, ghPrViewTool } from '../tools/gh-tools.ts'
+import {
+  getCiStatusTool,
+  waitForCiChecksTool,
+  getCiFailureLogsTool,
+} from '../tools/github-ci-tools.ts'
 import { runShellTool } from '../tools/shell-tool.ts'
 import { writeFileTool } from '../tools/write-file-tool.ts'
 import { strReplaceTool } from '../tools/str-replace-tool.ts'
@@ -41,6 +46,9 @@ export function createRegistry(): ToolRegistry {
   registry.register(gitLogTool)
   registry.register(ghPrListTool)
   registry.register(ghPrViewTool)
+  registry.register(getCiStatusTool)
+  registry.register(waitForCiChecksTool)
+  registry.register(getCiFailureLogsTool)
   registry.register(runShellTool)
   registry.register(exploreTool)
   registry.register(webSearchTool)

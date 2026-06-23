@@ -20,6 +20,8 @@ import {
   formatExternalSandboxPromptBody,
   shellRequiresOutsideSandbox,
   mcpToolLabel,
+  GITHUB_CI_TOOLS,
+  formatGithubCiPromptBody,
 } from './permission-policy.ts'
 import {
   BROWSER_TOOLS,
@@ -201,6 +203,19 @@ async function rememberBrowserOrigin(origin: string): Promise<void> {
   }
 }
 
+async function checkGithubCiPermission(toolName: string, args: unknown): Promise<boolean> {
+  if (getSetting<boolean>('githubCiAutoAllow', false)) return true
+  const { approved, remember } = await requestApproval({
+    title: `GitHub CI tool: ${toolName}`,
+    body: formatGithubCiPromptBody(toolName, args),
+    type: 'mcp',
+    allowRemember: true,
+    rememberLabel: 'Always allow GitHub CI tools',
+  })
+  if (approved && remember) await setSetting('githubCiAutoAllow', true)
+  return approved
+}
+
 async function checkBrowserNavigatePermission(args: unknown): Promise<boolean> {
   const url = browserUrlFromArgs(args)
   if (!url) throw new Error('browser_navigate requires a url argument')
@@ -300,6 +315,10 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
 
   if (toolName === 'web_search') {
     return checkWebSearchPermission()
+  }
+
+  if (GITHUB_CI_TOOLS.has(toolName)) {
+    return checkGithubCiPermission(toolName, args)
   }
 
   if (toolName.startsWith('mcp__')) {
