@@ -85,7 +85,7 @@ export interface Message {
 
 export interface SubagentSession {
   id: string
-  kind: 'explore'
+  kind: 'explore' | 'investigate_ci'
   status: 'running' | 'done' | 'error'
   prompt: string
   summary: string | null
