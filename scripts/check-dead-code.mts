@@ -107,7 +107,9 @@ while (queue.length > 0) {
     continue
   }
   for (const match of source.matchAll(SPECIFIER)) {
-    const resolved = resolveSpecifier(match[1], file)
+    const spec = match[1]
+    if (!spec) continue
+    const resolved = resolveSpecifier(spec, file)
     if (resolved && !visited.has(resolved)) queue.push(resolved)
   }
 }
