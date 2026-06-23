@@ -23,11 +23,9 @@ import {
   readFileLimitsFromConversationBudget,
 } from './agent-run-read-limits.ts'
 import { formatReadFileLimitHint } from '@shared/agent/read-file-limits.ts'
-import {
-  setExploreSubagentContext,
-  resetSubagentUsage,
-  getAccumulatedSubagentUsage,
-} from './explore-subagent-runner.ts'
+import { setExploreSubagentContext } from './explore-subagent-runner.ts'
+import { setCiInvestigatorContext } from './ci-investigator-runner.ts'
+import { resetSubagentUsage, getAccumulatedSubagentUsage } from './subagent-usage.ts'
 import { setAgentRunTodoContext, clearAgentRunTodos, getAgentRunTodos } from './agent-run-todos.ts'
 import {
   buildGithubLinkSteeringPrompt,
@@ -71,11 +69,14 @@ export const PARENT_DELEGATED_TOOLS = [
   'find_files',
 ] as const
 
+/** Tools that only function as subagent entry points; hidden when subagents are off. */
+const SUBAGENT_ENTRY_TOOLS = new Set<string>(['explore', 'investigate_ci'])
+
 function parentTools(registry: ToolRegistry, subagentsEnabled: boolean) {
   const tools = registry.toLLMTools()
   if (!subagentsEnabled) {
     return tools
-      .filter((t) => t.name !== 'explore')
+      .filter((t) => !SUBAGENT_ENTRY_TOOLS.has(t.name))
       .map((t) =>
         t.name === 'read_file'
           ? {
@@ -313,6 +314,23 @@ export async function runAgent(
               return await registry.execute(name, args, signal)
             } finally {
               setExploreSubagentContext(null)
+            }
+          }
+          if (name === 'investigate_ci' && subagentsEnabled) {
+            setCiInvestigatorContext({
+              parentToolCallId: toolCallId,
+              parentGoal,
+              provider: subagentRoute?.provider ?? provider,
+              registry,
+              contextWindow: subagentRoute?.contextWindow ?? contextWindow,
+              toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
+              onChunk: sendChunk,
+              usageModel: subagentUsageModel,
+            })
+            try {
+              return await registry.execute(name, args, signal)
+            } finally {
+              setCiInvestigatorContext(null)
             }
           }
           return registry.execute(name, args, signal)

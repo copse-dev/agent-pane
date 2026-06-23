@@ -1,10 +1,10 @@
 import type { ModelUsage, StreamChunk } from '@shared/types'
-import { runExploreSubagent } from './subagent-service.ts'
+import { runCiInvestigatorSubagent } from './ci-investigator-service.ts'
 import type { LLMProvider } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { addSubagentUsage } from './subagent-usage.ts'
 
-export interface ExploreSubagentRunnerContext {
+export interface CiInvestigatorRunnerContext {
   parentToolCallId: string
   parentGoal: string
   provider: LLMProvider
@@ -15,26 +15,26 @@ export interface ExploreSubagentRunnerContext {
   usageModel: string
 }
 
-export type ExploreSubagentRunner = (opts: {
-  query: string
-  paths?: string[]
+export type CiInvestigatorRunner = (opts: {
+  focus?: string
+  prNumber?: number
   signal: AbortSignal
 }) => Promise<{ summary: string; usage: ModelUsage }>
 
-let activeContext: ExploreSubagentRunnerContext | null = null
+let activeContext: CiInvestigatorRunnerContext | null = null
 
-export function setExploreSubagentContext(ctx: ExploreSubagentRunnerContext | null): void {
+export function setCiInvestigatorContext(ctx: CiInvestigatorRunnerContext | null): void {
   activeContext = ctx
 }
 
-export function getExploreSubagentRunner(): ExploreSubagentRunner | null {
+export function getCiInvestigatorRunner(): CiInvestigatorRunner | null {
   if (!activeContext) return null
   const ctx = activeContext
-  return async ({ query, paths, signal }) => {
-    const result = await runExploreSubagent({
+  return async ({ focus, prNumber, signal }) => {
+    const result = await runCiInvestigatorSubagent({
       parentToolCallId: ctx.parentToolCallId,
-      query,
-      ...(paths !== undefined ? { paths } : {}),
+      ...(focus !== undefined ? { focus } : {}),
+      ...(prNumber !== undefined ? { prNumber } : {}),
       parentGoal: ctx.parentGoal,
       provider: ctx.provider,
       registry: ctx.registry,

@@ -1,5 +1,5 @@
 import { runCommand } from './command-runner.ts'
-import { runGh } from './gh-service.ts'
+import { runGh, isFailingConclusion } from './gh-service.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import { isGitAvailable } from './tool-availability.ts'
 import { isInsideGitWorkTree } from './git-service.ts'
@@ -52,10 +52,7 @@ export function porcelainHasMergeConflicts(raw: string): boolean {
 
 export function ghPrHasCiFailures(pr: GhPrView): boolean {
   const checks = pr.statusCheckRollup ?? []
-  return checks.some((check) => {
-    const conclusion = (check.conclusion ?? check.state ?? '').toUpperCase()
-    return conclusion === 'FAILURE' || conclusion === 'ERROR' || conclusion === 'TIMED_OUT'
-  })
+  return checks.some((check) => isFailingConclusion(check.conclusion ?? check.state))
 }
 
 export function ghPrHasMergeConflicts(pr: GhPrView): boolean {

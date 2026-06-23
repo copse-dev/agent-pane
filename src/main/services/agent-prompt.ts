@@ -9,7 +9,9 @@ const SHARED_TOOL_TAIL = `- git_status: Show working tree status
 - git_diff: Show unstaged or staged changes
 - git_log: Show recent commit history
 - gh_pr_list: List pull requests (read-only GitHub CLI; prefer over run_shell + gh)
-- gh_pr_view: Show pull request details (read-only GitHub CLI; prefer over run_shell + gh)
+- gh_pr_view: Show pull request details incl. CI check status (read-only GitHub CLI; prefer over run_shell + gh)
+- gh_run_list: List recent CI workflow runs for a branch (read-only GitHub CLI)
+- gh_run_view: Fetch failing CI workflow run logs by run id (read-only GitHub CLI)
 - run_shell: Run a shell command in the workspace (may prompt for approval)
 - staged_diffs: List pending proposed file edits waiting for approval, recent edit decisions, and existing git changes
 - read_staged_diff: Inspect proposed content for a pending file edit
@@ -55,6 +57,7 @@ When modifying files:
 
 export const BASE_SYSTEM_PROMPT = buildBasePrompt({
   tools: `- explore: Explore the codebase by reading and searching files (returns a summary — use this instead of reading files directly)
+- investigate_ci: Delegate a deep CI-failure investigation to a subagent that reads the failing run logs and returns root-cause findings — prefer this when a PR has failing CI
 - write_file: Write a complete file directly when safe; otherwise stage a proposed diff for approval
 - str_replace: Replace a substring directly when safe; otherwise stage a proposed diff for approval
 ${SHARED_WEB_TOOLS}`,

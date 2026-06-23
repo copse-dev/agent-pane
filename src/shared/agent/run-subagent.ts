@@ -28,6 +28,23 @@ export const EXPLORE_TOOL_NAMES = [
   'find_files',
 ] as const
 
+/**
+ * Read-only tools the CI investigator subagent may use: GitHub CLI run/PR
+ * inspection for logs and check status, plus codebase reads to map a failure
+ * back to the offending source.
+ */
+export const CI_INVESTIGATOR_TOOL_NAMES = [
+  'gh_pr_view',
+  'gh_pr_list',
+  'gh_run_list',
+  'gh_run_view',
+  'read_file',
+  'list_dir',
+  'search_code',
+  'search_codebase',
+  'find_files',
+] as const
+
 export const SUBAGENT_SYSTEM_PROMPT = `You are an exploration subagent for a coding assistant.
 
 Your job is to read and search the workspace, then return a concise summary for the parent agent.
@@ -39,6 +56,18 @@ Rules:
 - Cite file paths and line ranges when relevant
 - Be thorough in exploration but concise in your final summary
 - Your final message must be a structured summary the parent can use without re-reading files`
+
+export const CI_INVESTIGATOR_SYSTEM_PROMPT = `You are a CI investigation subagent for a coding assistant.
+
+Your job is to deeply analyze failing continuous-integration (CI) checks for a pull request, then return precise findings for the parent agent to act on. You do NOT fix anything yourself.
+
+Rules:
+- Start with gh_pr_view to see which checks are failing, then gh_run_list to find the failing run id(s), then gh_run_view to read the failed step logs
+- Read the logs carefully: locate the first real error (not downstream noise), the failing command/step, and the exact file/line or test it points at
+- Use read_file, search_codebase, search_code, list_dir, and find_files to tie the error back to the responsible source code
+- Do not write files, push, or run shell commands — you are read-only
+- Be thorough while investigating but concise in the final summary
+- Your final message MUST be a structured findings report the parent can act on without re-reading the logs. Include: failing check(s), the root-cause error, the file(s)/line(s) involved, and a concrete suggested fix.`
 
 export interface RunSubagentOptions {
   provider: LLMProvider
@@ -54,6 +83,12 @@ export interface RunSubagentOptions {
   parentToolCallId: string
   systemPromptSuffix?: string
   usageModel?: string
+  /** Base system prompt for this subagent. Defaults to the explore prompt. */
+  systemPrompt?: string
+  /** Session kind reported to the renderer (drives the tool card label). */
+  kind?: SubagentSession['kind']
+  /** Override the user task message. Defaults to the explore-style task builder. */
+  userTask?: string
 }
 
 export interface RunSubagentResult {
@@ -85,12 +120,15 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
     parentToolCallId,
     systemPromptSuffix,
     usageModel,
+    systemPrompt = SUBAGENT_SYSTEM_PROMPT,
+    kind = 'explore',
+    userTask,
   } = opts
 
   const sessionId = randomUUID()
   const session: SubagentSession = {
     id: sessionId,
-    kind: 'explore',
+    kind,
     status: 'running',
     prompt,
     summary: null,
@@ -121,11 +159,9 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
   const messages: LLMMessage[] = [
     {
       role: 'system',
-      content: systemPromptSuffix
-        ? `${SUBAGENT_SYSTEM_PROMPT}\n\n${systemPromptSuffix}`
-        : SUBAGENT_SYSTEM_PROMPT,
+      content: systemPromptSuffix ? `${systemPrompt}\n\n${systemPromptSuffix}` : systemPrompt,
     },
-    { role: 'user', content: buildUserTask(prompt, parentGoal) },
+    { role: 'user', content: userTask ?? buildUserTask(prompt, parentGoal) },
   ]
 
   let summary: string
