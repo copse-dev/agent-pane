@@ -9,6 +9,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.3
+      - uses: actions/setup-node@v6
+        with: { node-version: '22', cache: 'npm' }
+      - run: npm ci
+      - run: sudo apt-get update && sudo apt-get install -y ripgrep
+      # Runs the unit suite under c8 and writes coverage/ (text-summary +
+      # json-summary + lcov), then fails if line coverage dropped below the
+      # committed baseline in coverage-baseline.json.
+      - run: npm run coverage:ci
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/lcov-report
+          if-no-files-found: ignore
+
   check:
     runs-on: ubuntu-latest
     steps:
