@@ -120,6 +120,7 @@ function setAssistantMarkdown(
 ): void {
   const display = assistantDisplayText(content)
   if (streaming) {
+    el.classList.add('is-streaming')
     let renderer = streamingRenderers.get(el)
     if (!renderer) {
       renderer = new StreamingMarkdownRenderer(el)
@@ -130,6 +131,7 @@ function setAssistantMarkdown(
     return
   }
   // Final render: replace the incremental scaffold with the finished markdown.
+  el.classList.remove('is-streaming')
   streamingRenderers.delete(el)
   el.innerHTML = sanitizeRenderedMarkdown(renderMarkdown(display))
   attachCodeBlockCopyButtons(el)
