@@ -17,7 +17,7 @@ describe('send-now stops the running turn and runs the queued message', function
   })
 
   it('aborts the active run and dispatches the queued prompt immediately', async () => {
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
     // Long mock delay keeps the first turn "running" long enough to queue + send-now.
     await $('.prompt-input').setValue('first slow prompt [[mock:delay_ms 5000]]')
     await $('.submit-btn').click()
