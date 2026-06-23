@@ -1,13 +1,39 @@
 import { Resvg } from '@resvg/resvg-js'
+import * as esbuild from 'esbuild'
 import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { DEFAULT_APP_ICON_VARIANT } from '../src/shared/app-icon-variants.ts'
-
-const RELEASE_ICON_VARIANT = DEFAULT_APP_ICON_VARIANT
+import type { AppIconVariant } from '../src/shared/app-icon-variants.ts'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+
+/**
+ * Loads the shared icon-variant constants without statically importing the
+ * `.ts` source. Node runs this script via type-stripping, but `package.json`
+ * declares `"type": "commonjs"`, so Node classifies `src/shared/*.ts` as
+ * CommonJS and a named ESM import resolves no exports. esbuild bundles the
+ * module to an ESM string we can import, keeping a single source of truth.
+ */
+async function loadReleaseIconVariant(): Promise<AppIconVariant> {
+  const { outputFiles } = await esbuild.build({
+    entryPoints: [join(root, 'src/shared/app-icon-variants.ts')],
+    bundle: true,
+    write: false,
+    format: 'esm',
+    platform: 'node',
+  })
+  const [bundle] = outputFiles
+  if (!bundle) {
+    throw new Error('esbuild produced no output for app-icon-variants.ts')
+  }
+  const mod: { DEFAULT_APP_ICON_VARIANT: AppIconVariant } = await import(
+    'data:text/javascript,' + encodeURIComponent(bundle.text)
+  )
+  return mod.DEFAULT_APP_ICON_VARIANT
+}
+
+const RELEASE_ICON_VARIANT = await loadReleaseIconVariant()
 
 interface IconVariant {
   id: string

@@ -35,11 +35,13 @@ import {
   downloadLmStudioModel,
   getLmStudioDownloadStatus,
 } from './services/lm-studio-setup.ts'
+import { estimateContextBreakdown } from './services/context-estimate.ts'
 import { suggestFollowUps } from './services/follow-up-service.ts'
 import type { FollowUpContext } from '@shared/follow-ups/types.ts'
 import { storageGet, storageSet } from './services/storage.ts'
 import { getMainWindow } from './windows/create-main-window.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
+import { shutdownBrowserSession } from './services/browser/session-manager.ts'
 
 // Prevent multiple instances stacking invisible windows at the same position.
 // A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.
@@ -140,6 +142,29 @@ app
       storageSet(`llm-history:${threadId}`, result.messages)
     })
 
+    ipcMain.handle('agent:estimateContext', async (_e, threadId: string, payloadJson: string) => {
+      const {
+        draftText = '',
+        invokedSkills = [],
+        imageCount = 0,
+      } = JSON.parse(payloadJson) as {
+        draftText?: string
+        invokedSkills?: string[]
+        imageCount?: number
+      }
+      if (!messageHistory.has(threadId)) {
+        const stored = storageGet(`llm-history:${threadId}`)
+        if (Array.isArray(stored)) messageHistory.set(threadId, stored as LLMMessage[])
+      }
+      const priorMessages = messageHistory.get(threadId) ?? []
+      return estimateContextBreakdown(registry, {
+        draftText,
+        invokedSkills,
+        imageCount,
+        priorMessages,
+      })
+    })
+
     ipcMain.handle('agent:clearHistory', (_e, threadId: string) => {
       messageHistory.delete(threadId)
       storageSet(`llm-history:${threadId}`, null)
@@ -166,6 +191,7 @@ let quitCleanupFinished = false
 async function cleanupBeforeQuit(): Promise<void> {
   closeAllWatchers()
   stopWorkspaceIndexWatcher()
+  shutdownBrowserSession()
   await Promise.allSettled([shutdownMcpServers(), shutdownProjectSandbox()])
 }
 

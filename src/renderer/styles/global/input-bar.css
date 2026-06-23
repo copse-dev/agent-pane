@@ -139,6 +139,58 @@
 .msg-queued .message-body {
   opacity: 0.85;
 }
+.msg-queued.msg-editing .message-body {
+  opacity: 1;
+}
+.message-queued-ui {
+  margin-top: var(--spacing-sm);
+}
+.message-queued-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-xs);
+}
+.queued-action {
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.queued-action:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+.queued-action.queued-send,
+.queued-action.queued-send-now {
+  color: white;
+  background: var(--accent);
+  border-color: transparent;
+}
+.queued-action.queued-send:hover,
+.queued-action.queued-send-now:hover {
+  color: white;
+  filter: brightness(1.08);
+}
+.message-edit-input {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-sm);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.55;
+}
+.message-edit-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
 .input-footer {
   display: flex;
   align-items: center;
@@ -339,6 +391,51 @@
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+  position: relative;
+}
+.context-wheel-popover {
+  position: absolute;
+  z-index: 30;
+  bottom: calc(100% + 8px);
+  right: 0;
+  min-width: 210px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-sm) var(--spacing-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  font-size: 11px;
+  color: var(--text-primary);
+  pointer-events: none;
+}
+.context-wheel-popover[hidden] {
+  display: none;
+}
+.context-wheel-popover-header {
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  white-space: nowrap;
+}
+.context-wheel-popover-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  white-space: nowrap;
+}
+.context-wheel-popover-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.context-wheel-popover-name {
+  flex: 1;
+}
+.context-wheel-popover-value {
+  color: var(--text-muted);
+  margin-left: 12px;
 }
 .context-wheel-track {
   stroke: var(--border);

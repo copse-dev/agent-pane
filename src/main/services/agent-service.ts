@@ -61,7 +61,7 @@ export { suggestThreadTitle, suggestTerminalTitle } from './title-generator.ts'
 
 const abortMap = new Map<string, AbortController>()
 
-const PARENT_DELEGATED_TOOLS = [
+export const PARENT_DELEGATED_TOOLS = [
   'read_file',
   'list_dir',
   'search_code',
@@ -306,6 +306,12 @@ export async function runAgent(
           model: subagentUsageModel,
           inputTokens: subUsage.inputTokens,
           outputTokens: subUsage.outputTokens,
+          ...(subUsage.cacheReadTokens !== undefined
+            ? { cacheReadTokens: subUsage.cacheReadTokens }
+            : {}),
+          ...(subUsage.cacheCreationTokens !== undefined
+            ? { cacheCreationTokens: subUsage.cacheCreationTokens }
+            : {}),
         })
       }
     })

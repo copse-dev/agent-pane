@@ -26,6 +26,13 @@ interface Scenario {
   expect?: ScenarioExpect
 }
 
+type Usage = {
+  inputTokens?: number
+  outputTokens?: number
+  cacheReadTokens?: number
+  cacheCreationTokens?: number
+}
+
 type JsonlRecord = {
   type: string
   role?: string
@@ -35,11 +42,57 @@ type JsonlRecord = {
     status?: string
     args?: Record<string, unknown>
     subagent?: {
+      prompt?: string
+      usage?: Usage
       messages?: Array<{ toolCalls?: Array<{ name: string; args?: Record<string, unknown> }> }>
     }
   }>
-  usage?: { inputTokens?: number; outputTokens?: number }
+  usage?: Usage
   title?: string
+}
+
+/** Cache-vs-fresh breakdown of a usage record (cache tokens are a subset of inputTokens). */
+function cacheBreakdown(usage: Usage): {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  freshInputTokens: number
+  cacheHitRatio: number | null
+} | null {
+  const inputTokens = usage.inputTokens ?? 0
+  const hasCache = usage.cacheReadTokens !== undefined || usage.cacheCreationTokens !== undefined
+  if (!hasCache) return null
+  const cacheReadTokens = usage.cacheReadTokens ?? 0
+  const cacheCreationTokens = usage.cacheCreationTokens ?? 0
+  return {
+    inputTokens,
+    outputTokens: usage.outputTokens ?? 0,
+    cacheReadTokens,
+    cacheCreationTokens,
+    freshInputTokens: Math.max(0, inputTokens - cacheReadTokens - cacheCreationTokens),
+    cacheHitRatio: inputTokens > 0 ? Number((cacheReadTokens / inputTokens).toFixed(3)) : null,
+  }
+}
+
+function subagentUsages(records: JsonlRecord[]): Array<{
+  prompt: string
+  messages: number
+  usage: Usage | null
+}> {
+  const out: Array<{ prompt: string; messages: number; usage: Usage | null }> = []
+  for (const r of records) {
+    if (r.role !== 'assistant') continue
+    for (const tc of r.toolCalls ?? []) {
+      if (tc.name !== 'explore' || !tc.subagent) continue
+      out.push({
+        prompt: (tc.subagent.prompt ?? '').slice(0, 80),
+        messages: tc.subagent.messages?.length ?? 0,
+        usage: tc.subagent.usage ?? null,
+      })
+    }
+  }
+  return out
 }
 
 function loadJsonl(path: string): JsonlRecord[] {
@@ -167,6 +220,8 @@ function analyze(path: string, scenario?: Scenario): void {
     shouldSteerGithubLinks: steerGithubLinks,
     shouldSteerTodos: steerTodos,
     usage,
+    cache: cacheBreakdown(usage),
+    subagents: subagentUsages(records),
     toolHistogram: toolHist,
     exploreCount,
     updateTodosCount: updateTodos,

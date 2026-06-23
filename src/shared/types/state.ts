@@ -28,6 +28,8 @@ export interface AppState {
   workspaceRoot: string | null
   projects: Project[]
   activeProjectId: string | null
+  /** Sidebar expand state; may lead activeProjectId while a workspace switch is in flight. */
+  expandedProjectId: string | null
   threads: Thread[]
   activeThreadId: string | null
   panelTab: PanelTab

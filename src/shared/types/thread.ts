@@ -26,6 +26,27 @@ export interface ContextSnapshot {
   updatedAt: number
 }
 
+/** Which part of the assembled prompt a breakdown segment represents. */
+export type ContextSegmentKey = 'system' | 'tools' | 'mcp' | 'skills' | 'history' | 'message'
+
+/** One slice of the pre-send context estimate (e.g. system prompt, tools, your message). */
+export interface ContextBreakdownSegment {
+  key: ContextSegmentKey
+  label: string
+  tokens: number
+}
+
+/**
+ * Estimated token cost of everything that would be sent on the next prompt,
+ * split into named parts. Computed before sending so the composer can show
+ * what the default context costs and how the draft message adds to it.
+ */
+export interface ContextBreakdown {
+  segments: ContextBreakdownSegment[]
+  totalTokens: number
+  contextWindow: number
+}
+
 export interface Thread {
   id: string
   title: string
@@ -44,6 +65,8 @@ export interface Thread {
   gitBranch?: string
   /** Prompts submitted while the agent is running; drained FIFO when idle. */
   pendingMessages?: QueuedUserMessage[]
+  /** True while a queued message is being edited; suspends FIFO draining. */
+  queuePaused?: boolean
   /** Unsubmitted composer text; keeps blank threads visible across switches. */
   draftPrompt?: string
   createdAt: number
@@ -67,7 +90,8 @@ export interface SubagentSession {
   prompt: string
   summary: string | null
   messages: SubagentMessage[]
-  usage?: { inputTokens: number; outputTokens: number }
+  /** Token totals for this subagent's own loop (also folded into the parent thread total). */
+  usage?: ModelUsage
 }
 
 export interface SubagentMessage {
@@ -75,6 +99,8 @@ export interface SubagentMessage {
   role: 'user' | 'assistant'
   content: string
   toolCalls: ToolCall[]
+  /** Wall-clock time the message was first created; absent on sessions persisted before timestamps existed. */
+  createdAt?: number
 }
 
 export interface ToolCall {
@@ -89,11 +115,26 @@ export interface ToolCall {
 export interface ModelUsage {
   inputTokens: number
   outputTokens: number
+  /**
+   * Portion of `inputTokens` served from the provider prompt cache (Anthropic
+   * `cache_read_input_tokens`). Billed far cheaper than fresh input; absent for
+   * providers/usage that don't report cache stats.
+   */
+  cacheReadTokens?: number
+  /**
+   * Portion of `inputTokens` written to the provider prompt cache (Anthropic
+   * `cache_creation_input_tokens`).
+   */
+  cacheCreationTokens?: number
 }
 
 export interface ThreadUsage {
   inputTokens: number
   outputTokens: number
+  /** Cumulative cache-read tokens across the thread (subset of `inputTokens`). */
+  cacheReadTokens?: number
+  /** Cumulative cache-creation tokens across the thread (subset of `inputTokens`). */
+  cacheCreationTokens?: number
   /** Token totals keyed by model id (e.g. claude-sonnet-4-6, lmstudio:qwen). */
   byModel?: Record<string, ModelUsage>
 }

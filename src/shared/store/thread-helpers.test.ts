@@ -6,6 +6,8 @@ import {
   openNewThread,
   switchThread,
   addMessage,
+  addUsageDelta,
+  getThreadById,
   isBlankThread,
   hasUnsubmittedPrompt,
   normalizeBlankThreads,
@@ -87,6 +89,49 @@ describe('blank thread reuse', () => {
     )
   })
 
+  it('addUsageDelta accumulates cache tokens per model and thread total', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+
+    addUsageDelta(store, threadId, {
+      model: 'claude-opus-4-8',
+      inputTokens: 1000,
+      outputTokens: 50,
+      cacheReadTokens: 800,
+      cacheCreationTokens: 100,
+    })
+    addUsageDelta(store, threadId, {
+      model: 'claude-opus-4-8',
+      inputTokens: 500,
+      outputTokens: 20,
+      cacheReadTokens: 450,
+      cacheCreationTokens: 0,
+    })
+
+    const usage = getThreadById(store, threadId)!.usage
+    assert.equal(usage.inputTokens, 1500)
+    assert.equal(usage.outputTokens, 70)
+    assert.equal(usage.cacheReadTokens, 1250)
+    assert.equal(usage.cacheCreationTokens, 100)
+    assert.deepEqual(usage.byModel?.['claude-opus-4-8'], {
+      inputTokens: 1500,
+      outputTokens: 70,
+      cacheReadTokens: 1250,
+      cacheCreationTokens: 100,
+    })
+  })
+
+  it('addUsageDelta omits cache fields when the provider reports none', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    addUsageDelta(store, threadId, { model: 'lmstudio:qwen', inputTokens: 300, outputTokens: 30 })
+
+    const usage = getThreadById(store, threadId)!.usage
+    assert.equal(usage.inputTokens, 300)
+    assert.equal('cacheReadTokens' in usage, false)
+    assert.equal('cacheCreationTokens' in usage, false)
+  })
+
   it('normalizeBlankThreads keeps blank threads that have draft prompts', () => {
     const store = createStore()
     const draftBlank = createThread(store)
@@ -107,5 +152,58 @@ describe('blank thread reuse', () => {
       threads.some((t) => t.id === emptyA || t.id === emptyB),
       true,
     )
+  })
+})
+
+describe('draft prompt events', () => {
+  it('emits thread_draft_changed (not threads_changed) when saving a draft', () => {
+    const store = createStore()
+    const id = createThread(store)
+
+    let threadsChanged = 0
+    let draftChanged = 0
+    let draftChangedId: string | null = null
+    store.on('threads_changed', () => threadsChanged++)
+    store.on('thread_draft_changed', (tid) => {
+      draftChanged++
+      draftChangedId = tid
+    })
+
+    setThreadDraftPrompt(store, id, 'typing a draft')
+
+    // The conversation rebuild listens to threads_changed; keeping draft saves
+    // off that event is what prevents the message list re-rendering per keystroke.
+    assert.equal(threadsChanged, 0)
+    assert.equal(draftChanged, 1)
+    assert.equal(draftChangedId, id)
+  })
+
+  it('emits thread_draft_changed when clearing an existing draft', () => {
+    const store = createStore()
+    const id = createThread(store)
+    setThreadDraftPrompt(store, id, 'something')
+
+    let threadsChanged = 0
+    let draftChanged = 0
+    store.on('threads_changed', () => threadsChanged++)
+    store.on('thread_draft_changed', () => draftChanged++)
+
+    setThreadDraftPrompt(store, id, '')
+
+    assert.equal(store.getState().threads.find((t) => t.id === id)?.draftPrompt, undefined)
+    assert.equal(threadsChanged, 0)
+    assert.equal(draftChanged, 1)
+  })
+
+  it('does not emit when the draft is unchanged', () => {
+    const store = createStore()
+    const id = createThread(store)
+    setThreadDraftPrompt(store, id, 'same')
+
+    let draftChanged = 0
+    store.on('thread_draft_changed', () => draftChanged++)
+
+    setThreadDraftPrompt(store, id, 'same')
+    assert.equal(draftChanged, 0)
   })
 })

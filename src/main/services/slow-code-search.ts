@@ -16,7 +16,6 @@ const DEFAULT_IGNORED_DIRS = new Set([
   'dist',
   'build',
   'coverage',
-  '.codesearch.db',
   'vendor',
   'out',
   '.next',

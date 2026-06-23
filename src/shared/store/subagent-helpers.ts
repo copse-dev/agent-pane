@@ -1,6 +1,6 @@
 // Subagent helpers — mutate ToolCall.subagent on parent tool calls.
 import type { AppStore } from './store.ts'
-import type { SubagentSession, ToolCall } from '@shared/types'
+import type { ModelUsage, SubagentSession, ToolCall } from '@shared/types'
 
 function findToolCall(
   store: AppStore,
@@ -93,7 +93,13 @@ export function appendSubagentText(
       ...session,
       messages: [
         ...session.messages,
-        { id: subMessageId, role: 'assistant', content: text, toolCalls: [] },
+        {
+          id: subMessageId,
+          role: 'assistant',
+          content: text,
+          toolCalls: [],
+          createdAt: Date.now(),
+        },
       ],
     }
   })
@@ -120,7 +126,13 @@ export function addSubagentToolCall(
       ...session,
       messages: [
         ...session.messages,
-        { id: subMessageId, role: 'assistant', content: '', toolCalls: [toolCall] },
+        {
+          id: subMessageId,
+          role: 'assistant',
+          content: '',
+          toolCalls: [toolCall],
+          createdAt: Date.now(),
+        },
       ],
     }
   })
@@ -148,10 +160,12 @@ export function finishSubagent(
   toolCallId: string,
   summary: string,
   status: SubagentSession['status'],
+  usage?: ModelUsage,
 ): void {
   updateSubagentOnToolCall(store, messageId, toolCallId, (session) => ({
     ...session,
     status,
     summary,
+    ...(usage ? { usage } : {}),
   }))
 }
