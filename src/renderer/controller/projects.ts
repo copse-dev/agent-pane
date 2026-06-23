@@ -8,6 +8,40 @@ import { resumePendingQueues } from './message-queue.ts'
 const uuid = () => globalThis.crypto.randomUUID()
 const basename = (p: string) => p.split('/').pop() ?? p
 
+export const SIDEBAR_THREADS_PAGE_SIZE = 10
+
+export interface SidebarThreadPagination {
+  visibleThreads: Thread[]
+  visibleCount: number
+  hasMore: boolean
+}
+
+/** Limit sidebar thread rows; expand the window when the active thread falls outside it. */
+export function paginateSidebarThreads(
+  threads: Thread[],
+  visibleLimit: number,
+  activeThreadId: string | null | undefined,
+): SidebarThreadPagination {
+  const total = threads.length
+  let visibleCount = Math.min(visibleLimit, total)
+
+  if (activeThreadId) {
+    const index = threads.findIndex((t) => t.id === activeThreadId)
+    if (index >= visibleCount) {
+      visibleCount = Math.min(
+        Math.ceil((index + 1) / SIDEBAR_THREADS_PAGE_SIZE) * SIDEBAR_THREADS_PAGE_SIZE,
+        total,
+      )
+    }
+  }
+
+  return {
+    visibleThreads: threads.slice(0, visibleCount),
+    visibleCount,
+    hasMore: visibleCount < total,
+  }
+}
+
 /** In-memory thread lists for sidebar display before a workspace switch finishes. */
 const threadCache = new Map<string, Thread[]>()
 let switchGeneration = 0
