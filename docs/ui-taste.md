@@ -60,6 +60,7 @@ fixtures: [`tests/e2e/markdown-table-wrap.e2e.ts`](../tests/e2e/markdown-table-w
   `width: 1%` tells the engine “as narrow as content allows”; middle columns take the rest. Scope
   with a structural guard (e.g. `:has(th:nth-child(4))`) when a rule would otherwise harm two-column
   tables.
+
 - **Let long inline code wrap inside the cell.** Lone `<code>` in a cell: `display: block`,
   `min-width: 0`, `max-width: 100%`, `overflow-wrap: anywhere`.
 
@@ -83,7 +84,6 @@ aren't enough:
 - `td > code:only-child` — “cell is just a slug/path”
 
 Avoid `:nth-child(3) { width: 34% }` and similar “column 3 is always Branch” rules.
-
 
 For primary/secondary action buttons (Save / Cancel style):
 
