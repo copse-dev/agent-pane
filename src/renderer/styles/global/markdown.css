@@ -1,22 +1,3 @@
-@media (prefers-reduced-motion: no-preference) {
-  @keyframes stream-markdown-in {
-    from {
-      opacity: 0.82;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
-  .message-text.is-streaming .stream-complete table.stream-enter {
-    animation: stream-markdown-in 0.22s ease-out;
-  }
-
-  .message-text.is-streaming .stream-complete tbody tr.stream-enter > td {
-    animation: stream-markdown-in 0.16s ease-out;
-  }
-}
-
 .message-text table {
   /* separated borders + overflow clip so the outer corners can be rounded */
   border-collapse: separate;

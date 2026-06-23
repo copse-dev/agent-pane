@@ -1,9 +1,6 @@
 import { escapeHtml, renderMarkdown } from './renderer.ts'
 import { sanitizeRenderedMarkdown } from './sanitize.ts'
 
-/** Transient class for one-shot CSS enter animations on newly streamed blocks. */
-export const STREAM_ENTER_CLASS = 'stream-enter'
-
 /** Split streamed content at the last newline so completed lines can be rendered. */
 export function splitAtLastNewline(content: string): { complete: string; pending: string } {
   const lastNl = content.lastIndexOf('\n')
@@ -37,36 +34,10 @@ export function renderStreamingMarkdown(content: string): string {
  * (i.e. the completed prefix actually grew), and a live `<span>` whose
  * `textContent` is updated for the in-progress line — cheap and DOM-preserving.
  */
-/** Mark tables/rows that just entered the completed streaming region for CSS fade-in. */
-export function markStreamingEnterAnimations(
-  completedEl: HTMLElement,
-  prevHadTable: boolean,
-  prevTableBodyRowCount: number,
-): { hadTable: boolean; tableBodyRowCount: number } {
-  const tables = completedEl.querySelectorAll('table')
-  const hadTable = tables.length > 0
-  const bodyRows = completedEl.querySelectorAll('table tbody tr')
-  const tableBodyRowCount = bodyRows.length
-
-  if (hadTable && !prevHadTable) {
-    tables[tables.length - 1]!.classList.add(STREAM_ENTER_CLASS)
-  }
-
-  bodyRows.forEach((row, index) => {
-    if (index >= prevTableBodyRowCount) {
-      row.classList.add(STREAM_ENTER_CLASS)
-    }
-  })
-
-  return { hadTable, tableBodyRowCount }
-}
-
 export class StreamingMarkdownRenderer {
   private completedEl: HTMLElement | null = null
   private pendingEl: HTMLSpanElement | null = null
   private lastComplete = ''
-  private lastHadTable = false
-  private lastTableBodyRowCount = 0
 
   constructor(private readonly host: HTMLElement) {}
 
@@ -80,12 +51,6 @@ export class StreamingMarkdownRenderer {
         ? sanitizeRenderedMarkdown(renderMarkdown(complete))
         : ''
       this.lastComplete = complete
-      ;({ hadTable: this.lastHadTable, tableBodyRowCount: this.lastTableBodyRowCount } =
-        markStreamingEnterAnimations(
-          this.completedEl!,
-          this.lastHadTable,
-          this.lastTableBodyRowCount,
-        ))
     }
 
     // textContent assignment escapes implicitly and only touches the tail node,
@@ -103,7 +68,5 @@ export class StreamingMarkdownRenderer {
     this.pendingEl.className = 'stream-pending'
     this.host.append(this.completedEl, this.pendingEl)
     this.lastComplete = ''
-    this.lastHadTable = false
-    this.lastTableBodyRowCount = 0
   }
 }

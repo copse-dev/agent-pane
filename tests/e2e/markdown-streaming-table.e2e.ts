@@ -17,7 +17,7 @@ describe('markdown streaming table transitions', () => {
     resetUserData()
   })
 
-  it('applies subtle enter animations while a table is streaming in', async () => {
+  it('applies CSS enter transitions while a table is streaming in', async () => {
     await $('.messages-list').waitForExist({ timeout: 15_000 })
 
     const layout = await browser.execute(() => {
@@ -30,10 +30,10 @@ describe('markdown streaming table transitions', () => {
       text.className = 'message-text is-streaming'
       text.innerHTML = [
         '<div class="stream-complete">',
-        '<table class="stream-enter">',
+        '<table>',
         '<thead><tr><th>Path</th><th>Role</th></tr></thead>',
         '<tbody>',
-        '<tr class="stream-enter"><td><code>src/</code></td><td>Application source</td></tr>',
+        '<tr><td><code>src/</code></td><td>Application source</td></tr>',
         '</tbody>',
         '</table>',
         '</div>',
@@ -42,18 +42,15 @@ describe('markdown streaming table transitions', () => {
       msg.append(text)
       list.append(msg)
 
-      const table = text.querySelector('table.stream-enter')
-      const row = text.querySelector('tbody tr.stream-enter')
+      const row = text.querySelector('tbody tr:last-child')
       const pending = text.querySelector('.stream-pending')
-      const tableAnim = table ? getComputedStyle(table).animationName : 'none'
-      const rowAnim = row ? getComputedStyle(row.querySelector('td')!).animationName : 'none'
+      const rowTransition = row ? getComputedStyle(row).transitionProperty : 'none'
 
       return {
         isStreaming: text.classList.contains('is-streaming'),
         hasStreamComplete: !!text.querySelector('.stream-complete'),
         pendingText: pending?.textContent ?? '',
-        tableAnim,
-        rowAnim,
+        rowTransition,
       }
     })
 
@@ -61,8 +58,7 @@ describe('markdown streaming table transitions', () => {
     expect(layout.isStreaming).toBe(true)
     expect(layout.hasStreamComplete).toBe(true)
     expect(layout.pendingText).toContain('tests/e2e/')
-    expect(layout.tableAnim).not.toBe('none')
-    expect(layout.rowAnim).not.toBe('none')
+    expect(layout.rowTransition).toContain('transform')
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'markdown-streaming-table-mid.png'))
   })

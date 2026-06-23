@@ -198,6 +198,34 @@
 .message-text .stream-pending {
   white-space: pre-wrap;
 }
+
+/* Streaming enter easing: @starting-style transitions on newly inserted nodes.
+   The completed region is re-rendered via innerHTML on each newline, so we target
+   :last-child (newest block) and tbody tr:last-child (newest table row) rather
+   than animating the whole message on every update. */
+@media (prefers-reduced-motion: no-preference) {
+  .message-text.is-streaming .stream-complete > :last-child:not(table) {
+    transition: transform 0.18s ease-out;
+    @starting-style {
+      transform: translateY(2px);
+    }
+  }
+
+  .message-text.is-streaming .stream-complete > table:not(:has(tbody tr)) {
+    transition: transform 0.18s ease-out;
+    @starting-style {
+      transform: translateY(2px);
+    }
+  }
+
+  .message-text.is-streaming .stream-complete table tbody tr:last-child {
+    transition: transform 0.16s ease-out;
+    @starting-style {
+      transform: translateY(2px);
+    }
+  }
+}
+
 .message-text code {
   font-family: var(--font-mono);
   background: var(--bg-elevated);
