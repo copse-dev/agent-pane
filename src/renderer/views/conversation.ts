@@ -15,7 +15,7 @@ import { agentActivityLabel } from '../agent-activity.ts'
 import {
   aggregateToolStatus,
   buildToolCallDisplayItems,
-  getToolDisplayName,
+  getToolCallLabel,
   type ToolCallDisplayItem,
 } from '@shared/tools/tool-display.ts'
 import { createTodoListEl } from './todo-panel.ts'
@@ -49,8 +49,15 @@ function createToolHeader(
   status: ToolCall['status'],
   summaryClass: string,
   count?: number,
+  editStats?: ToolCall['editStats'],
 ): HTMLElement {
   const children: (Node | string)[] = [el('span', { class: 'tool-name' }, label)]
+  if (editStats) {
+    children.push(
+      el('span', { class: 'tool-stat tool-stat-add' }, `+${editStats.additions}`),
+      el('span', { class: 'tool-stat tool-stat-del' }, `-${editStats.deletions}`),
+    )
+  }
   if (count !== undefined && count > 1) {
     children.push(el('span', { class: 'tool-count' }, `×${count}`))
   }
@@ -66,7 +73,7 @@ function appendStandardToolSections(
   count?: number,
 ): void {
   card.append(
-    createToolHeader(label, tc.status, summaryClass, count),
+    createToolHeader(label, tc.status, summaryClass, count, tc.editStats),
     createToolArgsSection(tc.args),
     el('div', { class: 'tool-result' }, ...(tc.result ? [tc.result] : [])),
   )
@@ -100,7 +107,7 @@ function createInnerToolCard(tc: ToolCall): HTMLElement {
     'data-tool-id': tc.id,
     'data-status': tc.status,
   })
-  appendStandardToolSections(entry, tc, getToolDisplayName(tc.name), 'tool-group-item-header')
+  appendStandardToolSections(entry, tc, getToolCallLabel(tc), 'tool-group-item-header')
   return entry
 }
 
@@ -210,7 +217,13 @@ function createGroupToolCard(item: Extract<ToolCallDisplayItem, { type: 'group' 
       'data-status': tc.status,
     })
     entry.append(
-      createToolHeader(getToolDisplayName(tc.name), tc.status, 'tool-group-item-header'),
+      createToolHeader(
+        getToolCallLabel(tc),
+        tc.status,
+        'tool-group-item-header',
+        undefined,
+        tc.editStats,
+      ),
       createToolArgsSection(tc.args),
       el('div', { class: 'tool-result' }, ...(tc.result ? [tc.result] : [])),
     )

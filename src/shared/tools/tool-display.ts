@@ -84,6 +84,21 @@ export function getToolDisplayName(name: string): string {
   return formatToolNameFallback(name)
 }
 
+function fileEditPath(args: unknown): string | null {
+  if (!args || typeof args !== 'object') return null
+  const path = (args as Record<string, unknown>).path
+  return typeof path === 'string' && path.length > 0 ? path : null
+}
+
+/** Human label for a tool card — file edits show `Edited <path>`. */
+export function getToolCallLabel(tc: ToolCall): string {
+  if (tc.name === 'write_file' || tc.name === 'str_replace') {
+    const path = fileEditPath(tc.args)
+    if (path) return `Edited ${path}`
+  }
+  return getToolDisplayName(tc.name)
+}
+
 export function getToolGroupKey(name: string): string | null {
   const builtIn = TOOL_TO_GROUP.get(name)
   if (builtIn) return builtIn
@@ -131,7 +146,7 @@ export function buildToolCallDisplayItems(toolCalls: ToolCall[]): ToolCallDispla
 
   for (const tc of toolCalls) {
     if (tc.status === 'error') {
-      result.push({ type: 'individual', toolCall: tc, label: getToolDisplayName(tc.name) })
+      result.push({ type: 'individual', toolCall: tc, label: getToolCallLabel(tc) })
       continue
     }
 
@@ -145,7 +160,7 @@ export function buildToolCallDisplayItems(toolCalls: ToolCall[]): ToolCallDispla
       continue
     }
 
-    result.push({ type: 'individual', toolCall: tc, label: getToolDisplayName(tc.name) })
+    result.push({ type: 'individual', toolCall: tc, label: getToolCallLabel(tc) })
   }
 
   return result

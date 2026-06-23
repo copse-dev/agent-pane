@@ -144,6 +144,7 @@ export function seedInnerHtmlToolArgsFixture(workspaceRoot: string): void {
                   args: INNERHTML_TRAP_ARGS,
                   status: 'done',
                   result: 'Wrote index.html',
+                  editStats: { additions: 1, deletions: 0 },
                 },
               ],
               createdAt: Date.now(),

@@ -91,6 +91,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           updateToolCall(store, st.msgId, chunk.toolCallId, {
             status: chunk.isError ? 'error' : 'done',
             result: chunk.result,
+            ...(chunk.editStats ? { editStats: chunk.editStats } : {}),
           })
           if (chunk.toolCallId && !chunk.isError) {
             tryOpenFileFromResult(store, chunk.result)
@@ -169,6 +170,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           updateSubagentToolCall(store, st.msgId, chunk.parentToolCallId, chunk.toolCallId, {
             status: chunk.isError ? 'error' : 'done',
             result: chunk.result,
+            ...(chunk.editStats ? { editStats: chunk.editStats } : {}),
           })
         }
         activity(threadId)

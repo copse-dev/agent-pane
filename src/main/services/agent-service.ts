@@ -281,7 +281,7 @@ export async function runAgent(
               setExploreSubagentContext(null)
             }
           }
-          return registry.execute(name, args, signal)
+          return registry.executeNormalized(name, args, signal)
         },
         signal: controller.signal,
         maxContextTokens: contextWindow,
