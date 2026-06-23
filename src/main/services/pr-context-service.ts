@@ -1,12 +1,11 @@
 import { runCommand } from './command-runner.ts'
-import { runGh } from './gh-service.ts'
+import { runGh, parseGhJson } from './gh-service.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import { isGitAvailable } from './tool-availability.ts'
 import { isInsideGitWorkTree } from './git-service.ts'
 import type { PrWorkspaceContext } from '@shared/follow-ups/types.ts'
 import type { GitBranchStatus, GitOpenPr } from '@shared/types/git.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
-import { runGh, parseGhJson } from './gh-service.ts'
 import { ghPrHasCiFailures } from './github-ci-service.ts'
 
 interface GhPrView {
