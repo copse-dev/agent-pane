@@ -1,11 +1,19 @@
 import * as esbuild from 'esbuild'
-import { accessSync, cpSync, copyFileSync } from 'node:fs'
+import { accessSync, cpSync, copyFileSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { copyMonacoWorkers } from './copy-monaco-workers.mts'
 
 const bundledCodesearchName = process.platform === 'win32' ? 'codesearch.exe' : 'codesearch'
 
 const sharedAlias = { '@shared': resolve('./src/shared') }
+
+// Release builds (`COPSE_RELEASE=1`, used by `npm run build:release` → packaging)
+// strip the MockLLMProvider test directives so the parser is absent from shipped
+// apps. The `define` turns the guard into `if (false)`; `minifySyntax` is what
+// actually dead-code-eliminates that dead branch (esbuild keeps it otherwise).
+// Non-release builds keep the directives for dev/e2e and stay un-minified.
+const isRelease = process.env.COPSE_RELEASE === '1'
+const define = { __COPSE_TEST_DIRECTIVES__: String(!isRelease) }
 
 const nodeOpts = {
   bundle: true,
@@ -23,6 +31,8 @@ const nodeOpts = {
   sourcemap: true,
   target: 'node22',
   alias: sharedAlias,
+  define,
+  minifySyntax: isRelease,
 }
 
 await esbuild.build({
@@ -48,6 +58,8 @@ await esbuild.build({
   sourcemap: true,
   loader: { '.ts': 'ts', '.css': 'css', '.ttf': 'file' },
   alias: sharedAlias,
+  define,
+  minifySyntax: isRelease,
 })
 
 copyFileSync('src/renderer/index.html', 'dist/renderer/index.html')
@@ -65,4 +77,19 @@ try {
   cpSync('vendor/codesearch', 'dist/resources/codesearch', { recursive: true })
 } catch {
   // Optional — postinstall may be skipped on unsupported platforms.
+}
+
+// Fail fast if a release build ever ships the MockLLMProvider test directives:
+// the `__COPSE_TEST_DIRECTIVES__` guard + minifySyntax must have eliminated them.
+// `mock:delay_ms` / `mcp:([` are fragments of the directive regexes and never
+// appear in product code (real MCP tool names use the `mcp__` separator).
+if (isRelease) {
+  const mainBundle = readFileSync('dist/main/index.js', 'utf8')
+  const leaked = ['mock:delay_ms', 'mcp:(['].filter((marker) => mainBundle.includes(marker))
+  if (leaked.length > 0) {
+    throw new Error(
+      `Release build leaked test-only mock directives (${leaked.join(', ')}). ` +
+        'The __COPSE_TEST_DIRECTIVES__ guard should have stripped them.',
+    )
+  }
 }
