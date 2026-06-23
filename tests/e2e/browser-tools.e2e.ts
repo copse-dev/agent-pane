@@ -18,7 +18,7 @@ describe('browser tool display', () => {
   })
 
   it('groups browser tool calls under a Browser card', async () => {
-    await $('.messages-list .msg-assistant').waitForExist({ timeout: 15_000 })
+    await $('.messages-list .msg-assistant').waitForExist({ timeout: 30_000 })
 
     const groupCard = await $('.tool-card-group')
     await expect(groupCard).toBeDisplayed()

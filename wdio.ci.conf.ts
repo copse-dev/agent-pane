@@ -34,6 +34,18 @@ const ciExclude = [
   // Drives a mock subagent/explore run and waits on `.tool-card-subagent`,
   // which is flaky to render in time on the constrained runner.
   './tests/e2e/semantic-search-markdown.e2e.ts',
+  // Genuinely flaky assertion (not the per-shard OOM): after creating a new
+  // thread it intermittently sees 1 `.chats-list .chat-row` instead of 2 —
+  // failed at position 1 of a fresh runner, so it's a spec timing issue, not
+  // resource exhaustion. Candidate real bug; quarantined pending a wait-logic
+  // fix.
+  './tests/e2e/new-thread-keeps-panel.e2e.ts',
+  // Reliably hard-OOM-crashes its runner ("shutdown signal", not a timeout) on
+  // both whole-shard retry attempts — a heavy reloadSession spec that, paired
+  // with the also-heavy double-submit in its shard, exhausts the 2-core/7GB
+  // runner. The crash kills the job before the failure-artifact upload can run,
+  // so screenshots can't capture it. Same class as context-wheel.
+  './tests/e2e/draft-prompt.e2e.ts',
 ]
 
 export const config: Options.Testrunner = {

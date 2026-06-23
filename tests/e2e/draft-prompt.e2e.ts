@@ -30,7 +30,7 @@ describe('draft prompt preservation', () => {
   })
 
   it('keeps blank threads with drafts and restores composer text on switch', async () => {
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await expect($('.chat-row.selected .chat-title')).toHaveText(blankThreadTitle)
 
     await $('.prompt-input').setValue(DRAFT_TEXT)

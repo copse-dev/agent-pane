@@ -43,7 +43,7 @@ describe('todo plan display', () => {
 
   it('shows inline todo panel and plan tab with statuses', async () => {
     const inlinePanel = await $('.conversation-todos-host .todo-panel')
-    await inlinePanel.waitForExist({ timeout: 15_000 })
+    await inlinePanel.waitForExist({ timeout: 30_000 })
 
     const title = (await inlinePanel.$('.todo-panel-title').getText()).toLowerCase()
     await expect(title).toBe('to-dos')

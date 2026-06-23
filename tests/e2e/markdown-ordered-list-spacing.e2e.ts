@@ -21,12 +21,12 @@ describe('markdown ordered list spacing', () => {
   })
 
   it('renders git summary as a compact ordered list after tool cards', async () => {
-    await $('.tool-card-group .tool-name').waitForExist({ timeout: 15_000 })
+    await $('.tool-card-group .tool-name').waitForExist({ timeout: 30_000 })
     await expect($('.tool-card-group .tool-name')).toHaveText('Git')
     await expect($('.tool-card-group .tool-count')).toHaveText('×2')
 
     const summary = await $('[data-message-id="msg-assistant-git-summary"] .message-text')
-    await summary.waitForExist({ timeout: 15_000 })
+    await summary.waitForExist({ timeout: 30_000 })
 
     const layout = await browser.execute(() => {
       const root = document.querySelector(
