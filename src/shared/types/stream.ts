@@ -1,4 +1,4 @@
-import type { SubagentSession } from './thread.ts'
+import type { ModelUsage, SubagentSession } from './thread.ts'
 import type { TodoItem } from './todo.ts'
 
 export type StreamChunk =
@@ -13,7 +13,14 @@ export type StreamChunk =
       historyBudget: number
       estimatedTokens: number
     }
-  | { type: 'usage'; model: string; inputTokens: number; outputTokens: number }
+  | {
+      type: 'usage'
+      model: string
+      inputTokens: number
+      outputTokens: number
+      cacheReadTokens?: number
+      cacheCreationTokens?: number
+    }
   | {
       type: 'context_pressure'
       contextWindow: number
@@ -36,7 +43,7 @@ export type StreamChunk =
       result: string
       isError: boolean
     }
-  | { type: 'subagent_done'; parentToolCallId: string; summary: string }
+  | { type: 'subagent_done'; parentToolCallId: string; summary: string; usage?: ModelUsage }
   | { type: 'subagent_error'; parentToolCallId: string; error: string }
   | { type: 'todo_update'; todos: TodoItem[] }
   | {

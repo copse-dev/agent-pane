@@ -15,8 +15,10 @@ import { exploreTool } from '../tools/explore-tool.ts'
 import { readSkillTool } from '../tools/read-skill-tool.ts'
 import { updateTodosTool } from '../tools/todo-tool.ts'
 import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
+import { browserTools } from '../tools/browser-tools.ts'
 import { listSkills } from './skills-registry.ts'
 import { getSetting } from './settings.ts'
+import { BROWSER_TOOLS_ENABLED_SETTING } from './browser/browser-origin-policy.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
@@ -41,6 +43,9 @@ export function createRegistry(): ToolRegistry {
   registry.register(webSearchTool)
   registry.register(fetchUrlTool)
   registry.register(updateTodosTool)
+  if (getSetting<boolean>(BROWSER_TOOLS_ENABLED_SETTING, false)) {
+    for (const tool of browserTools) registry.register(tool)
+  }
   return registry
 }
 

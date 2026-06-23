@@ -40,6 +40,7 @@ import type { FollowUpContext } from '@shared/follow-ups/types.ts'
 import { storageGet, storageSet } from './services/storage.ts'
 import { getMainWindow } from './windows/create-main-window.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
+import { shutdownBrowserSession } from './services/browser/session-manager.ts'
 
 // Prevent multiple instances stacking invisible windows at the same position.
 // A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.
@@ -166,6 +167,7 @@ let quitCleanupFinished = false
 async function cleanupBeforeQuit(): Promise<void> {
   closeAllWatchers()
   stopWorkspaceIndexWatcher()
+  shutdownBrowserSession()
   await Promise.allSettled([shutdownMcpServers(), shutdownProjectSandbox()])
 }
 

@@ -3,6 +3,7 @@ const randomUUID = () => globalThis.crypto.randomUUID()
 import type { AppStore } from './store.ts'
 import type {
   Message,
+  ModelUsage,
   ToolCall,
   ThreadUsage,
   UsageDelta,
@@ -296,20 +297,50 @@ export function updateUsage(store: AppStore, threadId: string, usage: ThreadUsag
   store.emit('usage_updated', threadId)
 }
 
+function addCacheTokens<T extends ModelUsage>(
+  base: T,
+  prevRead: number | undefined,
+  prevCreation: number | undefined,
+  delta: UsageDelta,
+): T {
+  const next: T = { ...base }
+  if (delta.cacheReadTokens !== undefined || prevRead !== undefined) {
+    next.cacheReadTokens = (prevRead ?? 0) + (delta.cacheReadTokens ?? 0)
+  }
+  if (delta.cacheCreationTokens !== undefined || prevCreation !== undefined) {
+    next.cacheCreationTokens = (prevCreation ?? 0) + (delta.cacheCreationTokens ?? 0)
+  }
+  return next
+}
+
 export function addUsageDelta(store: AppStore, threadId: string, delta: UsageDelta): void {
   const thread = getThreadById(store, threadId)
   if (!thread) return
   const byModel = { ...(thread.usage.byModel ?? {}) }
   const prev = byModel[delta.model] ?? { inputTokens: 0, outputTokens: 0 }
-  byModel[delta.model] = {
-    inputTokens: prev.inputTokens + delta.inputTokens,
-    outputTokens: prev.outputTokens + delta.outputTokens,
-  }
-  updateUsage(store, threadId, {
-    inputTokens: thread.usage.inputTokens + delta.inputTokens,
-    outputTokens: thread.usage.outputTokens + delta.outputTokens,
-    byModel,
-  })
+  byModel[delta.model] = addCacheTokens(
+    {
+      inputTokens: prev.inputTokens + delta.inputTokens,
+      outputTokens: prev.outputTokens + delta.outputTokens,
+    },
+    prev.cacheReadTokens,
+    prev.cacheCreationTokens,
+    delta,
+  )
+  updateUsage(
+    store,
+    threadId,
+    addCacheTokens(
+      {
+        inputTokens: thread.usage.inputTokens + delta.inputTokens,
+        outputTokens: thread.usage.outputTokens + delta.outputTokens,
+        byModel,
+      },
+      thread.usage.cacheReadTokens,
+      thread.usage.cacheCreationTokens,
+      delta,
+    ),
+  )
 }
 
 export function updateContextSnapshot(

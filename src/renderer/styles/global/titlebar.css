@@ -50,16 +50,26 @@
   padding: 3px 10px;
   font-size: var(--font-size-sm);
 }
+.titlebar-panel-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
 .titlebar-btn-icon {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  width: 14px;
-  height: 14px;
-}
-.titlebar-btn-icon .tree-icon-img {
-  width: 14px;
-  height: 14px;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: currentColor;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .titlebar button,
 .titlebar input,

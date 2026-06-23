@@ -8,7 +8,7 @@ import { StreamingMarkdownRenderer } from '../markdown/streaming.ts'
 import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { stripTextToolCallBlocks } from '@shared/agent/parse-text-tool-calls.ts'
-import type { ToolCall } from '@shared/types'
+import type { Message, ToolCall } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { agentActivityLabel } from '../agent-activity.ts'
 import {
@@ -282,20 +282,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     el('span', { class: 'agent-activity-pulse', 'aria-hidden': 'true' }),
     activityLabel,
   )
-  root.append(scrollArea, activityBar)
+  // Queued follow-ups live in a pinned panel below the scroll area so they stay
+  // visible at the bottom of the screen instead of getting buried under the
+  // streaming response inside the scrollable message list.
+  const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
+  root.append(scrollArea, queuedHost, activityBar)
 
   // Inline-edit state for a queued message. Preserved across re-renders so a
   // store-driven rebuild (e.g. pause toggle) keeps the editor and its draft.
   let editingMessageId: string | null = null
   let editingDraft = ''
-
-  function clearQueuedDecorations(msgEl: HTMLElement) {
-    msgEl.classList.remove('msg-queued', 'msg-editing')
-    msgEl.querySelector('.message-queued-badge')?.remove()
-    msgEl.querySelector('.message-queued-ui')?.remove()
-    const textEl = msgEl.querySelector('.message-text') as HTMLElement | null
-    if (textEl) textEl.hidden = false
-  }
 
   function startEditing(messageId: string) {
     const threadId = store.getState().activeThreadId
@@ -399,36 +395,44 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     return wrap
   }
 
-  function decorateQueuedMessage(msgEl: HTMLElement, messageId: string) {
-    msgEl.querySelector('.message-queued-badge')?.remove()
-    msgEl.querySelector('.message-queued-ui')?.remove()
-    msgEl.classList.add('msg-queued')
-    const body = msgEl.querySelector('.message-body')
-    if (!body) return
-    const textEl = msgEl.querySelector('.message-text') as HTMLElement | null
-    const editing = editingMessageId === messageId
-    msgEl.classList.toggle('msg-editing', editing)
-    if (textEl) textEl.hidden = editing
-
-    body.insertBefore(
-      el('span', { class: 'message-queued-badge' }, editing ? 'Editing' : 'Queued'),
-      body.firstChild,
-    )
-    body.append(editing ? buildQueuedEditor(messageId) : buildQueuedActions(messageId))
+  function createQueuedItem(msg: Message): HTMLElement {
+    const editing = editingMessageId === msg.id
+    const item = el('div', {
+      class: editing ? 'msg msg-user msg-queued msg-editing' : 'msg msg-user msg-queued',
+      'data-message-id': msg.id,
+    })
+    const body = el('div', { class: 'message-body' })
+    body.append(el('span', { class: 'message-queued-badge' }, editing ? 'Editing' : 'Queued'))
+    if (editing) {
+      body.append(buildQueuedEditor(msg.id))
+    } else {
+      appendMessageContent(body, msg, api)
+      body.append(buildQueuedActions(msg.id))
+    }
+    item.append(body)
+    return item
   }
 
-  function syncQueuedBadges(threadId: string) {
+  function renderQueuedPanel(threadId: string) {
     if (threadId !== store.getState().activeThreadId) return
     const thread = store.getState().threads.find((t) => t.id === threadId)
-    if (!thread) return
-    const queued = queuedMessageIds(thread)
-    if (editingMessageId && !queued.has(editingMessageId)) stopEditing()
-    for (const msg of thread.messages) {
-      const msgEl = list.querySelector(`[data-message-id="${msg.id}"]`) as HTMLElement | null
-      if (!msgEl || msg.role !== 'user') continue
-      if (queued.has(msg.id)) decorateQueuedMessage(msgEl, msg.id)
-      else clearQueuedDecorations(msgEl)
+    const pending = thread?.pendingMessages ?? []
+    // Drop stale edit state if the edited message is no longer queued.
+    if (editingMessageId && !pending.some((p) => p.messageId === editingMessageId)) {
+      stopEditing()
     }
+    queuedHost.replaceChildren()
+    if (!thread || pending.length === 0) {
+      queuedHost.hidden = true
+      return
+    }
+    const messagesById = new Map(thread.messages.map((m) => [m.id, m]))
+    for (const item of pending) {
+      const msg = messagesById.get(item.messageId)
+      if (!msg || msg.role !== 'user') continue
+      queuedHost.append(createQueuedItem(msg))
+    }
+    queuedHost.hidden = queuedHost.childElementCount === 0
   }
 
   let pinnedToBottom = true
@@ -559,6 +563,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const msg = thread?.messages.find((m) => m.id === msgId)
     if (!msg) return
 
+    // Queued user follow-ups render in the pinned panel, not inline.
+    if (msg.role === 'user' && thread && queuedMessageIds(thread).has(msgId)) {
+      renderQueuedPanel(threadId)
+      return
+    }
+
     const msgEl = el('div', { class: `msg msg-${msg.role}`, 'data-message-id': msgId })
     const body = el('div', { class: 'message-body' })
     appendMessageContent(body, msg, api)
@@ -570,9 +580,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
 
     list.append(msgEl)
-    if (msg.role === 'user' && thread && queuedMessageIds(thread).has(msgId)) {
-      decorateQueuedMessage(msgEl, msgId)
-    }
     // Re-render any tool cards this message already carries (restored threads).
     renderToolCards(msgEl, msg.toolCalls ?? [])
     scrollToBottom(msg.role === 'user')
@@ -594,7 +601,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const thread = getActiveThread(store)
     thread?.messages.forEach((m) => appendMessageEl(store.getState().activeThreadId!, m.id))
     syncTodoPanel()
-    syncQueuedBadges(store.getState().activeThreadId!)
+    renderQueuedPanel(store.getState().activeThreadId!)
     updateScrollButton()
   }
 
@@ -611,7 +618,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
   const unsubs = [
     store.on('message_added', (tid, mid) => appendMessageEl(tid, mid)),
-    store.on('message_queued', (tid) => syncQueuedBadges(tid)),
+    store.on('message_queued', (tid) => renderQueuedPanel(tid)),
     store.on('message_token', (mid) => {
       const thread = getActiveThread(store)
       const msg = thread?.messages.find((m) => m.id === mid)

@@ -9,6 +9,7 @@ import {
 import {
   BASE_SYSTEM_PROMPT,
   BASE_SYSTEM_PROMPT_DIRECT_READS,
+  BROWSER_TOOLS_BLOCK,
   EXTERNAL_API_SAFETY_BLOCK,
 } from './agent-prompt.ts'
 import { buildSemanticSearchPromptBlock } from './semantic-search.ts'
@@ -24,12 +25,14 @@ export async function buildSystemPrompt(opts: {
 
   const basePrompt = subagentsEnabled ? BASE_SYSTEM_PROMPT : BASE_SYSTEM_PROMPT_DIRECT_READS
   const externalApiSafety = getSetting<boolean>('externalApiSafety', false)
+  const browserToolsEnabled = getSetting<boolean>('browserToolsEnabled', false)
   const customInstructions = getSettingTrimmed('customInstructions')
   return (
     basePrompt
       .replace('{SKILLS_TOOLS_LINE}', skillsToolsLine)
       .replace('{WORKSPACE_ROOT}', getWorkspaceRoot() ?? '(none)') +
     (externalApiSafety ? EXTERNAL_API_SAFETY_BLOCK : '') +
+    (browserToolsEnabled ? BROWSER_TOOLS_BLOCK : '') +
     buildSkillsCatalogBlock() +
     (await buildInvokedSkillsBlock(invokedSkills)) +
     buildSemanticSearchPromptBlock() +
