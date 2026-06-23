@@ -379,6 +379,21 @@ export function setThreadTodos(store: AppStore, threadId: string, todos: TodoIte
   store.emit('todos_changed', threadId)
 }
 
+/** Suspend/resume FIFO draining of a thread's queued messages (e.g. while editing). */
+export function setQueuePaused(store: AppStore, threadId: string, paused: boolean): void {
+  const { threads } = store.getState()
+  const thread = threads.find((t) => t.id === threadId)
+  if (!thread || Boolean(thread.queuePaused) === paused) return
+  const updated = threads.map((t) => {
+    if (t.id !== threadId) return t
+    if (paused) return { ...t, queuePaused: true, updatedAt: Date.now() }
+    const { queuePaused: _removed, ...rest } = t
+    return { ...rest, updatedAt: Date.now() }
+  })
+  store.setState({ threads: updated })
+  store.emit('threads_changed')
+}
+
 export function setThreadStatus(
   store: AppStore,
   threadId: string,

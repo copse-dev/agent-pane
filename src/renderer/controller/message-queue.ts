@@ -1,8 +1,13 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { AgentRunPayload } from '@shared/types/skills.ts'
-import type { Message, QueuedUserMessage } from '@shared/types'
-import { clearContextSnapshot, setThreadStatus } from '@shared/store/thread-helpers.ts'
+import type { Message, QueuedUserMessage, UserContent } from '@shared/types'
+import {
+  clearContextSnapshot,
+  setMessageContent,
+  setQueuePaused,
+  setThreadStatus,
+} from '@shared/store/thread-helpers.ts'
 import { syncAgentActivity } from '../agent-activity.ts'
 
 function refreshPayload(
@@ -51,7 +56,7 @@ export function enqueueUserMessage(
 
 export function drainMessageQueue(store: AppStore, api: ApiClient, threadId: string): void {
   const thread = store.getState().threads.find((t) => t.id === threadId)
-  if (!thread || thread.status !== 'idle') return
+  if (!thread || thread.status !== 'idle' || thread.queuePaused) return
   const pending = thread.pendingMessages ?? []
   if (pending.length === 0) return
 
@@ -93,6 +98,8 @@ export function movePendingUserMessagesToEnd(
 
 export function resumePendingQueues(store: AppStore, api: ApiClient): void {
   for (const thread of store.getState().threads) {
+    // A fresh session has no open inline editors, so a persisted pause is stale.
+    if (thread.queuePaused) setQueuePaused(store, thread.id, false)
     if (thread.status === 'idle' && (thread.pendingMessages?.length ?? 0) > 0) {
       drainMessageQueue(store, api, thread.id)
     }
@@ -101,4 +108,89 @@ export function resumePendingQueues(store: AppStore, api: ApiClient): void {
 
 export function queuedMessageIds(thread: { pendingMessages?: QueuedUserMessage[] }): Set<string> {
   return new Set((thread.pendingMessages ?? []).map((item) => item.messageId))
+}
+
+/** The user-authored text portion of a queued payload (the editable bit). */
+export function queuedPayloadText(payload: AgentRunPayload): string {
+  const content = payload.content
+  if (typeof content === 'string') return content
+  return content.find((block) => block.type === 'text')?.text ?? ''
+}
+
+function withPayloadText(content: UserContent, text: string): UserContent {
+  if (typeof content === 'string') return text
+  let replaced = false
+  const next = content.map((block) => {
+    if (block.type !== 'text' || replaced) return block
+    replaced = true
+    return { ...block, text }
+  })
+  return replaced ? next : [...next, { type: 'text' as const, text }]
+}
+
+/**
+ * Persist an inline edit to a queued message: updates both the run payload (what
+ * the agent receives) and the displayed bubble text.
+ */
+export function updateQueuedMessageText(
+  store: AppStore,
+  threadId: string,
+  messageId: string,
+  text: string,
+): void {
+  const thread = store.getState().threads.find((t) => t.id === threadId)
+  const item = thread?.pendingMessages?.find((p) => p.messageId === messageId)
+  if (!item) return
+  const threads = store.getState().threads.map((t) =>
+    t.id !== threadId
+      ? t
+      : {
+          ...t,
+          pendingMessages: (t.pendingMessages ?? []).map((p) =>
+            p.messageId !== messageId
+              ? p
+              : {
+                  ...p,
+                  payload: { ...p.payload, content: withPayloadText(p.payload.content, text) },
+                },
+          ),
+          updatedAt: Date.now(),
+        },
+  )
+  store.setState({ threads })
+  setMessageContent(store, messageId, text)
+  store.emit('threads_changed')
+}
+
+/**
+ * Run a queued message immediately: move it to the front of the queue, lift any
+ * editing pause, then abort the active run. The trailing `done` chunk triggers
+ * the normal FIFO drain, which now dispatches this message first.
+ */
+export function sendQueuedMessageNow(
+  store: AppStore,
+  api: ApiClient,
+  threadId: string,
+  messageId: string,
+): void {
+  const thread = store.getState().threads.find((t) => t.id === threadId)
+  const pending = thread?.pendingMessages ?? []
+  const target = pending.find((p) => p.messageId === messageId)
+  if (!thread || !target) return
+
+  const reordered = [target, ...pending.filter((p) => p.messageId !== messageId)]
+  const threads = store.getState().threads.map((t) => {
+    if (t.id !== threadId) return t
+    const { queuePaused: _removed, ...rest } = t
+    return { ...rest, pendingMessages: reordered, updatedAt: Date.now() }
+  })
+  store.setState({ threads })
+  store.emit('threads_changed')
+
+  if (thread.status === 'running') {
+    // Abort the live run; its `done` chunk drains the reordered queue head.
+    void api.agent.abort(threadId)
+  } else {
+    drainMessageQueue(store, api, threadId)
+  }
 }

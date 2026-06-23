@@ -139,6 +139,58 @@
 .msg-queued .message-body {
   opacity: 0.85;
 }
+.msg-queued.msg-editing .message-body {
+  opacity: 1;
+}
+.message-queued-ui {
+  margin-top: var(--spacing-sm);
+}
+.message-queued-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-xs);
+}
+.queued-action {
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.queued-action:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+.queued-action.queued-send,
+.queued-action.queued-send-now {
+  color: white;
+  background: var(--accent);
+  border-color: transparent;
+}
+.queued-action.queued-send:hover,
+.queued-action.queued-send-now:hover {
+  color: white;
+  filter: brightness(1.08);
+}
+.message-edit-input {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-sm);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.55;
+}
+.message-edit-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
 .input-footer {
   display: flex;
   align-items: center;
