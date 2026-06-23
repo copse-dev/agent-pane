@@ -3,7 +3,7 @@ import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
 const settings = new Map<string, unknown>()
 const apiKeys = new Map<string, string>()
 
-export type KeyProvider = 'anthropic' | 'openai' | 'lmstudio'
+export type KeyProvider = 'anthropic' | 'openai' | 'lmstudio' | 'cursor'
 
 export function getApiKey(provider: KeyProvider): string | null {
   return apiKeys.get(provider) ?? null
@@ -17,8 +17,9 @@ export function setApiKey(provider: KeyProvider, key: string): void {
   apiKeys.set(provider, key.trim())
 }
 
-export function isProviderAvailable(provider: 'anthropic' | 'openai'): boolean {
+export function isProviderAvailable(provider: 'anthropic' | 'openai' | 'cursor'): boolean {
   if (provider === 'anthropic') return !!(process.env.ANTHROPIC_API_KEY || hasApiKey('anthropic'))
+  if (provider === 'cursor') return !!(process.env.CURSOR_API_KEY || hasApiKey('cursor'))
   return !!(process.env.OPENAI_API_KEY || hasApiKey('openai'))
 }
 

@@ -112,6 +112,10 @@ export interface ApiClient {
       error?: string
     }>
   }
+  remoteAgent: {
+    downloadArtifact: (agentId: string, path: string) => Promise<string>
+    artifactImageDataUrl: (agentId: string, path: string) => Promise<string>
+  }
   menu: {
     onSettings: (handler: () => void) => () => void
     onTogglePanel: (handler: () => void) => () => void
@@ -133,11 +137,11 @@ export interface ApiClient {
       webAllowedOrigins: string[]
       webAllowUserApproval: boolean
     }) => Promise<void>
-    getKey: (provider: 'anthropic' | 'openai' | 'lmstudio') => Promise<boolean>
-    setKey: (provider: 'anthropic' | 'openai' | 'lmstudio', key: string) => Promise<void>
-    availableProviders: () => Promise<{ anthropic: boolean; openai: boolean }>
+    getKey: (provider: 'anthropic' | 'openai' | 'lmstudio' | 'cursor') => Promise<boolean>
+    setKey: (provider: 'anthropic' | 'openai' | 'lmstudio' | 'cursor', key: string) => Promise<void>
+    availableProviders: () => Promise<{ anthropic: boolean; openai: boolean; cursor: boolean }>
     validateKey: (
-      provider: 'anthropic' | 'openai',
+      provider: 'anthropic' | 'openai' | 'cursor',
       key: string,
     ) => Promise<{ ok: boolean; error?: string; formatOk?: boolean }>
   }

@@ -42,6 +42,7 @@ export function renderMarkdown(raw: string): string {
   const { text: withPlaceholders, blocks } = extractFencedBlocks(raw)
   let s = escapeHtml(withPlaceholders)
   s = restoreFencedBlocks(s, blocks)
+  s = mapOutsideFencedHtml(s, (seg) => renderArtifactImageTags(seg))
 
   // Tables + inline/block markdown only outside fenced code and mermaid diagrams.
   s = mapOutsideFencedHtml(s, (seg) => parseTables(seg))
@@ -50,13 +51,16 @@ export function renderMarkdown(raw: string): string {
     t = t.replace(/`([^`]+)`/g, '<code>$1</code>')
     t = renderMarkdownLinks(t)
     t = renderBareHttpLinks(t)
-    // Bold around inline code first (`**` + <code> + `**`); then prose bold outside
-    // code spans. A single [^*]+ pass breaks on globs like src/**/*.test.ts inside
-    // <code> and can pair ** across table rows, leaving stray markers (e.g. MCP host**:).
+    // Bold around inline HTML first (`**` + text + <code>/<a>/<img> + text + `**`);
+    // then prose bold outside code spans. A single [^*]+ pass breaks on globs like
+    // src/**/*.test.ts inside <code> and can pair ** across table rows, leaving
+    // stray markers (e.g. MCP host**:).
     t = t.replace(/\*\*(<code>[\s\S]*?<\/code>)\*\*/g, '<strong>$1</strong>')
-    t = applyOutsideCode(t, /\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
-    t = applyOutsideCode(t, /_([^_\n]+)_/g, '<em>$1</em>')
-    t = applyOutsideCode(t, /(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
+    t = renderBoldAroundInlineHtml(t)
+    t = renderItalicAroundInlineHtml(t)
+    t = applyOutsideInlineHtml(t, /\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+    t = applyOutsideInlineHtml(t, /_([^_\n]+)_/g, '<em>$1</em>')
+    t = applyOutsideInlineHtml(t, /(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
     t = t.replace(/^### (.+)$/gm, '<h3>$1</h3>')
     t = t.replace(/^## (.+)$/gm, '<h4>$1</h4>')
     t = t.replace(/^# (.+)$/gm, '<h4>$1</h4>')
@@ -79,11 +83,24 @@ function wrapLooseListItems(text: string): string {
   })
 }
 
-function applyOutsideCode(text: string, pattern: RegExp, replacement: string): string {
+function applyOutsideInlineHtml(text: string, pattern: RegExp, replacement: string): string {
   return text
-    .split(/(<code>[\s\S]*?<\/code>)/g)
+    .split(/(<code>[\s\S]*?<\/code>|<a\b[\s\S]*?<\/a>|<img\b[^>]*>)/g)
     .map((segment, index) => (index % 2 === 1 ? segment : segment.replace(pattern, replacement)))
     .join('')
+}
+
+function renderBoldAroundInlineHtml(text: string): string {
+  return text.replace(
+    /\*\*([^*\n]*<(?:code|a|img)\b[\s\S]*?(?:<\/(?:code|a)>|>)[^*\n]*)\*\*/g,
+    '<strong>$1</strong>',
+  )
+}
+
+function renderItalicAroundInlineHtml(text: string): string {
+  return text
+    .replace(/_([^_\n]*<(?:a|img)\b[\s\S]*?(?:<\/a>|>)[^_\n]*)_/g, '<em>$1</em>')
+    .replace(/(?<!\*)\*([^*\n]*<(?:a|img)\b[\s\S]*?(?:<\/a>|>)[^*\n]*)\*(?!\*)/g, '<em>$1</em>')
 }
 
 /** Only allow safe URL schemes in rendered links. */
@@ -100,6 +117,48 @@ function decodeEscapedHref(raw: string): string {
     .replace(/&#39;/g, "'")
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
+}
+
+function parseHtmlAttributes(tag: string): Record<string, string> {
+  const attrs: Record<string, string> = {}
+  const decodedTag = decodeEscapedHref(tag)
+  for (const match of decodedTag.matchAll(/\b([a-zA-Z][\w:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) {
+    attrs[match[1]!.toLowerCase()] = match[2] ?? match[3] ?? ''
+  }
+  return attrs
+}
+
+function artifactImageSource(rawSrc: string): { path: string; agentId?: string } | null {
+  if (rawSrc.startsWith('/opt/cursor/artifacts/')) {
+    return { path: `artifacts/${rawSrc.slice('/opt/cursor/artifacts/'.length)}` }
+  }
+  if (rawSrc.startsWith('artifacts/')) return { path: rawSrc }
+
+  let url: URL
+  try {
+    url = new URL(rawSrc)
+  } catch {
+    return null
+  }
+  const match = url.pathname.match(/^\/v1\/agents\/([^/]+)\/artifacts\/download$/)
+  const path = url.searchParams.get('path')
+  if (!match?.[1] || !path?.startsWith('artifacts/')) return null
+  return { agentId: decodeURIComponent(match[1]), path }
+}
+
+function renderArtifactImageTags(text: string): string {
+  return text.replace(/&lt;img\b[\s\S]*?\/?&gt;/gi, (tag) => {
+    const attrs = parseHtmlAttributes(tag)
+    const artifact = attrs.src ? artifactImageSource(attrs.src) : null
+    if (!artifact) return tag
+    const alt = attrs.alt ?? 'Remote agent artifact'
+    const agent = artifact.agentId
+      ? ` data-remote-artifact-agent-id="${escapeHtml(artifact.agentId)}"`
+      : ''
+    return `<img class="remote-artifact-image" data-remote-artifact-path="${escapeHtml(
+      artifact.path,
+    )}"${agent} alt="${escapeHtml(alt)}" loading="lazy">`
+  })
 }
 
 function renderedLink(label: string, href: string): string {
@@ -121,11 +180,11 @@ function renderMarkdownLinks(text: string): string {
 }
 
 const BARE_HTTP_URL_RE = /(^|[\s(])((?:https?:\/\/)[^\s<]+)/gi
-const TRAILING_URL_PUNCTUATION_RE = /[),.;:!?]+$/
+const TRAILING_URL_PUNCTUATION_RE = /[),.;:!?_]+$/
 
 function renderBareHttpLinks(text: string): string {
   return text
-    .split(/(<code>[\s\S]*?<\/code>|<a\b[\s\S]*?<\/a>)/g)
+    .split(/(<code>[\s\S]*?<\/code>|<a\b[\s\S]*?<\/a>|<img\b[^>]*>)/g)
     .map((segment, index) => {
       if (index % 2 === 1) return segment
       return segment.replace(BARE_HTTP_URL_RE, (_match, prefix: string, rawUrl: string) => {
@@ -139,9 +198,9 @@ function renderBareHttpLinks(text: string): string {
     .join('')
 }
 
-const BLOCK_START_RE = /^<(pre|ul|ol|h[34]|table|hr|div class="mermaid-diagram\b)/
+const BLOCK_START_RE = /^<(pre|ul|ol|h[34]|table|hr|img|div class="mermaid-diagram\b)/
 const BLOCK_CLOSE_RE = /<\/(pre|ul|ol|h[34]|table|hr|div)>$/
-const CONTAINS_BLOCK_RE = /<(ul|ol|h[34]|pre|table|hr|div class="mermaid-diagram\b)[\s>]/
+const CONTAINS_BLOCK_RE = /<(ul|ol|h[34]|pre|table|hr|img|div class="mermaid-diagram\b)[\s>]/
 const ORDERED_ITEM_RE = /^(\d+)\. (.+)$/
 
 function isOrderedItemLine(line: string): boolean {
