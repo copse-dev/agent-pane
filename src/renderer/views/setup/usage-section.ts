@@ -1,4 +1,5 @@
 import type { ApiClient } from '../../../preload/api.d.ts'
+import type { AppStore } from '@shared/store/store.ts'
 import type { UsagePeriodSummary, UsageSummary } from '@shared/usage/aggregate-usage.ts'
 import {
   formatPeriodHeadline,
@@ -72,6 +73,7 @@ function renderPeriodSummary(
   host: HTMLElement,
   summary: UsagePeriodSummary,
   period: UsagePeriodKey,
+  meta: Pick<UsageSummary, 'ledgerEventCount' | 'trackingStartedAt'>,
 ): void {
   host.replaceChildren()
 
@@ -88,8 +90,14 @@ function renderPeriodSummary(
   if (period !== 'allTime') {
     const note = document.createElement('p')
     note.className = 'field-hint'
+    const trackedSince =
+      meta.trackingStartedAt !== null
+        ? new Date(meta.trackingStartedAt).toLocaleString()
+        : 'not yet'
     note.textContent =
-      'Time windows use the usage ledger recorded from this app version onward. All-time totals include every saved thread.'
+      `Ledger: ${meta.ledgerEventCount} event(s) tracked (since ${trackedSince}). ` +
+      'Time windows include cloud and local models recorded on each agent turn. ' +
+      'All-time totals come from saved threads and may include older usage.'
     host.append(note)
   }
 
@@ -107,9 +115,13 @@ function renderPeriodSummary(
   )
 }
 
-export function createUsageSection(api: ApiClient): {
+export function createUsageSection(
+  api: ApiClient,
+  store?: AppStore,
+): {
   root: HTMLElement
   refresh: () => Promise<void>
+  detach: () => void
 } {
   const root = document.createElement('div')
   root.className = 'usage-section-root'
@@ -138,7 +150,12 @@ export function createUsageSection(api: ApiClient): {
       btn.setAttribute('aria-selected', selected ? 'true' : 'false')
     })
     labelEl.textContent = PERIOD_LABELS[period]
-    if (cachedSummary) renderPeriodSummary(bodyEl, cachedSummary[period], period)
+    if (cachedSummary) {
+      renderPeriodSummary(bodyEl, cachedSummary[period], period, {
+        ledgerEventCount: cachedSummary.ledgerEventCount,
+        trackingStartedAt: cachedSummary.trackingStartedAt,
+      })
+    }
   }
 
   tabBtns.forEach((btn) => {
@@ -159,5 +176,11 @@ export function createUsageSection(api: ApiClient): {
     }
   }
 
-  return { root, refresh }
+  const unsubUsage = store?.on('usage_updated', () => {
+    if (root.closest('.settings-section')?.classList.contains('active')) {
+      void refresh()
+    }
+  })
+
+  return { root, refresh, detach: () => unsubUsage?.() }
 }

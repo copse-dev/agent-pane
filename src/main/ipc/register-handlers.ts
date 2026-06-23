@@ -267,9 +267,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const mainWin = getMainWindow()
     applyAppIcon(mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
   })
-  ipcMain.handle('usage:record', async (event, input: unknown) => {
+  ipcMain.handle('usage:record', (event, input: unknown) => {
     assertMainFrameSender(event, win)
-    await recordUsageEvent(parseUsageRecordInput(input))
+    recordUsageEvent(parseUsageRecordInput(input))
   })
   ipcMain.handle('usage:getSummary', () => getUsageSummary())
   ipcMain.handle('storage:get', (event, key: unknown) => {
