@@ -46,7 +46,7 @@ describe('follow-up suggestion bubbles', () => {
       await expect(changesBubble.$('.follow-up-stat-del')).toHaveText('-1')
 
       const ciBubble = await $('.follow-up-bubble[data-id="debug-ci"]')
-      await expect(ciBubble).toHaveText('Debug CI Failure')
+      await expect(ciBubble).toHaveText('Investigate CI failure')
 
       await expect($('.prompt-input')).toHaveAttribute('placeholder', 'Send follow-up')
 
