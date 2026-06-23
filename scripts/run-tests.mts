@@ -18,6 +18,8 @@ await esbuild.build({
   sourcemap: true,
   external: ['electron', 'node-pty', 'jsdom', '@mozilla/readability', 'turndown'],
   alias: { '@shared': resolve('./src/shared') },
+  // Unit tests cover the directive parser, so they always build with it enabled.
+  define: { __COPSE_TEST_DIRECTIVES__: 'true' },
   plugins: [
     {
       name: 'main-services-test-shims',

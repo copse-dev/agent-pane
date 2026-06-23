@@ -9,6 +9,7 @@ import { renderMarkdown } from '../markdown/renderer.ts'
 import { sanitizeRenderedMarkdown } from '../markdown/sanitize.ts'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
+import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { revealFirstDiffChangeOnNextUpdate } from '../monaco/diff-scroll.ts'
@@ -352,6 +353,7 @@ export function mountContextPanel(
     () => store.getState().workspaceRoot,
   )
   const unbindFileLinks = bindFileReferenceClicks(previewContainer, store, api)
+  const unbindBrowserLinks = bindBrowserLinkClicks(previewContainer, store, api)
 
   return () => {
     unsubs.forEach((u) => u())
@@ -360,6 +362,7 @@ export function mountContextPanel(
     unsubDiffConflict()
     unbindDrop()
     unbindFileLinks()
+    unbindBrowserLinks()
     fileEditor.dispose()
     diffEditor.dispose()
   }

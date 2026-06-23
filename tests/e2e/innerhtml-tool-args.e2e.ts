@@ -26,7 +26,9 @@ describe('innerHTML-safe tool args', () => {
     await $('.tool-card[data-tool-id="tc-write-trap"]').waitForExist({ timeout: 15_000 })
 
     const toolCard = await $('.tool-card[data-tool-id="tc-write-trap"]')
-    await expect(toolCard.$('.tool-name')).toHaveText('Write file')
+    await expect(toolCard.$('.tool-name')).toHaveText('Edited index.html')
+    await expect(toolCard.$('.tool-stat-add')).toHaveText('+1')
+    await expect(toolCard.$('.tool-stat-del')).toHaveText('-0')
     await expect(toolCard).toHaveAttribute('data-status', 'done')
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'innerhtml-tool-args-collapsed.png'))

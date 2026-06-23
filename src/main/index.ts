@@ -86,11 +86,42 @@ app
     const disposeTerminalHandlers = initTerminal(win)
     registerAllHandlers(win, registry)
 
+    // Register before async bootstrap so onboarding/settings can query models on first paint.
+    ipcMain.handle('lmstudio:test', async (_e, url: string, apiKey?: string) => {
+      const result = await testLmStudio(url, apiKey)
+      invalidateLmStudioModelsCache() // refetch the dropdown after a manual test
+      return result
+    })
+
+    ipcMain.handle('lmstudio:models', () => listLmStudioModels())
+
+    ipcMain.handle('lmstudio:detect', async (_e, url?: string, apiKey?: string) =>
+      detectLmStudio(url, apiKey),
+    )
+
+    ipcMain.handle(
+      'lmstudio:download',
+      async (_e, modelId: string, url?: string, apiKey?: string) => {
+        const baseUrl = url ?? 'http://localhost:1234/v1'
+        const result = await downloadLmStudioModel(modelId, baseUrl, apiKey)
+        if (result.ok) invalidateLmStudioModelsCache()
+        return result
+      },
+    )
+
+    ipcMain.handle(
+      'lmstudio:downloadStatus',
+      async (_e, jobId: string, url?: string, apiKey?: string) => {
+        const baseUrl = url ?? 'http://localhost:1234/v1'
+        return getLmStudioDownloadStatus(jobId, baseUrl, apiKey)
+      },
+    )
+
+    // Register before async bootstrap (skills/MCP) so the renderer, which loads
+    // concurrently and fires a context estimate on first paint, never races a
+    // missing handler. The registry these close over is populated lazily below.
     const messageHistory = new Map<string, LLMMessage[]>()
 
-    // Agent IPC must be registered before async bootstrap — the renderer mounts the
-    // composer and calls estimateContext as soon as the window loads, while MCP/skills
-    // init is still in flight.
     ipcMain.handle('agent:run', async (event, threadId: string, rawPrompt: string) => {
       assertMainFrameSender(event, win)
       const { userContent, invokedSkills, priorTodos, workingBrief } =
@@ -169,43 +200,10 @@ app
       return suggestFollowUps(context)
     })
 
-    // Register before async bootstrap so onboarding/settings can query models on first paint.
-    ipcMain.handle('lmstudio:test', async (_e, url: string, apiKey?: string) => {
-      const result = await testLmStudio(url, apiKey)
-      invalidateLmStudioModelsCache() // refetch the dropdown after a manual test
-      return result
-    })
-
-    ipcMain.handle('lmstudio:models', () => listLmStudioModels())
-
-    ipcMain.handle('lmstudio:detect', async (_e, url?: string, apiKey?: string) =>
-      detectLmStudio(url, apiKey),
-    )
-
-    ipcMain.handle(
-      'lmstudio:download',
-      async (_e, modelId: string, url?: string, apiKey?: string) => {
-        const baseUrl = url ?? 'http://localhost:1234/v1'
-        const result = await downloadLmStudioModel(modelId, baseUrl, apiKey)
-        if (result.ok) invalidateLmStudioModelsCache()
-        return result
-      },
-    )
-
-    ipcMain.handle(
-      'lmstudio:downloadStatus',
-      async (_e, jobId: string, url?: string, apiKey?: string) => {
-        const baseUrl = url ?? 'http://localhost:1234/v1'
-        return getLmStudioDownloadStatus(jobId, baseUrl, apiKey)
-      },
-    )
-
     await initSkillsRegistry()
     registerSkillTools(registry)
     await loadMcpServers(registry)
     win.webContents.send('mcp:status_changed', getMcpServerStatuses())
-    // Skill/MCP tools are now on the registry — refresh the composer's context wheel.
-    win.webContents.send('agent:refresh_context_estimate')
 
     disposeTerminal = disposeTerminalHandlers
   })
