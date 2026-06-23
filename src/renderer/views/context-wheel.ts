@@ -1,11 +1,32 @@
-import type { ContextSnapshot } from '@shared/types'
+import type { ContextBreakdown, ContextSegmentKey, ContextSnapshot } from '@shared/types'
 
 const RADIUS = 6
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS
+const SVG_NS = 'http://www.w3.org/2000/svg'
+
+/** Distinct ring/swatch colour per context part. */
+const SEGMENT_COLORS: Record<ContextSegmentKey, string> = {
+  system: '#6aa3ff',
+  tools: '#4fd1c5',
+  mcp: '#b794f4',
+  skills: '#f6ad55',
+  history: '#a0aec0',
+  message: '#68d391',
+}
 
 function formatTokenCount(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
   return String(Math.round(n))
+}
+
+function pctOf(part: number, whole: number): number {
+  if (whole <= 0) return 0
+  return Math.round((part / whole) * 100)
+}
+
+export interface ContextWheelOptions {
+  usageLine?: string | null
+  breakdown?: ContextBreakdown | null
 }
 
 export function createContextWheel(): {
@@ -13,20 +34,20 @@ export function createContextWheel(): {
   update: (
     snapshot: ContextSnapshot | null | undefined,
     running: boolean,
-    options?: { usageLine?: string | null },
+    options?: ContextWheelOptions,
   ) => void
 } {
   const root = document.createElement('div')
   root.className = 'context-wheel'
   root.hidden = true
 
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  const svg = document.createElementNS(SVG_NS, 'svg')
   svg.setAttribute('viewBox', '0 0 16 16')
   svg.setAttribute('width', '14')
   svg.setAttribute('height', '14')
   svg.setAttribute('aria-hidden', 'true')
 
-  const track = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
+  const track = document.createElementNS(SVG_NS, 'circle')
   track.setAttribute('cx', '8')
   track.setAttribute('cy', '8')
   track.setAttribute('r', String(RADIUS))
@@ -34,7 +55,12 @@ export function createContextWheel(): {
   track.setAttribute('stroke-width', '2')
   track.classList.add('context-wheel-track')
 
-  const fill = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
+  // Multi-arc group used in breakdown mode (one arc per context part).
+  const segGroup = document.createElementNS(SVG_NS, 'g')
+  segGroup.setAttribute('transform', 'rotate(-90 8 8)')
+
+  // Single arc used in snapshot (live fill) mode.
+  const fill = document.createElementNS(SVG_NS, 'circle')
   fill.setAttribute('cx', '8')
   fill.setAttribute('cy', '8')
   fill.setAttribute('r', String(RADIUS))
@@ -46,19 +72,120 @@ export function createContextWheel(): {
   const label = document.createElement('span')
   label.className = 'context-wheel-label'
 
-  svg.append(track, fill)
-  root.append(svg, label)
+  const popover = document.createElement('div')
+  popover.className = 'context-wheel-popover'
+  popover.hidden = true
 
-  function update(
-    snapshot: ContextSnapshot | null | undefined,
-    running: boolean,
-    options?: { usageLine?: string | null },
-  ): void {
-    if (!snapshot || snapshot.conversationBudget <= 0) {
-      root.hidden = true
-      return
+  svg.append(track, segGroup, fill)
+  root.append(svg, label, popover)
+
+  let breakdownActive = false
+
+  function showPopover(): void {
+    if (breakdownActive) popover.hidden = false
+  }
+  function hidePopover(): void {
+    popover.hidden = true
+  }
+  root.addEventListener('mouseenter', showPopover)
+  root.addEventListener('mouseleave', hidePopover)
+  root.addEventListener('focusin', showPopover)
+  root.addEventListener('focusout', hidePopover)
+
+  function clearSegments(): void {
+    while (segGroup.firstChild) segGroup.firstChild.remove()
+  }
+
+  function renderBreakdown(breakdown: ContextBreakdown): void {
+    breakdownActive = true
+    root.hidden = false
+    root.classList.add('has-breakdown')
+    root.tabIndex = 0
+    fill.style.display = 'none'
+
+    const { totalTokens, contextWindow, segments } = breakdown
+    const pct = pctOf(totalTokens, contextWindow)
+    label.textContent = `${pct}%`
+
+    // When the draft already exceeds the window, fill the whole ring proportionally.
+    const denom = Math.max(contextWindow, totalTokens, 1)
+    clearSegments()
+    let offset = 0
+    for (const segment of segments) {
+      const len = (segment.tokens / denom) * CIRCUMFERENCE
+      if (len <= 0) continue
+      const arc = document.createElementNS(SVG_NS, 'circle')
+      arc.setAttribute('cx', '8')
+      arc.setAttribute('cy', '8')
+      arc.setAttribute('r', String(RADIUS))
+      arc.setAttribute('fill', 'none')
+      arc.setAttribute('stroke-width', '2')
+      arc.setAttribute('stroke', SEGMENT_COLORS[segment.key])
+      arc.setAttribute('stroke-dasharray', `${len} ${CIRCUMFERENCE}`)
+      arc.setAttribute('stroke-dashoffset', `${-offset}`)
+      segGroup.append(arc)
+      offset += len
     }
 
+    clearPopover()
+    const header = document.createElement('div')
+    header.className = 'context-wheel-popover-header'
+    header.textContent = `Context · ${formatTokenCount(totalTokens)} / ${formatTokenCount(
+      contextWindow,
+    )} (${pct}%)`
+    popover.append(header)
+    for (const segment of segments) {
+      const row = document.createElement('div')
+      row.className = 'context-wheel-popover-row'
+      const swatch = document.createElement('span')
+      swatch.className = 'context-wheel-popover-swatch'
+      swatch.style.background = SEGMENT_COLORS[segment.key]
+      const name = document.createElement('span')
+      name.className = 'context-wheel-popover-name'
+      name.textContent = segment.label
+      const value = document.createElement('span')
+      value.className = 'context-wheel-popover-value'
+      value.textContent = `${formatTokenCount(segment.tokens)} · ${pctOf(
+        segment.tokens,
+        contextWindow,
+      )}%`
+      row.append(swatch, name, value)
+      popover.append(row)
+    }
+
+    const lines = segments.map(
+      (s) => `${s.label}: ${formatTokenCount(s.tokens)} (${pctOf(s.tokens, contextWindow)}%)`,
+    )
+    root.title = [
+      `Context: ${formatTokenCount(totalTokens)} / ${formatTokenCount(contextWindow)} (${pct}%)`,
+      ...lines,
+    ].join('\n')
+    root.setAttribute(
+      'aria-label',
+      `Estimated context ${pct}% of window, ${formatTokenCount(totalTokens)} of ${formatTokenCount(
+        contextWindow,
+      )} tokens`,
+    )
+  }
+
+  function clearPopover(): void {
+    while (popover.firstChild) popover.firstChild.remove()
+  }
+
+  function resetToSnapshotMode(): void {
+    breakdownActive = false
+    hidePopover()
+    root.classList.remove('has-breakdown')
+    root.removeAttribute('tabindex')
+    fill.style.display = ''
+    clearSegments()
+  }
+
+  function renderSnapshot(
+    snapshot: ContextSnapshot,
+    running: boolean,
+    options?: ContextWheelOptions,
+  ): void {
     const ratio = Math.min(1, Math.max(0, snapshot.fillRatio))
     const pct = Math.round(ratio * 100)
     const visible = running || ratio > 0.01
@@ -75,6 +202,25 @@ export function createContextWheel(): {
       'aria-label',
       `Context ${pct}% used, ${formatTokenCount(snapshot.conversationTokens)} of ${formatTokenCount(snapshot.conversationBudget)} tokens${ariaUsage}`,
     )
+  }
+
+  function update(
+    snapshot: ContextSnapshot | null | undefined,
+    running: boolean,
+    options?: ContextWheelOptions,
+  ): void {
+    const breakdown = options?.breakdown
+    if (!running && breakdown && breakdown.totalTokens > 0 && breakdown.contextWindow > 0) {
+      renderBreakdown(breakdown)
+      return
+    }
+
+    resetToSnapshotMode()
+    if (!snapshot || snapshot.conversationBudget <= 0) {
+      root.hidden = true
+      return
+    }
+    renderSnapshot(snapshot, running, options)
   }
 
   return { root, update }

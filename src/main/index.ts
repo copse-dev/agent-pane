@@ -35,6 +35,7 @@ import {
   downloadLmStudioModel,
   getLmStudioDownloadStatus,
 } from './services/lm-studio-setup.ts'
+import { estimateContextBreakdown } from './services/context-estimate.ts'
 import { suggestFollowUps } from './services/follow-up-service.ts'
 import type { FollowUpContext } from '@shared/follow-ups/types.ts'
 import { storageGet, storageSet } from './services/storage.ts'
@@ -139,6 +140,29 @@ app
       })
       messageHistory.set(threadId, result.messages)
       storageSet(`llm-history:${threadId}`, result.messages)
+    })
+
+    ipcMain.handle('agent:estimateContext', async (_e, threadId: string, payloadJson: string) => {
+      const {
+        draftText = '',
+        invokedSkills = [],
+        imageCount = 0,
+      } = JSON.parse(payloadJson) as {
+        draftText?: string
+        invokedSkills?: string[]
+        imageCount?: number
+      }
+      if (!messageHistory.has(threadId)) {
+        const stored = storageGet(`llm-history:${threadId}`)
+        if (Array.isArray(stored)) messageHistory.set(threadId, stored as LLMMessage[])
+      }
+      const priorMessages = messageHistory.get(threadId) ?? []
+      return estimateContextBreakdown(registry, {
+        draftText,
+        invokedSkills,
+        imageCount,
+        priorMessages,
+      })
     })
 
     ipcMain.handle('agent:clearHistory', (_e, threadId: string) => {
