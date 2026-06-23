@@ -44,6 +44,7 @@ const ciExclude = [
   './tests/e2e/todo-display.e2e.ts',
   './tests/e2e/tool-display-live-mock.e2e.ts',
   './tests/e2e/double-submit.e2e.ts',
+  './tests/e2e/draft-prompt.e2e.ts',
 ]
 
 export const config: Options.Testrunner = {
