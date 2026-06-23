@@ -61,6 +61,11 @@ them, but `npm run build:release` (used by `pack:mac`/packaging) sets `COPSE_REL
 dead-code-eliminates the parser and `build.mts` fails the build if any directive marker survives.
 Shipped apps therefore never contain the directive parser.
 
+For multi-turn e2e, specs can register an **ordered mock script** (regex `when` → tool or text
+response) via `window.__copseE2e.setMockScript([…])` before submitting natural-language prompts.
+Define the script in the spec file next to the prompts it drives (`tests/e2e/mock-script-multiturn.e2e.ts`).
+The legacy `[[mcp:…]]` inline directives remain for one-shot tool steering.
+
 ### Before committing
 
 Before opening a PR, rebase onto **`origin/main`** — GitHub PR CI tests the merge of base into head, not your branch tip alone.

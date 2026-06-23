@@ -61,6 +61,12 @@ import {
   setWorkspaceTrustAndReload,
 } from '../services/mcp-registry.ts'
 import { isWorkspaceTrusted } from '../services/workspace-trust.ts'
+import {
+  setMockScript,
+  clearMockScript,
+  mockScriptCursorForTests,
+  type MockScriptStep,
+} from '@shared/llm/mock-script.ts'
 import { applyAppIcon } from '../app-icon.ts'
 import { getMainWindow } from '../windows/create-main-window.ts'
 import { validateApiKey } from '../services/validate-api-key.ts'
@@ -295,4 +301,34 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     win.webContents.send('mcp:status_changed', statuses)
     return statuses
   })
+
+  // E2e-only: register an ordered mock script so specs can drive multi-turn flows
+  // with natural-language prompts (see mock-script.ts). Not exposed in release UX.
+  if (process.env.COPSE_E2E === '1') {
+    const mockScriptStepSchema = z
+      .object({
+        when: z.string().min(1).max(500),
+        tool: z
+          .object({
+            name: z.string().min(1).max(128),
+            args: z.record(z.string(), z.unknown()),
+          })
+          .optional(),
+        text: z.string().max(10_000).optional(),
+      })
+      .refine((step) => step.tool !== undefined || step.text !== undefined, {
+        message: 'mock script step needs tool or text',
+      })
+
+    ipcMain.handle('test:setMockScript', (event, raw: unknown) => {
+      assertMainFrameSender(event, win)
+      const steps = parseIpcArgs(z.array(mockScriptStepSchema).max(32), [raw])
+      setMockScript(steps as MockScriptStep[])
+      return { steps: steps.length, cursor: mockScriptCursorForTests() }
+    })
+    ipcMain.handle('test:clearMockScript', (event) => {
+      assertMainFrameSender(event, win)
+      clearMockScript()
+    })
+  }
 }
