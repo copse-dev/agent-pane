@@ -2,6 +2,7 @@ import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { discoverCursorPluginRoots, resolvePluginSkillsDir } from './cursor-plugins.ts'
+import { listBundledCursorPluginRoots } from './bundled-cursor-skills.ts'
 import { getSetting } from './settings.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import {
@@ -132,6 +133,13 @@ async function collectDiscoveryRoots(): Promise<Array<{ root: string; source: Sk
 
   for (const root of userSkillRoots()) {
     if (await pathExists(root)) roots.push({ root, source: 'user' })
+  }
+
+  if (getSetting<boolean>('bundledCursorSkillsEnabled', true)) {
+    for (const pluginRoot of await listBundledCursorPluginRoots()) {
+      const skillsDir = await resolvePluginSkillsDir(pluginRoot)
+      if (skillsDir) roots.push({ root: skillsDir, source: 'bundled' })
+    }
   }
 
   const workspace = getWorkspaceRoot()
