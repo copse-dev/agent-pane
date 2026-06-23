@@ -256,5 +256,11 @@ if (process.env.COPSE_E2E === '1') {
     getErrorToasts() {
       return [...errorToasts]
     },
+    setMockScript(script: unknown) {
+      return ipcRenderer.invoke('test:setMockScript', script)
+    },
+    clearMockScript() {
+      return ipcRenderer.invoke('test:clearMockScript')
+    },
   })
 }
