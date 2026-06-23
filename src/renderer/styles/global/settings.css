@@ -77,7 +77,11 @@
 .settings-content {
   flex: 1;
   overflow-y: auto;
-  padding: var(--spacing-xl);
+  /* No bottom padding: a sticky footer cannot extend past its containing
+     block's content box, so bottom padding here would leave a gap below the
+     sticky .settings-buttons bar that scrolled content shows through. The
+     footer carries its own bottom padding instead. */
+  padding: var(--spacing-xl) var(--spacing-xl) 0;
   max-width: 720px;
 }
 .settings-section {
@@ -113,6 +117,7 @@
   justify-content: flex-end;
   margin-top: var(--spacing-xl);
   padding-top: var(--spacing-lg);
+  padding-bottom: var(--spacing-xl);
   border-top: 1px solid var(--border);
   position: sticky;
   bottom: 0;
