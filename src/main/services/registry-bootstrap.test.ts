@@ -7,7 +7,10 @@ import { createRegistry, registerSkillTools } from './registry-bootstrap.ts'
 import { refreshSkillsRegistry, setSkillsForTest } from './skills-registry.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 import { setSetting } from './settings.test-shim.ts'
-import { setBundledCursorSkillsRootForTest, resetBundledCursorSkillsRootForTest } from './bundled-cursor-skills.ts'
+import {
+  setBundledCursorSkillsRootForTest,
+  resetBundledCursorSkillsRootForTest,
+} from './bundled-cursor-skills.ts'
 
 describe('registerSkillTools', () => {
   let tempRoot = ''
