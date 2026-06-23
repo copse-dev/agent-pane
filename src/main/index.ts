@@ -24,6 +24,7 @@ import { initTerminal } from './ipc/terminal.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
 import { initSkillsRegistry } from './services/skills-registry.ts'
 import { parseAgentRunPayload } from '@shared/agent/parse-agent-run-payload.ts'
+import type { AgentHost } from '@shared/agent/agent-host.ts'
 import {
   runAgent,
   abortAgent,
@@ -85,6 +86,14 @@ app
     applyAppIcon([win])
     buildAppMenu(win)
     const registry = createRegistry()
+    // The only Electron-specific seam the agent run needs: forward stream chunks
+    // to the renderer. Injecting it as an AgentHost keeps runAgent free of BrowserWindow.
+    // Guard against a window destroyed mid-run (e.g. closed while the agent streams).
+    const agentHost: AgentHost = {
+      emit: (threadId, chunk) => {
+        if (!win.isDestroyed()) win.webContents.send('agent:chunk', threadId, chunk)
+      },
+    }
 
     initApproval(win)
     initDiffQueue(win)
@@ -142,7 +151,7 @@ app
       }
 
       const priorMessages = messageHistory.get(threadId) ?? []
-      const result = await runAgent(threadId, userContent, priorMessages, win, registry, {
+      const result = await runAgent(threadId, userContent, priorMessages, agentHost, registry, {
         invokedSkills,
         priorTodos,
         ...(workingBrief !== undefined ? { workingBrief } : {}),
