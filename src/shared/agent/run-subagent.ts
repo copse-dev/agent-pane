@@ -110,6 +110,7 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
         role: 'assistant',
         content: '',
         toolCalls: [],
+        createdAt: Date.now(),
       }
       session.messages.push(msg)
       toolSinceText = false
@@ -133,12 +134,19 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
   // the loop emits (#58). Each chunk reflects exactly one stream, so subagent
   // usage is attributed once and never read from the shared mutable
   // provider.lastUsage that the parent also writes to (#112).
-  const recordUsage = (input: number, output: number) => {
+  const recordUsage = (chunk: Extract<StreamChunk, { type: 'usage' }>) => {
     const prev = session.usage ?? { inputTokens: 0, outputTokens: 0 }
-    session.usage = {
-      inputTokens: prev.inputTokens + input,
-      outputTokens: prev.outputTokens + output,
+    const next: NonNullable<SubagentSession['usage']> = {
+      inputTokens: prev.inputTokens + chunk.inputTokens,
+      outputTokens: prev.outputTokens + chunk.outputTokens,
     }
+    if (chunk.cacheReadTokens !== undefined || prev.cacheReadTokens !== undefined) {
+      next.cacheReadTokens = (prev.cacheReadTokens ?? 0) + (chunk.cacheReadTokens ?? 0)
+    }
+    if (chunk.cacheCreationTokens !== undefined || prev.cacheCreationTokens !== undefined) {
+      next.cacheCreationTokens = (prev.cacheCreationTokens ?? 0) + (chunk.cacheCreationTokens ?? 0)
+    }
+    session.usage = next
   }
 
   try {
@@ -156,7 +164,7 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
         executeTool(name, args, signal),
       onChunk: (chunk: StreamChunk) => {
         if (chunk.type === 'usage') {
-          recordUsage(chunk.inputTokens, chunk.outputTokens)
+          recordUsage(chunk)
         }
         if (chunk.type === 'text') {
           const msgId = ensureAssistantMessage()
@@ -219,14 +227,24 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
 
     session.status = 'done'
     session.summary = summary
-    onSubagentChunk({ type: 'subagent_done', parentToolCallId, summary })
+    onSubagentChunk({
+      type: 'subagent_done',
+      parentToolCallId,
+      summary,
+      ...(session.usage ? { usage: session.usage } : {}),
+    })
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err)
     session.status = 'error'
     session.summary = `Subagent error: ${error}`
     summary = session.summary
     onSubagentChunk({ type: 'subagent_error', parentToolCallId, error })
-    onSubagentChunk({ type: 'subagent_done', parentToolCallId, summary })
+    onSubagentChunk({
+      type: 'subagent_done',
+      parentToolCallId,
+      summary,
+      ...(session.usage ? { usage: session.usage } : {}),
+    })
   }
 
   return { session, summary }
