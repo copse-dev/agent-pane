@@ -86,8 +86,15 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
     changesIcon(),
     'Changes',
   )
+  const panelControls = el(
+    'div',
+    { class: 'titlebar-panel-controls' },
+    filesBtn,
+    terminalBtn,
+    changesBtn,
+  )
 
-  root.append(leftCluster, dragRegion, filesBtn, terminalBtn, changesBtn)
+  root.append(leftCluster, dragRegion, panelControls)
 
   filesBtn.addEventListener('click', () => {
     toggleRightPanelWithWorkspace(store, _api, 'explorer')

@@ -50,6 +50,13 @@
   padding: 3px 10px;
   font-size: var(--font-size-sm);
 }
+.titlebar-panel-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
 .titlebar-btn-icon {
   flex-shrink: 0;
   display: inline-flex;
