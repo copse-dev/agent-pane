@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Privacy Policy — Copse</title>
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      .privacy-container {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: var(--spacing-lg) var(--spacing-md);
+      }
+
+      .privacy-container h1 {
+        font-size: 2.5rem;
+        margin-bottom: var(--spacing-sm);
+        background: linear-gradient(135deg, var(--color-wave-start), var(--color-wave-end));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      .privacy-container .back-link {
+        display: inline-block;
+        margin-bottom: var(--spacing-md);
+        color: var(--color-text-light);
+        text-decoration: none;
+      }
+
+      .privacy-container .back-link:hover {
+        color: var(--color-primary);
+      }
+
+      .privacy-container h2 {
+        font-size: 1.5rem;
+        margin-top: var(--spacing-lg);
+        margin-bottom: var(--spacing-sm);
+        color: var(--color-text);
+      }
+
+      .privacy-container h3 {
+        font-size: 1.125rem;
+        margin-top: var(--spacing-md);
+        margin-bottom: var(--spacing-xs);
+        color: var(--color-text);
+      }
+
+      .privacy-container p {
+        color: var(--color-text-light);
+        margin-bottom: var(--spacing-sm);
+        line-height: 1.7;
+      }
+
+      .privacy-container ul {
+        margin: 0 0 var(--spacing-sm) 1.25rem;
+        color: var(--color-text-light);
+      }
+
+      .privacy-container li {
+        margin-bottom: 6px;
+      }
+
+      .privacy-container .short-version {
+        background: var(--color-white);
+        border-left: 3px solid var(--color-primary);
+        padding: var(--spacing-md);
+        border-radius: var(--border-radius-sm);
+        margin-bottom: var(--spacing-md);
+      }
+
+      .privacy-container .short-version p {
+        margin-bottom: 4px;
+      }
+
+      .privacy-container .date {
+        font-size: 0.875rem;
+        color: var(--color-text-light);
+        opacity: 0.7;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="privacy-container">
+      <a class="back-link" href="index.html">← Back to Copse</a>
+
+      <h1>Privacy Policy</h1>
+      <p class="date">Last updated: June 2025</p>
+
+      <div class="short-version">
+        <p>
+          <strong>Your data stays on your machine.</strong> Copse is an offline-first desktop app.
+          It doesn't send your code, prompts, or conversations to any server unless you explicitly
+          choose to use a cloud model provider.
+        </p>
+      </div>
+
+      <h2>The Short Version</h2>
+      <ul>
+        <li><strong>No cloud by default.</strong> Copse only connects to the internet when you
+          configure a cloud model (Anthropic, OpenAI) or an LM Studio server on another machine.</li>
+        <li><strong>No telemetry.</strong> No analytics, no crash reporting, no usage data
+          collection. We don't know how often you use the app or what you work on.</li>
+        <li><strong>No accounts.</strong> There's no signup, no login, no user identifier.</li>
+        <li><strong>Your API keys stay local.</strong> They're stored in your machine's settings and
+          never transmitted to Copse's servers — because Copse doesn't have any.</li>
+      </ul>
+
+      <h2>What Copse Does with Your Data</h2>
+
+      <h3>On-device processing (default)</h3>
+      <p>
+        When you use a local model (e.g. via LM Studio), everything happens on your machine. Your
+        prompts, your code, your conversations — all stay local. No data leaves your computer.
+      </p>
+
+      <h3>Cloud model providers (optional)</h3>
+      <p>
+        If you configure a cloud model, your prompts and conversation history are sent directly to
+        that provider's API (Anthropic, OpenAI, etc.). This is handled by the app's main process
+        talking directly to the provider's servers — Copse itself never receives, stores, or
+        intermediates your data.
+      </p>
+      <p>
+        The provider's own privacy policy applies to that data. Copse has no control over what
+        they store or how they use it.
+      </p>
+
+      <h3>MCP servers (optional)</h3>
+      <p>
+        If you connect MCP servers, those servers may make network requests. Copse does not
+        intercept, log, or store data flowing through MCP servers. You configure and approve each
+        server individually.
+      </p>
+
+      <h3>Local storage</h3>
+      <p>
+        Copse stores minimal data locally on your machine:
+      </p>
+      <ul>
+        <li>Settings and configuration (model URLs, API key references, UI preferences)</li>
+        <li>Conversation history (stored locally, encrypted at rest if you enable it)</li>
+        <li>Project metadata (open folders, recent files)</li>
+        <li>LM Studio model listings (cached locally for performance)</li>
+      </ul>
+      <p>
+        None of this data is transmitted to any external server unless you explicitly configure a
+        cloud model or MCP server that does so.
+      </p>
+
+      <h2>What Copse Does Not Do</h2>
+
+      <h3>No analytics or telemetry</h3>
+      <p>
+        Copse includes no analytics, crash reporting, usage tracking, or telemetry of any kind.
+        We don't know:
+      </p>
+      <ul>
+        <li>How often you use the app</li>
+        <li>What projects you're working on</li>
+        <li>What prompts you send</li>
+        <li>What models you use</li>
+        <li>Whether the app crashes</li>
+      </ul>
+      <p>Your usage is completely private.</p>
+
+      <h3>No data collection</h3>
+      <p>
+        Copse does not collect, transmit, or store any data on external servers. There are no
+        servers operated by Copse that receive user data. The only network connections the app
+        makes are:
+      </p>
+      <ul>
+        <li>Direct connections to cloud model APIs you configure (Anthropic, OpenAI, etc.)</li>
+        <li>Connections to LM Studio on your local network (if configured)</li>
+        <li>Connections to MCP servers you configure (if any)</li>
+      </ul>
+
+      <h3>No third-party SDKs</h3>
+      <p>
+        Copse contains no third-party analytics SDKs, crash reporters, or tracking libraries.
+        Every network request originates from the app's own code and goes only to destinations you
+        explicitly configure.
+      </p>
+
+      <h2>Permissions</h2>
+      <p>Copse requests only the permissions needed for its features:</p>
+      <ul>
+        <li><strong>File system access</strong> — Required to read and write your project files</li>
+        <li><strong>Network access</strong> — Only used when you configure cloud models or MCP
+          servers. Local mode requires no network access.</li>
+        <li><strong>Shell access</strong> — Only when you approve a command. macOS seatbelt
+          sandbox provides additional containment.</li>
+        <li><strong>Clipboard access</strong> — Optional, for copying content between the editor
+          and chat</li>
+      </ul>
+
+      <h2>Security</h2>
+      <p>
+        Copse is designed with security as a core principle:
+      </p>
+      <ul>
+        <li>API keys are stored locally and encrypted at rest</li>
+        <li>Shell commands run through approval prompts and a macOS seatbelt sandbox</li>
+        <li>Package installs are detected and routed through Socket Firewall with scripts disabled</li>
+        <li>MCP servers require per-server approval before spawning</li>
+        <li>All data stays on your machine unless you explicitly configure cloud providers</li>
+      </ul>
+
+      <h2>Open Source</h2>
+      <p>
+        Copse is open source. You can review our code at any time to verify these privacy claims:
+      </p>
+      <p>
+        <a href="https://github.com/jonathanKingston/agent-pane">View Source Code on GitHub</a>
+      </p>
+
+      <h2>Contact</h2>
+      <p>
+        If you have questions about this privacy policy or how Copse handles data, please open an
+        issue on our GitHub repository.
+      </p>
+    </div>
+  </body>
+</html>
