@@ -43,6 +43,7 @@ import { getMainWindow } from './windows/create-main-window.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
 import { clearRemoteAgentSession } from './services/remote-agent-client.ts'
 import { shutdownBrowserSession } from './services/browser/session-manager.ts'
+import { destroyAllTerminalSessions } from './services/terminal-service.ts'
 
 // Prevent multiple instances stacking invisible windows at the same position.
 // A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.
@@ -80,7 +81,7 @@ app
     initApproval(win)
     initDiffQueue(win)
     initFsWatcher(win)
-    initTerminal(win)
+    const disposeTerminalHandlers = initTerminal(win)
     registerAllHandlers(win, registry)
 
     // Register before async bootstrap so onboarding/settings can query models on first paint.
@@ -184,13 +185,19 @@ app
       const context = JSON.parse(contextJson) as FollowUpContext
       return suggestFollowUps(context)
     })
+
+    disposeTerminal = disposeTerminalHandlers
   })
   .catch(console.error)
 
 let quitCleanupStarted = false
 let quitCleanupFinished = false
+let disposeTerminal: (() => void) | undefined
 
 async function cleanupBeforeQuit(): Promise<void> {
+  destroyAllTerminalSessions()
+  disposeTerminal?.()
+  disposeTerminal = undefined
   closeAllWatchers()
   stopWorkspaceIndexWatcher()
   shutdownBrowserSession()
@@ -199,6 +206,7 @@ async function cleanupBeforeQuit(): Promise<void> {
 
 app.on('before-quit', (event) => {
   if (quitCleanupFinished) return
+  destroyAllTerminalSessions()
   event.preventDefault()
   if (quitCleanupStarted) return
   quitCleanupStarted = true

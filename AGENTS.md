@@ -40,6 +40,8 @@ No real model key is required to exercise core functionality. With neither `ANTH
 
 ### Before committing
 
+Before opening a PR, rebase onto **`origin/main`** — GitHub PR CI tests the merge of base into head, not your branch tip alone.
+
 Agents should run **`npm run check`** before creating a commit. That runs typecheck, ESLint,
 Prettier, the dead-code guard (`check:dead-code` — fails on `src/**/*.ts` files that nothing in
 the build graph imports), and unit tests (`npm test`) — the same fast gates CI runs before
