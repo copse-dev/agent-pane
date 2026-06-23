@@ -22,7 +22,7 @@ import { initMentionPicker } from './mention-picker.ts'
 import { initSkillPicker } from './skill-picker.ts'
 import { resolveSkillInvocation } from '@shared/skills/parse-skill-invocation.ts'
 import { buildSkillUserText } from '@shared/skills/build-skill-user-content.ts'
-import type { UserContent } from '@shared/types'
+import type { ContextBreakdown, UserContent } from '@shared/types'
 import type { AgentRunPayload, SkillSummary } from '@shared/types/skills.ts'
 import { mountFooterModelPicker } from './footer-model-picker.ts'
 import { mountFooterBranchStatus } from './footer-branch-status.ts'
@@ -144,6 +144,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   let attachedImages: { dataUrl: string; mimeType: string }[] = []
   let mismatchBranch: string | null = null
   let checkoutInProgress = false
+  let lastBreakdown: ContextBreakdown | null = null
 
   function getActiveThreadId() {
     return store.getState().activeThreadId
@@ -170,10 +171,14 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     const thread = getThreadById(store, id)
     textarea.value = thread?.draftPrompt ?? ''
     activeComposerThreadId = id
+    // New thread → drop the prior thread's estimate and recompute for this one.
+    lastBreakdown = null
+    scheduleContextEstimate(0)
   }
 
   let draftSaveTimer: ReturnType<typeof setTimeout> | null = null
   textarea.addEventListener('input', () => {
+    scheduleContextEstimate()
     const id = getActiveThreadId()
     if (!id) return
     if (draftSaveTimer !== null) clearTimeout(draftSaveTimer)
@@ -239,9 +244,27 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     const running = thread?.status === 'running'
     const usageText = usageSummaryText()
     const compact = footerCompact.isCompact()
-    const tuckUsageIntoWheel = compact && !contextWheel.root.hidden
-    contextWheel.update(thread?.contextSnapshot, running, {
+    const snapshot = thread?.contextSnapshot
+    const snapshotVisible =
+      !!snapshot && snapshot.conversationBudget > 0 && (running || snapshot.fillRatio > 0.01)
+    const snapshotUsable =
+      !!snapshot && snapshot.conversationBudget > 0 && snapshot.fillRatio > 0.01
+    const draftNonEmpty =
+      textarea.value.trim().length > 0 ||
+      attachedFiles.length > 0 ||
+      attachedTextBlocks.length > 0 ||
+      attachedImages.length > 0
+    // Show the pre-send breakdown while composing (or on fresh threads with no live
+    // snapshot); keep the measured live snapshot once a run has produced one.
+    const showBreakdown =
+      !running &&
+      !!lastBreakdown &&
+      lastBreakdown.totalTokens > 0 &&
+      (!snapshotUsable || draftNonEmpty)
+    const tuckUsageIntoWheel = compact && !showBreakdown && snapshotVisible
+    contextWheel.update(snapshot, running, {
       usageLine: tuckUsageIntoWheel ? usageText : null,
+      breakdown: showBreakdown ? lastBreakdown : null,
     })
     contextWheel.root.classList.toggle('is-interactive', tuckUsageIntoWheel)
     if (!usageText) {
@@ -254,6 +277,52 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     footerOverflow.update()
     updateState()
     updateQueueIndicator()
+  }
+
+  let estimateTimer: ReturnType<typeof setTimeout> | null = null
+  let estimateSeq = 0
+
+  function composeEstimatePayload(): string {
+    const rawText = textarea.value.trim()
+    const skillNames = (skillsCache ?? []).map((skill) => skill.name)
+    const invocation = resolveSkillInvocation(rawText, skillNames)
+    const invokedSkills =
+      invocation && (skillsCache ?? []).some((skill) => skill.name === invocation.skillName)
+        ? [invocation.skillName]
+        : []
+    const draftText = buildTextWithAttachments(rawText, attachedFiles, attachedTextBlocks)
+    return JSON.stringify({ draftText, invokedSkills, imageCount: attachedImages.length })
+  }
+
+  async function runContextEstimate(): Promise<void> {
+    const id = getActiveThreadId()
+    if (!id) {
+      if (lastBreakdown !== null) {
+        lastBreakdown = null
+        updateFooter()
+      }
+      return
+    }
+    const seq = ++estimateSeq
+    const payload = composeEstimatePayload()
+    let breakdown: ContextBreakdown
+    try {
+      breakdown = await api.agent.estimateContext(id, payload)
+    } catch {
+      return
+    }
+    // Drop results that arrived after a newer request or a thread switch.
+    if (seq !== estimateSeq || getActiveThreadId() !== id) return
+    lastBreakdown = breakdown
+    updateFooter()
+  }
+
+  function scheduleContextEstimate(delay = 300): void {
+    if (estimateTimer !== null) clearTimeout(estimateTimer)
+    estimateTimer = setTimeout(() => {
+      estimateTimer = null
+      void runContextEstimate()
+    }, delay)
   }
 
   submitBtn.addEventListener('click', () => {
@@ -415,6 +484,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     attachedTextBlocks = []
     attachedImages = []
     clear(chips)
+    scheduleContextEstimate(0)
   }
 
   function addChip(file: { path: string; content: string }) {
@@ -427,9 +497,11 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     remove.addEventListener('click', () => {
       attachedFiles = attachedFiles.filter((f) => f.path !== file.path)
       chip.remove()
+      scheduleContextEstimate()
     })
     chip.append(remove)
     chips.append(chip)
+    scheduleContextEstimate()
   }
 
   function addTextChip(content: string, explicitLabel?: string) {
@@ -444,9 +516,11 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     remove.addEventListener('click', () => {
       attachedTextBlocks = attachedTextBlocks.filter((b) => b.id !== id)
       chip.remove()
+      scheduleContextEstimate()
     })
     chip.append(remove)
     chips.append(chip)
+    scheduleContextEstimate()
   }
 
   function addImageChip(dataUrl: string, mimeType: string) {
@@ -462,9 +536,11 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     remove.addEventListener('click', () => {
       attachedImages = attachedImages.filter((i) => i.dataUrl !== dataUrl)
       chip.remove()
+      scheduleContextEstimate()
     })
     chip.append(thumb, remove)
     chips.append(chip)
+    scheduleContextEstimate()
   }
 
   function readAsDataUrl(blob: Blob): Promise<string> {
@@ -528,6 +604,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const unsubWorkspace = store.on('workspace_changed', () => {
     skillsCache = null
     refreshSkillsCache()
+    // Skills, tools, and instructions are workspace-scoped — re-estimate.
+    scheduleContextEstimate(0)
   })
 
   const skillPicker = initSkillPicker({
@@ -539,7 +617,11 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const unsubs = [
     store.on('composer_draft_flush', persistComposerDraft),
     store.on('thread_status_changed', (tid) => {
-      if (tid === getActiveThreadId()) updateFooter()
+      if (tid === getActiveThreadId()) {
+        updateFooter()
+        // A finished run changes the persisted history; refresh the estimate.
+        scheduleContextEstimate(0)
+      }
     }),
     store.on('message_queued', (tid) => {
       if (tid === getActiveThreadId()) updateQueueIndicator()
@@ -562,6 +644,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     store.on('settings_changed', () => {
       modelPicker.refresh()
       updateFooter()
+      // Model / subagent changes alter the context window and tool set.
+      scheduleContextEstimate(0)
     }),
   ]
 
@@ -573,8 +657,10 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
 
   updateFooter()
   syncComposerThread()
+  scheduleContextEstimate(0)
   return () => {
     if (draftSaveTimer !== null) clearTimeout(draftSaveTimer)
+    if (estimateTimer !== null) clearTimeout(estimateTimer)
     if (activeComposerThreadId) {
       setThreadDraftPrompt(store, activeComposerThreadId, textarea.value)
     }
