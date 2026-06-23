@@ -105,6 +105,13 @@ export interface IpcInvokeMap {
   // App icon
   'app-icon:apply': { args: []; result: void }
 
+  // Usage ledger
+  'usage:record': {
+    args: [input: import('@shared/usage/usage-event.ts').UsageRecordInput]
+    result: void
+  }
+  'usage:getSummary': { args: []; result: import('@shared/usage/aggregate-usage.ts').UsageSummary }
+
   // Storage (generic electron-store access)
   'storage:get': { args: [key: string]; result: unknown }
   'storage:set': { args: [key: string, value: unknown]; result: void }

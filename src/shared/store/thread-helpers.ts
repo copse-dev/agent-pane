@@ -354,6 +354,7 @@ export function addUsageDelta(store: AppStore, threadId: string, delta: UsageDel
       delta,
     ),
   )
+  store.emit('usage_delta', threadId, delta)
 }
 
 export function updateContextSnapshot(
