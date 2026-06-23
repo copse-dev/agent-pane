@@ -32,6 +32,8 @@ export interface UsageSummary {
   allTime: UsagePeriodSummary
   /** Earliest recorded event timestamp, or null when the ledger is empty. */
   trackingStartedAt: number | null
+  /** Count of events in the ledger (max 90 days retained). */
+  ledgerEventCount: number
 }
 
 function mergeModelUsage(prev: ModelUsage, delta: ModelUsage): ModelUsage {
@@ -146,6 +148,7 @@ export function buildUsageSummary(
     period90d: summarizeByModel(aggregateEventsByModel(events, PERIOD_90D_MS, now)),
     allTime: summarizeByModel(aggregateThreadUsage(threads)),
     trackingStartedAt,
+    ledgerEventCount: events.length,
   }
 }
 

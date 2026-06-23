@@ -112,6 +112,7 @@ describe('aggregate usage', () => {
     assert.ok(summary.day.totalCostUsd > 0)
     assert.equal(summary.day.localModels[0]!.estimatedCostUsd, 0)
     assert.equal(summary.trackingStartedAt, NOW - 1000)
+    assert.equal(summary.ledgerEventCount, 2)
   })
 
   it('parseUsageEvents drops malformed records', () => {

@@ -27,6 +27,23 @@ import {
 import { planAgentTextChunk } from '@shared/agent/agent-text-chunk.ts'
 import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY } from '../agent-activity.ts'
 import { drainMessageQueue } from './message-queue.ts'
+import { usageRecordFromAgentDelta } from '@shared/usage/usage-record-input.ts'
+import type { UsageDelta } from '@shared/types'
+
+function recordUsageToLedger(
+  api: ApiClient,
+  store: AppStore,
+  threadId: string,
+  delta: UsageDelta,
+): void {
+  if (!delta.inputTokens && !delta.outputTokens) return
+  const { activeProjectId } = store.getState()
+  void api.usage
+    .record(usageRecordFromAgentDelta(threadId, delta, activeProjectId))
+    .catch((err: unknown) => {
+      console.error('[usage] failed to record usage event:', err)
+    })
+}
 
 export function startAgentController(store: AppStore, api: ApiClient): () => void {
   // Per-thread streaming state: the message currently accumulating text, and
@@ -131,7 +148,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         break
       }
       case 'usage': {
-        addUsageDelta(store, threadId, {
+        const delta: UsageDelta = {
           model: chunk.model,
           inputTokens: chunk.inputTokens,
           outputTokens: chunk.outputTokens,
@@ -141,7 +158,9 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           ...(chunk.cacheCreationTokens !== undefined
             ? { cacheCreationTokens: chunk.cacheCreationTokens }
             : {}),
-        })
+        }
+        recordUsageToLedger(api, store, threadId, delta)
+        addUsageDelta(store, threadId, delta)
         break
       }
       case 'context_pressure': {
@@ -235,6 +254,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
 
   // Legacy path: some callers may still emit agent:usage directly.
   api.agent.onUsage((threadId, usage) => {
+    recordUsageToLedger(api, store, threadId, usage)
     addUsageDelta(store, threadId, usage)
   })
 

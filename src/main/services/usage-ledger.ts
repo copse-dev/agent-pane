@@ -1,5 +1,5 @@
 import type { StreamChunk, Thread } from '@shared/types'
-import { storageGet, storageUpdate } from './storage.ts'
+import { storageGet, storageSet } from './storage.ts'
 import {
   buildUsageSummary,
   parseUsageEvents,
@@ -32,24 +32,38 @@ function toUsageEvent(input: UsageRecordInput): UsageEvent {
   }
 }
 
-export async function recordUsageEvent(input: UsageRecordInput): Promise<void> {
-  if (!input.inputTokens && !input.outputTokens) return
-  const event = toUsageEvent(input)
-  await storageUpdate(USAGE_EVENTS_STORAGE_KEY, (raw) => {
-    const existing = parseUsageEvents(raw)
-    const next = pruneUsageEvents([...existing, event])
-    return next
-  })
+function isDuplicateEvent(existing: UsageEvent[], event: UsageEvent): boolean {
+  const last = existing.at(-1)
+  if (!last) return false
+  return (
+    last.source === event.source &&
+    last.threadId === event.threadId &&
+    last.model === event.model &&
+    last.inputTokens === event.inputTokens &&
+    last.outputTokens === event.outputTokens &&
+    (last.cacheReadTokens ?? 0) === (event.cacheReadTokens ?? 0) &&
+    (last.cacheCreationTokens ?? 0) === (event.cacheCreationTokens ?? 0) &&
+    Math.abs(event.at - last.at) < 250
+  )
 }
 
-/** Record token usage from an agent run usage chunk (main process — authoritative). */
+/** Append one usage event synchronously (safe for concurrent IPC handlers on the same key). */
+export function recordUsageEvent(input: UsageRecordInput): void {
+  if (!input.inputTokens && !input.outputTokens) return
+  const event = toUsageEvent(input)
+  const existing = parseUsageEvents(storageGet(USAGE_EVENTS_STORAGE_KEY))
+  if (isDuplicateEvent(existing, event)) return
+  storageSet(USAGE_EVENTS_STORAGE_KEY, pruneUsageEvents([...existing, event]))
+}
+
+/** Record token usage from an agent run usage chunk (main process). */
 export function recordAgentUsageChunk(
   threadId: string,
   chunk: Extract<StreamChunk, { type: 'usage' }>,
 ): void {
   if (!chunk.inputTokens && !chunk.outputTokens) return
   const projectId = storageGet('activeProjectId')
-  void recordUsageEvent({
+  recordUsageEvent({
     model: chunk.model,
     source: 'agent',
     inputTokens: chunk.inputTokens,
@@ -60,8 +74,6 @@ export function recordAgentUsageChunk(
     ...(chunk.cacheCreationTokens !== undefined
       ? { cacheCreationTokens: chunk.cacheCreationTokens }
       : {}),
-  }).catch((err) => {
-    console.error('[usage-ledger] failed to record agent usage:', err)
   })
 }
 
@@ -87,4 +99,8 @@ export function getUsageSummary(): UsageSummary {
   const events = parseUsageEvents(storageGet(USAGE_EVENTS_STORAGE_KEY))
   const threads = loadAllThreads()
   return buildUsageSummary(events, threads)
+}
+
+export function getUsageEventCount(): number {
+  return parseUsageEvents(storageGet(USAGE_EVENTS_STORAGE_KEY)).length
 }
