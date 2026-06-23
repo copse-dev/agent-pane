@@ -6,6 +6,7 @@ import { loadMcpServers } from '../mcp-registry.ts'
 import { buildProvider } from '../provider-selection.ts'
 import { buildSystemPrompt } from '../agent-system-prompt.ts'
 import { getSetting } from '../settings.ts'
+import { normalizeToolExecuteResult } from '@shared/types'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 
 // Tools that mutate the workspace, run commands, or reach the network must be
@@ -45,7 +46,10 @@ export async function runAcpAgentMode(): Promise<void> {
   const runner = createCopseAcpTurnRunner({
     buildProvider: () => buildProvider(model),
     buildTools: () => registry.toLLMTools(),
-    executeTool: (name, args, signal) => registry.execute(name, args, signal),
+    // registry.execute returns a ToolExecuteResult (string or { result, editStats });
+    // the ACP turn runner only needs the text result (editStats is a GUI diff-card concern).
+    executeTool: async (name, args, signal) =>
+      normalizeToolExecuteResult(await registry.execute(name, args, signal)).result,
     buildSystemPrompt: () => buildSystemPrompt({ subagentsEnabled, invokedSkills: [] }),
     needsPermission: (name) => TOOLS_REQUIRING_PERMISSION.has(name),
     usageModel: model,
