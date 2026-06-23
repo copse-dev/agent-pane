@@ -1,7 +1,7 @@
 import { runSubagent, EXPLORE_TOOL_NAMES } from '@shared/agent/run-subagent.ts'
 import { conversationTokenBudget } from '@shared/agent/trim-history.ts'
 import { readFileLimitsForSubagent } from '@shared/agent/read-file-limits.ts'
-import type { LLMProvider, LLMMessage, StreamChunk } from '@shared/types'
+import type { LLMProvider, LLMMessage, ModelUsage, StreamChunk } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { runWithAgentRunReadFileLimits } from './agent-run-read-limits.ts'
 import { getWorkspaceRoot } from './workspace.ts'
@@ -24,7 +24,7 @@ export interface RunExploreSubagentOptions {
 
 export interface ExploreSubagentResult {
   summary: string
-  usage: { inputTokens: number; outputTokens: number }
+  usage: ModelUsage
 }
 
 function filterExploreTools(registry: ToolRegistry) {

@@ -120,6 +120,12 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           model: chunk.model,
           inputTokens: chunk.inputTokens,
           outputTokens: chunk.outputTokens,
+          ...(chunk.cacheReadTokens !== undefined
+            ? { cacheReadTokens: chunk.cacheReadTokens }
+            : {}),
+          ...(chunk.cacheCreationTokens !== undefined
+            ? { cacheCreationTokens: chunk.cacheCreationTokens }
+            : {}),
         })
         break
       }
@@ -170,7 +176,14 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
       }
       case 'subagent_done': {
         if (st.msgId) {
-          finishSubagent(store, st.msgId, chunk.parentToolCallId, chunk.summary, 'done')
+          finishSubagent(
+            store,
+            st.msgId,
+            chunk.parentToolCallId,
+            chunk.summary,
+            'done',
+            chunk.usage,
+          )
         }
         activity(threadId)
         break

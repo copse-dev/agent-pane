@@ -306,6 +306,12 @@ export async function runAgent(
           model: subagentUsageModel,
           inputTokens: subUsage.inputTokens,
           outputTokens: subUsage.outputTokens,
+          ...(subUsage.cacheReadTokens !== undefined
+            ? { cacheReadTokens: subUsage.cacheReadTokens }
+            : {}),
+          ...(subUsage.cacheCreationTokens !== undefined
+            ? { cacheCreationTokens: subUsage.cacheCreationTokens }
+            : {}),
         })
       }
     })
