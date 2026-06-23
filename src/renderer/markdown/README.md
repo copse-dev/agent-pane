@@ -87,6 +87,15 @@ Bumping the spec is just `npm i -D commonmark-spec@<version>` followed by a
 re-baseline; the version is read from the installed package and pinned in the
 baseline.
 
+The JS normalizer (`tests/commonmark/normalize.ts`) is differentially validated
+against the vendored reference `tests/commonmark/normalize.py` by
+`npm run check:normalizer-parity` (a CI step in the `check` job; needs python3).
+It asserts both that the conformance pass set is identical under either
+normalizer and that per-example normalized output matches byte-for-byte, except
+for a small documented allowlist of pathological raw-HTML cases. This is **not**
+in `npm run check`, so contributors without python can still run the default
+gates.
+
 ### E2e tests (seeded via `tests/e2e/helpers/seed-config.ts`)
 
 - `tests/e2e/markdown-list-indent.e2e.ts` — Known Failures + Architecture Highlights; asserts list

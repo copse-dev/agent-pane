@@ -11,6 +11,9 @@ vendor/codesearch/
 .DS_Store
 *.log
 
+# Python bytecode cache (from the normalizer-parity reference normalize.py)
+__pycache__/
+
 # Test artifacts
 test-results/
 .wdio-profile-*/

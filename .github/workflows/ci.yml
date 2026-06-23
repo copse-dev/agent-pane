@@ -42,6 +42,9 @@ jobs:
       - run: npm run format:check
       - run: npm run check:dead-code
       - run: npm test
+      # Differentially validate the JS CommonMark normalizer against the vendored
+      # reference normalize.py (python3 is preinstalled on the runner).
+      - run: npm run check:normalizer-parity
       - run: npm run build
 
   e2e:

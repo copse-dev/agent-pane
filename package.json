@@ -16,6 +16,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint .",
     "check:dead-code": "node scripts/check-dead-code.mts",
+    "check:normalizer-parity": "node scripts/check-normalizer-parity.mts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "node scripts/run-tests.mts",
