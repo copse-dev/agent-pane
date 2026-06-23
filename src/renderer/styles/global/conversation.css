@@ -218,7 +218,14 @@
     }
   }
 
-  .message-text.is-streaming .stream-complete table tbody tr:last-child {
+  .message-text.is-streaming .stream-complete table tbody tr:last-child:not(.stream-pending-row) {
+    transition: transform 0.16s ease-out;
+    @starting-style {
+      transform: translateY(2px);
+    }
+  }
+
+  .message-text.is-streaming .stream-complete tr.stream-pending-row {
     transition: transform 0.16s ease-out;
     @starting-style {
       transform: translateY(2px);

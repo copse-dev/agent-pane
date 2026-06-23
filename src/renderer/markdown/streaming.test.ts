@@ -4,8 +4,11 @@ import '../../../tests/setup-dom-jsdom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  completeEndsInOpenTable,
+  pendingLineBelongsInTable,
   renderStreamingMarkdown,
   splitAtLastNewline,
+  splitTableRow,
   StreamingMarkdownRenderer,
 } from './streaming.ts'
 
@@ -121,5 +124,66 @@ describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
     const pending = host.querySelector('.stream-pending') as HTMLElement
     assert.equal(pending.hidden, true)
     assert.equal(pending.textContent, '')
+  })
+
+  it('renders an in-progress table row inside the table instead of below it', () => {
+    const host = document.createElement('div')
+    const r = new StreamingMarkdownRenderer(host)
+    r.update('| Name | Value |\n| --- | --- |\n| alpha | 1 |\n| beta | 2')
+
+    const pendingRow = host.querySelector('tr.stream-pending-row')
+    assert.ok(pendingRow)
+    assert.equal(pendingRow?.querySelectorAll('td').length, 2)
+    assert.deepEqual(
+      [...pendingRow!.querySelectorAll('td')].map((td) => td.textContent),
+      ['beta', '2'],
+    )
+
+    const pending = host.querySelector('.stream-pending') as HTMLElement
+    assert.equal(pending.hidden, true)
+    assert.equal(pending.textContent, '')
+  })
+
+  it('updates pending table row cells in place across tokens', () => {
+    const host = document.createElement('div')
+    const r = new StreamingMarkdownRenderer(host)
+    r.update('| A | B |\n| - | - |\n| one |')
+    r.update('| A | B |\n| - | - |\n| one | two')
+    const row = host.querySelector('tr.stream-pending-row')
+    assert.deepEqual(
+      [...row!.querySelectorAll('td')].map((td) => td.textContent),
+      ['one', 'two'],
+    )
+    assert.strictEqual(host.querySelectorAll('tr.stream-pending-row').length, 1)
+  })
+})
+
+describe('completeEndsInOpenTable', () => {
+  it('is true after header and separator rows', () => {
+    assert.equal(completeEndsInOpenTable('| A | B |\n| - | - |\n'), true)
+  })
+
+  it('is true after completed body rows', () => {
+    assert.equal(completeEndsInOpenTable('| A | B |\n| - | - |\n| 1 | 2 |\n'), true)
+  })
+
+  it('is false after the table ends', () => {
+    assert.equal(completeEndsInOpenTable('| A | B |\n| - | - |\n| 1 | 2 |\n\nNext'), false)
+  })
+})
+
+describe('pendingLineBelongsInTable', () => {
+  it('detects pipe rows continuing an open table', () => {
+    assert.equal(pendingLineBelongsInTable('| A | B |\n| - | - |\n| 1 | 2 |\n', '| 3 | 4'), true)
+  })
+
+  it('does not absorb non-table pending lines', () => {
+    assert.equal(pendingLineBelongsInTable('## Title\n', '- item'), false)
+  })
+})
+
+describe('splitTableRow', () => {
+  it('splits optional outer pipes', () => {
+    assert.deepEqual(splitTableRow('| alpha | beta |'), ['alpha', 'beta'])
   })
 })
