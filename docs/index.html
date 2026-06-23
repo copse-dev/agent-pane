@@ -4,32 +4,68 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Copse — AI coding assistant for your desktop</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'><rect width='48' height='48' rx='12' fill='%230F172A'/><path d='M34 18C34 12 28 10 23 13C18 16 17 22 20 26C23 30 28 29 30 25C31 22 29 19 26 20C24 21 23 24 25 25C26 26 28 25 29 24' fill='none' stroke='%237C3AED' stroke-width='3' stroke-linecap='round'/><path d='M34 18C34 12 28 10 23 13C18 16 17 22 20 26C23 30 28 29 30 25C31 22 29 19 26 20C24 21 23 24 25 25C26 26 28 25 29 24' fill='none' stroke='%2322D3EE' stroke-width='3' stroke-linecap='round' transform='translate(1,0)'/></svg>" />
     <meta
       name="description"
       content="Copse is a desktop AI coding assistant with agent tools, Monaco editor, git integration, MCP, semantic search, and local or cloud models."
     />
+    <meta property="og:title" content="Copse — AI coding assistant for your desktop" />
+    <meta property="og:description" content="Copse is a desktop AI coding assistant with agent tools, Monaco editor, git integration, MCP, semantic search, and local or cloud models." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://copse.dev/" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Copse — AI coding assistant for your desktop" />
+    <meta name="twitter:description" content="Copse is a desktop AI coding assistant with agent tools, Monaco editor, git integration, MCP, semantic search, and local or cloud models." />
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Copse",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "macOS",
+      "description": "Copse is a desktop AI coding assistant with agent tools, Monaco editor, git integration, MCP, semantic search, and local or cloud models.",
+      "url": "https://copse.dev/",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+      <defs>
+        <linearGradient id="fg" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#7C3AED" />
+          <stop offset="100%" stop-color="#22D3EE" />
+        </linearGradient>
+      </defs>
+    </svg>
     <div class="container">
       <header>
         <div class="logo">
           <svg
             width="48"
             height="48"
-            viewBox="0 0 48 48"
+            viewBox="0 0 512 512"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
             aria-hidden="true"
           >
-            <rect width="48" height="48" rx="12" fill="#0F172A" />
-            <path
-              d="M34 18C34 12 28 10 23 13C18 16 17 22 20 26C23 30 28 29 30 25C31 22 29 19 26 20C24 21 23 24 25 25C26 26 28 25 29 24"
-              fill="none"
-              stroke="url(#wave)"
-              stroke-width="3"
-              stroke-linecap="round"
-            />
+            <rect width="512" height="512" rx="128" fill="#0F172A" />
+            <g transform="translate(-8, 14)">
+              <g transform="translate(256, 256) scale(1.18) translate(-256, -256)">
+                <path
+                  d="M380 180C380 110 290 90 225 125C160 160 145 240 190 295C235 350 320 340 345 280C365 235 330 195 285 205C250 213 240 255 268 275C288 289 314 282 320 260"
+                  fill="none"
+                  stroke="url(#wave)"
+                  stroke-width="42"
+                  stroke-linecap="round"
+                />
+              </g>
+            </g>
             <defs>
               <linearGradient id="wave" x1="0%" y1="0%" x2="100%" y2="100%">
                 <stop offset="0%" stop-color="#7C3AED" />
@@ -44,18 +80,24 @@
 
       <main>
         <section class="hero">
+          <p class="eyebrow">Free &amp; open source · Runs on your machine</p>
           <h2>Code with an agent that lives in your project</h2>
           <p>
-            Copse is an Electron desktop app that chats with LLMs, runs tools against your
-            workspace, and keeps you in the loop with approvals, diffs, and a full three-pane IDE
-            layout. Use local models via LM Studio or cloud providers — no backend required.
+            Copse is a desktop coding assistant that pairs an AI agent with a real IDE — chat,
+            editor, terminal, and git in one window. The agent reads, writes, and runs code in
+            your workspace, and every change waits for your approval. No backend, no lock-in.
           </p>
           <div class="hero-cta">
-            <a class="btn btn-primary" href="#download">Download &amp; build</a>
+            <a class="btn btn-primary" href="#download">Get started</a>
             <a class="btn btn-secondary" href="https://github.com/jonathanKingston/agent-pane"
               >View on GitHub</a
             >
           </div>
+          <ul class="trust-strip" aria-label="Why teams choose Copse">
+            <li>Your code never leaves your machine</li>
+            <li>Bring your own keys — or run fully local</li>
+            <li>Fine-grained permissions, your call</li>
+          </ul>
           <figure class="hero-shot">
             <img
               src="screenshots/chat-layout-three-pane.png"
@@ -69,8 +111,10 @@
 
         <section class="features" aria-label="Core features">
           <div class="feature">
-            <div class="feature-icon" style="background: var(--color-accent)">
-              <span>💬</span>
+            <div class="feature-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
             </div>
             <h3>Agent chat</h3>
             <p>
@@ -79,8 +123,10 @@
           </div>
 
           <div class="feature">
-            <div class="feature-icon" style="background: var(--color-secondary)">
-              <span>📁</span>
+            <div class="feature-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
             </div>
             <h3>Workspace tools</h3>
             <p>
@@ -89,24 +135,35 @@
           </div>
 
           <div class="feature">
-            <div class="feature-icon" style="background: var(--color-purple)">
-              <span>🔍</span>
+            <div class="feature-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="11" cy="11" r="8" stroke="url(#fg)" stroke-width="1.5"/>
+                <path d="m21 21-4.3-4.3" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
             </div>
             <h3>Semantic search</h3>
             <p>Find code by meaning with bundled codesearch indexing and explore results in chat</p>
           </div>
 
           <div class="feature">
-            <div class="feature-icon" style="background: var(--color-success)">
-              <span>⎇</span>
+            <div class="feature-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 3v5.5a4.5 4.5 0 0 0 7.9 3L18 6" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M18 21v-5.5a4.5 4.5 0 0 0-7.9-3L6 18" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
             </div>
             <h3>Git built in</h3>
             <p>Review changes, inline diffs, image diffs, and branch warnings in the composer</p>
           </div>
 
           <div class="feature">
-            <div class="feature-icon" style="background: var(--color-warning)">
-              <span>$</span>
+            <div class="feature-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 18 2 14l7-3" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M2 14s2 3 7 2" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="m13 6 7-3-2 4" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M18 3s-2 3-7 2" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
             </div>
             <h3>Shell with guardrails</h3>
             <p>
@@ -115,8 +172,12 @@
           </div>
 
           <div class="feature">
-            <div class="feature-icon" style="background: var(--color-accent)">
-              <span>🔌</span>
+            <div class="feature-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 2v20" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round"/>
+                <path d="M2 12h20" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round"/>
+                <circle cx="12" cy="12" r="4" stroke="url(#fg)" stroke-width="1.5"/>
+              </svg>
             </div>
             <h3>MCP host</h3>
             <p>
@@ -126,8 +187,11 @@
           </div>
 
           <div class="feature">
-            <div class="feature-icon" style="background: var(--color-secondary)">
-              <span>🧠</span>
+            <div class="feature-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7z" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="12" cy="9" r="2" stroke="url(#fg)" stroke-width="1.5"/>
+              </svg>
             </div>
             <h3>Local + cloud models</h3>
             <p>
@@ -136,40 +200,58 @@
           </div>
 
           <div class="feature">
-            <div class="feature-icon" style="background: var(--color-purple)">
-              <span>🌿</span>
+            <div class="feature-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 3c-4 0-8 2-8 6 0 3 2 5 4 6l1 4h6l1-4c2-1 4-3 4-6 0-4-4-6-8-6z" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
             </div>
             <h3>Subagents</h3>
             <p>Delegate exploration to nested agents with their own tool timelines</p>
           </div>
 
           <div class="feature">
-            <div class="feature-icon" style="background: var(--color-success)">
-              <span>📝</span>
+            <div class="feature-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="3" y="3" width="18" height="18" rx="2" stroke="url(#fg)" stroke-width="1.5"/>
+                <path d="M8 7v10" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round"/>
+                <path d="M12 7v10" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round"/>
+                <path d="M16 7v10" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
             </div>
             <h3>Monaco editor</h3>
             <p>Edit files, preview markdown, attach selections to chat, and approve staged diffs</p>
           </div>
 
           <div class="feature">
-            <div class="feature-icon" style="background: var(--color-warning)">
-              <span>⌨</span>
+            <div class="feature-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="2" y="4" width="20" height="16" rx="2" stroke="url(#fg)" stroke-width="1.5"/>
+                <path d="m6 15 3 3 5-6" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
             </div>
             <h3>Terminal</h3>
             <p>Integrated xterm shell in the right panel, alongside explorer and git views</p>
           </div>
 
           <div class="feature">
-            <div class="feature-icon" style="background: var(--color-accent)">
-              <span>🌐</span>
+            <div class="feature-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" stroke="url(#fg)" stroke-width="1.5"/>
+                <path d="M2 12h20" stroke="url(#fg)" stroke-width="1.5"/>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" stroke="url(#fg)" stroke-width="1.5"/>
+              </svg>
             </div>
             <h3>In-app browser</h3>
             <p>Browse documentation and test web UIs without leaving the workspace</p>
           </div>
 
           <div class="feature">
-            <div class="feature-icon" style="background: var(--color-secondary)">
-              <span>✦</span>
+            <div class="feature-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 2 2 7l10 5 10-5-10-5z" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M2 17l10 5 10-5" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M2 12l10 5 10-5" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
             </div>
             <h3>Skills</h3>
             <p>
@@ -182,8 +264,7 @@
         <section class="showcase" aria-label="Feature tour">
           <h2>See it in action</h2>
           <p class="showcase-intro">
-            Screenshots captured from automated UI runs in this repository — the same views you get
-            when running Copse locally.
+            Real screenshots from Copse running locally — the exact views you get on day one.
           </p>
 
           <div class="showcase-grid">
@@ -434,7 +515,11 @@
         </section>
 
         <section class="install" id="download">
-          <h2>Get started</h2>
+          <h2>Get started in minutes</h2>
+          <p class="install-intro">
+            Copse is free and open source. Build it from source today — signed installers are on
+            the way.
+          </p>
           <div class="install-steps">
             <div class="step">
               <div class="step-number">1</div>
@@ -484,7 +569,7 @@
                   <button class="copy-btn" onclick="copyToClipboard('npm run dev')">Copy</button>
                 </div>
                 <p class="alt-text">
-                  Opens the Electron app with hot rebuild. Use
+                  Opens the app with hot rebuild. Use
                   <span class="inline-code">npm run build &amp;&amp; npm start</span>
                   for a production bundle.
                 </p>
@@ -529,7 +614,7 @@
             <div class="why-item">
               <h4>No backend</h4>
               <p>
-                The Electron main process talks directly to LLM providers. Your code stays on your
+                The app talks directly to LLM providers. Your code stays on your
                 machine; API keys live in local settings.
               </p>
             </div>
@@ -555,9 +640,9 @@
         <p>
           <a href="https://github.com/jonathanKingston/agent-pane">GitHub</a>
           <span class="separator">•</span>
-          <a href="supply-chain-security.md">Security</a>
+          <a href="privacy.html">Privacy Policy</a>
         </p>
-        <p class="copyright">Made for developers who pair with agents every day</p>
+        <p class="copyright">Free &amp; open source · Made for developers who pair with agents every day</p>
       </footer>
     </div>
 
