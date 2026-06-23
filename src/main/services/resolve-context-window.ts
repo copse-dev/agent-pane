@@ -1,7 +1,9 @@
 import { getSetting, getSettingTrimmed } from './settings.ts'
 import { LM_STUDIO_MODEL_IDS, DEFAULT_LM_STUDIO_URL } from '@shared/lm-studio-defaults.ts'
 import { getModelInfo } from '@shared/llm/model-catalog.ts'
+import { isOpenRouterModel, openRouterModelId } from '@shared/llm/openrouter.ts'
 import { contextLengthForModel, fetchLmStudioModelsCached } from './lm-studio-models.ts'
+import { openRouterModelContextLength } from './openrouter-models.ts'
 
 const DEFAULT_LOCAL_CONTEXT = 8192
 // Fallback for unrecognized cloud models. 128K matches the broad floor used by
@@ -32,6 +34,11 @@ export async function fetchLmStudioModelContextLength(
 export async function resolveContextWindow(model: string): Promise<number> {
   const cloud = getModelInfo(model)
   if (cloud) return cloud.contextWindow
+
+  if (isOpenRouterModel(model)) {
+    const ctx = await openRouterModelContextLength(openRouterModelId(model))
+    return ctx ?? DEFAULT_CLOUD_CONTEXT
+  }
 
   if (model === 'lm-studio' || model.startsWith('lmstudio:')) {
     const url = getSetting<string>('localServerUrl', DEFAULT_LM_STUDIO_URL)
