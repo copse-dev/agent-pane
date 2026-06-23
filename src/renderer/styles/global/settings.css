@@ -113,7 +113,7 @@
 }
 .settings-buttons {
   display: flex;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-md);
   justify-content: flex-end;
   margin-top: var(--spacing-xl);
   padding-top: var(--spacing-lg);
@@ -130,11 +130,11 @@
   background: var(--accent);
   color: white;
   border-radius: var(--radius);
-  padding: 8px 20px;
+  padding: var(--spacing-md) var(--spacing-xl);
 }
 .settings-buttons button[type='button'] {
   border-radius: var(--radius);
-  padding: 8px 20px;
+  padding: var(--spacing-md) var(--spacing-xl);
   color: var(--text-secondary);
 }
 .settings-buttons button[type='button']:hover {
