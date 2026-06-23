@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { runAgentLoop } from './run-agent-loop.ts'
+import { getLastMeasuredInputTokens, setLastMeasuredInputTokens } from './trim-history.ts'
 import type { LLMMessage, LLMProvider, StreamChunk } from '@shared/types'
 
 function mockProvider(chunks: StreamChunk[][]): LLMProvider {
@@ -467,5 +468,43 @@ describe('runAgentLoop', () => {
     assert.ok(usage && usage.type === 'usage')
     assert.equal(usage.inputTokens, 120)
     assert.equal(usage.outputTokens, 80)
+  })
+
+  it('restores measured input tokens after a tool runs a nested loop (#112)', async () => {
+    // A tool (e.g. an explore subagent or local todo worker) can run a nested
+    // agent loop that overwrites the shared `lastMeasuredInputTokens` global with
+    // its own stream sizes. The parent loop must restore its own measurement so
+    // the next turn's trim/escalation sizing is not skewed by the subagent.
+    let measuredAtSecondStream: number | null = -1
+    let call = 0
+    const provider: LLMProvider = {
+      async *stream() {
+        if (call++ === 0) {
+          yield { type: 'tool_call', toolCall: { id: '1', name: 'test', args: {} } }
+          yield { type: 'usage', model: 'm', inputTokens: 1000, outputTokens: 10 }
+          yield { type: 'done' }
+        } else {
+          // Sampled after the top-of-loop sizing for the second turn ran.
+          measuredAtSecondStream = getLastMeasuredInputTokens()
+          yield { type: 'text', text: 'final' }
+          yield { type: 'usage', model: 'm', inputTokens: 2000, outputTokens: 10 }
+          yield { type: 'done' }
+        }
+      },
+    }
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [],
+      maxContextTokens: 100_000,
+      usageModel: 'm',
+      onChunk: () => {},
+      executeTool: async () => {
+        // Simulate a nested loop clobbering the shared global.
+        setLastMeasuredInputTokens(5)
+        return 'tool done'
+      },
+    })
+    assert.equal(measuredAtSecondStream, 1000)
   })
 })
