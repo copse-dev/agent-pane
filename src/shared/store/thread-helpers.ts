@@ -267,6 +267,20 @@ export function addToolCall(store: AppStore, messageId: string, toolCall: ToolCa
   store.emit('tool_call_started', messageId, toolCall)
 }
 
+export function findToolCall(
+  store: AppStore,
+  messageId: string,
+  toolCallId: string,
+): ToolCall | undefined {
+  for (const thread of store.getState().threads) {
+    for (const message of thread.messages) {
+      if (message.id !== messageId) continue
+      return message.toolCalls.find((tc) => tc.id === toolCallId)
+    }
+  }
+  return undefined
+}
+
 export function updateToolCall(
   store: AppStore,
   messageId: string,
