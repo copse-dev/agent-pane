@@ -1,5 +1,5 @@
-import { BrowserWindow } from 'electron'
 import { runAgentLoop } from '@shared/agent/run-agent-loop.ts'
+import type { AgentHost } from '@shared/agent/agent-host.ts'
 import { AGENT_RUN_TIMEOUT_MS, DEFAULT_MAX_LLM_CALLS } from '@shared/agent/agent-loop-limits.ts'
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
@@ -95,7 +95,7 @@ export async function runAgent(
   threadId: string,
   userPrompt: UserContent,
   priorMessages: LLMMessage[],
-  mainWindow: BrowserWindow,
+  host: AgentHost,
   registry: ToolRegistry,
   options?: { invokedSkills?: string[]; priorTodos?: TodoItem[]; workingBrief?: string },
 ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> {
@@ -108,7 +108,7 @@ export async function runAgent(
     abortMap.set(threadId, controller)
     const runTimeoutTimer = setTimeout(() => controller.abort(), AGENT_RUN_TIMEOUT_MS)
     const sendChunk = (chunk: StreamChunk) => {
-      mainWindow.webContents.send('agent:chunk', threadId, chunk)
+      host.emit(threadId, chunk)
     }
     try {
       const result = await runRemoteAgentFromSettings({
@@ -185,19 +185,11 @@ export async function runAgent(
   const { trimmed, wasTrimmed, conversationBudget } = prepared
   const { notifyTrimmed } = createTrimNotifier(wasTrimmed)
   const sendTrimNotice = () => {
-    mainWindow.webContents.send(
-      'agent:chunk',
-      threadId,
-      contextTrimmedChunk(trimmed, contextWindow, prepared.historyBudget),
-    )
+    host.emit(threadId, contextTrimmedChunk(trimmed, contextWindow, prepared.historyBudget))
   }
   if (wasTrimmed) notifyTrimmed(sendTrimNotice)
 
-  mainWindow.webContents.send(
-    'agent:chunk',
-    threadId,
-    contextPressureChunk(prepared, contextWindow),
-  )
+  host.emit(threadId, contextPressureChunk(prepared, contextWindow))
   const runReadLimits = readFileLimitsFromConversationBudget(conversationBudget)
 
   const controller = new AbortController()
@@ -209,7 +201,7 @@ export async function runAgent(
 
   resetSubagentUsage()
   const sendChunk = (chunk: StreamChunk) => {
-    mainWindow.webContents.send('agent:chunk', threadId, chunk)
+    host.emit(threadId, chunk)
   }
 
   setAgentRunTodoContext({
@@ -356,11 +348,8 @@ export async function runAgent(
     })
   } catch (err) {
     const msg = classifyAgentError(err)
-    mainWindow.webContents.send('agent:chunk', threadId, {
-      type: 'text',
-      text: msg,
-    } satisfies StreamChunk)
-    mainWindow.webContents.send('agent:chunk', threadId, { type: 'done' } satisfies StreamChunk)
+    host.emit(threadId, { type: 'text', text: msg } satisfies StreamChunk)
+    host.emit(threadId, { type: 'done' } satisfies StreamChunk)
   } finally {
     clearTimeout(runTimeoutTimer)
     clearAgentRunTodos()
