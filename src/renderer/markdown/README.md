@@ -64,6 +64,24 @@ npm run test:e2e:markdown
 - `*italic*` and `` `snake_case` `` code spans stay intact (no cross-line `<em>` bleed)
 - Explore-style fixtures: `##`/`###` headings, `<hr>`, and lists as sibling block elements
 
+### CommonMark conformance (`commonmark-conformance.test.ts`, via `npm test`)
+
+`renderMarkdown` is run against every example in the official CommonMark spec
+(`tests/fixtures/commonmark/spec.json`, pinned to a version), comparing output to
+the expected HTML after the spec's own normalizer
+(`tests/commonmark/normalize.ts`, a faithful port of `normalize.py`). This is **at
+rest only** — streaming output intentionally differs (the live tail is escaped
+plain text) and is not conformance-tested.
+
+The renderer is deliberately app-specific (`#`→`<h4>`, decorated links,
+highlighted code), so it is **not** expected to fully conform. The set of examples
+we currently satisfy is pinned in `tests/fixtures/commonmark/conformance-baseline.json`
+and the test fails if it changes:
+
+- fewer passing → a regression in a construct we used to handle.
+- more passing → an improvement; re-run `UPDATE_COMMONMARK_BASELINE=1 npm test` to
+  record the new baseline.
+
 ### E2e tests (seeded via `tests/e2e/helpers/seed-config.ts`)
 
 - `tests/e2e/markdown-list-indent.e2e.ts` — Known Failures + Architecture Highlights; asserts list

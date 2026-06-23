@@ -1,0 +1,222 @@
+{
+  "specVersion": "0.31.2",
+  "source": "https://spec.commonmark.org/0.31.2/spec.json",
+  "note": "Examples from the official CommonMark spec that renderMarkdown() satisfies at rest, after the spec normalizer. This is a regression baseline, not a conformance goal — the renderer is intentionally app-specific.",
+  "total": 652,
+  "passing": [
+    13,
+    29,
+    30,
+    35,
+    43,
+    44,
+    45,
+    47,
+    50,
+    56,
+    57,
+    58,
+    63,
+    64,
+    74,
+    94,
+    97,
+    98,
+    99,
+    197,
+    199,
+    209,
+    219,
+    221,
+    261,
+    269,
+    275,
+    282,
+    303,
+    322,
+    327,
+    328,
+    332,
+    333,
+    338,
+    341,
+    342,
+    343,
+    345,
+    348,
+    350,
+    355,
+    356,
+    357,
+    364,
+    365,
+    370,
+    377,
+    378,
+    381,
+    393,
+    396,
+    410,
+    411,
+    413,
+    414,
+    415,
+    416,
+    420,
+    421,
+    434,
+    435,
+    436,
+    438,
+    439,
+    441,
+    444,
+    446,
+    448,
+    450,
+    451,
+    454,
+    455,
+    457,
+    459,
+    460,
+    461,
+    463,
+    467,
+    488,
+    497,
+    508,
+    511,
+    513,
+    523,
+    525,
+    546,
+    547,
+    548,
+    551,
+    590,
+    602,
+    607,
+    609,
+    610,
+    612,
+    618,
+    619,
+    620,
+    622,
+    624,
+    644,
+    645,
+    646,
+    647,
+    650,
+    651,
+    652
+  ],
+  "summaryBySection": {
+    "Tabs": {
+      "pass": 0,
+      "total": 11
+    },
+    "Backslash escapes": {
+      "pass": 1,
+      "total": 13
+    },
+    "Entity and numeric character references": {
+      "pass": 3,
+      "total": 17
+    },
+    "Precedence": {
+      "pass": 0,
+      "total": 1
+    },
+    "Thematic breaks": {
+      "pass": 8,
+      "total": 19
+    },
+    "ATX headings": {
+      "pass": 3,
+      "total": 18
+    },
+    "Setext headings": {
+      "pass": 4,
+      "total": 27
+    },
+    "Indented code blocks": {
+      "pass": 0,
+      "total": 12
+    },
+    "Fenced code blocks": {
+      "pass": 0,
+      "total": 29
+    },
+    "HTML blocks": {
+      "pass": 0,
+      "total": 44
+    },
+    "Link reference definitions": {
+      "pass": 3,
+      "total": 27
+    },
+    "Paragraphs": {
+      "pass": 2,
+      "total": 8
+    },
+    "Blank lines": {
+      "pass": 0,
+      "total": 1
+    },
+    "Block quotes": {
+      "pass": 0,
+      "total": 25
+    },
+    "List items": {
+      "pass": 4,
+      "total": 48
+    },
+    "Lists": {
+      "pass": 2,
+      "total": 26
+    },
+    "Inlines": {
+      "pass": 1,
+      "total": 1
+    },
+    "Code spans": {
+      "pass": 9,
+      "total": 22
+    },
+    "Emphasis and strong emphasis": {
+      "pass": 39,
+      "total": 132
+    },
+    "Links": {
+      "pass": 11,
+      "total": 90
+    },
+    "Images": {
+      "pass": 1,
+      "total": 22
+    },
+    "Autolinks": {
+      "pass": 5,
+      "total": 19
+    },
+    "Raw HTML": {
+      "pass": 5,
+      "total": 20
+    },
+    "Hard line breaks": {
+      "pass": 4,
+      "total": 15
+    },
+    "Soft line breaks": {
+      "pass": 0,
+      "total": 2
+    },
+    "Textual content": {
+      "pass": 3,
+      "total": 3
+    }
+  }
+}
