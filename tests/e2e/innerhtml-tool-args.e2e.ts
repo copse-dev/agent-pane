@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
+import { renderToolArgs } from '../../src/renderer/views/tool-args-format.ts'
 import {
   INNERHTML_TRAP_ARGS,
   resetUserData,
@@ -34,7 +35,7 @@ describe('innerHTML-safe tool args', () => {
     await toolCard.$('.tool-args summary').click()
 
     const argsPre = toolCard.$('.tool-args pre')
-    await expect(argsPre).toHaveText(JSON.stringify(INNERHTML_TRAP_ARGS, null, 2))
+    await expect(argsPre).toHaveText(renderToolArgs(INNERHTML_TRAP_ARGS))
     await expect(argsPre).toHaveText('</pre>', { containing: true })
 
     await expect(toolCard.$$('img')).toBeElementsArrayOfSize(0)

@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { formatArgvForShell } from './spawn.ts'
+import { formatArgvForShell, shellForSandboxWrap } from './spawn.ts'
 
 describe('formatArgvForShell', () => {
   it('keeps workspace and Electron paths with spaces as single shell words', () => {
@@ -33,5 +33,19 @@ describe('formatArgvForShell', () => {
     ].join('; ')
     const out = execFileSync('/bin/bash', ['-c', script], { encoding: 'utf8' }).trim()
     assert.equal(out, 'OK')
+  })
+})
+
+describe('shellForSandboxWrap', () => {
+  it('uses a PATH-resolvable shell name for absolute macOS shell paths', () => {
+    const originalPath = process.env.PATH
+    process.env.PATH = '/custom/bin'
+    try {
+      assert.equal(shellForSandboxWrap('/bin/bash'), 'bash')
+      assert.match(process.env.PATH ?? '', /(?:^|:)\/bin(?::|$)/)
+      assert.match(process.env.PATH ?? '', /(?:^|:)\/usr\/bin(?::|$)/)
+    } finally {
+      process.env.PATH = originalPath
+    }
   })
 })

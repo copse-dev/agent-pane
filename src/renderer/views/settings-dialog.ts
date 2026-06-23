@@ -8,6 +8,7 @@ import {
   type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
 import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
+import { DEFAULT_CURSOR_AGENT_BASE_URL } from '@shared/remote-agent.ts'
 import { populateModelSelect, populateSmallTasksModelSelect } from './model-options.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
@@ -43,6 +44,11 @@ interface SettingField {
 const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'customInstructions', kind: 'text', default: '', save: true },
   { name: 'externalApiSafety', kind: 'checkbox', default: false, save: true },
+  { name: 'remoteAgentBaseUrl', kind: 'text', default: DEFAULT_CURSOR_AGENT_BASE_URL, save: true },
+  { name: 'remoteAgentRepository', kind: 'text', default: '', save: true },
+  { name: 'remoteAgentStartingRef', kind: 'text', default: '', save: true },
+  { name: 'remoteAgentAutoCreatePR', kind: 'checkbox', default: true, save: true },
+  { name: 'remoteAgentWorkOnCurrentBranch', kind: 'checkbox', default: false, save: true },
   { name: 'localSubagentsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'localTodoItemsEnabled', kind: 'checkbox', default: true, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
@@ -140,6 +146,68 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <label>
                 Default model
                 <select name="model"></select>
+              </label>
+              <span class="field-hint">
+                Pick a cloud, local, or remote-agent model here (or from the model picker beside the
+                chat box). Selecting <strong>Cursor Cloud Agent</strong> sends each turn to Cursor
+                Cloud instead of running it on this machine — configure it below.
+              </span>
+            </fieldset>
+
+            <fieldset>
+              <legend>Remote agents (Cursor Cloud)</legend>
+              <p class="settings-fieldset-desc">
+                Choose <strong>Cursor Cloud Agent</strong> as your model to run chat turns on Cursor
+                Cloud. The conversation streams back here just like a normal chat, but the work
+                happens on a remote machine: the agent runs its own tools, pushes commits to a
+                branch, and (optionally) opens a pull request. It does <strong>not</strong> edit the
+                files in this local workspace — review its changes in the branch / PR it links in the
+                reply.
+              </p>
+              <div id="settings-cursor-key-host"></div>
+              <label>
+                Agent API base URL
+                <input
+                  type="url"
+                  name="remoteAgentBaseUrl"
+                  placeholder="https://api.cursor.com"
+                  autocomplete="off"
+                />
+                <span class="field-hint">
+                  Usually leave this as <code>https://api.cursor.com</code>. Change it only for
+                  Cursor API development or testing.
+                </span>
+              </label>
+              <label>
+                Repository
+                <input
+                  type="text"
+                  name="remoteAgentRepository"
+                  placeholder="https://github.com/owner/repo (defaults to project origin)"
+                  autocomplete="off"
+                />
+                <span class="field-hint">
+                  Which GitHub repo the remote agent works on. Leave blank to use this project's
+                  <code>origin</code> remote.
+                </span>
+              </label>
+              <label>
+                Starting ref
+                <input
+                  type="text"
+                  name="remoteAgentStartingRef"
+                  placeholder="main (optional)"
+                  autocomplete="off"
+                />
+                <span class="field-hint">Branch or commit the remote agent branches from.</span>
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="remoteAgentAutoCreatePR" />
+                Open a pull request automatically when the remote agent finishes
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="remoteAgentWorkOnCurrentBranch" />
+                Push directly to the starting ref instead of a new <code>cursor/…</code> branch
               </label>
             </fieldset>
 
@@ -341,8 +409,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   document.body.append(overlay)
   overlayEl = overlay
 
-  const apiKeysSection = createApiKeysSection(api)
+  const apiKeysSection = createApiKeysSection(api, { providers: ['anthropic', 'openai'] })
   overlay.querySelector('#settings-api-keys-host')!.append(apiKeysSection.root)
+
+  const cursorKeySection = createApiKeysSection(api, {
+    legend: 'Cursor authentication',
+    providers: ['cursor'],
+  })
+  overlay.querySelector('#settings-cursor-key-host')!.append(cursorKeySection.root)
 
   const lmStudioSection = createLmStudioSection(api, { showInstallGuide: false })
   overlay.querySelector('#settings-lm-studio-host')!.append(lmStudioSection.root)
@@ -509,6 +583,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     showSection('general')
     void (async () => {
       await apiKeysSection.refreshKeyStatus()
+      await cursorKeySection.refreshKeyStatus()
 
       const form = overlay.querySelector('form') as HTMLFormElement
       const model = (await api.settings.get('model')) as string | undefined
@@ -560,6 +635,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const data = new FormData(form)
 
       await apiKeysSection.saveKeys()
+      await cursorKeySection.saveKeys()
       await lmStudioSection.saveConnection()
       const routingValues = modelRoutingSection.readValues()
 
