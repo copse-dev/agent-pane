@@ -117,7 +117,10 @@
   justify-content: flex-end;
   margin-top: var(--spacing-xl);
   padding-top: var(--spacing-lg);
-  padding-bottom: var(--spacing-xl);
+  /* Lift the buttons off the window's bottom edge. This padding lives inside
+     the sticky footer box, so the bar still reaches the scrollport bottom and
+     keeps covering scrolled content — only the buttons move up. */
+  padding-bottom: calc(var(--spacing-xl) + var(--spacing-lg));
   border-top: 1px solid var(--border);
   position: sticky;
   bottom: 0;
