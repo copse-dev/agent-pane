@@ -141,6 +141,17 @@
 .chat-row:hover .chat-delete {
   opacity: 1;
 }
+.chats-show-more {
+  width: 100%;
+  text-align: left;
+  padding: 4px var(--spacing-sm) 4px 28px;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+.chats-show-more:hover {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
 .pane-chat {
   position: relative;
   flex: 1;
