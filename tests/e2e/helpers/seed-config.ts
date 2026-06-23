@@ -1048,6 +1048,78 @@ export function seedToolDisplayFixture(workspaceRoot: string): void {
   )
 }
 
+/**
+ * Two `run_shell` tool cards for the safe-install banner change: the old card
+ * echoes the raw `sfw /bin/sh -c '…'` wrapper, the new one echoes the original
+ * `npm install`. Lets a reviewer see the noisy-vs-clean banner side by side.
+ */
+export const SAFE_INSTALL_OLD_BANNER =
+  '[safe-install] scanned by Socket Firewall (sfw); install scripts disabled (npm_config_ignore_scripts)\n' +
+  "$ sfw /bin/sh -c 'cd /Users/example/agent-pane && npm install 2>&1'\n\n" +
+  'added 2 packages, changed 2 packages, and audited 1190 packages in 7s'
+export const SAFE_INSTALL_NEW_BANNER =
+  '[safe-install] scanned by Socket Firewall (sfw); install scripts disabled\n' +
+  '$ npm install\n\n' +
+  'added 2 packages, changed 2 packages, and audited 1190 packages in 7s'
+
+export function seedSafeInstallBannerFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-safe-install-banner-project'
+  const threadId = 'e2e-safe-install-banner-thread'
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      expandedProjectId: projectId,
+      activeThreadId: threadId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Safe-install banner',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-safe-install-old',
+              role: 'assistant',
+              content: 'Before: the banner echoed the raw sfw wrapper.',
+              toolCalls: [
+                {
+                  id: 'tc-install-old',
+                  name: 'run_shell',
+                  args: { command: 'npm install' },
+                  status: 'done',
+                  result: SAFE_INSTALL_OLD_BANNER,
+                },
+              ],
+              createdAt: Date.now(),
+            },
+            {
+              id: 'msg-assistant-safe-install-new',
+              role: 'assistant',
+              content: 'After: the banner echoes the original command.',
+              toolCalls: [
+                {
+                  id: 'tc-install-new',
+                  name: 'run_shell',
+                  args: { command: 'npm install' },
+                  status: 'done',
+                  result: SAFE_INSTALL_NEW_BANNER,
+                },
+              ],
+              createdAt: Date.now() + 1,
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
 /** Thread showing built-in browser tool cards (navigate/snapshot/screenshot/interact). */
 export function seedBrowserToolsFixture(workspaceRoot: string): void {
   const projectId = 'e2e-browser-tools-project'

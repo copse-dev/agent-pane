@@ -16,7 +16,11 @@ import {
 } from '../services/permission-policy.ts'
 import { envForRendererChildProcess } from '../services/child-process-env.ts'
 import { getSetting } from '../services/settings.ts'
-import { detectPackageInstall, wrapWithSocketFirewall } from '../services/safe-install.ts'
+import {
+  detectPackageInstall,
+  formatSafeInstallBanner,
+  wrapWithSocketFirewall,
+} from '../services/safe-install.ts'
 import { installSocketFirewall, isSocketFirewallAvailable } from '../services/socket-firewall.ts'
 import {
   CappedOutputAccumulator,
@@ -212,11 +216,8 @@ async function prepareCommand(command: string, signal: AbortSignal): Promise<Pre
   const env: NodeJS.ProcessEnv = detection.jsManager
     ? { ...baseEnv, npm_config_ignore_scripts: 'true' }
     : baseEnv
-  const notes = [
-    'scanned by Socket Firewall (sfw)',
-    ...(detection.jsManager ? ['install scripts disabled (npm_config_ignore_scripts)'] : []),
-  ]
-  const banner = `[safe-install] ${notes.join('; ')}\n$ ${wrapped}\n`
+  // Show the original command in the banner, not the `sfw <shell> -c '…'` wrapper.
+  const banner = formatSafeInstallBanner(command, detection)
   getMainWindow()?.webContents.send('agent:shell_output', banner)
   return { command: wrapped, env, banner }
 }

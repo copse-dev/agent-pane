@@ -1,6 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { detectPackageInstall, posixQuote, wrapWithSocketFirewall } from './safe-install.ts'
+import {
+  detectPackageInstall,
+  formatSafeInstallBanner,
+  posixQuote,
+  wrapWithSocketFirewall,
+} from './safe-install.ts'
 
 const SH = { path: '/bin/sh', cArg: '-c' }
 
@@ -94,5 +99,35 @@ describe('wrapWithSocketFirewall', () => {
       wrapWithSocketFirewall('npm install', { path: 'cmd', cArg: '/c' }, winQuote),
       `sfw cmd /c "npm install"`,
     )
+  })
+})
+
+describe('formatSafeInstallBanner', () => {
+  it('echoes the original command, not the sfw wrapper', () => {
+    const banner = formatSafeInstallBanner('npm install lodash', {
+      isInstall: true,
+      jsManager: true,
+    })
+    assert.equal(
+      banner,
+      '[safe-install] scanned by Socket Firewall (sfw); install scripts disabled\n$ npm install lodash\n',
+    )
+    assert.ok(!banner.includes('sfw /bin/sh -c'), 'wrapper plumbing must not leak into the banner')
+  })
+
+  it('omits the install-scripts note for non-JS managers', () => {
+    const banner = formatSafeInstallBanner('pip install requests', {
+      isInstall: true,
+      jsManager: false,
+    })
+    assert.equal(
+      banner,
+      '[safe-install] scanned by Socket Firewall (sfw)\n$ pip install requests\n',
+    )
+  })
+
+  it('trims surrounding whitespace from the echoed command', () => {
+    const banner = formatSafeInstallBanner('  npm ci  ', { isInstall: true, jsManager: true })
+    assert.ok(banner.includes('\n$ npm ci\n'))
   })
 })
