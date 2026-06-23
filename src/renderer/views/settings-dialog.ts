@@ -43,6 +43,7 @@ interface SettingField {
 
 const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'customInstructions', kind: 'text', default: '', save: true },
+  { name: 'openRouterModel', kind: 'text', default: '', save: true },
   { name: 'externalApiSafety', kind: 'checkbox', default: false, save: true },
   { name: 'remoteAgentBaseUrl', kind: 'text', default: DEFAULT_CURSOR_AGENT_BASE_URL, save: true },
   { name: 'remoteAgentRepository', kind: 'text', default: '', save: true },
@@ -82,7 +83,8 @@ async function saveSimpleFields(data: FormData, api: ApiClient): Promise<void> {
       await api.settings.set(field.name, data.get(field.name) === 'on')
     } else {
       const value = (data.get(field.name) as string) ?? ''
-      await api.settings.set(field.name, field.name === 'customInstructions' ? value.trim() : value)
+      const trimmed = field.name === 'customInstructions' || field.name === 'openRouterModel'
+      await api.settings.set(field.name, trimmed ? value.trim() : value)
     }
   }
 }
@@ -152,6 +154,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 chat box). Selecting <strong>Cursor Cloud Agent</strong> sends each turn to Cursor
                 Cloud instead of running it on this machine — configure it below.
               </span>
+              <label>
+                Custom OpenRouter model
+                <input
+                  type="text"
+                  name="openRouterModel"
+                  placeholder="vendor/model (e.g. anthropic/claude-3.7-sonnet)"
+                  autocomplete="off"
+                />
+                <span class="field-hint">
+                  Adds a model id beyond the built-in OpenRouter shortlist to the picker. Requires an
+                  OpenRouter API key below. Browse ids at <code>openrouter.ai/models</code>.
+                </span>
+              </label>
             </fieldset>
 
             <fieldset>
@@ -409,7 +424,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   document.body.append(overlay)
   overlayEl = overlay
 
-  const apiKeysSection = createApiKeysSection(api, { providers: ['anthropic', 'openai'] })
+  const apiKeysSection = createApiKeysSection(api, {
+    providers: ['anthropic', 'openai', 'openrouter'],
+  })
   overlay.querySelector('#settings-api-keys-host')!.append(apiKeysSection.root)
 
   const cursorKeySection = createApiKeysSection(api, {

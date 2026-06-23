@@ -2,6 +2,7 @@ import { AnthropicProvider } from './anthropic-provider.ts'
 import { OpenAIProvider } from './openai-provider.ts'
 import { MockLLMProvider } from './mock-provider.ts'
 import { DEFAULT_CLOUD_MODEL } from './model-catalog.ts'
+import { OPENROUTER_BASE_URL } from './openrouter.ts'
 import type { LLMProvider } from './types.ts'
 
 interface ProviderKeys {
@@ -63,3 +64,15 @@ export function createLocalOpenAIProvider(
 }
 
 export const createLMStudioProvider = createLocalOpenAIProvider
+
+// OpenRouter is an OpenAI-compatible cloud aggregator, so it reuses OpenAIProvider
+// with OpenRouter's base URL. Unlike a local server it is billed and reports usage,
+// so we keep `include_usage` on (includeUsage defaults to false when a baseURL is
+// set). `model` is the upstream id with the `openrouter:` prefix already stripped.
+export function createOpenRouterProvider(model: string, apiKey: string): LLMProvider {
+  return new OpenAIProvider(model, {
+    baseURL: OPENROUTER_BASE_URL,
+    apiKey,
+    includeUsage: true,
+  })
+}

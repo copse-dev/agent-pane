@@ -1,12 +1,20 @@
 import type { ApiClient } from '../../preload/api.d.ts'
 import { CLOUD_MODELS } from '@shared/llm/model-catalog.ts'
 import {
+  OPENROUTER_MODELS,
+  isOpenRouterModel,
+  openRouterDisplayLabel,
+  toOpenRouterModel,
+} from '@shared/llm/openrouter.ts'
+import {
   REMOTE_AGENT_MODELS,
   REMOTE_AGENT_MODEL_PREFIX,
   REMOTE_AGENT_PROVIDER_CURSOR,
   parseRemoteAgentModel,
 } from '@shared/remote-agent.ts'
 import { clear } from '../dom/helpers.ts'
+
+const OPENROUTER_GROUP = 'OpenRouter'
 
 export interface ModelOption {
   value: string
@@ -17,6 +25,7 @@ export interface ModelOption {
 
 export function modelDisplayLabel(model: string): string {
   if (model.startsWith('lmstudio:')) return model.slice('lmstudio:'.length)
+  if (isOpenRouterModel(model)) return openRouterDisplayLabel(model)
   const remoteProvider = parseRemoteAgentModel(model)
   if (remoteProvider) {
     return REMOTE_AGENT_MODELS.find((option) => option.provider === remoteProvider)?.label ?? model
@@ -24,10 +33,51 @@ export function modelDisplayLabel(model: string): string {
   return model
 }
 
+// Curated OpenRouter shortlist plus any custom id the user saved (or currently
+// has selected). When no key is configured the entries show disabled, mirroring
+// how the Cursor remote agent advertises itself before its key is set.
+async function openRouterOptions(
+  api: ApiClient,
+  available: boolean,
+  current: string,
+): Promise<ModelOption[]> {
+  let customId = ''
+  try {
+    customId = (((await api.settings.get('openRouterModel')) as string | null) ?? '').trim()
+  } catch {
+    /* no custom model configured */
+  }
+
+  const seen = new Set<string>()
+  const entries: Array<{ value: string; label: string }> = []
+  const add = (id: string, label: string) => {
+    const value = toOpenRouterModel(id)
+    if (!id || seen.has(value)) return
+    seen.add(value)
+    entries.push({ value, label })
+  }
+
+  for (const model of OPENROUTER_MODELS) add(model.id, model.label)
+  if (customId) add(customId, `${customId} (custom)`)
+  if (isOpenRouterModel(current))
+    add(current.slice('openrouter:'.length), modelDisplayLabel(current))
+
+  return entries.map((entry) =>
+    available
+      ? { value: entry.value, label: entry.label, group: OPENROUTER_GROUP }
+      : {
+          value: entry.value,
+          label: `${entry.label} — configure OpenRouter API key`,
+          group: OPENROUTER_GROUP,
+          disabled: true,
+        },
+  )
+}
+
 export async function fetchModelOptions(api: ApiClient, current: string): Promise<ModelOption[]> {
   const options: ModelOption[] = []
 
-  let available = { anthropic: true, openai: true, cursor: true }
+  let available = { anthropic: true, openai: true, cursor: true, openrouter: true }
   try {
     available = await api.settings.availableProviders()
   } catch {
@@ -36,6 +86,8 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
   for (const [value, label, provider] of CLOUD_MODELS) {
     if (available[provider]) options.push({ value, label })
   }
+
+  options.push(...(await openRouterOptions(api, available.openrouter, current)))
 
   const remoteGroup = 'Remote agents'
   for (const remote of REMOTE_AGENT_MODELS) {

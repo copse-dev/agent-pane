@@ -35,6 +35,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   localDefaultModel: z.string().max(256),
   smallTasksModel: z.string().max(256),
   subagentModel: z.string().max(256),
+  openRouterModel: z.string().max(256),
   localSubagentsEnabled: z.boolean(),
   localTodoItemsEnabled: z.boolean(),
   skillsEnabled: z.boolean(),

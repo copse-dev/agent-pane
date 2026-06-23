@@ -112,6 +112,37 @@ export function seedEmptyProject(
   }
 }
 
+/**
+ * Project with a stored OpenRouter API key and a custom OpenRouter model, so the
+ * model picker shows the enabled OpenRouter optgroup (curated + custom entries).
+ * The key record matches the base64-plaintext shape written by `setApiKey` when OS
+ * secure storage is unavailable, which is all `hasApiKey` needs to report it set.
+ */
+export function seedOpenRouterFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-openrouter-project'
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [],
+    }),
+    'utf8',
+  )
+  writeSettings({
+    model: 'openrouter:openai/gpt-4o',
+    openRouterModel: 'x-ai/grok-2',
+    apiKey: {
+      openrouter: {
+        v: 1,
+        enc: Buffer.from('sk-or-e2e-key', 'utf8').toString('base64'),
+        plain: true,
+      },
+    },
+  })
+}
+
 /** Tool args containing HTML-like strings that break innerHTML <pre> templates. */
 export const INNERHTML_TRAP_ARGS = {
   path: 'index.html',
