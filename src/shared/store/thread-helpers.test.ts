@@ -109,3 +109,56 @@ describe('blank thread reuse', () => {
     )
   })
 })
+
+describe('draft prompt events', () => {
+  it('emits thread_draft_changed (not threads_changed) when saving a draft', () => {
+    const store = createStore()
+    const id = createThread(store)
+
+    let threadsChanged = 0
+    let draftChanged = 0
+    let draftChangedId: string | null = null
+    store.on('threads_changed', () => threadsChanged++)
+    store.on('thread_draft_changed', (tid) => {
+      draftChanged++
+      draftChangedId = tid
+    })
+
+    setThreadDraftPrompt(store, id, 'typing a draft')
+
+    // The conversation rebuild listens to threads_changed; keeping draft saves
+    // off that event is what prevents the message list re-rendering per keystroke.
+    assert.equal(threadsChanged, 0)
+    assert.equal(draftChanged, 1)
+    assert.equal(draftChangedId, id)
+  })
+
+  it('emits thread_draft_changed when clearing an existing draft', () => {
+    const store = createStore()
+    const id = createThread(store)
+    setThreadDraftPrompt(store, id, 'something')
+
+    let threadsChanged = 0
+    let draftChanged = 0
+    store.on('threads_changed', () => threadsChanged++)
+    store.on('thread_draft_changed', () => draftChanged++)
+
+    setThreadDraftPrompt(store, id, '')
+
+    assert.equal(store.getState().threads.find((t) => t.id === id)?.draftPrompt, undefined)
+    assert.equal(threadsChanged, 0)
+    assert.equal(draftChanged, 1)
+  })
+
+  it('does not emit when the draft is unchanged', () => {
+    const store = createStore()
+    const id = createThread(store)
+    setThreadDraftPrompt(store, id, 'same')
+
+    let draftChanged = 0
+    store.on('thread_draft_changed', () => draftChanged++)
+
+    setThreadDraftPrompt(store, id, 'same')
+    assert.equal(draftChanged, 0)
+  })
+})
