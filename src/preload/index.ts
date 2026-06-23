@@ -206,6 +206,9 @@ contextBridge.exposeInMainWorld('api', {
   plugins: {
     list: () => ipcRenderer.invoke('plugins:list'),
   },
+  hooks: {
+    list: () => ipcRenderer.invoke('hooks:list'),
+  },
   terminal: {
     create: (cols: number, rows: number) => ipcRenderer.invoke('terminal:create', cols, rows),
     write: (sessionId: string, data: string) =>
