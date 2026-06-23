@@ -41,6 +41,7 @@ import type { FollowUpContext } from '@shared/follow-ups/types.ts'
 import { storageGet, storageSet } from './services/storage.ts'
 import { getMainWindow } from './windows/create-main-window.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
+import { clearRemoteAgentSession } from './services/remote-agent-client.ts'
 import { shutdownBrowserSession } from './services/browser/session-manager.ts'
 
 // Prevent multiple instances stacking invisible windows at the same position.
@@ -168,6 +169,7 @@ app
     ipcMain.handle('agent:clearHistory', (_e, threadId: string) => {
       messageHistory.delete(threadId)
       storageSet(`llm-history:${threadId}`, null)
+      clearRemoteAgentSession(threadId)
     })
 
     ipcMain.handle('agent:abort', (_e, threadId: string) => {

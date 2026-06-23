@@ -3,6 +3,8 @@ import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { storageGet, storageSet } from './storage.ts'
 
 const WORKSPACE_KEY = 'workspaceRoot'
+const PROJECTS_KEY = 'projects'
+const ACTIVE_PROJECT_KEY = 'activeProjectId'
 
 let workspaceRoot: string | null = (storageGet(WORKSPACE_KEY) as string | null | undefined) ?? null
 
@@ -60,6 +62,22 @@ export function clearAllowedWorkspaceRootsForTest(): void {
 
 export function getWorkspaceRoot(): string | null {
   return workspaceRoot
+}
+
+export function getActiveProjectRoot(): string | null {
+  const activeProjectId = storageGet(ACTIVE_PROJECT_KEY)
+  if (typeof activeProjectId !== 'string') return workspaceRoot
+
+  const projects = storageGet(PROJECTS_KEY)
+  if (!Array.isArray(projects)) return workspaceRoot
+
+  const activeProject = projects.find((project): project is { id: string; path: string } => {
+    if (!project || typeof project !== 'object') return false
+    const candidate = project as { id?: unknown; path?: unknown }
+    return candidate.id === activeProjectId && typeof candidate.path === 'string'
+  })
+
+  return activeProject?.path ?? workspaceRoot
 }
 
 export function setWorkspaceRoot(root: string | null): void {

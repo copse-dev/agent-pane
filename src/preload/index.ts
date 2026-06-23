@@ -171,6 +171,12 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.off('menu:showBrowser', listener)
     },
   },
+  remoteAgent: {
+    downloadArtifact: (agentId: string, path: string) =>
+      ipcRenderer.invoke('remoteAgent:downloadArtifact', agentId, path),
+    artifactImageDataUrl: (agentId: string, path: string) =>
+      ipcRenderer.invoke('remoteAgent:artifactImageDataUrl', agentId, path),
+  },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),
@@ -184,12 +190,12 @@ contextBridge.exposeInMainWorld('api', {
       webAllowedOrigins: string[]
       webAllowUserApproval: boolean
     }) => ipcRenderer.invoke('settings:setSecurity', prefs),
-    getKey: (provider: 'anthropic' | 'openai' | 'lmstudio') =>
+    getKey: (provider: 'anthropic' | 'openai' | 'lmstudio' | 'cursor') =>
       ipcRenderer.invoke('settings:getKey', provider),
-    setKey: (provider: 'anthropic' | 'openai' | 'lmstudio', key: string) =>
+    setKey: (provider: 'anthropic' | 'openai' | 'lmstudio' | 'cursor', key: string) =>
       ipcRenderer.invoke('settings:setKey', provider, key),
     availableProviders: () => ipcRenderer.invoke('settings:availableProviders'),
-    validateKey: (provider: 'anthropic' | 'openai', key: string) =>
+    validateKey: (provider: 'anthropic' | 'openai' | 'cursor', key: string) =>
       ipcRenderer.invoke('settings:validateKey', provider, key),
   },
   appIcon: {

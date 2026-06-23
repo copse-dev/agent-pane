@@ -79,6 +79,12 @@
   overflow-y: auto;
   color: var(--text-secondary);
 }
+.tool-result pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
 .tool-args details summary {
   cursor: pointer;
   color: var(--text-muted);
