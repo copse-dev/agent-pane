@@ -24,6 +24,13 @@ export const config: Options.Testrunner = {
   exclude: [...(baseConfig.exclude ?? []), ...ciExclude],
   specFileRetries: 1,
   specFileRetriesDelay: 2,
+  // Electron session relaunches (`browser.reloadSession()`) are slow on the
+  // resource-constrained GitHub runner, so specs that reload mid-test can blow
+  // the default 30s mocha timeout. Give them headroom (local runs finish in <5s).
+  mochaOpts: {
+    ...baseConfig.mochaOpts,
+    timeout: 60_000,
+  },
   beforeSession(config, capabilities) {
     process.env.COPSE_E2E_CI = '1'
     baseConfig.beforeSession?.(config, capabilities)
