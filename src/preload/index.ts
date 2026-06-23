@@ -80,6 +80,11 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('agent:usage', listener)
       return () => ipcRenderer.off('agent:usage', listener)
     },
+    onRefreshContextEstimate: (handler: () => void) => {
+      const listener = () => handler()
+      ipcRenderer.on('agent:refresh_context_estimate', listener)
+      return () => ipcRenderer.off('agent:refresh_context_estimate', listener)
+    },
   },
   diff: {
     approve: (path: string) => ipcRenderer.invoke('diff:approve', path),
