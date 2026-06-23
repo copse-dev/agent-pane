@@ -218,7 +218,7 @@ export function setThreadDraftPrompt(store: AppStore, threadId: string, draftPro
       t.id !== threadId ? t : { ...t, draftPrompt, updatedAt: Date.now() },
     )
     store.setState({ threads: updated })
-    store.emit('threads_changed')
+    store.emit('thread_draft_changed', threadId)
     return
   }
   if (thread.draftPrompt === undefined) return
@@ -228,7 +228,7 @@ export function setThreadDraftPrompt(store: AppStore, threadId: string, draftPro
     return { ...rest, updatedAt: Date.now() }
   })
   store.setState({ threads: updated })
-  store.emit('threads_changed')
+  store.emit('thread_draft_changed', threadId)
 }
 
 export function appendToken(store: AppStore, messageId: string, text: string): void {
