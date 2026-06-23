@@ -38,6 +38,7 @@ import {
   threadGitBranchMismatchMessage,
 } from '@shared/git/thread-branch.ts'
 import { showErrorToast, showToast } from './toast.ts'
+import { createComposerDraftAutosave } from './composer-draft-autosave.ts'
 
 export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const chips = el('div', { class: 'attachment-chips' })
@@ -172,16 +173,12 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     activeComposerThreadId = id
   }
 
-  let draftSaveTimer: ReturnType<typeof setTimeout> | null = null
-  textarea.addEventListener('input', () => {
-    const id = getActiveThreadId()
-    if (!id) return
-    if (draftSaveTimer !== null) clearTimeout(draftSaveTimer)
-    draftSaveTimer = setTimeout(() => {
-      draftSaveTimer = null
-      setThreadDraftPrompt(store, id, textarea.value)
-    }, 250)
+  const draftAutosave = createComposerDraftAutosave({
+    getActiveThreadId,
+    getValue: () => textarea.value,
+    save: (id, value) => setThreadDraftPrompt(store, id, value),
   })
+  textarea.addEventListener('input', () => draftAutosave.schedule())
 
   function updateState() {
     const running = isRunning()
@@ -557,7 +554,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   updateFooter()
   syncComposerThread()
   return () => {
-    if (draftSaveTimer !== null) clearTimeout(draftSaveTimer)
+    draftAutosave.cancel()
     if (activeComposerThreadId) {
       setThreadDraftPrompt(store, activeComposerThreadId, textarea.value)
     }
