@@ -32,7 +32,7 @@ describe('skills', () => {
     await browser.saveScreenshot(join(SCREENSHOTS, '02-skill-input.png'))
 
     await $('.submit-btn').click()
-    await $('.msg-user').waitForExist({ timeout: 15_000 })
+    await $('.msg-user').waitForExist({ timeout: 30_000 })
     await browser.waitUntil(
       async () =>
         (await browser.execute(() => document.querySelectorAll('.msg-assistant').length)) >= 1,

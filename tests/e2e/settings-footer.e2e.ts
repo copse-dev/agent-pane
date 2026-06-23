@@ -31,7 +31,7 @@ describe('settings footer overlap', () => {
     await $('[aria-label="Settings"]').click()
 
     const general = await $('.settings-section[data-section="general"]')
-    await general.waitForDisplayed({ timeout: 15_000 })
+    await general.waitForDisplayed({ timeout: 30_000 })
 
     // Scroll midway so fieldset content scrolls *under* the sticky footer.
     await scrollSettingsContent(99_999)

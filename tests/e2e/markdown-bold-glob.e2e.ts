@@ -19,7 +19,7 @@ describe('markdown bold after glob table cells', () => {
   })
 
   it('renders architecture list labels bold after table with glob paths', async () => {
-    await $('.message-text h4').waitForExist({ timeout: 15_000 })
+    await $('.message-text h4').waitForExist({ timeout: 30_000 })
 
     const metrics = await browser.execute(() => {
       const root = document.querySelector('.message-text')

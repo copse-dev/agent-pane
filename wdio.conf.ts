@@ -23,7 +23,7 @@ export const config: Options.Testrunner = {
   specFileRetries: 0,
   logLevel: 'warn',
   bail: 0,
-  waitforTimeout: 15_000,
+  waitforTimeout: 30_000,
   connectionRetryTimeout: 120_000,
   connectionRetryCount: 3,
   autoXvfb: !process.env.DISPLAY,

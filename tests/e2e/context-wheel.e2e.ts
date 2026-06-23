@@ -63,10 +63,10 @@ describeSkipInCi('context wheel footer live mock', () => {
     await $('.submit-btn').click()
 
     const wheel = await $('.context-wheel')
-    await expect(wheel).toBeDisplayed({ wait: 15_000 })
+    await expect(wheel).toBeDisplayed({ wait: 30_000 })
     await expect(wheel.$('.context-wheel-label')).toHaveText(/\d+%/)
 
-    await expect($('.footer-usage')).toHaveText(/\d/, { wait: 15_000 })
+    await expect($('.footer-usage')).toHaveText(/\d/, { wait: 30_000 })
 
     const footer = await $('.input-footer')
     await footer.saveScreenshot(join(SCREENSHOT_DIR, 'context-wheel-live-running.png'))

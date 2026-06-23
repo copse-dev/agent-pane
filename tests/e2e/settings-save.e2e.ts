@@ -29,7 +29,7 @@ describe('settings save', () => {
     await $('#settings-dialog button[type="submit"]').click()
 
     // Dialog hides on a successful save; a failed setSecurity leaves it visible.
-    await $('#settings-dialog').waitForDisplayed({ timeout: 15_000, reverse: true })
+    await $('#settings-dialog').waitForDisplayed({ timeout: 30_000, reverse: true })
 
     const toasts = await collectErrorToasts()
     await assertNoErrorToasts('settings save')

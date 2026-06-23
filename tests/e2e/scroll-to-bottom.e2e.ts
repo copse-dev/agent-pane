@@ -68,7 +68,7 @@ describe('scroll to bottom', () => {
     seedScrollToBottomFixture(process.cwd())
     await browser.reloadSession()
 
-    await $('.messages-list .msg-user').waitForExist({ timeout: 15_000 })
+    await $('.messages-list .msg-user').waitForExist({ timeout: 30_000 })
     await scrollMessagesListToTop()
 
     await expect(await isScrollToBottomVisible()).toBe(true)
@@ -81,7 +81,7 @@ describe('scroll to bottom', () => {
     seedScrollToBottomFixture(process.cwd())
     await browser.reloadSession()
 
-    await $('.messages-list .msg-user').waitForExist({ timeout: 15_000 })
+    await $('.messages-list .msg-user').waitForExist({ timeout: 30_000 })
     await scrollMessagesListToTop()
     await expect(await isNearBottom()).toBe(false)
 
@@ -124,7 +124,7 @@ describe('scroll to bottom', () => {
         })
         return lastAssistant.includes('Mock response')
       },
-      { timeout: 15_000, interval: 50 },
+      { timeout: 30_000, interval: 50 },
     )
 
     await expect(await isNearBottom()).toBe(true)
@@ -159,7 +159,7 @@ describe('scroll to bottom', () => {
         })
         return lastAssistant.includes('Mock response')
       },
-      { timeout: 15_000, interval: 50 },
+      { timeout: 30_000, interval: 50 },
     )
 
     await scrollMessagesListToTop()

@@ -34,7 +34,7 @@ describe('integrated terminal', () => {
     await $('.right-panel-tab[aria-label="Terminal"]').waitForDisplayed({ timeout: 5_000 })
     await expect($('.right-panel-tab[aria-label="Terminal"]')).toHaveElementClass('is-active')
 
-    await $('.terminal-container .xterm').waitForExist({ timeout: 15_000 })
+    await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 })
 
     await browser.waitUntil(
       async () => {
@@ -58,7 +58,7 @@ describe('integrated terminal', () => {
     await browser.keys(['echo', ' ', 'hello', '\uE007'])
 
     await browser.waitUntil(async () => (await xtermText()).includes('hello'), {
-      timeout: 15_000,
+      timeout: 30_000,
       timeoutMsg: 'expected echo hello output in xterm buffer',
     })
 

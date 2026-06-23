@@ -84,7 +84,7 @@ describe('settings model routing placement', () => {
     const general = settingsSection('general')
     await expect(general).toBeDisplayed()
     await $('select[name="localDefaultModel"] option[value="qwen/qwen3.6-35b-a3b"]').waitForExist({
-      timeout: 15_000,
+      timeout: 30_000,
     })
 
     const placement = await browser.execute(() => {

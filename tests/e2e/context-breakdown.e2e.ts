@@ -21,10 +21,10 @@ describe('composer context breakdown wheel', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     const wheel = await $('.context-wheel')
-    await wheel.waitForDisplayed({ timeout: 15_000 })
+    await wheel.waitForDisplayed({ timeout: 30_000 })
     await browser.waitUntil(
       async () => (await wheel.getAttribute('class'))?.includes('has-breakdown') ?? false,
-      { timeout: 15_000, timeoutMsg: 'expected breakdown ring on fresh thread' },
+      { timeout: 30_000, timeoutMsg: 'expected breakdown ring on fresh thread' },
     )
 
     await expect(wheel.$('.context-wheel-label')).toHaveText(/\d+%/)

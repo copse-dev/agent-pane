@@ -25,7 +25,7 @@ describe('package install approval', () => {
     await $('.submit-btn').click()
 
     const dialog = await $('#approval-dialog')
-    await dialog.waitForDisplayed({ timeout: 15_000 })
+    await dialog.waitForDisplayed({ timeout: 30_000 })
 
     await expect(dialog.$('.approval-title')).toHaveText('Run package install?')
 

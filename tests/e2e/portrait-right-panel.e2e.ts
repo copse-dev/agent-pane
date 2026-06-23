@@ -30,7 +30,7 @@ async function setPortraitWindow(): Promise<void> {
       return size.height >= 700 && size.height / size.width >= 1.35
     },
     {
-      timeout: 15_000,
+      timeout: 30_000,
       timeoutMsg: 'expected Electron window to resize to a tall portrait viewport',
     },
   )

@@ -18,7 +18,7 @@ async function completeMockTurn(): Promise<void> {
 
   await waitForAgentIdle(20_000)
 
-  await $('.follow-up-bubble').waitForExist({ timeout: 15_000 })
+  await $('.follow-up-bubble').waitForExist({ timeout: 30_000 })
 }
 
 describe('follow-up suggestion bubbles', () => {

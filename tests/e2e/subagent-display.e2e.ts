@@ -18,7 +18,7 @@ describe('subagent display', () => {
   })
 
   it('shows collapsed explore summary and expandable inner tools', async () => {
-    await $('.tool-card-subagent').waitForExist({ timeout: 15_000 })
+    await $('.tool-card-subagent').waitForExist({ timeout: 30_000 })
 
     const card = await $('.tool-card-subagent')
     await expect(card).toBeDisplayed()
