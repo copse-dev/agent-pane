@@ -48,16 +48,19 @@ jobs:
       # The Electron/Chromedriver e2e session occasionally fails to start on the
       # runner ("DevToolsActivePort file doesn't exist" / "POST /session" timeout).
       # The hang wedges the whole wdio run, so in-process retries don't recover —
-      # only a fresh xvfb+Electron launch does. Retry the entire shard instead.
+      # only a fresh xvfb+Electron launch does. Retry the entire shard, and wrap
+      # each attempt in `timeout` so a wedged session is killed and retried
+      # (a plain hang would otherwise never exit and stall the job).
       - name: e2e shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }} (retry on flaky session startup)
+        timeout-minutes: 20
         run: |
           for attempt in 1 2 3; do
             echo "::group::e2e shard ${{ matrix.shard }} attempt $attempt"
-            if npm run test:e2e:ci -- --shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }}; then
+            if timeout -k 15 300 npm run test:e2e:ci -- --shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }}; then
               echo "::endgroup::"
               exit 0
             fi
             echo "::endgroup::"
-            echo "e2e shard ${{ matrix.shard }} attempt $attempt failed"
+            echo "e2e shard ${{ matrix.shard }} attempt $attempt failed or timed out"
           done
           exit 1
