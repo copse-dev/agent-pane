@@ -1,4 +1,6 @@
-import '../../../tests/setup-dom.ts'
+// Uses jsdom (not the shared happy-dom setup) because these tests exercise the
+// DOMPurify sanitizer, which needs a spec-complete DOM.
+import '../../../tests/setup-dom-jsdom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
@@ -36,6 +38,15 @@ describe('renderStreamingMarkdown', () => {
     assert.match(html, /<h4>Title<\/h4>/)
     assert.match(html, /<span class="stream-pending">- item<\/span>/)
     assert.doesNotMatch(html, /<li>- item<\/li>/)
+  })
+
+  it('renders complete inline bold markup on the pending line', () => {
+    const html = renderStreamingMarkdown(
+      'Review intro\n**Recent commits to main (all auto-bump PRs):**',
+    )
+    assert.match(html, /<span class="stream-pending">/)
+    assert.match(html, /<strong>Recent commits to main \(all auto-bump PRs\):<\/strong>/)
+    assert.doesNotMatch(html, /\*\*Recent commits/)
   })
 
   it('formats each completed line as newlines arrive', () => {
@@ -77,6 +88,15 @@ describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
     assert.match(completed.innerHTML, /<h4>Title<\/h4>/)
     assert.equal(pending.textContent, '- item')
     assert.equal(pending.hidden, false)
+  })
+
+  it('renders inline markdown in the live tail without rebuilding completed content', () => {
+    const host = document.createElement('div')
+    const r = new StreamingMarkdownRenderer(host)
+    r.update('done\n**Recent commits:**')
+    const pending = host.querySelector('.stream-pending') as HTMLElement
+    assert.equal(pending.textContent, 'Recent commits:')
+    assert.match(pending.innerHTML, /<strong>Recent commits:<\/strong>/)
   })
 
   it('reuses the same completed node across tokens (no full rebuild)', () => {

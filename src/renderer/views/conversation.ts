@@ -3,10 +3,12 @@ import type { AppStore } from '@shared/store/store.ts'
 import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/thread-helpers.ts'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
 import { renderMarkdown } from '../markdown/renderer.ts'
+import { sanitizeRenderedMarkdown } from '../markdown/sanitize.ts'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { StreamingMarkdownRenderer } from '../markdown/streaming.ts'
 import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
+import { hydrateRemoteArtifactImages } from '../markdown/remote-artifact-images.ts'
 import { stripTextToolCallBlocks } from '@shared/agent/parse-text-tool-calls.ts'
 import type { Message, ToolCall } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -18,6 +20,7 @@ import {
   type ToolCallDisplayItem,
 } from '@shared/tools/tool-display.ts'
 import { createTodoListEl } from './todo-panel.ts'
+import { renderToolArgs } from './tool-args-format.ts'
 import {
   drainMessageQueue,
   queuedMessageIds,
@@ -30,10 +33,6 @@ function statusIcon(status: ToolCall['status']): string {
   return status === 'done' ? '✓' : status === 'error' ? '✕' : '⋯'
 }
 
-function renderToolArgs(args: unknown): string {
-  return JSON.stringify(args, null, 2)
-}
-
 function createToolArgsSection(args: unknown): HTMLDetailsElement {
   return el(
     'details',
@@ -41,6 +40,11 @@ function createToolArgsSection(args: unknown): HTMLDetailsElement {
     el('summary', {}, 'Arguments'),
     el('pre', {}, renderToolArgs(args)),
   )
+}
+
+function createToolResultSection(result: string | null): HTMLElement {
+  if (!result) return el('div', { class: 'tool-result' })
+  return el('div', { class: 'tool-result' }, el('pre', {}, renderToolArgs(result)))
 }
 
 function createToolHeader(
@@ -67,7 +71,7 @@ function appendStandardToolSections(
   card.append(
     createToolHeader(label, tc.status, summaryClass, count),
     createToolArgsSection(tc.args),
-    el('div', { class: 'tool-result' }, ...(tc.result ? [tc.result] : [])),
+    createToolResultSection(tc.result),
   )
 }
 
@@ -127,9 +131,10 @@ function setAssistantMarkdown(
   }
   // Final render: replace the incremental scaffold with the finished markdown.
   streamingRenderers.delete(el)
-  el.innerHTML = renderMarkdown(display)
+  el.innerHTML = sanitizeRenderedMarkdown(renderMarkdown(display))
   attachCodeBlockCopyButtons(el)
   void annotateFileReferences(el, api)
+  hydrateRemoteArtifactImages(el, api)
   void renderMermaidIn(el)
 }
 
@@ -211,7 +216,7 @@ function createGroupToolCard(item: Extract<ToolCallDisplayItem, { type: 'group' 
     entry.append(
       createToolHeader(getToolDisplayName(tc.name), tc.status, 'tool-group-item-header'),
       createToolArgsSection(tc.args),
-      el('div', { class: 'tool-result' }, ...(tc.result ? [tc.result] : [])),
+      createToolResultSection(tc.result),
     )
     groupItems.append(entry)
   }
@@ -580,6 +585,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
 
     list.append(msgEl)
+    hydrateRemoteArtifactImages(list, api)
     // Re-render any tool cards this message already carries (restored threads).
     renderToolCards(msgEl, msg.toolCalls ?? [])
     scrollToBottom(msg.role === 'user')
@@ -635,6 +641,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       const msg = thread?.messages.find((m) => m.id === mid)
       if (textEl && msg?.role === 'assistant') {
         setAssistantMarkdown(textEl as HTMLElement, msg.content, false, api)
+        hydrateRemoteArtifactImages(list, api)
       }
       if (msg?.role === 'assistant' && msg.content.trim()) {
         const body = msgEl?.querySelector('.message-body')
@@ -664,7 +671,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   ]
 
   const unbindFileLinks = bindFileReferenceClicks(root, store, api)
-  const unbindBrowserLinks = bindBrowserLinkClicks(root, store)
+  const unbindBrowserLinks = bindBrowserLinkClicks(root, store, api)
   rebuildForThread()
   syncFromStore()
   return () => {

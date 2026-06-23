@@ -44,6 +44,7 @@ import { storageGet, storageSet } from '../services/storage.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills-registry.ts'
 import { listCursorPlugins } from '../services/cursor-plugins.ts'
+import { listCursorHooks } from '../services/cursor-hooks.ts'
 import { registerSkillTools } from '../services/registry-bootstrap.ts'
 import {
   checkoutGitBranch,
@@ -63,6 +64,10 @@ import { isWorkspaceTrusted } from '../services/workspace-trust.ts'
 import { applyAppIcon } from '../app-icon.ts'
 import { getMainWindow } from '../windows/create-main-window.ts'
 import { validateApiKey } from '../services/validate-api-key.ts'
+import {
+  fetchRemoteArtifactImageDataUrl,
+  resolveRemoteArtifactDownloadUrl,
+} from '../services/remote-agent-client.ts'
 import {
   gatewayListDir,
   gatewayReadFile,
@@ -202,10 +207,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('settings:availableProviders', () => ({
     anthropic: isProviderAvailable('anthropic'),
     openai: isProviderAvailable('openai'),
+    cursor: isProviderAvailable('cursor'),
   }))
   ipcMain.handle('settings:validateKey', async (event, provider: unknown, key: unknown) => {
     assertMainFrameSender(event, win)
-    const p = parseIpcArgs(z.enum(['anthropic', 'openai']), [provider])
+    const p = parseIpcArgs(z.enum(['anthropic', 'openai', 'cursor']), [provider])
     const apiKey = parseIpcArgs(z.string().max(8192), [key])
     return validateApiKey(p, apiKey)
   })
@@ -228,6 +234,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   ipcMain.handle('skills:list', () => listSkills())
   ipcMain.handle('plugins:list', () => listCursorPlugins())
+  ipcMain.handle('hooks:list', () => {
+    const root = getWorkspaceRoot()
+    return listCursorHooks({ workspaceRoot: root, projectTrusted: isWorkspaceTrusted(root) })
+  })
 
   ipcMain.handle('git:isAvailable', async () => isGitAvailable() && (await isInsideGitWorkTree()))
   ipcMain.handle('git:status', () => getGitStatus())
@@ -247,6 +257,21 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const targetBranch = parseIpcArgs(z.string().min(1).max(256), [branch])
     await checkoutGitBranch(targetBranch)
   })
+  ipcMain.handle('remoteAgent:downloadArtifact', async (event, agentId: unknown, path: unknown) => {
+    assertMainFrameSender(event, win)
+    const parsedAgentId = parseIpcArgs(z.string().min(1).max(128), [agentId])
+    const parsedPath = parseIpcArgs(z.string().min(1).max(4096), [path])
+    return resolveRemoteArtifactDownloadUrl({ agentId: parsedAgentId, path: parsedPath })
+  })
+  ipcMain.handle(
+    'remoteAgent:artifactImageDataUrl',
+    async (event, agentId: unknown, path: unknown) => {
+      assertMainFrameSender(event, win)
+      const parsedAgentId = parseIpcArgs(z.string().min(1).max(128), [agentId])
+      const parsedPath = parseIpcArgs(z.string().min(1).max(4096), [path])
+      return fetchRemoteArtifactImageDataUrl({ agentId: parsedAgentId, path: parsedPath })
+    },
+  )
   ipcMain.handle('shell:openExternal', (event, url: unknown) => {
     assertMainFrameSender(event, win)
     const href = parseIpcArgs(z.string().url().max(2048), [url])

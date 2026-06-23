@@ -8,6 +8,22 @@ live in `package.json` (`dev`, `build`, `start`, `typecheck`, `lint`, `format:ch
 `test:e2e`, `check`); CI (`.github/workflows/ci.yml`) runs the full `check` + `build` + `test:e2e`
 sequence. Prefer those rather than reinventing commands.
 
+### Node version (>=22.18 required)
+
+This repo pins Node via `.nvmrc` (`22.18.0`) and `package.json` `engines` (`>=22.18`). The build/check
+tooling under `scripts/*.mts` relies on Node's native TypeScript type-stripping, which older 22.x
+releases lack. **The Cloud VM default `node` may be older than this** (e.g. `/exec-daemon/node` at
+`22.14`), in which case `npm run check` fails at `check:dead-code` with
+`TypeError [ERR_UNKNOWN_FILE_EXTENSION]: Unknown file extension ".mts"`. The cloud environment config
+(`.cursor/environment.json` → `.cursor/cloud-setup.sh`) installs and defaults Node to `.nvmrc` so fresh
+agents start correct. If you still land on an older node, switch before running anything:
+
+```bash
+export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"; nvm install; nvm use   # reads .nvmrc
+# nvm's `use` may not stick if an older node shadows PATH; if `node -v` is still wrong, prepend it:
+export PATH="$HOME/.nvm/versions/node/v$(cat .nvmrc)/bin:$PATH"
+```
+
 ### Running the app (headless VNC notes)
 
 This is a GUI Electron app. The Cloud VM exposes a VNC desktop on `DISPLAY=:1`, so launch with
@@ -40,6 +56,8 @@ No real model key is required to exercise core functionality. With neither `ANTH
 
 ### Before committing
 
+Before opening a PR, rebase onto **`origin/main`** — GitHub PR CI tests the merge of base into head, not your branch tip alone.
+
 Agents should run **`npm run check`** before creating a commit. That runs typecheck, ESLint,
 Prettier, the dead-code guard (`check:dead-code` — fails on `src/**/*.ts` files that nothing in
 the build graph imports), and unit tests (`npm test`) — the same fast gates CI runs before
@@ -47,6 +65,21 @@ build/e2e. If a file is intentionally unreferenced, add it to `ALLOWED_UNLINKED`
 `scripts/check-dead-code.mts` with a reason rather than leaving it to be flagged. If you
 changed renderer UI or e2e fixtures, also run **`npm run build && npm run test:e2e`** locally
 (macOS/Linux paths for seeded `electron-store` data must match `src/main/app-init.ts`).
+
+### Visual changes require evals
+
+Any change that affects what a user can see in the Electron app must include a focused visual eval
+unless the change is demonstrably invisible (for example, pure data plumbing with unchanged DOM).
+This includes edits to renderer components, styles, markdown rendering, tool cards, terminal/diff
+surfaces, screenshots fixtures, and visual copy/layout states. The eval should be a WebdriverIO
+Electron e2e spec that seeds the app into the target state, asserts the relevant DOM behavior, and
+saves screenshots for visual inspection. Use `.cursor/skills/screenshot-validate/SKILL.md` for
+DOM/layout changes and `.cursor/skills/agent-run-eval/SKILL.md` only when the visual change depends
+on an agent/tool loop. Do not rely on `npm run check`, a build, or manual VNC inspection alone as
+proof for a visual change.
+
+For appearance/layout taste — design-token usage, action-bar spacing, the sticky-footer-in-scroll
+gotcha, and other hard-won UI conventions — read and extend [`docs/ui-taste.md`](docs/ui-taste.md).
 
 ### App data / state
 
@@ -97,7 +130,9 @@ decisions) and `permission-gate.test.ts` (gate wiring + MCP decisions).
 
 ### Visual validation (tool UI / screenshots)
 
-Use WebdriverIO Electron e2e — do not hand-drive VNC unless debugging layout.
+Use WebdriverIO Electron e2e — do not hand-drive VNC unless debugging layout. For every visual
+change, add or update the smallest focused spec that exercises the changed state and captures at
+least one screenshot that reviewers can inspect.
 
 1. `npm run build`
 2. Seed `~/.config/copse-panel/config.json` before launch (see `tests/e2e/helpers/seed-config.ts`):

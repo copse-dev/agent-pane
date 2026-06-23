@@ -8,6 +8,12 @@ const PORTRAIT_WIDTH = 760
 const PORTRAIT_HEIGHT = 1180
 
 async function setPortraitWindow(): Promise<void> {
+  const alreadyPortrait = await browser.execute(() => {
+    const { innerWidth: width, innerHeight: height } = window
+    return height >= 700 && height / width >= 1.35
+  })
+  if (alreadyPortrait) return
+
   await browser.execute(
     (width, height) => {
       window.resizeTo(width, height)
@@ -24,7 +30,7 @@ async function setPortraitWindow(): Promise<void> {
       return size.height >= 700 && size.height / size.width >= 1.35
     },
     {
-      timeout: 5_000,
+      timeout: 15_000,
       timeoutMsg: 'expected Electron window to resize to a tall portrait viewport',
     },
   )
@@ -32,7 +38,10 @@ async function setPortraitWindow(): Promise<void> {
 
 async function openExplorerInPortraitWindow(autoPortraitRightPanel: boolean): Promise<void> {
   resetUserData()
-  seedPortraitRightPanelFixture(process.cwd(), autoPortraitRightPanel)
+  seedPortraitRightPanelFixture(process.cwd(), autoPortraitRightPanel, {
+    width: PORTRAIT_WIDTH,
+    height: PORTRAIT_HEIGHT,
+  })
   await browser.reloadSession()
   await $('.prompt-input').waitForExist({ timeout: 30_000 })
   await setPortraitWindow()
