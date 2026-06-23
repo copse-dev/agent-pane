@@ -2,7 +2,11 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
-import { syncThreadGitBranchIfChanged, threadGitBranchNeedsSync } from './sync-thread-branch.ts'
+import {
+  shellCommandMayChangeBranch,
+  syncThreadGitBranchIfChanged,
+  threadGitBranchNeedsSync,
+} from './sync-thread-branch.ts'
 
 function thread(id: string, branch?: string): Thread {
   const value: Thread = {
@@ -17,6 +21,28 @@ function thread(id: string, branch?: string): Thread {
   if (branch) value.gitBranch = branch
   return value
 }
+
+describe('shellCommandMayChangeBranch', () => {
+  it('matches branch-switching git commands', () => {
+    assert.equal(shellCommandMayChangeBranch({ command: 'git checkout main' }), true)
+    assert.equal(shellCommandMayChangeBranch({ command: 'git checkout -b feature/acp' }), true)
+    assert.equal(shellCommandMayChangeBranch({ command: 'git switch main' }), true)
+    assert.equal(shellCommandMayChangeBranch({ command: 'git worktree add ../wt main' }), true)
+    assert.equal(shellCommandMayChangeBranch({ command: 'npm test && git switch -c x' }), true)
+  })
+
+  it('ignores commands that cannot switch branches', () => {
+    assert.equal(shellCommandMayChangeBranch({ command: 'npm test' }), false)
+    assert.equal(shellCommandMayChangeBranch({ command: 'git status' }), false)
+    assert.equal(shellCommandMayChangeBranch({ command: 'ls -la' }), false)
+  })
+
+  it('ignores malformed args', () => {
+    assert.equal(shellCommandMayChangeBranch(undefined), false)
+    assert.equal(shellCommandMayChangeBranch({}), false)
+    assert.equal(shellCommandMayChangeBranch({ command: 42 }), false)
+  })
+})
 
 describe('threadGitBranchNeedsSync', () => {
   it('returns true when checkout differs from the bound branch', () => {

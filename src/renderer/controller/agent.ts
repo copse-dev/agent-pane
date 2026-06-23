@@ -16,6 +16,7 @@ import {
   getThreadById,
 } from '@shared/store/thread-helpers.ts'
 import { syncThreadGitBranchAfterShell } from './sync-thread-branch-after-shell.ts'
+import { shellCommandMayChangeBranch } from '@shared/git/sync-thread-branch.ts'
 import {
   initSubagent,
   appendSubagentText,
@@ -96,7 +97,14 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           })
           if (chunk.toolCallId && !chunk.isError) {
             const toolCall = findToolCall(store, st.msgId, chunk.toolCallId)
-            if (toolCall?.name === 'run_shell') {
+            // Only the foreground thread may rebind: branch status is global to
+            // the working tree, so a background thread reading HEAD would chase a
+            // branch the active thread checked out.
+            if (
+              toolCall?.name === 'run_shell' &&
+              threadId === store.getState().activeThreadId &&
+              shellCommandMayChangeBranch(toolCall.args)
+            ) {
               void syncThreadGitBranchAfterShell(store, api, threadId)
             }
             tryOpenFileFromResult(store, chunk.result)
