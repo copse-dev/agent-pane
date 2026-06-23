@@ -40,7 +40,7 @@ describe('staged diff approval UI', () => {
 
   it('stages diffs in the context panel with single- and multi-file selection', async function () {
     this.timeout(120_000)
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     await runWriteFileDirective('src/e2e-staged-a.ts', 'export const a = 1\n')
 
@@ -51,8 +51,8 @@ describe('staged diff approval UI', () => {
     )
     const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]')
     if (!(await $('#pane-files').isDisplayed())) await panelBtn.click()
-    await $('.diff-stage').waitForDisplayed({ timeout: 15_000 })
-    await $('#file-viewer .monaco-diff-editor').waitForDisplayed({ timeout: 15_000 })
+    await $('.diff-stage').waitForDisplayed({ timeout: 30_000 })
+    await $('#file-viewer .monaco-diff-editor').waitForDisplayed({ timeout: 30_000 })
 
     const acceptBtn = await $('#file-viewer .diff-accept-btn')
     const rejectBtn = await $('#file-viewer .diff-reject-btn')
@@ -68,7 +68,7 @@ describe('staged diff approval UI', () => {
     await runWriteFileDirective('src/e2e-staged-b.ts', 'export const b = 2\n')
 
     await browser.waitUntil(async () => (await $$('.diff-file-btn')).length === 2, {
-      timeout: 15_000,
+      timeout: 30_000,
       timeoutMsg: 'expected two queued diff file buttons',
     })
 

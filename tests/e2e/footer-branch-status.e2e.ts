@@ -25,7 +25,7 @@ describe('footer branch status match', () => {
   })
 
   it('shows the thread branch when checkout matches', async () => {
-    await $('.input-footer').waitForExist({ timeout: 15_000 })
+    await $('.input-footer').waitForExist({ timeout: 30_000 })
 
     const branchBtn = await $('.footer-branch-status')
     await expect(branchBtn).toBeDisplayed()
@@ -52,7 +52,7 @@ describeSkipInCi('footer branch status mismatch', () => {
   })
 
   it('highlights mismatch when thread branch differs from checkout', async () => {
-    await $('.input-footer').waitForExist({ timeout: 15_000 })
+    await $('.input-footer').waitForExist({ timeout: 30_000 })
 
     const branchBtn = await $('.footer-branch-status')
     await expect(branchBtn).toBeDisplayed({ wait: 10_000 })

@@ -14,10 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6.0.3
-      - uses: actions/setup-node@v6
-        with: { node-version: '22', cache: 'npm' }
-      - run: npm ci
-      - run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - uses: ./.github/actions/setup
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run format:check
@@ -36,39 +33,65 @@ jobs:
       # hash-verified upstream commit (not checked in) and runs the diff with
       # python3 (preinstalled on the runner).
       - run: npm run check:normalizer-parity
+      # The build is validated once in the dedicated `build` job below (whose
+      # dist artifact the e2e shards reuse), so it no longer runs here.
+
+  build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # Build dist once and hand it to every e2e shard. Previously each shard ran
+    # its own `npm run build`; an earlier attempt to share dist via upload/
+    # download dropped some Monaco worker files, breaking specs that open the
+    # diff editor. Packing dist into a single tar before upload preserves the
+    # full tree (worker files, nested dirs, exec bits) verbatim, so the shards
+    # get a byte-identical dist without each rebuilding it.
+    steps:
+      - uses: actions/checkout@v6.0.3
+      - uses: ./.github/actions/setup
       - run: npm run build
+      - run: tar -cf dist.tar dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-tar
+          path: dist.tar
+          if-no-files-found: error
+          retention-days: 1
 
   e2e:
+    needs: build
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     # Split the seeded e2e suite (see wdio.ci.conf.ts) into parallel shards so the
     # whole gate finishes well inside the runner window. Each shard runs a disjoint
-    # slice of specs via wdio's `--shard current/total`. Each shard builds its own
-    # `dist` (rather than sharing an artifact): the upload/download path dropped
-    # some Monaco worker files, breaking specs that open the diff editor.
+    # slice of specs via wdio's `--shard current/total`. The shared `dist` artifact
+    # from the `build` job is unpacked here rather than rebuilt per shard.
     #
-    # Shard count tuned from 12 recent green CI runs (Jun 2026): 8 shards billed
-    # ~18 min/run (8× ~42s setup overhead + tests); slowest e2e step p50 was 126s
-    # (shard 1). 4 shards drops ~4 duplicate npm ci/build cycles (~13 min billed),
-    # but packs ~8–9 specs into one sequential wdio process per shard, so a clean
-    # run is ~280s — too close to the old 300s per-attempt cap for the whole-shard
-    # retry below to recover a flaky spec. The per-attempt `timeout` is raised to
-    # 480s (and the step cap to 26 min for 3 attempts) so attempt 1 finishes
-    # instead of being SIGKILL'd mid-retry, letting attempt 2 relaunch a fresh
-    # Electron and pass.
+    # Shard count: 8. Each shard runs its slice as one sequential wdio process,
+    # relaunching Electron per spec. On the 2-core/7GB runner, once a shard runs
+    # too many specs the accumulated electron/codesearch processes exhaust it and
+    # a later spec's Electron fails to boot or OOM-crashes the runner ("shutdown
+    # signal"). wdio range-shards the full glob, and the ciExclude'd specs cluster
+    # alphabetically, so run-counts are uneven — at 7 shards the dense `t*` range
+    # still packed ~7 specs into one shard and hit the wall. 8 shards is the count
+    # #339's data showed green across 12 runs (~4 specs/shard, with these same
+    # specs), so it stays under the limit even in the densest range. It's cheap
+    # here because the shared `dist` artifact + cached node_modules mean shards no
+    # longer rebuild or reinstall (the cost that originally motivated 8→4). The
+    # per-attempt `timeout` is 480s (step cap 26 min for 3 attempts) so attempt 1
+    # finishes instead of being SIGKILL'd mid-retry, letting attempt 2 relaunch.
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     env:
-      SHARD_TOTAL: 4
+      SHARD_TOTAL: 8
     steps:
       - uses: actions/checkout@v6.0.3
-      - uses: actions/setup-node@v6
-        with: { node-version: '22', cache: 'npm' }
-      - run: npm ci
-      - run: sudo apt-get update && sudo apt-get install -y ripgrep
-      - run: npm run build
+      - uses: ./.github/actions/setup
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-tar
+      - run: tar -xf dist.tar
       # The Electron/Chromedriver e2e session occasionally fails to start on the
       # runner ("DevToolsActivePort file doesn't exist" / "POST /session" timeout).
       # The hang wedges the whole wdio run, so in-process retries don't recover —
@@ -88,3 +111,13 @@ jobs:
             echo "e2e shard ${{ matrix.shard }} attempt $attempt failed or timed out"
           done
           exit 1
+      # On failure, surface the screenshot + page source captured in afterTest so
+      # the constrained-runner render/OOM flakes can be inspected. Skipped when a
+      # hard runner OOM ("shutdown signal") kills the job before this step runs.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-failure-artifacts-shard-${{ matrix.shard }}
+          path: e2e-failure-artifacts/
+          if-no-files-found: ignore
+          retention-days: 3
