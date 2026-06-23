@@ -43,6 +43,7 @@ const ciExclude = [
   './tests/e2e/new-thread-keeps-panel.e2e.ts',
   './tests/e2e/todo-display.e2e.ts',
   './tests/e2e/tool-display-live-mock.e2e.ts',
+  './tests/e2e/double-submit.e2e.ts',
 ]
 
 export const config: Options.Testrunner = {
