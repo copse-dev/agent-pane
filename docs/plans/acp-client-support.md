@@ -15,10 +15,10 @@ Today agent-pane is both **client** and **agent**:
 
 ACP decouples these roles:
 
-| Role | Responsibility |
-|------|----------------|
-| **Client** (agent-pane) | UI, workspace context, filesystem/terminal access, permission prompts |
-| **Agent** (external subprocess) | LLM loop, tool planning/execution, session state |
+| Role                            | Responsibility                                                        |
+| ------------------------------- | --------------------------------------------------------------------- |
+| **Client** (agent-pane)         | UI, workspace context, filesystem/terminal access, permission prompts |
+| **Agent** (external subprocess) | LLM loop, tool planning/execution, session state                      |
 
 Transport today is **JSON-RPC 2.0 over stdio** (client spawns agent subprocess). Remote HTTP/WebSocket is on the roadmap but not stable yet.
 
@@ -81,22 +81,22 @@ Use **`@agentclientprotocol/sdk`** (`ClientSideConnection` for stdio). The repo 
 
 ## Mapping to Existing Code
 
-| Existing | ACP reuse |
-|----------|-----------|
-| `StreamChunk` + `agent:chunk` | Primary UI adapter target |
-| `src/renderer/controller/agent.ts` | Unchanged if chunks stay compatible |
-| `mcp-registry.ts` / `mcp.json` | Forward as `mcpServers` on session create/resume |
-| `approval.ts` | Map `session/request_permission` |
-| `workspace.ts` | Back `fs/read_text_file` / path sandboxing |
-| `terminal-service.ts` | Back `terminal/*` (headless pty sessions) |
-| `model-options.ts` | Add "ACP Agents" optgroup |
+| Existing                           | ACP reuse                                        |
+| ---------------------------------- | ------------------------------------------------ |
+| `StreamChunk` + `agent:chunk`      | Primary UI adapter target                        |
+| `src/renderer/controller/agent.ts` | Unchanged if chunks stay compatible              |
+| `mcp-registry.ts` / `mcp.json`     | Forward as `mcpServers` on session create/resume |
+| `approval.ts`                      | Map `session/request_permission`                 |
+| `workspace.ts`                     | Back `fs/read_text_file` / path sandboxing       |
+| `terminal-service.ts`              | Back `terminal/*` (headless pty sessions)        |
+| `model-options.ts`                 | Add "ACP Agents" optgroup                        |
 
-| Current behavior | ACP gap |
-|------------------|---------|
-| `llm-history:{threadId}` | Agent owns history; store `acpSessionId` per thread |
-| `write_file` → diff queue | Agent calls `fs/write_text_file` directly — need intercept policy |
-| Local `ToolRegistry` execution | Disabled in ACP mode; agent runs its own tools |
-| `context_trimmed` / subagent `explore` | Partial parity; agent-specific |
+| Current behavior                       | ACP gap                                                           |
+| -------------------------------------- | ----------------------------------------------------------------- |
+| `llm-history:{threadId}`               | Agent owns history; store `acpSessionId` per thread               |
+| `write_file` → diff queue              | Agent calls `fs/write_text_file` directly — need intercept policy |
+| Local `ToolRegistry` execution         | Disabled in ACP mode; agent runs its own tools                    |
+| `context_trimmed` / subagent `explore` | Partial parity; agent-specific                                    |
 
 ## Key Design Decisions
 
@@ -114,21 +114,21 @@ Disable local `ToolRegistry` execution for the parent turn. Forward user MCP ser
 
 ### 3. Session persistence
 
-| Store | Native mode | ACP mode |
-|-------|-------------|----------|
-| `llm-history:{threadId}` | LLM transcript | Unused |
-| `threads:{projectId}` | UI state | UI state |
-| `acp-session:{threadId}` | N/A | `acpSessionId` + agent metadata |
+| Store                    | Native mode    | ACP mode                        |
+| ------------------------ | -------------- | ------------------------------- |
+| `llm-history:{threadId}` | LLM transcript | Unused                          |
+| `threads:{projectId}`    | UI state       | UI state                        |
+| `acp-session:{threadId}` | N/A            | `acpSessionId` + agent metadata |
 
 Prefer `session/resume` when agent advertises `sessionCapabilities.resume`.
 
 ### 4. Content mapping (prompt → ACP)
 
-| agent-pane | ACP |
-|------------|-----|
-| Plain text | `{ type: 'text', text }` |
-| Image attachments | `{ type: 'image', ... }` if agent supports `promptCapabilities.image` |
-| `@file` references | `{ type: 'resource', resource: { uri, text } }` if `embeddedContext` |
+| agent-pane         | ACP                                                                   |
+| ------------------ | --------------------------------------------------------------------- |
+| Plain text         | `{ type: 'text', text }`                                              |
+| Image attachments  | `{ type: 'image', ... }` if agent supports `promptCapabilities.image` |
+| `@file` references | `{ type: 'resource', resource: { uri, text } }` if `embeddedContext`  |
 
 ### 5. Protocol version
 
@@ -136,13 +136,13 @@ Target **ACP v1** initially. Isolate adapter behind version check at `initialize
 
 ## `session/update` → `StreamChunk` Adapter
 
-| ACP `sessionUpdate` | `StreamChunk` |
-|---------------------|---------------|
-| `agent_message_chunk` | `{ type: 'text', text }` |
-| `tool_call` | `{ type: 'tool_call', toolCall: { id, name: title, args: rawInput } }` |
-| `tool_call_update` | Update tool card status/result |
-| `plan` | New UI (Phase 4) |
-| `thought_chunk` | Activity indicator or new chunk type |
+| ACP `sessionUpdate`   | `StreamChunk`                                                          |
+| --------------------- | ---------------------------------------------------------------------- |
+| `agent_message_chunk` | `{ type: 'text', text }`                                               |
+| `tool_call`           | `{ type: 'tool_call', toolCall: { id, name: title, args: rawInput } }` |
+| `tool_call_update`    | Update tool card status/result                                         |
+| `plan`                | New UI (Phase 4)                                                       |
+| `thought_chunk`       | Activity indicator or new chunk type                                   |
 
 ## Client Capabilities to Advertise
 
@@ -160,9 +160,9 @@ Target **ACP v1** initially. Isolate adapter behind version check at `initialize
 
 ```ts
 interface AcpAgentConfig {
-  id: string           // e.g. "gemini-cli"
-  title: string        // "Gemini CLI"
-  command: string      // absolute path or PATH lookup
+  id: string // e.g. "gemini-cli"
+  title: string // "Gemini CLI"
+  command: string // absolute path or PATH lookup
   args: string[]
   env?: Record<string, string>
   enabled: boolean
@@ -229,22 +229,22 @@ if (model.startsWith('acp:')) {
 
 ## Testing Strategy
 
-| Layer | Approach |
-|-------|----------|
-| Unit | `acp-update-adapter.test.ts` — fixture JSON → `StreamChunk[]` |
-| Unit | Client handlers — path sandboxing, diff intercept, permissions |
-| Integration | SDK example agent or minimal mock over stdio |
-| E2E | Mock agent in WDIO; screenshots for tool cards |
+| Layer       | Approach                                                       |
+| ----------- | -------------------------------------------------------------- |
+| Unit        | `acp-update-adapter.test.ts` — fixture JSON → `StreamChunk[]`  |
+| Unit        | Client handlers — path sandboxing, diff intercept, permissions |
+| Integration | SDK example agent or minimal mock over stdio                   |
+| E2E         | Mock agent in WDIO; screenshots for tool cards                 |
 
 ## Risks
 
-| Risk | Mitigation |
-|------|------------|
-| Write intercept breaks agents | Per-agent policy: direct vs diff approval |
-| Agent stderr on stdio | Surface stderr in log panel; strict stdout discipline |
-| Session divergence | Store `acpSessionId` immediately; prefer `session/resume` |
-| v2 protocol churn | Version gate at `initialize` |
-| Subprocess zombies | Connection manager + idle timeout + `session/close` on quit |
+| Risk                          | Mitigation                                                  |
+| ----------------------------- | ----------------------------------------------------------- |
+| Write intercept breaks agents | Per-agent policy: direct vs diff approval                   |
+| Agent stderr on stdio         | Surface stderr in log panel; strict stdout discipline       |
+| Session divergence            | Store `acpSessionId` immediately; prefer `session/resume`   |
+| v2 protocol churn             | Version gate at `initialize`                                |
+| Subprocess zombies            | Connection manager + idle timeout + `session/close` on quit |
 
 ## Success Criteria
 
