@@ -2,7 +2,6 @@ dist/
 dist-test/
 dist-types/
 node_modules/
-vendor/bundled-cursor-skills/
 coverage/
 test-results/
 tests/e2e/electron-shell/.e2e-env.json

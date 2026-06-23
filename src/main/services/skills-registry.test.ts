@@ -90,13 +90,35 @@ description: Bundled skill for tests
   })
 
   it('omits bundled skills when bundledCursorSkillsEnabled is false', async () => {
-    setBundledCursorSkillsRootForTest(join(process.cwd(), 'vendor/bundled-cursor-skills'))
+    const bundledRoot = await mkdtemp(join(tmpdir(), 'copse-bundled-disabled-'))
+    const pluginRoot = join(bundledRoot, 'plugins', 'demo-plugin')
+    await mkdir(join(pluginRoot, '.cursor-plugin'), { recursive: true })
+    await mkdir(join(pluginRoot, 'skills', 'bundled-skill'), { recursive: true })
+    await writeFile(
+      join(pluginRoot, '.cursor-plugin', 'plugin.json'),
+      JSON.stringify({ name: 'demo-plugin', skills: 'skills' }),
+      'utf8',
+    )
+    await writeFile(
+      join(pluginRoot, 'skills', 'bundled-skill', 'SKILL.md'),
+      `---
+name: bundled-skill
+description: Bundled skill for tests
+---
+
+# Bundled`,
+      'utf-8',
+    )
+
     setSetting('bundledCursorSkillsEnabled', false)
+    setBundledCursorSkillsRootForTest(bundledRoot)
     await refreshSkillsRegistry()
     assert.equal(
       listSkills().some((skill) => skill.source === 'bundled'),
       false,
     )
+
+    await rm(bundledRoot, { recursive: true, force: true })
   })
 
   it('reads skill content by name', async () => {

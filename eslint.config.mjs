@@ -9,7 +9,6 @@ export default ts.config(
       'dist-test/',
       'dist-types/',
       'node_modules/',
-      'vendor/bundled-cursor-skills/',
       '.tmp/',
       '.claude/**',
       'eslint.config.mjs',

@@ -186,8 +186,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <legend>Skills</legend>
               <p class="settings-fieldset-desc">
                 Reusable agent workflows invoked with <code>/skill-name</code> in the chat input.
-                Copse ships official Cursor marketplace skills by default; project skills live in
-                <code>.cursor/skills/</code>.
+                Official Cursor skills download once to app data (~250&nbsp;KB of instructions);
+                project skills live in <code>.cursor/skills/</code>.
               </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="bundledCursorSkillsEnabled" />

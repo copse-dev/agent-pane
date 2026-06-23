@@ -66,12 +66,3 @@ try {
 } catch {
   // Optional — postinstall may be skipped on unsupported platforms.
 }
-
-try {
-  accessSync(resolve('vendor/bundled-cursor-skills'))
-  cpSync('vendor/bundled-cursor-skills', 'dist/resources/bundled-cursor-skills', {
-    recursive: true,
-  })
-} catch {
-  // Optional — run `npm run sync:cursor-skills` to vendor skills for production builds.
-}
