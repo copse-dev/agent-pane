@@ -4,12 +4,15 @@
   border-spacing: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  overflow: auto;
+  overflow-x: auto;
   display: block;
+  /* Scroll horizontally instead of squeezing columns when the pane is narrow. */
   width: max-content;
+  min-width: max-content;
   max-width: 100%;
   margin: var(--spacing-sm) 0;
   font-size: var(--font-size-sm);
+  white-space: normal;
 }
 .message-text th,
 .message-text td {
@@ -17,6 +20,22 @@
   border-bottom: 1px solid var(--border);
   padding: 4px 10px;
   text-align: left;
+  vertical-align: top;
+  /* .message-text uses pre-wrap; reset so table cells wrap on words, not every char. */
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+/* Keep narrow index columns on one line; let title/body columns wrap. */
+.message-text th:first-child,
+.message-text td:first-child {
+  white-space: nowrap;
+  width: 1%;
+}
+/* Branch names and other single-code cells stay intact; scroll if needed. */
+.message-text td > code:only-child,
+.message-text th > code:only-child {
+  white-space: nowrap;
 }
 .message-text th:last-child,
 .message-text td:last-child {
@@ -28,6 +47,7 @@
 .message-text th {
   background: var(--bg-elevated);
   font-weight: 600;
+  white-space: nowrap;
 }
 .message-text tbody tr:nth-child(even) td {
   background: rgba(255, 255, 255, 0.02);
