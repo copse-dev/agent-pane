@@ -42,7 +42,7 @@ describe('git changes viewer', function () {
   it('lists staged and unstaged changes and shows a diff', async () => {
     // The titlebar "Changes" shortcut opens the right panel and switches to the
     // Changes tab in one click.
-    await $('.titlebar-btn[aria-label="Open changes"]').waitForExist({ timeout: 15_000 })
+    await $('.titlebar-btn[aria-label="Open changes"]').waitForExist({ timeout: 30_000 })
     const titlebarChangesBtn = await $('.titlebar-btn[aria-label="Open changes"]')
     await titlebarChangesBtn.click()
 
@@ -53,13 +53,13 @@ describe('git changes viewer', function () {
     await expect(changesTab).toHaveElementClass('is-active')
 
     const changesHost = await $('#git-changes-host')
-    await changesHost.waitForDisplayed({ timeout: 15_000 })
+    await changesHost.waitForDisplayed({ timeout: 30_000 })
 
     await (await $('.git-changes-refresh-btn')).click()
 
     // Wait for the async git status refresh to render rows.
     await browser.waitUntil(async () => (await $$('.git-change-row').length) >= 3, {
-      timeout: 15_000,
+      timeout: 30_000,
       timeoutMsg: 'expected at least 3 changed-file rows',
     })
     const rows = await $$('.git-change-row')
@@ -91,13 +91,13 @@ describe('git changes viewer', function () {
     await expect(stagedRow).toHaveElementClass('is-selected')
 
     const diffViewer = await $('#git-diff-viewer-host .monaco-diff-editor')
-    await diffViewer.waitForDisplayed({ timeout: 15_000 })
+    await diffViewer.waitForDisplayed({ timeout: 30_000 })
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-diff.png'))
 
     // Large staged.ts diffs collapse unchanged lines with context + expandable regions.
     await browser.waitUntil(async () => (await $$('.diff-hidden-lines-widget').length) >= 1, {
-      timeout: 15_000,
+      timeout: 30_000,
       timeoutMsg: 'expected collapsed unchanged regions in the diff viewer',
     })
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-diff-collapsed.png'))

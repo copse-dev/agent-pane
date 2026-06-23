@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
+  browserGuestWindowOpen,
   hardenWebviewPreferences,
   isAllowedRendererNavigation,
   isExternalHttpUrl,
@@ -40,6 +41,23 @@ describe('hardenWebviewPreferences', () => {
     assert.equal(prefs.sandbox, true)
     assert.equal(prefs.webSecurity, true)
     assert.equal(prefs.preload, undefined)
+  })
+})
+
+describe('browserGuestWindowOpen', () => {
+  it('reopens external links from visible webview guests as a tab', () => {
+    assert.deepEqual(browserGuestWindowOpen('webview', 'https://example.com/docs'), {
+      openTabUrl: 'https://example.com/docs',
+    })
+  })
+
+  it('blocks non-http schemes even from webview guests', () => {
+    assert.deepEqual(browserGuestWindowOpen('webview', 'javascript:alert(1)'), { openTabUrl: null })
+    assert.deepEqual(browserGuestWindowOpen('webview', 'file:///etc/passwd'), { openTabUrl: null })
+  })
+
+  it('blocks popups from headless automation windows', () => {
+    assert.deepEqual(browserGuestWindowOpen('window', 'https://example.com'), { openTabUrl: null })
   })
 })
 

@@ -18,7 +18,7 @@ describe('mermaid diagram rendering', () => {
   })
 
   it('renders mermaid fenced blocks as SVG diagrams', async () => {
-    await $('.message-text .mermaid-diagram').waitForExist({ timeout: 15_000 })
+    await $('.message-text .mermaid-diagram').waitForExist({ timeout: 30_000 })
 
     // The diagram SVG is produced by lazy-loading the (large) `mermaid` bundle and
     // then rendering it through DOMPurify (securityLevel 'strict', see

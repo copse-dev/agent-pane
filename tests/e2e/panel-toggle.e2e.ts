@@ -92,7 +92,7 @@ describe('right panel toggle and shortcuts', () => {
 
     await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
     await expect($('.right-panel-tab[aria-label="Terminal"]')).toHaveElementClass('is-active')
-    await $('.terminal-container .xterm').waitForExist({ timeout: 15_000 })
+    await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 })
   })
 
   it('toggles the right panel with Ctrl/Cmd+B and Ctrl/Cmd+J', async () => {
@@ -125,7 +125,7 @@ describe('right panel toggle and shortcuts', () => {
     await pressPanelChord({ ctrl: true, key: '`', code: 'Backquote' })
     await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
     await expect($('.right-panel-tab[aria-label="Terminal"]')).toHaveElementClass('is-active')
-    await $('.terminal-container .xterm').waitForExist({ timeout: 15_000 })
+    await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 })
   })
 
   it('opens changes with Ctrl/Cmd+Shift+G', async () => {

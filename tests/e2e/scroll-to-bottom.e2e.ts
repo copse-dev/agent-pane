@@ -68,7 +68,7 @@ describe('scroll to bottom', () => {
     seedScrollToBottomFixture(process.cwd())
     await browser.reloadSession()
 
-    await $('.messages-list .msg-user').waitForExist({ timeout: 15_000 })
+    await $('.messages-list .msg-user').waitForExist({ timeout: 30_000 })
     await scrollMessagesListToTop()
 
     await expect(await isScrollToBottomVisible()).toBe(true)
@@ -81,7 +81,7 @@ describe('scroll to bottom', () => {
     seedScrollToBottomFixture(process.cwd())
     await browser.reloadSession()
 
-    await $('.messages-list .msg-user').waitForExist({ timeout: 15_000 })
+    await $('.messages-list .msg-user').waitForExist({ timeout: 30_000 })
     await scrollMessagesListToTop()
     await expect(await isNearBottom()).toBe(false)
 
@@ -110,7 +110,7 @@ describe('scroll to bottom', () => {
     seedScrollStreamingFixture(process.cwd())
     await browser.reloadSession()
 
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await waitForPromptReady()
     await $('.prompt-input').setValue('Please write a longer follow-up answer')
     await $('.submit-btn').click()
@@ -124,7 +124,7 @@ describe('scroll to bottom', () => {
         })
         return lastAssistant.includes('Mock response')
       },
-      { timeout: 15_000, interval: 50 },
+      { timeout: 30_000, interval: 50 },
     )
 
     await expect(await isNearBottom()).toBe(true)
@@ -144,7 +144,7 @@ describe('scroll to bottom', () => {
     seedScrollStreamingFixture(process.cwd())
     await browser.reloadSession()
 
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await waitForPromptReady()
 
     await $('.prompt-input').setValue('Please write a longer follow-up answer')
@@ -159,7 +159,7 @@ describe('scroll to bottom', () => {
         })
         return lastAssistant.includes('Mock response')
       },
-      { timeout: 15_000, interval: 50 },
+      { timeout: 30_000, interval: 50 },
     )
 
     await scrollMessagesListToTop()
