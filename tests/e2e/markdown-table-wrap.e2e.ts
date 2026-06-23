@@ -1,9 +1,7 @@
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedMarkdownTableWrapFixture } from './helpers/seed-config.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
-
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
+import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 
 describe('markdown table wrapping', () => {
   before(async () => {
@@ -68,6 +66,11 @@ describe('markdown table wrapping', () => {
     }
 
     await assertNoErrorToasts('markdown table wrap fixture')
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'markdown-table-wrap.png'))
+
+    await browser.execute(() => {
+      document.querySelector('.message-text table')?.scrollIntoView({ block: 'center' })
+    })
+    await saveAppScreenshot('markdown-table-wrap.png')
+    await saveElementScreenshot('.message-text table', 'markdown-table-wrap-table.png')
   })
 })
