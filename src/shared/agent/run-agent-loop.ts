@@ -5,7 +5,9 @@ import type {
   StreamChunk,
   ToolCallChunk,
   ToolResult,
+  ToolExecuteResult,
 } from '@shared/types'
+import { normalizeToolExecuteResult } from '@shared/types'
 import {
   trimMessagesInPlace,
   repairToolUseToolResultPairing,
@@ -59,7 +61,7 @@ export interface AgentLoopOptions {
     args: unknown,
     signal: AbortSignal,
     toolCallId: string,
-  ) => Promise<string>
+  ) => Promise<ToolExecuteResult>
   signal?: AbortSignal
   maxSteps?: number
   /** Trim in-loop history to this context size (tokens). */
@@ -516,7 +518,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       }
 
       try {
-        const result = duplicate
+        const raw = duplicate
           ? DUPLICATE_TOOL_RESULT_PREFIX
           : await opts.executeTool(
               tc.name,
@@ -524,8 +526,15 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
               signal ?? new AbortController().signal,
               tc.id,
             )
+        const { result, editStats } = normalizeToolExecuteResult(raw)
         toolResults.push({ toolCallId: tc.id, result })
-        onChunk({ type: 'tool_result', toolCallId: tc.id, result, isError: false })
+        onChunk({
+          type: 'tool_result',
+          toolCallId: tc.id,
+          result,
+          isError: false,
+          ...(editStats ? { editStats } : {}),
+        })
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         toolResults.push({ toolCallId: tc.id, result: `Error: ${msg}` })
