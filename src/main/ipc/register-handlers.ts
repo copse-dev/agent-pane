@@ -110,8 +110,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return canonical
   })
 
-  ipcMain.handle('fs:readFile', async (_e, path: string) => {
-    const abs = resolveWorkspacePath(path)
+  ipcMain.handle('fs:readFile', async (event, path: unknown) => {
+    assertMainFrameSender(event, win)
+    const relPath = parseIpcArgs(zPathString, [path])
+    const abs = resolveWorkspacePath(relPath)
     return gatewayReadFile(abs)
   })
 
@@ -125,13 +127,17 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     scheduleIndexRebuild()
   })
 
-  ipcMain.handle('fs:readdir', async (_e, path: string) => {
-    const abs = resolveWorkspacePath(path)
+  ipcMain.handle('fs:readdir', async (event, path: unknown) => {
+    assertMainFrameSender(event, win)
+    const relPath = parseIpcArgs(zPathString, [path])
+    const abs = resolveWorkspacePath(relPath)
     return gatewayReaddir(abs)
   })
 
-  ipcMain.handle('fs:listDir', async (_e, path: string) => {
-    const abs = resolveWorkspacePath(path || '.')
+  ipcMain.handle('fs:listDir', async (event, path: unknown) => {
+    assertMainFrameSender(event, win)
+    const relPath = parseIpcArgs(zPathString.optional(), [path])
+    const abs = resolveWorkspacePath(relPath || '.')
     const dirents = await gatewayListDir(abs)
     return dirents
       .filter((d) => !d.name.startsWith('.') && d.name !== 'node_modules')
@@ -197,7 +203,8 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const mainWin = getMainWindow()
     applyAppIcon(mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
   })
-  ipcMain.handle('storage:get', (_e, key: unknown) => {
+  ipcMain.handle('storage:get', (event, key: unknown) => {
+    assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(256), [key])
     assertStorageKey(k)
     return storageGet(k)
@@ -214,9 +221,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   ipcMain.handle('git:isAvailable', async () => isGitAvailable() && (await isInsideGitWorkTree()))
   ipcMain.handle('git:status', () => getGitStatus())
-  ipcMain.handle('git:fileDiff', (_e, path: string, staged: boolean) =>
-    getGitFileDiff(path, staged),
-  )
+  ipcMain.handle('git:fileDiff', (event, path: unknown, staged: unknown) => {
+    assertMainFrameSender(event, win)
+    const filePath = parseIpcArgs(zPathString, [path])
+    const isStaged = parseIpcArgs(z.boolean(), [staged])
+    return getGitFileDiff(filePath, isStaged)
+  })
   ipcMain.handle('git:branchStatus', (_e, forBranch: unknown) => {
     const branch =
       forBranch === undefined ? undefined : parseIpcArgs(z.string().max(256), [forBranch])
