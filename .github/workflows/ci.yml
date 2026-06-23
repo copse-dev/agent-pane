@@ -66,24 +66,25 @@ jobs:
     # slice of specs via wdio's `--shard current/total`. The shared `dist` artifact
     # from the `build` job is unpacked here rather than rebuilt per shard.
     #
-    # Shard count: 7. The ~33 CI specs run as one sequential wdio process per
-    # shard, each spec relaunching Electron. On the 2-core/7GB runner the 6th
-    # Electron launch in a shard OOM-crashes the runner (job dies with a
-    # "shutdown signal"; `.prompt-input` never renders) as orphaned electron/
-    # codesearch processes from prior specs accumulate — so the last spec in an
-    # over-packed shard flakes regardless of which spec it is. Observed cutoff:
-    # the 5th launch passes, the 6th kills the runner. 8 shards (~4 specs each)
-    # was historically green for this reason; 4 (~8 each) and 6 (one shard at 6)
-    # both hit the wall. 7 keeps every shard at ≤5 specs — under the cutoff —
-    # while still saving a shard's setup vs 8. The per-attempt `timeout` is 480s
-    # (step cap 26 min for 3 attempts) so attempt 1 finishes instead of being
-    # SIGKILL'd mid-retry, letting attempt 2 relaunch a fresh Electron.
+    # Shard count: 8. Each shard runs its slice as one sequential wdio process,
+    # relaunching Electron per spec. On the 2-core/7GB runner, once a shard runs
+    # too many specs the accumulated electron/codesearch processes exhaust it and
+    # a later spec's Electron fails to boot or OOM-crashes the runner ("shutdown
+    # signal"). wdio range-shards the full glob, and the ciExclude'd specs cluster
+    # alphabetically, so run-counts are uneven — at 7 shards the dense `t*` range
+    # still packed ~7 specs into one shard and hit the wall. 8 shards is the count
+    # #339's data showed green across 12 runs (~4 specs/shard, with these same
+    # specs), so it stays under the limit even in the densest range. It's cheap
+    # here because the shared `dist` artifact + cached node_modules mean shards no
+    # longer rebuild or reinstall (the cost that originally motivated 8→4). The
+    # per-attempt `timeout` is 480s (step cap 26 min for 3 attempts) so attempt 1
+    # finishes instead of being SIGKILL'd mid-retry, letting attempt 2 relaunch.
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     env:
-      SHARD_TOTAL: 7
+      SHARD_TOTAL: 8
     steps:
       - uses: actions/checkout@v6.0.3
       - uses: ./.github/actions/setup
