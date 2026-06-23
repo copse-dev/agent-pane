@@ -75,6 +75,12 @@ import {
   gatewayWriteFile,
 } from '../project-sandbox/sandbox-fs-client.ts'
 
+const SKILLS_RELOAD_KEYS = new Set([
+  'skillsEnabled',
+  'bundledCursorSkillsEnabled',
+  'skillPluginPaths',
+])
+
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
   const storedProjects = (storageGet('projects') as { path: string }[] | null) ?? []
   seedAllowedWorkspaceRoots(storedProjects.map((p) => p.path))
@@ -178,6 +184,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       throw new IpcValidationError(`Setting key not writable from renderer: ${k}`)
     }
     await setSetting(k, parseRendererWritableSetting(k, value))
+    if (SKILLS_RELOAD_KEYS.has(k)) {
+      await initSkillsRegistry()
+      registerSkillTools(registry)
+    }
   })
   ipcMain.handle('settings:setSecurity', async (event, raw: unknown) => {
     assertMainFrameSender(event, win)
@@ -198,10 +208,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     anthropic: isProviderAvailable('anthropic'),
     openai: isProviderAvailable('openai'),
     cursor: isProviderAvailable('cursor'),
+    openrouter: isProviderAvailable('openrouter'),
   }))
   ipcMain.handle('settings:validateKey', async (event, provider: unknown, key: unknown) => {
     assertMainFrameSender(event, win)
-    const p = parseIpcArgs(z.enum(['anthropic', 'openai', 'cursor']), [provider])
+    const p = parseIpcArgs(z.enum(['anthropic', 'openai', 'cursor', 'openrouter']), [provider])
     const apiKey = parseIpcArgs(z.string().max(8192), [key])
     return validateApiKey(p, apiKey)
   })

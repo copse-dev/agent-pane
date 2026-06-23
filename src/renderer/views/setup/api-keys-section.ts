@@ -7,7 +7,7 @@ export interface ApiKeysSection {
   saveKeys: () => Promise<void>
 }
 
-type ApiKeyProvider = 'anthropic' | 'openai' | 'cursor'
+type ApiKeyProvider = 'anthropic' | 'openai' | 'cursor' | 'openrouter'
 
 interface ApiKeyProviderConfig {
   provider: ApiKeyProvider
@@ -39,6 +39,13 @@ const API_KEY_PROVIDER_CONFIGS: Record<ApiKeyProvider, ApiKeyProviderConfig> = {
     placeholder: 'cur_…',
     hint: 'For Cursor Cloud Agent remote runs. Validated via a free models request.',
   },
+  openrouter: {
+    provider: 'openrouter',
+    name: 'openrouterKey',
+    label: 'OpenRouter API key',
+    placeholder: 'sk-or-…',
+    hint: 'For OpenRouter models (Claude, GPT, Gemini, Llama, and more via one key). Validated via a free key request.',
+  },
 }
 
 function keyStatusClass(ok: boolean | null): string {
@@ -52,7 +59,7 @@ export function createApiKeysSection(
   opts: { legend?: string; providers?: ApiKeyProvider[]; validateOnInput?: boolean } = {},
 ): ApiKeysSection {
   const legend = opts.legend ?? 'API Keys'
-  const providers = opts.providers ?? ['anthropic', 'openai', 'cursor']
+  const providers = opts.providers ?? ['anthropic', 'openai', 'openrouter', 'cursor']
   const validateOnInput = opts.validateOnInput ?? true
 
   const fields = providers.map((provider) => {

@@ -1,4 +1,5 @@
 import * as esbuild from 'esbuild'
+import { execSync } from 'node:child_process'
 import { accessSync, cpSync, copyFileSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { copyMonacoWorkers } from './copy-monaco-workers.mts'
@@ -6,6 +7,15 @@ import { copyMonacoWorkers } from './copy-monaco-workers.mts'
 const bundledCodesearchName = process.platform === 'win32' ? 'codesearch.exe' : 'codesearch'
 
 const sharedAlias = { '@shared': resolve('./src/shared') }
+
+function fetchBundledCursorSkillsForBuild(): void {
+  if (process.env.SKIP_BUNDLED_CURSOR_SKILLS_FETCH === '1') return
+  try {
+    execSync('npx tsx scripts/fetch-bundled-cursor-skills.mts', { stdio: 'inherit' })
+  } catch {
+    console.warn('[build] bundled Cursor skills fetch failed — continuing without bundled skills')
+  }
+}
 
 // Release builds (`COPSE_RELEASE=1`, used by `npm run build:release` → packaging)
 // strip the MockLLMProvider test directives so the parser is absent from shipped
@@ -34,6 +44,8 @@ const nodeOpts = {
   define,
   minifySyntax: isRelease,
 }
+
+fetchBundledCursorSkillsForBuild()
 
 await esbuild.build({
   ...nodeOpts,
@@ -77,6 +89,15 @@ try {
   cpSync('vendor/codesearch', 'dist/resources/codesearch', { recursive: true })
 } catch {
   // Optional — postinstall may be skipped on unsupported platforms.
+}
+
+try {
+  accessSync(resolve('vendor/bundled-cursor-skills'))
+  cpSync('vendor/bundled-cursor-skills', 'dist/resources/bundled-cursor-skills', {
+    recursive: true,
+  })
+} catch {
+  // Optional — fetch-bundled-cursor-skills.mts may be skipped offline.
 }
 
 // Fail fast if a release build ever ships the MockLLMProvider test directives:

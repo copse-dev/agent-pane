@@ -1,4 +1,4 @@
-export type SkillSource = 'project' | 'user' | 'plugin' | 'plugin-path'
+export type SkillSource = 'project' | 'user' | 'plugin' | 'plugin-path' | 'bundled'
 
 export interface SkillSummary {
   name: string
