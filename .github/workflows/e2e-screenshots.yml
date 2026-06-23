@@ -51,11 +51,11 @@ jobs:
       - run: npm run build
 
       - name: Regenerate e2e reference screenshots (shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }})
-        timeout-minutes: 20
+        timeout-minutes: 26
         run: |
           for attempt in 1 2 3; do
             echo "::group::e2e screenshot shard ${{ matrix.shard }} attempt $attempt"
-            if timeout -k 15 300 npm run test:e2e:ci -- --shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }}; then
+            if timeout -k 15 480 npm run test:e2e:ci -- --shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }}; then
               echo "::endgroup::"
               exit 0
             fi

@@ -49,8 +49,13 @@ jobs:
     #
     # Shard count tuned from 12 recent green CI runs (Jun 2026): 8 shards billed
     # ~18 min/run (8× ~42s setup overhead + tests); slowest e2e step p50 was 126s
-    # (shard 1). 4 shards projects ~13 min billed with critical path ~236s — well
-    # under the 300s per-attempt timeout — saving ~4 duplicate npm ci/build cycles.
+    # (shard 1). 4 shards drops ~4 duplicate npm ci/build cycles (~13 min billed),
+    # but packs ~8–9 specs into one sequential wdio process per shard, so a clean
+    # run is ~280s — too close to the old 300s per-attempt cap for the whole-shard
+    # retry below to recover a flaky spec. The per-attempt `timeout` is raised to
+    # 480s (and the step cap to 26 min for 3 attempts) so attempt 1 finishes
+    # instead of being SIGKILL'd mid-retry, letting attempt 2 relaunch a fresh
+    # Electron and pass.
     strategy:
       fail-fast: false
       matrix:
@@ -71,11 +76,11 @@ jobs:
       # each attempt in `timeout` so a wedged session is killed and retried
       # (a plain hang would otherwise never exit and stall the job).
       - name: e2e shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }} (retry on flaky session startup)
-        timeout-minutes: 20
+        timeout-minutes: 26
         run: |
           for attempt in 1 2 3; do
             echo "::group::e2e shard ${{ matrix.shard }} attempt $attempt"
-            if timeout -k 15 300 npm run test:e2e:ci -- --shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }}; then
+            if timeout -k 15 480 npm run test:e2e:ci -- --shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }}; then
               echo "::endgroup::"
               exit 0
             fi
