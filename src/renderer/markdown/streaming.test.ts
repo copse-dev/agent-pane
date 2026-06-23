@@ -4,8 +4,10 @@ import '../../../tests/setup-dom-jsdom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  markStreamingEnterAnimations,
   renderStreamingMarkdown,
   splitAtLastNewline,
+  STREAM_ENTER_CLASS,
   StreamingMarkdownRenderer,
 } from './streaming.ts'
 
@@ -121,5 +123,53 @@ describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
     const pending = host.querySelector('.stream-pending') as HTMLElement
     assert.equal(pending.hidden, true)
     assert.equal(pending.textContent, '')
+  })
+
+  it('marks a new table and each new body row with stream-enter', () => {
+    const host = document.createElement('div')
+    host.classList.add('is-streaming')
+    const r = new StreamingMarkdownRenderer(host)
+
+    r.update('| Name | Value |\n| --- | --- |\n')
+    const table = host.querySelector('table')
+    assert.ok(table?.classList.contains(STREAM_ENTER_CLASS))
+    assert.equal(host.querySelectorAll('tbody tr').length, 0)
+
+    r.update('| Name | Value |\n| --- | --- |\n| alpha | 1 |\n')
+    const firstRow = host.querySelector('tbody tr')
+    assert.ok(firstRow?.classList.contains(STREAM_ENTER_CLASS))
+
+    r.update('| Name | Value |\n| --- | --- |\n| alpha | 1 |\n| beta | 2 |\n')
+    const rows = host.querySelectorAll('tbody tr')
+    assert.equal(rows.length, 2)
+    assert.equal(rows[1]?.classList.contains(STREAM_ENTER_CLASS), true)
+    assert.equal(rows[0]?.classList.contains(STREAM_ENTER_CLASS), false)
+  })
+})
+
+describe('markStreamingEnterAnimations', () => {
+  it('tracks table appearance and row growth independently', () => {
+    const completed = document.createElement('div')
+    completed.innerHTML =
+      '<table><thead><tr><th>A</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>'
+
+    const afterFirst = markStreamingEnterAnimations(completed, false, 0)
+    assert.equal(afterFirst.hadTable, true)
+    assert.equal(afterFirst.tableBodyRowCount, 1)
+    assert.ok(completed.querySelector('table')?.classList.contains(STREAM_ENTER_CLASS))
+    assert.ok(completed.querySelector('tbody tr')?.classList.contains(STREAM_ENTER_CLASS))
+
+    completed.innerHTML =
+      '<table><thead><tr><th>A</th></tr></thead><tbody><tr><td>1</td></tr><tr><td>2</td></tr></tbody></table>'
+    const afterSecond = markStreamingEnterAnimations(
+      completed,
+      afterFirst.hadTable,
+      afterFirst.tableBodyRowCount,
+    )
+    assert.equal(afterSecond.tableBodyRowCount, 2)
+    const rows = completed.querySelectorAll('tbody tr')
+    assert.equal(rows.length, 2)
+    assert.equal(rows[0]?.classList.contains(STREAM_ENTER_CLASS), false)
+    assert.equal(rows[1]?.classList.contains(STREAM_ENTER_CLASS), true)
   })
 })
