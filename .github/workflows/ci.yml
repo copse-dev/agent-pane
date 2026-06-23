@@ -66,22 +66,24 @@ jobs:
     # slice of specs via wdio's `--shard current/total`. The shared `dist` artifact
     # from the `build` job is unpacked here rather than rebuilt per shard.
     #
-    # Shard count: 6. The ~33 CI specs run as one sequential wdio process per
-    # shard, each spec relaunching Electron. On the 2-core/7GB runner the ~6th+
-    # Electron launch in a shard starts failing to boot (`.prompt-input` never
-    # renders) as orphaned electron/codesearch processes accumulate — so the
-    # *last* spec in an over-packed shard flakes regardless of which spec it is.
-    # 8 shards (~4 specs each) was green for this reason; the earlier 4-shard cut
-    # (~8 specs each) reliably hit that wall. 6 keeps each shard at ~5–6 specs
-    # (near but mostly under the limit) while still saving setup vs 8. The
-    # per-attempt `timeout` is 480s (step cap 26 min for 3 attempts) so attempt 1
-    # finishes instead of being SIGKILL'd mid-retry, letting attempt 2 relaunch.
+    # Shard count: 7. The ~33 CI specs run as one sequential wdio process per
+    # shard, each spec relaunching Electron. On the 2-core/7GB runner the 6th
+    # Electron launch in a shard OOM-crashes the runner (job dies with a
+    # "shutdown signal"; `.prompt-input` never renders) as orphaned electron/
+    # codesearch processes from prior specs accumulate — so the last spec in an
+    # over-packed shard flakes regardless of which spec it is. Observed cutoff:
+    # the 5th launch passes, the 6th kills the runner. 8 shards (~4 specs each)
+    # was historically green for this reason; 4 (~8 each) and 6 (one shard at 6)
+    # both hit the wall. 7 keeps every shard at ≤5 specs — under the cutoff —
+    # while still saving a shard's setup vs 8. The per-attempt `timeout` is 480s
+    # (step cap 26 min for 3 attempts) so attempt 1 finishes instead of being
+    # SIGKILL'd mid-retry, letting attempt 2 relaunch a fresh Electron.
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5, 6, 7]
     env:
-      SHARD_TOTAL: 6
+      SHARD_TOTAL: 7
     steps:
       - uses: actions/checkout@v6.0.3
       - uses: ./.github/actions/setup
