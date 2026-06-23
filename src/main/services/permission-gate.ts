@@ -24,6 +24,7 @@ import {
 import {
   BROWSER_TOOLS,
   READ_ONLY_BROWSER_TOOLS,
+  BROWSER_ALLOW_USER_APPROVAL_SETTING,
   decideBrowserNavigation,
   formatBrowserPromptBody,
 } from './browser/browser-origin-policy.ts'
@@ -208,7 +209,7 @@ async function checkBrowserNavigatePermission(args: unknown): Promise<boolean> {
   const decision = decideBrowserNavigation({
     url,
     allowedOrigins: getSetting<string[]>('browserAllowedOrigins', []),
-    allowUserApproval: getSetting<boolean>('autoRunSandboxCommands', true),
+    allowUserApproval: getSetting<boolean>(BROWSER_ALLOW_USER_APPROVAL_SETTING, true),
   })
   if (decision.action === 'allow') return true
   if (decision.action === 'deny') {
@@ -283,7 +284,17 @@ async function cursorHooksAllow(check: PermissionCheck): Promise<boolean> {
   return true
 }
 
-/** Returns true when the tool call may proceed, false when the user rejected. */
+/**
+ * Returns true when the tool call may proceed, false when the user rejected.
+ *
+ * This gate is default-allow: only the tools matched below (shell, MCP, web
+ * fetch/search, browser navigation) are explicitly gated, and anything else
+ * falls through to `return true`. That is safe only because every *mutating*
+ * tool is gated elsewhere — file writes/edits/deletes/renames go through the
+ * diff-approval queue (see diff-queue.ts), not this function. Any new tool that
+ * changes the workspace or reaches the network MUST either route through the
+ * diff queue or get an explicit case here; do not rely on the default branch.
+ */
 export async function ensureToolPermitted(check: PermissionCheck): Promise<boolean> {
   const { toolName, args } = check
 
@@ -315,5 +326,8 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
     return checkShellPermission(args)
   }
 
+  // Default-allow: read-only/in-process tools (and mutating tools that are
+  // gated via the diff-approval queue) need no prompt here. See the contract
+  // in this function's doc comment before relying on this branch for a new tool.
   return true
 }
