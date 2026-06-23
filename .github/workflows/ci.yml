@@ -23,21 +23,15 @@ jobs:
       - run: npm run format:check
       - run: npm test
       - run: npm run build
-      - name: Upload build
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist
-          retention-days: 1
-          if-no-files-found: error
 
   e2e:
-    needs: check
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     # Split the seeded e2e suite (see wdio.ci.conf.ts) into parallel shards so the
     # whole gate finishes well inside the runner window. Each shard runs a disjoint
-    # slice of specs via wdio's `--shard current/total`.
+    # slice of specs via wdio's `--shard current/total`. Each shard builds its own
+    # `dist` (rather than sharing an artifact): the upload/download path dropped
+    # some Monaco worker files, breaking specs that open the diff editor.
     strategy:
       fail-fast: false
       matrix:
@@ -50,11 +44,7 @@ jobs:
         with: { node-version: '22', cache: 'npm' }
       - run: npm ci
       - run: sudo apt-get update && sudo apt-get install -y ripgrep
-      - name: Download build
-        uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist
+      - run: npm run build
       # The Electron/Chromedriver e2e session occasionally fails to start on the
       # runner ("DevToolsActivePort file doesn't exist" / "POST /session" timeout).
       # The hang wedges the whole wdio run, so in-process retries don't recover —
