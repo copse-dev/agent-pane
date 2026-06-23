@@ -34,6 +34,25 @@ interface BrowserTab {
   loadError: string | null
 }
 
+function webviewUrl(tab: BrowserTab): string {
+  if (!tab.webview || !tab.webviewReady || typeof tab.webview.getURL !== 'function') return ''
+  try {
+    return tab.webview.getURL()
+  } catch {
+    return ''
+  }
+}
+
+function webviewTitle(tab: BrowserTab): string | undefined {
+  if (!tab.webview || !tab.webviewReady || typeof tab.webview.getTitle !== 'function')
+    return undefined
+  try {
+    return tab.webview.getTitle()
+  } catch {
+    return undefined
+  }
+}
+
 const WEBVIEW_PREFS = 'contextIsolation=true'
 
 function browserModeActive(store: AppStore): boolean {
@@ -92,16 +111,22 @@ export function mountBrowserPane(
   }
 
   function syncTabLabel(tab: BrowserTab) {
-    const url = tab.webview?.getURL() ?? tab.pendingUrl ?? 'about:blank'
-    const title = tab.webview?.getTitle()
+    const url = webviewUrl(tab) || tab.pendingUrl || 'about:blank'
+    const title = webviewTitle(tab)
     tab.label = browserTabLabel(url, title)
     tab.tabLabelEl.textContent = tab.label
   }
 
+  function displayUrl(tab: BrowserTab): string {
+    if (tab.pendingUrl) return tab.pendingUrl
+    const loaded = webviewUrl(tab)
+    return loaded === 'about:blank' ? '' : loaded
+  }
+
   function syncAddressBar(tab: BrowserTab) {
-    const url = tab.webview?.getURL() ?? tab.pendingUrl ?? ''
+    const url = displayUrl(tab)
     if (document.activeElement !== tab.urlInput) {
-      tab.urlInput.value = url === 'about:blank' ? '' : url
+      tab.urlInput.value = url
     }
     updateNavButtons(tab)
     syncTabLabel(tab)
@@ -139,6 +164,7 @@ export function mountBrowserPane(
     whenWebviewReady(tab, () => {
       const webview = tab.webview!
       const current = webview.getURL()
+      tab.pendingUrl = null
       if (current === url && url !== 'about:blank') webview.reload()
       else webview.src = url
       syncWebviewSize(tab)
@@ -185,12 +211,11 @@ export function mountBrowserPane(
 
   function navigateTab(tab: BrowserTab, rawUrl: string) {
     const url = normalizeBrowserUrl(rawUrl)
+    tab.pendingUrl = url === 'about:blank' ? null : url
     tab.urlInput.value = url === 'about:blank' ? '' : url
     if (browserModeActive(store)) {
       ensureWebview(tab)
       navigateWebview(tab, url)
-    } else {
-      tab.pendingUrl = url
     }
     syncTabLabel(tab)
   }
@@ -240,10 +265,26 @@ export function mountBrowserPane(
     }
   }
 
+  function isIdleBrowserTab(tab: BrowserTab): boolean {
+    const loaded = webviewUrl(tab)
+    return !loaded || loaded === 'about:blank'
+  }
+
+  function openRequestedBrowserUrl(rawUrl: string) {
+    const url = normalizeBrowserUrl(rawUrl)
+    let tab = activeTabId ? tabs.get(activeTabId) : undefined
+    if (!tab || !isIdleBrowserTab(tab)) {
+      addTab({ activate: true })
+      tab = activeTabId ? tabs.get(activeTabId) : undefined
+    }
+    if (!tab) return
+    setActiveTab(tab.id)
+    navigateTab(tab, url)
+  }
+
   function addTab(options?: { url?: string; activate?: boolean }): string {
     const id = crypto.randomUUID()
-    const initialUrl = options?.url ? normalizeBrowserUrl(options.url) : 'about:blank'
-    const label = browserTabLabel(initialUrl)
+    const label = browserTabLabel(options?.url ? normalizeBrowserUrl(options.url) : 'about:blank')
 
     const tabLabelEl = el('span', { class: 'browser-tabs-tab-label' }, label)
     const closeBtn = el(
@@ -327,7 +368,7 @@ export function mountBrowserPane(
       backBtn,
       forwardBtn,
       reloadBtn,
-      pendingUrl: initialUrl !== 'about:blank' ? initialUrl : null,
+      pendingUrl: null,
       loadError: null,
     }
 
@@ -348,7 +389,7 @@ export function mountBrowserPane(
     body.append(panel)
 
     if (options?.activate !== false || !activeTabId) setActiveTab(id)
-    if (browserModeActive(store) && tab.pendingUrl) ensureWebview(tab)
+    if (options?.url) navigateTab(tab, options.url)
     return id
   }
 
@@ -407,7 +448,7 @@ export function mountBrowserPane(
   const unsubs = [
     store.on('right_panel_mode_changed', onBrowserModeChange),
     store.on('files_pane_changed', onBrowserModeChange),
-    store.on('browser_url_requested', (url) => addTab({ url, activate: true })),
+    store.on('browser_url_requested', openRequestedBrowserUrl),
   ]
 
   return () => {

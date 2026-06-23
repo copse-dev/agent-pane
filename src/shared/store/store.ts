@@ -17,6 +17,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     workspaceRoot: null,
     projects: [],
     activeProjectId: null,
+    expandedProjectId: null,
     threads: [],
     activeThreadId: null,
     panelTab: 'file',

@@ -207,6 +207,38 @@ export function seedMarkdownListFixture(workspaceRoot: string): void {
   )
 }
 
+export function seedBrowserLinkChatFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-browser-link-chat-project'
+  const threadId = 'e2e-browser-link-chat-thread'
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Browser link chat',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-link',
+              role: 'assistant',
+              content: 'See [Example Domain](https://example.com) for details.',
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
 /** Git tool cards followed by an ordered-list summary (typical post-tool agent reply). */
 export function seedGitSummaryMarkdownFixture(workspaceRoot: string): void {
   const projectId = 'e2e-git-summary-md-project'
@@ -894,6 +926,70 @@ export function seedTodoDisplayFixture(workspaceRoot: string): void {
   seedTodoPlanFixtures(workspaceRoot)
 }
 
+/** Running thread with a queued follow-up message for edit / send-now e2e. */
+export function seedQueuedMessageFixture(workspaceRoot: string): {
+  threadId: string
+  queuedMessageId: string
+  queuedText: string
+} {
+  const projectId = 'e2e-queued-message-project'
+  const threadId = 'e2e-queued-message-thread'
+  const queuedMessageId = 'msg-user-queued'
+  const queuedText = 'Then add unit tests for the parser.'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      activeThreadId: threadId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Queued message edit',
+          status: 'running',
+          messages: [
+            {
+              id: 'msg-user-first',
+              role: 'user',
+              content: 'Refactor the JSON parser.',
+              toolCalls: [],
+              createdAt: now,
+            },
+            {
+              id: 'msg-assistant-first',
+              role: 'assistant',
+              content: 'Working on the refactor now…',
+              toolCalls: [],
+              createdAt: now + 1,
+            },
+            {
+              id: queuedMessageId,
+              role: 'user',
+              content: queuedText,
+              toolCalls: [],
+              createdAt: now + 2,
+            },
+          ],
+          pendingMessages: [
+            {
+              messageId: queuedMessageId,
+              payload: { content: queuedText, invokedSkills: [], priorTodos: [] },
+              createdAt: now + 2,
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: now,
+          updatedAt: now + 2,
+        },
+      ],
+    }),
+    'utf8',
+  )
+  return { threadId, queuedMessageId, queuedText }
+}
+
 export function seedToolDisplayFixture(workspaceRoot: string): void {
   const projectId = 'e2e-tool-display-project'
   const threadId = 'e2e-tool-display-thread'
@@ -903,6 +999,8 @@ export function seedToolDisplayFixture(workspaceRoot: string): void {
     JSON.stringify({
       projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
       activeProjectId: projectId,
+      expandedProjectId: projectId,
+      activeThreadId: threadId,
       [`threads:${projectId}`]: [
         {
           id: threadId,
@@ -934,6 +1032,71 @@ export function seedToolDisplayFixture(workspaceRoot: string): void {
                   args: { path: 'missing.txt' },
                   status: 'error',
                   result: 'Error: ENOENT',
+                },
+              ],
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
+/** Thread showing built-in browser tool cards (navigate/snapshot/screenshot/interact). */
+export function seedBrowserToolsFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-browser-tools-project'
+  const threadId = 'e2e-browser-tools-thread'
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Browser tools test',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-user-browser',
+              role: 'user',
+              content: 'Open the local dev server and check the heading renders.',
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+            {
+              id: 'msg-assistant-browser',
+              role: 'assistant',
+              content:
+                'Opened the page, read its accessibility snapshot, and captured a screenshot.',
+              toolCalls: [
+                {
+                  id: 'tc-browser-navigate',
+                  name: 'browser_navigate',
+                  args: { url: 'http://localhost:3000/' },
+                  status: 'done',
+                  result: 'Opened tab-1: Computer Use Demo\nhttp://localhost:3000/',
+                },
+                {
+                  id: 'tc-browser-snapshot',
+                  name: 'browser_snapshot',
+                  args: {},
+                  status: 'done',
+                  result:
+                    'page: "Computer Use Demo"\nurl: http://localhost:3000/\n\n- heading "Welcome"\n- link "Docs" [ref=e1]\n- textbox "Search" [ref=e2]',
+                },
+                {
+                  id: 'tc-browser-screenshot',
+                  name: 'browser_screenshot',
+                  args: {},
+                  status: 'done',
+                  result: 'Saved screenshot of tab-1 to /tmp/browser-screenshots/tab-1.png',
                 },
               ],
               createdAt: Date.now(),

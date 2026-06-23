@@ -1,5 +1,25 @@
 import { z } from 'zod'
 import { APP_ICON_VARIANTS } from '@shared/app-icon-variants.ts'
+import { validateWebOriginPattern } from './web-origin-policy.ts'
+
+export const webAllowedOriginsSchema = z
+  .array(
+    z
+      .string()
+      .max(256)
+      .transform((value, ctx) => {
+        try {
+          return validateWebOriginPattern(value)
+        } catch (error) {
+          ctx.addIssue({
+            code: 'custom',
+            message: error instanceof Error ? error.message : 'Invalid web origin',
+          })
+          return z.NEVER
+        }
+      }),
+  )
+  .max(128)
 
 export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   model: z.string().max(256),
@@ -26,6 +46,8 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   remoteAgentStartingRef: z.string().max(256),
   remoteAgentAutoCreatePR: z.boolean(),
   remoteAgentWorkOnCurrentBranch: z.boolean(),
+  browserToolsEnabled: z.boolean(),
+  browserAllowedOrigins: z.array(z.string().max(2048)).max(256),
   customInstructions: z.string().max(8192),
   onboardingCompleted: z.boolean(),
 } as const satisfies Record<string, z.ZodType>
@@ -50,6 +72,8 @@ export const securitySettingsSchema = z.object({
   safetyModel: z.string().max(256),
   autoRunSandboxCommands: z.boolean(),
   mcpAutoAllowReadOnly: z.boolean(),
+  webAllowedOrigins: webAllowedOriginsSchema,
+  webAllowUserApproval: z.boolean(),
 })
 
 export type SecuritySettings = z.infer<typeof securitySettingsSchema>

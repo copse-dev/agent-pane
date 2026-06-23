@@ -3,6 +3,7 @@ const randomUUID = () => globalThis.crypto.randomUUID()
 import type { AppStore } from './store.ts'
 import type {
   Message,
+  ModelUsage,
   ToolCall,
   ThreadUsage,
   UsageDelta,
@@ -217,7 +218,7 @@ export function setThreadDraftPrompt(store: AppStore, threadId: string, draftPro
       t.id !== threadId ? t : { ...t, draftPrompt, updatedAt: Date.now() },
     )
     store.setState({ threads: updated })
-    store.emit('threads_changed')
+    store.emit('thread_draft_changed', threadId)
     return
   }
   if (thread.draftPrompt === undefined) return
@@ -227,7 +228,7 @@ export function setThreadDraftPrompt(store: AppStore, threadId: string, draftPro
     return { ...rest, updatedAt: Date.now() }
   })
   store.setState({ threads: updated })
-  store.emit('threads_changed')
+  store.emit('thread_draft_changed', threadId)
 }
 
 export function appendToken(store: AppStore, messageId: string, text: string): void {
@@ -296,20 +297,50 @@ export function updateUsage(store: AppStore, threadId: string, usage: ThreadUsag
   store.emit('usage_updated', threadId)
 }
 
+function addCacheTokens<T extends ModelUsage>(
+  base: T,
+  prevRead: number | undefined,
+  prevCreation: number | undefined,
+  delta: UsageDelta,
+): T {
+  const next: T = { ...base }
+  if (delta.cacheReadTokens !== undefined || prevRead !== undefined) {
+    next.cacheReadTokens = (prevRead ?? 0) + (delta.cacheReadTokens ?? 0)
+  }
+  if (delta.cacheCreationTokens !== undefined || prevCreation !== undefined) {
+    next.cacheCreationTokens = (prevCreation ?? 0) + (delta.cacheCreationTokens ?? 0)
+  }
+  return next
+}
+
 export function addUsageDelta(store: AppStore, threadId: string, delta: UsageDelta): void {
   const thread = getThreadById(store, threadId)
   if (!thread) return
   const byModel = { ...(thread.usage.byModel ?? {}) }
   const prev = byModel[delta.model] ?? { inputTokens: 0, outputTokens: 0 }
-  byModel[delta.model] = {
-    inputTokens: prev.inputTokens + delta.inputTokens,
-    outputTokens: prev.outputTokens + delta.outputTokens,
-  }
-  updateUsage(store, threadId, {
-    inputTokens: thread.usage.inputTokens + delta.inputTokens,
-    outputTokens: thread.usage.outputTokens + delta.outputTokens,
-    byModel,
-  })
+  byModel[delta.model] = addCacheTokens(
+    {
+      inputTokens: prev.inputTokens + delta.inputTokens,
+      outputTokens: prev.outputTokens + delta.outputTokens,
+    },
+    prev.cacheReadTokens,
+    prev.cacheCreationTokens,
+    delta,
+  )
+  updateUsage(
+    store,
+    threadId,
+    addCacheTokens(
+      {
+        inputTokens: thread.usage.inputTokens + delta.inputTokens,
+        outputTokens: thread.usage.outputTokens + delta.outputTokens,
+        byModel,
+      },
+      thread.usage.cacheReadTokens,
+      thread.usage.cacheCreationTokens,
+      delta,
+    ),
+  )
 }
 
 export function updateContextSnapshot(
@@ -346,6 +377,21 @@ export function setThreadTodos(store: AppStore, threadId: string, todos: TodoIte
     .threads.map((t) => (t.id !== threadId ? t : { ...t, todos, updatedAt: Date.now() }))
   store.setState({ threads })
   store.emit('todos_changed', threadId)
+}
+
+/** Suspend/resume FIFO draining of a thread's queued messages (e.g. while editing). */
+export function setQueuePaused(store: AppStore, threadId: string, paused: boolean): void {
+  const { threads } = store.getState()
+  const thread = threads.find((t) => t.id === threadId)
+  if (!thread || Boolean(thread.queuePaused) === paused) return
+  const updated = threads.map((t) => {
+    if (t.id !== threadId) return t
+    if (paused) return { ...t, queuePaused: true, updatedAt: Date.now() }
+    const { queuePaused: _removed, ...rest } = t
+    return { ...rest, updatedAt: Date.now() }
+  })
+  store.setState({ threads: updated })
+  store.emit('threads_changed')
 }
 
 export function setThreadStatus(

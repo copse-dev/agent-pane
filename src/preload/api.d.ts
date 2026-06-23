@@ -1,4 +1,4 @@
-import type { StreamChunk, UsageDelta } from '@shared/types'
+import type { StreamChunk, UsageDelta, ContextBreakdown } from '@shared/types'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { GitFileDiff, GitStatusResult, GitBranchStatus } from '@shared/types/git.ts'
 import type { McpServerStatus } from '@shared/types/mcp.ts'
@@ -24,6 +24,7 @@ export interface ApiClient {
   }
   agent: {
     run: (threadId: string, prompt: string) => Promise<void>
+    estimateContext: (threadId: string, payload: string) => Promise<ContextBreakdown>
     abort: (threadId: string) => Promise<void>
     clearHistory: (threadId: string) => Promise<void>
     suggestTitle: (text: string) => Promise<string | null>
@@ -37,6 +38,7 @@ export interface ApiClient {
         body: string
         type: string
         allowRemember?: boolean
+        rememberLabel?: string
       }) => void,
     ) => () => void
     onShellOutput: (handler: (data: string) => void) => () => void
@@ -130,6 +132,8 @@ export interface ApiClient {
       safetyModel: string
       autoRunSandboxCommands: boolean
       mcpAutoAllowReadOnly: boolean
+      webAllowedOrigins: string[]
+      webAllowUserApproval: boolean
     }) => Promise<void>
     getKey: (provider: 'anthropic' | 'openai' | 'lmstudio' | 'cursor') => Promise<boolean>
     setKey: (provider: 'anthropic' | 'openai' | 'lmstudio' | 'cursor', key: string) => Promise<void>
