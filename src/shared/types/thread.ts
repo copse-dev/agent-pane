@@ -67,7 +67,8 @@ export interface SubagentSession {
   prompt: string
   summary: string | null
   messages: SubagentMessage[]
-  usage?: { inputTokens: number; outputTokens: number }
+  /** Token totals for this subagent's own loop (also folded into the parent thread total). */
+  usage?: ModelUsage
 }
 
 export interface SubagentMessage {
@@ -75,6 +76,8 @@ export interface SubagentMessage {
   role: 'user' | 'assistant'
   content: string
   toolCalls: ToolCall[]
+  /** Wall-clock time the message was first created; absent on sessions persisted before timestamps existed. */
+  createdAt?: number
 }
 
 export interface ToolCall {
@@ -89,11 +92,26 @@ export interface ToolCall {
 export interface ModelUsage {
   inputTokens: number
   outputTokens: number
+  /**
+   * Portion of `inputTokens` served from the provider prompt cache (Anthropic
+   * `cache_read_input_tokens`). Billed far cheaper than fresh input; absent for
+   * providers/usage that don't report cache stats.
+   */
+  cacheReadTokens?: number
+  /**
+   * Portion of `inputTokens` written to the provider prompt cache (Anthropic
+   * `cache_creation_input_tokens`).
+   */
+  cacheCreationTokens?: number
 }
 
 export interface ThreadUsage {
   inputTokens: number
   outputTokens: number
+  /** Cumulative cache-read tokens across the thread (subset of `inputTokens`). */
+  cacheReadTokens?: number
+  /** Cumulative cache-creation tokens across the thread (subset of `inputTokens`). */
+  cacheCreationTokens?: number
   /** Token totals keyed by model id (e.g. claude-sonnet-4-6, lmstudio:qwen). */
   byModel?: Record<string, ModelUsage>
 }

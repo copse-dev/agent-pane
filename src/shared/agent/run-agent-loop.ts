@@ -109,7 +109,12 @@ function reserveLlmCall(budget: LlmCallBudget): boolean {
   return true
 }
 
-type StepUsage = { inputTokens: number; outputTokens: number }
+type StepUsage = {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens?: number
+  cacheCreationTokens?: number
+}
 
 /**
  * Resolve a single step's usage, preferring usage captured from the stream
@@ -133,6 +138,10 @@ function emitStepUsage(
       model: usageModel,
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
+      ...(usage.cacheReadTokens !== undefined ? { cacheReadTokens: usage.cacheReadTokens } : {}),
+      ...(usage.cacheCreationTokens !== undefined
+        ? { cacheCreationTokens: usage.cacheCreationTokens }
+        : {}),
     })
   }
 }
@@ -180,7 +189,14 @@ async function streamTextOnlyTurn(
       onChunk(chunk)
     }
     if (chunk.type === 'usage') {
-      streamUsage = { inputTokens: chunk.inputTokens, outputTokens: chunk.outputTokens }
+      streamUsage = {
+        inputTokens: chunk.inputTokens,
+        outputTokens: chunk.outputTokens,
+        ...(chunk.cacheReadTokens !== undefined ? { cacheReadTokens: chunk.cacheReadTokens } : {}),
+        ...(chunk.cacheCreationTokens !== undefined
+          ? { cacheCreationTokens: chunk.cacheCreationTokens }
+          : {}),
+      }
     }
     if (chunk.type === 'done') {
       stopReason = chunk.stopReason
@@ -343,7 +359,16 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         onChunk(chunk)
       }
       if (chunk.type === 'usage') {
-        streamUsage = { inputTokens: chunk.inputTokens, outputTokens: chunk.outputTokens }
+        streamUsage = {
+          inputTokens: chunk.inputTokens,
+          outputTokens: chunk.outputTokens,
+          ...(chunk.cacheReadTokens !== undefined
+            ? { cacheReadTokens: chunk.cacheReadTokens }
+            : {}),
+          ...(chunk.cacheCreationTokens !== undefined
+            ? { cacheCreationTokens: chunk.cacheCreationTokens }
+            : {}),
+        }
       }
       if (chunk.type === 'done') {
         stopReason = chunk.stopReason

@@ -1,4 +1,4 @@
-import type { StreamChunk } from '@shared/types'
+import type { ModelUsage, StreamChunk } from '@shared/types'
 import { runExploreSubagent } from './subagent-service.ts'
 import type { LLMProvider } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
@@ -18,16 +18,16 @@ export type ExploreSubagentRunner = (opts: {
   query: string
   paths?: string[]
   signal: AbortSignal
-}) => Promise<{ summary: string; usage: { inputTokens: number; outputTokens: number } }>
+}) => Promise<{ summary: string; usage: ModelUsage }>
 
 let activeContext: ExploreSubagentRunnerContext | null = null
-let accumulatedUsage = { inputTokens: 0, outputTokens: 0 }
+let accumulatedUsage: ModelUsage = { inputTokens: 0, outputTokens: 0 }
 
 export function resetSubagentUsage(): void {
   accumulatedUsage = { inputTokens: 0, outputTokens: 0 }
 }
 
-export function getAccumulatedSubagentUsage(): { inputTokens: number; outputTokens: number } {
+export function getAccumulatedSubagentUsage(): ModelUsage {
   return accumulatedUsage
 }
 
@@ -54,6 +54,14 @@ export function getExploreSubagentRunner(): ExploreSubagentRunner | null {
     })
     accumulatedUsage.inputTokens += result.usage.inputTokens
     accumulatedUsage.outputTokens += result.usage.outputTokens
+    if (result.usage.cacheReadTokens !== undefined) {
+      accumulatedUsage.cacheReadTokens =
+        (accumulatedUsage.cacheReadTokens ?? 0) + result.usage.cacheReadTokens
+    }
+    if (result.usage.cacheCreationTokens !== undefined) {
+      accumulatedUsage.cacheCreationTokens =
+        (accumulatedUsage.cacheCreationTokens ?? 0) + result.usage.cacheCreationTokens
+    }
     return result
   }
 }
