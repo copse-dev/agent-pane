@@ -1,4 +1,7 @@
 import { getWorkspaceRoot } from './workspace.ts'
+import { isWorkspaceTrusted } from './workspace-trust.ts'
+import { runPermissionHooks } from './cursor-hooks.ts'
+import type { CursorPermissionHookEvent } from '@shared/types/cursor-hooks.ts'
 import { isProjectSandboxEnabled } from '../project-sandbox/index.ts'
 import { classifyShellScope } from './safety-classifier.ts'
 import { requestApproval } from './approval.ts'
@@ -228,9 +231,58 @@ export async function ensureTerminalPermitted(): Promise<boolean> {
   return true
 }
 
+/** Map a tool call to the Cursor permission-hook event + payload it should fire. */
+function cursorHookForTool(
+  toolName: string,
+  args: unknown,
+): { event: CursorPermissionHookEvent; payload: Record<string, unknown> } | null {
+  if (toolName === 'run_shell') {
+    const command = shellCommandFromArgs(args) ?? ''
+    return { event: 'beforeShellExecution', payload: { command, cwd: getWorkspaceRoot() ?? '' } }
+  }
+  if (toolName.startsWith('mcp__')) {
+    return { event: 'beforeMCPExecution', payload: { tool_name: toolName, tool_input: args } }
+  }
+  if (toolName === 'read_file') {
+    const rawPath =
+      typeof args === 'object' && args !== null ? (args as { path?: unknown }).path : undefined
+    const path = typeof rawPath === 'string' ? rawPath : ''
+    return { event: 'beforeReadFile', payload: { file_path: path, content: '' } }
+  }
+  return null
+}
+
+/**
+ * Run any matching Cursor hooks (https://cursor.com/docs/hooks) for this tool call.
+ * Hooks can only *block* — an allow/ask still falls through to Copse's own gate — so
+ * a deny here is the one short-circuit. Gated behind `cursorHooksEnabled` (default off)
+ * because honouring hooks spawns user/project scripts on the agent's hot path.
+ */
+async function cursorHooksAllow(check: PermissionCheck): Promise<boolean> {
+  if (!getSetting<boolean>('cursorHooksEnabled', false)) return true
+  const mapped = cursorHookForTool(check.toolName, check.args)
+  if (!mapped) return true
+
+  const workspaceRoot = getWorkspaceRoot()
+  const decision = await runPermissionHooks(mapped.event, mapped.payload, {
+    workspaceRoot,
+    projectTrusted: isWorkspaceTrusted(workspaceRoot),
+  })
+  if (decision.permission === 'deny') {
+    console.warn(
+      `[cursor-hooks] ${mapped.event} denied ${check.toolName}` +
+        (decision.agentMessage ? `: ${decision.agentMessage}` : ''),
+    )
+    return false
+  }
+  return true
+}
+
 /** Returns true when the tool call may proceed, false when the user rejected. */
 export async function ensureToolPermitted(check: PermissionCheck): Promise<boolean> {
   const { toolName, args } = check
+
+  if (!(await cursorHooksAllow(check))) return false
 
   if (SANDBOX_TOOLS.has(toolName)) return true
 

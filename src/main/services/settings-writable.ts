@@ -67,6 +67,7 @@ export const securitySettingsSchema = z.object({
   safetyModel: z.string().max(256),
   autoRunSandboxCommands: z.boolean(),
   mcpAutoAllowReadOnly: z.boolean(),
+  cursorHooksEnabled: z.boolean(),
   webAllowedOrigins: webAllowedOriginsSchema,
   webAllowUserApproval: z.boolean(),
 })

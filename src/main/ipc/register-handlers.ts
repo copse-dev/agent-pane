@@ -44,6 +44,7 @@ import { storageGet, storageSet } from '../services/storage.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills-registry.ts'
 import { listCursorPlugins } from '../services/cursor-plugins.ts'
+import { listCursorHooks } from '../services/cursor-hooks.ts'
 import { registerSkillTools } from '../services/registry-bootstrap.ts'
 import {
   checkoutGitBranch,
@@ -211,6 +212,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   ipcMain.handle('skills:list', () => listSkills())
   ipcMain.handle('plugins:list', () => listCursorPlugins())
+  ipcMain.handle('hooks:list', () => {
+    const root = getWorkspaceRoot()
+    return listCursorHooks({ workspaceRoot: root, projectTrusted: isWorkspaceTrusted(root) })
+  })
 
   ipcMain.handle('git:isAvailable', async () => isGitAvailable() && (await isInsideGitWorkTree()))
   ipcMain.handle('git:status', () => getGitStatus())
