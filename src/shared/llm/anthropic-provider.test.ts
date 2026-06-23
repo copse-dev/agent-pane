@@ -57,6 +57,9 @@ describe('AnthropicProvider usage accounting (#111)', () => {
     assert.equal(usage.inputTokens, 2000)
     // output comes from the final message_delta
     assert.equal(usage.outputTokens, 42)
+    // cache portions are surfaced separately for debugging (subset of inputTokens)
+    assert.equal(usage.cacheReadTokens, 500)
+    assert.equal(usage.cacheCreationTokens, 300)
     assert.deepEqual(provider.lastUsage, { inputTokens: 2000, outputTokens: 42 })
   })
 

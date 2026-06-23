@@ -53,4 +53,50 @@ describe('export thread', () => {
 
     assert.equal(jsonl.trimEnd().split('\n').length, 2)
   })
+
+  it('serializes cache usage, subagent usage, and subagent message timestamps', () => {
+    const t = thread([
+      {
+        id: 'message-1',
+        role: 'assistant',
+        content: '',
+        createdAt: 2,
+        toolCalls: [
+          {
+            id: 'tc-explore',
+            name: 'explore',
+            args: { query: 'find pages' },
+            status: 'done',
+            result: 'done',
+            subagent: {
+              id: 'sub-1',
+              kind: 'explore',
+              status: 'done',
+              prompt: 'find pages',
+              summary: 'summary',
+              usage: { inputTokens: 5000, outputTokens: 120, cacheReadTokens: 4200 },
+              messages: [
+                { id: 'sm-1', role: 'assistant', content: 'reading', toolCalls: [], createdAt: 99 },
+              ],
+            },
+          },
+        ],
+      },
+    ])
+    t.usage = {
+      inputTokens: 10000,
+      outputTokens: 200,
+      cacheReadTokens: 8000,
+      cacheCreationTokens: 500,
+    }
+
+    const [header, message] = threadToJsonl(t).trimEnd().split('\n')
+    const headerObj = JSON.parse(header!)
+    const msgObj = JSON.parse(message!)
+
+    assert.equal(headerObj.usage.cacheReadTokens, 8000)
+    assert.equal(headerObj.usage.cacheCreationTokens, 500)
+    assert.equal(msgObj.toolCalls[0].subagent.usage.cacheReadTokens, 4200)
+    assert.equal(msgObj.toolCalls[0].subagent.messages[0].createdAt, 99)
+  })
 })
