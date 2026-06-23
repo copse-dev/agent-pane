@@ -88,8 +88,11 @@ app
     const registry = createRegistry()
     // The only Electron-specific seam the agent run needs: forward stream chunks
     // to the renderer. Injecting it as an AgentHost keeps runAgent free of BrowserWindow.
+    // Guard against a window destroyed mid-run (e.g. closed while the agent streams).
     const agentHost: AgentHost = {
-      emit: (threadId, chunk) => win.webContents.send('agent:chunk', threadId, chunk),
+      emit: (threadId, chunk) => {
+        if (!win.isDestroyed()) win.webContents.send('agent:chunk', threadId, chunk)
+      },
     }
 
     initApproval(win)
