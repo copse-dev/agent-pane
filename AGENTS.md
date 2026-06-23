@@ -137,6 +137,7 @@ Unit coverage for grouping logic: `src/shared/tools/tool-display.test.ts`.
 
 Conversation messages, subagent timelines, and file preview use the hand-rolled renderer in
 `src/renderer/markdown/`. Design invariants, regression tests, and e2e fixtures are documented in
-[`src/renderer/markdown/README.md`](src/renderer/markdown/README.md).
+[`src/renderer/markdown/README.md`](src/renderer/markdown/README.md). Renderer CSS taste (tables,
+wrapping, no magic column widths) is in [`docs/taste.md`](docs/taste.md).
 
 After markdown or list-indent changes, run `npm run build && npm run test:e2e:markdown`.
