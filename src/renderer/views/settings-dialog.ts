@@ -14,13 +14,20 @@ import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createCustomProvidersSection } from './setup/custom-providers-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
+import { createUsageSection } from './setup/usage-section.ts'
 import {
   DEFAULT_WEB_ALLOWED_ORIGINS,
   WEB_ALLOWED_ORIGINS_SETTING,
   WEB_ALLOW_USER_APPROVAL_SETTING,
 } from '@shared/web-origins.ts'
 
-type SettingsSection = 'general' | 'local-models' | 'mcp' | 'appearance' | 'experimental'
+type SettingsSection =
+  | 'general'
+  | 'usage'
+  | 'local-models'
+  | 'mcp'
+  | 'appearance'
+  | 'experimental'
 
 /**
  * Single source of truth for the simple form fields, so each setting's default
@@ -141,6 +148,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       <div class="settings-body">
         <nav class="settings-nav" aria-label="Settings sections">
           <button type="button" class="settings-nav-btn active" data-section="general">General</button>
+          <button type="button" class="settings-nav-btn" data-section="usage">Usage</button>
           <button type="button" class="settings-nav-btn" data-section="local-models">Local models</button>
           <button type="button" class="settings-nav-btn" data-section="mcp">MCP servers</button>
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
@@ -325,6 +333,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
           </section>
 
+          <section class="settings-section" data-section="usage">
+            <h3>Usage</h3>
+            <p class="settings-section-desc">
+              Estimated cloud spend and local (free) model token usage across all workspaces.
+              Costs are approximate and use catalog pricing, including Anthropic prompt-cache rates
+              when cache tokens are reported.
+            </p>
+            <div id="settings-usage-host"></div>
+          </section>
+
           <section class="settings-section" data-section="local-models">
             <h3>Local models</h3>
             <p class="settings-section-desc">
@@ -504,6 +522,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   const modelRoutingSection = createModelRoutingSection(api)
   overlay.querySelector('#settings-model-routing-host')!.append(modelRoutingSection.root)
 
+  const usageSection = createUsageSection(api)
+  overlay.querySelector('#settings-usage-host')!.append(usageSection.root)
+
   const navBtns = overlay.querySelectorAll<HTMLButtonElement>('.settings-nav-btn')
   const sections = overlay.querySelectorAll<HTMLElement>('.settings-section')
 
@@ -515,7 +536,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   navBtns.forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = btn.dataset.section as SettingsSection | undefined
-      if (id) showSection(id)
+      if (id) {
+        showSection(id)
+        if (id === 'usage') void usageSection.refresh()
+      }
     })
   })
 
