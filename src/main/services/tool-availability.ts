@@ -5,10 +5,12 @@ import { getCodesearchCommand, probeSemanticBackends } from './semantic-index.ts
 
 let rgAvail: boolean | null = null
 let gitAvail: boolean | null = null
+let ghAvail: boolean | null = null
 
 export async function checkToolAvailability(): Promise<void> {
   rgAvail = await probe('rg', ['--version'])
   gitAvail = await probe('git', ['--version'])
+  ghAvail = await probe('gh', ['--version'])
   const grepBackend = await probeIndexedGrepBackends()
   const semanticBackend = await probeSemanticBackends()
   if (!rgAvail)
@@ -25,10 +27,12 @@ export async function checkToolAvailability(): Promise<void> {
       '[copse-panel] codesearch/vera not found — semantic search disabled (run npm install or add CLI to PATH)',
     )
   if (!gitAvail) console.warn('[copse-panel] git not found — git tools will be unavailable')
+  if (!ghAvail) console.warn('[copse-panel] gh not found — GitHub PR tools will be unavailable')
 }
 
 export const isRgAvailable = () => rgAvail === true
 export const isGitAvailable = () => gitAvail === true
+export const isGhAvailable = () => ghAvail === true
 
 /** Test hook — force ripgrep availability without probing PATH. */
 export function setRgAvailableForTest(value: boolean | null): void {
@@ -38,6 +42,11 @@ export function setRgAvailableForTest(value: boolean | null): void {
 /** Test hook — force git availability without probing PATH. */
 export function setGitAvailableForTest(value: boolean | null): void {
   gitAvail = value
+}
+
+/** Test hook — force gh availability without probing PATH. */
+export function setGhAvailableForTest(value: boolean | null): void {
+  ghAvail = value
 }
 
 async function probe(cmd: string, args: string[]): Promise<boolean> {

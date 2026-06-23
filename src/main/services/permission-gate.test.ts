@@ -18,6 +18,11 @@ describe('SANDBOX_TOOLS', () => {
   it('includes read_skill so skill reads auto-run without approval', () => {
     assert.equal(SANDBOX_TOOLS.has('read_skill'), true)
   })
+
+  it('includes read-only GitHub PR tools', () => {
+    assert.equal(SANDBOX_TOOLS.has('gh_pr_list'), true)
+    assert.equal(SANDBOX_TOOLS.has('gh_pr_view'), true)
+  })
 })
 
 describe('ensureToolPermitted', () => {
@@ -25,6 +30,14 @@ describe('ensureToolPermitted', () => {
     setPermissionGateForTests(null)
     assert.equal(
       await ensureToolPermitted({ toolName: 'read_skill', args: { name: 'demo-skill' } }),
+      true,
+    )
+  })
+
+  it('auto-allows gh_pr_list without prompting', async () => {
+    setPermissionGateForTests(null)
+    assert.equal(
+      await ensureToolPermitted({ toolName: 'gh_pr_list', args: { state: 'open', limit: 20 } }),
       true,
     )
   })

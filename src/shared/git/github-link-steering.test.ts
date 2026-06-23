@@ -44,11 +44,13 @@ describe('parseGithubRepoSlug', () => {
 describe('buildGithubLinkSteeringPrompt', () => {
   it('includes repo slug when available', () => {
     assert.match(buildGithubLinkSteeringPrompt('org/repo'), /Repo: org\/repo/)
+    assert.match(buildGithubLinkSteeringPrompt('org/repo'), /gh_pr_list/)
     assert.match(buildGithubLinkSteeringPrompt('org/repo'), /tables and lists/)
   })
 
   it('falls back to git remote hint without a slug', () => {
     assert.match(buildGithubLinkSteeringPrompt(null), /git remote/)
+    assert.match(buildGithubLinkSteeringPrompt(null), /gh_pr_list/)
     assert.match(buildGithubLinkSteeringPrompt(null), /tables and lists/)
   })
 })
