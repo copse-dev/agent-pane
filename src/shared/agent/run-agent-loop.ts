@@ -12,6 +12,7 @@ import {
   trimMessagesInPlace,
   repairToolUseToolResultPairing,
   CANCELLED_TOOL_RESULT,
+  getLastMeasuredInputTokens,
   setLastMeasuredInputTokens,
 } from './trim-history.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
@@ -474,7 +475,13 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       continue
     }
 
-    // Execute tools and collect results
+    // Execute tools and collect results. A tool may run a nested agent loop
+    // (explore subagent, local todo worker), and `setLastMeasuredInputTokens`
+    // is a module global that the nested loop resets and repopulates with its
+    // own stream sizes. Snapshot this loop's measured input here and restore it
+    // after the tools finish so the next iteration's trim/escalation sizing
+    // reflects the parent conversation, not the subagent's (#112).
+    const measuredInputBeforeTools = getLastMeasuredInputTokens()
     const toolResults: ToolResult[] = []
     for (let ti = 0; ti < pendingToolCalls.length; ti++) {
       const tc = pendingToolCalls[ti]
@@ -534,6 +541,8 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         onChunk({ type: 'tool_result', toolCallId: tc.id, result: `Error: ${msg}`, isError: true })
       }
     }
+
+    setLastMeasuredInputTokens(measuredInputBeforeTools)
 
     toolOnlySteps++
 
