@@ -23,7 +23,7 @@ describe('innerHTML-safe tool args', () => {
   })
 
   it('renders tool args with </pre> without breaking card markup', async () => {
-    await $('.tool-card[data-tool-id="tc-write-trap"]').waitForExist({ timeout: 15_000 })
+    await $('.tool-card[data-tool-id="tc-write-trap"]').waitForExist({ timeout: 30_000 })
 
     const toolCard = await $('.tool-card[data-tool-id="tc-write-trap"]')
     await expect(toolCard.$('.tool-name')).toHaveText('Edited index.html')

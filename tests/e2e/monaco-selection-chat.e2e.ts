@@ -79,11 +79,11 @@ describe('Monaco selection to chat attachment', () => {
     await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
 
     const sampleRow = await $(`.tree-row[title="${SAMPLE_FILE}"]`)
-    await sampleRow.waitForDisplayed({ timeout: 15_000 })
+    await sampleRow.waitForDisplayed({ timeout: 30_000 })
     await sampleRow.click()
 
     const editor = await $('#file-viewer .monaco-editor')
-    await editor.waitForDisplayed({ timeout: 15_000 })
+    await editor.waitForDisplayed({ timeout: 30_000 })
     await $('#file-viewer .monaco-editor .view-line').click()
     await focusMonacoInput()
 

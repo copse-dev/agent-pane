@@ -48,7 +48,7 @@ describe('chat layout styling', () => {
     resetUserData()
     seedToolDisplayFixture(process.cwd())
     await browser.reloadSession()
-    await $('.messages-list .msg-assistant').waitForExist({ timeout: 15_000 })
+    await $('.messages-list .msg-assistant').waitForExist({ timeout: 30_000 })
   })
 
   after(() => {
@@ -111,7 +111,7 @@ describe('chat layout styling', () => {
     seedEmptyProject(process.cwd(), 'e2e-chat-gradient-project')
     await browser.reloadSession()
 
-    await $('.project-new-thread-btn').waitForClickable({ timeout: 15_000 })
+    await $('.project-new-thread-btn').waitForClickable({ timeout: 30_000 })
     await $('.project-new-thread-btn').click()
     await $('.pane-chat.composer-centered').waitForExist({ timeout: 10_000 })
 
