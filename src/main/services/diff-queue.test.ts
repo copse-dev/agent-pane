@@ -282,14 +282,10 @@ describe('approveAllStagedDiffs', () => {
     await writeFile(join(tempRoot, 'a.txt'), 'orig\n', 'utf-8')
     await stageDiff('a.txt', 'orig\n', 'newA\n', 'plaintext')
 
-    // Simulate the agent staging a new diff while approveAll is mid-flight: the
-    // file-index rebuild that runs after applies is awaited, so stage during it.
-    let staged = false
+    // Stage a new diff while approveAll is in flight; it must survive because
+    // approveAll only removes entries it successfully applied by identity.
     const apply = approveAllStagedDiffs()
-    if (!staged) {
-      staged = true
-      await stageDiff('c.txt', '', 'newC\n', 'plaintext')
-    }
+    await stageDiff('c.txt', '', 'newC\n', 'plaintext')
     await apply
 
     const queue = getDiffQueueForTest()
