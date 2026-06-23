@@ -1,5 +1,6 @@
 import type { StreamChunk, UsageDelta, ContextBreakdown } from '@shared/types'
 import type { SkillSummary } from '@shared/types/skills.ts'
+import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import type { GitFileDiff, GitStatusResult, GitBranchStatus } from '@shared/types/git.ts'
 import type { McpServerStatus } from '@shared/types/mcp.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
@@ -148,6 +149,9 @@ export interface ApiClient {
   }
   skills: {
     list: () => Promise<SkillSummary[]>
+  }
+  plugins: {
+    list: () => Promise<CursorPluginSummary[]>
   }
   terminal: {
     create: (cols: number, rows: number) => Promise<string>
