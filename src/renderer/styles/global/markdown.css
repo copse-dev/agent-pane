@@ -24,6 +24,7 @@
   white-space: normal;
   word-break: normal;
   overflow-wrap: break-word;
+  min-width: 0;
 }
 /* PR-style tables (# / Title / Branch / Status): pin narrow edge columns. */
 .message-text:has(th:nth-child(4)) th:first-child,
@@ -39,12 +40,19 @@
 .message-text:has(th:nth-child(4)) th:nth-child(3),
 .message-text:has(th:nth-child(4)) td:nth-child(3) {
   width: 34%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 /* Branch slugs and paths in a single code span may break at / or -. */
 .message-text td > code:only-child,
 .message-text th > code:only-child {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   white-space: normal;
   overflow-wrap: anywhere;
+  word-break: break-all;
 }
 .message-text th:last-child,
 .message-text td:last-child {
