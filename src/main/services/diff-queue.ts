@@ -267,51 +267,59 @@ export function initDiffQueue(win: BrowserWindow): void {
     removeEntry(path)
   })
 
-  ipcMain.handle('diff:approveAll', async () => {
-    const conflicts: string[] = []
-    const failures: { path: string; error: string }[] = []
-    const remaining: QueueEntry[] = []
-    let wroteAny = false
-    for (const entry of queue) {
-      const result = await applyDiffEntry(entry)
-      if (result.status === 'conflict') {
-        restage(entry, result.current)
-        recordDecision({ path: entry.path, status: 'conflict' })
-        conflicts.push(entry.path)
-        remaining.push(entry)
-      } else if (result.status === 'error') {
-        // Per-entry failure isolation (#118): keep the failed entry queued for
-        // retry and continue applying the rest.
-        recordDecision({ path: entry.path, status: 'error', error: result.error })
-        failures.push({ path: entry.path, error: result.error })
-        remaining.push(entry)
-      } else {
-        recordDecision({ path: entry.path, status: 'approved' })
-        wroteAny = true
-      }
-    }
-    if (wroteAny) {
-      const root = getWorkspaceRoot()
-      if (root) await buildIndex(root)
-    }
-    queue.length = 0
-    queue.push(...remaining)
-    if (conflicts.length) mainWindow?.webContents.send('diff:conflict', conflicts)
-    broadcastQueue()
-    if (failures.length > 0) {
-      throw new Error(
-        `Failed to write ${failures.length} file(s):\n${failures
-          .map((f) => `  ${f.path}: ${f.error}`)
-          .join('\n')}`,
-      )
-    }
-  })
+  ipcMain.handle('diff:approveAll', () => approveAllStagedDiffs())
 
   ipcMain.handle('diff:rejectAll', () => {
     for (const entry of queue) recordDecision({ path: entry.path, status: 'rejected' })
     queue.length = 0
     broadcastQueue()
   })
+}
+
+/**
+ * Apply every queued diff, then remove only the entries that were successfully
+ * applied. Applying is async, and the agent can stage new diffs into `queue`
+ * while we await; rebuilding the queue from scratch afterward would drop those.
+ * Instead we track the specific entry objects we applied and remove them by
+ * identity, so conflicts and failures stay queued for retry and anything staged
+ * concurrently — even a re-stage of an already-applied path, which upsert
+ * replaces with a fresh object — survives. Throws if any write failed (#118).
+ */
+export async function approveAllStagedDiffs(): Promise<void> {
+  const conflicts: string[] = []
+  const failures: { path: string; error: string }[] = []
+  const toApply = [...queue]
+  const appliedEntries = new Set<QueueEntry>()
+  for (const entry of toApply) {
+    const result = await applyDiffEntry(entry)
+    if (result.status === 'conflict') {
+      restage(entry, result.current)
+      recordDecision({ path: entry.path, status: 'conflict' })
+      conflicts.push(entry.path)
+    } else if (result.status === 'error') {
+      recordDecision({ path: entry.path, status: 'error', error: result.error })
+      failures.push({ path: entry.path, error: result.error })
+    } else {
+      recordDecision({ path: entry.path, status: 'approved' })
+      appliedEntries.add(entry)
+    }
+  }
+  if (appliedEntries.size > 0) {
+    const root = getWorkspaceRoot()
+    if (root) await buildIndex(root)
+    for (let i = queue.length - 1; i >= 0; i--) {
+      if (appliedEntries.has(queue[i]!)) queue.splice(i, 1)
+    }
+  }
+  if (conflicts.length) mainWindow?.webContents.send('diff:conflict', conflicts)
+  broadcastQueue()
+  if (failures.length > 0) {
+    throw new Error(
+      `Failed to write ${failures.length} file(s):\n${failures
+        .map((f) => `  ${f.path}: ${f.error}`)
+        .join('\n')}`,
+    )
+  }
 }
 
 /**
