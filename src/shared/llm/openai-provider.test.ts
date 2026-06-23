@@ -7,6 +7,7 @@ interface CapturedChatCompletionRequest {
   model: string
   stream?: boolean
   stream_options?: { include_usage?: boolean }
+  provider?: { require_parameters?: boolean }
 }
 
 interface ChatCompletionChunk {
@@ -95,6 +96,25 @@ describe('OpenAIProvider request options', () => {
     await collect(provider)
 
     assert.equal(captured.request?.stream_options, undefined)
+  })
+
+  it('merges extraBody (e.g. OpenRouter require_parameters) into the request', async () => {
+    const provider = new OpenAIProvider('deepseek/deepseek-chat', {
+      baseURL: 'https://openrouter.ai/api/v1',
+      apiKey: 'sk-or-test',
+      includeUsage: true,
+      extraBody: { provider: { require_parameters: true } },
+    })
+    const captured: { request?: CapturedChatCompletionRequest } = {}
+    withFakeCreate(provider, (request) => {
+      captured.request = request
+      return streamEvents([{ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }])
+    })
+
+    await collect(provider)
+
+    assert.deepEqual(captured.request?.provider, { require_parameters: true })
+    assert.equal(captured.request?.stream_options?.include_usage, true)
   })
 })
 

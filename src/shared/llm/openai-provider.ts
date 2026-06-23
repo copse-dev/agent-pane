@@ -28,12 +28,20 @@ export class OpenAIProvider implements LLMProvider {
 
   // `baseURL` lets this provider talk to any OpenAI-compatible server (e.g.
   // LM Studio at http://localhost:1234/v1). Such servers often ignore the API
-  // key but the SDK requires a non-empty value.
+  // key but the SDK requires a non-empty value. `extraBody` is merged into every
+  // request body — used to pass provider-specific fields (e.g. OpenRouter's
+  // `provider: { require_parameters: true }`) that aren't in the OpenAI schema.
   constructor(
     private readonly model: string,
-    opts: { baseURL?: string; apiKey?: string; includeUsage?: boolean } = {},
+    opts: {
+      baseURL?: string
+      apiKey?: string
+      includeUsage?: boolean
+      extraBody?: Record<string, unknown>
+    } = {},
   ) {
     this.includeUsage = opts.includeUsage ?? !opts.baseURL
+    this.extraBody = opts.extraBody
     this.client = new OpenAI({
       apiKey: opts.apiKey ?? process.env.OPENAI_API_KEY ?? 'not-needed',
       ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
@@ -41,6 +49,7 @@ export class OpenAIProvider implements LLMProvider {
   }
 
   private readonly includeUsage: boolean
+  private readonly extraBody: Record<string, unknown> | undefined
 
   stream(
     messages: LLMMessage[],
@@ -68,6 +77,7 @@ export class OpenAIProvider implements LLMProvider {
             messages: toOpenAIMessages(messages),
             ...(self.includeUsage ? { stream_options: { include_usage: true } } : {}),
             ...(mappedTools ? { tools: mappedTools } : {}),
+            ...(self.extraBody ?? {}),
           },
           { signal },
         )
