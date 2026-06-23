@@ -16,11 +16,9 @@ export interface OpenRouterModelOption {
   label: string
 }
 
-// Curated shortlist of popular OpenRouter models. OpenRouter exposes hundreds of
-// models; rather than dump them all into the picker we surface a handful of common
-// ones and let users type any other id via the "Custom OpenRouter model" setting.
-// `:free` ids route to OpenRouter's free endpoints (usable at a $0 balance, but
-// rate-limited and not always tool-capable). The plain ids always bill.
+// Friendly display labels for a few well-known OpenRouter ids. The picker is
+// populated live from OpenRouter's catalog (free, tool-capable models); this map
+// only supplies a nicer label than the raw id when one of these is selected.
 export const OPENROUTER_MODELS: readonly OpenRouterModelOption[] = [
   { id: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet' },
   { id: 'openai/gpt-4o', label: 'GPT-4o' },

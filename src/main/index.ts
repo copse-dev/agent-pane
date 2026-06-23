@@ -33,6 +33,7 @@ import {
   listLmStudioModels,
   invalidateLmStudioModelsCache,
 } from './services/agent-service.ts'
+import { listFreeOpenRouterModels } from './services/openrouter-models.ts'
 import {
   detectLmStudio,
   downloadLmStudioModel,
@@ -100,6 +101,8 @@ app
     })
 
     ipcMain.handle('lmstudio:models', () => listLmStudioModels())
+
+    ipcMain.handle('openrouter:models', () => listFreeOpenRouterModels())
 
     ipcMain.handle('lmstudio:detect', async (_e, url?: string, apiKey?: string) =>
       detectLmStudio(url, apiKey),

@@ -1,9 +1,9 @@
 import type { ApiClient } from '../../preload/api.d.ts'
 import { CLOUD_MODELS } from '@shared/llm/model-catalog.ts'
 import {
-  OPENROUTER_MODELS,
   isOpenRouterModel,
   openRouterDisplayLabel,
+  openRouterModelId,
   toOpenRouterModel,
 } from '@shared/llm/openrouter.ts'
 import {
@@ -33,14 +33,32 @@ export function modelDisplayLabel(model: string): string {
   return model
 }
 
-// Curated OpenRouter shortlist plus any custom id the user saved (or currently
-// has selected). When no key is configured the entries show disabled, mirroring
-// how the Cursor remote agent advertises itself before its key is set.
+// OpenRouter's free, tool-capable models fetched live from its catalog, plus any
+// custom id the user saved (or currently has selected — which may be a paid id).
+// When no key is configured we show a single disabled hint instead of fetching.
 async function openRouterOptions(
   api: ApiClient,
   available: boolean,
   current: string,
 ): Promise<ModelOption[]> {
+  if (!available) {
+    return [
+      {
+        value: '',
+        label: 'Add an OpenRouter API key in Settings',
+        group: OPENROUTER_GROUP,
+        disabled: true,
+      },
+    ]
+  }
+
+  let liveModels: Array<{ id: string; name: string }> = []
+  try {
+    liveModels = await api.openRouter.models()
+  } catch {
+    /* network error — fall through to custom/current only */
+  }
+
   let customId = ''
   try {
     customId = (((await api.settings.get('openRouterModel')) as string | null) ?? '').trim()
@@ -49,29 +67,29 @@ async function openRouterOptions(
   }
 
   const seen = new Set<string>()
-  const entries: Array<{ value: string; label: string }> = []
+  const entries: ModelOption[] = []
   const add = (id: string, label: string) => {
     const value = toOpenRouterModel(id)
     if (!id || seen.has(value)) return
     seen.add(value)
-    entries.push({ value, label })
+    entries.push({ value, label, group: OPENROUTER_GROUP })
   }
 
-  for (const model of OPENROUTER_MODELS) add(model.id, model.label)
+  for (const model of liveModels) add(model.id, model.name || model.id)
   if (customId) add(customId, `${customId} (custom)`)
-  if (isOpenRouterModel(current))
-    add(current.slice('openrouter:'.length), modelDisplayLabel(current))
+  if (isOpenRouterModel(current)) add(openRouterModelId(current), modelDisplayLabel(current))
 
-  return entries.map((entry) =>
-    available
-      ? { value: entry.value, label: entry.label, group: OPENROUTER_GROUP }
-      : {
-          value: entry.value,
-          label: `${entry.label} — configure OpenRouter API key`,
-          group: OPENROUTER_GROUP,
-          disabled: true,
-        },
-  )
+  if (entries.length === 0) {
+    return [
+      {
+        value: '',
+        label: 'No free tool-capable models found',
+        group: OPENROUTER_GROUP,
+        disabled: true,
+      },
+    ]
+  }
+  return entries
 }
 
 export async function fetchModelOptions(api: ApiClient, current: string): Promise<ModelOption[]> {

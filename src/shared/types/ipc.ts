@@ -110,6 +110,7 @@ export interface IpcInvokeMap {
     result: { ok: boolean; models?: string[]; error?: string }
   }
   'lmstudio:models': { args: []; result: string[] }
+  'openrouter:models': { args: []; result: Array<{ id: string; name: string }> }
   'lmstudio:detect': {
     args: [url?: string, apiKey?: string]
     result: {

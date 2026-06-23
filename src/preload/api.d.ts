@@ -73,6 +73,9 @@ export interface ApiClient {
     get: (key: string) => Promise<unknown>
     set: (key: string, value: unknown) => Promise<void>
   }
+  openRouter: {
+    models: () => Promise<Array<{ id: string; name: string }>>
+  }
   lmStudio: {
     test: (
       url: string,

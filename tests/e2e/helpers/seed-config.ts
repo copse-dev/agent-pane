@@ -113,12 +113,13 @@ export function seedEmptyProject(
 }
 
 /**
- * Project with a stored OpenRouter API key and a custom OpenRouter model, so the
- * model picker shows the enabled OpenRouter optgroup (curated + custom entries).
- * The key record matches the base64-plaintext shape written by `setApiKey` when OS
- * secure storage is unavailable, which is all `hasApiKey` needs to report it set.
+ * Project with a stored OpenRouter API key, a custom model, and a (test-only)
+ * `openRouterApiBase` pointing at a local fixture so the picker fetches a known
+ * free/tool-capable model list without hitting the real OpenRouter API. The key
+ * record matches the base64-plaintext shape `setApiKey` writes when OS secure
+ * storage is unavailable, which is all `hasApiKey` needs to report it set.
  */
-export function seedOpenRouterFixture(workspaceRoot: string): void {
+export function seedOpenRouterFixture(workspaceRoot: string, options?: { apiBase?: string }): void {
   const projectId = 'e2e-openrouter-project'
   mkdirSync(USER_DATA, { recursive: true })
   writeFileSync(
@@ -131,8 +132,9 @@ export function seedOpenRouterFixture(workspaceRoot: string): void {
     'utf8',
   )
   writeSettings({
-    model: 'openrouter:openai/gpt-4o',
-    openRouterModel: 'x-ai/grok-2',
+    model: 'openrouter:qwen/qwen3-235b-a22b:free',
+    openRouterModel: 'anthropic/claude-3.5-sonnet',
+    ...(options?.apiBase ? { openRouterApiBase: options.apiBase } : {}),
     apiKey: {
       openrouter: {
         v: 1,
