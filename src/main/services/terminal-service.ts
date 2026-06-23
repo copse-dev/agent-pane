@@ -1,15 +1,21 @@
 import { randomUUID } from 'node:crypto'
 import type { BrowserWindow } from 'electron'
-import type { IPty } from 'node-pty'
+import type { IDisposable, IPty } from 'node-pty'
 import { spawnPtyInProjectSandbox } from '../project-sandbox/index.ts'
 import { envForRendererChildProcess } from './child-process-env.ts'
 import { getWorkspaceRoot } from './workspace.ts'
+
+interface PtyListeners {
+  onData: IDisposable
+  onExit: IDisposable
+}
 
 export interface TerminalSession {
   id: string
   pty: IPty
   /** Identifies the renderer that created the session, for ownership checks. */
   ownerId: number
+  listeners?: PtyListeners
 }
 
 const sessions = new Map<string, TerminalSession>()
@@ -40,14 +46,47 @@ function sessionCwd(): string {
   return getWorkspaceRoot() ?? process.cwd()
 }
 
-function attachPtyHandlers(win: BrowserWindow, sessionId: string, ptyProcess: IPty): void {
-  ptyProcess.onData((data) => {
-    win.webContents.send('terminal:output', sessionId, data)
+function sendTerminalEvent(
+  win: BrowserWindow,
+  channel: 'terminal:output' | 'terminal:exit',
+  sessionId: string,
+  payload: string | number,
+): void {
+  if (win.isDestroyed() || win.webContents.isDestroyed()) return
+  win.webContents.send(channel, sessionId, payload)
+}
+
+function disposeSessionListeners(session: TerminalSession): void {
+  session.listeners?.onData.dispose()
+  session.listeners?.onExit.dispose()
+  delete session.listeners
+}
+
+function disposeSession(session: TerminalSession, sessionId: string): void {
+  disposeSessionListeners(session)
+  try {
+    session.pty.kill()
+  } catch {
+    // PTY may already be dead during shutdown.
+  }
+  sessions.delete(sessionId)
+}
+
+function attachPtyHandlers(
+  win: BrowserWindow,
+  sessionId: string,
+  ptyProcess: IPty,
+  session: TerminalSession,
+): void {
+  const onData = ptyProcess.onData((data) => {
+    sendTerminalEvent(win, 'terminal:output', sessionId, data)
   })
-  ptyProcess.onExit(({ exitCode }) => {
+  const onExit = ptyProcess.onExit(({ exitCode }) => {
+    disposeSessionListeners(session)
     sessions.delete(sessionId)
-    win.webContents.send('terminal:exit', sessionId, exitCode ?? 1)
+    sendTerminalEvent(win, 'terminal:exit', sessionId, exitCode ?? 1)
   })
+  session.listeners = { onData, onExit }
 }
 
 async function spawnShell(
@@ -67,7 +106,7 @@ async function spawnShell(
 
   const session: TerminalSession = { id: randomUUID(), pty: ptyProcess, ownerId }
   sessions.set(session.id, session)
-  attachPtyHandlers(win, session.id, ptyProcess)
+  attachPtyHandlers(win, session.id, ptyProcess, session)
   return session
 }
 
@@ -101,13 +140,12 @@ export function resizeTerminalSession(
 export function destroyTerminalSession(sessionId: string, ownerId: number): void {
   const session = ownedSession(sessionId, ownerId)
   if (!session) return
-  session.pty.kill()
-  sessions.delete(sessionId)
+  disposeSession(session, sessionId)
 }
 
 export function destroyAllTerminalSessions(): void {
-  for (const session of sessions.values()) {
-    session.pty.kill()
+  for (const [sessionId, session] of sessions) {
+    disposeSession(session, sessionId)
   }
   sessions.clear()
 }

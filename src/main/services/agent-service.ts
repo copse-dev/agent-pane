@@ -47,6 +47,8 @@ import { setTodoToolPostProcess } from '../tools/todo-tool.ts'
 import { runTodoWorker } from './todo-worker-runner.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
+import { parseRemoteAgentModel } from '@shared/remote-agent.ts'
+import { runRemoteAgentFromSettings } from './remote-agent-client.ts'
 
 // Re-export the public surface so existing IPC/test imports stay stable while the
 // implementation lives in focused modules.
@@ -100,6 +102,41 @@ export async function runAgent(
   const sendChunk = (chunk: StreamChunk) => {
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send('agent:chunk', threadId, chunk)
+    }
+  }
+
+  const remoteProvider = parseRemoteAgentModel(getSetting<string>('model', DEFAULT_APP_CHAT_MODEL))
+  if (remoteProvider) {
+    const controller = new AbortController()
+    abortMap.set(threadId, controller)
+    const runTimeoutTimer = setTimeout(() => controller.abort(), AGENT_RUN_TIMEOUT_MS)
+    try {
+      const result = await runRemoteAgentFromSettings({
+        threadId,
+        provider: remoteProvider,
+        userPrompt,
+        signal: controller.signal,
+        onChunk: sendChunk,
+      })
+      return {
+        usage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens },
+        messages: [
+          ...priorMessages,
+          { role: 'user' as const, content: userPrompt },
+          ...result.messages,
+        ],
+      }
+    } catch (err) {
+      const msg = classifyAgentError(err)
+      sendChunk({ type: 'text', text: msg })
+      sendChunk({ type: 'done' })
+      return {
+        usage: { inputTokens: 0, outputTokens: 0 },
+        messages: [...priorMessages, { role: 'user' as const, content: userPrompt }],
+      }
+    } finally {
+      clearTimeout(runTimeoutTimer)
+      abortMap.delete(threadId)
     }
   }
 

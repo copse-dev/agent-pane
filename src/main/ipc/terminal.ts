@@ -45,7 +45,13 @@ export function initTerminal(win: BrowserWindow): () => void {
     destroyTerminalSession(id, event.sender.id)
   })
 
+  const onWindowClose = () => {
+    destroyAllTerminalSessions()
+  }
+  win.on('close', onWindowClose)
+
   return () => {
+    win.off('close', onWindowClose)
     ipcMain.removeHandler('terminal:create')
     ipcMain.removeHandler('terminal:write')
     ipcMain.removeHandler('terminal:resize')

@@ -1,5 +1,11 @@
 import type { ApiClient } from '../../preload/api.d.ts'
 import { CLOUD_MODELS } from '@shared/llm/model-catalog.ts'
+import {
+  REMOTE_AGENT_MODELS,
+  REMOTE_AGENT_MODEL_PREFIX,
+  REMOTE_AGENT_PROVIDER_CURSOR,
+  parseRemoteAgentModel,
+} from '@shared/remote-agent.ts'
 import { clear } from '../dom/helpers.ts'
 
 export interface ModelOption {
@@ -11,13 +17,17 @@ export interface ModelOption {
 
 export function modelDisplayLabel(model: string): string {
   if (model.startsWith('lmstudio:')) return model.slice('lmstudio:'.length)
+  const remoteProvider = parseRemoteAgentModel(model)
+  if (remoteProvider) {
+    return REMOTE_AGENT_MODELS.find((option) => option.provider === remoteProvider)?.label ?? model
+  }
   return model
 }
 
 export async function fetchModelOptions(api: ApiClient, current: string): Promise<ModelOption[]> {
   const options: ModelOption[] = []
 
-  let available = { anthropic: true, openai: true }
+  let available = { anthropic: true, openai: true, cursor: true }
   try {
     available = await api.settings.availableProviders()
   } catch {
@@ -25,6 +35,23 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
   }
   for (const [value, label, provider] of CLOUD_MODELS) {
     if (available[provider]) options.push({ value, label })
+  }
+
+  const remoteGroup = 'Remote agents'
+  for (const remote of REMOTE_AGENT_MODELS) {
+    if (remote.provider === REMOTE_AGENT_PROVIDER_CURSOR) {
+      options.push(
+        available.cursor
+          ? { value: remote.value, label: remote.label, group: remoteGroup }
+          : {
+              value: remote.value,
+              label: `${remote.label} — configure Cursor API key`,
+              group: remoteGroup,
+              disabled: true,
+            },
+      )
+      continue
+    }
   }
 
   const lmGroup = 'Local models'
@@ -51,6 +78,12 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
         value: current,
         label: `${current.slice('lmstudio:'.length)} (offline)`,
         group: lmGroup,
+      })
+    } else if (current.startsWith(REMOTE_AGENT_MODEL_PREFIX)) {
+      options.push({
+        value: current,
+        label: `${modelDisplayLabel(current)} (not configured)`,
+        group: remoteGroup,
       })
     } else {
       options.push({ value: current, label: `${current} (no key)` })
