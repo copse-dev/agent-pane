@@ -111,6 +111,35 @@ export function formatExternalSandboxPromptBody(command: string, reasons: string
   )
 }
 
+/**
+ * Approval body for a detected package install. Installs always need the network,
+ * so the generic "external command" reason list (and its nested parentheticals)
+ * just adds noise — this states plainly that it's an install, where it runs, and
+ * whether Socket Firewall will scan it.
+ */
+export function formatInstallPromptBody(
+  command: string,
+  opts: { outsideSandbox: boolean; safeInstall: boolean; jsManager: boolean },
+): string {
+  const access = opts.outsideSandbox
+    ? 'It runs once outside the macOS sandbox with network access.'
+    : 'It fetches packages over the network.'
+  const scan = opts.safeInstall
+    ? `Socket Firewall (sfw) scans the packages for known-malicious code${
+        opts.jsManager ? ', and install lifecycle scripts are disabled' : ''
+      }.`
+    : 'Package scanning (Socket Firewall) is off in Settings, so packages run unscanned.'
+  return [
+    command.trim(),
+    '',
+    `This installs packages. ${access}`,
+    '',
+    scan,
+    '',
+    'Allow this install?',
+  ].join('\n')
+}
+
 /** True when macOS seatbelt is active and an approved shell command should bypass ASRT. */
 export function shellRequiresOutsideSandbox(
   command: string,

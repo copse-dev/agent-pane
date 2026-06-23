@@ -18,9 +18,11 @@ import {
   shellCommandFromArgs,
   formatShellPromptBody,
   formatExternalSandboxPromptBody,
+  formatInstallPromptBody,
   shellRequiresOutsideSandbox,
   mcpToolLabel,
 } from './permission-policy.ts'
+import { detectPackageInstall } from './safe-install.ts'
 import {
   BROWSER_TOOLS,
   READ_ONLY_BROWSER_TOOLS,
@@ -182,11 +184,28 @@ async function checkShellPermission(args: unknown): Promise<boolean> {
   })
 
   if (decision.action === 'allow') return true
-  return promptShell(
-    command,
-    decision.reasons,
-    shellRequiresOutsideSandbox(command, workspaceRoot, sandboxEnabled),
-  )
+
+  const outsideSandbox = shellRequiresOutsideSandbox(command, workspaceRoot, sandboxEnabled)
+
+  // A plain package install gets a dedicated, readable approval rather than the
+  // generic external-command reason list. Only when the install is the *sole*
+  // flagged signal (one reason) — compound or registry-redirected commands keep
+  // the full reason list so extra risks (curl, custom registry, …) stay visible.
+  const install = detectPackageInstall(command)
+  if (install.isInstall && decision.reasons.length === 1) {
+    const { approved } = await requestApproval({
+      title: 'Run package install?',
+      body: formatInstallPromptBody(command, {
+        outsideSandbox,
+        safeInstall: getSetting<boolean>('safeInstallEnabled', true),
+        jsManager: install.jsManager,
+      }),
+      type: 'shell',
+    })
+    return approved
+  }
+
+  return promptShell(command, decision.reasons, outsideSandbox)
 }
 
 function browserUrlFromArgs(args: unknown): string | null {

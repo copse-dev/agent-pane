@@ -4,6 +4,7 @@ import {
   decideShellPermission,
   decideWebFetchPermission,
   decideWebSearchPermission,
+  formatInstallPromptBody,
   shellRequiresOutsideSandbox,
   shellSandboxFailureShouldOfferUnsandboxedRetry,
   SANDBOX_TOOLS,
@@ -195,6 +196,65 @@ describe('decideShellPermission', () => {
       confidenceThreshold: 0.85,
     })
     assert.equal(d.action, 'prompt')
+  })
+})
+
+describe('formatInstallPromptBody', () => {
+  it('leads with the command and never the nested external reason list', () => {
+    const body = formatInstallPromptBody('npm install', {
+      outsideSandbox: false,
+      safeInstall: true,
+      jsManager: true,
+    })
+    assert.ok(body.startsWith('npm install\n'))
+    assert.ok(!body.includes('may fetch + run code from network'))
+    assert.ok(!body.includes('((')) // no nested parentheticals
+    assert.ok(body.includes('Allow this install?'))
+  })
+
+  it('mentions Socket Firewall scanning and (for JS) disabled scripts', () => {
+    const body = formatInstallPromptBody('npm install', {
+      outsideSandbox: false,
+      safeInstall: true,
+      jsManager: true,
+    })
+    assert.ok(body.includes('Socket Firewall (sfw)'))
+    assert.ok(body.includes('install lifecycle scripts are disabled'))
+  })
+
+  it('omits the scripts note for non-JS managers', () => {
+    const body = formatInstallPromptBody('pip install requests', {
+      outsideSandbox: false,
+      safeInstall: true,
+      jsManager: false,
+    })
+    assert.ok(body.includes('Socket Firewall (sfw)'))
+    assert.ok(!body.includes('install lifecycle scripts'))
+  })
+
+  it('explains the macOS sandbox exit only when running outside it', () => {
+    const outside = formatInstallPromptBody('npm install', {
+      outsideSandbox: true,
+      safeInstall: true,
+      jsManager: true,
+    })
+    assert.ok(outside.includes('outside the macOS sandbox'))
+    const inside = formatInstallPromptBody('npm install', {
+      outsideSandbox: false,
+      safeInstall: true,
+      jsManager: true,
+    })
+    assert.ok(!inside.includes('macOS sandbox'))
+  })
+
+  it('warns when package scanning is disabled in Settings', () => {
+    const body = formatInstallPromptBody('npm install', {
+      outsideSandbox: false,
+      safeInstall: false,
+      jsManager: true,
+    })
+    assert.ok(body.includes('off in Settings'))
+    assert.ok(!body.includes('Socket Firewall (sfw) scans'))
   })
 })
 
