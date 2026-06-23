@@ -39,4 +39,72 @@ describe('toast (#119 surface IPC errors)', () => {
       /Oops: plain string reason/,
     )
   })
+
+  it('extracts a readable message from an ErrorEvent (not "[object ErrorEvent]")', () => {
+    showErrorToast('Unexpected error', new ErrorEvent('error', { message: 'Worker boom' }))
+    const text = document.querySelector('.toast-error')!.textContent ?? ''
+    assert.match(text, /Unexpected error: Worker boom/)
+    assert.doesNotMatch(text, /\[object ErrorEvent\]/)
+  })
+
+  it('prefers the nested Error message on an ErrorEvent', () => {
+    showErrorToast(
+      'Unexpected error',
+      new ErrorEvent('error', { error: new Error('nested cause') }),
+    )
+    assert.match(
+      document.querySelector('.toast-error')!.textContent ?? '',
+      /Unexpected error: nested cause/,
+    )
+  })
+
+  it('appends the source location to an ErrorEvent message', () => {
+    showErrorToast(
+      'Unexpected error',
+      new ErrorEvent('error', {
+        message: 'Failed to fetch module',
+        filename: 'file:///app/ts.worker.js',
+        lineno: 12,
+        colno: 5,
+      }),
+    )
+    assert.match(
+      document.querySelector('.toast-error')!.textContent ?? '',
+      /Unexpected error: Failed to fetch module \(file:\/\/\/app\/ts\.worker\.js:12:5\)/,
+    )
+  })
+
+  it('describes a message-less ErrorEvent by its source location', () => {
+    showErrorToast(
+      'Unexpected error',
+      new ErrorEvent('error', { filename: 'file:///app/ts.worker.js', lineno: 3 }),
+    )
+    const text = document.querySelector('.toast-error')!.textContent ?? ''
+    assert.match(text, /Unexpected error: script error at file:\/\/\/app\/ts\.worker\.js:3/)
+    assert.doesNotMatch(text, /\[object ErrorEvent\]/)
+  })
+
+  it('describes a resource-load Event by the element that failed', () => {
+    const img = document.createElement('img')
+    img.setAttribute('src', 'https://example.com/missing.png')
+    document.body.append(img)
+    let captured: Event | null = null
+    img.addEventListener('error', (e) => {
+      captured = e
+    })
+    img.dispatchEvent(new Event('error'))
+    showErrorToast('Unexpected error', captured)
+    img.remove()
+    assert.match(
+      document.querySelector('.toast-error')!.textContent ?? '',
+      /Unexpected error: failed to load <img> https:\/\/example\.com\/missing\.png/,
+    )
+  })
+
+  it('collapses identical error bursts into a single toast', () => {
+    showErrorToast('Unexpected error', new ErrorEvent('error', { message: 'Worker boom' }))
+    showErrorToast('Unexpected error', new ErrorEvent('error', { message: 'Worker boom' }))
+    showErrorToast('Unexpected error', new ErrorEvent('error', { message: 'Worker boom' }))
+    assert.equal(document.querySelectorAll('.toast-error').length, 1)
+  })
 })
