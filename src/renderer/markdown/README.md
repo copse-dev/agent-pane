@@ -44,6 +44,9 @@ list-style-position: outside`). Bullets should sit clearly inset from headings, 
   Before render, `prepareMermaidSource` / `mermaidSourceCandidates` decode entities and quote brittle
   `[labels]`. We call `mermaid.run` directly (no pre-parse gate — parse rejects some diagrams that
   still render). On failure after an aggressive retry, show the inline source fallback.
+- **Table layout.** Agent tables are unschema'd GFM — do not hardcode rem/% column widths for
+  specific fixtures. Use shrink-to-fit edge columns (`width: 1%` + `nowrap`), `min-width: 0` on
+  cells, and wrapping lone `<code>` slugs. Full rules: [`docs/ui-taste.md`](../../docs/ui-taste.md).
 
 Prefer structural unit tests on HTML output plus WDIO geometry checks over pixel-diff screenshot CI.
 E2e specs live in `tests/e2e/*.e2e.ts` (WebdriverIO) — not Playwright.
@@ -105,6 +108,8 @@ contributors without python can still run the default gates.
 - `tests/e2e/semantic-search-markdown.e2e.ts` — explore subagent timeline; asserts no raw `##` in
   rendered text, summary preview hidden when expanded, code spans intact
 - `tests/e2e/mermaid-diagram.e2e.ts` — seeded flowchart; asserts `.mermaid-diagram svg` renders
+- `tests/e2e/markdown-table-wrap.e2e.ts` — PR-style table; index/status stay single-line, branch
+  slugs wrap, table fits pane (see `docs/ui-taste.md`)
 
 Screenshots under `tests/e2e/screenshots/` (`markdown-list-indent-*.png`, `semantic-search-*.png`)
 are updated by those specs for human review; CI asserts DOM layout, not pixels.
