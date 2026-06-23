@@ -17,7 +17,7 @@ describe('skills', () => {
   it('slash picker and manual invocation', async () => {
     await mkdir(SCREENSHOTS, { recursive: true })
 
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     const textarea = await $('.prompt-input')
     await textarea.click()

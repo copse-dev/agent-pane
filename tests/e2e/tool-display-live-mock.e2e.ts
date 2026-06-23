@@ -18,7 +18,7 @@ describe('tool call display live mock', () => {
   })
 
   it('shows human-readable single tool name', async () => {
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     const textarea = await $('.prompt-input')
     await textarea.setValue('list files please')

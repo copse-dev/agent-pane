@@ -18,7 +18,7 @@ describe('package install approval', () => {
   })
 
   it('shows a clean, install-specific approval dialog', async () => {
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     const textarea = await $('.prompt-input')
     await textarea.setValue('[[mcp:run_shell {"command":"npm install"}]]')

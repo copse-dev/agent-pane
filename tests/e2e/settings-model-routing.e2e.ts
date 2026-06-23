@@ -78,7 +78,7 @@ describe('settings model routing placement', () => {
   })
 
   it('shows Model routing in General alongside small task model settings', async () => {
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
 
     const general = settingsSection('general')

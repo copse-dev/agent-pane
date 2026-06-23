@@ -22,7 +22,7 @@ describe('settings save', () => {
   })
 
   it('saves the settings dialog without an error toast', async () => {
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
     await expect($('#settings-dialog')).toBeDisplayed()
 

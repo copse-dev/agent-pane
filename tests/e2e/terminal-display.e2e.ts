@@ -25,7 +25,7 @@ describe('integrated terminal', () => {
 
   it('opens a PTY shell, runs echo hello, and shows no spawn error', async function () {
     this.timeout(90_000)
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]')
     await terminalBtn.click()

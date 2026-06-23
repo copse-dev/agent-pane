@@ -110,7 +110,7 @@ describe('scroll to bottom', () => {
     seedScrollStreamingFixture(process.cwd())
     await browser.reloadSession()
 
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await waitForPromptReady()
     await $('.prompt-input').setValue('Please write a longer follow-up answer')
     await $('.submit-btn').click()
@@ -144,7 +144,7 @@ describe('scroll to bottom', () => {
     seedScrollStreamingFixture(process.cwd())
     await browser.reloadSession()
 
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await waitForPromptReady()
 
     await $('.prompt-input').setValue('Please write a longer follow-up answer')

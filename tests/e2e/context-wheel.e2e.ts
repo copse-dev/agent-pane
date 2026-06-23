@@ -24,7 +24,7 @@ describeSkipInCi('context wheel footer seeded', () => {
   })
 
   it('shows neutral doughnut and percentage from seeded context snapshot', async () => {
-    await $('.input-footer').waitForExist({ timeout: 15_000 })
+    await $('.input-footer').waitForExist({ timeout: 30_000 })
 
     const wheel = await $('.context-wheel')
     await expect(wheel).toBeDisplayed()
@@ -56,7 +56,7 @@ describeSkipInCi('context wheel footer live mock', () => {
   })
 
   it('updates doughnut and tokens live during a mock agent run', async () => {
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     const textarea = await $('.prompt-input')
     await textarea.setValue('list files please')

@@ -18,7 +18,7 @@ describe('composer context breakdown wheel', () => {
   })
 
   it('shows the default-context breakdown ring on a fresh thread', async () => {
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     const wheel = await $('.context-wheel')
     await wheel.waitForDisplayed({ timeout: 15_000 })

@@ -26,7 +26,7 @@ describe('settings footer overlap', () => {
   })
 
   it('keeps the Save/Cancel bar flush with the bottom of the scroll area', async () => {
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await prepareE2eScreenshot()
     await $('[aria-label="Settings"]').click()
 

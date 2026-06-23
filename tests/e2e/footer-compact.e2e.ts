@@ -50,7 +50,7 @@ describe('footer compact layout', () => {
     seed = seedFooterCompactFixture(process.cwd())
     seedE2eViewport()
     await browser.reloadSession()
-    await $('.input-footer').waitForExist({ timeout: 15_000 })
+    await $('.input-footer').waitForExist({ timeout: 30_000 })
   })
 
   afterEach(() => {

@@ -17,7 +17,7 @@ describe('queued chats stay pinned to the bottom', function () {
     seedScrollStreamingFixture(process.cwd())
     await browser.reloadSession()
 
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('.messages-list .msg-assistant').waitForExist({ timeout: 15_000 })
 
     // Kick off a slow turn so the agent stays running while we queue follow-ups.

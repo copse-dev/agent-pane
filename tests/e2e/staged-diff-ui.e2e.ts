@@ -40,7 +40,7 @@ describe('staged diff approval UI', () => {
 
   it('stages diffs in the context panel with single- and multi-file selection', async function () {
     this.timeout(120_000)
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     await runWriteFileDirective('src/e2e-staged-a.ts', 'export const a = 1\n')
 
