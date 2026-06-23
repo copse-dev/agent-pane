@@ -1,5 +1,6 @@
 import { el } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
+import type { ApiClient } from '../../preload/api.d.ts'
 import { browserTabLabel, normalizeBrowserUrl } from '@shared/browser-url.ts'
 import { BROWSER_SESSION_PARTITION } from '@shared/browser-session.ts'
 
@@ -75,6 +76,7 @@ export function mountBrowserPane(
   listRoot: HTMLElement,
   viewerRoot: HTMLElement,
   store: AppStore,
+  api?: ApiClient,
 ): () => void {
   const listHeader = el('div', { class: 'browser-tabs-list-header' }, 'Tabs')
   const newBtn = el(
@@ -201,11 +203,6 @@ export function mountBrowserPane(
       tab.urlInput.classList.add('has-error')
       tab.urlInput.title = tab.loadError
     })
-    webview.addEventListener('new-window', (event: Event) => {
-      const detail = event as Event & { url?: string }
-      if (detail.url) addTab({ url: detail.url, activate: true })
-    })
-
     return webview
   }
 
@@ -449,10 +446,13 @@ export function mountBrowserPane(
     store.on('right_panel_mode_changed', onBrowserModeChange),
     store.on('files_pane_changed', onBrowserModeChange),
     store.on('browser_url_requested', openRequestedBrowserUrl),
+    // cmd/ctrl click and target=_blank links inside a guide open as a new
+    // background tab (main blocks the popup window and forwards the URL here).
+    api?.browser.onOpenTab((url) => addTab({ url, activate: false })),
   ]
 
   return () => {
-    unsubs.forEach((u) => u())
+    unsubs.forEach((u) => u?.())
     resizeObserver?.disconnect()
     for (const tab of tabs.values()) {
       tab.webview?.remove()
