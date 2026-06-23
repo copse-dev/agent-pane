@@ -25,6 +25,9 @@ export const READ_ONLY_BROWSER_TOOLS = new Set([
 
 export const BROWSER_TOOLS_ENABLED_SETTING = 'browserToolsEnabled'
 
+/** Whether the user may be prompted to approve a new public browser origin. */
+export const BROWSER_ALLOW_USER_APPROVAL_SETTING = 'browserAllowUserApproval'
+
 export interface ParsedBrowserUrl {
   protocol: string
   hostname: string
