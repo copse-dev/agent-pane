@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import type { ToolDefinition, LLMTool } from '@shared/types'
+import type { ToolDefinition, LLMTool, ToolExecuteResult } from '@shared/types'
+import { normalizeToolExecuteResult } from '@shared/types'
 import type { PermissionCheck } from './permission-policy.ts'
 
 type PermissionGateFn = (check: PermissionCheck) => Promise<boolean>
@@ -51,13 +52,22 @@ export class ToolRegistry {
     return parsed.data as Record<string, unknown>
   }
 
-  async execute(name: string, rawArgs: unknown, signal: AbortSignal): Promise<string> {
+  async execute(name: string, rawArgs: unknown, signal: AbortSignal): Promise<ToolExecuteResult> {
     const tool = this.tools.get(name)
     if (!tool) throw new Error(`Unknown tool: ${name}`)
     const parsed = tool.parameters.parse(rawArgs)
     const permitted = await ensurePermitted({ toolName: name, args: parsed })
     if (!permitted) return `User rejected the ${name} tool call.`
     return tool.execute(parsed, signal)
+  }
+
+  /** Execute and unwrap structured tool results (e.g. file-edit line stats). */
+  async executeNormalized(
+    name: string,
+    rawArgs: unknown,
+    signal: AbortSignal,
+  ): Promise<{ result: string; editStats?: { additions: number; deletions: number } }> {
+    return normalizeToolExecuteResult(await this.execute(name, rawArgs, signal))
   }
 
   has(name: string): boolean {

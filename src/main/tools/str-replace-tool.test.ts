@@ -3,9 +3,21 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { normalizeToolExecuteResult } from '@shared/types'
 import { strReplaceTool } from './str-replace-tool.ts'
 import { clearStagedDiffsForTest, getStagedDiffEntry } from '../services/diff-queue.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
+
+async function runStrReplace(args: {
+  path: string
+  old_string: string
+  new_string: string
+  replace_all: boolean
+}): Promise<string> {
+  return normalizeToolExecuteResult(
+    await strReplaceTool.execute(args, new AbortController().signal),
+  ).result
+}
 
 describe('strReplaceTool', () => {
   let tempRoot = ''
@@ -25,41 +37,51 @@ describe('strReplaceTool', () => {
 
   it('stages a diff message on unique match', async () => {
     await writeFile(join(tempRoot, 'f.ts'), 'const x = 1\n', 'utf-8')
-    const out = await strReplaceTool.execute(
-      { path: 'f.ts', old_string: 'const x = 1', new_string: 'const x = 2', replace_all: false },
-      new AbortController().signal,
-    )
+    const out = await runStrReplace({
+      path: 'f.ts',
+      old_string: 'const x = 1',
+      new_string: 'const x = 2',
+      replace_all: false,
+    })
     assert.match(out, /Diff staged/)
   })
 
   it('errors when old_string is missing', async () => {
     await writeFile(join(tempRoot, 'f.ts'), 'a', 'utf-8')
-    const out = await strReplaceTool.execute(
-      { path: 'f.ts', old_string: 'missing', new_string: 'b', replace_all: false },
-      new AbortController().signal,
-    )
+    const out = await runStrReplace({
+      path: 'f.ts',
+      old_string: 'missing',
+      new_string: 'b',
+      replace_all: false,
+    })
     assert.match(out, /not found/)
   })
 
   it('errors on ambiguous match without replace_all', async () => {
     await writeFile(join(tempRoot, 'f.ts'), 'foo\nfoo\n', 'utf-8')
-    const out = await strReplaceTool.execute(
-      { path: 'f.ts', old_string: 'foo', new_string: 'bar', replace_all: false },
-      new AbortController().signal,
-    )
+    const out = await runStrReplace({
+      path: 'f.ts',
+      old_string: 'foo',
+      new_string: 'bar',
+      replace_all: false,
+    })
     assert.match(out, /2 times/)
   })
 
   it('composes replacements against pending proposed content without writing to disk', async () => {
     await writeFile(join(tempRoot, 'f.ts'), 'const x = 1\n', 'utf-8')
-    await strReplaceTool.execute(
-      { path: 'f.ts', old_string: 'const x = 1', new_string: 'const x = 2', replace_all: false },
-      new AbortController().signal,
-    )
-    const out = await strReplaceTool.execute(
-      { path: 'f.ts', old_string: 'const x = 2', new_string: 'const x = 3', replace_all: false },
-      new AbortController().signal,
-    )
+    await runStrReplace({
+      path: 'f.ts',
+      old_string: 'const x = 1',
+      new_string: 'const x = 2',
+      replace_all: false,
+    })
+    const out = await runStrReplace({
+      path: 'f.ts',
+      old_string: 'const x = 2',
+      new_string: 'const x = 3',
+      replace_all: false,
+    })
 
     assert.match(out, /Updated pending staged diff/)
     assert.equal(getStagedDiffEntry('f.ts')?.before, 'const x = 1\n')

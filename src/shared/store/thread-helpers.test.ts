@@ -14,6 +14,55 @@ import {
   setThreadDraftPrompt,
 } from './thread-helpers.ts'
 
+describe('panel persistence on new thread', () => {
+  it('createThread keeps the side/bottom panel open and resets viewer content', () => {
+    const store = createStore()
+    store.setState({
+      filesPaneOpen: true,
+      rightPanelMode: 'terminal',
+      openFile: { path: 'a.ts', content: 'x', language: 'typescript' },
+      activeDiff: { path: 'a.ts', before: 'x', after: 'y', language: 'typescript' },
+      stagedDiffs: [{ path: 'a.ts', language: 'typescript' }],
+    })
+
+    createThread(store)
+
+    const state = store.getState()
+    assert.equal(state.filesPaneOpen, true)
+    assert.equal(state.rightPanelMode, 'terminal')
+    assert.equal(state.openFile, null)
+    assert.equal(state.activeDiff, null)
+    assert.deepEqual(state.stagedDiffs, [])
+  })
+
+  it('createThread leaves the panel closed when it was already closed', () => {
+    const store = createStore()
+    store.setState({ filesPaneOpen: false })
+
+    createThread(store)
+
+    assert.equal(store.getState().filesPaneOpen, false)
+  })
+
+  it('openNewThread reuse path keeps the panel open and resets viewer content', () => {
+    const store = createStore()
+    const blankId = createThread(store)
+    store.setState({
+      filesPaneOpen: true,
+      openFile: { path: 'a.ts', content: 'x', language: 'typescript' },
+      stagedDiffs: [{ path: 'a.ts', language: 'typescript' }],
+    })
+
+    const openedId = openNewThread(store)
+
+    const state = store.getState()
+    assert.equal(openedId, blankId)
+    assert.equal(state.filesPaneOpen, true)
+    assert.equal(state.openFile, null)
+    assert.deepEqual(state.stagedDiffs, [])
+  })
+})
+
 describe('blank thread reuse', () => {
   it('openNewThread reuses an existing blank thread instead of creating another', () => {
     const store = createStore()

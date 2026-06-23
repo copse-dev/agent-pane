@@ -7,6 +7,7 @@ import type {
   StreamChunk,
   SubagentSession,
   SubagentMessage,
+  ToolExecuteResult,
 } from '@shared/types'
 
 const randomUUID = () => globalThis.crypto.randomUUID()
@@ -45,7 +46,7 @@ export interface RunSubagentOptions {
   prompt: string
   parentGoal: string
   tools: LLMTool[]
-  executeTool: (name: string, args: unknown, signal: AbortSignal) => Promise<string>
+  executeTool: (name: string, args: unknown, signal: AbortSignal) => Promise<ToolExecuteResult>
   signal?: AbortSignal
   maxSteps?: number
   maxContextTokens?: number
@@ -201,6 +202,7 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
             if (tc) {
               tc.status = chunk.isError ? 'error' : 'done'
               tc.result = chunk.result
+              if (chunk.editStats) tc.editStats = chunk.editStats
               break
             }
           }
@@ -210,6 +212,7 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
             toolCallId: chunk.toolCallId,
             result: chunk.result,
             isError: chunk.isError,
+            ...(chunk.editStats ? { editStats: chunk.editStats } : {}),
           })
         }
       },

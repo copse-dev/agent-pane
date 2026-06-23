@@ -6,6 +6,8 @@ import {
   addProject,
   getSidebarThreads,
   isProjectSwitchInFlight,
+  paginateSidebarThreads,
+  SIDEBAR_THREADS_PAGE_SIZE,
   switchProject,
   switchProjectThread,
 } from '../controller/projects.ts'
@@ -24,6 +26,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   openBtn.addEventListener('click', () => {
     void addProject(store, api)
   })
+
+  const visibleThreadCounts = new Map<string, number>()
 
   function render() {
     clear(list)
@@ -78,11 +82,22 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       if (!isExpanded) continue
 
       const sidebarThreads = getSidebarThreads(store, project.id)
+      const visibleLimit = visibleThreadCounts.get(project.id) ?? SIDEBAR_THREADS_PAGE_SIZE
+      const activeId = project.id === activeProjectId ? activeThreadId : null
+      const { visibleThreads, visibleCount, hasMore } = paginateSidebarThreads(
+        sidebarThreads,
+        visibleLimit,
+        activeId,
+      )
+      if (visibleCount !== visibleLimit) {
+        visibleThreadCounts.set(project.id, visibleCount)
+      }
+
       const chats = el('div', { class: 'chats-list' })
       if (sidebarThreads.length === 0 && isProjectSwitchInFlight(store, project.id)) {
         chats.append(el('div', { class: 'sidebar-empty chats-loading' }, 'Loading…'))
       }
-      for (const thread of sidebarThreads) {
+      for (const thread of visibleThreads) {
         const chatRow = el(
           'div',
           {
@@ -105,6 +120,15 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         })
         chatRow.append(del)
         chats.append(chatRow)
+      }
+
+      if (hasMore) {
+        const showMoreBtn = el('button', { type: 'button', class: 'chats-show-more' }, 'Show more')
+        showMoreBtn.addEventListener('click', () => {
+          visibleThreadCounts.set(project.id, visibleCount + SIDEBAR_THREADS_PAGE_SIZE)
+          render()
+        })
+        chats.append(showMoreBtn)
       }
 
       list.append(chats)

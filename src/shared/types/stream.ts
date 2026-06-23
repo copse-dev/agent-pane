@@ -6,7 +6,13 @@ export type StreamChunk =
   /** Replace accumulated assistant text (e.g. after stripping embedded pseudo tool XML). */
   | { type: 'text_replace'; text: string }
   | { type: 'tool_call'; toolCall: ToolCallChunk }
-  | { type: 'tool_result'; toolCallId: string; result: string; isError: boolean }
+  | {
+      type: 'tool_result'
+      toolCallId: string
+      result: string
+      isError: boolean
+      editStats?: { additions: number; deletions: number }
+    }
   | {
       type: 'context_trimmed'
       contextWindow: number
@@ -42,6 +48,7 @@ export type StreamChunk =
       toolCallId: string
       result: string
       isError: boolean
+      editStats?: { additions: number; deletions: number }
     }
   | { type: 'subagent_done'; parentToolCallId: string; summary: string; usage?: ModelUsage }
   | { type: 'subagent_error'; parentToolCallId: string; error: string }

@@ -13,8 +13,10 @@ export async function prepareE2eScreenshot(
   await browser.execute((viewport) => {
     const app = document.getElementById('app')
     if (!app) return
-    app.style.width = `${viewport.width}px`
-    app.style.height = `${viewport.height}px`
+    const width = Math.min(viewport.width, window.innerWidth)
+    const height = Math.min(viewport.height, window.innerHeight)
+    app.style.width = `${width}px`
+    app.style.height = `${height}px`
     app.style.overflow = 'hidden'
     app.style.boxSizing = 'border-box'
     window.dispatchEvent(new Event('resize'))
@@ -59,6 +61,56 @@ export async function saveAppScreenshot(filename: string): Promise<void> {
   const app = await browser.$('#app')
   await app.waitForDisplayed({ timeout: 15_000 })
   await app.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+}
+
+/**
+ * Maximize chat width and relax overflow clipping so message/table captures are
+ * not truncated by the projects sidebar or pane overflow.
+ */
+export async function prepareChatMessageScreenshot(
+  size: { width: number; height: number } = E2E_VIEWPORT,
+): Promise<void> {
+  await prepareE2eScreenshot(size)
+  await browser.execute(() => {
+    document.getElementById('pane-projects')?.setAttribute('hidden', '')
+    document.getElementById('resizer-projects')?.setAttribute('hidden', '')
+    document.getElementById('body')?.style.setProperty('--projects-width', '0px')
+    const app = document.getElementById('app')
+    if (app) app.style.overflow = 'visible'
+    for (const sel of ['#body', '.pane-chat', '.conversation-scroll', '.messages-list']) {
+      const el = document.querySelector(sel) as HTMLElement | null
+      if (el) el.style.overflow = 'visible'
+    }
+    window.dispatchEvent(new Event('resize'))
+  })
+  await browser.pause(100)
+}
+
+/** Capture the app shell with projects hidden so chat/table shots are not clipped. */
+export async function saveChatPaneScreenshot(filename: string): Promise<void> {
+  await prepareChatMessageScreenshot()
+  await browser.execute(() => {
+    document.querySelector('.message-text table')?.scrollIntoView({ block: 'start' })
+  })
+  await browser.pause(100)
+  const app = await browser.$('#app')
+  await app.waitForDisplayed({ timeout: 15_000 })
+  await app.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+}
+
+/** Capture a message sub-tree once {@link prepareChatMessageScreenshot} has run. */
+export async function savePreparedElementScreenshot(
+  selector: string,
+  filename: string,
+): Promise<void> {
+  await prepareChatMessageScreenshot()
+  await browser.execute((sel) => {
+    document.querySelector(sel)?.scrollIntoView({ block: 'start', inline: 'nearest' })
+  }, selector)
+  await browser.pause(100)
+  const el = await browser.$(selector)
+  await el.waitForDisplayed({ timeout: 15_000 })
+  await el.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
 }
 
 /** Capture a single element after pinning the viewport (footer, input bar, etc.). */

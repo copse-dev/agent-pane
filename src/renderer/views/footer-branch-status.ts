@@ -8,6 +8,7 @@ import {
 } from '@shared/git/thread-branch.ts'
 import { showErrorToast, showToast } from './toast.ts'
 import { getThreadById } from '@shared/store/thread-helpers.ts'
+import { openBrowserUrl } from '../controller/panels.ts'
 
 const COPIED_BRANCH_TOAST = 'Copied branch name'
 const COPY_FEEDBACK_MS = 1600
@@ -100,7 +101,7 @@ export function mountFooterBranchStatus(
   root.addEventListener('click', () => {
     const url = status?.pr?.url
     if (url) {
-      void api.shell.openExternal(url)
+      openBrowserUrl(store, url)
       return
     }
 

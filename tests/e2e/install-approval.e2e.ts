@@ -1,0 +1,43 @@
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { $, browser, expect } from '@wdio/globals'
+import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+
+const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
+
+describe('package install approval', () => {
+  before(async () => {
+    mkdirSync(SCREENSHOT_DIR, { recursive: true })
+    resetUserData()
+    seedEmptyProject(process.cwd(), 'e2e-install-approval-project', { subagentsEnabled: false })
+    await browser.reloadSession()
+  })
+
+  after(() => {
+    resetUserData()
+  })
+
+  it('shows a clean, install-specific approval dialog', async () => {
+    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+
+    const textarea = await $('.prompt-input')
+    await textarea.setValue('[[mcp:run_shell {"command":"npm install"}]]')
+    await $('.submit-btn').click()
+
+    const dialog = await $('#approval-dialog')
+    await dialog.waitForDisplayed({ timeout: 15_000 })
+
+    await expect(dialog.$('.approval-title')).toHaveText('Run package install?')
+
+    const body = await dialog.$('.approval-body').getText()
+    expect(body).toContain('npm install')
+    expect(body).toContain('Socket Firewall (sfw)')
+    expect(body).toContain('Allow this install?')
+    // The noisy generic external-reason text must not leak into the install prompt.
+    expect(body).not.toContain('may fetch + run code from network')
+
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'install-approval-dialog.png'))
+
+    await dialog.$('.approval-reject').click()
+  })
+})

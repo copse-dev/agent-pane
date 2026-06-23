@@ -81,17 +81,17 @@ export function createThread(store: AppStore): string {
     },
     ...store.getState().threads,
   ]
+  // Keep the side/bottom panel (`filesPaneOpen`) open across new threads, matching
+  // `switchThread`; only the per-thread file/diff viewer content is reset.
   store.setState({
     threads,
     activeThreadId: id,
-    filesPaneOpen: false,
     openFile: null,
     activeDiff: null,
     stagedDiffs: [],
   })
   store.emit('threads_changed')
   store.emit('panel_changed')
-  store.emit('files_pane_changed')
   return id
 }
 
@@ -107,14 +107,13 @@ export function openNewThread(store: AppStore): string {
     }
     pruneBlankThreads(store, new Set([existing.id]))
     store.emit('threads_changed')
+    // Keep the side/bottom panel open; only reset the file/diff viewer content.
     store.setState({
-      filesPaneOpen: false,
       openFile: null,
       activeDiff: null,
       stagedDiffs: [],
     })
     store.emit('panel_changed')
-    store.emit('files_pane_changed')
     return existing.id
   }
   store.emit('composer_draft_flush')
@@ -266,6 +265,20 @@ export function addToolCall(store: AppStore, messageId: string, toolCall: ToolCa
   }))
   store.setState({ threads: updated })
   store.emit('tool_call_started', messageId, toolCall)
+}
+
+export function findToolCall(
+  store: AppStore,
+  messageId: string,
+  toolCallId: string,
+): ToolCall | undefined {
+  for (const thread of store.getState().threads) {
+    for (const message of thread.messages) {
+      if (message.id !== messageId) continue
+      return message.toolCalls.find((tc) => tc.id === toolCallId)
+    }
+  }
+  return undefined
 }
 
 export function updateToolCall(
