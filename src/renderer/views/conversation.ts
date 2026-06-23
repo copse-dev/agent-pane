@@ -8,7 +8,7 @@ import { StreamingMarkdownRenderer } from '../markdown/streaming.ts'
 import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { stripTextToolCallBlocks } from '@shared/agent/parse-text-tool-calls.ts'
-import type { ToolCall } from '@shared/types'
+import type { Message, ToolCall } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { agentActivityLabel } from '../agent-activity.ts'
 import {
@@ -276,32 +276,37 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     el('span', { class: 'agent-activity-pulse', 'aria-hidden': 'true' }),
     activityLabel,
   )
-  root.append(scrollArea, activityBar)
+  // Queued follow-ups live in a pinned panel below the scroll area so they stay
+  // visible at the bottom of the screen instead of getting buried under the
+  // streaming response inside the scrollable message list.
+  const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
+  root.append(scrollArea, queuedHost, activityBar)
 
-  function appendQueuedBadge(msgEl: HTMLElement) {
-    if (msgEl.querySelector('.message-queued-badge')) return
-    msgEl.classList.add('msg-queued')
-    const body = msgEl.querySelector('.message-body')
-    if (!body) return
-    body.insertBefore(el('span', { class: 'message-queued-badge' }, 'Queued'), body.firstChild)
+  function createQueuedItem(msg: Message): HTMLElement {
+    const item = el('div', { class: 'msg msg-user msg-queued', 'data-message-id': msg.id })
+    const body = el('div', { class: 'message-body' })
+    body.append(el('span', { class: 'message-queued-badge' }, 'Queued'))
+    appendMessageContent(body, msg, api)
+    item.append(body)
+    return item
   }
 
-  function clearQueuedBadge(msgEl: HTMLElement) {
-    msgEl.classList.remove('msg-queued')
-    msgEl.querySelector('.message-queued-badge')?.remove()
-  }
-
-  function syncQueuedBadges(threadId: string) {
+  function renderQueuedPanel(threadId: string) {
     if (threadId !== store.getState().activeThreadId) return
     const thread = store.getState().threads.find((t) => t.id === threadId)
-    if (!thread) return
-    const queued = queuedMessageIds(thread)
-    for (const msg of thread.messages) {
-      const msgEl = list.querySelector(`[data-message-id="${msg.id}"]`) as HTMLElement | null
-      if (!msgEl || msg.role !== 'user') continue
-      if (queued.has(msg.id)) appendQueuedBadge(msgEl)
-      else clearQueuedBadge(msgEl)
+    const pending = thread?.pendingMessages ?? []
+    queuedHost.replaceChildren()
+    if (!thread || pending.length === 0) {
+      queuedHost.hidden = true
+      return
     }
+    const messagesById = new Map(thread.messages.map((m) => [m.id, m]))
+    for (const item of pending) {
+      const msg = messagesById.get(item.messageId)
+      if (!msg || msg.role !== 'user') continue
+      queuedHost.append(createQueuedItem(msg))
+    }
+    queuedHost.hidden = queuedHost.childElementCount === 0
   }
 
   let pinnedToBottom = true
@@ -432,6 +437,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const msg = thread?.messages.find((m) => m.id === msgId)
     if (!msg) return
 
+    // Queued user follow-ups render in the pinned panel, not inline.
+    if (msg.role === 'user' && thread && queuedMessageIds(thread).has(msgId)) {
+      renderQueuedPanel(threadId)
+      return
+    }
+
     const msgEl = el('div', { class: `msg msg-${msg.role}`, 'data-message-id': msgId })
     const body = el('div', { class: 'message-body' })
     appendMessageContent(body, msg, api)
@@ -443,9 +454,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
 
     list.append(msgEl)
-    if (msg.role === 'user' && thread && queuedMessageIds(thread).has(msgId)) {
-      appendQueuedBadge(msgEl)
-    }
     // Re-render any tool cards this message already carries (restored threads).
     renderToolCards(msgEl, msg.toolCalls ?? [])
     scrollToBottom(msg.role === 'user')
@@ -467,7 +475,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const thread = getActiveThread(store)
     thread?.messages.forEach((m) => appendMessageEl(store.getState().activeThreadId!, m.id))
     syncTodoPanel()
-    syncQueuedBadges(store.getState().activeThreadId!)
+    renderQueuedPanel(store.getState().activeThreadId!)
     updateScrollButton()
   }
 
@@ -484,7 +492,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
   const unsubs = [
     store.on('message_added', (tid, mid) => appendMessageEl(tid, mid)),
-    store.on('message_queued', (tid) => syncQueuedBadges(tid)),
+    store.on('message_queued', (tid) => renderQueuedPanel(tid)),
     store.on('message_token', (mid) => {
       const thread = getActiveThread(store)
       const msg = thread?.messages.find((m) => m.id === mid)
