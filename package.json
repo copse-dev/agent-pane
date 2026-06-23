@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "node scripts/dev.mts",
     "build": "node scripts/build.mts",
+    "build:release": "COPSE_RELEASE=1 node scripts/build.mts",
     "generate:icon": "node scripts/generate-icon.mts",
     "icons:mac": "node scripts/generate-icon.mts && COPSE_PANEL_REFRESH_DOCK=1 node scripts/patch-dev-name.mts",
     "start:mac": "npm run icons:mac && env -u ELECTRON_RUN_AS_NODE electron dist/main/index.js",
@@ -34,7 +35,7 @@
     "test:e2e:markdown": "wdio run wdio.conf.ts --spec tests/e2e/markdown-list-indent.e2e.ts --spec tests/e2e/markdown-ordered-list-spacing.e2e.ts --spec tests/e2e/semantic-search-markdown.e2e.ts",
     "analyze:thread": "node scripts/run-analyze-thread.mts",
     "sync:models": "node scripts/sync-model-catalog.mts",
-    "pack:mac": "npm run build && npm run icons:mac && electron-builder --mac dir",
+    "pack:mac": "npm run build:release && npm run icons:mac && electron-builder --mac dir",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run check:dead-code && npm test"
   },
   "build": {

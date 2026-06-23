@@ -54,6 +54,13 @@ No real model key is required to exercise core functionality. With neither `ANTH
 `list_dir` tool call on the first turn — enough to drive the full agent loop end-to-end. Set
 `COPSE_PANEL_MOCK_LLM=1` to force the mock even when keys are present.
 
+The mock also honors test-only steering directives in the user message — `[[mcp:<tool> {json}]]`
+(drive a specific tool call) and `[[mock:delay_ms <n>]]` (stall) — used by e2e specs. These are
+gated behind the `__COPSE_TEST_DIRECTIVES__` build constant: `npm run build` (dev/e2e/CI) keeps
+them, but `npm run build:release` (used by `pack:mac`/packaging) sets `COPSE_RELEASE=1`, so esbuild
+dead-code-eliminates the parser and `build.mts` fails the build if any directive marker survives.
+Shipped apps therefore never contain the directive parser.
+
 ### Before committing
 
 Before opening a PR, rebase onto **`origin/main`** — GitHub PR CI tests the merge of base into head, not your branch tip alone.
