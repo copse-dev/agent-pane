@@ -16,13 +16,14 @@ import { streamChunkToSessionUpdate } from './session-update-adapter.ts'
 
 /**
  * ACP **Agent role** for Copse: expose Copse's agent loop over the Agent Client
- * Protocol so an ACP client (e.g. Buzz, or any ACP-speaking editor) can add the
+ * Protocol so an ACP client (any ACP-speaking editor or workspace) can add the
  * Copse agent to a session and drive it.
  *
  * The protocol plumbing here is deliberately decoupled from Electron and from
  * the concrete agent loop: callers supply an {@link AcpTurnRunner}, so the
  * server can be unit-tested in-process and the real Copse wiring lives in a
- * thin entry point (see `createCopseAcpTurnRunner`).
+ * thin entry point (see `runAcpAgentMode` in `acp-app-entry.ts`, which drives
+ * the full `runAgent`).
  */
 
 export type AcpPermissionDecision = 'allow' | 'reject' | 'cancelled'

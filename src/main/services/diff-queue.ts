@@ -64,6 +64,59 @@ const directAppliedSnapshots = new Map<string, string>()
 const MAX_DIRECT_APPLIED_SNAPSHOTS = 1000
 let mainWindow: BrowserWindow | null = null
 
+/**
+ * Headless resolver for a staged diff. In the GUI a staged entry waits for the
+ * renderer's `diff:approve`/`diff:reject` IPC. With no window (the ACP agent),
+ * nothing would ever answer, so a host can register a resolver: it is asked to
+ * approve each just-staged entry, and the entry is applied or dropped inline.
+ * Returning true applies the change; false rejects it.
+ */
+export type StagedDiffResolver = (entry: QueueEntry) => Promise<boolean>
+
+let stagedDiffResolver: StagedDiffResolver | null = null
+
+export function setStagedDiffResolver(resolver: StagedDiffResolver | null): void {
+  stagedDiffResolver = resolver
+}
+
+/**
+ * Decide a just-staged entry through {@link stagedDiffResolver} and apply or drop
+ * it immediately, returning the message the calling tool should report. Used in
+ * headless mode where there is no renderer to approve via IPC.
+ */
+async function resolveStagedEntry(path: string): Promise<string> {
+  const entry = queue.find((e) => e.path === path)
+  if (!entry) return `No staged change found for ${path}.`
+  let approved: boolean
+  try {
+    approved = await stagedDiffResolver!(cloneEntry(entry))
+  } catch {
+    approved = false
+  }
+  if (!approved) {
+    recordDecision({ path, status: 'rejected' })
+    removeEntry(path)
+    return `Change to ${path} was rejected; nothing was written to disk.`
+  }
+  const result = await applyDiffEntry(entry)
+  if (result.status === 'conflict') {
+    restage(entry, result.current)
+    recordDecision({ path, status: 'conflict' })
+    return `Could not write ${path}: it changed on disk since the edit was prepared. Re-read the file and try again.`
+  }
+  if (result.status === 'error') {
+    recordDecision({ path, status: 'error', error: result.error })
+    removeEntry(path)
+    return `Failed to write ${path}: ${result.error}`
+  }
+  if ((entry.op ?? 'write') === 'write') recordDirectAppliedSnapshot(path, entry.after)
+  recordDecision({ path, status: 'approved' })
+  removeEntry(path)
+  const root = getWorkspaceRoot()
+  if (root) await buildIndex(root)
+  return `Approved and applied change to ${path}.`
+}
+
 function recordDirectAppliedSnapshot(path: string, content: string): void {
   // Re-insert so a refreshed path counts as most-recent for eviction.
   directAppliedSnapshots.delete(path)
@@ -377,6 +430,9 @@ export function stageDiff(
   // Payload before queue broadcast so the renderer can populate activeDiff first.
   mainWindow?.webContents.send('agent:show_diff', path, entry.before, entry.after, entry.language)
   broadcastQueue()
+  // Headless host (e.g. ACP): resolve the staged entry inline instead of waiting
+  // for a renderer that will never answer.
+  if (stagedDiffResolver) return resolveStagedEntry(path)
   return Promise.resolve(
     `${hadPending ? 'Updated pending staged diff' : 'Diff staged'} for ${path}. The file on disk is NOT changed until the user approves it in the diff panel. Shell commands, git, and read_file still see the old on-disk content. Use staged_diffs/read_staged_diff to inspect pending proposed changes, or ask the user to approve before validating.`,
   )
@@ -448,6 +504,7 @@ export function stageFileOp(entry: {
     entry.language,
   )
   broadcastQueue()
+  if (stagedDiffResolver) return resolveStagedEntry(entry.path)
   const verb =
     entry.op === 'delete'
       ? `Deletion of ${entry.path}`
