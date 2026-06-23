@@ -24,6 +24,13 @@ export const SANDBOX_TOOLS = new Set([
   'gh_pr_view',
 ])
 
+/** GitHub CI tools reach github.com via the `gh` CLI. */
+export const GITHUB_CI_TOOLS = new Set([
+  'get_ci_status',
+  'wait_for_ci_checks',
+  'get_ci_failure_logs',
+])
+
 export interface PermissionCheck {
   toolName: string
   args: unknown
@@ -273,5 +280,17 @@ export function formatWebPromptBody(origin: string, detail: string): string {
     detail,
     '',
     'Approve once, or check "Always allow" to add this origin to Settings.',
+  ].join('\n')
+}
+
+export function formatGithubCiPromptBody(toolName: string, args: unknown): string {
+  return [
+    'This tool reads pull request CI status or logs from GitHub via the gh CLI.',
+    '',
+    `Tool: ${toolName}`,
+    '',
+    JSON.stringify(args, null, 2),
+    '',
+    'Approve once, or check "Always allow" to auto-run GitHub CI tools in this workspace.',
   ].join('\n')
 }
