@@ -4,6 +4,7 @@ import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import type { CursorHookSummary } from '@shared/types/cursor-hooks.ts'
 import type { GitFileDiff, GitStatusResult, GitBranchStatus } from '@shared/types/git.ts'
 import type { McpServerStatus } from '@shared/types/mcp.ts'
+import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
 
 export interface ApiClient {
@@ -65,6 +66,9 @@ export interface ApiClient {
     reload: () => Promise<McpServerStatus[]>
     setEnabled: (name: string, enabled: boolean) => Promise<McpServerStatus[]>
     onStatusChanged: (handler: (statuses: McpServerStatus[]) => void) => () => void
+  }
+  canvas: {
+    onArtefact: (handler: (artefact: CanvasArtefact) => void) => () => void
   }
   storage: {
     get: (key: string) => Promise<unknown>

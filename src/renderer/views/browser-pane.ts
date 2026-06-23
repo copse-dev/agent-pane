@@ -1,5 +1,6 @@
 import { el } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
+import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import { browserTabLabel, normalizeBrowserUrl } from '@shared/browser-url.ts'
 import { BROWSER_SESSION_PARTITION } from '@shared/browser-session.ts'
 
@@ -32,6 +33,20 @@ interface BrowserTab {
   reloadBtn: HTMLButtonElement
   pendingUrl: string | null
   loadError: string | null
+  /** When set, this tab renders a sandboxed MCP-UI artefact; the data: URL is
+   * hidden from the address bar in favour of this friendly title. */
+  artefactTitle: string | null
+}
+
+/** Encode an HTML document as a base64 `data:` URL (opaque origin, no network). */
+function htmlDataUrl(html: string): string {
+  const bytes = new TextEncoder().encode(html)
+  let binary = ''
+  const CHUNK = 0x8000
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+  }
+  return `data:text/html;charset=utf-8;base64,${btoa(binary)}`
 }
 
 function webviewUrl(tab: BrowserTab): string {
@@ -111,6 +126,11 @@ export function mountBrowserPane(
   }
 
   function syncTabLabel(tab: BrowserTab) {
+    if (tab.artefactTitle) {
+      tab.label = tab.artefactTitle
+      tab.tabLabelEl.textContent = tab.label
+      return
+    }
     const url = webviewUrl(tab) || tab.pendingUrl || 'about:blank'
     const title = webviewTitle(tab)
     tab.label = browserTabLabel(url, title)
@@ -118,6 +138,8 @@ export function mountBrowserPane(
   }
 
   function displayUrl(tab: BrowserTab): string {
+    // Don't surface the (large, opaque) artefact data: URL in the address bar.
+    if (tab.artefactTitle) return ''
     if (tab.pendingUrl) return tab.pendingUrl
     const loaded = webviewUrl(tab)
     return loaded === 'about:blank' ? '' : loaded
@@ -282,6 +304,26 @@ export function mountBrowserPane(
     navigateTab(tab, url)
   }
 
+  function openArtefact(artefact: CanvasArtefact) {
+    // text/html renders inline via an opaque data: URL; a URL-list artefact
+    // navigates normally (and is still subject to the browser origin policy).
+    const isHtml = artefact.mimeType === 'text/html'
+    const target = isHtml ? htmlDataUrl(artefact.body) : normalizeBrowserUrl(artefact.body)
+    const id = addTab({ activate: true })
+    const tab = tabs.get(id)
+    if (!tab) return
+    tab.artefactTitle = artefact.title
+    tab.urlInput.value = ''
+    tab.urlInput.placeholder = artefact.title
+    syncTabLabel(tab)
+    if (browserModeActive(store)) {
+      ensureWebview(tab)
+      navigateWebview(tab, target)
+    } else {
+      tab.pendingUrl = target
+    }
+  }
+
   function addTab(options?: { url?: string; activate?: boolean }): string {
     const id = crypto.randomUUID()
     const label = browserTabLabel(options?.url ? normalizeBrowserUrl(options.url) : 'about:blank')
@@ -370,6 +412,7 @@ export function mountBrowserPane(
       reloadBtn,
       pendingUrl: null,
       loadError: null,
+      artefactTitle: null,
     }
 
     goBtn.addEventListener('click', () => navigateTab(tab, tab.urlInput.value))
@@ -449,6 +492,7 @@ export function mountBrowserPane(
     store.on('right_panel_mode_changed', onBrowserModeChange),
     store.on('files_pane_changed', onBrowserModeChange),
     store.on('browser_url_requested', openRequestedBrowserUrl),
+    store.on('canvas_artefact_requested', openArtefact),
   ]
 
   return () => {

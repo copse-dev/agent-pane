@@ -1,4 +1,4 @@
-export type McpTransportKind = 'stdio' | 'http'
+export type McpTransportKind = 'stdio' | 'http' | 'in-process'
 
 /** Server-reported hints about a tool. All fields are advisory only. */
 export interface McpToolAnnotations {
