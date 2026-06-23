@@ -101,7 +101,7 @@ export async function classifyShellScope(command: string): Promise<Classificatio
     const promptTokens = json.usage?.prompt_tokens ?? 0
     const completionTokens = json.usage?.completion_tokens ?? 0
     if (promptTokens || completionTokens) {
-      await recordUsageEvent({
+      recordUsageEvent({
         model: lmStudioChatModelValue(model),
         source: 'safety-classifier',
         inputTokens: promptTokens,
