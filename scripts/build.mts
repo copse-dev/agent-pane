@@ -1,12 +1,21 @@
 import * as esbuild from 'esbuild'
+import { execSync } from 'node:child_process'
 import { accessSync, cpSync, copyFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { copyMonacoWorkers } from './copy-monaco-workers.mts'
-import { fetchBundledCursorSkills } from './fetch-bundled-cursor-skills.mts'
 
 const bundledCodesearchName = process.platform === 'win32' ? 'codesearch.exe' : 'codesearch'
 
 const sharedAlias = { '@shared': resolve('./src/shared') }
+
+function fetchBundledCursorSkillsForBuild(): void {
+  if (process.env.SKIP_BUNDLED_CURSOR_SKILLS_FETCH === '1') return
+  try {
+    execSync('npx tsx scripts/fetch-bundled-cursor-skills.mts', { stdio: 'inherit' })
+  } catch {
+    console.warn('[build] bundled Cursor skills fetch failed — continuing without bundled skills')
+  }
+}
 
 const nodeOpts = {
   bundle: true,
@@ -26,7 +35,7 @@ const nodeOpts = {
   alias: sharedAlias,
 }
 
-await fetchBundledCursorSkills()
+fetchBundledCursorSkillsForBuild()
 
 await esbuild.build({
   ...nodeOpts,

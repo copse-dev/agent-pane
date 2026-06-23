@@ -5,7 +5,7 @@ import {
   BUNDLED_CURSOR_PLUGINS_COMMIT,
   syncBundledCursorSkills,
   type BundledCursorSkillsSource,
-} from '../src/main/services/bundled-cursor-skills-sync.ts'
+} from './bundled-cursor-skills-sync.mts'
 
 export const BUNDLED_CURSOR_SKILLS_OUT_DIR = resolve('vendor/bundled-cursor-skills')
 

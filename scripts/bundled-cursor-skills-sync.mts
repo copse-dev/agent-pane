@@ -50,18 +50,6 @@ async function fetchText(url: string): Promise<string> {
   return res.text()
 }
 
-async function readSourceManifest(cacheDir: string): Promise<BundledCursorSkillsSource | null> {
-  try {
-    const raw = await fsp.readFile(join(cacheDir, 'SOURCE.json'), 'utf8')
-    const parsed = JSON.parse(raw) as BundledCursorSkillsSource
-    if (parsed.commit !== BUNDLED_CURSOR_PLUGINS_COMMIT || parsed.slim !== true) return null
-    if (parsed.skillCount <= 0) return null
-    return parsed
-  } catch {
-    return null
-  }
-}
-
 async function listSkillDirs(pluginSource: string): Promise<string[]> {
   const url = `${API_BASE}/${pluginSource}/skills?ref=${BUNDLED_CURSOR_PLUGINS_COMMIT}`
   const entries = await fetchJson<GitHubContentEntry[]>(url)
