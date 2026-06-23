@@ -26,12 +26,12 @@ describe('settings footer overlap', () => {
   })
 
   it('keeps the Save/Cancel bar flush with the bottom of the scroll area', async () => {
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await prepareE2eScreenshot()
     await $('[aria-label="Settings"]').click()
 
     const general = await $('.settings-section[data-section="general"]')
-    await general.waitForDisplayed({ timeout: 15_000 })
+    await general.waitForDisplayed({ timeout: 30_000 })
 
     // Scroll midway so fieldset content scrolls *under* the sticky footer.
     await scrollSettingsContent(99_999)

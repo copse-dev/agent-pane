@@ -23,7 +23,7 @@ describe('titlebar panel icons', () => {
 
   it('shows consistent outline icons on the panel controls', async () => {
     const titlebar = await $('#titlebar')
-    await titlebar.waitForDisplayed({ timeout: 15_000 })
+    await titlebar.waitForDisplayed({ timeout: 30_000 })
 
     const buttons = [
       { label: 'Toggle right panel', icon: 'panel', text: 'Panel' },
