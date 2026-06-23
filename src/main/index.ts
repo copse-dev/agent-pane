@@ -114,11 +114,9 @@ app
       },
     )
 
-    await initSkillsRegistry()
-    registerSkillTools(registry)
-    await loadMcpServers(registry)
-    win.webContents.send('mcp:status_changed', getMcpServerStatuses())
-
+    // Register before async bootstrap (skills/MCP) so the renderer, which loads
+    // concurrently and fires a context estimate on first paint, never races a
+    // missing handler. The registry these close over is populated lazily below.
     const messageHistory = new Map<string, LLMMessage[]>()
 
     ipcMain.handle('agent:run', async (_e, threadId: string, rawPrompt: string) => {
@@ -184,6 +182,11 @@ app
       const context = JSON.parse(contextJson) as FollowUpContext
       return suggestFollowUps(context)
     })
+
+    await initSkillsRegistry()
+    registerSkillTools(registry)
+    await loadMcpServers(registry)
+    win.webContents.send('mcp:status_changed', getMcpServerStatuses())
   })
   .catch(console.error)
 
