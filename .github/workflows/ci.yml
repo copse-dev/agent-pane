@@ -42,6 +42,11 @@ jobs:
       - run: npm run format:check
       - run: npm run check:dead-code
       - run: npm test
+      # Differentially validate the JS CommonMark normalizer against the
+      # reference normalize.py. The script fetches normalize.py from a pinned,
+      # hash-verified upstream commit (not checked in) and runs the diff with
+      # python3 (preinstalled on the runner).
+      - run: npm run check:normalizer-parity
       - run: npm run build
 
   e2e:
