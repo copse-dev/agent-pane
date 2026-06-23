@@ -64,6 +64,40 @@ npm run test:e2e:markdown
 - `*italic*` and `` `snake_case` `` code spans stay intact (no cross-line `<em>` bleed)
 - Explore-style fixtures: `##`/`###` headings, `<hr>`, and lists as sibling block elements
 
+### CommonMark conformance (`commonmark-conformance.test.ts`, via `npm test`)
+
+`renderMarkdown` is run against every example in the official CommonMark spec —
+loaded from the pinned `commonmark-spec` devDependency at runtime
+(`tests/commonmark/load-spec.ts`), so the ~650 examples are **not** vendored into
+this repo — comparing output to the expected HTML after the spec's own normalizer
+(`tests/commonmark/normalize.ts`, a faithful port of `normalize.py`). This is **at
+rest only** — streaming output intentionally differs (the live tail is escaped
+plain text) and is not conformance-tested.
+
+The renderer is deliberately app-specific (`#`→`<h4>`, decorated links,
+highlighted code), so it is **not** expected to fully conform. The set of examples
+we currently satisfy is pinned in `tests/fixtures/commonmark/conformance-baseline.json`
+and the test fails if it changes:
+
+- fewer passing → a regression in a construct we used to handle.
+- more passing → an improvement; re-run `UPDATE_COMMONMARK_BASELINE=1 npm test` to
+  record the new baseline.
+
+Bumping the spec is just `npm i -D commonmark-spec@<version>` followed by a
+re-baseline; the version is read from the installed package and pinned in the
+baseline.
+
+The JS normalizer (`tests/commonmark/normalize.ts`) is differentially validated
+against the reference `normalize.py` by `npm run check:normalizer-parity` (a CI
+step in the `check` job; needs python3). The reference normalizer is **not**
+checked in — `scripts/fetch-reference-normalizer.mts` fetches it from a pinned,
+SHA-256-verified upstream commit into `tests/commonmark/normalize.py`
+(gitignored) at check time. The parity check then asserts both that the
+conformance pass set is identical under either normalizer and that per-example
+normalized output matches byte-for-byte, except for a small documented allowlist
+of pathological raw-HTML cases. This is **not** in `npm run check`, so
+contributors without python can still run the default gates.
+
 ### E2e tests (seeded via `tests/e2e/helpers/seed-config.ts`)
 
 - `tests/e2e/markdown-list-indent.e2e.ts` — Known Failures + Architecture Highlights; asserts list
