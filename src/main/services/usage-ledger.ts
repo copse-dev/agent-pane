@@ -1,4 +1,4 @@
-import type { Thread } from '@shared/types'
+import type { StreamChunk, Thread } from '@shared/types'
 import { storageGet, storageUpdate } from './storage.ts'
 import {
   buildUsageSummary,
@@ -39,6 +39,29 @@ export async function recordUsageEvent(input: UsageRecordInput): Promise<void> {
     const existing = parseUsageEvents(raw)
     const next = pruneUsageEvents([...existing, event])
     return next
+  })
+}
+
+/** Record token usage from an agent run usage chunk (main process — authoritative). */
+export function recordAgentUsageChunk(
+  threadId: string,
+  chunk: Extract<StreamChunk, { type: 'usage' }>,
+): void {
+  if (!chunk.inputTokens && !chunk.outputTokens) return
+  const projectId = storageGet('activeProjectId')
+  void recordUsageEvent({
+    model: chunk.model,
+    source: 'agent',
+    inputTokens: chunk.inputTokens,
+    outputTokens: chunk.outputTokens,
+    threadId,
+    ...(typeof projectId === 'string' && projectId.length > 0 ? { projectId } : {}),
+    ...(chunk.cacheReadTokens !== undefined ? { cacheReadTokens: chunk.cacheReadTokens } : {}),
+    ...(chunk.cacheCreationTokens !== undefined
+      ? { cacheCreationTokens: chunk.cacheCreationTokens }
+      : {}),
+  }).catch((err) => {
+    console.error('[usage-ledger] failed to record agent usage:', err)
   })
 }
 

@@ -51,6 +51,7 @@ import { compactAtTodoBoundary } from '@shared/todos/todo-context.ts'
 import { setTodoToolPostProcess } from '../tools/todo-tool.ts'
 import { runTodoWorker } from './todo-worker-runner.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
+import { recordAgentUsageChunk } from './usage-ledger.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
 import { parseRemoteAgentModel } from '@shared/remote-agent.ts'
 import { runRemoteAgentFromSettings } from './remote-agent-client.ts'
@@ -107,16 +108,21 @@ export async function runAgent(
   const model = getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
   recordThreadModel(threadId, model)
   const remoteProvider = parseRemoteAgentModel(model)
+
+  const sendChunk = (chunk: StreamChunk) => {
+    if (chunk.type === 'usage') {
+      recordAgentUsageChunk(threadId, chunk)
+      recordThreadModel(threadId, chunk.model)
+    }
+    host.emit(threadId, chunk)
+  }
+
   if (remoteProvider) {
     const controller = new AbortController()
     abortMap.set(threadId, controller)
     setActiveRunThread(threadId)
     const runAbort = createAgentRunAbortScheduler(controller)
     runAbort.schedule()
-    const sendChunk = (chunk: StreamChunk) => {
-      if (chunk.type === 'usage') recordThreadModel(threadId, chunk.model)
-      host.emit(threadId, chunk)
-    }
     try {
       const result = await runRemoteAgentFromSettings({
         threadId,
@@ -159,17 +165,11 @@ export async function runAgent(
   const runAbort = createAgentRunAbortScheduler(controller)
   runAbort.schedule()
 
-  const sendChunk = (chunk: StreamChunk) => {
-    if (chunk.type === 'usage') recordThreadModel(threadId, chunk.model)
-    host.emit(threadId, chunk)
-  }
-
   try {
     const invokedSkills = options?.invokedSkills ?? []
     const subagentsEnabled = getSetting<boolean>('subagentsEnabled', true)
     const contextWindow = await resolveContextWindow(model)
     const toolSchemaReserve = model === 'lm-studio' || model.startsWith('lmstudio:') ? 2_500 : 1_000
-
     const provider = await buildProvider(model)
     const subagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
     const subagentUsageModel = subagentRoute?.usageModel ?? model
