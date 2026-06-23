@@ -1,4 +1,6 @@
-import '../../../tests/setup-dom.ts'
+// Uses jsdom (not the shared happy-dom setup) because these tests exercise the
+// DOMPurify sanitizer, which needs a spec-complete DOM.
+import '../../../tests/setup-dom-jsdom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
