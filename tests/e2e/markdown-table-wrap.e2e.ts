@@ -26,7 +26,6 @@ describe('markdown table wrapping', () => {
         const cells = [...row.querySelectorAll('td')]
         const indexCell = cells[0]
         const statusCell = cells[3]
-        const branchCode = cells[2]?.querySelector('code')
 
         const singleLine = (el: Element | undefined) => {
           if (!el) return false
@@ -41,27 +40,29 @@ describe('markdown table wrapping', () => {
           statusText: statusCell?.textContent ?? '',
           indexSingleLine: singleLine(indexCell ?? undefined),
           statusSingleLine: singleLine(statusCell ?? undefined),
-          branchSingleLine: branchCode ? singleLine(branchCode) : false,
         }
       })
 
       const tableStyle = getComputedStyle(table)
+      const tableBox = table.getBoundingClientRect()
+      const messageBox = table.closest('.message-text')?.getBoundingClientRect()
       return {
         rowMetrics,
-        tableMinWidth: tableStyle.minWidth,
-        tableOverflowX: tableStyle.overflowX,
+        tableWidth: tableBox.width,
+        messageWidth: messageBox?.width ?? 0,
+        tableScrollWidth: table.scrollWidth,
+        tableClientWidth: table.clientWidth,
       }
     })
 
     expect(metrics).not.toHaveProperty('error')
-    expect(metrics.tableMinWidth).toBe('max-content')
-    expect(metrics.tableOverflowX).toBe('auto')
     expect(metrics.rowMetrics).toHaveLength(3)
+    expect(metrics.tableWidth).toBeLessThanOrEqual(metrics.messageWidth + 1)
+    expect(metrics.tableScrollWidth).toBeLessThanOrEqual(metrics.tableClientWidth + 1)
 
     for (const row of metrics.rowMetrics) {
       expect(row.indexSingleLine).toBe(true)
       expect(row.statusSingleLine).toBe(true)
-      expect(row.branchSingleLine).toBe(true)
       expect(row.statusText).toBe('DRAFT')
     }
 
