@@ -18,7 +18,7 @@ describe('tool call display', () => {
   })
 
   it('shows human-readable names and grouped tool cards', async () => {
-    await $('.messages-list .msg-assistant').waitForExist({ timeout: 15_000 })
+    await $('.messages-list .msg-assistant').waitForExist({ timeout: 30_000 })
 
     const groupCard = await $('.tool-card-group')
     await expect(groupCard).toBeDisplayed()

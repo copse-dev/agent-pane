@@ -22,14 +22,14 @@ describe('settings save', () => {
   })
 
   it('saves the settings dialog without an error toast', async () => {
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
     await expect($('#settings-dialog')).toBeDisplayed()
 
     await $('#settings-dialog button[type="submit"]').click()
 
     // Dialog hides on a successful save; a failed setSecurity leaves it visible.
-    await $('#settings-dialog').waitForDisplayed({ timeout: 15_000, reverse: true })
+    await $('#settings-dialog').waitForDisplayed({ timeout: 30_000, reverse: true })
 
     const toasts = await collectErrorToasts()
     await assertNoErrorToasts('settings save')

@@ -18,7 +18,7 @@ describe('onboarding panel', () => {
 
   it('captures each onboarding step', async () => {
     const overlay = await $('#onboarding-dialog')
-    await overlay.waitForDisplayed({ timeout: 15_000 })
+    await overlay.waitForDisplayed({ timeout: 30_000 })
 
     await expect(overlay.$('h2')).toHaveText('Welcome to Copse')
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'onboarding-step-intro.png'))

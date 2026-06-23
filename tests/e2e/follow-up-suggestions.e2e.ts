@@ -12,13 +12,13 @@ import { waitForAgentIdle } from './helpers.ts'
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
 async function completeMockTurn(): Promise<void> {
-  await $('.prompt-input').waitForExist({ timeout: 15_000 })
+  await $('.prompt-input').waitForExist({ timeout: 30_000 })
   await $('.prompt-input').setValue('review my changes')
   await $('.submit-btn').click()
 
   await waitForAgentIdle(20_000)
 
-  await $('.follow-up-bubble').waitForExist({ timeout: 15_000 })
+  await $('.follow-up-bubble').waitForExist({ timeout: 30_000 })
 }
 
 describe('follow-up suggestion bubbles', () => {

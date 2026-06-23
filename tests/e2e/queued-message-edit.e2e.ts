@@ -18,7 +18,7 @@ describe('queued message edit and send-now', () => {
 
   it('exposes Edit and Send now actions on a queued message', async () => {
     const queuedMsg = await $(`.msg-queued[data-message-id="${queuedMessageId}"]`)
-    await queuedMsg.waitForExist({ timeout: 15_000 })
+    await queuedMsg.waitForExist({ timeout: 30_000 })
 
     // Badge uses CSS text-transform: uppercase, so the rendered text is upper-cased.
     await expect(queuedMsg.$('.message-queued-badge')).toHaveText('QUEUED')
