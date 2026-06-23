@@ -297,7 +297,24 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     void submit()
   })
 
+  // Guards against re-entrant submits. The agent dispatch path has async gaps
+  // (`api.git.branchStatus()`, `api.skills.list()`) between reading the
+  // textarea and clearing it, so without this a laggy renderer that queues up
+  // several keydown/click events could fire multiple `void submit()` calls that
+  // each read the same un-cleared text and send the message more than once.
+  let submitInProgress = false
+
   async function submit() {
+    if (submitInProgress) return
+    submitInProgress = true
+    try {
+      await performSubmit()
+    } finally {
+      submitInProgress = false
+    }
+  }
+
+  async function performSubmit() {
     followUps.clearSuggestions()
     textarea.placeholder = defaultPlaceholder
     const rawText = textarea.value.trim()
