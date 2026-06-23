@@ -32,7 +32,10 @@ describe('model catalog', () => {
     for (const model of TRACKED_MODELS) {
       if (!model.startsWith('claude')) continue
       const info = MODEL_CATALOG[model]
-      assert.ok(info?.cacheReadPricePerMTok && info.cacheReadPricePerMTok > 0, `${model}: cache read`)
+      assert.ok(
+        info?.cacheReadPricePerMTok && info.cacheReadPricePerMTok > 0,
+        `${model}: cache read`,
+      )
       assert.ok(
         info?.cacheCreationPricePerMTok && info.cacheCreationPricePerMTok > 0,
         `${model}: cache creation`,
