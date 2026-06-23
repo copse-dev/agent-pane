@@ -34,8 +34,6 @@ export interface BundledCursorSkillsSource {
   slim: true
 }
 
-let syncPromise: Promise<void> | null = null
-
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { headers: GITHUB_HEADERS })
   if (!res.ok) {
@@ -140,23 +138,4 @@ export async function syncBundledCursorSkills(
   }
   await fsp.writeFile(join(cacheDir, 'SOURCE.json'), JSON.stringify(source, null, 2) + '\n', 'utf8')
   return source
-}
-
-export async function ensureBundledCursorSkillsSynced(cacheDir: string): Promise<void> {
-  const existing = await readSourceManifest(cacheDir)
-  if (existing) return
-
-  if (!syncPromise) {
-    syncPromise = syncBundledCursorSkills(cacheDir)
-      .then(() => undefined)
-      .finally(() => {
-        syncPromise = null
-      })
-  }
-  await syncPromise
-}
-
-/** Test helper — reset in-flight sync guard. */
-export function resetBundledCursorSkillsSyncForTest(): void {
-  syncPromise = null
 }

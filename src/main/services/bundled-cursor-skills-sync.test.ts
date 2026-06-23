@@ -5,7 +5,6 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
   BUNDLED_CURSOR_PLUGINS_COMMIT,
-  resetBundledCursorSkillsSyncForTest,
   syncBundledCursorSkills,
 } from './bundled-cursor-skills-sync.ts'
 
@@ -15,7 +14,6 @@ describe('bundled-cursor-skills-sync', () => {
 
   beforeEach(async () => {
     cacheDir = await mkdtemp(join(tmpdir(), 'copse-bundled-sync-'))
-    resetBundledCursorSkillsSyncForTest()
     fetchMock = mock.fn(async (input: string | URL) => {
       const url = String(input)
       if (url.endsWith('/marketplace.json')) {
@@ -49,7 +47,6 @@ describe('bundled-cursor-skills-sync', () => {
 
   afterEach(async () => {
     mock.restoreAll()
-    resetBundledCursorSkillsSyncForTest()
     if (cacheDir) await rm(cacheDir, { recursive: true, force: true })
   })
 

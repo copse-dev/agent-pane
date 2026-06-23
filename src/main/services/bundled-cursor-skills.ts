@@ -1,49 +1,37 @@
 import { accessSync, constants, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { app } from 'electron'
 import { resolvePluginSkillsDir } from './cursor-plugins.ts'
-import { ensureBundledCursorSkillsSynced } from './bundled-cursor-skills-sync.ts'
+
+/** Gitignored build artifact — see scripts/fetch-bundled-cursor-skills.mts */
+export const BUNDLED_CURSOR_SKILLS_VENDOR_DIR = 'vendor/bundled-cursor-skills'
 
 let bundledRootOverride: string | null | undefined
 
-export function getBundledCursorSkillsCacheDir(): string {
-  if (bundledRootOverride !== undefined && bundledRootOverride !== null) {
-    return bundledRootOverride
-  }
-  return join(app.getPath('userData'), 'bundled-cursor-skills')
-}
-
+/** Resolve bundled skills shipped with the app (dist/resources) or dev vendor tree. */
 export function getBundledCursorSkillsRoot(): string | null {
-  if (bundledRootOverride !== undefined) {
-    return bundledRootOverride
+  if (bundledRootOverride !== undefined) return bundledRootOverride
+
+  const candidates = [
+    join(__dirname, '../resources/bundled-cursor-skills'),
+    join(__dirname, '../../vendor/bundled-cursor-skills'),
+  ]
+
+  for (const candidate of candidates) {
+    try {
+      accessSync(candidate, constants.F_OK)
+      return candidate
+    } catch {
+      // try next candidate
+    }
   }
-  const cacheDir = getBundledCursorSkillsCacheDir()
-  try {
-    accessSync(cacheDir, constants.F_OK)
-    return cacheDir
-  } catch {
-    return null
-  }
+  return null
 }
 
-/** Sync from GitHub if needed, then list plugin roots cached under userData. */
 export async function listBundledCursorPluginRoots(): Promise<string[]> {
   if (bundledRootOverride === null) return []
 
-  const cacheDir = getBundledCursorSkillsCacheDir()
-  if (bundledRootOverride === undefined) {
-    try {
-      await ensureBundledCursorSkillsSynced(cacheDir)
-    } catch (err) {
-      console.warn(
-        '[skills] Bundled Cursor skills sync failed:',
-        err instanceof Error ? err.message : err,
-      )
-      return []
-    }
-  }
-
-  const root = bundledRootOverride ?? cacheDir
+  const root = getBundledCursorSkillsRoot()
+  if (!root) return []
 
   const pluginsDir = join(root, 'plugins')
   let entries: string[]

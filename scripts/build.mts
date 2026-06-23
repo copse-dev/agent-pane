@@ -2,6 +2,7 @@ import * as esbuild from 'esbuild'
 import { accessSync, cpSync, copyFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { copyMonacoWorkers } from './copy-monaco-workers.mts'
+import { fetchBundledCursorSkills } from './fetch-bundled-cursor-skills.mts'
 
 const bundledCodesearchName = process.platform === 'win32' ? 'codesearch.exe' : 'codesearch'
 
@@ -24,6 +25,8 @@ const nodeOpts = {
   target: 'node22',
   alias: sharedAlias,
 }
+
+await fetchBundledCursorSkills()
 
 await esbuild.build({
   ...nodeOpts,
@@ -65,4 +68,13 @@ try {
   cpSync('vendor/codesearch', 'dist/resources/codesearch', { recursive: true })
 } catch {
   // Optional — postinstall may be skipped on unsupported platforms.
+}
+
+try {
+  accessSync(resolve('vendor/bundled-cursor-skills'))
+  cpSync('vendor/bundled-cursor-skills', 'dist/resources/bundled-cursor-skills', {
+    recursive: true,
+  })
+} catch {
+  // Optional — fetch-bundled-cursor-skills.mts may be skipped offline.
 }
