@@ -41,6 +41,8 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   skillPluginPaths: z.array(z.string().max(4096)).max(64),
   subagentsEnabled: z.boolean(),
   externalApiSafety: z.boolean(),
+  browserToolsEnabled: z.boolean(),
+  browserAllowedOrigins: z.array(z.string().max(2048)).max(256),
   customInstructions: z.string().max(8192),
   onboardingCompleted: z.boolean(),
 } as const satisfies Record<string, z.ZodType>
