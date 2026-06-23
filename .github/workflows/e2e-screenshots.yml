@@ -31,7 +31,7 @@ jobs:
               - 'assets/**'
               - '.github/workflows/e2e-screenshots.yml'
 
-  update-screenshots:
+  regenerate:
     needs: changes
     if: |
       github.event.pull_request.head.repo.full_name == github.repository &&
@@ -41,6 +41,15 @@ jobs:
         (github.event.action == 'labeled' && github.event.label.name == 'update-screenshots')
       )
     runs-on: ubuntu-latest
+    # Regenerate the seeded reference screenshots in parallel shards (same split as
+    # the CI e2e gate) so the suite finishes inside the runner window. Each shard
+    # uploads only the PNGs it changed; the `commit` job merges and commits them.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    env:
+      SHARD_TOTAL: 4
     steps:
       - uses: actions/checkout@v4
         with:
@@ -56,18 +65,61 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y ripgrep
       - run: npm run build
 
-      - name: Regenerate e2e reference screenshots
+      - name: Regenerate e2e reference screenshots (shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }})
         run: |
           for attempt in 1 2 3; do
-            echo "::group::e2e screenshot attempt $attempt"
-            if npm run test:e2e:ci; then
+            echo "::group::e2e screenshot shard ${{ matrix.shard }} attempt $attempt"
+            if npm run test:e2e:ci -- --shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }}; then
               echo "::endgroup::"
               exit 0
             fi
             echo "::endgroup::"
-            echo "e2e attempt $attempt failed"
+            echo "e2e shard ${{ matrix.shard }} attempt $attempt failed"
           done
           exit 1
+
+      - name: Collect changed screenshots
+        run: |
+          mkdir -p changed/tests/e2e/screenshots
+          # Sentinel keeps the artifact non-empty so the commit job's download
+          # never fails when a shard produced no screenshot diffs.
+          touch "changed/.shard-${{ matrix.shard }}"
+          mapfile -t files < <(git diff --name-only -- tests/e2e/screenshots/)
+          for f in "${files[@]}"; do
+            [ -n "$f" ] || continue
+            cp "$f" "changed/tests/e2e/screenshots/"
+          done
+          echo "Collected ${#files[@]} changed screenshot(s) for shard ${{ matrix.shard }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-shard-${{ matrix.shard }}
+          path: changed/
+          include-hidden-files: true
+          if-no-files-found: error
+
+  commit:
+    needs: regenerate
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Download regenerated screenshots
+        uses: actions/download-artifact@v4
+        with:
+          pattern: screenshots-shard-*
+          merge-multiple: true
+          path: artifacts
+
+      - name: Apply regenerated screenshots
+        run: |
+          if compgen -G "artifacts/tests/e2e/screenshots/*" > /dev/null; then
+            cp -f artifacts/tests/e2e/screenshots/* tests/e2e/screenshots/
+          fi
 
       - name: Detect screenshot changes
         id: diff
