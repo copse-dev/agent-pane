@@ -2,9 +2,27 @@
 <html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      style-src keeps 'unsafe-inline' on purpose. Our own code never emits
+      markup-level inline styles (no style="" attributes, no <style> blocks —
+      all dynamic styling goes through the CSSOM, which CSP does not govern).
+      The requirement comes from two bundled libraries that inject styles at
+      runtime and offer no CSP nonce hook:
+        - monaco-editor injects <style> elements (and uses innerHTML) for its
+          theming; content is dynamic per load, so nonce/hash do not apply.
+          This is unfixed upstream since 2016 (microsoft/monaco-editor#271),
+          and VS Code itself ships style-src 'unsafe-inline' for the same
+          reason (src/vs/code/electron-browser/workbench/workbench.html).
+        - mermaid emits SVG with <style> blocks and inline style="" attributes
+          (which cannot be nonced at all). Its securityLevel:'sandbox' iframe
+          uses srcdoc, which INHERITS this CSP, so it does not help here.
+      Dropping 'unsafe-inline' would break the editor and diagram rendering.
+      The exfiltration risk it would otherwise carry is already closed off by
+      img-src below (no remote URLs), so CSS-based data exfiltration is blocked.
+    -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:;"
+      content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none';"
     />
     <title>Copse</title>
     <link rel="icon" type="image/png" href="./favicon.png" />

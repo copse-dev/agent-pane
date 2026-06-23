@@ -2,8 +2,11 @@ dist/
 dist-test/
 dist-types/
 node_modules/
+coverage/
 test-results/
 tests/e2e/electron-shell/.e2e-env.json
 .wdio-profile-*
 .wdio-git-fixture-*
 tests/fixtures/git-changes-repo/
+# Generated CommonMark conformance baseline (written by the conformance test).
+tests/fixtures/commonmark/

@@ -13,6 +13,7 @@ export default ts.config(
       'eslint.config.mjs',
       'prettier.config.mjs',
       'wdio.conf.ts',
+      'wdio.ci.conf.ts',
       'wdio.eval.conf.ts',
       'tests/e2e/**',
       'tests/fixtures/git-changes-repo/**',
@@ -52,6 +53,24 @@ export default ts.config(
       '@typescript-eslint/no-floating-promises': 'off',
       '@typescript-eslint/require-await': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
+  {
+    // Plain CommonJS scripts aren't part of the typed tsconfig projects, so
+    // disable type-aware linting and provide Node CJS globals for them.
+    files: ['**/*.cjs'],
+    extends: [ts.configs.disableTypeChecked],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        require: 'readonly',
+        module: 'writable',
+        exports: 'writable',
+        __dirname: 'readonly',
+        __filename: 'readonly',
+      },
     },
   },
 )

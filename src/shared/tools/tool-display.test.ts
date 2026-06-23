@@ -78,10 +78,19 @@ describe('tool-display', () => {
   })
 
   it('groups git tools together', () => {
-    const items = buildToolCallDisplayItems([tc('1', 'git_status'), tc('2', 'git_diff')])
+    const items = buildToolCallDisplayItems([
+      tc('1', 'git_status'),
+      tc('2', 'git_diff'),
+      tc('3', 'gh_pr_list'),
+    ])
     assert.equal(items.length, 1)
     assert.equal(items[0]?.type, 'group')
     if (items[0]?.type === 'group') assert.equal(items[0].label, 'Git')
+  })
+
+  it('maps gh tools to human-readable names', () => {
+    assert.equal(getToolDisplayName('gh_pr_list'), 'List pull requests')
+    assert.equal(getToolDisplayName('gh_pr_view'), 'View pull request')
   })
 
   it('does not group unrelated tools', () => {

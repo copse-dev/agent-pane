@@ -37,7 +37,7 @@ export function buildGithubLinkSteeringPrompt(repoSlug: string | null): string {
   const base =
     'Markdown-link every PR/issue mention (tables and lists too) as `[text](full GitHub URL)`.'
   if (repoSlug) {
-    return `${base} Repo: ${repoSlug}. Use \`gh\` when you only have numbers.`
+    return `${base} Repo: ${repoSlug}. Use gh_pr_list / gh_pr_view when you only have numbers.`
   }
-  return `${base} Use \`gh\` or the git remote when you only have numbers.`
+  return `${base} Use gh_pr_list / gh_pr_view or the git remote when you only have numbers.`
 }

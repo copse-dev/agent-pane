@@ -8,8 +8,11 @@ import { parseGithubRepoSlug } from '@shared/git/github-link-steering.ts'
 import { imageMimeType } from '@shared/fs/image-path.ts'
 import type { GitChange, GitChangeStatus, GitFileDiff, GitStatusResult } from '@shared/types/git.ts'
 
-async function runGit(args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
-  const cwd = getWorkspaceRoot()
+async function runGit(
+  args: string[],
+  root: string | null = getWorkspaceRoot(),
+): Promise<{ stdout: string; stderr: string; code: number }> {
+  const cwd = root
   if (!cwd) return { stdout: '', stderr: 'No workspace open.', code: 1 }
   return runCommand('git', args, { cwd })
 }
@@ -266,9 +269,13 @@ export async function isInsideGitWorkTree(): Promise<boolean> {
 }
 
 /** `org/repo` from `origin` when the workspace remote is GitHub. */
-export async function getGithubRepoSlug(): Promise<string | null> {
-  if (!isGitAvailable() || !(await isInsideGitWorkTree())) return null
-  const { stdout, code } = await runGit(['remote', 'get-url', 'origin'])
+export async function getGithubRepoSlug(
+  root: string | null = getWorkspaceRoot(),
+): Promise<string | null> {
+  if (!isGitAvailable() || !root) return null
+  const inside = await runGit(['rev-parse', '--is-inside-work-tree'], root)
+  if (inside.code !== 0 || inside.stdout.trim() !== 'true') return null
+  const { stdout, code } = await runGit(['remote', 'get-url', 'origin'], root)
   if (code !== 0 || !stdout.trim()) return null
   return parseGithubRepoSlug(stdout.trim())
 }

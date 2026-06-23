@@ -3,7 +3,7 @@ import type { GitFileDiff, GitStatusResult, GitBranchStatus } from './git.ts'
 import type { McpServerStatus } from './mcp.ts'
 import type { UsageDelta } from './thread.ts'
 
-type Provider = 'anthropic' | 'openai' | 'lmstudio'
+type Provider = 'anthropic' | 'openai' | 'lmstudio' | 'cursor'
 
 // invoke channels (renderer → main, returns result)
 export interface IpcInvokeMap {
@@ -65,9 +65,12 @@ export interface IpcInvokeMap {
   }
   'settings:getKey': { args: [provider: Provider]; result: boolean }
   'settings:setKey': { args: [provider: Provider, key: string]; result: void }
-  'settings:availableProviders': { args: []; result: { anthropic: boolean; openai: boolean } }
+  'settings:availableProviders': {
+    args: []
+    result: { anthropic: boolean; openai: boolean; cursor: boolean }
+  }
   'settings:validateKey': {
-    args: [provider: 'anthropic' | 'openai', key: string]
+    args: [provider: 'anthropic' | 'openai' | 'cursor', key: string]
     result: { ok: boolean; error?: string; formatOk?: boolean }
   }
 
@@ -93,6 +96,10 @@ export interface IpcInvokeMap {
   'git:isAvailable': { args: []; result: boolean }
   'git:branchStatus': { args: [forBranch?: string]; result: GitBranchStatus }
   'git:checkoutBranch': { args: [branch: string]; result: void }
+
+  // Remote agent artifacts
+  'remoteAgent:downloadArtifact': { args: [agentId: string, path: string]; result: string }
+  'remoteAgent:artifactImageDataUrl': { args: [agentId: string, path: string]; result: string }
 
   // Shell
   'shell:openExternal': { args: [url: string]; result: void }

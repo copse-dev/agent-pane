@@ -1,4 +1,7 @@
 import { getWorkspaceRoot } from './workspace.ts'
+import { isWorkspaceTrusted } from './workspace-trust.ts'
+import { runPermissionHooks } from './cursor-hooks.ts'
+import type { CursorPermissionHookEvent } from '@shared/types/cursor-hooks.ts'
 import { isProjectSandboxEnabled } from '../project-sandbox/index.ts'
 import { classifyShellScope } from './safety-classifier.ts'
 import { requestApproval } from './approval.ts'
@@ -21,6 +24,7 @@ import {
 import {
   BROWSER_TOOLS,
   READ_ONLY_BROWSER_TOOLS,
+  BROWSER_ALLOW_USER_APPROVAL_SETTING,
   decideBrowserNavigation,
   formatBrowserPromptBody,
 } from './browser/browser-origin-policy.ts'
@@ -205,7 +209,7 @@ async function checkBrowserNavigatePermission(args: unknown): Promise<boolean> {
   const decision = decideBrowserNavigation({
     url,
     allowedOrigins: getSetting<string[]>('browserAllowedOrigins', []),
-    allowUserApproval: getSetting<boolean>('autoRunSandboxCommands', true),
+    allowUserApproval: getSetting<boolean>(BROWSER_ALLOW_USER_APPROVAL_SETTING, true),
   })
   if (decision.action === 'allow') return true
   if (decision.action === 'deny') {
@@ -222,15 +226,79 @@ async function checkBrowserNavigatePermission(args: unknown): Promise<boolean> {
   return approved
 }
 
+/** Gate a raw shell command string (todo verification, etc.) through the same policy as run_shell. */
+export async function ensureShellCommandPermitted(command: string): Promise<boolean> {
+  return checkShellPermission({ command })
+}
+
 /** Integrated terminal is a direct user UI action; PTY always runs outside seatbelt (#180). */
 export async function ensureTerminalPermitted(): Promise<boolean> {
   if (!getWorkspaceRoot()) throw new Error('No workspace open.')
   return true
 }
 
-/** Returns true when the tool call may proceed, false when the user rejected. */
+/** Map a tool call to the Cursor permission-hook event + payload it should fire. */
+function cursorHookForTool(
+  toolName: string,
+  args: unknown,
+): { event: CursorPermissionHookEvent; payload: Record<string, unknown> } | null {
+  if (toolName === 'run_shell') {
+    const command = shellCommandFromArgs(args) ?? ''
+    return { event: 'beforeShellExecution', payload: { command, cwd: getWorkspaceRoot() ?? '' } }
+  }
+  if (toolName.startsWith('mcp__')) {
+    return { event: 'beforeMCPExecution', payload: { tool_name: toolName, tool_input: args } }
+  }
+  if (toolName === 'read_file') {
+    const rawPath =
+      typeof args === 'object' && args !== null ? (args as { path?: unknown }).path : undefined
+    const path = typeof rawPath === 'string' ? rawPath : ''
+    return { event: 'beforeReadFile', payload: { file_path: path, content: '' } }
+  }
+  return null
+}
+
+/**
+ * Run any matching Cursor hooks (https://cursor.com/docs/hooks) for this tool call.
+ * Hooks can only *block* — an allow/ask still falls through to Copse's own gate — so
+ * a deny here is the one short-circuit. Gated behind `cursorHooksEnabled` (default off)
+ * because honouring hooks spawns user/project scripts on the agent's hot path.
+ */
+async function cursorHooksAllow(check: PermissionCheck): Promise<boolean> {
+  if (!getSetting<boolean>('cursorHooksEnabled', false)) return true
+  const mapped = cursorHookForTool(check.toolName, check.args)
+  if (!mapped) return true
+
+  const workspaceRoot = getWorkspaceRoot()
+  const decision = await runPermissionHooks(mapped.event, mapped.payload, {
+    workspaceRoot,
+    projectTrusted: isWorkspaceTrusted(workspaceRoot),
+  })
+  if (decision.permission === 'deny') {
+    console.warn(
+      `[cursor-hooks] ${mapped.event} denied ${check.toolName}` +
+        (decision.agentMessage ? `: ${decision.agentMessage}` : ''),
+    )
+    return false
+  }
+  return true
+}
+
+/**
+ * Returns true when the tool call may proceed, false when the user rejected.
+ *
+ * This gate is default-allow: only the tools matched below (shell, MCP, web
+ * fetch/search, browser navigation) are explicitly gated, and anything else
+ * falls through to `return true`. That is safe only because every *mutating*
+ * tool is gated elsewhere — file writes/edits/deletes/renames go through the
+ * diff-approval queue (see diff-queue.ts), not this function. Any new tool that
+ * changes the workspace or reaches the network MUST either route through the
+ * diff queue or get an explicit case here; do not rely on the default branch.
+ */
 export async function ensureToolPermitted(check: PermissionCheck): Promise<boolean> {
   const { toolName, args } = check
+
+  if (!(await cursorHooksAllow(check))) return false
 
   if (SANDBOX_TOOLS.has(toolName)) return true
 
@@ -258,5 +326,8 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
     return checkShellPermission(args)
   }
 
+  // Default-allow: read-only/in-process tools (and mutating tools that are
+  // gated via the diff-approval queue) need no prompt here. See the contract
+  // in this function's doc comment before relying on this branch for a new tool.
   return true
 }
