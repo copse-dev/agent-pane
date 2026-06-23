@@ -45,6 +45,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'externalApiSafety', kind: 'checkbox', default: false, save: true },
   { name: 'localSubagentsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'localTodoItemsEnabled', kind: 'checkbox', default: true, save: true },
+  { name: 'bundledCursorSkillsEnabled', kind: 'checkbox', default: true, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
@@ -179,6 +180,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Reminds the agent to pick compatible dependency versions and never hardcode or log
                 secrets when adding API calls.
               </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Skills</legend>
+              <p class="settings-fieldset-desc">
+                Reusable agent workflows invoked with <code>/skill-name</code> in the chat input.
+                Copse ships official Cursor marketplace skills by default; project skills live in
+                <code>.cursor/skills/</code>.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="bundledCursorSkillsEnabled" />
+                Include bundled Cursor skills (CI, code review, verification, and more)
+              </label>
             </fieldset>
 
             <fieldset>
@@ -604,6 +618,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       })
       store.emit('theme_changed', theme)
       store.emit('settings_changed')
+      window.dispatchEvent(new Event('copse:skills-changed'))
       document.documentElement.dataset.theme = theme
       closeSettingsDialog()
     })()

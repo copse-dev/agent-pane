@@ -55,14 +55,16 @@ describe('buildSkillsCatalogBlock', () => {
     assert.match(block, /Demo skill for tests/)
   })
 
-  it('marks project/plugin skills as untrusted and user skills as trusted', () => {
+  it('marks project/plugin skills as untrusted and user/bundled skills as trusted', () => {
     setSkillsForTest([
       { ...demoSkill, name: 'project-skill', source: 'project' },
       { ...demoSkill, name: 'user-skill', source: 'user' },
+      { ...demoSkill, name: 'bundled-skill', source: 'bundled' },
     ])
     const block = buildSkillsCatalogBlock()
     assert.match(block, /source="project" trust="untrusted"/)
     assert.match(block, /source="user" trust="trusted"/)
+    assert.match(block, /source="bundled" trust="trusted"/)
     // The block should tell the model to treat descriptions as untrusted data.
     assert.match(block, /untrusted data/)
   })
