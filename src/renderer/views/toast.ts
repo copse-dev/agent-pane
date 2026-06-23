@@ -25,16 +25,43 @@ function ensureHost(): HTMLElement {
 function normalizeMessage(error: unknown): string {
   if (error instanceof Error) return error.message
   if (typeof error === 'string') return error
-  // Worker / resource failures reject with an ErrorEvent whose default
-  // stringification ("[object ErrorEvent]") is useless — pull out its detail.
+  // Worker / resource failures reject with an ErrorEvent or a plain Event whose
+  // default stringification ("[object ErrorEvent]") is useless — describe them.
   if (typeof ErrorEvent !== 'undefined' && error instanceof ErrorEvent) {
-    if (error.error instanceof Error) return error.error.message
-    if (error.message) return error.message
+    return describeErrorEvent(error)
   }
   if (typeof Event !== 'undefined' && error instanceof Event) {
-    return `${error.type} event`
+    return describeEvent(error)
   }
   return String(error)
+}
+
+/** ErrorEvent → nested Error message, else its message plus source location. */
+function describeErrorEvent(event: ErrorEvent): string {
+  if (event.error instanceof Error && event.error.message) return event.error.message
+  const location = formatSourceLocation(event.filename, event.lineno, event.colno)
+  if (event.message) return location ? `${event.message} (${location})` : event.message
+  if (location) return `script error at ${location}`
+  return describeEvent(event)
+}
+
+/** Generic Event → the failed element (tag + src/href) when there is a target. */
+function describeEvent(event: Event): string {
+  const target = event.target
+  if (typeof Element !== 'undefined' && target instanceof Element) {
+    const tag = target.tagName.toLowerCase()
+    const src = target.getAttribute('src') ?? target.getAttribute('href')
+    return src ? `failed to load <${tag}> ${src}` : `<${tag}> ${event.type} event`
+  }
+  return `${event.type} event`
+}
+
+function formatSourceLocation(filename?: string, lineno?: number, colno?: number): string {
+  if (!filename) return ''
+  const parts = [filename]
+  if (lineno) parts.push(String(lineno))
+  if (colno) parts.push(String(colno))
+  return parts.join(':')
 }
 
 export function showToast(
