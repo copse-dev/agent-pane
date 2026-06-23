@@ -332,3 +332,16 @@ test('resumePendingQueues clears a stale pause then drains', () => {
   assert.equal(thread.queuePaused, undefined)
   assert.equal(api.runs.length, 1)
 })
+
+test('resumePendingQueues resets a stale running status when the queue is empty', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  setThreadStatus(store, threadId, 'running')
+
+  resumePendingQueues(store, api)
+
+  const thread = store.getState().threads.find((t) => t.id === threadId)!
+  assert.equal(thread.status, 'idle')
+  assert.equal(api.runs.length, 0)
+})

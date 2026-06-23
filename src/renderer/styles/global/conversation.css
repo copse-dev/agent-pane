@@ -242,6 +242,16 @@
 .message-text a:hover {
   opacity: 0.85;
 }
+.message-text .remote-artifact-image {
+  display: block;
+  max-width: 100%;
+  max-height: min(520px, 60vh);
+  margin: var(--spacing-sm) 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  object-fit: contain;
+}
 .message-text pre {
   background: var(--bg-elevated);
   padding: var(--spacing-sm);
