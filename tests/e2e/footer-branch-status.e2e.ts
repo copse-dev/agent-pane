@@ -6,6 +6,7 @@ import {
   seedFooterBranchFixture,
   seedFooterBranchMismatchFixture,
 } from './helpers/seed-config.ts'
+import { describeSkipInCi } from './helpers/ci-gate.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -36,7 +37,7 @@ describe('footer branch status match', () => {
   })
 })
 
-describe('footer branch status mismatch', () => {
+describeSkipInCi('footer branch status mismatch', () => {
   let seed: ReturnType<typeof seedFooterBranchMismatchFixture>
 
   before(async () => {

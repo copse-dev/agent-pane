@@ -29,6 +29,7 @@ jobs:
           if-no-files-found: ignore
 
   check:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6.0.3
@@ -42,19 +43,44 @@ jobs:
       - run: npm run check:dead-code
       - run: npm test
       - run: npm run build
+
+  e2e:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # Split the seeded e2e suite (see wdio.ci.conf.ts) into parallel shards so the
+    # whole gate finishes well inside the runner window. Each shard runs a disjoint
+    # slice of specs via wdio's `--shard current/total`. Each shard builds its own
+    # `dist` (rather than sharing an artifact): the upload/download path dropped
+    # some Monaco worker files, breaking specs that open the diff editor.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    env:
+      SHARD_TOTAL: 8
+    steps:
+      - uses: actions/checkout@v6.0.3
+      - uses: actions/setup-node@v6
+        with: { node-version: '22', cache: 'npm' }
+      - run: npm ci
+      - run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - run: npm run build
       # The Electron/Chromedriver e2e session occasionally fails to start on the
       # runner ("DevToolsActivePort file doesn't exist" / "POST /session" timeout).
       # The hang wedges the whole wdio run, so in-process retries don't recover —
-      # only a fresh xvfb+Electron launch does. Retry the entire command instead.
-      - name: e2e smoke (retry on flaky session startup)
+      # only a fresh xvfb+Electron launch does. Retry the entire shard, and wrap
+      # each attempt in `timeout` so a wedged session is killed and retried
+      # (a plain hang would otherwise never exit and stall the job).
+      - name: e2e shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }} (retry on flaky session startup)
+        timeout-minutes: 20
         run: |
           for attempt in 1 2 3; do
-            echo "::group::e2e attempt $attempt"
-            if npm run test:e2e:ci; then
+            echo "::group::e2e shard ${{ matrix.shard }} attempt $attempt"
+            if timeout -k 15 300 npm run test:e2e:ci -- --shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }}; then
               echo "::endgroup::"
               exit 0
             fi
             echo "::endgroup::"
-            echo "e2e attempt $attempt failed"
+            echo "e2e shard ${{ matrix.shard }} attempt $attempt failed or timed out"
           done
           exit 1
