@@ -446,9 +446,9 @@ export function mountBrowserPane(
     store.on('right_panel_mode_changed', onBrowserModeChange),
     store.on('files_pane_changed', onBrowserModeChange),
     store.on('browser_url_requested', openRequestedBrowserUrl),
-    // cmd/ctrl click and target=_blank links inside a guide open as a new tab
-    // (main blocks the popup window and forwards the URL here).
-    api?.browser.onOpenTab((url) => addTab({ url, activate: true })),
+    // cmd/ctrl click and target=_blank links inside a guide open as a new
+    // background tab (main blocks the popup window and forwards the URL here).
+    api?.browser.onOpenTab((url) => addTab({ url, activate: false })),
   ]
 
   return () => {
