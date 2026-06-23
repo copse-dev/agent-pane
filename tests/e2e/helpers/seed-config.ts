@@ -507,6 +507,7 @@ export function seedFooterCompactFixture(workspaceRoot: string): {
 export function seedPortraitRightPanelFixture(
   workspaceRoot: string,
   autoPortraitRightPanel: boolean,
+  windowBounds: { width: number; height: number } = { width: 760, height: 1180 },
 ): void {
   const projectId = 'e2e-portrait-right-panel-project'
   const threadId = 'e2e-portrait-right-panel-thread'
@@ -538,7 +539,7 @@ export function seedPortraitRightPanelFixture(
     }),
     'utf8',
   )
-  writeSettings({ autoPortraitRightPanel })
+  writeSettings({ autoPortraitRightPanel, windowBounds })
 }
 
 export function seedSubagentFixture(workspaceRoot: string): void {
@@ -924,6 +925,70 @@ export function seedTodoPlanFixtures(workspaceRoot: string): {
 /** @deprecated Use seedTodoPlanFixtures — kept for older specs that only need the plan thread. */
 export function seedTodoDisplayFixture(workspaceRoot: string): void {
   seedTodoPlanFixtures(workspaceRoot)
+}
+
+/** Running thread with a queued follow-up message for edit / send-now e2e. */
+export function seedQueuedMessageFixture(workspaceRoot: string): {
+  threadId: string
+  queuedMessageId: string
+  queuedText: string
+} {
+  const projectId = 'e2e-queued-message-project'
+  const threadId = 'e2e-queued-message-thread'
+  const queuedMessageId = 'msg-user-queued'
+  const queuedText = 'Then add unit tests for the parser.'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      activeThreadId: threadId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Queued message edit',
+          status: 'running',
+          messages: [
+            {
+              id: 'msg-user-first',
+              role: 'user',
+              content: 'Refactor the JSON parser.',
+              toolCalls: [],
+              createdAt: now,
+            },
+            {
+              id: 'msg-assistant-first',
+              role: 'assistant',
+              content: 'Working on the refactor now…',
+              toolCalls: [],
+              createdAt: now + 1,
+            },
+            {
+              id: queuedMessageId,
+              role: 'user',
+              content: queuedText,
+              toolCalls: [],
+              createdAt: now + 2,
+            },
+          ],
+          pendingMessages: [
+            {
+              messageId: queuedMessageId,
+              payload: { content: queuedText, invokedSkills: [], priorTodos: [] },
+              createdAt: now + 2,
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: now,
+          updatedAt: now + 2,
+        },
+      ],
+    }),
+    'utf8',
+  )
+  return { threadId, queuedMessageId, queuedText }
 }
 
 export function seedToolDisplayFixture(workspaceRoot: string): void {

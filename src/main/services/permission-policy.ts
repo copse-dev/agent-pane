@@ -20,6 +20,8 @@ export const SANDBOX_TOOLS = new Set([
   'git_status',
   'git_diff',
   'git_log',
+  'gh_pr_list',
+  'gh_pr_view',
 ])
 
 export interface PermissionCheck {

@@ -1,7 +1,7 @@
-import { BrowserWindow, app, session } from 'electron'
+import { BrowserWindow, app } from 'electron'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { BROWSER_SESSION_PARTITION } from '@shared/browser-session.ts'
+import { getInAppBrowserSession } from '../../windows/browser-web-contents.ts'
 import { DOM_SNAPSHOT_SCRIPT, renderSnapshot, type PageSnapshot } from './snapshot-format.ts'
 
 const MAX_TABS = 8
@@ -48,7 +48,7 @@ export class BrowserSessionManager {
         // Share the isolated in-app browser session so automation reuses the
         // same cookies/storage as the visible browser pane and is recognized by
         // isBrowserWebContents (skips the renderer lockdown meant for app pages).
-        session: session.fromPartition(BROWSER_SESSION_PARTITION),
+        session: getInAppBrowserSession(),
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,

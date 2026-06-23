@@ -5,6 +5,7 @@ import type { Message } from '@shared/types'
 import {
   addMessage,
   createThread,
+  setQueuePaused,
   setThreadStatus,
   setThreadTodos,
 } from '@shared/store/thread-helpers.ts'
@@ -15,20 +16,29 @@ import {
   enqueueUserMessage,
   movePendingUserMessagesToEnd,
   queuedMessageIds,
+  queuedPayloadText,
   resumePendingQueues,
+  sendQueuedMessageNow,
+  updateQueuedMessageText,
 } from './message-queue.ts'
 
-function fakeApi(): ApiClient & { runs: Array<[string, string]> } {
+function fakeApi(): ApiClient & { runs: Array<[string, string]>; aborts: string[] } {
   const runs: Array<[string, string]> = []
+  const aborts: string[] = []
   return {
     runs,
+    aborts,
     agent: {
       run: (threadId: string, payload: string) => {
         runs.push([threadId, payload])
         return Promise.resolve()
       },
+      abort: (threadId: string) => {
+        aborts.push(threadId)
+        return Promise.resolve()
+      },
     },
-  } as unknown as ApiClient & { runs: Array<[string, string]> }
+  } as unknown as ApiClient & { runs: Array<[string, string]>; aborts: string[] }
 }
 
 test('enqueueUserMessage appends to thread.pendingMessages and emits message_queued', () => {
@@ -184,4 +194,154 @@ test('queuedMessageIds returns pending message ids', () => {
     ],
   }
   assert.deepEqual([...queuedMessageIds(thread)].sort(), ['a', 'b'])
+})
+
+test('queuedPayloadText extracts text from string and array payloads', () => {
+  assert.equal(queuedPayloadText({ content: 'plain' }), 'plain')
+  assert.equal(
+    queuedPayloadText({
+      content: [
+        { type: 'image', dataUrl: 'data:img' },
+        { type: 'text', text: 'with image' },
+      ],
+    }),
+    'with image',
+  )
+})
+
+test('drainMessageQueue does nothing while the queue is paused', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  enqueueUserMessage(store, threadId, {
+    messageId: 'msg-1',
+    payload: { content: 'paused' },
+    createdAt: 1,
+  })
+  setQueuePaused(store, threadId, true)
+
+  drainMessageQueue(store, api, threadId)
+
+  assert.equal(api.runs.length, 0)
+  assert.equal(store.getState().threads.find((t) => t.id === threadId)?.pendingMessages?.length, 1)
+})
+
+test('updateQueuedMessageText edits the payload text and the displayed bubble', () => {
+  const store = createStore()
+  const threadId = createThread(store)
+  const messageId = addMessage(store, threadId, 'user', 'original')
+  enqueueUserMessage(store, threadId, {
+    messageId,
+    payload: { content: 'original', invokedSkills: [] },
+    createdAt: 1,
+  })
+
+  updateQueuedMessageText(store, threadId, messageId, 'edited prompt')
+
+  const thread = store.getState().threads.find((t) => t.id === threadId)!
+  assert.equal(thread.pendingMessages?.[0]?.payload.content, 'edited prompt')
+  assert.equal(thread.messages.find((m) => m.id === messageId)?.content, 'edited prompt')
+})
+
+test('updateQueuedMessageText preserves images when editing an array payload', () => {
+  const store = createStore()
+  const threadId = createThread(store)
+  const messageId = addMessage(store, threadId, 'user', 'original')
+  enqueueUserMessage(store, threadId, {
+    messageId,
+    payload: {
+      content: [
+        { type: 'image', dataUrl: 'data:img' },
+        { type: 'text', text: 'original' },
+      ],
+    },
+    createdAt: 1,
+  })
+
+  updateQueuedMessageText(store, threadId, messageId, 'edited')
+
+  const content = store.getState().threads.find((t) => t.id === threadId)!.pendingMessages?.[0]
+    ?.payload.content
+  assert.deepEqual(content, [
+    { type: 'image', dataUrl: 'data:img' },
+    { type: 'text', text: 'edited' },
+  ])
+})
+
+test('sendQueuedMessageNow reorders to the front and aborts the running thread', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  setThreadStatus(store, threadId, 'running')
+  enqueueUserMessage(store, threadId, {
+    messageId: 'first',
+    payload: { content: 'first' },
+    createdAt: 1,
+  })
+  enqueueUserMessage(store, threadId, {
+    messageId: 'second',
+    payload: { content: 'second' },
+    createdAt: 2,
+  })
+
+  sendQueuedMessageNow(store, api, threadId, 'second')
+
+  const thread = store.getState().threads.find((t) => t.id === threadId)!
+  assert.deepEqual(
+    thread.pendingMessages?.map((p) => p.messageId),
+    ['second', 'first'],
+  )
+  assert.deepEqual(api.aborts, [threadId])
+  assert.equal(api.runs.length, 0)
+})
+
+test('sendQueuedMessageNow lifts pause and drains immediately when idle', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  enqueueUserMessage(store, threadId, {
+    messageId: 'msg-1',
+    payload: { content: 'go now' },
+    createdAt: 1,
+  })
+  setQueuePaused(store, threadId, true)
+
+  sendQueuedMessageNow(store, api, threadId, 'msg-1')
+
+  const thread = store.getState().threads.find((t) => t.id === threadId)!
+  assert.equal(thread.queuePaused, undefined)
+  assert.equal(thread.status, 'running')
+  assert.equal(api.runs.length, 1)
+  assert.match(api.runs[0]![1], /go now/)
+})
+
+test('resumePendingQueues clears a stale pause then drains', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  enqueueUserMessage(store, threadId, {
+    messageId: 'msg-1',
+    payload: { content: 'resume me' },
+    createdAt: 1,
+  })
+  setQueuePaused(store, threadId, true)
+
+  resumePendingQueues(store, api)
+
+  const thread = store.getState().threads.find((t) => t.id === threadId)!
+  assert.equal(thread.queuePaused, undefined)
+  assert.equal(api.runs.length, 1)
+})
+
+test('resumePendingQueues resets a stale running status when the queue is empty', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  setThreadStatus(store, threadId, 'running')
+
+  resumePendingQueues(store, api)
+
+  const thread = store.getState().threads.find((t) => t.id === threadId)!
+  assert.equal(thread.status, 'idle')
+  assert.equal(api.runs.length, 0)
 })

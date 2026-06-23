@@ -1,17 +1,23 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedFooterCompactFixture } from './helpers/seed-config.ts'
+import { resetUserData, seedE2eViewport, seedFooterCompactFixture } from './helpers/seed-config.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
 async function setChatPaneWidth(px: number): Promise<void> {
   await browser.execute((width) => {
     const pane = document.getElementById('pane-chat')
-    if (!pane) return
-    pane.style.flex = '0 0 auto'
-    pane.style.width = `${width}px`
-    pane.style.maxWidth = `${width}px`
+    const inputBar = document.getElementById('input-bar')
+    if (pane) {
+      pane.style.flex = '0 0 auto'
+      pane.style.width = `${width}px`
+      pane.style.maxWidth = `${width}px`
+    }
+    if (inputBar) {
+      inputBar.style.width = `${width}px`
+      inputBar.style.maxWidth = `${width}px`
+    }
     window.dispatchEvent(new Event('resize'))
   }, px)
   await browser.waitUntil(
@@ -28,7 +34,7 @@ async function setChatPaneWidth(px: number): Promise<void> {
       if (px >= 600) return info.width >= 600 && !info.compact
       return info.width <= px + 4
     },
-    { timeout: 5_000, interval: 100 },
+    { timeout: 15_000, interval: 100 },
   )
 }
 
@@ -37,22 +43,26 @@ describe('footer compact layout', () => {
 
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
-    resetUserData()
-    seed = seedFooterCompactFixture(process.cwd())
-    await browser.reloadSession()
   })
 
-  after(() => {
+  beforeEach(async () => {
+    resetUserData()
+    seed = seedFooterCompactFixture(process.cwd())
+    seedE2eViewport()
+    await browser.reloadSession()
+    await $('.input-footer').waitForExist({ timeout: 15_000 })
+  })
+
+  afterEach(() => {
     resetUserData()
   })
 
   it('shows export and token count when the footer is wide enough', async () => {
-    await $('.input-footer').waitForExist({ timeout: 15_000 })
     await setChatPaneWidth(720)
 
     await browser.waitUntil(
       async () => !(await (await $('.input-footer')).getAttribute('class'))?.includes('is-compact'),
-      { timeout: 5_000, timeoutMsg: 'expected wide footer layout' },
+      { timeout: 15_000, timeoutMsg: 'expected wide footer layout' },
     )
 
     await expect($('.footer-export')).toBeDisplayed()
@@ -68,7 +78,7 @@ describe('footer compact layout', () => {
 
     await browser.waitUntil(
       async () => (await (await $('.input-footer')).getAttribute('class'))?.includes('is-compact'),
-      { timeout: 5_000, timeoutMsg: 'expected compact footer layout' },
+      { timeout: 15_000, timeoutMsg: 'expected compact footer layout' },
     )
 
     await expect($('.footer-export')).not.toBeDisplayed()

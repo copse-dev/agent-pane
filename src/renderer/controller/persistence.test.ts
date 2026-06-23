@@ -99,6 +99,24 @@ test('attachAutosave debounces a burst of events into a single save', async () =
   autosave.detach()
 })
 
+test('attachAutosave persists drafts via thread_draft_changed', async () => {
+  const calls: string[] = []
+  const api = fakeApi((key) => {
+    calls.push(key)
+    return Promise.resolve()
+  })
+  const store = createStore({ activeProjectId: 'p1', threads: [thread('t1')], projects: [] })
+  const autosave = attachAutosave(store, api)
+
+  // Draft saves use the narrow event (not threads_changed) but must still autosave.
+  store.emit('thread_draft_changed', 't1')
+  assert.equal(calls.length, 0)
+
+  await waitDebounce()
+  assert.ok(calls.includes('threads:p1'))
+  autosave.detach()
+})
+
 test('attachAutosave does not write the outgoing thread under the new project key after a switch', async () => {
   const calls: Array<[string, unknown]> = []
   const api = fakeApi((key, value) => {

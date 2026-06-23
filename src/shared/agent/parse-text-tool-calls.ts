@@ -29,6 +29,10 @@ const TOOL_NAME_ALIASES: Record<string, string> = {
   git_diff: 'git_diff',
   gitlog: 'git_log',
   git_log: 'git_log',
+  ghprlist: 'gh_pr_list',
+  gh_pr_list: 'gh_pr_list',
+  ghprview: 'gh_pr_view',
+  gh_pr_view: 'gh_pr_view',
   explore: 'explore',
 }
 

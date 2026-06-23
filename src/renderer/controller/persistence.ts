@@ -107,6 +107,7 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
 
   const events = [
     'threads_changed',
+    'thread_draft_changed',
     'message_done',
     'usage_updated',
     'thread_status_changed',

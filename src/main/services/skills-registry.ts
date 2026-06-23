@@ -1,6 +1,7 @@
 import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
+import { discoverCursorPluginRoots, resolvePluginSkillsDir } from './cursor-plugins.ts'
 import { getSetting } from './settings.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import {
@@ -61,54 +62,6 @@ async function walkForSkillRoots(dir: string, out: Set<string>): Promise<void> {
     }
     await walkForSkillRoots(full, out)
   }
-}
-
-async function findPluginRoots(dir: string, out: string[]): Promise<void> {
-  const manifest = join(dir, '.cursor-plugin', 'plugin.json')
-  try {
-    await fsp.access(manifest)
-    out.push(dir)
-    return
-  } catch {
-    /* not a plugin root */
-  }
-
-  let entries
-  try {
-    entries = await fsp.readdir(dir, { withFileTypes: true })
-  } catch {
-    return
-  }
-
-  for (const entry of entries) {
-    if (!entry.isDirectory() || SKIP_DIRS.has(entry.name)) continue
-    await findPluginRoots(join(dir, entry.name), out)
-  }
-}
-
-async function discoverCursorPluginRoots(): Promise<string[]> {
-  const pluginsRoot = join(homedir(), '.cursor', 'plugins')
-  const roots: string[] = []
-  for (const sub of ['local', 'cache']) {
-    const base = join(pluginsRoot, sub)
-    if (!(await pathExists(base))) continue
-    await findPluginRoots(base, roots)
-  }
-  return roots
-}
-
-async function pluginSkillsDir(pluginRoot: string): Promise<string | null> {
-  const manifestPath = join(pluginRoot, '.cursor-plugin', 'plugin.json')
-  let skillsRel = './skills/'
-  try {
-    const raw = await fsp.readFile(manifestPath, 'utf-8')
-    const json = JSON.parse(raw) as { skills?: string }
-    if (json.skills) skillsRel = json.skills
-  } catch {
-    /* fall back to ./skills */
-  }
-  const resolved = resolve(pluginRoot, skillsRel)
-  return (await pathExists(resolved)) ? resolved : null
 }
 
 async function walkForSkillFiles(
@@ -189,7 +142,7 @@ async function collectDiscoveryRoots(): Promise<Array<{ root: string; source: Sk
   }
 
   for (const pluginRoot of await discoverCursorPluginRoots()) {
-    const skillsDir = await pluginSkillsDir(pluginRoot)
+    const skillsDir = await resolvePluginSkillsDir(pluginRoot)
     if (skillsDir) roots.push({ root: skillsDir, source: 'plugin' })
   }
 
@@ -199,7 +152,7 @@ async function collectDiscoveryRoots(): Promise<Array<{ root: string; source: Sk
     if (!(await pathExists(resolved))) continue
     const manifest = join(resolved, '.cursor-plugin', 'plugin.json')
     if (await pathExists(manifest)) {
-      const skillsDir = await pluginSkillsDir(resolved)
+      const skillsDir = await resolvePluginSkillsDir(resolved)
       if (skillsDir) roots.push({ root: skillsDir, source: 'plugin-path' })
       continue
     }

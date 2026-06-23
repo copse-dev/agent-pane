@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   agent: {
     run: (threadId: string, prompt: string) => ipcRenderer.invoke('agent:run', threadId, prompt),
+    estimateContext: (threadId: string, payload: string) =>
+      ipcRenderer.invoke('agent:estimateContext', threadId, payload),
     abort: (threadId: string) => ipcRenderer.invoke('agent:abort', threadId),
     clearHistory: (threadId: string) => ipcRenderer.invoke('agent:clearHistory', threadId),
     suggestTitle: (text: string) => ipcRenderer.invoke('agent:suggestTitle', text),
@@ -169,6 +171,12 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.off('menu:showBrowser', listener)
     },
   },
+  remoteAgent: {
+    downloadArtifact: (agentId: string, path: string) =>
+      ipcRenderer.invoke('remoteAgent:downloadArtifact', agentId, path),
+    artifactImageDataUrl: (agentId: string, path: string) =>
+      ipcRenderer.invoke('remoteAgent:artifactImageDataUrl', agentId, path),
+  },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),
@@ -182,12 +190,12 @@ contextBridge.exposeInMainWorld('api', {
       webAllowedOrigins: string[]
       webAllowUserApproval: boolean
     }) => ipcRenderer.invoke('settings:setSecurity', prefs),
-    getKey: (provider: 'anthropic' | 'openai' | 'lmstudio') =>
+    getKey: (provider: 'anthropic' | 'openai' | 'lmstudio' | 'cursor') =>
       ipcRenderer.invoke('settings:getKey', provider),
-    setKey: (provider: 'anthropic' | 'openai' | 'lmstudio', key: string) =>
+    setKey: (provider: 'anthropic' | 'openai' | 'lmstudio' | 'cursor', key: string) =>
       ipcRenderer.invoke('settings:setKey', provider, key),
     availableProviders: () => ipcRenderer.invoke('settings:availableProviders'),
-    validateKey: (provider: 'anthropic' | 'openai', key: string) =>
+    validateKey: (provider: 'anthropic' | 'openai' | 'cursor', key: string) =>
       ipcRenderer.invoke('settings:validateKey', provider, key),
   },
   appIcon: {
@@ -200,6 +208,12 @@ contextBridge.exposeInMainWorld('api', {
   },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
+  },
+  plugins: {
+    list: () => ipcRenderer.invoke('plugins:list'),
+  },
+  hooks: {
+    list: () => ipcRenderer.invoke('hooks:list'),
   },
   terminal: {
     create: (cols: number, rows: number) => ipcRenderer.invoke('terminal:create', cols, rows),

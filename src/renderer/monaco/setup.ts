@@ -47,9 +47,18 @@ function createMonacoWorker(label: string): Promise<Worker> {
     worker.onmessage = (event) => {
       if (event.data?.type !== 'copse-monaco-worker-ready') return
       worker.onmessage = null
+      // Drop the bootstrap error handler once ready so a runtime worker error
+      // later in its lifetime can't reject this already-settled promise.
+      worker.onerror = null
       resolve(worker)
     }
-    worker.onerror = reject
+    // `onerror` fires with an ErrorEvent if the worker bootstrap import fails.
+    // Reject with a real Error carrying its message so callers (and the global
+    // unhandledrejection toast) get something readable, not "[object ErrorEvent]".
+    worker.onerror = (event) => {
+      const detail = event instanceof ErrorEvent ? event.message : String(event)
+      reject(new Error(`Monaco ${label} worker failed to load: ${detail || 'unknown error'}`))
+    }
   })
 }
 

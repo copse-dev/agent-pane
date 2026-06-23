@@ -26,6 +26,27 @@ export interface ContextSnapshot {
   updatedAt: number
 }
 
+/** Which part of the assembled prompt a breakdown segment represents. */
+export type ContextSegmentKey = 'system' | 'tools' | 'mcp' | 'skills' | 'history' | 'message'
+
+/** One slice of the pre-send context estimate (e.g. system prompt, tools, your message). */
+export interface ContextBreakdownSegment {
+  key: ContextSegmentKey
+  label: string
+  tokens: number
+}
+
+/**
+ * Estimated token cost of everything that would be sent on the next prompt,
+ * split into named parts. Computed before sending so the composer can show
+ * what the default context costs and how the draft message adds to it.
+ */
+export interface ContextBreakdown {
+  segments: ContextBreakdownSegment[]
+  totalTokens: number
+  contextWindow: number
+}
+
 export interface Thread {
   id: string
   title: string
@@ -44,6 +65,8 @@ export interface Thread {
   gitBranch?: string
   /** Prompts submitted while the agent is running; drained FIFO when idle. */
   pendingMessages?: QueuedUserMessage[]
+  /** True while a queued message is being edited; suspends FIFO draining. */
+  queuePaused?: boolean
   /** Unsubmitted composer text; keeps blank threads visible across switches. */
   draftPrompt?: string
   createdAt: number

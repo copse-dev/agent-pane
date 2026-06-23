@@ -1,12 +1,14 @@
 import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
-import { getThreadById, getActiveThread } from '@shared/store/thread-helpers.ts'
+import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/thread-helpers.ts'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
 import { renderMarkdown } from '../markdown/renderer.ts'
+import { sanitizeRenderedMarkdown } from '../markdown/sanitize.ts'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { StreamingMarkdownRenderer } from '../markdown/streaming.ts'
 import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
+import { hydrateRemoteArtifactImages } from '../markdown/remote-artifact-images.ts'
 import { stripTextToolCallBlocks } from '@shared/agent/parse-text-tool-calls.ts'
 import type { Message, ToolCall } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -18,14 +20,17 @@ import {
   type ToolCallDisplayItem,
 } from '@shared/tools/tool-display.ts'
 import { createTodoListEl } from './todo-panel.ts'
-import { queuedMessageIds } from '../controller/message-queue.ts'
+import { renderToolArgs } from './tool-args-format.ts'
+import {
+  drainMessageQueue,
+  queuedMessageIds,
+  queuedPayloadText,
+  sendQueuedMessageNow,
+  updateQueuedMessageText,
+} from '../controller/message-queue.ts'
 
 function statusIcon(status: ToolCall['status']): string {
   return status === 'done' ? '✓' : status === 'error' ? '✕' : '⋯'
-}
-
-function renderToolArgs(args: unknown): string {
-  return JSON.stringify(args, null, 2)
 }
 
 function createToolArgsSection(args: unknown): HTMLDetailsElement {
@@ -35,6 +40,11 @@ function createToolArgsSection(args: unknown): HTMLDetailsElement {
     el('summary', {}, 'Arguments'),
     el('pre', {}, renderToolArgs(args)),
   )
+}
+
+function createToolResultSection(result: string | null): HTMLElement {
+  if (!result) return el('div', { class: 'tool-result' })
+  return el('div', { class: 'tool-result' }, el('pre', {}, renderToolArgs(result)))
 }
 
 function createToolHeader(
@@ -61,7 +71,7 @@ function appendStandardToolSections(
   card.append(
     createToolHeader(label, tc.status, summaryClass, count),
     createToolArgsSection(tc.args),
-    el('div', { class: 'tool-result' }, ...(tc.result ? [tc.result] : [])),
+    createToolResultSection(tc.result),
   )
 }
 
@@ -121,9 +131,10 @@ function setAssistantMarkdown(
   }
   // Final render: replace the incremental scaffold with the finished markdown.
   streamingRenderers.delete(el)
-  el.innerHTML = renderMarkdown(display)
+  el.innerHTML = sanitizeRenderedMarkdown(renderMarkdown(display))
   attachCodeBlockCopyButtons(el)
   void annotateFileReferences(el, api)
+  hydrateRemoteArtifactImages(el, api)
   void renderMermaidIn(el)
 }
 
@@ -205,7 +216,7 @@ function createGroupToolCard(item: Extract<ToolCallDisplayItem, { type: 'group' 
     entry.append(
       createToolHeader(getToolDisplayName(tc.name), tc.status, 'tool-group-item-header'),
       createToolArgsSection(tc.args),
-      el('div', { class: 'tool-result' }, ...(tc.result ? [tc.result] : [])),
+      createToolResultSection(tc.result),
     )
     groupItems.append(entry)
   }
@@ -282,11 +293,127 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
   root.append(scrollArea, queuedHost, activityBar)
 
+  // Inline-edit state for a queued message. Preserved across re-renders so a
+  // store-driven rebuild (e.g. pause toggle) keeps the editor and its draft.
+  let editingMessageId: string | null = null
+  let editingDraft = ''
+
+  function startEditing(messageId: string) {
+    const threadId = store.getState().activeThreadId
+    if (!threadId) return
+    const thread = store.getState().threads.find((t) => t.id === threadId)
+    const item = thread?.pendingMessages?.find((p) => p.messageId === messageId)
+    if (!item) return
+    editingMessageId = messageId
+    editingDraft = queuedPayloadText(item.payload)
+    // Pausing emits threads_changed, which re-renders this message in edit mode.
+    setQueuePaused(store, threadId, true)
+  }
+
+  function stopEditing() {
+    editingMessageId = null
+    editingDraft = ''
+  }
+
+  function cancelEditing() {
+    const threadId = store.getState().activeThreadId
+    stopEditing()
+    if (!threadId) return
+    setQueuePaused(store, threadId, false)
+    drainMessageQueue(store, api, threadId)
+  }
+
+  function saveEditing(messageId: string, sendNow: boolean) {
+    const threadId = store.getState().activeThreadId
+    if (!threadId) return
+    const text = editingDraft.trim()
+    stopEditing()
+    if (text) updateQueuedMessageText(store, threadId, messageId, text)
+    setQueuePaused(store, threadId, false)
+    if (sendNow) sendQueuedMessageNow(store, api, threadId, messageId)
+    else drainMessageQueue(store, api, threadId)
+  }
+
+  function buildQueuedActions(messageId: string): HTMLElement {
+    const editBtn = el('button', { class: 'queued-action queued-edit', type: 'button' }, 'Edit')
+    editBtn.addEventListener('click', () => startEditing(messageId))
+    const sendNowBtn = el(
+      'button',
+      { class: 'queued-action queued-send-now', type: 'button' },
+      'Send now',
+    )
+    sendNowBtn.addEventListener('click', () => {
+      const threadId = store.getState().activeThreadId
+      if (threadId) sendQueuedMessageNow(store, api, threadId, messageId)
+    })
+    return el(
+      'div',
+      { class: 'message-queued-ui' },
+      el('div', { class: 'message-queued-actions' }, editBtn, sendNowBtn),
+    )
+  }
+
+  function buildQueuedEditor(messageId: string): HTMLElement {
+    const input = el('textarea', {
+      class: 'message-edit-input',
+      rows: '3',
+      'aria-label': 'Edit queued message',
+    })
+    input.value = editingDraft
+    input.addEventListener('input', () => {
+      editingDraft = input.value
+    })
+    input.addEventListener('keydown', (e) => {
+      if (e.isComposing) return
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        cancelEditing()
+      } else if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        saveEditing(messageId, false)
+      }
+    })
+    const sendBtn = el('button', { class: 'queued-action queued-send', type: 'button' }, 'Send')
+    sendBtn.addEventListener('click', () => saveEditing(messageId, false))
+    const sendNowBtn = el(
+      'button',
+      { class: 'queued-action queued-send-now', type: 'button' },
+      'Send now',
+    )
+    sendNowBtn.addEventListener('click', () => saveEditing(messageId, true))
+    const cancelBtn = el(
+      'button',
+      { class: 'queued-action queued-cancel', type: 'button' },
+      'Cancel',
+    )
+    cancelBtn.addEventListener('click', () => cancelEditing())
+    const wrap = el(
+      'div',
+      { class: 'message-queued-ui' },
+      input,
+      el('div', { class: 'message-queued-actions' }, sendBtn, sendNowBtn, cancelBtn),
+    )
+    requestAnimationFrame(() => {
+      input.focus()
+      input.setSelectionRange(input.value.length, input.value.length)
+    })
+    return wrap
+  }
+
   function createQueuedItem(msg: Message): HTMLElement {
-    const item = el('div', { class: 'msg msg-user msg-queued', 'data-message-id': msg.id })
+    const editing = editingMessageId === msg.id
+    const item = el('div', {
+      class: editing ? 'msg msg-user msg-queued msg-editing' : 'msg msg-user msg-queued',
+      'data-message-id': msg.id,
+    })
     const body = el('div', { class: 'message-body' })
-    body.append(el('span', { class: 'message-queued-badge' }, 'Queued'))
-    appendMessageContent(body, msg, api)
+    body.append(el('span', { class: 'message-queued-badge' }, editing ? 'Editing' : 'Queued'))
+    if (editing) {
+      body.append(buildQueuedEditor(msg.id))
+    } else {
+      appendMessageContent(body, msg, api)
+      body.append(buildQueuedActions(msg.id))
+    }
     item.append(body)
     return item
   }
@@ -295,6 +422,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (threadId !== store.getState().activeThreadId) return
     const thread = store.getState().threads.find((t) => t.id === threadId)
     const pending = thread?.pendingMessages ?? []
+    // Drop stale edit state if the edited message is no longer queued.
+    if (editingMessageId && !pending.some((p) => p.messageId === editingMessageId)) {
+      stopEditing()
+    }
     queuedHost.replaceChildren()
     if (!thread || pending.length === 0) {
       queuedHost.hidden = true
@@ -454,6 +585,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
 
     list.append(msgEl)
+    hydrateRemoteArtifactImages(list, api)
     // Re-render any tool cards this message already carries (restored threads).
     renderToolCards(msgEl, msg.toolCalls ?? [])
     scrollToBottom(msg.role === 'user')
@@ -509,6 +641,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       const msg = thread?.messages.find((m) => m.id === mid)
       if (textEl && msg?.role === 'assistant') {
         setAssistantMarkdown(textEl as HTMLElement, msg.content, false, api)
+        hydrateRemoteArtifactImages(list, api)
       }
       if (msg?.role === 'assistant' && msg.content.trim()) {
         const body = msgEl?.querySelector('.message-body')
@@ -538,7 +671,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   ]
 
   const unbindFileLinks = bindFileReferenceClicks(root, store, api)
-  const unbindBrowserLinks = bindBrowserLinkClicks(root, store)
+  const unbindBrowserLinks = bindBrowserLinkClicks(root, store, api)
   rebuildForThread()
   syncFromStore()
   return () => {

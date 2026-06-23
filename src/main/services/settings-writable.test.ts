@@ -32,6 +32,7 @@ describe('settings-writable', () => {
       safetyModel: '',
       autoRunSandboxCommands: false,
       mcpAutoAllowReadOnly: true,
+      cursorHooksEnabled: false,
       webAllowedOrigins: ['https://duckduckgo.com', 'http://localhost:*'],
       webAllowUserApproval: true,
     })
@@ -48,6 +49,7 @@ describe('settings-writable', () => {
         safetyModel: '',
         autoRunSandboxCommands: true,
         mcpAutoAllowReadOnly: false,
+        cursorHooksEnabled: false,
         webAllowedOrigins: ['https://example.com/path'],
         webAllowUserApproval: true,
       }),
