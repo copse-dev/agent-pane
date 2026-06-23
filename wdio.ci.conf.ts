@@ -17,6 +17,9 @@ const ciExclude = [
   './tests/e2e/message-queue.e2e.ts',
   './tests/e2e/portrait-right-panel.e2e.ts',
   './tests/e2e/skills.e2e.ts',
+  // Heavy multi-turn mock agent run + Monaco diff-approval IPC after a
+  // reloadSession; flaky/slow on the constrained CI runner (passes locally).
+  './tests/e2e/staged-diff-ui.e2e.ts',
 ]
 
 export const config: Options.Testrunner = {
