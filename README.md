@@ -19,14 +19,14 @@ Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for cloud models, or configure a loc
 
 ## Commands
 
-| Command              | Purpose                                      |
-| -------------------- | -------------------------------------------- |
-| `npm run dev`        | Dev build + Electron                         |
-| `npm run build`      | Production bundle to `dist/`                 |
-| `npm start`          | Run built app                                |
-| `npm test`           | Unit tests                                   |
-| `npm run test:e2e`   | WebdriverIO Electron e2e                     |
-| `npm run check`      | typecheck, lint, format, dead-code, test     |
+| Command            | Purpose                                  |
+| ------------------ | ---------------------------------------- |
+| `npm run dev`      | Dev build + Electron                     |
+| `npm run build`    | Production bundle to `dist/`             |
+| `npm start`        | Run built app                            |
+| `npm test`         | Unit tests                               |
+| `npm run test:e2e` | WebdriverIO Electron e2e                 |
+| `npm run check`    | typecheck, lint, format, dead-code, test |
 
 ## Shell command permissions
 
