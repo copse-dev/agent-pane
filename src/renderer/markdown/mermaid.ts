@@ -19,7 +19,12 @@ function initMermaid(mermaid: MermaidModule): void {
   mermaid.initialize({
     startOnLoad: false,
     theme: 'dark',
-    securityLevel: 'loose',
+    // Diagram source is chat/LLM-generated and therefore untrusted. 'strict'
+    // encodes HTML in labels, disables `click`/interaction directives, and
+    // runs the output through DOMPurify — neutralizing the XSS class behind
+    // CVE-2026-54011 (Open WebUI), GHSA-wvh5-6vjm-23qh (OneUptime), and the
+    // Mermaid-XSS-to-RCE reports in other Electron apps. Do not relax this.
+    securityLevel: 'strict',
   })
   initialized = true
 }

@@ -26,6 +26,7 @@ const MAIN_ONLY_SETTING_SCHEMAS = {
   mockFollowUps: z.boolean(),
   webAllowedOrigins: webAllowedOriginsSchema,
   webAllowUserApproval: z.boolean(),
+  browserAllowUserApproval: z.boolean(),
 } as const satisfies Record<string, z.ZodType>
 
 const SETTING_SCHEMAS: Record<string, z.ZodType> = {

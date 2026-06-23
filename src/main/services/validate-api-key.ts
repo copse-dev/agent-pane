@@ -73,9 +73,40 @@ export async function validateOpenAiApiKey(key: string): Promise<ApiKeyValidatio
   }
 }
 
+function cursorAuthHeader(apiKey: string): string {
+  return `Basic ${Buffer.from(`${apiKey}:`).toString('base64')}`
+}
+
+export async function validateCursorApiKey(key: string): Promise<ApiKeyValidationResult> {
+  const trimmed = key.trim()
+  if (!trimmed) return { ok: false, error: 'Key is empty' }
+
+  try {
+    const res = await fetch('https://api.cursor.com/v1/models', {
+      headers: { Authorization: cursorAuthHeader(trimmed) },
+      signal: AbortSignal.timeout(FETCH_TIMEOUTS.apiKeyValidation),
+    })
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, error: 'Key rejected by Cursor', formatOk: true }
+    }
+    if (!res.ok) {
+      return { ok: false, error: `Cursor returned HTTP ${res.status}`, formatOk: true }
+    }
+    return { ok: true, formatOk: true }
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Could not reach Cursor',
+      formatOk: true,
+    }
+  }
+}
+
 export async function validateApiKey(
-  provider: 'anthropic' | 'openai',
+  provider: 'anthropic' | 'openai' | 'cursor',
   key: string,
 ): Promise<ApiKeyValidationResult> {
-  return provider === 'anthropic' ? validateAnthropicApiKey(key) : validateOpenAiApiKey(key)
+  if (provider === 'anthropic') return validateAnthropicApiKey(key)
+  if (provider === 'cursor') return validateCursorApiKey(key)
+  return validateOpenAiApiKey(key)
 }

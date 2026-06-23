@@ -263,6 +263,13 @@ describe('renderMarkdown', () => {
     assert.doesNotMatch(html, /MCP host\*\*:/)
     assert.doesNotMatch(html, /<li><\/strong>/)
   })
+
+  it('bolds captions that mix inline code and prose', () => {
+    const html = renderMarkdown('**`css-new-tab.png` — NTP rendered end-to-end**')
+
+    assert.match(html, /<strong><code>css-new-tab\.png<\/code> — NTP rendered end-to-end<\/strong>/)
+    assert.doesNotMatch(html, /\*\*/)
+  })
 })
 
 describe('renderMarkdown sanitization (#115)', () => {
@@ -270,6 +277,17 @@ describe('renderMarkdown sanitization (#115)', () => {
     const html = renderMarkdown('<img src=x onerror=alert(1)>')
     assert.doesNotMatch(html, /<img/)
     assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/)
+  })
+
+  it('allows only remote artifact image tags as inert image placeholders', () => {
+    const html = renderMarkdown(
+      '<img alt="C-S-S New Tab Page rendered" src="/opt/cursor/artifacts/screenshots/css-new-tab.png" />',
+    )
+
+    assert.match(html, /<img class="remote-artifact-image"/)
+    assert.match(html, /data-remote-artifact-path="artifacts\/screenshots\/css-new-tab\.png"/)
+    assert.match(html, /alt="C-S-S New Tab Page rendered"/)
+    assert.doesNotMatch(html, /src="/)
   })
 
   it('escapes script tags rather than executing them', () => {
