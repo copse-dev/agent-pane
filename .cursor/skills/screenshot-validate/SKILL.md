@@ -6,6 +6,9 @@ description: Validate a UI fix in copse-panel with WebdriverIO Electron e2e scre
 # Screenshot validate (copse-panel)
 
 Use this skill to **prove a UI change works** and **judge whether it looks correct**.
+Invoke it for any renderer, style, markdown, terminal, diff, tool-card, or screenshot fixture change
+that affects pixels in the Electron app. A build or `npm run check` is not sufficient evidence for a
+visual change.
 
 ## Workflow
 
@@ -27,6 +30,9 @@ Use this skill to **prove a UI change works** and **judge whether it looks corre
    - **Pass/fail** against the assertions
    - **Visual check** — what you see in each screenshot (structure intact, no stray elements, readable args)
    - **Verdict** — whether the fix worked well or what still looks wrong
+
+If no visual eval is added for a visual change, explain the concrete reason in the PR/test summary
+and identify the lower-risk command that still exercised the changed rendering path.
 
 ## copse-panel conventions
 
