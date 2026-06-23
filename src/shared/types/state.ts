@@ -2,7 +2,7 @@ import type { Thread } from './thread.ts'
 import type { LayoutState } from './layout.ts'
 
 export type PanelTab = 'file' | 'diff'
-export type RightPanelMode = 'explorer' | 'terminal' | 'changes' | 'plan' | 'browser'
+export type RightPanelMode = 'explorer' | 'terminal' | 'changes' | 'plan' | 'browser' | 'prs'
 export type Theme = 'light' | 'dark'
 
 export interface OpenFile {

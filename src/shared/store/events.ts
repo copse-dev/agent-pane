@@ -21,6 +21,7 @@ export interface StoreEvents {
   files_pane_changed: []
   right_panel_mode_changed: []
   browser_url_requested: [url: string]
+  pr_open_requested: [owner: string, repo: string, number: number]
   settings_changed: []
   theme_changed: ['light' | 'dark']
   staged_diffs_changed: []

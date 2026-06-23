@@ -42,3 +42,48 @@ export interface GitBranchInfo {
   /** ISO-8601 timestamp of the most recent commit on this branch. */
   lastCommitDate: string
 }
+
+export interface GhCliStatus {
+  installed: boolean
+  authenticated: boolean
+  username: string | null
+  message: string | null
+}
+
+export interface GhPrSummary {
+  owner: string
+  repo: string
+  number: number
+  title: string
+  url: string
+  state: string
+  headRefName?: string
+  authorLogin?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface GhPrDetails extends GhPrSummary {
+  body: string
+  baseRefName?: string
+  mergeable?: string
+  mergeStateStatus?: string
+  additions?: number
+  deletions?: number
+  changedFiles?: number
+  files: GhPrChangedFile[]
+}
+
+export interface GhPrChangedFile {
+  path: string
+  status: 'added' | 'modified' | 'removed' | 'renamed'
+  additions: number
+  deletions: number
+}
+
+export interface GhPrFileDiff {
+  path: string
+  before: string
+  after: string
+  language: string
+}

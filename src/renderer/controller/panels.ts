@@ -38,6 +38,14 @@ export function openBrowserUrl(store: AppStore, url: string): void {
   store.emit('browser_url_requested', url)
 }
 
+export function openPullRequest(
+  store: AppStore,
+  ref: { owner: string; repo: string; number: number },
+): void {
+  openRightPanel(store, 'prs')
+  store.emit('pr_open_requested', ref.owner, ref.repo, ref.number)
+}
+
 export function toggleRightPanel(store: AppStore, mode: RightPanelMode): void {
   const { filesPaneOpen, rightPanelMode } = store.getState()
   if (filesPaneOpen && rightPanelMode === mode) {

@@ -318,6 +318,40 @@ export function seedBrowserLinkChatFixture(workspaceRoot: string): void {
   )
 }
 
+/** Thread with a GitHub PR markdown link for PR panel e2e. */
+export function seedPrPanelChatFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-pr-panel-project'
+  const threadId = 'e2e-pr-panel-thread'
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'PR panel chat',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-pr-link',
+              role: 'assistant',
+              content:
+                'Track progress in [PR #2394](https://github.com/brshood/JobSeekrrr/pull/2394).',
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
 /** Git tool cards followed by an ordered-list summary (typical post-tool agent reply). */
 export function seedGitSummaryMarkdownFixture(workspaceRoot: string): void {
   const projectId = 'e2e-git-summary-md-project'
