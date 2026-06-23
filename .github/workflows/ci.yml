@@ -14,10 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6.0.3
-      - uses: actions/setup-node@v6
-        with: { node-version: '22', cache: 'npm' }
-      - run: npm ci
-      - run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - uses: ./.github/actions/setup
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run format:check
@@ -36,16 +33,38 @@ jobs:
       # hash-verified upstream commit (not checked in) and runs the diff with
       # python3 (preinstalled on the runner).
       - run: npm run check:normalizer-parity
+      # The build is validated once in the dedicated `build` job below (whose
+      # dist artifact the e2e shards reuse), so it no longer runs here.
+
+  build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # Build dist once and hand it to every e2e shard. Previously each shard ran
+    # its own `npm run build`; an earlier attempt to share dist via upload/
+    # download dropped some Monaco worker files, breaking specs that open the
+    # diff editor. Packing dist into a single tar before upload preserves the
+    # full tree (worker files, nested dirs, exec bits) verbatim, so the shards
+    # get a byte-identical dist without each rebuilding it.
+    steps:
+      - uses: actions/checkout@v6.0.3
+      - uses: ./.github/actions/setup
       - run: npm run build
+      - run: tar -cf dist.tar dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-tar
+          path: dist.tar
+          if-no-files-found: error
+          retention-days: 1
 
   e2e:
+    needs: build
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     # Split the seeded e2e suite (see wdio.ci.conf.ts) into parallel shards so the
     # whole gate finishes well inside the runner window. Each shard runs a disjoint
-    # slice of specs via wdio's `--shard current/total`. Each shard builds its own
-    # `dist` (rather than sharing an artifact): the upload/download path dropped
-    # some Monaco worker files, breaking specs that open the diff editor.
+    # slice of specs via wdio's `--shard current/total`. The shared `dist` artifact
+    # from the `build` job is unpacked here rather than rebuilt per shard.
     #
     # Shard count tuned from 12 recent green CI runs (Jun 2026): 8 shards billed
     # ~18 min/run (8× ~42s setup overhead + tests); slowest e2e step p50 was 126s
@@ -64,11 +83,11 @@ jobs:
       SHARD_TOTAL: 4
     steps:
       - uses: actions/checkout@v6.0.3
-      - uses: actions/setup-node@v6
-        with: { node-version: '22', cache: 'npm' }
-      - run: npm ci
-      - run: sudo apt-get update && sudo apt-get install -y ripgrep
-      - run: npm run build
+      - uses: ./.github/actions/setup
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-tar
+      - run: tar -xf dist.tar
       # The Electron/Chromedriver e2e session occasionally fails to start on the
       # runner ("DevToolsActivePort file doesn't exist" / "POST /session" timeout).
       # The hang wedges the whole wdio run, so in-process retries don't recover —
