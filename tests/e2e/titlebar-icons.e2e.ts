@@ -61,6 +61,11 @@ describe('titlebar panel icons', () => {
       await expect(styles.strokeLinejoin).toBe('round')
     }
     await expect(await $$('.titlebar-text-btn svg.titlebar-btn-icon')).toBeElementsArrayOfSize(3)
+    await browser.execute(() => {
+      const dragRegion = document.querySelector<HTMLElement>('.titlebar-drag')
+      if (!dragRegion) throw new Error('Missing titlebar drag region')
+      dragRegion.style.flex = '0 0 16px'
+    })
     await saveElementScreenshot('.titlebar-panel-controls', 'titlebar-outline-icons.png')
   })
 })
