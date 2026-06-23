@@ -10,6 +10,7 @@ import { z } from 'zod'
 import type { McpServerConfig, McpServerStatus, McpToolAnnotations } from '@shared/types/mcp.ts'
 import type { ToolRegistry } from './tool-registry.ts'
 import { getWorkspaceRoot } from './workspace.ts'
+import { getSetting } from './settings.ts'
 import { storageGet, storageUpdate } from './storage.ts'
 import { parseStringList } from './storage-schema.ts'
 import {
@@ -297,7 +298,11 @@ async function connectServer(
             undefined,
             { signal },
           )
-          const text = flattenMcpContent(result.content)
+          // Experimental MCP-UI canvas: when enabled, recognised UI resources
+          // are summarised for the model (raw artefact body kept out of context)
+          // so the host can render them as a sandboxed artefact instead.
+          const summarizeUiResources = getSetting<boolean>('mcpUiArtefactsEnabled', false)
+          const text = flattenMcpContent(result.content, { summarizeUiResources })
           if (result.isError) {
             throw new Error(text || `MCP tool ${tool.name} reported an error`)
           }

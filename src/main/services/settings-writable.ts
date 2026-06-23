@@ -48,6 +48,9 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   remoteAgentWorkOnCurrentBranch: z.boolean(),
   browserToolsEnabled: z.boolean(),
   browserAllowedOrigins: z.array(z.string().max(2048)).max(256),
+  // Experimental features, opt-in and off by default. See the experimental
+  // section in Settings.
+  mcpUiArtefactsEnabled: z.boolean(),
   customInstructions: z.string().max(8192),
   onboardingCompleted: z.boolean(),
 } as const satisfies Record<string, z.ZodType>

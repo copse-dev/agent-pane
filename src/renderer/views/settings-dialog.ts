@@ -19,7 +19,7 @@ import {
   WEB_ALLOW_USER_APPROVAL_SETTING,
 } from '@shared/web-origins.ts'
 
-type SettingsSection = 'general' | 'local-models' | 'mcp' | 'appearance'
+type SettingsSection = 'general' | 'local-models' | 'mcp' | 'appearance' | 'experimental'
 
 /**
  * Single source of truth for the simple form fields, so each setting's default
@@ -51,6 +51,8 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'remoteAgentWorkOnCurrentBranch', kind: 'checkbox', default: false, save: true },
   { name: 'localSubagentsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'localTodoItemsEnabled', kind: 'checkbox', default: true, save: true },
+  // Experimental, opt-in features (off by default).
+  { name: 'mcpUiArtefactsEnabled', kind: 'checkbox', default: false, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
@@ -130,6 +132,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <button type="button" class="settings-nav-btn" data-section="local-models">Local models</button>
           <button type="button" class="settings-nav-btn" data-section="mcp">MCP servers</button>
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
+          <button type="button" class="settings-nav-btn" data-section="experimental">Experimental</button>
         </nav>
 
         <form class="settings-content">
@@ -395,6 +398,27 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 </label>`,
                 ).join('')}
               </div>
+            </fieldset>
+          </section>
+
+          <section class="settings-section" data-section="experimental">
+            <h3>Experimental</h3>
+            <p class="settings-section-desc">
+              Early, opt-in features that are still being explored. They may change or be removed,
+              and are off by default.
+            </p>
+
+            <fieldset>
+              <legend>MCP UI artefacts (canvas)</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="mcpUiArtefactsEnabled" />
+                Render MCP-UI artefacts as a sandboxed canvas
+              </label>
+              <p class="field-hint">
+                When an MCP tool returns a UI resource (self-contained HTML or a URL), Copse
+                recognises it and will render it as a fully sandboxed artefact in the Browser pane —
+                no Node, no app access. While off, UI resources are treated as plain tool output.
+              </p>
             </fieldset>
           </section>
 
