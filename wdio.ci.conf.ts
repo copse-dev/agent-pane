@@ -31,6 +31,9 @@ const ciExclude = [
   './tests/e2e/subagent-display.e2e.ts',
   './tests/e2e/scroll-to-bottom.e2e.ts',
   './tests/e2e/context-breakdown.e2e.ts',
+  // Drives a mock subagent/explore run and waits on `.tool-card-subagent`,
+  // which is flaky to render in time on the constrained runner.
+  './tests/e2e/semantic-search-markdown.e2e.ts',
 ]
 
 export const config: Options.Testrunner = {
