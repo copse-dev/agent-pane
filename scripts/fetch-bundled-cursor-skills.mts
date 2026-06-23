@@ -9,9 +9,7 @@ import {
 
 export const BUNDLED_CURSOR_SKILLS_OUT_DIR = resolve('vendor/bundled-cursor-skills')
 
-async function readSourceManifest(
-  cacheDir: string,
-): Promise<BundledCursorSkillsSource | null> {
+async function readSourceManifest(cacheDir: string): Promise<BundledCursorSkillsSource | null> {
   try {
     const { readFile } = await import('node:fs/promises')
     const raw = await readFile(resolve(cacheDir, 'SOURCE.json'), 'utf8')
