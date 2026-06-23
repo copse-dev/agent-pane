@@ -1,4 +1,5 @@
 import { escapeHtml, renderMarkdown } from './renderer.ts'
+import { sanitizeRenderedMarkdown } from './sanitize.ts'
 
 /** Split streamed content at the last newline so completed lines can be rendered. */
 export function splitAtLastNewline(content: string): { complete: string; pending: string } {
@@ -18,7 +19,7 @@ export function splitAtLastNewline(content: string): { complete: string; pending
  */
 export function renderStreamingMarkdown(content: string): string {
   const { complete, pending } = splitAtLastNewline(content)
-  const rendered = complete ? renderMarkdown(complete) : ''
+  const rendered = complete ? sanitizeRenderedMarkdown(renderMarkdown(complete)) : ''
   if (!pending) return rendered
   return `${rendered}<span class="stream-pending">${escapeHtml(pending)}</span>`
 }
@@ -46,7 +47,9 @@ export class StreamingMarkdownRenderer {
     this.ensureNodes()
 
     if (complete !== this.lastComplete) {
-      this.completedEl!.innerHTML = complete ? renderMarkdown(complete) : ''
+      this.completedEl!.innerHTML = complete
+        ? sanitizeRenderedMarkdown(renderMarkdown(complete))
+        : ''
       this.lastComplete = complete
     }
 

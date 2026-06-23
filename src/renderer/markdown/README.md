@@ -8,6 +8,15 @@ requirements clearly outgrow it.
 
 When extending the renderer or its CSS, preserve these rules:
 
+- **Sanitize at the sink.** `renderMarkdown()` is a pure string→HTML function, but
+  its output assembles HTML by concatenation and is treated as untrusted. Every
+  `innerHTML` assignment of rendered markdown goes through
+  `sanitizeRenderedMarkdown()` (`sanitize.ts`, DOMPurify) first — see
+  `conversation.ts`, `streaming.ts`, `context-panel.ts`. If you add a new sink or a
+  new output tag/attribute, route it through the sanitizer and widen its allowlist
+  to match. Mermaid SVG is produced after sanitization and is not re-sanitized.
+  Rationale and the survey of streaming-parser alternatives live in
+  `docs/plans/markdown-renderer-hardening.md`.
 - **Valid block HTML.** Block elements (`<ul>`, `<ol>`, `<h3>`, `<h4>`, `<pre>`, `<table>`,
   `<hr>`) must never end up inside `<p>`. Mixed single-newline blocks (heading → subheading → list)
   are common in LLM output; split at block boundaries before wrapping paragraphs.

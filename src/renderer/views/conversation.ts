@@ -3,6 +3,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/thread-helpers.ts'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
 import { renderMarkdown } from '../markdown/renderer.ts'
+import { sanitizeRenderedMarkdown } from '../markdown/sanitize.ts'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { StreamingMarkdownRenderer } from '../markdown/streaming.ts'
 import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
@@ -127,7 +128,7 @@ function setAssistantMarkdown(
   }
   // Final render: replace the incremental scaffold with the finished markdown.
   streamingRenderers.delete(el)
-  el.innerHTML = renderMarkdown(display)
+  el.innerHTML = sanitizeRenderedMarkdown(renderMarkdown(display))
   attachCodeBlockCopyButtons(el)
   void annotateFileReferences(el, api)
   void renderMermaidIn(el)
