@@ -1,12 +1,22 @@
 import { access } from 'node:fs/promises'
-import { join } from 'node:path'
 import type { TodoCheck } from '@shared/types/todo.ts'
+import { isProjectSandboxEnabled } from '../project-sandbox/index.ts'
 import { runCommand } from './command-runner.ts'
-import { getWorkspaceRoot } from './workspace.ts'
+import { ensureShellCommandPermitted } from './permission-gate.ts'
+import { shellRequiresOutsideSandbox } from './permission-policy.ts'
+import { getWorkspaceRoot, resolveWorkspacePath } from './workspace.ts'
 
 export interface TodoCheckResult {
   passed: boolean
   detail: string
+}
+
+async function rejectIfShellDenied(command: string): Promise<TodoCheckResult | null> {
+  const permitted = await ensureShellCommandPermitted(command)
+  if (!permitted) {
+    return { passed: false, detail: 'User rejected shell command for todo verification' }
+  }
+  return null
 }
 
 export async function verifyTodoCheck(
@@ -14,18 +24,31 @@ export async function verifyTodoCheck(
   signal: AbortSignal,
 ): Promise<TodoCheckResult> {
   const root = getWorkspaceRoot() ?? process.cwd()
+
   switch (check.kind) {
     case 'fileExists': {
-      const path = join(root, check.path)
+      let absPath: string
       try {
-        await access(path)
+        absPath = resolveWorkspacePath(check.path)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        return { passed: false, detail: msg }
+      }
+      try {
+        await access(absPath)
         return { passed: true, detail: `File exists: ${check.path}` }
       } catch {
         return { passed: false, detail: `File not found: ${check.path}` }
       }
     }
     case 'typecheck': {
-      const r = await runCommand('npm', ['run', 'typecheck'], { cwd: root, signal })
+      const rejected = await rejectIfShellDenied('npm run typecheck')
+      if (rejected) return rejected
+      const r = await runCommand('npm', ['run', 'typecheck'], {
+        cwd: root,
+        signal,
+        useRendererEnv: true,
+      })
       const expect = 0
       const passed = r.code === expect
       return {
@@ -36,10 +59,24 @@ export async function verifyTodoCheck(
       }
     }
     case 'shell': {
+      const rejected = await rejectIfShellDenied(check.command)
+      if (rejected) return rejected
+
       const parts = check.command.trim().split(/\s+/)
       const cmd = parts[0]!
       const args = parts.slice(1)
-      const r = await runCommand(cmd, args, { cwd: root, signal })
+      const workspaceRoot = getWorkspaceRoot()
+      const unsandboxed = shellRequiresOutsideSandbox(
+        check.command,
+        workspaceRoot,
+        isProjectSandboxEnabled(),
+      )
+      const r = await runCommand(cmd, args, {
+        cwd: root,
+        signal,
+        unsandboxed,
+        useRendererEnv: true,
+      })
       const expect = check.expectExit ?? 0
       const passed = r.code === expect
       return {

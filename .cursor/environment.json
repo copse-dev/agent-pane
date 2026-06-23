@@ -1,0 +1,4 @@
+{
+  "name": "copse-panel",
+  "install": "bash .cursor/cloud-setup.sh"
+}

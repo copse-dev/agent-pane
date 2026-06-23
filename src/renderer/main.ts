@@ -224,6 +224,7 @@ function confirmDeleteThread() {
   const { activeThreadId, threads } = store.getState()
   if (!activeThreadId || threads.length <= 1) return
   if (confirm('Delete this thread?')) {
+    void api.agent.clearHistory(activeThreadId)
     const index = threads.findIndex((t) => t.id === activeThreadId)
     const remaining = threads.filter((t) => t.id !== activeThreadId)
     const newActive = remaining[Math.min(index, remaining.length - 1)]?.id ?? null
