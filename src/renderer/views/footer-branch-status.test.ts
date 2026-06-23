@@ -28,18 +28,10 @@ function installClipboard(writeText: (text: string) => Promise<void>): void {
   })
 }
 
-function createApi(
-  status: GitBranchStatus,
-  onOpenExternal: (url: string) => void = () => {},
-): ApiClient {
+function createApi(status: GitBranchStatus): ApiClient {
   return {
     fs: { onChanged: () => () => {} },
     git: { branchStatus: async () => status },
-    shell: {
-      openExternal: async (url: string) => {
-        onOpenExternal(url)
-      },
-    },
   } as unknown as ApiClient
 }
 
@@ -81,9 +73,9 @@ describe('footer branch status', () => {
     assert.equal(document.querySelector('.toast')?.textContent, 'Copied branch name')
   })
 
-  it('opens the pull request instead of copying when a PR link is present', async () => {
+  it('opens the pull request in the in-app browser pane instead of copying when a PR link is present', async () => {
     let copiedBranch: string | null = null
-    let openedUrl: string | null = null
+    let requestedUrl: string | null = null
     installClipboard(async (text) => {
       copiedBranch = text
     })
@@ -93,25 +85,23 @@ describe('footer branch status', () => {
       activeThreadId: 'thread-1',
       threads: [thread('feature/with-pr')],
     })
+    store.on('browser_url_requested', (url) => {
+      requestedUrl = url
+    })
     const host = document.createElement('div')
     document.body.append(host)
 
     mountFooterBranchStatus(
       host,
       store,
-      createApi(
-        {
-          currentBranch: 'feature/with-pr',
-          pr: {
-            number: 12,
-            title: 'Add branch footer copy',
-            url: 'https://github.com/example/repo/pull/12',
-          },
+      createApi({
+        currentBranch: 'feature/with-pr',
+        pr: {
+          number: 12,
+          title: 'Add branch footer copy',
+          url: 'https://github.com/example/repo/pull/12',
         },
-        (url) => {
-          openedUrl = url
-        },
-      ),
+      }),
     )
     await settle()
 
@@ -123,7 +113,9 @@ describe('footer branch status', () => {
     button.click()
     await settle()
 
-    assert.equal(openedUrl, 'https://github.com/example/repo/pull/12')
+    assert.equal(requestedUrl, 'https://github.com/example/repo/pull/12')
+    assert.equal(store.getState().rightPanelMode, 'browser')
+    assert.equal(store.getState().filesPaneOpen, true)
     assert.equal(copiedBranch, null)
   })
 })
