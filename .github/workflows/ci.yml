@@ -20,6 +20,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run format:check
+      - run: npm run check:dead-code
       - run: npm test
       - run: npm run build
       # The Electron/Chromedriver e2e session occasionally fails to start on the

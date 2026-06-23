@@ -41,7 +41,10 @@ No real model key is required to exercise core functionality. With neither `ANTH
 ### Before committing
 
 Agents should run **`npm run check`** before creating a commit. That runs typecheck, ESLint,
-Prettier, and unit tests (`npm test`) — the same fast gates CI runs before build/e2e. If you
+Prettier, the dead-code guard (`check:dead-code` — fails on `src/**/*.ts` files that nothing in
+the build graph imports), and unit tests (`npm test`) — the same fast gates CI runs before
+build/e2e. If a file is intentionally unreferenced, add it to `ALLOWED_UNLINKED` in
+`scripts/check-dead-code.mts` with a reason rather than leaving it to be flagged. If you
 changed renderer UI or e2e fixtures, also run **`npm run build && npm run test:e2e`** locally
 (macOS/Linux paths for seeded `electron-store` data must match `src/main/app-init.ts`).
 

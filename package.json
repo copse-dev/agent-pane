@@ -15,6 +15,7 @@
     "postinstall": "node scripts/patch-dev-name.mts && node scripts/postinstall-native.mts && node scripts/fetch-codesearch.mts",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint .",
+    "check:dead-code": "node scripts/check-dead-code.mts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "node scripts/run-tests.mts",
@@ -27,7 +28,7 @@
     "analyze:thread": "node scripts/run-analyze-thread.mts",
     "sync:models": "node scripts/sync-model-catalog.mts",
     "pack:mac": "npm run build && npm run icons:mac && electron-builder --mac dir",
-    "check": "npm run typecheck && npm run lint && npm run format:check && npm test"
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run check:dead-code && npm test"
   },
   "build": {
     "appId": "app.copse-panel",
