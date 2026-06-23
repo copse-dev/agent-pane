@@ -13,15 +13,25 @@ const OWNER = 1
 const OTHER_OWNER = 2
 
 function mockWindow() {
+  let destroyed = false
   const sent: Array<[string, ...unknown[]]> = []
-  return {
+  const win = {
+    isDestroyed: () => destroyed,
     webContents: {
+      isDestroyed: () => destroyed,
       send(channel: string, ...args: unknown[]) {
         sent.push([channel, ...args])
       },
     },
+    markDestroyed() {
+      destroyed = true
+    },
     sent,
-  } as unknown as import('electron').BrowserWindow & { sent: typeof sent }
+  }
+  return win as unknown as import('electron').BrowserWindow & {
+    sent: typeof sent
+    markDestroyed: () => void
+  }
 }
 
 async function ptySpawnAvailable(): Promise<boolean> {
@@ -76,6 +86,32 @@ describe('terminal-service', () => {
       destroyTerminalSession(sessionId, OWNER)
       assert.throws(() => writeTerminalSession(sessionId, OWNER, 'x'), /Unknown terminal session/)
     } finally {
+      restore()
+    }
+  })
+
+  it('does not send output after the window is destroyed', async (t) => {
+    if (!(await ptySpawnAvailable())) {
+      t.skip('PTY spawn unavailable in this environment')
+      return
+    }
+    const restore = setWorkspaceRootForTest('/tmp')
+    const win = mockWindow()
+    let sessionId = ''
+    try {
+      sessionId = await createTerminalSession(win, OWNER)
+      writeTerminalSession(sessionId, OWNER, 'echo hello\n')
+      await new Promise((r) => setTimeout(r, 300))
+      const beforeDestroy = win.sent.filter(([ch]) => ch === 'terminal:output').length
+      assert.ok(beforeDestroy > 0)
+
+      win.markDestroyed()
+      writeTerminalSession(sessionId, OWNER, 'echo again\n')
+      await new Promise((r) => setTimeout(r, 300))
+      const afterDestroy = win.sent.filter(([ch]) => ch === 'terminal:output').length
+      assert.equal(afterDestroy, beforeDestroy)
+    } finally {
+      if (sessionId) destroyTerminalSession(sessionId, OWNER)
       restore()
     }
   })
