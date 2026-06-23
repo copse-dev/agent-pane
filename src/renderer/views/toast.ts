@@ -25,6 +25,15 @@ function ensureHost(): HTMLElement {
 function normalizeMessage(error: unknown): string {
   if (error instanceof Error) return error.message
   if (typeof error === 'string') return error
+  // Worker / resource failures reject with an ErrorEvent whose default
+  // stringification ("[object ErrorEvent]") is useless — pull out its detail.
+  if (typeof ErrorEvent !== 'undefined' && error instanceof ErrorEvent) {
+    if (error.error instanceof Error) return error.error.message
+    if (error.message) return error.message
+  }
+  if (typeof Event !== 'undefined' && error instanceof Event) {
+    return `${error.type} event`
+  }
   return String(error)
 }
 
@@ -33,19 +42,52 @@ export function showToast(
   opts: { variant?: 'error' | 'info'; durationMs?: number } = {},
 ): () => void {
   const host = ensureHost()
+  const variant = opts.variant ?? 'info'
+  const duration = opts.durationMs ?? DEFAULT_DURATION_MS
+
+  // Collapse identical bursts (e.g. several Monaco workers failing at once)
+  // into a single toast so the user sees one clear message, not a stack of
+  // duplicates. Refresh the existing toast's auto-dismiss timer instead.
+  const existing = findVisibleToast(message, variant)
+  if (existing) {
+    existing.refresh(duration)
+    return existing.dismiss
+  }
+
   const toast = document.createElement('div')
-  toast.className = `toast toast-${opts.variant ?? 'info'}`
+  toast.className = `toast toast-${variant}`
   // textContent (not innerHTML) — error messages may contain untrusted paths.
   toast.textContent = message
   host.append(toast)
 
-  const dismiss = () => toast.remove()
-  toast.addEventListener('click', dismiss)
-  const timer = setTimeout(dismiss, opts.durationMs ?? DEFAULT_DURATION_MS)
-  return () => {
+  let timer = setTimeout(() => toast.remove(), duration)
+  const dismiss = () => {
     clearTimeout(timer)
-    dismiss()
+    toast.remove()
   }
+  const refresh = (ms: number) => {
+    clearTimeout(timer)
+    timer = setTimeout(() => toast.remove(), ms)
+  }
+  toastControls.set(toast, { dismiss, refresh })
+  toast.addEventListener('click', dismiss)
+  return dismiss
+}
+
+interface ToastControl {
+  dismiss: () => void
+  refresh: (ms: number) => void
+}
+
+const toastControls = new WeakMap<HTMLElement, ToastControl>()
+
+function findVisibleToast(message: string, variant: 'error' | 'info'): ToastControl | null {
+  const host = document.getElementById(TOAST_HOST_ID)
+  if (!host) return null
+  for (const node of host.querySelectorAll<HTMLElement>(`.toast-${variant}`)) {
+    if (node.textContent === message) return toastControls.get(node) ?? null
+  }
+  return null
 }
 
 /** Surface a caught IPC/write error to the user. Always logs to the console too. */

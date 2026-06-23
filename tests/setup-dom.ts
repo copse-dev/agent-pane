@@ -9,3 +9,4 @@ const win = new Window()
 // built-in global Event.
 ;(globalThis as any).Event = win.Event
 ;(globalThis as any).CustomEvent = win.CustomEvent
+;(globalThis as any).ErrorEvent = win.ErrorEvent

@@ -39,4 +39,29 @@ describe('toast (#119 surface IPC errors)', () => {
       /Oops: plain string reason/,
     )
   })
+
+  it('extracts a readable message from an ErrorEvent (not "[object ErrorEvent]")', () => {
+    showErrorToast('Unexpected error', new ErrorEvent('error', { message: 'Worker boom' }))
+    const text = document.querySelector('.toast-error')!.textContent ?? ''
+    assert.match(text, /Unexpected error: Worker boom/)
+    assert.doesNotMatch(text, /\[object ErrorEvent\]/)
+  })
+
+  it('prefers the nested Error message on an ErrorEvent', () => {
+    showErrorToast(
+      'Unexpected error',
+      new ErrorEvent('error', { error: new Error('nested cause') }),
+    )
+    assert.match(
+      document.querySelector('.toast-error')!.textContent ?? '',
+      /Unexpected error: nested cause/,
+    )
+  })
+
+  it('collapses identical error bursts into a single toast', () => {
+    showErrorToast('Unexpected error', new ErrorEvent('error', { message: 'Worker boom' }))
+    showErrorToast('Unexpected error', new ErrorEvent('error', { message: 'Worker boom' }))
+    showErrorToast('Unexpected error', new ErrorEvent('error', { message: 'Worker boom' }))
+    assert.equal(document.querySelectorAll('.toast-error').length, 1)
+  })
 })
