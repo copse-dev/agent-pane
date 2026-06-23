@@ -100,7 +100,13 @@ export function resumePendingQueues(store: AppStore, api: ApiClient): void {
   for (const thread of store.getState().threads) {
     // A fresh session has no open inline editors, so a persisted pause is stale.
     if (thread.queuePaused) setQueuePaused(store, thread.id, false)
-    if (thread.status === 'idle' && (thread.pendingMessages?.length ?? 0) > 0) {
+    // A crash mid-run can leave status stuck at running with no live main-process run.
+    let status = thread.status
+    if (status === 'running') {
+      setThreadStatus(store, thread.id, 'idle')
+      status = 'idle'
+    }
+    if (status === 'idle' && (thread.pendingMessages?.length ?? 0) > 0) {
       drainMessageQueue(store, api, thread.id)
     }
   }
