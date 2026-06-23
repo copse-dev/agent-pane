@@ -54,4 +54,22 @@ export default ts.config(
       '@typescript-eslint/no-explicit-any': 'off',
     },
   },
+  {
+    // Plain CommonJS scripts aren't part of the typed tsconfig projects, so
+    // disable type-aware linting and provide Node CJS globals for them.
+    files: ['**/*.cjs'],
+    extends: [ts.configs.disableTypeChecked],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        require: 'readonly',
+        module: 'writable',
+        exports: 'writable',
+        __dirname: 'readonly',
+        __filename: 'readonly',
+      },
+    },
+  },
 )
