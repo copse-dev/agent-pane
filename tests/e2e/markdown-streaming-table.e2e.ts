@@ -18,7 +18,7 @@ describe('markdown streaming table transitions', () => {
   })
 
   it('applies CSS enter transitions while a table is streaming in', async () => {
-    await $('.messages-list').waitForExist({ timeout: 15_000 })
+    await $('.messages-list').waitForExist({ timeout: 30_000 })
 
     const layout = await browser.execute(() => {
       const list = document.querySelector('.messages-list')

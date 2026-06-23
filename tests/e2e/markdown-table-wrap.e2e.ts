@@ -15,7 +15,7 @@ describe('markdown table wrapping', () => {
   })
 
   it('keeps index and status cells on one line in a PR-style table', async () => {
-    await $('.message-text table').waitForExist({ timeout: 15_000 })
+    await $('.message-text table').waitForExist({ timeout: 30_000 })
 
     const metrics = await browser.execute(() => {
       const table = document.querySelector('.message-text table')

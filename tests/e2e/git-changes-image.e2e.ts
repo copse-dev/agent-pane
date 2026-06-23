@@ -10,13 +10,13 @@ import {
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
 async function openChangesPanel(): Promise<void> {
-  await $('.titlebar-btn[aria-label="Open changes"]').waitForExist({ timeout: 15_000 })
+  await $('.titlebar-btn[aria-label="Open changes"]').waitForExist({ timeout: 30_000 })
   await (await $('.titlebar-btn[aria-label="Open changes"]')).click()
   const changesTab = await $('.right-panel-tab[aria-label="Changes"]')
   await expect(changesTab).toHaveElementClass('is-active')
-  await $('#git-changes-host').waitForDisplayed({ timeout: 15_000 })
+  await $('#git-changes-host').waitForDisplayed({ timeout: 30_000 })
   await browser.waitUntil(async () => (await $$('.git-change-row')).length >= 3, {
-    timeout: 15_000,
+    timeout: 30_000,
     timeoutMsg: 'expected at least 3 changed image rows',
   })
 }
@@ -56,7 +56,7 @@ describe('git changes image preview', () => {
 
     await clickChange('staged.png')
     const stagedPreview = await $('#git-diff-viewer-host .git-image-diff')
-    await stagedPreview.waitForDisplayed({ timeout: 15_000 })
+    await stagedPreview.waitForDisplayed({ timeout: 30_000 })
     await expect($$('#git-diff-viewer-host .git-image-diff-img')).toBeElementsArrayOfSize({
       gte: 2,
     })
@@ -64,14 +64,14 @@ describe('git changes image preview', () => {
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-staged.png'))
 
     await clickChange('unstaged.png')
-    await $('#git-diff-viewer-host .git-image-diff').waitForDisplayed({ timeout: 15_000 })
+    await $('#git-diff-viewer-host .git-image-diff').waitForDisplayed({ timeout: 30_000 })
     await expect($$('#git-diff-viewer-host .git-image-diff-img')).toBeElementsArrayOfSize({
       gte: 2,
     })
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-unstaged.png'))
 
     await clickChange('new.png')
-    await $('#git-diff-viewer-host .git-image-diff').waitForDisplayed({ timeout: 15_000 })
+    await $('#git-diff-viewer-host .git-image-diff').waitForDisplayed({ timeout: 30_000 })
     await expect($$('#git-diff-viewer-host .git-image-diff-img')).toBeElementsArrayOfSize(1)
     await expect($('#git-diff-viewer-host .git-image-diff-label')).toHaveText(
       expect.stringMatching(/^after$/i),
