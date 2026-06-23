@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import {
   applyDiffEntry,
   applyOrStageDiff,
+  approveAllStagedDiffs,
   clearDiffQueueForTest,
   getDiffQueueForTest,
   getRecentStagedDiffDecision,
@@ -240,5 +241,62 @@ describe('stageDiff same-path coalescing (#118)', () => {
     await stageDiff('b.txt', '', 'b\n', 'plaintext')
     const queue = getDiffQueueForTest()
     assert.equal(queue.length, 2)
+  })
+})
+
+describe('approveAllStagedDiffs', () => {
+  let tempRoot = ''
+  let restoreWorkspace: (() => void) | undefined
+
+  beforeEach(async () => {
+    clearDiffQueueForTest()
+    tempRoot = await mkdtemp(join(tmpdir(), 'agent-pane-approve-all-'))
+    restoreWorkspace = setWorkspaceRootForTest(tempRoot)
+  })
+
+  afterEach(async () => {
+    restoreWorkspace?.()
+    clearDiffQueueForTest()
+    if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+  })
+
+  it('removes only applied entries and leaves a conflicting one queued for retry', async () => {
+    await writeFile(join(tempRoot, 'a.txt'), 'orig\n', 'utf-8')
+    // b.txt was changed on disk after staging, so applying it will conflict.
+    await writeFile(join(tempRoot, 'b.txt'), 'formatted\n', 'utf-8')
+    await stageDiff('a.txt', 'orig\n', 'newA\n', 'plaintext')
+    await stageDiff('b.txt', 'orig\n', 'newB\n', 'plaintext')
+
+    await approveAllStagedDiffs()
+
+    // a.txt applied and gone; b.txt kept, re-staged against its real on-disk content.
+    assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'newA\n')
+    const queue = getDiffQueueForTest()
+    assert.equal(queue.length, 1)
+    assert.equal(queue[0]!.path, 'b.txt')
+    assert.equal(queue[0]!.before, 'formatted\n', 'conflict re-stages against current disk content')
+    assert.equal(await readFile(join(tempRoot, 'b.txt'), 'utf-8'), 'formatted\n')
+  })
+
+  it('preserves an entry staged for a new path after the apply snapshot was taken', async () => {
+    await writeFile(join(tempRoot, 'a.txt'), 'orig\n', 'utf-8')
+    await stageDiff('a.txt', 'orig\n', 'newA\n', 'plaintext')
+
+    // Simulate the agent staging a new diff while approveAll is mid-flight: the
+    // file-index rebuild that runs after applies is awaited, so stage during it.
+    let staged = false
+    const apply = approveAllStagedDiffs()
+    if (!staged) {
+      staged = true
+      await stageDiff('c.txt', '', 'newC\n', 'plaintext')
+    }
+    await apply
+
+    const queue = getDiffQueueForTest()
+    assert.deepEqual(
+      queue.map((e) => e.path),
+      ['c.txt'],
+      'a concurrently staged entry must survive approveAll',
+    )
   })
 })
