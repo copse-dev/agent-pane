@@ -9,7 +9,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
+  # Cheap static gate (~no build, no tests). Everything expensive — coverage,
+  # build, e2e — hangs off this via `needs: lint`, so a typo, lint error, or
+  # bad format short-circuits the pipeline before it burns runner minutes on
+  # the build + four e2e shards.
+  lint:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
@@ -19,6 +23,14 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm run check:dead-code
+
+  check:
+    needs: lint
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.3
+      - uses: ./.github/actions/setup
       # Unit suite under c8 + coverage-baseline.json ratchet (replaces the
       # separate coverage job — same tests, no duplicate npm test run).
       - run: npm run coverage:ci
@@ -37,6 +49,7 @@ jobs:
       # dist artifact the e2e shards reuse), so it no longer runs here.
 
   build:
+    needs: lint
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     # Build dist once and hand it to every e2e shard. Previously each shard ran
