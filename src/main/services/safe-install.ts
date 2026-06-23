@@ -122,19 +122,3 @@ export function wrapWithSocketFirewall(
 ): string {
   return `sfw ${shell.path} ${shell.cArg} ${quote(command)}`
 }
-
-/**
- * Human-facing banner shown above a safe-install's output. It echoes the command
- * the agent actually asked for (e.g. `npm install`) — never the internal
- * `sfw /bin/sh -c '…'` wrapper — and a short note that Socket Firewall scanned it.
- * The wrapper is a transport detail (it lets `sfw` proxy whatever package manager
- * the command invokes); surfacing it only made the tool card noisy, so it stays
- * out of the user-visible banner.
- */
-export function formatSafeInstallBanner(command: string, detection: InstallDetection): string {
-  const notes = [
-    'scanned by Socket Firewall (sfw)',
-    ...(detection.jsManager ? ['install scripts disabled'] : []),
-  ]
-  return `[safe-install] ${notes.join('; ')}\n$ ${command.trim()}\n`
-}
