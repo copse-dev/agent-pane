@@ -72,7 +72,9 @@ export const securitySettingsSchema = z.object({
   safetyModel: z.string().max(256),
   autoRunSandboxCommands: z.boolean(),
   mcpAutoAllowReadOnly: z.boolean(),
-  cursorHooksEnabled: z.boolean(),
+  // Storage-only setting with no Settings UI yet (see docs/cursor-hooks.md). Optional so the
+  // renderer's setSecurity bundle, which never sends it, doesn't fail validation or clobber it.
+  cursorHooksEnabled: z.boolean().optional(),
   webAllowedOrigins: webAllowedOriginsSchema,
   webAllowUserApproval: z.boolean(),
 })
