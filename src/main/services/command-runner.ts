@@ -1,6 +1,7 @@
 import { getWorkspaceRoot } from './workspace.ts'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { afterSandboxedCommand, spawnInProjectSandbox } from '../project-sandbox/index.ts'
+import { envForRendererChildProcess } from './child-process-env.ts'
 import {
   appendFlatCapped,
   COMMAND_OUTPUT_MAX_BYTES,
@@ -18,6 +19,8 @@ export interface RunCommandOptions {
   cwd?: string
   signal?: AbortSignal
   unsandboxed?: boolean
+  /** When true, base env excludes LLM/provider secrets (same as run_shell / terminal). */
+  useRendererEnv?: boolean
   /** Extra env vars merged on top of `process.env` (and any built-in tweaks like git's). */
   env?: NodeJS.ProcessEnv
   /** Defaults to {@link COMMAND_RUNNER_DEFAULT_TIMEOUT_MS}; pass `0` to disable. */
@@ -58,7 +61,9 @@ export function runCommand(
   const stdoutMaxBytes = opts.stdoutMaxBytes ?? COMMAND_OUTPUT_MAX_BYTES
 
   let spawnArgs = args
-  let spawnEnv: NodeJS.ProcessEnv = { ...process.env }
+  let spawnEnv: NodeJS.ProcessEnv = opts.useRendererEnv
+    ? envForRendererChildProcess()
+    : { ...process.env }
   if (cmd === 'git') {
     const git = prepareGitInvocation(args, spawnEnv)
     spawnArgs = git.args

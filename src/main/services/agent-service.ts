@@ -99,8 +99,6 @@ export async function runAgent(
   registry: ToolRegistry,
   options?: { invokedSkills?: string[]; priorTodos?: TodoItem[]; workingBrief?: string },
 ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> {
-  const invokedSkills = options?.invokedSkills ?? []
-
   const model = getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
   const remoteProvider = parseRemoteAgentModel(model)
   if (remoteProvider) {
@@ -139,151 +137,156 @@ export async function runAgent(
       abortMap.delete(threadId)
     }
   }
-  const subagentsEnabled = getSetting<boolean>('subagentsEnabled', true)
-  const contextWindow = await resolveContextWindow(model)
-  const toolSchemaReserve = model === 'lm-studio' || model.startsWith('lmstudio:') ? 2_500 : 1_000
 
-  // Build the provider per run so a freshly-saved API key (now in process.env)
-  // and the currently-selected model take effect without a restart.
-  const provider = await buildProvider(model)
-  const subagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
-  const subagentUsageModel = subagentRoute?.usageModel ?? model
-
-  const systemPrompt = await buildSystemPrompt({ subagentsEnabled, invokedSkills })
-
-  const messages: LLMMessage[] = [
-    { role: 'system', content: systemPrompt },
-    ...priorMessages,
-    { role: 'user', content: userPrompt },
-  ]
-
-  const parentGoal = resolveParentGoal(options?.workingBrief, messages, userPrompt)
-
-  const userTextForSteering =
-    typeof userPrompt === 'string' ? userPrompt : resolveParentGoal(undefined, messages, userPrompt)
-  const steeringBlocks: string[] = []
-  if (shouldSteerTodos(userTextForSteering)) steeringBlocks.push(TODO_STEERING_PROMPT)
-  if (shouldSteerGithubLinks(userTextForSteering)) {
-    const repoSlug = await getGithubRepoSlug()
-    steeringBlocks.push(buildGithubLinkSteeringPrompt(repoSlug))
-  }
-  if (steeringBlocks.length && messages[0]?.role === 'system') {
-    messages[0] = {
-      role: 'system',
-      content: (messages[0].content as string) + `\n\n${steeringBlocks.join('\n\n')}`,
-    }
-  }
-  const priorTodos = options?.priorTodos ?? []
-  if (priorTodos.length && messages[0]?.role === 'system') {
-    messages[0] = {
-      role: 'system',
-      content: (messages[0].content as string) + formatTodosForPrompt(priorTodos),
-    }
-  }
-
-  const prepared = prepareAgentHistory(messages, contextWindow, toolSchemaReserve)
-  const { trimmed, wasTrimmed, conversationBudget } = prepared
-  const { notifyTrimmed } = createTrimNotifier(wasTrimmed)
-  const sendTrimNotice = () => {
-    host.emit(threadId, contextTrimmedChunk(trimmed, contextWindow, prepared.historyBudget))
-  }
-  if (wasTrimmed) notifyTrimmed(sendTrimNotice)
-
-  host.emit(threadId, contextPressureChunk(prepared, contextWindow))
-  const runReadLimits = readFileLimitsFromConversationBudget(conversationBudget)
+  let trimmed: LLMMessage[] = [...priorMessages, { role: 'user', content: userPrompt }]
+  let inputTokens = 0
+  let outputTokens = 0
 
   const controller = new AbortController()
   abortMap.set(threadId, controller)
   const runTimeoutTimer = setTimeout(() => controller.abort(), AGENT_RUN_TIMEOUT_MS)
 
-  let inputTokens = 0,
-    outputTokens = 0
-
-  resetSubagentUsage()
   const sendChunk = (chunk: StreamChunk) => {
     host.emit(threadId, chunk)
   }
 
-  setAgentRunTodoContext({
-    initial: priorTodos,
-    onUpdate: (todos) => {
-      sendChunk({ type: 'todo_update', todos })
-    },
-  })
+  try {
+    const invokedSkills = options?.invokedSkills ?? []
+    const subagentsEnabled = getSetting<boolean>('subagentsEnabled', true)
+    const contextWindow = await resolveContextWindow(model)
+    const toolSchemaReserve = model === 'lm-studio' || model.startsWith('lmstudio:') ? 2_500 : 1_000
 
-  setTodoToolPostProcess(async (before, after) => {
-    let todos = after
-    let extraMessage: string | undefined
+    const provider = await buildProvider(model)
+    const subagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
+    const subagentUsageModel = subagentRoute?.usageModel ?? model
 
-    const localItem = findNewlyInProgressLocal(before, after)
-    if (
-      localItem &&
-      shouldRouteToLocal(localItem, {
-        localTodoItemsEnabled: getSetting<boolean>('localTodoItemsEnabled', true),
-        parentIsLocal: isLocalChatModel(model),
-      }) &&
-      subagentRoute
-    ) {
-      sendChunk({ type: 'todo_worker_start', todoId: localItem.id, content: localItem.content })
-      try {
-        const worker = await runTodoWorker({
-          item: localItem,
-          provider: subagentRoute.provider,
-          registry,
-          contextWindow: subagentRoute.contextWindow,
-          toolSchemaReserve: subagentRoute.toolSchemaReserve,
-          signal: controller.signal,
-          onChunk: sendChunk,
-        })
-        inputTokens += worker.usage.inputTokens
-        outputTokens += worker.usage.outputTokens
-        sendChunk({
-          type: 'usage',
-          model: subagentUsageModel,
-          inputTokens: worker.usage.inputTokens,
-          outputTokens: worker.usage.outputTokens,
-        })
+    const systemPrompt = await buildSystemPrompt({ subagentsEnabled, invokedSkills })
 
-        let passed = true
-        if (localItem.check) {
-          const check = await verifyTodoCheck(localItem.check, controller.signal)
-          passed = check.passed
-          extraMessage = passed
-            ? `Local worker completed "${localItem.content}" (${check.detail})`
-            : `Local worker finished but check failed: ${check.detail}`
-        }
+    const messages: LLMMessage[] = [
+      { role: 'system', content: systemPrompt },
+      ...priorMessages,
+      { role: 'user', content: userPrompt },
+    ]
 
-        todos = todos.map((t) =>
-          t.id === localItem.id ? { ...t, status: passed ? 'completed' : 'in_progress' } : t,
-        )
-        sendChunk({ type: 'todo_update', todos })
-        sendChunk({
-          type: 'todo_worker_done',
-          todoId: localItem.id,
-          summary: worker.summary,
-          passed,
-        })
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        extraMessage = `Local worker failed: ${msg}`
-        sendChunk({
-          type: 'todo_worker_done',
-          todoId: localItem.id,
-          summary: msg,
-          passed: false,
-        })
+    const parentGoal = resolveParentGoal(options?.workingBrief, messages, userPrompt)
+
+    const userTextForSteering =
+      typeof userPrompt === 'string'
+        ? userPrompt
+        : resolveParentGoal(undefined, messages, userPrompt)
+    const steeringBlocks: string[] = []
+    if (shouldSteerTodos(userTextForSteering)) steeringBlocks.push(TODO_STEERING_PROMPT)
+    if (shouldSteerGithubLinks(userTextForSteering)) {
+      const repoSlug = await getGithubRepoSlug()
+      steeringBlocks.push(buildGithubLinkSteeringPrompt(repoSlug))
+    }
+    if (steeringBlocks.length && messages[0]?.role === 'system') {
+      messages[0] = {
+        role: 'system',
+        content: (messages[0].content as string) + `\n\n${steeringBlocks.join('\n\n')}`,
+      }
+    }
+    const priorTodos = options?.priorTodos ?? []
+    if (priorTodos.length && messages[0]?.role === 'system') {
+      messages[0] = {
+        role: 'system',
+        content: (messages[0].content as string) + formatTodosForPrompt(priorTodos),
       }
     }
 
-    const completed = findNewlyCompleted(before, todos)
-    if (completed && compactAtTodoBoundary(trimmed, todos)) {
-      notifyTrimmed(sendTrimNotice)
+    const prepared = prepareAgentHistory(messages, contextWindow, toolSchemaReserve)
+    trimmed = prepared.trimmed
+    const { wasTrimmed, conversationBudget } = prepared
+    const { notifyTrimmed } = createTrimNotifier(wasTrimmed)
+    const sendTrimNotice = () => {
+      sendChunk(contextTrimmedChunk(trimmed, contextWindow, prepared.historyBudget))
     }
+    if (wasTrimmed) notifyTrimmed(sendTrimNotice)
 
-    return { todos, ...(extraMessage ? { extraMessage } : {}) }
-  })
+    sendChunk(contextPressureChunk(prepared, contextWindow))
+    const runReadLimits = readFileLimitsFromConversationBudget(conversationBudget)
 
-  try {
+    resetSubagentUsage()
+
+    setAgentRunTodoContext({
+      initial: priorTodos,
+      onUpdate: (todos) => {
+        sendChunk({ type: 'todo_update', todos })
+      },
+    })
+
+    setTodoToolPostProcess(async (before, after) => {
+      let todos = after
+      let extraMessage: string | undefined
+
+      const localItem = findNewlyInProgressLocal(before, after)
+      if (
+        localItem &&
+        shouldRouteToLocal(localItem, {
+          localTodoItemsEnabled: getSetting<boolean>('localTodoItemsEnabled', true),
+          parentIsLocal: isLocalChatModel(model),
+        }) &&
+        subagentRoute
+      ) {
+        sendChunk({ type: 'todo_worker_start', todoId: localItem.id, content: localItem.content })
+        try {
+          const worker = await runTodoWorker({
+            item: localItem,
+            provider: subagentRoute.provider,
+            registry,
+            contextWindow: subagentRoute.contextWindow,
+            toolSchemaReserve: subagentRoute.toolSchemaReserve,
+            signal: controller.signal,
+            onChunk: sendChunk,
+          })
+          inputTokens += worker.usage.inputTokens
+          outputTokens += worker.usage.outputTokens
+          sendChunk({
+            type: 'usage',
+            model: subagentUsageModel,
+            inputTokens: worker.usage.inputTokens,
+            outputTokens: worker.usage.outputTokens,
+          })
+
+          let passed = true
+          if (localItem.check) {
+            const check = await verifyTodoCheck(localItem.check, controller.signal)
+            passed = check.passed
+            extraMessage = passed
+              ? `Local worker completed "${localItem.content}" (${check.detail})`
+              : `Local worker finished but check failed: ${check.detail}`
+          }
+
+          todos = todos.map((t) =>
+            t.id === localItem.id ? { ...t, status: passed ? 'completed' : 'in_progress' } : t,
+          )
+          sendChunk({ type: 'todo_update', todos })
+          sendChunk({
+            type: 'todo_worker_done',
+            todoId: localItem.id,
+            summary: worker.summary,
+            passed,
+          })
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          extraMessage = `Local worker failed: ${msg}`
+          sendChunk({
+            type: 'todo_worker_done',
+            todoId: localItem.id,
+            summary: msg,
+            passed: false,
+          })
+        }
+      }
+
+      const completed = findNewlyCompleted(before, todos)
+      if (completed && compactAtTodoBoundary(trimmed, todos)) {
+        notifyTrimmed(sendTrimNotice)
+      }
+
+      return { todos, ...(extraMessage ? { extraMessage } : {}) }
+    })
+
     await runWithAgentRunReadFileLimits(runReadLimits, async () => {
       await runAgentLoop({
         provider,
@@ -348,8 +351,8 @@ export async function runAgent(
     })
   } catch (err) {
     const msg = classifyAgentError(err)
-    host.emit(threadId, { type: 'text', text: msg } satisfies StreamChunk)
-    host.emit(threadId, { type: 'done' } satisfies StreamChunk)
+    sendChunk({ type: 'text', text: msg })
+    sendChunk({ type: 'done' })
   } finally {
     clearTimeout(runTimeoutTimer)
     clearAgentRunTodos()
@@ -357,8 +360,6 @@ export async function runAgent(
     abortMap.delete(threadId)
   }
 
-  // Usage is streamed per LLM step via agent:chunk (type: usage).
-  // Return non-system messages for history persistence in main process
   const updatedHistory = trimmed.filter((m) => m.role !== 'system')
   return { usage: { inputTokens, outputTokens }, messages: updatedHistory }
 }
