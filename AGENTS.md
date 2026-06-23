@@ -56,6 +56,8 @@ No real model key is required to exercise core functionality. With neither `ANTH
 
 ### Before committing
 
+Before opening a PR, rebase onto **`origin/main`** — GitHub PR CI tests the merge of base into head, not your branch tip alone.
+
 Agents should run **`npm run check`** before creating a commit. That runs typecheck, ESLint,
 Prettier, the dead-code guard (`check:dead-code` — fails on `src/**/*.ts` files that nothing in
 the build graph imports), and unit tests (`npm test`) — the same fast gates CI runs before
@@ -75,6 +77,9 @@ saves screenshots for visual inspection. Use `.cursor/skills/screenshot-validate
 DOM/layout changes and `.cursor/skills/agent-run-eval/SKILL.md` only when the visual change depends
 on an agent/tool loop. Do not rely on `npm run check`, a build, or manual VNC inspection alone as
 proof for a visual change.
+
+For appearance/layout taste — design-token usage, action-bar spacing, the sticky-footer-in-scroll
+gotcha, and other hard-won UI conventions — read and extend [`docs/ui-taste.md`](docs/ui-taste.md).
 
 ### App data / state
 
