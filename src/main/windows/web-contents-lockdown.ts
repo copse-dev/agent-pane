@@ -15,6 +15,21 @@ export function isExternalHttpUrl(url: string): boolean {
 }
 
 /**
+ * Decide what a window-open request from a browser guest should do. cmd/ctrl
+ * click and `target=_blank` links ask Chromium for a new window; without this
+ * the guest's default handler spawns a detached popup BrowserWindow. Visible
+ * `<webview>` guests have a tabbed UI, so route external links back to the
+ * renderer to open as a tab; headless automation windows just get blocked.
+ */
+export function browserGuestWindowOpen(
+  contentsType: string,
+  url: string,
+): { openTabUrl: string | null } {
+  if (contentsType === 'webview' && isExternalHttpUrl(url)) return { openTabUrl: url }
+  return { openTabUrl: null }
+}
+
+/**
  * Force secure webPreferences on any `<webview>` the renderer attaches. The
  * renderer sets these via DOM attributes, so a compromised renderer could
  * otherwise re-enable Node integration or inject a preload. Overriding them in

@@ -169,6 +169,7 @@ function mountFullLayout() {
     document.getElementById('browser-tabs-host')!,
     document.getElementById('browser-viewer-host')!,
     store,
+    api,
   )
   mountContextPanel(document.getElementById('file-viewer')!, store, api, monaco)
 
