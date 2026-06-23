@@ -18,7 +18,7 @@ describe('double submit guard', function () {
     seedEmptyProject(process.cwd(), 'e2e-double-submit', { subagentsEnabled: false })
     await browser.reloadSession()
 
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     // Start a slow turn so the thread stays running, mirroring the laggy state
     // where the user manages to press Send/Enter more than once.

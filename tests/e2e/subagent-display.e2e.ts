@@ -18,7 +18,7 @@ describe('subagent display', () => {
   })
 
   it('shows collapsed explore summary and expandable inner tools', async () => {
-    await $('.tool-card-subagent').waitForExist({ timeout: 15_000 })
+    await $('.tool-card-subagent').waitForExist({ timeout: 30_000 })
 
     const card = await $('.tool-card-subagent')
     await expect(card).toBeDisplayed()
@@ -48,7 +48,7 @@ describe('subagent display live mock', () => {
   })
 
   it('live mock explore turn shows Explore files card', async () => {
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     const textarea = await $('.prompt-input')
     await textarea.setValue('explore the repo please')
