@@ -19,15 +19,20 @@ export interface OpenRouterModelOption {
 // Curated shortlist of popular OpenRouter models. OpenRouter exposes hundreds of
 // models; rather than dump them all into the picker we surface a handful of common
 // ones and let users type any other id via the "Custom OpenRouter model" setting.
+// `:free` ids route to OpenRouter's free endpoints (usable at a $0 balance, but
+// rate-limited and not always tool-capable). The plain ids always bill.
 export const OPENROUTER_MODELS: readonly OpenRouterModelOption[] = [
   { id: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet' },
   { id: 'openai/gpt-4o', label: 'GPT-4o' },
   { id: 'openai/gpt-4o-mini', label: 'GPT-4o mini' },
   { id: 'z-ai/glm-4.6', label: 'GLM-4.6' },
+  { id: 'z-ai/glm-4.5-air:free', label: 'GLM-4.5 Air (free)' },
   { id: 'qwen/qwen3-235b-a22b', label: 'Qwen3 235B A22B' },
+  { id: 'qwen/qwen3-235b-a22b:free', label: 'Qwen3 235B A22B (free)' },
   { id: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash' },
   { id: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B' },
   { id: 'deepseek/deepseek-chat-v3.1', label: 'DeepSeek V3.1' },
+  { id: 'deepseek/deepseek-chat-v3.1:free', label: 'DeepSeek V3.1 (free)' },
 ] as const
 
 export function isOpenRouterModel(model: string): boolean {
