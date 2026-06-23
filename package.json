@@ -11,6 +11,7 @@
     "generate:icon": "node scripts/generate-icon.mts",
     "icons:mac": "node scripts/generate-icon.mts && COPSE_PANEL_REFRESH_DOCK=1 node scripts/patch-dev-name.mts",
     "start:mac": "npm run icons:mac && env -u ELECTRON_RUN_AS_NODE electron dist/main/index.js",
+    "prestart": "node scripts/patch-dev-name.mts",
     "start": "electron dist/main/index.js",
     "preinstall": "node scripts/check-node-version.cjs",
     "postinstall": "node scripts/check-node-version.cjs && node scripts/patch-dev-name.mts && node scripts/postinstall-native.mts && node scripts/fetch-codesearch.mts",
