@@ -341,9 +341,6 @@
   flex-shrink: 0;
   position: relative;
 }
-.context-wheel.has-breakdown {
-  cursor: help;
-}
 .context-wheel-popover {
   position: absolute;
   z-index: 30;
