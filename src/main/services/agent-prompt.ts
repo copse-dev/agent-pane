@@ -8,6 +8,8 @@ const SHARED_WEB_TOOLS = `- web_search: Search the public web
 const SHARED_TOOL_TAIL = `- git_status: Show working tree status
 - git_diff: Show unstaged or staged changes
 - git_log: Show recent commit history
+- gh_pr_list: List pull requests (read-only GitHub CLI; prefer over run_shell + gh)
+- gh_pr_view: Show pull request details (read-only GitHub CLI; prefer over run_shell + gh)
 - run_shell: Run a shell command in the workspace (may prompt for approval)
 - staged_diffs: List pending proposed file edits waiting for approval, recent edit decisions, and existing git changes
 - read_staged_diff: Inspect proposed content for a pending file edit

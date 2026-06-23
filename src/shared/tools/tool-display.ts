@@ -19,6 +19,8 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   git_status: 'Git status',
   git_diff: 'Git diff',
   git_log: 'Git log',
+  gh_pr_list: 'List pull requests',
+  gh_pr_view: 'View pull request',
   write_file: 'Write file',
   str_replace: 'Replace in file',
   run_shell: 'Run command',
@@ -43,7 +45,10 @@ const TOOL_GROUPS: Record<string, { tools: string[]; label: string }> = {
     ],
     label: 'Browser',
   },
-  git: { tools: ['git_status', 'git_diff', 'git_log'], label: 'Git' },
+  git: {
+    tools: ['git_status', 'git_diff', 'git_log', 'gh_pr_list', 'gh_pr_view'],
+    label: 'Git',
+  },
   writing: { tools: ['write_file', 'str_replace'], label: 'Writing files' },
   shell: { tools: ['run_shell'], label: 'Running commands' },
 }

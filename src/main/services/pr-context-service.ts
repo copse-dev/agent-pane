@@ -1,4 +1,5 @@
 import { runCommand } from './command-runner.ts'
+import { runGh } from './gh-service.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import { isGitAvailable } from './tool-availability.ts'
 import { isInsideGitWorkTree } from './git-service.ts'
@@ -90,7 +91,7 @@ async function getOpenPrForBranch(branch: string): Promise<GitOpenPr | null> {
     '--limit',
     '1',
   ])
-  return ghResult.code === 0 ? parseGhOpenPrList(ghResult.stdout) : null
+  return ghResult.code === 0 ? parseGhOpenPrList(ghResult.stdout.trim()) : null
 }
 
 /** Parse `gh pr view --json` output into an open PR summary, or null. */
@@ -111,17 +112,6 @@ async function runGit(args: string[]): Promise<{ stdout: string; code: number }>
   if (!cwd) return { stdout: '', code: 1 }
   const pathPrefix = process.platform === 'win32' ? '' : '/usr/bin:/bin:'
   const { stdout, code } = await runCommand('git', args, {
-    cwd,
-    env: { PATH: `${pathPrefix}${process.env.PATH ?? ''}` },
-  })
-  return { stdout, code }
-}
-
-async function runGh(args: string[]): Promise<{ stdout: string; code: number }> {
-  const cwd = getWorkspaceRoot()
-  if (!cwd) return { stdout: '', code: 1 }
-  const pathPrefix = process.platform === 'win32' ? '' : '/usr/bin:/bin:/exec-daemon:'
-  const { stdout, code } = await runCommand('gh', args, {
     cwd,
     env: { PATH: `${pathPrefix}${process.env.PATH ?? ''}` },
   })
