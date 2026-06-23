@@ -69,10 +69,16 @@ export const createLMStudioProvider = createLocalOpenAIProvider
 // with OpenRouter's base URL. Unlike a local server it is billed and reports usage,
 // so we keep `include_usage` on (includeUsage defaults to false when a baseURL is
 // set). `model` is the upstream id with the `openrouter:` prefix already stripped.
+//
+// `provider: { require_parameters: true }` restricts OpenRouter's routing to
+// upstream endpoints that support every parameter we send — crucially `tools`.
+// Without it a model id can be load-balanced onto an endpoint that ignores
+// function calling, so the model narrates instead of emitting tool calls.
 export function createOpenRouterProvider(model: string, apiKey: string): LLMProvider {
   return new OpenAIProvider(model, {
     baseURL: OPENROUTER_BASE_URL,
     apiKey,
     includeUsage: true,
+    extraBody: { provider: { require_parameters: true } },
   })
 }
