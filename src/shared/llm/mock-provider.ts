@@ -48,33 +48,38 @@ export class MockLLMProvider implements LLMProvider {
     const awaitingAssistantReply =
       lastUserIdx !== -1 && !messages.slice(lastUserIdx + 1).some((m) => m.role === 'assistant')
 
-    const delayDirective = fullUserText.match(/\[\[mock:delay_ms\s+(\d+)\]\]/)
-    if (delayDirective) {
-      const requestedDelay = Number.parseInt(delayDirective[1]!, 10)
-      const delayMs = Math.min(requestedDelay, MAX_MOCK_DELAY_MS)
-      await sleep(delayMs, signal)
-      if (signal?.aborted) return
-    }
-
-    // Test directive: `[[mcp:<toolName> {json args}]]` drives a specific tool
-    // call (used by e2e to exercise the MCP path). Real prompts never contain it.
-    // Only honor it for the current user turn — not on later agent-loop passes
-    // that still see the same user message in history.
-    if (awaitingAssistantReply && !demoSkillLoaded) {
-      const directive = fullUserText.match(/\[\[mcp:([^\s\]]+)(\s+\{[^]*?\})?\]\]/)
-      if (directive && tools.some((t) => t.name === directive[1])) {
+    // Test directives (`[[mock:…]]`, `[[mcp:…]]`) are a test-only steering hook.
+    // `__COPSE_TEST_DIRECTIVES__` is `false` in release builds, so esbuild
+    // dead-code-eliminates this whole block and the parser never ships (#DSL).
+    if (__COPSE_TEST_DIRECTIVES__) {
+      const delayDirective = fullUserText.match(/\[\[mock:delay_ms\s+(\d+)\]\]/)
+      if (delayDirective) {
+        const requestedDelay = Number.parseInt(delayDirective[1]!, 10)
+        const delayMs = Math.min(requestedDelay, MAX_MOCK_DELAY_MS)
+        await sleep(delayMs, signal)
         if (signal?.aborted) return
-        let args: Record<string, unknown> = {}
-        if (directive[2]) {
-          try {
-            args = JSON.parse(directive[2].trim()) as Record<string, unknown>
-          } catch {
-            args = {}
+      }
+
+      // `[[mcp:<toolName> {json args}]]` drives a specific tool call (used by e2e
+      // to exercise the MCP path). Real prompts never contain it. Only honor it
+      // for the current user turn — not on later agent-loop passes that still see
+      // the same user message in history.
+      if (awaitingAssistantReply && !demoSkillLoaded) {
+        const directive = fullUserText.match(/\[\[mcp:([^\s\]]+)(\s+\{[^]*?\})?\]\]/)
+        if (directive && tools.some((t) => t.name === directive[1])) {
+          if (signal?.aborted) return
+          let args: Record<string, unknown> = {}
+          if (directive[2]) {
+            try {
+              args = JSON.parse(directive[2].trim()) as Record<string, unknown>
+            } catch {
+              args = {}
+            }
           }
+          yield { type: 'tool_call', toolCall: { id: randomUUID(), name: directive[1]!, args } }
+          yield { type: 'done' }
+          return
         }
-        yield { type: 'tool_call', toolCall: { id: randomUUID(), name: directive[1]!, args } }
-        yield { type: 'done' }
-        return
       }
     }
 

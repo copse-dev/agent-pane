@@ -1,16 +1,12 @@
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
-
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
+import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 describe('send-now stops the running turn and runs the queued message', function () {
   this.timeout(120_000)
 
   before(async () => {
-    mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-send-now', { subagentsEnabled: false })
     await browser.reloadSession()
@@ -55,6 +51,6 @@ describe('send-now stops the running turn and runs the queued message', function
 
     const userMessages = await $$('.msg-user .message-text')
     await expect(userMessages[userMessages.length - 1]).toHaveText('run me right now')
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'queued-message-send-now.png'))
+    await saveAppScreenshot('queued-message-send-now.png')
   })
 })

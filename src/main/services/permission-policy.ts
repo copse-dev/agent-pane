@@ -24,6 +24,13 @@ export const SANDBOX_TOOLS = new Set([
   'gh_pr_view',
 ])
 
+/** GitHub CI tools reach github.com via the `gh` CLI. */
+export const GITHUB_CI_TOOLS = new Set([
+  'get_ci_status',
+  'wait_for_ci_checks',
+  'get_ci_failure_logs',
+])
+
 export interface PermissionCheck {
   toolName: string
   args: unknown
@@ -109,6 +116,35 @@ export function formatExternalSandboxPromptBody(command: string, reasons: string
     `${command}\n\n` +
     `Allow running it once outside the sandbox?`
   )
+}
+
+/**
+ * Approval body for a detected package install. Installs always need the network,
+ * so the generic "external command" reason list (and its nested parentheticals)
+ * just adds noise — this states plainly that it's an install, where it runs, and
+ * whether Socket Firewall will scan it.
+ */
+export function formatInstallPromptBody(
+  command: string,
+  opts: { outsideSandbox: boolean; safeInstall: boolean; jsManager: boolean },
+): string {
+  const access = opts.outsideSandbox
+    ? 'It runs once outside the macOS sandbox with network access.'
+    : 'It fetches packages over the network.'
+  const scan = opts.safeInstall
+    ? `Socket Firewall (sfw) scans the packages for known-malicious code${
+        opts.jsManager ? ', and install lifecycle scripts are disabled' : ''
+      }.`
+    : 'Package scanning (Socket Firewall) is off in Settings, so packages run unscanned.'
+  return [
+    command.trim(),
+    '',
+    `This installs packages. ${access}`,
+    '',
+    scan,
+    '',
+    'Allow this install?',
+  ].join('\n')
 }
 
 /** True when macOS seatbelt is active and an approved shell command should bypass ASRT. */
@@ -244,5 +280,17 @@ export function formatWebPromptBody(origin: string, detail: string): string {
     detail,
     '',
     'Approve once, or check "Always allow" to add this origin to Settings.',
+  ].join('\n')
+}
+
+export function formatGithubCiPromptBody(toolName: string, args: unknown): string {
+  return [
+    'This tool reads pull request CI status or logs from GitHub via the gh CLI.',
+    '',
+    `Tool: ${toolName}`,
+    '',
+    JSON.stringify(args, null, 2),
+    '',
+    'Approve once, or check "Always allow" to auto-run GitHub CI tools in this workspace.',
   ].join('\n')
 }

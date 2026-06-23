@@ -40,6 +40,21 @@ describe('settings-writable', () => {
     assert.deepEqual(parsed.webAllowedOrigins, ['https://duckduckgo.com', 'http://localhost:*'])
   })
 
+  it('parses the renderer bundle without cursorHooksEnabled (storage-only, no UI yet)', () => {
+    const parsed = securitySettingsSchema.parse({
+      localServerUrl: 'http://127.0.0.1:1234/v1',
+      safetyClassifierEnabled: true,
+      safetyConfidenceThreshold: 0.85,
+      safetyModel: '',
+      autoRunSandboxCommands: false,
+      mcpAutoAllowReadOnly: true,
+      webAllowedOrigins: ['https://duckduckgo.com'],
+      webAllowUserApproval: true,
+    })
+    assert.equal(parsed.cursorHooksEnabled, undefined)
+    assert.equal('cursorHooksEnabled' in parsed, false)
+  })
+
   it('rejects malformed web origins in the security bundle', () => {
     assert.throws(() =>
       securitySettingsSchema.parse({

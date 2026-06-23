@@ -8,6 +8,22 @@ live in `package.json` (`dev`, `build`, `start`, `typecheck`, `lint`, `format:ch
 `test:e2e`, `check`); CI (`.github/workflows/ci.yml`) runs the full `check` + `build` + `test:e2e`
 sequence. Prefer those rather than reinventing commands.
 
+### Node version (>=22.18 required)
+
+This repo pins Node via `.nvmrc` (`22.18.0`) and `package.json` `engines` (`>=22.18`). The build/check
+tooling under `scripts/*.mts` relies on Node's native TypeScript type-stripping, which older 22.x
+releases lack. **The Cloud VM default `node` may be older than this** (e.g. `/exec-daemon/node` at
+`22.14`), in which case `npm run check` fails at `check:dead-code` with
+`TypeError [ERR_UNKNOWN_FILE_EXTENSION]: Unknown file extension ".mts"`. The cloud environment config
+(`.cursor/environment.json` → `.cursor/cloud-setup.sh`) installs and defaults Node to `.nvmrc` so fresh
+agents start correct. If you still land on an older node, switch before running anything:
+
+```bash
+export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"; nvm install; nvm use   # reads .nvmrc
+# nvm's `use` may not stick if an older node shadows PATH; if `node -v` is still wrong, prepend it:
+export PATH="$HOME/.nvm/versions/node/v$(cat .nvmrc)/bin:$PATH"
+```
+
 ### Running the app (headless VNC notes)
 
 This is a GUI Electron app. The Cloud VM exposes a VNC desktop on `DISPLAY=:1`, so launch with
@@ -37,6 +53,13 @@ No real model key is required to exercise core functionality. With neither `ANTH
 (`src/shared/llm/mock-provider.ts`), which echoes `Mock response to: <message>` and issues one
 `list_dir` tool call on the first turn — enough to drive the full agent loop end-to-end. Set
 `COPSE_PANEL_MOCK_LLM=1` to force the mock even when keys are present.
+
+The mock also honors test-only steering directives in the user message — `[[mcp:<tool> {json}]]`
+(drive a specific tool call) and `[[mock:delay_ms <n>]]` (stall) — used by e2e specs. These are
+gated behind the `__COPSE_TEST_DIRECTIVES__` build constant: `npm run build` (dev/e2e/CI) keeps
+them, but `npm run build:release` (used by `pack:mac`/packaging) sets `COPSE_RELEASE=1`, so esbuild
+dead-code-eliminates the parser and `build.mts` fails the build if any directive marker survives.
+Shipped apps therefore never contain the directive parser.
 
 ### Before committing
 
@@ -137,6 +160,7 @@ Unit coverage for grouping logic: `src/shared/tools/tool-display.test.ts`.
 
 Conversation messages, subagent timelines, and file preview use the hand-rolled renderer in
 `src/renderer/markdown/`. Design invariants, regression tests, and e2e fixtures are documented in
-[`src/renderer/markdown/README.md`](src/renderer/markdown/README.md).
+[`src/renderer/markdown/README.md`](src/renderer/markdown/README.md). Table layout taste (wrapping,
+no magic column widths) is in [`docs/ui-taste.md`](docs/ui-taste.md).
 
 After markdown or list-indent changes, run `npm run build && npm run test:e2e:markdown`.
