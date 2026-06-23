@@ -66,21 +66,22 @@ jobs:
     # slice of specs via wdio's `--shard current/total`. The shared `dist` artifact
     # from the `build` job is unpacked here rather than rebuilt per shard.
     #
-    # Shard count tuned from 12 recent green CI runs (Jun 2026): 8 shards billed
-    # ~18 min/run (8× ~42s setup overhead + tests); slowest e2e step p50 was 126s
-    # (shard 1). 4 shards drops ~4 duplicate npm ci/build cycles (~13 min billed),
-    # but packs ~8–9 specs into one sequential wdio process per shard, so a clean
-    # run is ~280s — too close to the old 300s per-attempt cap for the whole-shard
-    # retry below to recover a flaky spec. The per-attempt `timeout` is raised to
-    # 480s (and the step cap to 26 min for 3 attempts) so attempt 1 finishes
-    # instead of being SIGKILL'd mid-retry, letting attempt 2 relaunch a fresh
-    # Electron and pass.
+    # Shard count: 6. The ~33 CI specs run as one sequential wdio process per
+    # shard, each spec relaunching Electron. On the 2-core/7GB runner the ~6th+
+    # Electron launch in a shard starts failing to boot (`.prompt-input` never
+    # renders) as orphaned electron/codesearch processes accumulate — so the
+    # *last* spec in an over-packed shard flakes regardless of which spec it is.
+    # 8 shards (~4 specs each) was green for this reason; the earlier 4-shard cut
+    # (~8 specs each) reliably hit that wall. 6 keeps each shard at ~5–6 specs
+    # (near but mostly under the limit) while still saving setup vs 8. The
+    # per-attempt `timeout` is 480s (step cap 26 min for 3 attempts) so attempt 1
+    # finishes instead of being SIGKILL'd mid-retry, letting attempt 2 relaunch.
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6]
     env:
-      SHARD_TOTAL: 4
+      SHARD_TOTAL: 6
     steps:
       - uses: actions/checkout@v6.0.3
       - uses: ./.github/actions/setup

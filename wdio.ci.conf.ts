@@ -34,17 +34,6 @@ const ciExclude = [
   // Drives a mock subagent/explore run and waits on `.tool-card-subagent`,
   // which is flaky to render in time on the constrained runner.
   './tests/e2e/semantic-search-markdown.e2e.ts',
-  // Seeded-render specs that intermittently time out waiting on their target
-  // element (`element ... still not existing after 15000ms`) on the 2-core/7GB
-  // runner — same OOM/render-timeout family as above, non-deterministic across
-  // runs, all pass locally. Quarantined after they flaked the 4-shard gate.
-  './tests/e2e/markdown-list-indent.e2e.ts',
-  './tests/e2e/markdown-ordered-list-spacing.e2e.ts',
-  './tests/e2e/new-thread-keeps-panel.e2e.ts',
-  './tests/e2e/todo-display.e2e.ts',
-  './tests/e2e/tool-display-live-mock.e2e.ts',
-  './tests/e2e/double-submit.e2e.ts',
-  './tests/e2e/draft-prompt.e2e.ts',
 ]
 
 export const config: Options.Testrunner = {
