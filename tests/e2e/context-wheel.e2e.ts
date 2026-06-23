@@ -6,12 +6,9 @@ import { describeSkipInCi } from './helpers/ci-gate.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
-// Heaviest seeded spec (seedContextWheelFixture + reloadSession): even at a
-// "safe" 5th position in a 7-shard split it intermittently OOM-times-out on
-// `.input-footer` and takes the runner down before the retry can recover.
-// Skip in CI alongside the live-mock suite below until the per-spec Electron
-// cleanup is fixed.
-describeSkipInCi('context wheel footer seeded', () => {
+// TRIAL: re-enabled in CI (was describeSkipInCi while debugging the per-shard
+// OOM) to check whether it passes at the 8-shard / 30s-wait density.
+describe('context wheel footer seeded', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
