@@ -24,13 +24,11 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { renderMarkdown } from './renderer.ts'
 import { normalizeHtml } from '../../../tests/commonmark/normalize.ts'
-
-interface SpecExample {
-  markdown: string
-  html: string
-  example: number
-  section: string
-}
+import {
+  commonMarkSpecVersion,
+  loadCommonMarkSpec,
+  type SpecExample,
+} from '../../../tests/commonmark/load-spec.ts'
 
 interface Baseline {
   specVersion: string
@@ -41,9 +39,8 @@ interface Baseline {
   summaryBySection: Record<string, { pass: number; total: number }>
 }
 
-const SPEC_VERSION = '0.31.2'
+const SPEC_VERSION = commonMarkSpecVersion()
 const ROOT = process.cwd()
-const SPEC_PATH = resolve(ROOT, 'tests/fixtures/commonmark/spec.json')
 const BASELINE_PATH = resolve(ROOT, 'tests/fixtures/commonmark/conformance-baseline.json')
 
 function readJson<T>(path: string, hint: string): T {
@@ -56,10 +53,7 @@ function readJson<T>(path: string, hint: string): T {
   return JSON.parse(raw) as T
 }
 
-const spec = readJson<SpecExample[]>(
-  SPEC_PATH,
-  'The CommonMark spec fixture is required to run the conformance suite.',
-)
+const spec = loadCommonMarkSpec()
 
 function conforms(example: SpecExample): boolean {
   return normalizeHtml(renderMarkdown(example.markdown)) === normalizeHtml(example.html)
@@ -86,7 +80,7 @@ describe('CommonMark conformance (at rest)', () => {
   if (process.env.UPDATE_COMMONMARK_BASELINE === '1') {
     const baseline: Baseline = {
       specVersion: SPEC_VERSION,
-      source: `https://spec.commonmark.org/${SPEC_VERSION}/spec.json`,
+      source: `commonmark-spec@${SPEC_VERSION} (devDependency)`,
       note: 'Examples from the official CommonMark spec that renderMarkdown() satisfies at rest, after the spec normalizer. This is a regression baseline, not a conformance goal — the renderer is intentionally app-specific.',
       total: spec.length,
       passing,

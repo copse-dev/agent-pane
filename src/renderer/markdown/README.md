@@ -66,9 +66,10 @@ npm run test:e2e:markdown
 
 ### CommonMark conformance (`commonmark-conformance.test.ts`, via `npm test`)
 
-`renderMarkdown` is run against every example in the official CommonMark spec
-(`tests/fixtures/commonmark/spec.json`, pinned to a version), comparing output to
-the expected HTML after the spec's own normalizer
+`renderMarkdown` is run against every example in the official CommonMark spec —
+loaded from the pinned `commonmark-spec` devDependency at runtime
+(`tests/commonmark/load-spec.ts`), so the ~650 examples are **not** vendored into
+this repo — comparing output to the expected HTML after the spec's own normalizer
 (`tests/commonmark/normalize.ts`, a faithful port of `normalize.py`). This is **at
 rest only** — streaming output intentionally differs (the live tail is escaped
 plain text) and is not conformance-tested.
@@ -81,6 +82,10 @@ and the test fails if it changes:
 - fewer passing → a regression in a construct we used to handle.
 - more passing → an improvement; re-run `UPDATE_COMMONMARK_BASELINE=1 npm test` to
   record the new baseline.
+
+Bumping the spec is just `npm i -D commonmark-spec@<version>` followed by a
+re-baseline; the version is read from the installed package and pinned in the
+baseline.
 
 ### E2e tests (seeded via `tests/e2e/helpers/seed-config.ts`)
 

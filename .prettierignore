@@ -8,5 +8,5 @@ tests/e2e/electron-shell/.e2e-env.json
 .wdio-profile-*
 .wdio-git-fixture-*
 tests/fixtures/git-changes-repo/
-# Vendored CommonMark spec data + generated conformance baseline — keep verbatim.
+# Generated CommonMark conformance baseline (written by the conformance test).
 tests/fixtures/commonmark/

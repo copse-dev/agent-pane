@@ -1,6 +1,6 @@
 {
   "specVersion": "0.31.2",
-  "source": "https://spec.commonmark.org/0.31.2/spec.json",
+  "source": "commonmark-spec@0.31.2 (devDependency)",
   "note": "Examples from the official CommonMark spec that renderMarkdown() satisfies at rest, after the spec normalizer. This is a regression baseline, not a conformance goal — the renderer is intentionally app-specific.",
   "total": 652,
   "passing": [
