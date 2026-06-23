@@ -1521,3 +1521,46 @@ export function seedMarkdownBoldGlobFixture(workspaceRoot: string): void {
     'utf8',
   )
 }
+
+/** PR-style draft table with narrow index/status columns and long branch names. */
+export function seedMarkdownTableWrapFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-markdown-table-wrap-project'
+  const threadId = 'e2e-markdown-table-wrap-thread'
+  const content = [
+    '### Draft (work in progress)',
+    '',
+    '| # | Title | Branch | Status |',
+    '| --- | --- | --- | --- |',
+    '| 296 | Screenshot validate: capture before/after tool-display grouping UI fix | `jkt/auto/queued-message-screenshot-eval-b2d1` | DRAFT |',
+    '| 294 | Fix markdown table column wrapping in chat messages | `jkt/auto/markdown-table-wrapping-8760` | DRAFT |',
+    '| 293 | Queued message composer badge polish | `jkt/auto/queued-message-badge` | DRAFT |',
+  ].join('\n')
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Open draft PRs',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-table-wrap',
+              role: 'assistant',
+              content,
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
