@@ -110,3 +110,13 @@ jobs:
             echo "e2e shard ${{ matrix.shard }} attempt $attempt failed or timed out"
           done
           exit 1
+      # On failure, surface the screenshot + page source captured in afterTest so
+      # the constrained-runner render/OOM flakes can be inspected. Skipped when a
+      # hard runner OOM ("shutdown signal") kills the job before this step runs.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-failure-artifacts-shard-${{ matrix.shard }}
+          path: e2e-failure-artifacts/
+          if-no-files-found: ignore
+          retention-days: 3

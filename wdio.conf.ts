@@ -1,7 +1,8 @@
 import type { Options } from '@wdio/types'
+import { browser } from '@wdio/globals'
 import electronBinary from 'electron'
 import { randomInt } from 'node:crypto'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
 
@@ -51,7 +52,24 @@ export const config: Options.Testrunner = {
     ui: 'bdd',
     timeout: 30_000,
   },
-  afterTest: async (test) => {
+  afterTest: async (test, _context, result) => {
+    // On failure, dump a screenshot + page source to e2e-failure-artifacts/ so
+    // CI can upload them for debugging the constrained-runner render/OOM flakes.
+    // Best-effort: if the renderer or whole runner has crashed the session is
+    // already gone, so swallow any error here rather than masking the real one.
+    if (!result?.passed) {
+      try {
+        const dir = join(process.cwd(), 'e2e-failure-artifacts')
+        mkdirSync(dir, { recursive: true })
+        const base = `${String(test.title ?? 'e2e-test')
+          .replace(/[^a-z0-9]+/gi, '-')
+          .slice(0, 80)}-${Date.now()}`
+        await browser.saveScreenshot(join(dir, `${base}.png`))
+        writeFileSync(join(dir, `${base}.html`), await browser.getPageSource())
+      } catch {
+        // session/runner likely already dead — nothing to capture
+      }
+    }
     await assertNoErrorToasts(typeof test.title === 'string' ? test.title : 'e2e test')
   },
   beforeSession(_config, capabilities) {
