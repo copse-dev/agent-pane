@@ -51,8 +51,28 @@ export type ApplyResult =
 
 const queue: QueueEntry[] = []
 const recentDecisions: DiffDecision[] = []
+/**
+ * Content Copse last wrote directly (bypassing the approval queue) per path.
+ * `canApplyDirectly` uses it to tell its own past edits apart from unowned
+ * changes in `git status`. The on-disk content check there is the real safety
+ * net — a stale or missing snapshot only makes the fast path more conservative
+ * (it falls back to staging for approval), never less safe. Bounded by
+ * insertion order so a long-running session can't grow it without limit.
+ */
 const directAppliedSnapshots = new Map<string, string>()
+const MAX_DIRECT_APPLIED_SNAPSHOTS = 1000
 let mainWindow: BrowserWindow | null = null
+
+function recordDirectAppliedSnapshot(path: string, content: string): void {
+  // Re-insert so a refreshed path counts as most-recent for eviction.
+  directAppliedSnapshots.delete(path)
+  directAppliedSnapshots.set(path, content)
+  while (directAppliedSnapshots.size > MAX_DIRECT_APPLIED_SNAPSHOTS) {
+    const oldest = directAppliedSnapshots.keys().next().value
+    if (oldest === undefined) break
+    directAppliedSnapshots.delete(oldest)
+  }
+}
 
 function cloneEntry(entry: QueueEntry): QueueEntry {
   return { ...entry }
@@ -361,7 +381,7 @@ export async function applyOrStageDiff(
 
   const result = await applyDiffEntry({ path, before, after, language })
   if (result.status === 'written') {
-    directAppliedSnapshots.set(path, after)
+    recordDirectAppliedSnapshot(path, after)
     recordDecision({ path, status: 'applied_directly' })
     const root = getWorkspaceRoot()
     if (root) await buildIndex(root)
