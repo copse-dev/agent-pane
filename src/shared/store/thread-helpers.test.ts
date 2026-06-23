@@ -6,6 +6,8 @@ import {
   openNewThread,
   switchThread,
   addMessage,
+  addUsageDelta,
+  getThreadById,
   isBlankThread,
   hasUnsubmittedPrompt,
   normalizeBlankThreads,
@@ -85,6 +87,49 @@ describe('blank thread reuse', () => {
       threads.some((t) => t.id === blankA),
       false,
     )
+  })
+
+  it('addUsageDelta accumulates cache tokens per model and thread total', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+
+    addUsageDelta(store, threadId, {
+      model: 'claude-opus-4-8',
+      inputTokens: 1000,
+      outputTokens: 50,
+      cacheReadTokens: 800,
+      cacheCreationTokens: 100,
+    })
+    addUsageDelta(store, threadId, {
+      model: 'claude-opus-4-8',
+      inputTokens: 500,
+      outputTokens: 20,
+      cacheReadTokens: 450,
+      cacheCreationTokens: 0,
+    })
+
+    const usage = getThreadById(store, threadId)!.usage
+    assert.equal(usage.inputTokens, 1500)
+    assert.equal(usage.outputTokens, 70)
+    assert.equal(usage.cacheReadTokens, 1250)
+    assert.equal(usage.cacheCreationTokens, 100)
+    assert.deepEqual(usage.byModel?.['claude-opus-4-8'], {
+      inputTokens: 1500,
+      outputTokens: 70,
+      cacheReadTokens: 1250,
+      cacheCreationTokens: 100,
+    })
+  })
+
+  it('addUsageDelta omits cache fields when the provider reports none', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    addUsageDelta(store, threadId, { model: 'lmstudio:qwen', inputTokens: 300, outputTokens: 30 })
+
+    const usage = getThreadById(store, threadId)!.usage
+    assert.equal(usage.inputTokens, 300)
+    assert.equal('cacheReadTokens' in usage, false)
+    assert.equal('cacheCreationTokens' in usage, false)
   })
 
   it('normalizeBlankThreads keeps blank threads that have draft prompts', () => {

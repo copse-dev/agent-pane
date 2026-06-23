@@ -138,6 +138,51 @@ describe('runSubagent', () => {
     assert.deepEqual(session.usage, { inputTokens: 150, outputTokens: 15 })
   })
 
+  it('records cache tokens and emits subagent usage on subagent_done', async () => {
+    const subagentChunks: StreamChunk[] = []
+    const provider = {
+      lastUsage: null as { inputTokens: number; outputTokens: number } | null,
+      async *stream() {
+        yield { type: 'text' as const, text: 'Summary' }
+        yield {
+          type: 'usage' as const,
+          model: 'sub',
+          inputTokens: 1000,
+          outputTokens: 20,
+          cacheReadTokens: 800,
+          cacheCreationTokens: 50,
+        }
+        yield { type: 'done' as const }
+      },
+    } satisfies LLMProvider & { lastUsage: { inputTokens: number; outputTokens: number } | null }
+
+    const { session } = await runSubagent({
+      provider,
+      prompt: 'Read a.ts',
+      parentGoal: 'Review',
+      tools: [{ name: 'read_file', description: '', parameters: {} }],
+      parentToolCallId: 'parent-cache',
+      onSubagentChunk: (c) => subagentChunks.push(c),
+      executeTool: async () => 'contents',
+      usageModel: 'test-model',
+    })
+
+    assert.deepEqual(session.usage, {
+      inputTokens: 1000,
+      outputTokens: 20,
+      cacheReadTokens: 800,
+      cacheCreationTokens: 50,
+    })
+    const done = subagentChunks.find((c) => c.type === 'subagent_done')
+    assert.ok(done && done.type === 'subagent_done')
+    assert.deepEqual(done.usage, {
+      inputTokens: 1000,
+      outputTokens: 20,
+      cacheReadTokens: 800,
+      cacheCreationTokens: 50,
+    })
+  })
+
   it('respects AbortSignal', async () => {
     const controller = new AbortController()
     controller.abort()

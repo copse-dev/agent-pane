@@ -62,15 +62,16 @@ export class AnthropicProvider implements LLMProvider {
         // single per-stream usage value so we never depend on a shared field.
         let inputTokens = 0
         let outputTokens = 0
+        let cacheReadTokens = 0
+        let cacheCreationTokens = 0
 
         for await (const event of stream) {
           if (event.type === 'message_start') {
             const u = event.message.usage
+            cacheReadTokens = u.cache_read_input_tokens ?? 0
+            cacheCreationTokens = u.cache_creation_input_tokens ?? 0
             // Total input = fresh input + cache-creation + cache-read tokens.
-            inputTokens =
-              (u.input_tokens ?? 0) +
-              (u.cache_creation_input_tokens ?? 0) +
-              (u.cache_read_input_tokens ?? 0)
+            inputTokens = (u.input_tokens ?? 0) + cacheCreationTokens + cacheReadTokens
             outputTokens = u.output_tokens ?? 0
           }
           if (event.type === 'content_block_start' && event.content_block.type === 'tool_use') {
@@ -118,7 +119,14 @@ export class AnthropicProvider implements LLMProvider {
         // Emit usage per-stream so consumers can attribute it to this exact
         // stream rather than racing on the shared lastUsage field (#112).
         if (inputTokens || outputTokens) {
-          yield { type: 'usage', model, inputTokens, outputTokens }
+          yield {
+            type: 'usage',
+            model,
+            inputTokens,
+            outputTokens,
+            cacheReadTokens,
+            cacheCreationTokens,
+          }
         }
         if (stopReason === 'max_tokens') {
           yield {
