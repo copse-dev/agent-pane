@@ -63,10 +63,13 @@ app.on('web-contents-created', (_event, contents) => {
 })
 
 const agentEval = process.env.COPSE_AGENT_EVAL === '1'
-const gotSingleInstanceLock = agentEval ? true : app.requestSingleInstanceLock()
+// `copse --acp` drives the agent over stdio for an ACP client; it must not take
+// the single-instance lock (each client spawns its own) or open a window.
+const acpMode = process.argv.includes('--acp')
+const gotSingleInstanceLock = agentEval || acpMode ? true : app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
   app.quit()
-} else if (!agentEval) {
+} else if (!agentEval && !acpMode) {
   app.on('second-instance', () => {
     const win = getMainWindow()
     if (win) {
@@ -80,6 +83,13 @@ if (!gotSingleInstanceLock) {
 app
   .whenReady()
   .then(async () => {
+    if (acpMode) {
+      // Headless ACP agent over stdio: bootstrap tools/provider, no window.
+      const { runAcpAgentMode } = await import('./services/acp/acp-app-entry.ts')
+      await runAcpAgentMode()
+      return
+    }
+
     await checkToolAvailability()
     await initProjectSandbox()
 
