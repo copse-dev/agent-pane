@@ -59,8 +59,16 @@ export const EXTRA_PROVIDERS: Readonly<Record<ExtraProviderId, ExtraProvider>> =
     keyHint:
       "For Mistral models on La Plateforme's free Experiment tier. Validated via a free models request.",
     models: [
-      { id: 'mistral-small-latest', label: 'Mistral Small (free tier)', contextWindow: MISTRAL_CONTEXT },
-      { id: 'open-mistral-nemo', label: 'Mistral Nemo (free tier)', contextWindow: MISTRAL_CONTEXT },
+      {
+        id: 'mistral-small-latest',
+        label: 'Mistral Small (free tier)',
+        contextWindow: MISTRAL_CONTEXT,
+      },
+      {
+        id: 'open-mistral-nemo',
+        label: 'Mistral Nemo (free tier)',
+        contextWindow: MISTRAL_CONTEXT,
+      },
       { id: 'mistral-large-latest', label: 'Mistral Large', contextWindow: MISTRAL_CONTEXT },
     ],
   },
@@ -77,10 +85,26 @@ export const EXTRA_PROVIDERS: Readonly<Record<ExtraProviderId, ExtraProvider>> =
       'For Gemini Flash models on the free tier (rate-limited, no card). Get a key at aistudio.google.com.',
     keyPrefix: 'AIza',
     models: [
-      { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (free tier)', contextWindow: GEMINI_CONTEXT },
-      { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite (free tier)', contextWindow: GEMINI_CONTEXT },
-      { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (free tier)', contextWindow: GEMINI_CONTEXT },
-      { id: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash-Lite (free tier)', contextWindow: GEMINI_CONTEXT },
+      {
+        id: 'gemini-2.5-flash',
+        label: 'Gemini 2.5 Flash (free tier)',
+        contextWindow: GEMINI_CONTEXT,
+      },
+      {
+        id: 'gemini-2.5-flash-lite',
+        label: 'Gemini 2.5 Flash-Lite (free tier)',
+        contextWindow: GEMINI_CONTEXT,
+      },
+      {
+        id: 'gemini-2.0-flash',
+        label: 'Gemini 2.0 Flash (free tier)',
+        contextWindow: GEMINI_CONTEXT,
+      },
+      {
+        id: 'gemini-2.0-flash-lite',
+        label: 'Gemini 2.0 Flash-Lite (free tier)',
+        contextWindow: GEMINI_CONTEXT,
+      },
     ],
   },
   deepseek: {
@@ -96,7 +120,13 @@ export const EXTRA_PROVIDERS: Readonly<Record<ExtraProviderId, ExtraProvider>> =
     keyPrefix: 'sk-',
     // Only `deepseek-chat` (V3) reliably supports function calling, which this
     // agent needs; `deepseek-reasoner` is intentionally omitted.
-    models: [{ id: 'deepseek-chat', label: 'DeepSeek V3 (deepseek-chat)', contextWindow: DEEPSEEK_CONTEXT }],
+    models: [
+      {
+        id: 'deepseek-chat',
+        label: 'DeepSeek V3 (deepseek-chat)',
+        contextWindow: DEEPSEEK_CONTEXT,
+      },
+    ],
   },
 }
 

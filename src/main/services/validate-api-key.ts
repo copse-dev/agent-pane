@@ -168,12 +168,7 @@ export async function validateExtraProviderApiKey(
   }
 }
 
-export type ValidatableProvider =
-  | 'anthropic'
-  | 'openai'
-  | 'cursor'
-  | 'openrouter'
-  | ExtraProviderId
+export type ValidatableProvider = 'anthropic' | 'openai' | 'cursor' | 'openrouter' | ExtraProviderId
 
 export async function validateApiKey(
   provider: ValidatableProvider,
