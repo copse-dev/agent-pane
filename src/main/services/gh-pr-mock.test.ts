@@ -23,7 +23,7 @@ describe('gh-pr-mock', () => {
       number: MOCK_GH_PR_NUMBER,
     })
     assert.ok(details?.body.includes('PRs'))
-    assert.equal(details?.files.length, 2)
+    assert.equal(details?.files.length, 4)
   })
 
   it('supports unavailable and unauthenticated status modes', () => {

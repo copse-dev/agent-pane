@@ -244,7 +244,6 @@ export async function getGhPrDetails(ref: {
       'changedFiles',
       'createdAt',
       'updatedAt',
-      'repository',
       'files',
     ].join(','),
   ]
@@ -344,11 +343,14 @@ export async function getGhPrFileDiff(
     after = await fetchRepoFileAtRef(ref.owner, ref.repo, path, pr.headRefOid)
   }
 
+  const isDeleted = status === 'removed'
+
   return {
     path,
     before,
     after,
     language: detectLanguage(path),
+    deleted: isDeleted,
   }
 }
 

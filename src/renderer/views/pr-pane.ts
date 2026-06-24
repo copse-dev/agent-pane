@@ -103,7 +103,7 @@ export function mountPrPane(
   listRoot.append(listHeader, listBody)
 
   const metaHost = el('div', { class: 'pr-viewer-meta' })
-  const descriptionHost = el('div', { class: 'pr-viewer-description markdown-body' })
+  const descriptionHost = el('div', { class: 'pr-viewer-description message-text' })
   const filesHost = el('div', { class: 'pr-viewer-files' })
   const diffWrap = el('div', { class: 'git-diff-editor-wrap' })
   const emptyState = el('div', { class: 'panel-empty' }, 'Select a pull request')
@@ -326,6 +326,13 @@ export function mountPrPane(
         if (requestId !== selectRequestId || selectedFile !== path) return
         emptyState.hidden = true
         diffWrap.hidden = false
+        if (diff.deleted) {
+          // Show a "deleted" badge instead of an empty diff for deleted files.
+          clearDiff()
+          emptyState.hidden = false
+          emptyState.textContent = 'File was deleted in this pull request'
+          return
+        }
         await setGitFileDiffModel(ensureDiffEditor(), monaco, diff, viewerRoot)
       })
     await diffLoadQueue

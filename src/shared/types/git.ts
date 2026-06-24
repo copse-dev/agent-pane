@@ -86,4 +86,6 @@ export interface GhPrFileDiff {
   before: string
   after: string
   language: string
+  /** The file was deleted in this PR (no `after` content). */
+  deleted?: boolean
 }

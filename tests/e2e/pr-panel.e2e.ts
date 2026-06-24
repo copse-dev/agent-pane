@@ -68,6 +68,9 @@ describe('PR panel (mock gh)', () => {
 
     await saveElementScreenshot('#pane-files', 'pr-panel-linked-list.png')
     await expect(await $('.pr-viewer-description')).toHaveText(expect.stringContaining('PRs'))
+    await expect(await $('.pr-viewer-description')).not.toHaveText(
+      expect.stringMatching(/template hint|<!--|Copse PR template/i),
+    )
     await saveElementScreenshot('#pane-files', 'pr-panel-viewer.png')
 
     await $('[aria-label="Explorer"]').click()

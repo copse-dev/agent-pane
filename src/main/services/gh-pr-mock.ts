@@ -30,6 +30,7 @@ const MOCK_OTHER_PR: GhPrSummary = {
 const MOCK_PR_DETAILS: GhPrDetails = {
   ...MOCK_LINKED_PR,
   body: [
+    '<!-- Copse PR template: hidden guidance for reviewers -->',
     '## Summary',
     '',
     'Adds a **PRs** tab to the right panel so chat-linked pull requests open in-app.',
@@ -42,10 +43,12 @@ const MOCK_PR_DETAILS: GhPrDetails = {
   mergeStateStatus: 'CLEAN',
   additions: 12,
   deletions: 3,
-  changedFiles: 2,
+  changedFiles: 4,
   files: [
     { path: 'src/renderer/views/pr-pane.ts', status: 'added', additions: 420, deletions: 0 },
     { path: 'src/main/services/gh-pr-service.ts', status: 'modified', additions: 80, deletions: 4 },
+    { path: 'src/shared/types/git.ts', status: 'modified', additions: 3, deletions: 1 },
+    { path: 'src/renderer/views/old-panel.ts', status: 'removed', additions: 0, deletions: 150 },
   ],
 }
 
