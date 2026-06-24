@@ -30,6 +30,7 @@ export function mountRightPanelTabs(root: HTMLElement, store: AppStore): () => v
       'aria-label': 'Changes',
     },
     'Changes',
+    el('span', { class: 'right-panel-tab-badge', hidden: true }),
   )
   const planBtn = el(
     'button',
@@ -122,6 +123,15 @@ export function mountRightPanelTabs(root: HTMLElement, store: AppStore): () => v
     changesBtn.classList.toggle('is-active', mode === 'changes')
     planBtn.classList.toggle('is-active', mode === 'plan')
     browserBtn.classList.toggle('is-active', mode === 'browser')
+
+    const pendingCount = store.getState().stagedDiffs?.length ?? 0
+    const badge = changesBtn.querySelector('.right-panel-tab-badge') as HTMLElement
+    if (badge) {
+      badge.hidden = pendingCount === 0
+      badge.textContent = String(pendingCount)
+    }
+    changesBtn.classList.toggle('has-pending', pendingCount > 0)
+
     syncLayout()
   }
 
@@ -137,6 +147,7 @@ export function mountRightPanelTabs(root: HTMLElement, store: AppStore): () => v
     store.on('files_pane_changed', syncLayout),
     store.on('todos_changed', sync),
     store.on('threads_changed', sync),
+    store.on('staged_diffs_changed', sync),
   ]
 
   return () => unsubs.forEach((u) => u())
