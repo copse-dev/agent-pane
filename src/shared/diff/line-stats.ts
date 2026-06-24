@@ -4,13 +4,21 @@ export interface LineDiffStats {
   deletions: number
 }
 
+/** Split file text into logical lines (git treats '' as zero lines, not one empty line). */
+function splitIntoLines(text: string): string[] {
+  if (text === '') return []
+  const lines = text.split('\n')
+  if (text.endsWith('\n')) lines.pop()
+  return lines
+}
+
 /**
  * Count lines added and removed between two file snapshots using an LCS line
  * diff — matches git `diff --numstat` semantics for whole-file replacements.
  */
 export function computeLineDiffStats(before: string, after: string): LineDiffStats {
-  const a = before.split('\n')
-  const b = after.split('\n')
+  const a = splitIntoLines(before)
+  const b = splitIntoLines(after)
   const n = a.length
   const m = b.length
   const dp = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0))
