@@ -1,4 +1,5 @@
-import type { ApiClient } from '../../../preload/api.d.ts'
+import type { ApiClient, ApiKeyProvider } from '../../../preload/api.d.ts'
+import { EXTRA_PROVIDERS_LIST, type ExtraProviderId } from '@shared/llm/extra-providers.ts'
 import { el } from '../../dom/helpers.ts'
 
 export interface ApiKeysSection {
@@ -7,7 +8,7 @@ export interface ApiKeysSection {
   saveKeys: () => Promise<void>
 }
 
-type ApiKeyProvider = 'anthropic' | 'openai' | 'cursor' | 'openrouter'
+export type { ApiKeyProvider }
 
 interface ApiKeyProviderConfig {
   provider: ApiKeyProvider
@@ -46,6 +47,18 @@ const API_KEY_PROVIDER_CONFIGS: Record<ApiKeyProvider, ApiKeyProviderConfig> = {
     placeholder: 'sk-or-…',
     hint: 'For OpenRouter models (Claude, GPT, Gemini, Llama, and more via one key). Validated via a free key request.',
   },
+  ...(Object.fromEntries(
+    EXTRA_PROVIDERS_LIST.map((p) => [
+      p.id,
+      {
+        provider: p.id,
+        name: `${p.id}Key`,
+        label: p.keyLabel,
+        placeholder: p.keyPlaceholder,
+        hint: p.keyHint,
+      },
+    ]),
+  ) as Record<ExtraProviderId, ApiKeyProviderConfig>),
 }
 
 function keyStatusClass(ok: boolean | null): string {

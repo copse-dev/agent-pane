@@ -2,8 +2,14 @@ import {
   createProvider,
   createLocalOpenAIProvider,
   createOpenRouterProvider,
+  createExtraCloudProvider,
 } from '@shared/llm/create-provider.ts'
 import { isOpenRouterModel, openRouterModelId } from '@shared/llm/openrouter.ts'
+import {
+  extraProviderForModel,
+  extraProviderModelId,
+  type ExtraProviderId,
+} from '@shared/llm/extra-providers.ts'
 import type { LLMProvider } from '@shared/types'
 import { DEFAULT_LM_STUDIO_URL, LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
 import { getSetting, getSettingTrimmed, getApiKey, getLmStudioApiKey } from './settings.ts'
@@ -16,11 +22,16 @@ import { isLocalModel } from '@shared/llm/estimate-cost.ts'
 
 export { DEFAULT_LM_STUDIO_URL }
 
-function storedOrEnvApiKey(provider: 'anthropic' | 'openai' | 'openrouter'): string | null {
+function storedOrEnvApiKey(
+  provider: 'anthropic' | 'openai' | 'openrouter' | ExtraProviderId,
+): string | null {
   if (provider === 'anthropic')
     return getApiKey('anthropic') ?? process.env.ANTHROPIC_API_KEY ?? null
   if (provider === 'openrouter')
     return getApiKey('openrouter') ?? process.env.OPENROUTER_API_KEY ?? null
+  if (provider === 'mistral') return getApiKey('mistral') ?? process.env.MISTRAL_API_KEY ?? null
+  if (provider === 'gemini') return getApiKey('gemini') ?? process.env.GEMINI_API_KEY ?? null
+  if (provider === 'deepseek') return getApiKey('deepseek') ?? process.env.DEEPSEEK_API_KEY ?? null
   return getApiKey('openai') ?? process.env.OPENAI_API_KEY ?? null
 }
 
@@ -106,6 +117,16 @@ export async function buildProvider(model: string): Promise<LLMProvider> {
       )
     }
     return createOpenRouterProvider(openRouterModelId(model), apiKey)
+  }
+  const extra = extraProviderForModel(model)
+  if (extra) {
+    const apiKey = storedOrEnvApiKey(extra.id)
+    if (!apiKey) {
+      throw new Error(
+        `${extra.label} is not configured. Add a ${extra.label} API key in Settings or choose another model.`,
+      )
+    }
+    return createExtraCloudProvider(extra, extraProviderModelId(model), apiKey)
   }
   if (model.startsWith('claude')) {
     return createProvider(model, {
