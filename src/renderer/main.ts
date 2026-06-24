@@ -84,6 +84,14 @@ async function boot() {
     if (!isSettingsDialogOpen()) openSettingsDialog()
   })
 
+  // File ▸ New Thread (Cmd/Ctrl+N) opens a fresh composer, mirroring the
+  // sidebar's "+" button. No-op until a workspace is open.
+  api.menu.onNewThread(() => {
+    if (!store.getState().workspaceRoot) return
+    ensureLayout()
+    openNewThread(store)
+  })
+
   api.menu.onTogglePanel(() => {
     ensureLayout()
     toggleFilesPaneWithWorkspace(store, api)

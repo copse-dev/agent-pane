@@ -47,6 +47,12 @@ export function buildAppMenu(win: BrowserWindow): void {
       label: 'File',
       submenu: [
         {
+          label: 'New Thread',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => win.webContents.send('menu:newThread'),
+        },
+        { type: 'separator' as const },
+        {
           label: 'Open Folder…',
           accelerator: 'CmdOrCtrl+O',
           click: () => void openFolder(),

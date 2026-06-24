@@ -168,6 +168,7 @@ export interface IpcEventMap {
   'diff:conflict': [paths: string[]]
   'fs:changed': [path: string, content: string | null]
   'menu:settings': []
+  'menu:newThread': []
   'menu:togglePanel': []
   'menu:showExplorer': []
   'menu:showTerminal': []

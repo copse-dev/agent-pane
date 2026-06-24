@@ -124,6 +124,7 @@ export interface ApiClient {
   }
   menu: {
     onSettings: (handler: () => void) => () => void
+    onNewThread: (handler: () => void) => () => void
     onTogglePanel: (handler: () => void) => () => void
     onShowExplorer: (handler: () => void) => () => void
     onShowTerminal: (handler: () => void) => () => void

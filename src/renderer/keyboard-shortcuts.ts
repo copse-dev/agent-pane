@@ -1,6 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../preload/api.d.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
+import { openNewThread } from '@shared/store/thread-helpers.ts'
 import { openRightPanelWithWorkspace, toggleFilesPaneWithWorkspace } from './controller/panels.ts'
 
 export function isTypingTarget(target: EventTarget | null): boolean {
@@ -11,6 +12,13 @@ export function isTypingTarget(target: EventTarget | null): boolean {
   if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT') return true
   if (el.isContentEditable) return true
   return false
+}
+
+/** Cmd/Ctrl+N starts a new thread, matching the File ▸ New Thread menu item. */
+export function matchNewThreadShortcut(e: KeyboardEvent): boolean {
+  const meta = e.ctrlKey || e.metaKey
+  if (!meta || e.altKey || e.shiftKey) return false
+  return e.key === 'n' || e.key === 'N'
 }
 
 export type PanelShortcutAction = 'togglePanel' | { openPanel: RightPanelMode }
@@ -43,6 +51,14 @@ export function handlePanelShortcut(
 
 export function registerPanelKeyboardShortcuts(store: AppStore, api: ApiClient): void {
   document.addEventListener('keydown', (e) => {
+    // New thread fires even from the composer, so it's checked before the
+    // typing-target guard that the panel chords skip on.
+    if (matchNewThreadShortcut(e)) {
+      if (!store.getState().workspaceRoot) return
+      e.preventDefault()
+      openNewThread(store)
+      return
+    }
     if (isTypingTarget(e.target)) return
     const action = matchPanelShortcut(e)
     if (!action) return
