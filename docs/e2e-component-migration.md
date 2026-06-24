@@ -87,12 +87,12 @@ trivial indent-geometry line is dropped.)
 
 `src/renderer/views/new-thread-keeps-panel.test.ts` ports
 `tests/e2e/new-thread-keeps-panel.e2e.ts`: seed a `createStore({...})` with a
-project + non-blank thread, mount the **real** views (`mountProjectsPane`,
-`mountRightPanelTabs`) plus a `#pane-files` element kept in sync by the panels
-controller, drive the `.project-new-thread-btn` click through the real
-`openNewThread` path, and assert the same DOM the e2e did — chat-row count,
-selected title, `#pane-files` visibility, Explorer tab `is-active` — with no
-Electron. Replicate this shape per candidate.
+project + non-blank thread, mount the **real** `mountProjectsPane` view plus a
+`#pane-files` element kept in sync by the panels controller, drive the
+`.project-new-thread-btn` click through the real `openNewThread` path, and assert
+the same behaviour the e2e did — chat-row count, selected title, `#pane-files`
+visibility, and `rightPanelMode === 'explorer'` (what drives the Explorer tab's
+`is-active`) — with no Electron. Replicate this shape per candidate.
 
 ## Workflow per migration
 

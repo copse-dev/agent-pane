@@ -5,16 +5,17 @@ import { createStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountProjectsPane } from './projects-pane.ts'
-import { mountRightPanelTabs } from './right-panel-tabs.ts'
 import { syncFilesPaneDom, toggleRightPanel } from '../controller/panels.ts'
 
 // Component-level port of tests/e2e/new-thread-keeps-panel.e2e.ts. That spec is
 // CI-quarantined for a new-thread `$$` race, yet everything it asserts — the
-// chats-list rows, #pane-files visibility, and the active right-panel tab — is
+// chats-list rows and the side panel staying open in the same mode — is
 // DOM/store with no Electron runtime. So it runs here in happy-dom against the
-// real projects-pane / right-panel-tabs views and the openNewThread controller
-// path, guarding the same regression (creating a new thread must not close the
-// side panel) without launching the app.
+// real projects-pane view, the openNewThread controller path, and the panels
+// controller that drives #pane-files. The active right-panel tab is `is-active`
+// purely from `rightPanelMode`, so that's asserted at the store level rather
+// than mounting the tab strip. Guards the same regression: creating a new
+// thread must not close the side panel.
 
 function seededThread(): Thread {
   return {
@@ -39,7 +40,7 @@ afterEach(() => {
 })
 
 describe('new thread keeps the side panel open (component)', () => {
-  it('adds a selected New Thread row while #pane-files and the Explorer tab stay active', () => {
+  it('adds a selected New Thread row while the side panel stays open in explorer mode', () => {
     const store = createStore({
       projects: [{ id: 'p1', path: '/proj', name: 'Proj' }],
       activeProjectId: 'p1',
@@ -52,28 +53,24 @@ describe('new thread keeps the side panel open (component)', () => {
     })
 
     const projectsHost = document.createElement('div')
-    const tabsHost = document.createElement('div')
     const pane = document.createElement('div')
     pane.id = 'pane-files'
-    pane.hidden = true
-    document.body.append(projectsHost, tabsHost, pane)
+    document.body.append(projectsHost, pane)
     mountProjectsPane(projectsHost, store, apiStub)
-    mountRightPanelTabs(tabsHost, store)
 
     const chatRows = () => document.querySelectorAll('.chats-list .chat-row')
-    const explorerTab = () =>
-      document.querySelector('.right-panel-tab[aria-label="Explorer"]') as HTMLElement
 
-    // One seeded thread, panel closed.
+    // One seeded thread; the panel starts closed.
+    syncFilesPaneDom(store)
     assert.equal(chatRows().length, 1)
     assert.equal(pane.hidden, true)
 
-    // Open the right panel (explorer) — mirrors clicking the titlebar toggle.
+    // Open the side panel (explorer) — mirrors clicking the titlebar toggle.
     toggleRightPanel(store, 'explorer')
     syncFilesPaneDom(store)
     assert.equal(store.getState().filesPaneOpen, true)
+    assert.equal(store.getState().rightPanelMode, 'explorer')
     assert.equal(pane.hidden, false)
-    assert.ok(explorerTab().classList.contains('is-active'))
 
     // Create a new thread from the expanded project row.
     document.querySelector<HTMLButtonElement>('.project-new-thread-btn')!.click()
@@ -85,10 +82,10 @@ describe('new thread keeps the side panel open (component)', () => {
       'New Thread',
     )
 
-    // The panel stays open in the same mode on the new thread.
+    // The side panel stays open in the same mode on the new thread.
     syncFilesPaneDom(store)
     assert.equal(store.getState().filesPaneOpen, true)
+    assert.equal(store.getState().rightPanelMode, 'explorer')
     assert.equal(pane.hidden, false)
-    assert.ok(explorerTab().classList.contains('is-active'))
   })
 })
