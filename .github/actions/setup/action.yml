@@ -32,13 +32,20 @@ runs:
     # the native ABI) busts it and forces a fresh electron-rebuild. vendor/
     # codesearch is a pinned-version binary fetch that postinstall guards as
     # idempotent, so it caches cleanly alongside node_modules.
+    #
+    # Key by runner.arch as well as runner.os: the tree holds arch-specific native
+    # binaries (esbuild's @esbuild/<platform> optional dep, node-pty/electron
+    # rebuilds, the vendor/codesearch fetch), but `runner.os` is `macOS` for BOTH
+    # Intel and Apple-Silicon runners. A mixed-arch self-hosted Mac fleet would
+    # otherwise share one entry, and an arm64 box restoring an x64-populated cache
+    # (or vice-versa) fails at load with "@esbuild/darwin-arm64 could not be found".
     - uses: actions/cache@v4
       id: deps
       with:
         path: |
           node_modules
           vendor/codesearch
-        key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+        key: ${{ runner.os }}-${{ runner.arch }}-deps-${{ hashFiles('package-lock.json') }}
     - run: npm ci
       if: steps.deps.outputs.cache-hit != 'true'
       shell: bash

@@ -156,7 +156,13 @@ jobs:
     # per-attempt `timeout` is 480s (step cap 26 min for 3 attempts) so attempt 1
     # finishes instead of being SIGKILL'd mid-retry, letting attempt 2 relaunch.
     strategy:
-      fail-fast: false
+      # Fail fast: the first shard to go red cancels the rest. On the self-hosted
+      # fleet a failure is usually a whole-run problem (a poisoned dep cache, a
+      # broken commit, a runner-env issue) that every shard would hit anyway, so
+      # cancelling the siblings frees the box instead of grinding all 8 through
+      # their retry budget. Tradeoff: you see the first failing shard, not every
+      # failing shard, in one run.
+      fail-fast: true
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8]
     env:
