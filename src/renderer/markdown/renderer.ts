@@ -91,8 +91,13 @@ function applyOutsideInlineHtml(text: string, pattern: RegExp, replacement: stri
 }
 
 function renderBoldAroundInlineHtml(text: string): string {
+  // The opening `**` must be left-flanking (followed by a non-space): a `**`
+  // followed by whitespace can only *close* emphasis, never open it. Without
+  // this guard an odd `**` count like `**Label** … <code>…</code>).**` pairs the
+  // label's closing `**` with the stray trailing one across the code span,
+  // bolding the wrong half and leaving `**Label` literal (#streaming-bold).
   return text.replace(
-    /\*\*([^*\n]*<(?:code|a|img)\b[\s\S]*?(?:<\/(?:code|a)>|>)[^*\n]*)\*\*/g,
+    /\*\*(?=\S)([^*\n]*<(?:code|a|img)\b[\s\S]*?(?:<\/(?:code|a)>|>)[^*\n]*)\*\*/g,
     '<strong>$1</strong>',
   )
 }

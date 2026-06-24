@@ -18,12 +18,18 @@ import {
   shellCommandFromArgs,
   formatShellPromptBody,
   formatExternalSandboxPromptBody,
+  formatInstallPromptBody,
+  formatEphemeralRunnerPromptBody,
   shellRequiresOutsideSandbox,
   mcpToolLabel,
+  GITHUB_CI_TOOLS,
+  formatGithubCiPromptBody,
 } from './permission-policy.ts'
+import { detectPackageInstall } from './safe-install.ts'
 import {
   BROWSER_TOOLS,
   READ_ONLY_BROWSER_TOOLS,
+  BROWSER_ALLOW_USER_APPROVAL_SETTING,
   decideBrowserNavigation,
   formatBrowserPromptBody,
 } from './browser/browser-origin-policy.ts'
@@ -181,11 +187,37 @@ async function checkShellPermission(args: unknown): Promise<boolean> {
   })
 
   if (decision.action === 'allow') return true
-  return promptShell(
-    command,
-    decision.reasons,
-    shellRequiresOutsideSandbox(command, workspaceRoot, sandboxEnabled),
-  )
+
+  const outsideSandbox = shellRequiresOutsideSandbox(command, workspaceRoot, sandboxEnabled)
+
+  // A plain package install gets a dedicated, readable approval rather than the
+  // generic external-command reason list. Only when the install is the *sole*
+  // flagged signal (one reason) — compound or registry-redirected commands keep
+  // the full reason list so extra risks (curl, custom registry, …) stay visible.
+  const install = detectPackageInstall(command)
+  if (install.isInstall && decision.reasons.length === 1) {
+    const safeInstall = getSetting<boolean>('safeInstallEnabled', true)
+    const { approved } = await requestApproval(
+      install.isEphemeralRunner
+        ? {
+            title: 'Run package command?',
+            body: formatEphemeralRunnerPromptBody(command, { outsideSandbox, safeInstall }),
+            type: 'shell',
+          }
+        : {
+            title: 'Run package install?',
+            body: formatInstallPromptBody(command, {
+              outsideSandbox,
+              safeInstall,
+              jsManager: install.jsManager,
+            }),
+            type: 'shell',
+          },
+    )
+    return approved
+  }
+
+  return promptShell(command, decision.reasons, outsideSandbox)
 }
 
 function browserUrlFromArgs(args: unknown): string | null {
@@ -201,6 +233,19 @@ async function rememberBrowserOrigin(origin: string): Promise<void> {
   }
 }
 
+async function checkGithubCiPermission(toolName: string, args: unknown): Promise<boolean> {
+  if (getSetting<boolean>('githubCiAutoAllow', false)) return true
+  const { approved, remember } = await requestApproval({
+    title: `GitHub CI tool: ${toolName}`,
+    body: formatGithubCiPromptBody(toolName, args),
+    type: 'mcp',
+    allowRemember: true,
+    rememberLabel: 'Always allow GitHub CI tools',
+  })
+  if (approved && remember) await setSetting('githubCiAutoAllow', true)
+  return approved
+}
+
 async function checkBrowserNavigatePermission(args: unknown): Promise<boolean> {
   const url = browserUrlFromArgs(args)
   if (!url) throw new Error('browser_navigate requires a url argument')
@@ -208,7 +253,7 @@ async function checkBrowserNavigatePermission(args: unknown): Promise<boolean> {
   const decision = decideBrowserNavigation({
     url,
     allowedOrigins: getSetting<string[]>('browserAllowedOrigins', []),
-    allowUserApproval: getSetting<boolean>('autoRunSandboxCommands', true),
+    allowUserApproval: getSetting<boolean>(BROWSER_ALLOW_USER_APPROVAL_SETTING, true),
   })
   if (decision.action === 'allow') return true
   if (decision.action === 'deny') {
@@ -223,6 +268,11 @@ async function checkBrowserNavigatePermission(args: unknown): Promise<boolean> {
   })
   if (approved && remember) await rememberBrowserOrigin(decision.origin)
   return approved
+}
+
+/** Gate a raw shell command string (todo verification, etc.) through the same policy as run_shell. */
+export async function ensureShellCommandPermitted(command: string): Promise<boolean> {
+  return checkShellPermission({ command })
 }
 
 /** Integrated terminal is a direct user UI action; PTY always runs outside seatbelt (#180). */
@@ -278,7 +328,17 @@ async function cursorHooksAllow(check: PermissionCheck): Promise<boolean> {
   return true
 }
 
-/** Returns true when the tool call may proceed, false when the user rejected. */
+/**
+ * Returns true when the tool call may proceed, false when the user rejected.
+ *
+ * This gate is default-allow: only the tools matched below (shell, MCP, web
+ * fetch/search, browser navigation) are explicitly gated, and anything else
+ * falls through to `return true`. That is safe only because every *mutating*
+ * tool is gated elsewhere — file writes/edits/deletes/renames go through the
+ * diff-approval queue (see diff-queue.ts), not this function. Any new tool that
+ * changes the workspace or reaches the network MUST either route through the
+ * diff queue or get an explicit case here; do not rely on the default branch.
+ */
 export async function ensureToolPermitted(check: PermissionCheck): Promise<boolean> {
   const { toolName, args } = check
 
@@ -302,6 +362,10 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
     return checkWebSearchPermission()
   }
 
+  if (GITHUB_CI_TOOLS.has(toolName)) {
+    return checkGithubCiPermission(toolName, args)
+  }
+
   if (toolName.startsWith('mcp__')) {
     return checkMcpPermission(toolName, args)
   }
@@ -310,5 +374,8 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
     return checkShellPermission(args)
   }
 
+  // Default-allow: read-only/in-process tools (and mutating tools that are
+  // gated via the diff-approval queue) need no prompt here. See the contract
+  // in this function's doc comment before relying on this branch for a new tool.
   return true
 }

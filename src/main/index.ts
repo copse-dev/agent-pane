@@ -1,7 +1,10 @@
 import './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
 import { app, ipcMain } from 'electron'
 import { attachWebContentsLockdown } from './windows/web-contents-lockdown.ts'
-import { isBrowserWebContents } from './windows/browser-web-contents.ts'
+import {
+  attachBrowserGuestWindowOpen,
+  isBrowserWebContents,
+} from './windows/browser-web-contents.ts'
 import { applyAppIcon } from './app-icon.ts'
 import type { LLMMessage } from '@shared/types'
 import { createMainWindow } from './windows/create-main-window.ts'
@@ -21,6 +24,7 @@ import { initTerminal } from './ipc/terminal.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
 import { initSkillsRegistry } from './services/skills-registry.ts'
 import { parseAgentRunPayload } from '@shared/agent/parse-agent-run-payload.ts'
+import type { AgentHost } from '@shared/agent/agent-host.ts'
 import {
   runAgent,
   abortAgent,
@@ -30,6 +34,7 @@ import {
   listLmStudioModels,
   invalidateLmStudioModelsCache,
 } from './services/agent-service.ts'
+import { listFreeOpenRouterModels } from './services/openrouter-models.ts'
 import {
   detectLmStudio,
   downloadLmStudioModel,
@@ -43,20 +48,28 @@ import { getMainWindow } from './windows/create-main-window.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
 import { clearRemoteAgentSession } from './services/remote-agent-client.ts'
 import { shutdownBrowserSession } from './services/browser/session-manager.ts'
+import { drainWriteQueue } from './services/write-queue.ts'
+import { assertMainFrameSender } from './ipc/ipc-guards.ts'
 import { destroyAllTerminalSessions } from './services/terminal-service.ts'
 
 // Prevent multiple instances stacking invisible windows at the same position.
 // A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.
 app.on('web-contents-created', (_event, contents) => {
-  if (isBrowserWebContents(contents)) return
+  if (isBrowserWebContents(contents)) {
+    attachBrowserGuestWindowOpen(contents)
+    return
+  }
   attachWebContentsLockdown(contents)
 })
 
 const agentEval = process.env.COPSE_AGENT_EVAL === '1'
-const gotSingleInstanceLock = agentEval ? true : app.requestSingleInstanceLock()
+// `copse --acp` drives the agent over stdio for an ACP client; it must not take
+// the single-instance lock (each client spawns its own) or open a window.
+const acpMode = process.argv.includes('--acp')
+const gotSingleInstanceLock = agentEval || acpMode ? true : app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
   app.quit()
-} else if (!agentEval) {
+} else if (!agentEval && !acpMode) {
   app.on('second-instance', () => {
     const win = getMainWindow()
     if (win) {
@@ -70,6 +83,13 @@ if (!gotSingleInstanceLock) {
 app
   .whenReady()
   .then(async () => {
+    if (acpMode) {
+      // Headless ACP agent over stdio: bootstrap tools/provider, no window.
+      const { runAcpAgentMode } = await import('./services/acp/acp-app-entry.ts')
+      await runAcpAgentMode()
+      return
+    }
+
     await checkToolAvailability()
     await initProjectSandbox()
 
@@ -77,6 +97,14 @@ app
     applyAppIcon([win])
     buildAppMenu(win)
     const registry = createRegistry()
+    // The only Electron-specific seam the agent run needs: forward stream chunks
+    // to the renderer. Injecting it as an AgentHost keeps runAgent free of BrowserWindow.
+    // Guard against a window destroyed mid-run (e.g. closed while the agent streams).
+    const agentHost: AgentHost = {
+      emit: (threadId, chunk) => {
+        if (!win.isDestroyed()) win.webContents.send('agent:chunk', threadId, chunk)
+      },
+    }
 
     initApproval(win)
     initDiffQueue(win)
@@ -92,6 +120,8 @@ app
     })
 
     ipcMain.handle('lmstudio:models', () => listLmStudioModels())
+
+    ipcMain.handle('openrouter:models', () => listFreeOpenRouterModels())
 
     ipcMain.handle('lmstudio:detect', async (_e, url?: string, apiKey?: string) =>
       detectLmStudio(url, apiKey),
@@ -115,14 +145,13 @@ app
       },
     )
 
-    await initSkillsRegistry()
-    registerSkillTools(registry)
-    await loadMcpServers(registry)
-    win.webContents.send('mcp:status_changed', getMcpServerStatuses())
-
+    // Register before async bootstrap (skills/MCP) so the renderer, which loads
+    // concurrently and fires a context estimate on first paint, never races a
+    // missing handler. The registry these close over is populated lazily below.
     const messageHistory = new Map<string, LLMMessage[]>()
 
-    ipcMain.handle('agent:run', async (_e, threadId: string, rawPrompt: string) => {
+    ipcMain.handle('agent:run', async (event, threadId: string, rawPrompt: string) => {
+      assertMainFrameSender(event, win)
       const { userContent, invokedSkills, priorTodos, workingBrief } =
         parseAgentRunPayload(rawPrompt)
 
@@ -135,7 +164,7 @@ app
       }
 
       const priorMessages = messageHistory.get(threadId) ?? []
-      const result = await runAgent(threadId, userContent, priorMessages, win, registry, {
+      const result = await runAgent(threadId, userContent, priorMessages, agentHost, registry, {
         invokedSkills,
         priorTodos,
         ...(workingBrief !== undefined ? { workingBrief } : {}),
@@ -144,47 +173,65 @@ app
       storageSet(`llm-history:${threadId}`, result.messages)
     })
 
-    ipcMain.handle('agent:estimateContext', async (_e, threadId: string, payloadJson: string) => {
-      const {
-        draftText = '',
-        invokedSkills = [],
-        imageCount = 0,
-      } = JSON.parse(payloadJson) as {
-        draftText?: string
-        invokedSkills?: string[]
-        imageCount?: number
-      }
-      if (!messageHistory.has(threadId)) {
-        const stored = storageGet(`llm-history:${threadId}`)
-        if (Array.isArray(stored)) messageHistory.set(threadId, stored as LLMMessage[])
-      }
-      const priorMessages = messageHistory.get(threadId) ?? []
-      return estimateContextBreakdown(registry, {
-        draftText,
-        invokedSkills,
-        imageCount,
-        priorMessages,
-      })
-    })
+    ipcMain.handle(
+      'agent:estimateContext',
+      async (event, threadId: string, payloadJson: string) => {
+        assertMainFrameSender(event, win)
+        const {
+          draftText = '',
+          invokedSkills = [],
+          imageCount = 0,
+        } = JSON.parse(payloadJson) as {
+          draftText?: string
+          invokedSkills?: string[]
+          imageCount?: number
+        }
+        if (!messageHistory.has(threadId)) {
+          const stored = storageGet(`llm-history:${threadId}`)
+          if (Array.isArray(stored)) messageHistory.set(threadId, stored as LLMMessage[])
+        }
+        const priorMessages = messageHistory.get(threadId) ?? []
+        return estimateContextBreakdown(registry, {
+          draftText,
+          invokedSkills,
+          imageCount,
+          priorMessages,
+        })
+      },
+    )
 
-    ipcMain.handle('agent:clearHistory', (_e, threadId: string) => {
+    ipcMain.handle('agent:clearHistory', (event, threadId: string) => {
+      assertMainFrameSender(event, win)
       messageHistory.delete(threadId)
       storageSet(`llm-history:${threadId}`, null)
       clearRemoteAgentSession(threadId)
     })
 
-    ipcMain.handle('agent:abort', (_e, threadId: string) => {
+    ipcMain.handle('agent:abort', (event, threadId: string) => {
+      assertMainFrameSender(event, win)
       abortAgent(threadId)
     })
 
-    ipcMain.handle('agent:suggestTitle', (_e, text: string) => suggestThreadTitle(text))
+    ipcMain.handle('agent:suggestTitle', (event, text: string) => {
+      assertMainFrameSender(event, win)
+      return suggestThreadTitle(text)
+    })
 
-    ipcMain.handle('agent:suggestTerminalTitle', (_e, text: string) => suggestTerminalTitle(text))
+    ipcMain.handle('agent:suggestTerminalTitle', (event, text: string) => {
+      assertMainFrameSender(event, win)
+      return suggestTerminalTitle(text)
+    })
 
-    ipcMain.handle('agent:suggestFollowUps', (_e, contextJson: string) => {
+    ipcMain.handle('agent:suggestFollowUps', (event, contextJson: string) => {
+      assertMainFrameSender(event, win)
       const context = JSON.parse(contextJson) as FollowUpContext
       return suggestFollowUps(context)
     })
+
+    await initSkillsRegistry()
+    registerSkillTools(registry)
+    await loadMcpServers(registry)
+    win.webContents.send('mcp:status_changed', getMcpServerStatuses())
 
     disposeTerminal = disposeTerminalHandlers
   })
@@ -201,6 +248,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   closeAllWatchers()
   stopWorkspaceIndexWatcher()
   shutdownBrowserSession()
+  await drainWriteQueue()
   await Promise.allSettled([shutdownMcpServers(), shutdownProjectSandbox()])
 }
 

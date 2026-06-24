@@ -12,8 +12,12 @@ import {
 } from '../services/diff-queue.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
 
+import { normalizeToolExecuteResult } from '@shared/types'
+
 function run(registry: ToolRegistry, name: string, args: Record<string, unknown>): Promise<string> {
-  return registry.execute(name, args, new AbortController().signal)
+  return registry
+    .execute(name, args, new AbortController().signal)
+    .then((r) => normalizeToolExecuteResult(r).result)
 }
 
 async function exists(p: string): Promise<boolean> {

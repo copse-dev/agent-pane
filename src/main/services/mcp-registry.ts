@@ -9,6 +9,7 @@ import { app } from 'electron'
 import { z } from 'zod'
 import type { McpServerConfig, McpServerStatus, McpToolAnnotations } from '@shared/types/mcp.ts'
 import type { ToolRegistry } from './tool-registry.ts'
+import { envForRendererChildProcess } from './child-process-env.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import { getSetting } from './settings.ts'
 import { storageGet, storageUpdate } from './storage.ts'
@@ -223,7 +224,7 @@ function createTransport(cfg: McpServerConfig): CreatedTransport {
   const transport = new StdioClientTransport({
     command: cfg.command!,
     args: cfg.args ?? [],
-    env: { ...(process.env as Record<string, string>), ...(cfg.env ?? {}) },
+    env: { ...envForRendererChildProcess(), ...(cfg.env ?? {}) },
     stderr: 'pipe',
     ...(cwd ? { cwd } : {}),
   })

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { normalizeToolExecuteResult } from '@shared/types'
 import { ToolRegistry, setPermissionGateForTests } from '../services/tool-registry.ts'
 import { createSearchCodebaseTool } from './search-codebase-tool.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
@@ -42,12 +43,13 @@ describe('search_codebase tool', () => {
   })
 
   it('routes identifier queries through regex search', async () => {
-    const tool = registry
-    const result = await tool.execute(
-      'search_codebase',
-      { query: 'authenticate', mode: 'auto' },
-      new AbortController().signal,
-    )
+    const result = normalizeToolExecuteResult(
+      await registry.execute(
+        'search_codebase',
+        { query: 'authenticate', mode: 'auto' },
+        new AbortController().signal,
+      ),
+    ).result
     assert.match(result, /\[regex search\]/)
     assert.match(result, /auth\.ts/)
   })
@@ -65,30 +67,36 @@ describe('search_codebase tool', () => {
       backend: 'codesearch',
     }))
 
-    const result = await registry.execute(
-      'search_codebase',
-      { query: 'where is authentication handled', mode: 'auto' },
-      new AbortController().signal,
-    )
+    const result = normalizeToolExecuteResult(
+      await registry.execute(
+        'search_codebase',
+        { query: 'where is authentication handled', mode: 'auto' },
+        new AbortController().signal,
+      ),
+    ).result
     assert.match(result, /\[native semantic search\]/)
     assert.match(result, /semantic hit/)
   })
 
   it('falls back to regex when native semantic search is unavailable', async () => {
-    const result = await registry.execute(
-      'search_codebase',
-      { query: 'where is authentication handled', mode: 'auto' },
-      new AbortController().signal,
-    )
+    const result = normalizeToolExecuteResult(
+      await registry.execute(
+        'search_codebase',
+        { query: 'where is authentication handled', mode: 'auto' },
+        new AbortController().signal,
+      ),
+    ).result
     assert.match(result, /\[semantic search unavailable — regex fallback\]/)
   })
 
   it('reports when semantic mode is requested but unavailable', async () => {
-    const result = await registry.execute(
-      'search_codebase',
-      { query: 'where is auth handled', mode: 'semantic' },
-      new AbortController().signal,
-    )
+    const result = normalizeToolExecuteResult(
+      await registry.execute(
+        'search_codebase',
+        { query: 'where is auth handled', mode: 'semantic' },
+        new AbortController().signal,
+      ),
+    ).result
     assert.match(result, /Semantic search unavailable/)
     assert.match(result, /codesearch/)
   })

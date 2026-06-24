@@ -11,15 +11,15 @@ function escapeXml(text: string): string {
 }
 
 /**
- * Only skills the user installed for themselves (`~/.cursor/skills` etc.) are
- * treated as trusted authors. Everything auto-discovered from a workspace
- * (`project`) or a plugin (`plugin`, `plugin-path`) is attacker-controllable —
- * a cloned repo or third-party plugin can ship a SKILL.md whose description or
- * body tries to hijack the agent. Such content is surfaced to the model as
- * untrusted *data*, not as authoritative instructions.
+ * User-installed skills and first-party skills shipped with Copse (`bundled`) are
+ * trusted authors. Everything auto-discovered from a workspace (`project`) or a
+ * third-party plugin (`plugin`, `plugin-path`) is attacker-controllable — a cloned
+ * repo or marketplace plugin can ship a SKILL.md whose description or body tries
+ * to hijack the agent. Such content is surfaced to the model as untrusted *data*,
+ * not as authoritative instructions.
  */
 function isTrustedSource(source: SkillSource): boolean {
-  return source === 'user'
+  return source === 'user' || source === 'bundled'
 }
 
 export function skillMarkdownBody(raw: string): string {

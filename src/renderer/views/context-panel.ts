@@ -9,9 +9,11 @@ import { renderMarkdown } from '../markdown/renderer.ts'
 import { sanitizeRenderedMarkdown } from '../markdown/sanitize.ts'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
+import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { revealFirstDiffChangeOnNextUpdate } from '../monaco/diff-scroll.ts'
+import { disposeDiffModels } from '../monaco/git-diff-viewer.ts'
 import { registerMonacoSelectionToChatShortcut } from '../monaco/selection-to-chat.ts'
 import { showErrorToast } from './toast.ts'
 
@@ -175,17 +177,26 @@ export function mountContextPanel(
     }
   }
 
-  function showDiffView(view: ActiveDiff) {
-    const oldModels = diffEditor.getModel()
+  function clearDiffView() {
     cancelPendingDiffReveal?.()
-    cancelPendingDiffReveal = revealFirstDiffChangeOnNextUpdate(diffEditor)
+    cancelPendingDiffReveal = null
+    currentDiffView = null
+    disposeDiffModels(diffEditor)
+  }
+
+  function showDiffView(view: ActiveDiff) {
+    cancelPendingDiffReveal?.()
+    cancelPendingDiffReveal = null
     currentDiffView = view
+    const oldModels = diffEditor.getModel()
+    diffEditor.setModel(null)
+    oldModels?.original.dispose()
+    oldModels?.modified.dispose()
     diffEditor.setModel({
       original: monaco.editor.createModel(view.before, view.language),
       modified: monaco.editor.createModel(view.after, view.language),
     })
-    oldModels?.original.dispose()
-    oldModels?.modified.dispose()
+    cancelPendingDiffReveal = revealFirstDiffChangeOnNextUpdate(diffEditor)
     acceptBtn.onclick = () => void api.diff.approve(view.path)
     rejectBtn.onclick = () => void api.diff.reject(view.path)
   }
@@ -224,9 +235,7 @@ export function mountContextPanel(
     if (panelTab === 'file' && openFile) {
       emptyContainer.hidden = true
       diffStage.hidden = true
-      currentDiffView = null
-      cancelPendingDiffReveal?.()
-      cancelPendingDiffReveal = null
+      clearDiffView()
 
       const old = fileEditor.getModel()
       fileEditor.setModel(monaco.editor.createModel(openFile.content, openFile.language))
@@ -266,23 +275,19 @@ export function mountContextPanel(
         showDiffView(view)
       } else {
         selectedDiffPath = null
-        currentDiffView = null
         fileToolbar.hidden = true
         previewContainer.hidden = true
         fileContainer.hidden = true
         diffStage.hidden = true
-        cancelPendingDiffReveal?.()
-        cancelPendingDiffReveal = null
+        clearDiffView()
         emptyContainer.hidden = false
       }
     } else {
-      currentDiffView = null
       fileToolbar.hidden = true
       previewContainer.hidden = true
       fileContainer.hidden = true
       diffStage.hidden = true
-      cancelPendingDiffReveal?.()
-      cancelPendingDiffReveal = null
+      clearDiffView()
       emptyContainer.hidden = false
     }
   }
@@ -352,6 +357,7 @@ export function mountContextPanel(
     () => store.getState().workspaceRoot,
   )
   const unbindFileLinks = bindFileReferenceClicks(previewContainer, store, api)
+  const unbindBrowserLinks = bindBrowserLinkClicks(previewContainer, store, api)
 
   return () => {
     unsubs.forEach((u) => u())
@@ -360,6 +366,7 @@ export function mountContextPanel(
     unsubDiffConflict()
     unbindDrop()
     unbindFileLinks()
+    unbindBrowserLinks()
     fileEditor.dispose()
     diffEditor.dispose()
   }

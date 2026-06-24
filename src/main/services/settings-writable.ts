@@ -35,8 +35,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   localDefaultModel: z.string().max(256),
   smallTasksModel: z.string().max(256),
   subagentModel: z.string().max(256),
+  openRouterModel: z.string().max(256),
   localSubagentsEnabled: z.boolean(),
   localTodoItemsEnabled: z.boolean(),
+  bundledCursorSkillsEnabled: z.boolean(),
   skillsEnabled: z.boolean(),
   skillPluginPaths: z.array(z.string().max(4096)).max(64),
   subagentsEnabled: z.boolean(),
@@ -75,7 +77,9 @@ export const securitySettingsSchema = z.object({
   safetyModel: z.string().max(256),
   autoRunSandboxCommands: z.boolean(),
   mcpAutoAllowReadOnly: z.boolean(),
-  cursorHooksEnabled: z.boolean(),
+  // Storage-only setting with no Settings UI yet (see docs/cursor-hooks.md). Optional so the
+  // renderer's setSecurity bundle, which never sends it, doesn't fail validation or clobber it.
+  cursorHooksEnabled: z.boolean().optional(),
   webAllowedOrigins: webAllowedOriginsSchema,
   webAllowUserApproval: z.boolean(),
 })

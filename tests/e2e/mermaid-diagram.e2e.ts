@@ -18,15 +18,22 @@ describe('mermaid diagram rendering', () => {
   })
 
   it('renders mermaid fenced blocks as SVG diagrams', async () => {
-    await $('.message-text .mermaid-diagram').waitForExist({ timeout: 15_000 })
+    await $('.message-text .mermaid-diagram').waitForExist({ timeout: 30_000 })
 
+    // The diagram SVG is produced by lazy-loading the (large) `mermaid` bundle and
+    // then rendering it through DOMPurify (securityLevel 'strict', see
+    // src/renderer/markdown/mermaid.ts). That import-plus-sanitize cost is the
+    // heaviest single step in the CI gate and occasionally overran the old 20s
+    // budget on the 2-core GitHub runner (fail-then-pass-on-retry). Give it real
+    // headroom so the spec passes on the first attempt instead of leaning on the
+    // shard-level retry.
     await browser.waitUntil(
       async () => {
         const svg = await $('.message-text .mermaid-diagram svg')
         return svg.isExisting()
       },
       {
-        timeout: 20_000,
+        timeout: 40_000,
         timeoutMsg: 'expected mermaid diagram SVG to render',
       },
     )
@@ -77,9 +84,9 @@ describe('mermaid diagram rendering', () => {
     expect(chrome.composerNearPaneBottom).toBe(true)
     expect(chrome.composerHeight).toBeGreaterThan(72)
 
-    await $('.mermaid-diagram--folded').waitForExist({ timeout: 5_000 })
+    await $('.mermaid-diagram--folded').waitForExist({ timeout: 10_000 })
     await $('.mermaid-diagram--folded').click()
-    await $('dialog.mermaid-expand-dialog[open]').waitForExist({ timeout: 5_000 })
+    await $('dialog.mermaid-expand-dialog[open]').waitForExist({ timeout: 10_000 })
     await expect($('dialog.mermaid-expand-dialog svg')).toExist()
     await expect($('.mermaid-expand-viewport')).toExist()
     await expect($('.mermaid-expand-toolbar')).toExist()

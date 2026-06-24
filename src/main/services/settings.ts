@@ -16,7 +16,7 @@ interface StoredKey {
   plain?: boolean
 }
 
-export type KeyProvider = 'anthropic' | 'openai' | 'lmstudio' | 'cursor'
+export type KeyProvider = 'anthropic' | 'openai' | 'lmstudio' | 'cursor' | 'openrouter'
 
 export function hasApiKey(provider: KeyProvider): boolean {
   const raw = store.get(`apiKey.${provider}`) as StoredKey | undefined
@@ -38,10 +38,11 @@ export function getApiKey(provider: KeyProvider): string | null {
 
 function envVarFor(
   provider: KeyProvider,
-): 'ANTHROPIC_API_KEY' | 'OPENAI_API_KEY' | 'CURSOR_API_KEY' | null {
+): 'ANTHROPIC_API_KEY' | 'OPENAI_API_KEY' | 'CURSOR_API_KEY' | 'OPENROUTER_API_KEY' | null {
   if (provider === 'anthropic') return 'ANTHROPIC_API_KEY'
   if (provider === 'openai') return 'OPENAI_API_KEY'
   if (provider === 'cursor') return 'CURSOR_API_KEY'
+  if (provider === 'openrouter') return 'OPENROUTER_API_KEY'
   return null
 }
 
@@ -93,9 +94,13 @@ export function isApiKeyEncrypted(provider: KeyProvider): boolean | null {
 
 // Whether a cloud provider can be used at all — a key is stored in Settings or
 // present in the environment.
-export function isProviderAvailable(provider: 'anthropic' | 'openai' | 'cursor'): boolean {
+export function isProviderAvailable(
+  provider: 'anthropic' | 'openai' | 'cursor' | 'openrouter',
+): boolean {
   if (provider === 'anthropic') return !!(process.env.ANTHROPIC_API_KEY || hasApiKey('anthropic'))
   if (provider === 'cursor') return !!(process.env.CURSOR_API_KEY || hasApiKey('cursor'))
+  if (provider === 'openrouter')
+    return !!(process.env.OPENROUTER_API_KEY || hasApiKey('openrouter'))
   return !!(process.env.OPENAI_API_KEY || hasApiKey('openai'))
 }
 

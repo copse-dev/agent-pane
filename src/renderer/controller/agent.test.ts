@@ -6,8 +6,8 @@ import { getThreadById } from '@shared/store/thread-helpers.ts'
 import type { Message, Thread, StreamChunk } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 
-function thread(id: string, messages: Message[] = []): Thread {
-  return {
+function thread(id: string, messages: Message[] = [], branch?: string): Thread {
+  const value: Thread = {
     id,
     title: id, // not 'New Thread', so auto-naming on `done` is skipped
     status: 'running',
@@ -16,17 +16,25 @@ function thread(id: string, messages: Message[] = []): Thread {
     createdAt: 1,
     updatedAt: 1,
   }
+  if (branch) value.gitBranch = branch
+  return value
 }
 
 // The controller registers an `agent.onChunk` handler and subscribes to usage +
 // diff IPC. Capture the chunk handler so tests can drive synthetic stream
 // chunks, and hand back noop unsubscribers for the rest.
-function setup(initial: Thread[] = [thread('t1')], activeThreadId = 't1') {
+function setup(
+  initial: Thread[] = [thread('t1')],
+  activeThreadId = 't1',
+  options?: { currentBranch?: string | null },
+) {
   const store = createStore({ threads: initial, activeThreadId })
   let chunkHandler: ((threadId: string, chunk: StreamChunk) => void) | null = null
   const titleCalls: string[] = []
   const messageDone: string[] = []
+  const gitBranchChanged: number[] = []
   store.on('message_done', (id) => messageDone.push(id))
+  store.on('git_branch_changed', () => gitBranchChanged.push(1))
 
   const api = {
     agent: {
@@ -44,12 +52,18 @@ function setup(initial: Thread[] = [thread('t1')], activeThreadId = 't1') {
       onShowDiff: () => () => {},
       onQueued: () => () => {},
     },
+    git: {
+      branchStatus: async () => ({
+        currentBranch: options?.currentBranch ?? null,
+        pr: null,
+      }),
+    },
   } as unknown as ApiClient
 
   const unsub = startAgentController(store, api)
   const send = (chunk: StreamChunk, threadId = 't1') => chunkHandler!(threadId, chunk)
   const messages = (id = 't1') => getThreadById(store, id)!.messages
-  return { store, send, unsub, titleCalls, messageDone, messages }
+  return { store, send, unsub, titleCalls, messageDone, messages, gitBranchChanged }
 }
 
 test('text chunks create one assistant message and accumulate tokens', () => {
@@ -95,6 +109,40 @@ test('tool_result with isError marks the tool card as error', () => {
   send({ type: 'tool_call', toolCall: { id: 'tc1', name: 'read_file', args: {} } })
   send({ type: 'tool_result', toolCallId: 'tc1', result: 'boom', isError: true })
   assert.equal(messages()[0]!.toolCalls[0]!.status, 'error')
+})
+
+test('successful run_shell rebinds the thread when checkout changed', async () => {
+  const { send, store, gitBranchChanged } = setup([thread('t1', [], 'main')], 't1', {
+    currentBranch: 'claude/compassionate-wright-a1awji',
+  })
+  send({
+    type: 'tool_call',
+    toolCall: {
+      id: 'tc1',
+      name: 'run_shell',
+      args: { command: 'git checkout claude/compassionate-wright-a1awji' },
+    },
+  })
+  send({ type: 'tool_result', toolCallId: 'tc1', result: 'Switched to branch', isError: false })
+  await new Promise((r) => setTimeout(r, 0))
+
+  assert.equal(getThreadById(store, 't1')!.gitBranch, 'claude/compassionate-wright-a1awji')
+  assert.equal(gitBranchChanged.length, 1)
+})
+
+test('successful run_shell does not rebind when checkout is unchanged', async () => {
+  const { send, store, gitBranchChanged } = setup([thread('t1', [], 'main')], 't1', {
+    currentBranch: 'main',
+  })
+  send({
+    type: 'tool_call',
+    toolCall: { id: 'tc1', name: 'run_shell', args: { command: 'npm test' } },
+  })
+  send({ type: 'tool_result', toolCallId: 'tc1', result: 'ok', isError: false })
+  await new Promise((r) => setTimeout(r, 0))
+
+  assert.equal(getThreadById(store, 't1')!.gitBranch, 'main')
+  assert.equal(gitBranchChanged.length, 0)
 })
 
 test('text after a tool call finalizes the prior bubble and starts a new one below', () => {

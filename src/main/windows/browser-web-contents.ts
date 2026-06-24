@@ -1,6 +1,8 @@
 import { session } from 'electron'
 import type { WebContents } from 'electron'
 import { BROWSER_SESSION_PARTITION } from '@shared/browser-session.ts'
+import { getMainWindow } from './create-main-window.ts'
+import { browserGuestWindowOpen } from './web-contents-lockdown.ts'
 
 let browserSession: Electron.Session | undefined
 
@@ -41,4 +43,13 @@ export function getInAppBrowserSession(): Electron.Session {
 /** True for in-sidebar browser guest pages that must load external https URLs. */
 export function isBrowserWebContents(contents: WebContents): boolean {
   return contents.session === getInAppBrowserSession()
+}
+
+/** Block popups from browser guests, reopening webview links as renderer tabs. */
+export function attachBrowserGuestWindowOpen(contents: WebContents): void {
+  contents.setWindowOpenHandler(({ url }) => {
+    const { openTabUrl } = browserGuestWindowOpen(contents.getType(), url)
+    if (openTabUrl) getMainWindow()?.webContents.send('browser:open-tab', openTabUrl)
+    return { action: 'deny' }
+  })
 }

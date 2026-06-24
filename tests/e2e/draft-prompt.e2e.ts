@@ -30,7 +30,7 @@ describe('draft prompt preservation', () => {
   })
 
   it('keeps blank threads with drafts and restores composer text on switch', async () => {
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await expect($('.chat-row.selected .chat-title')).toHaveText(blankThreadTitle)
 
     await $('.prompt-input').setValue(DRAFT_TEXT)
@@ -49,8 +49,16 @@ describe('draft prompt preservation', () => {
 
     await $('.project-new-thread-btn').click()
     await expect($('.prompt-input')).toHaveValue('')
+
+    // Creating a new thread appends its row asynchronously (store emit →
+    // re-render), so snapshotting `$$` right after the click races the insert
+    // and sees the pre-insert count — the #345 flake (expected 3, received 2).
+    // Poll until the row lands before snapshotting.
+    await browser.waitUntil(async () => (await $$('.chats-list .chat-row')).length === 3, {
+      timeout: 10_000,
+      timeoutMsg: 'expected 3 chat rows after creating a new thread',
+    })
     const rowsAfterNew = await $$('.chats-list .chat-row')
-    await expect(rowsAfterNew).toBeElementsArrayOfSize(3)
     const titles = await rowsAfterNew.map((row) => row.$('.chat-title').getText())
     await expect(titles.filter((t) => t === blankThreadTitle).length).toBe(2)
 

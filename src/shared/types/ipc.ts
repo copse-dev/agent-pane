@@ -3,7 +3,7 @@ import type { GitFileDiff, GitStatusResult, GitBranchStatus } from './git.ts'
 import type { McpServerStatus } from './mcp.ts'
 import type { UsageDelta } from './thread.ts'
 
-type Provider = 'anthropic' | 'openai' | 'lmstudio' | 'cursor'
+type Provider = 'anthropic' | 'openai' | 'lmstudio' | 'cursor' | 'openrouter'
 
 // invoke channels (renderer → main, returns result)
 export interface IpcInvokeMap {
@@ -67,10 +67,10 @@ export interface IpcInvokeMap {
   'settings:setKey': { args: [provider: Provider, key: string]; result: void }
   'settings:availableProviders': {
     args: []
-    result: { anthropic: boolean; openai: boolean; cursor: boolean }
+    result: { anthropic: boolean; openai: boolean; cursor: boolean; openrouter: boolean }
   }
   'settings:validateKey': {
-    args: [provider: 'anthropic' | 'openai' | 'cursor', key: string]
+    args: [provider: 'anthropic' | 'openai' | 'cursor' | 'openrouter', key: string]
     result: { ok: boolean; error?: string; formatOk?: boolean }
   }
 
@@ -110,6 +110,7 @@ export interface IpcInvokeMap {
     result: { ok: boolean; models?: string[]; error?: string }
   }
   'lmstudio:models': { args: []; result: string[] }
+  'openrouter:models': { args: []; result: Array<{ id: string; name: string }> }
   'lmstudio:detect': {
     args: [url?: string, apiKey?: string]
     result: {

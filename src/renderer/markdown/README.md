@@ -22,6 +22,10 @@ When extending the renderer or its CSS, preserve these rules:
   are common in LLM output; split at block boundaries before wrapping paragraphs.
 - **Inline formatting order.** Fenced code → inline code → bold → italic. Italic (`_` and `*`) runs
   only outside `<code>` spans and must not match across newlines (or `* list` lines get eaten).
+  Consequence: emphasis whose opener and closer are split across a soft line break is **not**
+  rendered (it stays literal), unlike spec CommonMark which resolves emphasis per block. This is a
+  known limitation — see the "Emphasis across soft line breaks" follow-up in
+  [`docs/plans/markdown-renderer-hardening.md`](../../../docs/plans/markdown-renderer-hardening.md).
 - **Agent-output shapes.** Support `-`, `*`, and `+` list markers. Map `#`/`##` to `<h4>`, `###` to
   `<h3>` — h1/h2 are intentionally too large for the narrow pane.
 - **List indent.** Global `* { padding: 0 }` strips UA list padding. Restore readable indent on
@@ -44,6 +48,9 @@ list-style-position: outside`). Bullets should sit clearly inset from headings, 
   Before render, `prepareMermaidSource` / `mermaidSourceCandidates` decode entities and quote brittle
   `[labels]`. We call `mermaid.run` directly (no pre-parse gate — parse rejects some diagrams that
   still render). On failure after an aggressive retry, show the inline source fallback.
+- **Table layout.** Agent tables are unschema'd GFM — do not hardcode rem/% column widths for
+  specific fixtures. Use shrink-to-fit edge columns (`width: 1%` + `nowrap`), `min-width: 0` on
+  cells, and wrapping lone `<code>` slugs. Full rules: [`docs/ui-taste.md`](../../docs/ui-taste.md).
 
 Prefer structural unit tests on HTML output plus WDIO geometry checks over pixel-diff screenshot CI.
 E2e specs live in `tests/e2e/*.e2e.ts` (WebdriverIO) — not Playwright.
@@ -64,6 +71,40 @@ npm run test:e2e:markdown
 - `*italic*` and `` `snake_case` `` code spans stay intact (no cross-line `<em>` bleed)
 - Explore-style fixtures: `##`/`###` headings, `<hr>`, and lists as sibling block elements
 
+### CommonMark conformance (`commonmark-conformance.test.ts`, via `npm test`)
+
+`renderMarkdown` is run against every example in the official CommonMark spec —
+loaded from the pinned `commonmark-spec` devDependency at runtime
+(`tests/commonmark/load-spec.ts`), so the ~650 examples are **not** vendored into
+this repo — comparing output to the expected HTML after the spec's own normalizer
+(`tests/commonmark/normalize.ts`, a faithful port of `normalize.py`). This is **at
+rest only** — streaming output intentionally differs (the live tail is escaped
+plain text) and is not conformance-tested.
+
+The renderer is deliberately app-specific (`#`→`<h4>`, decorated links,
+highlighted code), so it is **not** expected to fully conform. The set of examples
+we currently satisfy is pinned in `tests/fixtures/commonmark/conformance-baseline.json`
+and the test fails if it changes:
+
+- fewer passing → a regression in a construct we used to handle.
+- more passing → an improvement; re-run `UPDATE_COMMONMARK_BASELINE=1 npm test` to
+  record the new baseline.
+
+Bumping the spec is just `npm i -D commonmark-spec@<version>` followed by a
+re-baseline; the version is read from the installed package and pinned in the
+baseline.
+
+The JS normalizer (`tests/commonmark/normalize.ts`) is differentially validated
+against the reference `normalize.py` by `npm run check:normalizer-parity` (a CI
+step in the `check` job; needs python3). The reference normalizer is **not**
+checked in — `scripts/fetch-reference-normalizer.mts` fetches it from a pinned,
+SHA-256-verified upstream commit into `tests/commonmark/normalize.py`
+(gitignored) at check time. The parity check then asserts both that the
+conformance pass set is identical under either normalizer and that per-example
+normalized output matches byte-for-byte, except for a small documented allowlist
+of pathological raw-HTML cases. This is **not** in `npm run check`, so
+contributors without python can still run the default gates.
+
 ### E2e tests (seeded via `tests/e2e/helpers/seed-config.ts`)
 
 - `tests/e2e/markdown-list-indent.e2e.ts` — Known Failures + Architecture Highlights; asserts list
@@ -71,6 +112,8 @@ npm run test:e2e:markdown
 - `tests/e2e/semantic-search-markdown.e2e.ts` — explore subagent timeline; asserts no raw `##` in
   rendered text, summary preview hidden when expanded, code spans intact
 - `tests/e2e/mermaid-diagram.e2e.ts` — seeded flowchart; asserts `.mermaid-diagram svg` renders
+- `tests/e2e/markdown-table-wrap.e2e.ts` — PR-style table; index/status stay single-line, branch
+  slugs wrap, table fits pane (see `docs/ui-taste.md`)
 
 Screenshots under `tests/e2e/screenshots/` (`markdown-list-indent-*.png`, `semantic-search-*.png`)
 are updated by those specs for human review; CI asserts DOM layout, not pixels.

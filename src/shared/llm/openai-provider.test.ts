@@ -7,6 +7,7 @@ interface CapturedChatCompletionRequest {
   model: string
   stream?: boolean
   stream_options?: { include_usage?: boolean }
+  provider?: { require_parameters?: boolean }
 }
 
 interface ChatCompletionChunk {
@@ -96,6 +97,25 @@ describe('OpenAIProvider request options', () => {
 
     assert.equal(captured.request?.stream_options, undefined)
   })
+
+  it('merges extraBody (e.g. OpenRouter require_parameters) into the request', async () => {
+    const provider = new OpenAIProvider('deepseek/deepseek-chat', {
+      baseURL: 'https://openrouter.ai/api/v1',
+      apiKey: 'sk-or-test',
+      includeUsage: true,
+      extraBody: { provider: { require_parameters: true } },
+    })
+    const captured: { request?: CapturedChatCompletionRequest } = {}
+    withFakeCreate(provider, (request) => {
+      captured.request = request
+      return streamEvents([{ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }])
+    })
+
+    await collect(provider)
+
+    assert.deepEqual(captured.request?.provider, { require_parameters: true })
+    assert.equal(captured.request?.stream_options?.include_usage, true)
+  })
 })
 
 describe('OpenAIProvider stream parsing', () => {
@@ -166,6 +186,43 @@ describe('OpenAIProvider stream parsing', () => {
     const done = chunks.at(-1)
     assert.ok(done && done.type === 'done')
     assert.equal(done.stopReason, 'tool_calls')
+  })
+
+  it('flushes tool calls when the stream ends with finish_reason stop', async () => {
+    const provider = new OpenAIProvider('local-model', {
+      baseURL: 'http://localhost:11434/v1',
+      apiKey: 'local-key',
+    })
+    withFakeStream(provider, [
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                { index: 0, id: 'call_1', function: { name: 'list_dir', arguments: '{"path":' } },
+              ],
+            },
+            finish_reason: null,
+          },
+        ],
+      },
+      {
+        choices: [
+          {
+            delta: { tool_calls: [{ index: 0, function: { arguments: '"."}' } }] },
+            finish_reason: 'stop',
+          },
+        ],
+      },
+    ])
+
+    const chunks = await collect(provider)
+    const toolCalls = chunks.filter(
+      (c): c is Extract<StreamChunk, { type: 'tool_call' }> => c.type === 'tool_call',
+    )
+    assert.equal(toolCalls.length, 1)
+    assert.equal(toolCalls[0]!.toolCall.name, 'list_dir')
+    assert.deepEqual(toolCalls[0]!.toolCall.args, { path: '.' })
   })
 
   it('surfaces a parse error when tool-call arguments are malformed JSON', async () => {

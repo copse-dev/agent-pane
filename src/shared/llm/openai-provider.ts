@@ -3,18 +3,45 @@ import type { LLMProvider, LLMMessage, LLMTool, StreamChunk } from '@shared/type
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
 
+type ToolCallBuilder = { id: string; name: string; argsJson: string }
+
+function* yieldAssembledToolCalls(
+  toolCallBuilders: Map<number, ToolCallBuilder>,
+): Generator<StreamChunk> {
+  for (const [, builder] of toolCallBuilders) {
+    const parsed = parseToolArgs(builder.argsJson)
+    yield {
+      type: 'tool_call',
+      toolCall: {
+        id: builder.id,
+        name: builder.name,
+        args: parsed.args,
+        ...(parsed.error ? { argsError: parsed.error } : {}),
+      },
+    }
+  }
+}
+
 export class OpenAIProvider implements LLMProvider {
   private client: OpenAI
   lastUsage: { inputTokens: number; outputTokens: number } | null = null
 
   // `baseURL` lets this provider talk to any OpenAI-compatible server (e.g.
   // LM Studio at http://localhost:1234/v1). Such servers often ignore the API
-  // key but the SDK requires a non-empty value.
+  // key but the SDK requires a non-empty value. `extraBody` is merged into every
+  // request body — used to pass provider-specific fields (e.g. OpenRouter's
+  // `provider: { require_parameters: true }`) that aren't in the OpenAI schema.
   constructor(
     private readonly model: string,
-    opts: { baseURL?: string; apiKey?: string; includeUsage?: boolean } = {},
+    opts: {
+      baseURL?: string
+      apiKey?: string
+      includeUsage?: boolean
+      extraBody?: Record<string, unknown>
+    } = {},
   ) {
     this.includeUsage = opts.includeUsage ?? !opts.baseURL
+    this.extraBody = opts.extraBody
     this.client = new OpenAI({
       apiKey: opts.apiKey ?? process.env.OPENAI_API_KEY ?? 'not-needed',
       ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
@@ -22,6 +49,7 @@ export class OpenAIProvider implements LLMProvider {
   }
 
   private readonly includeUsage: boolean
+  private readonly extraBody: Record<string, unknown> | undefined
 
   stream(
     messages: LLMMessage[],
@@ -49,6 +77,7 @@ export class OpenAIProvider implements LLMProvider {
             messages: toOpenAIMessages(messages),
             ...(self.includeUsage ? { stream_options: { include_usage: true } } : {}),
             ...(mappedTools ? { tools: mappedTools } : {}),
+            ...(self.extraBody ?? {}),
           },
           { signal },
         )
@@ -91,20 +120,14 @@ export class OpenAIProvider implements LLMProvider {
           if (reason) finishReason = reason
 
           if (reason === 'tool_calls') {
-            for (const [, builder] of toolCallBuilders) {
-              const parsed = parseToolArgs(builder.argsJson)
-              yield {
-                type: 'tool_call',
-                toolCall: {
-                  id: builder.id,
-                  name: builder.name,
-                  args: parsed.args,
-                  ...(parsed.error ? { argsError: parsed.error } : {}),
-                },
-              }
-            }
+            yield* yieldAssembledToolCalls(toolCallBuilders)
             toolCallBuilders.clear()
           }
+        }
+        // Some OpenAI-compatible servers finish with `stop` while still streaming tool deltas.
+        if (toolCallBuilders.size > 0) {
+          yield* yieldAssembledToolCalls(toolCallBuilders)
+          toolCallBuilders.clear()
         }
         // Emit usage per-stream so consumers attribute it to this exact stream
         // rather than racing on the shared lastUsage field (#112).

@@ -1,4 +1,9 @@
-import { createProvider, createLocalOpenAIProvider } from '@shared/llm/create-provider.ts'
+import {
+  createProvider,
+  createLocalOpenAIProvider,
+  createOpenRouterProvider,
+} from '@shared/llm/create-provider.ts'
+import { isOpenRouterModel, openRouterModelId } from '@shared/llm/openrouter.ts'
 import type { LLMProvider } from '@shared/types'
 import { DEFAULT_LM_STUDIO_URL, LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
 import { getSetting, getSettingTrimmed, getApiKey, getLmStudioApiKey } from './settings.ts'
@@ -11,9 +16,11 @@ import { isLocalModel } from '@shared/llm/estimate-cost.ts'
 
 export { DEFAULT_LM_STUDIO_URL }
 
-function storedOrEnvApiKey(provider: 'anthropic' | 'openai'): string | null {
+function storedOrEnvApiKey(provider: 'anthropic' | 'openai' | 'openrouter'): string | null {
   if (provider === 'anthropic')
     return getApiKey('anthropic') ?? process.env.ANTHROPIC_API_KEY ?? null
+  if (provider === 'openrouter')
+    return getApiKey('openrouter') ?? process.env.OPENROUTER_API_KEY ?? null
   return getApiKey('openai') ?? process.env.OPENAI_API_KEY ?? null
 }
 
@@ -90,6 +97,15 @@ export async function buildProvider(model: string): Promise<LLMProvider> {
       )
     }
     return createLocalOpenAIProvider(url, id, getLmStudioApiKey())
+  }
+  if (isOpenRouterModel(model)) {
+    const apiKey = storedOrEnvApiKey('openrouter')
+    if (!apiKey) {
+      throw new Error(
+        'OpenRouter is not configured. Add an OpenRouter API key in Settings or choose another model.',
+      )
+    }
+    return createOpenRouterProvider(openRouterModelId(model), apiKey)
   }
   if (model.startsWith('claude')) {
     return createProvider(model, {
