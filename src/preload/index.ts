@@ -155,6 +155,11 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('menu:settings', listener)
       return () => ipcRenderer.off('menu:settings', listener)
     },
+    onNewThread: (handler: () => void) => {
+      const listener = () => handler()
+      ipcRenderer.on('menu:newThread', listener)
+      return () => ipcRenderer.off('menu:newThread', listener)
+    },
     onTogglePanel: (handler: () => void) => {
       const listener = () => handler()
       ipcRenderer.on('menu:togglePanel', listener)
