@@ -20,6 +20,7 @@ import {
   type ToolCallDisplayItem,
 } from '@shared/tools/tool-display.ts'
 import { createTodoListEl } from './todo-panel.ts'
+import { createReviewCardEl } from './review-panel.ts'
 import { renderToolArgs } from './tool-args-format.ts'
 import {
   drainMessageQueue,
@@ -283,6 +284,7 @@ const USER_SCROLL_UP_DEBOUNCE_MS = 150
 export function mountConversation(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const scrollArea = el('div', { class: 'conversation-scroll' })
   const todoHost = el('div', { class: 'conversation-todos-host' })
+  const reviewHost = el('div', { class: 'conversation-review-host' })
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
   const scrollToBottomBtn = el(
     'button',
@@ -294,7 +296,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     },
     '↓',
   )
-  scrollArea.append(todoHost, list, scrollToBottomBtn)
+  scrollArea.append(todoHost, list, reviewHost, scrollToBottomBtn)
 
   const activityBar = el('div', { class: 'agent-activity', role: 'status', 'aria-live': 'polite' })
   const activityLabel = el('span', { class: 'agent-activity-label' })
@@ -614,6 +616,14 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
   }
 
+  function syncReviewPanel() {
+    reviewHost.replaceChildren()
+    const thread = getActiveThread(store)
+    if (thread?.review) {
+      reviewHost.append(createReviewCardEl(thread.review))
+    }
+  }
+
   function rebuildForThread() {
     pinnedToBottom = true
     userScrolledUpAt = 0
@@ -622,6 +632,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const thread = getActiveThread(store)
     thread?.messages.forEach((m) => appendMessageEl(store.getState().activeThreadId!, m.id))
     syncTodoPanel()
+    syncReviewPanel()
     renderQueuedPanel(store.getState().activeThreadId!)
     updateScrollButton()
   }
@@ -673,6 +684,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     store.on('todos_changed', () => {
       syncTodoPanel()
       syncFromStore()
+      scrollToBottom()
+    }),
+    store.on('review_changed', () => {
+      syncReviewPanel()
       scrollToBottom()
     }),
     store.on('thread_status_changed', (tid, status) => {

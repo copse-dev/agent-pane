@@ -38,6 +38,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   openRouterModel: z.string().max(256),
   localSubagentsEnabled: z.boolean(),
   localTodoItemsEnabled: z.boolean(),
+  postTurnReviewEnabled: z.boolean(),
   bundledCursorSkillsEnabled: z.boolean(),
   skillsEnabled: z.boolean(),
   skillPluginPaths: z.array(z.string().max(4096)).max(64),
@@ -72,6 +73,9 @@ export const securitySettingsSchema = z.object({
   safetyClassifierEnabled: z.boolean(),
   safetyConfidenceThreshold: z.number().min(0).max(1),
   safetyModel: z.string().max(256),
+  // Optional: distinct model for the post-turn review subagent. Empty/absent
+  // means reuse the parent chat model.
+  reviewModel: z.string().max(256).optional(),
   autoRunSandboxCommands: z.boolean(),
   mcpAutoAllowReadOnly: z.boolean(),
   // Storage-only setting with no Settings UI yet (see docs/cursor-hooks.md). Optional so the

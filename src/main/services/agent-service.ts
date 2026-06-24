@@ -12,7 +12,14 @@ import { buildSystemPrompt } from './agent-system-prompt.ts'
 import { hasLastUsage } from './provider-usage.ts'
 import { clearActiveRunThread, recordThreadModel, setActiveRunThread } from './thread-models.ts'
 import { buildCommitSteeringPrompt, shouldSteerCommit } from '@shared/git/commit-attribution.ts'
-import { buildProvider, buildSubagentRoute, isLocalChatModel } from './provider-selection.ts'
+import {
+  buildProvider,
+  buildSubagentRoute,
+  buildReviewRoute,
+  isLocalChatModel,
+} from './provider-selection.ts'
+import { runPostTurnReview } from './review-subagent-runner.ts'
+import { isEditTool } from '@shared/agent/review-subagent.ts'
 import {
   prepareAgentHistory,
   contextTrimmedChunk,
@@ -168,6 +175,13 @@ export async function runAgent(
     const subagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
     const subagentUsageModel = subagentRoute?.usageModel ?? model
 
+    // Set when the turn runs any file-mutating tool, gating the post-turn review.
+    let turnChangedFiles = false
+    // The agent loop's terminal `done` chunk is held back until the post-turn
+    // review finishes, so the thread doesn't flip to idle (and drain its queued
+    // messages) while the review is still running.
+    let deferredDone: Extract<StreamChunk, { type: 'done' }> | null = null
+
     const systemPrompt = await buildSystemPrompt({ subagentsEnabled, invokedSkills })
 
     const messages: LLMMessage[] = [
@@ -307,6 +321,7 @@ export async function runAgent(
         coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
         getOpenTodos: () => getAgentRunTodos(),
         executeTool: async (name, args, signal, toolCallId) => {
+          if (isEditTool(name)) turnChangedFiles = true
           if (name === 'explore' && subagentsEnabled) {
             setExploreSubagentContext({
               parentToolCallId: toolCallId,
@@ -332,6 +347,10 @@ export async function runAgent(
         onHistoryTrimmed: () => notifyTrimmed(sendTrimNotice),
         getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
         onChunk: (chunk) => {
+          if (chunk.type === 'done') {
+            deferredDone = chunk
+            return
+          }
           sendChunk(chunk)
           if (chunk.type === 'usage') {
             inputTokens += chunk.inputTokens
@@ -358,6 +377,42 @@ export async function runAgent(
         })
       }
     })
+
+    // Post-turn review: when this turn changed files, run a read-only review
+    // subagent over the working diff and surface its verdict. Runs before the
+    // deferred `done` so the thread stays "running" until the review lands.
+    if (turnChangedFiles && getSetting<boolean>('postTurnReviewEnabled', true)) {
+      sendChunk({ type: 'post_turn_review', status: 'running', summary: '' })
+      try {
+        const reviewRoute = await buildReviewRoute()
+        const reviewUsageModel = reviewRoute?.usageModel ?? model
+        const review = await runPostTurnReview({
+          parentGoal,
+          provider: reviewRoute?.provider ?? provider,
+          registry,
+          contextWindow: reviewRoute?.contextWindow ?? contextWindow,
+          toolSchemaReserve: reviewRoute?.toolSchemaReserve ?? toolSchemaReserve,
+          signal: controller.signal,
+          usageModel: reviewUsageModel,
+          onUsage: (u) => {
+            inputTokens += u.inputTokens
+            outputTokens += u.outputTokens
+            sendChunk({
+              type: 'usage',
+              model: reviewUsageModel,
+              inputTokens: u.inputTokens,
+              outputTokens: u.outputTokens,
+            })
+          },
+        })
+        sendChunk({ type: 'post_turn_review', status: 'done', summary: review.summary })
+      } catch (err) {
+        const detail = controller.signal.aborted ? 'Review cancelled.' : classifyAgentError(err)
+        sendChunk({ type: 'post_turn_review', status: 'error', summary: detail })
+      }
+    }
+
+    sendChunk(deferredDone ?? { type: 'done' })
   } catch (err) {
     const msg = classifyAgentError(err)
     sendChunk({ type: 'text', text: msg })
