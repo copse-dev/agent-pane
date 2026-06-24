@@ -53,6 +53,8 @@ function createApi(options: {
     git: {
       branchStatus: async () => ({ currentBranch: options.currentBranch, pr: null }),
       checkoutBranch: options.onCheckoutBranch ?? (async () => {}),
+      listBranches: async () => [{ name: options.currentBranch, lastCommitDate: '2024-01-01' }],
+      getDefaultBranch: async () => 'main',
     },
     lmStudio: {
       models: async () => [],
