@@ -23,6 +23,10 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm run check:dead-code
+      # Guard the e2e oracle that gates the `e2e` job: every spec must stay
+      # selectable (liveness) and the mapping invariants must hold, so the gate
+      # can't silently start skipping specs it should run.
+      - run: npm run check:oracle
 
   check:
     needs: lint
@@ -139,6 +143,17 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.3
       - uses: ./.github/actions/setup
+      # Reclaim ~20-30 GB of runner-preloaded toolchains (dotnet/android/ghc/
+      # CodeQL/swift) and cached Docker images. The e2e shards have hit "No space
+      # left on device" mid-run, which cascades into OOM / runner-shutdown and
+      # Electron session-startup failures; freeing space up front removes that
+      # whole failure class. Best-effort — never fail the job on cleanup.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/boost || true
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+          df -h /
       - uses: actions/download-artifact@v4
         with:
           name: dist-tar
@@ -149,25 +164,37 @@ jobs:
       # only a fresh xvfb+Electron launch does. Retry the entire shard, and wrap
       # each attempt in `timeout` so a wedged session is killed and retried
       # (a plain hang would otherwise never exit and stall the job).
-      # Oracle gate (see plan-e2e): `full` shards the whole suite; `subset` runs
-      # only the planned specs, concentrated on shard 1 so the other 7 shards
-      # stay idle (they skip this step and report green); `skip` runs nothing.
-      # Every shard still reports a status, so this composes with any required
-      # check without depending on an aggregate gate being merged first.
+      # Oracle gate (see plan-e2e): `full` shards the whole suite; `subset`
+      # distributes only the planned specs round-robin across the same 8 shards
+      # (so no shard exceeds the per-shard memory budget the count is tuned for);
+      # `skip` runs nothing. Every shard still reports a status, so this composes
+      # with any required check without depending on an aggregate gate first.
       - name: e2e shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }} (oracle-gated, retry on flaky session startup)
         if: >-
           needs.plan-e2e.outputs.mode == 'full' ||
-          (needs.plan-e2e.outputs.mode == 'subset' && matrix.shard == 1)
+          needs.plan-e2e.outputs.mode == 'subset'
         timeout-minutes: 26
         env:
           PLAN_MODE: ${{ needs.plan-e2e.outputs.mode }}
           PLAN_SPECS: ${{ needs.plan-e2e.outputs.specs }}
         run: |
           if [ "$PLAN_MODE" = "subset" ]; then
-            SHARD_ARGS=""
+            # Round-robin the planned specs onto this shard; an empty slice means
+            # this shard has nothing to do (subset smaller than 8) — report green.
+            i=0
             SPEC_ARGS=""
-            for s in $PLAN_SPECS; do SPEC_ARGS="$SPEC_ARGS --spec $s"; done
-            echo "oracle subset ($(echo $PLAN_SPECS | wc -w) spec(s)): $PLAN_SPECS"
+            for s in $PLAN_SPECS; do
+              if [ $(( i % SHARD_TOTAL )) -eq $(( ${{ matrix.shard }} - 1 )) ]; then
+                SPEC_ARGS="$SPEC_ARGS --spec $s"
+              fi
+              i=$(( i + 1 ))
+            done
+            if [ -z "$SPEC_ARGS" ]; then
+              echo "shard ${{ matrix.shard }}: no specs in this subset slice — nothing to run"
+              exit 0
+            fi
+            SHARD_ARGS=""
+            echo "oracle subset shard ${{ matrix.shard }}:${SPEC_ARGS}"
           else
             SHARD_ARGS="--shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }}"
             SPEC_ARGS=""

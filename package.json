@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "node scripts/dev.mts",
     "oracle": "node scripts/test-oracle.mts",
+    "check:oracle": "node scripts/check-oracle.mts",
     "build": "node scripts/build.mts",
     "build:release": "COPSE_RELEASE=1 node scripts/build.mts",
     "generate:icon": "node scripts/generate-icon.mts",
@@ -38,7 +39,7 @@
     "sync:models": "node scripts/sync-model-catalog.mts",
     "sync:cursor-skills": "npx tsx scripts/fetch-bundled-cursor-skills.mts",
     "pack:mac": "npm run build:release && npm run icons:mac && electron-builder --mac dir",
-    "check": "npm run typecheck && npm run lint && npm run format:check && npm run check:dead-code && npm test"
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run check:dead-code && npm run check:oracle && npm test"
   },
   "build": {
     "appId": "app.copse-panel",

@@ -41,6 +41,7 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const ROOT = process.cwd()
 const E2E_DIR = 'tests/e2e'
@@ -69,7 +70,7 @@ const BROAD_PATTERNS: RegExp[] = [
 
 // Generic selector tokens so common they'd match nearly any file; ignored as
 // the *sole* reason to select a spec (they still ride along with a real match).
-const SELECTOR_STOPLIST = new Set([
+export const SELECTOR_STOPLIST = new Set([
   'is-active',
   'active',
   'hidden',
@@ -171,7 +172,7 @@ function walk(dir: string, out: string[] = []): string[] {
   return out
 }
 
-function read(rel: string): string {
+export function read(rel: string): string {
   try {
     return readFileSync(join(ROOT, rel), 'utf8')
   } catch {
@@ -187,36 +188,40 @@ function ciExcludedSpecs(): Set<string> {
   return out
 }
 
+export type CiPlan = { mode: 'full' | 'subset' | 'skip'; specs: string[]; count: number }
+
 /**
- * Emit a CI plan on stdout as `key=value` lines (ready for $GITHUB_OUTPUT):
- *   mode=full|subset|skip   count=<n>   specs=<space-separated>
+ * Decide how much of the e2e tier a change needs:
+ *   full   — run the whole sharded suite (default / safe)
+ *   subset — run only `specs` (CI distributes them across the shards)
+ *   skip   — nothing e2e-relevant changed
  *
  * Only specs the CI gate actually runs (minus wdio.ci.conf.ts excludes) are
- * considered. `subset` runs just those; `full` runs the normal sharded suite;
- * `skip` means nothing relevant to e2e changed. LOW confidence and broad
- * changes both fall back to `full` so the gate never trusts a partial map.
- * Big subsets (>half the runnable suite) also go full — not worth a partial run.
+ * considered. LOW confidence and broad changes fall back to `full` so the gate
+ * never trusts a partial map; a subset above half the runnable suite isn't
+ * worth a partial run either, so it also goes `full`.
  */
-function emitCiPlan(
-  broad: boolean,
-  confidence: string,
-  selectedE2e: string[],
-  allSpecs: string[],
-): void {
+export function computePlan(sel: Selection): CiPlan {
   const excluded = ciExcludedSpecs()
-  const runnableAll = allSpecs.filter((s) => !excluded.has(s))
-  const runnable = selectedE2e.filter((s) => !excluded.has(s))
-  let mode: 'full' | 'subset' | 'skip'
+  const runnableAll = sel.specs.filter((s) => !excluded.has(s))
+  const runnable = sel.selectedE2e.filter((s) => !excluded.has(s))
+  let mode: CiPlan['mode']
   let specs: string[] = []
-  if (broad || confidence === 'low') mode = 'full'
+  if (sel.broad || sel.confidence === 'low') mode = 'full'
   else if (runnable.length === 0) mode = 'skip'
   else if (runnable.length > Math.ceil(runnableAll.length / 2)) mode = 'full'
   else {
     mode = 'subset'
     specs = runnable
   }
+  return { mode, specs, count: mode === 'full' ? runnableAll.length : specs.length }
+}
+
+/** Emit the plan as `key=value` lines (ready for $GITHUB_OUTPUT). */
+function emitCiPlan(sel: Selection): void {
+  const { mode, specs, count } = computePlan(sel)
   process.stdout.write(`mode=${mode}\n`)
-  process.stdout.write(`count=${mode === 'full' ? runnableAll.length : specs.length}\n`)
+  process.stdout.write(`count=${count}\n`)
   process.stdout.write(`specs=${specs.join(' ')}\n`)
 }
 
@@ -248,7 +253,7 @@ const TOKEN_STOPLIST = new Set([
  * `matches`, `getElementById`) are scanned, so import paths like
  * `'./helpers/x.ts'` never leak a bogus `.ts` class token.
  */
-function extractSpecTokens(src: string): Token[] {
+export function extractSpecTokens(src: string): Token[] {
   const tokens = new Map<string, Token>()
   const push = (kind: Token['kind'], value: string) => {
     if (!value || TOKEN_STOPLIST.has(value)) return
@@ -271,7 +276,7 @@ function extractSpecTokens(src: string): Token[] {
 }
 
 /** Does a (source/css/html) file body contain a token's literal name? */
-function fileContainsToken(body: string, tok: Token): boolean {
+export function fileContainsToken(body: string, tok: Token): boolean {
   if (tok.kind === 'txt') return body.includes(tok.value)
   // id/class: word-bounded so `pane` doesn't match `pane-files`.
   const esc = tok.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -306,7 +311,7 @@ function directImports(rel: string): string[] {
 }
 
 /** Transitive set of local files reachable from `entry` (excluding itself). */
-function reachableFiles(entry: string, cache: Map<string, Set<string>>): Set<string> {
+export function reachableFiles(entry: string, cache: Map<string, Set<string>>): Set<string> {
   const cached = cache.get(entry)
   if (cached) return cached
   const seen = new Set<string>()
@@ -324,17 +329,50 @@ function reachableFiles(entry: string, cache: Map<string, Set<string>>): Set<str
   return seen
 }
 
-// ── Main ─────────────────────────────────────────────────────────────────────
-function main(): void {
-  const args = parseArgs(process.argv.slice(2))
-  const changed = (args.files ?? changedFiles(args.base)).map((f) => f.replace(/\\/g, '/'))
+// ── Selection ────────────────────────────────────────────────────────────────
+export type Selection = {
+  changed: string[]
+  broad: boolean
+  broadHits: string[]
+  confidence: 'high' | 'low' | 'broad'
+  unmapped: string[]
+  specs: string[]
+  unitTests: string[]
+  selectedE2e: string[]
+  selectedUnit: string[]
+  e2eReasons: Map<string, string[]>
+  unitReasons: Map<string, string[]>
+}
 
-  const specs = walk(E2E_DIR)
+/** Runnable e2e specs (the wdio.conf.ts glob minus its one exclude). */
+export function listSpecs(): string[] {
+  return walk(E2E_DIR)
     .filter((f) => f.endsWith('.e2e.ts') && !E2E_GLOB_EXCLUDE.has(f.replace(`${E2E_DIR}/`, '')))
     .sort()
-  const unitTests = walk('src')
+}
+
+/** Unit test files (selected via the import graph). */
+export function listUnitTests(): string[] {
+  return walk('src')
     .filter((f) => f.endsWith('.test.ts'))
     .sort()
+}
+
+/** Shipped source the selector vocabulary resolves against (no test files). */
+export function listSourceFiles(): string[] {
+  return walk('src').filter(
+    (f) =>
+      (CODE_EXTS.some((e) => f.endsWith(e)) || f.endsWith('.css') || f.endsWith('.html')) &&
+      !f.endsWith('.test.ts') &&
+      !f.endsWith('.e2e.ts'),
+  )
+}
+
+/** Map a set of changed files to the affected e2e specs and unit tests. */
+export function computeSelection(changedInput: string[]): Selection {
+  const changed = changedInput.map((f) => f.replace(/\\/g, '/'))
+  const specs = listSpecs()
+  const unitTests = listUnitTests()
 
   const specTokens = new Map<string, Token[]>()
   for (const s of specs) specTokens.set(s, extractSpecTokens(read(s)))
@@ -419,10 +457,30 @@ function main(): void {
       !e2eMappedFiles.has(f) &&
       !broadHits.includes(f),
   )
-  const confidence = broad ? 'broad' : unmapped.length ? 'low' : 'high'
+  const confidence: Selection['confidence'] = broad ? 'broad' : unmapped.length ? 'low' : 'high'
+
+  return {
+    changed,
+    broad,
+    broadHits,
+    confidence,
+    unmapped,
+    specs,
+    unitTests,
+    selectedE2e,
+    selectedUnit,
+    e2eReasons,
+    unitReasons,
+  }
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
+function main(): void {
+  const args = parseArgs(process.argv.slice(2))
+  const sel = computeSelection(args.files ?? changedFiles(args.base))
 
   if (args.plan) {
-    emitCiPlan(broad, confidence, selectedE2e, specs)
+    emitCiPlan(sel)
     return
   }
 
@@ -431,53 +489,34 @@ function main(): void {
       JSON.stringify(
         {
           base: args.base,
-          changed,
-          broad,
-          broadHits,
-          confidence,
-          unmapped,
-          e2e: { selected: selectedE2e, total: specs.length },
-          unit: { selected: selectedUnit, total: unitTests.length },
+          changed: sel.changed,
+          broad: sel.broad,
+          broadHits: sel.broadHits,
+          confidence: sel.confidence,
+          unmapped: sel.unmapped,
+          e2e: { selected: sel.selectedE2e, total: sel.specs.length },
+          unit: { selected: sel.selectedUnit, total: sel.unitTests.length },
         },
         null,
         2,
       ),
     )
   } else {
-    report(args, {
-      changed,
-      broad,
-      broadHits,
-      confidence,
-      unmapped,
-      specs,
-      unitTests,
-      selectedE2e,
-      selectedUnit,
-      e2eReasons,
-      unitReasons,
-    })
+    report(args, sel)
   }
 
   if (args.run)
-    runSelected(args.run, broad, selectedE2e, selectedUnit, specs.length, unitTests.length)
+    runSelected(
+      args.run,
+      sel.broad,
+      sel.selectedE2e,
+      sel.selectedUnit,
+      sel.specs.length,
+      sel.unitTests.length,
+    )
 }
 
-type ReportCtx = {
-  changed: string[]
-  broad: boolean
-  broadHits: string[]
-  confidence: string
-  unmapped: string[]
-  specs: string[]
-  unitTests: string[]
-  selectedE2e: string[]
-  selectedUnit: string[]
-  e2eReasons: Map<string, string[]>
-  unitReasons: Map<string, string[]>
-}
-
-function report(args: Args, c: ReportCtx): void {
+function report(args: Args, c: Selection): void {
   const dim = (s: string) => `\x1b[2m${s}\x1b[0m`
   const bold = (s: string) => `\x1b[1m${s}\x1b[0m`
   console.log(bold(`\nTest oracle — ${c.changed.length} changed file(s)`))
@@ -553,4 +592,6 @@ function runSelected(
   }
 }
 
-main()
+// Run the CLI only when invoked directly — importing this module (e.g. from
+// scripts/check-oracle.mts) must not trigger a git diff + report.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main()
