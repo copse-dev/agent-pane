@@ -4,7 +4,7 @@
 // ran in the thread (sourced from usage, not the LLM guessing its own name).
 
 /** Fixed co-author trailer identifying Copse as a commit author. */
-export const COPSE_COAUTHOR = 'Co-Authored-By: Copse <noreply@copse-panel.app>'
+export const COPSE_COAUTHOR = 'Co-Authored-By: Copse <noreply@copse.dev>'
 
 /** Trailer key carrying the comma-separated list of models used. */
 export const COPSE_MODELS_TRAILER = 'Copse-Models'
