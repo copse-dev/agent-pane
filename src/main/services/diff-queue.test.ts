@@ -5,9 +5,11 @@ import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
+  adoptWorktreeChangesSince,
   applyDiffEntry,
   applyOrStageDiff,
   approveAllStagedDiffs,
+  captureWorktreeBaseline,
   clearDiffQueueForTest,
   getDiffQueueForTest,
   getRecentStagedDiffDecision,
@@ -221,6 +223,72 @@ describe('applyOrStageDiff direct-apply policy', () => {
     assert.equal(getRecentStagedDiffDecision('a.txt')?.status, 'conflict')
     assert.equal(getStagedDiffEntry('a.txt')?.before, 'current\n')
     assert.equal(getStagedDiffEntry('a.txt')?.after, 'next\n')
+  })
+})
+
+describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
+  let tempRoot = ''
+  let workspaceRoot = ''
+  let restoreWorkspace: (() => void) | undefined
+
+  beforeEach(async () => {
+    clearDiffQueueForTest()
+    setGitAvailableForTest(true)
+    tempRoot = await mkdtemp(join(tmpdir(), 'agent-pane-adopt-'))
+    workspaceRoot = join(tempRoot, 'packages/app')
+    await mkdir(workspaceRoot, { recursive: true })
+    initCommittedRepo(tempRoot)
+    restoreWorkspace = setWorkspaceRootForTest(workspaceRoot)
+  })
+
+  afterEach(async () => {
+    clearDiffQueueForTest()
+    setGitAvailableForTest(null)
+    restoreWorkspace?.()
+    if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+  })
+
+  it('adopts a file a command reformatted so the next edit applies directly', async () => {
+    await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
+    git(tempRoot, ['add', 'packages/app/a.txt'])
+    git(tempRoot, ['commit', '-m', 'add workspace file'])
+
+    // Copse edits a.txt directly this turn.
+    await applyOrStageDiff('a.txt', 'one\n', 'two\n', 'plaintext')
+
+    // A formatter (run via run_shell) then rewrites it. Bracket that effect.
+    const baseline = await captureWorktreeBaseline()
+    await writeFile(join(workspaceRoot, 'a.txt'), 'two-formatted\n', 'utf-8')
+    const adopted = await adoptWorktreeChangesSince(baseline)
+    assert.deepEqual(adopted, ['a.txt'])
+
+    // Next turn edits the now-formatted file — must apply directly, not propose.
+    const next = await applyOrStageDiff('a.txt', 'two-formatted\n', 'three\n', 'plaintext')
+    assert.match(next, /Applied edit directly/)
+    assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf-8'), 'three\n')
+  })
+
+  it('does not adopt a pre-existing dirty file the command left untouched', async () => {
+    await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
+    await writeFile(join(workspaceRoot, 'manual.txt'), 'base\n', 'utf-8')
+    git(tempRoot, ['add', '.'])
+    git(tempRoot, ['commit', '-m', 'add files'])
+
+    // The user manually edited manual.txt before any command ran.
+    await writeFile(join(workspaceRoot, 'manual.txt'), 'user edit\n', 'utf-8')
+
+    // A command changes only a.txt; manual.txt is untouched between baseline/after.
+    const baseline = await captureWorktreeBaseline()
+    await writeFile(join(workspaceRoot, 'a.txt'), 'one-touched\n', 'utf-8')
+    const adopted = await adoptWorktreeChangesSince(baseline)
+    assert.deepEqual(adopted, ['a.txt'])
+
+    // The untouched manual edit is still unowned, so an edit must propose, not apply.
+    const result = await applyOrStageDiff('a.txt', 'one-touched\n', 'next\n', 'plaintext')
+    assert.match(
+      result,
+      /Reason approval is required: git already has unowned changes: manual\.txt/,
+    )
   })
 })
 

@@ -168,6 +168,48 @@ async function canApplyDirectly(
   return { ok: true }
 }
 
+/**
+ * Snapshot the content of every file currently in `git status`, keyed the same
+ * way ownership is (git's workspace-relative path). Used to bracket an
+ * agent-triggered shell command: the post-command worktree is compared against
+ * this baseline by {@link adoptWorktreeChangesSince} so only paths the command
+ * actually changed are adopted.
+ */
+export async function captureWorktreeBaseline(): Promise<Map<string, string>> {
+  const baseline = new Map<string, string>()
+  const status = await getGitStatus()
+  if (!status) return baseline
+  const paths = new Set([...status.staged, ...status.unstaged].map((c) => c.path))
+  for (const path of paths) baseline.set(ownedKey(path), await readCurrentContent(path))
+  return baseline
+}
+
+/**
+ * After an agent-triggered shell command, mark every file the command changed as
+ * Copse-owned so the next edit sees a clean worktree and applies directly instead
+ * of proposing the command's own effect (e.g. a formatter rewriting a file Copse
+ * just edited). Scoped to genuine command effects by diffing against the
+ * pre-command baseline: a path is adopted only when it was clean before (absent
+ * from the baseline) or its content now differs from the baseline. Pre-existing
+ * unowned edits the command did not touch keep their status, so the
+ * stale-overwrite guard still protects them. Returns the adopted paths.
+ */
+export async function adoptWorktreeChangesSince(baseline: Map<string, string>): Promise<string[]> {
+  const status = await getGitStatus()
+  if (!status) return []
+  const paths = new Set([...status.staged, ...status.unstaged].map((c) => c.path))
+  const adopted: string[] = []
+  for (const path of paths) {
+    const after = await readCurrentContent(path)
+    const before = baseline.get(ownedKey(path))
+    if (before === undefined || before !== after) {
+      recordDirectAppliedSnapshot(path, after)
+      adopted.push(path)
+    }
+  }
+  return adopted
+}
+
 function recordDecision(decision: Omit<DiffDecision, 'at'>): void {
   recentDecisions.unshift({ ...decision, at: Date.now() })
   recentDecisions.splice(20)
