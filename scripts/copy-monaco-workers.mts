@@ -1,6 +1,8 @@
 import { cpSync, copyFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+const ESM_WORKER_HOST_SRC = resolve('src/renderer/monaco/esm-worker-host.js')
+
 /** ESM worker ids used by Monaco's editor host vs filenames shipped in the ESM bundle. */
 const WORKER_ALIASES: ReadonlyArray<[dest: string, src: string]> = [
   ['language/typescript/tsWorker.js', 'language/typescript/ts.worker.js'],
@@ -15,8 +17,13 @@ const WORKER_ALIASES: ReadonlyArray<[dest: string, src: string]> = [
  * workers (those call `define()` and fail with "define is not defined").
  */
 export function copyMonacoWorkers(rendererOutDir: string): void {
-  const vsDest = resolve(rendererOutDir, 'monaco/vs')
+  const monacoDest = resolve(rendererOutDir, 'monaco')
+  const vsDest = resolve(monacoDest, 'vs')
   cpSync(resolve('node_modules/monaco-editor/esm/vs'), vsDest, { recursive: true })
+  // Language workers import from `../../../external/...` (sibling of `vs/`, not inside it).
+  cpSync(resolve('node_modules/monaco-editor/esm/external'), resolve(monacoDest, 'external'), {
+    recursive: true,
+  })
 
   for (const [destRel, srcRel] of WORKER_ALIASES) {
     const src = resolve(vsDest, srcRel)
@@ -27,4 +34,6 @@ export function copyMonacoWorkers(rendererOutDir: string): void {
     if (existsSync(dest)) continue
     copyFileSync(src, dest)
   }
+
+  copyFileSync(ESM_WORKER_HOST_SRC, resolve(rendererOutDir, 'monaco/esm-worker-host.js'))
 }

@@ -26,7 +26,14 @@ const SHARED = resolve(ROOT, 'src/shared')
 // Files that are deliberately not imported anywhere. Each needs a reason so the
 // next person knows it is intentional rather than forgotten dead code.
 const ALLOWED_UNLINKED: Record<string, string> = {
-  // (none currently — delete the file or add it here with a reason instead)
+  // ACP client-role protocol core (consume external ACP agents). Landed ahead of
+  // the app wiring (model-picker `acp:*` routing + settings UI) and exercised via
+  // the loopback test against the SDK directly, so nothing imports these yet.
+  // Tracked in #264 (Track 1); drop these once the client is wired into the router.
+  'src/main/services/acp/acp-client.ts':
+    'ACP client role; wired into the model router in a follow-up (#264)',
+  'src/shared/types/acp.ts':
+    'AcpAgentConfig for the ACP client registry; consumed once client config persistence lands (#264)',
 }
 
 const abs = (p: string) => resolve(ROOT, p)

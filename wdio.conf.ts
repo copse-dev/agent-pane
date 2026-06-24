@@ -26,7 +26,9 @@ export const config: Options.Testrunner = {
   waitforTimeout: 30_000,
   connectionRetryTimeout: 120_000,
   connectionRetryCount: 3,
-  autoXvfb: !process.env.DISPLAY,
+  // Xvfb is X11/Linux only — a self-hosted macOS runner uses its native window
+  // server (and has no `Xvfb` binary), so enable it on Linux only.
+  autoXvfb: process.platform === 'linux' && !process.env.DISPLAY,
   capabilities: [
     {
       browserName: 'chrome',

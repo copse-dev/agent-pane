@@ -26,6 +26,11 @@ describeSpacedExplorer('explorer reload with spaced workspace path', () => {
     writeFileSync(join(workspaceRoot, 'README.md'), '# Spaced path fixture\n', 'utf8')
     seedEmptyProject(workspaceRoot, 'e2e-spaced-explorer')
     await browser.reloadSession()
+    // Wait for the app to finish booting the seeded workspace before touching
+    // the titlebar. Until workspaceRoot is set the panel toggle no-ops (it
+    // routes to add-project), so clicking too early — common on a slower
+    // self-hosted runner — leaves #pane-files permanently hidden.
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })
 
   after(() => {
@@ -34,8 +39,19 @@ describeSpacedExplorer('explorer reload with spaced workspace path', () => {
   })
 
   it('reloads the file tree without fs:listDir errors', async () => {
-    await (await $('.titlebar-btn[aria-label="Toggle right panel"]')).click()
-    await (await $('#pane-files')).waitForDisplayed({ timeout: 10_000 })
+    // Click the toggle until the files pane actually shows (only when it isn't
+    // already open, so we never toggle it back shut) — a single click can still
+    // land a beat before the workspace is ready on a constrained runner.
+    const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]')
+    const pane = await $('#pane-files')
+    await browser.waitUntil(
+      async () => {
+        if (await pane.isDisplayed()) return true
+        await panelBtn.click()
+        return false
+      },
+      { timeout: 30_000, interval: 1000, timeoutMsg: '#pane-files did not become visible' },
+    )
 
     const refreshBtn = await $('.sidebar-refresh[aria-label="Refresh"]')
     await refreshBtn.waitForDisplayed({ timeout: 10_000 })
