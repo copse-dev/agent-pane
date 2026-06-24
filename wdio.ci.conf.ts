@@ -35,12 +35,16 @@ const ciExclude = [
   // which is flaky to render in time on the constrained runner.
   './tests/e2e/semantic-search-markdown.e2e.ts',
   // Genuinely flaky assertion (not the per-shard OOM): after creating a new
-  // thread it intermittently sees 1 `.chats-list .chat-row` instead of 2, and
-  // its app-ready wait also timed out in the un-quarantine trial (#345). It's a
-  // real spec race, not density — stays out until the `$$` wait is fixed.
+  // thread these snapshot `$$('.chats-list .chat-row')` before the appended row
+  // renders, seeing one row too few. A real spec race, not density — they stay
+  // out until the `$$` wait polls for the new row.
   './tests/e2e/new-thread-keeps-panel.e2e.ts',
-  // NOTE: draft-prompt was un-quarantined here — the #345 trial confirmed it
-  // passes at the 8-shard density (it only flaked at 7 shards from packing).
+  // draft-prompt hits the same new-thread `$$` race (expected 3 rows, saw 2),
+  // and its heavy reloadSession run also drew the per-shard OOM on retry. The
+  // race fix landed in this branch (poll for the row before snapshotting), but
+  // it stays quarantined until a follow-up confirms a few green CI runs and
+  // removes this line — re-added after the #345 un-quarantine regressed.
+  './tests/e2e/draft-prompt.e2e.ts',
   // context-wheel stays quarantined (describeSkipInCi in its spec): it hard-OOM
   // crashes the runner on its first launch even in a 4-spec shard.
 ]
