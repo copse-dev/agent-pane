@@ -5,7 +5,13 @@ import {
 } from '@shared/agent/run-subagent.ts'
 import { conversationTokenBudget } from '@shared/agent/trim-history.ts'
 import { readFileLimitsForSubagent } from '@shared/agent/read-file-limits.ts'
-import type { LLMProvider, LLMMessage, ModelUsage, StreamChunk } from '@shared/types'
+import type {
+  LLMProvider,
+  LLMMessage,
+  ModelUsage,
+  StreamChunk,
+  ToolExecuteResult,
+} from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { runWithAgentRunReadFileLimits } from './agent-run-read-limits.ts'
 import { getWorkspaceRoot } from './workspace.ts'
@@ -39,7 +45,7 @@ async function executeCiTool(
   name: string,
   args: unknown,
   signal: AbortSignal,
-): Promise<string> {
+): Promise<ToolExecuteResult> {
   if (!CI_INVESTIGATOR_TOOL_NAMES.includes(name as (typeof CI_INVESTIGATOR_TOOL_NAMES)[number])) {
     throw new Error(`Tool not allowed in CI investigator subagent: ${name}`)
   }

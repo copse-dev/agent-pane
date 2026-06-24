@@ -68,12 +68,16 @@ function startElectron() {
   })
 }
 
+// Dev builds always keep the MockLLMProvider test directives (never shipped).
+const define = { __COPSE_TEST_DIRECTIVES__: 'true' }
+
 const nodeOpts = {
   bundle: true,
   platform: 'node' as const,
   format: 'cjs' as const,
   external: ['electron', '@anthropic-ai/sandbox-runtime', 'shell-quote', 'node-pty'],
   sourcemap: true,
+  define,
 }
 
 const sharedAlias = { '@shared': new URL('../src/shared', import.meta.url).pathname }
@@ -111,6 +115,7 @@ const rendererCtx = await esbuild.context({
   sourcemap: true,
   loader: { '.ts': 'ts', '.css': 'css', '.ttf': 'file' },
   alias: sharedAlias,
+  define,
 })
 buildContexts.push(rendererCtx)
 

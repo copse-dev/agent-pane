@@ -4,6 +4,7 @@ import type { ToolCall } from '@shared/types'
 import {
   buildToolCallDisplayItems,
   getToolDisplayName,
+  getToolCallLabel,
   getToolGroupKey,
   getToolGroupLabel,
   aggregateToolStatus,
@@ -14,6 +15,20 @@ function tc(id: string, name: string, status: ToolCall['status'] = 'done'): Tool
 }
 
 describe('tool-display', () => {
+  it('labels file edits with the target path', () => {
+    const write = {
+      ...tc('1', 'write_file'),
+      args: { path: 'README.md', content: 'hello' },
+      editStats: { additions: 27, deletions: 29 },
+    }
+    assert.equal(getToolCallLabel(write), 'Edited README.md')
+    const replace = {
+      ...tc('2', 'str_replace'),
+      args: { path: 'src/foo.ts', old_string: 'a', new_string: 'b' },
+    }
+    assert.equal(getToolCallLabel(replace), 'Edited src/foo.ts')
+  })
+
   it('maps known tools to human-readable names', () => {
     assert.equal(getToolDisplayName('explore'), 'Explore files')
     assert.equal(getToolDisplayName('read_file'), 'Read file')

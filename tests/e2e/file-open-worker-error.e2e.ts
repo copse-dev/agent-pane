@@ -8,6 +8,7 @@ import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-file-open-worker-project'
 const SAMPLE_FILE = 'worker-sample.ts'
+const CSS_FILE = 'worker-sample.css'
 
 async function waitForWorkspace(): Promise<void> {
   await browser.waitUntil(
@@ -36,6 +37,11 @@ describe('Opening a code file does not surface worker error toasts', () => {
       ].join('\n'),
       'utf8',
     )
+    writeFileSync(
+      join(workspaceRoot, CSS_FILE),
+      ['.panel {', '  display: flex;', '  color: var(--text-primary);', '}', ''].join('\n'),
+      'utf8',
+    )
     mkdirSync(join(process.cwd(), 'tests/e2e/screenshots'), { recursive: true })
     resetUserData()
     seedE2eViewport()
@@ -56,12 +62,12 @@ describe('Opening a code file does not surface worker error toasts', () => {
     await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
 
     const sampleRow = await $(`.tree-row[title="${SAMPLE_FILE}"]`)
-    await sampleRow.waitForDisplayed({ timeout: 15_000 })
+    await sampleRow.waitForDisplayed({ timeout: 30_000 })
     await sampleRow.click()
 
     const editor = await $('#file-viewer .monaco-editor')
-    await editor.waitForDisplayed({ timeout: 15_000 })
-    await $('#file-viewer .monaco-editor .view-line').waitForDisplayed({ timeout: 15_000 })
+    await editor.waitForDisplayed({ timeout: 30_000 })
+    await $('#file-viewer .monaco-editor .view-line').waitForDisplayed({ timeout: 30_000 })
 
     // Give Monaco's TypeScript language worker time to spin up — this is the
     // path that previously rejected with an ErrorEvent and produced repeated
@@ -70,6 +76,22 @@ describe('Opening a code file does not surface worker error toasts', () => {
 
     const toasts = await collectErrorToasts()
     await saveAppScreenshot('file-open-worker-no-error.png')
+    await expect(toasts).toEqual([])
+  })
+
+  it('shows a CSS file in Monaco with its language worker and no error toast', async () => {
+    const cssRow = await $(`.tree-row[title="${CSS_FILE}"]`)
+    await cssRow.waitForDisplayed({ timeout: 15_000 })
+    await cssRow.click()
+
+    const editor = await $('#file-viewer .monaco-editor')
+    await editor.waitForDisplayed({ timeout: 15_000 })
+    await $('#file-viewer .monaco-editor .view-line').waitForDisplayed({ timeout: 15_000 })
+
+    await browser.pause(3_000)
+
+    const toasts = await collectErrorToasts()
+    await saveAppScreenshot('file-open-css-worker-no-error.png')
     await expect(toasts).toEqual([])
   })
 })

@@ -9,6 +9,7 @@ export default ts.config(
       'dist-test/',
       'dist-types/',
       'node_modules/',
+      '.tmp/',
       '.claude/**',
       'eslint.config.mjs',
       'prettier.config.mjs',
@@ -70,6 +71,19 @@ export default ts.config(
         exports: 'writable',
         __dirname: 'readonly',
         __filename: 'readonly',
+      },
+    },
+  },
+  {
+    // Static ESM worker host copied to dist; not part of the TS project graph.
+    files: ['src/renderer/monaco/esm-worker-host.js'],
+    extends: [ts.configs.disableTypeChecked],
+    languageOptions: {
+      sourceType: 'module',
+      globals: {
+        URL: 'readonly',
+        globalThis: 'readonly',
+        importScripts: 'readonly',
       },
     },
   },

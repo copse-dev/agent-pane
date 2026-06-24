@@ -5,6 +5,7 @@ import {
   appendToken,
   addToolCall,
   updateToolCall,
+  findToolCall,
   setMessageContent,
   setThreadStatus,
   setThreadTitle,
@@ -14,6 +15,7 @@ import {
   setThreadTodos,
   getThreadById,
 } from '@shared/store/thread-helpers.ts'
+import { syncThreadGitBranchAfterShell } from './sync-thread-branch-after-shell.ts'
 import {
   initSubagent,
   appendSubagentText,
@@ -91,8 +93,13 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           updateToolCall(store, st.msgId, chunk.toolCallId, {
             status: chunk.isError ? 'error' : 'done',
             result: chunk.result,
+            ...(chunk.editStats ? { editStats: chunk.editStats } : {}),
           })
           if (chunk.toolCallId && !chunk.isError) {
+            const toolCall = findToolCall(store, st.msgId, chunk.toolCallId)
+            if (toolCall?.name === 'run_shell') {
+              void syncThreadGitBranchAfterShell(store, api, threadId)
+            }
             tryOpenFileFromResult(store, chunk.result)
           }
         }
@@ -169,6 +176,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           updateSubagentToolCall(store, st.msgId, chunk.parentToolCallId, chunk.toolCallId, {
             status: chunk.isError ? 'error' : 'done',
             result: chunk.result,
+            ...(chunk.editStats ? { editStats: chunk.editStats } : {}),
           })
         }
         activity(threadId)

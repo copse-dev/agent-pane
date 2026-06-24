@@ -24,6 +24,9 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   gh_run_list: 'List CI runs',
   gh_run_view: 'View CI run logs',
   investigate_ci: 'Investigate CI',
+  get_ci_status: 'CI status',
+  wait_for_ci_checks: 'Wait for CI',
+  get_ci_failure_logs: 'CI failure logs',
   write_file: 'Write file',
   str_replace: 'Replace in file',
   run_shell: 'Run command',
@@ -57,6 +60,9 @@ const TOOL_GROUPS: Record<string, { tools: string[]; label: string }> = {
       'gh_pr_view',
       'gh_run_list',
       'gh_run_view',
+      'get_ci_status',
+      'wait_for_ci_checks',
+      'get_ci_failure_logs',
     ],
     label: 'Git',
   },
@@ -93,6 +99,21 @@ export function getToolDisplayName(name: string): string {
   const mcp = parseMcp(name)
   if (mcp) return `${mcp.server}: ${formatToolNameFallback(mcp.tool)}`
   return formatToolNameFallback(name)
+}
+
+function fileEditPath(args: unknown): string | null {
+  if (!args || typeof args !== 'object') return null
+  const path = (args as Record<string, unknown>).path
+  return typeof path === 'string' && path.length > 0 ? path : null
+}
+
+/** Human label for a tool card — file edits show `Edited <path>`. */
+export function getToolCallLabel(tc: ToolCall): string {
+  if (tc.name === 'write_file' || tc.name === 'str_replace') {
+    const path = fileEditPath(tc.args)
+    if (path) return `Edited ${path}`
+  }
+  return getToolDisplayName(tc.name)
 }
 
 export function getToolGroupKey(name: string): string | null {
@@ -142,7 +163,7 @@ export function buildToolCallDisplayItems(toolCalls: ToolCall[]): ToolCallDispla
 
   for (const tc of toolCalls) {
     if (tc.status === 'error') {
-      result.push({ type: 'individual', toolCall: tc, label: getToolDisplayName(tc.name) })
+      result.push({ type: 'individual', toolCall: tc, label: getToolCallLabel(tc) })
       continue
     }
 
@@ -156,7 +177,7 @@ export function buildToolCallDisplayItems(toolCalls: ToolCall[]): ToolCallDispla
       continue
     }
 
-    result.push({ type: 'individual', toolCall: tc, label: getToolDisplayName(tc.name) })
+    result.push({ type: 'individual', toolCall: tc, label: getToolCallLabel(tc) })
   }
 
   return result

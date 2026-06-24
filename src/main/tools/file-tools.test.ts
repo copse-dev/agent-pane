@@ -8,7 +8,13 @@ import { readFileTool, listDirTool, LIST_DIR_MAX_ENTRIES } from './file-tools.ts
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
 import { runWithAgentRunReadFileLimits } from '../services/agent-run-read-limits.ts'
 
+import { normalizeToolExecuteResult, type ToolExecuteResult } from '@shared/types'
+
 const TEST_READ_LIMITS = { maxLines: 150, maxChars: 12_000 }
+
+function toolText(result: ToolExecuteResult): string {
+  return normalizeToolExecuteResult(result).result
+}
 
 function runTool(
   registry: ToolRegistry,
@@ -16,7 +22,9 @@ function runTool(
   args: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<string> {
-  return runWithAgentRunReadFileLimits(TEST_READ_LIMITS, () => registry.execute(name, args, signal))
+  return runWithAgentRunReadFileLimits(TEST_READ_LIMITS, () =>
+    registry.execute(name, args, signal).then(toolText),
+  )
 }
 
 describe('file tools', () => {

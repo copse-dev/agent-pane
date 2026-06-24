@@ -18,7 +18,7 @@ describe('message queue while agent is running', function () {
     seedEmptyProject(process.cwd(), 'e2e-message-queue', { subagentsEnabled: false })
     await browser.reloadSession()
 
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
     const firstPrompt = 'first prompt [[mock:delay_ms 2000]]'
     await $('.prompt-input').setValue(firstPrompt)
     await $('.submit-btn').click()

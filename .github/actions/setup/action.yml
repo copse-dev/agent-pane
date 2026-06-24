@@ -1,0 +1,83 @@
+name: Setup
+description: >-
+  Install Node, ripgrep, and project dependencies with a cached node_modules.
+  On a cache hit the slow postinstall steps (node-pty electron-rebuild + the
+  vendored codesearch download) are skipped entirely, since their outputs live
+  inside the cached node_modules / vendor/codesearch trees.
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v6
+      with: { node-version: '22', cache: 'npm' }
+    # ripgrep backs the app's code-search services at runtime; the unit suite
+    # and the e2e app both exercise them. GitHub-hosted runners have passwordless
+    # sudo + apt, so install it there. Self-hosted runners typically have neither
+    # (sudo prompts for a password, apt may be unavailable), so provision ripgrep
+    # — and the Electron e2e system libs — on the host once instead (see PR #371).
+    - run: sudo apt-get update && sudo apt-get install -y ripgrep
+      if: runner.environment == 'github-hosted'
+      shell: bash
+    # Self-hosted macOS runner: provision ripgrep + coreutils via Homebrew (no
+    # apt). coreutils supplies `gtimeout`, which the e2e shard step uses to cap a
+    # wedged run (macOS has no `timeout`). Skips installs that are already
+    # present, so it's cheap on warm runners.
+    - run: |
+        command -v rg >/dev/null 2>&1 || brew install ripgrep
+        command -v gtimeout >/dev/null 2>&1 || brew install coreutils
+      if: runner.environment == 'self-hosted' && runner.os == 'macOS'
+      shell: bash
+    # Cache the fully-installed dependency tree, not just the npm download cache.
+    # The key is the lockfile hash, so an electron/node-pty bump (which changes
+    # the native ABI) busts it and forces a fresh electron-rebuild. vendor/
+    # codesearch is a pinned-version binary fetch that postinstall guards as
+    # idempotent, so it caches cleanly alongside node_modules.
+    #
+    # Key by runner.arch as well as runner.os: the tree holds arch-specific native
+    # binaries (esbuild's @esbuild/<platform> optional dep, node-pty/electron
+    # rebuilds, the vendor/codesearch fetch), but `runner.os` is `macOS` for BOTH
+    # Intel and Apple-Silicon runners. A mixed-arch self-hosted Mac fleet would
+    # otherwise share one entry, and an arm64 box restoring an x64-populated cache
+    # (or vice-versa) fails at load with "@esbuild/darwin-arm64 could not be found".
+    - uses: actions/cache@v4
+      id: deps
+      with:
+        path: |
+          node_modules
+          vendor/codesearch
+        # The -vN token is a manual cache-bust: earlier runs on a runner with
+        # ignore-scripts saved a node_modules with no native builds (no esbuild
+        # binary, no electron-rebuilt node-pty) under the lockfile-hash key. Since
+        # the lockfile is unchanged that poisoned entry would keep restoring and
+        # skip the fixed npm ci; bumping the token forces one clean reinstall.
+        key: ${{ runner.os }}-${{ runner.arch }}-deps-v2-${{ hashFiles('package-lock.json') }}
+    # Force install scripts to run for THIS install only. A self-hosted runner may
+    # set `ignore-scripts=true` globally (a sensible host-wide hardening), but that
+    # skips the native setup this app's e2e needs: esbuild's platform binary (used
+    # to load the wdio TS config — without it wdio dies instantly with
+    # "@esbuild/<os>-<arch> could not be found"), Electron's binary download, and
+    # the root postinstall that electron-rebuilds node-pty. Scoping the override to
+    # this step via step env keeps the box's global setting intact for everything
+    # else; running our own first-party repo's scripts here is safe (the fork guard
+    # keeps untrusted PR code off the self-hosted runner). --include=optional
+    # additionally overrides any host `omit=optional`, which would otherwise drop
+    # esbuild's @esbuild/<os>-<arch> optional package.
+    - run: npm ci --include=optional
+      if: steps.deps.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        npm_config_ignore_scripts: 'false'
+    # Self-heal a poisoned dependency tree on the cache-HIT path too (where the
+    # npm ci above is skipped). If a cache was saved before this fix — or restored
+    # missing esbuild's working binary — the probe rebuilds just esbuild with
+    # scripts forced on, refetching the platform binary. Runs on every setup (hit
+    # or miss), cheap when the binary is already there.
+    - run: |
+        if ! node_modules/.bin/esbuild --version >/dev/null 2>&1; then
+          echo "::warning::esbuild platform binary missing after dep restore — running npm rebuild esbuild"
+          npm rebuild esbuild
+          node_modules/.bin/esbuild --version
+        fi
+      shell: bash
+      env:
+        npm_config_ignore_scripts: 'false'

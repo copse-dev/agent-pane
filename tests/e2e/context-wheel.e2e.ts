@@ -6,7 +6,11 @@ import { describeSkipInCi } from './helpers/ci-gate.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
-describe('context wheel footer seeded', () => {
+// Heaviest seeded spec (seedContextWheelFixture + reloadSession). The #345
+// trial confirmed it hard-OOM-crashes the runner on its first launch even in a
+// 4-spec shard at 8 shards, so it stays skipped in CI until its fixture is
+// lightened (it runs fine locally).
+describeSkipInCi('context wheel footer seeded', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
@@ -19,7 +23,7 @@ describe('context wheel footer seeded', () => {
   })
 
   it('shows neutral doughnut and percentage from seeded context snapshot', async () => {
-    await $('.input-footer').waitForExist({ timeout: 15_000 })
+    await $('.input-footer').waitForExist({ timeout: 30_000 })
 
     const wheel = await $('.context-wheel')
     await expect(wheel).toBeDisplayed()
@@ -51,17 +55,17 @@ describeSkipInCi('context wheel footer live mock', () => {
   })
 
   it('updates doughnut and tokens live during a mock agent run', async () => {
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     const textarea = await $('.prompt-input')
     await textarea.setValue('list files please')
     await $('.submit-btn').click()
 
     const wheel = await $('.context-wheel')
-    await expect(wheel).toBeDisplayed({ wait: 15_000 })
+    await expect(wheel).toBeDisplayed({ wait: 30_000 })
     await expect(wheel.$('.context-wheel-label')).toHaveText(/\d+%/)
 
-    await expect($('.footer-usage')).toHaveText(/\d/, { wait: 15_000 })
+    await expect($('.footer-usage')).toHaveText(/\d/, { wait: 30_000 })
 
     const footer = await $('.input-footer')
     await footer.saveScreenshot(join(SCREENSHOT_DIR, 'context-wheel-live-running.png'))

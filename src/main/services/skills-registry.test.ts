@@ -13,6 +13,10 @@ import {
 } from './skills-registry.ts'
 import { setSetting } from './settings.test-shim.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
+import {
+  resetBundledCursorSkillsRootForTest,
+  setBundledCursorSkillsRootForTest,
+} from './bundled-cursor-skills.ts'
 
 describe('skills-registry', () => {
   let tempRoot = ''
@@ -22,6 +26,8 @@ describe('skills-registry', () => {
     setSkillsForTest([])
     setSetting('skillsEnabled', true)
     setSetting('skillPluginPaths', [])
+    setSetting('bundledCursorSkillsEnabled', false)
+    setBundledCursorSkillsRootForTest(null)
     tempRoot = await mkdtemp(join(tmpdir(), 'copse-panel-skills-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
     await mkdir(join(tempRoot, '.cursor', 'skills', 'demo-skill'), { recursive: true })
@@ -41,6 +47,7 @@ description: Demo skill for tests
     restoreWorkspace?.()
     restoreWorkspace = undefined
     setSkillsForTest([])
+    resetBundledCursorSkillsRootForTest()
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
   })
 
@@ -49,6 +56,69 @@ description: Demo skill for tests
     const skills = listSkills()
     const demo = skills.find((skill) => skill.name === 'demo-skill' && skill.source === 'project')
     assert.ok(demo, 'expected demo-skill from project .cursor/skills')
+  })
+
+  it('discovers bundled Cursor skills when enabled', async () => {
+    const bundledRoot = await mkdtemp(join(tmpdir(), 'copse-bundled-registry-'))
+    const pluginRoot = join(bundledRoot, 'plugins', 'demo-plugin')
+    await mkdir(join(pluginRoot, '.cursor-plugin'), { recursive: true })
+    await mkdir(join(pluginRoot, 'skills', 'bundled-skill'), { recursive: true })
+    await writeFile(
+      join(pluginRoot, '.cursor-plugin', 'plugin.json'),
+      JSON.stringify({ name: 'demo-plugin', skills: 'skills' }),
+      'utf8',
+    )
+    await writeFile(
+      join(pluginRoot, 'skills', 'bundled-skill', 'SKILL.md'),
+      `---
+name: bundled-skill
+description: Bundled skill for tests
+---
+
+# Bundled`,
+      'utf-8',
+    )
+
+    setSetting('bundledCursorSkillsEnabled', true)
+    setBundledCursorSkillsRootForTest(bundledRoot)
+    await refreshSkillsRegistry()
+    const skill = listSkills().find((s) => s.name === 'bundled-skill')
+    assert.ok(skill)
+    assert.equal(skill?.source, 'bundled')
+
+    await rm(bundledRoot, { recursive: true, force: true })
+  })
+
+  it('omits bundled skills when bundledCursorSkillsEnabled is false', async () => {
+    const bundledRoot = await mkdtemp(join(tmpdir(), 'copse-bundled-disabled-'))
+    const pluginRoot = join(bundledRoot, 'plugins', 'demo-plugin')
+    await mkdir(join(pluginRoot, '.cursor-plugin'), { recursive: true })
+    await mkdir(join(pluginRoot, 'skills', 'bundled-skill'), { recursive: true })
+    await writeFile(
+      join(pluginRoot, '.cursor-plugin', 'plugin.json'),
+      JSON.stringify({ name: 'demo-plugin', skills: 'skills' }),
+      'utf8',
+    )
+    await writeFile(
+      join(pluginRoot, 'skills', 'bundled-skill', 'SKILL.md'),
+      `---
+name: bundled-skill
+description: Bundled skill for tests
+---
+
+# Bundled`,
+      'utf-8',
+    )
+
+    setSetting('bundledCursorSkillsEnabled', false)
+    setBundledCursorSkillsRootForTest(bundledRoot)
+    await refreshSkillsRegistry()
+    assert.equal(
+      listSkills().some((skill) => skill.source === 'bundled'),
+      false,
+    )
+
+    await rm(bundledRoot, { recursive: true, force: true })
   })
 
   it('reads skill content by name', async () => {

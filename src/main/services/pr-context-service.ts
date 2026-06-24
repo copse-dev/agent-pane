@@ -1,11 +1,12 @@
 import { runCommand } from './command-runner.ts'
-import { runGh, isFailingConclusion } from './gh-service.ts'
+import { runGh, parseGhJson } from './gh-service.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import { isGitAvailable } from './tool-availability.ts'
 import { isInsideGitWorkTree } from './git-service.ts'
 import type { PrWorkspaceContext } from '@shared/follow-ups/types.ts'
 import type { GitBranchStatus, GitOpenPr } from '@shared/types/git.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
+import { ghPrHasCiFailures } from './github-ci-service.ts'
 
 interface GhPrView {
   state?: string
@@ -17,6 +18,7 @@ interface GhPrView {
   statusCheckRollup?: Array<{
     __typename?: string
     name?: string
+    context?: string
     status?: string
     conclusion?: string
     state?: string
@@ -50,10 +52,7 @@ export function porcelainHasMergeConflicts(raw: string): boolean {
   return false
 }
 
-export function ghPrHasCiFailures(pr: GhPrView): boolean {
-  const checks = pr.statusCheckRollup ?? []
-  return checks.some((check) => isFailingConclusion(check.conclusion ?? check.state))
-}
+export { ghPrHasCiFailures }
 
 export function ghPrHasMergeConflicts(pr: GhPrView): boolean {
   if (pr.mergeable === 'CONFLICTING') return true
@@ -155,15 +154,11 @@ export async function getPrWorkspaceContext(): Promise<PrWorkspaceContext> {
     'state,mergeable,mergeStateStatus,statusCheckRollup',
   ])
   if (ghResult.code === 0 && ghResult.stdout.trim()) {
-    try {
-      const pr = JSON.parse(ghResult.stdout) as GhPrView
-      if (pr.state === 'OPEN') {
-        hasOpenPr = true
-        hasMergeConflicts = hasMergeConflicts || ghPrHasMergeConflicts(pr)
-        hasCiFailures = ghPrHasCiFailures(pr)
-      }
-    } catch {
-      // gh output wasn't JSON — treat as no PR context
+    const pr = parseGhJson<GhPrView>(ghResult.stdout)
+    if (pr?.state === 'OPEN') {
+      hasOpenPr = true
+      hasMergeConflicts = hasMergeConflicts || ghPrHasMergeConflicts(pr)
+      hasCiFailures = ghPrHasCiFailures(pr)
     }
   }
 

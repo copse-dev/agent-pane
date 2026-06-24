@@ -6,12 +6,19 @@ import { tmpdir } from 'node:os'
 import { createRegistry, registerSkillTools } from './registry-bootstrap.ts'
 import { refreshSkillsRegistry, setSkillsForTest } from './skills-registry.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
+import { setSetting } from './settings.test-shim.ts'
+import {
+  setBundledCursorSkillsRootForTest,
+  resetBundledCursorSkillsRootForTest,
+} from './bundled-cursor-skills.ts'
 
 describe('registerSkillTools', () => {
   let tempRoot = ''
   let restoreWorkspace: (() => void) | undefined
 
   beforeEach(async () => {
+    setSetting('bundledCursorSkillsEnabled', false)
+    setBundledCursorSkillsRootForTest(null)
     tempRoot = await mkdtemp(join(tmpdir(), 'copse-panel-registry-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
     await mkdir(join(tempRoot, '.cursor', 'skills', 'demo-skill'), { recursive: true })
@@ -30,6 +37,7 @@ description: Demo skill for tests
   afterEach(async () => {
     restoreWorkspace?.()
     setSkillsForTest([])
+    resetBundledCursorSkillsRootForTest()
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
   })
 

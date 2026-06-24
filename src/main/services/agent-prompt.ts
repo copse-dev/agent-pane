@@ -12,6 +12,9 @@ const SHARED_TOOL_TAIL = `- git_status: Show working tree status
 - gh_pr_view: Show pull request details incl. CI check status (read-only GitHub CLI; prefer over run_shell + gh)
 - gh_run_list: List recent CI workflow runs for a branch (read-only GitHub CLI)
 - gh_run_view: Fetch failing CI workflow run logs by run id (read-only GitHub CLI)
+- get_ci_status: Read GitHub pull request CI check status (requires gh CLI and an open PR)
+- wait_for_ci_checks: Wait until PR CI checks finish after a push
+- get_ci_failure_logs: Fetch failed GitHub Actions log output for a PR
 - run_shell: Run a shell command in the workspace (may prompt for approval)
 - staged_diffs: List pending proposed file edits waiting for approval, recent edit decisions, and existing git changes
 - read_staged_diff: Inspect proposed content for a pending file edit

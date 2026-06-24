@@ -13,6 +13,13 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.off('workspace:opened', listener)
     },
   },
+  browser: {
+    onOpenTab: (handler: (url: string) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, url: string) => handler(url)
+      ipcRenderer.on('browser:open-tab', listener)
+      return () => ipcRenderer.off('browser:open-tab', listener)
+    },
+  },
   fs: {
     readFile: (path: string) => ipcRenderer.invoke('fs:readFile', path),
     writeFile: (path: string, content: string) => ipcRenderer.invoke('fs:writeFile', path, content),
@@ -138,6 +145,9 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('lmstudio:download', modelId, url, apiKey),
     downloadStatus: (jobId: string, url?: string, apiKey?: string) =>
       ipcRenderer.invoke('lmstudio:downloadStatus', jobId, url, apiKey),
+  },
+  openRouter: {
+    models: () => ipcRenderer.invoke('openrouter:models'),
   },
   menu: {
     onSettings: (handler: () => void) => {

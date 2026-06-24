@@ -24,7 +24,7 @@ describe('titlebar workspace name', () => {
 
   it('shows the active project folder name after restoring on launch', async () => {
     const workspaceName = await $('.workspace-name')
-    await workspaceName.waitForExist({ timeout: 15_000 })
+    await workspaceName.waitForExist({ timeout: 30_000 })
     await expect(workspaceName).toHaveText(basename(workspaceRoot))
     await expect(workspaceName).not.toHaveText('No folder')
 

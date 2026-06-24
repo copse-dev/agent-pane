@@ -9,6 +9,7 @@ export interface ApiKeyValidationResult {
 
 const ANTHROPIC_KEY_RE = /^sk-ant-/
 const OPENAI_KEY_RE = /^sk-/
+const OPENROUTER_KEY_RE = /^sk-or-/
 
 function formatError(provider: 'anthropic' | 'openai'): string {
   return provider === 'anthropic' ? 'Key should start with sk-ant-' : 'Key should start with sk-'
@@ -102,11 +103,42 @@ export async function validateCursorApiKey(key: string): Promise<ApiKeyValidatio
   }
 }
 
+export async function validateOpenRouterApiKey(key: string): Promise<ApiKeyValidationResult> {
+  const trimmed = key.trim()
+  if (!trimmed) return { ok: false, error: 'Key is empty' }
+  if (!OPENROUTER_KEY_RE.test(trimmed)) {
+    return { ok: false, error: 'Key should start with sk-or-', formatOk: false }
+  }
+
+  try {
+    // `/key` echoes the key's own metadata and requires auth, so it doubles as a
+    // free auth check without spending any credits.
+    const res = await fetch('https://openrouter.ai/api/v1/key', {
+      headers: { Authorization: `Bearer ${trimmed}` },
+      signal: AbortSignal.timeout(FETCH_TIMEOUTS.apiKeyValidation),
+    })
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, error: 'Key rejected by OpenRouter', formatOk: true }
+    }
+    if (!res.ok) {
+      return { ok: false, error: `OpenRouter returned HTTP ${res.status}`, formatOk: true }
+    }
+    return { ok: true, formatOk: true }
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Could not reach OpenRouter',
+      formatOk: true,
+    }
+  }
+}
+
 export async function validateApiKey(
-  provider: 'anthropic' | 'openai' | 'cursor',
+  provider: 'anthropic' | 'openai' | 'cursor' | 'openrouter',
   key: string,
 ): Promise<ApiKeyValidationResult> {
   if (provider === 'anthropic') return validateAnthropicApiKey(key)
   if (provider === 'cursor') return validateCursorApiKey(key)
+  if (provider === 'openrouter') return validateOpenRouterApiKey(key)
   return validateOpenAiApiKey(key)
 }
