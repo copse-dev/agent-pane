@@ -34,12 +34,7 @@ const ciExclude = [
   // Drives a mock subagent/explore run and waits on `.tool-card-subagent`,
   // which is flaky to render in time on the constrained runner.
   './tests/e2e/semantic-search-markdown.e2e.ts',
-  // Genuinely flaky assertion (not the per-shard OOM): after creating a new
-  // thread these snapshot `$$('.chats-list .chat-row')` before the appended row
-  // renders, seeing one row too few. A real spec race, not density — they stay
-  // out until the `$$` wait polls for the new row.
-  './tests/e2e/new-thread-keeps-panel.e2e.ts',
-  // draft-prompt hits the same new-thread `$$` race (expected 3 rows, saw 2),
+  // draft-prompt hits a new-thread `$$` race (expected 3 rows, saw 2),
   // and its heavy reloadSession run also drew the per-shard OOM on retry. The
   // race fix landed in this branch (poll for the row before snapshotting), but
   // it stays quarantined until a follow-up confirms a few green CI runs and

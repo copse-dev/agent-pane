@@ -22,6 +22,10 @@ When extending the renderer or its CSS, preserve these rules:
   are common in LLM output; split at block boundaries before wrapping paragraphs.
 - **Inline formatting order.** Fenced code → inline code → bold → italic. Italic (`_` and `*`) runs
   only outside `<code>` spans and must not match across newlines (or `* list` lines get eaten).
+  Consequence: emphasis whose opener and closer are split across a soft line break is **not**
+  rendered (it stays literal), unlike spec CommonMark which resolves emphasis per block. This is a
+  known limitation — see the "Emphasis across soft line breaks" follow-up in
+  [`docs/plans/markdown-renderer-hardening.md`](../../../docs/plans/markdown-renderer-hardening.md).
 - **Agent-output shapes.** Support `-`, `*`, and `+` list markers. Map `#`/`##` to `<h4>`, `###` to
   `<h3>` — h1/h2 are intentionally too large for the narrow pane.
 - **List indent.** Global `* { padding: 0 }` strips UA list padding. Restore readable indent on

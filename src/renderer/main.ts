@@ -53,6 +53,11 @@ const api = window.api
 // Catch-all for IPC/promise failures that would otherwise vanish silently
 // (many call sites dispatch with `void api.…()`). Surface them to the user.
 window.addEventListener('unhandledrejection', (event) => {
+  // Monaco throws when diff compute races model disposal (e.g. staged-diff accept).
+  if (event.reason instanceof Error && event.reason.message === 'no diff result available') {
+    event.preventDefault()
+    return
+  }
   showErrorToast('Unexpected error', event.reason)
 })
 
