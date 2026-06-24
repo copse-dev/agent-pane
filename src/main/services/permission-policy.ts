@@ -62,9 +62,12 @@ export function decideShellPermission(
 
   // Heuristic only — see shell-scope.ts; macOS seatbelt is the real boundary when enabled.
   // With macOS seatbelt active, sandbox-contained, non-destructive commands auto-run
-  // inside the project sandbox. External commands (network, gh, git push, …) prompt
-  // first, then run outside the sandbox. Destructive in-workspace commands also prompt.
-  // If a sandbox-contained command still fails (e.g. Playwright), shell-tool offers a retry.
+  // inside the project sandbox. Hard-external commands (network downloads, git push,
+  // installs, outside-workspace FS) prompt first, then run outside the sandbox.
+  // Ambiguous "may reach" matchers (gh, cloud CLI, nc, open-URL) auto-run *inside* the
+  // sandbox: if seatbelt actually blocks them the command fails and shell-tool offers an
+  // unsandboxed retry — so a grep over a `gh-*` path isn't gated on a guess, while a real
+  // escape is still contained. Destructive in-workspace commands always prompt.
   if (opts.sandboxEnabled) {
     if (analysis.verdict === 'external') {
       return { action: 'prompt', reasons: analysis.reasons }
@@ -75,7 +78,10 @@ export function decideShellPermission(
     return { action: 'allow', reasons: analysis.reasons }
   }
 
-  if (analysis.verdict === 'external') {
+  // No OS sandbox: the heuristic is the only guard, so an ambiguous "may reach network"
+  // verdict must prompt exactly like a hard-external one — auto-running it would be an
+  // unprompted network/out-of-workspace call.
+  if (analysis.verdict === 'external' || analysis.verdict === 'ambiguous') {
     return { action: 'prompt', reasons: analysis.reasons }
   }
   if (dangerous.length > 0) {
@@ -188,7 +194,11 @@ export function shellSandboxFailureShouldOfferUnsandboxedRetry(
   workspaceRoot: string | null,
 ): boolean {
   const analysis = analyzeShellCommand(command, workspaceRoot)
+  // sandbox/ambiguous commands ran *inside* seatbelt, so a sandbox-caused failure is
+  // a genuine block worth retrying outside (e.g. `gh` denied network, Playwright FS).
   if (analysis.verdict !== 'external') return true
+  // Hard-external commands already ran outside the sandbox, so only offer a retry for
+  // filesystem-escape reasons; a network failure there isn't a sandbox artifact.
   return analysis.reasons.some((reason) => shellReasonRequiresOutsideSandbox(reason))
 }
 

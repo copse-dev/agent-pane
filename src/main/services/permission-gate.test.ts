@@ -131,10 +131,26 @@ describe('decideShellPermission', () => {
     assert.equal(shellRequiresOutsideSandbox('git pull origin main', root, true), true)
   })
 
-  it('prompts for gh CLI when OS sandbox is active', () => {
+  it('auto-runs gh CLI inside the OS sandbox and escalates only if blocked', () => {
+    // gh is an ambiguous "may reach" matcher: under seatbelt it runs inside the
+    // sandbox (no upfront prompt — so a grep over a gh-* path isn't gated), and if
+    // the OS blocks it the failure path offers an unsandboxed retry.
     const d = decideShellPermission('gh pr view --json state', {
       workspaceRoot: root,
       sandboxEnabled: true,
+      autoRun: true,
+      classification: null,
+      confidenceThreshold: 0.85,
+    })
+    assert.equal(d.action, 'allow')
+    assert.equal(shellRequiresOutsideSandbox('gh pr view --json state', root, true), false)
+    assert.equal(shellSandboxFailureShouldOfferUnsandboxedRetry('gh pr view', root), true)
+  })
+
+  it('still prompts for gh CLI when there is no OS sandbox', () => {
+    const d = decideShellPermission('gh pr view --json state', {
+      workspaceRoot: root,
+      sandboxEnabled: false,
       autoRun: true,
       classification: null,
       confidenceThreshold: 0.85,
