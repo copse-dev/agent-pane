@@ -5,6 +5,7 @@ import {
   decideWebFetchPermission,
   decideWebSearchPermission,
   formatInstallPromptBody,
+  formatEphemeralRunnerPromptBody,
   shellRequiresOutsideSandbox,
   shellSandboxFailureShouldOfferUnsandboxedRetry,
   SANDBOX_TOOLS,
@@ -252,6 +253,38 @@ describe('formatInstallPromptBody', () => {
       outsideSandbox: false,
       safeInstall: false,
       jsManager: true,
+    })
+    assert.ok(body.includes('off in Settings'))
+    assert.ok(!body.includes('Socket Firewall (sfw) scans'))
+  })
+})
+
+describe('formatEphemeralRunnerPromptBody', () => {
+  it('describes fetch-and-run rather than installing project dependencies', () => {
+    const body = formatEphemeralRunnerPromptBody('npx tsc --noEmit', {
+      outsideSandbox: true,
+      safeInstall: true,
+    })
+    assert.ok(body.startsWith('npx tsc --noEmit\n'))
+    assert.ok(body.includes('download and run code from the network'))
+    assert.ok(body.includes('Allow this command?'))
+    assert.ok(!body.includes('installs packages'))
+    assert.ok(!body.includes('Allow this install?'))
+  })
+
+  it('mentions Socket Firewall scanning when enabled', () => {
+    const body = formatEphemeralRunnerPromptBody('npx eslint .', {
+      outsideSandbox: false,
+      safeInstall: true,
+    })
+    assert.ok(body.includes('Socket Firewall (sfw)'))
+    assert.ok(!body.includes('install lifecycle scripts'))
+  })
+
+  it('warns when package scanning is disabled in Settings', () => {
+    const body = formatEphemeralRunnerPromptBody('npx tsc --noEmit', {
+      outsideSandbox: false,
+      safeInstall: false,
     })
     assert.ok(body.includes('off in Settings'))
     assert.ok(!body.includes('Socket Firewall (sfw) scans'))
