@@ -18,6 +18,11 @@ runs:
     - run: sudo apt-get update && sudo apt-get install -y ripgrep
       if: runner.environment == 'github-hosted'
       shell: bash
+    # Self-hosted macOS runner: provision ripgrep via Homebrew (no apt). Skips
+    # the install when it's already present, so it's cheap on warm runners.
+    - run: command -v rg >/dev/null 2>&1 || brew install ripgrep
+      if: runner.environment == 'self-hosted' && runner.os == 'macOS'
+      shell: bash
     # Cache the fully-installed dependency tree, not just the npm download cache.
     # The key is the lockfile hash, so an electron/node-pty bump (which changes
     # the native ABI) busts it and forces a fresh electron-rebuild. vendor/
