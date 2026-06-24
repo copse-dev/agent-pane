@@ -75,5 +75,26 @@ process, so this does not affect the happy-dom globals used elsewhere.
 
 - A dedicated fuzzing pass over `renderMarkdown()` to find structural-correctness
   bugs (the sanitizer covers _safety_, not correctness).
+- **Emphasis across soft line breaks is not rendered.** CommonMark resolves
+  emphasis at the _block_ level, so `**bold` on one line and `text**` on the next
+  (within the same paragraph) should render as a single `<strong>`. We do not:
+  - _At rest_, the inline bold/italic regexes are line-bounded (`[^*\n]+` /
+    `[^_\n]+` in `renderer.ts`) — deliberately, so `* list` markers and
+    `src/**/*.ts` globs don't get eaten — so a delimiter pair split by a `\n`
+    never matches and renders as literal asterisks.
+  - _While streaming_, `splitAtLastNewline` (`streaming.ts`) finalizes the
+    completed region at the last newline, and `pendingHoldIndex` only holds
+    unresolved delimiters within the single in-progress line. An opener on an
+    already-completed line is committed as literal before its closer arrives.
+
+  Fixing this is a block-granularity change: accumulate inline tokens for the
+  whole open block and resolve emphasis on a delimiter stack when the block
+  closes (blank line / end of input) — the architecture cmark uses, and the one
+  the streaming notes in `streaming.ts` describe. It is intentionally out of
+  scope here because it touches the at-rest renderer's core loop and risks the
+  list-marker / glob regressions the line-bounded regexes guard against. In
+  practice LLMs rarely wrap a single emphasis span across a soft break, so the
+  visible impact is small.
+
 - Revisit a full parser migration only if requirements clearly outgrow the
   hand-rolled renderer (per `src/renderer/markdown/README.md`).
