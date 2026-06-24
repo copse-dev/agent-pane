@@ -3,6 +3,7 @@ import { OpenAIProvider } from './openai-provider.ts'
 import { MockLLMProvider } from './mock-provider.ts'
 import { DEFAULT_CLOUD_MODEL } from './model-catalog.ts'
 import { OPENROUTER_BASE_URL } from './openrouter.ts'
+import type { ExtraProvider } from './extra-providers.ts'
 import type { LLMProvider } from './types.ts'
 
 interface ProviderKeys {
@@ -80,5 +81,21 @@ export function createOpenRouterProvider(model: string, apiKey: string): LLMProv
     apiKey,
     includeUsage: true,
     extraBody: { provider: { require_parameters: true } },
+  })
+}
+
+// Mistral, Gemini, and DeepSeek are direct OpenAI-compatible cloud providers
+// (see extra-providers.ts), so each reuses OpenAIProvider with the provider's
+// base URL. Like OpenRouter they are billed/usage-reporting, so `includeUsage`
+// stays on. `model` is the upstream id with the provider prefix already stripped.
+export function createExtraCloudProvider(
+  provider: ExtraProvider,
+  model: string,
+  apiKey: string,
+): LLMProvider {
+  return new OpenAIProvider(model, {
+    baseURL: provider.baseUrl,
+    apiKey,
+    includeUsage: true,
   })
 }

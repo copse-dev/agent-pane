@@ -160,6 +160,41 @@ describe('buildProvider', () => {
       else process.env.OPENROUTER_API_KEY = prevKey
     }
   })
+
+  it('fails fast for an extra-provider model when its key is missing', async () => {
+    const prevMock = process.env.COPSE_PANEL_MOCK_LLM
+    const prevKey = process.env.GEMINI_API_KEY
+    delete process.env.COPSE_PANEL_MOCK_LLM
+    delete process.env.GEMINI_API_KEY
+    try {
+      await assert.rejects(
+        () => buildProvider('gemini:gemini-2.5-flash'),
+        /Google Gemini is not configured/,
+      )
+    } finally {
+      if (prevMock === undefined) delete process.env.COPSE_PANEL_MOCK_LLM
+      else process.env.COPSE_PANEL_MOCK_LLM = prevMock
+      if (prevKey === undefined) delete process.env.GEMINI_API_KEY
+      else process.env.GEMINI_API_KEY = prevKey
+    }
+  })
+
+  it('builds a DeepSeek provider from the env key', async () => {
+    const prevMock = process.env.COPSE_PANEL_MOCK_LLM
+    const prevKey = process.env.DEEPSEEK_API_KEY
+    delete process.env.COPSE_PANEL_MOCK_LLM
+    process.env.DEEPSEEK_API_KEY = 'sk-deepseek-test'
+    try {
+      const provider = await buildProvider('deepseek:deepseek-chat')
+      assert.ok(provider)
+      assert.equal(typeof provider.stream, 'function')
+    } finally {
+      if (prevMock === undefined) delete process.env.COPSE_PANEL_MOCK_LLM
+      else process.env.COPSE_PANEL_MOCK_LLM = prevMock
+      if (prevKey === undefined) delete process.env.DEEPSEEK_API_KEY
+      else process.env.DEEPSEEK_API_KEY = prevKey
+    }
+  })
 })
 
 describe('testLmStudio', () => {

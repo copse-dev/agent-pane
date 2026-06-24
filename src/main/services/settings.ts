@@ -16,7 +16,24 @@ interface StoredKey {
   plain?: boolean
 }
 
-export type KeyProvider = 'anthropic' | 'openai' | 'lmstudio' | 'cursor' | 'openrouter'
+export type KeyProvider =
+  | 'anthropic'
+  | 'openai'
+  | 'lmstudio'
+  | 'cursor'
+  | 'openrouter'
+  | 'mistral'
+  | 'gemini'
+  | 'deepseek'
+
+/** Cloud providers whose availability/keys are backed by an env var fallback. */
+export type CloudKeyProvider = Exclude<KeyProvider, 'lmstudio'>
+
+const EXTRA_PROVIDER_ENV_VARS: Record<'mistral' | 'gemini' | 'deepseek', string> = {
+  mistral: 'MISTRAL_API_KEY',
+  gemini: 'GEMINI_API_KEY',
+  deepseek: 'DEEPSEEK_API_KEY',
+}
 
 export function hasApiKey(provider: KeyProvider): boolean {
   const raw = store.get(`apiKey.${provider}`) as StoredKey | undefined
@@ -36,13 +53,14 @@ export function getApiKey(provider: KeyProvider): string | null {
   }
 }
 
-function envVarFor(
-  provider: KeyProvider,
-): 'ANTHROPIC_API_KEY' | 'OPENAI_API_KEY' | 'CURSOR_API_KEY' | 'OPENROUTER_API_KEY' | null {
+function envVarFor(provider: KeyProvider): string | null {
   if (provider === 'anthropic') return 'ANTHROPIC_API_KEY'
   if (provider === 'openai') return 'OPENAI_API_KEY'
   if (provider === 'cursor') return 'CURSOR_API_KEY'
   if (provider === 'openrouter') return 'OPENROUTER_API_KEY'
+  if (provider === 'mistral' || provider === 'gemini' || provider === 'deepseek') {
+    return EXTRA_PROVIDER_ENV_VARS[provider]
+  }
   return null
 }
 
@@ -94,14 +112,9 @@ export function isApiKeyEncrypted(provider: KeyProvider): boolean | null {
 
 // Whether a cloud provider can be used at all — a key is stored in Settings or
 // present in the environment.
-export function isProviderAvailable(
-  provider: 'anthropic' | 'openai' | 'cursor' | 'openrouter',
-): boolean {
-  if (provider === 'anthropic') return !!(process.env.ANTHROPIC_API_KEY || hasApiKey('anthropic'))
-  if (provider === 'cursor') return !!(process.env.CURSOR_API_KEY || hasApiKey('cursor'))
-  if (provider === 'openrouter')
-    return !!(process.env.OPENROUTER_API_KEY || hasApiKey('openrouter'))
-  return !!(process.env.OPENAI_API_KEY || hasApiKey('openai'))
+export function isProviderAvailable(provider: CloudKeyProvider): boolean {
+  const envVar = envVarFor(provider)
+  return !!((envVar && process.env[envVar]) || hasApiKey(provider))
 }
 
 export function getLmStudioApiKey(): string {

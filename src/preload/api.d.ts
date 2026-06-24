@@ -11,6 +11,16 @@ import type {
 import type { McpServerStatus } from '@shared/types/mcp.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
 
+/** Cloud providers with a user-supplied API key (everything but local LM Studio). */
+export type ApiKeyProvider =
+  | 'anthropic'
+  | 'openai'
+  | 'cursor'
+  | 'openrouter'
+  | 'mistral'
+  | 'gemini'
+  | 'deepseek'
+
 export interface ApiClient {
   workspace: {
     open: () => Promise<string | null>
@@ -149,21 +159,19 @@ export interface ApiClient {
       webAllowedOrigins: string[]
       webAllowUserApproval: boolean
     }) => Promise<void>
-    getKey: (
-      provider: 'anthropic' | 'openai' | 'lmstudio' | 'cursor' | 'openrouter',
-    ) => Promise<boolean>
-    setKey: (
-      provider: 'anthropic' | 'openai' | 'lmstudio' | 'cursor' | 'openrouter',
-      key: string,
-    ) => Promise<void>
+    getKey: (provider: ApiKeyProvider | 'lmstudio') => Promise<boolean>
+    setKey: (provider: ApiKeyProvider | 'lmstudio', key: string) => Promise<void>
     availableProviders: () => Promise<{
       anthropic: boolean
       openai: boolean
       cursor: boolean
       openrouter: boolean
+      mistral: boolean
+      gemini: boolean
+      deepseek: boolean
     }>
     validateKey: (
-      provider: 'anthropic' | 'openai' | 'cursor' | 'openrouter',
+      provider: ApiKeyProvider,
       key: string,
     ) => Promise<{ ok: boolean; error?: string; formatOk?: boolean }>
   }
