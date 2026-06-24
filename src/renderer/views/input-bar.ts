@@ -31,7 +31,8 @@ import { createContextWheel } from './context-wheel.ts'
 import { bindFooterCompactLayout } from './footer-compact.ts'
 import { mountFooterOverflow } from './footer-overflow.ts'
 import { downloadThreadJsonl, threadHasExportableContent } from '../export-thread.ts'
-import { formatThreadUsageCost, type ExtraPricing } from '@shared/llm/estimate-cost.ts'
+import { formatFooterUsageSummary, resolveFooterUsage } from '@shared/usage/footer-usage-summary.ts'
+import { type ExtraPricing } from '@shared/llm/estimate-cost.ts'
 import { extraProviderPricingMap } from '@shared/llm/extra-providers.ts'
 import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
 import { mountFollowUpSuggestions } from './follow-up-suggestions.ts'
@@ -277,14 +278,21 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   function usageSummaryText(): string | null {
     const model = store.getState().settings?.model ?? DEFAULT_CLOUD_MODEL
     const thread = getActiveThread(store)
-    const { inputTokens, outputTokens } = thread?.usage ?? { inputTokens: 0, outputTokens: 0 }
-    const total = inputTokens + outputTokens
-    const running = thread?.status === 'running'
-    if (!total && !running) return null
-    if (costVisible) {
-      return `${inputTokens} in / ${outputTokens} out · ${formatThreadUsageCost(thread?.usage ?? { inputTokens: 0, outputTokens: 0 }, model, extraPricing)}`
-    }
-    return total ? `${(total / 1000).toFixed(1)}k tokens` : '0 tokens'
+    if (!thread) return null
+    const display = resolveFooterUsage({
+      measured: thread.usage,
+      running: thread.status === 'running',
+      messages: thread.messages,
+      contextSnapshot: thread.contextSnapshot,
+      breakdown: lastBreakdown,
+    })
+    if (!display) return null
+    return formatFooterUsageSummary(display, {
+      costVisible,
+      model,
+      measuredUsage: thread.usage,
+      extra: extraPricing,
+    })
   }
 
   function updateFooter() {
