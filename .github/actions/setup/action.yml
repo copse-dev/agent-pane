@@ -45,7 +45,12 @@ runs:
         path: |
           node_modules
           vendor/codesearch
-        key: ${{ runner.os }}-${{ runner.arch }}-deps-${{ hashFiles('package-lock.json') }}
+        # The -vN token is a manual cache-bust: earlier runs on a runner with
+        # ignore-scripts saved a node_modules with no native builds (no esbuild
+        # binary, no electron-rebuilt node-pty) under the lockfile-hash key. Since
+        # the lockfile is unchanged that poisoned entry would keep restoring and
+        # skip the fixed npm ci; bumping the token forces one clean reinstall.
+        key: ${{ runner.os }}-${{ runner.arch }}-deps-v2-${{ hashFiles('package-lock.json') }}
     # Force install scripts to run for THIS install only. A self-hosted runner may
     # set `ignore-scripts=true` globally (a sensible host-wide hardening), but that
     # skips the native setup this app's e2e needs: esbuild's platform binary (used
