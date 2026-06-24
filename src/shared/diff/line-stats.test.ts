@@ -18,4 +18,9 @@ describe('computeLineDiffStats', () => {
   it('reports zero when content is unchanged', () => {
     assert.deepEqual(computeLineDiffStats('same\n', 'same\n'), { additions: 0, deletions: 0 })
   })
+
+  it('matches git numstat for a single line without trailing newline', () => {
+    assert.deepEqual(computeLineDiffStats('', 'a'), { additions: 1, deletions: 0 })
+    assert.deepEqual(computeLineDiffStats('a', ''), { additions: 0, deletions: 1 })
+  })
 })
