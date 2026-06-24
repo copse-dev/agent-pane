@@ -33,16 +33,28 @@ function workerPathForLabel(label: string): string {
   }
 }
 
+function workerEntryRelativeToMonacoRoot(label: string): string {
+  return workerPathForLabel(label).replace(/^\.\/monaco\//, '')
+}
+
 function createMonacoWorker(label: string): Promise<Worker> {
-  const workerUrl = new URL(workerPathForLabel(label), window.location.href).href
-  const root = globalThis._VSCODE_FILE_ROOT!
-  const bootstrap = [
-    `globalThis._VSCODE_FILE_ROOT = ${JSON.stringify(root)};`,
-    `await import(${JSON.stringify(workerUrl)});`,
-    `globalThis.postMessage({ type: 'copse-monaco-worker-ready' });`,
-  ].join('')
-  const blobUrl = URL.createObjectURL(new Blob([bootstrap], { type: 'application/javascript' }))
-  const worker = new Worker(blobUrl, { name: label, type: 'module' })
+  const cached = workerPromises.get(label)
+  if (cached) return cached
+
+  const promise = createMonacoWorkerOnce(label).catch((err) => {
+    workerPromises.delete(label)
+    throw err
+  })
+  workerPromises.set(label, promise)
+  return promise
+}
+
+const workerPromises = new Map<string, Promise<Worker>>()
+
+function createMonacoWorkerOnce(label: string): Promise<Worker> {
+  const hostUrl = new URL('./monaco/esm-worker-host.js', window.location.href)
+  hostUrl.searchParams.set('entry', workerEntryRelativeToMonacoRoot(label))
+  const worker = new Worker(hostUrl, { name: label, type: 'module' })
   return new Promise((resolve, reject) => {
     worker.onmessage = (event) => {
       if (event.data?.type !== 'copse-monaco-worker-ready') return
@@ -71,5 +83,8 @@ export function initMonaco(): typeof monaco {
       return createMonacoWorker(label)
     },
   }
+  // Diff computation uses the generic editor worker; warm it during init so the
+  // first staged-diff accept doesn't race an in-flight worker bootstrap.
+  void createMonacoWorker('editor').catch(() => undefined)
   return monaco
 }

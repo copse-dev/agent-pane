@@ -74,4 +74,17 @@ export default ts.config(
       },
     },
   },
+  {
+    // Static ESM worker host copied to dist; not part of the TS project graph.
+    files: ['src/renderer/monaco/esm-worker-host.js'],
+    extends: [ts.configs.disableTypeChecked],
+    languageOptions: {
+      sourceType: 'module',
+      globals: {
+        URL: 'readonly',
+        globalThis: 'readonly',
+        importScripts: 'readonly',
+      },
+    },
+  },
 )
