@@ -1,3 +1,23 @@
+/* ---- projects pane settings button ---- */
+.projects-settings-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.projects-settings-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
 /* ---- three-pane layout ---- */
 .three-pane {
   display: flex;

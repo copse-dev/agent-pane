@@ -270,6 +270,19 @@ describe('renderMarkdown', () => {
     assert.match(html, /<strong><code>css-new-tab\.png<\/code> — NTP rendered end-to-end<\/strong>/)
     assert.doesNotMatch(html, /\*\*/)
   })
+
+  it('bolds the label, not the body, when a stray trailing ** follows a code span', () => {
+    // Odd `**` count: the label closer must not pair with the stray trailing
+    // delimiter across the code span (which would bold the wrong half and leave
+    // `**MCP support` literal).
+    const html = renderMarkdown(
+      '- **MCP support** — Can host servers (configured via `.cursor/mcp.json`).**',
+    )
+    assert.match(html, /<li><strong>MCP support<\/strong> — Can host servers/)
+    assert.match(html, /<code>\.cursor\/mcp\.json<\/code>/)
+    assert.doesNotMatch(html, /\*\*MCP support/)
+    assert.doesNotMatch(html, /<strong> — Can host/)
+  })
 })
 
 describe('renderMarkdown sanitization (#115)', () => {

@@ -1,7 +1,6 @@
 import { el } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { openSettingsDialog } from './settings-dialog.ts'
 import { toggleRightPanelWithWorkspace } from '../controller/panels.ts'
 
 const ICON_SIZE = '16'
@@ -57,13 +56,8 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
   root.classList.add('titlebar')
 
   const leftCluster = el('div', { class: 'titlebar-left' })
-  const settingsBtn = el(
-    'button',
-    { class: 'titlebar-btn titlebar-settings-btn', 'aria-label': 'Settings' },
-    'Settings',
-  )
   const workspaceName = el('span', { class: 'workspace-name' }, 'No folder')
-  leftCluster.append(settingsBtn, workspaceName)
+  leftCluster.append(workspaceName)
 
   const dragRegion = el('div', { class: 'titlebar-drag' })
   // Opening projects lives in the projects panel; the titlebar only toggles the
@@ -131,10 +125,6 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
     store.on('files_pane_changed', syncPanelBtns),
     store.on('right_panel_mode_changed', syncPanelBtns),
   ]
-
-  settingsBtn.addEventListener('click', () => {
-    openSettingsDialog()
-  })
 
   return () => unsubs.forEach((u) => u())
 }
