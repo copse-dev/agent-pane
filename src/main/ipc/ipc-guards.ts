@@ -28,10 +28,8 @@ export const zSessionId = z.string().uuid()
 
 export const INDEX_QUERY_PATTERN = /^[\w.\-/+$@ ]{0,128}$/
 
-export function assertIndexQueryPattern(pattern: string): void {
-  if (!INDEX_QUERY_PATTERN.test(pattern)) {
-    throw new IpcValidationError('Invalid index query pattern')
-  }
+export function isIndexQueryPattern(pattern: string): boolean {
+  return INDEX_QUERY_PATTERN.test(pattern)
 }
 
 export const MAX_FS_WRITE_BYTES = 16 * 1024 * 1024
@@ -61,4 +59,4 @@ export const approvalRespondSchema = z.tuple([
   z.boolean().optional(),
 ])
 
-export const providerSchema = z.enum(['anthropic', 'openai', 'lmstudio', 'cursor'])
+export const providerSchema = z.enum(['anthropic', 'openai', 'lmstudio', 'cursor', 'openrouter'])

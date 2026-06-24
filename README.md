@@ -15,7 +15,7 @@ npm install
 npm run dev
 ```
 
-Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for cloud models, or configure a local provider in Settings. Without keys, the app falls back to a built-in mock LLM for development.
+Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for cloud models, add an `OPENROUTER_API_KEY` (Settings → API Keys) to reach Claude, GPT, Gemini, Llama and more through [OpenRouter](https://openrouter.ai), or configure a local provider in Settings. Without keys, the app falls back to a built-in mock LLM for development.
 
 ## Commands
 

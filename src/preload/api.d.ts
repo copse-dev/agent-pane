@@ -74,6 +74,9 @@ export interface ApiClient {
     get: (key: string) => Promise<unknown>
     set: (key: string, value: unknown) => Promise<void>
   }
+  openRouter: {
+    models: () => Promise<Array<{ id: string; name: string }>>
+  }
   lmStudio: {
     test: (
       url: string,
@@ -141,11 +144,21 @@ export interface ApiClient {
       webAllowedOrigins: string[]
       webAllowUserApproval: boolean
     }) => Promise<void>
-    getKey: (provider: 'anthropic' | 'openai' | 'lmstudio' | 'cursor') => Promise<boolean>
-    setKey: (provider: 'anthropic' | 'openai' | 'lmstudio' | 'cursor', key: string) => Promise<void>
-    availableProviders: () => Promise<{ anthropic: boolean; openai: boolean; cursor: boolean }>
+    getKey: (
+      provider: 'anthropic' | 'openai' | 'lmstudio' | 'cursor' | 'openrouter',
+    ) => Promise<boolean>
+    setKey: (
+      provider: 'anthropic' | 'openai' | 'lmstudio' | 'cursor' | 'openrouter',
+      key: string,
+    ) => Promise<void>
+    availableProviders: () => Promise<{
+      anthropic: boolean
+      openai: boolean
+      cursor: boolean
+      openrouter: boolean
+    }>
     validateKey: (
-      provider: 'anthropic' | 'openai' | 'cursor',
+      provider: 'anthropic' | 'openai' | 'cursor' | 'openrouter',
       key: string,
     ) => Promise<{ ok: boolean; error?: string; formatOk?: boolean }>
   }

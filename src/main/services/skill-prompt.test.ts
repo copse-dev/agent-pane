@@ -11,6 +11,11 @@ import {
 } from './skill-prompt.ts'
 import { refreshSkillsRegistry, setSkillsForTest } from './skills-registry.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
+import { setSetting } from './settings.test-shim.ts'
+import {
+  resetBundledCursorSkillsRootForTest,
+  setBundledCursorSkillsRootForTest,
+} from './bundled-cursor-skills.ts'
 import type { SkillMetadata } from '@shared/types/skills.ts'
 
 const demoSkill: SkillMetadata = {
@@ -55,14 +60,16 @@ describe('buildSkillsCatalogBlock', () => {
     assert.match(block, /Demo skill for tests/)
   })
 
-  it('marks project/plugin skills as untrusted and user skills as trusted', () => {
+  it('marks project/plugin skills as untrusted and user/bundled skills as trusted', () => {
     setSkillsForTest([
       { ...demoSkill, name: 'project-skill', source: 'project' },
       { ...demoSkill, name: 'user-skill', source: 'user' },
+      { ...demoSkill, name: 'bundled-skill', source: 'bundled' },
     ])
     const block = buildSkillsCatalogBlock()
     assert.match(block, /source="project" trust="untrusted"/)
     assert.match(block, /source="user" trust="trusted"/)
+    assert.match(block, /source="bundled" trust="trusted"/)
     // The block should tell the model to treat descriptions as untrusted data.
     assert.match(block, /untrusted data/)
   })
@@ -73,6 +80,8 @@ describe('buildInvokedSkillsBlock', () => {
   let restoreWorkspace: (() => void) | undefined
 
   beforeEach(async () => {
+    setSetting('bundledCursorSkillsEnabled', false)
+    setBundledCursorSkillsRootForTest(null)
     tempRoot = await mkdtemp(join(tmpdir(), 'copse-panel-skill-prompt-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
     await mkdir(join(tempRoot, '.cursor', 'skills', 'demo-skill'), { recursive: true })
@@ -92,6 +101,7 @@ description: Demo skill for tests
   afterEach(async () => {
     restoreWorkspace?.()
     setSkillsForTest([])
+    resetBundledCursorSkillsRootForTest()
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
   })
 
