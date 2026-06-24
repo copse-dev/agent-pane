@@ -38,7 +38,7 @@ describe('staged diff approval UI', () => {
     resetUserData()
   })
 
-  it('stages diffs in the context panel with single- and multi-file selection', async function () {
+  it('stages diffs in the Changes panel with single- and multi-file selection', async function () {
     this.timeout(120_000)
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
@@ -49,44 +49,45 @@ describe('staged diff approval UI', () => {
         await $('.tool-card[data-status="done"], .tool-card[data-status="running"]').isExisting(),
       { timeout: 30_000, timeoutMsg: 'expected write_file tool card' },
     )
-    const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]')
-    if (!(await $('#pane-files').isDisplayed())) await panelBtn.click()
-    await $('.diff-stage').waitForDisplayed({ timeout: 30_000 })
-    await $('#file-viewer .monaco-diff-editor').waitForDisplayed({ timeout: 30_000 })
 
-    const acceptBtn = await $('#file-viewer .diff-accept-btn')
-    const rejectBtn = await $('#file-viewer .diff-reject-btn')
+    await expect($('.right-panel-tab[aria-label="Changes"]')).toHaveElementClass('is-active')
+    await $('#git-changes-host').waitForDisplayed({ timeout: 30_000 })
+    await $('.git-changes-section-proposed').waitForDisplayed({ timeout: 30_000 })
+    await $('#git-diff-viewer-host .monaco-diff-editor').waitForDisplayed({ timeout: 30_000 })
+
+    const acceptBtn = await $('#git-diff-viewer-host .diff-accept-btn')
+    const rejectBtn = await $('#git-diff-viewer-host .diff-reject-btn')
     await acceptBtn.waitForDisplayed({ timeout: 5_000 })
     await browser.waitUntil(async () => (await acceptBtn.getText()) === 'Accept', {
       timeout: 5_000,
     })
     await expect(rejectBtn).toHaveText('Reject')
-    await expect($('.diff-file-list')).not.toBeDisplayed()
+    await expect($('.git-changes-bulk-actions')).not.toBeDisplayed()
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'staged-diff-single.png'))
 
     await runWriteFileDirective('src/e2e-staged-b.ts', 'export const b = 2\n')
 
-    await browser.waitUntil(async () => (await $$('.diff-file-btn')).length === 2, {
+    await browser.waitUntil(async () => (await $$('.git-change-row-proposed')).length === 2, {
       timeout: 30_000,
-      timeoutMsg: 'expected two queued diff file buttons',
+      timeoutMsg: 'expected two proposed diff rows',
     })
 
-    await expect($('.diff-stage-toolbar')).toBeDisplayed()
+    await expect($('.git-changes-bulk-actions')).toBeDisplayed()
     await expect($('button*=Accept all')).toBeDisplayed()
     await expect($('button*=Reject all')).toBeDisplayed()
 
-    const paths = await $$('.diff-file-btn').map((btn) => btn.getText())
+    const paths = await $$('.git-change-row-proposed .git-change-path').map((el) => el.getText())
     await expect(paths).toContain('src/e2e-staged-a.ts')
     await expect(paths).toContain('src/e2e-staged-b.ts')
 
-    const buttons = await $$('.diff-file-btn')
-    const second = await buttons.find(async (btn) =>
-      (await btn.getText()).includes('e2e-staged-b.ts'),
+    const rows = await $$('.git-change-row-proposed')
+    const second = await rows.find(async (row) =>
+      (await row.$('.git-change-path').getText()).includes('e2e-staged-b.ts'),
     )
-    if (!second) throw new Error('missing e2e-staged-b.ts diff file button')
+    if (!second) throw new Error('missing e2e-staged-b.ts proposed row')
     await second.click()
-    await expect(second).toHaveElementClass('selected')
+    await expect(second).toHaveElementClass('is-selected')
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'staged-diff-multi.png'))
   })
