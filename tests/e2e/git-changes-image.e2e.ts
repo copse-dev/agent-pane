@@ -10,10 +10,23 @@ import {
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
 async function openChangesPanel(): Promise<void> {
-  await $('.titlebar-btn[aria-label="Open changes"]').waitForExist({ timeout: 30_000 })
-  await (await $('.titlebar-btn[aria-label="Open changes"]')).click()
-  const changesTab = await $('.right-panel-tab[aria-label="Changes"]')
-  await expect(changesTab).toHaveElementClass('is-active')
+  const changesBtn = await $('.titlebar-btn[aria-label="Open changes"]')
+  await changesBtn.waitForExist({ timeout: 30_000 })
+  // The titlebar button no-ops until the seeded workspace has loaded (it routes
+  // to add-project when workspaceRoot isn't set yet), and that load is slower on
+  // some runners — so a single click can land before the workspace is ready and
+  // never activate the panel. Click until the Changes tab actually goes active
+  // (only when it isn't already, so we never toggle an open panel shut).
+  await browser.waitUntil(
+    async () => {
+      const tab = await $('.right-panel-tab[aria-label="Changes"]')
+      if ((await tab.isExisting()) && ((await tab.getAttribute('class')) ?? '').includes('is-active'))
+        return true
+      await changesBtn.click()
+      return false
+    },
+    { timeout: 30_000, interval: 1000, timeoutMsg: 'Changes tab did not become active' },
+  )
   await $('#git-changes-host').waitForDisplayed({ timeout: 30_000 })
   await browser.waitUntil(async () => (await $$('.git-change-row')).length >= 3, {
     timeout: 30_000,
