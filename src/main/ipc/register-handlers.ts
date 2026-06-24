@@ -12,7 +12,7 @@ import {
 } from '../services/workspace.ts'
 import {
   assertFsWriteContent,
-  assertIndexQueryPattern,
+  isIndexQueryPattern,
   assertMainFrameSender,
   assertStorageKey,
   cloudProviderSchema,
@@ -162,7 +162,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       throw new IpcValidationError('Index query pattern must be a string')
     }
     const query = typeof pattern === 'string' ? pattern : ''
-    if (query) assertIndexQueryPattern(query)
+    if (query && !isIndexQueryPattern(query)) return []
     const idx = getIndex()
     if (!idx) return []
     return query ? micromatch(idx.paths, `**/*${query}*`).slice(0, 20) : idx.paths.slice(0, 20)

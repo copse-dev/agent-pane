@@ -19,6 +19,7 @@ import {
   formatShellPromptBody,
   formatExternalSandboxPromptBody,
   formatInstallPromptBody,
+  formatEphemeralRunnerPromptBody,
   shellRequiresOutsideSandbox,
   mcpToolLabel,
   GITHUB_CI_TOOLS,
@@ -195,15 +196,24 @@ async function checkShellPermission(args: unknown): Promise<boolean> {
   // the full reason list so extra risks (curl, custom registry, …) stay visible.
   const install = detectPackageInstall(command)
   if (install.isInstall && decision.reasons.length === 1) {
-    const { approved } = await requestApproval({
-      title: 'Run package install?',
-      body: formatInstallPromptBody(command, {
-        outsideSandbox,
-        safeInstall: getSetting<boolean>('safeInstallEnabled', true),
-        jsManager: install.jsManager,
-      }),
-      type: 'shell',
-    })
+    const safeInstall = getSetting<boolean>('safeInstallEnabled', true)
+    const { approved } = await requestApproval(
+      install.isEphemeralRunner
+        ? {
+            title: 'Run package command?',
+            body: formatEphemeralRunnerPromptBody(command, { outsideSandbox, safeInstall }),
+            type: 'shell',
+          }
+        : {
+            title: 'Run package install?',
+            body: formatInstallPromptBody(command, {
+              outsideSandbox,
+              safeInstall,
+              jsManager: install.jsManager,
+            }),
+            type: 'shell',
+          },
+    )
     return approved
   }
 
