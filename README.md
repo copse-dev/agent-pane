@@ -51,6 +51,30 @@ Path alias `@shared/*` maps to `src/shared/*` (see tsconfig).
 
 The agent is an MCP (Model Context Protocol) host and ships with no servers connected. Add them in `.cursor/mcp.json` / `.mcp.json` (project) or `~/.cursor/mcp.json` (global), using the standard `mcpServers` format (same as Cursor / Claude Desktop); reference secrets with `${env:VAR}`. See [`mcp.json.example`](./mcp.json.example) for optional MCP servers. Status, reload, and approval settings live under **Settings → MCP servers**.
 
+## Custom tools
+
+For a one-off capability that doesn't justify standing up a whole MCP server, drop
+an in-process **custom tool** into `<userData>/tools/` (`*.js` / `*.mjs` / `*.cjs`).
+Each module default-exports a tool object (or an array, or a factory returning
+either):
+
+```js
+export default {
+  name: 'lookup_user',
+  description: 'Look up a user by id',
+  inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+  async execute({ id }) {
+    return `user ${id}`
+  },
+}
+```
+
+They register into the same tool registry as built-in and MCP tools (namespaced
+`custom__<name>`) and **always prompt for approval** before running, since they
+execute with full Node privilege. They are loaded **only** from the user's trusted
+directory — never from the workspace, so a cloned repo can't inject one. See
+[`docs/custom-tools.md`](./docs/custom-tools.md).
+
 ## Semantic search
 
 On supported platforms, `npm install` downloads a bundled `codesearch` binary to `vendor/codesearch/` (postinstall; skip with `SKIP_CODESEARCH_FETCH=1`). Native tools (`semantic_search`, `search_codebase` semantic mode) use codesearch or vera on PATH, preferring a system install over the bundled copy, and keep the index in sync with the workspace. Index data is stored globally under Copse app data (`codesearch/` inside the `copse-panel` userData directory), not in the project tree.

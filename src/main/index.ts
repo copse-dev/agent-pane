@@ -16,6 +16,7 @@ import {
   shutdownMcpServers,
   getMcpServerStatuses,
 } from './services/mcp-registry.ts'
+import { loadCustomTools } from './services/custom-tools-registry.ts'
 import { initApproval } from './services/approval.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
@@ -232,6 +233,7 @@ app
     registerSkillTools(registry)
     await loadMcpServers(registry)
     win.webContents.send('mcp:status_changed', getMcpServerStatuses())
+    await loadCustomTools(registry)
 
     disposeTerminal = disposeTerminalHandlers
   })
