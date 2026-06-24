@@ -2,7 +2,12 @@ import type { StreamChunk, UsageDelta, ContextBreakdown } from '@shared/types'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import type { CursorHookSummary } from '@shared/types/cursor-hooks.ts'
-import type { GitFileDiff, GitStatusResult, GitBranchStatus } from '@shared/types/git.ts'
+import type {
+  GitFileDiff,
+  GitStatusResult,
+  GitBranchStatus,
+  GitBranchInfo,
+} from '@shared/types/git.ts'
 import type { McpServerStatus } from '@shared/types/mcp.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
 
@@ -191,6 +196,8 @@ export interface ApiClient {
     fileDiff: (path: string, staged: boolean) => Promise<GitFileDiff | null>
     branchStatus: (forBranch?: string) => Promise<GitBranchStatus>
     checkoutBranch: (branch: string) => Promise<void>
+    listBranches: () => Promise<GitBranchInfo[]>
+    getDefaultBranch: () => Promise<string | null>
   }
   shell: {
     openExternal: (url: string) => Promise<void>

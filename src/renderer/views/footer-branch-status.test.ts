@@ -4,10 +4,10 @@ import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { GitBranchStatus } from '@shared/types/git.ts'
+import type { GitBranchInfo, GitBranchStatus } from '@shared/types/git.ts'
 import { mountFooterBranchStatus } from './footer-branch-status.ts'
 
-function thread(branch?: string): Thread {
+function thread(branch?: string, withMessages = false): Thread {
   const value: Thread = {
     id: 'thread-1',
     title: 'Test thread',
@@ -18,6 +18,17 @@ function thread(branch?: string): Thread {
     updatedAt: 1,
   }
   if (branch) value.gitBranch = branch
+  if (withMessages) {
+    value.messages = [
+      {
+        id: 'msg-1',
+        role: 'user',
+        content: 'hello',
+        toolCalls: [],
+        createdAt: 1,
+      },
+    ]
+  }
   return value
 }
 
@@ -28,16 +39,30 @@ function installClipboard(writeText: (text: string) => Promise<void>): void {
   })
 }
 
-function createApi(status: GitBranchStatus): ApiClient {
+function createApi(
+  status: GitBranchStatus,
+  branches: GitBranchInfo[] = [],
+  defaultBranch: string | null = 'main',
+): ApiClient {
   return {
     fs: { onChanged: () => () => {} },
-    git: { branchStatus: async () => status },
+    git: {
+      branchStatus: async () => status,
+      listBranches: async () => branches,
+      getDefaultBranch: async () => defaultBranch,
+      checkoutBranch: async () => {},
+    },
   } as unknown as ApiClient
 }
 
 async function settle(): Promise<void> {
-  await Promise.resolve()
-  await Promise.resolve()
+  await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  await new Promise<void>((resolve) => setTimeout(resolve, 0))
+}
+
+async function openBranchMenu(host: HTMLElement): Promise<void> {
+  host.querySelector<HTMLButtonElement>('.branch-picker-trigger')!.click()
+  await settle()
 }
 
 afterEach(() => {
@@ -45,7 +70,7 @@ afterEach(() => {
 })
 
 describe('footer branch status', () => {
-  it('copies the thread branch when there is no pull request link', async () => {
+  it('copies the thread branch on click for existing chats', async () => {
     let copiedBranch: string | null = null
     installClipboard(async (text) => {
       copiedBranch = text
@@ -54,26 +79,35 @@ describe('footer branch status', () => {
     const store = createStore({
       workspaceRoot: '/repo',
       activeThreadId: 'thread-1',
-      threads: [thread('feature/footer-copy')],
+      threads: [thread('feature/footer-copy', true)],
     })
     const host = document.createElement('div')
     document.body.append(host)
 
-    mountFooterBranchStatus(host, store, createApi({ currentBranch: 'main', pr: null }))
+    mountFooterBranchStatus(
+      host,
+      store,
+      createApi({ currentBranch: 'main', pr: null }, [
+        { name: 'main', lastCommitDate: '2024-01-01' },
+        { name: 'feature/footer-copy', lastCommitDate: '2024-01-02' },
+      ]),
+    )
     await settle()
 
     const button = host.querySelector<HTMLButtonElement>('.footer-branch-status')!
-    assert.equal(button.textContent, 'feature/footer-copy')
+    assert.equal(button.querySelector('.footer-branch-label')?.textContent, 'feature/footer-copy')
     assert.ok(button.classList.contains('is-copyable'))
+    assert.ok(host.querySelector<HTMLElement>('.branch-picker-chevron')!.hidden)
 
     button.click()
     await settle()
 
     assert.equal(copiedBranch, 'feature/footer-copy')
     assert.equal(document.querySelector('.toast')?.textContent, 'Copied branch name')
+    assert.equal(host.querySelector('.branch-picker-menu')?.hasAttribute('hidden'), true)
   })
 
-  it('opens the pull request in the in-app browser pane instead of copying when a PR link is present', async () => {
+  it('opens the pull request on click for existing chats when a PR link is present', async () => {
     let copiedBranch: string | null = null
     let requestedUrl: string | null = null
     installClipboard(async (text) => {
@@ -83,7 +117,7 @@ describe('footer branch status', () => {
     const store = createStore({
       workspaceRoot: '/repo',
       activeThreadId: 'thread-1',
-      threads: [thread('feature/with-pr')],
+      threads: [thread('feature/with-pr', true)],
     })
     store.on('browser_url_requested', (url) => {
       requestedUrl = url
@@ -94,19 +128,22 @@ describe('footer branch status', () => {
     mountFooterBranchStatus(
       host,
       store,
-      createApi({
-        currentBranch: 'feature/with-pr',
-        pr: {
-          number: 12,
-          title: 'Add branch footer copy',
-          url: 'https://github.com/example/repo/pull/12',
+      createApi(
+        {
+          currentBranch: 'feature/with-pr',
+          pr: {
+            number: 12,
+            title: 'Add branch footer copy',
+            url: 'https://github.com/example/repo/pull/12',
+          },
         },
-      }),
+        [{ name: 'feature/with-pr', lastCommitDate: '2024-01-01' }],
+      ),
     )
     await settle()
 
     const button = host.querySelector<HTMLButtonElement>('.footer-branch-status')!
-    assert.equal(button.textContent, 'PR #12')
+    assert.equal(button.querySelector('.footer-branch-label')?.textContent, 'PR #12')
     assert.ok(button.classList.contains('is-link'))
     assert.ok(!button.classList.contains('is-copyable'))
 
@@ -117,5 +154,41 @@ describe('footer branch status', () => {
     assert.equal(store.getState().rightPanelMode, 'browser')
     assert.equal(store.getState().filesPaneOpen, true)
     assert.equal(copiedBranch, null)
+  })
+
+  it('shows the branch picker for new chats without a copy action', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+
+    mountFooterBranchStatus(
+      host,
+      store,
+      createApi(
+        { currentBranch: 'main', pr: null },
+        [
+          { name: 'main', lastCommitDate: '2024-01-01' },
+          { name: 'feature/new', lastCommitDate: '2024-01-02' },
+        ],
+        'main',
+      ),
+    )
+    await settle()
+
+    const picker = host.querySelector<HTMLElement>('.branch-picker')!
+    assert.ok(picker.classList.contains('is-picker-mode'))
+    assert.ok(!host.querySelector<HTMLElement>('.branch-picker-chevron')!.hidden)
+
+    await openBranchMenu(host)
+
+    assert.equal(host.querySelectorAll('.branch-picker-action').length, 0)
+    const labels = [...host.querySelectorAll('.branch-picker-option-label')].map(
+      (node) => node.textContent,
+    )
+    assert.deepEqual(labels[0], 'main')
   })
 })

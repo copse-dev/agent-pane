@@ -1404,6 +1404,45 @@ export function seedFooterBranchFixture(workspaceRoot: string): FooterBranchSeed
   }
 }
 
+/** Blank new-thread composer for footer branch picker screenshots. */
+export function seedFooterBranchPickerFixture(workspaceRoot: string): {
+  projectId: string
+  blankThreadId: string
+  currentBranch: string
+} {
+  const projectId = 'e2e-footer-branch-picker-project'
+  const blankThreadId = 'e2e-footer-branch-picker-blank'
+  const currentBranch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+    cwd: workspaceRoot,
+    encoding: 'utf8',
+  }).trim()
+  const now = Date.now()
+
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: blankThreadId,
+          title: 'New Thread',
+          status: 'idle',
+          messages: [],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+      activeThreadId: blankThreadId,
+    }),
+    'utf8',
+  )
+
+  return { projectId, blankThreadId, currentBranch }
+}
+
 /** Single thread bound to a branch that differs from HEAD (mismatch footer screenshot). */
 export function seedFooterBranchMismatchFixture(workspaceRoot: string): FooterBranchSeedIds {
   const projectId = 'e2e-footer-branch-project'
