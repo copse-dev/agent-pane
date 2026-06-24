@@ -46,6 +46,27 @@ runs:
           node_modules
           vendor/codesearch
         key: ${{ runner.os }}-${{ runner.arch }}-deps-${{ hashFiles('package-lock.json') }}
-    - run: npm ci
+    # --include=optional: defend against a runner whose npm is configured with
+    # `omit=optional` (global ~/.npmrc or an exported npm_config_omit on the
+    # service). esbuild ships its platform binary as an OPTIONAL dependency
+    # (@esbuild/<os>-<arch>), so an omit-optional install silently drops it and
+    # wdio later dies loading its esbuild-compiled config. The flag forces it in.
+    - run: npm ci --include=optional
       if: steps.deps.outputs.cache-hit != 'true'
+      shell: bash
+    # Self-heal a poisoned dependency tree on the cache-HIT path too (where the
+    # npm ci above is skipped, so the flag above can't help). A cache saved by a
+    # runner that dropped esbuild's optional platform binary — or restored across
+    # a mismatched setup — leaves node_modules without it, and the failure is an
+    # instant "@esbuild/darwin-arm64 could not be found" at wdio config load.
+    # Probe the binary directly; if it can't run, `npm rebuild esbuild` re-runs
+    # esbuild's install script, which fetches the correct platform binary even
+    # when the optional package isn't present. Runs on every setup (hit or miss),
+    # cheap when the binary is already there.
+    - run: |
+        if ! node_modules/.bin/esbuild --version >/dev/null 2>&1; then
+          echo "::warning::esbuild platform binary missing after dep restore — running npm rebuild esbuild"
+          npm rebuild esbuild
+          node_modules/.bin/esbuild --version
+        fi
       shell: bash
