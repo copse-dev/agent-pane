@@ -30,6 +30,16 @@
   color: var(--text-muted);
   font-size: var(--font-size-sm);
 }
+.tool-stat {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+}
+.tool-stat-add {
+  color: #3dd68c;
+}
+.tool-stat-del {
+  color: #f07178;
+}
 .tool-card-group > .tool-group-items {
   display: flex;
   flex-direction: column;

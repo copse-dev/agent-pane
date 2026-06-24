@@ -5,6 +5,11 @@
 // path/filename. Spaces in the .app name break Chromium helper lookup (icudtl.dat /
 // GPU process). Use Copse.app on disk; CFBundleDisplayName stays "Copse".
 //
+// Electron 42+ no longer downloads its macOS binary during the package's own
+// install hook — the dist is fetched lazily on first `electron` CLI use. Root
+// postinstall must therefore call install.js here before patching, or the first
+// `npm start` launches stock Electron.app with a Dock label of "Electron".
+//
 // Runs on postinstall so it survives `npm install`. Does NOT rename
 // CFBundleExecutable (the binary must stay "Electron").
 import { createHash } from 'node:crypto'
@@ -27,14 +32,67 @@ const TARGET_APP = join(ELECTRON_DIST, APP_BUNDLE)
 const DISPLAY_NAME = 'Copse'
 const PATH_TXT = join('node_modules', 'electron', 'path.txt')
 const EXEC_REL = `${APP_BUNDLE}/Contents/MacOS/Electron`
+/** Must stay in sync with electron/install.js getPlatformPath() for darwin. */
+const ELECTRON_EXEC_REL = 'Electron.app/Contents/MacOS/Electron'
+const ELECTRON_INSTALL_JS = join('node_modules', 'electron', 'install.js')
+const ELECTRON_VERSION_FILE = join(ELECTRON_DIST, 'version')
+const ELECTRON_PKG_JSON = join('node_modules', 'electron', 'package.json')
 
 if (process.platform !== 'darwin') {
   process.exit(0)
 }
 
 const sourcePlist = join(SOURCE_APP, 'Contents', 'Info.plist')
-if (!existsSync(sourcePlist)) {
-  console.log('[patch-dev-name] Electron.app not found, skipping')
+
+function readElectronPackageVersion(): string {
+  return JSON.parse(readFileSync(ELECTRON_PKG_JSON, 'utf8')).version as string
+}
+
+function readDistVersion(): string | undefined {
+  if (!existsSync(ELECTRON_VERSION_FILE)) return undefined
+  return readFileSync(ELECTRON_VERSION_FILE, 'utf8').replace(/^v/, '').trim()
+}
+
+function ensureElectronDist(): void {
+  if (!existsSync(ELECTRON_INSTALL_JS)) {
+    console.log('[patch-dev-name] electron/install.js not found, skipping')
+    process.exit(0)
+  }
+
+  const pkgVersion = readElectronPackageVersion()
+  const distVersion = readDistVersion()
+  const needsDownload =
+    !existsSync(sourcePlist) || distVersion === undefined || distVersion !== pkgVersion
+
+  if (!needsDownload) return
+
+  console.log(`[patch-dev-name] fetching Electron ${pkgVersion} dist (Electron 42+ lazy download)`)
+  execFileSync(process.execPath, [ELECTRON_INSTALL_JS], { stdio: 'inherit' })
+
+  if (!existsSync(sourcePlist)) {
+    console.log('[patch-dev-name] Electron.app not found after install.js, skipping')
+    process.exit(0)
+  }
+
+  const pathTxt = existsSync(PATH_TXT) ? readFileSync(PATH_TXT, 'utf8').trim() : ''
+  if (pathTxt !== ELECTRON_EXEC_REL) {
+    console.warn(
+      `[patch-dev-name] expected path.txt → ${ELECTRON_EXEC_REL}, got ${pathTxt || '(missing)'}`,
+    )
+  }
+}
+
+function isPatchApplied(): boolean {
+  if (!existsSync(PATH_TXT) || !existsSync(TARGET_APP)) return false
+  if (readFileSync(PATH_TXT, 'utf8').trim() !== EXEC_REL) return false
+  const distVersion = readDistVersion()
+  return distVersion !== undefined && distVersion === readElectronPackageVersion()
+}
+
+ensureElectronDist()
+
+if (isPatchApplied() && process.env.COPSE_PANEL_REFRESH_DOCK !== '1') {
+  console.log(`[patch-dev-name] ${APP_BUNDLE} already patched for Electron ${readDistVersion()}`)
   process.exit(0)
 }
 

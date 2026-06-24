@@ -1,5 +1,21 @@
 import type { z } from 'zod'
 
+/** Per-file line add/delete counts for write_file / str_replace tool cards. */
+export interface ToolEditStats {
+  additions: number
+  deletions: number
+}
+
+export type ToolExecuteResult = string | { result: string; editStats?: ToolEditStats }
+
+export function normalizeToolExecuteResult(value: ToolExecuteResult): {
+  result: string
+  editStats?: ToolEditStats
+} {
+  if (typeof value === 'string') return { result: value }
+  return value
+}
+
 export interface LLMTool {
   name: string
   description: string
@@ -10,7 +26,7 @@ export interface ToolDefinition<TArgs = any> {
   name: string
   description: string
   parameters: z.ZodType<TArgs>
-  execute: (args: TArgs, signal: AbortSignal) => Promise<string>
+  execute: (args: TArgs, signal: AbortSignal) => Promise<ToolExecuteResult>
   requiresApproval?: boolean
   /**
    * Pre-built JSON Schema for the tool's parameters. When set, the registry

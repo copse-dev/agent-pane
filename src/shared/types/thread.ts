@@ -109,6 +109,8 @@ export interface ToolCall {
   args: unknown
   status: 'running' | 'done' | 'error'
   result: string | null
+  /** Line add/delete counts for file edit tools (write_file, str_replace). */
+  editStats?: { additions: number; deletions: number }
   subagent?: SubagentSession
 }
 

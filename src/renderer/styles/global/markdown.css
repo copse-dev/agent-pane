@@ -4,12 +4,14 @@
   border-spacing: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  overflow: auto;
-  display: block;
-  width: max-content;
+  width: 100%;
   max-width: 100%;
+  table-layout: auto;
   margin: var(--spacing-sm) 0;
   font-size: var(--font-size-sm);
+  white-space: normal;
+  /* Scroll only when a cell has an unbreakable run (e.g. very long hash). */
+  overflow-x: auto;
 }
 .message-text th,
 .message-text td {
@@ -17,6 +19,30 @@
   border-bottom: 1px solid var(--border);
   padding: 4px 10px;
   text-align: left;
+  vertical-align: top;
+  /* .message-text uses pre-wrap; reset so table cells wrap on words, not every char. */
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: break-word;
+  min-width: 0;
+}
+/* Tables with 4+ columns often put short index/status values on the edges. */
+.message-text:has(th:nth-child(4)) th:first-child,
+.message-text:has(th:nth-child(4)) td:first-child,
+.message-text:has(th:nth-child(4)) th:last-child,
+.message-text:has(th:nth-child(4)) td:last-child {
+  width: 1%;
+  white-space: nowrap;
+}
+/* Long branch slugs in a lone code span should wrap inside the cell, not widen the table. */
+.message-text td > code:only-child,
+.message-text th > code:only-child {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .message-text th:last-child,
 .message-text td:last-child {

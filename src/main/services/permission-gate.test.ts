@@ -4,6 +4,8 @@ import {
   decideShellPermission,
   decideWebFetchPermission,
   decideWebSearchPermission,
+  formatInstallPromptBody,
+  formatEphemeralRunnerPromptBody,
   shellRequiresOutsideSandbox,
   shellSandboxFailureShouldOfferUnsandboxedRetry,
   SANDBOX_TOOLS,
@@ -195,6 +197,97 @@ describe('decideShellPermission', () => {
       confidenceThreshold: 0.85,
     })
     assert.equal(d.action, 'prompt')
+  })
+})
+
+describe('formatInstallPromptBody', () => {
+  it('leads with the command and never the nested external reason list', () => {
+    const body = formatInstallPromptBody('npm install', {
+      outsideSandbox: false,
+      safeInstall: true,
+      jsManager: true,
+    })
+    assert.ok(body.startsWith('npm install\n'))
+    assert.ok(!body.includes('may fetch + run code from network'))
+    assert.ok(!body.includes('((')) // no nested parentheticals
+    assert.ok(body.includes('Allow this install?'))
+  })
+
+  it('mentions Socket Firewall scanning and (for JS) disabled scripts', () => {
+    const body = formatInstallPromptBody('npm install', {
+      outsideSandbox: false,
+      safeInstall: true,
+      jsManager: true,
+    })
+    assert.ok(body.includes('Socket Firewall (sfw)'))
+    assert.ok(body.includes('install lifecycle scripts are disabled'))
+  })
+
+  it('omits the scripts note for non-JS managers', () => {
+    const body = formatInstallPromptBody('pip install requests', {
+      outsideSandbox: false,
+      safeInstall: true,
+      jsManager: false,
+    })
+    assert.ok(body.includes('Socket Firewall (sfw)'))
+    assert.ok(!body.includes('install lifecycle scripts'))
+  })
+
+  it('explains the macOS sandbox exit only when running outside it', () => {
+    const outside = formatInstallPromptBody('npm install', {
+      outsideSandbox: true,
+      safeInstall: true,
+      jsManager: true,
+    })
+    assert.ok(outside.includes('outside the macOS sandbox'))
+    const inside = formatInstallPromptBody('npm install', {
+      outsideSandbox: false,
+      safeInstall: true,
+      jsManager: true,
+    })
+    assert.ok(!inside.includes('macOS sandbox'))
+  })
+
+  it('warns when package scanning is disabled in Settings', () => {
+    const body = formatInstallPromptBody('npm install', {
+      outsideSandbox: false,
+      safeInstall: false,
+      jsManager: true,
+    })
+    assert.ok(body.includes('off in Settings'))
+    assert.ok(!body.includes('Socket Firewall (sfw) scans'))
+  })
+})
+
+describe('formatEphemeralRunnerPromptBody', () => {
+  it('describes fetch-and-run rather than installing project dependencies', () => {
+    const body = formatEphemeralRunnerPromptBody('npx tsc --noEmit', {
+      outsideSandbox: true,
+      safeInstall: true,
+    })
+    assert.ok(body.startsWith('npx tsc --noEmit\n'))
+    assert.ok(body.includes('download and run code from the network'))
+    assert.ok(body.includes('Allow this command?'))
+    assert.ok(!body.includes('installs packages'))
+    assert.ok(!body.includes('Allow this install?'))
+  })
+
+  it('mentions Socket Firewall scanning when enabled', () => {
+    const body = formatEphemeralRunnerPromptBody('npx eslint .', {
+      outsideSandbox: false,
+      safeInstall: true,
+    })
+    assert.ok(body.includes('Socket Firewall (sfw)'))
+    assert.ok(!body.includes('install lifecycle scripts'))
+  })
+
+  it('warns when package scanning is disabled in Settings', () => {
+    const body = formatEphemeralRunnerPromptBody('npx tsc --noEmit', {
+      outsideSandbox: false,
+      safeInstall: false,
+    })
+    assert.ok(body.includes('off in Settings'))
+    assert.ok(!body.includes('Socket Firewall (sfw) scans'))
   })
 })
 

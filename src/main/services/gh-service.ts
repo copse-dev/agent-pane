@@ -67,14 +67,26 @@ function ghPathPrefix(): string {
 /** Run GitHub CLI outside the project sandbox so read-only API calls can reach GitHub. */
 export async function runGh(
   args: string[],
+  opts: { timeout_ms?: number; signal?: AbortSignal } = {},
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   const cwd = getWorkspaceRoot()
   if (!cwd) return { stdout: '', stderr: 'No workspace open.', code: 1 }
-  return runCommand('gh', args, {
+  const commandOpts: Parameters<typeof runCommand>[2] = {
     cwd,
     unsandboxed: true,
     env: { PATH: `${ghPathPrefix()}${process.env.PATH ?? ''}` },
-  })
+  }
+  if (opts.timeout_ms !== undefined) commandOpts.timeout_ms = opts.timeout_ms
+  if (opts.signal !== undefined) commandOpts.signal = opts.signal
+  const { stdout, stderr, code } = await runCommand('gh', args, commandOpts)
+  return { stdout, stderr, code }
+}
+
+/** Parse JSON stdout from `gh`, or null when empty/invalid. */
+export function parseGhJson<T>(stdout: string): T | null {
+  const trimmed = stdout.trim()
+  if (!trimmed) return null
+  return safeJsonParse<T>(trimmed)
 }
 
 function formatGhError(stderr: string, code: number): string {

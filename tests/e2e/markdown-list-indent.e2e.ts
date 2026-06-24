@@ -18,7 +18,7 @@ describe('markdown list indentation', () => {
   })
 
   it('aligns bullets consistently across multi-section messages', async () => {
-    await $('.message-text h3').waitForExist({ timeout: 15_000 })
+    await $('.message-text h3').waitForExist({ timeout: 30_000 })
 
     const layout = await browser.execute(() => {
       const root = document.querySelector('.message-text')

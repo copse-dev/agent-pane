@@ -34,7 +34,7 @@ async function setChatPaneWidth(px: number): Promise<void> {
       if (px >= 600) return info.width >= 600 && !info.compact
       return info.width <= px + 4
     },
-    { timeout: 15_000, interval: 100 },
+    { timeout: 30_000, interval: 100 },
   )
 }
 
@@ -50,7 +50,7 @@ describe('footer compact layout', () => {
     seed = seedFooterCompactFixture(process.cwd())
     seedE2eViewport()
     await browser.reloadSession()
-    await $('.input-footer').waitForExist({ timeout: 15_000 })
+    await $('.input-footer').waitForExist({ timeout: 30_000 })
   })
 
   afterEach(() => {
@@ -62,7 +62,7 @@ describe('footer compact layout', () => {
 
     await browser.waitUntil(
       async () => !(await (await $('.input-footer')).getAttribute('class'))?.includes('is-compact'),
-      { timeout: 15_000, timeoutMsg: 'expected wide footer layout' },
+      { timeout: 30_000, timeoutMsg: 'expected wide footer layout' },
     )
 
     await expect($('.footer-export')).toBeDisplayed()
@@ -78,7 +78,7 @@ describe('footer compact layout', () => {
 
     await browser.waitUntil(
       async () => (await (await $('.input-footer')).getAttribute('class'))?.includes('is-compact'),
-      { timeout: 15_000, timeoutMsg: 'expected compact footer layout' },
+      { timeout: 30_000, timeoutMsg: 'expected compact footer layout' },
     )
 
     await expect($('.footer-export')).not.toBeDisplayed()

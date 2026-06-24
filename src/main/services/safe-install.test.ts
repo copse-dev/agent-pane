@@ -36,6 +36,20 @@ describe('detectPackageInstall', () => {
     }
   })
 
+  it('marks npx as an ephemeral runner, not a project install', () => {
+    const d = detectPackageInstall('npx tsc --noEmit')
+    assert.equal(d.isInstall, true)
+    assert.equal(d.isEphemeralRunner, true)
+    assert.equal(d.jsManager, false)
+  })
+
+  it('does not mark npm install as an ephemeral runner', () => {
+    const d = detectPackageInstall('npm install lodash')
+    assert.equal(d.isInstall, true)
+    assert.equal(d.isEphemeralRunner, false)
+    assert.equal(d.jsManager, true)
+  })
+
   it('ignores non-install commands', () => {
     for (const cmd of [
       'npm test',
