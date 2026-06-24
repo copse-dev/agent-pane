@@ -75,8 +75,12 @@ describe('new thread keeps the side panel open (component)', () => {
     // Create a new thread from the expanded project row.
     document.querySelector<HTMLButtonElement>('.project-new-thread-btn')!.click()
 
-    // A fresh blank thread is added and selected.
-    assert.equal(chatRows().length, 2)
+    // A fresh blank thread is created, selected, and rendered at the top. Assert
+    // the store + the selected row rather than the raw row count: the sidebar
+    // paginates rows (visibleThreadCounts), so row-count is draft-prompt's
+    // concern, not this regression's — here we only care that the new thread
+    // exists and is the active, rendered selection.
+    assert.equal(store.getState().threads.length, 2)
     assert.equal(
       document.querySelector('.chat-row.selected .chat-title')?.textContent,
       'New Thread',
