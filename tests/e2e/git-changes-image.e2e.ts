@@ -20,7 +20,10 @@ async function openChangesPanel(): Promise<void> {
   await browser.waitUntil(
     async () => {
       const tab = await $('.right-panel-tab[aria-label="Changes"]')
-      if ((await tab.isExisting()) && ((await tab.getAttribute('class')) ?? '').includes('is-active'))
+      if (
+        (await tab.isExisting()) &&
+        ((await tab.getAttribute('class')) ?? '').includes('is-active')
+      )
         return true
       await changesBtn.click()
       return false
