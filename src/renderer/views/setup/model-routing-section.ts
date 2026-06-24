@@ -10,6 +10,7 @@ export interface ModelRoutingSection {
     localDefaultModel: string
     subagentModel: string
     safetyModel: string
+    reviewModel: string
   }
 }
 
@@ -27,6 +28,7 @@ export function createModelRoutingSection(api: ApiClient): ModelRoutingSection {
   const localDefaultModel = el('select', { name: 'localDefaultModel' }) as HTMLSelectElement
   const subagentModel = el('select', { name: 'subagentModel' }) as HTMLSelectElement
   const safetyModel = el('select', { name: 'safetyModel' }) as HTMLSelectElement
+  const reviewModel = el('select', { name: 'reviewModel' }) as HTMLSelectElement
 
   const fieldset = el(
     'fieldset',
@@ -52,6 +54,11 @@ export function createModelRoutingSection(api: ApiClient): ModelRoutingSection {
       safetyModel,
       'Classifies shell commands when the OS sandbox is off',
     ),
+    routingField(
+      'Post-turn review model',
+      reviewModel,
+      'Reviews the diff after an editing turn (auto reuses the chat model)',
+    ),
   ) as HTMLFieldSetElement
 
   async function refresh(): Promise<void> {
@@ -65,6 +72,7 @@ export function createModelRoutingSection(api: ApiClient): ModelRoutingSection {
     const localModel = (await api.settings.get('localDefaultModel')) as string | undefined
     const subagent = (await api.settings.get('subagentModel')) as string | undefined
     const safety = (await api.settings.get('safetyModel')) as string | undefined
+    const review = (await api.settings.get('reviewModel')) as string | undefined
 
     populateLocalModelSelect(localDefaultModel, models, localModel ?? PREFERRED_MODELS[0]!.id)
     populateLocalModelSelect(
@@ -79,6 +87,7 @@ export function createModelRoutingSection(api: ApiClient): ModelRoutingSection {
       safety ?? PREFERRED_MODELS[2]!.id,
       '(auto — use default local model)',
     )
+    populateLocalModelSelect(reviewModel, models, review ?? '', '(auto — use chat model)')
   }
 
   function readValues() {
@@ -86,6 +95,7 @@ export function createModelRoutingSection(api: ApiClient): ModelRoutingSection {
       localDefaultModel: localDefaultModel.value.trim(),
       subagentModel: subagentModel.value.trim(),
       safetyModel: safetyModel.value.trim(),
+      reviewModel: reviewModel.value.trim(),
     }
   }
 

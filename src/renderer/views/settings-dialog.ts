@@ -52,6 +52,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'remoteAgentWorkOnCurrentBranch', kind: 'checkbox', default: false, save: true },
   { name: 'localSubagentsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'localTodoItemsEnabled', kind: 'checkbox', default: true, save: true },
+  { name: 'postTurnReviewEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'bundledCursorSkillsEnabled', kind: 'checkbox', default: true, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
@@ -321,6 +322,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <label class="checkbox-label">
                 <input type="checkbox" name="localTodoItemsEnabled" />
                 Use local models for todo items tagged local (requires acceptance check)
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="postTurnReviewEnabled" />
+                Review the diff with a subagent after each editing turn
               </label>
               <label class="checkbox-label">
                 <input type="checkbox" name="safetyClassifierEnabled" />
@@ -695,6 +700,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await api.settings.setSecurity({
         localServerUrl: lmStudioSection.getUrl(),
         safetyModel: routingValues.safetyModel,
+        reviewModel: routingValues.reviewModel,
         safetyClassifierEnabled: data.get('safetyClassifierEnabled') === 'on',
         safetyConfidenceThreshold: Number.isFinite(confidence) ? confidence : 0.85,
         autoRunSandboxCommands: data.get('autoRunSandboxCommands') === 'on',
