@@ -134,3 +134,26 @@ jobs:
           path: e2e-failure-artifacts/
           if-no-files-found: ignore
           retention-days: 3
+
+  # Single aggregate gate. Require ONLY this check in branch protection: it
+  # `needs` every other job (and e2e's result aggregates all 8 shards), so it
+  # turns the whole pipeline into one green/red status. New jobs or e2e shard
+  # counts can change without touching the required-checks list — just add the
+  # job to `needs` here. `if: always()` so this runs even when an upstream job
+  # fails/is skipped; we then assert none failed or were cancelled. Skipped is
+  # treated as a pass so the fork guard above (which skips every job on fork
+  # PRs) doesn't wedge the gate.
+  ci-passed:
+    name: CI Passed
+    if: always()
+    needs: [lint, check, build, e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check upstream job results
+        run: |
+          if ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}; then
+            echo "One or more CI jobs failed or were cancelled:"
+            echo '${{ toJSON(needs) }}'
+            exit 1
+          fi
+          echo "All CI jobs passed (or were intentionally skipped)."
