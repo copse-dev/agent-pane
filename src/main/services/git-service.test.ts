@@ -1,4 +1,4 @@
-import { describe, it, before, after } from 'node:test'
+import { describe, it, before, after, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
 import {
   classifyGitBlob,
+  getDefaultBranch,
   getGitDiffText,
   getGitFileDiff,
   parsePorcelainV1,
@@ -13,6 +14,7 @@ import {
 } from './git-service.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 import { setGitAvailableForTest } from './tool-availability.ts'
+import { DEFAULT_GIT_BRANCH } from '@shared/types/git.ts'
 
 describe('parsePorcelainV1', () => {
   it('returns empty lists for clean tree', () => {
@@ -319,5 +321,40 @@ describe('getGitFileDiff subdirectory workspace', { skip: !gitOk && 'git not ins
     assert.match(diff!.before, /Intro paragraph\.\n\n## Section/)
     assert.match(diff!.after, /Intro paragraph\.\n\n\n\n\n\n## Section/)
     assert.notEqual(diff!.before, diff!.after)
+  })
+})
+
+describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
+  let repo = ''
+  let restore: (() => void) | undefined
+
+  const git = (...args: string[]) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
+
+  afterEach(() => {
+    restore?.()
+    restore = undefined
+  })
+
+  after(async () => {
+    if (repo) await rm(repo, { recursive: true, force: true })
+    repo = ''
+  })
+
+  it('uses init.defaultBranch from git config when origin is absent', async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-default-branch-'))
+    git('init', '-q')
+    git('config', 'init.defaultBranch', 'develop')
+    restore = setWorkspaceRootForTest(repo)
+
+    assert.equal(await getDefaultBranch(), 'develop')
+  })
+
+  it(`falls back to ${DEFAULT_GIT_BRANCH} when no remote and no configured default`, async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-default-branch-fallback-'))
+    git('init', '-q')
+    git('config', '--unset', 'init.defaultBranch')
+    restore = setWorkspaceRootForTest(repo)
+
+    assert.equal(await getDefaultBranch(), DEFAULT_GIT_BRANCH)
   })
 })

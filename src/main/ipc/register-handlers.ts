@@ -48,6 +48,8 @@ import { listCursorHooks } from '../services/cursor-hooks.ts'
 import { registerSkillTools } from '../services/registry-bootstrap.ts'
 import {
   checkoutGitBranch,
+  getBranches,
+  getDefaultBranch,
   getGitFileDiff,
   getGitStatus,
   isInsideGitWorkTree,
@@ -258,6 +260,8 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const targetBranch = parseIpcArgs(z.string().min(1).max(256), [branch])
     await checkoutGitBranch(targetBranch)
   })
+  ipcMain.handle('git:listBranches', () => getBranches())
+  ipcMain.handle('git:getDefaultBranch', () => getDefaultBranch())
   ipcMain.handle('remoteAgent:downloadArtifact', async (event, agentId: unknown, path: unknown) => {
     assertMainFrameSender(event, win)
     const parsedAgentId = parseIpcArgs(z.string().min(1).max(128), [agentId])
