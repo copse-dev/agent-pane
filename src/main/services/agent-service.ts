@@ -11,6 +11,7 @@ import { resolveParentGoal } from '@shared/agent/working-brief.ts'
 import { buildSystemPrompt } from './agent-system-prompt.ts'
 import { hasLastUsage } from './provider-usage.ts'
 import { clearActiveRunThread, recordThreadModel, setActiveRunThread } from './thread-models.ts'
+import { buildCommitSteeringPrompt, shouldSteerCommit } from '@shared/git/commit-attribution.ts'
 import { buildProvider, buildSubagentRoute, isLocalChatModel } from './provider-selection.ts'
 import {
   prepareAgentHistory,
@@ -187,6 +188,7 @@ export async function runAgent(
       const repoSlug = await getGithubRepoSlug()
       steeringBlocks.push(buildGithubLinkSteeringPrompt(repoSlug))
     }
+    if (shouldSteerCommit(userTextForSteering)) steeringBlocks.push(buildCommitSteeringPrompt())
     if (steeringBlocks.length && messages[0]?.role === 'system') {
       messages[0] = {
         role: 'system',

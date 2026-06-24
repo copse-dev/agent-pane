@@ -4,6 +4,7 @@ import {
   COPSE_COAUTHOR,
   appendCommitAttribution,
   buildCommitAttribution,
+  shouldSteerCommit,
 } from './commit-attribution.ts'
 
 describe('buildCommitAttribution', () => {
@@ -44,5 +45,26 @@ describe('appendCommitAttribution', () => {
   it('is idempotent when the co-author trailer is already present', () => {
     const once = appendCommitAttribution('Subject', ['gpt-4o'])
     assert.equal(appendCommitAttribution(once, ['gpt-4o', 'claude-opus-4-8']), once)
+  })
+})
+
+describe('shouldSteerCommit', () => {
+  it('fires on commit intent in its various forms', () => {
+    for (const text of [
+      'commit this',
+      'please commit the changes',
+      'stage and commit',
+      'you committed too early',
+      'committing now',
+      'squash the commits',
+    ]) {
+      assert.equal(shouldSteerCommit(text), true, text)
+    }
+  })
+
+  it('does not fire on unrelated text or the word commitment', () => {
+    for (const text of ['fix the bug', 'a strong commitment to quality', 'review the PR']) {
+      assert.equal(shouldSteerCommit(text), false, text)
+    }
   })
 })
