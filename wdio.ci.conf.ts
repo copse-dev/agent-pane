@@ -35,17 +35,18 @@ const ciExclude = [
   // which is flaky to render in time on the constrained runner.
   './tests/e2e/semantic-search-markdown.e2e.ts',
   // Genuinely flaky assertion (not the per-shard OOM): after creating a new
-  // thread it intermittently sees 1 `.chats-list .chat-row` instead of 2 —
-  // failed at position 1 of a fresh runner, so it's a spec timing issue, not
-  // resource exhaustion. Candidate real bug; quarantined pending a wait-logic
-  // fix.
+  // thread these snapshot `$$('.chats-list .chat-row')` before the appended row
+  // renders, seeing one row too few. A real spec race, not density — they stay
+  // out until the `$$` wait polls for the new row.
   './tests/e2e/new-thread-keeps-panel.e2e.ts',
-  // Reliably hard-OOM-crashes its runner ("shutdown signal", not a timeout) on
-  // both whole-shard retry attempts — a heavy reloadSession spec that, paired
-  // with the also-heavy double-submit in its shard, exhausts the 2-core/7GB
-  // runner. The crash kills the job before the failure-artifact upload can run,
-  // so screenshots can't capture it. Same class as context-wheel.
+  // draft-prompt hits the same new-thread `$$` race (expected 3 rows, saw 2),
+  // and its heavy reloadSession run also drew the per-shard OOM on retry. The
+  // race fix landed in this branch (poll for the row before snapshotting), but
+  // it stays quarantined until a follow-up confirms a few green CI runs and
+  // removes this line — re-added after the #345 un-quarantine regressed.
   './tests/e2e/draft-prompt.e2e.ts',
+  // context-wheel stays quarantined (describeSkipInCi in its spec): it hard-OOM
+  // crashes the runner on its first launch even in a 4-spec shard.
 ]
 
 export const config: Options.Testrunner = {

@@ -61,4 +61,4 @@ export const approvalRespondSchema = z.tuple([
   z.boolean().optional(),
 ])
 
-export const providerSchema = z.enum(['anthropic', 'openai', 'lmstudio', 'cursor'])
+export const providerSchema = z.enum(['anthropic', 'openai', 'lmstudio', 'cursor', 'openrouter'])

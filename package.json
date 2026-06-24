@@ -7,6 +7,8 @@
   "type": "commonjs",
   "scripts": {
     "dev": "node scripts/dev.mts",
+    "oracle": "node scripts/test-oracle.mts",
+    "check:oracle": "node scripts/check-oracle.mts",
     "build": "node scripts/build.mts",
     "build:release": "COPSE_RELEASE=1 node scripts/build.mts",
     "generate:icon": "node scripts/generate-icon.mts",
@@ -15,7 +17,7 @@
     "prestart": "node scripts/patch-dev-name.mts",
     "start": "electron dist/main/index.js",
     "preinstall": "node scripts/check-node-version.cjs",
-    "postinstall": "node scripts/check-node-version.cjs && node scripts/patch-dev-name.mts && node scripts/postinstall-native.mts && node scripts/fetch-codesearch.mts",
+    "postinstall": "node scripts/check-node-version.cjs && node scripts/patch-dev-name.mts && node scripts/postinstall-native.mts && node scripts/fetch-codesearch.mts && npx tsx scripts/fetch-bundled-cursor-skills.mts",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint .",
     "check:dead-code": "node scripts/check-dead-code.mts",
@@ -35,8 +37,9 @@
     "test:e2e:markdown": "wdio run wdio.conf.ts --spec tests/e2e/markdown-list-indent.e2e.ts --spec tests/e2e/markdown-ordered-list-spacing.e2e.ts --spec tests/e2e/markdown-streaming-table.e2e.ts --spec tests/e2e/semantic-search-markdown.e2e.ts",
     "analyze:thread": "node scripts/run-analyze-thread.mts",
     "sync:models": "node scripts/sync-model-catalog.mts",
+    "sync:cursor-skills": "npx tsx scripts/fetch-bundled-cursor-skills.mts",
     "pack:mac": "npm run build:release && npm run icons:mac && electron-builder --mac dir",
-    "check": "npm run typecheck && npm run lint && npm run format:check && npm run check:dead-code && npm test"
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run check:dead-code && npm run check:oracle && npm test"
   },
   "build": {
     "appId": "app.copse-panel",

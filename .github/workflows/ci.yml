@@ -23,6 +23,10 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm run check:dead-code
+      # Guard the e2e oracle that gates the `e2e` job: every spec must stay
+      # selectable (liveness) and the mapping invariants must hold, so the gate
+      # can't silently start skipping specs it should run.
+      - run: npm run check:oracle
 
   check:
     needs: lint
@@ -70,8 +74,46 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # Test oracle (scripts/test-oracle.mts) decides how much of the e2e tier this
+  # run needs. On a pull_request it maps the diff to the specs it can affect; on
+  # a push to main it always runs the full suite, so main is never gated on a
+  # partial map. The output drives the `e2e` job below:
+  #   mode=full    → all 8 shards run the whole CI suite (default / safe)
+  #   mode=subset  → only the listed specs run, on shard 1 (fast PR lane)
+  #   mode=skip    → nothing e2e-relevant changed; shards report green, no run
+  # subset is used only for confident, UI-coupled diffs; LOW-confidence (backend
+  # logic with no selector coupling) and broad changes fall back to full.
+  plan-e2e:
+    needs: lint
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      specs: ${{ steps.plan.outputs.specs }}
+    steps:
+      - uses: actions/checkout@v6.0.3
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - id: plan
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "Non-PR event (${{ github.event_name }}) -> full e2e suite"
+            { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # full clone already has base history; this is belt-and-suspenders.
+          git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || true
+          node scripts/test-oracle.mts --plan --base "$BASE_SHA" | tee plan.txt
+          grep -E '^(mode|specs)=' plan.txt >> "$GITHUB_OUTPUT"
+          { echo '### e2e oracle plan'; echo '```'; cat plan.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
   e2e:
-    needs: build
+    needs: [build, plan-e2e]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     # Split the seeded e2e suite (see wdio.ci.conf.ts) into parallel shards so the
@@ -101,6 +143,17 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.3
       - uses: ./.github/actions/setup
+      # Reclaim ~20-30 GB of runner-preloaded toolchains (dotnet/android/ghc/
+      # CodeQL/swift) and cached Docker images. The e2e shards have hit "No space
+      # left on device" mid-run, which cascades into OOM / runner-shutdown and
+      # Electron session-startup failures; freeing space up front removes that
+      # whole failure class. Best-effort — never fail the job on cleanup.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/boost || true
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+          df -h /
       - uses: actions/download-artifact@v4
         with:
           name: dist-tar
@@ -111,12 +164,44 @@ jobs:
       # only a fresh xvfb+Electron launch does. Retry the entire shard, and wrap
       # each attempt in `timeout` so a wedged session is killed and retried
       # (a plain hang would otherwise never exit and stall the job).
-      - name: e2e shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }} (retry on flaky session startup)
+      # Oracle gate (see plan-e2e): `full` shards the whole suite; `subset`
+      # distributes only the planned specs round-robin across the same 8 shards
+      # (so no shard exceeds the per-shard memory budget the count is tuned for);
+      # `skip` runs nothing. Every shard still reports a status, so this composes
+      # with any required check without depending on an aggregate gate first.
+      - name: e2e shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }} (oracle-gated, retry on flaky session startup)
+        if: >-
+          needs.plan-e2e.outputs.mode == 'full' ||
+          needs.plan-e2e.outputs.mode == 'subset'
         timeout-minutes: 26
+        env:
+          PLAN_MODE: ${{ needs.plan-e2e.outputs.mode }}
+          PLAN_SPECS: ${{ needs.plan-e2e.outputs.specs }}
         run: |
+          if [ "$PLAN_MODE" = "subset" ]; then
+            # Round-robin the planned specs onto this shard; an empty slice means
+            # this shard has nothing to do (subset smaller than 8) — report green.
+            i=0
+            SPEC_ARGS=""
+            for s in $PLAN_SPECS; do
+              if [ $(( i % SHARD_TOTAL )) -eq $(( ${{ matrix.shard }} - 1 )) ]; then
+                SPEC_ARGS="$SPEC_ARGS --spec $s"
+              fi
+              i=$(( i + 1 ))
+            done
+            if [ -z "$SPEC_ARGS" ]; then
+              echo "shard ${{ matrix.shard }}: no specs in this subset slice — nothing to run"
+              exit 0
+            fi
+            SHARD_ARGS=""
+            echo "oracle subset shard ${{ matrix.shard }}:${SPEC_ARGS}"
+          else
+            SHARD_ARGS="--shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }}"
+            SPEC_ARGS=""
+          fi
           for attempt in 1 2 3; do
             echo "::group::e2e shard ${{ matrix.shard }} attempt $attempt"
-            if timeout -k 15 480 npm run test:e2e:ci -- --shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }}; then
+            if timeout -k 15 480 npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS; then
               echo "::endgroup::"
               exit 0
             fi
@@ -134,3 +219,26 @@ jobs:
           path: e2e-failure-artifacts/
           if-no-files-found: ignore
           retention-days: 3
+
+  # Single aggregate gate. Require ONLY this check in branch protection: it
+  # `needs` every other job (and e2e's result aggregates all 8 shards), so it
+  # turns the whole pipeline into one green/red status. New jobs or e2e shard
+  # counts can change without touching the required-checks list — just add the
+  # job to `needs` here. `if: always()` so this runs even when an upstream job
+  # fails/is skipped; we then assert none failed or were cancelled. Skipped is
+  # treated as a pass so the fork guard above (which skips every job on fork
+  # PRs) doesn't wedge the gate.
+  ci-passed:
+    name: CI Passed
+    if: always()
+    needs: [lint, check, build, plan-e2e, e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check upstream job results
+        run: |
+          if ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}; then
+            echo "One or more CI jobs failed or were cancelled:"
+            echo '${{ toJSON(needs) }}'
+            exit 1
+          fi
+          echo "All CI jobs passed (or were intentionally skipped)."
