@@ -64,14 +64,48 @@ const directAppliedSnapshots = new Map<string, string>()
 const MAX_DIRECT_APPLIED_SNAPSHOTS = 1000
 let mainWindow: BrowserWindow | null = null
 
+/**
+ * Canonicalize a path to the same shape `getGitStatus` reports (workspace-relative,
+ * forward slashes, no leading `./`). The ownership map is keyed this way so a path
+ * the model spells as `./src/foo.ts` one turn and `src/foo.ts` the next still
+ * resolves to the same snapshot — otherwise the lookup misses and the next turn
+ * treats Copse's own edit as an unowned external change.
+ */
+function ownedKey(path: string): string {
+  return path.replace(/\\/g, '/').replace(/^(?:\.\/)+/, '')
+}
+
 function recordDirectAppliedSnapshot(path: string, content: string): void {
+  const key = ownedKey(path)
   // Re-insert so a refreshed path counts as most-recent for eviction.
-  directAppliedSnapshots.delete(path)
-  directAppliedSnapshots.set(path, content)
+  directAppliedSnapshots.delete(key)
+  directAppliedSnapshots.set(key, content)
   while (directAppliedSnapshots.size > MAX_DIRECT_APPLIED_SNAPSHOTS) {
     const oldest = directAppliedSnapshots.keys().next().value
     if (oldest === undefined) break
     directAppliedSnapshots.delete(oldest)
+  }
+}
+
+/**
+ * Mark the result of an approved (or directly-applied) op as Copse-owned so the
+ * next turn keeps editing it directly instead of re-proposing it. Approvals run
+ * through `applyDiffEntry` just like direct applies, but previously never
+ * recorded ownership — so any path that went through the approval panel poisoned
+ * the fast path for every later turn. Mirrors what each op leaves on disk: a
+ * write/rename-destination holds its new content; a deleted file and a renamed
+ * source are gone (empty, matching a missing-file read); a mkdir leaves no file
+ * that surfaces in `git status`, so there is nothing to own.
+ */
+function recordOwnershipAfterApply(entry: QueueEntry): void {
+  const op = entry.op ?? 'write'
+  if (op === 'write') {
+    recordDirectAppliedSnapshot(entry.path, entry.after)
+  } else if (op === 'delete') {
+    recordDirectAppliedSnapshot(entry.path, '')
+  } else if (op === 'rename' && entry.renameTo) {
+    recordDirectAppliedSnapshot(entry.path, '')
+    recordDirectAppliedSnapshot(entry.renameTo, entry.after)
   }
 }
 
@@ -114,7 +148,7 @@ async function canApplyDirectly(
 
   const changedPaths = [...status.staged, ...status.unstaged].map((change) => change.path)
   const unownedChanges = changedPaths.filter(
-    (changedPath) => !directAppliedSnapshots.has(changedPath),
+    (changedPath) => !directAppliedSnapshots.has(ownedKey(changedPath)),
   )
   if (unownedChanges.length > 0) {
     return {
@@ -123,7 +157,7 @@ async function canApplyDirectly(
     }
   }
 
-  const lastDirectContent = directAppliedSnapshots.get(path)
+  const lastDirectContent = directAppliedSnapshots.get(ownedKey(path))
   if (lastDirectContent !== undefined && (await readCurrentContent(path)) !== lastDirectContent) {
     return {
       ok: false,
@@ -132,6 +166,48 @@ async function canApplyDirectly(
   }
 
   return { ok: true }
+}
+
+/**
+ * Snapshot the content of every file currently in `git status`, keyed the same
+ * way ownership is (git's workspace-relative path). Used to bracket an
+ * agent-triggered shell command: the post-command worktree is compared against
+ * this baseline by {@link adoptWorktreeChangesSince} so only paths the command
+ * actually changed are adopted.
+ */
+export async function captureWorktreeBaseline(): Promise<Map<string, string>> {
+  const baseline = new Map<string, string>()
+  const status = await getGitStatus()
+  if (!status) return baseline
+  const paths = new Set([...status.staged, ...status.unstaged].map((c) => c.path))
+  for (const path of paths) baseline.set(ownedKey(path), await readCurrentContent(path))
+  return baseline
+}
+
+/**
+ * After an agent-triggered shell command, mark every file the command changed as
+ * Copse-owned so the next edit sees a clean worktree and applies directly instead
+ * of proposing the command's own effect (e.g. a formatter rewriting a file Copse
+ * just edited). Scoped to genuine command effects by diffing against the
+ * pre-command baseline: a path is adopted only when it was clean before (absent
+ * from the baseline) or its content now differs from the baseline. Pre-existing
+ * unowned edits the command did not touch keep their status, so the
+ * stale-overwrite guard still protects them. Returns the adopted paths.
+ */
+export async function adoptWorktreeChangesSince(baseline: Map<string, string>): Promise<string[]> {
+  const status = await getGitStatus()
+  if (!status) return []
+  const paths = new Set([...status.staged, ...status.unstaged].map((c) => c.path))
+  const adopted: string[] = []
+  for (const path of paths) {
+    const after = await readCurrentContent(path)
+    const before = baseline.get(ownedKey(path))
+    if (before === undefined || before !== after) {
+      recordDirectAppliedSnapshot(path, after)
+      adopted.push(path)
+    }
+  }
+  return adopted
 }
 
 function recordDecision(decision: Omit<DiffDecision, 'at'>): void {
@@ -280,6 +356,7 @@ export function initDiffQueue(win: BrowserWindow): void {
     }
     const root = getWorkspaceRoot()
     if (root) await buildIndex(root)
+    recordOwnershipAfterApply(entry)
     recordDecision({ path: entry.path, status: 'approved' })
     removeEntry(path)
   })
@@ -327,6 +404,7 @@ export async function approveAllStagedDiffs(): Promise<void> {
       recordDecision({ path: entry.path, status: 'error', error: result.error })
       failures.push({ path: entry.path, error: result.error })
     } else {
+      recordOwnershipAfterApply(entry)
       recordDecision({ path: entry.path, status: 'approved' })
       appliedEntries.add(entry)
     }
