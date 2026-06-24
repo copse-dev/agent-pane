@@ -177,6 +177,40 @@ describe('applyOrStageDiff direct-apply policy', () => {
     assert.equal(getStagedDiffEntry('a.txt')?.after, 'two\n')
   })
 
+  it('keeps editing directly after a staged diff is approved (approval records ownership)', async () => {
+    await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
+    git(tempRoot, ['add', 'packages/app/a.txt'])
+    git(tempRoot, ['commit', '-m', 'add workspace file'])
+
+    // First edit goes through the approval queue, then the user approves it.
+    await stageDiff('a.txt', 'one\n', 'two\n', 'plaintext')
+    await approveAllStagedDiffs()
+    assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf-8'), 'two\n')
+
+    // The next turn must continue applying directly rather than re-proposing the
+    // now-approved file as if it were an unowned external change.
+    const next = await applyOrStageDiff('a.txt', 'two\n', 'three\n', 'plaintext')
+    assert.match(next, /Applied edit directly/)
+    assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf-8'), 'three\n')
+    assert.equal(getDiffQueueForTest().length, 0)
+  })
+
+  it('treats ./path and path as the same owned file across turns', async () => {
+    await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
+    git(tempRoot, ['add', 'packages/app/a.txt'])
+    git(tempRoot, ['commit', '-m', 'add workspace file'])
+
+    // Model spells the path with a leading ./ on the first edit ...
+    const first = await applyOrStageDiff('./a.txt', 'one\n', 'two\n', 'plaintext')
+    assert.match(first, /Applied edit directly/)
+
+    // ... and without it on the next turn; ownership must still resolve.
+    const second = await applyOrStageDiff('a.txt', 'two\n', 'three\n', 'plaintext')
+    assert.match(second, /Applied edit directly/)
+    assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf-8'), 'three\n')
+    assert.equal(getDiffQueueForTest().length, 0)
+  })
+
   it('records a conflict decision when direct apply sees stale content', async () => {
     await writeFile(join(workspaceRoot, 'a.txt'), 'current\n', 'utf-8')
     git(tempRoot, ['add', 'packages/app/a.txt'])
