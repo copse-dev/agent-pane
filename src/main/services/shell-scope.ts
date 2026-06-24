@@ -15,6 +15,13 @@ export interface ShellScopeAnalysis {
  * possible; patterns here reduce obvious false auto-runs only.
  */
 
+// A command-invocation position: start of the string, or immediately after a
+// shell separator (pipe, semicolon, &&/||, subshell open, newline). Anchoring a
+// bare command name here lets us match e.g. `gh` the binary without also matching
+// `gh` as a substring of a path or argument like `services/gh-pr-service.ts`
+// (a read-only grep on a gh-* filename was misclassified as a GitHub CLI call).
+const CMD_POS = String.raw`(?:^|[\n|;&(])\s*`
+
 // Commands that clearly reach outside the workspace or network.
 const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: string }> = [
   { re: /\bcurl\b|\bwget\b|\bfetch\b/i, reason: 'network download (curl/wget/fetch)' },
@@ -47,9 +54,9 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: string }> = [
   { re: /\bdocker\s+(pull|push|run)\b/i, reason: 'docker network/container operation' },
   { re: /\bkubectl\b|\bhelm\s+install\b/i, reason: 'kubernetes remote operation' },
   { re: /\b(aws|gcloud|az)\s+/i, reason: 'cloud CLI (may reach external services)' },
-  { re: /\bgh\b/i, reason: 'GitHub CLI (may reach GitHub)' },
+  { re: new RegExp(`${CMD_POS}gh\\b`, 'i'), reason: 'GitHub CLI (may reach GitHub)' },
   { re: /\bopen\s+https?:|\bxdg-open\s+https?:/i, reason: 'open external URL' },
-  { re: /\bnc\b|\bnetcat\b|\btelnet\b/i, reason: 'raw network utility' },
+  { re: new RegExp(`${CMD_POS}nc\\b|\\bnetcat\\b|\\btelnet\\b`, 'i'), reason: 'raw network utility' },
   {
     re: /\bpython3?\b[^\n|;&]*\s-c\b|\bnode\b[^\n|;&]*\s-e\b|\bbun\b[^\n|;&]*\s-e\b/i,
     reason: 'inline script (python/node -c/-e)',

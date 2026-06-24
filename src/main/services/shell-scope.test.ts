@@ -32,6 +32,25 @@ describe('analyzeShellCommand', () => {
     assert.ok(r.reasons.some((x) => x.includes('GitHub CLI')))
   })
 
+  it('flags gh CLI after a pipe/separator', () => {
+    for (const cmd of ['cat body.md | gh pr create -F -', 'echo hi && gh pr view']) {
+      const r = analyzeShellCommand(cmd, root)
+      assert.equal(r.verdict, 'external', `expected external for: ${cmd}`)
+      assert.ok(r.reasons.some((x) => x.includes('GitHub CLI')))
+    }
+  })
+
+  it('does not treat gh inside a path/argument as the GitHub CLI', () => {
+    // `gh` is a substring of the filename, not an invoked command — a read-only
+    // grep must not be misclassified as a GitHub CLI network call.
+    const r = analyzeShellCommand(
+      "grep -n 'getGithubRepoSlug' src/main/services/gh-pr-service.ts | head -20",
+      root,
+    )
+    assert.equal(r.verdict, 'sandbox')
+    assert.ok(!r.reasons.some((x) => x.includes('GitHub CLI')))
+  })
+
   it('flags home directory paths', () => {
     const r = analyzeShellCommand('cat ~/.ssh/id_rsa', root)
     assert.equal(r.verdict, 'external')
