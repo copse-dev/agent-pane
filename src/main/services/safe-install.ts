@@ -37,35 +37,47 @@ interface SegmentSpec {
   manager: 'npm' | 'pnpm' | 'yarn' | 'pip' | 'uv' | 'cargo' | 'npx'
   /** npm/pnpm/yarn — honour `npm_config_ignore_scripts` to block lifecycle scripts. */
   jsManager: boolean
+  /** npx — fetch-and-run without adding packages to the project. */
+  ephemeralRunner: boolean
 }
 
 function classify(tokens: string[]): SegmentSpec | null {
   const [t0, t1] = tokens
   switch (t0) {
     case 'npm':
-      return t1 && NPM_INSTALL_VERBS.has(t1) ? { manager: 'npm', jsManager: true } : null
+      return t1 && NPM_INSTALL_VERBS.has(t1)
+        ? { manager: 'npm', jsManager: true, ephemeralRunner: false }
+        : null
     case 'pnpm':
       // A bare `pnpm` defaults to `install`.
-      return !t1 || PNPM_INSTALL_VERBS.has(t1) ? { manager: 'pnpm', jsManager: true } : null
+      return !t1 || PNPM_INSTALL_VERBS.has(t1)
+        ? { manager: 'pnpm', jsManager: true, ephemeralRunner: false }
+        : null
     case 'yarn':
       // A bare `yarn` defaults to `install`.
-      return !t1 || YARN_INSTALL_VERBS.has(t1) ? { manager: 'yarn', jsManager: true } : null
+      return !t1 || YARN_INSTALL_VERBS.has(t1)
+        ? { manager: 'yarn', jsManager: true, ephemeralRunner: false }
+        : null
     case 'npx':
-      return { manager: 'npx', jsManager: false }
+      return { manager: 'npx', jsManager: false, ephemeralRunner: true }
     case 'pip':
     case 'pip3':
-      return t1 === 'install' ? { manager: 'pip', jsManager: false } : null
+      return t1 === 'install' ? { manager: 'pip', jsManager: false, ephemeralRunner: false } : null
     case 'python':
     case 'python3':
       return t1 === '-m' && tokens[2] === 'pip' && tokens[3] === 'install'
-        ? { manager: 'pip', jsManager: false }
+        ? { manager: 'pip', jsManager: false, ephemeralRunner: false }
         : null
     case 'uv':
-      if (t1 === 'add' || t1 === 'sync') return { manager: 'uv', jsManager: false }
-      if (t1 === 'pip' && tokens[2] === 'install') return { manager: 'uv', jsManager: false }
+      if (t1 === 'add' || t1 === 'sync')
+        return { manager: 'uv', jsManager: false, ephemeralRunner: false }
+      if (t1 === 'pip' && tokens[2] === 'install')
+        return { manager: 'uv', jsManager: false, ephemeralRunner: false }
       return null
     case 'cargo':
-      return t1 && CARGO_VERBS.has(t1) ? { manager: 'cargo', jsManager: false } : null
+      return t1 && CARGO_VERBS.has(t1)
+        ? { manager: 'cargo', jsManager: false, ephemeralRunner: false }
+        : null
     default:
       return null
   }
@@ -82,6 +94,8 @@ function classifySegment(rawSegment: string): SegmentSpec | null {
 export interface InstallDetection {
   /** True when any command segment is a recognised package install. */
   isInstall: boolean
+  /** True for ephemeral runners (npx) that may fetch and run without adding project deps. */
+  isEphemeralRunner: boolean
   /** True when an npm/pnpm/yarn install was detected (drives `npm_config_ignore_scripts`). */
   jsManager: boolean
 }
@@ -89,14 +103,16 @@ export interface InstallDetection {
 /** Detect whether a shell command performs a package install. */
 export function detectPackageInstall(command: string): InstallDetection {
   let isInstall = false
+  let isEphemeralRunner = false
   let jsManager = false
   for (const segment of command.split(SEGMENT_RE)) {
     const spec = classifySegment(segment)
     if (!spec) continue
     isInstall = true
+    if (spec.ephemeralRunner) isEphemeralRunner = true
     if (spec.jsManager) jsManager = true
   }
-  return { isInstall, jsManager }
+  return { isInstall, isEphemeralRunner, jsManager }
 }
 
 /** POSIX single-quote a string so it survives intact as one shell word. */
