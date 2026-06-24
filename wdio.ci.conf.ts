@@ -19,7 +19,6 @@ const ciExclude = [
   // Queued-message timing family (mock delays, scroll pinning, run abort);
   // same flaky-on-CI timing as message-queue above.
   './tests/e2e/queued-pinned.e2e.ts',
-  './tests/e2e/queued-send-now.e2e.ts',
   './tests/e2e/queued-message-edit.e2e.ts',
   './tests/e2e/portrait-right-panel.e2e.ts',
   './tests/e2e/skills.e2e.ts',
