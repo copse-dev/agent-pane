@@ -8,6 +8,7 @@ const SHARED_WEB_TOOLS = `- web_search: Search the public web
 const SHARED_TOOL_TAIL = `- git_status: Show working tree status
 - git_diff: Show unstaged or staged changes
 - git_log: Show recent commit history
+- git_commit: Create a commit (adds a Co-Authored-By: Copse trailer and the models used) — prefer over run_shell git commit
 - gh_pr_list: List pull requests (read-only GitHub CLI; prefer over run_shell + gh)
 - gh_pr_view: Show pull request details (read-only GitHub CLI; prefer over run_shell + gh)
 - get_ci_status: Read GitHub pull request CI check status (requires gh CLI and an open PR)

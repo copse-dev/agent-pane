@@ -5,6 +5,7 @@ import { runCommand } from './command-runner.ts'
 import { isGitAvailable } from './tool-availability.ts'
 import { detectLanguage } from './language.ts'
 import { parseGithubRepoSlug } from '@shared/git/github-link-steering.ts'
+import { appendCommitAttribution } from '@shared/git/commit-attribution.ts'
 import { imageMimeType } from '@shared/fs/image-path.ts'
 import type { GitChange, GitChangeStatus, GitFileDiff, GitStatusResult } from '@shared/types/git.ts'
 
@@ -407,6 +408,33 @@ export async function getGitDiffText(path?: string, staged = false): Promise<str
   }
 
   return combined || '(no output)'
+}
+
+/**
+ * Create a commit, appending the Copse attribution trailer (co-author + the
+ * `models` that ran in this thread). Optionally stages all changes first.
+ * Local only — never pushes.
+ */
+export async function commitWithAttribution(
+  message: string,
+  models: string[],
+  stageAll: boolean,
+): Promise<string> {
+  if (!isGitAvailable()) return 'git is not available on this system.'
+  if (!getWorkspaceRoot()) return 'No workspace open.'
+
+  if (stageAll) {
+    const add = await runGit(['add', '-A'])
+    if (add.code !== 0) return add.stderr.trim() || `git add exited with code ${add.code}`
+  }
+
+  const fullMessage = appendCommitAttribution(message, models)
+  const { stdout, stderr, code } = await runGit(['commit', '-m', fullMessage])
+  if (code !== 0) {
+    // `git commit` reports "nothing to commit" and similar on stdout, not stderr.
+    return stderr.trim() || stdout.trim() || `git commit exited with code ${code}`
+  }
+  return stdout.trim() || '(committed)'
 }
 
 export async function getGitLogText(maxCount: number, path?: string): Promise<string> {
