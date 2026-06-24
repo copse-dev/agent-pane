@@ -223,9 +223,14 @@ jobs:
             SHARD_ARGS="--shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }}"
             SPEC_ARGS=""
           fi
+          # `timeout` is GNU coreutils — present on Linux, but on macOS it's
+          # `gtimeout` (from `brew install coreutils`). Pick whichever exists;
+          # fall back to no inner timeout (the step `timeout-minutes` still caps
+          # a wedged run) so the command can't die with "timeout: not found".
+          TIMEOUT="$(command -v timeout || command -v gtimeout || true)"
           for attempt in 1 2 3; do
             echo "::group::e2e shard ${{ matrix.shard }} attempt $attempt"
-            if timeout -k 15 480 npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS; then
+            if ${TIMEOUT:+$TIMEOUT -k 15 480} npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS; then
               echo "::endgroup::"
               exit 0
             fi

@@ -18,9 +18,13 @@ runs:
     - run: sudo apt-get update && sudo apt-get install -y ripgrep
       if: runner.environment == 'github-hosted'
       shell: bash
-    # Self-hosted macOS runner: provision ripgrep via Homebrew (no apt). Skips
-    # the install when it's already present, so it's cheap on warm runners.
-    - run: command -v rg >/dev/null 2>&1 || brew install ripgrep
+    # Self-hosted macOS runner: provision ripgrep + coreutils via Homebrew (no
+    # apt). coreutils supplies `gtimeout`, which the e2e shard step uses to cap a
+    # wedged run (macOS has no `timeout`). Skips installs that are already
+    # present, so it's cheap on warm runners.
+    - run: |
+        command -v rg >/dev/null 2>&1 || brew install ripgrep
+        command -v gtimeout >/dev/null 2>&1 || brew install coreutils
       if: runner.environment == 'self-hosted' && runner.os == 'macOS'
       shell: bash
     # Cache the fully-installed dependency tree, not just the npm download cache.
