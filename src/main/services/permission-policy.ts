@@ -147,6 +147,32 @@ export function formatInstallPromptBody(
   ].join('\n')
 }
 
+/**
+ * Approval body for ephemeral package runners (npx). These may download and
+ * execute code without adding dependencies to the project — different from a
+ * persistent install, but still network + supply-chain sensitive.
+ */
+export function formatEphemeralRunnerPromptBody(
+  command: string,
+  opts: { outsideSandbox: boolean; safeInstall: boolean },
+): string {
+  const access = opts.outsideSandbox
+    ? 'It runs once outside the macOS sandbox with network access.'
+    : 'It may reach the network.'
+  const scan = opts.safeInstall
+    ? 'Socket Firewall (sfw) scans packages for known-malicious code.'
+    : 'Package scanning (Socket Firewall) is off in Settings, so packages run unscanned.'
+  return [
+    command.trim(),
+    '',
+    `This may download and run code from the network. ${access}`,
+    '',
+    scan,
+    '',
+    'Allow this command?',
+  ].join('\n')
+}
+
 /** True when macOS seatbelt is active and an approved shell command should bypass ASRT. */
 export function shellRequiresOutsideSandbox(
   command: string,

@@ -8,6 +8,7 @@ import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-file-open-worker-project'
 const SAMPLE_FILE = 'worker-sample.ts'
+const CSS_FILE = 'worker-sample.css'
 
 async function waitForWorkspace(): Promise<void> {
   await browser.waitUntil(
@@ -34,6 +35,11 @@ describe('Opening a code file does not surface worker error toasts', () => {
         '}',
         '',
       ].join('\n'),
+      'utf8',
+    )
+    writeFileSync(
+      join(workspaceRoot, CSS_FILE),
+      ['.panel {', '  display: flex;', '  color: var(--text-primary);', '}', ''].join('\n'),
       'utf8',
     )
     mkdirSync(join(process.cwd(), 'tests/e2e/screenshots'), { recursive: true })
@@ -70,6 +76,22 @@ describe('Opening a code file does not surface worker error toasts', () => {
 
     const toasts = await collectErrorToasts()
     await saveAppScreenshot('file-open-worker-no-error.png')
+    await expect(toasts).toEqual([])
+  })
+
+  it('shows a CSS file in Monaco with its language worker and no error toast', async () => {
+    const cssRow = await $(`.tree-row[title="${CSS_FILE}"]`)
+    await cssRow.waitForDisplayed({ timeout: 15_000 })
+    await cssRow.click()
+
+    const editor = await $('#file-viewer .monaco-editor')
+    await editor.waitForDisplayed({ timeout: 15_000 })
+    await $('#file-viewer .monaco-editor .view-line').waitForDisplayed({ timeout: 15_000 })
+
+    await browser.pause(3_000)
+
+    const toasts = await collectErrorToasts()
+    await saveAppScreenshot('file-open-css-worker-no-error.png')
     await expect(toasts).toEqual([])
   })
 })
