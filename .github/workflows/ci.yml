@@ -70,8 +70,46 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # Test oracle (scripts/test-oracle.mts) decides how much of the e2e tier this
+  # run needs. On a pull_request it maps the diff to the specs it can affect; on
+  # a push to main it always runs the full suite, so main is never gated on a
+  # partial map. The output drives the `e2e` job below:
+  #   mode=full    → all 8 shards run the whole CI suite (default / safe)
+  #   mode=subset  → only the listed specs run, on shard 1 (fast PR lane)
+  #   mode=skip    → nothing e2e-relevant changed; shards report green, no run
+  # subset is used only for confident, UI-coupled diffs; LOW-confidence (backend
+  # logic with no selector coupling) and broad changes fall back to full.
+  plan-e2e:
+    needs: lint
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      specs: ${{ steps.plan.outputs.specs }}
+    steps:
+      - uses: actions/checkout@v6.0.3
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - id: plan
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "Non-PR event (${{ github.event_name }}) -> full e2e suite"
+            { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # full clone already has base history; this is belt-and-suspenders.
+          git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || true
+          node scripts/test-oracle.mts --plan --base "$BASE_SHA" | tee plan.txt
+          grep -E '^(mode|specs)=' plan.txt >> "$GITHUB_OUTPUT"
+          { echo '### e2e oracle plan'; echo '```'; cat plan.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
   e2e:
-    needs: build
+    needs: [build, plan-e2e]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     # Split the seeded e2e suite (see wdio.ci.conf.ts) into parallel shards so the
@@ -111,12 +149,32 @@ jobs:
       # only a fresh xvfb+Electron launch does. Retry the entire shard, and wrap
       # each attempt in `timeout` so a wedged session is killed and retried
       # (a plain hang would otherwise never exit and stall the job).
-      - name: e2e shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }} (retry on flaky session startup)
+      # Oracle gate (see plan-e2e): `full` shards the whole suite; `subset` runs
+      # only the planned specs, concentrated on shard 1 so the other 7 shards
+      # stay idle (they skip this step and report green); `skip` runs nothing.
+      # Every shard still reports a status, so this composes with any required
+      # check without depending on an aggregate gate being merged first.
+      - name: e2e shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }} (oracle-gated, retry on flaky session startup)
+        if: >-
+          needs.plan-e2e.outputs.mode == 'full' ||
+          (needs.plan-e2e.outputs.mode == 'subset' && matrix.shard == 1)
         timeout-minutes: 26
+        env:
+          PLAN_MODE: ${{ needs.plan-e2e.outputs.mode }}
+          PLAN_SPECS: ${{ needs.plan-e2e.outputs.specs }}
         run: |
+          if [ "$PLAN_MODE" = "subset" ]; then
+            SHARD_ARGS=""
+            SPEC_ARGS=""
+            for s in $PLAN_SPECS; do SPEC_ARGS="$SPEC_ARGS --spec $s"; done
+            echo "oracle subset ($(echo $PLAN_SPECS | wc -w) spec(s)): $PLAN_SPECS"
+          else
+            SHARD_ARGS="--shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }}"
+            SPEC_ARGS=""
+          fi
           for attempt in 1 2 3; do
             echo "::group::e2e shard ${{ matrix.shard }} attempt $attempt"
-            if timeout -k 15 480 npm run test:e2e:ci -- --shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }}; then
+            if timeout -k 15 480 npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS; then
               echo "::endgroup::"
               exit 0
             fi

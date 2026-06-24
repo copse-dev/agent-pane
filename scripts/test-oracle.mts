@@ -32,6 +32,11 @@
  *   node scripts/test-oracle.mts --explain       # show why each spec was picked
  *   node scripts/test-oracle.mts --json          # machine-readable
  *   node scripts/test-oracle.mts --run e2e       # run the recommended e2e subset
+ *   node scripts/test-oracle.mts --plan          # CI plan (see .github/workflows/ci.yml)
+ *
+ * CI gating (.github/workflows/ci.yml `plan-e2e` job): on a pull_request the
+ * `--plan` output thins the e2e tier to the affected specs; a push to main
+ * always runs the full suite, so main is never gated on a partial map.
  */
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
@@ -86,6 +91,7 @@ Options:
   --files <a b…>   use an explicit file list instead of git
   --explain        show why each test was selected
   --json           machine-readable output
+  --plan           emit a CI plan (mode=/count=/specs=) for $GITHUB_OUTPUT
   --run <tier>     run the recommendation: e2e (default) | unit | all
   --help           show this help
 
@@ -97,11 +103,19 @@ type Args = {
   files: string[] | null
   explain: boolean
   json: boolean
+  plan: boolean
   run: 'e2e' | 'unit' | 'all' | null
 }
 
 function parseArgs(argv: string[]): Args {
-  const a: Args = { base: 'origin/main', files: null, explain: false, json: false, run: null }
+  const a: Args = {
+    base: 'origin/main',
+    files: null,
+    explain: false,
+    json: false,
+    plan: false,
+    run: null,
+  }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--help' || arg === '-h') {
@@ -110,6 +124,7 @@ function parseArgs(argv: string[]): Args {
     } else if (arg === '--base') a.base = argv[++i]!
     else if (arg === '--explain') a.explain = true
     else if (arg === '--json') a.json = true
+    else if (arg === '--plan') a.plan = true
     else if (arg === '--run') {
       const v = argv[i + 1]
       a.run = v === 'unit' || v === 'all' ? ((++i, v) as Args['run']) : 'e2e'
@@ -162,6 +177,47 @@ function read(rel: string): string {
   } catch {
     return ''
   }
+}
+
+/** Specs wdio.ci.conf.ts excludes from the CI gate (flaky/heavy/network). */
+function ciExcludedSpecs(): Set<string> {
+  const out = new Set<string>()
+  for (const m of read('wdio.ci.conf.ts').matchAll(/['"]\.\/(tests\/e2e\/[^'"]+\.e2e\.ts)['"]/g))
+    out.add(m[1]!)
+  return out
+}
+
+/**
+ * Emit a CI plan on stdout as `key=value` lines (ready for $GITHUB_OUTPUT):
+ *   mode=full|subset|skip   count=<n>   specs=<space-separated>
+ *
+ * Only specs the CI gate actually runs (minus wdio.ci.conf.ts excludes) are
+ * considered. `subset` runs just those; `full` runs the normal sharded suite;
+ * `skip` means nothing relevant to e2e changed. LOW confidence and broad
+ * changes both fall back to `full` so the gate never trusts a partial map.
+ * Big subsets (>half the runnable suite) also go full — not worth a partial run.
+ */
+function emitCiPlan(
+  broad: boolean,
+  confidence: string,
+  selectedE2e: string[],
+  allSpecs: string[],
+): void {
+  const excluded = ciExcludedSpecs()
+  const runnableAll = allSpecs.filter((s) => !excluded.has(s))
+  const runnable = selectedE2e.filter((s) => !excluded.has(s))
+  let mode: 'full' | 'subset' | 'skip'
+  let specs: string[] = []
+  if (broad || confidence === 'low') mode = 'full'
+  else if (runnable.length === 0) mode = 'skip'
+  else if (runnable.length > Math.ceil(runnableAll.length / 2)) mode = 'full'
+  else {
+    mode = 'subset'
+    specs = runnable
+  }
+  process.stdout.write(`mode=${mode}\n`)
+  process.stdout.write(`count=${mode === 'full' ? runnableAll.length : specs.length}\n`)
+  process.stdout.write(`specs=${specs.join(' ')}\n`)
 }
 
 // ── Selector vocabulary ──────────────────────────────────────────────────────
@@ -325,7 +381,13 @@ function main(): void {
       if (unitImports.get(t)!.has(f)) addReason(unitReasons, t, `imports ${f}`)
 
     // Selector vocabulary: which specs' selectors appear in this changed file?
-    const isSelectorHost = /\.(ts|tsx|css|html)$/.test(f) && f.startsWith('src/')
+    // Only shipped source — test files carry selector strings of their own that
+    // would otherwise pull in unrelated specs by coincidence.
+    const isSelectorHost =
+      /\.(ts|tsx|css|html)$/.test(f) &&
+      f.startsWith('src/') &&
+      !f.endsWith('.test.ts') &&
+      !f.endsWith('.e2e.ts')
     if (isSelectorHost) {
       const body = read(f)
       for (const s of specs) {
@@ -358,6 +420,11 @@ function main(): void {
       !broadHits.includes(f),
   )
   const confidence = broad ? 'broad' : unmapped.length ? 'low' : 'high'
+
+  if (args.plan) {
+    emitCiPlan(broad, confidence, selectedE2e, specs)
+    return
+  }
 
   if (args.json) {
     console.log(
