@@ -4,6 +4,7 @@ import '../../../tests/setup-dom-jsdom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  pendingHoldIndex,
   renderStreamingMarkdown,
   splitAtLastNewline,
   StreamingMarkdownRenderer,
@@ -75,6 +76,77 @@ describe('renderStreamingMarkdown', () => {
     const html = renderStreamingMarkdown('<script>alert(1)</script>\n')
     assert.doesNotMatch(html, /<script>/)
     assert.match(html, /&lt;script&gt;/)
+  })
+})
+
+describe('pendingHoldIndex (defer unresolved inline markup)', () => {
+  const visible = (s: string) => s.slice(0, pendingHoldIndex(s))
+
+  it('does not cut a line with no inline delimiters', () => {
+    assert.equal(pendingHoldIndex('plain text'), 'plain text'.length)
+  })
+
+  it('keeps fully resolved emphasis', () => {
+    assert.equal(pendingHoldIndex('**bold** done'), '**bold** done'.length)
+    assert.equal(pendingHoldIndex('**Recent commits:**'), '**Recent commits:**'.length)
+  })
+
+  it('holds an unclosed bold run and everything after it', () => {
+    assert.equal(visible('intro **bold'), 'intro ')
+    assert.equal(visible('**bold'), '')
+  })
+
+  it('holds a bare trailing delimiter run before its lookahead arrives', () => {
+    assert.equal(visible('intro **'), 'intro ')
+    assert.equal(visible('a *'), 'a ')
+  })
+
+  it('holds the nearest-opener case rather than mis-bolding the first run', () => {
+    // `**foo **bar baz**` resolves to `**foo <strong>bar baz</strong>`; until the
+    // first `**` closes we hold from it so we never show `<strong>foo </strong>`.
+    assert.equal(visible('**foo **bar baz**'), '')
+  })
+
+  it('holds a whitespace-flanked closer instead of pairing it', () => {
+    assert.equal(visible('**Recent commits **(all'), '')
+  })
+
+  it('does not treat underscores inside a word as emphasis', () => {
+    assert.equal(pendingHoldIndex('see some_long_identifier'), 'see some_long_identifier'.length)
+  })
+
+  it('does not hold a dangling closer with no opener', () => {
+    assert.equal(pendingHoldIndex('host**: value'), 'host**: value'.length)
+    assert.equal(pendingHoldIndex('2 ** 3 stays literal'), '2 ** 3 stays literal'.length)
+  })
+
+  it('holds an unclosed inline code span', () => {
+    assert.equal(visible('run `npm test'), 'run ')
+    assert.equal(pendingHoldIndex('run `npm test` now'), 'run `npm test` now'.length)
+  })
+
+  it('ignores emphasis delimiters inside a closed code span', () => {
+    assert.equal(pendingHoldIndex('use `a**b` here'), 'use `a**b` here'.length)
+  })
+})
+
+describe('renderStreamingMarkdown (holds unresolved bold)', () => {
+  it('never emits a half-open bold tag on the pending line', () => {
+    const html = renderStreamingMarkdown('done\nintro **bold text')
+    assert.doesNotMatch(html, /<strong>/)
+    assert.doesNotMatch(html, /\*\*/)
+    assert.match(html, /<span class="stream-pending">intro\s*<\/span>/)
+  })
+
+  it('does not mis-bold a whitespace-flanked closer mid-stream', () => {
+    const html = renderStreamingMarkdown('done\n**Recent commits **(all')
+    assert.doesNotMatch(html, /<strong>Recent commits/)
+    assert.doesNotMatch(html, /\*\*/)
+  })
+
+  it('reveals the bold once the closing delimiter arrives', () => {
+    const html = renderStreamingMarkdown('done\nintro **bold text**')
+    assert.match(html, /<strong>bold text<\/strong>/)
   })
 })
 
