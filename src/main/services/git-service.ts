@@ -5,8 +5,16 @@ import { runCommand } from './command-runner.ts'
 import { isGitAvailable } from './tool-availability.ts'
 import { detectLanguage } from './language.ts'
 import { parseGithubRepoSlug } from '@shared/git/github-link-steering.ts'
+import { appendCommitAttribution } from '@shared/git/commit-attribution.ts'
 import { imageMimeType } from '@shared/fs/image-path.ts'
-import type { GitChange, GitChangeStatus, GitFileDiff, GitStatusResult } from '@shared/types/git.ts'
+import {
+  DEFAULT_GIT_BRANCH,
+  type GitBranchInfo,
+  type GitChange,
+  type GitChangeStatus,
+  type GitFileDiff,
+  type GitStatusResult,
+} from '@shared/types/git.ts'
 
 async function runGit(
   args: string[],
@@ -301,6 +309,55 @@ export async function checkoutGitBranch(branch: string): Promise<void> {
   }
 }
 
+export async function getBranches(): Promise<GitBranchInfo[]> {
+  if (!getWorkspaceRoot()) return []
+  const { stdout, code } = await runGit([
+    'for-each-ref',
+    '--sort=-committerdate',
+    '--format=%(refname:short) %(committerdate:iso8601)',
+    'refs/heads',
+  ])
+  if (code !== 0) return []
+  const lines = stdout.trim().split('\n').filter(Boolean)
+  const branches: GitBranchInfo[] = []
+  for (const line of lines) {
+    // Format: "<branch> <date>" — date contains spaces, so split on first space
+    const spaceIndex = line.indexOf(' ')
+    if (spaceIndex === -1) continue
+    branches.push({
+      name: line.slice(0, spaceIndex),
+      lastCommitDate: line.slice(spaceIndex + 1),
+    })
+  }
+  return branches
+}
+
+/** Return the default branch name for the current repository. */
+export async function getDefaultBranch(): Promise<string | null> {
+  if (!getWorkspaceRoot()) return null
+
+  const { stdout: remoteStdout, code: remoteCode } = await runGit([
+    'remote',
+    'show',
+    'origin',
+    '-n',
+  ])
+  if (remoteCode === 0) {
+    const match = remoteStdout.match(/HEAD branch:\s*(.+)/m)
+    const remoteDefault = match?.[1]?.trim()
+    if (remoteDefault && !remoteDefault.startsWith('(')) return remoteDefault
+  }
+
+  const { stdout: configStdout, code: configCode } = await runGit([
+    'config',
+    '--get',
+    'init.defaultBranch',
+  ])
+  if (configCode === 0 && configStdout.trim()) return configStdout.trim()
+
+  return DEFAULT_GIT_BRANCH
+}
+
 export async function getGitFileDiff(path: string, staged: boolean): Promise<GitFileDiff | null> {
   if (!isGitAvailable() || !(await isInsideGitWorkTree())) return null
 
@@ -407,6 +464,33 @@ export async function getGitDiffText(path?: string, staged = false): Promise<str
   }
 
   return combined || '(no output)'
+}
+
+/**
+ * Create a commit, appending the Copse attribution trailer (co-author + the
+ * `models` that ran in this thread). Optionally stages all changes first.
+ * Local only — never pushes.
+ */
+export async function commitWithAttribution(
+  message: string,
+  models: string[],
+  stageAll: boolean,
+): Promise<string> {
+  if (!isGitAvailable()) return 'git is not available on this system.'
+  if (!getWorkspaceRoot()) return 'No workspace open.'
+
+  if (stageAll) {
+    const add = await runGit(['add', '-A'])
+    if (add.code !== 0) return add.stderr.trim() || `git add exited with code ${add.code}`
+  }
+
+  const fullMessage = appendCommitAttribution(message, models)
+  const { stdout, stderr, code } = await runGit(['commit', '-m', fullMessage])
+  if (code !== 0) {
+    // `git commit` reports "nothing to commit" and similar on stdout, not stderr.
+    return stderr.trim() || stdout.trim() || `git commit exited with code ${code}`
+  }
+  return stdout.trim() || '(committed)'
 }
 
 export async function getGitLogText(maxCount: number, path?: string): Promise<string> {

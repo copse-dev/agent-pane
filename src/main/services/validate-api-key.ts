@@ -1,4 +1,5 @@
 import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
+import { EXTRA_PROVIDERS, type ExtraProviderId } from '@shared/llm/extra-providers.ts'
 
 export interface ApiKeyValidationResult {
   ok: boolean
@@ -133,12 +134,51 @@ export async function validateOpenRouterApiKey(key: string): Promise<ApiKeyValid
   }
 }
 
+// Mistral, Gemini, and DeepSeek are OpenAI-compatible, so a GET on their
+// `/models` endpoint with the key as a Bearer token doubles as a free auth check.
+export async function validateExtraProviderApiKey(
+  providerId: ExtraProviderId,
+  key: string,
+): Promise<ApiKeyValidationResult> {
+  const provider = EXTRA_PROVIDERS[providerId]
+  const trimmed = key.trim()
+  if (!trimmed) return { ok: false, error: 'Key is empty' }
+  if (provider.keyPrefix && !trimmed.startsWith(provider.keyPrefix)) {
+    return { ok: false, error: `Key should start with ${provider.keyPrefix}`, formatOk: false }
+  }
+
+  try {
+    const res = await fetch(`${provider.baseUrl.replace(/\/$/, '')}/models`, {
+      headers: { Authorization: `Bearer ${trimmed}` },
+      signal: AbortSignal.timeout(FETCH_TIMEOUTS.apiKeyValidation),
+    })
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, error: `Key rejected by ${provider.label}`, formatOk: true }
+    }
+    if (!res.ok) {
+      return { ok: false, error: `${provider.label} returned HTTP ${res.status}`, formatOk: true }
+    }
+    return { ok: true, formatOk: true }
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : `Could not reach ${provider.label}`,
+      formatOk: true,
+    }
+  }
+}
+
+export type ValidatableProvider = 'anthropic' | 'openai' | 'cursor' | 'openrouter' | ExtraProviderId
+
 export async function validateApiKey(
-  provider: 'anthropic' | 'openai' | 'cursor' | 'openrouter',
+  provider: ValidatableProvider,
   key: string,
 ): Promise<ApiKeyValidationResult> {
   if (provider === 'anthropic') return validateAnthropicApiKey(key)
   if (provider === 'cursor') return validateCursorApiKey(key)
   if (provider === 'openrouter') return validateOpenRouterApiKey(key)
+  if (provider === 'mistral' || provider === 'gemini' || provider === 'deepseek') {
+    return validateExtraProviderApiKey(provider, key)
+  }
   return validateOpenAiApiKey(key)
 }

@@ -31,6 +31,7 @@ describe('footer branch status match', () => {
     await expect(branchBtn).toBeDisplayed()
     await expect(branchBtn).not.toHaveElementClass('is-mismatch')
     await expect(branchBtn.$('.footer-branch-label')).toHaveText(seed.currentBranch)
+    await expect(branchBtn.$('.branch-picker-chevron')).not.toBeDisplayed()
 
     const inputBar = await $('#input-bar')
     await inputBar.saveScreenshot(join(SCREENSHOT_DIR, 'footer-branch-match.png'))

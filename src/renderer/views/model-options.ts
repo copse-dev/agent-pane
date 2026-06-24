@@ -7,6 +7,17 @@ import {
   toOpenRouterModel,
 } from '@shared/llm/openrouter.ts'
 import {
+  EXTRA_PROVIDERS_LIST,
+  extraProviderDisplayLabel,
+  extraProviderForModel,
+  extraProviderModelId,
+  isExtraProviderModel,
+  toExtraProviderModel,
+  type ExtraProvider,
+} from '@shared/llm/extra-providers.ts'
+
+type AvailableProviders = Awaited<ReturnType<ApiClient['settings']['availableProviders']>>
+import {
   REMOTE_AGENT_MODELS,
   REMOTE_AGENT_MODEL_PREFIX,
   REMOTE_AGENT_PROVIDER_CURSOR,
@@ -26,6 +37,7 @@ export interface ModelOption {
 export function modelDisplayLabel(model: string): string {
   if (model.startsWith('lmstudio:')) return model.slice('lmstudio:'.length)
   if (isOpenRouterModel(model)) return openRouterDisplayLabel(model)
+  if (isExtraProviderModel(model)) return extraProviderDisplayLabel(model)
   const remoteProvider = parseRemoteAgentModel(model)
   if (remoteProvider) {
     return REMOTE_AGENT_MODELS.find((option) => option.provider === remoteProvider)?.label ?? model
@@ -92,10 +104,54 @@ async function openRouterOptions(
   return entries
 }
 
+// Curated, tool-capable models for a direct cloud provider (Mistral, Gemini,
+// DeepSeek). Unlike OpenRouter there is no live catalog, so the shortlist comes
+// from the registry; the currently-selected id is kept selectable even if it
+// isn't in the shortlist. When no key is configured we show a disabled hint.
+function extraProviderOptions(
+  provider: ExtraProvider,
+  available: boolean,
+  current: string,
+): ModelOption[] {
+  if (!available) {
+    return [
+      {
+        value: '',
+        label: `Add a ${provider.label} API key in Settings`,
+        group: provider.label,
+        disabled: true,
+      },
+    ]
+  }
+
+  const seen = new Set<string>()
+  const entries: ModelOption[] = []
+  const add = (id: string, label: string) => {
+    const value = toExtraProviderModel(provider.id, id)
+    if (!id || seen.has(value)) return
+    seen.add(value)
+    entries.push({ value, label, group: provider.label })
+  }
+
+  for (const model of provider.models) add(model.id, model.label)
+  if (extraProviderForModel(current) === provider) {
+    add(extraProviderModelId(current), modelDisplayLabel(current))
+  }
+  return entries
+}
+
 export async function fetchModelOptions(api: ApiClient, current: string): Promise<ModelOption[]> {
   const options: ModelOption[] = []
 
-  let available = { anthropic: true, openai: true, cursor: true, openrouter: true }
+  let available: AvailableProviders = {
+    anthropic: true,
+    openai: true,
+    cursor: true,
+    openrouter: true,
+    mistral: true,
+    gemini: true,
+    deepseek: true,
+  }
   try {
     available = await api.settings.availableProviders()
   } catch {
@@ -106,6 +162,10 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
   }
 
   options.push(...(await openRouterOptions(api, available.openrouter, current)))
+
+  for (const provider of EXTRA_PROVIDERS_LIST) {
+    options.push(...extraProviderOptions(provider, available[provider.id], current))
+  }
 
   const remoteGroup = 'Remote agents'
   for (const remote of REMOTE_AGENT_MODELS) {

@@ -26,11 +26,10 @@
   overflow-wrap: break-word;
   min-width: 0;
 }
-/* Tables with 4+ columns often put short index/status values on the edges. */
-.message-text:has(th:nth-child(4)) th:first-child,
-.message-text:has(th:nth-child(4)) td:first-child,
-.message-text:has(th:nth-child(4)) th:last-child,
-.message-text:has(th:nth-child(4)) td:last-child {
+/* Tables with 3+ columns: pin only the first column (PR/number) to 1%
+   so the last (content) column expands to fill remaining space. */
+.message-text:has(th:nth-child(3)) th:first-child,
+.message-text:has(th:nth-child(3)) td:first-child {
   width: 1%;
   white-space: nowrap;
 }

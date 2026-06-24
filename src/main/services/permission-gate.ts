@@ -43,6 +43,8 @@ import {
 } from './web-origin-policy.ts'
 import { formatUnsandboxedPromptBody } from './sandbox-failure.ts'
 import { getMcpToolMeta, isMcpToolRemembered, rememberMcpTool } from './mcp-registry.ts'
+import { CUSTOM_TOOL_PREFIX, customToolLabel } from './custom-tools-config.ts'
+import { isCustomToolRemembered, rememberCustomTool } from './custom-tools-registry.ts'
 
 export type { ShellPermissionDecision, PermissionCheck } from './permission-policy.ts'
 export { decideShellPermission } from './permission-policy.ts'
@@ -170,6 +172,23 @@ async function checkWebSearchPermission(): Promise<boolean> {
     decision.origin,
     `DuckDuckGo search is allowed by default through: ${DEFAULT_WEB_ALLOWED_ORIGINS.join(', ')}`,
   )
+}
+
+/**
+ * Custom tools run user-authored code in-process with full privilege, so a call
+ * always prompts unless the user remembered this exact tool — the same opt-in
+ * model as MCP tools (custom tools have no server-reported read-only hints).
+ */
+async function checkCustomToolPermission(toolName: string, args: unknown): Promise<boolean> {
+  if (isCustomToolRemembered(toolName)) return true
+  const { approved, remember } = await requestApproval({
+    title: `Custom tool: ${customToolLabel(toolName)}`,
+    body: JSON.stringify(args, null, 2),
+    type: 'mcp',
+    allowRemember: true,
+  })
+  if (approved && remember) await rememberCustomTool(toolName)
+  return approved
 }
 
 async function checkShellPermission(args: unknown): Promise<boolean> {
@@ -368,6 +387,10 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
 
   if (toolName.startsWith('mcp__')) {
     return checkMcpPermission(toolName, args)
+  }
+
+  if (toolName.startsWith(CUSTOM_TOOL_PREFIX)) {
+    return checkCustomToolPermission(toolName, args)
   }
 
   if (toolName === 'run_shell') {
