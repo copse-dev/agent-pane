@@ -5,7 +5,16 @@ import { $, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
-describe('explorer reload with spaced workspace path', () => {
+// This guards #268: on macOS with ASRT active, `fs:listDir` routes through the
+// seatbelt-wrapped `sandbox-fs-worker`, whose spawn broke when the workspace
+// path contained spaces. That sandbox path is darwin-only
+// (`isProjectSandboxEnabled`); on other platforms `fs:listDir` is a plain
+// `readdir`, so the spaced-path scenario exercises nothing it can regress and
+// only adds noise to the (Linux) CI e2e shard. Scope the suite to where the
+// behaviour under test actually runs.
+const describeSpacedExplorer = process.platform === 'darwin' ? describe : describe.skip
+
+describeSpacedExplorer('explorer reload with spaced workspace path', () => {
   let workspaceParent: string
   let workspaceRoot: string
 
