@@ -1,6 +1,7 @@
 import * as fsp from 'node:fs/promises'
 import { z } from 'zod'
 import type { ToolDefinition } from '@shared/types'
+import { computeLineDiffStats } from '@shared/diff/line-stats.ts'
 import { resolveWorkspacePath } from '../services/workspace.ts'
 import { getPendingAfterContent, applyOrStageDiff } from '../services/diff-queue.ts'
 import { detectLanguage } from '../services/language.ts'
@@ -60,6 +61,8 @@ export const strReplaceTool: ToolDefinition = {
     }
 
     const language = detectLanguage(path)
-    return applyOrStageDiff(path, before, after, language)
+    const editStats = computeLineDiffStats(before, after)
+    const result = await applyOrStageDiff(path, before, after, language)
+    return { result, editStats }
   },
 }

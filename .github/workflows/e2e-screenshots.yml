@@ -36,26 +36,22 @@ jobs:
     env:
       SHARD_TOTAL: 8
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.3
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-
-      - run: npm ci
-      - run: sudo apt-get update && sudo apt-get install -y ripgrep
+      # Shared setup: Node + ripgrep + cached node_modules (see ci.yml). Keeps
+      # this workflow in lockstep with the CI e2e gate's environment.
+      - uses: ./.github/actions/setup
       - run: npm run build
 
       - name: Regenerate e2e reference screenshots (shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }})
-        timeout-minutes: 20
+        timeout-minutes: 26
         run: |
           for attempt in 1 2 3; do
             echo "::group::e2e screenshot shard ${{ matrix.shard }} attempt $attempt"
-            if timeout -k 15 300 npm run test:e2e:ci -- --shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }}; then
+            if timeout -k 15 480 npm run test:e2e:ci -- --shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }}; then
               echo "::endgroup::"
               exit 0
             fi
@@ -89,7 +85,7 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.3
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0

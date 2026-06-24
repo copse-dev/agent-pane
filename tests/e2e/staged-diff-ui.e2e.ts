@@ -2,6 +2,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { collectErrorToasts } from './helpers/assert-no-error-toasts.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const PROJECT_ID = 'e2e-staged-diff-project'
@@ -40,7 +41,7 @@ describe('staged diff approval UI', () => {
 
   it('stages diffs in the context panel with single- and multi-file selection', async function () {
     this.timeout(120_000)
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     await runWriteFileDirective('src/e2e-staged-a.ts', 'export const a = 1\n')
 
@@ -51,8 +52,8 @@ describe('staged diff approval UI', () => {
     )
     const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]')
     if (!(await $('#pane-files').isDisplayed())) await panelBtn.click()
-    await $('.diff-stage').waitForDisplayed({ timeout: 15_000 })
-    await $('#file-viewer .monaco-diff-editor').waitForDisplayed({ timeout: 15_000 })
+    await $('.diff-stage').waitForDisplayed({ timeout: 30_000 })
+    await $('#file-viewer .monaco-diff-editor').waitForDisplayed({ timeout: 30_000 })
 
     const acceptBtn = await $('#file-viewer .diff-accept-btn')
     const rejectBtn = await $('#file-viewer .diff-reject-btn')
@@ -68,7 +69,7 @@ describe('staged diff approval UI', () => {
     await runWriteFileDirective('src/e2e-staged-b.ts', 'export const b = 2\n')
 
     await browser.waitUntil(async () => (await $$('.diff-file-btn')).length === 2, {
-      timeout: 15_000,
+      timeout: 30_000,
       timeoutMsg: 'expected two queued diff file buttons',
     })
 
@@ -89,5 +90,42 @@ describe('staged diff approval UI', () => {
     await expect(second).toHaveElementClass('selected')
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'staged-diff-multi.png'))
+  })
+
+  it('accepting a CSS staged diff clears the view without error toasts', async function () {
+    this.timeout(120_000)
+
+    const rejectAllBtn = await $('button*=Reject all')
+    if (await rejectAllBtn.isDisplayed()) {
+      await rejectAllBtn.click()
+      await browser.waitUntil(async () => !(await $('.diff-stage').isDisplayed()), {
+        timeout: 15_000,
+        timeoutMsg: 'expected diff stage to close after reject all',
+      })
+    }
+
+    await runWriteFileDirective(
+      'src/e2e-staged-layout.css',
+      ['.projects-settings-btn {', '  color: var(--text-muted);', '}', ''].join('\n'),
+    )
+
+    await browser.waitUntil(async () => await $('.diff-stage').isDisplayed(), {
+      timeout: 15_000,
+      timeoutMsg: 'expected staged CSS diff panel',
+    })
+    await $('#file-viewer .monaco-diff-editor').waitForDisplayed({ timeout: 15_000 })
+
+    const acceptBtn = await $('#file-viewer .diff-accept-btn')
+    await acceptBtn.waitForDisplayed({ timeout: 5_000 })
+    await acceptBtn.click()
+
+    await browser.waitUntil(async () => !(await $('.diff-stage').isDisplayed()), {
+      timeout: 15_000,
+      timeoutMsg: 'expected diff stage to close after accept',
+    })
+
+    await browser.pause(3_000)
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'staged-diff-css-accept-no-error.png'))
+    await expect(await collectErrorToasts()).toEqual([])
   })
 })

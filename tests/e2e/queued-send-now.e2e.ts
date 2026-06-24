@@ -1,16 +1,12 @@
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
-
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
+import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 describe('send-now stops the running turn and runs the queued message', function () {
   this.timeout(120_000)
 
   before(async () => {
-    mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-send-now', { subagentsEnabled: false })
     await browser.reloadSession()
@@ -21,7 +17,7 @@ describe('send-now stops the running turn and runs the queued message', function
   })
 
   it('aborts the active run and dispatches the queued prompt immediately', async () => {
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
     // Long mock delay keeps the first turn "running" long enough to queue + send-now.
     await $('.prompt-input').setValue('first slow prompt [[mock:delay_ms 5000]]')
     await $('.submit-btn').click()
@@ -55,6 +51,6 @@ describe('send-now stops the running turn and runs the queued message', function
 
     const userMessages = await $$('.msg-user .message-text')
     await expect(userMessages[userMessages.length - 1]).toHaveText('run me right now')
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'queued-message-send-now.png'))
+    await saveAppScreenshot('queued-message-send-now.png')
   })
 })

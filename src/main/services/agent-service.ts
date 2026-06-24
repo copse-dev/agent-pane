@@ -1,5 +1,5 @@
-import { BrowserWindow } from 'electron'
 import { runAgentLoop } from '@shared/agent/run-agent-loop.ts'
+import type { AgentHost } from '@shared/agent/agent-host.ts'
 import { AGENT_RUN_TIMEOUT_MS, DEFAULT_MAX_LLM_CALLS } from '@shared/agent/agent-loop-limits.ts'
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
@@ -95,21 +95,19 @@ export async function runAgent(
   threadId: string,
   userPrompt: UserContent,
   priorMessages: LLMMessage[],
-  mainWindow: BrowserWindow,
+  host: AgentHost,
   registry: ToolRegistry,
   options?: { invokedSkills?: string[]; priorTodos?: TodoItem[]; workingBrief?: string },
 ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> {
-  const sendChunk = (chunk: StreamChunk) => {
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('agent:chunk', threadId, chunk)
-    }
-  }
-
-  const remoteProvider = parseRemoteAgentModel(getSetting<string>('model', DEFAULT_APP_CHAT_MODEL))
+  const model = getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
+  const remoteProvider = parseRemoteAgentModel(model)
   if (remoteProvider) {
     const controller = new AbortController()
     abortMap.set(threadId, controller)
     const runTimeoutTimer = setTimeout(() => controller.abort(), AGENT_RUN_TIMEOUT_MS)
+    const sendChunk = (chunk: StreamChunk) => {
+      host.emit(threadId, chunk)
+    }
     try {
       const result = await runRemoteAgentFromSettings({
         threadId,
@@ -148,10 +146,12 @@ export async function runAgent(
   abortMap.set(threadId, controller)
   const runTimeoutTimer = setTimeout(() => controller.abort(), AGENT_RUN_TIMEOUT_MS)
 
+  const sendChunk = (chunk: StreamChunk) => {
+    host.emit(threadId, chunk)
+  }
+
   try {
     const invokedSkills = options?.invokedSkills ?? []
-
-    const model = getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
     const subagentsEnabled = getSetting<boolean>('subagentsEnabled', true)
     const contextWindow = await resolveContextWindow(model)
     const toolSchemaReserve = model === 'lm-studio' || model.startsWith('lmstudio:') ? 2_500 : 1_000
@@ -315,7 +315,7 @@ export async function runAgent(
               setExploreSubagentContext(null)
             }
           }
-          return registry.execute(name, args, signal)
+          return registry.executeNormalized(name, args, signal)
         },
         signal: controller.signal,
         maxContextTokens: contextWindow,

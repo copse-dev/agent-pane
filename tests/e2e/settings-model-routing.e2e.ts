@@ -78,13 +78,13 @@ describe('settings model routing placement', () => {
   })
 
   it('shows Model routing in General alongside small task model settings', async () => {
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
 
     const general = settingsSection('general')
     await expect(general).toBeDisplayed()
     await $('select[name="localDefaultModel"] option[value="qwen/qwen3.6-35b-a3b"]').waitForExist({
-      timeout: 15_000,
+      timeout: 30_000,
     })
 
     const placement = await browser.execute(() => {

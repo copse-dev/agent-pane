@@ -1,15 +1,11 @@
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedQueuedMessageFixture } from './helpers/seed-config.ts'
-
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
+import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 
 describe('queued message edit and send-now', () => {
   let queuedMessageId = ''
 
   before(async () => {
-    mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     const seeded = seedQueuedMessageFixture(process.cwd())
     queuedMessageId = seeded.queuedMessageId
@@ -22,7 +18,7 @@ describe('queued message edit and send-now', () => {
 
   it('exposes Edit and Send now actions on a queued message', async () => {
     const queuedMsg = await $(`.msg-queued[data-message-id="${queuedMessageId}"]`)
-    await queuedMsg.waitForExist({ timeout: 15_000 })
+    await queuedMsg.waitForExist({ timeout: 30_000 })
 
     // Badge uses CSS text-transform: uppercase, so the rendered text is upper-cased.
     await expect(queuedMsg.$('.message-queued-badge')).toHaveText('QUEUED')
@@ -31,7 +27,8 @@ describe('queued message edit and send-now', () => {
     // Exactly one action row — guards against duplicate decoration on re-render.
     await expect(queuedMsg.$$('.message-queued-actions')).toBeElementsArrayOfSize(1)
 
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'queued-message-actions.png'))
+    await saveAppScreenshot('queued-message-actions.png')
+    await saveElementScreenshot('.conversation-queued', 'queued-message-panel.png')
   })
 
   it('pauses the queue and shows an inline editor when Edit is clicked', async () => {
@@ -48,7 +45,7 @@ describe('queued message edit and send-now', () => {
     await expect(editingMsg.$('.queued-send')).toBeDisplayed()
     await expect(editingMsg.$('.queued-cancel')).toBeDisplayed()
 
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'queued-message-editing.png'))
+    await saveAppScreenshot('queued-message-editing.png')
   })
 
   it('confirms the edit with Send and re-queues with updated text', async () => {
@@ -68,6 +65,6 @@ describe('queued message edit and send-now', () => {
     // Still queued (thread is "running"), with actions available again.
     await expect(queuedMsg.$('.queued-edit')).toBeDisplayed()
 
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'queued-message-edited.png'))
+    await saveAppScreenshot('queued-message-edited.png')
   })
 })

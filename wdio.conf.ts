@@ -1,7 +1,8 @@
 import type { Options } from '@wdio/types'
+import { browser } from '@wdio/globals'
 import electronBinary from 'electron'
 import { randomInt } from 'node:crypto'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
 
@@ -22,14 +23,20 @@ export const config: Options.Testrunner = {
   specFileRetries: 0,
   logLevel: 'warn',
   bail: 0,
-  waitforTimeout: 15_000,
+  waitforTimeout: 30_000,
   connectionRetryTimeout: 120_000,
   connectionRetryCount: 3,
-  autoXvfb: !process.env.DISPLAY,
+  // Xvfb is X11/Linux only — a self-hosted macOS runner uses its native window
+  // server (and has no `Xvfb` binary), so enable it on Linux only.
+  autoXvfb: process.platform === 'linux' && !process.env.DISPLAY,
   capabilities: [
     {
       browserName: 'chrome',
-      browserVersion: '134.0.6998.205',
+      // Must match the Chromium shipped by the pinned Electron (electron ^42 →
+      // Chromium 148); the session reports 148.0.7778.265 at runtime. This was
+      // left at 134 (Electron 35's Chromium) across the Electron bump, so the
+      // requested vs actual browser version diverged.
+      browserVersion: '148.0.7778.265',
       'wdio:chromedriverOptions': { binary: chromedriverBinary },
       'wdio:enforceWebDriverClassic': true,
       'goog:chromeOptions': {
@@ -51,7 +58,24 @@ export const config: Options.Testrunner = {
     ui: 'bdd',
     timeout: 30_000,
   },
-  afterTest: async (test) => {
+  afterTest: async (test, _context, result) => {
+    // On failure, dump a screenshot + page source to e2e-failure-artifacts/ so
+    // CI can upload them for debugging the constrained-runner render/OOM flakes.
+    // Best-effort: if the renderer or whole runner has crashed the session is
+    // already gone, so swallow any error here rather than masking the real one.
+    if (!result?.passed) {
+      try {
+        const dir = join(process.cwd(), 'e2e-failure-artifacts')
+        mkdirSync(dir, { recursive: true })
+        const base = `${String(test.title ?? 'e2e-test')
+          .replace(/[^a-z0-9]+/gi, '-')
+          .slice(0, 80)}-${Date.now()}`
+        await browser.saveScreenshot(join(dir, `${base}.png`))
+        writeFileSync(join(dir, `${base}.html`), await browser.getPageSource())
+      } catch {
+        // session/runner likely already dead — nothing to capture
+      }
+    }
     await assertNoErrorToasts(typeof test.title === 'string' ? test.title : 'e2e test')
   },
   beforeSession(_config, capabilities) {

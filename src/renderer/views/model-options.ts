@@ -1,12 +1,20 @@
 import type { ApiClient } from '../../preload/api.d.ts'
 import { CLOUD_MODELS } from '@shared/llm/model-catalog.ts'
 import {
+  isOpenRouterModel,
+  openRouterDisplayLabel,
+  openRouterModelId,
+  toOpenRouterModel,
+} from '@shared/llm/openrouter.ts'
+import {
   REMOTE_AGENT_MODELS,
   REMOTE_AGENT_MODEL_PREFIX,
   REMOTE_AGENT_PROVIDER_CURSOR,
   parseRemoteAgentModel,
 } from '@shared/remote-agent.ts'
 import { clear } from '../dom/helpers.ts'
+
+const OPENROUTER_GROUP = 'OpenRouter'
 
 export interface ModelOption {
   value: string
@@ -17,6 +25,7 @@ export interface ModelOption {
 
 export function modelDisplayLabel(model: string): string {
   if (model.startsWith('lmstudio:')) return model.slice('lmstudio:'.length)
+  if (isOpenRouterModel(model)) return openRouterDisplayLabel(model)
   const remoteProvider = parseRemoteAgentModel(model)
   if (remoteProvider) {
     return REMOTE_AGENT_MODELS.find((option) => option.provider === remoteProvider)?.label ?? model
@@ -24,10 +33,69 @@ export function modelDisplayLabel(model: string): string {
   return model
 }
 
+// OpenRouter's free, tool-capable models fetched live from its catalog, plus any
+// custom id the user saved (or currently has selected — which may be a paid id).
+// When no key is configured we show a single disabled hint instead of fetching.
+async function openRouterOptions(
+  api: ApiClient,
+  available: boolean,
+  current: string,
+): Promise<ModelOption[]> {
+  if (!available) {
+    return [
+      {
+        value: '',
+        label: 'Add an OpenRouter API key in Settings',
+        group: OPENROUTER_GROUP,
+        disabled: true,
+      },
+    ]
+  }
+
+  let liveModels: Array<{ id: string; name: string }> = []
+  try {
+    liveModels = await api.openRouter.models()
+  } catch {
+    /* network error — fall through to custom/current only */
+  }
+
+  let customId = ''
+  try {
+    customId = (((await api.settings.get('openRouterModel')) as string | null) ?? '').trim()
+  } catch {
+    /* no custom model configured */
+  }
+
+  const seen = new Set<string>()
+  const entries: ModelOption[] = []
+  const add = (id: string, label: string) => {
+    const value = toOpenRouterModel(id)
+    if (!id || seen.has(value)) return
+    seen.add(value)
+    entries.push({ value, label, group: OPENROUTER_GROUP })
+  }
+
+  for (const model of liveModels) add(model.id, model.name || model.id)
+  if (customId) add(customId, `${customId} (custom)`)
+  if (isOpenRouterModel(current)) add(openRouterModelId(current), modelDisplayLabel(current))
+
+  if (entries.length === 0) {
+    return [
+      {
+        value: '',
+        label: 'No free tool-capable models found',
+        group: OPENROUTER_GROUP,
+        disabled: true,
+      },
+    ]
+  }
+  return entries
+}
+
 export async function fetchModelOptions(api: ApiClient, current: string): Promise<ModelOption[]> {
   const options: ModelOption[] = []
 
-  let available = { anthropic: true, openai: true, cursor: true }
+  let available = { anthropic: true, openai: true, cursor: true, openrouter: true }
   try {
     available = await api.settings.availableProviders()
   } catch {
@@ -36,6 +104,8 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
   for (const [value, label, provider] of CLOUD_MODELS) {
     if (available[provider]) options.push({ value, label })
   }
+
+  options.push(...(await openRouterOptions(api, available.openrouter, current)))
 
   const remoteGroup = 'Remote agents'
   for (const remote of REMOTE_AGENT_MODELS) {

@@ -112,6 +112,39 @@ export function seedEmptyProject(
   }
 }
 
+/**
+ * Project with a stored OpenRouter API key, a custom model, and a (test-only)
+ * `openRouterApiBase` pointing at a local fixture so the picker fetches a known
+ * free/tool-capable model list without hitting the real OpenRouter API. The key
+ * record matches the base64-plaintext shape `setApiKey` writes when OS secure
+ * storage is unavailable, which is all `hasApiKey` needs to report it set.
+ */
+export function seedOpenRouterFixture(workspaceRoot: string, options?: { apiBase?: string }): void {
+  const projectId = 'e2e-openrouter-project'
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [],
+    }),
+    'utf8',
+  )
+  writeSettings({
+    model: 'openrouter:qwen/qwen3-235b-a22b:free',
+    openRouterModel: 'anthropic/claude-3.5-sonnet',
+    ...(options?.apiBase ? { openRouterApiBase: options.apiBase } : {}),
+    apiKey: {
+      openrouter: {
+        v: 1,
+        enc: Buffer.from('sk-or-e2e-key', 'utf8').toString('base64'),
+        plain: true,
+      },
+    },
+  })
+}
+
 /** Tool args containing HTML-like strings that break innerHTML <pre> templates. */
 export const INNERHTML_TRAP_ARGS = {
   path: 'index.html',
@@ -144,6 +177,7 @@ export function seedInnerHtmlToolArgsFixture(workspaceRoot: string): void {
                   args: INNERHTML_TRAP_ARGS,
                   status: 'done',
                   result: 'Wrote index.html',
+                  editStats: { additions: 1, deletions: 0 },
                 },
               ],
               createdAt: Date.now(),
@@ -1506,6 +1540,49 @@ export function seedMarkdownBoldGlobFixture(workspaceRoot: string): void {
           messages: [
             {
               id: 'msg-assistant-bold-glob',
+              role: 'assistant',
+              content,
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
+/** PR-style draft table with narrow index/status columns and long branch names. */
+export function seedMarkdownTableWrapFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-markdown-table-wrap-project'
+  const threadId = 'e2e-markdown-table-wrap-thread'
+  const content = [
+    '### Draft (work in progress)',
+    '',
+    '| # | Title | Branch | Status |',
+    '| --- | --- | --- | --- |',
+    '| 296 | Screenshot validate: capture before/after tool-display grouping UI fix | `jkt/auto/queued-message-screenshot-eval-b2d1` | DRAFT |',
+    '| 294 | Fix markdown table column wrapping in chat messages | `jkt/auto/markdown-table-wrapping-8760` | DRAFT |',
+    '| 293 | Queued message composer badge polish | `jkt/auto/queued-message-badge` | DRAFT |',
+  ].join('\n')
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Open draft PRs',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-table-wrap',
               role: 'assistant',
               content,
               toolCalls: [],

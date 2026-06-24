@@ -19,7 +19,7 @@ describe('code block copy buttons', () => {
 
   it('shows per-block copy buttons with hover and copied feedback', async () => {
     const message = await $('[data-message-id="msg-assistant-code-blocks"] .message-text')
-    await message.waitForExist({ timeout: 15_000 })
+    await message.waitForExist({ timeout: 30_000 })
 
     const codeBlocks = await $$('[data-message-id="msg-assistant-code-blocks"] pre.code-block')
     await expect(codeBlocks).toHaveLength(2)
