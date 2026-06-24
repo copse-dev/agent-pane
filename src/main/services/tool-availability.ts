@@ -8,6 +8,18 @@ let gitAvail: boolean | null = null
 let ghAvail: boolean | null = null
 
 export async function checkToolAvailability(): Promise<void> {
+  // The e2e app relaunches Electron once per spec (~47×/full run); these probes
+  // run before the window opens on every launch. Under e2e, skip them: ripgrep
+  // and git are provisioned in the e2e environment, so assume them present (the
+  // git-changes and search specs rely on it), while gh and the indexed-grep /
+  // semantic-backend probes (a spawned codesearch binary) are unused by the
+  // seeded suite, so leave them off rather than spawning anything.
+  if (process.env.COPSE_E2E === '1') {
+    rgAvail = true
+    gitAvail = true
+    ghAvail = false
+    return
+  }
   rgAvail = await probe('rg', ['--version'])
   gitAvail = await probe('git', ['--version'])
   ghAvail = await probe('gh', ['--version'])

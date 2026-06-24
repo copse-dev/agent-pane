@@ -125,6 +125,41 @@ describe('buildProvider', () => {
       else process.env.COPSE_PANEL_MOCK_LLM = prevMock
     }
   })
+
+  it('fails fast for openrouter models when no OpenRouter key is configured', async () => {
+    const prevMock = process.env.COPSE_PANEL_MOCK_LLM
+    const prevKey = process.env.OPENROUTER_API_KEY
+    delete process.env.COPSE_PANEL_MOCK_LLM
+    delete process.env.OPENROUTER_API_KEY
+    try {
+      await assert.rejects(
+        () => buildProvider('openrouter:anthropic/claude-3.5-sonnet'),
+        /OpenRouter is not configured/,
+      )
+    } finally {
+      if (prevMock === undefined) delete process.env.COPSE_PANEL_MOCK_LLM
+      else process.env.COPSE_PANEL_MOCK_LLM = prevMock
+      if (prevKey === undefined) delete process.env.OPENROUTER_API_KEY
+      else process.env.OPENROUTER_API_KEY = prevKey
+    }
+  })
+
+  it('builds an OpenRouter provider from the env key', async () => {
+    const prevMock = process.env.COPSE_PANEL_MOCK_LLM
+    const prevKey = process.env.OPENROUTER_API_KEY
+    delete process.env.COPSE_PANEL_MOCK_LLM
+    process.env.OPENROUTER_API_KEY = 'sk-or-test'
+    try {
+      const provider = await buildProvider('openrouter:openai/gpt-4o')
+      assert.ok(provider)
+      assert.equal(typeof provider.stream, 'function')
+    } finally {
+      if (prevMock === undefined) delete process.env.COPSE_PANEL_MOCK_LLM
+      else process.env.COPSE_PANEL_MOCK_LLM = prevMock
+      if (prevKey === undefined) delete process.env.OPENROUTER_API_KEY
+      else process.env.OPENROUTER_API_KEY = prevKey
+    }
+  })
 })
 
 describe('testLmStudio', () => {
