@@ -76,6 +76,7 @@ export interface CuratedMcpServer {
 
   // http
   url?: string
+  headers?: Record<string, string>
 }
 
 /** A curated catalog entry joined with its enabled flag and live connection state. */

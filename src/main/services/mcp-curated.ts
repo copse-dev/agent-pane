@@ -25,10 +25,14 @@ export const CURATED_MCP_SERVERS: readonly CuratedMcpServer[] = [
     name: 'mdn',
     title: 'MDN Web Docs',
     description:
-      "Search MDN's documentation and browser-compatibility data for accurate, up-to-date answers about HTML, CSS, JavaScript, and web platform APIs.",
+      "Search MDN's documentation and browser-compatibility data for accurate, up-to-date answers about HTML, CSS, JavaScript, and web platform APIs. Experimental Mozilla service; we send their first-party analytics opt-out header, but queries (which may include code you share with the agent) still reach Mozilla.",
     homepage: 'https://developer.mozilla.org/en-US/mcp',
     transport: 'http',
     url: 'https://mcp.mdn.mozilla.net/',
+    // MDN's MCP server logs received queries while experimental. This header opts
+    // out of Mozilla's first-party analytics so a "Copse reviewed" server is
+    // privacy-respecting by default. See https://github.com/mdn/mcp.
+    headers: { 'X-Moz-1st-Party-Data-Opt-Out': '1' },
   },
 ]
 
@@ -66,6 +70,7 @@ function curatedToConfig(entry: CuratedMcpServer): McpServerConfig {
     ...(entry.command !== undefined ? { command: entry.command } : {}),
     ...(entry.args !== undefined ? { args: entry.args } : {}),
     ...(entry.url !== undefined ? { url: entry.url } : {}),
+    ...(entry.headers !== undefined ? { headers: entry.headers } : {}),
   }
 }
 

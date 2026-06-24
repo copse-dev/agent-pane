@@ -26,6 +26,17 @@ describe('curated MCP catalog', () => {
     assert.equal(mdn!.url, 'https://mcp.mdn.mozilla.net/')
   })
 
+  it('sends the Mozilla analytics opt-out header for MDN by default', () => {
+    const mdn = CURATED_MCP_SERVERS.find((s) => s.name === 'mdn')!
+    assert.equal(mdn.headers?.['X-Moz-1st-Party-Data-Opt-Out'], '1')
+  })
+
+  it('propagates curated headers into the built config', async () => {
+    await setCuratedServerEnabled('mdn', true)
+    const config = getEnabledCuratedConfigs().find((c) => c.name === 'mdn')!
+    assert.equal(config.headers?.['X-Moz-1st-Party-Data-Opt-Out'], '1')
+  })
+
   it('curated servers are off by default', () => {
     assert.equal(getEnabledCuratedServerNames().size, 0)
     assert.deepEqual(getEnabledCuratedConfigs(), [])
