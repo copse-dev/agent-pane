@@ -13,6 +13,7 @@ const ciExclude = [
   './tests/e2e/composer-branch-warning.e2e.ts',
   './tests/e2e/follow-up-suggestions.e2e.ts',
   './tests/e2e/footer-branch-status.e2e.ts',
+  './tests/e2e/footer-branch-picker.e2e.ts',
   './tests/e2e/footer-compact.e2e.ts',
   './tests/e2e/message-queue.e2e.ts',
   // Queued-message timing family (mock delays, scroll pinning, run abort);

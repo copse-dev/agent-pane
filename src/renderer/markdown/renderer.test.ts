@@ -185,6 +185,20 @@ describe('renderMarkdown', () => {
     assert.match(html, /<td>2<\/td>/)
   })
 
+  it('renders 3-column tables with PR/branch/description layout', () => {
+    const html = renderMarkdown(
+      '| PR | Branch | Description |\n|----|--------|-------------|\n| #11 | `jkt/vendor` | Vendor visual-plan. 18 files, +2,315 lines. |\n| #10 | `jkt/okf` | On-device retrieval. 26 files, +5,604 lines. |',
+    )
+    assert.match(html, /<table>/)
+    assert.match(html, /<th>PR<\/th>/)
+    assert.match(html, /<th>Branch<\/th>/)
+    assert.match(html, /<th>Description<\/th>/)
+    assert.match(html, /<td>#11<\/td>/)
+    assert.match(html, /<td>#10<\/td>/)
+    assert.match(html, /<td>Vendor visual-plan\./)
+    assert.match(html, /<td>On-device retrieval\./)
+  })
+
   it('renders thematic breaks as horizontal rules', () => {
     const html = renderMarkdown('Above\n\n---\n\nBelow')
     assert.match(html, /<hr>/)

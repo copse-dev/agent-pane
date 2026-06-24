@@ -2,9 +2,24 @@ import type { StreamChunk, UsageDelta, ContextBreakdown } from '@shared/types'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import type { CursorHookSummary } from '@shared/types/cursor-hooks.ts'
-import type { GitFileDiff, GitStatusResult, GitBranchStatus } from '@shared/types/git.ts'
+import type {
+  GitFileDiff,
+  GitStatusResult,
+  GitBranchStatus,
+  GitBranchInfo,
+} from '@shared/types/git.ts'
 import type { McpServerStatus } from '@shared/types/mcp.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
+
+/** Cloud providers with a user-supplied API key (everything but local LM Studio). */
+export type ApiKeyProvider =
+  | 'anthropic'
+  | 'openai'
+  | 'cursor'
+  | 'openrouter'
+  | 'mistral'
+  | 'gemini'
+  | 'deepseek'
 
 export interface ApiClient {
   workspace: {
@@ -124,6 +139,7 @@ export interface ApiClient {
   }
   menu: {
     onSettings: (handler: () => void) => () => void
+    onNewThread: (handler: () => void) => () => void
     onTogglePanel: (handler: () => void) => () => void
     onShowExplorer: (handler: () => void) => () => void
     onShowTerminal: (handler: () => void) => () => void
@@ -143,21 +159,19 @@ export interface ApiClient {
       webAllowedOrigins: string[]
       webAllowUserApproval: boolean
     }) => Promise<void>
-    getKey: (
-      provider: 'anthropic' | 'openai' | 'lmstudio' | 'cursor' | 'openrouter',
-    ) => Promise<boolean>
-    setKey: (
-      provider: 'anthropic' | 'openai' | 'lmstudio' | 'cursor' | 'openrouter',
-      key: string,
-    ) => Promise<void>
+    getKey: (provider: ApiKeyProvider | 'lmstudio') => Promise<boolean>
+    setKey: (provider: ApiKeyProvider | 'lmstudio', key: string) => Promise<void>
     availableProviders: () => Promise<{
       anthropic: boolean
       openai: boolean
       cursor: boolean
       openrouter: boolean
+      mistral: boolean
+      gemini: boolean
+      deepseek: boolean
     }>
     validateKey: (
-      provider: 'anthropic' | 'openai' | 'cursor' | 'openrouter',
+      provider: ApiKeyProvider,
       key: string,
     ) => Promise<{ ok: boolean; error?: string; formatOk?: boolean }>
   }
@@ -191,6 +205,8 @@ export interface ApiClient {
     fileDiff: (path: string, staged: boolean) => Promise<GitFileDiff | null>
     branchStatus: (forBranch?: string) => Promise<GitBranchStatus>
     checkoutBranch: (branch: string) => Promise<void>
+    listBranches: () => Promise<GitBranchInfo[]>
+    getDefaultBranch: () => Promise<string | null>
   }
   shell: {
     openExternal: (url: string) => Promise<void>

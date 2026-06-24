@@ -155,6 +155,11 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('menu:settings', listener)
       return () => ipcRenderer.off('menu:settings', listener)
     },
+    onNewThread: (handler: () => void) => {
+      const listener = () => handler()
+      ipcRenderer.on('menu:newThread', listener)
+      return () => ipcRenderer.off('menu:newThread', listener)
+    },
     onTogglePanel: (handler: () => void) => {
       const listener = () => handler()
       ipcRenderer.on('menu:togglePanel', listener)
@@ -200,12 +205,10 @@ contextBridge.exposeInMainWorld('api', {
       webAllowedOrigins: string[]
       webAllowUserApproval: boolean
     }) => ipcRenderer.invoke('settings:setSecurity', prefs),
-    getKey: (provider: 'anthropic' | 'openai' | 'lmstudio' | 'cursor') =>
-      ipcRenderer.invoke('settings:getKey', provider),
-    setKey: (provider: 'anthropic' | 'openai' | 'lmstudio' | 'cursor', key: string) =>
-      ipcRenderer.invoke('settings:setKey', provider, key),
+    getKey: (provider: string) => ipcRenderer.invoke('settings:getKey', provider),
+    setKey: (provider: string, key: string) => ipcRenderer.invoke('settings:setKey', provider, key),
     availableProviders: () => ipcRenderer.invoke('settings:availableProviders'),
-    validateKey: (provider: 'anthropic' | 'openai' | 'cursor', key: string) =>
+    validateKey: (provider: string, key: string) =>
       ipcRenderer.invoke('settings:validateKey', provider, key),
   },
   appIcon: {
@@ -251,6 +254,8 @@ contextBridge.exposeInMainWorld('api', {
     fileDiff: (path: string, staged: boolean) => ipcRenderer.invoke('git:fileDiff', path, staged),
     branchStatus: (forBranch?: string) => ipcRenderer.invoke('git:branchStatus', forBranch),
     checkoutBranch: (branch: string) => ipcRenderer.invoke('git:checkoutBranch', branch),
+    listBranches: () => ipcRenderer.invoke('git:listBranches'),
+    getDefaultBranch: () => ipcRenderer.invoke('git:getDefaultBranch'),
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),

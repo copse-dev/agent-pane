@@ -439,7 +439,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   overlayEl = overlay
 
   const apiKeysSection = createApiKeysSection(api, {
-    providers: ['anthropic', 'openai', 'openrouter'],
+    providers: ['anthropic', 'openai', 'openrouter', 'mistral', 'gemini', 'deepseek'],
   })
   overlay.querySelector('#settings-api-keys-host')!.append(apiKeysSection.root)
 

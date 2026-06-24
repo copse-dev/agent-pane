@@ -5,7 +5,7 @@ import {
   createSearchCodebaseTool,
   createSemanticSearchTool,
 } from '../tools/search-codebase-tool.ts'
-import { gitStatusTool, gitDiffTool, gitLogTool } from '../tools/git-tools.ts'
+import { gitStatusTool, gitDiffTool, gitLogTool, gitCommitTool } from '../tools/git-tools.ts'
 import { ghPrListTool, ghPrViewTool } from '../tools/gh-tools.ts'
 import {
   getCiStatusTool,
@@ -44,6 +44,7 @@ export function createRegistry(): ToolRegistry {
   registry.register(gitStatusTool)
   registry.register(gitDiffTool)
   registry.register(gitLogTool)
+  registry.register(gitCommitTool)
   registry.register(ghPrListTool)
   registry.register(ghPrViewTool)
   registry.register(getCiStatusTool)

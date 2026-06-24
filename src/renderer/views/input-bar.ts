@@ -114,7 +114,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       updateFooter()
     },
   )
-  const destroyBranchStatus = mountFooterBranchStatus(branchHost, store, api)
+  const branchControl = mountFooterBranchStatus(branchHost, store, api)
 
   exportBtn.addEventListener('click', () => {
     const thread = getActiveThread(store)
@@ -646,6 +646,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       // Model / subagent changes alter the context window and tool set.
       scheduleContextEstimate(0)
     }),
+    store.on('workspace_changed', () => branchControl.refresh()),
+    store.on('git_branch_changed', () => branchControl.refresh()),
   ]
 
   const observer = new MutationObserver(() => {
@@ -673,7 +675,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     modelPicker.destroy()
     footerOverflow.destroy()
     footerCompact.destroy()
-    destroyBranchStatus()
+    branchControl.destroy()
     skillPicker()
   }
 }
