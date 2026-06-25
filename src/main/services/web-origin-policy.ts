@@ -231,24 +231,13 @@ export async function fetchWithWebOriginPolicy(
   for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount += 1) {
     assertLowRiskHost(url.hostname)
     assertWebOriginAllowed(url, allowedOrigins)
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), WEB_FETCH_TIMEOUT_MS)
-    const parentSignal = init.signal
-    const abortFromParent = () => controller.abort()
-    try {
-      if (parentSignal) {
-        if (parentSignal.aborted) controller.abort()
-        else parentSignal.addEventListener('abort', abortFromParent, { once: true })
-      }
-      const res = await fetch(url, { ...init, signal: controller.signal, redirect: 'manual' })
-      if (res.status < 300 || res.status >= 400) return res
-      const location = res.headers.get('location')
-      if (!location) return res
-      url = new URL(location, url)
-    } finally {
-      clearTimeout(timeout)
-      parentSignal?.removeEventListener('abort', abortFromParent)
-    }
+    const timeout = AbortSignal.timeout(WEB_FETCH_TIMEOUT_MS)
+    const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout
+    const res = await fetch(url, { ...init, signal, redirect: 'manual' })
+    if (res.status < 300 || res.status >= 400) return res
+    const location = res.headers.get('location')
+    if (!location) return res
+    url = new URL(location, url)
   }
   throw new Error(`Fetch exceeded ${MAX_REDIRECTS} redirects: ${initialUrl.toString()}`)
 }
