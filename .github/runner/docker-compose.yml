@@ -1,0 +1,29 @@
+# Spin up N identical Linux e2e runners on whatever host this is:
+#
+#   cd .github/runner
+#   cp .env.example .env          # fill in GITHUB_URL + ACCESS_TOKEN
+#   docker compose up -d --build --scale runner=3
+#
+# Works unchanged on Linux, macOS (Docker Desktop/OrbStack/Colima), and Windows
+# (Docker Desktop in Linux-containers mode). Scale `runner` to your core/RAM
+# budget — see the memory notes below.
+services:
+  runner:
+    build:
+      context: .
+    image: copse-ci-runner:latest
+    # Ephemeral runners exit after each job; `always` restarts a fresh, clean
+    # container that re-registers. Gives you per-job isolation for free.
+    restart: always
+    env_file: .env
+    environment:
+      EPHEMERAL: "true"
+    init: true              # PID 1 reaps stray electron/chromedriver children
+    # Chromium-under-Xvfb is memory-hungry and the suite OOM'd historically on a
+    # 7GB box (see wdio.ci.conf.ts quarantines). Cap per-runner memory so one
+    # shard can't take the whole host down, and budget ~4-6 GB per concurrent
+    # runner. Tune to your hardware.
+    mem_limit: 6g
+    # A roomy /dev/shm avoids Chromium shm crashes; the wdio config also passes
+    # --disable-dev-shm-usage as a fallback, so this is defense-in-depth.
+    shm_size: "2gb"
