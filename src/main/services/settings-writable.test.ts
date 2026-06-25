@@ -58,6 +58,40 @@ describe('settings-writable', () => {
     assert.equal('cursorHooksEnabled' in parsed, false)
   })
 
+  it('accepts safe remoteAgentBaseUrl values', () => {
+    assert.equal(
+      parseRendererWritableSetting('remoteAgentBaseUrl', ''),
+      '',
+      'empty string means use the provider default',
+    )
+    for (const value of [
+      'https://api.cursor.com',
+      'https://example.com',
+      'http://localhost:3000',
+      'http://127.0.0.1:8080',
+    ]) {
+      assert.equal(
+        typeof parseRendererWritableSetting('remoteAgentBaseUrl', value),
+        'string',
+        `expected ${value} to be accepted`,
+      )
+    }
+  })
+
+  it('rejects unsafe remoteAgentBaseUrl values', () => {
+    for (const value of [
+      'http://evil.example',
+      'https://user:pass@evil.example',
+      'ftp://x',
+      'not a url',
+    ]) {
+      assert.throws(
+        () => parseRendererWritableSetting('remoteAgentBaseUrl', value),
+        `expected ${value} to be rejected`,
+      )
+    }
+  })
+
   it('rejects malformed web origins in the security bundle', () => {
     assert.throws(() =>
       securitySettingsSchema.parse({

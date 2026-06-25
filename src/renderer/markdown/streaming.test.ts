@@ -77,6 +77,16 @@ describe('renderStreamingMarkdown', () => {
     assert.doesNotMatch(html, /<script>/)
     assert.match(html, /&lt;script&gt;/)
   })
+
+  it('sanitizes a dangerous element emitted on the pending line (L3 defense-in-depth)', () => {
+    // The renderer re-emits <img> for artifact tags; that element is not in the
+    // DOMPurify allowlist, so the pending fragment must be stripped of it rather
+    // than written to innerHTML verbatim.
+    const html = renderStreamingMarkdown('done\n<img src="artifacts/x.png" onerror="alert(1)">')
+    assert.match(html, /<span class="stream-pending">/)
+    assert.doesNotMatch(html, /<img/)
+    assert.doesNotMatch(html, /onerror/)
+  })
 })
 
 describe('pendingHoldIndex (defer unresolved inline markup)', () => {
@@ -202,6 +212,16 @@ describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
     assert.equal(host.querySelectorAll('img').length, 0)
     const pending = host.querySelector('.stream-pending') as HTMLElement
     assert.equal(pending.textContent, '<img src=x onerror=alert(1)>')
+  })
+
+  it('sanitizes a dangerous element on the live tail before innerHTML (L3)', () => {
+    const host = document.createElement('div')
+    const r = new StreamingMarkdownRenderer(host)
+    r.update('done\n<img src="artifacts/x.png" onerror="alert(1)">')
+    assert.equal(host.querySelectorAll('img').length, 0)
+    const pending = host.querySelector('.stream-pending') as HTMLElement
+    assert.doesNotMatch(pending.innerHTML, /<img/)
+    assert.doesNotMatch(pending.innerHTML, /onerror/)
   })
 
   it('hides the pending span when the tail is empty', () => {
