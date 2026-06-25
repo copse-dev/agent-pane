@@ -32,6 +32,11 @@
   padding: var(--spacing-md);
   background: var(--bg-base);
   font-family: inherit;
+  /* Grow with the typed content instead of staying a fixed 3 rows — no JS
+     scrollHeight measuring. The `rows` attribute is the floor; cap the growth
+     so a long paste scrolls internally rather than eating the conversation. */
+  field-sizing: content;
+  max-height: 40vh;
 }
 .input-row {
   position: relative;
