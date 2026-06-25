@@ -53,3 +53,51 @@
 .mcp-trust-banner button {
   flex: none;
 }
+
+.mcp-curated-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+}
+.mcp-curated-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-sm);
+}
+.mcp-curated-row .mcp-server-toggle {
+  margin-top: 2px;
+}
+.mcp-curated-body {
+  flex: 1;
+  min-width: 0;
+}
+.mcp-curated-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  font-weight: 600;
+}
+.mcp-curated-link {
+  font-size: 11px;
+  font-weight: 400;
+}
+.mcp-curated-desc {
+  margin-top: 2px;
+  color: var(--text-muted);
+  word-break: break-word;
+}
+.mcp-curated-status {
+  margin-top: 4px;
+  font-size: 11px;
+  word-break: break-word;
+}
+.mcp-curated-row.mcp-state-connected .mcp-curated-status {
+  color: var(--success);
+}
+.mcp-curated-row.mcp-state-error .mcp-curated-status {
+  color: var(--error);
+}
