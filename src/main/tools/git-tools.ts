@@ -1,7 +1,13 @@
 import { z } from 'zod'
 import type { ToolDefinition } from '@shared/types'
-import { getGitDiffText, getGitLogText, getGitStatusText } from '../services/git-service.ts'
+import {
+  commitWithAttribution,
+  getGitDiffText,
+  getGitLogText,
+  getGitStatusText,
+} from '../services/git-service.ts'
 import { resolveWorkspacePath } from '../services/workspace.ts'
+import { getActiveRunThread, getThreadModels } from '../services/thread-models.ts'
 
 /** Reject paths that escape the workspace (absolute, `..`, symlink-out) before handing them to git. */
 function validateGitPath(path: string | undefined): { ok: true } | { ok: false; error: string } {
@@ -39,6 +45,32 @@ export const gitDiffTool: ToolDefinition = {
     const valid = validateGitPath(path)
     if (!valid.ok) return valid.error
     return getGitDiffText(path, staged)
+  },
+}
+
+export const gitCommitTool: ToolDefinition = {
+  name: 'git_commit',
+  description:
+    'Create a git commit. Copse automatically appends a "Co-Authored-By: Copse" trailer and a "Copse-Models" line naming the model(s) used in this thread — prefer this over `run_shell git commit` so attribution is added reliably. Local only; it never pushes.',
+  parameters: z.object({
+    message: z
+      .string()
+      .min(1)
+      .describe(
+        'Commit message. First line is the subject; add body paragraphs after a blank line.',
+      ),
+    stage_all: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe(
+        'Run `git add -A` to stage all changes before committing. Omit to commit only what is already staged.',
+      ),
+  }),
+  execute: async ({ message, stage_all }) => {
+    const threadId = getActiveRunThread()
+    const models = threadId ? getThreadModels(threadId) : []
+    return commitWithAttribution(message, models, stage_all)
   },
 }
 

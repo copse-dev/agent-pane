@@ -15,7 +15,7 @@ npm install
 npm run dev
 ```
 
-Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for cloud models, add an `OPENROUTER_API_KEY` (Settings → API Keys) to reach Claude, GPT, Gemini, Llama and more through [OpenRouter](https://openrouter.ai), or configure a local provider in Settings. Without keys, the app falls back to a built-in mock LLM for development.
+Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for cloud models, add an `OPENROUTER_API_KEY` (Settings → API Keys) to reach Claude, GPT, Gemini, Llama and more through [OpenRouter](https://openrouter.ai), or configure a local provider in Settings. For cheap/free tiers you can also add a `MISTRAL_API_KEY` (Mistral's free Experiment tier), `GEMINI_API_KEY` (Google's free-tier Gemini Flash models), or `DEEPSEEK_API_KEY` (low-cost DeepSeek) — each appears as its own group in the model picker. Without keys, the app falls back to a built-in mock LLM for development.
 
 ## Commands
 
@@ -50,6 +50,30 @@ Path alias `@shared/*` maps to `src/shared/*` (see tsconfig).
 ## MCP servers
 
 The agent is an MCP (Model Context Protocol) host and ships with no servers connected. Add them in `.cursor/mcp.json` / `.mcp.json` (project) or `~/.cursor/mcp.json` (global), using the standard `mcpServers` format (same as Cursor / Claude Desktop); reference secrets with `${env:VAR}`. See [`mcp.json.example`](./mcp.json.example) for optional MCP servers. Status, reload, and approval settings live under **Settings → MCP servers**.
+
+## Custom tools
+
+For a one-off capability that doesn't justify standing up a whole MCP server, drop
+an in-process **custom tool** into `<userData>/tools/` (`*.js` / `*.mjs` / `*.cjs`).
+Each module default-exports a tool object (or an array, or a factory returning
+either):
+
+```js
+export default {
+  name: 'lookup_user',
+  description: 'Look up a user by id',
+  inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+  async execute({ id }) {
+    return `user ${id}`
+  },
+}
+```
+
+They register into the same tool registry as built-in and MCP tools (namespaced
+`custom__<name>`) and **always prompt for approval** before running, since they
+execute with full Node privilege. They are loaded **only** from the user's trusted
+directory — never from the workspace, so a cloned repo can't inject one. See
+[`docs/custom-tools.md`](./docs/custom-tools.md).
 
 ## Semantic search
 

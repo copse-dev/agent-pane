@@ -2,7 +2,11 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { syncThreadGitBranchIfChanged } from '@shared/git/sync-thread-branch.ts'
 
-/** After a successful shell command, rebind the thread if HEAD moved. */
+/**
+ * Rebind the thread if HEAD moved. Callers gate this on the foreground thread
+ * running a branch-changing command (see `shellCommandMayChangeBranch`); here we
+ * read the resulting branch from HEAD so `-b`/`switch -c`/detached all resolve.
+ */
 export async function syncThreadGitBranchAfterShell(
   store: AppStore,
   api: ApiClient,
