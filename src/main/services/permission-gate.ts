@@ -44,7 +44,11 @@ import {
 import { formatUnsandboxedPromptBody } from './sandbox-failure.ts'
 import { getMcpToolMeta, isMcpToolRemembered, rememberMcpTool } from './mcp-registry.ts'
 import { CUSTOM_TOOL_PREFIX, customToolLabel } from './custom-tools-config.ts'
-import { isCustomToolRemembered, rememberCustomTool } from './custom-tools-registry.ts'
+import {
+  customToolRequiresApproval,
+  isCustomToolRemembered,
+  rememberCustomTool,
+} from './custom-tools-registry.ts'
 
 export type { ShellPermissionDecision, PermissionCheck } from './permission-policy.ts'
 export { decideShellPermission } from './permission-policy.ts'
@@ -178,16 +182,21 @@ async function checkWebSearchPermission(): Promise<boolean> {
  * Custom tools run user-authored code in-process with full privilege, so a call
  * always prompts unless the user remembered this exact tool — the same opt-in
  * model as MCP tools (custom tools have no server-reported read-only hints).
+ *
+ * A tool that declared `requiresApproval: true` opts out of remembering: it
+ * always prompts, so a remembered grant is ignored for those tools.
  */
 async function checkCustomToolPermission(toolName: string, args: unknown): Promise<boolean> {
-  if (isCustomToolRemembered(toolName)) return true
+  const alwaysPrompt = customToolRequiresApproval(toolName)
+  if (!alwaysPrompt && isCustomToolRemembered(toolName)) return true
   const { approved, remember } = await requestApproval({
     title: `Custom tool: ${customToolLabel(toolName)}`,
     body: JSON.stringify(args, null, 2),
     type: 'mcp',
-    allowRemember: true,
+    // No "remember" for always-prompt tools: a saved grant would never be honored.
+    allowRemember: !alwaysPrompt,
   })
-  if (approved && remember) await rememberCustomTool(toolName)
+  if (approved && remember && !alwaysPrompt) await rememberCustomTool(toolName)
   return approved
 }
 
