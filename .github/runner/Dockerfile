@@ -10,11 +10,18 @@
 # CI device. Multi-arch: builds for the host's native arch (linux/amd64 on
 # Intel, linux/arm64 on Apple Silicon); both Electron and the runner agent
 # ship both.
-
-FROM node:22-bookworm
+#
+# Base is Ubuntu 24.04 to MATCH the GitHub-hosted `ubuntu-latest` CI runner
+# (glibc 2.39). The vendored `codesearch` binary (and other prebuilts) are
+# built against glibc >= 2.38/2.39; on the older Debian bookworm (glibc 2.36)
+# the postinstall `codesearch --version` check fails with "GLIBC_2.39 not
+# found". Mirroring CI's OS guarantees every prebuilt behaves identically.
+FROM ubuntu:24.04
 
 # Pin the runner agent; bump deliberately. https://github.com/actions/runner/releases
 ARG RUNNER_VERSION=2.330.0
+# Node major to match CI's actions/setup-node `node-version: '22'` (>=22.18).
+ARG NODE_MAJOR=22
 # Supplied automatically by BuildKit (amd64 | arm64).
 ARG TARGETARCH
 
@@ -28,21 +35,33 @@ ENV DEBIAN_FRONTEND=noninteractive \
 #    - the full Chromium runtime lib set Electron dlopen()s at launch. Missing
 #      any one of these surfaces as a cryptic "tab crashed" / launch failure,
 #      so the list is deliberately complete rather than minimal.
+#
+#    NOTE: Ubuntu 24.04 completed the 64-bit time_t transition, so several libs
+#    carry a `t64` suffix (libasound2t64, libatk1.0-0t64, libcups2t64, …) — the
+#    pre-24.04 names no longer resolve.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl git jq sudo \
+      ca-certificates curl git jq sudo gnupg \
       build-essential python3 \
       xvfb \
       fonts-liberation \
-      libglib2.0-0 libdbus-1-3 \
+      libglib2.0-0t64 libdbus-1-3 \
       libnss3 libnspr4 \
-      libatk1.0-0 libatk-bridge2.0-0 libatspi2.0-0 \
-      libcups2 libdrm2 libgbm1 libgl1 \
-      libgtk-3-0 libpango-1.0-0 libcairo2 libasound2 \
+      libatk1.0-0t64 libatk-bridge2.0-0t64 libatspi2.0-0t64 \
+      libcups2t64 libdrm2 libgbm1 libgl1 \
+      libgtk-3-0t64 libpango-1.0-0 libcairo2 libasound2t64 \
       libx11-xcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 \
       libxrandr2 libxkbcommon0 libxshmfence1 \
     && rm -rf /var/lib/apt/lists/*
 
-# 2) Non-root user. The GitHub runner refuses to run as root unless you set
+# 2) Node.js (NodeSource). Ubuntu's archive Node is too old for this repo's
+#    >=22.18 engine and its `.mts` install scripts, so install the 22.x line
+#    that mirrors CI's setup-node.
+RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/* \
+    && node --version && npm --version
+
+# 3) Non-root user. The GitHub runner refuses to run as root unless you set
 #    RUNNER_ALLOW_RUNASROOT; a normal user is the supported path.
 RUN useradd -m -s /bin/bash runner \
     && mkdir -p /opt/runner \
@@ -50,7 +69,7 @@ RUN useradd -m -s /bin/bash runner \
 
 WORKDIR /opt/runner
 
-# 3) GitHub Actions runner agent. TARGETARCH -> the release asset suffix.
+# 4) GitHub Actions runner agent. TARGETARCH -> the release asset suffix.
 RUN set -eux; \
     case "${TARGETARCH}" in \
       amd64) RUNNER_ARCH=x64 ;; \
