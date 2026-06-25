@@ -98,28 +98,33 @@ function parseWebAllowedOrigins(value: FormDataEntryValue | null): string[] {
     .filter(Boolean)
 }
 
-let overlayEl: HTMLElement | null = null
+let overlayEl: HTMLDialogElement | null = null
 
 export function openSettingsDialog(): void {
-  if (!overlayEl || !overlayEl.hidden) return
-  overlayEl.hidden = false
+  if (!overlayEl || overlayEl.open) return
+  // showModal() puts the dialog in the top layer: focus is trapped inside, the
+  // background is made inert, and Esc closes it — all for free, replacing the
+  // hand-rolled overlay + manual `hidden` toggle.
+  overlayEl.showModal()
   overlayEl.dispatchEvent(new Event('settings-open'))
 }
 
 export function closeSettingsDialog(): void {
-  if (!overlayEl || overlayEl.hidden) return
-  overlayEl.hidden = true
+  if (!overlayEl || !overlayEl.open) return
+  overlayEl.close()
 }
 
 export function isSettingsDialogOpen(): boolean {
-  return !!overlayEl && !overlayEl.hidden
+  return !!overlayEl && overlayEl.open
 }
 
 export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
-  const overlay = document.createElement('div')
+  // A native <dialog> (opened via showModal in openSettingsDialog) rather than a
+  // div: the platform handles focus-trapping, inert background, top-layer
+  // stacking, and Esc-to-close. Closed by default — no `hidden` needed.
+  const overlay = document.createElement('dialog')
   overlay.id = 'settings-dialog'
   overlay.className = 'settings-overlay'
-  overlay.hidden = true
   overlay.innerHTML = `
     <div class="settings-shell">
       <header class="settings-header">
