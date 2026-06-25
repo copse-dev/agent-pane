@@ -17,14 +17,11 @@ const MAX_SUGGESTIONS = 3
 async function completeText(provider: LLMProvider, prompt: string): Promise<string> {
   const messages: LLMMessage[] = [{ role: 'user', content: prompt }]
   let out = ''
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 15_000)
-  try {
-    for await (const chunk of provider.stream(messages, [], controller.signal)) {
-      if (chunk.type === 'text') out += chunk.text
-    }
-  } finally {
-    clearTimeout(timer)
+  // Bound the stream with a self-cleaning timeout signal instead of a manual
+  // AbortController + setTimeout + clearTimeout. On timeout the stream throws,
+  // which the caller already treats as "no suggestions".
+  for await (const chunk of provider.stream(messages, [], AbortSignal.timeout(15_000))) {
+    if (chunk.type === 'text') out += chunk.text
   }
   return out
 }
