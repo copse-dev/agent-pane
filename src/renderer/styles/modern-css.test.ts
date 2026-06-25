@@ -61,5 +61,11 @@ describe('modern CSS adoptions', () => {
       declares(css, '.prompt-input', /max-height:/),
       '.prompt-input must cap its growth so long input scrolls internally',
     )
+    // field-sizing: content ignores the `rows` attribute, so without a min-height
+    // floor the empty composer collapses below the chat layout's 72px clamp.
+    assert.ok(
+      declares(css, '.prompt-input', /min-height:/),
+      '.prompt-input must set a min-height floor (field-sizing ignores rows)',
+    )
   })
 })

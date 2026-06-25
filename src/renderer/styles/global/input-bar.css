@@ -33,9 +33,12 @@
   background: var(--bg-base);
   font-family: inherit;
   /* Grow with the typed content instead of staying a fixed 3 rows — no JS
-     scrollHeight measuring. The `rows` attribute is the floor; cap the growth
-     so a long paste scrolls internally rather than eating the conversation. */
+     scrollHeight measuring. field-sizing ignores the `rows` attribute, so
+     min-height carries the 3-row resting floor (the chat layout clamps the
+     composer height to >=72px and expects it above that); max-height caps the
+     growth so a long paste scrolls internally rather than eating the chat. */
   field-sizing: content;
+  min-height: calc(3lh + 2 * var(--spacing-md));
   max-height: 40vh;
 }
 .input-row {
