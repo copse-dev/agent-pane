@@ -61,6 +61,8 @@ const roots = [
   'src/main/project-sandbox/sandbox-fs-worker.ts',
   'src/preload/index.ts',
   'src/renderer/main.ts',
+  // Standalone bundle injected lazily at runtime (not imported by product code).
+  'src/renderer/monaco/monaco-global.ts',
   ...tracked.filter((p) => /\.test\.ts$/.test(p)),
   ...tracked.filter((p) => p.startsWith('src/') && /\.test-shim\.ts$/.test(p)),
   ...tracked.filter((p) => p.startsWith('tests/') && isModuleTs(p)),
