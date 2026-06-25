@@ -109,6 +109,38 @@ export function isLoopbackHostname(hostname: string): boolean {
   return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]'
 }
 
+/**
+ * Validate a base URL that will carry a secret credential (e.g. the Cursor API
+ * key Authorization header). Requires https:, except http: is allowed only for
+ * loopback hosts. Embedded userinfo (user:pass@host) is rejected so a tampered
+ * or synced setting cannot exfiltrate the key to an attacker-controlled host.
+ * Returns the normalized URL string, or throws on invalid input.
+ */
+export function validateRemoteAgentBaseUrl(value: string): string {
+  const raw = value.trim()
+  if (!raw) throw new Error('Remote agent base URL cannot be blank')
+
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    throw new Error(`Remote agent base URL is not a valid URL: ${value}`)
+  }
+
+  if (url.username || url.password) {
+    throw new Error('Remote agent base URL must not include embedded credentials')
+  }
+
+  if (url.protocol === 'https:') return url.toString()
+
+  if (url.protocol === 'http:') {
+    if (isLoopbackHostname(url.hostname)) return url.toString()
+    throw new Error('Remote agent base URL may only use http: for loopback hosts')
+  }
+
+  throw new Error(`Remote agent base URL must use https: ${value}`)
+}
+
 function assertLowRiskHost(hostname: string): void {
   const host = normalizeHostname(hostname)
   if (isLoopbackHostname(host)) return
@@ -199,24 +231,13 @@ export async function fetchWithWebOriginPolicy(
   for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount += 1) {
     assertLowRiskHost(url.hostname)
     assertWebOriginAllowed(url, allowedOrigins)
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), WEB_FETCH_TIMEOUT_MS)
-    const parentSignal = init.signal
-    const abortFromParent = () => controller.abort()
-    try {
-      if (parentSignal) {
-        if (parentSignal.aborted) controller.abort()
-        else parentSignal.addEventListener('abort', abortFromParent, { once: true })
-      }
-      const res = await fetch(url, { ...init, signal: controller.signal, redirect: 'manual' })
-      if (res.status < 300 || res.status >= 400) return res
-      const location = res.headers.get('location')
-      if (!location) return res
-      url = new URL(location, url)
-    } finally {
-      clearTimeout(timeout)
-      parentSignal?.removeEventListener('abort', abortFromParent)
-    }
+    const timeout = AbortSignal.timeout(WEB_FETCH_TIMEOUT_MS)
+    const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout
+    const res = await fetch(url, { ...init, signal, redirect: 'manual' })
+    if (res.status < 300 || res.status >= 400) return res
+    const location = res.headers.get('location')
+    if (!location) return res
+    url = new URL(location, url)
   }
   throw new Error(`Fetch exceeded ${MAX_REDIRECTS} redirects: ${initialUrl.toString()}`)
 }

@@ -106,10 +106,30 @@ export function sandboxNetworkConfig(
   }
 }
 
+/**
+ * Network policy for the AUTO-RUN, sandbox-contained spawn path.
+ *
+ * Commands that auto-run without user approval reach the seatbelt only via
+ * {@link workspaceSandboxOverlay} (commands the user explicitly approves for
+ * network/outside-workspace access run fully UNSANDBOXED, never through this
+ * overlay). The classifier/system prompt presents these contained commands as
+ * "Network: denied", so the contained policy must actually deny network: no
+ * allowed domains and no local socket binding. This closes the exfiltration
+ * gap (M6) where an auto-run command could still reach a DuckDuckGo subdomain
+ * or a local listener with no prompt.
+ */
+export function containedSandboxNetworkConfig(): NonNullable<SandboxRuntimeConfig['network']> {
+  return {
+    allowedDomains: [],
+    deniedDomains: [],
+    allowLocalBinding: false,
+  }
+}
+
 /** Base ASRT config; workspace-specific paths are passed per spawn via `customConfig`. */
 export function baseSandboxConfig(): SandboxRuntimeConfig {
   return {
-    network: sandboxNetworkConfig(),
+    network: containedSandboxNetworkConfig(),
     filesystem: {
       denyRead: [],
       allowWrite: [],
@@ -207,7 +227,10 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   const root = canonicalizeWorkspaceRoot(workspaceRoot)
   const toolchainRead = resolveNodeToolchainAllowRead()
   return {
-    network: sandboxNetworkConfig(),
+    // Auto-run, sandbox-contained commands get NO network (see
+    // containedSandboxNetworkConfig); only user-approved commands run with
+    // network, and those run fully unsandboxed rather than through this overlay.
+    network: containedSandboxNetworkConfig(),
     filesystem: {
       // Deny home reads, re-allow only this project plus the user's git config
       // files (ASRT deny-then-allow; a more-specific allow overrides the deny).
