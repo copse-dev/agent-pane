@@ -60,6 +60,18 @@ export function isRendererWritableSettingKey(key: string): key is RendererWritab
   return key in RENDERER_WRITABLE_SETTING_SCHEMAS
 }
 
+/**
+ * Setting keys holding secret material that must never be read back through the
+ * renderer-facing `settings:get` IPC. API keys are persisted under `apiKey.<provider>`
+ * in the same store as ordinary settings; without this guard a renderer (or any
+ * compromised frame) could read the stored key record — which is base64 plaintext
+ * when the OS keyring is unavailable. The renderer only ever needs the boolean
+ * `settings:getKey` (hasApiKey), never the record itself.
+ */
+export function isSecretSettingKey(key: string): boolean {
+  return key === 'apiKey' || key.startsWith('apiKey.')
+}
+
 export function parseRendererWritableSetting(
   key: RendererWritableSettingKey,
   value: unknown,
