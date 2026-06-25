@@ -42,6 +42,12 @@ const ciExclude = [
   './tests/e2e/draft-prompt.e2e.ts',
   // context-wheel stays quarantined (describeSkipInCi in its spec): it hard-OOM
   // crashes the runner on its first launch even in a 4-spec shard.
+  // subagent-display is now a thin VISUAL-ONLY smoke (renders the seeded card +
+  // saves collapsed/expanded screenshots). Its DOM contract is asserted in the
+  // fast tier (src/renderer/views/subagent-display.test.ts), so it doesn't need
+  // to gate PRs; keep it quarantined to avoid re-exposing the migrated card to
+  // the flaky e2e tier. Screenshots regenerate on a local/nightly run.
+  './tests/e2e/subagent-display.e2e.ts',
 ]
 
 export const config: Options.Testrunner = {

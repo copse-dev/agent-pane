@@ -83,16 +83,16 @@ terminal-display (xterm/pty) · browser-display · browser-link-chat · browser-
 All are already CI-quarantined for flake/OOM yet assert only DOM — biggest
 flake/cost reduction:
 
-| #   | Spec                   | Quarantined for               | Unit-test target                                             |
-| --- | ---------------------- | ----------------------------- | ------------------------------------------------------------ |
-| 1   | new-thread-keeps-panel | new-thread `$$` race          | `controller/panels.ts` + projects-pane _(prototype landed)_  |
-| 2   | subagent-display ✓     | runner OOM (live-mock half)   | `subagent-display.test.ts` (DOM) + thin e2e screenshot smoke |
-| 3   | context-breakdown      | OOM                           | footer context-breakdown view + store                        |
-| 4   | message-queue          | timing                        | message-queue controller                                     |
-| 5   | queued-message-edit    | timing                        | message-queue / composer controller                          |
-| 6   | queued-send-now        | timing                        | message-queue controller                                     |
-| 7   | draft-prompt           | `$$` race + reloadSession OOM | thread-switch draft persistence                              |
-| 8   | skills                 | flake                         | composer slash-command controller                            |
+| #   | Spec                   | Quarantined for               | Unit-test target                                            |
+| --- | ---------------------- | ----------------------------- | ----------------------------------------------------------- |
+| 1   | new-thread-keeps-panel | new-thread `$$` race          | `controller/panels.ts` + projects-pane _(prototype landed)_ |
+| 2   | subagent-display ✓     | runner OOM (live-mock half)   | `subagent-display.test.ts` (DOM) + quarantined visual smoke |
+| 3   | context-breakdown      | OOM                           | footer context-breakdown view + store                       |
+| 4   | message-queue          | timing                        | message-queue controller                                    |
+| 5   | queued-message-edit    | timing                        | message-queue / composer controller                         |
+| 6   | queued-send-now        | timing                        | message-queue controller                                    |
+| 7   | draft-prompt           | `$$` race + reloadSession OOM | thread-switch draft persistence                             |
+| 8   | skills                 | flake                         | composer slash-command controller                           |
 
 (Runner-up: semantic-search-markdown — markdown-renderer structure, once the
 trivial indent-geometry line is dropped.)
