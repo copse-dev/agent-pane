@@ -11,7 +11,12 @@ import {
   aggregateToolStatus,
   stripShellCdPrefix,
   shellCommandLabel,
+  classifyShellCommand,
 } from './tool-display.ts'
+
+function shell(id: string, command: string, status: ToolCall['status'] = 'done'): ToolCall {
+  return { ...tc(id, 'run_shell', status), args: { command } }
+}
 
 function tc(id: string, name: string, status: ToolCall['status'] = 'done'): ToolCall {
   return { id, name, args: {}, status, result: status === 'running' ? null : 'ok' }
@@ -63,6 +68,33 @@ describe('tool-display', () => {
     assert.equal(getToolCallLabel(shell), 'npx vitest run 2>&1 | tail -40')
     // falls back to the generic name when no command is present
     assert.equal(getToolCallLabel(tc('2', 'run_shell')), 'Run command')
+  })
+
+  it('classifies common shell commands into categories', () => {
+    assert.equal(classifyShellCommand('cd /p && npx vitest run')?.key, 'test')
+    assert.equal(classifyShellCommand('npm test')?.label, 'Running tests')
+    assert.equal(classifyShellCommand('pnpm install')?.key, 'install')
+    assert.equal(classifyShellCommand('tsc --noEmit -p tsconfig.json')?.key, 'typecheck')
+    assert.equal(classifyShellCommand('eslint .')?.key, 'lint')
+    assert.equal(classifyShellCommand('git status')?.key, 'git')
+    assert.equal(classifyShellCommand('rg foo src')?.key, 'search')
+    assert.equal(classifyShellCommand('echo hello'), null)
+  })
+
+  it('rolls a unanimous shell group up to its category label', () => {
+    const items = buildToolCallDisplayItems([
+      shell('1', 'cd /p && npx vitest run a.test.ts'),
+      shell('2', 'cd /p && npx vitest run b.test.ts'),
+    ])
+    assert.equal(items.length, 1)
+    assert.equal(items[0]?.type, 'group')
+    if (items[0]?.type === 'group') assert.equal(items[0].label, 'Running tests')
+  })
+
+  it('keeps the generic label when a shell group is mixed', () => {
+    const items = buildToolCallDisplayItems([shell('1', 'npm test'), shell('2', 'git diff')])
+    assert.equal(items[0]?.type, 'group')
+    if (items[0]?.type === 'group') assert.equal(items[0].label, 'Running commands')
   })
 
   it('maps known tools to human-readable names', () => {
