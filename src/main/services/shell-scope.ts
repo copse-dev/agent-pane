@@ -43,16 +43,38 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: string }> = [
   },
   { re: /\bssh\b|\bscp\b|\brsync\b/i, reason: 'remote shell/copy (ssh/scp/rsync)' },
   { re: /\bsocat\b|\blftp\b|\bftp\b/i, reason: 'network utility (socat/ftp/lftp)' },
-  { re: /\bgit\s+(push|pull|fetch|clone|remote)\b/i, reason: 'git network operation' },
+  // Allow interspersed global options (`git -c protocol.ext.allow=always clone …`,
+  // which is a classic clone-time RCE vector) and cover submodule/archive, which
+  // also reach the network. `-c` takes a `key=val` argument that isn't flag-shaped,
+  // so it gets its own alternative.
+  {
+    re: /\bgit\s+(?:-c\s+\S+\s+|--?\S+\s+)*(push|pull|fetch|clone|remote|submodule|archive)\b/i,
+    reason: 'git network operation',
+  },
   { re: /\bdocker\s+(pull|push|run)\b/i, reason: 'docker network/container operation' },
   { re: /\bkubectl\b|\bhelm\s+install\b/i, reason: 'kubernetes remote operation' },
   { re: /\b(aws|gcloud|az)\s+/i, reason: 'cloud CLI (may reach external services)' },
   { re: /\bgh\b/i, reason: 'GitHub CLI (may reach GitHub)' },
   { re: /\bopen\s+https?:|\bxdg-open\s+https?:/i, reason: 'open external URL' },
-  { re: /\bnc\b|\bnetcat\b|\btelnet\b/i, reason: 'raw network utility' },
+  { re: /\bnc\b|\bncat\b|\bnetcat\b|\btelnet\b/i, reason: 'raw network utility' },
   {
-    re: /\bpython3?\b[^\n|;&]*\s-c\b|\bnode\b[^\n|;&]*\s-e\b|\bbun\b[^\n|;&]*\s-e\b/i,
-    reason: 'inline script (python/node -c/-e)',
+    // Inline code passed straight to an interpreter (-c / -e / --eval). The body is
+    // opaque to this classifier, so it must always prompt.
+    re: /\b(?:python3?|node|deno|bun|ruby|perl)\b[^\n|;&]*\s(?:-c|-e|--eval)\b/i,
+    reason: 'inline script (interpreter -c/-e/--eval)',
+  },
+  {
+    // An interpreter executing a local script file (`node ./x.js`, `bash deploy.sh`).
+    // The agent can write the script first, so its contents are invisible here — and
+    // to the file-blind safety classifier — which is exactly why it must not auto-run.
+    re: /\b(?:python3?|node|deno|bun|ruby|perl|bash|sh|zsh)\s+(?:-\S+\s+)*[^\s|;&]*\.(?:js|cjs|mjs|ts|py|rb|pl|sh|bash|zsh)\b/i,
+    reason: 'runs a local script via an interpreter (contents opaque to analysis)',
+  },
+  {
+    // Heredoc fed to a real interpreter (`python3 <<EOF … EOF`) — inline code with
+    // no `-c`. `cat <<EOF > file` is deliberately excluded (that just writes text).
+    re: /\b(?:python3?|node|deno|bun|ruby|perl)\b[^\n]*<<-?/i,
+    reason: 'heredoc script fed to an interpreter',
   },
   { re: /\beval\b|\bexec\b|\bbase64\b/i, reason: 'dynamic execution / encoding' },
   { re: /\bpkill\b|\bkillall\b|\bkill\s+-9\b/i, reason: 'process kill (system-wide)' },
@@ -77,9 +99,16 @@ const OUTSIDE_PATH_PATTERNS: Array<{ re: RegExp; reason: string }> = [
   { re: /\.\.\//, reason: 'parent directory traversal (../)' },
 ]
 
-/** Undo common backslash obfuscation before pattern matching (e.g. c\\url → curl). */
+/**
+ * Undo the cheap obfuscations the shell collapses away but that defeat the
+ * word-boundary patterns below: backslash escapes (`c\url` → `curl`) and shell
+ * quoting (`c""url`, `'r''m'`, `r"m"` → `curl`/`rm`). Stripping every quote can
+ * merge string literals into adjacent tokens, but over-matching here only ever
+ * causes an extra approval prompt — never a silent auto-run — so we normalise
+ * aggressively in the safe direction.
+ */
 export function normalizeShellCommandForAnalysis(command: string): string {
-  return command.replace(/\\(?=[a-zA-Z0-9])/g, '')
+  return command.replace(/\\(?=[a-zA-Z0-9])/g, '').replace(/['"]/g, '')
 }
 
 // Signals that a package command points at a non-default registry or carries
