@@ -136,7 +136,20 @@ jobs:
     # quarantines exist to work around. The nightly `schedule` runs the full
     # suite on GitHub-hosted ubuntu-latest. NOTE: requires a registered
     # self-hosted runner (label `self-hosted`) or PR/push e2e will queue forever.
-    runs-on: ${{ github.event_name == 'schedule' && 'ubuntu-latest' || 'self-hosted' }}
+    #
+    # Runner is picked by TRUST, not just by event. `self-hosted` is reachable
+    # ONLY for runs we control: pushes to our branches and same-repo (non-fork)
+    # PRs. The nightly `schedule` and ANY fork PR resolve to GitHub-hosted
+    # ubuntu-latest instead. This is defense-in-depth for the `if` guard above:
+    # that guard already skips fork-PR e2e entirely, but even if it were ever
+    # removed or weakened, untrusted fork code still could not be dispatched to
+    # the self-hosted box — the worst case is a fork running on a throwaway
+    # GitHub-hosted VM, never on our hardware. Keep BOTH layers.
+    runs-on: >-
+      ${{ (github.event_name == 'push' ||
+           (github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository))
+          && 'self-hosted' || 'ubuntu-latest' }}
     # Split the seeded e2e suite (see wdio.ci.conf.ts) into parallel shards so the
     # whole gate finishes well inside the runner window. Each shard runs a disjoint
     # slice of specs via wdio's `--shard current/total`. The shared `dist` artifact
