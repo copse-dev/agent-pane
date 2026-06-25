@@ -131,12 +131,16 @@ jobs:
   e2e:
     needs: [build, plan-e2e]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    # PR/push e2e runs on a self-hosted runner: free minutes, and a box big
-    # enough to avoid the 2-core/7GB hosted-runner OOM that most of the shard
-    # quarantines exist to work around. The nightly `schedule` runs the full
-    # suite on GitHub-hosted ubuntu-latest. NOTE: requires a registered
-    # self-hosted runner (label `self-hosted`) or PR/push e2e will queue forever.
-    runs-on: ${{ github.event_name == 'schedule' && 'ubuntu-latest' || 'self-hosted' }}
+    # PR/push e2e runs on the self-hosted Docker runners (see .github/runner):
+    # free minutes, and a box big enough to avoid the 2-core/7GB hosted-runner
+    # OOM that most of the shard quarantines exist to work around. The nightly
+    # `schedule` runs the full suite on GitHub-hosted ubuntu-latest.
+    #
+    # The label set requires BOTH `self-hosted` AND `copse-e2e`, so jobs land
+    # only on the Linux Docker runners and never on the macOS `self-hosted`
+    # boxes (which carry `macOS`/`ARM64` but not `copse-e2e`). NOTE: requires at
+    # least one registered `copse-e2e` runner or PR/push e2e will queue forever.
+    runs-on: ${{ github.event_name == 'schedule' && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "copse-e2e"]') }}
     # Split the seeded e2e suite (see wdio.ci.conf.ts) into parallel shards so the
     # whole gate finishes well inside the runner window. Each shard runs a disjoint
     # slice of specs via wdio's `--shard current/total`. The shared `dist` artifact
