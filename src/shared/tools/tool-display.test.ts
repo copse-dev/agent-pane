@@ -5,9 +5,12 @@ import {
   buildToolCallDisplayItems,
   getToolDisplayName,
   getToolCallLabel,
+  getToolEditPath,
   getToolGroupKey,
   getToolGroupLabel,
   aggregateToolStatus,
+  stripShellCdPrefix,
+  shellCommandLabel,
 } from './tool-display.ts'
 
 function tc(id: string, name: string, status: ToolCall['status'] = 'done'): ToolCall {
@@ -27,6 +30,39 @@ describe('tool-display', () => {
       args: { path: 'src/foo.ts', old_string: 'a', new_string: 'b' },
     }
     assert.equal(getToolCallLabel(replace), 'Edited src/foo.ts')
+  })
+
+  it('exposes the edited path for file-edit tools only', () => {
+    const write = { ...tc('1', 'write_file'), args: { path: 'README.md', content: 'x' } }
+    assert.equal(getToolEditPath(write), 'README.md')
+    assert.equal(getToolEditPath(tc('2', 'run_shell')), null)
+    assert.equal(getToolEditPath(tc('3', 'read_file')), null)
+  })
+
+  it('strips a leading `cd <path> &&` workspace prefix from commands', () => {
+    assert.equal(stripShellCdPrefix('cd /Users/me/proj && npm test'), 'npm test')
+    assert.equal(stripShellCdPrefix("cd '/path with spaces' && ls"), 'ls')
+    assert.equal(stripShellCdPrefix('npm test'), 'npm test')
+    // only the leading cd is removed, not a later one
+    assert.equal(stripShellCdPrefix('cd /a && cd /b && ls'), 'cd /b && ls')
+  })
+
+  it('builds a compact single-line command label', () => {
+    assert.equal(shellCommandLabel('cd /proj && npm   test'), 'npm test')
+    const long = `echo ${'x'.repeat(200)}`
+    const label = shellCommandLabel(long)
+    assert.ok(label.length <= 96)
+    assert.ok(label.endsWith('…'))
+  })
+
+  it('labels run_shell with the cd-stripped command', () => {
+    const shell = {
+      ...tc('1', 'run_shell'),
+      args: { command: 'cd /Users/me/agent-pane && npx vitest run 2>&1 | tail -40' },
+    }
+    assert.equal(getToolCallLabel(shell), 'npx vitest run 2>&1 | tail -40')
+    // falls back to the generic name when no command is present
+    assert.equal(getToolCallLabel(tc('2', 'run_shell')), 'Run command')
   })
 
   it('maps known tools to human-readable names', () => {

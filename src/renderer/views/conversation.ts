@@ -17,8 +17,10 @@ import {
   aggregateToolStatus,
   buildToolCallDisplayItems,
   getToolCallLabel,
+  getToolEditPath,
   type ToolCallDisplayItem,
 } from '@shared/tools/tool-display.ts'
+import { navigateToChange } from '../controller/panels.ts'
 import { createTodoListEl } from './todo-panel.ts'
 import { renderToolArgs } from './tool-args-format.ts'
 import {
@@ -53,13 +55,33 @@ function createToolHeader(
   summaryClass: string,
   count?: number,
   editStats?: ToolCall['editStats'],
+  editPath?: string | null,
 ): HTMLElement {
   const children: (Node | string)[] = [el('span', { class: 'tool-name' }, label)]
   if (editStats) {
-    children.push(
+    const stats = [
       el('span', { class: 'tool-stat tool-stat-add' }, `+${editStats.additions}`),
       el('span', { class: 'tool-stat tool-stat-del' }, `-${editStats.deletions}`),
-    )
+    ]
+    if (editPath) {
+      // Clickable: reveal this file's diff in the Changes panel. Delegated
+      // click handling lives in mountConversation (needs the store).
+      children.push(
+        el(
+          'button',
+          {
+            type: 'button',
+            class: 'tool-edit-stats',
+            'data-edit-path': editPath,
+            title: 'View changes',
+            'aria-label': `View changes to ${editPath}`,
+          },
+          ...stats,
+        ),
+      )
+    } else {
+      children.push(...stats)
+    }
   }
   if (count !== undefined && count > 1) {
     children.push(el('span', { class: 'tool-count' }, `×${count}`))
@@ -76,7 +98,7 @@ function appendStandardToolSections(
   count?: number,
 ): void {
   card.append(
-    createToolHeader(label, tc.status, summaryClass, count, tc.editStats),
+    createToolHeader(label, tc.status, summaryClass, count, tc.editStats, getToolEditPath(tc)),
     createToolArgsSection(tc.args),
     createToolResultSection(tc.result),
   )
@@ -229,6 +251,7 @@ function createGroupToolCard(item: Extract<ToolCallDisplayItem, { type: 'group' 
         'tool-group-item-header',
         undefined,
         tc.editStats,
+        getToolEditPath(tc),
       ),
       createToolArgsSection(tc.args),
       createToolResultSection(tc.result),
@@ -307,6 +330,20 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // streaming response inside the scrollable message list.
   const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
   root.append(scrollArea, queuedHost, activityBar)
+
+  // Clicking a file edit's +/- counts reveals that file in the Changes panel.
+  // Delegated here so the handler can reach the store; preventDefault stops the
+  // surrounding <summary> from toggling its <details>.
+  list.addEventListener('click', (e) => {
+    const statsBtn = (e.target as HTMLElement | null)?.closest(
+      '.tool-edit-stats',
+    ) as HTMLElement | null
+    const path = statsBtn?.dataset.editPath
+    if (!path) return
+    e.preventDefault()
+    e.stopPropagation()
+    navigateToChange(store, path)
+  })
 
   // Inline-edit state for a queued message. Preserved across re-renders so a
   // store-driven rebuild (e.g. pause toggle) keeps the editor and its draft.

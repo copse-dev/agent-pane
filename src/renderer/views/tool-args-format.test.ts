@@ -74,7 +74,8 @@ describe('renderToolArgs', () => {
       rendered,
       [
         'Command:',
-        '  cd /workspace && git status',
+        // The leading `cd <workspace> &&` prefix is stripped for readability.
+        '  git status',
         'Output:',
         '  On branch main',
         '  nothing to commit, working tree clean',

@@ -33,6 +33,12 @@ export function openRightPanel(store: AppStore, mode: RightPanelMode): void {
   store.emit('right_panel_mode_changed')
 }
 
+/** Open the Changes panel and reveal the diff for a workspace-relative file path. */
+export function navigateToChange(store: AppStore, path: string): void {
+  store.emit('git_change_navigate', path)
+  openRightPanel(store, 'changes')
+}
+
 export function openBrowserUrl(store: AppStore, url: string): void {
   openRightPanel(store, 'browser')
   store.emit('browser_url_requested', url)

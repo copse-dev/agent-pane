@@ -1,3 +1,5 @@
+import { stripShellCdPrefix } from '@shared/tools/tool-display.ts'
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
 }
@@ -103,7 +105,12 @@ function formatTerminalPayload(value: unknown): string | null {
 
   const { status, payload, meta } = terminal
   const lines: string[] = []
-  appendMultiline(lines, 'Command', firstPresent(payload.command, meta.command))
+  const command = firstPresent(payload.command, meta.command)
+  appendMultiline(
+    lines,
+    'Command',
+    typeof command === 'string' ? stripShellCdPrefix(command) : command,
+  )
 
   const stdout = firstPresent(payload.stdout, payload.output)
   appendMultiline(lines, 'Output', stdout)
