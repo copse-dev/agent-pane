@@ -18,7 +18,7 @@ export async function fetchOpenAiCompatibleModels(
   baseUrl: string,
   apiKey?: string,
 ): Promise<{ ok: boolean; models: FetchedProviderModel[]; error?: string }> {
-  const base = stripTrailingSlash(baseUrl || '')
+  const base = stripTrailingSlash((baseUrl || '').trim())
   if (!base) return { ok: false, models: [], error: 'Base URL is empty' }
   const key = apiKey?.trim()
   try {

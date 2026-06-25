@@ -30,33 +30,29 @@ export function getResolvedExtraProvider(slug: string): ExtraProvider | null {
 }
 
 /**
- * Persist (insert or replace) one provider record. For a built-in slug this is
- * an override; for any other slug it is a user custom. Returns the resolved
- * list so the caller can hand it straight back to the renderer.
+ * Persist (insert or replace) one provider record. A built-in slug is an
+ * override; any other slug is a user custom. Returns the resolved list so the
+ * caller can hand it straight back to the renderer.
  *
- * If `record.slug` is blank, a slug is derived from the base URL and made unique
- * against reserved built-ins and existing customs. A custom slug that collides
- * with a built-in is rejected back onto the built-in override path is NOT done
- * here — callers should present the built-in row instead.
+ * Slug handling encodes the "frozen slug" rule:
+ *   - An explicit slug (an edit, or a user-typed one) is used verbatim, so it
+ *     replaces the matching record and never drifts when the URL changes.
+ *   - A blank slug (a fresh add) is derived from the base URL and disambiguated
+ *     against reserved built-ins and existing customs, so two providers on the
+ *     same host stay distinct instead of clobbering each other.
  */
 export async function saveExtraProvider(
   record: Omit<StoredExtraProvider, 'slug'> & { slug?: string },
 ): Promise<ExtraProvider[]> {
   const current = storedProviders()
   const givenSlug = (record.slug ?? '').trim()
-  const isBuiltin = !!givenSlug && BUILTIN_EXTRA_PROVIDER_SLUGS.includes(givenSlug)
 
-  let slug = givenSlug
-  if (!isBuiltin) {
-    const takenCustomSlugs = current
-      .filter((p) => !BUILTIN_EXTRA_PROVIDER_SLUGS.includes(p.slug) && p.slug !== record.slug)
-      .map((p) => p.slug)
-    if (!slug) slug = providerSlugFromBaseUrl(record.baseUrl ?? '')
-    // Freeze the slug: only disambiguate when it isn't already this record's slug.
-    if (!current.some((p) => p.slug === slug)) {
-      slug = uniqueProviderSlug(slug, takenCustomSlugs)
-    }
-  }
+  const slug = givenSlug
+    ? givenSlug
+    : uniqueProviderSlug(
+        providerSlugFromBaseUrl(record.baseUrl ?? ''),
+        current.map((p) => p.slug),
+      )
 
   const next: StoredExtraProvider = { ...record, slug }
   const idx = current.findIndex((p) => p.slug === slug)
