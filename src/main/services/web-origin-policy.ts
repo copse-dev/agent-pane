@@ -109,6 +109,38 @@ export function isLoopbackHostname(hostname: string): boolean {
   return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]'
 }
 
+/**
+ * Validate a base URL that will carry a secret credential (e.g. the Cursor API
+ * key Authorization header). Requires https:, except http: is allowed only for
+ * loopback hosts. Embedded userinfo (user:pass@host) is rejected so a tampered
+ * or synced setting cannot exfiltrate the key to an attacker-controlled host.
+ * Returns the normalized URL string, or throws on invalid input.
+ */
+export function validateRemoteAgentBaseUrl(value: string): string {
+  const raw = value.trim()
+  if (!raw) throw new Error('Remote agent base URL cannot be blank')
+
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    throw new Error(`Remote agent base URL is not a valid URL: ${value}`)
+  }
+
+  if (url.username || url.password) {
+    throw new Error('Remote agent base URL must not include embedded credentials')
+  }
+
+  if (url.protocol === 'https:') return url.toString()
+
+  if (url.protocol === 'http:') {
+    if (isLoopbackHostname(url.hostname)) return url.toString()
+    throw new Error('Remote agent base URL may only use http: for loopback hosts')
+  }
+
+  throw new Error(`Remote agent base URL must use https: ${value}`)
+}
+
 function assertLowRiskHost(hostname: string): void {
   const host = normalizeHostname(hostname)
   if (isLoopbackHostname(host)) return
