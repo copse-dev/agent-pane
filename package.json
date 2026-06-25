@@ -2,6 +2,7 @@
   "name": "copse-panel",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "description": "Copse — AI coding assistant desktop app",
   "main": "dist/main/index.js",
   "type": "commonjs",
