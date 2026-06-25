@@ -20,6 +20,8 @@ export interface StoreEvents {
   projects_changed: []
   files_pane_changed: []
   right_panel_mode_changed: []
+  // Request the Changes panel to reveal a specific workspace-relative file diff.
+  git_change_navigate: [path: string]
   browser_url_requested: [url: string]
   settings_changed: []
   theme_changed: ['light' | 'dark']
