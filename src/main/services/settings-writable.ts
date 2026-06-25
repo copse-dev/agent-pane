@@ -1,6 +1,23 @@
 import { z } from 'zod'
 import { APP_ICON_VARIANTS } from '@shared/app-icon-variants.ts'
-import { validateWebOriginPattern } from './web-origin-policy.ts'
+import { validateRemoteAgentBaseUrl, validateWebOriginPattern } from './web-origin-policy.ts'
+
+// Empty string means "use the provider default"; any non-empty value must be a
+// safe base URL since it carries the Cursor API key as an Authorization header.
+export const remoteAgentBaseUrlSchema = z
+  .string()
+  .max(2048)
+  .superRefine((value, ctx) => {
+    if (value.trim() === '') return
+    try {
+      validateRemoteAgentBaseUrl(value)
+    } catch (error) {
+      ctx.addIssue({
+        code: 'custom',
+        message: error instanceof Error ? error.message : 'Invalid remote agent base URL',
+      })
+    }
+  })
 
 export const webAllowedOriginsSchema = z
   .array(
@@ -44,7 +61,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   skillPluginPaths: z.array(z.string().max(4096)).max(64),
   subagentsEnabled: z.boolean(),
   externalApiSafety: z.boolean(),
-  remoteAgentBaseUrl: z.string().max(2048),
+  remoteAgentBaseUrl: remoteAgentBaseUrlSchema,
   remoteAgentRepository: z.string().max(2048),
   remoteAgentStartingRef: z.string().max(256),
   remoteAgentAutoCreatePR: z.boolean(),
