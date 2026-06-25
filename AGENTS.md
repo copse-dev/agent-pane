@@ -155,12 +155,10 @@ least one screenshot that reviewers can inspect.
 5. Screenshots land in `tests/e2e/screenshots/`:
    - `tool-display-live-mock.png` — live mock turn shows `List directory` (not `list_dir`)
 
-Reach for an e2e spec only when the change is genuinely visual/layout (needs a real
-browser to render). The tool-card DOM structure itself — grouped `Reading files ×N`
-card, failed tool surfaced as its own `.tool-card[data-status=error]` outside the
-group, human-readable labels — is asserted without Electron in the component test
-`src/renderer/views/tool-display.test.ts` (the seeded port of the former
-`tool-display.e2e.ts`). Grouping logic alone: `src/shared/tools/tool-display.test.ts`.
+Assertions to mirror: `.tool-card-group .tool-name` = group label; `.tool-count` = `×N`;
+failed tools stay `.tool-card[data-status=error]` with individual `getToolDisplayName` labels.
+The seeded tool-card DOM assertions now run without Electron in the component test
+`src/renderer/views/tool-display.test.ts`; grouping logic in `src/shared/tools/tool-display.test.ts`.
 
 ### Markdown rendering
 
