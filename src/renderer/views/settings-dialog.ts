@@ -373,6 +373,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset>
+              <legend>Copse reviewed servers</legend>
+              <p class="settings-fieldset-desc">
+                A small catalog of MCP servers we've vetted. They're off by default — flip a switch
+                to add one to the agent. No config file editing required.
+              </p>
+              <div id="mcp-curated-list" class="mcp-curated-list">Loading…</div>
+            </fieldset>
+
+            <fieldset>
               <legend>Tool approval</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="mcpAutoAllowReadOnly" />
@@ -479,8 +488,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     await modelRoutingSection.refresh()
   }
 
-  function renderMcpServers(statuses: import('@shared/types/mcp.ts').McpServerStatus[]): void {
+  function renderMcpServers(allStatuses: import('@shared/types/mcp.ts').McpServerStatus[]): void {
     const listEl = overlay.querySelector('#mcp-server-list') as HTMLElement
+    // Curated ("Copse reviewed") servers have their own section below.
+    const statuses = allStatuses.filter((s) => !s.curated)
     if (statuses.length === 0) {
       listEl.textContent = 'No servers configured.'
       return
@@ -597,6 +608,91 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     }
   }
 
+  function renderCuratedServers(
+    servers: import('@shared/types/mcp.ts').CuratedMcpServerStatus[],
+  ): void {
+    const listEl = overlay.querySelector('#mcp-curated-list') as HTMLElement
+    listEl.innerHTML = ''
+    if (servers.length === 0) {
+      listEl.textContent = 'No reviewed servers available.'
+      return
+    }
+
+    for (const s of servers) {
+      const row = document.createElement('div')
+      row.className = `mcp-curated-row mcp-state-${s.state}`
+
+      const toggleLabel = document.createElement('label')
+      toggleLabel.className = 'toggle-switch mcp-server-toggle'
+      toggleLabel.title = s.enabled ? `Turn off ${s.title}` : `Turn on ${s.title}`
+      const toggle = document.createElement('input')
+      toggle.type = 'checkbox'
+      toggle.checked = s.enabled
+      toggle.setAttribute('aria-label', `${s.title} enabled`)
+      const track = document.createElement('span')
+      track.className = 'toggle-switch-track'
+      track.setAttribute('aria-hidden', 'true')
+      toggle.addEventListener('change', () => {
+        toggle.disabled = true
+        void api.mcp
+          .setCuratedEnabled(s.name, toggle.checked)
+          .then((next) => renderCuratedServers(next))
+          .catch(() => {
+            toggle.checked = !toggle.checked
+            toggle.disabled = false
+          })
+      })
+      toggleLabel.append(toggle, track)
+
+      const body = document.createElement('div')
+      body.className = 'mcp-curated-body'
+
+      const titleRow = document.createElement('div')
+      titleRow.className = 'mcp-curated-title'
+      const name = document.createElement('span')
+      name.textContent = s.title
+      const link = document.createElement('a')
+      link.href = '#'
+      link.className = 'mcp-curated-link'
+      link.textContent = 'Learn more'
+      link.addEventListener('click', (e) => {
+        e.preventDefault()
+        void api.shell.openExternal(s.homepage)
+      })
+      titleRow.append(name, link)
+
+      const desc = document.createElement('div')
+      desc.className = 'mcp-curated-desc'
+      desc.textContent = s.description
+
+      body.append(titleRow, desc)
+
+      // Surface the live connection state once enabled.
+      if (s.enabled) {
+        const status = document.createElement('div')
+        status.className = 'mcp-curated-status'
+        status.textContent =
+          s.state === 'connected'
+            ? `● connected — ${s.toolCount} tool(s)${s.tools.length ? `: ${s.tools.join(', ')}` : ''}`
+            : s.state === 'error'
+              ? `✗ ${s.error ?? 'error'}`
+              : '… connecting'
+        body.append(status)
+      }
+
+      row.append(toggleLabel, body)
+      listEl.append(row)
+    }
+  }
+
+  async function refreshCuratedServers(): Promise<void> {
+    try {
+      renderCuratedServers(await api.mcp.listCurated())
+    } catch {
+      renderCuratedServers([])
+    }
+  }
+
   overlay.querySelector('#mcp-reload-btn')!.addEventListener('click', () => {
     const statusEl = overlay.querySelector('#mcp-reload-status') as HTMLElement
     statusEl.textContent = 'Reloading…'
@@ -605,8 +701,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       .reload()
       .then((statuses) => {
         renderMcpServers(statuses)
-        const ok = statuses.filter((s) => s.state === 'connected').length
-        statusEl.textContent = `✓ ${ok}/${statuses.length} server(s) connected`
+        void refreshCuratedServers()
+        const visible = statuses.filter((s) => !s.curated)
+        const ok = visible.filter((s) => s.state === 'connected').length
+        statusEl.textContent = `✓ ${ok}/${visible.length} server(s) connected`
         statusEl.classList.add('ok')
       })
       .catch((err) => {
@@ -661,6 +759,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await refreshLocalModelSelects()
       await lmStudioSection.refreshDetection()
       await refreshMcpServers()
+      await refreshCuratedServers()
     })()
   })
 

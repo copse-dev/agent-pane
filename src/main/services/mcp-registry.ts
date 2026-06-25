@@ -23,6 +23,7 @@ import {
   isMcpServerEffectivelyDisabled,
 } from './mcp-config.ts'
 import { flattenMcpContent, sanitizeMcpInputSchema } from './mcp-schema.ts'
+import { CURATED_MCP_SOURCE, getEnabledCuratedConfigs } from './mcp-curated.ts'
 import { isWorkspaceTrusted, setWorkspaceTrusted } from './workspace-trust.ts'
 import { appendFlatCapped, COMMAND_OUTPUT_MAX_BYTES } from './subprocess-output-cap.ts'
 import {
@@ -158,19 +159,23 @@ async function collectConfigs(): Promise<{
     readPluginMcpConfigs(),
   ])
 
-  // User/global and Cursor plugins first so they win over project sources on name collisions.
+  // App-level servers the user trusts implicitly: their own/global/plugin configs
+  // plus any enabled "Copse reviewed" catalog entries. User/global and plugins win
+  // over the curated catalog on name collisions, so a user can override a curated
+  // definition in their own mcp.json.
   const userMerged = mergeMcpConfigs([...userPerSource, pluginMerged])
+  const appActive = mergeMcpConfigs([userMerged, getEnabledCuratedConfigs()])
   const trusted = isWorkspaceTrusted(workspace)
 
   if (!trusted) {
     // Project servers are not spawned; report only those whose name doesn't collide
-    // with an existing user/global/plugin server (a colliding name simply uses the trusted one).
-    const trustedNames = new Set(userMerged.map((c) => c.name))
+    // with an existing app-level server (a colliding name simply uses the trusted one).
+    const trustedNames = new Set(appActive.map((c) => c.name))
     const untrusted = mergeMcpConfigs(projectPerSource).filter((c) => !trustedNames.has(c.name))
-    return { active: userMerged, untrusted }
+    return { active: appActive, untrusted }
   }
 
-  const active = mergeMcpConfigs([userMerged, ...projectPerSource])
+  const active = mergeMcpConfigs([appActive, ...projectPerSource])
   return { active, untrusted: [] }
 }
 
@@ -182,6 +187,7 @@ const PROJECT_ENV_ALLOWLIST: ReadonlySet<string> = new Set()
 function isUserMcpSource(source: string | undefined): boolean {
   if (!source) return false
   return (
+    source === CURATED_MCP_SOURCE ||
     source === join(homedir(), '.cursor', 'mcp.json') ||
     source === join(app.getPath('userData'), 'mcp.json') ||
     isCursorPluginMcpSource(source)
@@ -253,6 +259,7 @@ async function connectServer(
     userEnabled,
     configDisabled,
     ...(cfg.source !== undefined ? { source: cfg.source } : {}),
+    ...(cfg.source === CURATED_MCP_SOURCE ? { curated: true } : {}),
   }
 
   if (isMcpServerEffectivelyDisabled(rawCfg, userDisabled)) {
