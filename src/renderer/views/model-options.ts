@@ -46,22 +46,14 @@ export function modelDisplayLabel(model: string): string {
 
 // OpenRouter's free, tool-capable models fetched live from its catalog, plus any
 // custom id the user saved (or currently has selected — which may be a paid id).
-// When no key is configured we show a single disabled hint instead of fetching.
+// When no key is configured we contribute nothing (the provider is hidden from
+// the picker rather than shown as a disabled "add a key" row).
 async function openRouterOptions(
   api: ApiClient,
   available: boolean,
   current: string,
 ): Promise<ModelOption[]> {
-  if (!available) {
-    return [
-      {
-        value: '',
-        label: 'Add an OpenRouter API key in Settings',
-        group: OPENROUTER_GROUP,
-        disabled: true,
-      },
-    ]
-  }
+  if (!available) return []
 
   let liveModels: Array<{ id: string; name: string }> = []
   try {
@@ -104,24 +96,16 @@ async function openRouterOptions(
 }
 
 // Curated, tool-capable models for a direct cloud provider (Mistral, Gemini,
-// DeepSeek). Unlike OpenRouter there is no live catalog, so the shortlist comes
-// from the registry; the currently-selected id is kept selectable even if it
-// isn't in the shortlist. When no key is configured we show a disabled hint.
+// DeepSeek, or a user-added one). Unlike OpenRouter there is no live catalog, so
+// the shortlist comes from the registry; the currently-selected id is kept
+// selectable even if it isn't in the shortlist. An unconfigured provider (no key)
+// contributes nothing — it's hidden from the picker rather than shown as a hint.
 function extraProviderOptions(
   provider: ExtraProvider,
   available: boolean,
   current: string,
 ): ModelOption[] {
-  if (!available) {
-    return [
-      {
-        value: '',
-        label: `Add a ${provider.label} API key in Settings`,
-        group: provider.label,
-        disabled: true,
-      },
-    ]
-  }
+  if (!available) return []
 
   const seen = new Set<string>()
   const entries: ModelOption[] = []
@@ -167,23 +151,15 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
     options.push(...extraProviderOptions(provider, isAvailable(provider.id), current))
   }
 
+  // Remote agents (Cursor Cloud): only listed once configured.
   const remoteGroup = 'Remote agents'
   for (const remote of REMOTE_AGENT_MODELS) {
-    if (remote.provider === REMOTE_AGENT_PROVIDER_CURSOR) {
-      options.push(
-        isAvailable('cursor')
-          ? { value: remote.value, label: remote.label, group: remoteGroup }
-          : {
-              value: remote.value,
-              label: `${remote.label} — configure Cursor API key`,
-              group: remoteGroup,
-              disabled: true,
-            },
-      )
-      continue
+    if (remote.provider === REMOTE_AGENT_PROVIDER_CURSOR && isAvailable('cursor')) {
+      options.push({ value: remote.value, label: remote.label, group: remoteGroup })
     }
   }
 
+  // Local models: only listed when a local server is reachable and exposes some.
   const lmGroup = 'Local models'
   let models: string[]
   try {
@@ -191,16 +167,7 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
   } catch {
     models = []
   }
-  if (models.length) {
-    for (const id of models) options.push({ value: `lmstudio:${id}`, label: id, group: lmGroup })
-  } else {
-    options.push({
-      value: '',
-      label: 'Not connected — configure in Settings',
-      group: lmGroup,
-      disabled: true,
-    })
-  }
+  for (const id of models) options.push({ value: `lmstudio:${id}`, label: id, group: lmGroup })
 
   if (current && !options.some((o) => o.value === current)) {
     if (current.startsWith('lmstudio:')) {
@@ -218,6 +185,16 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
     } else {
       options.push({ value: current, label: `${current} (no key)` })
     }
+  }
+
+  // Only when nothing at all is configured (no cloud key, no provider, no local
+  // server) do we surface a single guiding message instead of an empty picker.
+  if (options.length === 0) {
+    options.push({
+      value: '',
+      label: 'No models available — add a provider or API key in Settings',
+      disabled: true,
+    })
   }
 
   return options
