@@ -137,19 +137,19 @@ jobs:
     # suite on GitHub-hosted ubuntu-latest. NOTE: requires a registered
     # self-hosted runner (label `self-hosted`) or PR/push e2e will queue forever.
     #
-    # Runner is picked by TRUST, not just by event. `self-hosted` is reachable
-    # ONLY for runs we control: pushes to our branches and same-repo (non-fork)
-    # PRs. The nightly `schedule` and ANY fork PR resolve to GitHub-hosted
-    # ubuntu-latest instead. This is defense-in-depth for the `if` guard above:
-    # that guard already skips fork-PR e2e entirely, but even if it were ever
-    # removed or weakened, untrusted fork code still could not be dispatched to
-    # the self-hosted box — the worst case is a fork running on a throwaway
-    # GitHub-hosted VM, never on our hardware. Keep BOTH layers.
+    # Runner is picked by TRUST. The self-hosted label is `self-hosted` (not
+    # `ubuntu-latest`). Nightly `schedule` uses GitHub-hosted ubuntu-latest;
+    # trusted push/same-repo PR use the self-hosted box. Fork PRs are skipped
+    # by the `if` guard above and must never run on any runner — there is no
+    # hosted fallback. If that guard were ever removed, the expression below
+    # evaluates to a falsy value (not a runner label) so the job fails closed
+    # instead of dispatching untrusted code anywhere.
     runs-on: >-
-      ${{ (github.event_name == 'push' ||
-           (github.event_name == 'pull_request' &&
-            github.event.pull_request.head.repo.full_name == github.repository))
-          && 'self-hosted' || 'ubuntu-latest' }}
+      ${{ github.event_name == 'schedule' && 'ubuntu-latest' ||
+          ((github.event_name == 'push' ||
+            (github.event_name == 'pull_request' &&
+             github.event.pull_request.head.repo.full_name == github.repository))
+           && 'self-hosted') }}
     # Split the seeded e2e suite (see wdio.ci.conf.ts) into parallel shards so the
     # whole gate finishes well inside the runner window. Each shard runs a disjoint
     # slice of specs via wdio's `--shard current/total`. The shared `dist` artifact
