@@ -23,6 +23,7 @@ import {
   stripTerminalControlSequences,
 } from '../services/subprocess-output-cap.ts'
 import { terminateProcessTree } from '../services/subprocess-kill.ts'
+import { adoptWorktreeChangesSince, captureWorktreeBaseline } from '../services/diff-queue.ts'
 
 interface ShellRunResult {
   output: string
@@ -256,31 +257,41 @@ export const runShellTool: ToolDefinition = {
     // are preserved on top.
     const childEnv = envForRendererChildProcess(env)
 
-    const result = await runShellOnce(
-      finalCommand,
-      cwd,
-      timeout_ms,
-      signal,
-      outsideSandbox,
-      childEnv,
-    )
+    // Bracket the run so any file this agent-triggered command changes (e.g. a
+    // formatter rewriting a file Copse just edited) is adopted as Copse-owned —
+    // keeping the worktree "clean" for direct edits on the next turn. Runs in a
+    // finally because a command can change files even when it exits non-zero or
+    // the runner throws. Scoped to the command's real effects by the baseline diff.
+    const baseline = await captureWorktreeBaseline()
+    try {
+      const result = await runShellOnce(
+        finalCommand,
+        cwd,
+        timeout_ms,
+        signal,
+        outsideSandbox,
+        childEnv,
+      )
 
-    if (result.exitCode === 0) return withBanner(formatShellSuccess(result))
+      if (result.exitCode === 0) return withBanner(formatShellSuccess(result))
 
-    const retry = await maybeRetryUnsandboxed(
-      finalCommand,
-      cwd,
-      timeout_ms,
-      signal,
-      result,
-      childEnv,
-    )
-    if (retry === 'declined') return 'User declined to run outside the sandbox.'
-    if (retry) {
-      if (retry.exitCode === 0) return withBanner(formatShellSuccess(retry))
-      throw formatShellFailure(retry)
+      const retry = await maybeRetryUnsandboxed(
+        finalCommand,
+        cwd,
+        timeout_ms,
+        signal,
+        result,
+        childEnv,
+      )
+      if (retry === 'declined') return 'User declined to run outside the sandbox.'
+      if (retry) {
+        if (retry.exitCode === 0) return withBanner(formatShellSuccess(retry))
+        throw formatShellFailure(retry)
+      }
+
+      throw formatShellFailure(result)
+    } finally {
+      await adoptWorktreeChangesSince(baseline)
     }
-
-    throw formatShellFailure(result)
   },
 }

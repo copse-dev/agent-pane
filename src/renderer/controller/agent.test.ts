@@ -145,6 +145,33 @@ test('successful run_shell does not rebind when checkout is unchanged', async ()
   assert.equal(gitBranchChanged.length, 0)
 })
 
+test('run_shell does not rebind a background (non-active) thread', async () => {
+  const { send, store, gitBranchChanged } = setup(
+    [thread('t1', [], 'main'), thread('t2', [], 'main')],
+    't2',
+    { currentBranch: 'claude/compassionate-wright-a1awji' },
+  )
+  send(
+    {
+      type: 'tool_call',
+      toolCall: {
+        id: 'tc1',
+        name: 'run_shell',
+        args: { command: 'git checkout claude/compassionate-wright-a1awji' },
+      },
+    },
+    't1',
+  )
+  send(
+    { type: 'tool_result', toolCallId: 'tc1', result: 'Switched to branch', isError: false },
+    't1',
+  )
+  await new Promise((r) => setTimeout(r, 0))
+
+  assert.equal(getThreadById(store, 't1')!.gitBranch, 'main')
+  assert.equal(gitBranchChanged.length, 0)
+})
+
 test('text after a tool call finalizes the prior bubble and starts a new one below', () => {
   const { send, messages, messageDone } = setup()
   send({ type: 'text', text: 'thinking' })

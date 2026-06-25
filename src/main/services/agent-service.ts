@@ -10,6 +10,8 @@ import { classifyAgentError } from './agent-errors.ts'
 import { resolveParentGoal } from '@shared/agent/working-brief.ts'
 import { buildSystemPrompt } from './agent-system-prompt.ts'
 import { hasLastUsage } from './provider-usage.ts'
+import { clearActiveRunThread, recordThreadModel, setActiveRunThread } from './thread-models.ts'
+import { buildCommitSteeringPrompt, shouldSteerCommit } from '@shared/git/commit-attribution.ts'
 import { buildProvider, buildSubagentRoute, isLocalChatModel } from './provider-selection.ts'
 import {
   prepareAgentHistory,
@@ -101,12 +103,15 @@ export async function runAgent(
   options?: { invokedSkills?: string[]; priorTodos?: TodoItem[]; workingBrief?: string },
 ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> {
   const model = getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
+  recordThreadModel(threadId, model)
   const remoteProvider = parseRemoteAgentModel(model)
   if (remoteProvider) {
     const controller = new AbortController()
     abortMap.set(threadId, controller)
+    setActiveRunThread(threadId)
     const runTimeoutTimer = setTimeout(() => controller.abort(), AGENT_RUN_TIMEOUT_MS)
     const sendChunk = (chunk: StreamChunk) => {
+      if (chunk.type === 'usage') recordThreadModel(threadId, chunk.model)
       host.emit(threadId, chunk)
     }
     try {
@@ -135,6 +140,7 @@ export async function runAgent(
       }
     } finally {
       clearTimeout(runTimeoutTimer)
+      clearActiveRunThread(threadId)
       abortMap.delete(threadId)
     }
   }
@@ -145,9 +151,11 @@ export async function runAgent(
 
   const controller = new AbortController()
   abortMap.set(threadId, controller)
+  setActiveRunThread(threadId)
   const runTimeoutTimer = setTimeout(() => controller.abort(), AGENT_RUN_TIMEOUT_MS)
 
   const sendChunk = (chunk: StreamChunk) => {
+    if (chunk.type === 'usage') recordThreadModel(threadId, chunk.model)
     host.emit(threadId, chunk)
   }
 
@@ -181,6 +189,7 @@ export async function runAgent(
       const repoSlug = await getGithubRepoSlug()
       steeringBlocks.push(buildGithubLinkSteeringPrompt(repoSlug))
     }
+    if (shouldSteerCommit(userTextForSteering)) steeringBlocks.push(buildCommitSteeringPrompt())
     if (steeringBlocks.length && messages[0]?.role === 'system') {
       messages[0] = {
         role: 'system',
@@ -375,6 +384,7 @@ export async function runAgent(
     clearTimeout(runTimeoutTimer)
     clearAgentRunTodos()
     setTodoToolPostProcess(null)
+    clearActiveRunThread(threadId)
     abortMap.delete(threadId)
   }
 
