@@ -27,6 +27,12 @@ runs:
         command -v gtimeout >/dev/null 2>&1 || brew install coreutils
       if: runner.environment == 'self-hosted' && runner.os == 'macOS'
       shell: bash
+      # Skip Homebrew's implicit `brew update` (can add minutes per install) and
+      # its analytics ping. Only affects the cold-install path — warm runners that
+      # already have rg/gtimeout never reach the brew calls.
+      env:
+        HOMEBREW_NO_AUTO_UPDATE: '1'
+        HOMEBREW_NO_ANALYTICS: '1'
     # Cache the fully-installed dependency tree, not just the npm download cache.
     # The key is the lockfile hash, so an electron/node-pty bump (which changes
     # the native ABI) busts it and forces a fresh electron-rebuild. vendor/
