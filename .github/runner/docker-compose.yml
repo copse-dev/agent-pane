@@ -17,8 +17,8 @@ services:
     restart: always
     env_file: .env
     environment:
-      EPHEMERAL: "true"
-    init: true              # PID 1 reaps stray electron/chromedriver children
+      EPHEMERAL: 'true'
+    init: true # PID 1 reaps stray electron/chromedriver children
     # Chromium-under-Xvfb is memory-hungry and the suite OOM'd historically on a
     # 7GB box (see wdio.ci.conf.ts quarantines). Cap per-runner memory so one
     # shard can't take the whole host down, and budget ~4-6 GB per concurrent
@@ -26,4 +26,4 @@ services:
     mem_limit: 6g
     # A roomy /dev/shm avoids Chromium shm crashes; the wdio config also passes
     # --disable-dev-shm-usage as a fallback, so this is defense-in-depth.
-    shm_size: "2gb"
+    shm_size: '2gb'
