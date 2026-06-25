@@ -132,63 +132,15 @@ function shellCommandArg(args: unknown): string | null {
   return typeof command === 'string' && command.trim() ? command : null
 }
 
-export interface ShellCommandCategory {
-  key: string
-  label: string
-}
-
-// High-confidence shell-command categories. Order matters: more specific rules
-// (e.g. `tsc --noEmit` as a type-check) come before broader ones. Matched
-// against the lowercased, cd-stripped command. Kept intentionally conservative —
-// a command only rolls up a group when every command shares one category.
-const SHELL_CATEGORY_RULES: ReadonlyArray<readonly [RegExp, ShellCommandCategory]> = [
-  [/\b(?:vitest|jest|mocha|ava|pytest|phpunit)\b/, { key: 'test', label: 'Running tests' }],
-  [/\bplaywright\s+test\b/, { key: 'test', label: 'Running tests' }],
-  [/\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test\b/, { key: 'test', label: 'Running tests' }],
-  [/\b(?:go|cargo)\s+test\b/, { key: 'test', label: 'Running tests' }],
-  [
-    /\b(?:npm|pnpm|yarn|bun)\s+(?:install|ci|add)\b|\bpip3?\s+install\b/,
-    { key: 'install', label: 'Installing dependencies' },
-  ],
-  [
-    /\btsc\b[^|&]*--noemit\b|\b(?:npm|pnpm|yarn)\s+(?:run\s+)?typecheck\b/,
-    { key: 'typecheck', label: 'Type-checking' },
-  ],
-  [
-    /\b(?:eslint|prettier|biome|ruff|gofmt)\b|\b(?:npm|pnpm|yarn)\s+(?:run\s+)?lint\b/,
-    { key: 'lint', label: 'Linting' },
-  ],
-  [
-    /\b(?:npm|pnpm|yarn)\s+(?:run\s+)?build\b|\b(?:vite|webpack|rollup)\s+build\b|\b(?:go|cargo)\s+build\b/,
-    { key: 'build', label: 'Building' },
-  ],
-  [/^git\s+\S/, { key: 'git', label: 'Running git commands' }],
-  [/^(?:rg|grep|ag|ack|find|fd)\b/, { key: 'search', label: 'Searching' }],
-]
-
-/** Classify a shell command into a known category, or null if not obvious. */
-export function classifyShellCommand(rawCommand: string): ShellCommandCategory | null {
-  const command = stripShellCdPrefix(rawCommand).trim().toLowerCase()
-  if (!command) return null
-  for (const [re, category] of SHELL_CATEGORY_RULES) {
-    if (re.test(command)) return category
-  }
-  return null
-}
-
-/**
- * Label for a group of shell commands. When every command shares one obvious
- * category (e.g. all are test runs) the group rolls up to that category's label
- * ("Running tests"); otherwise it stays the generic "Running commands".
- */
-function shellGroupLabel(members: ToolCall[]): string {
-  const categories = members.map((tc) => {
+/** The cd-stripped command strings for any run_shell tool calls in `toolCalls`. */
+export function shellCommandsFromToolCalls(toolCalls: ToolCall[]): string[] {
+  const commands: string[] = []
+  for (const tc of toolCalls) {
+    if (tc.name !== 'run_shell' || tc.status === 'error') continue
     const command = shellCommandArg(tc.args)
-    return command ? classifyShellCommand(command) : null
-  })
-  const first = categories[0]
-  if (first && categories.every((c) => c?.key === first.key)) return first.label
-  return getToolGroupLabel('shell')
+    if (command) commands.push(stripShellCdPrefix(command).trim())
+  }
+  return commands
 }
 
 /**
@@ -264,8 +216,7 @@ export function buildToolCallDisplayItems(toolCalls: ToolCall[]): ToolCallDispla
     if (key && members && members.length >= 2) {
       if (!emittedGroups.has(key)) {
         emittedGroups.add(key)
-        const label = key === 'shell' ? shellGroupLabel(members) : getToolGroupLabel(key)
-        result.push({ type: 'group', key, label, toolCalls: members })
+        result.push({ type: 'group', key, label: getToolGroupLabel(key), toolCalls: members })
       }
       continue
     }

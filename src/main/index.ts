@@ -31,6 +31,7 @@ import {
   abortAgent,
   suggestThreadTitle,
   suggestTerminalTitle,
+  suggestCommandSummary,
   testLmStudio,
   listLmStudioModels,
   invalidateLmStudioModelsCache,
@@ -221,6 +222,11 @@ app
     ipcMain.handle('agent:suggestTerminalTitle', (event, text: string) => {
       assertMainFrameSender(event, win)
       return suggestTerminalTitle(text)
+    })
+
+    ipcMain.handle('agent:suggestCommandSummary', (event, commands: string[]) => {
+      assertMainFrameSender(event, win)
+      return suggestCommandSummary(commands)
     })
 
     ipcMain.handle('agent:suggestFollowUps', (event, contextJson: string) => {

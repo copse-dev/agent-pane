@@ -11,7 +11,7 @@ import {
   aggregateToolStatus,
   stripShellCdPrefix,
   shellCommandLabel,
-  classifyShellCommand,
+  shellCommandsFromToolCalls,
 } from './tool-display.ts'
 
 function shell(id: string, command: string, status: ToolCall['status'] = 'done'): ToolCall {
@@ -70,28 +70,17 @@ describe('tool-display', () => {
     assert.equal(getToolCallLabel(tc('2', 'run_shell')), 'Run command')
   })
 
-  it('classifies common shell commands into categories', () => {
-    assert.equal(classifyShellCommand('cd /p && npx vitest run')?.key, 'test')
-    assert.equal(classifyShellCommand('npm test')?.label, 'Running tests')
-    assert.equal(classifyShellCommand('pnpm install')?.key, 'install')
-    assert.equal(classifyShellCommand('tsc --noEmit -p tsconfig.json')?.key, 'typecheck')
-    assert.equal(classifyShellCommand('eslint .')?.key, 'lint')
-    assert.equal(classifyShellCommand('git status')?.key, 'git')
-    assert.equal(classifyShellCommand('rg foo src')?.key, 'search')
-    assert.equal(classifyShellCommand('echo hello'), null)
-  })
-
-  it('rolls a unanimous shell group up to its category label', () => {
-    const items = buildToolCallDisplayItems([
+  it('collects cd-stripped commands from run_shell tool calls', () => {
+    const commands = shellCommandsFromToolCalls([
       shell('1', 'cd /p && npx vitest run a.test.ts'),
-      shell('2', 'cd /p && npx vitest run b.test.ts'),
+      shell('2', 'git diff'),
+      shell('3', 'should be skipped', 'error'),
+      tc('4', 'read_file'),
     ])
-    assert.equal(items.length, 1)
-    assert.equal(items[0]?.type, 'group')
-    if (items[0]?.type === 'group') assert.equal(items[0].label, 'Running tests')
+    assert.deepEqual(commands, ['npx vitest run a.test.ts', 'git diff'])
   })
 
-  it('keeps the generic label when a shell group is mixed', () => {
+  it('shell groups keep the generic label (LLM summary applied at render)', () => {
     const items = buildToolCallDisplayItems([shell('1', 'npm test'), shell('2', 'git diff')])
     assert.equal(items[0]?.type, 'group')
     if (items[0]?.type === 'group') assert.equal(items[0].label, 'Running commands')
