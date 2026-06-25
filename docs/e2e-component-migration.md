@@ -87,7 +87,7 @@ flake/cost reduction:
 | --- | ---------------------- | ----------------------------- | ----------------------------------------------------------- |
 | 1   | new-thread-keeps-panel | new-thread `$$` race          | `controller/panels.ts` + projects-pane _(prototype landed)_ |
 | 2   | subagent-display       | runner OOM                    | tool-card / subagent view                                   |
-| 3   | context-breakdown      | OOM                           | footer context-breakdown view + store                       |
+| 3   | context-breakdown ✓    | OOM                           | `src/renderer/views/context-wheel.test.ts` (done)           |
 | 4   | message-queue          | timing                        | message-queue controller                                    |
 | 5   | queued-message-edit    | timing                        | message-queue / composer controller                         |
 | 6   | queued-send-now        | timing                        | message-queue controller                                    |
