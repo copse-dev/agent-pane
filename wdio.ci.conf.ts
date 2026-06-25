@@ -29,7 +29,6 @@ const ciExclude = [
   // Heavy mock-agent / context-estimate / scroll specs whose Electron renderer
   // OOM-crashes ("tab crashed") or overruns the timeout on the 2-core/7GB GitHub
   // runner even on a fresh first attempt; all pass locally.
-  './tests/e2e/subagent-display.e2e.ts',
   './tests/e2e/scroll-to-bottom.e2e.ts',
   './tests/e2e/context-breakdown.e2e.ts',
   // Drives a mock subagent/explore run and waits on `.tool-card-subagent`,
