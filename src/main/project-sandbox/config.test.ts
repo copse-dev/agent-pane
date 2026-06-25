@@ -4,6 +4,8 @@ import { accessSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync }
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import {
+  baseSandboxConfig,
+  containedSandboxNetworkConfig,
   electronRuntimeAllowReadPaths,
   fsWorkerSandboxOverlay,
   resolveNodeToolchainAllowRead,
@@ -39,17 +41,15 @@ describe('resolveNodeToolchainAllowRead', () => {
 })
 
 describe('workspaceSandboxOverlay', () => {
-  it('uses the default web-origin allowlist as ASRT allowed domains', () => {
+  it('denies all network for the auto-run, sandbox-contained path (M6)', () => {
+    // Auto-run commands reach the seatbelt only through this overlay; the
+    // classifier presents them as "Network: denied", so the contained policy
+    // must allow no domains and no local socket binding. User-approved network
+    // commands run fully unsandboxed, never through this overlay.
     const overlay = workspaceSandboxOverlay('/tmp/project')
-    assert.deepEqual(overlay.network?.allowedDomains, [
-      'localhost',
-      '127.0.0.1',
-      '::1',
-      'duckduckgo.com',
-      '*.duckduckgo.com',
-    ])
+    assert.deepEqual(overlay.network?.allowedDomains, [])
     assert.deepEqual(overlay.network?.deniedDomains, [])
-    assert.equal(overlay.network?.allowLocalBinding, true)
+    assert.equal(overlay.network?.allowLocalBinding, false)
   })
 
   it('re-allows node toolchain paths alongside the workspace', () => {
@@ -127,6 +127,19 @@ describe('sandboxNetworkConfig', () => {
     assert.deepEqual(network.allowedDomains, ['example.com', '*.example.com', 'localhost'])
     assert.deepEqual(network.deniedDomains, [])
     assert.equal(network.allowLocalBinding, true)
+  })
+})
+
+describe('containedSandboxNetworkConfig', () => {
+  it('allows no domains and no local binding', () => {
+    const network = containedSandboxNetworkConfig()
+    assert.deepEqual(network.allowedDomains, [])
+    assert.deepEqual(network.deniedDomains, [])
+    assert.equal(network.allowLocalBinding, false)
+  })
+
+  it('is the network policy the base sandbox config initializes with', () => {
+    assert.deepEqual(baseSandboxConfig().network, containedSandboxNetworkConfig())
   })
 })
 

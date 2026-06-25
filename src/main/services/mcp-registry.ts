@@ -339,7 +339,13 @@ async function teardown(registry: ToolRegistry): Promise<void> {
 }
 
 export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
-  if (process.env.COPSE_AGENT_EVAL === '1') {
+  // Skip all MCP server connections under agent-eval and e2e. e2e mocks the LLM
+  // and must not reach the network — a curated HTTP server (e.g. the MDN server
+  // at https://mcp.mdn.mozilla.net/) would block the awaited startup connect for
+  // CONNECT_TIMEOUT_MS on a runner with no egress, wedging the whole app and
+  // hanging every workspace-loading spec. (Onboarding has no active servers, so
+  // it was unaffected.)
+  if (process.env.COPSE_AGENT_EVAL === '1' || process.env.COPSE_E2E === '1') {
     serverStatuses = []
     return
   }
