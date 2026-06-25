@@ -206,6 +206,38 @@ describe('renderMarkdown', () => {
     assert.match(html, /<p>Below<\/p>/)
   })
 
+  it('treats spaced marker runs as thematic breaks, not lists or emphasis', () => {
+    for (const rule of ['* * *', '- - -', '_ _ _', ' **  * ** * ** * **']) {
+      const html = renderMarkdown(`Above\n\n${rule}\n\nBelow`)
+      assert.match(html, /<hr>/, `expected <hr> for ${JSON.stringify(rule)}`)
+      assert.doesNotMatch(html, /<em>/, `unexpected <em> for ${JSON.stringify(rule)}`)
+      assert.doesNotMatch(html, /<li>/, `unexpected <li> for ${JSON.stringify(rule)}`)
+    }
+  })
+
+  it('renders multi-backtick code spans with interior backticks', () => {
+    const html = renderMarkdown('`` foo ` bar ``')
+    assert.match(html, /<code>foo ` bar<\/code>/)
+    assert.doesNotMatch(html, /<code><\/code>/)
+  })
+
+  it('strips a single surrounding space inside code spans', () => {
+    assert.match(renderMarkdown('` `` `'), /<code>``<\/code>/)
+    assert.match(renderMarkdown('`  ``  `'), /<code> `` <\/code>/)
+  })
+
+  it('collapses interior line endings in multi-line code spans to spaces', () => {
+    const html = renderMarkdown('``\nfoo\nbar\n``')
+    assert.match(html, /<code>foo bar<\/code>/)
+    assert.doesNotMatch(html, /<code>[^<]*<br>/)
+  })
+
+  it('leaves an unmatched backtick run as literal text', () => {
+    const html = renderMarkdown('```foo``')
+    assert.doesNotMatch(html, /<code>/)
+    assert.match(html, /```foo``/)
+  })
+
   it('does not strip interior newlines from multi-line content', () => {
     const input = '## Repo summary\n\n### index.html\nMain app file.\n\n### tests\n14 passed.'
     const html = renderMarkdown(input)
