@@ -135,6 +135,11 @@ decisions) and `permission-gate.test.ts` (gate wiring + MCP decisions).
 - `npm run test:e2e` is WebdriverIO + `@wdio/electron-service` and needs a display. It passes under
   `npm run test:e2e` on this headless VM (WDIO auto-starts Xvfb on Linux).
 
+For _which tier a test belongs in_ — favour unit/component tests, reserve e2e for broad validation
+and real-runtime checks (sizing/rendering, Monaco, terminal, webview, main IPC) — read
+[`docs/testing-strategy.md`](docs/testing-strategy.md). The per-spec e2e→component migration backlog
+is in [`docs/e2e-component-migration.md`](docs/e2e-component-migration.md).
+
 ### Visual validation (tool UI / screenshots)
 
 Use WebdriverIO Electron e2e — do not hand-drive VNC unless debugging layout. For every visual

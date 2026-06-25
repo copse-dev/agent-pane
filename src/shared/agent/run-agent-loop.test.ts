@@ -197,6 +197,114 @@ describe('runAgentLoop', () => {
     assert.ok(chunks.some((c) => c.type === 'tool_result'))
   })
 
+  /** Exact XML from Review-Icon export line 19 — tools never fired before recovery fix. */
+  const PHANTOM_READ_FILE_XML = `<tool_call>
+<function=read_file>
+<parameter=path>
+src/renderer/views/titlebar.ts
+</parameter>
+</function>
+</tool_call>
+<tool_call>
+<function=read_file>
+<parameter=path>
+src/renderer/views/projects-pane.ts
+</parameter>
+</function>
+</tool_call>`
+
+  it('recovers phantom read_file XML from finalize text-only turn', async () => {
+    const readPaths: string[] = []
+    let textOnlyCalls = 0
+    const provider: LLMProvider = {
+      async *stream(_messages, tools) {
+        if (tools.length === 0) {
+          textOnlyCalls++
+          yield {
+            type: 'text',
+            text: textOnlyCalls === 1 ? PHANTOM_READ_FILE_XML : 'Icons look good.',
+          }
+          yield { type: 'done' }
+          return
+        }
+        yield { type: 'tool_call', toolCall: { id: '1', name: 'list_dir', args: { path: '.' } } }
+        yield { type: 'done' }
+      },
+    }
+    const chunks: StreamChunk[] = []
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'verify settings icons' }],
+      tools: [{ name: 'list_dir', description: '', parameters: {} }],
+      maxSteps: 1,
+      onChunk: (c) => chunks.push(c),
+      coerceTextToolCallArgs: (name, args) => {
+        if (name === 'read_file' && typeof args.path === 'string' && args.path.trim()) {
+          return args
+        }
+        return null
+      },
+      executeTool: async (name, args) => {
+        if (name === 'read_file') readPaths.push((args as { path: string }).path)
+        return 'file contents'
+      },
+    })
+    assert.deepEqual(readPaths, [
+      'src/renderer/views/titlebar.ts',
+      'src/renderer/views/projects-pane.ts',
+    ])
+    assert.ok(chunks.some((c) => c.type === 'text_replace'))
+    assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('Icons look good')))
+  })
+
+  it('recovers phantom read_file XML from forced text-only turn', async () => {
+    const readPaths: string[] = []
+    let listDirCalls = 0
+    let textOnlyStreams = 0
+    const provider: LLMProvider = {
+      async *stream(_messages, tools) {
+        if (tools.length === 0) {
+          textOnlyStreams++
+          yield { type: 'text', text: PHANTOM_READ_FILE_XML }
+          yield { type: 'done' }
+          return
+        }
+        listDirCalls++
+        yield {
+          type: 'tool_call',
+          toolCall: { id: `ld-${listDirCalls}`, name: 'list_dir', args: { path: '.' } },
+        }
+        yield { type: 'done' }
+      },
+    }
+    const chunks: StreamChunk[] = []
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'verify settings icons' }],
+      tools: [{ name: 'list_dir', description: '', parameters: {} }],
+      maxContextTokens: 8192,
+      maxSteps: 20,
+      onChunk: (c) => chunks.push(c),
+      coerceTextToolCallArgs: (name, args) => {
+        if (name === 'read_file' && typeof args.path === 'string' && args.path.trim()) {
+          return args
+        }
+        return null
+      },
+      executeTool: async (name, args) => {
+        if (name === 'read_file') readPaths.push((args as { path: string }).path)
+        return 'file contents'
+      },
+    })
+    assert.ok(textOnlyStreams >= 1, 'expected at least one forced text-only provider call')
+    assert.ok(listDirCalls >= 6, 'expected enough tool steps to trigger forced text answer')
+    assert.deepEqual(readPaths, [
+      'src/renderer/views/titlebar.ts',
+      'src/renderer/views/projects-pane.ts',
+    ])
+    assert.ok(chunks.some((c) => c.type === 'tool_result'))
+  })
+
   it('stops when max LLM call budget is exhausted', async () => {
     const chunks: StreamChunk[] = []
     await runAgentLoop({
