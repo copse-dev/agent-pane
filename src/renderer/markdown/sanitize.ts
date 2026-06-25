@@ -34,13 +34,58 @@ const ALLOWED_TAGS = [
   'tr',
   'th',
   'td',
+  // Remote-agent artifact images. The renderer only ever emits the locked-down
+  // form `<img class="remote-artifact-image" data-remote-artifact-path="…" …>`
+  // (no `src`); `hydrateRemoteArtifactImages()` resolves the `src` to a
+  // data:/blob: URL *after* sanitization. The `uponSanitizeElement` hook below
+  // drops any other `<img>`, so arbitrary LLM `<img>` can never survive.
+  'img',
 ]
 
 // `data-browser-link` flags links the renderer routes through the in-app browser
 // (see `browser-links.ts`); `class` carries highlight.js and mermaid hooks.
-const ALLOWED_ATTR = ['href', 'target', 'rel', 'class', 'data-browser-link']
+// The `data-remote-artifact-*`/`alt`/`loading` attributes belong to the
+// artifact-image element above. `src` is deliberately NOT allowed: the renderer
+// never emits one, and letting it through would re-open `<img src=… onerror=…>`
+// style payloads. Hydration sets `src` programmatically post-sanitization.
+const ALLOWED_ATTR = [
+  'href',
+  'target',
+  'rel',
+  'class',
+  'data-browser-link',
+  'data-remote-artifact-path',
+  'data-remote-artifact-agent-id',
+  'alt',
+  'loading',
+]
+
+// Only this exact class marks a renderer-produced artifact image. Any `<img>`
+// whose class differs (including LLM-authored `<img>` that slipped through the
+// regex assembly) is removed entirely by the hook below.
+const REMOTE_ARTIFACT_IMAGE_CLASS = 'remote-artifact-image'
+
+let imgHookInstalled = false
+
+function installImgHook(): void {
+  if (imgHookInstalled) return
+  imgHookInstalled = true
+  DOMPurify.addHook('uponSanitizeElement', (node, data) => {
+    if (data.tagName !== 'img') return
+    const el = node as Element
+    // Class-gate: drop any image that is not the renderer's artifact image.
+    if (el.getAttribute('class') !== REMOTE_ARTIFACT_IMAGE_CLASS) {
+      el.remove()
+      return
+    }
+    // Defense-in-depth: artifact images carry no `src` until hydration runs.
+    // Strip any `src` an attacker might have smuggled in alongside the class.
+    el.removeAttribute('src')
+  })
+}
 
 /** Sanitize rendered-markdown HTML before it is assigned to `innerHTML`. */
 export function sanitizeRenderedMarkdown(html: string): string {
+  installImgHook()
   return DOMPurify.sanitize(html, { ALLOWED_TAGS, ALLOWED_ATTR })
 }
