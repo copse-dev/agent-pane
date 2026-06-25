@@ -53,7 +53,7 @@ describe('renderStreamingMarkdown', () => {
   it('formats each completed line as newlines arrive', () => {
     const first = renderStreamingMarkdown('## Title\n')
     const second = renderStreamingMarkdown('## Title\n- item one\n')
-    assert.match(first, /<h4>Title<\/h4>/)
+    assert.match(first, /<h2>Title<\/h2>/)
     assert.match(second, /<li>item one<\/li>/)
   })
 
