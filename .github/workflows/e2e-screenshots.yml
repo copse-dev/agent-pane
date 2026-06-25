@@ -13,18 +13,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Cheap static planner (no build/Electron/e2e). Maps the PR diff to the
+  # reference shots it affects and decides whether regeneration is needed:
+  # `needs-regen=true` when a UI change touches shots that aren't already
+  # refreshed in the diff (stale), or when the `update-screenshots` label forces
+  # a refresh. This is what makes regeneration auto-kick on the first push — no
+  # label required — while a diff that hand-commits its PNGs skips it.
+  plan:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      needed: ${{ steps.plan.outputs.needs-regen }}
+    steps:
+      - uses: actions/checkout@v6.0.3
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - id: plan
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          UPDATE_SCREENSHOTS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'update-screenshots') }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || true
+          node scripts/check-screenshots.mts --plan --base "$BASE_SHA"
+
   regenerate:
     # Regeneration runs the full seeded e2e suite — the same heavy suite the CI
-    # workflow already gates on. Running both on every push overwhelms the shared
-    # GitHub-hosted runners (flaky failures + cancelled jobs), so make screenshot
-    # regeneration opt-in via the `update-screenshots` label instead of
-    # auto-running on every UI change.
-    if: |
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      (
-        contains(github.event.pull_request.labels.*.name, 'update-screenshots') ||
-        (github.event.action == 'labeled' && github.event.label.name == 'update-screenshots')
-      )
+    # workflow already gates on, so running both concurrently roughly doubles the
+    # e2e load on a screenshot-affecting PR. We accept that here in exchange for
+    # auto-committing fresh shots on the first push: the `plan` job only flags
+    # PRs that actually touch reference shots, so this stays off for the vast
+    # majority of pushes. The `update-screenshots` label still forces a refresh.
+    needs: plan
+    if: needs.plan.outputs.needed == 'true'
     runs-on: ubuntu-latest
     # Regenerate the seeded reference screenshots in parallel shards (same split as
     # the CI e2e gate) so the suite finishes inside the runner window. Each shard

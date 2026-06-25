@@ -1,18 +1,33 @@
 /**
- * Reference-screenshot freshness gate (hard). A UI change that the oracle
- * (scripts/test-oracle.mts) maps to a screenshot-producing e2e spec must either
- * refresh that spec's committed reference PNG(s) in the same diff, or carry the
- * `update-screenshots` label — which makes the e2e-screenshots workflow
- * regenerate and commit the shots on a hosted runner. Without one of those, the
- * committed PNGs silently drift out of sync with the UI they document.
+ * Reference-screenshot freshness — planner + hard gate.
  *
- * It runs in the cheap `lint`/`plan-e2e` tier: pure static analysis over the
- * diff, no build, no Electron, and crucially no rerun of the self-hosted e2e
- * suite. Reference shots are rendered on the Linux CI runner, so regenerating
- * locally produces runner-mismatched pixels — the label is the sanctioned path.
+ * A UI change that the oracle (scripts/test-oracle.mts) maps to a
+ * screenshot-producing e2e spec keeps its committed reference PNG(s) in sync
+ * one of two ways: the diff refreshes them itself, or CI regenerates them on a
+ * hosted runner and auto-commits them. Reference shots are pixel-rendered on the
+ * Linux CI runner, so a contributor can't reliably regenerate them locally — the
+ * hosted regeneration in the e2e-screenshots workflow is the sanctioned path.
  *
- * Run: UPDATE_SCREENSHOTS_LABEL=<true|false> node scripts/check-screenshots.mts --base <ref>
+ * Two modes (both pure static analysis over the diff — no build, no Electron, no
+ * rerun of the self-hosted e2e tier):
+ *
+ *   --plan   Advisory planner. Emits `needs-regen=<true|false>` to GITHUB_OUTPUT
+ *            (and prints which shots will be refreshed) but NEVER fails. The
+ *            e2e-screenshots workflow reads this to auto-kick regeneration when
+ *            shots are stale (no label required); ci.yml runs it to annotate the
+ *            run. Stale shots don't block the PR — regeneration auto-commits them.
+ *
+ *   (default) Hard gate for local/manual use: exits non-zero when shots look
+ *            stale and the `update-screenshots` label is absent.
+ *
+ * needs-regen is true when the change affects reference shots AND either the
+ * `update-screenshots` label is set (force-refresh) or some affected shot wasn't
+ * already refreshed in the diff (stale). A diff that hand-refreshes every
+ * affected PNG needs no regen.
+ *
+ * Run: UPDATE_SCREENSHOTS_LABEL=<true|false> node scripts/check-screenshots.mts [--plan] --base <ref>
  */
+import { appendFileSync } from 'node:fs'
 import { changedFiles, computeScreenshotGate } from './test-oracle.mts'
 
 function parseBase(argv: string[]): string {
@@ -20,11 +35,43 @@ function parseBase(argv: string[]): string {
   return i >= 0 && argv[i + 1] ? argv[i + 1]! : 'origin/main'
 }
 
+/** Set a GitHub Actions step output when running in CI; a no-op locally. */
+function emitOutput(name: string, value: string): void {
+  const file = process.env.GITHUB_OUTPUT
+  if (file) appendFileSync(file, `${name}=${value}\n`)
+}
+
 function main(): void {
-  const base = parseBase(process.argv.slice(2))
+  const argv = process.argv.slice(2)
+  const base = parseBase(argv)
   const labeled = process.env.UPDATE_SCREENSHOTS_LABEL === 'true'
   const gate = computeScreenshotGate(changedFiles(base), labeled)
 
+  // Regenerate when the change touches reference shots and they aren't already
+  // all refreshed in the diff — or whenever the label forces a refresh.
+  const needsRegen = gate.affected.length > 0 && (gate.labeled || gate.missing.length > 0)
+
+  if (argv.includes('--plan')) {
+    emitOutput('needs-regen', needsRegen ? 'true' : 'false')
+    if (!gate.affected.length) {
+      console.log('✓ screenshot plan: no reference screenshots affected — no regen needed')
+    } else if (needsRegen) {
+      const shots = gate.missing.length ? gate.missing : gate.affected
+      console.log(
+        `screenshot plan: ${shots.length} reference shot(s) will be regenerated and ` +
+          'auto-committed on a hosted runner ' +
+          (gate.labeled ? '(update-screenshots label present):' : '(stale shots detected):'),
+      )
+      for (const p of shots) console.log(`      tests/e2e/screenshots/${p}`)
+    } else {
+      console.log(
+        `✓ screenshot plan: ${gate.affected.length} shot(s) affected, all refreshed in this diff — no regen needed`,
+      )
+    }
+    return
+  }
+
+  // Hard gate (local/manual): fail on stale-and-unlabeled.
   if (gate.ok) {
     if (!gate.affected.length) console.log('✓ screenshot gate: no reference screenshots affected')
     else if (gate.labeled)
@@ -46,11 +93,9 @@ function main(): void {
   )
   for (const p of gate.missing) console.error(`      tests/e2e/screenshots/${p}`)
   console.error(
-    '\n  Fix — pick one:\n' +
-      '    • Add the `update-screenshots` label to the PR (recommended). CI regenerates\n' +
-      '      and commits the reference shots on a hosted runner; no self-hosted e2e run.\n' +
-      '    • If the diff genuinely cannot change these shots, the oracle matched it via a\n' +
-      '      shared selector/import — split that file out, or add the label to acknowledge.\n',
+    '\n  On CI this auto-resolves: the e2e-screenshots workflow regenerates and\n' +
+      '  commits these shots on a hosted runner. To refresh them yourself, add the\n' +
+      '  `update-screenshots` label to the PR, or commit the rendered PNGs in the diff.\n',
   )
   process.exit(1)
 }
