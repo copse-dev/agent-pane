@@ -7,10 +7,9 @@ import {
   toOpenRouterModel,
 } from '@shared/llm/openrouter.ts'
 import {
-  EXTRA_PROVIDERS_LIST,
   extraProviderDisplayLabel,
-  extraProviderForModel,
   extraProviderModelId,
+  extraProviderSlugFromModel,
   isExtraProviderModel,
   toExtraProviderModel,
   type ExtraProvider,
@@ -133,8 +132,8 @@ function extraProviderOptions(
     entries.push({ value, label, group: provider.label })
   }
 
-  for (const model of provider.models) add(model.id, model.label)
-  if (extraProviderForModel(current) === provider) {
+  for (const model of provider.models) add(model.id, model.label ?? model.id)
+  if (extraProviderSlugFromModel(current) === provider.id) {
     add(extraProviderModelId(current), modelDisplayLabel(current))
   }
   return entries
@@ -143,35 +142,36 @@ function extraProviderOptions(
 export async function fetchModelOptions(api: ApiClient, current: string): Promise<ModelOption[]> {
   const options: ModelOption[] = []
 
-  let available: AvailableProviders = {
-    anthropic: true,
-    openai: true,
-    cursor: true,
-    openrouter: true,
-    mistral: true,
-    gemini: true,
-    deepseek: true,
-  }
+  let available: AvailableProviders = {}
   try {
     available = await api.settings.availableProviders()
   } catch {
     /* keep defaults */
   }
+  // When availability is unknown (e.g. the query failed), default to showing the
+  // option rather than hiding it behind an "add a key" hint.
+  const isAvailable = (provider: string): boolean => available[provider] ?? true
   for (const [value, label, provider] of CLOUD_MODELS) {
-    if (available[provider]) options.push({ value, label })
+    if (isAvailable(provider)) options.push({ value, label })
   }
 
-  options.push(...(await openRouterOptions(api, available.openrouter, current)))
+  options.push(...(await openRouterOptions(api, isAvailable('openrouter'), current)))
 
-  for (const provider of EXTRA_PROVIDERS_LIST) {
-    options.push(...extraProviderOptions(provider, available[provider.id], current))
+  let extraProviders: ExtraProvider[] = []
+  try {
+    extraProviders = await api.settings.extraProviders()
+  } catch {
+    /* no extra providers available */
+  }
+  for (const provider of extraProviders) {
+    options.push(...extraProviderOptions(provider, isAvailable(provider.id), current))
   }
 
   const remoteGroup = 'Remote agents'
   for (const remote of REMOTE_AGENT_MODELS) {
     if (remote.provider === REMOTE_AGENT_PROVIDER_CURSOR) {
       options.push(
-        available.cursor
+        isAvailable('cursor')
           ? { value: remote.value, label: remote.label, group: remoteGroup }
           : {
               value: remote.value,

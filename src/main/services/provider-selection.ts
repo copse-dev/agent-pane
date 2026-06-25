@@ -5,14 +5,16 @@ import {
   createExtraCloudProvider,
 } from '@shared/llm/create-provider.ts'
 import { isOpenRouterModel, openRouterModelId } from '@shared/llm/openrouter.ts'
-import {
-  extraProviderForModel,
-  extraProviderModelId,
-  type ExtraProviderId,
-} from '@shared/llm/extra-providers.ts'
+import { extraProviderForModel, extraProviderModelId } from '@shared/llm/extra-providers.ts'
+import { getResolvedExtraProviders } from './extra-providers-store.ts'
 import type { LLMProvider } from '@shared/types'
 import { DEFAULT_LM_STUDIO_URL, LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
-import { getSetting, getSettingTrimmed, getApiKey, getLmStudioApiKey } from './settings.ts'
+import {
+  getSetting,
+  getSettingTrimmed,
+  getLmStudioApiKey,
+  resolveApiKey,
+} from './settings.ts'
 import { resolveContextWindow } from './resolve-context-window.ts'
 import {
   fetchLmStudioModelsCached,
@@ -22,17 +24,10 @@ import { isLocalModel } from '@shared/llm/estimate-cost.ts'
 
 export { DEFAULT_LM_STUDIO_URL }
 
-function storedOrEnvApiKey(
-  provider: 'anthropic' | 'openai' | 'openrouter' | ExtraProviderId,
-): string | null {
-  if (provider === 'anthropic')
-    return getApiKey('anthropic') ?? process.env.ANTHROPIC_API_KEY ?? null
-  if (provider === 'openrouter')
-    return getApiKey('openrouter') ?? process.env.OPENROUTER_API_KEY ?? null
-  if (provider === 'mistral') return getApiKey('mistral') ?? process.env.MISTRAL_API_KEY ?? null
-  if (provider === 'gemini') return getApiKey('gemini') ?? process.env.GEMINI_API_KEY ?? null
-  if (provider === 'deepseek') return getApiKey('deepseek') ?? process.env.DEEPSEEK_API_KEY ?? null
-  return getApiKey('openai') ?? process.env.OPENAI_API_KEY ?? null
+// Stored key with env-var fallback for any provider slug (fixed cloud providers,
+// built-in presets, or user customs — the latter resolve to their stored key only).
+function storedOrEnvApiKey(provider: string): string | null {
+  return resolveApiKey(provider)
 }
 
 export function isLocalChatModel(model: string): boolean {
@@ -118,7 +113,7 @@ export async function buildProvider(model: string): Promise<LLMProvider> {
     }
     return createOpenRouterProvider(openRouterModelId(model), apiKey)
   }
-  const extra = extraProviderForModel(model)
+  const extra = extraProviderForModel(getResolvedExtraProviders(), model)
   if (extra) {
     const apiKey = storedOrEnvApiKey(extra.id)
     if (!apiKey) {

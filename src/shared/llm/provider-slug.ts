@@ -42,7 +42,7 @@ function slugify(value: string): string {
  * to rename the Gemini-style `googleapis` case) before it is frozen on the record.
  */
 export function providerSlugFromBaseUrl(baseUrl: string): string {
-  let host = ''
+  let host: string
   try {
     host = new URL(baseUrl.trim()).hostname.toLowerCase()
   } catch {
@@ -59,7 +59,7 @@ export function providerSlugFromBaseUrl(baseUrl: string): string {
   // Primary registrable label is the one just left of the public suffix
   // (mistral.ai → mistral, deepseek.com → deepseek). For multi-part TLDs like
   // `.co.uk` this picks the SLD label, which is still stable and unique per host.
-  const primary = labels.length >= 2 ? labels[labels.length - 2] : labels[0]
+  const primary = (labels.length >= 2 ? labels[labels.length - 2] : labels[0]) ?? ''
   return slugify(primary)
 }
 
