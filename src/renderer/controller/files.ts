@@ -54,10 +54,11 @@ export async function openWorkspaceFile(
   store: AppStore,
   api: ApiClient,
   path: string,
+  reveal?: { line: number; column?: number },
 ): Promise<void> {
   const content = await api.fs.readFile(path)
   store.setState({
-    openFile: { path, content, language: detectLanguage(path) },
+    openFile: { path, content, language: detectLanguage(path), ...(reveal ? { reveal } : {}) },
     panelTab: 'file',
     rightPanelMode: 'explorer',
     filesPaneOpen: true,

@@ -1,49 +1,11 @@
 import type { AppStore } from '@shared/store/store.ts'
+import { fileReferenceMatches } from '@shared/fs/file-reference.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { openWorkspaceFile } from '../controller/files.ts'
 import { showErrorToast } from '../views/toast.ts'
 
-const FILE_REFERENCE_RE =
-  /(^|[^A-Za-z0-9_./-])((?:\.\/)?(?:[A-Za-z0-9_@+$.-]+\/)+[A-Za-z0-9_@+$.-]+|[A-Za-z0-9_@+$-]+\.[A-Za-z0-9][A-Za-z0-9.-]{0,15}|Dockerfile|Makefile)(?=$|[^A-Za-z0-9_./-])/g
-
 const SKIP_SELECTOR = 'a, button, textarea, select, pre, svg, .mermaid-diagram'
 const TREE_WALKER_SHOW_TEXT = 4
-const TRAILING_PROSE_PUNCTUATION_RE = /[.,;:!?]+$/
-
-interface FileReferenceMatch {
-  candidate: string
-  start: number
-  end: number
-}
-
-/**
- * The filename regex runs over prose, so it can consume punctuation from text
- * like `renderer.ts.`. Keep that punctuation outside the link by shortening
- * the matched range while leaving the surrounding text node intact.
- */
-function trimTrailingProsePunctuation(candidate: string, start: number): FileReferenceMatch {
-  const trimmed = candidate.replace(TRAILING_PROSE_PUNCTUATION_RE, '')
-  return {
-    candidate: trimmed,
-    start,
-    end: start + trimmed.length,
-  }
-}
-
-function fileReferenceMatches(text: string): FileReferenceMatch[] {
-  const matches: FileReferenceMatch[] = []
-  FILE_REFERENCE_RE.lastIndex = 0
-  for (let match = FILE_REFERENCE_RE.exec(text); match; match = FILE_REFERENCE_RE.exec(text)) {
-    const prefix = match[1] ?? ''
-    const candidate = match[2]
-    if (!candidate) continue
-    const start = match.index + prefix.length
-    const trimmed = trimTrailingProsePunctuation(candidate, start)
-    if (trimmed.candidate === '') continue
-    matches.push(trimmed)
-  }
-  return matches
-}
 
 function shouldScanTextNode(node: Text, root: HTMLElement): boolean {
   const parent = node.parentElement
@@ -94,8 +56,10 @@ function replaceTextNodeReferences(
     link.href = '#'
     link.className = 'file-reference-link'
     link.dataset.fileReferencePath = path
-    link.title = path
-    link.textContent = match.candidate
+    if (match.line != null) link.dataset.fileReferenceLine = String(match.line)
+    if (match.column != null) link.dataset.fileReferenceColumn = String(match.column)
+    link.title = match.line != null ? `${path}:${match.line}` : path
+    link.textContent = match.text
     fragment.append(link)
     cursor = match.end
   }
@@ -134,7 +98,12 @@ export function bindFileReferenceClicks(
 
     const path = link.dataset.fileReferencePath
     if (!path) return
-    void openWorkspaceFile(store, api, path).catch((error) => {
+    const line = link.dataset.fileReferenceLine
+    const column = link.dataset.fileReferenceColumn
+    const reveal = line
+      ? { line: Number(line), ...(column ? { column: Number(column) } : {}) }
+      : undefined
+    void openWorkspaceFile(store, api, path, reveal).catch((error) => {
       showErrorToast(`Failed to open ${path}`, error)
     })
   }
