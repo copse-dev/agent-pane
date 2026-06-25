@@ -151,15 +151,16 @@ least one screenshot that reviewers can inspect.
    - `projects` + `activeProjectId` pointing at repo root
    - optional `threads:<projectId>` with pre-built `toolCalls` to exercise grouping without a real model
 3. Launch with mock LLM: `COPSE_PANEL_MOCK_LLM=1 ANTHROPIC_API_KEY= OPENAI_API_KEY=`
-4. Run: `npm run test:e2e -- --spec tests/e2e/tool-display.e2e.ts`
+4. Run: `npm run test:e2e -- --spec tests/e2e/tool-display-live-mock.e2e.ts`
 5. Screenshots land in `tests/e2e/screenshots/`:
-   - `tool-display-collapsed.png` — grouped label (`Reading files ×2`) + failed tool outside group
-   - `tool-display-group-expanded.png` — nested human names (`Read file`, `List directory`)
    - `tool-display-live-mock.png` — live mock turn shows `List directory` (not `list_dir`)
 
-Assertions to mirror: `.tool-card-group .tool-name` = group label; `.tool-count` = `×N`;
-failed tools stay `.tool-card[data-status=error]` with individual `getToolDisplayName` labels.
-Unit coverage for grouping logic: `src/shared/tools/tool-display.test.ts`.
+Reach for an e2e spec only when the change is genuinely visual/layout (needs a real
+browser to render). The tool-card DOM structure itself — grouped `Reading files ×N`
+card, failed tool surfaced as its own `.tool-card[data-status=error]` outside the
+group, human-readable labels — is asserted without Electron in the component test
+`src/renderer/views/tool-display.test.ts` (the seeded port of the former
+`tool-display.e2e.ts`). Grouping logic alone: `src/shared/tools/tool-display.test.ts`.
 
 ### Markdown rendering
 
