@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   assertAllowedWorkspaceRoot,
+  assertWorkspaceWriteTarget,
   clearAllowedWorkspaceRootsForTest,
   registerAllowedWorkspaceRoot,
   resolveWorkspacePath,
@@ -84,6 +85,65 @@ describe('workspace path containment', () => {
     const resolved = resolveWorkspacePath('src/new-file.ts')
     assert.equal(resolved, join(realpathSync.native(ws), 'src', 'new-file.ts'))
     assert.ok(!existsSync(resolved))
+  })
+})
+
+describe('assertWorkspaceWriteTarget (symlink write escape)', () => {
+  let cleanupRoot: (() => void) | undefined
+
+  beforeEach(() => {
+    clearAllowedWorkspaceRootsForTest()
+  })
+
+  afterEach(() => {
+    cleanupRoot?.()
+    cleanupRoot = undefined
+    clearAllowedWorkspaceRootsForTest()
+  })
+
+  it('rejects writing through a dangling symlink that points outside the workspace', () => {
+    const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+    const outside = mkdtempSync(join(tmpdir(), 'copse-out-'))
+    // Target does NOT exist yet: a dangling symlink slips past resolveWorkspacePath
+    // (existsSync follows the link, sees nothing, and treats it as a new file).
+    symlinkSync(join(outside, 'authorized_keys'), join(ws, 'deploy.conf'))
+    registerAllowedWorkspaceRoot(ws)
+    cleanupRoot = setWorkspaceRootForTest(ws)
+    // resolveWorkspacePath still returns an in-workspace-looking path...
+    const resolved = resolveWorkspacePath('deploy.conf')
+    // ...but the write guard must refuse to follow the escaping symlink.
+    assert.throws(() => assertWorkspaceWriteTarget(resolved), /symlink that escapes/)
+  })
+
+  it('rejects writing through a symlinked parent directory that points outside', () => {
+    const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+    const outside = mkdtempSync(join(tmpdir(), 'copse-out-'))
+    symlinkSync(outside, join(ws, 'link'), 'dir')
+    registerAllowedWorkspaceRoot(ws)
+    cleanupRoot = setWorkspaceRootForTest(ws)
+    assert.throws(
+      () => assertWorkspaceWriteTarget(join(realpathSync.native(ws), 'link', 'x.txt')),
+      /escapes the workspace|outside workspace/,
+    )
+  })
+
+  it('allows a symlink whose target stays inside the workspace', () => {
+    const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+    mkdirSync(join(ws, 'real'))
+    symlinkSync(join(ws, 'real', 'file.ts'), join(ws, 'alias.ts'))
+    registerAllowedWorkspaceRoot(ws)
+    cleanupRoot = setWorkspaceRootForTest(ws)
+    assert.doesNotThrow(() => assertWorkspaceWriteTarget(join(realpathSync.native(ws), 'alias.ts')))
+  })
+
+  it('allows creating an ordinary new file (no symlink in the path)', () => {
+    const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+    mkdirSync(join(ws, 'src'))
+    registerAllowedWorkspaceRoot(ws)
+    cleanupRoot = setWorkspaceRootForTest(ws)
+    assert.doesNotThrow(() =>
+      assertWorkspaceWriteTarget(join(realpathSync.native(ws), 'src', 'new.ts')),
+    )
   })
 })
 
