@@ -166,7 +166,11 @@ jobs:
       # cancelling the siblings frees the box instead of grinding all 8 through
       # their retry budget. Tradeoff: you see the first failing shard, not every
       # failing shard, in one run.
-      fail-fast: true
+      #
+      # TEMPORARY (branch claude/dazzling-fermat-vxt9p9): disabled while bringing
+      # up the Docker runners so a single run surfaces EVERY spec that wedges in
+      # the container, not just the first. Restore to `true` before merge.
+      fail-fast: false
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8]
     env:

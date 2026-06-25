@@ -43,6 +43,14 @@ const ciExclude = [
   './tests/e2e/draft-prompt.e2e.ts',
   // context-wheel stays quarantined (describeSkipInCi in its spec): it hard-OOM
   // crashes the runner on its first launch even in a 4-spec shard.
+  //
+  // Persistently wedges the Electron session on the self-hosted Docker runners
+  // (.github/runner): after reloadSession it drives the model picker against a
+  // local mock catalog server, the renderer goes unresponsive (60s test timeout
+  // then `DELETE /session` times out, leaving an orphan electron), and all 3
+  // shard attempts fail. Passes on the GitHub-hosted runner. Quarantined pending
+  // a follow-up to root-cause the reloadSession/local-fetch wedge in-container.
+  './tests/e2e/openrouter-model-picker.e2e.ts',
 ]
 
 export const config: Options.Testrunner = {
