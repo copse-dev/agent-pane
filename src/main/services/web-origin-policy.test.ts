@@ -1,7 +1,8 @@
-import { describe, it } from 'node:test'
+import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   DEFAULT_WEB_ALLOWED_ORIGINS,
+  fetchWithWebOriginPolicy,
   isWebOriginAllowed,
   normalizeWebAllowedOrigins,
   parseFetchUrl,
@@ -67,5 +68,53 @@ describe('web-origin-policy', () => {
       ]),
       ['example.com', '*.example.com', 'localhost'],
     )
+  })
+})
+
+describe('fetchWithWebOriginPolicy abort composition', () => {
+  const realFetch = globalThis.fetch
+  afterEach(() => {
+    globalThis.fetch = realFetch
+  })
+
+  // Capture the signal the policy hands to fetch so we can assert how it is
+  // composed, and return a terminal 200 so there's no redirect follow-up.
+  function stubFetch(): () => AbortSignal | null | undefined {
+    let captured: AbortSignal | null | undefined
+    globalThis.fetch = ((_url: unknown, init?: RequestInit) => {
+      captured = init?.signal
+      return Promise.resolve(new Response('ok', { status: 200 }))
+    }) as typeof fetch
+    return () => captured
+  }
+
+  it('forwards a live (non-aborted) timeout signal when the caller passes none', async () => {
+    const getSignal = stubFetch()
+    await fetchWithWebOriginPolicy(
+      new URL('https://duckduckgo.com/'),
+      {},
+      DEFAULT_WEB_ALLOWED_ORIGINS,
+    )
+    const signal = getSignal()
+    assert.ok(signal instanceof AbortSignal)
+    assert.equal(signal.aborted, false)
+  })
+
+  it("aborts the fetch when the caller's signal aborts (AbortSignal.any)", async () => {
+    const getSignal = stubFetch()
+    const caller = new AbortController()
+    await fetchWithWebOriginPolicy(
+      new URL('https://duckduckgo.com/'),
+      { signal: caller.signal },
+      DEFAULT_WEB_ALLOWED_ORIGINS,
+    )
+    const signal = getSignal()
+    assert.ok(signal instanceof AbortSignal)
+    assert.equal(signal.aborted, false)
+
+    // The signal handed to fetch is AbortSignal.any([caller, timeout]); aborting
+    // the caller must propagate to it.
+    caller.abort()
+    assert.equal(signal!.aborted, true)
   })
 })
