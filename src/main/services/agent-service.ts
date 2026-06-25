@@ -4,7 +4,7 @@ import {
   createAgentRunAbortScheduler,
   DEFAULT_MAX_LLM_CALLS,
 } from '@shared/agent/agent-loop-limits.ts'
-import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
+import type { LLMMessage, UserContent } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { getSetting } from './settings.ts'
@@ -14,6 +14,7 @@ import { resolveParentGoal } from '@shared/agent/working-brief.ts'
 import { buildSystemPrompt } from './agent-system-prompt.ts'
 import { hasLastUsage } from './provider-usage.ts'
 import { clearActiveRunThread, recordThreadModel, setActiveRunThread } from './thread-models.ts'
+import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { buildCommitSteeringPrompt, shouldSteerCommit } from '@shared/git/commit-attribution.ts'
 import { buildProvider, buildSubagentRoute, isLocalChatModel } from './provider-selection.ts'
 import {
@@ -51,7 +52,6 @@ import { compactAtTodoBoundary } from '@shared/todos/todo-context.ts'
 import { setTodoToolPostProcess } from '../tools/todo-tool.ts'
 import { runTodoWorker } from './todo-worker-runner.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
-import { recordAgentUsageChunk } from './usage-ledger.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
 import { parseRemoteAgentModel } from '@shared/remote-agent.ts'
 import { runRemoteAgentFromSettings } from './remote-agent-client.ts'
@@ -109,13 +109,7 @@ export async function runAgent(
   recordThreadModel(threadId, model)
   const remoteProvider = parseRemoteAgentModel(model)
 
-  const sendChunk = (chunk: StreamChunk) => {
-    if (chunk.type === 'usage') {
-      recordAgentUsageChunk(threadId, chunk)
-      recordThreadModel(threadId, chunk.model)
-    }
-    host.emit(threadId, chunk)
-  }
+  const sendChunk = createAgentChunkSink(threadId, host)
 
   if (remoteProvider) {
     const controller = new AbortController()
