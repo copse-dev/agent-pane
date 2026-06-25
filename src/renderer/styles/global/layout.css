@@ -284,31 +284,6 @@
   overflow: hidden;
   min-height: 0;
 }
-.right-panel-tabs {
-  display: flex;
-  gap: 2px;
-  padding: var(--spacing-xs);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.right-panel-tab {
-  flex: 1;
-  padding: 4px 8px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  border-radius: var(--radius);
-  text-align: center;
-}
-.right-panel-tab:hover {
-  color: var(--text-secondary);
-  background: var(--bg-hover);
-}
-.right-panel-tab.is-active {
-  color: var(--text-primary);
-  background: var(--bg-base);
-}
 .right-sidebar {
   display: flex;
   flex-direction: column;

@@ -19,16 +19,11 @@ async function openChangesPanel(): Promise<void> {
   // (only when it isn't already, so we never toggle an open panel shut).
   await browser.waitUntil(
     async () => {
-      const tab = await $('.right-panel-tab[aria-label="Changes"]')
-      if (
-        (await tab.isExisting()) &&
-        ((await tab.getAttribute('class')) ?? '').includes('is-active')
-      )
-        return true
+      if (((await changesBtn.getAttribute('class')) ?? '').includes('active')) return true
       await changesBtn.click()
       return false
     },
-    { timeout: 30_000, interval: 1000, timeoutMsg: 'Changes tab did not become active' },
+    { timeout: 30_000, interval: 1000, timeoutMsg: 'Changes button did not become active' },
   )
   await $('#git-changes-host').waitForDisplayed({ timeout: 30_000 })
   await browser.waitUntil(async () => (await $$('.git-change-row')).length >= 3, {
