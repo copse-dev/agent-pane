@@ -50,6 +50,11 @@
   padding: 3px 10px;
   font-size: var(--font-size-sm);
 }
+.titlebar-text-btn.active {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
 .titlebar-panel-controls {
   display: inline-flex;
   align-items: center;

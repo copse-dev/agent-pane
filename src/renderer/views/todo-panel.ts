@@ -48,20 +48,3 @@ export function createTodoListEl(todos: TodoItem[], opts?: { compact?: boolean }
   panel.append(list)
   return panel
 }
-
-export function mountPlanPane(
-  root: HTMLElement,
-  getTodos: () => TodoItem[] | undefined,
-): () => void {
-  function render() {
-    root.replaceChildren()
-    const todos = getTodos()
-    if (!todos?.length) {
-      root.append(el('p', { class: 'plan-pane-empty' }, 'No active plan for this thread.'))
-      return
-    }
-    root.append(createTodoListEl(todos))
-  }
-  render()
-  return render
-}

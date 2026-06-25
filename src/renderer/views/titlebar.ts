@@ -49,6 +49,14 @@ function changesIcon(): SVGSVGElement {
   ])
 }
 
+function browserIcon(): SVGSVGElement {
+  return outlineIcon('browser', [
+    'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z',
+    'M2 12h20',
+    'M12 2a15.3 15.3 0 0 1 0 20 15.3 15.3 0 0 1 0-20Z',
+  ])
+}
+
 export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClient): () => void {
   // The structural #titlebar div needs the .titlebar class for its flex layout,
   // height, and traffic-light clearance to apply. Without it the controls
@@ -80,12 +88,19 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
     changesIcon(),
     'Changes',
   )
+  const browserBtn = el(
+    'button',
+    { class: 'titlebar-btn titlebar-text-btn', 'aria-label': 'Open browser' },
+    browserIcon(),
+    'Browser',
+  )
   const panelControls = el(
     'div',
     { class: 'titlebar-panel-controls' },
     filesBtn,
     terminalBtn,
     changesBtn,
+    browserBtn,
   )
 
   root.append(leftCluster, dragRegion, panelControls)
@@ -105,11 +120,17 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
     syncPanelBtns()
   })
 
+  browserBtn.addEventListener('click', () => {
+    toggleRightPanelWithWorkspace(store, _api, 'browser')
+    syncPanelBtns()
+  })
+
   function syncPanelBtns() {
     const { filesPaneOpen, rightPanelMode } = store.getState()
     filesBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'explorer')
     terminalBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'terminal')
     changesBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'changes')
+    browserBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'browser')
   }
 
   function syncName() {
