@@ -36,7 +36,7 @@ describe('splitAtLastNewline', () => {
 describe('renderStreamingMarkdown', () => {
   it('renders completed lines as markdown while the tail stays plain', () => {
     const html = renderStreamingMarkdown('## Title\n- item')
-    assert.match(html, /<h4>Title<\/h4>/)
+    assert.match(html, /<h1>Title<\/h1>/)
     assert.match(html, /<span class="stream-pending">- item<\/span>/)
     assert.doesNotMatch(html, /<li>- item<\/li>/)
   })

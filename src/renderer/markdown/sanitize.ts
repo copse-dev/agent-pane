@@ -25,6 +25,8 @@ const ALLOWED_TAGS = [
   'div',
   'h3',
   'h4',
+  'h5',
+  'h6',
   'ul',
   'ol',
   'li',
