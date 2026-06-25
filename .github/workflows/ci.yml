@@ -15,15 +15,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Cheap static gate (~no build, no tests). Everything expensive — coverage,
-  # build, e2e — hangs off this via `needs: lint`, so a typo, lint error, or
-  # bad format short-circuits the pipeline before it burns runner minutes on
-  # the build + four e2e shards.
-  lint:
+  # Cheap static gate + e2e planning. Runs the fast static checks (typecheck,
+  # lint, format, dead-code, oracle liveness) AND computes the e2e oracle plan in
+  # a single job. Everything expensive — coverage, build, e2e — hangs off this
+  # via `needs: precheck`, so a typo, lint error, or bad format short-circuits
+  # the pipeline before it burns runner minutes on the build + e2e shards.
+  # Folding the former standalone `plan-e2e` job in here drops a duplicate
+  # checkout + node setup (and its rounded-up billed minute) from every run.
+  precheck:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    # Consumed by the e2e job: how much of the e2e tier this run needs.
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      specs: ${{ steps.plan.outputs.specs }}
     steps:
+      # fetch-depth: 0 so the e2e oracle (plan step) can diff against the PR base
+      # / previous main tip.
       - uses: actions/checkout@v6.0.3
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup
       - run: npm run typecheck
       - run: npm run lint
@@ -33,78 +44,18 @@ jobs:
       # selectable (liveness) and the mapping invariants must hold, so the gate
       # can't silently start skipping specs it should run.
       - run: npm run check:oracle
-
-  check:
-    needs: lint
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6.0.3
-      - uses: ./.github/actions/setup
-      # Unit suite under c8 + coverage-baseline.json ratchet (replaces the
-      # separate coverage job — same tests, no duplicate npm test run).
-      - run: npm run coverage:ci
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: coverage-report
-          path: coverage/lcov-report
-          if-no-files-found: ignore
-      # Differentially validate the JS CommonMark normalizer against the
-      # reference normalize.py. The script fetches normalize.py from a pinned,
-      # hash-verified upstream commit (not checked in) and runs the diff with
-      # python3 (preinstalled on the runner).
-      - run: npm run check:normalizer-parity
-      # The build is validated once in the dedicated `build` job below (whose
-      # dist artifact the e2e shards reuse), so it no longer runs here.
-
-  build:
-    needs: lint
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    # Build dist once and hand it to every e2e shard. Previously each shard ran
-    # its own `npm run build`; an earlier attempt to share dist via upload/
-    # download dropped some Monaco worker files, breaking specs that open the
-    # diff editor. Packing dist into a single tar before upload preserves the
-    # full tree (worker files, nested dirs, exec bits) verbatim, so the shards
-    # get a byte-identical dist without each rebuilding it.
-    steps:
-      - uses: actions/checkout@v6.0.3
-      - uses: ./.github/actions/setup
-      - run: npm run build
-      - run: tar -cf dist.tar dist
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist-tar
-          path: dist.tar
-          if-no-files-found: error
-          retention-days: 1
-
-  # Test oracle (scripts/test-oracle.mts) decides how much of the e2e tier this
-  # run needs. On a pull_request it maps the diff (vs the PR base) to the specs
-  # it can affect; on a push to main it maps vs the previous main commit. The
-  # nightly `schedule` always runs the full suite. The output drives the `e2e`
-  # job below:
-  #   mode=full    → all 8 shards run the whole CI suite
-  #   mode=subset  → only the listed specs run, distributed across the shards
-  #   mode=skip    → nothing e2e-relevant changed; shards report green, no run
-  # subset is used only for confident, UI-coupled diffs; LOW-confidence (backend
-  # logic with no selector coupling) and broad changes fall back to full. Full
-  # coverage on every push is no longer guaranteed — the nightly is the net.
-  plan-e2e:
-    needs: lint
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    outputs:
-      mode: ${{ steps.plan.outputs.mode }}
-      specs: ${{ steps.plan.outputs.specs }}
-    steps:
-      - uses: actions/checkout@v6.0.3
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
+      # Test oracle (scripts/test-oracle.mts) decides how much of the e2e tier
+      # this run needs. On a pull_request it maps the diff (vs the PR base) to the
+      # specs it can affect; on a push to main it maps vs the previous main
+      # commit. The nightly `schedule` always runs the full suite. The output
+      # drives the `e2e` job below:
+      #   mode=full    → all 8 shards run the whole CI suite
+      #   mode=subset  → only the listed specs run, distributed across the shards
+      #   mode=skip    → nothing e2e-relevant changed; shards report green, no run
+      # subset is used only for confident, UI-coupled diffs; LOW-confidence
+      # (backend logic with no selector coupling) and broad changes fall back to
+      # full. Full coverage on every push is no longer guaranteed — the nightly
+      # is the net.
       - id: plan
         env:
           EVENT: ${{ github.event_name }}
@@ -128,8 +79,54 @@ jobs:
           grep -E '^(mode|specs)=' plan.txt >> "$GITHUB_OUTPUT"
           { echo '### e2e oracle plan'; echo '```'; cat plan.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
+  check:
+    needs: precheck
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.3
+      - uses: ./.github/actions/setup
+      # Unit suite under c8 + coverage-baseline.json ratchet (replaces the
+      # separate coverage job — same tests, no duplicate npm test run).
+      - run: npm run coverage:ci
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/lcov-report
+          if-no-files-found: ignore
+      # Differentially validate the JS CommonMark normalizer against the
+      # reference normalize.py. The script fetches normalize.py from a pinned,
+      # hash-verified upstream commit (not checked in) and runs the diff with
+      # python3 (preinstalled on the runner).
+      - run: npm run check:normalizer-parity
+      # The build is validated once in the dedicated `build` job below (whose
+      # dist artifact the e2e shards reuse), so it no longer runs here.
+
+  build:
+    needs: precheck
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # Build dist once and hand it to every e2e shard. Previously each shard ran
+    # its own `npm run build`; an earlier attempt to share dist via upload/
+    # download dropped some Monaco worker files, breaking specs that open the
+    # diff editor. Packing dist into a single tar before upload preserves the
+    # full tree (worker files, nested dirs, exec bits) verbatim, so the shards
+    # get a byte-identical dist without each rebuilding it.
+    steps:
+      - uses: actions/checkout@v6.0.3
+      - uses: ./.github/actions/setup
+      - run: npm run build
+      - run: tar -cf dist.tar dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-tar
+          path: dist.tar
+          if-no-files-found: error
+          retention-days: 1
+
   e2e:
-    needs: [build, plan-e2e]
+    needs: [build, precheck]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     # PR/push e2e runs on the self-hosted Docker runners (see .github/runner):
     # free minutes, and a box big enough to avoid the 2-core/7GB hosted-runner
@@ -198,19 +195,20 @@ jobs:
       # only a fresh xvfb+Electron launch does. Retry the entire shard, and wrap
       # each attempt in `timeout` so a wedged session is killed and retried
       # (a plain hang would otherwise never exit and stall the job).
-      # Oracle gate (see plan-e2e): `full` shards the whole suite; `subset`
-      # distributes only the planned specs round-robin across the same 8 shards
-      # (so no shard exceeds the per-shard memory budget the count is tuned for);
-      # `skip` runs nothing. Every shard still reports a status, so this composes
-      # with any required check without depending on an aggregate gate first.
+      # Oracle gate (see the precheck job's plan step): `full` shards the whole
+      # suite; `subset` distributes only the planned specs round-robin across the
+      # same 8 shards (so no shard exceeds the per-shard memory budget the count
+      # is tuned for); `skip` runs nothing. Every shard still reports a status, so
+      # this composes with any required check without depending on an aggregate
+      # gate first.
       - name: e2e shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }} (oracle-gated, retry on flaky session startup)
         if: >-
-          needs.plan-e2e.outputs.mode == 'full' ||
-          needs.plan-e2e.outputs.mode == 'subset'
+          needs.precheck.outputs.mode == 'full' ||
+          needs.precheck.outputs.mode == 'subset'
         timeout-minutes: 26
         env:
-          PLAN_MODE: ${{ needs.plan-e2e.outputs.mode }}
-          PLAN_SPECS: ${{ needs.plan-e2e.outputs.specs }}
+          PLAN_MODE: ${{ needs.precheck.outputs.mode }}
+          PLAN_SPECS: ${{ needs.precheck.outputs.specs }}
         run: |
           if [ "$PLAN_MODE" = "subset" ]; then
             # Round-robin the planned specs onto this shard; an empty slice means
@@ -270,7 +268,7 @@ jobs:
   ci-passed:
     name: CI Passed
     if: always()
-    needs: [lint, check, build, plan-e2e, e2e]
+    needs: [precheck, check, build, e2e]
     runs-on: ubuntu-latest
     steps:
       - name: Check upstream job results
