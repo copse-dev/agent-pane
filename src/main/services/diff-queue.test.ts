@@ -14,6 +14,7 @@ import {
   getDiffQueueForTest,
   getRecentStagedDiffDecision,
   getStagedDiffEntry,
+  setStagedDiffResolver,
   stageDiff,
   upsertStagedDiffEntry,
 } from './diff-queue.ts'
@@ -396,5 +397,54 @@ describe('approveAllStagedDiffs', () => {
       ['c.txt'],
       'a concurrently staged entry must survive approveAll',
     )
+  })
+})
+
+describe('staged-diff resolver (headless host, e.g. ACP)', () => {
+  let tempRoot = ''
+  let restoreWorkspace: (() => void) | undefined
+
+  beforeEach(async () => {
+    tempRoot = await mkdtemp(join(tmpdir(), 'agent-pane-diff-resolver-'))
+    restoreWorkspace = setWorkspaceRootForTest(tempRoot)
+  })
+
+  afterEach(async () => {
+    setStagedDiffResolver(null)
+    clearDiffQueueForTest()
+    restoreWorkspace?.()
+    if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+  })
+
+  it('applies a staged write inline when the resolver approves', async () => {
+    await writeFile(join(tempRoot, 'a.txt'), 'old\n', 'utf-8')
+    setStagedDiffResolver(async () => true)
+
+    const message = await stageDiff('a.txt', 'old\n', 'new\n', 'plaintext')
+
+    assert.match(message, /Approved and applied/)
+    assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'new\n')
+    assert.equal(getDiffQueueForTest().length, 0, 'the entry should not linger once resolved')
+  })
+
+  it('drops a staged write and leaves the file untouched when the resolver rejects', async () => {
+    await writeFile(join(tempRoot, 'a.txt'), 'old\n', 'utf-8')
+    setStagedDiffResolver(async () => false)
+
+    const message = await stageDiff('a.txt', 'old\n', 'new\n', 'plaintext')
+
+    assert.match(message, /rejected/)
+    assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'old\n')
+    assert.equal(getDiffQueueForTest().length, 0)
+  })
+
+  it('without a resolver, keeps the staged entry pending (GUI behaviour unchanged)', async () => {
+    await writeFile(join(tempRoot, 'a.txt'), 'old\n', 'utf-8')
+
+    const message = await stageDiff('a.txt', 'old\n', 'new\n', 'plaintext')
+
+    assert.match(message, /NOT changed until/)
+    assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'old\n')
+    assert.equal(getDiffQueueForTest().length, 1, 'the entry waits for renderer approval')
   })
 })
