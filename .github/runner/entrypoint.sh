@@ -67,6 +67,19 @@ cleanup() {
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM
 
+# A container's filesystem survives a `docker restart` / restart-policy bounce
+# (the same container is re-run, not recreated), so a prior run's registration
+# files can still be here — and config.sh refuses to reconfigure when they are
+# ("Cannot configure the runner because it is already configured."). Clear any
+# prior local config first; `--replace` below reclaims the same-named server
+# registration. `config.sh remove` deregisters cleanly when the token is still
+# valid; otherwise fall back to deleting the local config files directly.
+if [[ -f .runner ]]; then
+  echo "Existing runner config found — removing before reconfigure…"
+  ./config.sh remove --token "${RUNNER_TOKEN}" 2>/dev/null \
+    || rm -f .runner .credentials .credentials_rsaparams
+fi
+
 CONFIG_ARGS=(
   --url "${GITHUB_URL}"
   --token "${RUNNER_TOKEN}"
