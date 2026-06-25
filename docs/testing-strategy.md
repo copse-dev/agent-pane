@@ -92,10 +92,10 @@ the eval config) intact so this stays runnable as the rest of CI gets leaner.
 
 ## Quick rule of thumb
 
-| Question the test answers              | Tier                |
-| -------------------------------------- | ------------------- |
-| Pure logic / data transform            | unit                |
-| "Does the view render / wire up X?"    | component           |
-| Sizing, computed style, real geometry  | e2e                 |
-| Monaco / terminal / webview / main IPC | e2e                 |
-| Does a real local model drive the loop | local-model eval    |
+| Question the test answers              | Tier             |
+| -------------------------------------- | ---------------- |
+| Pure logic / data transform            | unit             |
+| "Does the view render / wire up X?"    | component        |
+| Sizing, computed style, real geometry  | e2e              |
+| Monaco / terminal / webview / main IPC | e2e              |
+| Does a real local model drive the loop | local-model eval |
