@@ -242,7 +242,10 @@ jobs:
           # fall back to no inner timeout (the step `timeout-minutes` still caps
           # a wedged run) so the command can't die with "timeout: not found".
           TIMEOUT="$(command -v timeout || command -v gtimeout || true)"
-          for attempt in 1 2 3; do
+          # TEMPORARY (branch claude/dazzling-fermat-vxt9p9): single attempt for
+          # the Docker runner bring-up diagnostic so wedging shards fail fast
+          # instead of re-kicking 3x. Restore to `1 2 3` before merge.
+          for attempt in 1; do
             echo "::group::e2e shard ${{ matrix.shard }} attempt $attempt"
             if ${TIMEOUT:+$TIMEOUT -k 15 480} npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS; then
               echo "::endgroup::"

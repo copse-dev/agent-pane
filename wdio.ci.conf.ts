@@ -56,7 +56,10 @@ const ciExclude = [
 export const config: Options.Testrunner = {
   ...baseConfig,
   exclude: [...(baseConfig.exclude ?? []), ...ciExclude],
-  specFileRetries: 1,
+  // TEMPORARY (branch claude/dazzling-fermat-vxt9p9): 0 retries for the Docker
+  // runner bring-up diagnostic so a wedging spec fails once instead of retrying.
+  // Restore to 1 before merge.
+  specFileRetries: 0,
   specFileRetriesDelay: 2,
   // Electron session relaunches (`browser.reloadSession()`) are slow on the
   // resource-constrained GitHub runner, so specs that reload mid-test can blow
