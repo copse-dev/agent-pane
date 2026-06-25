@@ -3,19 +3,19 @@
  *
  * A UI change that the oracle (scripts/test-oracle.mts) maps to a
  * screenshot-producing e2e spec keeps its committed reference PNG(s) in sync
- * one of two ways: the diff refreshes them itself, or CI regenerates them on a
- * hosted runner and auto-commits them. Reference shots are pixel-rendered on the
- * Linux CI runner, so a contributor can't reliably regenerate them locally — the
- * hosted regeneration in the e2e-screenshots workflow is the sanctioned path.
+ * one of two ways: the diff refreshes them itself, or the CI `e2e` job re-renders
+ * them (the specs write the PNGs as a side effect of the gate run) and the
+ * `commit-screenshots` job auto-commits the diff. Reference shots are pixel-
+ * rendered on the CI runner, so a contributor can't reliably regenerate them
+ * locally — letting CI render and commit them is the sanctioned path.
  *
  * Two modes (both pure static analysis over the diff — no build, no Electron, no
- * rerun of the self-hosted e2e tier):
+ * extra rerun of the e2e tier):
  *
  *   --plan   Advisory planner. Emits `needs-regen=<true|false>` to GITHUB_OUTPUT
- *            (and prints which shots will be refreshed) but NEVER fails. The
- *            e2e-screenshots workflow reads this to auto-kick regeneration when
- *            shots are stale (no label required); ci.yml runs it to annotate the
- *            run. Stale shots don't block the PR — regeneration auto-commits them.
+ *            (and prints which shots will be refreshed) but NEVER fails. ci.yml
+ *            runs it to annotate the run. Stale shots don't block the PR — the
+ *            e2e gate run re-renders them and commit-screenshots auto-commits them.
  *
  *   (default) Hard gate for local/manual use: exits non-zero when shots look
  *            stale and the `update-screenshots` label is absent.
@@ -93,8 +93,8 @@ function main(): void {
   )
   for (const p of gate.missing) console.error(`      tests/e2e/screenshots/${p}`)
   console.error(
-    '\n  On CI this auto-resolves: the e2e-screenshots workflow regenerates and\n' +
-      '  commits these shots on a hosted runner. To refresh them yourself, add the\n' +
+    '\n  On CI this auto-resolves: the e2e gate run re-renders these shots and the\n' +
+      '  commit-screenshots job commits them. To refresh them yourself, add the\n' +
       '  `update-screenshots` label to the PR, or commit the rendered PNGs in the diff.\n',
   )
   process.exit(1)
