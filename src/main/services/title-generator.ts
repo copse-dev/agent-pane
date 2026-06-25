@@ -5,9 +5,6 @@ import { resolveSmallTasksProvider } from './small-tasks-provider.ts'
 async function completeText(provider: LLMProvider, prompt: string): Promise<string> {
   const messages: LLMMessage[] = [{ role: 'user', content: prompt }]
   let out = ''
-  // Bound the stream with a self-cleaning timeout signal instead of a manual
-  // AbortController + setTimeout + clearTimeout. On timeout the stream throws,
-  // which the caller already treats as "fall back to a heuristic".
   for await (const chunk of provider.stream(messages, [], AbortSignal.timeout(20_000))) {
     if (chunk.type === 'text') out += chunk.text
   }
