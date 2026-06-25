@@ -280,6 +280,16 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
 
   let estimateTimer: ReturnType<typeof setTimeout> | null = null
   let estimateSeq = 0
+  let estimateEnabled = true
+
+  function stopContextEstimates(): void {
+    estimateEnabled = false
+    estimateSeq++
+    if (estimateTimer !== null) {
+      clearTimeout(estimateTimer)
+      estimateTimer = null
+    }
+  }
 
   function composeEstimatePayload(): string {
     const rawText = textarea.value.trim()
@@ -294,6 +304,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   }
 
   async function runContextEstimate(): Promise<void> {
+    if (!estimateEnabled) return
     const id = getActiveThreadId()
     if (!id) {
       if (lastBreakdown !== null) {
@@ -317,6 +328,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   }
 
   function scheduleContextEstimate(delay = 300): void {
+    if (!estimateEnabled) return
     if (estimateTimer !== null) clearTimeout(estimateTimer)
     estimateTimer = setTimeout(() => {
       estimateTimer = null
@@ -614,6 +626,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   })
 
   const unsubs = [
+    api.agent.onRefreshContextEstimate(() => scheduleContextEstimate(0)),
     store.on('composer_draft_flush', persistComposerDraft),
     store.on('thread_status_changed', (tid) => {
       if (tid === getActiveThreadId()) {
@@ -659,9 +672,11 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   updateFooter()
   syncComposerThread()
   scheduleContextEstimate(0)
+  window.addEventListener('beforeunload', stopContextEstimates)
   return () => {
+    window.removeEventListener('beforeunload', stopContextEstimates)
+    stopContextEstimates()
     draftAutosave.cancel()
-    if (estimateTimer !== null) clearTimeout(estimateTimer)
     if (activeComposerThreadId) {
       setThreadDraftPrompt(store, activeComposerThreadId, textarea.value)
     }
