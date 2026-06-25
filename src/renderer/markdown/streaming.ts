@@ -190,7 +190,7 @@ export function renderStreamingMarkdown(content: string): string {
   const { complete, pending } = splitAtLastNewline(content)
   const rendered = complete ? sanitizeRenderedMarkdown(renderMarkdown(complete)) : ''
   if (!pending) return rendered
-  return `${rendered}<span class="stream-pending">${renderPendingInlineMarkdown(pending)}</span>`
+  return `${rendered}<span class="stream-pending">${sanitizeRenderedMarkdown(renderPendingInlineMarkdown(pending))}</span>`
 }
 
 /**
@@ -224,7 +224,9 @@ export class StreamingMarkdownRenderer {
 
     // The completed region (and any selection within it) is untouched. Pending
     // content is still rendered through the markdown sanitizer before insertion.
-    this.pendingEl!.innerHTML = pending ? renderPendingInlineMarkdown(pending) : ''
+    this.pendingEl!.innerHTML = pending
+      ? sanitizeRenderedMarkdown(renderPendingInlineMarkdown(pending))
+      : ''
     this.pendingEl!.hidden = pending === ''
   }
 
