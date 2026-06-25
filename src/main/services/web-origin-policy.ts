@@ -199,10 +199,6 @@ export async function fetchWithWebOriginPolicy(
   for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount += 1) {
     assertLowRiskHost(url.hostname)
     assertWebOriginAllowed(url, allowedOrigins)
-    // Abort on whichever comes first: the caller's cancellation or our per-hop
-    // timeout. AbortSignal.any/timeout replace a hand-wired controller, a
-    // setTimeout, and manual add/removeEventListener bookkeeping — and the
-    // timeout signal is self-cleaning, so no finally block is needed.
     const timeout = AbortSignal.timeout(WEB_FETCH_TIMEOUT_MS)
     const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout
     const res = await fetch(url, { ...init, signal, redirect: 'manual' })
