@@ -33,6 +33,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
 #      (node-pty, @anthropic-ai/sandbox-runtime) built during `npm install`.
 #      python3-setuptools restores the `distutils` module that node-gyp's gyp
 #      imports — Python 3.12 (Ubuntu 24.04) dropped it from the stdlib (PEP 632).
+#    - ripgrep (rg): the e2e app assumes it's provisioned (see
+#      tool-availability.ts — under COPSE_E2E it reports rg present WITHOUT
+#      probing). workspace:set awaits buildIndex(), which spawns `rg --files`;
+#      if rg is missing the workspace never finishes loading and every
+#      workspace-opening spec hangs to a 60s timeout. (Present on the
+#      GitHub-hosted ubuntu runner; must be added explicitly here.)
 #    - xvfb: the virtual display WebdriverIO auto-spawns on Linux
 #    - the full Chromium runtime lib set Electron dlopen()s at launch. Missing
 #      any one of these surfaces as a cryptic "tab crashed" / launch failure,
@@ -43,6 +49,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 #    pre-24.04 names no longer resolve.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl git jq sudo gnupg \
+      ripgrep \
       build-essential python3 python3-setuptools \
       xvfb \
       fonts-liberation \
