@@ -14,6 +14,7 @@ import {
   type RemoteAgentProvider,
 } from '@shared/remote-agent.ts'
 import { getApiKey, getSetting } from './settings.ts'
+import { validateRemoteAgentBaseUrl } from './web-origin-policy.ts'
 import { getGithubRepoSlug } from './git-service.ts'
 import { storageGet, storageSet } from './storage.ts'
 import { getActiveProjectRoot, getWorkspaceRoot } from './workspace.ts'
@@ -153,15 +154,34 @@ async function readJsonResponse<T>(response: Response, label: string): Promise<T
   }
 }
 
-function resolveBaseUrl(provider: RemoteAgentProvider): string {
+/**
+ * Defensively re-validate the renderer-writable base URL before it is used to
+ * send the API key. A tampered or synced setting could otherwise point the
+ * Authorization header at an attacker-controlled (or cleartext) host. Invalid
+ * Cursor base URLs fall back to the safe default; other providers must fix the
+ * setting because they have no safe default.
+ */
+function readValidatedBaseUrl(provider: RemoteAgentProvider): string {
+  const raw = getSetting<string>('remoteAgentBaseUrl', '').trim()
   if (provider === REMOTE_AGENT_PROVIDER_CURSOR) {
-    return getSetting<string>('remoteAgentBaseUrl', DEFAULT_CURSOR_AGENT_BASE_URL).trim()
+    if (!raw) return DEFAULT_CURSOR_AGENT_BASE_URL
+    try {
+      validateRemoteAgentBaseUrl(raw)
+      return raw
+    } catch (err) {
+      console.warn('[remote-agent] ignoring invalid remoteAgentBaseUrl, using default:', err)
+      return DEFAULT_CURSOR_AGENT_BASE_URL
+    }
   }
-  const baseUrl = getSetting<string>('remoteAgentBaseUrl', '').trim()
-  if (!baseUrl) {
+  if (!raw) {
     throw new Error('Configure Settings → Remote agents → Agent API base URL before using Copse.')
   }
-  return baseUrl
+  validateRemoteAgentBaseUrl(raw)
+  return raw
+}
+
+function resolveBaseUrl(provider: RemoteAgentProvider): string {
+  return readValidatedBaseUrl(provider)
 }
 
 function resolveApiKey(): string {
@@ -364,8 +384,7 @@ export async function resolveRemoteArtifactDownloadUrl(input: {
   path: string
 }): Promise<string> {
   const fetchImpl = input.fetchImpl ?? fetch
-  const baseUrl =
-    input.baseUrl ?? getSetting<string>('remoteAgentBaseUrl', DEFAULT_CURSOR_AGENT_BASE_URL).trim()
+  const baseUrl = input.baseUrl ?? readValidatedBaseUrl(REMOTE_AGENT_PROVIDER_CURSOR)
   const apiKey = input.apiKey ?? resolveApiKey()
   const path = assertArtifactPath(input.path)
   const response = await fetchImpl(remoteArtifactDownloadEndpoint(baseUrl, input.agentId, path), {
