@@ -43,6 +43,15 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
+/* ...but in the pinned first column (width: 1%), a lone code span is a short id
+   (PR number, test name) that should hug its content on one line. Without this it
+   inherits the break-anywhere rule above and shatters one char per line. */
+.message-text:has(th:nth-child(3)) th:first-child > code:only-child,
+.message-text:has(th:nth-child(3)) td:first-child > code:only-child {
+  display: inline;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
 .message-text th:last-child,
 .message-text td:last-child {
   border-right: none;
