@@ -11,3 +11,13 @@ const win = new Window()
 ;(globalThis as any).CustomEvent = win.CustomEvent
 ;(globalThis as any).ErrorEvent = win.ErrorEvent
 ;(globalThis as any).Element = win.Element
+// requestAnimationFrame is a standard part of a browser DOM environment that
+// happy-dom doesn't surface as a bare global. Real renderer views call it (e.g.
+// the conversation list's scroll-pin reset), so component tests that mount those
+// views need it defined. A synchronous shim is enough — the callbacks here only
+// flip flags; no view recurses inside rAF.
+;(globalThis as any).requestAnimationFrame = (cb: (t: number) => void): number => {
+  cb(0)
+  return 0
+}
+;(globalThis as any).cancelAnimationFrame = (): void => {}
