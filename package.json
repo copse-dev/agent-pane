@@ -9,6 +9,7 @@
     "dev": "node scripts/dev.mts",
     "oracle": "node scripts/test-oracle.mts",
     "check:oracle": "node scripts/check-oracle.mts",
+    "check:screenshots": "node scripts/check-screenshots.mts",
     "build": "node scripts/build.mts",
     "build:release": "COPSE_RELEASE=1 node scripts/build.mts",
     "generate:icon": "node scripts/generate-icon.mts",

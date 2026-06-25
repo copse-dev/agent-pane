@@ -128,6 +128,20 @@ jobs:
           grep -E '^(mode|specs)=' plan.txt >> "$GITHUB_OUTPUT"
           { echo '### e2e oracle plan'; echo '```'; cat plan.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
+      # Hard gate: a UI change the oracle maps to a screenshot-producing spec must
+      # refresh that spec's committed reference PNG(s) in the diff, or carry the
+      # `update-screenshots` label (which regenerates them on a hosted runner).
+      # Pure static analysis — no build, no Electron, no self-hosted e2e rerun.
+      # PR-only: there's no label to gate on for a push/schedule.
+      - name: Enforce reference-screenshot freshness
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          UPDATE_SCREENSHOTS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'update-screenshots') }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || true
+          node scripts/check-screenshots.mts --base "$BASE_SHA"
+
   e2e:
     needs: [build, plan-e2e]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
