@@ -241,6 +241,51 @@ export function seedMarkdownListFixture(workspaceRoot: string): void {
   )
 }
 
+/** Thematic breaks (spaced marker runs) + multi-backtick / multi-line code spans. */
+export function seedMarkdownConformanceFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-markdown-conformance-project'
+  const threadId = 'e2e-markdown-conformance-thread'
+  const content = [
+    'Thematic breaks from spaced markers:',
+    '',
+    '* * *',
+    '',
+    'Some prose between breaks.',
+    '',
+    '- - -',
+    '',
+    'Inline code spans: a multi-backtick span `` foo ` bar `` keeps the interior backtick,',
+    'and ``code`` renders too.',
+  ].join('\n')
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Markdown conformance',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-conformance',
+              role: 'assistant',
+              content,
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
 export function seedBrowserLinkChatFixture(workspaceRoot: string): void {
   const projectId = 'e2e-browser-link-chat-project'
   const threadId = 'e2e-browser-link-chat-thread'
