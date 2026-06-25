@@ -15,6 +15,7 @@ import {
   isIndexQueryPattern,
   assertMainFrameSender,
   assertStorageKey,
+  cloudProviderSchema,
   IpcValidationError,
   parseIpcArgs,
   providerSchema,
@@ -48,6 +49,8 @@ import { listCursorHooks } from '../services/cursor-hooks.ts'
 import { registerSkillTools } from '../services/registry-bootstrap.ts'
 import {
   checkoutGitBranch,
+  getBranches,
+  getDefaultBranch,
   getGitFileDiff,
   getGitStatus,
   isInsideGitWorkTree,
@@ -60,6 +63,7 @@ import {
   setMcpServerUserEnabled,
   setWorkspaceTrustAndReload,
 } from '../services/mcp-registry.ts'
+import { getCuratedServerStatuses, setCuratedServerEnabled } from '../services/mcp-curated.ts'
 import { isWorkspaceTrusted } from '../services/workspace-trust.ts'
 import {
   setMockScript,
@@ -215,10 +219,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     openai: isProviderAvailable('openai'),
     cursor: isProviderAvailable('cursor'),
     openrouter: isProviderAvailable('openrouter'),
+    mistral: isProviderAvailable('mistral'),
+    gemini: isProviderAvailable('gemini'),
+    deepseek: isProviderAvailable('deepseek'),
   }))
   ipcMain.handle('settings:validateKey', async (event, provider: unknown, key: unknown) => {
     assertMainFrameSender(event, win)
-    const p = parseIpcArgs(z.enum(['anthropic', 'openai', 'cursor', 'openrouter']), [provider])
+    const p = parseIpcArgs(cloudProviderSchema, [provider])
     const apiKey = parseIpcArgs(z.string().max(8192), [key])
     return validateApiKey(p, apiKey)
   })
@@ -264,6 +271,8 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const targetBranch = parseIpcArgs(z.string().min(1).max(256), [branch])
     await checkoutGitBranch(targetBranch)
   })
+  ipcMain.handle('git:listBranches', () => getBranches())
+  ipcMain.handle('git:getDefaultBranch', () => getDefaultBranch())
   ipcMain.handle('remoteAgent:downloadArtifact', async (event, agentId: unknown, path: unknown) => {
     assertMainFrameSender(event, win)
     const parsedAgentId = parseIpcArgs(z.string().min(1).max(128), [agentId])
@@ -299,6 +308,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const statuses = await reloadMcpServers(registry)
     win.webContents.send('mcp:status_changed', statuses)
     return statuses
+  })
+  ipcMain.handle('mcp:listCurated', () => getCuratedServerStatuses(getMcpServerStatuses()))
+  ipcMain.handle('mcp:setCuratedEnabled', async (_e, name: string, enabled: boolean) => {
+    await setCuratedServerEnabled(name, enabled)
+    const statuses = await reloadMcpServers(registry)
+    win.webContents.send('mcp:status_changed', statuses)
+    return getCuratedServerStatuses(statuses)
   })
   ipcMain.handle('workspace:isTrusted', () => isWorkspaceTrusted(getWorkspaceRoot()))
   ipcMain.handle('workspace:setTrusted', async (event, trusted: unknown) => {

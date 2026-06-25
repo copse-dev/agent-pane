@@ -32,3 +32,13 @@ export interface GitBranchStatus {
   currentBranch: string | null
   pr: GitOpenPr | null
 }
+
+/** Fallback when the repository has no configured default branch name. */
+export const DEFAULT_GIT_BRANCH = 'main'
+
+/** Lightweight branch listing: name + most recent commit timestamp. */
+export interface GitBranchInfo {
+  name: string
+  /** ISO-8601 timestamp of the most recent commit on this branch. */
+  lastCommitDate: string
+}

@@ -169,6 +169,38 @@ function emitContextPressure(
   })
 }
 
+/** When native tool_calls are absent, parse Cursor-style XML embedded in assistant text. */
+function applyTextToolCallRecovery(
+  assistantText: string,
+  pendingToolCalls: ToolCallChunk[],
+  onChunk: (chunk: StreamChunk) => void,
+  coerceTextToolCallArgs?: CoerceToolArgsFn,
+): string {
+  if (pendingToolCalls.length > 0 || !/<\s*tool_call\s*>/i.test(assistantText)) {
+    return assistantText
+  }
+  const recovered = recoverTextToolCalls(assistantText, coerceTextToolCallArgs)
+  if (recovered.toolCalls.length > 0) {
+    assistantText = recovered.cleanedText
+    onChunk({ type: 'text_replace', text: assistantText })
+    for (const tc of recovered.toolCalls) {
+      pendingToolCalls.push(tc)
+      onChunk({ type: 'tool_call', toolCall: tc })
+    }
+  } else if (!recovered.keptRawBlocks) {
+    assistantText = recovered.cleanedText
+    onChunk({ type: 'text_replace', text: assistantText })
+  }
+  return assistantText
+}
+
+interface TextOnlyTurnResult {
+  /** Set when the turn finishes as plain text (no recovered tools). */
+  answerText: string
+  /** Recovered tool calls the caller should execute before treating the run as finished. */
+  pendingToolCalls: ToolCallChunk[]
+}
+
 async function streamTextOnlyTurn(
   provider: LLMProvider,
   messages: LLMMessage[],
@@ -177,8 +209,10 @@ async function streamTextOnlyTurn(
   nudge = FINALIZE_NUDGE,
   getLastUsage?: () => { inputTokens: number; outputTokens: number } | null,
   usageModel?: string,
-): Promise<string> {
-  if (!reserveLlmCall(budget)) return ''
+  coerceTextToolCallArgs?: CoerceToolArgsFn,
+): Promise<TextOnlyTurnResult> {
+  const empty: TextOnlyTurnResult = { answerText: '', pendingToolCalls: [] }
+  if (!reserveLlmCall(budget)) return empty
   const signal = budget.signal
   const turnMessages: LLMMessage[] = [...messages, { role: 'user', content: nudge }]
   let assistantText = ''
@@ -207,13 +241,30 @@ async function streamTextOnlyTurn(
     }
   }
 
+  const pendingToolCalls: ToolCallChunk[] = []
+  assistantText = applyTextToolCallRecovery(
+    assistantText,
+    pendingToolCalls,
+    onChunk,
+    coerceTextToolCallArgs,
+  )
+
+  if (pendingToolCalls.length > 0) {
+    messages.push({
+      role: 'assistant',
+      content: pendingToolCalls.map((tc) => ({ id: tc.id, name: tc.name, args: tc.args })),
+    })
+    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
+    return { answerText: '', pendingToolCalls }
+  }
+
   const trimmed = assistantText.trim()
   if (isRefusalStopReason(stopReason)) {
     const text = trimmed || REFUSAL_USER_MESSAGE
     if (!trimmed) onChunk({ type: 'text', text })
     messages.push({ role: 'assistant', content: text })
     emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
-    return text
+    return { answerText: text, pendingToolCalls: [] }
   }
   if (trimmed) {
     messages.push({ role: 'assistant', content: assistantText })
@@ -221,7 +272,78 @@ async function streamTextOnlyTurn(
     messages.push({ role: 'user', content: TRUNCATION_CONTINUE_NUDGE })
   }
   emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
-  return trimmed
+  return { answerText: trimmed, pendingToolCalls: [] }
+}
+
+type ToolBatchContext = {
+  pendingToolCalls: ToolCallChunk[]
+  messages: LLMMessage[]
+  executeTool: AgentLoopOptions['executeTool']
+  signal?: AbortSignal | undefined
+  onChunk: (chunk: StreamChunk) => void
+  recentFingerprints: string[]
+}
+
+async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
+  const { pendingToolCalls, messages, executeTool, signal, onChunk, recentFingerprints } = ctx
+  const measuredInputBeforeTools = getLastMeasuredInputTokens()
+  const toolResults: ToolResult[] = []
+  for (let ti = 0; ti < pendingToolCalls.length; ti++) {
+    const tc = pendingToolCalls[ti]
+    if (!tc) continue
+    if (signal?.aborted) {
+      for (let j = ti; j < pendingToolCalls.length; j++) {
+        const cancelled = pendingToolCalls[j]
+        if (!cancelled) continue
+        toolResults.push({ toolCallId: cancelled.id, result: CANCELLED_TOOL_RESULT })
+        onChunk({
+          type: 'tool_result',
+          toolCallId: cancelled.id,
+          result: CANCELLED_TOOL_RESULT,
+          isError: true,
+        })
+      }
+      break
+    }
+    if (tc.argsError) {
+      const result = `Error: ${tc.argsError}`
+      toolResults.push({ toolCallId: tc.id, result })
+      onChunk({ type: 'tool_result', toolCallId: tc.id, result, isError: true })
+      continue
+    }
+    const normalizedArgs = normalizeExploreArgs(tc.name, tc.args)
+    const fp = toolCallFingerprint(tc.name, normalizedArgs)
+    const duplicate = isDuplicateExploreCall(tc.name, normalizedArgs, recentFingerprints)
+    recentFingerprints.push(fp)
+    if (recentFingerprints.length > RECENT_FINGERPRINT_WINDOW) {
+      recentFingerprints.shift()
+    }
+
+    try {
+      const raw = duplicate
+        ? DUPLICATE_TOOL_RESULT_PREFIX
+        : await executeTool(tc.name, normalizedArgs, signal ?? new AbortController().signal, tc.id)
+      const { result, editStats } = normalizeToolExecuteResult(raw)
+      toolResults.push({ toolCallId: tc.id, result })
+      onChunk({
+        type: 'tool_result',
+        toolCallId: tc.id,
+        result,
+        isError: false,
+        ...(editStats ? { editStats } : {}),
+      })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      toolResults.push({ toolCallId: tc.id, result: `Error: ${msg}` })
+      onChunk({ type: 'tool_result', toolCallId: tc.id, result: `Error: ${msg}`, isError: true })
+    }
+  }
+
+  setLastMeasuredInputTokens(measuredInputBeforeTools)
+
+  if (toolResults.length > 0) {
+    messages.push({ role: 'tool', toolResults })
+  }
 }
 
 function handleContextOverflowInLoop(
@@ -316,8 +438,21 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           STUCK_FINALIZE_NUDGE,
           getLastUsage,
           usageModel,
+          coerceTextToolCallArgs,
         )
-        if (forced.trim()) {
+        if (forced.pendingToolCalls.length > 0) {
+          await executeToolBatch({
+            pendingToolCalls: forced.pendingToolCalls,
+            messages,
+            executeTool: opts.executeTool,
+            signal,
+            onChunk,
+            recentFingerprints,
+          })
+          toolOnlySteps++
+          continue
+        }
+        if (forced.answerText.trim()) {
           finishedWithAnswer = true
           break
         }
@@ -396,20 +531,12 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
 
     if (signal?.aborted) break
 
-    if (pendingToolCalls.length === 0 && /<\s*tool_call\s*>/i.test(assistantText)) {
-      const recovered = recoverTextToolCalls(assistantText, coerceTextToolCallArgs)
-      if (recovered.toolCalls.length > 0) {
-        assistantText = recovered.cleanedText
-        onChunk({ type: 'text_replace', text: assistantText })
-        for (const tc of recovered.toolCalls) {
-          pendingToolCalls.push(tc)
-          onChunk({ type: 'tool_call', toolCall: tc })
-        }
-      } else if (!recovered.keptRawBlocks) {
-        assistantText = recovered.cleanedText
-        onChunk({ type: 'text_replace', text: assistantText })
-      }
-    }
+    assistantText = applyTextToolCallRecovery(
+      assistantText,
+      pendingToolCalls,
+      onChunk,
+      coerceTextToolCallArgs,
+    )
 
     // Push assistant message to history
     if (pendingToolCalls.length > 0) {
@@ -481,74 +608,16 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     // own stream sizes. Snapshot this loop's measured input here and restore it
     // after the tools finish so the next iteration's trim/escalation sizing
     // reflects the parent conversation, not the subagent's (#112).
-    const measuredInputBeforeTools = getLastMeasuredInputTokens()
-    const toolResults: ToolResult[] = []
-    for (let ti = 0; ti < pendingToolCalls.length; ti++) {
-      const tc = pendingToolCalls[ti]
-      if (!tc) continue
-      if (signal?.aborted) {
-        for (let j = ti; j < pendingToolCalls.length; j++) {
-          const cancelled = pendingToolCalls[j]
-          if (!cancelled) continue
-          toolResults.push({ toolCallId: cancelled.id, result: CANCELLED_TOOL_RESULT })
-          onChunk({
-            type: 'tool_result',
-            toolCallId: cancelled.id,
-            result: CANCELLED_TOOL_RESULT,
-            isError: true,
-          })
-        }
-        break
-      }
-      // Provider could not parse the streamed tool-call arguments. Do not run
-      // the tool with empty/partial args — return an error so the model retries
-      // the call with well-formed JSON (#114).
-      if (tc.argsError) {
-        const result = `Error: ${tc.argsError}`
-        toolResults.push({ toolCallId: tc.id, result })
-        onChunk({ type: 'tool_result', toolCallId: tc.id, result, isError: true })
-        continue
-      }
-      const normalizedArgs = normalizeExploreArgs(tc.name, tc.args)
-      const fp = toolCallFingerprint(tc.name, normalizedArgs)
-      const duplicate = isDuplicateExploreCall(tc.name, normalizedArgs, recentFingerprints)
-      recentFingerprints.push(fp)
-      if (recentFingerprints.length > RECENT_FINGERPRINT_WINDOW) {
-        recentFingerprints.shift()
-      }
-
-      try {
-        const raw = duplicate
-          ? DUPLICATE_TOOL_RESULT_PREFIX
-          : await opts.executeTool(
-              tc.name,
-              normalizedArgs,
-              signal ?? new AbortController().signal,
-              tc.id,
-            )
-        const { result, editStats } = normalizeToolExecuteResult(raw)
-        toolResults.push({ toolCallId: tc.id, result })
-        onChunk({
-          type: 'tool_result',
-          toolCallId: tc.id,
-          result,
-          isError: false,
-          ...(editStats ? { editStats } : {}),
-        })
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        toolResults.push({ toolCallId: tc.id, result: `Error: ${msg}` })
-        onChunk({ type: 'tool_result', toolCallId: tc.id, result: `Error: ${msg}`, isError: true })
-      }
-    }
-
-    setLastMeasuredInputTokens(measuredInputBeforeTools)
+    await executeToolBatch({
+      pendingToolCalls,
+      messages,
+      executeTool: opts.executeTool,
+      signal,
+      onChunk,
+      recentFingerprints,
+    })
 
     toolOnlySteps++
-
-    if (toolResults.length > 0) {
-      messages.push({ role: 'tool', toolResults })
-    }
 
     if (signal?.aborted) break
   }
@@ -557,7 +626,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     const openTodos = getOpenTodos?.() ?? []
     const nudge =
       openTodos.length > 0 && hasOpenTodos(openTodos) ? OPEN_TODOS_FINALIZE_NUDGE : FINALIZE_NUDGE
-    const finalText = await streamTextOnlyTurn(
+    let finalResult = await streamTextOnlyTurn(
       provider,
       messages,
       onChunk,
@@ -565,8 +634,29 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       nudge,
       getLastUsage,
       usageModel,
+      coerceTextToolCallArgs,
     )
-    if (!finalText.trim()) {
+    while (finalResult.pendingToolCalls.length > 0 && !runBudgetExhausted(budget)) {
+      await executeToolBatch({
+        pendingToolCalls: finalResult.pendingToolCalls,
+        messages,
+        executeTool: opts.executeTool,
+        signal,
+        onChunk,
+        recentFingerprints,
+      })
+      finalResult = await streamTextOnlyTurn(
+        provider,
+        messages,
+        onChunk,
+        budget,
+        nudge,
+        getLastUsage,
+        usageModel,
+        coerceTextToolCallArgs,
+      )
+    }
+    if (!finalResult.answerText.trim()) {
       onChunk({ type: 'text', text: INCOMPLETE_RUN_MESSAGE })
       messages.push({ role: 'assistant', content: INCOMPLETE_RUN_MESSAGE })
     } else {
