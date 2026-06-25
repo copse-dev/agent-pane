@@ -12,6 +12,24 @@ Moving a spec down to a component test removes it from the flaky tier entirely
 (better than the test-oracle merely skipping it) and it gets exact import-graph
 selection. This doc tracks what can move.
 
+## Migrated so far
+
+- `message-queue`, `queued-send-now`, `queued-message-edit` → component (#377).
+- `context-breakdown` → `src/renderer/views/context-wheel.test.ts` — the breakdown
+  ring (`has-breakdown`, `NN%` label, ≥2 arcs) and hover popover render from a
+  `ContextBreakdown` with no Electron; the estimate itself (main IPC) stays e2e,
+  so the test feeds the real shared `composeContextBreakdown` builder.
+- `tool-display` → `src/renderer/views/tool-display.test.ts` (#386).
+- `composer-typing-no-rerender` → `src/renderer/views/conversation-draft-no-rerender.test.ts`
+  (the regression — conversation must not rebuild on a draft save — decomposes
+  into this view test plus the existing `composer-draft-autosave` /
+  `thread-helpers` draft-event units).
+- `new-thread-keeps-panel` → component (prototype, see Pattern below).
+- Markdown specs (`markdown-bold-glob` / `-list-indent` / `-ordered-list-spacing`)
+  stay e2e for their layout half, but their **parsing** assertions moved to
+  `src/renderer/markdown/renderer-fixtures.test.ts` (#386) — fast structural
+  coverage alongside the geometry checks.
+
 ## The discriminator
 
 `saveScreenshot` and `browser.reloadSession()` are boilerplate — **no spec

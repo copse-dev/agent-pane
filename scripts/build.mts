@@ -62,16 +62,27 @@ await esbuild.build({
   entryPoints: ['src/preload/index.ts'],
   outfile: 'dist/preload/index.js',
 })
-await esbuild.build({
-  entryPoints: ['src/renderer/main.ts'],
-  outfile: 'dist/renderer/app.js',
+const browserOpts = {
   bundle: true,
-  platform: 'browser',
+  platform: 'browser' as const,
   sourcemap: true,
-  loader: { '.ts': 'ts', '.css': 'css', '.ttf': 'file' },
+  loader: { '.ts': 'ts', '.css': 'css', '.ttf': 'file' } as const,
   alias: sharedAlias,
   define,
   minifySyntax: isRelease,
+}
+
+await esbuild.build({
+  ...browserOpts,
+  entryPoints: ['src/renderer/main.ts'],
+  outfile: 'dist/renderer/app.js',
+})
+// Monaco is bundled on its own and injected lazily by monaco/setup.ts, keeping
+// the multi-megabyte editor (and its CSS) out of the initial app.js.
+await esbuild.build({
+  ...browserOpts,
+  entryPoints: ['src/renderer/monaco/monaco-global.ts'],
+  outfile: 'dist/renderer/monaco-bundle.js',
 })
 
 copyFileSync('src/renderer/index.html', 'dist/renderer/index.html')

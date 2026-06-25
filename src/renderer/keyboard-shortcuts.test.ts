@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { isTypingTarget, matchPanelShortcut } from './keyboard-shortcuts.ts'
+import { isTypingTarget, matchNewThreadShortcut, matchPanelShortcut } from './keyboard-shortcuts.ts'
 
 function keyEvent(init: KeyboardEventInit): KeyboardEvent {
   return { ...init } as KeyboardEvent
@@ -35,6 +35,21 @@ describe('keyboard-shortcuts', () => {
     assert.equal(matchPanelShortcut(keyEvent({ ctrlKey: true, key: 't' })), null)
     assert.equal(matchPanelShortcut(keyEvent({ ctrlKey: true, shiftKey: true, key: 't' })), null)
     assert.equal(matchPanelShortcut(keyEvent({ altKey: true, ctrlKey: true, key: 'b' })), null)
+  })
+
+  it('matchNewThreadShortcut matches Cmd/Ctrl+N', () => {
+    assert.equal(matchNewThreadShortcut(keyEvent({ ctrlKey: true, key: 'n' })), true)
+    assert.equal(matchNewThreadShortcut(keyEvent({ metaKey: true, key: 'N' })), true)
+  })
+
+  it('matchNewThreadShortcut ignores modified or unrelated chords', () => {
+    assert.equal(matchNewThreadShortcut(keyEvent({ key: 'n' })), false)
+    assert.equal(
+      matchNewThreadShortcut(keyEvent({ ctrlKey: true, shiftKey: true, key: 'n' })),
+      false,
+    )
+    assert.equal(matchNewThreadShortcut(keyEvent({ ctrlKey: true, altKey: true, key: 'n' })), false)
+    assert.equal(matchNewThreadShortcut(keyEvent({ ctrlKey: true, key: 'b' })), false)
   })
 
   it('isTypingTarget detects editable fields', () => {

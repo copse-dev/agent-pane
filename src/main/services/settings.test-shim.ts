@@ -3,7 +3,27 @@ import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
 const settings = new Map<string, unknown>()
 const apiKeys = new Map<string, string>()
 
-export type KeyProvider = 'anthropic' | 'openai' | 'lmstudio' | 'cursor'
+export type KeyProvider =
+  | 'anthropic'
+  | 'openai'
+  | 'lmstudio'
+  | 'cursor'
+  | 'openrouter'
+  | 'mistral'
+  | 'gemini'
+  | 'deepseek'
+
+export type CloudKeyProvider = Exclude<KeyProvider, 'lmstudio'>
+
+const ENV_VARS: Partial<Record<KeyProvider, string>> = {
+  anthropic: 'ANTHROPIC_API_KEY',
+  openai: 'OPENAI_API_KEY',
+  cursor: 'CURSOR_API_KEY',
+  openrouter: 'OPENROUTER_API_KEY',
+  mistral: 'MISTRAL_API_KEY',
+  gemini: 'GEMINI_API_KEY',
+  deepseek: 'DEEPSEEK_API_KEY',
+}
 
 export function getApiKey(provider: KeyProvider): string | null {
   return apiKeys.get(provider) ?? null
@@ -17,10 +37,9 @@ export function setApiKey(provider: KeyProvider, key: string): void {
   apiKeys.set(provider, key.trim())
 }
 
-export function isProviderAvailable(provider: 'anthropic' | 'openai' | 'cursor'): boolean {
-  if (provider === 'anthropic') return !!(process.env.ANTHROPIC_API_KEY || hasApiKey('anthropic'))
-  if (provider === 'cursor') return !!(process.env.CURSOR_API_KEY || hasApiKey('cursor'))
-  return !!(process.env.OPENAI_API_KEY || hasApiKey('openai'))
+export function isProviderAvailable(provider: CloudKeyProvider): boolean {
+  const envVar = ENV_VARS[provider]
+  return !!((envVar && process.env[envVar]) || hasApiKey(provider))
 }
 
 export function getLmStudioApiKey(): string {

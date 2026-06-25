@@ -59,4 +59,25 @@ export const approvalRespondSchema = z.tuple([
   z.boolean().optional(),
 ])
 
-export const providerSchema = z.enum(['anthropic', 'openai', 'lmstudio', 'cursor', 'openrouter'])
+export const providerSchema = z.enum([
+  'anthropic',
+  'openai',
+  'lmstudio',
+  'cursor',
+  'openrouter',
+  'mistral',
+  'gemini',
+  'deepseek',
+])
+
+// Cloud providers the renderer can query availability for and validate keys
+// against (everything in `providerSchema` except the local LM Studio server).
+export const cloudProviderSchema = z.enum([
+  'anthropic',
+  'openai',
+  'cursor',
+  'openrouter',
+  'mistral',
+  'gemini',
+  'deepseek',
+])
