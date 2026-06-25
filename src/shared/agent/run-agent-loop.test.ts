@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { runAgentLoop } from './run-agent-loop.ts'
+import { AGENT_RUN_ABORT_REASON_TIMEOUT } from './agent-loop-limits.ts'
 import { getLastMeasuredInputTokens, setLastMeasuredInputTokens } from './trim-history.ts'
 import type { LLMMessage, LLMProvider, StreamChunk } from '@shared/types'
 
@@ -526,6 +527,22 @@ src/renderer/views/projects-pane.ts
     assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('time or LLM call limit')))
     assert.equal(chunks.at(-1)?.type, 'done')
     assertToolPairingValid(messages)
+  })
+
+  it('surfaces the run limit message when aborted for timeout', async () => {
+    const controller = new AbortController()
+    controller.abort(AGENT_RUN_ABORT_REASON_TIMEOUT)
+    const chunks: StreamChunk[] = []
+    await runAgentLoop({
+      provider: mockProvider([[{ type: 'text', text: 'hi' }, { type: 'done' }]]),
+      messages: [{ role: 'user', content: 'hello' }],
+      tools: [],
+      onChunk: (c) => chunks.push(c),
+      executeTool: async () => '',
+      signal: controller.signal,
+    })
+    assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('time or LLM call limit')))
+    assert.equal(chunks.at(-1)?.type, 'done')
   })
 
   it('prefers per-stream usage chunks over the shared lastUsage field (#112)', async () => {
