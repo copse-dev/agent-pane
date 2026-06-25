@@ -179,16 +179,20 @@ export interface ApiClient {
     /** Effective extra-provider list: shipped presets merged with stored overrides/customs. */
     extraProviders: () => Promise<ExtraProvider[]>
     /** Insert/replace a preset override or custom provider; returns the resolved list. */
-    saveExtraProvider: (record: Omit<StoredExtraProvider, 'slug'> & { slug?: string }) => Promise<
-      ExtraProvider[]
-    >
+    saveExtraProvider: (
+      record: Omit<StoredExtraProvider, 'slug'> & { slug?: string },
+    ) => Promise<ExtraProvider[]>
     /** Remove a custom provider (or revert a preset override); returns the resolved list. */
     deleteExtraProvider: (slug: string) => Promise<ExtraProvider[]>
     /** List models from an OpenAI-compatible `/models` endpoint for the add/edit form. */
     fetchProviderModels: (
       baseUrl: string,
       apiKey?: string,
-    ) => Promise<{ ok: boolean; models: { id: string; contextLength: number | null }[]; error?: string }>
+    ) => Promise<{
+      ok: boolean
+      models: { id: string; contextLength: number | null }[]
+      error?: string
+    }>
   }
   appIcon: {
     apply: () => Promise<void>

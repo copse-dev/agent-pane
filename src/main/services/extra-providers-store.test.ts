@@ -37,8 +37,16 @@ describe('extra-providers-store', () => {
   })
 
   it('treats an explicit slug as an in-place edit (the frozen slug)', async () => {
-    await saveExtraProvider({ slug: 'together', baseUrl: 'https://api.together.xyz/v1', label: 'A' })
-    await saveExtraProvider({ slug: 'together', baseUrl: 'https://api.together.xyz/v1', label: 'B' })
+    await saveExtraProvider({
+      slug: 'together',
+      baseUrl: 'https://api.together.xyz/v1',
+      label: 'A',
+    })
+    await saveExtraProvider({
+      slug: 'together',
+      baseUrl: 'https://api.together.xyz/v1',
+      label: 'B',
+    })
     assert.equal(slugs().filter((s) => s === 'together').length, 1)
     assert.equal(getResolvedExtraProvider('together')?.label, 'B')
   })

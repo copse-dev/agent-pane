@@ -50,7 +50,10 @@ describe('extra provider lookups against a resolved list', () => {
       extraProviderDisplayLabel('deepseek:deepseek-chat', providers),
       'DeepSeek V3 (deepseek-chat)',
     )
-    assert.equal(extraProviderDisplayLabel('gemini:some-unknown-model', providers), 'some-unknown-model')
+    assert.equal(
+      extraProviderDisplayLabel('gemini:some-unknown-model', providers),
+      'some-unknown-model',
+    )
     // No list → degrade to the stripped id.
     assert.equal(extraProviderDisplayLabel('gemini:gemini-2.5-flash'), 'gemini-2.5-flash')
   })

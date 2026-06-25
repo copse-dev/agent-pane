@@ -27,7 +27,11 @@ export async function fetchOpenAiCompatibleModels(
       signal: AbortSignal.timeout(FETCH_TIMEOUTS.modelList),
     })
     if (!res.ok) {
-      return { ok: false, models: [], error: `HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ''}` }
+      return {
+        ok: false,
+        models: [],
+        error: `HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ''}`,
+      }
     }
     const json: unknown = await res.json()
     const data = (json as { data?: unknown })?.data
@@ -36,7 +40,8 @@ export async function fetchOpenAiCompatibleModels(
     for (const row of data) {
       if (!row || typeof row !== 'object') continue
       const rec = row as Record<string, unknown>
-      const id = typeof rec.id === 'string' ? rec.id : typeof rec.model === 'string' ? rec.model : null
+      const id =
+        typeof rec.id === 'string' ? rec.id : typeof rec.model === 'string' ? rec.model : null
       if (!id) continue
       models.push({ id, contextLength: parseContextFromModelRecord(rec) })
     }

@@ -9,12 +9,7 @@ import { extraProviderForModel, extraProviderModelId } from '@shared/llm/extra-p
 import { getResolvedExtraProviders } from './extra-providers-store.ts'
 import type { LLMProvider } from '@shared/types'
 import { DEFAULT_LM_STUDIO_URL, LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
-import {
-  getSetting,
-  getSettingTrimmed,
-  getLmStudioApiKey,
-  resolveApiKey,
-} from './settings.ts'
+import { getSetting, getSettingTrimmed, getLmStudioApiKey, resolveApiKey } from './settings.ts'
 import { resolveContextWindow } from './resolve-context-window.ts'
 import {
   fetchLmStudioModelsCached,

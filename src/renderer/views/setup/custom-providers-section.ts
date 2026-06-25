@@ -206,7 +206,14 @@ export function createCustomProvidersSection(api: ApiClient): CustomProvidersSec
     const keyStatus = el('span', { class: 'key-status', 'data-key': provider.id })
     keyInputs.set(provider.id, key)
     row.append(
-      el('label', {}, provider.keyLabel, key, keyStatus, el('span', { class: 'field-hint' }, provider.keyHint)),
+      el(
+        'label',
+        {},
+        provider.keyLabel,
+        key,
+        keyStatus,
+        el('span', { class: 'field-hint' }, provider.keyHint),
+      ),
     )
 
     // Models (editable lines) + fetch button.
@@ -222,14 +229,20 @@ export function createCustomProvidersSection(api: ApiClient): CustomProvidersSec
       void (async () => {
         fetchStatus.textContent = 'Fetching…'
         fetchStatus.className = 'key-status'
-        const res = await api.settings.fetchProviderModels(urlField.value.trim(), key.value.trim() || undefined)
+        const res = await api.settings.fetchProviderModels(
+          urlField.value.trim(),
+          key.value.trim() || undefined,
+        )
         if (!res.ok) {
           fetchStatus.textContent = `✗ ${res.error ?? 'Could not list models'}`
           fetchStatus.className = 'key-status err'
           return
         }
         modelsArea.value = formatModelsText(
-          res.models.map((m) => ({ id: m.id, ...(m.contextLength ? { contextWindow: m.contextLength } : {}) })),
+          res.models.map((m) => ({
+            id: m.id,
+            ...(m.contextLength ? { contextWindow: m.contextLength } : {}),
+          })),
         )
         fetchStatus.textContent = `✓ ${res.models.length} model(s) — review and Save`
         fetchStatus.className = 'key-status ok'
@@ -243,7 +256,7 @@ export function createCustomProvidersSection(api: ApiClient): CustomProvidersSec
     // Advanced: usage reporting, fallback context window, extra request body.
     const usageBox = el('input', {
       type: 'checkbox',
-      ...(provider.includeUsage ?? true ? { checked: true } : {}),
+      ...((provider.includeUsage ?? true) ? { checked: true } : {}),
     }) as HTMLInputElement
     const ctxInput = el('input', {
       type: 'number',
@@ -294,7 +307,12 @@ export function createCustomProvidersSection(api: ApiClient): CustomProvidersSec
       'details',
       { class: 'custom-provider-advanced' },
       el('summary', {}, 'Advanced'),
-      el('label', { class: 'checkbox-label' }, usageBox, ' Report token usage (stream_options.include_usage)'),
+      el(
+        'label',
+        { class: 'checkbox-label' },
+        usageBox,
+        ' Report token usage (stream_options.include_usage)',
+      ),
       el(
         'label',
         {},

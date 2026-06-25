@@ -216,8 +216,7 @@ contextBridge.exposeInMainWorld('api', {
     extraProviders: () => ipcRenderer.invoke('settings:extraProviders'),
     saveExtraProvider: (record: unknown) =>
       ipcRenderer.invoke('settings:saveExtraProvider', record),
-    deleteExtraProvider: (slug: string) =>
-      ipcRenderer.invoke('settings:deleteExtraProvider', slug),
+    deleteExtraProvider: (slug: string) => ipcRenderer.invoke('settings:deleteExtraProvider', slug),
     fetchProviderModels: (baseUrl: string, apiKey?: string) =>
       ipcRenderer.invoke('settings:fetchProviderModels', baseUrl, apiKey),
   },

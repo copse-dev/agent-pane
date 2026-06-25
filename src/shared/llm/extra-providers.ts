@@ -94,8 +94,16 @@ export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
     fallbackContextWindow: MISTRAL_CONTEXT,
     includeUsage: true,
     models: [
-      { id: 'mistral-small-latest', label: 'Mistral Small (free tier)', contextWindow: MISTRAL_CONTEXT },
-      { id: 'open-mistral-nemo', label: 'Mistral Nemo (free tier)', contextWindow: MISTRAL_CONTEXT },
+      {
+        id: 'mistral-small-latest',
+        label: 'Mistral Small (free tier)',
+        contextWindow: MISTRAL_CONTEXT,
+      },
+      {
+        id: 'open-mistral-nemo',
+        label: 'Mistral Nemo (free tier)',
+        contextWindow: MISTRAL_CONTEXT,
+      },
       { id: 'mistral-large-latest', label: 'Mistral Large', contextWindow: MISTRAL_CONTEXT },
     ],
   },
@@ -115,10 +123,26 @@ export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
     fallbackContextWindow: GEMINI_CONTEXT,
     includeUsage: true,
     models: [
-      { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (free tier)', contextWindow: GEMINI_CONTEXT },
-      { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite (free tier)', contextWindow: GEMINI_CONTEXT },
-      { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (free tier)', contextWindow: GEMINI_CONTEXT },
-      { id: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash-Lite (free tier)', contextWindow: GEMINI_CONTEXT },
+      {
+        id: 'gemini-2.5-flash',
+        label: 'Gemini 2.5 Flash (free tier)',
+        contextWindow: GEMINI_CONTEXT,
+      },
+      {
+        id: 'gemini-2.5-flash-lite',
+        label: 'Gemini 2.5 Flash-Lite (free tier)',
+        contextWindow: GEMINI_CONTEXT,
+      },
+      {
+        id: 'gemini-2.0-flash',
+        label: 'Gemini 2.0 Flash (free tier)',
+        contextWindow: GEMINI_CONTEXT,
+      },
+      {
+        id: 'gemini-2.0-flash-lite',
+        label: 'Gemini 2.0 Flash-Lite (free tier)',
+        contextWindow: GEMINI_CONTEXT,
+      },
     ],
   },
   {
@@ -137,7 +161,13 @@ export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
     includeUsage: true,
     // Only `deepseek-chat` (V3) reliably supports function calling, which this
     // agent needs; `deepseek-reasoner` is intentionally omitted.
-    models: [{ id: 'deepseek-chat', label: 'DeepSeek V3 (deepseek-chat)', contextWindow: DEEPSEEK_CONTEXT }],
+    models: [
+      {
+        id: 'deepseek-chat',
+        label: 'DeepSeek V3 (deepseek-chat)',
+        contextWindow: DEEPSEEK_CONTEXT,
+      },
+    ],
   },
 ]
 
@@ -271,13 +301,17 @@ function customToProvider(stored: StoredExtraProvider): ExtraProvider | null {
     keyLabel: `${label} API key`,
     keyPlaceholder: 'API key',
     keyHint: `For ${label} (OpenAI-compatible). Validated via a models request.`,
-    ...(typeof stored.keyPrefix === 'string' && stored.keyPrefix ? { keyPrefix: stored.keyPrefix } : {}),
+    ...(typeof stored.keyPrefix === 'string' && stored.keyPrefix
+      ? { keyPrefix: stored.keyPrefix }
+      : {}),
     fallbackContextWindow:
       typeof stored.fallbackContextWindow === 'number' && stored.fallbackContextWindow > 0
         ? stored.fallbackContextWindow
         : DEFAULT_EXTRA_PROVIDER_CONTEXT,
     ...(typeof stored.includeUsage === 'boolean' ? { includeUsage: stored.includeUsage } : {}),
-    ...(stored.extraBody && typeof stored.extraBody === 'object' ? { extraBody: stored.extraBody } : {}),
+    ...(stored.extraBody && typeof stored.extraBody === 'object'
+      ? { extraBody: stored.extraBody }
+      : {}),
     models: normalizeModels(stored.models),
   }
 }

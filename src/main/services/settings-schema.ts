@@ -22,9 +22,7 @@ const extraProviderModelSchema = z.object({
 // Persisted override (for a built-in preset) or full definition (for a user
 // custom). `slug` matches the URL-safe form derived from a base-URL hostname.
 export const storedExtraProviderSchema = z.object({
-  slug: z
-    .string()
-    .regex(/^[a-z0-9-]{1,64}$/),
+  slug: z.string().regex(/^[a-z0-9-]{1,64}$/),
   label: z.string().max(256).optional(),
   baseUrl: z.string().max(2048).optional(),
   keyPrefix: z.string().max(64).optional(),
