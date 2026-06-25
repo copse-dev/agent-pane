@@ -48,9 +48,13 @@ export function renderMarkdown(raw: string): string {
   s = mapOutsideFencedHtml(s, (seg) => parseTables(seg))
   s = mapOutsideFencedHtml(s, (seg) => {
     let t = seg
-    t = t.replace(/`([^`]+)`/g, '<code>$1</code>')
+    t = renderInlineCode(t)
     t = renderMarkdownLinks(t)
     t = renderBareHttpLinks(t)
+    // Thematic break: a line of 3+ of the same -, *, or _ marker, optionally
+    // separated by spaces/tabs. Detect before the inline `*`/`_` passes so a
+    // spaced break like `* * *` / `_ _ _` is not chewed into stray <em> spans.
+    t = t.replace(/^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/gm, '\n\n<hr>\n\n')
     // Bold around inline HTML first (`**` + text + <code>/<a>/<img> + text + `**`);
     // then prose bold outside code spans. A single [^*]+ pass breaks on globs like
     // src/**/*.test.ts inside <code> and can pair ** across table rows, leaving
@@ -64,7 +68,6 @@ export function renderMarkdown(raw: string): string {
     t = t.replace(/^### (.+)$/gm, '<h3>$1</h3>')
     t = t.replace(/^## (.+)$/gm, '<h4>$1</h4>')
     t = t.replace(/^# (.+)$/gm, '<h4>$1</h4>')
-    t = t.replace(/^ {0,3}(-{3,}|\*{3,}|_{3,}) *$/gm, '\n\n<hr>\n\n')
     t = t.replace(/^(?:[-*+] )(.+)$/gm, '<li>$1</li>')
     t = wrapLooseListItems(t)
     return t
@@ -73,6 +76,61 @@ export function renderMarkdown(raw: string): string {
   s = mapOutsideFencedHtml(s, (seg) => wrapProseBlocks(seg))
 
   return s
+}
+
+/**
+ * CommonMark code spans: a run of N backticks opens a span that closes at the
+ * next run of exactly N backticks. Interior line endings collapse to spaces, and
+ * a single leading+trailing space is stripped when both are present and the
+ * content is not all spaces. Runs of a different length stay literal content, so
+ * `` `` foo ` bar `` `` and ``code`` work — unlike a naive single-backtick regex.
+ * Input is already HTML-escaped (backticks survive escaping), so content is safe.
+ */
+function renderInlineCode(text: string): string {
+  let out = ''
+  let i = 0
+  while (i < text.length) {
+    if (text[i] !== '`') {
+      out += text[i]
+      i++
+      continue
+    }
+    let runEnd = i
+    while (text[runEnd] === '`') runEnd++
+    const fence = runEnd - i
+    let close = -1
+    let k = runEnd
+    while (k < text.length) {
+      if (text[k] !== '`') {
+        k++
+        continue
+      }
+      let l = k
+      while (text[l] === '`') l++
+      if (l - k === fence) {
+        close = k
+        break
+      }
+      k = l
+    }
+    if (close === -1) {
+      out += text.slice(i, runEnd)
+      i = runEnd
+      continue
+    }
+    let content = text.slice(runEnd, close).replace(/\n/g, ' ')
+    if (
+      content.length >= 2 &&
+      content.startsWith(' ') &&
+      content.endsWith(' ') &&
+      /[^ ]/.test(content)
+    ) {
+      content = content.slice(1, -1)
+    }
+    out += `<code>${content}</code>`
+    i = close + fence
+  }
+  return out
 }
 
 /** Group consecutive `<li>` blocks (including blank-line gaps) into a tight `<ul>`. */

@@ -1,0 +1,2 @@
+# The repo root ignores `.env.*`; keep the template tracked here.
+!.env.example
