@@ -1,7 +1,7 @@
 import { runCommand } from './command-runner.ts'
 import { runGh, parseGhJson } from './gh-service.ts'
 import { getWorkspaceRoot } from './workspace.ts'
-import { isGitAvailable } from './tool-availability.ts'
+import { isGitAvailable, isGhAvailable } from './tool-availability.ts'
 import { isInsideGitWorkTree } from './git-service.ts'
 import type { PrWorkspaceContext } from '@shared/follow-ups/types.ts'
 import type { GitBranchStatus, GitOpenPr } from '@shared/types/git.ts'
@@ -179,6 +179,12 @@ export async function getGitBranchStatus(forBranch?: string): Promise<GitBranchS
   const branchResult = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'])
   const currentBranch = branchResult.code === 0 ? branchResult.stdout.trim() || null : null
   if (!currentBranch) return empty
+
+  // gh may be absent (minimal installs, the e2e runner image) — checkToolAvailability
+  // already reports it. Skip the PR lookup rather than spawning gh, which would
+  // reject with "spawn gh ENOENT" and surface an error toast on every workspace
+  // that has a branch (failing nearly every workspace e2e spec via afterTest).
+  if (!isGhAvailable()) return { currentBranch, pr: null }
 
   let pr: GitOpenPr | null
   if (forBranch && forBranch !== currentBranch) {
