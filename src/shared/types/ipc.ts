@@ -1,9 +1,28 @@
 import type { StreamChunk } from './stream.ts'
 import type { GitFileDiff, GitStatusResult, GitBranchStatus } from './git.ts'
-import type { McpServerStatus } from './mcp.ts'
+import type { McpServerStatus, CuratedMcpServerStatus } from './mcp.ts'
 import type { UsageDelta } from './thread.ts'
 
-type Provider = 'anthropic' | 'openai' | 'lmstudio' | 'cursor' | 'openrouter'
+type Provider =
+  | 'anthropic'
+  | 'openai'
+  | 'lmstudio'
+  | 'cursor'
+  | 'openrouter'
+  | 'mistral'
+  | 'gemini'
+  | 'deepseek'
+type CloudProvider = Exclude<Provider, 'lmstudio'>
+
+interface AvailableProviders {
+  anthropic: boolean
+  openai: boolean
+  cursor: boolean
+  openrouter: boolean
+  mistral: boolean
+  gemini: boolean
+  deepseek: boolean
+}
 
 // invoke channels (renderer → main, returns result)
 export interface IpcInvokeMap {
@@ -44,6 +63,11 @@ export interface IpcInvokeMap {
   'mcp:list': { args: []; result: McpServerStatus[] }
   'mcp:reload': { args: []; result: McpServerStatus[] }
   'mcp:setEnabled': { args: [name: string, enabled: boolean]; result: McpServerStatus[] }
+  'mcp:listCurated': { args: []; result: CuratedMcpServerStatus[] }
+  'mcp:setCuratedEnabled': {
+    args: [name: string, enabled: boolean]
+    result: CuratedMcpServerStatus[]
+  }
 
   // Settings
   'settings:get': { args: [key: string]; result: unknown }
@@ -67,10 +91,10 @@ export interface IpcInvokeMap {
   'settings:setKey': { args: [provider: Provider, key: string]; result: void }
   'settings:availableProviders': {
     args: []
-    result: { anthropic: boolean; openai: boolean; cursor: boolean; openrouter: boolean }
+    result: AvailableProviders
   }
   'settings:validateKey': {
-    args: [provider: 'anthropic' | 'openai' | 'cursor' | 'openrouter', key: string]
+    args: [provider: CloudProvider, key: string]
     result: { ok: boolean; error?: string; formatOk?: boolean }
   }
 
@@ -168,6 +192,7 @@ export interface IpcEventMap {
   'diff:conflict': [paths: string[]]
   'fs:changed': [path: string, content: string | null]
   'menu:settings': []
+  'menu:newThread': []
   'menu:togglePanel': []
   'menu:showExplorer': []
   'menu:showTerminal': []

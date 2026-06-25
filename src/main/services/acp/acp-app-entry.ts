@@ -1,38 +1,29 @@
-import { createCopseAcpTurnRunner } from './copse-turn-runner.ts'
-import { serveAcpAgentOverStdio } from './acp-agent-server.ts'
+import { randomUUID } from 'node:crypto'
+import { serveAcpAgentOverStdio, type AcpTurnRunner } from './acp-agent-server.ts'
 import { createRegistry, registerSkillTools } from '../registry-bootstrap.ts'
 import { initSkillsRegistry } from '../skills-registry.ts'
 import { loadMcpServers } from '../mcp-registry.ts'
-import { buildProvider } from '../provider-selection.ts'
-import { buildSystemPrompt } from '../agent-system-prompt.ts'
-import { getSetting } from '../settings.ts'
-import { normalizeToolExecuteResult } from '@shared/types'
-import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
-
-// Tools that mutate the workspace, run commands, or reach the network must be
-// approved by the ACP client (via `session/request_permission`) before they
-// run. Read/search tools run without a prompt.
-const TOOLS_REQUIRING_PERMISSION = new Set<string>([
-  'write_file',
-  'str_replace',
-  'delete_file',
-  'rename_file',
-  'make_directory',
-  'run_shell',
-  'fetch_url',
-  'web_search',
-])
+import { runAgent, abortAgent } from '../agent-service.ts'
+import { setApprovalHandler, type ApprovalRequest } from '../approval.ts'
+import { setStagedDiffResolver } from '../diff-queue.ts'
+import type { AgentHost } from '@shared/agent/agent-host.ts'
+import type { LLMMessage } from '@shared/types'
 
 /**
  * Headless entry for `copse --acp`: expose the Copse agent loop to an ACP
  * client over stdio (ndjson JSON-RPC).
  *
- * This runs inside the Electron main process (the binary the ACP client
- * spawns) and reuses the same registry/provider/system-prompt bootstrap as the
- * GUI app, so the agent has the full tool surface. The window is never created.
+ * This runs inside the Electron main process (the binary the ACP client spawns)
+ * and drives the *full* {@link runAgent} — the same orchestrator the GUI uses,
+ * so the ACP agent gets todos, history trimming, steering and subagent routing
+ * for free. The only Electron seams it needs are injected per turn:
  *
- * Note: the ACP transport owns stdout, so nothing else in this process may
- * write to it once the server is connected — keep diagnostics on stderr.
+ * - chunk emission → an {@link AgentHost} that forwards to the ACP session;
+ * - tool approvals (`approval.ts`) and staged writes (`diff-queue.ts`) → handlers
+ *   that map to the client's `session/request_permission`.
+ *
+ * No window is ever created. The ACP transport owns stdout, so nothing else in
+ * this process may write to it once connected — keep diagnostics on stderr.
  */
 export async function runAcpAgentMode(): Promise<void> {
   const registry = createRegistry()
@@ -40,20 +31,45 @@ export async function runAcpAgentMode(): Promise<void> {
   registerSkillTools(registry)
   await loadMcpServers(registry)
 
-  const model = getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
-  const subagentsEnabled = getSetting<boolean>('subagentsEnabled', true)
+  // One ACP session ↔ one Copse thread: keep the transcript across prompts.
+  const history: LLMMessage[] = []
 
-  const runner = createCopseAcpTurnRunner({
-    buildProvider: () => buildProvider(model),
-    buildTools: () => registry.toLLMTools(),
-    // registry.execute returns a ToolExecuteResult (string or { result, editStats });
-    // the ACP turn runner only needs the text result (editStats is a GUI diff-card concern).
-    executeTool: async (name, args, signal) =>
-      normalizeToolExecuteResult(await registry.execute(name, args, signal)).result,
-    buildSystemPrompt: () => buildSystemPrompt({ subagentsEnabled, invokedSkills: [] }),
-    needsPermission: (name) => TOOLS_REQUIRING_PERMISSION.has(name),
-    usageModel: model,
-  })
+  const runner: AcpTurnRunner = async (ctx) => {
+    const host: AgentHost = {
+      emit: (_threadId, chunk) => {
+        void ctx.emit(chunk)
+      },
+    }
+
+    // Both of Copse's approval channels (shell/mcp/web prompts and staged file
+    // writes) ask the ACP client to decide, via session/request_permission.
+    const askClient = async (title: string, rawInput: unknown): Promise<boolean> => {
+      const decision = await ctx.requestPermission({ toolCallId: randomUUID(), title, rawInput })
+      return decision === 'allow'
+    }
+    setApprovalHandler(async (req: ApprovalRequest) => ({
+      approved: await askClient(req.title, { body: req.body, type: req.type }),
+      remember: false,
+    }))
+    setStagedDiffResolver((entry) =>
+      askClient(`Write ${entry.path}`, { path: entry.path, op: entry.op ?? 'write' }),
+    )
+
+    // Bridge ACP session/cancel to runAgent's abort (it keys aborts by thread id).
+    const onAbort = () => abortAgent(ctx.sessionId)
+    ctx.signal.addEventListener('abort', onAbort, { once: true })
+
+    try {
+      const result = await runAgent(ctx.sessionId, ctx.prompt, history, host, registry)
+      history.length = 0
+      history.push(...result.messages)
+      return { stopReason: 'end_turn' }
+    } finally {
+      ctx.signal.removeEventListener('abort', onAbort)
+      setApprovalHandler(null)
+      setStagedDiffResolver(null)
+    }
+  }
 
   serveAcpAgentOverStdio(runner, { name: 'Copse', loadSession: false })
 }
