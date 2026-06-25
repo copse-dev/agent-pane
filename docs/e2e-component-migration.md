@@ -15,6 +15,10 @@ selection. This doc tracks what can move.
 ## Migrated so far
 
 - `message-queue`, `queued-send-now`, `queued-message-edit` → component (#377).
+- `context-breakdown` → `src/renderer/views/context-wheel.test.ts` — the breakdown
+  ring (`has-breakdown`, `NN%` label, ≥2 arcs) and hover popover render from a
+  `ContextBreakdown` with no Electron; the estimate itself (main IPC) stays e2e,
+  so the test feeds the real shared `composeContextBreakdown` builder.
 - `tool-display` → `src/renderer/views/tool-display.test.ts` (#386).
 - `composer-typing-no-rerender` → `src/renderer/views/conversation-draft-no-rerender.test.ts`
   (the regression — conversation must not rebuild on a draft save — decomposes
