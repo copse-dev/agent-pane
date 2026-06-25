@@ -15,12 +15,12 @@ const ciExclude = [
   './tests/e2e/footer-branch-status.e2e.ts',
   './tests/e2e/footer-branch-picker.e2e.ts',
   './tests/e2e/footer-compact.e2e.ts',
-  './tests/e2e/message-queue.e2e.ts',
-  // Queued-message timing family (mock delays, scroll pinning, run abort);
-  // same flaky-on-CI timing as message-queue above.
+  // Queued-message timing (mock delays, scroll pinning) that's flaky on the CI
+  // runner. The basic-queue, send-now, and edit specs in this family migrated to
+  // happy-dom component tests (src/renderer/views/{message-queue,queued-send-now,
+  // queued-message-edit}.test.ts); queued-pinned stays until its scroll-pinning
+  // behaviour is ported too.
   './tests/e2e/queued-pinned.e2e.ts',
-  './tests/e2e/queued-send-now.e2e.ts',
-  './tests/e2e/queued-message-edit.e2e.ts',
   './tests/e2e/portrait-right-panel.e2e.ts',
   './tests/e2e/skills.e2e.ts',
   // Heavy multi-turn mock agent run + Monaco diff-approval IPC after a
@@ -31,7 +31,6 @@ const ciExclude = [
   // runner even on a fresh first attempt; all pass locally.
   './tests/e2e/subagent-display.e2e.ts',
   './tests/e2e/scroll-to-bottom.e2e.ts',
-  './tests/e2e/context-breakdown.e2e.ts',
   // Drives a mock subagent/explore run and waits on `.tool-card-subagent`,
   // which is flaky to render in time on the constrained runner.
   './tests/e2e/semantic-search-markdown.e2e.ts',

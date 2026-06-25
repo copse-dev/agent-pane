@@ -40,7 +40,7 @@ import {
   syncFilesPaneDom,
   openCanvasArtefact,
 } from './controller/panels.ts'
-import { initMonaco } from './monaco/setup.ts'
+import { loadMonaco } from './monaco/setup.ts'
 import { mountPaneResizers, parseSavedLayout } from './views/pane-resizer.ts'
 import { bindChatComposerLayout } from './views/chat-layout.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
@@ -162,7 +162,10 @@ function ensureLayout() {
 }
 
 function mountFullLayout() {
-  const monaco = initMonaco()
+  // Kick off the Monaco bundle immediately so it loads in parallel with the rest
+  // of the layout, but mount the editor-backed panes only once it resolves — the
+  // editor library is no longer part of the initial app.js.
+  const monacoReady = loadMonaco()
   mountProjectsPane(document.getElementById('pane-projects')!, store, api)
   const inputRoot = document.getElementById('input-bar')!
   mountInputBar(inputRoot, store, api)
@@ -179,20 +182,22 @@ function mountFullLayout() {
     store,
     api,
   )
-  mountGitChangesPane(
-    document.getElementById('git-changes-host')!,
-    document.getElementById('git-diff-viewer-host')!,
-    store,
-    api,
-    monaco,
-  )
   mountBrowserPane(
     document.getElementById('browser-tabs-host')!,
     document.getElementById('browser-viewer-host')!,
     store,
     api,
   )
-  mountContextPanel(document.getElementById('file-viewer')!, store, api, monaco)
+  void monacoReady.then((monaco) => {
+    mountGitChangesPane(
+      document.getElementById('git-changes-host')!,
+      document.getElementById('git-diff-viewer-host')!,
+      store,
+      api,
+      monaco,
+    )
+    mountContextPanel(document.getElementById('file-viewer')!, store, api, monaco)
+  })
 
   const body = document.getElementById('body')
   if (body) {

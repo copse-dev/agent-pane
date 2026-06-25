@@ -87,6 +87,11 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('agent:usage', listener)
       return () => ipcRenderer.off('agent:usage', listener)
     },
+    onRefreshContextEstimate: (handler: () => void) => {
+      const listener = () => handler()
+      ipcRenderer.on('agent:refresh_context_estimate', listener)
+      return () => ipcRenderer.off('agent:refresh_context_estimate', listener)
+    },
   },
   diff: {
     approve: (path: string) => ipcRenderer.invoke('diff:approve', path),
@@ -127,6 +132,9 @@ contextBridge.exposeInMainWorld('api', {
     reload: () => ipcRenderer.invoke('mcp:reload'),
     setEnabled: (name: string, enabled: boolean) =>
       ipcRenderer.invoke('mcp:setEnabled', name, enabled),
+    listCurated: () => ipcRenderer.invoke('mcp:listCurated'),
+    setCuratedEnabled: (name: string, enabled: boolean) =>
+      ipcRenderer.invoke('mcp:setCuratedEnabled', name, enabled),
     onStatusChanged: (handler: (statuses: unknown) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, statuses: unknown) => handler(statuses)
       ipcRenderer.on('mcp:status_changed', listener)

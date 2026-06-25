@@ -8,7 +8,7 @@ import type {
   GitBranchStatus,
   GitBranchInfo,
 } from '@shared/types/git.ts'
-import type { McpServerStatus } from '@shared/types/mcp.ts'
+import type { McpServerStatus, CuratedMcpServerStatus } from '@shared/types/mcp.ts'
 import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
 
@@ -64,6 +64,7 @@ export interface ApiClient {
     ) => () => void
     onShellOutput: (handler: (data: string) => void) => () => void
     onUsage: (handler: (threadId: string, usage: UsageDelta) => void) => () => void
+    onRefreshContextEstimate: (handler: () => void) => () => void
   }
   diff: {
     approve: (path: string) => Promise<void>
@@ -83,6 +84,8 @@ export interface ApiClient {
     list: () => Promise<McpServerStatus[]>
     reload: () => Promise<McpServerStatus[]>
     setEnabled: (name: string, enabled: boolean) => Promise<McpServerStatus[]>
+    listCurated: () => Promise<CuratedMcpServerStatus[]>
+    setCuratedEnabled: (name: string, enabled: boolean) => Promise<CuratedMcpServerStatus[]>
     onStatusChanged: (handler: (statuses: McpServerStatus[]) => void) => () => void
   }
   canvas: {

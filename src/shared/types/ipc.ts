@@ -1,6 +1,6 @@
 import type { StreamChunk } from './stream.ts'
 import type { GitFileDiff, GitStatusResult, GitBranchStatus } from './git.ts'
-import type { McpServerStatus } from './mcp.ts'
+import type { McpServerStatus, CuratedMcpServerStatus } from './mcp.ts'
 import type { UsageDelta } from './thread.ts'
 
 type Provider =
@@ -63,6 +63,11 @@ export interface IpcInvokeMap {
   'mcp:list': { args: []; result: McpServerStatus[] }
   'mcp:reload': { args: []; result: McpServerStatus[] }
   'mcp:setEnabled': { args: [name: string, enabled: boolean]; result: McpServerStatus[] }
+  'mcp:listCurated': { args: []; result: CuratedMcpServerStatus[] }
+  'mcp:setCuratedEnabled': {
+    args: [name: string, enabled: boolean]
+    result: CuratedMcpServerStatus[]
+  }
 
   // Settings
   'settings:get': { args: [key: string]; result: unknown }
