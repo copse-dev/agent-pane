@@ -8,8 +8,16 @@ description: >-
 runs:
   using: composite
   steps:
+    # Deliberately NO `cache: 'npm'` here. That option caches ~/.npm (the npm
+    # download cache — inputs to `npm ci`), which on this repo is ~2.5 GB. But the
+    # actions/cache step below already caches node_modules (the *output* of the
+    # install), and on a cache hit the `npm ci` step is skipped — so ~/.npm is
+    # never read. Restoring that 2.5 GB archive cost ~3 min per hit job for nothing.
+    # On a miss, `npm ci` simply repopulates ~/.npm from the network and the
+    # node_modules cache hits next time. So this layer is pure waste on the hit path
+    # and redundant on the miss path.
     - uses: actions/setup-node@v6
-      with: { node-version: '22', cache: 'npm' }
+      with: { node-version: '22' }
     # ripgrep backs the app's code-search services at runtime; the unit suite
     # and the e2e app both exercise them. GitHub-hosted runners have passwordless
     # sudo + apt, so install it there. Self-hosted runners typically have neither
