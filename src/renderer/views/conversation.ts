@@ -578,7 +578,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     updateScrollButton()
   }
 
-  function renderToolCards(msgEl: HTMLElement, toolCalls: ToolCall[]) {
+  function renderToolCards(msgEl: HTMLElement, toolCalls: ToolCall[], commandSummary?: string) {
     const userExpandedGroups = new Set<string>()
     msgEl.querySelectorAll('.tool-card-group[open]').forEach((node) => {
       const el = node as HTMLElement
@@ -600,6 +600,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     msgEl.querySelectorAll('.tool-card').forEach((node) => node.remove())
 
     for (const item of buildToolCallDisplayItems(toolCalls)) {
+      // LLM-only rollup: a small-model summary, when ready, replaces the generic
+      // "Running commands" header for the shell group.
+      if (item.type === 'group' && item.key === 'shell' && commandSummary) {
+        item.label = commandSummary
+      }
       const card = createToolCard(item, api) as HTMLDetailsElement
       if (item.type === 'group') {
         const status = aggregateToolStatus(item.toolCalls)
@@ -639,7 +644,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     list.append(msgEl)
     hydrateRemoteArtifactImages(list, api)
     // Re-render any tool cards this message already carries (restored threads).
-    renderToolCards(msgEl, msg.toolCalls ?? [])
+    renderToolCards(msgEl, msg.toolCalls ?? [], msg.commandSummary)
     scrollToBottom(msg.role === 'user')
   }
 
@@ -670,7 +675,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       .find((m) => m.id === msgId)
     const msgEl = list.querySelector(`[data-message-id="${msgId}"]`)
     if (!msg || !msgEl) return
-    renderToolCards(msgEl as HTMLElement, msg.toolCalls ?? [])
+    renderToolCards(msgEl as HTMLElement, msg.toolCalls ?? [], msg.commandSummary)
     scrollToBottom()
   }
 
