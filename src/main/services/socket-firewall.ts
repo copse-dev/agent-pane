@@ -10,7 +10,25 @@ import { getMainWindow } from '../windows/create-main-window.ts'
 
 const SFW_BIN = 'sfw'
 
+/**
+ * Pinned `sfw` version. This first install protects every later package install,
+ * yet is itself unscanned, so it must be exact (no version range) and run with
+ * lifecycle scripts disabled to defend against a typosquatted/compromised
+ * publish of the short `sfw` name. Bump deliberately after reviewing the release.
+ */
+const SFW_VERSION = '2.0.6'
+
 let cachedAvailable: boolean | null = null
+
+/**
+ * Build the npm argv used to install the pinned `sfw` globally. Exported (and
+ * pure) so the security-critical install command can be unit-tested without
+ * spawning a process. `--ignore-scripts` blocks npm lifecycle scripts; the
+ * exact `sfw@<version>` spec prevents installing an unexpected version.
+ */
+export function sfwInstallArgs(): string[] {
+  return ['install', '-g', '--ignore-scripts', `${SFW_BIN}@${SFW_VERSION}`]
+}
 
 /** Test/refresh hook — forget the cached availability probe. */
 export function resetSocketFirewallCache(): void {
@@ -29,16 +47,20 @@ export function isSocketFirewallAvailable(): boolean {
   return cachedAvailable
 }
 
-/** Install `sfw` globally (`npm install -g sfw`), streaming progress to the UI. */
+/**
+ * Install the pinned `sfw` globally (`npm install -g --ignore-scripts
+ * sfw@<version>`), streaming progress to the UI.
+ */
 export function installSocketFirewall(signal: AbortSignal): Promise<boolean> {
   return new Promise((resolve) => {
     const win = getMainWindow()
     const emit = (text: string) => win?.webContents.send('agent:shell_output', text)
-    emit('[safe-install] installing Socket Firewall (npm install -g sfw)…\n')
+    const args = sfwInstallArgs()
+    emit(`[safe-install] installing Socket Firewall (npm ${args.join(' ')})…\n`)
 
     let proc
     try {
-      proc = spawn('npm', ['install', '-g', SFW_BIN], {
+      proc = spawn('npm', args, {
         stdio: 'pipe',
         signal,
         shell: process.platform === 'win32',
