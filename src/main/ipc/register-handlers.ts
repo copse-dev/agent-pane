@@ -63,6 +63,7 @@ import {
   setMcpServerUserEnabled,
   setWorkspaceTrustAndReload,
 } from '../services/mcp-registry.ts'
+import { getCuratedServerStatuses, setCuratedServerEnabled } from '../services/mcp-curated.ts'
 import { isWorkspaceTrusted } from '../services/workspace-trust.ts'
 import { applyAppIcon } from '../app-icon.ts'
 import { getMainWindow } from '../windows/create-main-window.ts'
@@ -301,6 +302,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const statuses = await reloadMcpServers(registry)
     win.webContents.send('mcp:status_changed', statuses)
     return statuses
+  })
+  ipcMain.handle('mcp:listCurated', () => getCuratedServerStatuses(getMcpServerStatuses()))
+  ipcMain.handle('mcp:setCuratedEnabled', async (_e, name: string, enabled: boolean) => {
+    await setCuratedServerEnabled(name, enabled)
+    const statuses = await reloadMcpServers(registry)
+    win.webContents.send('mcp:status_changed', statuses)
+    return getCuratedServerStatuses(statuses)
   })
   ipcMain.handle('workspace:isTrusted', () => isWorkspaceTrusted(getWorkspaceRoot()))
   ipcMain.handle('workspace:setTrusted', async (event, trusted: unknown) => {
