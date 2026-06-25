@@ -4,7 +4,9 @@
   "note": "Examples from the official CommonMark spec that renderMarkdown() satisfies at rest, after the spec normalizer. This is a regression baseline, not a conformance goal — the renderer is intentionally app-specific.",
   "total": 652,
   "passing": [
+    11,
     13,
+    17,
     29,
     30,
     35,
@@ -13,9 +15,14 @@
     45,
     47,
     50,
+    51,
+    52,
+    53,
+    54,
     56,
     57,
     58,
+    60,
     63,
     64,
     74,
@@ -23,6 +30,7 @@
     97,
     98,
     99,
+    121,
     197,
     199,
     209,
@@ -36,14 +44,24 @@
     322,
     327,
     328,
+    329,
+    330,
+    331,
     332,
     333,
+    335,
+    336,
+    337,
     338,
+    339,
+    340,
     341,
     342,
     343,
     345,
+    347,
     348,
+    349,
     350,
     355,
     356,
@@ -105,6 +123,8 @@
     620,
     622,
     624,
+    640,
+    641,
     644,
     645,
     646,
@@ -115,11 +135,11 @@
   ],
   "summaryBySection": {
     "Tabs": {
-      "pass": 0,
+      "pass": 1,
       "total": 11
     },
     "Backslash escapes": {
-      "pass": 1,
+      "pass": 2,
       "total": 13
     },
     "Entity and numeric character references": {
@@ -131,7 +151,7 @@
       "total": 1
     },
     "Thematic breaks": {
-      "pass": 8,
+      "pass": 13,
       "total": 19
     },
     "ATX headings": {
@@ -147,7 +167,7 @@
       "total": 12
     },
     "Fenced code blocks": {
-      "pass": 0,
+      "pass": 1,
       "total": 29
     },
     "HTML blocks": {
@@ -183,7 +203,7 @@
       "total": 1
     },
     "Code spans": {
-      "pass": 9,
+      "pass": 19,
       "total": 22
     },
     "Emphasis and strong emphasis": {
@@ -207,7 +227,7 @@
       "total": 20
     },
     "Hard line breaks": {
-      "pass": 4,
+      "pass": 6,
       "total": 15
     },
     "Soft line breaks": {
