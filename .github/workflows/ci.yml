@@ -130,16 +130,19 @@ jobs:
             { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ "$UPDATE_SCREENSHOTS_LABEL" = "true" ]; then
-            echo "update-screenshots label -> full e2e suite (force screenshot refresh)"
-            { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
           # Screenshot-only head commit -> skip e2e. This is the commit-screenshots
           # auto-commit (now PAT-pushed, so it triggers its own CI run): its parent
           # already ran e2e, and it adds only reference PNGs, so re-running the suite
           # would just re-render identical shots. Skipping keeps `ci-passed` reporting
           # on the new head (lint/check/build still run) without paying for e2e twice.
+          #
+          # This MUST stay ahead of the update-screenshots label check below.
+          # Otherwise the label forces a full run on the bot's OWN screenshot
+          # commit; because rendering isn't pixel-deterministic that run commits a
+          # few more shots, which (PAT-pushed) re-triggers CI, forces full again,
+          # and loops indefinitely. Skipping screenshot-only commits first breaks
+          # the cycle while still letting a real code commit + label force a full
+          # render (a code commit isn't screenshot-only, so it falls through).
           if [ -n "$HEAD_SHA" ]; then
             changed="$(git diff --name-only "${HEAD_SHA}^" "${HEAD_SHA}" 2>/dev/null || true)"
             if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qv '^tests/e2e/screenshots/'; then
@@ -147,6 +150,11 @@ jobs:
               { echo "mode=skip"; echo "specs="; } >> "$GITHUB_OUTPUT"
               exit 0
             fi
+          fi
+          if [ "$UPDATE_SCREENSHOTS_LABEL" = "true" ]; then
+            echo "update-screenshots label -> full e2e suite (force screenshot refresh)"
+            { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           # No usable base (first push / forced push / branch create) -> full.
           if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
