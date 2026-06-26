@@ -303,7 +303,10 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
         const key = (pendingKeys.get(provider.id) ?? '').trim()
         const res = await api.settings.fetchProviderModels(urlInput.value.trim(), key || undefined)
         if (!res.ok) {
-          fetchStatus.textContent = `✗ ${res.error ?? 'Could not list models'}`
+          // Most cloud providers reject an unauthenticated /models request (Google
+          // even 404s it), so nudge toward entering a key before blaming the URL.
+          const hint = !key ? ' — enter an API key and try again' : ''
+          fetchStatus.textContent = `✗ ${res.error ?? 'Could not list models'}${hint}`
           fetchStatus.className = 'key-status err'
           return
         }
@@ -467,9 +470,15 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
     ) as HTMLButtonElement
     const status = el('span', { class: 'key-status' })
 
+    // Track manual edits so a preset switch overwrites auto-filled values but
+    // never clobbers something the user typed themselves.
     let slugEdited = false
+    let labelEdited = false
     slugInput.addEventListener('input', () => {
       slugEdited = true
+    })
+    labelInput.addEventListener('input', () => {
+      labelEdited = true
     })
     const repredict = (): void => {
       if (!slugEdited) slugInput.value = providerSlugFromBaseUrl(urlInput.value)
@@ -479,7 +488,7 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
       const ep = KNOWN_ENDPOINTS.find((e) => e.baseUrl === presetSelect.value)
       if (ep) {
         urlInput.value = ep.baseUrl
-        if (!labelInput.value.trim()) labelInput.value = ep.label
+        if (!labelEdited) labelInput.value = ep.label
         repredict()
       }
     })
