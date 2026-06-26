@@ -115,8 +115,6 @@
   width: 28px;
   height: 28px;
   border-radius: var(--radius);
-  font-size: 15px;
-  line-height: 1;
   color: var(--text-secondary);
   background: transparent;
   cursor: pointer;
@@ -124,6 +122,15 @@
 .attach-btn:hover {
   color: var(--text-primary);
   background: var(--bg-hover);
+}
+.attach-btn-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .stop-btn {
   position: absolute;

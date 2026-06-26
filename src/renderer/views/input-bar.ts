@@ -1,4 +1,5 @@
 import { el, clear } from '../dom/helpers.ts'
+import { outlineIcon } from '../dom/outline-icon.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
@@ -67,7 +68,13 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const attachBtn = el(
     'button',
     { class: 'attach-btn', type: 'button', 'aria-label': 'Attach files', title: 'Attach files' },
-    '📎',
+    outlineIcon(
+      'attach',
+      [
+        'm21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48',
+      ],
+      'attach-btn-icon',
+    ),
   )
   // The Send button is positioned relative to this row (not the whole input
   // bar), so it sits inside the textarea box and never overlaps the footer.
