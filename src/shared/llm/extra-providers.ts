@@ -169,6 +169,27 @@ export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
       },
     ],
   },
+  {
+    id: 'huggingface',
+    label: 'Hugging Face',
+    prefix: 'huggingface:',
+    // HF Inference Providers router — OpenAI-compatible, fans out to Together,
+    // Novita, Fireworks, etc. Model ids are `org/model[:routing]`, e.g.
+    // `zai-org/GLM-5.2:fastest`; the routing suffix survives our slug strip.
+    baseUrl: 'https://router.huggingface.co/v1',
+    builtin: true,
+    envVar: 'HF_TOKEN',
+    keyLabel: 'Hugging Face token',
+    keyPlaceholder: 'hf_…',
+    keyHint:
+      'For Hugging Face Inference Providers (serverless). Pick a model with Fetch models or type one like org/model:fastest. Get a token at huggingface.co/settings/tokens.',
+    keyPrefix: 'hf_',
+    // Context varies per upstream model; keep the generic 128K default.
+    fallbackContextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
+    includeUsage: true,
+    // Bring-your-own model id (huge, fast-moving catalog): no curated shortlist.
+    models: [],
+  },
 ]
 
 export const BUILTIN_EXTRA_PROVIDER_SLUGS: readonly string[] = BUILTIN_EXTRA_PROVIDERS.map(

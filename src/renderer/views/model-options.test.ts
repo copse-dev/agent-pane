@@ -22,6 +22,7 @@ const ALL_UNCONFIGURED = {
   mistral: false,
   gemini: false,
   deepseek: false,
+  huggingface: false,
 }
 
 // Minimal ApiClient stub exposing only what fetchModelOptions touches.

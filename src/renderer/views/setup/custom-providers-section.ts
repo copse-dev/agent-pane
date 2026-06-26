@@ -53,6 +53,7 @@ const CHIP_ORDER: readonly string[] = [
   'deepseek',
   'anthropic',
   'openrouter',
+  'huggingface',
 ]
 
 // Well-known OpenAI-compatible cloud endpoints offered as add-form prefills.

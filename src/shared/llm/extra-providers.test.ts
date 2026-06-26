@@ -67,9 +67,9 @@ describe('extra provider lookups against a resolved list', () => {
 })
 
 describe('resolveExtraProviders', () => {
-  it('returns the three presets unchanged when nothing is stored', () => {
+  it('returns the shipped presets unchanged when nothing is stored', () => {
     const providers = resolveExtraProviders(undefined)
-    assert.equal(providers.length, 3)
+    assert.equal(providers.length, BUILTIN_EXTRA_PROVIDERS.length)
     for (const provider of providers) {
       assert.ok(provider.builtin)
       assert.equal(provider.prefix, `${provider.id}:`)
@@ -117,9 +117,9 @@ describe('resolveExtraProviders', () => {
     const providers = resolveExtraProviders([
       { slug: 'nourl' },
       { slug: 'Bad Slug', baseUrl: 'https://x.example' },
-      { slug: 'mistral', baseUrl: 'https://api.mistral.ai/v1' }, // override, not a 4th provider
+      { slug: 'mistral', baseUrl: 'https://api.mistral.ai/v1' }, // override, not a new provider
     ])
-    assert.equal(providers.length, 3)
+    assert.equal(providers.length, BUILTIN_EXTRA_PROVIDERS.length)
     assert.equal(providers.filter((p) => p.id === 'mistral').length, 1)
   })
 })
