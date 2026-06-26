@@ -22,6 +22,7 @@ import {
   type Selection,
   SELECTOR_STOPLIST,
   computePlan,
+  computeScreenshotGate,
   computeSelection,
   extractSpecTokens,
   fileContainsToken,
@@ -85,6 +86,24 @@ function expectConfidence(files: string[], conf: Selection['confidence']): strin
   return got === conf ? null : `expected confidence '${conf}' for ${files.join(', ')}; got '${got}'`
 }
 
+function expectGate(files: string[], labeled: boolean, ok: boolean): string | null {
+  const gate = computeScreenshotGate(files, labeled)
+  return gate.ok === ok
+    ? null
+    : `expected screenshot gate ok=${ok} for ${files.join(', ')} (labeled=${labeled}); ` +
+        `got ok=${gate.ok} (affected=[${gate.affected.join(', ')}], missing=[${gate.missing.join(', ')}])`
+}
+
+// A screenshot-producing spec + the reference PNGs it writes. Changing the spec
+// selects itself, so its shots become "affected"; if these are renamed the pins
+// below fail loudly, exactly the drift we want surfaced. (context-wheel.e2e.ts
+// writes these two via footer.saveScreenshot(join(SCREENSHOT_DIR, …)).)
+const SHOT_SPEC = 'tests/e2e/context-wheel.e2e.ts'
+const SHOT_PNGS = [
+  'tests/e2e/screenshots/context-wheel-seeded-30pct.png',
+  'tests/e2e/screenshots/context-wheel-live-running.png',
+]
+
 // Representative diffs whose mapping must hold. Each references a file/spec that
 // exists today; if one is renamed away, this fails loudly so the pin is updated
 // alongside the move (exactly the drift we want surfaced).
@@ -115,6 +134,22 @@ const INVARIANTS: Invariant[] = [
   {
     name: 'docs-only change skips e2e',
     check: () => expectPlan(['README.md'], 'skip'),
+  },
+  {
+    name: 'screenshot-affecting change without refreshed PNGs fails the gate',
+    check: () => expectGate([SHOT_SPEC], false, false),
+  },
+  {
+    name: 'update-screenshots label is the escape hatch for an affected change',
+    check: () => expectGate([SHOT_SPEC], true, true),
+  },
+  {
+    name: 'affected change passes once its reference PNGs are in the diff',
+    check: () => expectGate([SHOT_SPEC, ...SHOT_PNGS], false, true),
+  },
+  {
+    name: 'a change affecting no reference shots passes the gate',
+    check: () => expectGate(['README.md'], false, true),
   },
 ]
 
