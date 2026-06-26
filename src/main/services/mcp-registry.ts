@@ -65,6 +65,8 @@ interface ActiveServer {
 interface McpToolMeta {
   server: string
   annotations?: McpToolAnnotations | undefined
+  /** True for Copse's own bundled in-process servers (first-party, sandboxed). */
+  bundled?: boolean
 }
 
 interface CreatedTransport {
@@ -254,6 +256,7 @@ async function registerClientTools(
   registry: ToolRegistry,
   client: Client,
   serverName: string,
+  bundled = false,
 ): Promise<string[]> {
   const { tools } = await client.listTools()
   const toolNames: string[] = []
@@ -261,6 +264,7 @@ async function registerClientTools(
     const fullName = mcpToolName(serverName, tool.name)
     toolNames.push(tool.name)
     const meta: McpToolMeta = { server: serverName }
+    if (bundled) meta.bundled = true
     if (tool.annotations) meta.annotations = tool.annotations as McpToolAnnotations
     toolMeta.set(fullName, meta)
     registry.register({
@@ -310,7 +314,7 @@ async function connectBundledServers(
   for (const { name, client } of bundled) {
     try {
       activeServers.push({ config: { name, transport: 'in-process' }, client })
-      const tools = await registerClientTools(registry, client, name)
+      const tools = await registerClientTools(registry, client, name, true)
       statuses.push({
         name,
         transport: 'in-process',

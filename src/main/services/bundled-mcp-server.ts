@@ -44,6 +44,8 @@ function buildCanvasServer(): { name: string; server: McpServer } {
           .max(512 * 1024)
           .describe('A complete, self-contained HTML document.'),
       },
+      // Rendering into the sandbox does not modify the host; no approval needed.
+      annotations: { readOnlyHint: true },
     },
     async ({ title, html }) => {
       const slug = (title ?? 'artefact')
@@ -62,7 +64,12 @@ function buildCanvasServer(): { name: string; server: McpServer } {
           },
           {
             type: 'text',
-            text: `Rendered "${title ?? 'artefact'}" in the canvas.`,
+            text:
+              `Rendered "${title ?? 'artefact'}" in the canvas — it is now visible to the user in ` +
+              `the Browser pane. The canvas is a separate sandboxed preview, not a browser_* tab, ` +
+              `so do NOT call browser_snapshot or browser_screenshot on it (those drive a different ` +
+              `browser and will report "unknown browser tab"). You already have the HTML you sent, ` +
+              `so there is nothing more to capture; just tell the user it is displayed.`,
           },
         ],
       }
