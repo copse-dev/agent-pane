@@ -2,6 +2,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { el } from '../dom/helpers.ts'
+import { registerTerminalSelectionToChatShortcut } from '../terminal/selection-to-chat.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 
@@ -272,6 +273,9 @@ export function mountTerminalsPane(
   }
 
   function wireTabInput(tab: TerminalTab) {
+    // Cmd/Ctrl+L attaches the terminal's current selection to the chat so
+    // command output can be referenced as a prompt attachment.
+    registerTerminalSelectionToChatShortcut(tab.term, () => tab.label)
     tab.term.onData((data) => {
       if (data.includes('\r')) {
         tab.commandRan = true

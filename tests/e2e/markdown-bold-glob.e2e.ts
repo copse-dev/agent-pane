@@ -19,7 +19,7 @@ describe('markdown bold after glob table cells', () => {
   })
 
   it('renders architecture list labels bold after table with glob paths', async () => {
-    await $('.message-text h4').waitForExist({ timeout: 30_000 })
+    await $('.message-text h2').waitForExist({ timeout: 30_000 })
 
     const metrics = await browser.execute(() => {
       const root = document.querySelector('.message-text')
@@ -30,7 +30,7 @@ describe('markdown bold after glob table cells', () => {
       )
       const mcpStrong = mcpItem?.querySelector('strong')
       const globCell = root.querySelector('td strong code')
-      const supportingHeading = [...root.querySelectorAll('h4')].find((h) =>
+      const supportingHeading = [...root.querySelectorAll('h2')].find((h) =>
         h.textContent?.includes('Key Supporting Files'),
       )
       const supportingList = supportingHeading?.nextElementSibling
@@ -47,7 +47,7 @@ describe('markdown bold after glob table cells', () => {
         hasLiteralMcpStars: (mcpItem?.textContent ?? '').includes('**'),
         hasMalformedStrong: (root.innerHTML ?? '').includes('</strong>MCP host**'),
         globCellText: globCell?.textContent ?? '',
-        architectureListLabels: [...(root.querySelectorAll('h4') ?? [])]
+        architectureListLabels: [...(root.querySelectorAll('h2') ?? [])]
           .filter((h) => h.textContent?.includes('Architecture Notes'))[0]
           ?.nextElementSibling?.querySelectorAll('li strong').length,
         supportingListItemCount: supportingItems.length,
@@ -69,7 +69,7 @@ describe('markdown bold after glob table cells', () => {
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'markdown-bold-glob-full.png'))
 
     await browser.execute(() => {
-      const heading = [...document.querySelectorAll('.message-text h4')].find((h) =>
+      const heading = [...document.querySelectorAll('.message-text h2')].find((h) =>
         h.textContent?.includes('Architecture Notes'),
       )
       heading?.scrollIntoView({ block: 'start' })

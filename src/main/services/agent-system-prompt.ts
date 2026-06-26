@@ -2,6 +2,10 @@ import { loadProjectInstructions } from './project-instructions.ts'
 import { getSetting, getSettingTrimmed } from './settings.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import {
+  BROWSER_TOOLS_ENABLED_SETTING,
+  BROWSER_TOOLS_DEFAULT_ENABLED,
+} from './browser/browser-origin-policy.ts'
+import {
   buildInvokedSkillsBlock,
   buildSkillsCatalogBlock,
   buildSkillsToolsPromptLine,
@@ -25,7 +29,10 @@ export async function buildSystemPrompt(opts: {
 
   const basePrompt = subagentsEnabled ? BASE_SYSTEM_PROMPT : BASE_SYSTEM_PROMPT_DIRECT_READS
   const externalApiSafety = getSetting<boolean>('externalApiSafety', false)
-  const browserToolsEnabled = getSetting<boolean>('browserToolsEnabled', false)
+  const browserToolsEnabled = getSetting<boolean>(
+    BROWSER_TOOLS_ENABLED_SETTING,
+    BROWSER_TOOLS_DEFAULT_ENABLED,
+  )
   const customInstructions = getSettingTrimmed('customInstructions')
   return (
     basePrompt

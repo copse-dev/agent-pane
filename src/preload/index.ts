@@ -143,6 +143,16 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.off('mcp:status_changed', listener)
     },
   },
+  canvas: {
+    onArtefact: (handler: (artefact: import('@shared/types/canvas.ts').CanvasArtefact) => void) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        artefact: import('@shared/types/canvas.ts').CanvasArtefact,
+      ) => handler(artefact)
+      ipcRenderer.on('canvas:artefact', listener)
+      return () => ipcRenderer.off('canvas:artefact', listener)
+    },
+  },
   storage: {
     get: (key: string) => ipcRenderer.invoke('storage:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('storage:set', key, value),

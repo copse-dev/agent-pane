@@ -5,14 +5,8 @@ import { resolveSmallTasksProvider } from './small-tasks-provider.ts'
 async function completeText(provider: LLMProvider, prompt: string): Promise<string> {
   const messages: LLMMessage[] = [{ role: 'user', content: prompt }]
   let out = ''
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 20_000)
-  try {
-    for await (const chunk of provider.stream(messages, [], controller.signal)) {
-      if (chunk.type === 'text') out += chunk.text
-    }
-  } finally {
-    clearTimeout(timer)
+  for await (const chunk of provider.stream(messages, [], AbortSignal.timeout(20_000))) {
+    if (chunk.type === 'text') out += chunk.text
   }
   return out
 }

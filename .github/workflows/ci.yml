@@ -110,11 +110,36 @@ jobs:
           EVENT: ${{ github.event_name }}
           # PR base on pull_request; previous-tip on push. Empty for schedule.
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          # Real PR head commit (not the merge ref this job checks out), used to
+          # detect the commit-screenshots auto-commit.
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # `update-screenshots` forces a full e2e run so every reference shot is
+          # re-rendered and the commit-screenshots job can refresh it, even when
+          # the oracle would otherwise thin (subset) or skip the suite.
+          UPDATE_SCREENSHOTS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'update-screenshots') }}
         run: |
           if [ "$EVENT" = "schedule" ]; then
             echo "Nightly schedule -> full e2e suite"
             { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
             exit 0
+          fi
+          if [ "$UPDATE_SCREENSHOTS_LABEL" = "true" ]; then
+            echo "update-screenshots label -> full e2e suite (force screenshot refresh)"
+            { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Screenshot-only head commit -> skip e2e. This is the commit-screenshots
+          # auto-commit (now PAT-pushed, so it triggers its own CI run): its parent
+          # already ran e2e, and it adds only reference PNGs, so re-running the suite
+          # would just re-render identical shots. Skipping keeps `ci-passed` reporting
+          # on the new head (lint/check/build still run) without paying for e2e twice.
+          if [ -n "$HEAD_SHA" ]; then
+            changed="$(git diff --name-only "${HEAD_SHA}^" "${HEAD_SHA}" 2>/dev/null || true)"
+            if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qv '^tests/e2e/screenshots/'; then
+              echo "HEAD commit only refreshes reference screenshots -> skip e2e"
+              { echo "mode=skip"; echo "specs="; } >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           fi
           # No usable base (first push / forced push / branch create) -> full.
           if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
@@ -128,15 +153,33 @@ jobs:
           grep -E '^(mode|specs)=' plan.txt >> "$GITHUB_OUTPUT"
           { echo '### e2e oracle plan'; echo '```'; cat plan.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
+      # Advisory: annotate which reference shots a UI change will refresh. Stale
+      # shots DON'T block the PR — the `e2e` job below already re-renders them as a
+      # side effect of the gate run, and the `commit-screenshots` job auto-commits
+      # the diff. Pure static analysis — no build, no Electron, no e2e rerun.
+      # PR-only: no label exists for push/schedule.
+      - name: Plan reference-screenshot regeneration
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          UPDATE_SCREENSHOTS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'update-screenshots') }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || true
+          node scripts/check-screenshots.mts --plan --base "$BASE_SHA"
+
   e2e:
     needs: [build, plan-e2e]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    # PR/push e2e runs on a self-hosted runner: free minutes, and a box big
-    # enough to avoid the 2-core/7GB hosted-runner OOM that most of the shard
-    # quarantines exist to work around. The nightly `schedule` runs the full
-    # suite on GitHub-hosted ubuntu-latest. NOTE: requires a registered
-    # self-hosted runner (label `self-hosted`) or PR/push e2e will queue forever.
-    runs-on: ${{ github.event_name == 'schedule' && 'ubuntu-latest' || 'self-hosted' }}
+    # PR/push e2e runs on the self-hosted Docker runners (see .github/runner):
+    # free minutes, and a box big enough to avoid the 2-core/7GB hosted-runner
+    # OOM that most of the shard quarantines exist to work around. The nightly
+    # `schedule` runs the full suite on GitHub-hosted ubuntu-latest.
+    #
+    # The label set requires BOTH `self-hosted` AND `copse-e2e`, so jobs land
+    # only on the Linux Docker runners and never on the macOS `self-hosted`
+    # boxes (which carry `macOS`/`ARM64` but not `copse-e2e`). NOTE: requires at
+    # least one registered `copse-e2e` runner or PR/push e2e will queue forever.
+    runs-on: ${{ github.event_name == 'schedule' && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "copse-e2e"]') }}
     # Split the seeded e2e suite (see wdio.ci.conf.ts) into parallel shards so the
     # whole gate finishes well inside the runner window. Each shard runs a disjoint
     # slice of specs via wdio's `--shard current/total`. The shared `dist` artifact
@@ -244,6 +287,29 @@ jobs:
             echo "e2e shard ${{ matrix.shard }} attempt $attempt failed or timed out"
           done
           exit 1
+      # The specs above call saveScreenshot as they run, so this shard's slice has
+      # already re-rendered its reference PNGs into tests/e2e/screenshots/. Collect
+      # whatever changed (vs the committed shots) and hand it to commit-screenshots
+      # — no second e2e suite needed. PR-only; the sentinel keeps the artifact
+      # non-empty when a shard rendered no diffs.
+      - name: Collect changed reference screenshots
+        if: success() && github.event_name == 'pull_request'
+        run: |
+          mkdir -p changed/tests/e2e/screenshots
+          touch "changed/.shard-${{ matrix.shard }}"
+          mapfile -t files < <(git diff --name-only -- tests/e2e/screenshots/)
+          for f in "${files[@]}"; do
+            [ -n "$f" ] || continue
+            cp "$f" "changed/tests/e2e/screenshots/"
+          done
+          echo "Collected ${#files[@]} changed screenshot(s) for shard ${{ matrix.shard }}"
+      - uses: actions/upload-artifact@v4
+        if: success() && github.event_name == 'pull_request'
+        with:
+          name: screenshots-shard-${{ matrix.shard }}
+          path: changed/
+          include-hidden-files: true
+          if-no-files-found: error
       # On failure, surface the screenshot + page source captured in afterTest so
       # the constrained-runner render/OOM flakes can be inspected. Skipped when a
       # hard runner OOM ("shutdown signal") kills the job before this step runs.
@@ -254,6 +320,133 @@ jobs:
           path: e2e-failure-artifacts/
           if-no-files-found: ignore
           retention-days: 3
+
+  # Auto-commit the reference screenshots the `e2e` gate already re-rendered.
+  # Folds the old standalone e2e-screenshots workflow in here: rather than running
+  # the whole seeded suite a SECOND time just to regenerate shots, we reuse the
+  # PNGs the gate run produced (the specs write them as a side effect) and commit
+  # the diff. One e2e run, not two. Same-repo PRs only (CI can't push to a fork
+  # branch) and only after a green e2e run, so we never commit half-rendered shots.
+  # Deliberately NOT in `ci-passed`'s needs: it's a side effect, not a gate.
+  #
+  # The checkout uses a PAT (secrets.SCREENSHOTS_PAT) rather than the default
+  # GITHUB_TOKEN: GitHub will not start a new workflow run for a commit pushed with
+  # GITHUB_TOKEN (recursion guard), so a token-pushed screenshot commit would land
+  # as the PR head with no CI run and no `ci-passed` status — leaving the PR blocked
+  # and auto-merge stuck. Pushing with a PAT makes the commit trigger CI normally so
+  # `ci-passed` reports on the new head. That re-run is cheap: plan-e2e skips the
+  # e2e tier for a screenshot-only commit (see its `mode=skip` shortcut). Falls back
+  # to github.token when the secret is unset — commits still land, just without the
+  # CI re-trigger (the pre-PAT behaviour).
+  commit-screenshots:
+    needs: e2e
+    if: >-
+      always() && needs.e2e.result == 'success' &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6.0.3
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          token: ${{ secrets.SCREENSHOTS_PAT || github.token }}
+      - name: Download regenerated screenshots
+        uses: actions/download-artifact@v4
+        with:
+          pattern: screenshots-shard-*
+          merge-multiple: true
+          path: artifacts
+      - name: Apply regenerated screenshots
+        run: |
+          if compgen -G "artifacts/tests/e2e/screenshots/*" > /dev/null; then
+            cp -f artifacts/tests/e2e/screenshots/* tests/e2e/screenshots/
+          fi
+      - name: Detect screenshot changes
+        id: diff
+        run: |
+          mapfile -t files < <(git diff --name-only -- tests/e2e/screenshots/)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          {
+            echo "files<<EOF"
+            printf '%s\n' "${files[@]}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+      - name: Commit screenshot updates
+        if: steps.diff.outputs.changed == 'true'
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/e2e/screenshots/
+          # No [skip ci]: let the pushed commit run CI so `ci-passed` reports on
+          # the new HEAD — otherwise the PR sits `blocked` with no status on this
+          # commit. It terminates in one extra run: a PNG-only diff makes the oracle
+          # skip the e2e tier, so CI re-runs only lint/check/build, renders nothing,
+          # and this job finds no further screenshots to commit.
+          git commit -m "chore(e2e): update reference screenshots from CI"
+          git push
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Comment on PR with updated screenshots
+        if: steps.diff.outputs.changed == 'true'
+        uses: actions/github-script@v7
+        env:
+          CHANGED_FILES: ${{ steps.diff.outputs.files }}
+          COMMIT_SHA: ${{ steps.commit.outputs.sha }}
+        with:
+          script: |
+            const marker = '<!-- copse-e2e-screenshots -->';
+            const sha = process.env.COMMIT_SHA || context.sha;
+            const repo = context.repo.owner + '/' + context.repo.repo;
+            const files = process.env.CHANGED_FILES.split('\n').filter(Boolean);
+            const lines = files.map((path) => {
+              const name = path.split('/').pop();
+              const url = `https://github.com/${repo}/blob/${sha}/${path}`;
+              return `- [${name}](${url}) — ![${name}](${url}?raw=1)`;
+            });
+            const body = `${marker}
+            ## E2E screenshot updates
+
+            This commit refreshed ${files.length} reference screenshot(s) from the CI e2e run:
+
+            ${lines.join('\n')}
+
+            These PNGs live under \`tests/e2e/screenshots/\` for human visual review; CI asserts DOM structure, not pixel diffs.
+            `;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(
+              (c) =>
+                c.user?.type === 'Bot' &&
+                typeof c.body === 'string' &&
+                c.body.includes(marker),
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
 
   # Single aggregate gate. Require ONLY this check in branch protection: it
   # `needs` every other job (and e2e's result aggregates all 8 shards), so it

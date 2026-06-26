@@ -149,6 +149,42 @@ describe('tool-display', () => {
     }
   })
 
+  it('collapses repeated failures into a single error group', () => {
+    const items = buildToolCallDisplayItems([
+      tc('1', 'mcp__mdn__get_compat', 'error'),
+      tc('2', 'mcp__mdn__get_compat', 'error'),
+      tc('3', 'mcp__mdn__get_compat', 'error'),
+    ])
+    assert.equal(items.length, 1)
+    assert.equal(items[0]?.type, 'group')
+    if (items[0]?.type === 'group') {
+      assert.equal(items[0].label, 'mdn (MCP)')
+      assert.equal(items[0].toolCalls.length, 3)
+      assert.equal(aggregateToolStatus(items[0].toolCalls), 'error')
+    }
+  })
+
+  it('separates successful and failed calls into distinct groups', () => {
+    const items = buildToolCallDisplayItems([
+      tc('1', 'mcp__mdn__get_compat', 'error'),
+      tc('2', 'mcp__mdn__get_compat', 'error'),
+      tc('3', 'mcp__mdn__get_compat'),
+      tc('4', 'mcp__mdn__get_compat'),
+    ])
+    assert.equal(items.length, 2)
+    assert.equal(items[0]?.type, 'group')
+    assert.equal(items[1]?.type, 'group')
+    if (items[0]?.type === 'group' && items[1]?.type === 'group') {
+      // Error group emitted at the position of the first failed call.
+      assert.equal(aggregateToolStatus(items[0].toolCalls), 'error')
+      assert.equal(items[0].toolCalls.length, 2)
+      assert.equal(aggregateToolStatus(items[1].toolCalls), 'done')
+      assert.equal(items[1].toolCalls.length, 2)
+      // Distinct keys so expansion state and DOM ids never collide.
+      assert.notEqual(items[0].key, items[1].key)
+    }
+  })
+
   it('groups git tools together', () => {
     const items = buildToolCallDisplayItems([
       tc('1', 'git_status'),
