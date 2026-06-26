@@ -53,6 +53,9 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'localSubagentsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'localTodoItemsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'bundledCursorSkillsEnabled', kind: 'checkbox', default: true, save: true },
+  // Built-in browser tools (Electron's bundled Chromium); on by default so the
+  // agent renders/screenshots web UIs in-app instead of installing a browser.
+  { name: 'browserToolsEnabled', kind: 'checkbox', default: true, save: true },
   // Experimental, opt-in features (off by default).
   { name: 'mcpUiArtefactsEnabled', kind: 'checkbox', default: false, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
@@ -286,6 +289,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <p class="settings-fieldset-desc">
                 Agent web tools are limited to these origins. New origins require approval before
                 <code>fetch_url</code> can access them.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="browserToolsEnabled" />
+                Built-in browser tools (load &amp; screenshot web UIs in-app)
+              </label>
+              <p class="field-hint">
+                Lets the agent open and inspect pages in the app's bundled browser instead of
+                installing a separate browser (e.g. Playwright). Localhost auto-runs; other origins
+                prompt.
               </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="webAllowUserApproval" />
