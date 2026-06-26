@@ -5,7 +5,7 @@ import { renderMarkdown } from './renderer.ts'
 describe('renderMarkdown', () => {
   it('renders headings on their own lines', () => {
     const html = renderMarkdown('## Section\n\nBody text')
-    assert.match(html, /<h4>Section<\/h4>/)
+    assert.match(html, /<h2>Section<\/h2>/)
     assert.match(html, /<p>Body text<\/p>/)
   })
 
@@ -206,10 +206,42 @@ describe('renderMarkdown', () => {
     assert.match(html, /<p>Below<\/p>/)
   })
 
+  it('treats spaced marker runs as thematic breaks, not lists or emphasis', () => {
+    for (const rule of ['* * *', '- - -', '_ _ _', ' **  * ** * ** * **']) {
+      const html = renderMarkdown(`Above\n\n${rule}\n\nBelow`)
+      assert.match(html, /<hr>/, `expected <hr> for ${JSON.stringify(rule)}`)
+      assert.doesNotMatch(html, /<em>/, `unexpected <em> for ${JSON.stringify(rule)}`)
+      assert.doesNotMatch(html, /<li>/, `unexpected <li> for ${JSON.stringify(rule)}`)
+    }
+  })
+
+  it('renders multi-backtick code spans with interior backticks', () => {
+    const html = renderMarkdown('`` foo ` bar ``')
+    assert.match(html, /<code>foo ` bar<\/code>/)
+    assert.doesNotMatch(html, /<code><\/code>/)
+  })
+
+  it('strips a single surrounding space inside code spans', () => {
+    assert.match(renderMarkdown('` `` `'), /<code>``<\/code>/)
+    assert.match(renderMarkdown('`  ``  `'), /<code> `` <\/code>/)
+  })
+
+  it('collapses interior line endings in multi-line code spans to spaces', () => {
+    const html = renderMarkdown('``\nfoo\nbar\n``')
+    assert.match(html, /<code>foo bar<\/code>/)
+    assert.doesNotMatch(html, /<code>[^<]*<br>/)
+  })
+
+  it('leaves an unmatched backtick run as literal text', () => {
+    const html = renderMarkdown('```foo``')
+    assert.doesNotMatch(html, /<code>/)
+    assert.match(html, /```foo``/)
+  })
+
   it('does not strip interior newlines from multi-line content', () => {
     const input = '## Repo summary\n\n### index.html\nMain app file.\n\n### tests\n14 passed.'
     const html = renderMarkdown(input)
-    assert.match(html, /<h4>Repo summary<\/h4>/)
+    assert.match(html, /<h2>Repo summary<\/h2>/)
     assert.match(html, /<h3>index\.html<\/h3>/)
     assert.match(html, /Main app file\./)
     assert.match(html, /<h3>tests<\/h3>/)
@@ -249,7 +281,7 @@ describe('renderMarkdown', () => {
     )
     assert.doesNotMatch(html, /<p>(?:(?!<\/p>)[\s\S])*<ul>/)
     assert.match(html, /<hr>/)
-    assert.match(html, /<h4>Search Routing Summary/)
+    assert.match(html, /<h2>Search Routing Summary/)
     assert.match(html, /<h3>1\. Classification/)
     assert.match(html, /<code>search_codebase<\/code>/)
     assert.match(html, /<h3>2\. Execution<\/h3>\s*<ul>/)

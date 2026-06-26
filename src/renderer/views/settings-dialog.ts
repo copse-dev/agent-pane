@@ -19,7 +19,7 @@ import {
   WEB_ALLOW_USER_APPROVAL_SETTING,
 } from '@shared/web-origins.ts'
 
-type SettingsSection = 'general' | 'local-models' | 'mcp' | 'appearance'
+type SettingsSection = 'general' | 'local-models' | 'mcp' | 'appearance' | 'experimental'
 
 /**
  * Single source of truth for the simple form fields, so each setting's default
@@ -53,6 +53,11 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'localSubagentsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'localTodoItemsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'bundledCursorSkillsEnabled', kind: 'checkbox', default: true, save: true },
+  // Built-in browser tools (Electron's bundled Chromium); on by default so the
+  // agent renders/screenshots web UIs in-app instead of installing a browser.
+  { name: 'browserToolsEnabled', kind: 'checkbox', default: true, save: true },
+  // Experimental, opt-in features (off by default).
+  { name: 'mcpUiArtefactsEnabled', kind: 'checkbox', default: false, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
@@ -98,28 +103,33 @@ function parseWebAllowedOrigins(value: FormDataEntryValue | null): string[] {
     .filter(Boolean)
 }
 
-let overlayEl: HTMLElement | null = null
+let overlayEl: HTMLDialogElement | null = null
 
 export function openSettingsDialog(): void {
-  if (!overlayEl || !overlayEl.hidden) return
-  overlayEl.hidden = false
+  if (!overlayEl || overlayEl.open) return
+  // showModal() puts the dialog in the top layer: focus is trapped inside, the
+  // background is made inert, and Esc closes it — all for free, replacing the
+  // hand-rolled overlay + manual `hidden` toggle.
+  overlayEl.showModal()
   overlayEl.dispatchEvent(new Event('settings-open'))
 }
 
 export function closeSettingsDialog(): void {
-  if (!overlayEl || overlayEl.hidden) return
-  overlayEl.hidden = true
+  if (!overlayEl || !overlayEl.open) return
+  overlayEl.close()
 }
 
 export function isSettingsDialogOpen(): boolean {
-  return !!overlayEl && !overlayEl.hidden
+  return !!overlayEl && overlayEl.open
 }
 
 export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
-  const overlay = document.createElement('div')
+  // A native <dialog> (opened via showModal in openSettingsDialog) rather than a
+  // div: the platform handles focus-trapping, inert background, top-layer
+  // stacking, and Esc-to-close. Closed by default — no `hidden` needed.
+  const overlay = document.createElement('dialog')
   overlay.id = 'settings-dialog'
   overlay.className = 'settings-overlay'
-  overlay.hidden = true
   overlay.innerHTML = `
     <div class="settings-shell">
       <header class="settings-header">
@@ -133,6 +143,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <button type="button" class="settings-nav-btn" data-section="local-models">Local models</button>
           <button type="button" class="settings-nav-btn" data-section="mcp">MCP servers</button>
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
+          <button type="button" class="settings-nav-btn" data-section="experimental">Experimental</button>
         </nav>
 
         <form class="settings-content">
@@ -285,6 +296,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <code>fetch_url</code> can access them.
               </p>
               <label class="checkbox-label">
+                <input type="checkbox" name="browserToolsEnabled" />
+                Built-in browser tools (load &amp; screenshot web UIs in-app)
+              </label>
+              <p class="field-hint">
+                Lets the agent open and inspect pages in the app's bundled browser instead of
+                installing a separate browser (e.g. Playwright). Localhost auto-runs; other origins
+                prompt.
+              </p>
+              <label class="checkbox-label">
                 <input type="checkbox" name="webAllowUserApproval" />
                 Ask before allowing new web origins
               </label>
@@ -433,6 +453,27 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 </label>`,
                 ).join('')}
               </div>
+            </fieldset>
+          </section>
+
+          <section class="settings-section" data-section="experimental">
+            <h3>Experimental</h3>
+            <p class="settings-section-desc">
+              Early, opt-in features that are still being explored. They may change or be removed,
+              and are off by default.
+            </p>
+
+            <fieldset>
+              <legend>MCP UI artefacts (canvas)</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="mcpUiArtefactsEnabled" />
+                Render MCP-UI artefacts as a sandboxed canvas
+              </label>
+              <p class="field-hint">
+                When an MCP tool returns a UI resource (self-contained HTML or a URL), Copse
+                recognises it and will render it as a fully sandboxed artefact in the Browser pane —
+                no Node, no app access. While off, UI resources are treated as plain tool output.
+              </p>
             </fieldset>
           </section>
 

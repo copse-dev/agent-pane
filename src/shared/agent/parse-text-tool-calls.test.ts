@@ -59,6 +59,31 @@ describe('parse-text-tool-calls', () => {
     assert.equal(toolCalls[1]!.name, 'list_dir')
   })
 
+  it('parses phantom export XML with multiline path parameters', () => {
+    const text = `<tool_call>
+<function=read_file>
+<parameter=path>
+src/renderer/views/titlebar.ts
+</parameter>
+</function>
+</tool_call>
+<tool_call>
+<function=read_file>
+<parameter=path>
+src/renderer/views/projects-pane.ts
+</parameter>
+</function>
+</tool_call>`
+    const { toolCalls, keptRawBlocks } = recoverTextToolCalls(text)
+    assert.equal(toolCalls.length, 2)
+    assert.equal(keptRawBlocks, false)
+    assert.equal((toolCalls[0]!.args as { path: string }).path, 'src/renderer/views/titlebar.ts')
+    assert.equal(
+      (toolCalls[1]!.args as { path: string }).path,
+      'src/renderer/views/projects-pane.ts',
+    )
+  })
+
   it('coerces line numbers via schema callback', () => {
     const readFileSchema = z.object({
       path: z.string(),

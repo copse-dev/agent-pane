@@ -87,6 +87,11 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('agent:usage', listener)
       return () => ipcRenderer.off('agent:usage', listener)
     },
+    onRefreshContextEstimate: (handler: () => void) => {
+      const listener = () => handler()
+      ipcRenderer.on('agent:refresh_context_estimate', listener)
+      return () => ipcRenderer.off('agent:refresh_context_estimate', listener)
+    },
   },
   diff: {
     approve: (path: string) => ipcRenderer.invoke('diff:approve', path),
@@ -134,6 +139,16 @@ contextBridge.exposeInMainWorld('api', {
       const listener = (_e: Electron.IpcRendererEvent, statuses: unknown) => handler(statuses)
       ipcRenderer.on('mcp:status_changed', listener)
       return () => ipcRenderer.off('mcp:status_changed', listener)
+    },
+  },
+  canvas: {
+    onArtefact: (handler: (artefact: import('@shared/types/canvas.ts').CanvasArtefact) => void) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        artefact: import('@shared/types/canvas.ts').CanvasArtefact,
+      ) => handler(artefact)
+      ipcRenderer.on('canvas:artefact', listener)
+      return () => ipcRenderer.off('canvas:artefact', listener)
     },
   },
   storage: {
