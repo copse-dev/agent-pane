@@ -1,5 +1,6 @@
 // src/shared/store/events.ts
 import type { ThreadStatus, ToolCall } from '@shared/types'
+import type { CanvasArtefact } from '@shared/types/canvas.ts'
 
 export interface StoreEvents {
   message_added: [threadId: string, messageId: string]
@@ -23,6 +24,8 @@ export interface StoreEvents {
   // Request the Changes panel to reveal a specific workspace-relative file diff.
   git_change_navigate: [path: string]
   browser_url_requested: [url: string]
+  // An MCP-UI artefact should be rendered in the canvas (Browser pane).
+  canvas_artefact_requested: [artefact: CanvasArtefact]
   settings_changed: []
   theme_changed: ['light' | 'dark']
   staged_diffs_changed: []
