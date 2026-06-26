@@ -99,5 +99,15 @@ RUN apt-get update \
 COPY --chown=runner:runner entrypoint.sh /opt/runner/entrypoint.sh
 RUN chmod +x /opt/runner/entrypoint.sh && chown -R runner:runner /opt/runner
 
+# 5) Color-emoji font. Without it Chromium/Electron has no glyphs for emoji, so
+#    they render as blank "tofu" boxes in the e2e reference screenshots. Kept as
+#    the LAST root layer on purpose: rebuilding to pick this up re-runs only this
+#    small step while every layer above (Chromium deps, Node, the runner agent)
+#    stays cached. The package's postinstall refreshes the fontconfig cache, so no
+#    explicit `fc-cache` is needed. Still root here (USER runner is set below).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends fonts-noto-color-emoji \
+    && rm -rf /var/lib/apt/lists/*
+
 USER runner
 ENTRYPOINT ["/opt/runner/entrypoint.sh"]
