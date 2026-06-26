@@ -453,10 +453,27 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     const invocation = resolveSkillInvocation(rawText, skillNames)
     const invokedSkills = invocation ? [invocation.skillName] : []
 
-    if (invocation && !skills.some((skill) => skill.name === invocation.skillName)) {
+    const invokedSkill = invocation
+      ? skills.find((skill) => skill.name === invocation.skillName)
+      : undefined
+
+    if (invocation && !invokedSkill) {
       textarea.setCustomValidity(`Unknown skill: /${invocation.skillName}`)
       textarea.reportValidity()
       return
+    }
+
+    // Warn up front when the invoked skill points the agent at external hosts.
+    // The setting defaults on, so only an explicit `false` suppresses it.
+    if (invokedSkill && invokedSkill.externalLinks.length > 0) {
+      const warnEnabled = (await api.settings.get('skillExternalLinkWarnings')) !== false
+      if (warnEnabled) {
+        showToast(
+          `/${invokedSkill.name} references external links: ${invokedSkill.externalLinks.join(', ')}. ` +
+            `The agent will ask before fetching, installing, or running code from them.`,
+          { variant: 'error', durationMs: 10000 },
+        )
+      }
     }
 
     const text = invocation
