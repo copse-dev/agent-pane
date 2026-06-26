@@ -2,7 +2,14 @@ name: CI
 on:
   push:
     branches: [main]
+  # `labeled` is included so adding the `update-screenshots` label kicks a fresh
+  # run on the PR head — plan-e2e then forces mode=full and commit-screenshots
+  # refreshes the reference shots. Without it the label only takes effect on the
+  # next push/sync, so a label-only request would never regenerate. (For
+  # pull_request events GitHub reads these triggers from the BASE branch's
+  # workflow, so this is only active once merged to main.)
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   # Nightly full e2e on GitHub-hosted runners — the comprehensive safety net.
   # PR/push runs are oracle-thinned on self-hosted (see the e2e job), so the
   # full suite is no longer guaranteed on every main push; this catches anything
