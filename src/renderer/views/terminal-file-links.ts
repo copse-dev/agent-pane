@@ -2,7 +2,7 @@ import type { Terminal, ILink, ILinkProvider, IBufferRange } from '@xterm/xterm'
 import type { AppStore } from '@shared/store/store.ts'
 import { fileReferenceMatches } from '@shared/fs/file-reference.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { openWorkspaceFile } from '../controller/files.ts'
+import { activateWorkspaceReference } from '../controller/files.ts'
 import { showErrorToast } from './toast.ts'
 
 const RESOLVE_DEBOUNCE_MS = 250
@@ -52,7 +52,7 @@ export function installTerminalFileLinks(
   store: AppStore,
   api: ApiClient,
 ): TerminalFileLinks {
-  const resolved = new Map<string, string>() // candidate -> workspace-relative path
+  const resolved = new Map<string, { path: string; kind: 'file' | 'directory' }>()
   let timer: ReturnType<typeof setTimeout> | null = null
 
   async function resolveNow(): Promise<void> {
@@ -61,7 +61,7 @@ export function installTerminalFileLinks(
     if (unknown.length === 0) return
     try {
       const list = (await api.index.resolveFileReferences(unknown)) ?? []
-      for (const { candidate, path } of list) resolved.set(candidate, path)
+      for (const { candidate, path, kind } of list) resolved.set(candidate, { path, kind })
     } catch {
       // Leave candidates unresolved; the next refresh retries them.
     }
@@ -85,8 +85,9 @@ export function installTerminalFileLinks(
       const text = line.translateToString(true)
       const links: ILink[] = []
       for (const match of fileReferenceMatches(text)) {
-        const path = resolved.get(match.candidate)
-        if (!path) continue
+        const target = resolved.get(match.candidate)
+        if (!target) continue
+        const { path, kind } = target
         const range: IBufferRange = {
           start: { x: match.start + 1, y: bufferLineNumber },
           end: { x: match.end, y: bufferLineNumber },
@@ -102,7 +103,7 @@ export function installTerminalFileLinks(
             // Match IDE/terminal convention: only open on cmd/ctrl-click so
             // plain clicks still place the cursor and start text selection.
             if (!event.metaKey && !event.ctrlKey) return
-            void openWorkspaceFile(store, api, path, reveal).catch((error) => {
+            void activateWorkspaceReference(store, api, path, kind, reveal).catch((error) => {
               showErrorToast(`Failed to open ${path}`, error)
             })
           },

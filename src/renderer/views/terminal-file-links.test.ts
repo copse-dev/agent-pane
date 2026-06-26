@@ -38,9 +38,16 @@ function fakeTerm(lines: string[]): FakeTerm {
   }
 }
 
-function apiWith(resolutions: { candidate: string; path: string }[], fileContent = 'x'): ApiClient {
+function apiWith(
+  resolutions: { candidate: string; path: string; kind?: 'file' | 'directory' }[],
+  fileContent = 'x',
+): ApiClient {
   return {
-    index: { query: async () => [], resolveFileReferences: async () => resolutions },
+    index: {
+      query: async () => [],
+      resolveFileReferences: async () =>
+        resolutions.map((r) => ({ ...r, kind: r.kind ?? ('file' as const) })),
+    },
     fs: { readFile: async () => fileContent },
   } as unknown as ApiClient
 }
@@ -79,6 +86,30 @@ describe('terminal file links', () => {
     // Range spans exactly the path: 1-based, end inclusive of the last cell.
     assert.deepEqual(provided![0]!.range.start, { x: 6, y: 1 })
     assert.deepEqual(provided![0]!.range.end, { x: 22, y: 1 })
+    links.dispose()
+  })
+
+  it('cmd-click reveals a resolved directory in the explorer', async () => {
+    const term = fakeTerm(['cd src/renderer/views'])
+    let revealed: string | null = null
+    store.on('explorer_reveal', (path) => {
+      revealed = path
+    })
+    const links = installTerminalFileLinks(
+      term as unknown as Parameters<typeof installTerminalFileLinks>[0],
+      store,
+      apiWith([{ candidate: 'src/renderer/views', path: 'src/renderer/views', kind: 'directory' }]),
+    )
+    links.refresh()
+    await new Promise((r) => setTimeout(r, 300))
+
+    const link = provideLinksAt(term, 1)![0]!
+    link.activate(new window.MouseEvent('click', { metaKey: true }), link.text)
+    await new Promise((r) => setTimeout(r, 0))
+
+    assert.equal(revealed, 'src/renderer/views')
+    assert.equal(store.getState().openFile, null)
+    assert.equal(store.getState().rightPanelMode, 'explorer')
     links.dispose()
   })
 

@@ -49,6 +49,12 @@ describe('fileReferenceMatches', () => {
     )
   })
 
+  it('matches hyphenated filenames', () => {
+    const [match] = fileReferenceMatches('see DEVELOPMENT-NOTES.md next')
+    assert.equal(match!.candidate, 'DEVELOPMENT-NOTES.md')
+    assert.equal(match!.text, 'DEVELOPMENT-NOTES.md')
+  })
+
   it('reports start/end spanning the full reference', () => {
     const text = 'go to src/a/b.ts:10:2 now'
     const [match] = fileReferenceMatches(text)

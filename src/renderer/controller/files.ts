@@ -67,3 +67,31 @@ export async function openWorkspaceFile(
   store.emit('right_panel_mode_changed')
   store.emit('files_pane_changed')
 }
+
+/** Reveal a workspace directory in the explorer tree without opening a file viewer tab. */
+export function revealWorkspaceDirectory(store: AppStore, path: string): void {
+  store.setState({
+    openFile: null,
+    panelTab: 'file',
+    rightPanelMode: 'explorer',
+    filesPaneOpen: true,
+  })
+  store.emit('explorer_reveal', path)
+  store.emit('panel_changed')
+  store.emit('right_panel_mode_changed')
+  store.emit('files_pane_changed')
+}
+
+export async function activateWorkspaceReference(
+  store: AppStore,
+  api: ApiClient,
+  path: string,
+  kind: 'file' | 'directory',
+  reveal?: { line: number; column?: number },
+): Promise<void> {
+  if (kind === 'directory') {
+    revealWorkspaceDirectory(store, path)
+    return
+  }
+  await openWorkspaceFile(store, api, path, reveal)
+}
