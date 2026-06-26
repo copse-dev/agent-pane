@@ -29,6 +29,13 @@ body {
   user-select: none;
   -webkit-user-select: none;
 }
+/* Theme every scroll container's scrollbar to match the surface (inherited by
+   all descendants). --border tracks the active theme, so light and dark stay
+   in sync without per-scroller rules. */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
 #app {
   display: flex;
   flex-direction: column;

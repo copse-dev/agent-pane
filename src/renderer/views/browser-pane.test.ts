@@ -2,8 +2,24 @@ import '../../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { openBrowserUrl } from '../controller/panels.ts'
+import { openBrowserUrl, openCanvasArtefact } from '../controller/panels.ts'
 import { mountBrowserPane } from './browser-pane.ts'
+
+interface FakeWebview extends HTMLElement {
+  src: string
+  getURL(): string
+  canGoBack(): boolean
+  canGoForward(): boolean
+  reload(): void
+}
+
+/** Stub the guest-webview methods jsdom lacks so `dom-ready` handlers can run. */
+function stubWebviewMethods(webview: FakeWebview): void {
+  webview.getURL = () => 'about:blank'
+  webview.canGoBack = () => false
+  webview.canGoForward = () => false
+  webview.reload = () => {}
+}
 
 function mountBrowserHosts(): { list: HTMLElement; viewer: HTMLElement } {
   const list = document.createElement('div')
@@ -42,6 +58,59 @@ describe('browser pane requested URLs', () => {
 
       const tabLabel = list.querySelector('.browser-tabs-tab-label')?.textContent
       assert.match(tabLabel ?? '', /example\.com/)
+    } finally {
+      globalThis.requestAnimationFrame = raf
+      if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
+      else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
+      unmount()
+    }
+  })
+
+  it('renders an HTML artefact in a sandboxed tab via a data: URL', () => {
+    const raf = globalThis.requestAnimationFrame
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback) => {
+      cb(0)
+      return 0
+    }
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    class NoopResizeObserver {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver as unknown as typeof ResizeObserver
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    const unmount = mountBrowserPane(list, viewer, store)
+
+    try {
+      openCanvasArtefact(store, {
+        title: 'Sales Dashboard',
+        mimeType: 'text/html',
+        body: '<!doctype html><h1>Sales</h1>',
+      })
+
+      // The artefact opens in a new, active tab (a blank tab is created first).
+      const activePanel = viewer.querySelector('.browser-tab-panel.is-active')
+      const webview = activePanel?.querySelector('.browser-webview') as FakeWebview | null
+      assert.ok(webview, 'artefact tab should create a webview')
+      stubWebviewMethods(webview)
+      webview.dispatchEvent(new Event('dom-ready'))
+
+      // Loaded as an opaque data: URL (sandboxed, no origin/network grant).
+      assert.match(webview.src, /^data:text\/html/)
+      const decoded = Buffer.from(webview.src.split('base64,')[1] ?? '', 'base64').toString('utf8')
+      assert.match(decoded, /<h1>Sales<\/h1>/)
+
+      // Friendly title on the tab; the (large) data URL is hidden from the bar.
+      const activeLabel = list.querySelector('.browser-tabs-tab.is-active .browser-tabs-tab-label')
+      assert.equal(activeLabel?.textContent, 'Sales Dashboard')
+      const urlInput = activePanel?.querySelector('.browser-url-input') as HTMLInputElement
+      assert.equal(urlInput.value, '')
+
+      // Opening an artefact switches the right panel to the browser canvas.
+      assert.equal(store.getState().rightPanelMode, 'browser')
     } finally {
       globalThis.requestAnimationFrame = raf
       if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor

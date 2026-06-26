@@ -98,8 +98,13 @@ export function deleteApiKey(provider: KeyProvider): void {
 
 /**
  * Whether the stored key for a provider is OS-encrypted (`true`) vs persisted as
- * base64 plaintext (`false`). Returns `null` when no key is stored. Lets the UI
- * warn the user that an unencrypted key is at rest.
+ * base64 plaintext (`false`). Returns `null` when no key is stored.
+ *
+ * NOTE: this is not yet wired to any IPC handler or the renderer, so the
+ * plaintext-at-rest condition is currently surfaced only by the `console.warn`
+ * in `setApiKey` (and documented in the README's "How API keys are stored"
+ * section). Expose this over IPC if/when the Settings UI should warn the user
+ * directly.
  */
 export function isApiKeyEncrypted(provider: KeyProvider): boolean | null {
   const raw = store.get(`apiKey.${provider}`) as StoredKey | undefined

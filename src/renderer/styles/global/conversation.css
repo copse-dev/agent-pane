@@ -1,6 +1,10 @@
 .messages-list {
   flex: 1;
   overflow-y: auto;
+  /* The log streams content in, so the scrollbar appears the moment the
+     conversation overflows. Reserving the gutter up front stops the content
+     column from narrowing mid-stream (a visible horizontal reflow per message). */
+  scrollbar-gutter: stable;
   padding: var(--spacing-md);
   display: flex;
   flex-direction: column;
@@ -51,6 +55,7 @@
   gap: var(--spacing-xs);
   max-height: 38%;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   padding: var(--spacing-sm) var(--spacing-md);
   background: var(--bg-elevated);
   border-top: 1px solid var(--border);

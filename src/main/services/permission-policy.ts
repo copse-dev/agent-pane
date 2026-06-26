@@ -217,6 +217,12 @@ export interface McpPermissionInput {
   remembered: boolean
   /** Setting: auto-run tools the server flags as read-only. */
   autoAllowReadOnly: boolean
+  /**
+   * The tool comes from one of Copse's own bundled in-process servers (e.g. the
+   * canvas). These are first-party and sandboxed with no host access, so they
+   * auto-run without prompting — there is no external party to approve.
+   */
+  bundled?: boolean
 }
 
 /**
@@ -231,6 +237,11 @@ export function decideMcpPermission(input: McpPermissionInput): McpPermissionDec
   const ann = input.annotations
   if (ann?.destructiveHint) {
     return { action: 'prompt', reasons: ['tool is flagged as destructive'] }
+  }
+  // First-party bundled servers we ship are trusted; a destructive hint above
+  // still prompts as a backstop, but otherwise they run without approval.
+  if (input.bundled) {
+    return { action: 'allow', reasons: ['first-party bundled tool'] }
   }
   if (ann?.readOnlyHint && input.autoAllowReadOnly) {
     return { action: 'allow', reasons: ['tool is flagged read-only'] }
