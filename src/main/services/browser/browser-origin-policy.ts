@@ -28,6 +28,12 @@ export const BROWSER_TOOLS_ENABLED_SETTING = 'browserToolsEnabled'
 /** Whether the user may be prompted to approve a new public browser origin. */
 export const BROWSER_ALLOW_USER_APPROVAL_SETTING = 'browserAllowUserApproval'
 
+// On by default: the built-in browser (Electron's bundled Chromium) is how the
+// agent loads and screenshots local web UIs without downloading a separate
+// browser stack (e.g. Playwright). Navigation is still gated by the origin
+// policy below — loopback auto-runs, public origins prompt, private is denied.
+export const BROWSER_TOOLS_DEFAULT_ENABLED = true
+
 export interface ParsedBrowserUrl {
   protocol: string
   hostname: string

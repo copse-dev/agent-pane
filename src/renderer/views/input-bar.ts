@@ -1,4 +1,5 @@
 import { el, clear } from '../dom/helpers.ts'
+import { outlineIcon } from '../dom/outline-icon.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
@@ -17,7 +18,7 @@ import {
   textBlockLabel,
 } from '@shared/agent/build-text-with-attachments.ts'
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
-import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
+import { bindFileDropTarget, attachFiles } from '../attachments/handle-file-drop.ts'
 import { initMentionPicker } from './mention-picker.ts'
 import { initSkillPicker } from './skill-picker.ts'
 import { resolveSkillInvocation } from '@shared/skills/parse-skill-invocation.ts'
@@ -54,9 +55,38 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     { class: 'stop-btn', type: 'button', hidden: '', 'aria-label': 'Stop agent' },
     'Stop',
   )
+  // Hidden native file picker driven by the paperclip button — gives an
+  // explicit "browse" affordance alongside drag-and-drop and @-mentions.
+  const fileInput = el('input', {
+    class: 'attach-file-input',
+    type: 'file',
+    multiple: '',
+    hidden: '',
+    'aria-hidden': 'true',
+    tabindex: '-1',
+  })
+  const attachBtn = el(
+    'button',
+    { class: 'attach-btn', type: 'button', 'aria-label': 'Attach files', title: 'Attach files' },
+    outlineIcon(
+      'attach',
+      [
+        'm21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48',
+      ],
+      'attach-btn-icon',
+    ),
+  )
   // The Send button is positioned relative to this row (not the whole input
   // bar), so it sits inside the textarea box and never overlaps the footer.
-  const inputRow = el('div', { class: 'input-row' }, textarea, stopBtn, submitBtn)
+  const inputRow = el(
+    'div',
+    { class: 'input-row' },
+    textarea,
+    attachBtn,
+    fileInput,
+    stopBtn,
+    submitBtn,
+  )
   const branchWarningText = el('span', { class: 'composer-branch-warning-text' })
   const checkoutBranchBtn = el(
     'button',
@@ -569,6 +599,16 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     attachImage: addImageChip,
   }
   const unregisterAttachments = registerPromptAttachments(attachmentHandlers)
+
+  attachBtn.addEventListener('click', () => fileInput.click())
+  const onFileInputChange = () => {
+    const files = Array.from(fileInput.files ?? [])
+    if (files.length === 0) return
+    void attachFiles(files, attachmentHandlers, api, store.getState().workspaceRoot)
+    // Reset so re-selecting the same file fires `change` again.
+    fileInput.value = ''
+  }
+  fileInput.addEventListener('change', onFileInputChange)
 
   const onPaste = (e: ClipboardEvent) => {
     const items = Array.from(e.clipboardData?.items ?? [])
