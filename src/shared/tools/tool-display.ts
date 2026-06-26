@@ -140,14 +140,24 @@ export function aggregateToolStatus(toolCalls: ToolCall[]): ToolCall['status'] {
   return 'done'
 }
 
+// Successful and failed calls aggregate into separate cards so a batch of
+// identical failures collapses into one error group rather than spamming the
+// timeline with indistinguishable rows. The suffix keeps the two buckets'
+// group keys (and thus their DOM ids / expansion state) distinct.
+const ERROR_BUCKET_SUFFIX = '::errors'
+
+function bucketKey(groupKey: string, isError: boolean): string {
+  return isError ? `${groupKey}${ERROR_BUCKET_SUFFIX}` : groupKey
+}
+
 export function buildToolCallDisplayItems(toolCalls: ToolCall[]): ToolCallDisplayItem[] {
   if (toolCalls.length === 0) return []
 
   const groupMembers = new Map<string, ToolCall[]>()
   for (const tc of toolCalls) {
-    if (tc.status === 'error') continue
-    const key = getToolGroupKey(tc.name)
-    if (!key) continue
+    const groupKey = getToolGroupKey(tc.name)
+    if (!groupKey) continue
+    const key = bucketKey(groupKey, tc.status === 'error')
     const members = groupMembers.get(key) ?? []
     members.push(tc)
     groupMembers.set(key, members)
@@ -157,17 +167,18 @@ export function buildToolCallDisplayItems(toolCalls: ToolCall[]): ToolCallDispla
   const emittedGroups = new Set<string>()
 
   for (const tc of toolCalls) {
-    if (tc.status === 'error') {
+    const groupKey = getToolGroupKey(tc.name)
+    if (!groupKey) {
       result.push({ type: 'individual', toolCall: tc, label: getToolCallLabel(tc) })
       continue
     }
 
-    const key = getToolGroupKey(tc.name)
-    const members = key ? groupMembers.get(key) : undefined
-    if (key && members && members.length >= 2) {
+    const key = bucketKey(groupKey, tc.status === 'error')
+    const members = groupMembers.get(key)
+    if (members && members.length >= 2) {
       if (!emittedGroups.has(key)) {
         emittedGroups.add(key)
-        result.push({ type: 'group', key, label: getToolGroupLabel(key), toolCalls: members })
+        result.push({ type: 'group', key, label: getToolGroupLabel(groupKey), toolCalls: members })
       }
       continue
     }

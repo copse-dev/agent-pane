@@ -102,6 +102,7 @@ async function checkMcpPermission(toolName: string, args: unknown): Promise<bool
     annotations: meta?.annotations,
     remembered: isMcpToolRemembered(toolName),
     autoAllowReadOnly: getSetting<boolean>('mcpAutoAllowReadOnly', false),
+    bundled: meta?.bundled ?? false,
   })
   if (decision.action === 'allow') return true
 
