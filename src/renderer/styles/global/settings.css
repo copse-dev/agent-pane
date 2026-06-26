@@ -228,3 +228,131 @@
 .key-status.err {
   color: var(--error);
 }
+
+/* Providers panel: chip row selects one provider; its form shows below. */
+.provider-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+}
+.provider-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.provider-chip:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.provider-chip.active {
+  border-color: var(--accent);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.provider-chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.provider-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+.provider-form > label {
+  margin-bottom: 0;
+}
+.provider-form-title {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin: 0;
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+}
+.provider-form-tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1px var(--spacing-xs);
+}
+.provider-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.provider-field-group > label {
+  margin-bottom: 0;
+}
+
+/* Evenly spaced action row: button(s) then an inline status. */
+.provider-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+.provider-form-footer {
+  margin-top: var(--spacing-xs);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--border);
+}
+.provider-delete {
+  margin-left: auto;
+  color: var(--error);
+}
+
+/* Structured model list: id / context / label rows with add + remove. */
+.provider-models {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.provider-model-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.provider-model-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 2fr auto;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+.provider-model-row input {
+  width: 100%;
+}
+.provider-model-head {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.provider-model-remove {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  color: var(--text-muted);
+}
+.provider-model-remove:hover {
+  color: var(--error);
+}
+.provider-add-model {
+  align-self: flex-start;
+  font-size: var(--font-size-sm);
+}
+.provider-advanced summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.provider-advanced[open] summary {
+  margin-bottom: var(--spacing-sm);
+}

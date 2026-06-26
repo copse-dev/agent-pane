@@ -143,8 +143,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               Cloud API keys, default chat model, and task-specific model choices.
             </p>
 
-            <div id="settings-api-keys-host"></div>
-
             <div id="settings-custom-providers-host"></div>
 
             <fieldset>
@@ -450,11 +448,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   document.body.append(overlay)
   overlayEl = overlay
 
-  const apiKeysSection = createApiKeysSection(api, {
-    providers: ['anthropic', 'openai', 'openrouter'],
-  })
-  overlay.querySelector('#settings-api-keys-host')!.append(apiKeysSection.root)
-
   const customProvidersSection = createCustomProvidersSection(api)
   overlay.querySelector('#settings-custom-providers-host')!.append(customProvidersSection.root)
 
@@ -717,7 +710,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   overlay.addEventListener('settings-open', () => {
     showSection('general')
     void (async () => {
-      await apiKeysSection.refreshKeyStatus()
       await cursorKeySection.refreshKeyStatus()
       await customProvidersSection.refresh()
 
@@ -771,7 +763,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const form = overlay.querySelector('form') as HTMLFormElement
       const data = new FormData(form)
 
-      await apiKeysSection.saveKeys()
       await cursorKeySection.saveKeys()
       await customProvidersSection.saveKeys()
       await lmStudioSection.saveConnection()
