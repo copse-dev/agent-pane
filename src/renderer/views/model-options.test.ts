@@ -73,6 +73,15 @@ describe('fetchModelOptions visibility', () => {
     assert.ok(withKey.some((o) => o.group === 'Remote agents'))
   })
 
+  it('groups hosted cloud models under a heading', async () => {
+    const options = await fetchModelOptions(mockApi({ available: { anthropic: true } }), '')
+    const cloud = options.filter((o) => o.group === 'Cloud models')
+    assert.ok(cloud.length > 0)
+    assert.ok(cloud.some((o) => o.value.startsWith('claude')))
+    // Every visible option now belongs to a heading (no headingless block).
+    assert.ok(options.every((o) => o.group || !o.value))
+  })
+
   it('keeps the current selection selectable even with no key', async () => {
     const options = await fetchModelOptions(mockApi(), 'gpt-5')
     const current = options.find((o) => o.value === 'gpt-5')

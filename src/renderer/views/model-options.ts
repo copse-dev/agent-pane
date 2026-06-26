@@ -135,8 +135,11 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
   // When availability is unknown (e.g. the query failed), default to showing the
   // option rather than hiding it behind an "add a key" hint.
   const isAvailable = (provider: string): boolean => available[provider] ?? true
+  // Hosted Anthropic/OpenAI models. Grouped so they get a heading like every
+  // other section (otherwise they'd be the only headingless block at the top).
+  const cloudGroup = 'Cloud models'
   for (const [value, label, provider] of CLOUD_MODELS) {
-    if (isAvailable(provider)) options.push({ value, label })
+    if (isAvailable(provider)) options.push({ value, label, group: cloudGroup })
   }
 
   options.push(...(await openRouterOptions(api, isAvailable('openrouter'), current)))
