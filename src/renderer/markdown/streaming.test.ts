@@ -36,7 +36,7 @@ describe('splitAtLastNewline', () => {
 describe('renderStreamingMarkdown', () => {
   it('renders completed lines as markdown while the tail stays plain', () => {
     const html = renderStreamingMarkdown('## Title\n- item')
-    assert.match(html, /<h1>Title<\/h1>/)
+    assert.match(html, /<h2>Title<\/h2>/)
     assert.match(html, /<span class="stream-pending">- item<\/span>/)
     assert.doesNotMatch(html, /<li>- item<\/li>/)
   })
@@ -59,7 +59,7 @@ describe('renderStreamingMarkdown', () => {
 
   it('matches final markdown render once the last line ends', () => {
     const streaming = renderStreamingMarkdown('## Title\n- item one\n- item two\n')
-    assert.match(streaming, /<h4>Title<\/h4>/)
+    assert.match(streaming, /<h2>Title<\/h2>/)
     assert.match(streaming, /<li>item one<\/li>/)
     assert.match(streaming, /<li>item two<\/li>/)
     assert.doesNotMatch(streaming, /stream-pending/)
@@ -167,7 +167,7 @@ describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
     r.update('## Title\n- item')
     const completed = host.querySelector('.stream-complete')!
     const pending = host.querySelector('.stream-pending')! as HTMLElement
-    assert.match(completed.innerHTML, /<h4>Title<\/h4>/)
+    assert.match(completed.innerHTML, /<h2>Title<\/h2>/)
     assert.equal(pending.textContent, '- item')
     assert.equal(pending.hidden, false)
   })
