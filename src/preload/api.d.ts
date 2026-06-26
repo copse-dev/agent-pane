@@ -9,6 +9,7 @@ import type {
   GitBranchInfo,
 } from '@shared/types/git.ts'
 import type { McpServerStatus, CuratedMcpServerStatus } from '@shared/types/mcp.ts'
+import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
 
 /** Cloud providers with a user-supplied API key (everything but local LM Studio). */
@@ -86,6 +87,9 @@ export interface ApiClient {
     listCurated: () => Promise<CuratedMcpServerStatus[]>
     setCuratedEnabled: (name: string, enabled: boolean) => Promise<CuratedMcpServerStatus[]>
     onStatusChanged: (handler: (statuses: McpServerStatus[]) => void) => () => void
+  }
+  canvas: {
+    onArtefact: (handler: (artefact: CanvasArtefact) => void) => () => void
   }
   storage: {
     get: (key: string) => Promise<unknown>

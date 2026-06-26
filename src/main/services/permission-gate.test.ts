@@ -319,6 +319,19 @@ describe('decideMcpPermission', () => {
     })
     assert.equal(d.action, 'prompt')
   })
+
+  it('auto-allows first-party bundled tools without prompting', () => {
+    assert.equal(decideMcpPermission({ ...baseInput, bundled: true }).action, 'allow')
+  })
+
+  it('still prompts for a bundled tool flagged destructive', () => {
+    const d = decideMcpPermission({
+      ...baseInput,
+      bundled: true,
+      annotations: { destructiveHint: true },
+    })
+    assert.equal(d.action, 'prompt')
+  })
 })
 
 describe('web tool permission decisions', () => {
