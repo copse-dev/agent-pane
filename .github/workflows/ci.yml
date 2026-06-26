@@ -110,6 +110,9 @@ jobs:
           EVENT: ${{ github.event_name }}
           # PR base on pull_request; previous-tip on push. Empty for schedule.
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          # Real PR head commit (not the merge ref this job checks out), used to
+          # detect the commit-screenshots auto-commit.
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           # `update-screenshots` forces a full e2e run so every reference shot is
           # re-rendered and the commit-screenshots job can refresh it, even when
           # the oracle would otherwise thin (subset) or skip the suite.
@@ -124,6 +127,19 @@ jobs:
             echo "update-screenshots label -> full e2e suite (force screenshot refresh)"
             { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
             exit 0
+          fi
+          # Screenshot-only head commit -> skip e2e. This is the commit-screenshots
+          # auto-commit (now PAT-pushed, so it triggers its own CI run): its parent
+          # already ran e2e, and it adds only reference PNGs, so re-running the suite
+          # would just re-render identical shots. Skipping keeps `ci-passed` reporting
+          # on the new head (lint/check/build still run) without paying for e2e twice.
+          if [ -n "$HEAD_SHA" ]; then
+            changed="$(git diff --name-only "${HEAD_SHA}^" "${HEAD_SHA}" 2>/dev/null || true)"
+            if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qv '^tests/e2e/screenshots/'; then
+              echo "HEAD commit only refreshes reference screenshots -> skip e2e"
+              { echo "mode=skip"; echo "specs="; } >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           fi
           # No usable base (first push / forced push / branch create) -> full.
           if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
@@ -312,6 +328,16 @@ jobs:
   # the diff. One e2e run, not two. Same-repo PRs only (CI can't push to a fork
   # branch) and only after a green e2e run, so we never commit half-rendered shots.
   # Deliberately NOT in `ci-passed`'s needs: it's a side effect, not a gate.
+  #
+  # The checkout uses a PAT (secrets.SCREENSHOTS_PAT) rather than the default
+  # GITHUB_TOKEN: GitHub will not start a new workflow run for a commit pushed with
+  # GITHUB_TOKEN (recursion guard), so a token-pushed screenshot commit would land
+  # as the PR head with no CI run and no `ci-passed` status — leaving the PR blocked
+  # and auto-merge stuck. Pushing with a PAT makes the commit trigger CI normally so
+  # `ci-passed` reports on the new head. That re-run is cheap: plan-e2e skips the
+  # e2e tier for a screenshot-only commit (see its `mode=skip` shortcut). Falls back
+  # to github.token when the secret is unset — commits still land, just without the
+  # CI re-trigger (the pre-PAT behaviour).
   commit-screenshots:
     needs: e2e
     if: >-
@@ -327,6 +353,7 @@ jobs:
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
+          token: ${{ secrets.SCREENSHOTS_PAT || github.token }}
       - name: Download regenerated screenshots
         uses: actions/download-artifact@v4
         with:
