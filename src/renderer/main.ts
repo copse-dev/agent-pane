@@ -38,6 +38,7 @@ import {
   openRightPanelWithWorkspace,
   toggleFilesPaneWithWorkspace,
   syncFilesPaneDom,
+  openCanvasArtefact,
 } from './controller/panels.ts'
 import { loadMonaco } from './monaco/setup.ts'
 import { mountPaneResizers, parseSavedLayout } from './views/pane-resizer.ts'
@@ -116,6 +117,13 @@ async function boot() {
   api.menu.onShowBrowser(() => {
     ensureLayout()
     openRightPanelWithWorkspace(store, api, 'browser')
+  })
+
+  // MCP-UI canvas: an artefact from a (bundled or external) MCP server opens in
+  // the Browser pane, rendered fully sandboxed.
+  api.canvas.onArtefact((artefact) => {
+    ensureLayout()
+    openCanvasArtefact(store, artefact)
   })
 
   // File ▸ Open Folder… registers the chosen folder as a project and switches.
