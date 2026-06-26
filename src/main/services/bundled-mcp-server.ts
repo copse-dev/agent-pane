@@ -12,7 +12,44 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import { readFile } from 'node:fs/promises'
+import { basename } from 'node:path'
 import { z } from 'zod'
+import { resolveWorkspacePath } from './workspace.ts'
+
+const MAX_ARTEFACT_BYTES = 512 * 1024
+
+/**
+ * Resolve the HTML to render from either an inline string or a workspace file
+ * path. Reading from a written file is preferred — it keeps the artefact as a
+ * real, editable, versioned file rather than an inline blob. Path access is
+ * confined to the workspace by `resolveWorkspacePath`.
+ */
+async function resolveArtefactHtml(input: {
+  html?: string | undefined
+  path?: string | undefined
+  title?: string | undefined
+}): Promise<{ html: string; title: string }> {
+  if (input.path) {
+    const abs = resolveWorkspacePath(input.path) // throws if outside the workspace
+    let raw: string
+    try {
+      raw = await readFile(abs, 'utf8')
+    } catch {
+      throw new Error(`Could not read artefact file: ${input.path}`)
+    }
+    if (!raw.trim()) throw new Error(`Artefact file is empty: ${input.path}`)
+    if (Buffer.byteLength(raw, 'utf8') > MAX_ARTEFACT_BYTES) {
+      throw new Error(`Artefact file is too large (max 512 KB): ${input.path}`)
+    }
+    const fallbackTitle = basename(input.path).replace(/\.[^.]+$/, '')
+    return { html: raw, title: input.title ?? fallbackTitle }
+  }
+  if (input.html) {
+    return { html: input.html, title: input.title ?? 'artefact' }
+  }
+  throw new Error('Provide either `path` (a workspace HTML file, preferred) or inline `html`.')
+}
 
 /** Stable name for the bundled canvas server (shown in Settings → MCP servers). */
 export const CANVAS_SERVER_NAME = 'copse-canvas'
@@ -33,43 +70,63 @@ function buildCanvasServer(): { name: string; server: McpServer } {
       title: 'Render HTML artefact',
       description:
         'Render a self-contained HTML document as a live, sandboxed artefact in the canvas ' +
-        '(Browser pane). Use for demos, charts, dashboards, and small interactive UIs. The HTML ' +
-        "runs fully isolated with no access to the user's machine, files, or network beyond what " +
-        'the document itself loads. Include all CSS/JS inline.',
+        '(Browser pane). Use for demos, charts, dashboards, and small interactive UIs. Prefer ' +
+        'writing the HTML to a file in the workspace and passing its `path` (the artefact stays a ' +
+        'real, editable, versioned file) — or pass inline `html`. The document runs fully isolated ' +
+        "with no access to the user's machine, files, or network beyond what it loads itself; " +
+        'include all CSS/JS inline.',
       inputSchema: {
         title: z.string().max(200).optional().describe('Short title for the artefact tab.'),
+        path: z
+          .string()
+          .max(1024)
+          .optional()
+          .describe(
+            'Preferred: workspace-relative path to an HTML file to render (write it first with ' +
+              'write_file). Use instead of `html`.',
+          ),
         html: z
           .string()
-          .min(1)
           .max(512 * 1024)
-          .describe('A complete, self-contained HTML document.'),
+          .optional()
+          .describe('Inline, complete HTML document. Alternative to `path`.'),
       },
       // Rendering into the sandbox does not modify the host; no approval needed.
       annotations: { readOnlyHint: true },
     },
-    async ({ title, html }) => {
-      const slug = (title ?? 'artefact')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '')
+    async ({ title, html, path }) => {
+      let resolved: { html: string; title: string }
+      try {
+        resolved = await resolveArtefactHtml({ html, path, title })
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
+          isError: true,
+        }
+      }
+      const slug =
+        resolved.title
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '') || 'artefact'
       return {
         content: [
           {
             type: 'resource',
             resource: {
-              uri: `ui://canvas/${slug || 'artefact'}`,
+              uri: `ui://canvas/${slug}`,
               mimeType: 'text/html',
-              text: html,
+              text: resolved.html,
             },
           },
           {
             type: 'text',
             text:
-              `Rendered "${title ?? 'artefact'}" in the canvas — it is now visible to the user in ` +
-              `the Browser pane. The canvas is a separate sandboxed preview, not a browser_* tab, ` +
-              `so do NOT call browser_snapshot or browser_screenshot on it (those drive a different ` +
-              `browser and will report "unknown browser tab"). You already have the HTML you sent, ` +
-              `so there is nothing more to capture; just tell the user it is displayed.`,
+              `Rendered "${resolved.title}" in the canvas — it is now visible to the user in the ` +
+              `Browser pane. The canvas is a live sandboxed preview, not a browser_* tab, so ` +
+              `browser_snapshot / browser_screenshot can't target it (they drive a different ` +
+              `browser). To capture it, open the page via its dev-server URL with browser_navigate ` +
+              `first; otherwise just tell the user it is displayed.`,
           },
         ],
       }
