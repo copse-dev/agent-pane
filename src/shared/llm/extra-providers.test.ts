@@ -7,6 +7,8 @@ import {
   extraProviderDisplayLabel,
   extraProviderForModel,
   extraProviderModelId,
+  extraProviderModelPricing,
+  extraProviderPricingMap,
   isExtraProviderModel,
   resolveExtraProviders,
   toExtraProviderModel,
@@ -63,6 +65,54 @@ describe('extra provider lookups against a resolved list', () => {
     // Unknown model under a known provider → provider fallback (Gemini = 1M).
     assert.equal(extraProviderContextWindow(providers, 'gemini:not-a-real-model'), 1_048_576)
     assert.equal(extraProviderContextWindow(providers, 'claude-sonnet-4-6'), null)
+  })
+})
+
+describe('extra provider pricing', () => {
+  const providers = resolveExtraProviders([
+    {
+      slug: 'huggingface',
+      models: [
+        {
+          id: 'zai-org/GLM-5.2:together',
+          label: 'zai-org/GLM-5.2',
+          contextWindow: 131_072,
+          inputPricePerMTok: 0.6,
+          outputPricePerMTok: 2.2,
+        },
+        // Output rate omitted on persist → falls back to the input rate on read.
+        { id: 'org/model:novita', inputPricePerMTok: 1.5 },
+        { id: 'org/unpriced:x', contextWindow: 8192 },
+      ],
+    },
+  ])
+
+  it('round-trips stored per-model rates through resolveExtraProviders', () => {
+    assert.deepEqual(extraProviderModelPricing(providers, 'huggingface:zai-org/GLM-5.2:together'), {
+      inputPricePerMTok: 0.6,
+      outputPricePerMTok: 2.2,
+    })
+  })
+
+  it('defaults a missing output rate to the input rate', () => {
+    assert.deepEqual(extraProviderModelPricing(providers, 'huggingface:org/model:novita'), {
+      inputPricePerMTok: 1.5,
+      outputPricePerMTok: 1.5,
+    })
+  })
+
+  it('returns null for unpriced models and non-extra selections', () => {
+    assert.equal(extraProviderModelPricing(providers, 'huggingface:org/unpriced:x'), null)
+    assert.equal(extraProviderModelPricing(providers, 'claude-sonnet-4-6'), null)
+  })
+
+  it('builds a selection→pricing map covering only priced models', () => {
+    const map = extraProviderPricingMap(providers)
+    assert.deepEqual(Object.keys(map).sort(), [
+      'huggingface:org/model:novita',
+      'huggingface:zai-org/GLM-5.2:together',
+    ])
+    assert.equal(map['huggingface:zai-org/GLM-5.2:together']?.outputPricePerMTok, 2.2)
   })
 })
 

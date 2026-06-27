@@ -198,6 +198,14 @@ export interface ApiClient {
       models: { id: string; contextLength: number | null }[]
       error?: string
     }>
+    /**
+     * Fetch the Hugging Face router catalogue and persist priced, provider-pinned
+     * models onto the `huggingface` provider. Uses the stored/env token when none
+     * is passed. Runs automatically when the HF token is saved.
+     */
+    refreshHuggingFaceModels: (
+      apiKey?: string,
+    ) => Promise<{ ok: boolean; count: number; error?: string }>
   }
   appIcon: {
     apply: () => Promise<void>
