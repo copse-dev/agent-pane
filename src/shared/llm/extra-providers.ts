@@ -28,6 +28,10 @@ export interface ExtraProviderModel {
   label?: string
   /** Context window (tokens) used for history trimming; falls back per provider. */
   contextWindow?: number
+  /** USD per million input tokens, when the provider reports a rate (e.g. HF router). */
+  inputPricePerMTok?: number
+  /** USD per million output tokens, when the provider reports a rate. */
+  outputPricePerMTok?: number
 }
 
 export interface ExtraProvider {
@@ -273,6 +277,52 @@ export function extraProviderContextWindow(
   return known ?? provider.fallbackContextWindow ?? DEFAULT_EXTRA_PROVIDER_CONTEXT
 }
 
+/** Per-MTok USD pricing for an extra-provider model, when one was stored. */
+export interface ExtraProviderPricing {
+  inputPricePerMTok: number
+  outputPricePerMTok: number
+}
+
+/**
+ * Stored pricing for an extra-provider selection, or `null` when the provider
+ * didn't report a rate (so the caller treats it as unpriced rather than free).
+ */
+export function extraProviderModelPricing(
+  providers: readonly ExtraProvider[],
+  model: string,
+): ExtraProviderPricing | null {
+  const provider = extraProviderForModel(providers, model)
+  if (!provider) return null
+  const id = extraProviderModelId(model)
+  const known = provider.models.find((m) => m.id === id)
+  if (!known || typeof known.inputPricePerMTok !== 'number') return null
+  return {
+    inputPricePerMTok: known.inputPricePerMTok,
+    outputPricePerMTok: known.outputPricePerMTok ?? known.inputPricePerMTok,
+  }
+}
+
+/**
+ * A `model selection → pricing` map for every extra-provider model that carries
+ * a rate, keyed by the `<slug>:<id>` selection string used in thread usage. The
+ * cost estimator consults this for models absent from the static cloud catalog.
+ */
+export function extraProviderPricingMap(
+  providers: readonly ExtraProvider[],
+): Record<string, ExtraProviderPricing> {
+  const out: Record<string, ExtraProviderPricing> = {}
+  for (const provider of providers) {
+    for (const m of provider.models) {
+      if (typeof m.inputPricePerMTok !== 'number') continue
+      out[toExtraProviderModel(provider.id, m.id)] = {
+        inputPricePerMTok: m.inputPricePerMTok,
+        outputPricePerMTok: m.outputPricePerMTok ?? m.inputPricePerMTok,
+      }
+    }
+  }
+  return out
+}
+
 function normalizeModels(models: unknown): ExtraProviderModel[] {
   if (!Array.isArray(models)) return []
   const out: ExtraProviderModel[] = []
@@ -282,10 +332,18 @@ function normalizeModels(models: unknown): ExtraProviderModel[] {
     if (typeof id !== 'string' || !id.trim()) continue
     const label = (raw as ExtraProviderModel).label
     const contextWindow = (raw as ExtraProviderModel).contextWindow
+    const inputPrice = (raw as ExtraProviderModel).inputPricePerMTok
+    const outputPrice = (raw as ExtraProviderModel).outputPricePerMTok
     out.push({
       id: id.trim(),
       ...(typeof label === 'string' && label.trim() ? { label: label.trim() } : {}),
       ...(typeof contextWindow === 'number' && contextWindow > 0 ? { contextWindow } : {}),
+      ...(typeof inputPrice === 'number' && inputPrice >= 0
+        ? { inputPricePerMTok: inputPrice }
+        : {}),
+      ...(typeof outputPrice === 'number' && outputPrice >= 0
+        ? { outputPricePerMTok: outputPrice }
+        : {}),
     })
   }
   return out

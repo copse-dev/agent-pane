@@ -295,6 +295,10 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
     form.append(keyField(provider.id, provider.keyLabel, provider.keyPlaceholder, provider.keyHint))
 
     const editor = createModelsEditor(provider.models)
+    // HF models carry per-provider pricing/context that the structured editor
+    // doesn't surface; preserve those stored fields across a manual save.
+    const priorById = new Map(provider.models.map((m) => [m.id, m]))
+    const isHuggingFace = provider.id === 'huggingface'
     const fetchBtn = el('button', { type: 'button' }, 'Fetch models') as HTMLButtonElement
     const fetchStatus = el('span', { class: 'key-status' })
     fetchBtn.addEventListener('click', () => {
@@ -302,6 +306,22 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
         fetchStatus.textContent = 'Fetching…'
         fetchStatus.className = 'key-status'
         const key = (pendingKeys.get(provider.id) ?? '').trim()
+        // HF's router exposes per-provider pricing/context the generic /models
+        // endpoint lacks, so it has a dedicated fetch that resolves the cheapest
+        // live provider, pins it, and persists prices — then we reload the form.
+        if (isHuggingFace) {
+          const res = await api.settings.refreshHuggingFaceModels(key || undefined)
+          if (!res.ok) {
+            const hint = !key ? ' — enter your HF token and try again' : ''
+            fetchStatus.textContent = `✗ ${res.error ?? 'Could not list models'}${hint}`
+            fetchStatus.className = 'key-status err'
+            return
+          }
+          fetchStatus.textContent = `✓ ${res.count} model(s) imported with pricing`
+          fetchStatus.className = 'key-status ok'
+          await refresh()
+          return
+        }
         const res = await api.settings.fetchProviderModels(urlInput.value.trim(), key || undefined)
         if (!res.ok) {
           // Most cloud providers reject an unauthenticated /models request (Google
@@ -394,11 +414,27 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
           }
         }
         const ctx = Number(ctxInput.value)
+        // Re-attach any stored pricing the editor can't show, matched by model id,
+        // so a manual save doesn't strip fetched HF rates. The editor's own
+        // id/label/context values win.
+        const models = editor.read().map((m) => {
+          const prior = priorById.get(m.id)
+          if (!prior) return m
+          return {
+            ...(typeof prior.inputPricePerMTok === 'number'
+              ? { inputPricePerMTok: prior.inputPricePerMTok }
+              : {}),
+            ...(typeof prior.outputPricePerMTok === 'number'
+              ? { outputPricePerMTok: prior.outputPricePerMTok }
+              : {}),
+            ...m,
+          }
+        })
         try {
           await api.settings.saveExtraProvider({
             slug: provider.id,
             ...(provider.builtin ? {} : { label: provider.label, baseUrl: urlInput.value.trim() }),
-            models: editor.read(),
+            models,
             includeUsage: usageBox.checked,
             ...(Number.isFinite(ctx) && ctx > 0 ? { fallbackContextWindow: ctx } : {}),
             ...(extraBody ? { extraBody } : {}),
