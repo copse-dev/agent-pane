@@ -1,6 +1,7 @@
 import { safeStorage } from 'electron'
 import ElectronStore from 'electron-store'
 import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
+import { BUILTIN_EXTRA_PROVIDERS } from '@shared/llm/extra-providers.ts'
 import { runSerialized } from './write-queue.ts'
 import { getSettingSchema } from './settings-schema.ts'
 
@@ -16,23 +17,28 @@ interface StoredKey {
   plain?: boolean
 }
 
-export type KeyProvider =
-  | 'anthropic'
-  | 'openai'
-  | 'lmstudio'
-  | 'cursor'
-  | 'openrouter'
-  | 'mistral'
-  | 'gemini'
-  | 'deepseek'
+// A key is stored per provider slug at `apiKey.<slug>`. The fixed cloud providers
+// and shipped presets keep an env-var fallback; user-added custom providers (any
+// other slug) are stored-only, like the local LM Studio key.
+export type KeyProvider = string
 
 /** Cloud providers whose availability/keys are backed by an env var fallback. */
-export type CloudKeyProvider = Exclude<KeyProvider, 'lmstudio'>
+export type CloudKeyProvider = string
 
-const EXTRA_PROVIDER_ENV_VARS: Record<'mistral' | 'gemini' | 'deepseek', string> = {
-  mistral: 'MISTRAL_API_KEY',
-  gemini: 'GEMINI_API_KEY',
-  deepseek: 'DEEPSEEK_API_KEY',
+const FIXED_PROVIDER_ENV_VARS: Record<string, string> = {
+  anthropic: 'ANTHROPIC_API_KEY',
+  openai: 'OPENAI_API_KEY',
+  cursor: 'CURSOR_API_KEY',
+  openrouter: 'OPENROUTER_API_KEY',
+}
+
+// Env-var fallback for every provider that ships one: the fixed cloud providers
+// plus the built-in OpenAI-compatible presets (Mistral/Gemini/DeepSeek).
+const PROVIDER_ENV_VARS: Record<string, string> = {
+  ...FIXED_PROVIDER_ENV_VARS,
+  ...Object.fromEntries(
+    BUILTIN_EXTRA_PROVIDERS.filter((p) => p.envVar).map((p) => [p.id, p.envVar as string]),
+  ),
 }
 
 export function hasApiKey(provider: KeyProvider): boolean {
@@ -54,14 +60,7 @@ export function getApiKey(provider: KeyProvider): string | null {
 }
 
 function envVarFor(provider: KeyProvider): string | null {
-  if (provider === 'anthropic') return 'ANTHROPIC_API_KEY'
-  if (provider === 'openai') return 'OPENAI_API_KEY'
-  if (provider === 'cursor') return 'CURSOR_API_KEY'
-  if (provider === 'openrouter') return 'OPENROUTER_API_KEY'
-  if (provider === 'mistral' || provider === 'gemini' || provider === 'deepseek') {
-    return EXTRA_PROVIDER_ENV_VARS[provider]
-  }
-  return null
+  return PROVIDER_ENV_VARS[provider] ?? null
 }
 
 export function setApiKey(provider: KeyProvider, key: string): void {
@@ -120,6 +119,14 @@ export function isApiKeyEncrypted(provider: KeyProvider): boolean | null {
 export function isProviderAvailable(provider: CloudKeyProvider): boolean {
   const envVar = envVarFor(provider)
   return !!((envVar && process.env[envVar]) || hasApiKey(provider))
+}
+
+/** Stored key, falling back to the provider's env var when it ships one. */
+export function resolveApiKey(provider: KeyProvider): string | null {
+  const stored = getApiKey(provider)
+  if (stored) return stored
+  const envVar = envVarFor(provider)
+  return (envVar && process.env[envVar]) || null
 }
 
 export function getLmStudioApiKey(): string {
