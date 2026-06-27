@@ -83,6 +83,7 @@ export function mountContextPanel(
 
   let markdownViewMode: MarkdownViewMode = 'preview'
   let lastMarkdownPath: string | null = null
+  let revealedFor: OpenFile | null = null
 
   function syncToolbarActive() {
     previewBtn.classList.toggle('is-active', markdownViewMode === 'preview')
@@ -240,6 +241,15 @@ export function mountContextPanel(
       const old = fileEditor.getModel()
       fileEditor.setModel(monaco.editor.createModel(openFile.content, openFile.language))
       old?.dispose()
+
+      // Reveal a requested line/col once per distinct open (a new openFile
+      // object), so unrelated panel re-renders don't yank the user's scroll.
+      if (openFile.reveal && revealedFor !== openFile) {
+        const { line, column } = openFile.reveal
+        fileEditor.revealLineInCenter(line)
+        fileEditor.setPosition({ lineNumber: line, column: column ?? 1 })
+      }
+      revealedFor = openFile
 
       const md = isMarkdownFile(openFile)
       fileToolbar.hidden = !md

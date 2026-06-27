@@ -204,7 +204,9 @@ export interface ApiClient {
   }
   index: {
     query: (pattern: string) => Promise<string[]>
-    resolveFileReferences: (candidates: string[]) => Promise<{ candidate: string; path: string }[]>
+    resolveFileReferences: (
+      candidates: string[],
+    ) => Promise<{ candidate: string; path: string; kind: 'file' | 'directory' }[]>
   }
   skills: {
     list: () => Promise<SkillSummary[]>
