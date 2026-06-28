@@ -48,9 +48,7 @@ describe('git changes viewer', function () {
 
     await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
 
-    const changesTab = await $('.right-panel-tab[aria-label="Changes"]')
-    await changesTab.waitForDisplayed({ timeout: 5_000 })
-    await expect(changesTab).toHaveElementClass('is-active')
+    await expect(titlebarChangesBtn).toHaveElementClass('active')
 
     const changesHost = await $('#git-changes-host')
     await changesHost.waitForDisplayed({ timeout: 30_000 })

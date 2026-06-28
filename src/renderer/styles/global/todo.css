@@ -98,19 +98,6 @@
   padding: var(--spacing-md);
   min-height: 0;
 }
-.plan-viewer-host {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--spacing-md);
-  min-height: 0;
-  background: var(--bg-base);
-}
-.plan-pane-empty {
-  color: var(--text-muted);
-  font-size: 13px;
-  margin: 0;
-}
-
 /* Post-turn review panel */
 .conversation-review-host {
   flex-shrink: 0;

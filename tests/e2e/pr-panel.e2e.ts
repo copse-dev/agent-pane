@@ -32,7 +32,7 @@ describe('PR panel (mock gh)', () => {
       await $('.titlebar-panel-controls .titlebar-btn[aria-label="Toggle right panel"]').click()
       await pane.waitForDisplayed({ timeout: 10_000 })
     }
-    await $('[aria-label="Pull requests"]').click()
+    await $('[aria-label="Open pull requests"]').click()
     await browser.pause(800)
   }
 
@@ -73,14 +73,14 @@ describe('PR panel (mock gh)', () => {
     )
     await saveElementScreenshot('#pane-files', 'pr-panel-viewer.png')
 
-    await $('[aria-label="Explorer"]').click()
+    await $('[aria-label="Toggle right panel"]').click()
     await browser.pause(200)
     await (await $('[data-message-id="msg-assistant-pr-link"] .message-text a')).click()
     await browser.waitUntil(
       async () =>
         await browser.execute(
           () =>
-            document.querySelector('[aria-label="Pull requests"].is-active') != null &&
+            document.querySelector('[aria-label="Open pull requests"].active') != null &&
             document.querySelector('.pr-viewer-title')?.textContent === 'Add GitHub PR panel tab',
         ),
       { timeout: 10_000, timeoutMsg: 'expected chat PR link to open mock PR viewer' },

@@ -41,7 +41,7 @@ describe('todo plan display', () => {
     resetUserData()
   })
 
-  it('shows inline todo panel and plan tab with statuses', async () => {
+  it('shows inline todo panel with statuses', async () => {
     const inlinePanel = await $('.conversation-todos-host .todo-panel')
     await inlinePanel.waitForExist({ timeout: 30_000 })
 
@@ -61,21 +61,9 @@ describe('todo plan display', () => {
     await expect((await localBadge.getText()).toLowerCase()).toBe('local')
 
     await saveAppScreenshot('todo-inline-panel.png')
-
-    await openRightPanel()
-
-    await $('.right-panel-tab[aria-label="Plan"]').waitForDisplayed({ timeout: 5_000 })
-    await (await $('.right-panel-tab[aria-label="Plan"]')).click()
-    await browser.waitUntil(async () => (await $$('#plan-viewer-host .todo-item')).length === 5, {
-      timeout: 10_000,
-      timeoutMsg: 'expected 5 todo items in plan tab',
-    })
-    await expect($('#plan-viewer-host .todo-panel')).toBeDisplayed()
-
-    await saveAppScreenshot('todo-plan-tab.png')
   })
 
-  it('hides inline todo panel and Plan tab when the thread has no plan', async () => {
+  it('hides inline todo panel when the thread has no plan', async () => {
     await clickThreadByTitle(noPlanThreadTitle)
     await expect($('.chat-row.selected .chat-title')).toHaveText(noPlanThreadTitle)
     await browser.waitUntil(
@@ -87,12 +75,9 @@ describe('todo plan display', () => {
     )
 
     await openRightPanel()
-    await (await $('.right-panel-tab[aria-label="Explorer"]')).click()
-    await expect($('.right-panel-tab[aria-label="Explorer"]')).toHaveElementClass('is-active')
-    await expect($('.right-panel-tab[aria-label="Plan"]')).not.toBeDisplayed()
+    await expect($('.titlebar-btn[aria-label="Toggle right panel"]')).toHaveElementClass('active')
     await expect($('#pane-projects .chats-list')).toBeDisplayed()
     await expect($('#file-tree-host')).toBeDisplayed()
-    await expect($('#plan-viewer-host')).not.toBeDisplayed()
 
     await saveThreePaneScreenshot('todo-no-plan.png')
   })
