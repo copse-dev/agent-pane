@@ -89,8 +89,9 @@ export const browserTabsTool = defineTool({
   },
 })
 
-// Each tool carries its own arg type; the registry validates args at runtime,
-// so erase to the common ToolDefinition shape for bulk registration.
+// Single source of truth for registration. ToolDefinition<TArgs> is invariant
+// in TArgs, so a heterogeneous list can't be typed as ToolDefinition[] without
+// erasing here; the registry validates each tool's args at runtime.
 export const browserTools: ToolDefinition[] = [
   browserNavigateTool,
   browserSnapshotTool,

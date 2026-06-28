@@ -4,10 +4,10 @@ import OpenAI from 'openai'
 export const DEFAULT_STREAM_MAX_ATTEMPTS = 4
 
 function errorHeaders(err: unknown): Headers | undefined {
-  // Both SDKs type APIError.headers via an unconstrained generic (`any` here),
-  // but the runtime value is a Fetch `Headers` (consumed via `.get()` below).
-  if (err instanceof Anthropic.APIError && err.headers) return err.headers as Headers
-  if (err instanceof OpenAI.APIError && err.headers) return err.headers as Headers
+  // Both SDKs type APIError.headers via an unconstrained generic (`any` here);
+  // the `instanceof Headers` guard narrows it to the runtime Fetch `Headers`.
+  if (err instanceof Anthropic.APIError && err.headers instanceof Headers) return err.headers
+  if (err instanceof OpenAI.APIError && err.headers instanceof Headers) return err.headers
   return undefined
 }
 
