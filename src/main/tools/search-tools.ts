@@ -70,7 +70,7 @@ export const findFilesTool = defineTool({
       .describe('Filename or glob. Examples: "*.ts", "package.json", "src/**/*service*"'),
     max_results: z.number().int().min(1).max(200).optional().default(50),
   }),
-  async execute({ pattern, max_results }) {
+  execute({ pattern, max_results }) {
     const idx = getIndex()
     if (!idx) return 'File index not available. Try opening the workspace again.'
     // Take one extra so we can tell "exactly max_results total" from "more were dropped".

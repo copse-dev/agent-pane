@@ -75,7 +75,7 @@ export const browserTabsTool = defineTool({
     action: z.enum(['list', 'close']).optional().default('list'),
     viewId: z.string().optional().describe('Tab id to close when action is "close"'),
   }),
-  async execute({ action, viewId }) {
+  execute({ action, viewId }) {
     const session = getBrowserSession()
     if (action === 'close') {
       if (!viewId) throw new Error('viewId is required to close a tab')
