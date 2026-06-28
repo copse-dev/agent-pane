@@ -20,6 +20,16 @@ describe('renderMarkdown', () => {
     assert.match(html, /<p>second paragraph<\/p>/)
   })
 
+  it('strips HTML comments from prose but keeps them in fenced code', () => {
+    const html = renderMarkdown(
+      '<!-- template hint -->\n\nVisible text\n\n```html\n<!-- keep -->\n```',
+    )
+    assert.doesNotMatch(html, /template hint/)
+    assert.match(html, /<p>Visible text<\/p>/)
+    assert.match(html, /keep/)
+    assert.doesNotMatch(html, /template hint/)
+  })
+
   it('renders unordered lists', () => {
     const html = renderMarkdown('- alpha\n- beta')
     assert.match(html, /<ul>/)

@@ -126,6 +126,22 @@ export interface IpcInvokeMap {
   'git:branchStatus': { args: [forBranch?: string]; result: GitBranchStatus }
   'git:checkoutBranch': { args: [branch: string]; result: void }
 
+  // GitHub CLI / pull requests
+  'gh:status': { args: []; result: import('./git.ts').GhCliStatus }
+  'gh:listMyOpenPrs': { args: []; result: import('./git.ts').GhPrSummary[] | null }
+  'gh:prDetails': {
+    args: [owner: string, repo: string, number: number]
+    result: import('./git.ts').GhPrDetails | null
+  }
+  'gh:prFileDiff': {
+    args: [owner: string, repo: string, number: number, path: string]
+    result: import('./git.ts').GhPrFileDiff | null
+  }
+  'gh:resolvePrUrl': {
+    args: [url: string]
+    result: { owner: string; repo: string; number: number } | null
+  }
+
   // Remote agent artifacts
   'remoteAgent:downloadArtifact': { args: [agentId: string, path: string]; result: string }
   'remoteAgent:artifactImageDataUrl': { args: [agentId: string, path: string]; result: string }
