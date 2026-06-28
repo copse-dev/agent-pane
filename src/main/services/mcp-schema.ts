@@ -38,7 +38,7 @@ function sanitizeNode(value: unknown, depth: number): unknown {
     if (propCount >= MAX_PROPERTIES) break
     propCount++
     if (key === 'enum' && Array.isArray(v)) {
-      out.enum = v.slice(0, MAX_ENUM_ENTRIES)
+      out['enum'] = v.slice(0, MAX_ENUM_ENTRIES)
     } else {
       out[key] = sanitizeNode(v, depth + 1)
     }
@@ -59,8 +59,8 @@ export function sanitizeMcpInputSchema(inputSchema: unknown): Record<string, unk
   }
   const out = sanitizeNode(inputSchema, 0) as Record<string, unknown>
 
-  if (out.type !== 'object') out.type = 'object'
-  if (!out.properties || typeof out.properties !== 'object') out.properties = {}
+  if (out['type'] !== 'object') out['type'] = 'object'
+  if (!out['properties'] || typeof out['properties'] !== 'object') out['properties'] = {}
 
   return out
 }
@@ -161,7 +161,7 @@ export function flattenMcpContent(content: unknown, options: FlattenOptions = {}
         parts.push(`[audio${raw.mimeType ? ` ${raw.mimeType}` : ''} omitted]`)
         break
       case 'resource_link': {
-        const uri = typeof raw.uri === 'string' ? raw.uri : ''
+        const uri = typeof raw['uri'] === 'string' ? raw['uri'] : ''
         parts.push(`[resource link: ${uri}]`)
         break
       }

@@ -160,7 +160,7 @@ export async function loadCustomToolsFromDir(
 
 /** Load custom tools from the user-trusted directory into the registry. */
 export async function loadCustomTools(registry: ToolRegistry): Promise<void> {
-  if (process.env.COPSE_AGENT_EVAL === '1') {
+  if (process.env['COPSE_AGENT_EVAL'] === '1') {
     customToolStatuses = []
     return
   }

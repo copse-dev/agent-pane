@@ -26,7 +26,7 @@ function ensureNodePtySpawnHelperExecutable(): void {
 
 ensureNodePtySpawnHelperExecutable()
 
-if (process.env.SKIP_ELECTRON_REBUILD === '1') {
+if (process.env['SKIP_ELECTRON_REBUILD'] === '1') {
   console.log('[postinstall] SKIP_ELECTRON_REBUILD=1 — skipping node-pty electron-rebuild')
   process.exit(0)
 }

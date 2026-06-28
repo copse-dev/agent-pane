@@ -207,8 +207,11 @@ export class StreamingMarkdownRenderer {
   private completedEl: HTMLElement | null = null
   private pendingEl: HTMLSpanElement | null = null
   private lastComplete = ''
+  private readonly host: HTMLElement
 
-  constructor(private readonly host: HTMLElement) {}
+  constructor(host: HTMLElement) {
+    this.host = host
+  }
 
   /** Render `content` (the full message text so far) into the host incrementally. */
   update(content: string): void {

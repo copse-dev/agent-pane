@@ -38,14 +38,14 @@ describe('formatArgvForShell', () => {
 
 describe('shellForSandboxWrap', () => {
   it('uses a PATH-resolvable shell name for absolute macOS shell paths', () => {
-    const originalPath = process.env.PATH
-    process.env.PATH = '/custom/bin'
+    const originalPath = process.env['PATH']
+    process.env['PATH'] = '/custom/bin'
     try {
       assert.equal(shellForSandboxWrap('/bin/bash'), 'bash')
-      assert.match(process.env.PATH ?? '', /(?:^|:)\/bin(?::|$)/)
-      assert.match(process.env.PATH ?? '', /(?:^|:)\/usr\/bin(?::|$)/)
+      assert.match(process.env['PATH'] ?? '', /(?:^|:)\/bin(?::|$)/)
+      assert.match(process.env['PATH'] ?? '', /(?:^|:)\/usr\/bin(?::|$)/)
     } finally {
-      process.env.PATH = originalPath
+      process.env['PATH'] = originalPath
     }
   })
 })

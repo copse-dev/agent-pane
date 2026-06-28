@@ -240,7 +240,7 @@ src/renderer/views/projects-pane.ts
       maxSteps: 1,
       onChunk: (c) => chunks.push(c),
       coerceTextToolCallArgs: (name, args) => {
-        if (name === 'read_file' && typeof args.path === 'string' && args.path.trim()) {
+        if (name === 'read_file' && typeof args['path'] === 'string' && args['path'].trim()) {
           return args
         }
         return null
@@ -287,7 +287,7 @@ src/renderer/views/projects-pane.ts
       maxSteps: 20,
       onChunk: (c) => chunks.push(c),
       coerceTextToolCallArgs: (name, args) => {
-        if (name === 'read_file' && typeof args.path === 'string' && args.path.trim()) {
+        if (name === 'read_file' && typeof args['path'] === 'string' && args['path'].trim()) {
           return args
         }
         return null

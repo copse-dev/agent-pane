@@ -219,9 +219,9 @@ function artifactImageSource(rawSrc: string): { path: string; agentId?: string }
 function renderArtifactImageTags(text: string): string {
   return text.replace(/&lt;img\b[\s\S]*?\/?&gt;/gi, (tag) => {
     const attrs = parseHtmlAttributes(tag)
-    const artifact = attrs.src ? artifactImageSource(attrs.src) : null
+    const artifact = attrs['src'] ? artifactImageSource(attrs['src']) : null
     if (!artifact) return tag
-    const alt = attrs.alt ?? 'Remote agent artifact'
+    const alt = attrs['alt'] ?? 'Remote agent artifact'
     const agent = artifact.agentId
       ? ` data-remote-artifact-agent-id="${escapeHtml(artifact.agentId)}"`
       : ''

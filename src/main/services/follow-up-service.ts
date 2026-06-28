@@ -128,7 +128,7 @@ export function mockFollowUpSuggestions(): FollowUpSuggestion[] {
 /** Build follow-up bubbles: deterministic PR/git signals first, then model picks. */
 export async function suggestFollowUps(context: FollowUpContext): Promise<FollowUpSuggestion[]> {
   if (
-    process.env.COPSE_PANEL_MOCK_FOLLOW_UPS === '1' ||
+    process.env['COPSE_PANEL_MOCK_FOLLOW_UPS'] === '1' ||
     getSetting<boolean>('mockFollowUps', false)
   ) {
     return mockFollowUpSuggestions()

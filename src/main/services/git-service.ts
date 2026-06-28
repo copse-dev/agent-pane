@@ -211,7 +211,7 @@ function runGitBuffer(args: string[]): { stdout: Buffer; code: number } {
     GIT_OPTIONAL_LOCKS: '0',
     GIT_PAGER: 'cat',
     GIT_TERMINAL_PROMPT: '0',
-    GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -oBatchMode=yes',
+    GIT_SSH_COMMAND: process.env['GIT_SSH_COMMAND'] ?? 'ssh -oBatchMode=yes',
   }
   const result = spawnSync('git', prepared, {
     cwd,

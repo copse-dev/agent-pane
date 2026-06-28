@@ -31,7 +31,7 @@ export function bindBrowserLinkClicks(
     if (!target || typeof (target as Element).closest !== 'function') return
     const link = (target as Element).closest<HTMLAnchorElement>('a[href]')
     if (!link || !root.contains(link)) return
-    if (link.dataset.fileReferencePath) return
+    if (link.dataset['fileReferencePath']) return
 
     const href = linkHttpHref(link)
     if (!href) return

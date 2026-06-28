@@ -538,13 +538,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   const sections = overlay.querySelectorAll<HTMLElement>('.settings-section')
 
   function showSection(id: SettingsSection): void {
-    navBtns.forEach((btn) => btn.classList.toggle('active', btn.dataset.section === id))
-    sections.forEach((sec) => sec.classList.toggle('active', sec.dataset.section === id))
+    navBtns.forEach((btn) => btn.classList.toggle('active', btn.dataset['section'] === id))
+    sections.forEach((sec) => sec.classList.toggle('active', sec.dataset['section'] === id))
   }
 
   navBtns.forEach((btn) => {
     btn.addEventListener('click', () => {
-      const id = btn.dataset.section as SettingsSection | undefined
+      const id = btn.dataset['section'] as SettingsSection | undefined
       if (id) showSection(id)
     })
   })
@@ -882,7 +882,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       store.emit('theme_changed', theme)
       store.emit('settings_changed')
       window.dispatchEvent(new Event('copse:skills-changed'))
-      document.documentElement.dataset.theme = theme
+      document.documentElement.dataset['theme'] = theme
       closeSettingsDialog()
     })()
   })

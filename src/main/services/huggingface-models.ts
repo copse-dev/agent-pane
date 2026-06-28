@@ -42,18 +42,21 @@ function num(value: unknown): number | null {
 }
 
 function readPricing(rec: Record<string, unknown>): { input: number; output: number } | null {
-  const pricing = rec.pricing
+  const pricing = rec['pricing']
   if (!pricing || typeof pricing !== 'object') return null
   const p = pricing as Record<string, unknown>
-  const input = num(p.input ?? p.input_per_million ?? p.prompt)
+  const input = num(p['input'] ?? p['input_per_million'] ?? p['prompt'])
   if (input === null) return null
-  const output = num(p.output ?? p.output_per_million ?? p.completion)
+  const output = num(p['output'] ?? p['output_per_million'] ?? p['completion'])
   return { input, output: output ?? input }
 }
 
 function readContextLength(rec: Record<string, unknown>): number | null {
   return num(
-    rec.context_length ?? rec.context_window ?? rec.contextLength ?? rec.max_context_length,
+    rec['context_length'] ??
+      rec['context_window'] ??
+      rec['contextLength'] ??
+      rec['max_context_length'],
   )
 }
 
@@ -71,14 +74,14 @@ export function selectBestHfProvider(providers: unknown): HfProviderEntry | null
     if (!raw || typeof raw !== 'object') continue
     const rec = raw as Record<string, unknown>
     const name =
-      typeof rec.provider === 'string'
-        ? rec.provider
-        : typeof rec.name === 'string'
-          ? rec.name
+      typeof rec['provider'] === 'string'
+        ? rec['provider']
+        : typeof rec['name'] === 'string'
+          ? rec['name']
           : null
     if (!name) continue
-    if (rec.status !== undefined && rec.status !== 'live') continue
-    if (rec.supports_tools === false) continue
+    if (rec['status'] !== undefined && rec['status'] !== 'live') continue
+    if (rec['supports_tools'] === false) continue
     const pricing = readPricing(rec)
     if (!pricing) continue
     const entry: HfProviderEntry = {
@@ -110,9 +113,13 @@ export function parseHuggingFaceModels(json: unknown): ExtraProviderModel[] {
     if (!row || typeof row !== 'object') continue
     const rec = row as Record<string, unknown>
     const id =
-      typeof rec.id === 'string' ? rec.id : typeof rec.model === 'string' ? rec.model : null
+      typeof rec['id'] === 'string'
+        ? rec['id']
+        : typeof rec['model'] === 'string'
+          ? rec['model']
+          : null
     if (!id) continue
-    const best = selectBestHfProvider(rec.providers)
+    const best = selectBestHfProvider(rec['providers'])
     if (!best) continue
     out.push({
       // Pin the chosen provider so routing (and thus price/context) can't drift.
