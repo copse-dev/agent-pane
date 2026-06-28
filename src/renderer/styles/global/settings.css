@@ -344,7 +344,7 @@ dialog.settings-overlay::backdrop {
 }
 .provider-model-row {
   display: grid;
-  grid-template-columns: 2fr 1fr 2fr auto;
+  grid-template-columns: 2fr 1fr 1fr 1fr 1.5fr auto;
   gap: var(--spacing-sm);
   align-items: center;
 }
