@@ -11,7 +11,7 @@ import { mountConversation } from './views/conversation.ts'
 import { mountFileTree } from './views/file-tree.ts'
 import { mountInputBar } from './views/input-bar.ts'
 import { mountContextPanel } from './views/context-panel.ts'
-import { mountRightPanelTabs } from './views/right-panel-tabs.ts'
+import { mountRightPanelLayout } from './views/right-panel-layout.ts'
 import { mountTerminalsPane } from './views/terminals-pane.ts'
 import { mountGitChangesPane } from './views/git-changes-pane.ts'
 import { mountPrPane } from './views/pr-pane.ts'
@@ -183,7 +183,7 @@ function mountFullLayout() {
   }
   bindChatComposerLayout(store)
   mountFileTree(document.getElementById('file-tree-host')!, store, api)
-  mountRightPanelTabs(document.getElementById('right-panel-tabs')!, store)
+  mountRightPanelLayout(store)
   mountTerminalsPane(
     document.getElementById('terminals-list-host')!,
     document.getElementById('terminals-viewer-host')!,

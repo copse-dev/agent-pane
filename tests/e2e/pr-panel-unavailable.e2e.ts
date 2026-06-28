@@ -36,7 +36,7 @@ describe('PR panel gh unavailable (mock)', () => {
       await $('.titlebar-panel-controls .titlebar-btn[aria-label="Toggle right panel"]').click()
       await pane.waitForDisplayed({ timeout: 10_000 })
     }
-    await $('[aria-label="Pull requests"]').click()
+    await $('[aria-label="Open pull requests"]').click()
     await browser.pause(800)
 
     await (await $('.git-changes-section-title*=From chat')).waitForDisplayed({ timeout: 10_000 })

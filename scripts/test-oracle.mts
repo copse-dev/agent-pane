@@ -8,7 +8,7 @@
  *
  * How it maps changes → tests:
  *   • e2e specs barely import source — they drive the built app through DOM
- *     selectors and aria-labels (`#pane-files`, `.right-panel-tab`, "Terminal").
+ *     selectors and aria-labels (`#pane-files`, `.titlebar-btn`, "Terminal").
  *     Those same strings live in the renderer/HTML/CSS that defines them, so we
  *     build each spec's *selector vocabulary* and select a spec when a changed
  *     file contains one of its selectors. We also follow real imports (helpers
