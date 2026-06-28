@@ -67,7 +67,10 @@ const KNOWN_ENDPOINTS: ReadonlyArray<{ label: string; baseUrl: string }> = [
 ]
 
 // A small structured editor for a provider's model shortlist: one row of
-// id / context-window / label inputs each, with add and remove controls.
+// id / context-window / in & out price / label inputs each, with add and remove
+// controls. Prices are USD per million tokens; blank means unpriced (no cost
+// estimate). For HF these are auto-filled by the fetch and overwritten on the
+// next refetch; for custom providers they're the only way to opt into costing.
 interface ModelsEditor {
   element: HTMLElement
   read: () => ExtraProviderModel[]
@@ -87,6 +90,18 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
       min: '1',
       placeholder: 'context',
     }) as HTMLInputElement
+    const inPrice = el('input', {
+      type: 'number',
+      min: '0',
+      step: 'any',
+      placeholder: 'in $/Mtok',
+    }) as HTMLInputElement
+    const outPrice = el('input', {
+      type: 'number',
+      min: '0',
+      step: 'any',
+      placeholder: 'out $/Mtok',
+    }) as HTMLInputElement
     const label = el('input', {
       type: 'text',
       placeholder: 'label (optional)',
@@ -95,6 +110,10 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
     if (model) {
       id.value = model.id
       if (model.contextWindow) ctx.value = String(model.contextWindow)
+      if (typeof model.inputPricePerMTok === 'number')
+        inPrice.value = String(model.inputPricePerMTok)
+      if (typeof model.outputPricePerMTok === 'number')
+        outPrice.value = String(model.outputPricePerMTok)
       if (model.label) label.value = model.label
     }
     const remove = el(
@@ -102,7 +121,16 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
       { type: 'button', class: 'provider-model-remove', title: 'Remove model' },
       '✕',
     ) as HTMLButtonElement
-    const row = el('div', { class: 'provider-model-row' }, id, ctx, label, remove)
+    const row = el(
+      'div',
+      { class: 'provider-model-row' },
+      id,
+      ctx,
+      inPrice,
+      outPrice,
+      label,
+      remove,
+    )
     remove.addEventListener('click', () => row.remove())
     rows.append(row)
   }
@@ -121,6 +149,8 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
     { class: 'provider-model-row provider-model-head' },
     el('span', {}, 'Model id'),
     el('span', {}, 'Context'),
+    el('span', {}, 'In $/Mtok'),
+    el('span', {}, 'Out $/Mtok'),
     el('span', {}, 'Label'),
     el('span', {}, ''),
   )
@@ -130,15 +160,23 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
   const read = (): ExtraProviderModel[] => {
     const out: ExtraProviderModel[] = []
     for (const row of rows.querySelectorAll('.provider-model-row')) {
-      const [idEl, ctxEl, labelEl] = row.querySelectorAll('input')
+      const [idEl, ctxEl, inEl, outEl, labelEl] = row.querySelectorAll('input')
       const id = (idEl as HTMLInputElement).value.trim()
       if (!id) continue
       const ctx = Number((ctxEl as HTMLInputElement).value)
+      const inPrice = (inEl as HTMLInputElement).value.trim()
+      const outPrice = (outEl as HTMLInputElement).value.trim()
+      const inNum = Number(inPrice)
+      const outNum = Number(outPrice)
       const label = (labelEl as HTMLInputElement).value.trim()
       out.push({
         id,
         ...(label ? { label } : {}),
         ...(Number.isFinite(ctx) && ctx > 0 ? { contextWindow: ctx } : {}),
+        ...(inPrice && Number.isFinite(inNum) && inNum >= 0 ? { inputPricePerMTok: inNum } : {}),
+        ...(outPrice && Number.isFinite(outNum) && outNum >= 0
+          ? { outputPricePerMTok: outNum }
+          : {}),
       })
     }
     return out
@@ -295,9 +333,6 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
     form.append(keyField(provider.id, provider.keyLabel, provider.keyPlaceholder, provider.keyHint))
 
     const editor = createModelsEditor(provider.models)
-    // HF models carry per-provider pricing/context that the structured editor
-    // doesn't surface; preserve those stored fields across a manual save.
-    const priorById = new Map(provider.models.map((m) => [m.id, m]))
     const isHuggingFace = provider.id === 'huggingface'
     const fetchBtn = el('button', { type: 'button' }, 'Fetch models') as HTMLButtonElement
     const fetchStatus = el('span', { class: 'key-status' })
@@ -414,27 +449,11 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
           }
         }
         const ctx = Number(ctxInput.value)
-        // Re-attach any stored pricing the editor can't show, matched by model id,
-        // so a manual save doesn't strip fetched HF rates. The editor's own
-        // id/label/context values win.
-        const models = editor.read().map((m) => {
-          const prior = priorById.get(m.id)
-          if (!prior) return m
-          return {
-            ...(typeof prior.inputPricePerMTok === 'number'
-              ? { inputPricePerMTok: prior.inputPricePerMTok }
-              : {}),
-            ...(typeof prior.outputPricePerMTok === 'number'
-              ? { outputPricePerMTok: prior.outputPricePerMTok }
-              : {}),
-            ...m,
-          }
-        })
         try {
           await api.settings.saveExtraProvider({
             slug: provider.id,
             ...(provider.builtin ? {} : { label: provider.label, baseUrl: urlInput.value.trim() }),
-            models,
+            models: editor.read(),
             includeUsage: usageBox.checked,
             ...(Number.isFinite(ctx) && ctx > 0 ? { fallbackContextWindow: ctx } : {}),
             ...(extraBody ? { extraBody } : {}),
