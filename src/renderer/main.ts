@@ -11,9 +11,10 @@ import { mountConversation } from './views/conversation.ts'
 import { mountFileTree } from './views/file-tree.ts'
 import { mountInputBar } from './views/input-bar.ts'
 import { mountContextPanel } from './views/context-panel.ts'
-import { mountRightPanelTabs } from './views/right-panel-tabs.ts'
+import { mountRightPanelLayout } from './views/right-panel-layout.ts'
 import { mountTerminalsPane } from './views/terminals-pane.ts'
 import { mountGitChangesPane } from './views/git-changes-pane.ts'
+import { mountPrPane } from './views/pr-pane.ts'
 import { mountBrowserPane } from './views/browser-pane.ts'
 import {
   mountSettingsDialog,
@@ -27,6 +28,12 @@ import {
   shouldShowOnboarding,
 } from './views/onboarding-dialog.ts'
 import { mountApprovalDialog } from './views/approval-dialog.ts'
+import {
+  mountFileSearchDialog,
+  openFileSearchDialog,
+  closeFileSearchDialog,
+  isFileSearchDialogOpen,
+} from './views/file-search-dialog.ts'
 import { startAgentController } from './controller/agent.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
 import {
@@ -38,6 +45,7 @@ import {
   openRightPanelWithWorkspace,
   toggleFilesPaneWithWorkspace,
   syncFilesPaneDom,
+  openCanvasArtefact,
 } from './controller/panels.ts'
 import { loadMonaco } from './monaco/setup.ts'
 import { mountPaneResizers, parseSavedLayout } from './views/pane-resizer.ts'
@@ -67,6 +75,7 @@ async function boot() {
   mountSettingsDialog(store, api)
   mountOnboardingDialog(store, api)
   mountApprovalDialog(api)
+  mountFileSearchDialog(store, api)
 
   // Load persisted user preferences before the main layout mounts.
   const savedModel = (await api.settings.get('model')) as string | null
@@ -118,6 +127,13 @@ async function boot() {
     openRightPanelWithWorkspace(store, api, 'browser')
   })
 
+  // MCP-UI canvas: an artefact from a (bundled or external) MCP server opens in
+  // the Browser pane, rendered fully sandboxed.
+  api.canvas.onArtefact((artefact) => {
+    ensureLayout()
+    openCanvasArtefact(store, artefact)
+  })
+
   // File ▸ Open Folder… registers the chosen folder as a project and switches.
   api.workspace.onOpened((root) => {
     void addProjectFromPath(store, api, root).then(ensureLayout)
@@ -167,7 +183,7 @@ function mountFullLayout() {
   }
   bindChatComposerLayout(store)
   mountFileTree(document.getElementById('file-tree-host')!, store, api)
-  mountRightPanelTabs(document.getElementById('right-panel-tabs')!, store)
+  mountRightPanelLayout(store)
   mountTerminalsPane(
     document.getElementById('terminals-list-host')!,
     document.getElementById('terminals-viewer-host')!,
@@ -184,6 +200,13 @@ function mountFullLayout() {
     mountGitChangesPane(
       document.getElementById('git-changes-host')!,
       document.getElementById('git-diff-viewer-host')!,
+      store,
+      api,
+      monaco,
+    )
+    mountPrPane(
+      document.getElementById('pr-list-host')!,
+      document.getElementById('pr-viewer-host')!,
       store,
       api,
       monaco,
@@ -214,6 +237,11 @@ function registerKeyboardShortcuts() {
       e.preventDefault()
       openNewThread(store)
     }
+    // Cmd/Ctrl+P opens the file quick-open palette (needs a workspace to search).
+    if (meta && e.key === 'p') {
+      e.preventDefault()
+      if (store.getState().workspaceRoot) openFileSearchDialog()
+    }
     // Cmd/Ctrl+O is handled by the native File ▸ Open Folder… menu accelerator.
     if (meta && e.key === ',') {
       e.preventDefault()
@@ -224,6 +252,10 @@ function registerKeyboardShortcuts() {
       confirmDeleteThread()
     }
     if (e.key === 'Escape') {
+      if (isFileSearchDialogOpen()) {
+        closeFileSearchDialog()
+        return
+      }
       if (isSettingsDialogOpen()) {
         closeSettingsDialog()
         return

@@ -29,6 +29,8 @@ describe('titlebar panel icons', () => {
       { label: 'Toggle right panel', icon: 'panel', text: 'Panel' },
       { label: 'Open terminal', icon: 'terminal', text: 'Terminal' },
       { label: 'Open changes', icon: 'changes', text: 'Changes' },
+      { label: 'Open pull requests', icon: 'prs', text: 'PRs' },
+      { label: 'Open browser', icon: 'browser', text: 'Browser' },
     ]
 
     for (const button of buttons) {
@@ -60,7 +62,7 @@ describe('titlebar panel icons', () => {
       await expect(styles.strokeLinecap).toBe('round')
       await expect(styles.strokeLinejoin).toBe('round')
     }
-    await expect(await $$('.titlebar-text-btn svg.titlebar-btn-icon')).toBeElementsArrayOfSize(3)
+    await expect(await $$('.titlebar-text-btn svg.titlebar-btn-icon')).toBeElementsArrayOfSize(5)
     await browser.execute(() => {
       const dragRegion = document.querySelector<HTMLElement>('.titlebar-drag')
       if (!dragRegion) throw new Error('Missing titlebar drag region')

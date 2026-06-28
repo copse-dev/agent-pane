@@ -26,9 +26,11 @@ await esbuild.build({
       setup(build) {
         build.onResolve({ filter: /\/settings\.ts$/ }, (args) => {
           if (!args.path.includes('settings.test-shim')) return { path: settingsShim }
+          return undefined
         })
         build.onResolve({ filter: /\/storage\.ts$/ }, (args) => {
           if (!args.path.includes('storage.test-shim')) return { path: storageShim }
+          return undefined
         })
       },
     },

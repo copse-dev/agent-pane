@@ -54,6 +54,10 @@ export interface RunSubagentOptions {
   onSubagentChunk: (chunk: StreamChunk) => void
   parentToolCallId: string
   systemPromptSuffix?: string
+  /** Replace the default explore system prompt entirely (e.g. for a review subagent). */
+  systemPrompt?: string
+  /** Replace the default "exploration query" user-task framing with a ready-made task. */
+  userTask?: string
   usageModel?: string
 }
 
@@ -85,6 +89,8 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
     onSubagentChunk,
     parentToolCallId,
     systemPromptSuffix,
+    systemPrompt,
+    userTask,
     usageModel,
   } = opts
 
@@ -119,14 +125,13 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
     return currentMsgId
   }
 
+  const basePrompt = systemPrompt ?? SUBAGENT_SYSTEM_PROMPT
   const messages: LLMMessage[] = [
     {
       role: 'system',
-      content: systemPromptSuffix
-        ? `${SUBAGENT_SYSTEM_PROMPT}\n\n${systemPromptSuffix}`
-        : SUBAGENT_SYSTEM_PROMPT,
+      content: systemPromptSuffix ? `${basePrompt}\n\n${systemPromptSuffix}` : basePrompt,
     },
-    { role: 'user', content: buildUserTask(prompt, parentGoal) },
+    { role: 'user', content: userTask ?? buildUserTask(prompt, parentGoal) },
   ]
 
   let summary: string

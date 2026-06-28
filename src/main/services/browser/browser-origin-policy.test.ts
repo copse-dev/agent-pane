@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   decideBrowserNavigation,
+  isAllowedBrowserNavigationUrl,
   isBlockedHost,
   isLoopbackHost,
   parseBrowserUrl,
@@ -21,6 +22,22 @@ describe('parseBrowserUrl', () => {
     assert.equal(parseBrowserUrl('file:///etc/passwd'), null)
     assert.equal(parseBrowserUrl('javascript:alert(1)'), null)
     assert.equal(parseBrowserUrl('not a url'), null)
+  })
+})
+
+describe('isAllowedBrowserNavigationUrl', () => {
+  it('allows http, https, and about:blank', () => {
+    assert.equal(isAllowedBrowserNavigationUrl('http://example.com/x'), true)
+    assert.equal(isAllowedBrowserNavigationUrl('https://example.com/x'), true)
+    assert.equal(isAllowedBrowserNavigationUrl('about:blank'), true)
+  })
+
+  it('blocks file, chrome, data, and other privileged schemes', () => {
+    assert.equal(isAllowedBrowserNavigationUrl('file:///etc/passwd'), false)
+    assert.equal(isAllowedBrowserNavigationUrl('chrome://settings'), false)
+    assert.equal(isAllowedBrowserNavigationUrl('data:text/html,<h1>hi</h1>'), false)
+    assert.equal(isAllowedBrowserNavigationUrl('javascript:alert(1)'), false)
+    assert.equal(isAllowedBrowserNavigationUrl('not a url'), false)
   })
 })
 

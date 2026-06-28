@@ -31,8 +31,7 @@ describe('integrated terminal', () => {
     await terminalBtn.click()
 
     await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
-    await $('.right-panel-tab[aria-label="Terminal"]').waitForDisplayed({ timeout: 5_000 })
-    await expect($('.right-panel-tab[aria-label="Terminal"]')).toHaveElementClass('is-active')
+    await expect(terminalBtn).toHaveElementClass('active')
 
     await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 })
 

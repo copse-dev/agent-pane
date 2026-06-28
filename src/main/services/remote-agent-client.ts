@@ -1,5 +1,6 @@
-import type { StreamChunk, UserContent } from '@shared/types'
+import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
 import {
+  buildRemoteAgentContextPreamble,
   parseSseStream,
   promptPayloadFromUserContent,
   remoteStreamEventToChunks,
@@ -15,7 +16,7 @@ import {
 } from '@shared/remote-agent.ts'
 import { getApiKey, getSetting } from './settings.ts'
 import { validateRemoteAgentBaseUrl } from './web-origin-policy.ts'
-import { getGithubRepoSlug } from './git-service.ts'
+import { getCurrentBranchName, getGithubRepoSlug } from './git-service.ts'
 import { storageGet, storageSet } from './storage.ts'
 import { getActiveProjectRoot, getWorkspaceRoot } from './workspace.ts'
 
@@ -46,6 +47,8 @@ interface RemoteAgentRunOptions {
   userPrompt: UserContent
   signal: AbortSignal
   onChunk: (chunk: StreamChunk) => void
+  /** Prior local conversation, dumped into the first prompt on remote hand-off. */
+  priorMessages?: LLMMessage[]
   fetchImpl?: typeof fetch
 }
 
@@ -185,7 +188,7 @@ function resolveBaseUrl(provider: RemoteAgentProvider): string {
 }
 
 function resolveApiKey(): string {
-  const apiKey = getApiKey('cursor') ?? process.env.CURSOR_API_KEY ?? null
+  const apiKey = getApiKey('cursor') ?? process.env['CURSOR_API_KEY'] ?? null
   if (!apiKey) {
     throw new Error('Configure a Cursor API key in Settings before using remote agents.')
   }
@@ -261,6 +264,27 @@ async function createRemoteAgent(input: {
     runId: assertRunId(json),
     ...(json.agent?.url ? { url: json.agent.url } : {}),
   }
+}
+
+/**
+ * The remote machine starts with no memory of the local chat that preceded it.
+ * On the first hand-off (new agent), prepend the prior conversation and the
+ * current branch so the remote agent continues rather than starting cold.
+ * Follow-up runs reuse the same remote agent, which already has the history.
+ */
+async function buildFirstHandoffPrompt(
+  prompt: PromptPayload,
+  priorMessages: LLMMessage[],
+): Promise<PromptPayload> {
+  let branch: string | null = null
+  try {
+    branch = await getCurrentBranchName()
+  } catch (err) {
+    console.warn('[remote-agent] branch lookup failed:', err)
+  }
+  const preamble = buildRemoteAgentContextPreamble({ priorMessages, branch })
+  if (!preamble) return prompt
+  return { ...prompt, text: `${preamble}\n\n--- New message ---\n${prompt.text}` }
 }
 
 function remoteAgentLabel(provider: RemoteAgentProvider): string {
@@ -547,7 +571,12 @@ export async function runRemoteAgentFromSettings(
         }),
         ...(priorSession.url ? { url: priorSession.url } : {}),
       }
-    : await createRemoteAgent({ fetchImpl, baseUrl, apiKey, prompt })
+    : await createRemoteAgent({
+        fetchImpl,
+        baseUrl,
+        apiKey,
+        prompt: await buildFirstHandoffPrompt(prompt, options.priorMessages ?? []),
+      })
 
   writeSession(options.threadId, {
     v: 1,

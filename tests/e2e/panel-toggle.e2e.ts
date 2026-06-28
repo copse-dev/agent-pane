@@ -76,8 +76,7 @@ describe('right panel toggle and shortcuts', () => {
 
     await panelBtn.click()
     await pane.waitForDisplayed({ timeout: 5_000 })
-    await expect($('.right-panel-tab[aria-label="Explorer"]')).toHaveElementClass('is-active')
-    await expect($('.right-panel-tab[aria-label="Plan"]')).not.toBeDisplayed()
+    await expect(panelBtn).toHaveElementClass('active')
 
     await panelBtn.click()
     await browser.waitUntil(async () => !(await pane.isDisplayed()), {
@@ -91,7 +90,7 @@ describe('right panel toggle and shortcuts', () => {
     await terminalBtn.click()
 
     await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
-    await expect($('.right-panel-tab[aria-label="Terminal"]')).toHaveElementClass('is-active')
+    await expect(terminalBtn).toHaveElementClass('active')
     await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 })
   })
 
@@ -102,7 +101,7 @@ describe('right panel toggle and shortcuts', () => {
 
     await pressPanelChord({ ctrl: true, key: 'b' })
     await pane.waitForDisplayed({ timeout: 5_000 })
-    await expect($('.right-panel-tab[aria-label="Explorer"]')).toHaveElementClass('is-active')
+    await expect($('.titlebar-btn[aria-label="Toggle right panel"]')).toHaveElementClass('active')
 
     await pressPanelChord({ ctrl: true, key: 'j' })
     await browser.waitUntil(async () => !(await pane.isDisplayed()), {
@@ -116,7 +115,7 @@ describe('right panel toggle and shortcuts', () => {
     await focusOutsideComposer()
     await pressPanelChord({ ctrl: true, shift: true, key: 'E' })
     await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
-    await expect($('.right-panel-tab[aria-label="Explorer"]')).toHaveElementClass('is-active')
+    await expect($('.titlebar-btn[aria-label="Toggle right panel"]')).toHaveElementClass('active')
   })
 
   it('opens terminal with Ctrl/Cmd+`', async () => {
@@ -124,7 +123,7 @@ describe('right panel toggle and shortcuts', () => {
     await focusOutsideComposer()
     await pressPanelChord({ ctrl: true, key: '`', code: 'Backquote' })
     await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
-    await expect($('.right-panel-tab[aria-label="Terminal"]')).toHaveElementClass('is-active')
+    await expect($('.titlebar-btn[aria-label="Open terminal"]')).toHaveElementClass('active')
     await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 })
   })
 
@@ -133,7 +132,7 @@ describe('right panel toggle and shortcuts', () => {
     await focusOutsideComposer()
     await pressPanelChord({ ctrl: true, shift: true, key: 'G' })
     await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
-    await expect($('.right-panel-tab[aria-label="Changes"]')).toHaveElementClass('is-active')
+    await expect($('.titlebar-btn[aria-label="Open changes"]')).toHaveElementClass('active')
     await $('#git-changes-host').waitForDisplayed({ timeout: 5_000 })
   })
 

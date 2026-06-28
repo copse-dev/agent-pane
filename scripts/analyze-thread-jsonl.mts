@@ -112,8 +112,8 @@ function subagentReads(records: JsonlRecord[]): { path: string; exploreId: strin
       const eid = (tc as { id?: string }).id?.slice(0, 8) ?? '?'
       for (const m of tc.subagent?.messages ?? []) {
         for (const st of m.toolCalls ?? []) {
-          if (st.name === 'read_file' && typeof st.args?.path === 'string') {
-            out.push({ path: st.args.path, exploreId: eid })
+          if (st.name === 'read_file' && typeof st.args?.['path'] === 'string') {
+            out.push({ path: st.args['path'], exploreId: eid })
           }
         }
       }

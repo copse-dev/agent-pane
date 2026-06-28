@@ -15,10 +15,10 @@ import {
   isIndexQueryPattern,
   assertMainFrameSender,
   assertStorageKey,
-  cloudProviderSchema,
   IpcValidationError,
+  keyProviderSchema,
   parseIpcArgs,
-  providerSchema,
+  zMcpServerName,
   zNonEmptyString,
   zPathString,
 } from './ipc-guards.ts'
@@ -38,9 +38,19 @@ import {
 } from '../services/settings.ts'
 import {
   isRendererWritableSettingKey,
+  isSecretSettingKey,
   parseRendererWritableSetting,
   securitySettingsSchema,
 } from '../services/settings-writable.ts'
+import { storedExtraProviderSchema } from '../services/settings-schema.ts'
+import {
+  getResolvedExtraProviders,
+  saveExtraProvider,
+  deleteExtraProvider,
+  refreshHuggingFaceModels,
+  HUGGINGFACE_SLUG,
+} from '../services/extra-providers-store.ts'
+import { fetchOpenAiCompatibleModels } from '../services/provider-models.ts'
 import { storageGet, storageSet } from '../services/storage.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills-registry.ts'
@@ -58,6 +68,13 @@ import {
 import { getGitBranchStatus } from '../services/pr-context-service.ts'
 import { isGitAvailable } from '../services/tool-availability.ts'
 import {
+  getGhCliStatus,
+  getGhPrDetails,
+  getGhPrFileDiff,
+  listMyOpenPrs,
+  resolveGithubPrRef,
+} from '../services/gh-pr-service.ts'
+import {
   getMcpServerStatuses,
   reloadMcpServers,
   setMcpServerUserEnabled,
@@ -74,6 +91,8 @@ import {
 import { applyAppIcon } from '../app-icon.ts'
 import { getMainWindow } from '../windows/create-main-window.ts'
 import { validateApiKey } from '../services/validate-api-key.ts'
+import { getUsageSummary, recordUsageEvent } from '../services/usage-ledger.ts'
+import { parseUsageRecordInput } from '../services/usage-record-schema.ts'
 import {
   fetchRemoteArtifactImageDataUrl,
   resolveRemoteArtifactDownloadUrl,
@@ -183,8 +202,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return resolveFileReferences(candidates)
   })
 
-  ipcMain.handle('settings:get', (_e, key: unknown) => {
+  ipcMain.handle('settings:get', (event, key: unknown) => {
+    assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(128), [key])
+    // Never hand stored API-key records back to the renderer — it only needs the
+    // boolean `settings:getKey`. Reading `apiKey.*` here would expose the key
+    // (base64 plaintext when the OS keyring is unavailable).
+    if (isSecretSettingKey(k)) {
+      throw new IpcValidationError(`Setting key not readable from renderer: ${k}`)
+    }
     return getSetting(k, null)
   })
   ipcMain.handle('settings:set', async (event, key: unknown, value: unknown) => {
@@ -205,34 +231,69 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     await Promise.all(Object.entries(prefs).map(([k, v]) => setSetting(k, v)))
   })
   ipcMain.handle('settings:getKey', (_e, provider: unknown) => {
-    const p = parseIpcArgs(providerSchema, [provider])
+    const p = parseIpcArgs(keyProviderSchema, [provider])
     return hasApiKey(p)
   })
   ipcMain.handle('settings:setKey', (event, provider: unknown, key: unknown) => {
     assertMainFrameSender(event, win)
-    const p = parseIpcArgs(providerSchema, [provider])
+    const p = parseIpcArgs(keyProviderSchema, [provider])
     const apiKey = parseIpcArgs(z.string().max(8192), [key])
     setApiKey(p, apiKey)
+    // Saving an HF token auto-populates its priced, provider-pinned model list so
+    // the picker and cost estimate work without a manual fetch (fire-and-forget).
+    if (p === HUGGINGFACE_SLUG && apiKey.trim()) {
+      void refreshHuggingFaceModels(apiKey).catch(() => {})
+    }
   })
-  ipcMain.handle('settings:availableProviders', () => ({
-    anthropic: isProviderAvailable('anthropic'),
-    openai: isProviderAvailable('openai'),
-    cursor: isProviderAvailable('cursor'),
-    openrouter: isProviderAvailable('openrouter'),
-    mistral: isProviderAvailable('mistral'),
-    gemini: isProviderAvailable('gemini'),
-    deepseek: isProviderAvailable('deepseek'),
-  }))
+  ipcMain.handle('settings:availableProviders', () => {
+    const available: Record<string, boolean> = {
+      anthropic: isProviderAvailable('anthropic'),
+      openai: isProviderAvailable('openai'),
+      cursor: isProviderAvailable('cursor'),
+      openrouter: isProviderAvailable('openrouter'),
+    }
+    for (const provider of getResolvedExtraProviders()) {
+      available[provider.id] = isProviderAvailable(provider.id)
+    }
+    return available
+  })
   ipcMain.handle('settings:validateKey', async (event, provider: unknown, key: unknown) => {
     assertMainFrameSender(event, win)
-    const p = parseIpcArgs(cloudProviderSchema, [provider])
+    const p = parseIpcArgs(keyProviderSchema, [provider])
     const apiKey = parseIpcArgs(z.string().max(8192), [key])
     return validateApiKey(p, apiKey)
+  })
+  ipcMain.handle('settings:extraProviders', () => getResolvedExtraProviders())
+  ipcMain.handle('settings:saveExtraProvider', async (event, record: unknown) => {
+    assertMainFrameSender(event, win)
+    const parsed = parseIpcArgs(storedExtraProviderSchema.partial({ slug: true }), [record])
+    return saveExtraProvider(parsed as Parameters<typeof saveExtraProvider>[0])
+  })
+  ipcMain.handle('settings:deleteExtraProvider', async (event, slug: unknown) => {
+    assertMainFrameSender(event, win)
+    const s = parseIpcArgs(keyProviderSchema, [slug])
+    return deleteExtraProvider(s)
+  })
+  ipcMain.handle('settings:fetchProviderModels', async (event, baseUrl: unknown, key: unknown) => {
+    assertMainFrameSender(event, win)
+    const url = parseIpcArgs(z.string().max(2048), [baseUrl])
+    const apiKey = parseIpcArgs(z.string().max(8192).optional(), [key])
+    return fetchOpenAiCompatibleModels(url, apiKey)
+  })
+  ipcMain.handle('settings:refreshHuggingFaceModels', async (event, key: unknown) => {
+    assertMainFrameSender(event, win)
+    const apiKey = parseIpcArgs(z.string().max(8192).optional(), [key])
+    return refreshHuggingFaceModels(apiKey)
   })
   ipcMain.handle('app-icon:apply', () => {
     const mainWin = getMainWindow()
     applyAppIcon(mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
   })
+  ipcMain.handle('usage:record', (event, input: unknown) => {
+    assertMainFrameSender(event, win)
+    recordUsageEvent(parseUsageRecordInput(input))
+  })
+  ipcMain.handle('usage:getSummary', () => getUsageSummary())
   ipcMain.handle('storage:get', (event, key: unknown) => {
     assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(256), [key])
@@ -273,6 +334,32 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   })
   ipcMain.handle('git:listBranches', () => getBranches())
   ipcMain.handle('git:getDefaultBranch', () => getDefaultBranch())
+
+  ipcMain.handle('gh:status', () => getGhCliStatus())
+  ipcMain.handle('gh:listMyOpenPrs', () => listMyOpenPrs())
+  ipcMain.handle('gh:prDetails', (_e, owner: unknown, repo: unknown, number: unknown) => {
+    const parsedOwner = parseIpcArgs(z.string().min(1).max(128), [owner])
+    const parsedRepo = parseIpcArgs(z.string().min(1).max(128), [repo])
+    const parsedNumber = parseIpcArgs(z.number().int().positive(), [number])
+    return getGhPrDetails({ owner: parsedOwner, repo: parsedRepo, number: parsedNumber })
+  })
+  ipcMain.handle(
+    'gh:prFileDiff',
+    (_e, owner: unknown, repo: unknown, number: unknown, path: unknown) => {
+      const parsedOwner = parseIpcArgs(z.string().min(1).max(128), [owner])
+      const parsedRepo = parseIpcArgs(z.string().min(1).max(128), [repo])
+      const parsedNumber = parseIpcArgs(z.number().int().positive(), [number])
+      const parsedPath = parseIpcArgs(zPathString, [path])
+      return getGhPrFileDiff(
+        { owner: parsedOwner, repo: parsedRepo, number: parsedNumber },
+        parsedPath,
+      )
+    },
+  )
+  ipcMain.handle('gh:resolvePrUrl', (_e, url: unknown) => {
+    const parsedUrl = parseIpcArgs(z.string().url().max(2048), [url])
+    return resolveGithubPrRef(parsedUrl)
+  })
   ipcMain.handle('remoteAgent:downloadArtifact', async (event, agentId: unknown, path: unknown) => {
     assertMainFrameSender(event, win)
     const parsedAgentId = parseIpcArgs(z.string().min(1).max(128), [agentId])
@@ -297,21 +384,38 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return shell.openExternal(href)
   })
 
-  ipcMain.handle('mcp:list', () => getMcpServerStatuses())
-  ipcMain.handle('mcp:reload', async () => {
+  ipcMain.handle('mcp:list', (event) => {
+    assertMainFrameSender(event, win)
+    return getMcpServerStatuses()
+  })
+  ipcMain.handle('mcp:reload', async (event) => {
+    assertMainFrameSender(event, win)
     const statuses = await reloadMcpServers(registry)
     win.webContents.send('mcp:status_changed', statuses)
     return statuses
   })
-  ipcMain.handle('mcp:setEnabled', async (_e, name: string, enabled: boolean) => {
-    await setMcpServerUserEnabled(name, enabled)
+  ipcMain.handle('mcp:setEnabled', async (event, name: unknown, enabled: unknown) => {
+    assertMainFrameSender(event, win)
+    const [parsedName, parsedEnabled] = parseIpcArgs(z.tuple([zMcpServerName, z.boolean()]), [
+      name,
+      enabled,
+    ])
+    await setMcpServerUserEnabled(parsedName, parsedEnabled)
     const statuses = await reloadMcpServers(registry)
     win.webContents.send('mcp:status_changed', statuses)
     return statuses
   })
-  ipcMain.handle('mcp:listCurated', () => getCuratedServerStatuses(getMcpServerStatuses()))
-  ipcMain.handle('mcp:setCuratedEnabled', async (_e, name: string, enabled: boolean) => {
-    await setCuratedServerEnabled(name, enabled)
+  ipcMain.handle('mcp:listCurated', (event) => {
+    assertMainFrameSender(event, win)
+    return getCuratedServerStatuses(getMcpServerStatuses())
+  })
+  ipcMain.handle('mcp:setCuratedEnabled', async (event, name: unknown, enabled: unknown) => {
+    assertMainFrameSender(event, win)
+    const [parsedName, parsedEnabled] = parseIpcArgs(z.tuple([zMcpServerName, z.boolean()]), [
+      name,
+      enabled,
+    ])
+    await setCuratedServerEnabled(parsedName, parsedEnabled)
     const statuses = await reloadMcpServers(registry)
     win.webContents.send('mcp:status_changed', statuses)
     return getCuratedServerStatuses(statuses)
