@@ -41,6 +41,8 @@ contextBridge.exposeInMainWorld('api', {
     clearHistory: (threadId: string) => ipcRenderer.invoke('agent:clearHistory', threadId),
     suggestTitle: (text: string) => ipcRenderer.invoke('agent:suggestTitle', text),
     suggestTerminalTitle: (text: string) => ipcRenderer.invoke('agent:suggestTerminalTitle', text),
+    suggestCommandSummary: (commands: string[]) =>
+      ipcRenderer.invoke('agent:suggestCommandSummary', commands),
     suggestFollowUps: (contextJson: string) =>
       ipcRenderer.invoke('agent:suggestFollowUps', contextJson),
     onChunk: (handler: (threadId: string, chunk: unknown) => void) => {

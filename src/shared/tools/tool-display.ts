@@ -102,11 +102,60 @@ function fileEditPath(args: unknown): string | null {
   return typeof path === 'string' && path.length > 0 ? path : null
 }
 
-/** Human label for a tool card — file edits show `Edited <path>`. */
+/** Workspace-relative path a file-edit tool touched, or null for non-edit tools. */
+export function getToolEditPath(tc: ToolCall): string | null {
+  if (tc.name !== 'write_file' && tc.name !== 'str_replace') return null
+  return fileEditPath(tc.args)
+}
+
+// Commands are almost always prefixed with `cd <workspace> && ` so the agent
+// runs from the project root. That prefix is noise in the UI — strip a single
+// leading `cd <path> && ` (quoted or bare path).
+const SHELL_CD_PREFIX_RE = /^\s*cd\s+(?:'[^']*'|"[^"]*"|[^\s&|;]+)\s*&&\s*/
+
+export function stripShellCdPrefix(command: string): string {
+  return command.replace(SHELL_CD_PREFIX_RE, '')
+}
+
+const SHELL_LABEL_MAX = 96
+
+/** A compact, single-line command for a tool header: cd-prefix stripped, collapsed, capped. */
+export function shellCommandLabel(command: string): string {
+  const cleaned = stripShellCdPrefix(command).replace(/\s+/g, ' ').trim()
+  if (cleaned.length <= SHELL_LABEL_MAX) return cleaned
+  return `${cleaned.slice(0, SHELL_LABEL_MAX - 1)}…`
+}
+
+function shellCommandArg(args: unknown): string | null {
+  if (!args || typeof args !== 'object') return null
+  const command = (args as Record<string, unknown>)['command']
+  return typeof command === 'string' && command.trim() ? command : null
+}
+
+/** The cd-stripped command strings for any run_shell tool calls in `toolCalls`. */
+export function shellCommandsFromToolCalls(toolCalls: ToolCall[]): string[] {
+  const commands: string[] = []
+  for (const tc of toolCalls) {
+    if (tc.name !== 'run_shell' || tc.status === 'error') continue
+    const command = shellCommandArg(tc.args)
+    if (command) commands.push(stripShellCdPrefix(command).trim())
+  }
+  return commands
+}
+
+/**
+ * Human label for a tool card — file edits show `Edited <path>` and shell
+ * commands surface the actual (cd-stripped) command instead of a generic
+ * "Run command", so the user can see what ran without expanding the card.
+ */
 export function getToolCallLabel(tc: ToolCall): string {
   if (tc.name === 'write_file' || tc.name === 'str_replace') {
     const path = fileEditPath(tc.args)
     if (path) return `Edited ${path}`
+  }
+  if (tc.name === 'run_shell') {
+    const command = shellCommandArg(tc.args)
+    if (command) return shellCommandLabel(command)
   }
   return getToolDisplayName(tc.name)
 }

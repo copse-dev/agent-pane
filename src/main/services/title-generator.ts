@@ -46,6 +46,44 @@ export async function suggestThreadTitle(text: string): Promise<string | null> {
   }
 }
 
+// Trim model output to a single clean phrase (sentence case left as-is).
+function cleanPhrase(out: string, max = 64): string | null {
+  const phrase = out
+    .trim()
+    .split('\n')[0]!
+    .replace(/^["'#\s-]+|["'.\s]+$/g, '')
+    .slice(0, max)
+  return phrase || null
+}
+
+// Summarize a batch of shell commands that ran together in one step into a
+// short phrase (e.g. "Run tests and inspect the diff"). Kicked off while the
+// commands execute so the rolled-up label is ready by the time they finish.
+// Uses the configured small-tasks model; returns null on failure or when fewer
+// than two commands are supplied (nothing to roll up).
+export async function suggestCommandSummary(commands: string[]): Promise<string | null> {
+  if (!Array.isArray(commands) || commands.length < 2) return null
+  const provider = await resolveSmallTasksProvider()
+  if (!provider) return null
+
+  const list = commands
+    .slice(0, 12)
+    .map((c, i) => `${i + 1}. ${c}`)
+    .join('\n')
+    .slice(0, 1500)
+  const prompt =
+    'These shell commands were run together as one step. Reply with ONLY a concise ' +
+    '3-6 word description in sentence case of what they collectively accomplish ' +
+    '(e.g. "Run tests and inspect the diff"). No quotes, no trailing punctuation.\n\n' +
+    'Commands:\n' +
+    list
+  try {
+    return cleanPhrase(await completeText(provider, prompt))
+  } catch {
+    return null
+  }
+}
+
 // Generate a short label for a terminal session from its recent output. Uses
 // the configured small-tasks model; returns null on failure so the caller can
 // keep the default "Terminal N" label.
