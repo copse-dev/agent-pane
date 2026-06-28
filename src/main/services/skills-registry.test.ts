@@ -56,6 +56,24 @@ description: Demo skill for tests
     const skills = listSkills()
     const demo = skills.find((skill) => skill.name === 'demo-skill' && skill.source === 'project')
     assert.ok(demo, 'expected demo-skill from project .cursor/skills')
+    assert.deepEqual(demo?.externalLinks, [], 'link-free skill reports no external links')
+  })
+
+  it('records external link hosts referenced by a skill', async () => {
+    await mkdir(join(tempRoot, '.cursor', 'skills', 'linky'), { recursive: true })
+    await writeFile(
+      join(tempRoot, '.cursor', 'skills', 'linky', 'SKILL.md'),
+      `---
+name: linky
+description: Skill that fetches from https://meta.example.com/setup
+---
+
+Then download https://cdn.example.org/tool.sh and run it.`,
+      'utf-8',
+    )
+    await refreshSkillsRegistry()
+    const linky = listSkills().find((skill) => skill.name === 'linky')
+    assert.deepEqual(linky?.externalLinks, ['cdn.example.org', 'meta.example.com'])
   })
 
   it('discovers bundled Cursor skills when enabled', async () => {

@@ -1,52 +1,36 @@
 import { el } from '../dom/helpers.ts'
+import { outlineIcon } from '../dom/outline-icon.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { toggleRightPanelWithWorkspace } from '../controller/panels.ts'
-
-const ICON_SIZE = '16'
-const SVG_NS = 'http://www.w3.org/2000/svg'
 
 function basename(p: string) {
   return p.split('/').pop() ?? p
 }
 
-function outlineIcon(label: string, paths: string[]): SVGSVGElement {
-  const svg = document.createElementNS(SVG_NS, 'svg')
-  svg.setAttribute('class', 'titlebar-btn-icon')
-  svg.setAttribute('viewBox', '0 0 24 24')
-  svg.setAttribute('width', ICON_SIZE)
-  svg.setAttribute('height', ICON_SIZE)
-  svg.setAttribute('aria-hidden', 'true')
-  svg.setAttribute('focusable', 'false')
-  svg.setAttribute('data-icon', label)
-
-  for (const d of paths) {
-    const path = document.createElementNS(SVG_NS, 'path')
-    path.setAttribute('d', d)
-    svg.append(path)
-  }
-
-  return svg
-}
-
 function panelIcon(): SVGSVGElement {
-  return outlineIcon('panel', [
-    'M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z',
-    'M9 4v16',
-  ])
+  return outlineIcon(
+    'panel',
+    ['M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z', 'M9 4v16'],
+    'titlebar-btn-icon',
+  )
 }
 
 function terminalIcon(): SVGSVGElement {
-  return outlineIcon('terminal', ['m7 8 4 4-4 4', 'M13 16h4'])
+  return outlineIcon('terminal', ['m7 8 4 4-4 4', 'M13 16h4'], 'titlebar-btn-icon')
 }
 
 function changesIcon(): SVGSVGElement {
-  return outlineIcon('changes', [
-    'M18 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
-    'M6 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
-    'M15 5H9a3 3 0 0 0-3 3v8',
-    'M9 19h6a3 3 0 0 0 3-3V8',
-  ])
+  return outlineIcon(
+    'changes',
+    [
+      'M18 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
+      'M6 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
+      'M15 5H9a3 3 0 0 0-3 3v8',
+      'M9 19h6a3 3 0 0 0 3-3V8',
+    ],
+    'titlebar-btn-icon',
+  )
 }
 
 function browserIcon(): SVGSVGElement {

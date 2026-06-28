@@ -19,6 +19,21 @@
       Dropping 'unsafe-inline' would break the editor and diagram rendering.
       The exfiltration risk it would otherwise carry is already closed off by
       img-src below (no remote URLs), so CSS-based data exfiltration is blocked.
+
+      Compensating controls for the residual mermaid concern (diagram source is
+      model/workspace-controlled and mermaid has a history of XSS via crafted
+      syntax):
+        - mermaid runs with securityLevel:'strict' (markdown/mermaid.ts), which
+          HTML-encodes labels, disables click/interaction directives, and passes
+          its SVG through DOMPurify. Do not relax that setting.
+        - all renderer innerHTML of model output is sanitized through DOMPurify
+          first (markdown/sanitize.ts); the mermaid fallback path inserts source
+          via textContent only (markdown/mermaid-fallback.ts), never as markup.
+        - script-src 'self' blocks inline/remote script regardless, and
+          img-src below has no remote http(s) origin, so even a style/SVG that
+          slipped through has no network sink to exfiltrate to.
+      Note: 'unsafe-inline' here governs style only; it does NOT loosen
+      script-src, so it cannot enable script-based XSS.
     -->
     <meta
       http-equiv="Content-Security-Policy"

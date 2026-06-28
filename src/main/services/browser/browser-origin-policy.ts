@@ -28,6 +28,12 @@ export const BROWSER_TOOLS_ENABLED_SETTING = 'browserToolsEnabled'
 /** Whether the user may be prompted to approve a new public browser origin. */
 export const BROWSER_ALLOW_USER_APPROVAL_SETTING = 'browserAllowUserApproval'
 
+// On by default: the built-in browser (Electron's bundled Chromium) is how the
+// agent loads and screenshots local web UIs without downloading a separate
+// browser stack (e.g. Playwright). Navigation is still gated by the origin
+// policy below — loopback auto-runs, public origins prompt, private is denied.
+export const BROWSER_TOOLS_DEFAULT_ENABLED = true
+
 export interface ParsedBrowserUrl {
   protocol: string
   hostname: string
@@ -54,6 +60,23 @@ export function parseBrowserUrl(raw: string): ParsedBrowserUrl | null {
   if (!hostname) return null
   const port = url.port || (DEFAULT_PORTS[url.protocol] ?? '')
   return { protocol: url.protocol, hostname, port, origin: `${url.protocol}//${hostname}:${port}` }
+}
+
+/**
+ * Scheme allowlist for the in-app browser guest's own navigations (`will-navigate`
+ * / `will-redirect`). The guest may browse the public web freely, but must never be
+ * driven to local or privileged schemes (`file:`, `chrome:`, `data:`, …) by a
+ * hostile page or redirect, which would render local files inside the guest.
+ */
+export function isAllowedBrowserNavigationUrl(url: string): boolean {
+  if (url === 'about:blank') return true
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return false
+  }
+  return parsed.protocol === 'http:' || parsed.protocol === 'https:'
 }
 
 function stripIpv6Brackets(hostname: string): string {
