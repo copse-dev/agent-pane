@@ -27,24 +27,24 @@ describe('gh-pr-mock', () => {
   })
 
   it('supports unavailable and unauthenticated status modes', () => {
-    process.env.COPSE_PANEL_MOCK_GH = '1'
-    process.env.COPSE_PANEL_MOCK_GH_STATUS = 'unavailable'
+    process.env['COPSE_PANEL_MOCK_GH'] = '1'
+    process.env['COPSE_PANEL_MOCK_GH_STATUS'] = 'unavailable'
     assert.equal(mockGhCliStatus().installed, false)
 
-    process.env.COPSE_PANEL_MOCK_GH_STATUS = 'unauthenticated'
+    process.env['COPSE_PANEL_MOCK_GH_STATUS'] = 'unauthenticated'
     assert.equal(mockGhCliStatus().authenticated, false)
 
-    process.env.COPSE_PANEL_MOCK_GH_STATUS = 'ready'
+    process.env['COPSE_PANEL_MOCK_GH_STATUS'] = 'ready'
     assert.equal(mockGhCliStatus().username, 'mock-user')
-    delete process.env.COPSE_PANEL_MOCK_GH
-    delete process.env.COPSE_PANEL_MOCK_GH_STATUS
+    delete process.env['COPSE_PANEL_MOCK_GH']
+    delete process.env['COPSE_PANEL_MOCK_GH_STATUS']
   })
 })
 
 describe('gh-pr-service mock wiring', () => {
   it('delegates to mock fixtures when COPSE_PANEL_MOCK_GH=1', async () => {
-    process.env.COPSE_PANEL_MOCK_GH = '1'
-    process.env.COPSE_PANEL_MOCK_GH_STATUS = 'ready'
+    process.env['COPSE_PANEL_MOCK_GH'] = '1'
+    process.env['COPSE_PANEL_MOCK_GH_STATUS'] = 'ready'
     assert.equal(isMockGhEnabled(), true)
 
     const status = await getGhCliStatus()
@@ -60,7 +60,7 @@ describe('gh-pr-service mock wiring', () => {
     })
     assert.equal(details?.title, 'Add GitHub PR panel tab')
 
-    delete process.env.COPSE_PANEL_MOCK_GH
-    delete process.env.COPSE_PANEL_MOCK_GH_STATUS
+    delete process.env['COPSE_PANEL_MOCK_GH']
+    delete process.env['COPSE_PANEL_MOCK_GH_STATUS']
   })
 })

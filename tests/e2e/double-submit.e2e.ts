@@ -15,7 +15,10 @@ describe('double submit guard', function () {
 
   it('only sends one message when submit is fired twice in quick succession', async function () {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-double-submit', { subagentsEnabled: false })
+    seedEmptyProject(process.cwd(), 'e2e-double-submit', {
+      subagentsEnabled: false,
+      model: 'claude-sonnet-4-6',
+    })
     await browser.reloadSession()
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })

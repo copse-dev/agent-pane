@@ -91,7 +91,7 @@ function isPatchApplied(): boolean {
 
 ensureElectronDist()
 
-if (isPatchApplied() && process.env.COPSE_PANEL_REFRESH_DOCK !== '1') {
+if (isPatchApplied() && process.env['COPSE_PANEL_REFRESH_DOCK'] !== '1') {
   console.log(`[patch-dev-name] ${APP_BUNDLE} already patched for Electron ${readDistVersion()}`)
   process.exit(0)
 }
@@ -179,7 +179,7 @@ if (icnsHash) {
   console.log(`[patch-dev-name] copse-panel.icns sha256:${icnsHash} (also CFBundleVersion)`)
 }
 
-if (process.env.COPSE_PANEL_REFRESH_DOCK === '1') {
+if (process.env['COPSE_PANEL_REFRESH_DOCK'] === '1') {
   try {
     execSync('pkill -f "Copse.app/Contents/MacOS/Electron" || true', { stdio: 'ignore' })
   } catch {

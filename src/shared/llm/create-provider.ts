@@ -16,12 +16,12 @@ interface ProviderKeys {
 // the model id. Falls back to whichever key is present; mock only when
 // COPSE_PANEL_MOCK_LLM=1 (tests / dev).
 export function createProvider(model?: string, keys: ProviderKeys = {}): LLMProvider {
-  if (process.env.COPSE_PANEL_MOCK_LLM === '1') {
+  if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') {
     return new MockLLMProvider()
   }
   const m = model ?? ''
-  const anthropicApiKey = keys.anthropicApiKey ?? process.env.ANTHROPIC_API_KEY
-  const openAiApiKey = keys.openAiApiKey ?? process.env.OPENAI_API_KEY
+  const anthropicApiKey = keys.anthropicApiKey ?? process.env['ANTHROPIC_API_KEY']
+  const openAiApiKey = keys.openAiApiKey ?? process.env['OPENAI_API_KEY']
   if (m.startsWith('gpt')) {
     if (!openAiApiKey) {
       throw new Error(
@@ -39,12 +39,12 @@ export function createProvider(model?: string, keys: ProviderKeys = {}): LLMProv
     return new AnthropicProvider(m, { apiKey: anthropicApiKey })
   }
   if (anthropicApiKey) {
-    return new AnthropicProvider(model ?? process.env.ANTHROPIC_MODEL ?? DEFAULT_CLOUD_MODEL, {
+    return new AnthropicProvider(model ?? process.env['ANTHROPIC_MODEL'] ?? DEFAULT_CLOUD_MODEL, {
       apiKey: anthropicApiKey,
     })
   }
   if (openAiApiKey) {
-    return new OpenAIProvider(model ?? process.env.OPENAI_MODEL ?? 'gpt-4o', {
+    return new OpenAIProvider(model ?? process.env['OPENAI_MODEL'] ?? 'gpt-4o', {
       apiKey: openAiApiKey,
     })
   }

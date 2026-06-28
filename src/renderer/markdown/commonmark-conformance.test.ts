@@ -77,7 +77,7 @@ describe('CommonMark conformance (at rest)', () => {
   const passing = computePassing()
   const passingSet = new Set(passing)
 
-  if (process.env.UPDATE_COMMONMARK_BASELINE === '1') {
+  if (process.env['UPDATE_COMMONMARK_BASELINE'] === '1') {
     const baseline: Baseline = {
       specVersion: SPEC_VERSION,
       source: `commonmark-spec@${SPEC_VERSION} (devDependency)`,

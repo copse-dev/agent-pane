@@ -9,7 +9,10 @@ describe('package install approval', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-install-approval-project', { subagentsEnabled: false })
+    seedEmptyProject(process.cwd(), 'e2e-install-approval-project', {
+      subagentsEnabled: false,
+      model: 'claude-sonnet-4-6',
+    })
     await browser.reloadSession()
   })
 
