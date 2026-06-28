@@ -1,8 +1,8 @@
 import { z } from 'zod'
-import type { ToolDefinition } from '@shared/types'
+import { defineTool } from '@shared/types'
 import { readSkill } from '../services/skills-registry.ts'
 
-export const readSkillTool: ToolDefinition = {
+export const readSkillTool = defineTool({
   name: 'read_skill',
   description:
     'Read a file under a skill directory (scripts/, references/, assets/). ' +
@@ -32,4 +32,4 @@ export const readSkillTool: ToolDefinition = {
       .join('\n')
     return header + result.body
   },
-}
+})

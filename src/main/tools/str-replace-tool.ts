@@ -1,6 +1,6 @@
 import * as fsp from 'node:fs/promises'
 import { z } from 'zod'
-import type { ToolDefinition } from '@shared/types'
+import { defineTool } from '@shared/types'
 import { computeLineDiffStats } from '@shared/diff/line-stats.ts'
 import { resolveWorkspacePath } from '../services/workspace.ts'
 import { getPendingAfterContent, applyOrStageDiff } from '../services/diff-queue.ts'
@@ -17,7 +17,7 @@ function countOccurrences(haystack: string, needle: string): number {
   return count
 }
 
-export const strReplaceTool: ToolDefinition = {
+export const strReplaceTool = defineTool({
   name: 'str_replace',
   description:
     'Replace text in an existing file. Applies directly when the git worktree is clean or only contains Copse-applied edits from this session; otherwise stages a proposed diff for user approval. If the file already has a pending staged diff, the replacement is applied to that pending proposed content so edits compose.',
@@ -65,4 +65,4 @@ export const strReplaceTool: ToolDefinition = {
     const result = await applyOrStageDiff(path, before, after, language)
     return { result, editStats }
   },
-}
+})

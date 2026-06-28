@@ -40,7 +40,9 @@ describe('ToolRegistry', () => {
     const tools = reg.toLLMTools()
     assert.equal(tools.length, 1)
     assert.equal(tools[0]!.name, 'greet')
-    assert.ok((tools[0]!.parameters as any).properties?.name)
+    assert.ok(
+      (tools[0]!.parameters as { properties?: Record<string, unknown> }).properties?.['name'],
+    )
     setPermissionGateForTests(null)
   })
 })

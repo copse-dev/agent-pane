@@ -104,7 +104,18 @@ if (!existsSync(resultFile)) {
   process.exit(1)
 }
 
-const result = JSON.parse(readFileSync(resultFile, 'utf8'))
+interface BrowserValidationResult {
+  ok?: boolean
+  navigate?: string
+  snapshot?: string
+  type?: string
+  click?: string
+  afterSnapshot?: string
+  screenshot?: string
+  error?: string
+}
+
+const result = JSON.parse(readFileSync(resultFile, 'utf8')) as BrowserValidationResult
 console.log('\n=== browser_navigate ===')
 console.log(result.navigate)
 console.log('\n=== browser_snapshot ===')

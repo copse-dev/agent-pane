@@ -1,11 +1,11 @@
 import { z } from 'zod'
-import type { ToolDefinition } from '@shared/types'
+import { defineTool } from '@shared/types'
 
 async function loadWebSearch() {
   return import('../services/web-search/index.ts')
 }
 
-export const webSearchTool: ToolDefinition = {
+export const webSearchTool = defineTool({
   name: 'web_search',
   description:
     'Search the public web. Use for documentation, release notes, or facts outside the workspace.',
@@ -26,9 +26,9 @@ export const webSearchTool: ToolDefinition = {
     if (hits.length === 0) return `No web results for: ${query}`
     return JSON.stringify(hits, null, 2)
   },
-}
+})
 
-export const fetchUrlTool: ToolDefinition = {
+export const fetchUrlTool = defineTool({
   name: 'fetch_url',
   description:
     'Fetch a public HTTP/HTTPS URL and return readable Markdown extracted from the page content.',
@@ -39,4 +39,4 @@ export const fetchUrlTool: ToolDefinition = {
     const { fetchUrlMarkdown } = await loadWebSearch()
     return fetchUrlMarkdown(url, signal)
   },
-}
+})

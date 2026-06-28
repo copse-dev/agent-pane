@@ -208,7 +208,21 @@ export function isResolvedPathInsideWorkspace(absPath: string): boolean {
 
 export function toRelativePath(absPath: string): string {
   if (!workspaceRoot) return absPath
-  const rel = relative(resolve(workspaceRoot), resolve(absPath))
-  if (!rel) return '.'
-  return rel
+  const base = resolve(workspaceRoot)
+  const target = resolve(absPath)
+  let rel = relative(base, target)
+  // A realpath'd input (e.g. from `resolveWorkspacePath`) compared against a
+  // non-canonical workspace root produces a spurious `../` escape where the
+  // root is symlinked (macOS `/var` -> `/private/var`; an Open Folder path is
+  // not canonicalized). Only then pay the realpath cost and re-derive through
+  // the canonical forms; the common in-workspace case keeps the cheap result.
+  if (rel.startsWith('..')) {
+    try {
+      const realRel = relative(realpathSync.native(base), resolveThroughExistingPrefix(target))
+      if (!realRel.startsWith('..')) rel = realRel
+    } catch {
+      // Workspace root missing on disk (e.g. mock tests); keep the raw result.
+    }
+  }
+  return rel || '.'
 }

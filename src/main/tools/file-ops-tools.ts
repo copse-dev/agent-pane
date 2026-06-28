@@ -1,11 +1,11 @@
 import * as fsp from 'node:fs/promises'
 import { z } from 'zod'
-import type { ToolDefinition } from '@shared/types'
+import { defineTool } from '@shared/types'
 import { resolveWorkspacePath } from '../services/workspace.ts'
 import { stageFileOp } from '../services/diff-queue.ts'
 import { detectLanguage } from '../services/language.ts'
 
-export const deleteFileTool: ToolDefinition = {
+export const deleteFileTool = defineTool({
   name: 'delete_file',
   description:
     'Propose deleting an existing file. Stages the deletion for user approval (shown as a diff removing the file) — the file is not removed until accepted. Use this instead of run_shell rm so the deletion flows through the approval model.',
@@ -28,9 +28,9 @@ export const deleteFileTool: ToolDefinition = {
       language: detectLanguage(path),
     })
   },
-}
+})
 
-export const renameFileTool: ToolDefinition = {
+export const renameFileTool = defineTool({
   name: 'rename_file',
   description:
     'Propose renaming or moving a file from one path to another. Stages the move for user approval — nothing changes on disk until accepted. Use this instead of run_shell mv so the move flows through the approval model.',
@@ -64,9 +64,9 @@ export const renameFileTool: ToolDefinition = {
       language: detectLanguage(to),
     })
   },
-}
+})
 
-export const makeDirectoryTool: ToolDefinition = {
+export const makeDirectoryTool = defineTool({
   name: 'make_directory',
   description:
     'Propose creating a directory (including any missing parents). Stages the creation for user approval — the directory is not created until accepted.',
@@ -90,4 +90,4 @@ export const makeDirectoryTool: ToolDefinition = {
       language: 'plaintext',
     })
   },
-}
+})

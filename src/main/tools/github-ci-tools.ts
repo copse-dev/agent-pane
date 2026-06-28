@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ToolDefinition } from '@shared/types'
+import { defineTool } from '@shared/types'
 import { getCiFailureLogs, getCiStatus, waitForCiChecks } from '../services/github-ci-service.ts'
 const prNumberSchema = z
   .number()
@@ -8,7 +8,7 @@ const prNumberSchema = z
   .optional()
   .describe('Pull request number. Omit to use the open PR for the current branch.')
 
-export const getCiStatusTool: ToolDefinition = {
+export const getCiStatusTool = defineTool({
   name: 'get_ci_status',
   description:
     'Read GitHub pull request CI check status for the current branch or a specific PR number. ' +
@@ -20,9 +20,9 @@ export const getCiStatusTool: ToolDefinition = {
     const status = await getCiStatus(pr_number)
     return JSON.stringify(status, null, 2)
   },
-}
+})
 
-export const waitForCiChecksTool: ToolDefinition = {
+export const waitForCiChecksTool = defineTool({
   name: 'wait_for_ci_checks',
   description:
     'Block until GitHub CI checks finish for a pull request. Use once after push instead of polling with shell sleep loops.',
@@ -56,9 +56,9 @@ export const waitForCiChecksTool: ToolDefinition = {
     )
     return JSON.stringify(status, null, 2)
   },
-}
+})
 
-export const getCiFailureLogsTool: ToolDefinition = {
+export const getCiFailureLogsTool = defineTool({
   name: 'get_ci_failure_logs',
   description:
     'Fetch failed GitHub Actions log output for a pull request workflow run. ' +
@@ -75,4 +75,4 @@ export const getCiFailureLogsTool: ToolDefinition = {
   execute: async ({ pr_number, run_id }, _signal) => {
     return getCiFailureLogs({ prNumber: pr_number, runId: run_id })
   },
-}
+})
