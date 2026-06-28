@@ -27,9 +27,9 @@ async function loadReleaseIconVariant(): Promise<AppIconVariant> {
   if (!bundle) {
     throw new Error('esbuild produced no output for app-icon-variants.ts')
   }
-  const mod: { DEFAULT_APP_ICON_VARIANT: AppIconVariant } = await import(
-    'data:text/javascript,' + encodeURIComponent(bundle.text)
-  )
+  const mod = (await import('data:text/javascript,' + encodeURIComponent(bundle.text))) as {
+    DEFAULT_APP_ICON_VARIANT: AppIconVariant
+  }
   return mod.DEFAULT_APP_ICON_VARIANT
 }
 

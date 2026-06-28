@@ -148,7 +148,7 @@ export function formatGhPrView(pr: GhPrViewDetails): string {
 export async function getGhPrListText(opts: {
   state: 'open' | 'closed' | 'merged' | 'all'
   limit: number
-  head?: string
+  head?: string | undefined
 }): Promise<string> {
   if (!isGhAvailable()) return 'gh is not available on this system.'
   const args = [
@@ -208,9 +208,9 @@ export function truncateLogTail(text: string, maxChars: number): string {
 }
 
 export async function getGhRunListText(opts: {
-  branch?: string
+  branch?: string | undefined
   limit: number
-  failedOnly?: boolean
+  failedOnly?: boolean | undefined
 }): Promise<string> {
   if (!isGhAvailable()) return 'gh is not available on this system.'
   const branch = opts.branch ?? (await currentGitBranch())
@@ -254,7 +254,7 @@ export async function getGhRunLogText(opts: {
 }
 
 export async function getGhPrViewText(opts: {
-  number?: number
+  number?: number | undefined
   includeChecks: boolean
 }): Promise<string> {
   if (!isGhAvailable()) return 'gh is not available on this system.'

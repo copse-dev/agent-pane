@@ -45,7 +45,7 @@ if (process.platform !== 'darwin') {
 const sourcePlist = join(SOURCE_APP, 'Contents', 'Info.plist')
 
 function readElectronPackageVersion(): string {
-  return JSON.parse(readFileSync(ELECTRON_PKG_JSON, 'utf8')).version as string
+  return (JSON.parse(readFileSync(ELECTRON_PKG_JSON, 'utf8')) as { version: string }).version
 }
 
 function readDistVersion(): string | undefined {

@@ -1,13 +1,13 @@
 import { z } from 'zod'
-import type { ToolDefinition } from '@shared/types'
+import { defineTool } from '@shared/types'
 import { classifySearchQuery } from '@shared/agent/search-routing.ts'
 import { getWorkspaceRoot, resolveWorkspacePath, toRelativePath } from '../services/workspace.ts'
 import { isRgAvailable } from '../services/tool-availability.ts'
 import { formatCodeSearchResults, searchCodeContent } from '../services/indexed-grep.ts'
 import { executeSemanticSearch } from '../services/semantic-search.ts'
 
-export function createSearchCodebaseTool(): ToolDefinition {
-  return {
+export function createSearchCodebaseTool() {
+  return defineTool({
     name: 'search_codebase',
     description:
       'Search the codebase by regex or by meaning. Auto mode picks regex for symbols/strings and native semantic search for conceptual questions.',
@@ -90,11 +90,11 @@ export function createSearchCodebaseTool(): ToolDefinition {
           : '[regex search]\n'
       return header + formatCodeSearchResults(lines, max_results, backend)
     },
-  }
+  })
 }
 
-export function createSemanticSearchTool(): ToolDefinition {
-  return {
+export function createSemanticSearchTool() {
+  return defineTool({
     name: 'semantic_search',
     description:
       'Search the codebase by meaning using a local semantic index (codesearch or vera CLI). Use for conceptual questions.',
@@ -125,5 +125,5 @@ export function createSemanticSearchTool(): ToolDefinition {
 
       return `[native semantic search]\n${semantic.text}`
     },
-  }
+  })
 }

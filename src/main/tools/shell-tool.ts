@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ToolDefinition } from '@shared/types'
+import { defineTool } from '@shared/types'
 import { getWorkspaceRoot } from '../services/workspace.ts'
 import { getMainWindow } from '../windows/create-main-window.ts'
 import {
@@ -232,7 +232,7 @@ function formatShellFailure(result: ShellRunResult): Error {
   return new Error(`Exited with code ${result.exitCode}:\n${clean}`)
 }
 
-export const runShellTool: ToolDefinition = {
+export const runShellTool = defineTool({
   name: 'run_shell',
   description:
     'Run a shell command in the workspace directory. Output is streamed to the conversation. Commands contained within the sandbox auto-run; network or outside-workspace access (e.g. gh, curl, git push) prompts for approval and runs outside the sandbox when the macOS project sandbox is active. If a sandbox-contained command fails because the sandbox blocks filesystem/process access (e.g. Playwright), the user may approve running it once outside the sandbox. Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) are automatically run through Socket Firewall to scan for malicious packages, with install lifecycle scripts disabled.',
@@ -294,4 +294,4 @@ export const runShellTool: ToolDefinition = {
       await adoptWorktreeChangesSince(baseline)
     }
   },
-}
+})

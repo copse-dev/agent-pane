@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ToolDefinition } from '@shared/types'
+import { defineTool } from '@shared/types'
 import type { TodoItem, TodoUpdateInput } from '@shared/types/todo.ts'
 import {
   applyTodoUpdate,
@@ -69,7 +69,7 @@ async function applyAndGate(
   return { todos, messages }
 }
 
-export const updateTodosTool: ToolDefinition = {
+export const updateTodosTool = defineTool({
   name: 'update_todos',
   description:
     'Create or update the structured task plan. Pass the full list (merge=false) or patch items by id (merge=true). Use for multi-step work only; mark one item in_progress at a time.',
@@ -88,6 +88,6 @@ export const updateTodosTool: ToolDefinition = {
     if (messages.length) lines.push('', ...messages)
     return lines.join('\n')
   },
-}
+})
 
 export { findNewlyInProgressLocal, findNewlyCompleted, applyTodoUpdate }
