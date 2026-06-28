@@ -4,7 +4,7 @@ import {
   createAgentRunAbortScheduler,
   DEFAULT_MAX_LLM_CALLS,
 } from '@shared/agent/agent-loop-limits.ts'
-import type { LLMMessage, UserContent } from '@shared/types'
+import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { getSetting } from './settings.ts'
