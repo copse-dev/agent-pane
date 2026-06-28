@@ -31,6 +31,15 @@ export function mountRightPanelTabs(root: HTMLElement, store: AppStore): () => v
     },
     'Changes',
   )
+  const prsBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'right-panel-tab',
+      'aria-label': 'Pull requests',
+    },
+    'PRs',
+  )
   const planBtn = el(
     'button',
     {
@@ -49,7 +58,7 @@ export function mountRightPanelTabs(root: HTMLElement, store: AppStore): () => v
     },
     'Browser',
   )
-  root.append(explorerBtn, terminalBtn, changesBtn, planBtn, browserBtn)
+  root.append(explorerBtn, terminalBtn, changesBtn, prsBtn, planBtn, browserBtn)
 
   let renderPlanPane: (() => void) | null = null
   const planHost = document.getElementById('plan-viewer-host')
@@ -70,28 +79,33 @@ export function mountRightPanelTabs(root: HTMLElement, store: AppStore): () => v
     const isExplorer = mode === 'explorer'
     const isTerminal = mode === 'terminal'
     const isChanges = mode === 'changes'
+    const isPrs = mode === 'prs'
     const isPlan = mode === 'plan'
     const isBrowser = mode === 'browser'
 
     const treeHost = document.getElementById('file-tree-host')
     const terminalsList = document.getElementById('terminals-list-host')
     const gitChangesHost = document.getElementById('git-changes-host')
+    const prListHost = document.getElementById('pr-list-host')
     const browserTabsHost = document.getElementById('browser-tabs-host')
     const treeResizer = document.getElementById('resizer-tree')
     const fileViewer = document.getElementById('file-viewer')
     const planViewer = document.getElementById('plan-viewer-host')
     const terminalsViewer = document.getElementById('terminals-viewer-host')
     const gitDiffViewer = document.getElementById('git-diff-viewer-host')
+    const prViewer = document.getElementById('pr-viewer-host')
     const browserViewer = document.getElementById('browser-viewer-host')
 
     if (treeHost) treeHost.hidden = !isExplorer
     if (terminalsList) terminalsList.hidden = !isTerminal
     if (gitChangesHost) gitChangesHost.hidden = !isChanges
+    if (prListHost) prListHost.hidden = !isPrs
     if (browserTabsHost) browserTabsHost.hidden = !isBrowser
     if (fileViewer) fileViewer.hidden = !isExplorer
     if (planViewer) planViewer.hidden = !isPlan
     if (terminalsViewer) terminalsViewer.hidden = !isTerminal
     if (gitDiffViewer) gitDiffViewer.hidden = !isChanges
+    if (prViewer) prViewer.hidden = !isPrs
     if (browserViewer) browserViewer.hidden = !isBrowser
     if (treeResizer) treeResizer.hidden = !store.getState().filesPaneOpen || isPlan
     if (isPlan) renderPlanPane?.()
@@ -120,6 +134,7 @@ export function mountRightPanelTabs(root: HTMLElement, store: AppStore): () => v
     explorerBtn.classList.toggle('is-active', mode === 'explorer')
     terminalBtn.classList.toggle('is-active', mode === 'terminal')
     changesBtn.classList.toggle('is-active', mode === 'changes')
+    prsBtn.classList.toggle('is-active', mode === 'prs')
     planBtn.classList.toggle('is-active', mode === 'plan')
     browserBtn.classList.toggle('is-active', mode === 'browser')
     syncLayout()
@@ -128,6 +143,7 @@ export function mountRightPanelTabs(root: HTMLElement, store: AppStore): () => v
   explorerBtn.addEventListener('click', () => setMode('explorer'))
   terminalBtn.addEventListener('click', () => setMode('terminal'))
   changesBtn.addEventListener('click', () => setMode('changes'))
+  prsBtn.addEventListener('click', () => setMode('prs'))
   planBtn.addEventListener('click', () => setMode('plan'))
   browserBtn.addEventListener('click', () => setMode('browser'))
 
