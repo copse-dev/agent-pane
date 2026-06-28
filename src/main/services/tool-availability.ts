@@ -61,11 +61,14 @@ export function setGhAvailableForTest(value: boolean | null): void {
   ghAvail = value
 }
 
+function probePathPrefix(): string {
+  return process.platform === 'win32' ? '' : '/usr/bin:/bin:/exec-daemon:'
+}
+
 async function probe(cmd: string, args: string[]): Promise<boolean> {
   try {
-    const pathPrefix = process.platform === 'win32' ? '' : '/usr/bin:/bin:'
     await runCommand(cmd, args, {
-      env: { PATH: `${pathPrefix}${process.env['PATH'] ?? ''}` },
+      env: { PATH: `${probePathPrefix()}${process.env['PATH'] ?? ''}` },
     })
     return true
   } catch {

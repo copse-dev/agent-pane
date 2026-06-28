@@ -1,6 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { openBrowserUrl } from '../controller/panels.ts'
+import { openBrowserUrl, openPullRequest } from '../controller/panels.ts'
+import { parseGithubPrUrl } from '@shared/git/github-pr-url.ts'
 
 function linkHttpHref(link: HTMLAnchorElement): string | null {
   const href = link.href
@@ -24,7 +25,10 @@ function remoteArtifactFromHref(href: string): { agentId: string; path: string }
 export function bindBrowserLinkClicks(
   root: HTMLElement,
   store: AppStore,
-  api?: { remoteAgent: Pick<ApiClient['remoteAgent'], 'downloadArtifact'> },
+  api?: {
+    remoteAgent: Pick<ApiClient['remoteAgent'], 'downloadArtifact'>
+    gh?: Pick<ApiClient['gh'], 'status'>
+  },
 ): () => void {
   const onClick = (event: MouseEvent) => {
     const target = event.target
@@ -48,6 +52,19 @@ export function bindBrowserLinkClicks(
         })
       return
     }
+
+    const githubPr = parseGithubPrUrl(href)
+    if (githubPr && api?.gh) {
+      void api.gh.status().then((status) => {
+        if (status.installed && status.authenticated) {
+          openPullRequest(store, githubPr)
+          return
+        }
+        openBrowserUrl(store, href)
+      })
+      return
+    }
+
     openBrowserUrl(store, href)
   }
 

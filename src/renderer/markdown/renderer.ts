@@ -38,9 +38,14 @@ function restoreFencedBlocks(text: string, blocks: string[]): string {
   return text.replace(/\x00FENCE(\d+)\x00/g, (_, i: string) => blocks[Number(i)] ?? '')
 }
 
+/** GitHub PR templates often include HTML comments; strip them from prose only. */
+function stripHtmlComments(text: string): string {
+  return text.replace(/<!--[\s\S]*?-->/g, '')
+}
+
 export function renderMarkdown(raw: string): string {
   const { text: withPlaceholders, blocks } = extractFencedBlocks(raw)
-  let s = escapeHtml(withPlaceholders)
+  let s = escapeHtml(stripHtmlComments(withPlaceholders))
   s = restoreFencedBlocks(s, blocks)
   s = mapOutsideFencedHtml(s, (seg) => renderArtifactImageTags(seg))
 
