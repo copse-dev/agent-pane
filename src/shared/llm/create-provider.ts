@@ -61,7 +61,10 @@ export function createLocalOpenAIProvider(
   model: string,
   apiKey = 'lm-studio',
 ): LLMProvider {
-  return new OpenAIProvider(model, { baseURL, apiKey: apiKey || 'lm-studio' })
+  // LM Studio and other OpenAI-compatible local servers need stream_options.include_usage
+  // or they never report prompt/completion tokens — without that, usage chunks (and the
+  // Settings usage ledger) stay empty for local models such as qwen.
+  return new OpenAIProvider(model, { baseURL, apiKey: apiKey || 'lm-studio', includeUsage: true })
 }
 
 export const createLMStudioProvider = createLocalOpenAIProvider
