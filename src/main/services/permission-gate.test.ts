@@ -16,6 +16,11 @@ import { setPermissionGateForTests } from './tool-registry.ts'
 import { ensureToolPermitted, ensureTerminalPermitted } from './permission-gate.ts'
 import { decideMcpPermission, describeMcpAnnotations } from './permission-policy.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
+import { setApprovalHandler } from './approval.ts'
+import {
+  rememberCustomTool,
+  setCustomToolRequiresApprovalForTests,
+} from './custom-tools-registry.ts'
 
 describe('SANDBOX_TOOLS', () => {
   it('includes read_skill so skill reads auto-run without approval', () => {
@@ -43,6 +48,46 @@ describe('ensureToolPermitted', () => {
       await ensureToolPermitted({ toolName: 'gh_pr_list', args: { state: 'open', limit: 20 } }),
       true,
     )
+  })
+})
+
+describe('custom tool permission', () => {
+  it('auto-allows a remembered tool without requiresApproval (no prompt)', async () => {
+    setPermissionGateForTests(null)
+    const toolName = 'custom__remembered_plain'
+    setCustomToolRequiresApprovalForTests(toolName, false)
+    await rememberCustomTool(toolName)
+    let prompted = false
+    setApprovalHandler(async () => {
+      prompted = true
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(await ensureToolPermitted({ toolName, args: {} }), true)
+      assert.equal(prompted, false, 'remembered plain tool must not prompt')
+    } finally {
+      setApprovalHandler(null)
+      setCustomToolRequiresApprovalForTests(toolName, false)
+    }
+  })
+
+  it('still prompts a remembered tool with requiresApproval: true', async () => {
+    setPermissionGateForTests(null)
+    const toolName = 'custom__remembered_always'
+    setCustomToolRequiresApprovalForTests(toolName, true)
+    await rememberCustomTool(toolName)
+    let prompted = false
+    setApprovalHandler(async () => {
+      prompted = true
+      return { approved: true, remember: false }
+    })
+    try {
+      assert.equal(await ensureToolPermitted({ toolName, args: {} }), true)
+      assert.equal(prompted, true, 'requiresApproval tool must prompt even when remembered')
+    } finally {
+      setApprovalHandler(null)
+      setCustomToolRequiresApprovalForTests(toolName, false)
+    }
   })
 })
 

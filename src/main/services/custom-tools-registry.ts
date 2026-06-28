@@ -28,8 +28,24 @@ export interface CustomToolStatus {
 
 let customToolStatuses: CustomToolStatus[] = []
 
+// Tools that opted into `requiresApproval: true`, tracked at registration time so
+// the permission gate can force a prompt even when the user remembered the tool
+// (cf. mcp-registry's `toolMeta`). Keyed by prefixed tool name.
+const alwaysApproveTools = new Set<string>()
+
 export function getCustomToolStatuses(): CustomToolStatus[] {
   return customToolStatuses.map((s) => ({ ...s }))
+}
+
+/** True when this custom tool declared `requiresApproval: true` (always prompt). */
+export function customToolRequiresApproval(toolName: string): boolean {
+  return alwaysApproveTools.has(toolName)
+}
+
+/** Test hook — seed the always-approve set without running the on-disk loader. */
+export function setCustomToolRequiresApprovalForTests(toolName: string, value: boolean): void {
+  if (value) alwaysApproveTools.add(toolName)
+  else alwaysApproveTools.delete(toolName)
 }
 
 export function isCustomToolRemembered(toolName: string): boolean {
@@ -87,6 +103,7 @@ function unregisterAll(registry: ToolRegistry): void {
   for (const name of registry.names()) {
     if (name.startsWith(CUSTOM_TOOL_PREFIX)) registry.unregister(name)
   }
+  alwaysApproveTools.clear()
 }
 
 /**
@@ -128,6 +145,7 @@ export async function loadCustomToolsFromDir(
           continue
         }
         registry.register(tool)
+        if (tool.requiresApproval === true) alwaysApproveTools.add(tool.name)
         statuses.push({ name: customToolLabel(tool.name), source: full, registered: true })
         console.log(`[custom-tools] registered "${tool.name}" from ${entry.name}`)
       }
