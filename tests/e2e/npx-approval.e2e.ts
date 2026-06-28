@@ -9,7 +9,10 @@ describe('npx package command approval', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-npx-approval-project', { subagentsEnabled: false })
+    seedEmptyProject(process.cwd(), 'e2e-npx-approval-project', {
+      subagentsEnabled: false,
+      model: 'claude-sonnet-4-6',
+    })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })

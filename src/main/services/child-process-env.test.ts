@@ -10,10 +10,10 @@ describe('envForRendererChildProcess', () => {
       OPENAI_API_KEY: 'sk-openai-secret',
       HOME: '/Users/me',
     })
-    assert.equal(env.PATH, '/usr/bin')
-    assert.equal(env.HOME, '/Users/me')
-    assert.equal(env.ANTHROPIC_API_KEY, undefined)
-    assert.equal(env.OPENAI_API_KEY, undefined)
+    assert.equal(env['PATH'], '/usr/bin')
+    assert.equal(env['HOME'], '/Users/me')
+    assert.equal(env['ANTHROPIC_API_KEY'], undefined)
+    assert.equal(env['OPENAI_API_KEY'], undefined)
   })
 
   it('strips other LLM provider keys by name and pattern', () => {
@@ -25,12 +25,12 @@ describe('envForRendererChildProcess', () => {
       OPENROUTER_API_KEY: 'o',
       ANTHROPIC_AUTH_TOKEN: 'a', // caught by the provider pattern, not the list
     })
-    assert.equal(env.PATH, '/usr/bin')
-    assert.equal(env.GEMINI_API_KEY, undefined)
-    assert.equal(env.GROQ_API_KEY, undefined)
-    assert.equal(env.MISTRAL_API_KEY, undefined)
-    assert.equal(env.OPENROUTER_API_KEY, undefined)
-    assert.equal(env.ANTHROPIC_AUTH_TOKEN, undefined)
+    assert.equal(env['PATH'], '/usr/bin')
+    assert.equal(env['GEMINI_API_KEY'], undefined)
+    assert.equal(env['GROQ_API_KEY'], undefined)
+    assert.equal(env['MISTRAL_API_KEY'], undefined)
+    assert.equal(env['OPENROUTER_API_KEY'], undefined)
+    assert.equal(env['ANTHROPIC_AUTH_TOKEN'], undefined)
   })
 
   it('keeps non-LLM tool tokens that subprocesses legitimately need', () => {
@@ -39,8 +39,8 @@ describe('envForRendererChildProcess', () => {
       NPM_TOKEN: 'npm',
       AWS_ACCESS_KEY_ID: 'aws',
     })
-    assert.equal(env.GITHUB_TOKEN, 'gh')
-    assert.equal(env.NPM_TOKEN, 'npm')
-    assert.equal(env.AWS_ACCESS_KEY_ID, 'aws')
+    assert.equal(env['GITHUB_TOKEN'], 'gh')
+    assert.equal(env['NPM_TOKEN'], 'npm')
+    assert.equal(env['AWS_ACCESS_KEY_ID'], 'aws')
   })
 })

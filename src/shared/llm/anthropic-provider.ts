@@ -6,13 +6,12 @@ import { parseToolArgs } from './parse-tool-args.ts'
 
 export class AnthropicProvider implements LLMProvider {
   private client: Anthropic
+  private readonly model: string
   lastUsage: { inputTokens: number; outputTokens: number } | null = null
 
-  constructor(
-    private readonly model: string,
-    opts: { apiKey?: string } = {},
-  ) {
-    this.client = new Anthropic({ apiKey: opts.apiKey ?? process.env.ANTHROPIC_API_KEY })
+  constructor(model: string, opts: { apiKey?: string } = {}) {
+    this.model = model
+    this.client = new Anthropic({ apiKey: opts.apiKey ?? process.env['ANTHROPIC_API_KEY'] })
   }
 
   stream(
