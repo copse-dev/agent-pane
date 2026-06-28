@@ -22,15 +22,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Cheap static gate (~no build, no tests). Everything expensive — coverage,
-  # build, e2e — hangs off this via `needs: lint`, so a typo, lint error, or
-  # bad format short-circuits the pipeline before it burns runner minutes on
-  # the build + four e2e shards.
-  lint:
+  # Cheap static gate + e2e planning. Runs the fast static checks (typecheck,
+  # lint, format, dead-code, oracle liveness) AND computes the e2e oracle plan in
+  # a single job. Everything expensive — coverage, build, e2e — hangs off this
+  # via `needs: precheck`, so a typo, lint error, or bad format short-circuits
+  # the pipeline before it burns runner minutes on the build + e2e shards.
+  # Folding the former standalone `plan-e2e` job in here drops a duplicate
+  # checkout + node setup (and its rounded-up billed minute) from every run.
+  precheck:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    # Consumed by the e2e job: how much of the e2e tier this run needs (mode/
+    # specs), and the runner-dependent shard fan-out (e2e_shards / shard_total).
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      specs: ${{ steps.plan.outputs.specs }}
+      e2e_shards: ${{ steps.shards.outputs.list }}
+      e2e_shard_total: ${{ steps.shards.outputs.total }}
     steps:
+      # fetch-depth: 0 so the e2e oracle (plan step) can diff against the PR base
+      # / previous main tip.
       - uses: actions/checkout@v6.0.3
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup
       - run: npm run typecheck
       - run: npm run lint
@@ -40,78 +54,18 @@ jobs:
       # selectable (liveness) and the mapping invariants must hold, so the gate
       # can't silently start skipping specs it should run.
       - run: npm run check:oracle
-
-  check:
-    needs: lint
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6.0.3
-      - uses: ./.github/actions/setup
-      # Unit suite under c8 + coverage-baseline.json ratchet (replaces the
-      # separate coverage job — same tests, no duplicate npm test run).
-      - run: npm run coverage:ci
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: coverage-report
-          path: coverage/lcov-report
-          if-no-files-found: ignore
-      # Differentially validate the JS CommonMark normalizer against the
-      # reference normalize.py. The script fetches normalize.py from a pinned,
-      # hash-verified upstream commit (not checked in) and runs the diff with
-      # python3 (preinstalled on the runner).
-      - run: npm run check:normalizer-parity
-      # The build is validated once in the dedicated `build` job below (whose
-      # dist artifact the e2e shards reuse), so it no longer runs here.
-
-  build:
-    needs: lint
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    # Build dist once and hand it to every e2e shard. Previously each shard ran
-    # its own `npm run build`; an earlier attempt to share dist via upload/
-    # download dropped some Monaco worker files, breaking specs that open the
-    # diff editor. Packing dist into a single tar before upload preserves the
-    # full tree (worker files, nested dirs, exec bits) verbatim, so the shards
-    # get a byte-identical dist without each rebuilding it.
-    steps:
-      - uses: actions/checkout@v6.0.3
-      - uses: ./.github/actions/setup
-      - run: npm run build
-      - run: tar -cf dist.tar dist
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist-tar
-          path: dist.tar
-          if-no-files-found: error
-          retention-days: 1
-
-  # Test oracle (scripts/test-oracle.mts) decides how much of the e2e tier this
-  # run needs. On a pull_request it maps the diff (vs the PR base) to the specs
-  # it can affect; on a push to main it maps vs the previous main commit. The
-  # nightly `schedule` always runs the full suite. The output drives the `e2e`
-  # job below:
-  #   mode=full    → all 8 shards run the whole CI suite
-  #   mode=subset  → only the listed specs run, distributed across the shards
-  #   mode=skip    → nothing e2e-relevant changed; shards report green, no run
-  # subset is used only for confident, UI-coupled diffs; LOW-confidence (backend
-  # logic with no selector coupling) and broad changes fall back to full. Full
-  # coverage on every push is no longer guaranteed — the nightly is the net.
-  plan-e2e:
-    needs: lint
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    outputs:
-      mode: ${{ steps.plan.outputs.mode }}
-      specs: ${{ steps.plan.outputs.specs }}
-    steps:
-      - uses: actions/checkout@v6.0.3
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
+      # Test oracle (scripts/test-oracle.mts) decides how much of the e2e tier
+      # this run needs. On a pull_request it maps the diff (vs the PR base) to the
+      # specs it can affect; on a push to main it maps vs the previous main
+      # commit. The nightly `schedule` always runs the full suite. The output
+      # drives the `e2e` job below:
+      #   mode=full    → all 8 shards run the whole CI suite
+      #   mode=subset  → only the listed specs run, distributed across the shards
+      #   mode=skip    → nothing e2e-relevant changed; shards report green, no run
+      # subset is used only for confident, UI-coupled diffs; LOW-confidence
+      # (backend logic with no selector coupling) and broad changes fall back to
+      # full. Full coverage on every push is no longer guaranteed — the nightly
+      # is the net.
       - id: plan
         env:
           EVENT: ${{ github.event_name }}
@@ -167,7 +121,6 @@ jobs:
           node scripts/test-oracle.mts --plan --base "$BASE_SHA" | tee plan.txt
           grep -E '^(mode|specs)=' plan.txt >> "$GITHUB_OUTPUT"
           { echo '### e2e oracle plan'; echo '```'; cat plan.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-
       # Advisory: annotate which reference shots a UI change will refresh. Stale
       # shots DON'T block the PR — the `e2e` job below already re-renders them as a
       # side effect of the gate run, and the `commit-screenshots` job auto-commits
@@ -181,9 +134,73 @@ jobs:
         run: |
           git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || true
           node scripts/check-screenshots.mts --plan --base "$BASE_SHA"
+      # e2e shard fan-out is runner-dependent. The GitHub-hosted nightly keeps 8
+      # shards to stay under the 2-core/7GB OOM ceiling (see the e2e job comment).
+      # PR/push runs on the self-hosted Linux Docker `copse-e2e` fleet (see #422),
+      # where 8 shards just means paying the (mostly-cached but non-trivial, and
+      # occasionally cold) dep restore + Electron setup up to 8× across the fleet.
+      # Fewer, larger shards there cut that repeated setup without duplicating any
+      # spec: wdio `--shard current/total` and the `subset` round-robin both
+      # partition the specs disjointly, so a lower total just makes each slice
+      # bigger. Tune the self-hosted count below to your fleet size.
+      - id: shards
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = "schedule" ]; then
+            { echo "total=8"; echo "list=[1,2,3,4,5,6,7,8]"; } >> "$GITHUB_OUTPUT"
+          else
+            { echo "total=3"; echo "list=[1,2,3]"; } >> "$GITHUB_OUTPUT"
+          fi
+
+  check:
+    needs: precheck
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.3
+      - uses: ./.github/actions/setup
+      # Unit suite under c8 + coverage-baseline.json ratchet (replaces the
+      # separate coverage job — same tests, no duplicate npm test run).
+      - run: npm run coverage:ci
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/lcov-report
+          if-no-files-found: ignore
+      # Differentially validate the JS CommonMark normalizer against the
+      # reference normalize.py. The script fetches normalize.py from a pinned,
+      # hash-verified upstream commit (not checked in) and runs the diff with
+      # python3 (preinstalled on the runner).
+      - run: npm run check:normalizer-parity
+      # The build is validated once in the dedicated `build` job below (whose
+      # dist artifact the e2e shards reuse), so it no longer runs here.
+
+  build:
+    needs: precheck
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # Build dist once and hand it to every e2e shard. Previously each shard ran
+    # its own `npm run build`; an earlier attempt to share dist via upload/
+    # download dropped some Monaco worker files, breaking specs that open the
+    # diff editor. Packing dist into a single tar before upload preserves the
+    # full tree (worker files, nested dirs, exec bits) verbatim, so the shards
+    # get a byte-identical dist without each rebuilding it.
+    steps:
+      - uses: actions/checkout@v6.0.3
+      - uses: ./.github/actions/setup
+      - run: npm run build
+      - run: tar -cf dist.tar dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-tar
+          path: dist.tar
+          if-no-files-found: error
+          retention-days: 1
 
   e2e:
-    needs: [build, plan-e2e]
+    needs: [build, precheck]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     # PR/push e2e runs on the self-hosted Docker runners (see .github/runner):
     # free minutes, and a box big enough to avoid the 2-core/7GB hosted-runner
@@ -210,31 +227,33 @@ jobs:
     # slice of specs via wdio's `--shard current/total`. The shared `dist` artifact
     # from the `build` job is unpacked here rather than rebuilt per shard.
     #
-    # Shard count: 8. Each shard runs its slice as one sequential wdio process,
-    # relaunching Electron per spec. On the 2-core/7GB runner, once a shard runs
-    # too many specs the accumulated electron/codesearch processes exhaust it and
-    # a later spec's Electron fails to boot or OOM-crashes the runner ("shutdown
-    # signal"). wdio range-shards the full glob, and the ciExclude'd specs cluster
-    # alphabetically, so run-counts are uneven — at 7 shards the dense `t*` range
-    # still packed ~7 specs into one shard and hit the wall. 8 shards is the count
-    # #339's data showed green across 12 runs (~4 specs/shard, with these same
-    # specs), so it stays under the limit even in the densest range. It's cheap
-    # here because the shared `dist` artifact + cached node_modules mean shards no
-    # longer rebuild or reinstall (the cost that originally motivated 8→4). The
-    # per-attempt `timeout` is 480s (step cap 26 min for 3 attempts) so attempt 1
-    # finishes instead of being SIGKILL'd mid-retry, letting attempt 2 relaunch.
+    # Shard count is runner-dependent (computed by the precheck `shards` step):
+    #   - hosted nightly: 8. Each shard runs its slice as one sequential wdio
+    #     process, relaunching Electron per spec. On the 2-core/7GB runner, once a
+    #     shard runs too many specs the accumulated electron/codesearch processes
+    #     exhaust it and a later spec's Electron fails to boot or OOM-crashes the
+    #     runner ("shutdown signal"). #339's data showed 8 stays under that limit
+    #     even in the densest spec range.
+    #   - self-hosted PR/push: 3. These run on the Linux Docker `copse-e2e`
+    #     runners (see #422), which have the headroom 8 was protecting against, so
+    #     the only thing 8 buys there is paying dep restore + Electron setup up to
+    #     8× across the fleet. Fewer, larger shards cut that repeated (and
+    #     sometimes cold) setup — the dominant wall-clock cost — without
+    #     duplicating any spec. Tune to the `copse-e2e` runner count.
+    # The per-attempt `timeout` is 480s (step cap 26 min for 3 attempts) so attempt
+    # 1 finishes instead of being SIGKILL'd mid-retry, letting attempt 2 relaunch.
     strategy:
       # Fail fast: the first shard to go red cancels the rest. On the self-hosted
       # fleet a failure is usually a whole-run problem (a poisoned dep cache, a
       # broken commit, a runner-env issue) that every shard would hit anyway, so
-      # cancelling the siblings frees the box instead of grinding all 8 through
+      # cancelling the siblings frees the box instead of grinding them all through
       # their retry budget. Tradeoff: you see the first failing shard, not every
       # failing shard, in one run.
       fail-fast: true
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: ${{ fromJSON(needs.precheck.outputs.e2e_shards) }}
     env:
-      SHARD_TOTAL: 8
+      SHARD_TOTAL: ${{ needs.precheck.outputs.e2e_shard_total }}
     steps:
       - uses: actions/checkout@v6.0.3
       - uses: ./.github/actions/setup
@@ -262,19 +281,20 @@ jobs:
       # only a fresh xvfb+Electron launch does. Retry the entire shard, and wrap
       # each attempt in `timeout` so a wedged session is killed and retried
       # (a plain hang would otherwise never exit and stall the job).
-      # Oracle gate (see plan-e2e): `full` shards the whole suite; `subset`
-      # distributes only the planned specs round-robin across the same 8 shards
-      # (so no shard exceeds the per-shard memory budget the count is tuned for);
-      # `skip` runs nothing. Every shard still reports a status, so this composes
-      # with any required check without depending on an aggregate gate first.
+      # Oracle gate (see the precheck job's plan step): `full` shards the whole
+      # suite; `subset` distributes only the planned specs round-robin across the
+      # same 8 shards (so no shard exceeds the per-shard memory budget the count
+      # is tuned for); `skip` runs nothing. Every shard still reports a status, so
+      # this composes with any required check without depending on an aggregate
+      # gate first.
       - name: e2e shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }} (oracle-gated, retry on flaky session startup)
         if: >-
-          needs.plan-e2e.outputs.mode == 'full' ||
-          needs.plan-e2e.outputs.mode == 'subset'
+          needs.precheck.outputs.mode == 'full' ||
+          needs.precheck.outputs.mode == 'subset'
         timeout-minutes: 26
         env:
-          PLAN_MODE: ${{ needs.plan-e2e.outputs.mode }}
-          PLAN_SPECS: ${{ needs.plan-e2e.outputs.specs }}
+          PLAN_MODE: ${{ needs.precheck.outputs.mode }}
+          PLAN_SPECS: ${{ needs.precheck.outputs.specs }}
         run: |
           if [ "$PLAN_MODE" = "subset" ]; then
             # Round-robin the planned specs onto this shard; an empty slice means
@@ -528,7 +548,7 @@ jobs:
   ci-passed:
     name: CI Passed
     if: always()
-    needs: [lint, check, build, plan-e2e, e2e]
+    needs: [precheck, check, build, e2e]
     runs-on: ubuntu-latest
     steps:
       - name: Check upstream job results

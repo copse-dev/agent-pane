@@ -281,6 +281,7 @@ export function createLmStudioSection(
       | undefined
     const currentAutoRun = (await api.settings.get('autoRunSandboxCommands')) as boolean | undefined
     const currentMcpAuto = (await api.settings.get('mcpAutoAllowReadOnly')) as boolean | undefined
+    const currentReadonly = (await api.settings.get('defaultReadonlyMode')) as boolean | undefined
     const currentWebOrigins = (await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING)) as
       | string[]
       | undefined
@@ -295,6 +296,7 @@ export function createLmStudioSection(
       safetyModel: opts?.safetyModel ?? currentSafety ?? PREFERRED_MODELS[2]!.id,
       autoRunSandboxCommands: currentAutoRun ?? true,
       mcpAutoAllowReadOnly: currentMcpAuto ?? false,
+      defaultReadonlyMode: currentReadonly ?? false,
       webAllowedOrigins: currentWebOrigins?.length
         ? currentWebOrigins
         : [...DEFAULT_WEB_ALLOWED_ORIGINS],

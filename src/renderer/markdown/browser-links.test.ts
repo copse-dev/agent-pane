@@ -93,6 +93,68 @@ describe('markdown browser links', () => {
     ])
   })
 
+  it('opens GitHub PR links in the PR panel when gh is ready', async () => {
+    const href = 'https://github.com/org/repo/pull/42'
+    const root = document.createElement('div')
+    root.innerHTML = `<a href="${href}">PR</a>`
+    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    const browserRequested: string[] = []
+    const prRequested: Array<{ owner: string; repo: string; number: number }> = []
+    store.on('browser_url_requested', (url) => browserRequested.push(url))
+    store.on('pr_open_requested', (owner, repo, number) =>
+      prRequested.push({ owner, repo, number }),
+    )
+    const unbind = bindBrowserLinkClicks(root, store, {
+      remoteAgent: { downloadArtifact: async () => 'https://example.com' },
+      gh: {
+        status: async () => ({
+          installed: true,
+          authenticated: true,
+          username: 'dev',
+          message: null,
+        }),
+      },
+    })
+
+    const event = new window.MouseEvent('click', { bubbles: true, cancelable: true })
+    root.querySelector('a')!.dispatchEvent(event)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    unbind()
+    assert.equal(event.defaultPrevented, true)
+    assert.equal(store.getState().rightPanelMode, 'prs')
+    assert.deepEqual(prRequested, [{ owner: 'org', repo: 'repo', number: 42 }])
+    assert.deepEqual(browserRequested, [])
+  })
+
+  it('falls back to browser panel for GitHub PR links when gh is unavailable', async () => {
+    const href = 'https://github.com/org/repo/pull/42'
+    const root = document.createElement('div')
+    root.innerHTML = `<a href="${href}">PR</a>`
+    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    const requested: string[] = []
+    store.on('browser_url_requested', (url) => requested.push(url))
+    const unbind = bindBrowserLinkClicks(root, store, {
+      remoteAgent: { downloadArtifact: async () => 'https://example.com' },
+      gh: {
+        status: async () => ({
+          installed: false,
+          authenticated: false,
+          username: null,
+          message: 'missing',
+        }),
+      },
+    })
+
+    const event = new window.MouseEvent('click', { bubbles: true, cancelable: true })
+    root.querySelector('a')!.dispatchEvent(event)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    unbind()
+    assert.equal(store.getState().rightPanelMode, 'browser')
+    assert.deepEqual(requested, [href])
+  })
+
   it('hydrates remote artifact image tags from the thread agent link', async () => {
     const root = document.createElement('div')
     root.className = 'messages-list'

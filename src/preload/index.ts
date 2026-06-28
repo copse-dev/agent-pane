@@ -220,6 +220,7 @@ contextBridge.exposeInMainWorld('api', {
       safetyModel: string
       autoRunSandboxCommands: boolean
       mcpAutoAllowReadOnly: boolean
+      defaultReadonlyMode: boolean
       webAllowedOrigins: string[]
       webAllowUserApproval: boolean
     }) => ipcRenderer.invoke('settings:setSecurity', prefs),
@@ -282,6 +283,15 @@ contextBridge.exposeInMainWorld('api', {
     checkoutBranch: (branch: string) => ipcRenderer.invoke('git:checkoutBranch', branch),
     listBranches: () => ipcRenderer.invoke('git:listBranches'),
     getDefaultBranch: () => ipcRenderer.invoke('git:getDefaultBranch'),
+  },
+  gh: {
+    status: () => ipcRenderer.invoke('gh:status'),
+    listMyOpenPrs: () => ipcRenderer.invoke('gh:listMyOpenPrs'),
+    prDetails: (owner: string, repo: string, number: number) =>
+      ipcRenderer.invoke('gh:prDetails', owner, repo, number),
+    prFileDiff: (owner: string, repo: string, number: number, path: string) =>
+      ipcRenderer.invoke('gh:prFileDiff', owner, repo, number, path),
+    resolvePrUrl: (url: string) => ipcRenderer.invoke('gh:resolvePrUrl', url),
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),

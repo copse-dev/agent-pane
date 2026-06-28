@@ -39,6 +39,14 @@ export function openBrowserUrl(store: AppStore, url: string): void {
   store.emit('browser_url_requested', url)
 }
 
+export function openPullRequest(
+  store: AppStore,
+  ref: { owner: string; repo: string; number: number },
+): void {
+  openRightPanel(store, 'prs')
+  store.emit('pr_open_requested', ref.owner, ref.repo, ref.number)
+}
+
 /** Surface an MCP-UI artefact in the canvas (Browser pane). */
 export function openCanvasArtefact(store: AppStore, artefact: CanvasArtefact): void {
   openRightPanel(store, 'browser')
