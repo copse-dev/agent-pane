@@ -6,6 +6,8 @@ import {
   pruneUsageEvents,
   type UsageSummary,
 } from '@shared/usage/aggregate-usage.ts'
+import { extraProviderPricingMap } from '@shared/llm/extra-providers.ts'
+import { getResolvedExtraProviders } from './extra-providers-store.ts'
 import {
   USAGE_EVENTS_STORAGE_KEY,
   type UsageRecordInput,
@@ -98,7 +100,12 @@ function loadAllThreads(): Thread[] {
 export function getUsageSummary(): UsageSummary {
   const events = parseUsageEvents(storageGet(USAGE_EVENTS_STORAGE_KEY))
   const threads = loadAllThreads()
-  return buildUsageSummary(events, threads)
+  return buildUsageSummary(
+    events,
+    threads,
+    Date.now(),
+    extraProviderPricingMap(getResolvedExtraProviders()),
+  )
 }
 
 export function getUsageEventCount(): number {

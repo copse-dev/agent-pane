@@ -21,13 +21,7 @@ import {
   WEB_ALLOW_USER_APPROVAL_SETTING,
 } from '@shared/web-origins.ts'
 
-type SettingsSection =
-  | 'general'
-  | 'usage'
-  | 'local-models'
-  | 'mcp'
-  | 'appearance'
-  | 'experimental'
+type SettingsSection = 'general' | 'usage' | 'local-models' | 'mcp' | 'appearance' | 'experimental'
 
 /**
  * Single source of truth for the simple form fields, so each setting's default
