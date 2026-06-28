@@ -1,6 +1,9 @@
 import { runAgentLoop } from '@shared/agent/run-agent-loop.ts'
 import type { AgentHost } from '@shared/agent/agent-host.ts'
-import { AGENT_RUN_TIMEOUT_MS, DEFAULT_MAX_LLM_CALLS } from '@shared/agent/agent-loop-limits.ts'
+import {
+  createAgentRunAbortScheduler,
+  DEFAULT_MAX_LLM_CALLS,
+} from '@shared/agent/agent-loop-limits.ts'
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
@@ -112,7 +115,8 @@ export async function runAgent(
     const controller = new AbortController()
     abortMap.set(threadId, controller)
     setActiveRunThread(threadId)
-    const runTimeoutTimer = setTimeout(() => controller.abort(), AGENT_RUN_TIMEOUT_MS)
+    const runAbort = createAgentRunAbortScheduler(controller)
+    runAbort.schedule()
     const sendChunk = (chunk: StreamChunk) => {
       if (chunk.type === 'usage') recordThreadModel(threadId, chunk.model)
       host.emit(threadId, chunk)
@@ -122,6 +126,7 @@ export async function runAgent(
         threadId,
         provider: remoteProvider,
         userPrompt,
+        priorMessages,
         signal: controller.signal,
         onChunk: sendChunk,
       })
@@ -142,7 +147,7 @@ export async function runAgent(
         messages: [...priorMessages, { role: 'user' as const, content: userPrompt }],
       }
     } finally {
-      clearTimeout(runTimeoutTimer)
+      runAbort.clear()
       clearActiveRunThread(threadId)
       abortMap.delete(threadId)
     }
@@ -155,7 +160,8 @@ export async function runAgent(
   const controller = new AbortController()
   abortMap.set(threadId, controller)
   setActiveRunThread(threadId)
-  const runTimeoutTimer = setTimeout(() => controller.abort(), AGENT_RUN_TIMEOUT_MS)
+  const runAbort = createAgentRunAbortScheduler(controller)
+  runAbort.schedule()
 
   const sendChunk = (chunk: StreamChunk) => {
     if (chunk.type === 'usage') recordThreadModel(threadId, chunk.model)
@@ -307,7 +313,8 @@ export async function runAgent(
         tools: parentTools(registry, subagentsEnabled),
         usageModel: model,
         maxLlmCalls: DEFAULT_MAX_LLM_CALLS,
-        runTimeoutMs: AGENT_RUN_TIMEOUT_MS,
+        runDeadline: runAbort.deadline,
+        onRunDeadlineActivity: runAbort.schedule,
         coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
         getOpenTodos: () => getAgentRunTodos(),
         executeTool: async (name, args, signal, toolCallId) => {
@@ -367,7 +374,7 @@ export async function runAgent(
     sendChunk({ type: 'text', text: msg })
     sendChunk({ type: 'done' })
   } finally {
-    clearTimeout(runTimeoutTimer)
+    runAbort.clear()
     clearAgentRunTodos()
     setTodoToolPostProcess(null)
     clearActiveRunThread(threadId)
