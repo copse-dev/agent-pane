@@ -1,4 +1,4 @@
-import { existsSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, lstatSync, readlinkSync, realpathSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { storageGet, storageSet } from './storage.ts'
 
@@ -142,6 +142,49 @@ export function resolveWorkspacePath(path: string): string {
     )
   }
   return resolved
+}
+
+/**
+ * Guard a write/create target against symlink escape before any `fs.writeFile`/
+ * `mkdir` follows it. `resolveWorkspacePath` realpaths only the *existing* prefix of
+ * a path, so a symlink whose target does not yet exist (a dangling symlink) is
+ * skipped by the `existsSync` walk and treated as a plain new file — a subsequent
+ * write would then follow it outside the workspace root. A repo can ship such a
+ * symlink (e.g. `deploy.conf -> ../../../.ssh/authorized_keys`) and the agent
+ * editing that path would clobber a file outside the workspace.
+ *
+ * `lstat` (no-follow) every path segment from the root down and reject any symlink
+ * whose target resolves outside the root. Symlinks pointing *inside* the workspace
+ * are allowed, so legitimate in-repo symlink edits keep working. Call this at every
+ * site that writes/creates through a resolved path; reads are unaffected (a dangling
+ * read just fails with ENOENT, and an existing symlink to outside is already caught
+ * by `resolveWorkspacePath`'s realpath check).
+ */
+export function assertWorkspaceWriteTarget(absPath: string): void {
+  if (!workspaceRoot) throw new Error('No workspace open. Use Open Folder first.')
+  const absRoot = realpathSync.native(resolve(workspaceRoot))
+  const rel = relative(absRoot, absPath)
+  if (rel === '' || rel.startsWith('..') || rel.split(sep).includes('..')) {
+    throw new Error(`Path outside workspace: ${absPath}.`)
+  }
+  let current = absRoot
+  for (const segment of rel.split(sep)) {
+    current = resolve(current, segment)
+    let info
+    try {
+      info = lstatSync(current)
+    } catch {
+      // Segment does not exist yet (the new file/dir being created), and anything
+      // deeper can't exist under it — nothing left to follow.
+      break
+    }
+    if (info.isSymbolicLink()) {
+      const target = resolve(dirname(current), readlinkSync(current))
+      if (!isPathInsideRoot(resolveThroughExistingPrefix(target), absRoot)) {
+        throw new Error(`Refusing to write through a symlink that escapes the workspace: ${rel}`)
+      }
+    }
+  }
 }
 
 /**

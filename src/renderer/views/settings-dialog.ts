@@ -13,6 +13,7 @@ import { populateModelSelect, populateSmallTasksModelSelect } from './model-opti
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createCustomProvidersSection } from './setup/custom-providers-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
+import { createGhCliSection } from './setup/gh-cli-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
 import {
   DEFAULT_WEB_ALLOWED_ORIGINS,
@@ -65,6 +66,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
   { name: 'mcpAutoAllowReadOnly', kind: 'checkbox', default: false, save: false },
+  { name: 'defaultReadonlyMode', kind: 'checkbox', default: false, save: false },
   { name: 'webAllowUserApproval', kind: 'checkbox', default: true, save: false },
   { name: 'safetyConfidenceThreshold', kind: 'text', default: '0.85', save: false },
 ]
@@ -255,6 +257,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
             <div id="settings-model-routing-host"></div>
 
+            <div id="settings-gh-cli-host"></div>
+
             <fieldset>
               <legend>Agent behavior</legend>
               <label>
@@ -427,6 +431,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Destructive tools always prompt. Other tools prompt once; choose “always allow” to
                 remember a specific tool.
               </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="defaultReadonlyMode" />
+                Read-only agent mode
+              </label>
+              <p class="field-hint">
+                Agent runs can read and search the workspace but cannot write files, run shell
+                commands, or make network calls. MCP tools are limited to those the server flags as
+                read-only and non-destructive (which still prompt as usual).
+              </p>
             </fieldset>
           </section>
 
@@ -520,6 +533,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   const lmStudioSection = createLmStudioSection(api, { showInstallGuide: false })
   overlay.querySelector('#settings-lm-studio-host')!.append(lmStudioSection.root)
+
+  const ghCliSection = createGhCliSection(api)
+  overlay.querySelector('#settings-gh-cli-host')!.append(ghCliSection.root)
 
   const modelRoutingSection = createModelRoutingSection(api)
   overlay.querySelector('#settings-model-routing-host')!.append(modelRoutingSection.root)
@@ -813,6 +829,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       await refreshLocalModelSelects()
       await lmStudioSection.refreshDetection()
+      await ghCliSection.refreshStatus()
       await refreshMcpServers()
       await refreshCuratedServers()
     })()
@@ -858,6 +875,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         safetyConfidenceThreshold: Number.isFinite(confidence) ? confidence : 0.85,
         autoRunSandboxCommands: data.get('autoRunSandboxCommands') === 'on',
         mcpAutoAllowReadOnly: data.get('mcpAutoAllowReadOnly') === 'on',
+        defaultReadonlyMode: data.get('defaultReadonlyMode') === 'on',
         webAllowedOrigins: parseWebAllowedOrigins(data.get('webAllowedOrigins')),
         webAllowUserApproval: data.get(WEB_ALLOW_USER_APPROVAL_SETTING) === 'on',
       })
