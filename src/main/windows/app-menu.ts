@@ -1,5 +1,5 @@
 import { app, Menu, dialog, type BrowserWindow } from 'electron'
-import { setWorkspaceRoot } from '../services/workspace.ts'
+import { registerAllowedWorkspaceRoot, setWorkspaceRoot } from '../services/workspace.ts'
 import { buildIndex } from '../services/file-index.ts'
 
 // Builds the native application menu. The File ▸ Open Folder… item drives the
@@ -12,7 +12,11 @@ export function buildAppMenu(win: BrowserWindow): void {
   async function openFolder(): Promise<void> {
     const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
     if (result.canceled || !result.filePaths[0]) return
-    const root = result.filePaths[0]
+    // Canonicalize (realpath) the selected folder before storing it as the
+    // workspace root, mirroring the workspace:open/set IPC handlers. A
+    // non-canonical (symlinked) root makes toRelativePath emit broken paths and
+    // would leave the index and renderer 'workspace:opened' path inconsistent.
+    const root = registerAllowedWorkspaceRoot(result.filePaths[0])
     setWorkspaceRoot(root)
     await buildIndex(root)
     win.webContents.send('workspace:opened', root)
