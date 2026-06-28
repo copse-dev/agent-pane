@@ -332,6 +332,15 @@ export async function getBranches(): Promise<GitBranchInfo[]> {
   return branches
 }
 
+/** Current checked-out branch, or null when detached / outside a repo. */
+export async function getCurrentBranchName(): Promise<string | null> {
+  if (!getWorkspaceRoot()) return null
+  const { stdout, code } = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'])
+  if (code !== 0) return null
+  const branch = stdout.trim()
+  return branch && branch !== 'HEAD' ? branch : null
+}
+
 /** Return the default branch name for the current repository. */
 export async function getDefaultBranch(): Promise<string | null> {
   if (!getWorkspaceRoot()) return null
