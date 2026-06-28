@@ -18,6 +18,7 @@ import {
   IpcValidationError,
   keyProviderSchema,
   parseIpcArgs,
+  zMcpServerName,
   zNonEmptyString,
   zPathString,
 } from './ipc-guards.ts'
@@ -66,6 +67,13 @@ import {
 } from '../services/git-service.ts'
 import { getGitBranchStatus } from '../services/pr-context-service.ts'
 import { isGitAvailable } from '../services/tool-availability.ts'
+import {
+  getGhCliStatus,
+  getGhPrDetails,
+  getGhPrFileDiff,
+  listMyOpenPrs,
+  resolveGithubPrRef,
+} from '../services/gh-pr-service.ts'
 import {
   getMcpServerStatuses,
   reloadMcpServers,
@@ -313,6 +321,32 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   })
   ipcMain.handle('git:listBranches', () => getBranches())
   ipcMain.handle('git:getDefaultBranch', () => getDefaultBranch())
+
+  ipcMain.handle('gh:status', () => getGhCliStatus())
+  ipcMain.handle('gh:listMyOpenPrs', () => listMyOpenPrs())
+  ipcMain.handle('gh:prDetails', (_e, owner: unknown, repo: unknown, number: unknown) => {
+    const parsedOwner = parseIpcArgs(z.string().min(1).max(128), [owner])
+    const parsedRepo = parseIpcArgs(z.string().min(1).max(128), [repo])
+    const parsedNumber = parseIpcArgs(z.number().int().positive(), [number])
+    return getGhPrDetails({ owner: parsedOwner, repo: parsedRepo, number: parsedNumber })
+  })
+  ipcMain.handle(
+    'gh:prFileDiff',
+    (_e, owner: unknown, repo: unknown, number: unknown, path: unknown) => {
+      const parsedOwner = parseIpcArgs(z.string().min(1).max(128), [owner])
+      const parsedRepo = parseIpcArgs(z.string().min(1).max(128), [repo])
+      const parsedNumber = parseIpcArgs(z.number().int().positive(), [number])
+      const parsedPath = parseIpcArgs(zPathString, [path])
+      return getGhPrFileDiff(
+        { owner: parsedOwner, repo: parsedRepo, number: parsedNumber },
+        parsedPath,
+      )
+    },
+  )
+  ipcMain.handle('gh:resolvePrUrl', (_e, url: unknown) => {
+    const parsedUrl = parseIpcArgs(z.string().url().max(2048), [url])
+    return resolveGithubPrRef(parsedUrl)
+  })
   ipcMain.handle('remoteAgent:downloadArtifact', async (event, agentId: unknown, path: unknown) => {
     assertMainFrameSender(event, win)
     const parsedAgentId = parseIpcArgs(z.string().min(1).max(128), [agentId])
@@ -337,21 +371,38 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return shell.openExternal(href)
   })
 
-  ipcMain.handle('mcp:list', () => getMcpServerStatuses())
-  ipcMain.handle('mcp:reload', async () => {
+  ipcMain.handle('mcp:list', (event) => {
+    assertMainFrameSender(event, win)
+    return getMcpServerStatuses()
+  })
+  ipcMain.handle('mcp:reload', async (event) => {
+    assertMainFrameSender(event, win)
     const statuses = await reloadMcpServers(registry)
     win.webContents.send('mcp:status_changed', statuses)
     return statuses
   })
-  ipcMain.handle('mcp:setEnabled', async (_e, name: string, enabled: boolean) => {
-    await setMcpServerUserEnabled(name, enabled)
+  ipcMain.handle('mcp:setEnabled', async (event, name: unknown, enabled: unknown) => {
+    assertMainFrameSender(event, win)
+    const [parsedName, parsedEnabled] = parseIpcArgs(z.tuple([zMcpServerName, z.boolean()]), [
+      name,
+      enabled,
+    ])
+    await setMcpServerUserEnabled(parsedName, parsedEnabled)
     const statuses = await reloadMcpServers(registry)
     win.webContents.send('mcp:status_changed', statuses)
     return statuses
   })
-  ipcMain.handle('mcp:listCurated', () => getCuratedServerStatuses(getMcpServerStatuses()))
-  ipcMain.handle('mcp:setCuratedEnabled', async (_e, name: string, enabled: boolean) => {
-    await setCuratedServerEnabled(name, enabled)
+  ipcMain.handle('mcp:listCurated', (event) => {
+    assertMainFrameSender(event, win)
+    return getCuratedServerStatuses(getMcpServerStatuses())
+  })
+  ipcMain.handle('mcp:setCuratedEnabled', async (event, name: unknown, enabled: unknown) => {
+    assertMainFrameSender(event, win)
+    const [parsedName, parsedEnabled] = parseIpcArgs(z.tuple([zMcpServerName, z.boolean()]), [
+      name,
+      enabled,
+    ])
+    await setCuratedServerEnabled(parsedName, parsedEnabled)
     const statuses = await reloadMcpServers(registry)
     win.webContents.send('mcp:status_changed', statuses)
     return getCuratedServerStatuses(statuses)
