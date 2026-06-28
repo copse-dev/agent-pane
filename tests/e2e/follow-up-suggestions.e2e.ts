@@ -28,6 +28,7 @@ describe('follow-up suggestion bubbles', () => {
       resetUserData()
       seedEmptyProject(process.cwd(), 'e2e-follow-up-mock-project', {
         subagentsEnabled: false,
+        model: 'claude-sonnet-4-6',
         mockFollowUps: true,
       })
       await browser.reloadSession()
