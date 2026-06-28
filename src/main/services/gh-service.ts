@@ -36,6 +36,30 @@ export interface GhPrViewDetails {
   }>
 }
 
+export interface GhRunEntry {
+  databaseId?: number
+  workflowName?: string
+  name?: string
+  displayTitle?: string
+  headBranch?: string
+  headSha?: string
+  conclusion?: string
+  status?: string
+  event?: string
+  createdAt?: string
+  url?: string
+}
+
+/**
+ * GitHub check/run conclusions that count as a CI failure. Shared so the
+ * follow-up bubble detector and the CI run tools agree on what "failing" means.
+ */
+export const FAILING_CI_CONCLUSIONS = new Set(['FAILURE', 'ERROR', 'TIMED_OUT'])
+
+export function isFailingConclusion(value: string | undefined | null): boolean {
+  return FAILING_CI_CONCLUSIONS.has((value ?? '').toUpperCase())
+}
+
 function ghPathPrefix(): string {
   return process.platform === 'win32' ? '' : '/usr/bin:/bin:/exec-daemon:'
 }
@@ -50,7 +74,7 @@ export async function runGh(
   const commandOpts: Parameters<typeof runCommand>[2] = {
     cwd,
     unsandboxed: true,
-    env: { PATH: `${ghPathPrefix()}${process.env.PATH ?? ''}` },
+    env: { PATH: `${ghPathPrefix()}${process.env['PATH'] ?? ''}` },
   }
   if (opts.timeout_ms !== undefined) commandOpts.timeout_ms = opts.timeout_ms
   if (opts.signal !== undefined) commandOpts.signal = opts.signal
@@ -143,6 +167,90 @@ export async function getGhPrListText(opts: {
   const list = safeJsonParse<GhPrListEntry[]>(stdout.trim())
   if (!Array.isArray(list)) return stdout.trim() || '(no output)'
   return formatGhPrList(list)
+}
+
+async function currentGitBranch(): Promise<string | null> {
+  const cwd = getWorkspaceRoot()
+  if (!cwd) return null
+  const pathPrefix = process.platform === 'win32' ? '' : '/usr/bin:/bin:'
+  const { stdout, code } = await runCommand('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+    cwd,
+    env: { PATH: `${pathPrefix}${process.env['PATH'] ?? ''}` },
+  })
+  return code === 0 ? stdout.trim() || null : null
+}
+
+function shortSha(sha: string | undefined): string {
+  return sha ? sha.slice(0, 7) : '?'
+}
+
+export function formatGhRunList(entries: GhRunEntry[]): string {
+  if (entries.length === 0) return '(no workflow runs)'
+  return entries
+    .map((run) => {
+      const id = run.databaseId !== undefined ? `#${run.databaseId}` : '(no id)'
+      const workflow = run.workflowName ?? run.name ?? 'workflow'
+      const outcome = (run.conclusion ?? run.status ?? 'unknown').toUpperCase()
+      const where = `${run.headBranch ?? '?'} @ ${shortSha(run.headSha)}`
+      const title = run.displayTitle ? ` — ${run.displayTitle}` : ''
+      const url = run.url ? `\n  ${run.url}` : ''
+      return `${id} ${workflow}: ${outcome} (${where})${title}${url}`
+    })
+    .join('\n')
+}
+
+/** Keep the last `maxChars` of a (potentially huge) log, noting how much was dropped. */
+export function truncateLogTail(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text
+  const tail = text.slice(text.length - maxChars)
+  const dropped = text.length - maxChars
+  return `… [${dropped} earlier characters truncated; showing the last ${maxChars}]\n${tail}`
+}
+
+export async function getGhRunListText(opts: {
+  branch?: string
+  limit: number
+  failedOnly?: boolean
+}): Promise<string> {
+  if (!isGhAvailable()) return 'gh is not available on this system.'
+  const branch = opts.branch ?? (await currentGitBranch())
+  const args = [
+    'run',
+    'list',
+    '--limit',
+    String(opts.limit),
+    '--json',
+    'databaseId,workflowName,name,displayTitle,headBranch,headSha,conclusion,status,event,createdAt,url',
+  ]
+  if (branch) args.push('--branch', branch)
+  const { stdout, stderr, code } = await runGh(args)
+  if (code !== 0) return formatGhError(stderr, code)
+  let list = safeJsonParse<GhRunEntry[]>(stdout.trim())
+  if (!Array.isArray(list)) return stdout.trim() || '(no output)'
+  if (opts.failedOnly) list = list.filter((run) => isFailingConclusion(run.conclusion))
+  return formatGhRunList(list)
+}
+
+/** Default cap on returned log size to keep CI logs within the agent's context budget. */
+export const GH_RUN_LOG_MAX_CHARS = 20_000
+
+export async function getGhRunLogText(opts: {
+  runId: number
+  failedOnly?: boolean
+  maxChars?: number
+}): Promise<string> {
+  if (!isGhAvailable()) return 'gh is not available on this system.'
+  const args = [
+    'run',
+    'view',
+    String(opts.runId),
+    opts.failedOnly === false ? '--log' : '--log-failed',
+  ]
+  const { stdout, stderr, code } = await runGh(args)
+  if (code !== 0) return formatGhError(stderr, code)
+  const log = stdout.trim()
+  if (!log) return '(no log output — the run may still be in progress or have no failing steps)'
+  return truncateLogTail(log, opts.maxChars ?? GH_RUN_LOG_MAX_CHARS)
 }
 
 export async function getGhPrViewText(opts: {

@@ -61,7 +61,7 @@ export class CappedOutputAccumulator {
   private readonly headMax: number
   private readonly tailMax: number
 
-  constructor(private readonly maxBytes = COMMAND_OUTPUT_MAX_BYTES) {
+  constructor(maxBytes = COMMAND_OUTPUT_MAX_BYTES) {
     const { headMax, tailMax } = headTailBudget(maxBytes)
     this.headMax = headMax
     this.tailMax = tailMax

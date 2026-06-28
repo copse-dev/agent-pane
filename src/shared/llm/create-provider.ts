@@ -16,12 +16,12 @@ interface ProviderKeys {
 // the model id. Falls back to whichever key is present; mock only when
 // COPSE_PANEL_MOCK_LLM=1 (tests / dev).
 export function createProvider(model?: string, keys: ProviderKeys = {}): LLMProvider {
-  if (process.env.COPSE_PANEL_MOCK_LLM === '1') {
+  if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') {
     return new MockLLMProvider()
   }
   const m = model ?? ''
-  const anthropicApiKey = keys.anthropicApiKey ?? process.env.ANTHROPIC_API_KEY
-  const openAiApiKey = keys.openAiApiKey ?? process.env.OPENAI_API_KEY
+  const anthropicApiKey = keys.anthropicApiKey ?? process.env['ANTHROPIC_API_KEY']
+  const openAiApiKey = keys.openAiApiKey ?? process.env['OPENAI_API_KEY']
   if (m.startsWith('gpt')) {
     if (!openAiApiKey) {
       throw new Error(
@@ -39,12 +39,12 @@ export function createProvider(model?: string, keys: ProviderKeys = {}): LLMProv
     return new AnthropicProvider(m, { apiKey: anthropicApiKey })
   }
   if (anthropicApiKey) {
-    return new AnthropicProvider(model ?? process.env.ANTHROPIC_MODEL ?? DEFAULT_CLOUD_MODEL, {
+    return new AnthropicProvider(model ?? process.env['ANTHROPIC_MODEL'] ?? DEFAULT_CLOUD_MODEL, {
       apiKey: anthropicApiKey,
     })
   }
   if (openAiApiKey) {
-    return new OpenAIProvider(model ?? process.env.OPENAI_MODEL ?? 'gpt-4o', {
+    return new OpenAIProvider(model ?? process.env['OPENAI_MODEL'] ?? 'gpt-4o', {
       apiKey: openAiApiKey,
     })
   }
@@ -61,7 +61,10 @@ export function createLocalOpenAIProvider(
   model: string,
   apiKey = 'lm-studio',
 ): LLMProvider {
-  return new OpenAIProvider(model, { baseURL, apiKey: apiKey || 'lm-studio' })
+  // LM Studio and other OpenAI-compatible local servers need stream_options.include_usage
+  // or they never report prompt/completion tokens — without that, usage chunks (and the
+  // Settings usage ledger) stay empty for local models such as qwen.
+  return new OpenAIProvider(model, { baseURL, apiKey: apiKey || 'lm-studio', includeUsage: true })
 }
 
 export const createLMStudioProvider = createLocalOpenAIProvider
@@ -84,10 +87,12 @@ export function createOpenRouterProvider(model: string, apiKey: string): LLMProv
   })
 }
 
-// Mistral, Gemini, and DeepSeek are direct OpenAI-compatible cloud providers
-// (see extra-providers.ts), so each reuses OpenAIProvider with the provider's
-// base URL. Like OpenRouter they are billed/usage-reporting, so `includeUsage`
-// stays on. `model` is the upstream id with the provider prefix already stripped.
+// An extra provider (built-in preset or user-added custom) is OpenAI-compatible,
+// so it reuses OpenAIProvider with the provider's base URL. `model` is the
+// upstream id with the provider slug already stripped. `includeUsage` defaults
+// on for billed cloud APIs and off for a localhost server (which rarely reports
+// usage); `extraBody` carries any provider-specific request fields (e.g. an
+// OpenRouter-style routing hint a user pastes into the advanced field).
 export function createExtraCloudProvider(
   provider: ExtraProvider,
   model: string,
@@ -96,6 +101,16 @@ export function createExtraCloudProvider(
   return new OpenAIProvider(model, {
     baseURL: provider.baseUrl,
     apiKey,
-    includeUsage: true,
+    includeUsage: provider.includeUsage ?? !isLocalhostUrl(provider.baseUrl),
+    ...(provider.extraBody ? { extraBody: provider.extraBody } : {}),
   })
+}
+
+function isLocalhostUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase()
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1'
+  } catch {
+    return false
+  }
 }

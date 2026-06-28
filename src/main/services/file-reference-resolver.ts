@@ -1,8 +1,11 @@
+import { existsSync, statSync } from 'node:fs'
 import { getIndex } from './file-index.ts'
+import { getWorkspaceRoot, resolveWorkspacePath, toRelativePath } from './workspace.ts'
 
 export interface FileReferenceResolution {
   candidate: string
   path: string
+  kind: 'file' | 'directory'
 }
 
 function normalizeCandidate(candidate: string): string | null {
@@ -19,6 +22,25 @@ function normalizeCandidate(candidate: string): string | null {
 
 function basename(path: string): string {
   return path.split('/').pop() ?? path
+}
+
+/** Resolve a path on disk when it is missing from the workspace file index. */
+function resolveOnFilesystem(
+  candidate: string,
+  normalized: string,
+): FileReferenceResolution | null {
+  if (!getWorkspaceRoot()) return null
+  try {
+    const abs = resolveWorkspacePath(normalized)
+    if (!existsSync(abs)) return null
+    const stat = statSync(abs)
+    const path = toRelativePath(abs)
+    if (stat.isDirectory()) return { candidate, path, kind: 'directory' }
+    if (stat.isFile()) return { candidate, path, kind: 'file' }
+    return null
+  } catch {
+    return null
+  }
 }
 
 export function resolveFileReferences(candidates: string[]): FileReferenceResolution[] {
@@ -44,7 +66,13 @@ export function resolveFileReferences(candidates: string[]): FileReferenceResolu
     if (!normalized) continue
 
     if (exactPaths.has(normalized)) {
-      resolutions.push({ candidate, path: normalized })
+      resolutions.push({ candidate, path: normalized, kind: 'file' })
+      continue
+    }
+
+    const onDisk = resolveOnFilesystem(candidate, normalized)
+    if (onDisk) {
+      resolutions.push(onDisk)
       continue
     }
 
@@ -52,7 +80,7 @@ export function resolveFileReferences(candidates: string[]): FileReferenceResolu
 
     const basenameMatches = pathsByBasename.get(normalized) ?? []
     if (basenameMatches.length === 1) {
-      resolutions.push({ candidate, path: basenameMatches[0]! })
+      resolutions.push({ candidate, path: basenameMatches[0]!, kind: 'file' })
     }
   }
   return resolutions

@@ -47,6 +47,12 @@ export interface ContextBreakdown {
   contextWindow: number
 }
 
+/** Verdict from the post-turn review subagent for the most recent editing turn. */
+export interface ThreadReview {
+  status: 'running' | 'done' | 'error'
+  summary: string
+}
+
 export interface Thread {
   id: string
   title: string
@@ -59,6 +65,8 @@ export interface Thread {
   contextSnapshot?: ContextSnapshot
   /** Structured task plan for multi-step agent work (updated via update_todos). */
   todos?: TodoItem[]
+  /** Latest post-turn review verdict produced after an editing turn. */
+  review?: ThreadReview
   /** Persisted parent/explore goal; set on the first user message in the thread. */
   workingBrief?: string
   /** Git branch this thread was started on; set on first message and persisted. */
@@ -80,12 +88,14 @@ export interface Message {
   /** Pasted image attachments as data URLs (user messages only). */
   images?: string[]
   toolCalls: ToolCall[]
+  /** Small-model rollup label for this message's batch of shell commands. */
+  commandSummary?: string
   createdAt: number
 }
 
 export interface SubagentSession {
   id: string
-  kind: 'explore'
+  kind: 'explore' | 'investigate_ci'
   status: 'running' | 'done' | 'error'
   prompt: string
   summary: string | null

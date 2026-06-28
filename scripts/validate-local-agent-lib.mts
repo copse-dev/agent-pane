@@ -43,7 +43,7 @@ function loadSettings(): Record<string, unknown> {
 }
 
 function loadLmStudioKey(): string {
-  const fromEnv = process.env.LM_STUDIO_API_KEY?.trim()
+  const fromEnv = process.env['LM_STUDIO_API_KEY']?.trim()
   if (fromEnv) return fromEnv
   fail('Set LM_STUDIO_API_KEY (LM Studio → Server → API keys) to run headless local validation.')
 }
@@ -54,7 +54,7 @@ function settingString(settings: Record<string, unknown>, key: string, fallback 
 }
 
 function loadModel(settings: Record<string, unknown>): string {
-  if (process.env.LM_STUDIO_MODEL?.trim()) return process.env.LM_STUDIO_MODEL.trim()
+  if (process.env['LM_STUDIO_MODEL']?.trim()) return process.env['LM_STUDIO_MODEL'].trim()
   const modelSetting = settingString(settings, 'model')
   if (modelSetting.startsWith('lmstudio:')) return modelSetting.slice('lmstudio:'.length)
   const configured = settingString(settings, 'localDefaultModel')
@@ -94,13 +94,13 @@ async function executeTool(workspace: string, name: string, args: unknown): Prom
 }
 
 export async function validateLocalAgentFinalAnswer(): Promise<void> {
-  delete process.env.ANTHROPIC_API_KEY
-  delete process.env.OPENAI_API_KEY
-  process.env.COPSE_PANEL_MOCK_LLM = ''
+  delete process.env['ANTHROPIC_API_KEY']
+  delete process.env['OPENAI_API_KEY']
+  process.env['COPSE_PANEL_MOCK_LLM'] = ''
 
   const settings = loadSettings()
   const url =
-    process.env.LM_STUDIO_URL?.trim() ||
+    process.env['LM_STUDIO_URL']?.trim() ||
     settingString(settings, 'localServerUrl', 'http://localhost:1234/v1')
   const model = loadModel(settings)
   const apiKey = loadLmStudioKey()

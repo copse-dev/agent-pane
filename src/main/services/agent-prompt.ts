@@ -10,7 +10,9 @@ const SHARED_TOOL_TAIL = `- git_status: Show working tree status
 - git_log: Show recent commit history
 - git_commit: Create a commit with a Co-Authored-By: Copse trailer and the models used (local only; does not push)
 - gh_pr_list: List pull requests (read-only GitHub CLI; prefer over run_shell + gh)
-- gh_pr_view: Show pull request details (read-only GitHub CLI; prefer over run_shell + gh)
+- gh_pr_view: Show pull request details incl. CI check status (read-only GitHub CLI; prefer over run_shell + gh)
+- gh_run_list: List recent CI workflow runs for a branch (read-only GitHub CLI)
+- gh_run_view: Fetch failing CI workflow run logs by run id (read-only GitHub CLI)
 - get_ci_status: Read GitHub pull request CI check status (requires gh CLI and an open PR)
 - wait_for_ci_checks: Wait until PR CI checks finish after a push
 - get_ci_failure_logs: Fetch failed GitHub Actions log output for a PR
@@ -59,6 +61,7 @@ When modifying files:
 
 export const BASE_SYSTEM_PROMPT = buildBasePrompt({
   tools: `- explore: Explore the codebase by reading and searching files (returns a summary — use this instead of reading files directly)
+- investigate_ci: Delegate a deep CI-failure investigation to a subagent that reads the failing run logs and returns root-cause findings — prefer this when a PR has failing CI
 - write_file: Write a complete file directly when safe; otherwise stage a proposed diff for approval
 - str_replace: Replace a substring directly when safe; otherwise stage a proposed diff for approval
 ${SHARED_WEB_TOOLS}`,
@@ -98,7 +101,8 @@ You also have built-in browser tools (loopback/localhost auto-runs; other origin
 - browser_screenshot: Save a PNG of the page for visual checks
 - browser_click / browser_type: Interact with an element by its snapshot ref
 - browser_tabs: List or close tabs
-Prefer browser_snapshot over browser_screenshot for reading and interacting; take a fresh snapshot after navigation or a click before acting on refs.`
+Prefer browser_snapshot over browser_screenshot for reading and interacting; take a fresh snapshot after navigation or a click before acting on refs.
+This built-in browser uses the app's bundled Chromium — use it for local web/UI verification and screenshots. Do NOT install or spin up a separate browser stack (Playwright, Puppeteer, Selenium, or a standalone Chromium download); start the project's dev server and open its URL with browser_navigate.`
 
 // Optional steering, toggled by the `externalApiSafety` setting. Kept short and
 // appended near the top of the system prompt so it sits ahead of workspace- and

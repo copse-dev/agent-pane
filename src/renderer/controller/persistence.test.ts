@@ -8,7 +8,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 // attachAutosave registers a pagehide listener; provide a minimal window stub
 // (node test env has no DOM).
 const pagehideHandlers = new Set<() => void>()
-;(globalThis as Record<string, unknown>).window = {
+;(globalThis as Record<string, unknown>)['window'] = {
   addEventListener: (event: string, handler: () => void) => {
     if (event === 'pagehide') pagehideHandlers.add(handler)
   },

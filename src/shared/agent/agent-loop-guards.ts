@@ -22,7 +22,7 @@ function stableJson(value: unknown): string {
 export function normalizeExploreArgs(name: string, args: unknown): unknown {
   if (name !== 'list_dir' || !args || typeof args !== 'object') return args
   const a = args as Record<string, unknown>
-  const path = typeof a.path === 'string' ? a.path.trim() || '.' : '.'
+  const path = typeof a['path'] === 'string' ? a['path'].trim() || '.' : '.'
   return { ...a, path }
 }
 

@@ -318,6 +318,40 @@ export function seedBrowserLinkChatFixture(workspaceRoot: string): void {
   )
 }
 
+/** Thread with a GitHub PR markdown link for PR panel e2e. */
+export function seedPrPanelChatFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-pr-panel-project'
+  const threadId = 'e2e-pr-panel-thread'
+  const mockPrUrl = 'https://github.com/copse-dev/copse-panel/pull/42'
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'PR panel chat',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-pr-link',
+              role: 'assistant',
+              content: `Track progress in [PR #42](${mockPrUrl}).`,
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
 /** Git tool cards followed by an ordered-list summary (typical post-tool agent reply). */
 export function seedGitSummaryMarkdownFixture(workspaceRoot: string): void {
   const projectId = 'e2e-git-summary-md-project'
@@ -672,6 +706,91 @@ export function seedSubagentFixture(workspaceRoot: string): void {
                         id: 'sub-msg-2',
                         role: 'assistant',
                         content: 'README describes Copse setup and dev workflow.',
+                        toolCalls: [],
+                      },
+                    ],
+                  },
+                },
+              ],
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
+/** Thread with a completed CI investigator subagent tool card for visual validation. */
+export function seedCiInvestigatorFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-ci-investigator-project'
+  const threadId = 'e2e-ci-investigator-thread'
+  const summary = [
+    '**Failing check:** `CI / check`',
+    '',
+    '**Root cause:** `npm run typecheck` failed — `src/main/foo.ts:12` calls `bar()` with a missing argument.',
+    '',
+    '**Suggested fix:** pass the required `id` argument to `bar()` in `src/main/foo.ts`.',
+  ].join('\n')
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'CI investigator display test',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-ci',
+              role: 'assistant',
+              content: 'I investigated the failing CI and found the root cause.',
+              toolCalls: [
+                {
+                  id: 'tc-investigate-ci-1',
+                  name: 'investigate_ci',
+                  args: { pr_number: 42 },
+                  status: 'done',
+                  result: summary,
+                  subagent: {
+                    id: 'sub-ci-1',
+                    kind: 'investigate_ci',
+                    status: 'done',
+                    prompt: 'Investigate CI failures for PR #42',
+                    summary,
+                    messages: [
+                      {
+                        id: 'sub-ci-msg-1',
+                        role: 'assistant',
+                        content: 'Reading the **failing run logs** for PR #42.',
+                        toolCalls: [
+                          {
+                            id: 'inner-run-list-1',
+                            name: 'gh_run_list',
+                            args: { failed_only: true },
+                            status: 'done',
+                            result: '#1234 CI: FAILURE (feature @ abcdef1)',
+                          },
+                          {
+                            id: 'inner-run-view-1',
+                            name: 'gh_run_view',
+                            args: { run_id: 1234 },
+                            status: 'done',
+                            result: 'src/main/foo.ts(12,3): error TS2554: Expected 1 argument.',
+                          },
+                        ],
+                      },
+                      {
+                        id: 'sub-ci-msg-2',
+                        role: 'assistant',
+                        content: summary,
                         toolCalls: [],
                       },
                     ],
@@ -1667,6 +1786,50 @@ export function seedMarkdownTableWrapFixture(workspaceRoot: string): void {
           messages: [
             {
               id: 'msg-assistant-table-wrap',
+              role: 'assistant',
+              content,
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
+/** 3-column table whose first column is a lone code span (e.g. a test name).
+ * Regression for the first column shattering one character per line. */
+export function seedMarkdownTableCodeFirstColumnFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-markdown-table-code-first-project'
+  const threadId = 'e2e-markdown-table-code-first-thread'
+  const content = [
+    '### Remaining failures:',
+    '',
+    '| Test | Status | Reason |',
+    '| --- | --- | --- |',
+    '| `terminateProcessTree` | ❌ | Environment issue (process tree killing does not work in this test environment) |',
+    '| `renderMarkdown` | ❌ | 3 subtests fail — the heading-level assertions in `renderer.test.ts` |',
+    '| `sanitizeRenderedMarkdown` | ❌ | 1 subtest fails — the "is a no-op" test expects `<h2>` tags to survive sanitization |',
+  ].join('\n')
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Remaining failures',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-table-code-first',
               role: 'assistant',
               content,
               toolCalls: [],

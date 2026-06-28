@@ -2,6 +2,9 @@ import type { ToolCallChunk } from '@shared/types'
 
 /** Cursor / Qwen-style tool calls embedded in assistant text instead of native tool_calls. */
 const TOOL_CALL_BLOCK_RE = /<\s*tool_call\s*>([\s\S]*?)<\s*\/\s*tool_call\s*>/gi
+/** A `<tool_call>` opener with no matching closer (block still streaming in). */
+const OPEN_TOOL_CALL_RE = /<\s*tool_call\s*>/i
+const TOOL_CALL_OPENER = '<tool_call>'
 const FUNCTION_RE =
   /<\s*function\s*=\s*([^>\s]+)\s*>([\s\S]*?)(?:<\s*\/\s*function\s*>|(?=<\s*function\s*=)|(?=<\s*\/\s*tool_call\s*>))/gi
 const PARAMETER_RE = /<\s*parameter\s*=\s*([^>\s]+)\s*>([\s\S]*?)<\s*\/\s*parameter\s*>/gi
@@ -101,12 +104,38 @@ export interface TextToolCallRecovery {
   keptRawBlocks: boolean
 }
 
-/** Remove embedded pseudo tool-call blocks from assistant text (display / history). */
+/**
+ * Index of a trailing, still-incomplete `<tool_call>` opener (e.g. `<tool_ca`
+ * or a lone `<` arriving mid-stream), or -1 when the tail can't begin one.
+ * Whitespace inside the opener is ignored so `< tool_call` matches `<tool_call`.
+ */
+function trailingPartialToolCallIndex(s: string): number {
+  const lt = s.lastIndexOf('<')
+  if (lt === -1) return -1
+  const tail = s.slice(lt).toLowerCase().replace(/\s+/g, '')
+  return tail.length < TOOL_CALL_OPENER.length && TOOL_CALL_OPENER.startsWith(tail) ? lt : -1
+}
+
+/**
+ * Remove embedded pseudo tool-call blocks from assistant text (display / history).
+ *
+ * Complete `<tool_call>…</tool_call>` blocks are dropped. While streaming, the
+ * closing tag has not arrived yet, so an unterminated opener — or even a partial
+ * `<tool_ca` prefix mid-token — is held back too; otherwise the raw XML
+ * (DOCTYPE, `<function=…>`, `<parameter=…>`) flashes into the transcript before
+ * the block finishes. The renderer must stop emitting as soon as the tag
+ * appears, not once it closes.
+ */
 export function stripTextToolCallBlocks(text: string): string {
-  return text
-    .replace(TOOL_CALL_BLOCK_RE, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trimEnd()
+  let out = text.replace(TOOL_CALL_BLOCK_RE, '')
+  const open = out.search(OPEN_TOOL_CALL_RE)
+  if (open !== -1) {
+    out = out.slice(0, open)
+  } else {
+    const partial = trailingPartialToolCallIndex(out)
+    if (partial !== -1) out = out.slice(0, partial)
+  }
+  return out.replace(/\n{3,}/g, '\n\n').trimEnd()
 }
 
 /**

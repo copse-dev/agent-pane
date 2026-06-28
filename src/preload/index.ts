@@ -41,6 +41,8 @@ contextBridge.exposeInMainWorld('api', {
     clearHistory: (threadId: string) => ipcRenderer.invoke('agent:clearHistory', threadId),
     suggestTitle: (text: string) => ipcRenderer.invoke('agent:suggestTitle', text),
     suggestTerminalTitle: (text: string) => ipcRenderer.invoke('agent:suggestTerminalTitle', text),
+    suggestCommandSummary: (commands: string[]) =>
+      ipcRenderer.invoke('agent:suggestCommandSummary', commands),
     suggestFollowUps: (contextJson: string) =>
       ipcRenderer.invoke('agent:suggestFollowUps', contextJson),
     onChunk: (handler: (threadId: string, chunk: unknown) => void) => {
@@ -141,6 +143,16 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.off('mcp:status_changed', listener)
     },
   },
+  canvas: {
+    onArtefact: (handler: (artefact: import('@shared/types/canvas.ts').CanvasArtefact) => void) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        artefact: import('@shared/types/canvas.ts').CanvasArtefact,
+      ) => handler(artefact)
+      ipcRenderer.on('canvas:artefact', listener)
+      return () => ipcRenderer.off('canvas:artefact', listener)
+    },
+  },
   storage: {
     get: (key: string) => ipcRenderer.invoke('storage:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('storage:set', key, value),
@@ -208,8 +220,10 @@ contextBridge.exposeInMainWorld('api', {
       safetyClassifierEnabled: boolean
       safetyConfidenceThreshold: number
       safetyModel: string
+      reviewModel?: string
       autoRunSandboxCommands: boolean
       mcpAutoAllowReadOnly: boolean
+      defaultReadonlyMode: boolean
       webAllowedOrigins: string[]
       webAllowUserApproval: boolean
     }) => ipcRenderer.invoke('settings:setSecurity', prefs),
@@ -218,9 +232,22 @@ contextBridge.exposeInMainWorld('api', {
     availableProviders: () => ipcRenderer.invoke('settings:availableProviders'),
     validateKey: (provider: string, key: string) =>
       ipcRenderer.invoke('settings:validateKey', provider, key),
+    extraProviders: () => ipcRenderer.invoke('settings:extraProviders'),
+    saveExtraProvider: (record: unknown) =>
+      ipcRenderer.invoke('settings:saveExtraProvider', record),
+    deleteExtraProvider: (slug: string) => ipcRenderer.invoke('settings:deleteExtraProvider', slug),
+    fetchProviderModels: (baseUrl: string, apiKey?: string) =>
+      ipcRenderer.invoke('settings:fetchProviderModels', baseUrl, apiKey),
+    refreshHuggingFaceModels: (apiKey?: string) =>
+      ipcRenderer.invoke('settings:refreshHuggingFaceModels', apiKey),
   },
   appIcon: {
     apply: () => ipcRenderer.invoke('app-icon:apply'),
+  },
+  usage: {
+    record: (input: import('@shared/usage/usage-event.ts').UsageRecordInput) =>
+      ipcRenderer.invoke('usage:record', input),
+    getSummary: () => ipcRenderer.invoke('usage:getSummary'),
   },
   index: {
     query: (pattern: string) => ipcRenderer.invoke('index:query', pattern),
@@ -265,12 +292,22 @@ contextBridge.exposeInMainWorld('api', {
     listBranches: () => ipcRenderer.invoke('git:listBranches'),
     getDefaultBranch: () => ipcRenderer.invoke('git:getDefaultBranch'),
   },
+  gh: {
+    status: () => ipcRenderer.invoke('gh:status'),
+    listMyOpenPrs: () => ipcRenderer.invoke('gh:listMyOpenPrs'),
+    listWorkspaceOpenPrs: () => ipcRenderer.invoke('gh:listWorkspaceOpenPrs'),
+    prDetails: (owner: string, repo: string, number: number) =>
+      ipcRenderer.invoke('gh:prDetails', owner, repo, number),
+    prFileDiff: (owner: string, repo: string, number: number, path: string) =>
+      ipcRenderer.invoke('gh:prFileDiff', owner, repo, number, path),
+    resolvePrUrl: (url: string) => ipcRenderer.invoke('gh:resolvePrUrl', url),
+  },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   },
 })
 
-if (process.env.COPSE_E2E === '1') {
+if (process.env['COPSE_E2E'] === '1') {
   const errorToasts: string[] = []
   contextBridge.exposeInMainWorld('__copseE2e', {
     pushErrorToast(message: string) {
@@ -278,6 +315,12 @@ if (process.env.COPSE_E2E === '1') {
     },
     getErrorToasts() {
       return [...errorToasts]
+    },
+    setMockScript(script: unknown) {
+      return ipcRenderer.invoke('test:setMockScript', script)
+    },
+    clearMockScript() {
+      return ipcRenderer.invoke('test:clearMockScript')
     },
   })
 }

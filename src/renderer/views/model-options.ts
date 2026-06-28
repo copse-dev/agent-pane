@@ -7,10 +7,9 @@ import {
   toOpenRouterModel,
 } from '@shared/llm/openrouter.ts'
 import {
-  EXTRA_PROVIDERS_LIST,
   extraProviderDisplayLabel,
-  extraProviderForModel,
   extraProviderModelId,
+  extraProviderSlugFromModel,
   isExtraProviderModel,
   toExtraProviderModel,
   type ExtraProvider,
@@ -47,22 +46,14 @@ export function modelDisplayLabel(model: string): string {
 
 // OpenRouter's free, tool-capable models fetched live from its catalog, plus any
 // custom id the user saved (or currently has selected — which may be a paid id).
-// When no key is configured we show a single disabled hint instead of fetching.
+// When no key is configured we contribute nothing (the provider is hidden from
+// the picker rather than shown as a disabled "add a key" row).
 async function openRouterOptions(
   api: ApiClient,
   available: boolean,
   current: string,
 ): Promise<ModelOption[]> {
-  if (!available) {
-    return [
-      {
-        value: '',
-        label: 'Add an OpenRouter API key in Settings',
-        group: OPENROUTER_GROUP,
-        disabled: true,
-      },
-    ]
-  }
+  if (!available) return []
 
   let liveModels: Array<{ id: string; name: string }> = []
   try {
@@ -105,24 +96,16 @@ async function openRouterOptions(
 }
 
 // Curated, tool-capable models for a direct cloud provider (Mistral, Gemini,
-// DeepSeek). Unlike OpenRouter there is no live catalog, so the shortlist comes
-// from the registry; the currently-selected id is kept selectable even if it
-// isn't in the shortlist. When no key is configured we show a disabled hint.
+// DeepSeek, or a user-added one). Unlike OpenRouter there is no live catalog, so
+// the shortlist comes from the registry; the currently-selected id is kept
+// selectable even if it isn't in the shortlist. An unconfigured provider (no key)
+// contributes nothing — it's hidden from the picker rather than shown as a hint.
 function extraProviderOptions(
   provider: ExtraProvider,
   available: boolean,
   current: string,
 ): ModelOption[] {
-  if (!available) {
-    return [
-      {
-        value: '',
-        label: `Add a ${provider.label} API key in Settings`,
-        group: provider.label,
-        disabled: true,
-      },
-    ]
-  }
+  if (!available) return []
 
   const seen = new Set<string>()
   const entries: ModelOption[] = []
@@ -133,8 +116,8 @@ function extraProviderOptions(
     entries.push({ value, label, group: provider.label })
   }
 
-  for (const model of provider.models) add(model.id, model.label)
-  if (extraProviderForModel(current) === provider) {
+  for (const model of provider.models) add(model.id, model.label ?? model.id)
+  if (extraProviderSlugFromModel(current) === provider.id) {
     add(extraProviderModelId(current), modelDisplayLabel(current))
   }
   return entries
@@ -143,47 +126,43 @@ function extraProviderOptions(
 export async function fetchModelOptions(api: ApiClient, current: string): Promise<ModelOption[]> {
   const options: ModelOption[] = []
 
-  let available: AvailableProviders = {
-    anthropic: true,
-    openai: true,
-    cursor: true,
-    openrouter: true,
-    mistral: true,
-    gemini: true,
-    deepseek: true,
-  }
+  let available: AvailableProviders = {}
   try {
     available = await api.settings.availableProviders()
   } catch {
     /* keep defaults */
   }
+  // When availability is unknown (e.g. the query failed), default to showing the
+  // option rather than hiding it behind an "add a key" hint.
+  const isAvailable = (provider: string): boolean => available[provider] ?? true
+  // Hosted Anthropic/OpenAI models. Grouped so they get a heading like every
+  // other section (otherwise they'd be the only headingless block at the top).
+  const cloudGroup = 'Cloud models'
   for (const [value, label, provider] of CLOUD_MODELS) {
-    if (available[provider]) options.push({ value, label })
+    if (isAvailable(provider)) options.push({ value, label, group: cloudGroup })
   }
 
-  options.push(...(await openRouterOptions(api, available.openrouter, current)))
+  options.push(...(await openRouterOptions(api, isAvailable('openrouter'), current)))
 
-  for (const provider of EXTRA_PROVIDERS_LIST) {
-    options.push(...extraProviderOptions(provider, available[provider.id], current))
+  let extraProviders: ExtraProvider[] = []
+  try {
+    extraProviders = await api.settings.extraProviders()
+  } catch {
+    /* no extra providers available */
+  }
+  for (const provider of extraProviders) {
+    options.push(...extraProviderOptions(provider, isAvailable(provider.id), current))
   }
 
+  // Remote agents (Cursor Cloud): only listed once configured.
   const remoteGroup = 'Remote agents'
   for (const remote of REMOTE_AGENT_MODELS) {
-    if (remote.provider === REMOTE_AGENT_PROVIDER_CURSOR) {
-      options.push(
-        available.cursor
-          ? { value: remote.value, label: remote.label, group: remoteGroup }
-          : {
-              value: remote.value,
-              label: `${remote.label} — configure Cursor API key`,
-              group: remoteGroup,
-              disabled: true,
-            },
-      )
-      continue
+    if (remote.provider === REMOTE_AGENT_PROVIDER_CURSOR && isAvailable('cursor')) {
+      options.push({ value: remote.value, label: remote.label, group: remoteGroup })
     }
   }
 
+  // Local models: only listed when a local server is reachable and exposes some.
   const lmGroup = 'Local models'
   let models: string[]
   try {
@@ -191,16 +170,7 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
   } catch {
     models = []
   }
-  if (models.length) {
-    for (const id of models) options.push({ value: `lmstudio:${id}`, label: id, group: lmGroup })
-  } else {
-    options.push({
-      value: '',
-      label: 'Not connected — configure in Settings',
-      group: lmGroup,
-      disabled: true,
-    })
-  }
+  for (const id of models) options.push({ value: `lmstudio:${id}`, label: id, group: lmGroup })
 
   if (current && !options.some((o) => o.value === current)) {
     if (current.startsWith('lmstudio:')) {
@@ -218,6 +188,16 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
     } else {
       options.push({ value: current, label: `${current} (no key)` })
     }
+  }
+
+  // Only when nothing at all is configured (no cloud key, no provider, no local
+  // server) do we surface a single guiding message instead of an empty picker.
+  if (options.length === 0) {
+    options.push({
+      value: '',
+      label: 'No models available — add a provider or API key in Settings',
+      disabled: true,
+    })
   }
 
   return options

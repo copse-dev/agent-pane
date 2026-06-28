@@ -20,7 +20,7 @@ describe('resolveNodeToolchainAllowRead', () => {
     assert.ok(allow.length > 0, 'expected toolchain paths from process.env.PATH')
 
     let nodePath: string | null = null
-    for (const dir of (process.env.PATH ?? '').split(':')) {
+    for (const dir of (process.env['PATH'] ?? '').split(':')) {
       if (!dir) continue
       const candidate = resolve(dir, 'node')
       try {

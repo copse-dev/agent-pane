@@ -26,7 +26,7 @@ import { join, resolve, dirname } from 'node:path'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const NORMALIZE_PY = resolve(ROOT, 'tests/commonmark/normalize.py')
-const PYTHON = process.env.PYTHON ?? 'python3'
+const PYTHON = process.env['PYTHON'] ?? 'python3'
 
 // Examples where our tokenizer and Python's stdlib HTMLParser legitimately
 // disagree on how to normalize malformed/raw HTML or comment edge cases. None

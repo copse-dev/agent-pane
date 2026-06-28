@@ -36,13 +36,13 @@ function parsePositiveInt(value: unknown): number | null {
 /** Best-effort context length from one LM Studio /models row (OpenAI or native v1). */
 export function parseContextFromModelRecord(record: Record<string, unknown>): number | null {
   const direct = [
-    record.max_context_length,
-    record.context_length,
-    record.contextLength,
-    record.n_ctx,
-    record.max_model_len,
-    record.loaded_context_length,
-    record.session_context_length,
+    record['max_context_length'],
+    record['context_length'],
+    record['contextLength'],
+    record['n_ctx'],
+    record['max_model_len'],
+    record['loaded_context_length'],
+    record['session_context_length'],
   ]
   for (const value of direct) {
     const n = parsePositiveInt(value)
@@ -68,7 +68,11 @@ function parseOpenAiModelsPayload(json: unknown): LmStudioModelInfo[] {
     if (!row || typeof row !== 'object') continue
     const rec = row as Record<string, unknown>
     const id =
-      typeof rec.id === 'string' ? rec.id : typeof rec.model === 'string' ? rec.model : null
+      typeof rec['id'] === 'string'
+        ? rec['id']
+        : typeof rec['model'] === 'string'
+          ? rec['model']
+          : null
     if (!id) continue
     out.push({ id, contextLength: parseContextFromModelRecord(rec) })
   }
@@ -79,33 +83,33 @@ function parseOpenAiModelsPayload(json: unknown): LmStudioModelInfo[] {
 export function effectiveContextFromNativeModelRecord(
   record: Record<string, unknown>,
 ): number | null {
-  const loaded = record.loaded_instances
+  const loaded = record['loaded_instances']
   if (Array.isArray(loaded)) {
     for (const inst of loaded) {
       if (!inst || typeof inst !== 'object') continue
-      const config = (inst as Record<string, unknown>).config
+      const config = (inst as Record<string, unknown>)['config']
       if (config && typeof config === 'object' && !Array.isArray(config)) {
-        const n = parsePositiveInt((config as Record<string, unknown>).context_length)
+        const n = parsePositiveInt((config as Record<string, unknown>)['context_length'])
         if (n) return n
       }
     }
   }
-  return parsePositiveInt(record.max_context_length)
+  return parsePositiveInt(record['max_context_length'])
 }
 
 function parseNativeV1ModelsPayload(json: unknown): LmStudioModelInfo[] {
   const root = json as Record<string, unknown>
-  const list = root.models ?? root.data
+  const list = root['models'] ?? root['data']
   if (!Array.isArray(list)) return []
   const out: LmStudioModelInfo[] = []
   for (const row of list) {
     if (!row || typeof row !== 'object') continue
     const rec = row as Record<string, unknown>
     const id =
-      (typeof rec.key === 'string' && rec.key) ||
-      (typeof rec.id === 'string' && rec.id) ||
-      (typeof rec.identifier === 'string' && rec.identifier) ||
-      (typeof rec.model_key === 'string' && rec.model_key) ||
+      (typeof rec['key'] === 'string' && rec['key']) ||
+      (typeof rec['id'] === 'string' && rec['id']) ||
+      (typeof rec['identifier'] === 'string' && rec['identifier']) ||
+      (typeof rec['model_key'] === 'string' && rec['model_key']) ||
       null
     if (!id) continue
     out.push({ id, contextLength: effectiveContextFromNativeModelRecord(rec) })

@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { runSubagent } from './run-subagent.ts'
-import type { LLMProvider, StreamChunk } from '@shared/types'
+import { runSubagent, CI_INVESTIGATOR_SYSTEM_PROMPT } from './run-subagent.ts'
+import type { LLMMessage, LLMProvider, StreamChunk } from '@shared/types'
 
 function mockProvider(chunks: StreamChunk[][]): LLMProvider {
   let call = 0
@@ -181,6 +181,56 @@ describe('runSubagent', () => {
       cacheReadTokens: 800,
       cacheCreationTokens: 50,
     })
+  })
+
+  it('honors a custom system prompt, kind, and user task', async () => {
+    let received: LLMMessage[] | null = null
+    const provider: LLMProvider = {
+      async *stream(messages) {
+        received = messages
+        yield { type: 'text', text: 'CI failed because of a type error in foo.ts:12' }
+        yield { type: 'done' }
+      },
+    }
+
+    const { session } = await runSubagent({
+      provider,
+      prompt: 'Investigate CI failures for PR #5',
+      parentGoal: 'Fix the PR',
+      tools: [],
+      parentToolCallId: 'parent-ci',
+      onSubagentChunk: () => {},
+      executeTool: async () => '',
+      systemPrompt: CI_INVESTIGATOR_SYSTEM_PROMPT,
+      kind: 'investigate_ci',
+      userTask: 'Investigate the failing CI checks for pull request #5.',
+    })
+
+    assert.equal(session.kind, 'investigate_ci')
+    assert.ok(received)
+    const messages = received as LLMMessage[]
+    const contentOf = (m: LLMMessage | undefined): unknown =>
+      m && 'content' in m ? m.content : undefined
+    assert.equal(messages[0]?.role, 'system')
+    assert.equal(contentOf(messages[0]), CI_INVESTIGATOR_SYSTEM_PROMPT)
+    assert.equal(contentOf(messages[1]), 'Investigate the failing CI checks for pull request #5.')
+  })
+
+  it('emits a subagent_start chunk carrying the requested kind', async () => {
+    const chunks: StreamChunk[] = []
+    await runSubagent({
+      provider: mockProvider([[{ type: 'text', text: 'done' }, { type: 'done' }]]),
+      prompt: 'Investigate CI',
+      parentGoal: 'Fix',
+      tools: [],
+      parentToolCallId: 'parent-kind',
+      onSubagentChunk: (c) => chunks.push(c),
+      executeTool: async () => '',
+      kind: 'investigate_ci',
+    })
+    const start = chunks.find((c) => c.type === 'subagent_start')
+    assert.ok(start && start.type === 'subagent_start')
+    assert.equal(start.session.kind, 'investigate_ci')
   })
 
   it('respects AbortSignal', async () => {

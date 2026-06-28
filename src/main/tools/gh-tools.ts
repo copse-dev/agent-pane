@@ -1,6 +1,11 @@
 import { z } from 'zod'
 import type { ToolDefinition } from '@shared/types'
-import { getGhPrListText, getGhPrViewText } from '../services/gh-service.ts'
+import {
+  getGhPrListText,
+  getGhPrViewText,
+  getGhRunListText,
+  getGhRunLogText,
+} from '../services/gh-service.ts'
 
 export const ghPrListTool: ToolDefinition = {
   name: 'gh_pr_list',
@@ -47,4 +52,47 @@ export const ghPrViewTool: ToolDefinition = {
   }),
   execute: async ({ number, include_checks }) =>
     getGhPrViewText({ number, includeChecks: include_checks }),
+}
+
+export const ghRunListTool: ToolDefinition = {
+  name: 'gh_run_list',
+  description:
+    'List recent CI workflow runs for a branch via GitHub CLI (read-only). Use to find the run id of a failing check before fetching its logs.',
+  parameters: z.object({
+    branch: z
+      .string()
+      .optional()
+      .describe('Branch to filter runs by. Omit to use the checked-out branch.'),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(30)
+      .optional()
+      .default(20)
+      .describe('Maximum number of runs to return.'),
+    failed_only: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe('Only return runs that failed (failure, error, or timed out).'),
+  }),
+  execute: async ({ branch, limit, failed_only }) =>
+    getGhRunListText({ branch, limit, failedOnly: failed_only }),
+}
+
+export const ghRunViewTool: ToolDefinition = {
+  name: 'gh_run_view',
+  description:
+    'Fetch the logs of a CI workflow run via GitHub CLI (read-only). Defaults to only the failed steps; long logs are truncated to the tail. Use after gh_run_list to read why a check failed.',
+  parameters: z.object({
+    run_id: z.number().int().positive().describe('Workflow run id (databaseId from gh_run_list).'),
+    failed_only: z
+      .boolean()
+      .optional()
+      .default(true)
+      .describe('Return only the logs of failed steps. Set false for the full run log.'),
+  }),
+  execute: async ({ run_id, failed_only }) =>
+    getGhRunLogText({ runId: run_id, failedOnly: failed_only }),
 }

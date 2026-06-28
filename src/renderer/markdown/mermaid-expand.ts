@@ -198,11 +198,11 @@ function openMermaidExpand(source: HTMLElement): void {
 export function attachMermaidExpand(root: ParentNode): void {
   const diagrams = root.querySelectorAll<HTMLElement>('.mermaid-diagram')
   for (const diagram of diagrams) {
-    if (diagram.dataset.mermaidUi === 'true') continue
+    if (diagram.dataset['mermaidUi'] === 'true') continue
     if (diagram.querySelector('.error-icon')) continue
     if (!diagram.querySelector('svg')) continue
 
-    diagram.dataset.mermaidUi = 'true'
+    diagram.dataset['mermaidUi'] = 'true'
     diagram.classList.remove('mermaid-diagram--pending')
     diagram.classList.add('mermaid-diagram--folded')
     diagram.setAttribute('role', 'button')
