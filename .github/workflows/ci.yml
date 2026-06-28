@@ -190,11 +190,21 @@ jobs:
     # OOM that most of the shard quarantines exist to work around. The nightly
     # `schedule` runs the full suite on GitHub-hosted ubuntu-latest.
     #
-    # The label set requires BOTH `self-hosted` AND `copse-e2e`, so jobs land
-    # only on the Linux Docker runners and never on the macOS `self-hosted`
-    # boxes (which carry `macOS`/`ARM64` but not `copse-e2e`). NOTE: requires at
-    # least one registered `copse-e2e` runner or PR/push e2e will queue forever.
-    runs-on: ${{ github.event_name == 'schedule' && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "copse-e2e"]') }}
+    # Runner is picked by TRUST and fails closed. The label set requires BOTH
+    # `self-hosted` AND `copse-e2e`, so trusted push/same-repo PR jobs land only
+    # on the Linux Docker runners (never the macOS `self-hosted` boxes, which
+    # lack `copse-e2e`). Nightly `schedule` uses GitHub-hosted ubuntu-latest.
+    # Fork PRs are skipped by the `if` guard above and must never run on any
+    # runner — there is no hosted fallback; if that guard were ever removed, the
+    # expression below evaluates to a falsy value (not a runner label) so the
+    # job fails closed instead of dispatching untrusted code anywhere. NOTE:
+    # requires a registered `copse-e2e` runner or PR/push e2e queues forever.
+    runs-on: >-
+      ${{ github.event_name == 'schedule' && fromJSON('["ubuntu-latest"]') ||
+          ((github.event_name == 'push' ||
+            (github.event_name == 'pull_request' &&
+             github.event.pull_request.head.repo.full_name == github.repository))
+           && fromJSON('["self-hosted", "copse-e2e"]')) }}
     # Split the seeded e2e suite (see wdio.ci.conf.ts) into parallel shards so the
     # whole gate finishes well inside the runner window. Each shard runs a disjoint
     # slice of specs via wdio's `--shard current/total`. The shared `dist` artifact
