@@ -129,4 +129,39 @@ src/renderer/views/projects-pane.ts
     assert.ok(!stripped.includes('<function='))
     assert.ok(stripped.includes("I'll run eslint"))
   })
+
+  it('stripTextToolCallBlocks holds an unterminated opener while streaming', () => {
+    // Mid-stream: the closing </tool_call> has not arrived, so the raw XML must
+    // not be shown — only the prose before the opener survives.
+    const partial = `Let me render the demo for you.
+
+<tool_call>
+<function=render_html_artefact>
+<parameter=html>
+<!DOCTYPE html>`
+    const stripped = stripTextToolCallBlocks(partial)
+    assert.equal(stripped, 'Let me render the demo for you.')
+    assert.ok(!stripped.includes('<tool_call>'))
+    assert.ok(!stripped.includes('<function='))
+    assert.ok(!stripped.includes('DOCTYPE'))
+  })
+
+  it('stripTextToolCallBlocks holds a partial opener tag mid-token', () => {
+    assert.equal(stripTextToolCallBlocks('Working on it <tool_ca'), 'Working on it')
+    assert.equal(stripTextToolCallBlocks('Working on it <'), 'Working on it')
+    assert.equal(stripTextToolCallBlocks('Working on it < tool_call'), 'Working on it')
+  })
+
+  it('stripTextToolCallBlocks keeps a completed block then drops a new opener', () => {
+    const stripped = stripTextToolCallBlocks(`${SAMPLE}\nNow another:\n<tool_call>\n<function=`)
+    assert.ok(stripped.includes("I'll run eslint"))
+    assert.ok(stripped.includes('Now another:'))
+    assert.ok(!stripped.includes('<tool_call>'))
+    assert.ok(!stripped.includes('<function='))
+  })
+
+  it('stripTextToolCallBlocks preserves unrelated angle brackets in prose', () => {
+    assert.equal(stripTextToolCallBlocks('compare a < b and c > d'), 'compare a < b and c > d')
+    assert.equal(stripTextToolCallBlocks('use a <div> wrapper'), 'use a <div> wrapper')
+  })
 })

@@ -1,7 +1,10 @@
 import { z } from 'zod'
 import type { ToolDefinition, LLMTool, ToolExecuteResult } from '@shared/types'
 import { normalizeToolExecuteResult } from '@shared/types'
+import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
 import type { PermissionCheck } from './permission-policy.ts'
+import { isAgentRunReadonly } from './agent-run-readonly.ts'
+import { getMcpToolMeta } from './mcp-registry.ts'
 
 type PermissionGateFn = (check: PermissionCheck) => Promise<boolean>
 
@@ -56,6 +59,12 @@ export class ToolRegistry {
     const tool = this.tools.get(name)
     if (!tool) throw new Error(`Unknown tool: ${name}`)
     const parsed = tool.parameters.parse(rawArgs)
+    if (isAgentRunReadonly()) {
+      const blockReason = getReadonlyToolBlockReason(name, {
+        mcpAnnotations: name.startsWith('mcp__') ? getMcpToolMeta(name)?.annotations : undefined,
+      })
+      if (blockReason) return blockReason
+    }
     const permitted = await ensurePermitted({ toolName: name, args: parsed })
     if (!permitted) return `User rejected the ${name} tool call.`
     return tool.execute(parsed, signal)

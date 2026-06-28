@@ -39,7 +39,7 @@ export function detectLmStudioInstall(): boolean {
   if (process.platform === 'darwin') {
     candidates.push('/Applications/LM Studio.app')
   } else if (process.platform === 'win32') {
-    const local = process.env.LOCALAPPDATA
+    const local = process.env['LOCALAPPDATA']
     if (local) candidates.push(join(local, 'Programs', 'LM Studio', 'LM Studio.exe'))
   } else {
     candidates.push(
@@ -74,9 +74,10 @@ export async function detectLmStudio(url?: string, apiKey?: string): Promise<LmS
 
 function parseDownloadResponse(json: unknown): LmStudioDownloadJob {
   const row = json as Record<string, unknown>
-  const status = typeof row.status === 'string' ? row.status : undefined
-  const jobId = typeof row.job_id === 'string' ? row.job_id : undefined
-  const totalSizeBytes = typeof row.total_size_bytes === 'number' ? row.total_size_bytes : undefined
+  const status = typeof row['status'] === 'string' ? row['status'] : undefined
+  const jobId = typeof row['job_id'] === 'string' ? row['job_id'] : undefined
+  const totalSizeBytes =
+    typeof row['total_size_bytes'] === 'number' ? row['total_size_bytes'] : undefined
   if (!status) {
     return { ok: false, error: 'Unexpected download response' }
   }
@@ -146,10 +147,12 @@ export async function getLmStudioDownloadStatus(
     return {
       ok: true,
       jobId,
-      ...(typeof row.status === 'string' ? { status: row.status } : {}),
-      ...(typeof row.total_size_bytes === 'number' ? { totalSizeBytes: row.total_size_bytes } : {}),
-      ...(typeof row.downloaded_bytes === 'number'
-        ? { downloadedBytes: row.downloaded_bytes }
+      ...(typeof row['status'] === 'string' ? { status: row['status'] } : {}),
+      ...(typeof row['total_size_bytes'] === 'number'
+        ? { totalSizeBytes: row['total_size_bytes'] }
+        : {}),
+      ...(typeof row['downloaded_bytes'] === 'number'
+        ? { downloadedBytes: row['downloaded_bytes'] }
         : {}),
     }
   } catch (err) {

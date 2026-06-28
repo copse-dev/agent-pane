@@ -109,7 +109,7 @@ async function runGit(args: string[]): Promise<{ stdout: string; code: number }>
   const pathPrefix = process.platform === 'win32' ? '' : '/usr/bin:/bin:'
   const { stdout, code } = await runCommand('git', args, {
     cwd,
-    env: { PATH: `${pathPrefix}${process.env.PATH ?? ''}` },
+    env: { PATH: `${pathPrefix}${process.env['PATH'] ?? ''}` },
   })
   return { stdout, code }
 }

@@ -11,6 +11,7 @@ import type { McpServerConfig, McpServerStatus, McpToolAnnotations } from '@shar
 import type { ToolRegistry } from './tool-registry.ts'
 import { envForRendererChildProcess } from './child-process-env.ts'
 import { getWorkspaceRoot } from './workspace.ts'
+import { getSetting } from './settings.ts'
 import { storageGet, storageUpdate } from './storage.ts'
 import { parseStringList } from './storage-schema.ts'
 import {
@@ -23,6 +24,8 @@ import {
   isMcpServerEffectivelyDisabled,
 } from './mcp-config.ts'
 import { flattenMcpContent, sanitizeMcpInputSchema } from './mcp-schema.ts'
+import { createBundledMcpServers } from './bundled-mcp-server.ts'
+import { dispatchCanvasArtefacts } from './canvas-dispatch.ts'
 import { CURATED_MCP_SOURCE, getEnabledCuratedConfigs } from './mcp-curated.ts'
 import { isWorkspaceTrusted, setWorkspaceTrusted } from './workspace-trust.ts'
 import { appendFlatCapped, COMMAND_OUTPUT_MAX_BYTES } from './subprocess-output-cap.ts'
@@ -62,6 +65,8 @@ interface ActiveServer {
 interface McpToolMeta {
   server: string
   annotations?: McpToolAnnotations | undefined
+  /** True for Copse's own bundled in-process servers (first-party, sandboxed). */
+  bundled?: boolean
 }
 
 interface CreatedTransport {
@@ -241,6 +246,103 @@ function createTransport(cfg: McpServerConfig): CreatedTransport {
   }
 }
 
+/**
+ * List a connected MCP client's tools and register each into the tool registry.
+ * Shared by external (stdio/http) servers and bundled in-process servers so the
+ * result handling — UI-resource summarisation for the model plus dispatch to the
+ * canvas — is identical. Returns the human tool names for status reporting.
+ */
+async function registerClientTools(
+  registry: ToolRegistry,
+  client: Client,
+  serverName: string,
+  bundled = false,
+): Promise<string[]> {
+  const { tools } = await client.listTools()
+  const toolNames: string[] = []
+  for (const tool of tools) {
+    const fullName = mcpToolName(serverName, tool.name)
+    toolNames.push(tool.name)
+    const meta: McpToolMeta = { server: serverName }
+    if (bundled) meta.bundled = true
+    if (tool.annotations) meta.annotations = tool.annotations as McpToolAnnotations
+    toolMeta.set(fullName, meta)
+    registry.register({
+      name: fullName,
+      description: `[MCP:${serverName}] ${tool.description ?? ''}`.trim(),
+      parameters: z.unknown(),
+      rawParameters: sanitizeMcpInputSchema(tool.inputSchema),
+      async execute(args, signal) {
+        const result = await client.callTool(
+          { name: tool.name, arguments: (args ?? {}) as Record<string, unknown> },
+          undefined,
+          { signal },
+        )
+        // Experimental MCP-UI canvas: when enabled, recognised UI resources are
+        // rendered as a sandboxed artefact and summarised for the model (raw
+        // body kept out of context) rather than inlined as tool output.
+        const summarizeUiResources = getSetting<boolean>('mcpUiArtefactsEnabled', false)
+        if (summarizeUiResources) dispatchCanvasArtefacts(result.content)
+        const text = flattenMcpContent(result.content, { summarizeUiResources })
+        if (result.isError) {
+          throw new Error(text || `MCP tool ${tool.name} reported an error`)
+        }
+        return text
+      },
+    })
+  }
+  return toolNames
+}
+
+/**
+ * Connect Copse's bundled in-process MCP servers (e.g. the canvas). These ship
+ * with the app, need no user configuration, and are trusted by default. Gated by
+ * the same experimental flag that turns on canvas rendering. Reported with an
+ * `in-process` transport so the UI can distinguish them from configured servers.
+ */
+async function connectBundledServers(
+  registry: ToolRegistry,
+  generation: number,
+): Promise<McpServerStatus[]> {
+  if (!getSetting<boolean>('mcpUiArtefactsEnabled', false)) return []
+  const bundled = await createBundledMcpServers()
+  if (generation !== loadGeneration) {
+    await Promise.allSettled(bundled.map((b) => b.client.close()))
+    return []
+  }
+  const statuses: McpServerStatus[] = []
+  for (const { name, client } of bundled) {
+    try {
+      activeServers.push({ config: { name, transport: 'in-process' }, client })
+      const tools = await registerClientTools(registry, client, name, true)
+      statuses.push({
+        name,
+        transport: 'in-process',
+        state: 'connected',
+        toolCount: tools.length,
+        tools,
+        userEnabled: true,
+        configDisabled: false,
+      })
+      console.log(`[MCP] Connected bundled "${name}" (in-process) — ${tools.length} tool(s)`)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(`[MCP] Failed to register bundled "${name}":`, message)
+      statuses.push({
+        name,
+        transport: 'in-process',
+        state: 'error',
+        toolCount: 0,
+        tools: [],
+        userEnabled: true,
+        configDisabled: false,
+        error: message,
+      })
+    }
+  }
+  return statuses
+}
+
 async function connectServer(
   registry: ToolRegistry,
   rawCfg: McpServerConfig,
@@ -285,37 +387,10 @@ async function connectServer(
     }
     activeServers.push({ config: cfg, client })
 
-    const { tools } = await client.listTools()
-    const toolNames: string[] = []
+    const toolNames = await registerClientTools(registry, client, cfg.name)
 
-    for (const tool of tools) {
-      const fullName = mcpToolName(cfg.name, tool.name)
-      toolNames.push(tool.name)
-      const meta: McpToolMeta = { server: cfg.name }
-      if (tool.annotations) meta.annotations = tool.annotations as McpToolAnnotations
-      toolMeta.set(fullName, meta)
-      registry.register({
-        name: fullName,
-        description: `[MCP:${cfg.name}] ${tool.description ?? ''}`.trim(),
-        parameters: z.unknown(),
-        rawParameters: sanitizeMcpInputSchema(tool.inputSchema),
-        async execute(args, signal) {
-          const result = await client.callTool(
-            { name: tool.name, arguments: (args ?? {}) as Record<string, unknown> },
-            undefined,
-            { signal },
-          )
-          const text = flattenMcpContent(result.content)
-          if (result.isError) {
-            throw new Error(text || `MCP tool ${tool.name} reported an error`)
-          }
-          return text
-        },
-      })
-    }
-
-    console.log(`[MCP] Connected to "${cfg.name}" (${cfg.transport}) — ${tools.length} tool(s)`)
-    return { ...base, state: 'connected', toolCount: tools.length, tools: toolNames }
+    console.log(`[MCP] Connected to "${cfg.name}" (${cfg.transport}) — ${toolNames.length} tool(s)`)
+    return { ...base, state: 'connected', toolCount: toolNames.length, tools: toolNames }
   } catch (err) {
     const stderr = stderrOutput()
     const message = err instanceof Error ? err.message : String(err)
@@ -345,7 +420,7 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
   // CONNECT_TIMEOUT_MS on a runner with no egress, wedging the whole app and
   // hanging every workspace-loading spec. (Onboarding has no active servers, so
   // it was unaffected.)
-  if (process.env.COPSE_AGENT_EVAL === '1' || process.env.COPSE_E2E === '1') {
+  if (process.env['COPSE_AGENT_EVAL'] === '1' || process.env['COPSE_E2E'] === '1') {
     serverStatuses = []
     return
   }
@@ -353,7 +428,10 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
   const { active, untrusted } = await collectConfigs()
   if (generation !== loadGeneration) return // superseded while reading config
   const userDisabled = getUserDisabledServerNames()
-  if (active.length === 0 && untrusted.length === 0) {
+  // Bundled in-process servers (e.g. the canvas) are always considered, even with
+  // no user config, so the feature "just works" once the experimental flag is on.
+  const bundledStatuses = await connectBundledServers(registry, generation)
+  if (active.length === 0 && untrusted.length === 0 && bundledStatuses.length === 0) {
     serverStatuses = []
     return
   }
@@ -364,7 +442,9 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
   // `untrusted` so the UI can offer "trust this workspace" (issue #100).
   const untrustedStatuses = untrusted.map((cfg) => untrustedStatus(cfg, userDisabled))
   // Only publish statuses if a newer load hasn't started in the meantime.
-  if (generation === loadGeneration) serverStatuses = [...connected, ...untrustedStatuses]
+  if (generation === loadGeneration) {
+    serverStatuses = [...bundledStatuses, ...connected, ...untrustedStatuses]
+  }
 }
 
 function untrustedStatus(cfg: McpServerConfig, userDisabled: ReadonlySet<string>): McpServerStatus {

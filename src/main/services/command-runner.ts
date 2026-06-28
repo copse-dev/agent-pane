@@ -46,7 +46,7 @@ function prepareGitInvocation(
       GIT_PAGER: 'cat',
       // Never block on credential / SSH host-key prompts.
       GIT_TERMINAL_PROMPT: '0',
-      GIT_SSH_COMMAND: env.GIT_SSH_COMMAND ?? 'ssh -oBatchMode=yes',
+      GIT_SSH_COMMAND: env['GIT_SSH_COMMAND'] ?? 'ssh -oBatchMode=yes',
     },
   }
 }

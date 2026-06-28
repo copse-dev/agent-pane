@@ -81,6 +81,7 @@ export interface IpcInvokeMap {
         safetyModel: string
         autoRunSandboxCommands: boolean
         mcpAutoAllowReadOnly: boolean
+        defaultReadonlyMode: boolean
         webAllowedOrigins: string[]
         webAllowUserApproval: boolean
       },
@@ -89,6 +90,10 @@ export interface IpcInvokeMap {
   }
   'settings:getKey': { args: [provider: Provider]; result: boolean }
   'settings:setKey': { args: [provider: Provider, key: string]; result: void }
+  'settings:refreshHuggingFaceModels': {
+    args: [key?: string]
+    result: { ok: boolean; count: number; error?: string }
+  }
   'settings:availableProviders': {
     args: []
     result: AvailableProviders
@@ -100,6 +105,13 @@ export interface IpcInvokeMap {
 
   // App icon
   'app-icon:apply': { args: []; result: void }
+
+  // Usage ledger
+  'usage:record': {
+    args: [input: import('@shared/usage/usage-event.ts').UsageRecordInput]
+    result: void
+  }
+  'usage:getSummary': { args: []; result: import('@shared/usage/aggregate-usage.ts').UsageSummary }
 
   // Storage (generic electron-store access)
   'storage:get': { args: [key: string]; result: unknown }
@@ -120,6 +132,22 @@ export interface IpcInvokeMap {
   'git:isAvailable': { args: []; result: boolean }
   'git:branchStatus': { args: [forBranch?: string]; result: GitBranchStatus }
   'git:checkoutBranch': { args: [branch: string]; result: void }
+
+  // GitHub CLI / pull requests
+  'gh:status': { args: []; result: import('./git.ts').GhCliStatus }
+  'gh:listMyOpenPrs': { args: []; result: import('./git.ts').GhPrSummary[] | null }
+  'gh:prDetails': {
+    args: [owner: string, repo: string, number: number]
+    result: import('./git.ts').GhPrDetails | null
+  }
+  'gh:prFileDiff': {
+    args: [owner: string, repo: string, number: number, path: string]
+    result: import('./git.ts').GhPrFileDiff | null
+  }
+  'gh:resolvePrUrl': {
+    args: [url: string]
+    result: { owner: string; repo: string; number: number } | null
+  }
 
   // Remote agent artifacts
   'remoteAgent:downloadArtifact': { args: [agentId: string, path: string]; result: string }

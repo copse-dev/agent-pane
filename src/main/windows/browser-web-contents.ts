@@ -3,6 +3,7 @@ import type { WebContents } from 'electron'
 import { BROWSER_SESSION_PARTITION } from '@shared/browser-session.ts'
 import { getMainWindow } from './create-main-window.ts'
 import { browserGuestWindowOpen } from './web-contents-lockdown.ts'
+import { isAllowedBrowserNavigationUrl } from '../services/browser/browser-origin-policy.ts'
 
 let browserSession: Electron.Session | undefined
 
@@ -52,4 +53,13 @@ export function attachBrowserGuestWindowOpen(contents: WebContents): void {
     if (openTabUrl) getMainWindow()?.webContents.send('browser:open-tab', openTabUrl)
     return { action: 'deny' }
   })
+
+  // The guest browses the public web freely, but a hostile page or redirect must
+  // not be able to drive it to file:/chrome:/data: and render local or privileged
+  // content inside the guest. Restrict its own navigations to web schemes.
+  const blockNonWebScheme = (event: Electron.Event, url: string) => {
+    if (!isAllowedBrowserNavigationUrl(url)) event.preventDefault()
+  }
+  contents.on('will-navigate', blockNonWebScheme)
+  contents.on('will-redirect', blockNonWebScheme)
 }

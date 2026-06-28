@@ -7,16 +7,19 @@ import {
   updateToolCall,
   findToolCall,
   setMessageContent,
+  setMessageCommandSummary,
   setThreadStatus,
   setThreadTitle,
   addUsageDelta,
   recordContextTrim,
   updateContextSnapshot,
   setThreadTodos,
+  setThreadReview,
   getThreadById,
 } from '@shared/store/thread-helpers.ts'
 import { syncThreadGitBranchAfterShell } from './sync-thread-branch-after-shell.ts'
 import { shellCommandMayChangeBranch } from '@shared/git/sync-thread-branch.ts'
+import { shellCommandsFromToolCalls } from '@shared/tools/tool-display.ts'
 import {
   initSubagent,
   appendSubagentText,
@@ -27,6 +30,23 @@ import {
 import { planAgentTextChunk } from '@shared/agent/agent-text-chunk.ts'
 import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY } from '../agent-activity.ts'
 import { drainMessageQueue } from './message-queue.ts'
+import { usageRecordFromAgentDelta } from '@shared/usage/usage-record-input.ts'
+import type { UsageDelta } from '@shared/types'
+
+function recordUsageToLedger(
+  api: ApiClient,
+  store: AppStore,
+  threadId: string,
+  delta: UsageDelta,
+): void {
+  if (!delta.inputTokens && !delta.outputTokens) return
+  const { activeProjectId } = store.getState()
+  void api.usage
+    .record(usageRecordFromAgentDelta(threadId, delta, activeProjectId))
+    .catch((err: unknown) => {
+      console.error('[usage] failed to record usage event:', err)
+    })
+}
 
 export function startAgentController(store: AppStore, api: ApiClient): () => void {
   // Per-thread streaming state: the message currently accumulating text, and
@@ -35,12 +55,26 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
   // one so the final answer renders BELOW the tool cards rather than above them.
   const state = new Map<
     string,
-    { msgId: string | null; toolSinceText: boolean; writing: boolean }
+    {
+      msgId: string | null
+      toolSinceText: boolean
+      writing: boolean
+      // Which message we've already requested a command summary for, and at what
+      // shell-command count, so we re-summarize only when more commands arrive.
+      summaryMsgId: string | null
+      summaryCount: number
+    }
   >()
   const get = (tid: string) => {
     let st = state.get(tid)
     if (!st) {
-      st = { msgId: null, toolSinceText: false, writing: false }
+      st = {
+        msgId: null,
+        toolSinceText: false,
+        writing: false,
+        summaryMsgId: null,
+        summaryCount: 0,
+      }
       state.set(tid, st)
     }
     return st
@@ -110,6 +144,10 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
             }
             tryOpenFileFromResult(store, chunk.result)
           }
+          // Tools are now executing — the model is idle. Kick off a small-model
+          // rollup summary for this message's shell batch so the group header is
+          // ready by the time the commands finish.
+          maybeSummarizeCommands(store, api, threadId, st)
         }
         st.writing = false
         activity(threadId)
@@ -131,7 +169,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         break
       }
       case 'usage': {
-        addUsageDelta(store, threadId, {
+        const delta: UsageDelta = {
           model: chunk.model,
           inputTokens: chunk.inputTokens,
           outputTokens: chunk.outputTokens,
@@ -141,7 +179,9 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           ...(chunk.cacheCreationTokens !== undefined
             ? { cacheCreationTokens: chunk.cacheCreationTokens }
             : {}),
-        })
+        }
+        recordUsageToLedger(api, store, threadId, delta)
+        addUsageDelta(store, threadId, delta)
         break
       }
       case 'context_pressure': {
@@ -221,6 +261,11 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         activity(threadId)
         break
       }
+      case 'post_turn_review': {
+        setThreadReview(store, threadId, { status: chunk.status, summary: chunk.summary })
+        if (chunk.status === 'running') store.emit('agent_activity', threadId, 'Reviewing changes…')
+        break
+      }
       case 'done': {
         if (st.msgId) store.emit('message_done', st.msgId)
         state.delete(threadId)
@@ -235,6 +280,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
 
   // Legacy path: some callers may still emit agent:usage directly.
   api.agent.onUsage((threadId, usage) => {
+    recordUsageToLedger(api, store, threadId, usage)
     addUsageDelta(store, threadId, usage)
   })
 
@@ -269,6 +315,45 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
   })
 
   return unsub
+}
+
+type AgentState = {
+  msgId: string | null
+  summaryMsgId: string | null
+  summaryCount: number
+}
+
+// Generate (or regenerate) a rolled-up label for the current message's batch of
+// shell commands using the small-tasks model. Fired while tools execute so the
+// summary lands during the model's idle window; guarded so each message is only
+// summarized once per distinct command count. Silently no-ops for <2 commands
+// (nothing to roll up) or when no small-tasks model is configured.
+function maybeSummarizeCommands(
+  store: AppStore,
+  api: ApiClient,
+  threadId: string,
+  st: AgentState,
+): void {
+  const msgId = st.msgId
+  if (!msgId) return
+  const msg = getThreadById(store, threadId)?.messages.find((m) => m.id === msgId)
+  if (!msg) return
+
+  const commands = shellCommandsFromToolCalls(msg.toolCalls)
+  if (commands.length < 2) return
+  if (st.summaryMsgId === msgId && st.summaryCount === commands.length) return
+  st.summaryMsgId = msgId
+  st.summaryCount = commands.length
+
+  void (async () => {
+    let summary: string | null
+    try {
+      summary = await api.agent.suggestCommandSummary(commands)
+    } catch {
+      summary = null
+    }
+    if (summary?.trim()) setMessageCommandSummary(store, msgId, summary.trim())
+  })()
 }
 
 // Threads we've already attempted to auto-name, to avoid repeat calls.

@@ -9,7 +9,7 @@ const bundledCodesearchName = process.platform === 'win32' ? 'codesearch.exe' : 
 const sharedAlias = { '@shared': resolve('./src/shared') }
 
 function fetchBundledCursorSkillsForBuild(): void {
-  if (process.env.SKIP_BUNDLED_CURSOR_SKILLS_FETCH === '1') return
+  if (process.env['SKIP_BUNDLED_CURSOR_SKILLS_FETCH'] === '1') return
   try {
     execSync('npx tsx scripts/fetch-bundled-cursor-skills.mts', { stdio: 'inherit' })
   } catch {
@@ -22,7 +22,7 @@ function fetchBundledCursorSkillsForBuild(): void {
 // apps. The `define` turns the guard into `if (false)`; `minifySyntax` is what
 // actually dead-code-eliminates that dead branch (esbuild keeps it otherwise).
 // Non-release builds keep the directives for dev/e2e and stay un-minified.
-const isRelease = process.env.COPSE_RELEASE === '1'
+const isRelease = process.env['COPSE_RELEASE'] === '1'
 const define = { __COPSE_TEST_DIRECTIVES__: String(!isRelease) }
 
 const nodeOpts = {

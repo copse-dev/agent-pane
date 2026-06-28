@@ -2,11 +2,13 @@ import * as fsp from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { ipcMain } from 'electron'
-import { resolveWorkspacePath } from './workspace.ts'
+import { assertWorkspaceWriteTarget, resolveWorkspacePath } from './workspace.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import { buildIndex } from './file-index.ts'
 import { getGitStatus } from './git-service.ts'
 import { assertMainFrameSender } from '../ipc/ipc-guards.ts'
+import { isAgentRunReadonly } from './agent-run-readonly.ts'
+import { READONLY_MODE_BLOCK_MESSAGE } from '@shared/tools/readonly-tools.ts'
 
 export type DiffOp = 'write' | 'delete' | 'rename' | 'mkdir'
 
@@ -321,6 +323,7 @@ async function applyWrite(entry: QueueEntry): Promise<ApplyResult> {
     return { status: 'conflict', current }
   }
   try {
+    assertWorkspaceWriteTarget(absPath)
     await fsp.mkdir(dirname(absPath), { recursive: true })
     await fsp.writeFile(absPath, entry.after, 'utf-8')
   } catch (err) {
@@ -370,6 +373,7 @@ async function applyRename(entry: QueueEntry): Promise<ApplyResult> {
     /* destination is free */
   }
   try {
+    assertWorkspaceWriteTarget(toAbs)
     await fsp.mkdir(dirname(toAbs), { recursive: true })
     await fsp.rename(fromAbs, toAbs)
   } catch (err) {
@@ -381,6 +385,7 @@ async function applyRename(entry: QueueEntry): Promise<ApplyResult> {
 async function applyMkdir(entry: QueueEntry): Promise<ApplyResult> {
   const absPath = resolveWorkspacePath(entry.path)
   try {
+    assertWorkspaceWriteTarget(absPath)
     await fsp.mkdir(absPath, { recursive: true })
   } catch (err) {
     return { status: 'error', error: err instanceof Error ? err.message : String(err) }
@@ -502,6 +507,7 @@ export function stageDiff(
   after: string,
   language: string,
 ): Promise<string> {
+  if (isAgentRunReadonly()) return Promise.resolve(READONLY_MODE_BLOCK_MESSAGE)
   const hadPending = queue.some((e) => e.path === path)
   upsertStagedDiffEntry(queue, { path, before, after, language, op: 'write' })
   const entry = queue.find((e) => e.path === path)!
@@ -522,6 +528,7 @@ export async function applyOrStageDiff(
   after: string,
   language: string,
 ): Promise<string> {
+  if (isAgentRunReadonly()) return READONLY_MODE_BLOCK_MESSAGE
   const direct = await canApplyDirectly(path)
   if (!direct.ok) {
     const staged = await stageDiff(path, before, after, language)
@@ -560,6 +567,7 @@ export function stageFileOp(entry: {
   language: string
   renameTo?: string
 }): Promise<string> {
+  if (isAgentRunReadonly()) return Promise.resolve(READONLY_MODE_BLOCK_MESSAGE)
   const existingIdx = queue.findIndex((e) => e.path === entry.path)
   const queued: QueueEntry = {
     path: entry.path,
