@@ -5,6 +5,8 @@ export interface SkillSummary {
   description: string
   source: SkillSource
   skillPath: string
+  /** Unique external hostnames the skill's SKILL.md references (http/https). */
+  externalLinks: string[]
 }
 
 export interface SkillMetadata extends SkillSummary {

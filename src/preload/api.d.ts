@@ -11,8 +11,13 @@ import type {
 import type { McpServerStatus, CuratedMcpServerStatus } from '@shared/types/mcp.ts'
 import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
+import type {
+  ExtraProvider,
+  ExtraProviderModel,
+  StoredExtraProvider,
+} from '@shared/llm/extra-providers.ts'
 
-/** Cloud providers with a user-supplied API key (everything but local LM Studio). */
+/** Fixed cloud providers with a user-supplied API key (presets/customs use slugs). */
 export type ApiKeyProvider =
   | 'anthropic'
   | 'openai'
@@ -21,6 +26,8 @@ export type ApiKeyProvider =
   | 'mistral'
   | 'gemini'
   | 'deepseek'
+
+export type { ExtraProvider, ExtraProviderModel, StoredExtraProvider }
 
 export interface ApiClient {
   workspace: {
@@ -166,28 +173,48 @@ export interface ApiClient {
       webAllowedOrigins: string[]
       webAllowUserApproval: boolean
     }) => Promise<void>
-    getKey: (provider: ApiKeyProvider | 'lmstudio') => Promise<boolean>
-    setKey: (provider: ApiKeyProvider | 'lmstudio', key: string) => Promise<void>
-    availableProviders: () => Promise<{
-      anthropic: boolean
-      openai: boolean
-      cursor: boolean
-      openrouter: boolean
-      mistral: boolean
-      gemini: boolean
-      deepseek: boolean
-    }>
+    getKey: (provider: string) => Promise<boolean>
+    setKey: (provider: string, key: string) => Promise<void>
+    /** Availability keyed by provider slug: fixed cloud providers + every resolved extra provider. */
+    availableProviders: () => Promise<Record<string, boolean>>
     validateKey: (
-      provider: ApiKeyProvider,
+      provider: string,
       key: string,
     ) => Promise<{ ok: boolean; error?: string; formatOk?: boolean }>
+    /** Effective extra-provider list: shipped presets merged with stored overrides/customs. */
+    extraProviders: () => Promise<ExtraProvider[]>
+    /** Insert/replace a preset override or custom provider; returns the resolved list. */
+    saveExtraProvider: (
+      record: Omit<StoredExtraProvider, 'slug'> & { slug?: string },
+    ) => Promise<ExtraProvider[]>
+    /** Remove a custom provider (or revert a preset override); returns the resolved list. */
+    deleteExtraProvider: (slug: string) => Promise<ExtraProvider[]>
+    /** List models from an OpenAI-compatible `/models` endpoint for the add/edit form. */
+    fetchProviderModels: (
+      baseUrl: string,
+      apiKey?: string,
+    ) => Promise<{
+      ok: boolean
+      models: { id: string; contextLength: number | null }[]
+      error?: string
+    }>
+    /**
+     * Fetch the Hugging Face router catalogue and persist priced, provider-pinned
+     * models onto the `huggingface` provider. Uses the stored/env token when none
+     * is passed. Runs automatically when the HF token is saved.
+     */
+    refreshHuggingFaceModels: (
+      apiKey?: string,
+    ) => Promise<{ ok: boolean; count: number; error?: string }>
   }
   appIcon: {
     apply: () => Promise<void>
   }
   index: {
     query: (pattern: string) => Promise<string[]>
-    resolveFileReferences: (candidates: string[]) => Promise<{ candidate: string; path: string }[]>
+    resolveFileReferences: (
+      candidates: string[],
+    ) => Promise<{ candidate: string; path: string; kind: 'file' | 'directory' }[]>
   }
   skills: {
     list: () => Promise<SkillSummary[]>

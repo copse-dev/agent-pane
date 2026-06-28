@@ -190,11 +190,21 @@ jobs:
     # OOM that most of the shard quarantines exist to work around. The nightly
     # `schedule` runs the full suite on GitHub-hosted ubuntu-latest.
     #
-    # The label set requires BOTH `self-hosted` AND `copse-e2e`, so jobs land
-    # only on the Linux Docker runners and never on the macOS `self-hosted`
-    # boxes (which carry `macOS`/`ARM64` but not `copse-e2e`). NOTE: requires at
-    # least one registered `copse-e2e` runner or PR/push e2e will queue forever.
-    runs-on: ${{ github.event_name == 'schedule' && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "copse-e2e"]') }}
+    # Runner is picked by TRUST and fails closed. The label set requires BOTH
+    # `self-hosted` AND `copse-e2e`, so trusted push/same-repo PR jobs land only
+    # on the Linux Docker runners (never the macOS `self-hosted` boxes, which
+    # lack `copse-e2e`). Nightly `schedule` uses GitHub-hosted ubuntu-latest.
+    # Fork PRs are skipped by the `if` guard above and must never run on any
+    # runner — there is no hosted fallback; if that guard were ever removed, the
+    # expression below evaluates to a falsy value (not a runner label) so the
+    # job fails closed instead of dispatching untrusted code anywhere. NOTE:
+    # requires a registered `copse-e2e` runner or PR/push e2e queues forever.
+    runs-on: >-
+      ${{ github.event_name == 'schedule' && fromJSON('["ubuntu-latest"]') ||
+          ((github.event_name == 'push' ||
+            (github.event_name == 'pull_request' &&
+             github.event.pull_request.head.repo.full_name == github.repository))
+           && fromJSON('["self-hosted", "copse-e2e"]')) }}
     # Split the seeded e2e suite (see wdio.ci.conf.ts) into parallel shards so the
     # whole gate finishes well inside the runner window. Each shard runs a disjoint
     # slice of specs via wdio's `--shard current/total`. The shared `dist` artifact
@@ -380,6 +390,28 @@ jobs:
           if compgen -G "artifacts/tests/e2e/screenshots/*" > /dev/null; then
             cp -f artifacts/tests/e2e/screenshots/* tests/e2e/screenshots/
           fi
+      # Drop sub-threshold render noise before staging. A re-render of an unchanged
+      # screen still wobbles a few pixels (font hinting / anti-alias), and committing
+      # that churns the reference shots for nothing. filter-screenshots.mts pixel-
+      # compares each changed PNG against its committed baseline and reverts the ones
+      # whose difference is below the noise threshold (clearly-different shots stay).
+      # The reverted "near-identical" shots are reported back so the comment step can
+      # offer them for manual review. Needs Node + pixelmatch/pngjs only — install
+      # just those two into node_modules (an isolated, scripts-off install, ~0.3s)
+      # rather than a full `npm ci`; this job otherwise needs no dependency tree.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Filter sub-threshold screenshot noise
+        id: filter
+        env:
+          UPDATE_SCREENSHOTS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'update-screenshots') }}
+        run: |
+          npm install --no-save --no-audit --no-fund --ignore-scripts \
+            --prefix /tmp/ssfilter pixelmatch pngjs
+          mkdir -p node_modules
+          cp -r /tmp/ssfilter/node_modules/. node_modules/
+          node scripts/filter-screenshots.mts
       - name: Detect screenshot changes
         id: diff
         run: |
@@ -410,31 +442,53 @@ jobs:
           git push
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Comment on PR with updated screenshots
-        if: steps.diff.outputs.changed == 'true'
+        # Post when real shots were committed OR when shots were ignored as noise —
+        # the ignored list is offered for manual acceptance, so it's worth surfacing
+        # even on a run that committed nothing.
+        if: steps.diff.outputs.changed == 'true' || steps.filter.outputs.ignored-count != '0'
         uses: actions/github-script@v7
         env:
           CHANGED_FILES: ${{ steps.diff.outputs.files }}
           COMMIT_SHA: ${{ steps.commit.outputs.sha }}
+          IGNORED_JSON: ${{ steps.filter.outputs.ignored-json }}
         with:
           script: |
             const marker = '<!-- copse-e2e-screenshots -->';
             const sha = process.env.COMMIT_SHA || context.sha;
             const repo = context.repo.owner + '/' + context.repo.repo;
-            const files = process.env.CHANGED_FILES.split('\n').filter(Boolean);
-            const lines = files.map((path) => {
-              const name = path.split('/').pop();
-              const url = `https://github.com/${repo}/blob/${sha}/${path}`;
-              return `- [${name}](${url}) — ![${name}](${url}?raw=1)`;
-            });
-            const body = `${marker}
-            ## E2E screenshot updates
-
-            This commit refreshed ${files.length} reference screenshot(s) from the CI e2e run:
-
-            ${lines.join('\n')}
-
-            These PNGs live under \`tests/e2e/screenshots/\` for human visual review; CI asserts DOM structure, not pixel diffs.
-            `;
+            const files = (process.env.CHANGED_FILES || '').split('\n').filter(Boolean);
+            const ignored = JSON.parse(process.env.IGNORED_JSON || '[]');
+            const sections = [];
+            if (files.length) {
+              const lines = files.map((path) => {
+                const name = path.split('/').pop();
+                const url = `https://github.com/${repo}/blob/${sha}/${path}`;
+                return `- [${name}](${url}) — ![${name}](${url}?raw=1)`;
+              });
+              sections.push(
+                `### Refreshed (${files.length})\n\n` +
+                  `Clearly-different shots re-rendered by the CI e2e run and committed:\n\n` +
+                  lines.join('\n'),
+              );
+            }
+            if (ignored.length) {
+              const lines = ignored.map((s) => `- \`${s.name}\` — ${s.diffPixels} px (${s.ratioPct})`);
+              sections.push(
+                `### Ignored as render noise (${ignored.length})\n\n` +
+                  `These re-rendered below the variance threshold (font hinting / anti-alias ` +
+                  `wobble) and were **not** committed. To accept them anyway, add the ` +
+                  `\`update-screenshots\` label or commit the rendered PNGs by hand:\n\n` +
+                  lines.join('\n'),
+              );
+            }
+            const body = [
+              marker,
+              '## E2E screenshot updates',
+              '',
+              sections.join('\n\n'),
+              '',
+              'These PNGs live under `tests/e2e/screenshots/` for human visual review; CI asserts DOM structure, not pixel diffs.',
+            ].join('\n');
 
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
