@@ -44,11 +44,12 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
     }
   }
 
-  async function revealPath(path: string): Promise<void> {
+  async function revealPath(path: string, isDirectory = false): Promise<void> {
     await rootLoad
     const segments = path.split('/').filter(Boolean)
     let dir = ''
-    for (let i = 0; i < segments.length - 1; i++) {
+    const expandThrough = isDirectory ? segments.length : segments.length - 1
+    for (let i = 0; i < expandThrough; i++) {
       dir = join(dir, segments[i]!)
       const controller = dirByPath.get(dir)
       if (!controller) return
@@ -168,6 +169,9 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
     store.on('panel_changed', () => {
       const path = store.getState().openFile?.path
       if (path) void revealPath(path)
+    }),
+    store.on('explorer_reveal', (path) => {
+      void revealPath(path, true)
     }),
   ]
 

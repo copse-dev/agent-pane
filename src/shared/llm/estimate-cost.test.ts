@@ -31,4 +31,40 @@ describe('estimateUsageCost', () => {
       '~$3.00',
     )
   })
+
+  it('prices extra-provider models from the supplied rate map (e.g. HF)', () => {
+    const cost = estimateUsageCost(
+      {
+        'huggingface:zai-org/GLM-5.2:together': { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+      },
+      {
+        'huggingface:zai-org/GLM-5.2:together': { inputPricePerMTok: 0.6, outputPricePerMTok: 2.2 },
+      },
+    )
+    assert.equal(cost, '~$2.80')
+  })
+
+  it('treats an extra-provider model with no known rate as unpriced, not free', () => {
+    assert.equal(
+      estimateUsageCost({
+        'huggingface:org/model:together': { inputTokens: 1_000_000, outputTokens: 0 },
+      }),
+      '',
+    )
+  })
+
+  it('passes the rate map through formatThreadUsageCost byModel breakdown', () => {
+    assert.equal(
+      formatThreadUsageCost(
+        {
+          inputTokens: 1_000_000,
+          outputTokens: 0,
+          byModel: { 'huggingface:m:p': { inputTokens: 1_000_000, outputTokens: 0 } },
+        },
+        'claude-sonnet-4-6',
+        { 'huggingface:m:p': { inputPricePerMTok: 10, outputPricePerMTok: 20 } },
+      ),
+      '~$10.00',
+    )
+  })
 })

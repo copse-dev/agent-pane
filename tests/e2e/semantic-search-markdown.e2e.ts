@@ -36,7 +36,7 @@ describe('semantic search explore markdown', () => {
           code.innerHTML.includes('<em>'),
         ),
         hasItalicIs: root.innerHTML.includes('<em>is</em>'),
-        hasSearchRoutingHeading: [...root.querySelectorAll('h4')].some((h) =>
+        hasSearchRoutingHeading: [...root.querySelectorAll('h2')].some((h) =>
           h.textContent?.includes('Search Routing Summary'),
         ),
         hasClassificationHeading: [...root.querySelectorAll('h3')].some((h) =>

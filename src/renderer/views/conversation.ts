@@ -199,7 +199,11 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
   card.append(timeline)
 
   if (tc.result && status === 'done') {
-    card.append(el('div', { class: 'tool-result subagent-parent-result' }, tc.result))
+    const resultEl = el('div', {
+      class: 'subagent-parent-result subagent-message subagent-message-assistant message-text',
+    })
+    setAssistantMarkdown(resultEl, tc.result, false, api)
+    card.append(resultEl)
   }
 
   return card

@@ -15,10 +15,9 @@ import {
   isIndexQueryPattern,
   assertMainFrameSender,
   assertStorageKey,
-  cloudProviderSchema,
   IpcValidationError,
+  keyProviderSchema,
   parseIpcArgs,
-  providerSchema,
   zNonEmptyString,
   zPathString,
 } from './ipc-guards.ts'
@@ -38,9 +37,19 @@ import {
 } from '../services/settings.ts'
 import {
   isRendererWritableSettingKey,
+  isSecretSettingKey,
   parseRendererWritableSetting,
   securitySettingsSchema,
 } from '../services/settings-writable.ts'
+import { storedExtraProviderSchema } from '../services/settings-schema.ts'
+import {
+  getResolvedExtraProviders,
+  saveExtraProvider,
+  deleteExtraProvider,
+  refreshHuggingFaceModels,
+  HUGGINGFACE_SLUG,
+} from '../services/extra-providers-store.ts'
+import { fetchOpenAiCompatibleModels } from '../services/provider-models.ts'
 import { storageGet, storageSet } from '../services/storage.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills-registry.ts'
@@ -177,8 +186,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return resolveFileReferences(candidates)
   })
 
-  ipcMain.handle('settings:get', (_e, key: unknown) => {
+  ipcMain.handle('settings:get', (event, key: unknown) => {
+    assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(128), [key])
+    // Never hand stored API-key records back to the renderer — it only needs the
+    // boolean `settings:getKey`. Reading `apiKey.*` here would expose the key
+    // (base64 plaintext when the OS keyring is unavailable).
+    if (isSecretSettingKey(k)) {
+      throw new IpcValidationError(`Setting key not readable from renderer: ${k}`)
+    }
     return getSetting(k, null)
   })
   ipcMain.handle('settings:set', async (event, key: unknown, value: unknown) => {
@@ -199,29 +215,59 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     await Promise.all(Object.entries(prefs).map(([k, v]) => setSetting(k, v)))
   })
   ipcMain.handle('settings:getKey', (_e, provider: unknown) => {
-    const p = parseIpcArgs(providerSchema, [provider])
+    const p = parseIpcArgs(keyProviderSchema, [provider])
     return hasApiKey(p)
   })
   ipcMain.handle('settings:setKey', (event, provider: unknown, key: unknown) => {
     assertMainFrameSender(event, win)
-    const p = parseIpcArgs(providerSchema, [provider])
+    const p = parseIpcArgs(keyProviderSchema, [provider])
     const apiKey = parseIpcArgs(z.string().max(8192), [key])
     setApiKey(p, apiKey)
+    // Saving an HF token auto-populates its priced, provider-pinned model list so
+    // the picker and cost estimate work without a manual fetch (fire-and-forget).
+    if (p === HUGGINGFACE_SLUG && apiKey.trim()) {
+      void refreshHuggingFaceModels(apiKey).catch(() => {})
+    }
   })
-  ipcMain.handle('settings:availableProviders', () => ({
-    anthropic: isProviderAvailable('anthropic'),
-    openai: isProviderAvailable('openai'),
-    cursor: isProviderAvailable('cursor'),
-    openrouter: isProviderAvailable('openrouter'),
-    mistral: isProviderAvailable('mistral'),
-    gemini: isProviderAvailable('gemini'),
-    deepseek: isProviderAvailable('deepseek'),
-  }))
+  ipcMain.handle('settings:availableProviders', () => {
+    const available: Record<string, boolean> = {
+      anthropic: isProviderAvailable('anthropic'),
+      openai: isProviderAvailable('openai'),
+      cursor: isProviderAvailable('cursor'),
+      openrouter: isProviderAvailable('openrouter'),
+    }
+    for (const provider of getResolvedExtraProviders()) {
+      available[provider.id] = isProviderAvailable(provider.id)
+    }
+    return available
+  })
   ipcMain.handle('settings:validateKey', async (event, provider: unknown, key: unknown) => {
     assertMainFrameSender(event, win)
-    const p = parseIpcArgs(cloudProviderSchema, [provider])
+    const p = parseIpcArgs(keyProviderSchema, [provider])
     const apiKey = parseIpcArgs(z.string().max(8192), [key])
     return validateApiKey(p, apiKey)
+  })
+  ipcMain.handle('settings:extraProviders', () => getResolvedExtraProviders())
+  ipcMain.handle('settings:saveExtraProvider', async (event, record: unknown) => {
+    assertMainFrameSender(event, win)
+    const parsed = parseIpcArgs(storedExtraProviderSchema.partial({ slug: true }), [record])
+    return saveExtraProvider(parsed as Parameters<typeof saveExtraProvider>[0])
+  })
+  ipcMain.handle('settings:deleteExtraProvider', async (event, slug: unknown) => {
+    assertMainFrameSender(event, win)
+    const s = parseIpcArgs(keyProviderSchema, [slug])
+    return deleteExtraProvider(s)
+  })
+  ipcMain.handle('settings:fetchProviderModels', async (event, baseUrl: unknown, key: unknown) => {
+    assertMainFrameSender(event, win)
+    const url = parseIpcArgs(z.string().max(2048), [baseUrl])
+    const apiKey = parseIpcArgs(z.string().max(8192).optional(), [key])
+    return fetchOpenAiCompatibleModels(url, apiKey)
+  })
+  ipcMain.handle('settings:refreshHuggingFaceModels', async (event, key: unknown) => {
+    assertMainFrameSender(event, win)
+    const apiKey = parseIpcArgs(z.string().max(8192).optional(), [key])
+    return refreshHuggingFaceModels(apiKey)
   })
   ipcMain.handle('app-icon:apply', () => {
     const mainWin = getMainWindow()

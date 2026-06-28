@@ -5,14 +5,15 @@ import {
   createExtraCloudProvider,
 } from '@shared/llm/create-provider.ts'
 import { isOpenRouterModel, openRouterModelId } from '@shared/llm/openrouter.ts'
-import {
-  extraProviderForModel,
-  extraProviderModelId,
-  type ExtraProviderId,
-} from '@shared/llm/extra-providers.ts'
+import { extraProviderForModel, extraProviderModelId } from '@shared/llm/extra-providers.ts'
+import { getResolvedExtraProviders } from './extra-providers-store.ts'
 import type { LLMProvider } from '@shared/types'
-import { DEFAULT_LM_STUDIO_URL, LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
-import { getSetting, getSettingTrimmed, getApiKey, getLmStudioApiKey } from './settings.ts'
+import {
+  DEFAULT_LM_STUDIO_URL,
+  LM_STUDIO_MODEL_IDS,
+  resolveLocalServerUrl,
+} from '@shared/lm-studio-defaults.ts'
+import { getSetting, getSettingTrimmed, getLmStudioApiKey, resolveApiKey } from './settings.ts'
 import { resolveContextWindow } from './resolve-context-window.ts'
 import {
   fetchLmStudioModelsCached,
@@ -22,17 +23,14 @@ import { isLocalModel } from '@shared/llm/estimate-cost.ts'
 
 export { DEFAULT_LM_STUDIO_URL }
 
-function storedOrEnvApiKey(
-  provider: 'anthropic' | 'openai' | 'openrouter' | ExtraProviderId,
-): string | null {
-  if (provider === 'anthropic')
-    return getApiKey('anthropic') ?? process.env.ANTHROPIC_API_KEY ?? null
-  if (provider === 'openrouter')
-    return getApiKey('openrouter') ?? process.env.OPENROUTER_API_KEY ?? null
-  if (provider === 'mistral') return getApiKey('mistral') ?? process.env.MISTRAL_API_KEY ?? null
-  if (provider === 'gemini') return getApiKey('gemini') ?? process.env.GEMINI_API_KEY ?? null
-  if (provider === 'deepseek') return getApiKey('deepseek') ?? process.env.DEEPSEEK_API_KEY ?? null
-  return getApiKey('openai') ?? process.env.OPENAI_API_KEY ?? null
+function localServerUrl(): string {
+  return resolveLocalServerUrl(getSetting<string>('localServerUrl', ''), process.env)
+}
+
+// Stored key with env-var fallback for any provider slug (fixed cloud providers,
+// built-in presets, or user customs — the latter resolve to their stored key only).
+function storedOrEnvApiKey(provider: string): string | null {
+  return resolveApiKey(provider)
 }
 
 export function isLocalChatModel(model: string): boolean {
@@ -78,7 +76,7 @@ export async function buildSubagentRoute(parentModel: string): Promise<SubagentR
   if (isLocalChatModel(parentModel)) return null
   if (!getSetting<boolean>('localSubagentsEnabled', true)) return null
 
-  const url = getSetting<string>('localServerUrl', DEFAULT_LM_STUDIO_URL)
+  const url = localServerUrl()
   const modelId = await resolveSubagentLocalModelId(url)
   if (!modelId) return null
 
@@ -120,7 +118,7 @@ export async function buildReviewRoute(): Promise<SubagentRoute | null> {
 export async function buildProvider(model: string): Promise<LLMProvider> {
   if (process.env.COPSE_PANEL_MOCK_LLM === '1') return createProvider(model)
   if (model === 'lm-studio' || model.startsWith('lmstudio:')) {
-    const url = getSetting<string>('localServerUrl', DEFAULT_LM_STUDIO_URL)
+    const url = localServerUrl()
     let id = model.startsWith('lmstudio:')
       ? model.slice('lmstudio:'.length)
       : getSetting<string>('localDefaultModel', LM_STUDIO_MODEL_IDS.chat)
@@ -141,7 +139,7 @@ export async function buildProvider(model: string): Promise<LLMProvider> {
     }
     return createOpenRouterProvider(openRouterModelId(model), apiKey)
   }
-  const extra = extraProviderForModel(model)
+  const extra = extraProviderForModel(getResolvedExtraProviders(), model)
   if (extra) {
     const apiKey = storedOrEnvApiKey(extra.id)
     if (!apiKey) {
@@ -169,7 +167,7 @@ export async function buildProvider(model: string): Promise<LLMProvider> {
 
 // List the model ids an LM Studio server currently exposes (using saved URL/key).
 export async function listLmStudioModels(): Promise<string[]> {
-  const url = getSetting<string>('localServerUrl', DEFAULT_LM_STUDIO_URL)
+  const url = localServerUrl()
   const r = await fetchLmStudioModelsCached(url)
   return r.ok ? r.models.map((m) => m.id) : []
 }
