@@ -97,11 +97,40 @@
   cursor: progress;
 }
 .prompt-input {
-  /* leave room for the absolutely-positioned Send button */
+  /* leave room for the absolutely-positioned Send button (right) and the
+     paperclip attach button (left) */
   padding-right: 84px;
+  padding-left: 44px;
 }
 .prompt-input.with-stop {
   padding-right: 148px;
+}
+.attach-btn {
+  position: absolute;
+  left: 8px;
+  bottom: var(--spacing-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+.attach-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.attach-btn-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .stop-btn {
   position: absolute;
