@@ -287,8 +287,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
   api.diff.onShowDiff((path, before, after, language) => {
     store.setState({
       activeDiff: { path, before, after, language },
-      panelTab: 'diff',
-      rightPanelMode: 'explorer',
+      rightPanelMode: 'changes',
       filesPaneOpen: true,
     })
     store.emit('panel_changed')
@@ -296,17 +295,16 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     store.emit('files_pane_changed')
   })
 
-  // Diff IPC → store: `agent:show_diff` sets activeDiff + panel tab; `diff:queued`
-  // updates stagedDiffs (path/language only). The context panel caches full payloads
-  // from show_diff for multi-file switching; approve/reject use diff:* IPC handlers.
+  // Diff IPC → store: `agent:show_diff` sets activeDiff; `diff:queued` updates
+  // stagedDiffs (path/language only). The Changes panel caches full payloads from
+  // show_diff for multi-file switching; approve/reject use diff:* IPC handlers.
   api.diff.onQueued((entries) => {
     const { activeDiff } = store.getState()
     const stillQueued =
       activeDiff && entries.some((e) => e.path === activeDiff.path) ? activeDiff : null
     store.setState({
       stagedDiffs: entries,
-      panelTab: entries.length > 0 ? 'diff' : store.getState().panelTab,
-      rightPanelMode: entries.length > 0 ? 'explorer' : store.getState().rightPanelMode,
+      rightPanelMode: entries.length > 0 ? 'changes' : store.getState().rightPanelMode,
       filesPaneOpen: entries.length > 0 ? true : store.getState().filesPaneOpen,
       activeDiff: entries.length === 0 ? null : stillQueued,
     })

@@ -55,6 +55,23 @@
   border-color: var(--accent);
   color: var(--text-primary);
 }
+.titlebar-text-btn.has-pending:not(.active) {
+  color: var(--text-secondary);
+}
+.titlebar-btn-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 14px;
+}
 .titlebar-panel-controls {
   display: inline-flex;
   align-items: center;
