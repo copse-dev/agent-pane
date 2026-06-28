@@ -7,6 +7,7 @@ import {
 } from '@shared/follow-ups/presets.ts'
 import { resolveSmallTasksProvider, resolveSmallTasksModelId } from './small-tasks-provider.ts'
 import { getSetting } from './settings.ts'
+import { CI_INVESTIGATOR_ENABLED_SETTING } from './ci-investigator-service.ts'
 import { getPrWorkspaceContext } from './pr-context-service.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
 import { completeTextWithUsage } from './llm-complete-text.ts'
@@ -96,7 +97,7 @@ function buildDeterministicFollowUps(
   }
 
   if (ctx.hasOpenPr && ctx.hasCiFailures) {
-    const ci = buildDebugCiSuggestion()
+    const ci = buildDebugCiSuggestion(getSetting<boolean>(CI_INVESTIGATOR_ENABLED_SETTING, false))
     out.push({ id: ci.id, label: ci.label, prompt: ci.prompt })
   }
 

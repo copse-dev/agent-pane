@@ -75,6 +75,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // Experimental features, opt-in and off by default. See the experimental
   // section in Settings.
   mcpUiArtefactsEnabled: z.boolean(),
+  ciInvestigatorEnabled: z.boolean(),
   customInstructions: z.string().max(8192),
   onboardingCompleted: z.boolean(),
 } as const satisfies Record<string, z.ZodType>

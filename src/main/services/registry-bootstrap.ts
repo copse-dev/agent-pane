@@ -6,7 +6,8 @@ import {
   createSemanticSearchTool,
 } from '../tools/search-codebase-tool.ts'
 import { gitStatusTool, gitDiffTool, gitLogTool, gitCommitTool } from '../tools/git-tools.ts'
-import { ghPrListTool, ghPrViewTool } from '../tools/gh-tools.ts'
+import { ghPrListTool, ghPrViewTool, ghRunListTool, ghRunViewTool } from '../tools/gh-tools.ts'
+import { investigateCiTool } from '../tools/investigate-ci-tool.ts'
 import {
   getCiStatusTool,
   waitForCiChecksTool,
@@ -28,6 +29,7 @@ import {
   BROWSER_TOOLS_ENABLED_SETTING,
   BROWSER_TOOLS_DEFAULT_ENABLED,
 } from './browser/browser-origin-policy.ts'
+import { CI_INVESTIGATOR_ENABLED_SETTING } from './ci-investigator-service.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
@@ -55,6 +57,14 @@ export function createRegistry(): ToolRegistry {
   registry.register(getCiFailureLogsTool)
   registry.register(runShellTool)
   registry.register(exploreTool)
+  // Experimental CI investigator subagent (off by default). Gates its entry tool
+  // and the deep-log gh_run_* helpers it relies on so the feature is fully inert
+  // unless explicitly opted into via the experimental setting.
+  if (getSetting<boolean>(CI_INVESTIGATOR_ENABLED_SETTING, false)) {
+    registry.register(ghRunListTool)
+    registry.register(ghRunViewTool)
+    registry.register(investigateCiTool)
+  }
   registry.register(webSearchTool)
   registry.register(fetchUrlTool)
   registry.register(updateTodosTool)

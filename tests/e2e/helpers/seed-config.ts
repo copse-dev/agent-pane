@@ -725,6 +725,91 @@ export function seedSubagentFixture(workspaceRoot: string): void {
   )
 }
 
+/** Thread with a completed CI investigator subagent tool card for visual validation. */
+export function seedCiInvestigatorFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-ci-investigator-project'
+  const threadId = 'e2e-ci-investigator-thread'
+  const summary = [
+    '**Failing check:** `CI / check`',
+    '',
+    '**Root cause:** `npm run typecheck` failed — `src/main/foo.ts:12` calls `bar()` with a missing argument.',
+    '',
+    '**Suggested fix:** pass the required `id` argument to `bar()` in `src/main/foo.ts`.',
+  ].join('\n')
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'CI investigator display test',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-ci',
+              role: 'assistant',
+              content: 'I investigated the failing CI and found the root cause.',
+              toolCalls: [
+                {
+                  id: 'tc-investigate-ci-1',
+                  name: 'investigate_ci',
+                  args: { pr_number: 42 },
+                  status: 'done',
+                  result: summary,
+                  subagent: {
+                    id: 'sub-ci-1',
+                    kind: 'investigate_ci',
+                    status: 'done',
+                    prompt: 'Investigate CI failures for PR #42',
+                    summary,
+                    messages: [
+                      {
+                        id: 'sub-ci-msg-1',
+                        role: 'assistant',
+                        content: 'Reading the **failing run logs** for PR #42.',
+                        toolCalls: [
+                          {
+                            id: 'inner-run-list-1',
+                            name: 'gh_run_list',
+                            args: { failed_only: true },
+                            status: 'done',
+                            result: '#1234 CI: FAILURE (feature @ abcdef1)',
+                          },
+                          {
+                            id: 'inner-run-view-1',
+                            name: 'gh_run_view',
+                            args: { run_id: 1234 },
+                            status: 'done',
+                            result: 'src/main/foo.ts(12,3): error TS2554: Expected 1 argument.',
+                          },
+                        ],
+                      },
+                      {
+                        id: 'sub-ci-msg-2',
+                        role: 'assistant',
+                        content: summary,
+                        toolCalls: [],
+                      },
+                    ],
+                  },
+                },
+              ],
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
 const GIT_CHANGES_FIXTURE_ROOT = join(process.cwd(), 'tests/fixtures/git-changes-repo')
 
 function buildLargeStagedFile(value: number): string {
