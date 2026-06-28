@@ -1,6 +1,6 @@
 export function renderMermaidFallback(container: HTMLElement, source: string): void {
   container.classList.remove('mermaid-diagram--pending', 'mermaid-diagram--folded')
-  container.dataset.mermaidUi = 'true'
+  container.dataset['mermaidUi'] = 'true'
   container.removeAttribute('role')
   container.removeAttribute('tabindex')
   container.removeAttribute('aria-label')

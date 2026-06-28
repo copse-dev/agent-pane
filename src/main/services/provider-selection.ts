@@ -93,7 +93,7 @@ export async function buildSubagentRoute(parentModel: string): Promise<SubagentR
 // `lmstudio:<modelId>`; the legacy `lm-studio` value resolves to the configured
 // model or the first one the server has loaded (never the bogus "local-model").
 export async function buildProvider(model: string): Promise<LLMProvider> {
-  if (process.env.COPSE_PANEL_MOCK_LLM === '1') return createProvider(model)
+  if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return createProvider(model)
   if (model === 'lm-studio' || model.startsWith('lmstudio:')) {
     const url = localServerUrl()
     let id = model.startsWith('lmstudio:')

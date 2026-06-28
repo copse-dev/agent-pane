@@ -52,24 +52,24 @@ describe('streamRetryDelayMs', () => {
 
 describe('createProvider routing', () => {
   it('fails fast for gpt-* when OpenAI key is missing', () => {
-    const prevMock = process.env.COPSE_PANEL_MOCK_LLM
-    const prevAnthropic = process.env.ANTHROPIC_API_KEY
-    const prevOpenai = process.env.OPENAI_API_KEY
-    delete process.env.COPSE_PANEL_MOCK_LLM
-    process.env.ANTHROPIC_API_KEY = 'test-anthropic'
-    delete process.env.OPENAI_API_KEY
+    const prevMock = process.env['COPSE_PANEL_MOCK_LLM']
+    const prevAnthropic = process.env['ANTHROPIC_API_KEY']
+    const prevOpenai = process.env['OPENAI_API_KEY']
+    delete process.env['COPSE_PANEL_MOCK_LLM']
+    process.env['ANTHROPIC_API_KEY'] = 'test-anthropic'
+    delete process.env['OPENAI_API_KEY']
     try {
       assert.throws(
         () => createProvider('gpt-4o', { anthropicApiKey: 'test-anthropic', openAiApiKey: null }),
         /OpenAI is not configured/,
       )
     } finally {
-      if (prevMock === undefined) delete process.env.COPSE_PANEL_MOCK_LLM
-      else process.env.COPSE_PANEL_MOCK_LLM = prevMock
-      if (prevAnthropic === undefined) delete process.env.ANTHROPIC_API_KEY
-      else process.env.ANTHROPIC_API_KEY = prevAnthropic
-      if (prevOpenai === undefined) delete process.env.OPENAI_API_KEY
-      else process.env.OPENAI_API_KEY = prevOpenai
+      if (prevMock === undefined) delete process.env['COPSE_PANEL_MOCK_LLM']
+      else process.env['COPSE_PANEL_MOCK_LLM'] = prevMock
+      if (prevAnthropic === undefined) delete process.env['ANTHROPIC_API_KEY']
+      else process.env['ANTHROPIC_API_KEY'] = prevAnthropic
+      if (prevOpenai === undefined) delete process.env['OPENAI_API_KEY']
+      else process.env['OPENAI_API_KEY'] = prevOpenai
     }
   })
 })

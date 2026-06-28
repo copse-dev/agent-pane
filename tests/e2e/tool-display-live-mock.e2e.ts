@@ -9,7 +9,14 @@ describe('tool call display live mock', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-live-project', { subagentsEnabled: false })
+    // Seed a deterministic cloud model so the run does not depend on resolving a
+    // context window from an LM Studio server that is absent in CI (the default
+    // model is `lmstudio:…`). The mock LLM is used regardless via
+    // COPSE_PANEL_MOCK_LLM, so this only fixes the model-metadata path.
+    seedEmptyProject(process.cwd(), 'e2e-live-project', {
+      subagentsEnabled: false,
+      model: 'claude-sonnet-4-6',
+    })
     await browser.reloadSession()
   })
 

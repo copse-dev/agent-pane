@@ -73,7 +73,7 @@ app.on('web-contents-created', (_event, contents) => {
   attachWebContentsLockdown(contents)
 })
 
-const agentEval = process.env.COPSE_AGENT_EVAL === '1'
+const agentEval = process.env['COPSE_AGENT_EVAL'] === '1'
 // `copse --acp` drives the agent over stdio for an ACP client; it must not take
 // the single-instance lock (each client spawns its own) or open a window.
 const acpMode = process.argv.includes('--acp')

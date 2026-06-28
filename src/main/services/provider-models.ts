@@ -41,7 +41,11 @@ export async function fetchOpenAiCompatibleModels(
       if (!row || typeof row !== 'object') continue
       const rec = row as Record<string, unknown>
       const id =
-        typeof rec.id === 'string' ? rec.id : typeof rec.model === 'string' ? rec.model : null
+        typeof rec['id'] === 'string'
+          ? rec['id']
+          : typeof rec['model'] === 'string'
+            ? rec['model']
+            : null
       if (!id) continue
       models.push({ id, contextLength: parseContextFromModelRecord(rec) })
     }
