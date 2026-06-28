@@ -2,13 +2,15 @@ import type { Thread } from './thread.ts'
 import type { LayoutState } from './layout.ts'
 
 export type PanelTab = 'file' | 'diff'
-export type RightPanelMode = 'explorer' | 'terminal' | 'changes' | 'plan' | 'browser'
+export type RightPanelMode = 'explorer' | 'terminal' | 'changes' | 'browser' | 'prs'
 export type Theme = 'light' | 'dark'
 
 export interface OpenFile {
   path: string
   content: string
   language: string
+  /** When set, the viewer scrolls to and positions the caret at this location. */
+  reveal?: { line: number; column?: number }
 }
 
 export interface ActiveDiff {

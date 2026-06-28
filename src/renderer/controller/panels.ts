@@ -1,6 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
+import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import { addProject } from './projects.ts'
 
 /** Keep `#pane-files` visibility in sync with store state (also wired via `files_pane_changed`). */
@@ -33,9 +34,29 @@ export function openRightPanel(store: AppStore, mode: RightPanelMode): void {
   store.emit('right_panel_mode_changed')
 }
 
+/** Open the Changes panel and reveal the diff for a workspace-relative file path. */
+export function navigateToChange(store: AppStore, path: string): void {
+  store.emit('git_change_navigate', path)
+  openRightPanel(store, 'changes')
+}
+
 export function openBrowserUrl(store: AppStore, url: string): void {
   openRightPanel(store, 'browser')
   store.emit('browser_url_requested', url)
+}
+
+export function openPullRequest(
+  store: AppStore,
+  ref: { owner: string; repo: string; number: number },
+): void {
+  openRightPanel(store, 'prs')
+  store.emit('pr_open_requested', ref.owner, ref.repo, ref.number)
+}
+
+/** Surface an MCP-UI artefact in the canvas (Browser pane). */
+export function openCanvasArtefact(store: AppStore, artefact: CanvasArtefact): void {
+  openRightPanel(store, 'browser')
+  store.emit('canvas_artefact_requested', artefact)
 }
 
 export function toggleRightPanel(store: AppStore, mode: RightPanelMode): void {

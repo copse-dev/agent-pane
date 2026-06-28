@@ -7,15 +7,14 @@ import quote from 'shell-quote'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { posixQuote } from '../services/safe-install.ts'
 import { workspaceSandboxOverlay } from './config.ts'
-
-let enabled = false
+import { isProjectSandboxActive, setProjectSandboxActive } from './state.ts'
 
 export function isProjectSandboxEnabled(): boolean {
-  return enabled && process.platform === 'darwin' && SandboxManager.isSandboxingEnabled()
+  return isProjectSandboxActive() && SandboxManager.isSandboxingEnabled()
 }
 
 export function setProjectSandboxEnabled(active: boolean): void {
-  enabled = active
+  setProjectSandboxActive(active)
 }
 
 /** Join argv for `/bin/sh -c` / ASRT wrap. Uses POSIX single quotes so paths with spaces stay one word. */
@@ -38,11 +37,11 @@ const DEFAULT_SANDBOX_SHELL = '/bin/bash'
 
 function ensurePathIncludes(dirs: string[]): void {
   if (process.platform === 'win32') return
-  const current = process.env.PATH ?? ''
+  const current = process.env['PATH'] ?? ''
   const seen = new Set(current.split(':').filter(Boolean))
   const missing = dirs.filter((dir) => !seen.has(dir))
   if (missing.length > 0) {
-    process.env.PATH = [...missing, current].filter(Boolean).join(':')
+    process.env['PATH'] = [...missing, current].filter(Boolean).join(':')
   }
 }
 

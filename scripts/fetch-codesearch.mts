@@ -1,12 +1,78 @@
 import { execFileSync } from 'node:child_process'
-import { access, chmod, mkdir, rm, stat, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { access, chmod, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const CODESEARCH_VERSION = 'v1.0.209'
 const REPO = 'flupkede/codesearch'
 const OUT_DIR = resolve('vendor/codesearch')
 const BIN_NAME = process.platform === 'win32' ? 'codesearch.exe' : 'codesearch'
+
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
+const CHECKSUMS_PATH = join(SCRIPT_DIR, 'codesearch-checksums.json')
+
+type ChecksumManifest = Record<string, Record<string, string>>
+
+async function sha256File(path: string): Promise<string> {
+  const hash = createHash('sha256')
+  hash.update(await readFile(path))
+  return hash.digest('hex')
+}
+
+async function loadChecksums(): Promise<ChecksumManifest> {
+  try {
+    return JSON.parse(await readFile(CHECKSUMS_PATH, 'utf8')) as ChecksumManifest
+  } catch {
+    return {}
+  }
+}
+
+function expectedHash(manifest: ChecksumManifest, asset: string): string | null {
+  const forVersion = manifest[CODESEARCH_VERSION]
+  if (!forVersion) return null
+  const value = forVersion[asset]
+  return typeof value === 'string' && value.length === 64 ? value : null
+}
+
+/**
+ * Verify the downloaded artifact against the committed SHA-256 manifest before
+ * it is made executable. Fails closed: a missing expected hash aborts the
+ * install rather than running an unverified binary (supply-chain finding L5).
+ * To record hashes after bumping CODESEARCH_VERSION, run on a trusted machine:
+ *   UPDATE_CHECKSUMS=1 node scripts/fetch-codesearch.mts
+ */
+async function verifyChecksum(archivePath: string, asset: string): Promise<void> {
+  const manifest = await loadChecksums()
+  const expected = expectedHash(manifest, asset)
+  const actual = await sha256File(archivePath)
+
+  if (process.env['UPDATE_CHECKSUMS'] === '1') {
+    manifest[CODESEARCH_VERSION] = { ...(manifest[CODESEARCH_VERSION] ?? {}), [asset]: actual }
+    await writeFile(CHECKSUMS_PATH, `${JSON.stringify(manifest, null, 2)}\n`)
+    console.log(`[fetch-codesearch] UPDATE_CHECKSUMS=1 — recorded ${asset} = ${actual}`)
+    return
+  }
+
+  if (!expected) {
+    throw new Error(
+      `no expected SHA-256 for ${CODESEARCH_VERSION}/${asset} in ${CHECKSUMS_PATH}. ` +
+        'Refusing to install an unverified binary. On a trusted machine run ' +
+        '`UPDATE_CHECKSUMS=1 node scripts/fetch-codesearch.mts` to record it, ' +
+        'or set SKIP_CODESEARCH_FETCH=1 to skip the fetch entirely.',
+    )
+  }
+
+  if (actual !== expected) {
+    throw new Error(
+      `SHA-256 mismatch for ${asset}: expected ${expected}, got ${actual}. ` +
+        'Aborting — the downloaded artifact does not match the committed checksum.',
+    )
+  }
+
+  console.log(`[fetch-codesearch] verified ${asset} SHA-256 ${actual}`)
+}
 
 function assetName(): string | null {
   if (process.platform === 'darwin' && process.arch === 'arm64') {
@@ -85,7 +151,7 @@ async function findExtractedBinary(root: string): Promise<string | null> {
 }
 
 async function main(): Promise<void> {
-  if (process.env.SKIP_CODESEARCH_FETCH === '1') {
+  if (process.env['SKIP_CODESEARCH_FETCH'] === '1') {
     console.log('[fetch-codesearch] SKIP_CODESEARCH_FETCH=1 — skipping')
     return
   }
@@ -112,6 +178,12 @@ async function main(): Promise<void> {
     await mkdir(tmpRoot, { recursive: true })
     console.log(`[fetch-codesearch] downloading ${asset} (${CODESEARCH_VERSION})`)
     await download(url, archivePath)
+    // Integrity gate: verify before extracting / chmod / exec (fails closed).
+    await verifyChecksum(archivePath, asset)
+    if (process.env['UPDATE_CHECKSUMS'] === '1') {
+      console.log('[fetch-codesearch] UPDATE_CHECKSUMS=1 — checksum recorded, skipping install')
+      return
+    }
     await extract(archivePath, extractDir)
 
     const extracted = await findExtractedBinary(extractDir)

@@ -1,4 +1,4 @@
-import type { StreamChunk, UserContent } from './types/index.ts'
+import type { LLMMessage, StreamChunk, UserContent } from './types/index.ts'
 
 export interface PromptPayload {
   text: string
@@ -56,6 +56,68 @@ function parseDataUrl(dataUrl: string): { mimeType: string; data: string } {
     throw new Error('Remote agents only support image attachments encoded as base64 data URLs.')
   }
   return { mimeType: match[1]!, data: match[2]! }
+}
+
+export function userContentToText(content: UserContent): string {
+  if (typeof content === 'string') return content
+  return content
+    .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
+    .map((block) => block.text)
+    .join('\n')
+}
+
+/** Keep the handoff prompt well under Cursor's input limits; trim the oldest turns first. */
+const MAX_CONTEXT_PREAMBLE_CHARS = 16_000
+
+export interface RemoteAgentContextInput {
+  /** Prior local conversation for this thread (system/tool turns are ignored). */
+  priorMessages: LLMMessage[]
+  /** Current local git branch, when the thread is working on one. */
+  branch?: string | null
+}
+
+/**
+ * When a thread is first handed off to a remote agent, the remote machine has no
+ * memory of the local chat that preceded it. Dump that context — the prior
+ * conversation and the current branch — into the first prompt so the remote agent
+ * can pick up where the local chat left off instead of starting cold.
+ */
+export function buildRemoteAgentContextPreamble(input: RemoteAgentContextInput): string {
+  const lines: string[] = []
+  for (const message of input.priorMessages) {
+    if (message.role === 'user') {
+      const text = userContentToText(message.content).trim()
+      if (text) lines.push(`User: ${text}`)
+    } else if (message.role === 'assistant') {
+      if (typeof message.content === 'string') {
+        const text = message.content.trim()
+        if (text) lines.push(`Assistant: ${text}`)
+      } else {
+        const tools = message.content.map((call) => call.name).filter(Boolean)
+        if (tools.length) lines.push(`Assistant: (used tools: ${tools.join(', ')})`)
+      }
+    }
+    // System prompts and raw tool results are intentionally skipped to keep the
+    // handoff compact and free of local-only tooling noise.
+  }
+
+  const branch = input.branch?.trim()
+  const hasChat = lines.length > 0
+  if (!hasChat && !branch) return ''
+
+  const sections: string[] = [
+    'You are continuing an existing Copse chat that is now being handed off to you. ' +
+      'Use the context below to pick up where it left off.',
+  ]
+  if (branch) sections.push(`Current branch: \`${branch}\``)
+  if (hasChat) {
+    let transcript = lines.join('\n\n')
+    if (transcript.length > MAX_CONTEXT_PREAMBLE_CHARS) {
+      transcript = `…(earlier messages trimmed)…\n\n${transcript.slice(-MAX_CONTEXT_PREAMBLE_CHARS)}`
+    }
+    sections.push(`--- Prior conversation ---\n${transcript}\n--- End prior conversation ---`)
+  }
+  return sections.join('\n\n')
 }
 
 export function promptPayloadFromUserContent(content: UserContent): PromptPayload {

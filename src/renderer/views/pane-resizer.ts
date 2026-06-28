@@ -17,25 +17,25 @@ export function parseSavedLayout(raw: unknown): LayoutState {
   const saved = raw as Record<string, unknown>
   return {
     projectsPaneWidth: clampNumber(
-      saved.projectsPaneWidth,
+      saved['projectsPaneWidth'],
       DEFAULT_LAYOUT.projectsPaneWidth,
       LAYOUT_LIMITS.projects.min,
       LAYOUT_LIMITS.projects.max,
     ),
     filesPaneWidth: clampNumber(
-      saved.filesPaneWidth,
+      saved['filesPaneWidth'],
       DEFAULT_LAYOUT.filesPaneWidth,
       LAYOUT_LIMITS.files.min,
       4000,
     ),
     filesPaneHeight: clampNumber(
-      saved.filesPaneHeight,
+      saved['filesPaneHeight'],
       DEFAULT_LAYOUT.filesPaneHeight,
       LAYOUT_LIMITS.filesStacked.min,
       4000,
     ),
     fileTreeWidth: clampNumber(
-      saved.fileTreeWidth,
+      saved['fileTreeWidth'],
       DEFAULT_LAYOUT.fileTreeWidth,
       LAYOUT_LIMITS.tree.min,
       LAYOUT_LIMITS.tree.max,

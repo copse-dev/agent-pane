@@ -38,8 +38,8 @@ const DEFAULT_COLS = 80
 const DEFAULT_ROWS = 24
 
 function defaultShell(): string {
-  if (process.platform === 'win32') return process.env.COMSPEC || 'cmd.exe'
-  return process.env.SHELL || '/bin/bash'
+  if (process.platform === 'win32') return process.env['COMSPEC'] || 'cmd.exe'
+  return process.env['SHELL'] || '/bin/bash'
 }
 
 function sessionCwd(): string {

@@ -2,7 +2,7 @@ import * as fs from 'node:fs'
 import * as fsp from 'node:fs/promises'
 import { ipcMain, type BrowserWindow } from 'electron'
 import { assertMainFrameSender, parseIpcArgs, zPathString } from './ipc-guards.ts'
-import { resolveWorkspacePath } from '../services/workspace.ts'
+import { isResolvedPathInsideWorkspace, resolveWorkspacePath } from '../services/workspace.ts'
 import { gatewayReadFile } from '../project-sandbox/sandbox-fs-client.ts'
 import { FS_WATCH_MAX_CONTENT_BYTES } from '../services/fs-watch-limits.ts'
 
@@ -39,6 +39,11 @@ async function notifyFileChanged(
   absPath: string,
 ): Promise<void> {
   try {
+    // TOCTOU guard: `absPath` was containment-checked once at watch
+    // registration, but `fs.watch` follows the live filesystem. Re-resolve the
+    // real on-disk location and skip the event if a swapped symlink now points
+    // outside the workspace.
+    if (!isResolvedPathInsideWorkspace(absPath)) return
     const st = await fsp.stat(absPath)
     if (!st.isFile()) return
     if (st.size > FS_WATCH_MAX_CONTENT_BYTES) {

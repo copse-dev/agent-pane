@@ -17,9 +17,12 @@ import {
   aggregateToolStatus,
   buildToolCallDisplayItems,
   getToolCallLabel,
+  getToolEditPath,
   type ToolCallDisplayItem,
 } from '@shared/tools/tool-display.ts'
+import { navigateToChange } from '../controller/panels.ts'
 import { createTodoListEl } from './todo-panel.ts'
+import { createReviewCardEl } from './review-panel.ts'
 import { renderToolArgs } from './tool-args-format.ts'
 import {
   drainMessageQueue,
@@ -53,13 +56,33 @@ function createToolHeader(
   summaryClass: string,
   count?: number,
   editStats?: ToolCall['editStats'],
+  editPath?: string | null,
 ): HTMLElement {
   const children: (Node | string)[] = [el('span', { class: 'tool-name' }, label)]
   if (editStats) {
-    children.push(
+    const stats = [
       el('span', { class: 'tool-stat tool-stat-add' }, `+${editStats.additions}`),
       el('span', { class: 'tool-stat tool-stat-del' }, `-${editStats.deletions}`),
-    )
+    ]
+    if (editPath) {
+      // Clickable: reveal this file's diff in the Changes panel. Delegated
+      // click handling lives in mountConversation (needs the store).
+      children.push(
+        el(
+          'button',
+          {
+            type: 'button',
+            class: 'tool-edit-stats',
+            'data-edit-path': editPath,
+            title: 'View changes',
+            'aria-label': `View changes to ${editPath}`,
+          },
+          ...stats,
+        ),
+      )
+    } else {
+      children.push(...stats)
+    }
   }
   if (count !== undefined && count > 1) {
     children.push(el('span', { class: 'tool-count' }, `×${count}`))
@@ -76,7 +99,7 @@ function appendStandardToolSections(
   count?: number,
 ): void {
   card.append(
-    createToolHeader(label, tc.status, summaryClass, count, tc.editStats),
+    createToolHeader(label, tc.status, summaryClass, count, tc.editStats, getToolEditPath(tc)),
     createToolArgsSection(tc.args),
     createToolResultSection(tc.result),
   )
@@ -198,7 +221,11 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
   card.append(timeline)
 
   if (tc.result && status === 'done') {
-    card.append(el('div', { class: 'tool-result subagent-parent-result' }, tc.result))
+    const resultEl = el('div', {
+      class: 'subagent-parent-result subagent-message subagent-message-assistant message-text',
+    })
+    setAssistantMarkdown(resultEl, tc.result, false, api)
+    card.append(resultEl)
   }
 
   return card
@@ -229,6 +256,7 @@ function createGroupToolCard(item: Extract<ToolCallDisplayItem, { type: 'group' 
         'tool-group-item-header',
         undefined,
         tc.editStats,
+        getToolEditPath(tc),
       ),
       createToolArgsSection(tc.args),
       createToolResultSection(tc.result),
@@ -283,6 +311,7 @@ const USER_SCROLL_UP_DEBOUNCE_MS = 150
 export function mountConversation(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const scrollArea = el('div', { class: 'conversation-scroll' })
   const todoHost = el('div', { class: 'conversation-todos-host' })
+  const reviewHost = el('div', { class: 'conversation-review-host' })
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
   const scrollToBottomBtn = el(
     'button',
@@ -294,7 +323,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     },
     '↓',
   )
-  scrollArea.append(todoHost, list, scrollToBottomBtn)
+  scrollArea.append(todoHost, list, reviewHost, scrollToBottomBtn)
 
   const activityBar = el('div', { class: 'agent-activity', role: 'status', 'aria-live': 'polite' })
   const activityLabel = el('span', { class: 'agent-activity-label' })
@@ -307,6 +336,20 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // streaming response inside the scrollable message list.
   const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
   root.append(scrollArea, queuedHost, activityBar)
+
+  // Clicking a file edit's +/- counts reveals that file in the Changes panel.
+  // Delegated here so the handler can reach the store; preventDefault stops the
+  // surrounding <summary> from toggling its <details>.
+  list.addEventListener('click', (e) => {
+    const statsBtn = (e.target as HTMLElement | null)?.closest(
+      '.tool-edit-stats',
+    ) as HTMLElement | null
+    const path = statsBtn?.dataset['editPath']
+    if (!path) return
+    e.preventDefault()
+    e.stopPropagation()
+    navigateToChange(store, path)
+  })
 
   // Inline-edit state for a queued message. Preserved across re-renders so a
   // store-driven rebuild (e.g. pause toggle) keeps the editor and its draft.
@@ -541,13 +584,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     updateScrollButton()
   }
 
-  function renderToolCards(msgEl: HTMLElement, toolCalls: ToolCall[]) {
+  function renderToolCards(msgEl: HTMLElement, toolCalls: ToolCall[], commandSummary?: string) {
     const userExpandedGroups = new Set<string>()
     msgEl.querySelectorAll('.tool-card-group[open]').forEach((node) => {
       const el = node as HTMLElement
-      const key = el.dataset.groupKey
+      const key = el.dataset['groupKey']
       // Running groups are auto-expanded; don't treat that as a user preference.
-      if (key && el.dataset.status !== 'running') userExpandedGroups.add(key)
+      if (key && el.dataset['status'] !== 'running') userExpandedGroups.add(key)
     })
 
     const userExpandedTools = new Set<string>()
@@ -556,13 +599,18 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         '.tool-card[data-tool-id][open], .tool-group-item[open], .tool-card-subagent[open]',
       )
       .forEach((node) => {
-        const id = (node as HTMLElement).dataset.toolId
+        const id = (node as HTMLElement).dataset['toolId']
         if (id) userExpandedTools.add(id)
       })
 
     msgEl.querySelectorAll('.tool-card').forEach((node) => node.remove())
 
     for (const item of buildToolCallDisplayItems(toolCalls)) {
+      // LLM-only rollup: a small-model summary, when ready, replaces the generic
+      // "Running commands" header for the shell group.
+      if (item.type === 'group' && item.key === 'shell' && commandSummary) {
+        item.label = commandSummary
+      }
       const card = createToolCard(item, api) as HTMLDetailsElement
       if (item.type === 'group') {
         const status = aggregateToolStatus(item.toolCalls)
@@ -602,7 +650,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     list.append(msgEl)
     hydrateRemoteArtifactImages(list, api)
     // Re-render any tool cards this message already carries (restored threads).
-    renderToolCards(msgEl, msg.toolCalls ?? [])
+    renderToolCards(msgEl, msg.toolCalls ?? [], msg.commandSummary)
     scrollToBottom(msg.role === 'user')
   }
 
@@ -614,6 +662,14 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
   }
 
+  function syncReviewPanel() {
+    reviewHost.replaceChildren()
+    const thread = getActiveThread(store)
+    if (thread?.review) {
+      reviewHost.append(createReviewCardEl(thread.review))
+    }
+  }
+
   function rebuildForThread() {
     pinnedToBottom = true
     userScrolledUpAt = 0
@@ -622,6 +678,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const thread = getActiveThread(store)
     thread?.messages.forEach((m) => appendMessageEl(store.getState().activeThreadId!, m.id))
     syncTodoPanel()
+    syncReviewPanel()
     renderQueuedPanel(store.getState().activeThreadId!)
     updateScrollButton()
   }
@@ -633,7 +690,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       .find((m) => m.id === msgId)
     const msgEl = list.querySelector(`[data-message-id="${msgId}"]`)
     if (!msg || !msgEl) return
-    renderToolCards(msgEl as HTMLElement, msg.toolCalls ?? [])
+    renderToolCards(msgEl as HTMLElement, msg.toolCalls ?? [], msg.commandSummary)
     scrollToBottom()
   }
 
@@ -673,6 +730,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     store.on('todos_changed', () => {
       syncTodoPanel()
       syncFromStore()
+      scrollToBottom()
+    }),
+    store.on('review_changed', () => {
+      syncReviewPanel()
       scrollToBottom()
     }),
     store.on('thread_status_changed', (tid, status) => {
