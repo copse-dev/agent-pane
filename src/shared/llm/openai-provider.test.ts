@@ -98,6 +98,26 @@ describe('OpenAIProvider request options', () => {
     assert.equal(captured.request?.stream_options, undefined)
   })
 
+  it('requests usage for local servers when includeUsage is enabled', async () => {
+    const provider = new OpenAIProvider('qwen/qwen3.6-35b-a3b', {
+      baseURL: 'http://localhost:1234/v1',
+      apiKey: 'local-key',
+      includeUsage: true,
+    })
+    const captured: { request?: CapturedChatCompletionRequest } = {}
+    withFakeCreate(provider, (request) => {
+      captured.request = request
+      return streamEvents([
+        { choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] },
+        { choices: [], usage: { prompt_tokens: 400, completion_tokens: 50 } },
+      ])
+    })
+
+    await collect(provider)
+
+    assert.equal(captured.request?.stream_options?.include_usage, true)
+  })
+
   it('merges extraBody (e.g. OpenRouter require_parameters) into the request', async () => {
     const provider = new OpenAIProvider('deepseek/deepseek-chat', {
       baseURL: 'https://openrouter.ai/api/v1',

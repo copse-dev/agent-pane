@@ -38,7 +38,7 @@ function sanitizeNode(value: unknown, depth: number): unknown {
     if (propCount >= MAX_PROPERTIES) break
     propCount++
     if (key === 'enum' && Array.isArray(v)) {
-      out.enum = v.slice(0, MAX_ENUM_ENTRIES)
+      out['enum'] = v.slice(0, MAX_ENUM_ENTRIES)
     } else {
       out[key] = sanitizeNode(v, depth + 1)
     }
@@ -59,8 +59,8 @@ export function sanitizeMcpInputSchema(inputSchema: unknown): Record<string, unk
   }
   const out = sanitizeNode(inputSchema, 0) as Record<string, unknown>
 
-  if (out.type !== 'object') out.type = 'object'
-  if (!out.properties || typeof out.properties !== 'object') out.properties = {}
+  if (out['type'] !== 'object') out['type'] = 'object'
+  if (!out['properties'] || typeof out['properties'] !== 'object') out['properties'] = {}
 
   return out
 }
@@ -74,8 +74,75 @@ interface McpContentBlock {
   [key: string]: unknown
 }
 
+// Embedded `resource` blocks the MCP-UI / "MCP Apps" convention uses to ship
+// renderable UI. `text/html` carries a self-contained document; `text/uri-list`
+// carries an external URL the host loads itself. By convention these use a
+// `ui://` URI, but we key off the mime type so servers that omit the scheme
+// still work. See the canvas exploration issue for the rendering plan.
+const UI_RESOURCE_MIME_TYPES = new Set(['text/html', 'text/uri-list'])
+
+// Cap how much artefact payload we accept so a hostile/oversized resource can't
+// blow up the renderer or the model transcript. Larger payloads are still
+// announced to the model but their body is dropped from the side-channel.
+const MAX_UI_RESOURCE_BYTES = 512 * 1024
+
+export interface McpUiResource {
+  /** Resource URI (e.g. `ui://component/dashboard`), or '' when absent. */
+  uri: string
+  mimeType: string
+  /** Inline payload: an HTML document, or a URL list for `text/uri-list`. */
+  text: string
+}
+
+function uiResourceMimeType(resource: { mimeType?: string } | undefined): string | null {
+  const mime = typeof resource?.mimeType === 'string' ? resource.mimeType.toLowerCase() : ''
+  return UI_RESOURCE_MIME_TYPES.has(mime) ? mime : null
+}
+
+/**
+ * Pull MCP-UI resources out of a tool-call result so the host can render them as
+ * sandboxed artefacts. Defensive against untrusted servers: skips non-objects,
+ * requires a recognised mime type, and drops oversized payloads. Returns [] when
+ * the content carries no renderable UI.
+ */
+export function extractUiResources(content: unknown): McpUiResource[] {
+  if (!Array.isArray(content)) return []
+  const out: McpUiResource[] = []
+  for (const raw of content as McpContentBlock[]) {
+    if (!raw || typeof raw !== 'object' || raw.type !== 'resource') continue
+    const mime = uiResourceMimeType(raw.resource)
+    if (!mime) continue
+    const text = typeof raw.resource?.text === 'string' ? raw.resource.text : ''
+    if (!text || Buffer.byteLength(text, 'utf8') > MAX_UI_RESOURCE_BYTES) continue
+    out.push({
+      uri: typeof raw.resource?.uri === 'string' ? raw.resource.uri : '',
+      mimeType: mime,
+      text,
+    })
+  }
+  return out
+}
+
+/** Short, model-facing descriptor for a UI resource rendered in the canvas. */
+function describeUiResource(resource: { uri?: string; mimeType?: string; text?: string }): string {
+  const label = resource.uri || resource.mimeType || 'ui resource'
+  const bytes = typeof resource.text === 'string' ? Buffer.byteLength(resource.text, 'utf8') : 0
+  const size = bytes ? ` (${resource.mimeType ?? 'unknown'}, ${(bytes / 1024).toFixed(1)} KB)` : ''
+  return `[ui resource: ${label}${size} — rendered in the canvas]`
+}
+
+export interface FlattenOptions {
+  /**
+   * When set, embedded UI resources (`text/html` / `text/uri-list`) are replaced
+   * with a compact descriptor instead of having their full body inlined, so the
+   * raw artefact payload stays out of the model's context window. Off by default
+   * to preserve the legacy transcript shape.
+   */
+  summarizeUiResources?: boolean
+}
+
 /** Flatten an MCP tool-call result `content` array into a single string for the model. */
-export function flattenMcpContent(content: unknown): string {
+export function flattenMcpContent(content: unknown, options: FlattenOptions = {}): string {
   if (!Array.isArray(content)) {
     return typeof content === 'string' ? content : ''
   }
@@ -94,12 +161,14 @@ export function flattenMcpContent(content: unknown): string {
         parts.push(`[audio${raw.mimeType ? ` ${raw.mimeType}` : ''} omitted]`)
         break
       case 'resource_link': {
-        const uri = typeof raw.uri === 'string' ? raw.uri : ''
+        const uri = typeof raw['uri'] === 'string' ? raw['uri'] : ''
         parts.push(`[resource link: ${uri}]`)
         break
       }
       case 'resource':
-        if (raw.resource?.text) {
+        if (options.summarizeUiResources && uiResourceMimeType(raw.resource)) {
+          parts.push(describeUiResource(raw.resource!))
+        } else if (raw.resource?.text) {
           parts.push(raw.resource.text)
         } else if (raw.resource?.uri) {
           parts.push(`[resource: ${raw.resource.uri}]`)

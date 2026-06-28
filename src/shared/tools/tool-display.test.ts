@@ -5,10 +5,18 @@ import {
   buildToolCallDisplayItems,
   getToolDisplayName,
   getToolCallLabel,
+  getToolEditPath,
   getToolGroupKey,
   getToolGroupLabel,
   aggregateToolStatus,
+  stripShellCdPrefix,
+  shellCommandLabel,
+  shellCommandsFromToolCalls,
 } from './tool-display.ts'
+
+function shell(id: string, command: string, status: ToolCall['status'] = 'done'): ToolCall {
+  return { ...tc(id, 'run_shell', status), args: { command } }
+}
 
 function tc(id: string, name: string, status: ToolCall['status'] = 'done'): ToolCall {
   return { id, name, args: {}, status, result: status === 'running' ? null : 'ok' }
@@ -27,6 +35,55 @@ describe('tool-display', () => {
       args: { path: 'src/foo.ts', old_string: 'a', new_string: 'b' },
     }
     assert.equal(getToolCallLabel(replace), 'Edited src/foo.ts')
+  })
+
+  it('exposes the edited path for file-edit tools only', () => {
+    const write = { ...tc('1', 'write_file'), args: { path: 'README.md', content: 'x' } }
+    assert.equal(getToolEditPath(write), 'README.md')
+    assert.equal(getToolEditPath(tc('2', 'run_shell')), null)
+    assert.equal(getToolEditPath(tc('3', 'read_file')), null)
+  })
+
+  it('strips a leading `cd <path> &&` workspace prefix from commands', () => {
+    assert.equal(stripShellCdPrefix('cd /Users/me/proj && npm test'), 'npm test')
+    assert.equal(stripShellCdPrefix("cd '/path with spaces' && ls"), 'ls')
+    assert.equal(stripShellCdPrefix('npm test'), 'npm test')
+    // only the leading cd is removed, not a later one
+    assert.equal(stripShellCdPrefix('cd /a && cd /b && ls'), 'cd /b && ls')
+  })
+
+  it('builds a compact single-line command label', () => {
+    assert.equal(shellCommandLabel('cd /proj && npm   test'), 'npm test')
+    const long = `echo ${'x'.repeat(200)}`
+    const label = shellCommandLabel(long)
+    assert.ok(label.length <= 96)
+    assert.ok(label.endsWith('…'))
+  })
+
+  it('labels run_shell with the cd-stripped command', () => {
+    const shell = {
+      ...tc('1', 'run_shell'),
+      args: { command: 'cd /Users/me/agent-pane && npx vitest run 2>&1 | tail -40' },
+    }
+    assert.equal(getToolCallLabel(shell), 'npx vitest run 2>&1 | tail -40')
+    // falls back to the generic name when no command is present
+    assert.equal(getToolCallLabel(tc('2', 'run_shell')), 'Run command')
+  })
+
+  it('collects cd-stripped commands from run_shell tool calls', () => {
+    const commands = shellCommandsFromToolCalls([
+      shell('1', 'cd /p && npx vitest run a.test.ts'),
+      shell('2', 'git diff'),
+      shell('3', 'should be skipped', 'error'),
+      tc('4', 'read_file'),
+    ])
+    assert.deepEqual(commands, ['npx vitest run a.test.ts', 'git diff'])
+  })
+
+  it('shell groups keep the generic label (LLM summary applied at render)', () => {
+    const items = buildToolCallDisplayItems([shell('1', 'npm test'), shell('2', 'git diff')])
+    assert.equal(items[0]?.type, 'group')
+    if (items[0]?.type === 'group') assert.equal(items[0].label, 'Running commands')
   })
 
   it('maps known tools to human-readable names', () => {
@@ -89,6 +146,42 @@ describe('tool-display', () => {
     if (items[1]?.type === 'individual') {
       assert.equal(items[1].toolCall.id, '2')
       assert.equal(items[1].label, 'Read file')
+    }
+  })
+
+  it('collapses repeated failures into a single error group', () => {
+    const items = buildToolCallDisplayItems([
+      tc('1', 'mcp__mdn__get_compat', 'error'),
+      tc('2', 'mcp__mdn__get_compat', 'error'),
+      tc('3', 'mcp__mdn__get_compat', 'error'),
+    ])
+    assert.equal(items.length, 1)
+    assert.equal(items[0]?.type, 'group')
+    if (items[0]?.type === 'group') {
+      assert.equal(items[0].label, 'mdn (MCP)')
+      assert.equal(items[0].toolCalls.length, 3)
+      assert.equal(aggregateToolStatus(items[0].toolCalls), 'error')
+    }
+  })
+
+  it('separates successful and failed calls into distinct groups', () => {
+    const items = buildToolCallDisplayItems([
+      tc('1', 'mcp__mdn__get_compat', 'error'),
+      tc('2', 'mcp__mdn__get_compat', 'error'),
+      tc('3', 'mcp__mdn__get_compat'),
+      tc('4', 'mcp__mdn__get_compat'),
+    ])
+    assert.equal(items.length, 2)
+    assert.equal(items[0]?.type, 'group')
+    assert.equal(items[1]?.type, 'group')
+    if (items[0]?.type === 'group' && items[1]?.type === 'group') {
+      // Error group emitted at the position of the first failed call.
+      assert.equal(aggregateToolStatus(items[0].toolCalls), 'error')
+      assert.equal(items[0].toolCalls.length, 2)
+      assert.equal(aggregateToolStatus(items[1].toolCalls), 'done')
+      assert.equal(items[1].toolCalls.length, 2)
+      // Distinct keys so expansion state and DOM ids never collide.
+      assert.notEqual(items[0].key, items[1].key)
     }
   })
 

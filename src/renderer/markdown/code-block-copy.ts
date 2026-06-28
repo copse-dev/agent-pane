@@ -20,7 +20,7 @@ export function attachCodeBlockCopyButtons(root: ParentNode): void {
     const parent = pre.parentNode
     if (!parent) continue
 
-    pre.dataset.copyAttached = 'true'
+    pre.dataset['copyAttached'] = 'true'
     pre.classList.add('code-block')
 
     const shell = el('div', { class: 'code-block-shell' })

@@ -39,9 +39,11 @@ import {
   TRUNCATION_CONTINUE_NUDGE,
 } from '../llm/provider-stop-reason.ts'
 import {
+  AGENT_RUN_HARD_MAX_MS,
   AGENT_RUN_TIMEOUT_MS,
+  AgentRunDeadline,
   defaultMaxLlmCallsForSteps,
-  isRunPastDeadline,
+  isAgentRunTimeoutAbort,
 } from './agent-loop-limits.ts'
 import { hasOpenTodos, OPEN_TODOS_FINALIZE_NUDGE } from '@shared/todos/todo-logic.ts'
 
@@ -75,8 +77,14 @@ export interface AgentLoopOptions {
   usageModel?: string
   /** Max provider.stream calls (main loop + finalize / forced text). */
   maxLlmCalls?: number
-  /** Wall-clock budget checked alongside maxLlmCalls. */
+  /** Shared sliding-idle deadline. When omitted, one is created from runTimeoutMs. */
+  runDeadline?: AgentRunDeadline
+  /** Idle timeout when runDeadline is omitted. */
   runTimeoutMs?: number
+  /** Hard wall-clock cap when runDeadline is omitted. */
+  runHardMaxMs?: number
+  /** Called when the deadline records activity (reschedule external abort timers). */
+  onRunDeadlineActivity?: () => void
   /** Coerce recovered XML tool args against registered tool schemas. */
   coerceTextToolCallArgs?: CoerceToolArgsFn
   /** When set, finalize is blocked while todos remain open. */
@@ -95,13 +103,18 @@ const RUN_LIMIT_MESSAGE =
 type LlmCallBudget = {
   llmCalls: number
   maxLlmCalls: number
-  runStartedAt: number
-  runTimeoutMs: number
+  deadline: AgentRunDeadline
   signal?: AbortSignal
+  onRunDeadlineActivity?: () => void
+}
+
+function recordRunActivity(budget: LlmCallBudget): void {
+  budget.deadline.recordActivity()
+  budget.onRunDeadlineActivity?.()
 }
 
 function runBudgetExhausted(budget: LlmCallBudget): boolean {
-  if (isRunPastDeadline(budget.runStartedAt, budget.runTimeoutMs)) return true
+  if (budget.deadline.isExpired()) return true
   if (budget.llmCalls >= budget.maxLlmCalls) return true
   return false
 }
@@ -219,27 +232,35 @@ async function streamTextOnlyTurn(
   let stopReason: string | undefined
   let streamUsage: StepUsage | null = null
 
-  for await (const chunk of provider.stream(turnMessages, [], signal)) {
-    if (signal?.aborted) break
-    if (chunk.type === 'text') {
-      assistantText += chunk.text
-      onChunk(chunk)
-    }
-    if (chunk.type === 'usage') {
-      streamUsage = {
-        inputTokens: chunk.inputTokens,
-        outputTokens: chunk.outputTokens,
-        ...(chunk.cacheReadTokens !== undefined ? { cacheReadTokens: chunk.cacheReadTokens } : {}),
-        ...(chunk.cacheCreationTokens !== undefined
-          ? { cacheCreationTokens: chunk.cacheCreationTokens }
-          : {}),
+  budget.deadline.pause()
+  try {
+    for await (const chunk of provider.stream(turnMessages, [], signal)) {
+      if (signal?.aborted) break
+      if (chunk.type === 'text') {
+        assistantText += chunk.text
+        onChunk(chunk)
+      }
+      if (chunk.type === 'usage') {
+        streamUsage = {
+          inputTokens: chunk.inputTokens,
+          outputTokens: chunk.outputTokens,
+          ...(chunk.cacheReadTokens !== undefined
+            ? { cacheReadTokens: chunk.cacheReadTokens }
+            : {}),
+          ...(chunk.cacheCreationTokens !== undefined
+            ? { cacheCreationTokens: chunk.cacheCreationTokens }
+            : {}),
+        }
+      }
+      if (chunk.type === 'done') {
+        stopReason = chunk.stopReason
+        break
       }
     }
-    if (chunk.type === 'done') {
-      stopReason = chunk.stopReason
-      break
-    }
+  } finally {
+    budget.deadline.resume()
   }
+  recordRunActivity(budget)
 
   const pendingToolCalls: ToolCallChunk[] = []
   assistantText = applyTextToolCallRecovery(
@@ -282,61 +303,73 @@ type ToolBatchContext = {
   signal?: AbortSignal | undefined
   onChunk: (chunk: StreamChunk) => void
   recentFingerprints: string[]
+  budget: LlmCallBudget
 }
 
 async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
-  const { pendingToolCalls, messages, executeTool, signal, onChunk, recentFingerprints } = ctx
+  const { pendingToolCalls, messages, executeTool, signal, onChunk, recentFingerprints, budget } =
+    ctx
   const measuredInputBeforeTools = getLastMeasuredInputTokens()
   const toolResults: ToolResult[] = []
-  for (let ti = 0; ti < pendingToolCalls.length; ti++) {
-    const tc = pendingToolCalls[ti]
-    if (!tc) continue
-    if (signal?.aborted) {
-      for (let j = ti; j < pendingToolCalls.length; j++) {
-        const cancelled = pendingToolCalls[j]
-        if (!cancelled) continue
-        toolResults.push({ toolCallId: cancelled.id, result: CANCELLED_TOOL_RESULT })
+  budget.deadline.pause()
+  try {
+    for (let ti = 0; ti < pendingToolCalls.length; ti++) {
+      const tc = pendingToolCalls[ti]
+      if (!tc) continue
+      if (signal?.aborted) {
+        for (let j = ti; j < pendingToolCalls.length; j++) {
+          const cancelled = pendingToolCalls[j]
+          if (!cancelled) continue
+          toolResults.push({ toolCallId: cancelled.id, result: CANCELLED_TOOL_RESULT })
+          onChunk({
+            type: 'tool_result',
+            toolCallId: cancelled.id,
+            result: CANCELLED_TOOL_RESULT,
+            isError: true,
+          })
+        }
+        break
+      }
+      if (tc.argsError) {
+        const result = `Error: ${tc.argsError}`
+        toolResults.push({ toolCallId: tc.id, result })
+        onChunk({ type: 'tool_result', toolCallId: tc.id, result, isError: true })
+        continue
+      }
+      const normalizedArgs = normalizeExploreArgs(tc.name, tc.args)
+      const fp = toolCallFingerprint(tc.name, normalizedArgs)
+      const duplicate = isDuplicateExploreCall(tc.name, normalizedArgs, recentFingerprints)
+      recentFingerprints.push(fp)
+      if (recentFingerprints.length > RECENT_FINGERPRINT_WINDOW) {
+        recentFingerprints.shift()
+      }
+
+      try {
+        const raw = duplicate
+          ? DUPLICATE_TOOL_RESULT_PREFIX
+          : await executeTool(
+              tc.name,
+              normalizedArgs,
+              signal ?? new AbortController().signal,
+              tc.id,
+            )
+        const { result, editStats } = normalizeToolExecuteResult(raw)
+        toolResults.push({ toolCallId: tc.id, result })
         onChunk({
           type: 'tool_result',
-          toolCallId: cancelled.id,
-          result: CANCELLED_TOOL_RESULT,
-          isError: true,
+          toolCallId: tc.id,
+          result,
+          isError: false,
+          ...(editStats ? { editStats } : {}),
         })
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        toolResults.push({ toolCallId: tc.id, result: `Error: ${msg}` })
+        onChunk({ type: 'tool_result', toolCallId: tc.id, result: `Error: ${msg}`, isError: true })
       }
-      break
     }
-    if (tc.argsError) {
-      const result = `Error: ${tc.argsError}`
-      toolResults.push({ toolCallId: tc.id, result })
-      onChunk({ type: 'tool_result', toolCallId: tc.id, result, isError: true })
-      continue
-    }
-    const normalizedArgs = normalizeExploreArgs(tc.name, tc.args)
-    const fp = toolCallFingerprint(tc.name, normalizedArgs)
-    const duplicate = isDuplicateExploreCall(tc.name, normalizedArgs, recentFingerprints)
-    recentFingerprints.push(fp)
-    if (recentFingerprints.length > RECENT_FINGERPRINT_WINDOW) {
-      recentFingerprints.shift()
-    }
-
-    try {
-      const raw = duplicate
-        ? DUPLICATE_TOOL_RESULT_PREFIX
-        : await executeTool(tc.name, normalizedArgs, signal ?? new AbortController().signal, tc.id)
-      const { result, editStats } = normalizeToolExecuteResult(raw)
-      toolResults.push({ toolCallId: tc.id, result })
-      onChunk({
-        type: 'tool_result',
-        toolCallId: tc.id,
-        result,
-        isError: false,
-        ...(editStats ? { editStats } : {}),
-      })
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      toolResults.push({ toolCallId: tc.id, result: `Error: ${msg}` })
-      onChunk({ type: 'tool_result', toolCallId: tc.id, result: `Error: ${msg}`, isError: true })
-    }
+  } finally {
+    budget.deadline.resume()
   }
 
   setLastMeasuredInputTokens(measuredInputBeforeTools)
@@ -344,6 +377,7 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
   if (toolResults.length > 0) {
     messages.push({ role: 'tool', toolResults })
   }
+  recordRunActivity(budget)
 }
 
 function handleContextOverflowInLoop(
@@ -384,16 +418,20 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     getLastUsage,
     usageModel,
     maxLlmCalls = defaultMaxLlmCallsForSteps(maxSteps),
+    runDeadline,
     runTimeoutMs = AGENT_RUN_TIMEOUT_MS,
+    runHardMaxMs = AGENT_RUN_HARD_MAX_MS,
+    onRunDeadlineActivity,
     coerceTextToolCallArgs,
     getOpenTodos,
   } = opts
+  const deadline = runDeadline ?? new AgentRunDeadline(runTimeoutMs, runHardMaxMs)
   const budget: LlmCallBudget = {
     llmCalls: 0,
     maxLlmCalls,
-    runStartedAt: Date.now(),
-    runTimeoutMs,
+    deadline,
     ...(signal !== undefined ? { signal } : {}),
+    ...(onRunDeadlineActivity !== undefined ? { onRunDeadlineActivity } : {}),
   }
   let steps = 0
   let finishedWithAnswer = false
@@ -448,6 +486,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
             signal,
             onChunk,
             recentFingerprints,
+            budget,
           })
           toolOnlySteps++
           continue
@@ -486,33 +525,39 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       break
     }
 
-    for await (const chunk of provider.stream(messages, tools, signal)) {
-      if (signal?.aborted) break
-      if (chunk.type === 'text') {
-        assistantText += chunk.text
-        onChunk(chunk)
-      }
-      if (chunk.type === 'tool_call') {
-        pendingToolCalls.push(chunk.toolCall)
-        onChunk(chunk)
-      }
-      if (chunk.type === 'usage') {
-        streamUsage = {
-          inputTokens: chunk.inputTokens,
-          outputTokens: chunk.outputTokens,
-          ...(chunk.cacheReadTokens !== undefined
-            ? { cacheReadTokens: chunk.cacheReadTokens }
-            : {}),
-          ...(chunk.cacheCreationTokens !== undefined
-            ? { cacheCreationTokens: chunk.cacheCreationTokens }
-            : {}),
+    budget.deadline.pause()
+    try {
+      for await (const chunk of provider.stream(messages, tools, signal)) {
+        if (signal?.aborted) break
+        if (chunk.type === 'text') {
+          assistantText += chunk.text
+          onChunk(chunk)
+        }
+        if (chunk.type === 'tool_call') {
+          pendingToolCalls.push(chunk.toolCall)
+          onChunk(chunk)
+        }
+        if (chunk.type === 'usage') {
+          streamUsage = {
+            inputTokens: chunk.inputTokens,
+            outputTokens: chunk.outputTokens,
+            ...(chunk.cacheReadTokens !== undefined
+              ? { cacheReadTokens: chunk.cacheReadTokens }
+              : {}),
+            ...(chunk.cacheCreationTokens !== undefined
+              ? { cacheCreationTokens: chunk.cacheCreationTokens }
+              : {}),
+          }
+        }
+        if (chunk.type === 'done') {
+          stopReason = chunk.stopReason
+          break
         }
       }
-      if (chunk.type === 'done') {
-        stopReason = chunk.stopReason
-        break
-      }
+    } finally {
+      budget.deadline.resume()
     }
+    recordRunActivity(budget)
 
     emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
 
@@ -615,6 +660,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       signal,
       onChunk,
       recentFingerprints,
+      budget,
     })
 
     toolOnlySteps++
@@ -644,6 +690,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         signal,
         onChunk,
         recentFingerprints,
+        budget,
       })
       finalResult = await streamTextOnlyTurn(
         provider,
@@ -664,7 +711,8 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     }
   }
 
-  if (hitRunLimit && !finishedWithAnswer && !signal?.aborted) {
+  const timedOut = hitRunLimit || isAgentRunTimeoutAbort(signal)
+  if (timedOut && !finishedWithAnswer) {
     onChunk({ type: 'text', text: RUN_LIMIT_MESSAGE })
     messages.push({ role: 'assistant', content: RUN_LIMIT_MESSAGE })
   }

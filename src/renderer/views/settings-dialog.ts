@@ -11,15 +11,18 @@ import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
 import { DEFAULT_CURSOR_AGENT_BASE_URL } from '@shared/remote-agent.ts'
 import { populateModelSelect, populateSmallTasksModelSelect } from './model-options.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
+import { createCustomProvidersSection } from './setup/custom-providers-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
+import { createGhCliSection } from './setup/gh-cli-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
+import { createUsageSection } from './setup/usage-section.ts'
 import {
   DEFAULT_WEB_ALLOWED_ORIGINS,
   WEB_ALLOWED_ORIGINS_SETTING,
   WEB_ALLOW_USER_APPROVAL_SETTING,
 } from '@shared/web-origins.ts'
 
-type SettingsSection = 'general' | 'local-models' | 'mcp' | 'appearance'
+type SettingsSection = 'general' | 'usage' | 'local-models' | 'mcp' | 'appearance' | 'experimental'
 
 /**
  * Single source of truth for the simple form fields, so each setting's default
@@ -52,11 +55,21 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'remoteAgentWorkOnCurrentBranch', kind: 'checkbox', default: false, save: true },
   { name: 'localSubagentsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'localTodoItemsEnabled', kind: 'checkbox', default: true, save: true },
+  { name: 'postTurnReviewEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'bundledCursorSkillsEnabled', kind: 'checkbox', default: true, save: true },
+  { name: 'skillExternalLinkWarnings', kind: 'checkbox', default: true, save: true },
+  { name: 'skillSandboxGuidance', kind: 'checkbox', default: true, save: true },
+  // Built-in browser tools (Electron's bundled Chromium); on by default so the
+  // agent renders/screenshots web UIs in-app instead of installing a browser.
+  { name: 'browserToolsEnabled', kind: 'checkbox', default: true, save: true },
+  // Experimental, opt-in features (off by default).
+  { name: 'mcpUiArtefactsEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'ciInvestigatorEnabled', kind: 'checkbox', default: false, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
   { name: 'mcpAutoAllowReadOnly', kind: 'checkbox', default: false, save: false },
+  { name: 'defaultReadonlyMode', kind: 'checkbox', default: false, save: false },
   { name: 'webAllowUserApproval', kind: 'checkbox', default: true, save: false },
   { name: 'safetyConfidenceThreshold', kind: 'text', default: '0.85', save: false },
 ]
@@ -98,28 +111,33 @@ function parseWebAllowedOrigins(value: FormDataEntryValue | null): string[] {
     .filter(Boolean)
 }
 
-let overlayEl: HTMLElement | null = null
+let overlayEl: HTMLDialogElement | null = null
 
 export function openSettingsDialog(): void {
-  if (!overlayEl || !overlayEl.hidden) return
-  overlayEl.hidden = false
+  if (!overlayEl || overlayEl.open) return
+  // showModal() puts the dialog in the top layer: focus is trapped inside, the
+  // background is made inert, and Esc closes it — all for free, replacing the
+  // hand-rolled overlay + manual `hidden` toggle.
+  overlayEl.showModal()
   overlayEl.dispatchEvent(new Event('settings-open'))
 }
 
 export function closeSettingsDialog(): void {
-  if (!overlayEl || overlayEl.hidden) return
-  overlayEl.hidden = true
+  if (!overlayEl || !overlayEl.open) return
+  overlayEl.close()
 }
 
 export function isSettingsDialogOpen(): boolean {
-  return !!overlayEl && !overlayEl.hidden
+  return !!overlayEl && overlayEl.open
 }
 
 export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
-  const overlay = document.createElement('div')
+  // A native <dialog> (opened via showModal in openSettingsDialog) rather than a
+  // div: the platform handles focus-trapping, inert background, top-layer
+  // stacking, and Esc-to-close. Closed by default — no `hidden` needed.
+  const overlay = document.createElement('dialog')
   overlay.id = 'settings-dialog'
   overlay.className = 'settings-overlay'
-  overlay.hidden = true
   overlay.innerHTML = `
     <div class="settings-shell">
       <header class="settings-header">
@@ -130,9 +148,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       <div class="settings-body">
         <nav class="settings-nav" aria-label="Settings sections">
           <button type="button" class="settings-nav-btn active" data-section="general">General</button>
+          <button type="button" class="settings-nav-btn" data-section="usage">Usage</button>
           <button type="button" class="settings-nav-btn" data-section="local-models">Local models</button>
           <button type="button" class="settings-nav-btn" data-section="mcp">MCP servers</button>
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
+          <button type="button" class="settings-nav-btn" data-section="experimental">Experimental</button>
         </nav>
 
         <form class="settings-content">
@@ -142,7 +162,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               Cloud API keys, default chat model, and task-specific model choices.
             </p>
 
-            <div id="settings-api-keys-host"></div>
+            <div id="settings-custom-providers-host"></div>
 
             <fieldset>
               <legend>Chat model</legend>
@@ -241,6 +261,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
             <div id="settings-model-routing-host"></div>
 
+            <div id="settings-gh-cli-host"></div>
+
             <fieldset>
               <legend>Agent behavior</legend>
               <label>
@@ -276,6 +298,24 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <input type="checkbox" name="bundledCursorSkillsEnabled" />
                 Include bundled Cursor skills (CI, code review, verification, and more)
               </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="skillExternalLinkWarnings" />
+                Warn before running a skill that references external links
+              </label>
+              <p class="field-hint">
+                When an invoked skill's <code>SKILL.md</code> points at <code>http(s)</code> hosts,
+                surface a warning up front and tell the agent to treat fetch/install/run-from-network
+                steps as approval-gated.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="skillSandboxGuidance" />
+                Reinforce sandbox confinement for invoked skills
+              </label>
+              <p class="field-hint">
+                Reminds the agent that a skill's shell commands stay inside the project sandbox (or,
+                where no OS sandbox is active, require approval) rather than silently reaching the
+                network or the host filesystem.
+              </p>
             </fieldset>
 
             <fieldset>
@@ -283,6 +323,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <p class="settings-fieldset-desc">
                 Agent web tools are limited to these origins. New origins require approval before
                 <code>fetch_url</code> can access them.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="browserToolsEnabled" />
+                Built-in browser tools (load &amp; screenshot web UIs in-app)
+              </label>
+              <p class="field-hint">
+                Lets the agent open and inspect pages in the app's bundled browser instead of
+                installing a separate browser (e.g. Playwright). Localhost auto-runs; other origins
+                prompt.
               </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="webAllowUserApproval" />
@@ -304,6 +353,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
           </section>
 
+          <section class="settings-section" data-section="usage">
+            <h3>Usage</h3>
+            <p class="settings-section-desc">
+              Estimated cloud spend and local (free) model token usage across all workspaces.
+              Costs are approximate and use catalog pricing, including Anthropic prompt-cache rates
+              when cache tokens are reported.
+            </p>
+            <div id="settings-usage-host"></div>
+          </section>
+
           <section class="settings-section" data-section="local-models">
             <h3>Local models</h3>
             <p class="settings-section-desc">
@@ -321,6 +380,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <label class="checkbox-label">
                 <input type="checkbox" name="localTodoItemsEnabled" />
                 Use local models for todo items tagged local (requires acceptance check)
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="postTurnReviewEnabled" />
+                Review the diff with a subagent after each editing turn
               </label>
               <label class="checkbox-label">
                 <input type="checkbox" name="safetyClassifierEnabled" />
@@ -386,6 +449,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Destructive tools always prompt. Other tools prompt once; choose “always allow” to
                 remember a specific tool.
               </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="defaultReadonlyMode" />
+                Read-only agent mode
+              </label>
+              <p class="field-hint">
+                Agent runs can read and search the workspace but cannot write files, run shell
+                commands, or make network calls. MCP tools are limited to those the server flags as
+                read-only and non-destructive (which still prompt as usual).
+              </p>
             </fieldset>
           </section>
 
@@ -436,6 +508,41 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
           </section>
 
+          <section class="settings-section" data-section="experimental">
+            <h3>Experimental</h3>
+            <p class="settings-section-desc">
+              Early, opt-in features that are still being explored. They may change or be removed,
+              and are off by default.
+            </p>
+
+            <fieldset>
+              <legend>MCP UI artefacts (canvas)</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="mcpUiArtefactsEnabled" />
+                Render MCP-UI artefacts as a sandboxed canvas
+              </label>
+              <p class="field-hint">
+                When an MCP tool returns a UI resource (self-contained HTML or a URL), Copse
+                recognises it and will render it as a fully sandboxed artefact in the Browser pane —
+                no Node, no app access. While off, UI resources are treated as plain tool output.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>CI investigator subagent</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="ciInvestigatorEnabled" />
+                Enable the CI investigator subagent
+              </label>
+              <p class="field-hint">
+                Adds an <code>investigate_ci</code> tool that delegates to a read-only subagent to
+                analyse failing CI run logs in depth and report the root cause, and points the
+                "Investigate CI failure" follow-up at it. While off, CI failures use the plain
+                "Debug CI Failure" follow-up and the tool is not registered.
+              </p>
+            </fieldset>
+          </section>
+
           <div class="settings-buttons">
             <button type="submit">Save</button>
             <button type="button" id="settings-cancel">Cancel</button>
@@ -447,10 +554,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   document.body.append(overlay)
   overlayEl = overlay
 
-  const apiKeysSection = createApiKeysSection(api, {
-    providers: ['anthropic', 'openai', 'openrouter', 'mistral', 'gemini', 'deepseek'],
-  })
-  overlay.querySelector('#settings-api-keys-host')!.append(apiKeysSection.root)
+  const customProvidersSection = createCustomProvidersSection(api)
+  overlay.querySelector('#settings-custom-providers-host')!.append(customProvidersSection.root)
 
   const cursorKeySection = createApiKeysSection(api, {
     legend: 'Cursor authentication',
@@ -461,21 +566,30 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   const lmStudioSection = createLmStudioSection(api, { showInstallGuide: false })
   overlay.querySelector('#settings-lm-studio-host')!.append(lmStudioSection.root)
 
+  const ghCliSection = createGhCliSection(api)
+  overlay.querySelector('#settings-gh-cli-host')!.append(ghCliSection.root)
+
   const modelRoutingSection = createModelRoutingSection(api)
   overlay.querySelector('#settings-model-routing-host')!.append(modelRoutingSection.root)
+
+  const usageSection = createUsageSection(api, store)
+  overlay.querySelector('#settings-usage-host')!.append(usageSection.root)
 
   const navBtns = overlay.querySelectorAll<HTMLButtonElement>('.settings-nav-btn')
   const sections = overlay.querySelectorAll<HTMLElement>('.settings-section')
 
   function showSection(id: SettingsSection): void {
-    navBtns.forEach((btn) => btn.classList.toggle('active', btn.dataset.section === id))
-    sections.forEach((sec) => sec.classList.toggle('active', sec.dataset.section === id))
+    navBtns.forEach((btn) => btn.classList.toggle('active', btn.dataset['section'] === id))
+    sections.forEach((sec) => sec.classList.toggle('active', sec.dataset['section'] === id))
   }
 
   navBtns.forEach((btn) => {
     btn.addEventListener('click', () => {
-      const id = btn.dataset.section as SettingsSection | undefined
-      if (id) showSection(id)
+      const id = btn.dataset['section'] as SettingsSection | undefined
+      if (id) {
+        showSection(id)
+        if (id === 'usage') void usageSection.refresh()
+      }
     })
   })
 
@@ -711,8 +825,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   overlay.addEventListener('settings-open', () => {
     showSection('general')
     void (async () => {
-      await apiKeysSection.refreshKeyStatus()
       await cursorKeySection.refreshKeyStatus()
+      await customProvidersSection.refresh()
 
       const form = overlay.querySelector('form') as HTMLFormElement
       const model = (await api.settings.get('model')) as string | undefined
@@ -753,6 +867,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       await refreshLocalModelSelects()
       await lmStudioSection.refreshDetection()
+      await ghCliSection.refreshStatus()
       await refreshMcpServers()
       await refreshCuratedServers()
     })()
@@ -764,8 +879,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const form = overlay.querySelector('form') as HTMLFormElement
       const data = new FormData(form)
 
-      await apiKeysSection.saveKeys()
       await cursorKeySection.saveKeys()
+      await customProvidersSection.saveKeys()
       await lmStudioSection.saveConnection()
       const routingValues = modelRoutingSection.readValues()
 
@@ -794,10 +909,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await api.settings.setSecurity({
         localServerUrl: lmStudioSection.getUrl(),
         safetyModel: routingValues.safetyModel,
+        reviewModel: routingValues.reviewModel,
         safetyClassifierEnabled: data.get('safetyClassifierEnabled') === 'on',
         safetyConfidenceThreshold: Number.isFinite(confidence) ? confidence : 0.85,
         autoRunSandboxCommands: data.get('autoRunSandboxCommands') === 'on',
         mcpAutoAllowReadOnly: data.get('mcpAutoAllowReadOnly') === 'on',
+        defaultReadonlyMode: data.get('defaultReadonlyMode') === 'on',
         webAllowedOrigins: parseWebAllowedOrigins(data.get('webAllowedOrigins')),
         webAllowUserApproval: data.get(WEB_ALLOW_USER_APPROVAL_SETTING) === 'on',
       })
@@ -811,7 +928,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       store.emit('theme_changed', theme)
       store.emit('settings_changed')
       window.dispatchEvent(new Event('copse:skills-changed'))
-      document.documentElement.dataset.theme = theme
+      document.documentElement.dataset['theme'] = theme
       closeSettingsDialog()
     })()
   })

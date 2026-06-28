@@ -124,6 +124,7 @@ describe('settings model routing placement', () => {
       'Default local model',
       'Exploration subagent model',
       'Instruct / safety model',
+      'Post-turn review model',
     ])
 
     await scrollSettingsToLegend('Small tasks')

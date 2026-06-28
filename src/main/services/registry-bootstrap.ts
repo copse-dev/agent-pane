@@ -25,7 +25,11 @@ import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
 import { browserTools } from '../tools/browser-tools.ts'
 import { listSkills } from './skills-registry.ts'
 import { getSetting } from './settings.ts'
-import { BROWSER_TOOLS_ENABLED_SETTING } from './browser/browser-origin-policy.ts'
+import {
+  BROWSER_TOOLS_ENABLED_SETTING,
+  BROWSER_TOOLS_DEFAULT_ENABLED,
+} from './browser/browser-origin-policy.ts'
+import { CI_INVESTIGATOR_ENABLED_SETTING } from './ci-investigator-service.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
@@ -48,18 +52,23 @@ export function createRegistry(): ToolRegistry {
   registry.register(gitCommitTool)
   registry.register(ghPrListTool)
   registry.register(ghPrViewTool)
-  registry.register(ghRunListTool)
-  registry.register(ghRunViewTool)
   registry.register(getCiStatusTool)
   registry.register(waitForCiChecksTool)
   registry.register(getCiFailureLogsTool)
   registry.register(runShellTool)
   registry.register(exploreTool)
-  registry.register(investigateCiTool)
+  // Experimental CI investigator subagent (off by default). Gates its entry tool
+  // and the deep-log gh_run_* helpers it relies on so the feature is fully inert
+  // unless explicitly opted into via the experimental setting.
+  if (getSetting<boolean>(CI_INVESTIGATOR_ENABLED_SETTING, false)) {
+    registry.register(ghRunListTool)
+    registry.register(ghRunViewTool)
+    registry.register(investigateCiTool)
+  }
   registry.register(webSearchTool)
   registry.register(fetchUrlTool)
   registry.register(updateTodosTool)
-  if (getSetting<boolean>(BROWSER_TOOLS_ENABLED_SETTING, false)) {
+  if (getSetting<boolean>(BROWSER_TOOLS_ENABLED_SETTING, BROWSER_TOOLS_DEFAULT_ENABLED)) {
     for (const tool of browserTools) registry.register(tool)
   }
   return registry

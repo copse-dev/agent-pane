@@ -143,15 +143,15 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
 
   function showStep(step: OnboardingStep): void {
     currentStep = step
-    stepBtns.forEach((btn) => btn.classList.toggle('active', btn.dataset.step === step))
-    panels.forEach((panel) => panel.classList.toggle('active', panel.dataset.step === step))
+    stepBtns.forEach((btn) => btn.classList.toggle('active', btn.dataset['step'] === step))
+    panels.forEach((panel) => panel.classList.toggle('active', panel.dataset['step'] === step))
     backBtn.disabled = step === 'welcome'
     nextBtn.textContent = step === 'routing' ? 'Finish setup' : 'Continue'
   }
 
   stepBtns.forEach((btn) => {
     btn.addEventListener('click', () => {
-      const step = btn.dataset.step as OnboardingStep | undefined
+      const step = btn.dataset['step'] as OnboardingStep | undefined
       if (step) showStep(step)
     })
   })

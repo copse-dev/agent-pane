@@ -5,7 +5,7 @@ import { renderMarkdown } from './renderer.ts'
 describe('renderMarkdown', () => {
   it('renders headings on their own lines', () => {
     const html = renderMarkdown('## Section\n\nBody text')
-    assert.match(html, /<h4>Section<\/h4>/)
+    assert.match(html, /<h2>Section<\/h2>/)
     assert.match(html, /<p>Body text<\/p>/)
   })
 
@@ -18,6 +18,16 @@ describe('renderMarkdown', () => {
     const html = renderMarkdown('first paragraph\n\nsecond paragraph')
     assert.match(html, /<p>first paragraph<\/p>/)
     assert.match(html, /<p>second paragraph<\/p>/)
+  })
+
+  it('strips HTML comments from prose but keeps them in fenced code', () => {
+    const html = renderMarkdown(
+      '<!-- template hint -->\n\nVisible text\n\n```html\n<!-- keep -->\n```',
+    )
+    assert.doesNotMatch(html, /template hint/)
+    assert.match(html, /<p>Visible text<\/p>/)
+    assert.match(html, /keep/)
+    assert.doesNotMatch(html, /template hint/)
   })
 
   it('renders unordered lists', () => {
@@ -241,7 +251,7 @@ describe('renderMarkdown', () => {
   it('does not strip interior newlines from multi-line content', () => {
     const input = '## Repo summary\n\n### index.html\nMain app file.\n\n### tests\n14 passed.'
     const html = renderMarkdown(input)
-    assert.match(html, /<h4>Repo summary<\/h4>/)
+    assert.match(html, /<h2>Repo summary<\/h2>/)
     assert.match(html, /<h3>index\.html<\/h3>/)
     assert.match(html, /Main app file\./)
     assert.match(html, /<h3>tests<\/h3>/)
@@ -281,7 +291,7 @@ describe('renderMarkdown', () => {
     )
     assert.doesNotMatch(html, /<p>(?:(?!<\/p>)[\s\S])*<ul>/)
     assert.match(html, /<hr>/)
-    assert.match(html, /<h4>Search Routing Summary/)
+    assert.match(html, /<h2>Search Routing Summary/)
     assert.match(html, /<h3>1\. Classification/)
     assert.match(html, /<code>search_codebase<\/code>/)
     assert.match(html, /<h3>2\. Execution<\/h3>\s*<ul>/)

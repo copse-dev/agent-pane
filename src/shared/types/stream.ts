@@ -59,6 +59,7 @@ export type StreamChunk =
       content: string
     }
   | { type: 'todo_worker_done'; todoId: string; summary: string; passed: boolean }
+  | { type: 'post_turn_review'; status: 'running' | 'done' | 'error'; summary: string }
   | { type: 'done'; stopReason?: string }
 
 export interface ToolCallChunk {
