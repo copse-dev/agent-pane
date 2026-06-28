@@ -41,19 +41,19 @@ describe('PR panel (mock gh)', () => {
 
     await openPrTab()
 
-    await browser.waitUntil(async () => (await $$('.pr-list-row')).length >= 3, {
+    // Default view = chat-linked + workspace rows only; the cross-repo "your
+    // PRs" section stays collapsed (and unqueried) until expanded.
+    await browser.waitUntil(async () => (await $$('.pr-list-row')).length >= 2, {
       timeout: 15_000,
-      timeoutMsg: 'expected linked, workspace, and open PR rows',
+      timeoutMsg: 'expected linked and workspace PR rows',
     })
 
     await expect(await $('.git-changes-section-title*=From chat')).toHaveText(
       expect.stringMatching(/from chat \(1\)/i),
     )
+    // Repo-scoped header drops the "In " prefix to save horizontal space.
     await expect(await $('.git-changes-section-title*=copse-panel')).toHaveText(
-      expect.stringMatching(/in copse-dev\/copse-panel \(1\)/i),
-    )
-    await expect(await $('.git-changes-section-title*=Your other open PRs')).toHaveText(
-      expect.stringMatching(/your other open prs \(1\)/i),
+      expect.stringMatching(/^copse-dev\/copse-panel \(1\)$/i),
     )
     await expect(await $('.pr-list-row[data-pr-section="linked"] .pr-list-title')).toHaveText(
       'Add GitHub PR panel tab',
@@ -62,6 +62,23 @@ describe('PR panel (mock gh)', () => {
     // selector so the oracle doesn't extract a generic "workspace" token that
     // would falsely couple backend files to this spec.
     await expect(await $('.pr-list-title*=Tidy up workspace status polling')).toBeDisplayed()
+
+    // CI rollup dots ride along with the workspace listing: #88 fails, the
+    // chat-linked #42 passes — both shown without a per-row query.
+    await expect(await $('.pr-list-ci-failure')).toBeDisplayed()
+    await expect(await $('.pr-list-ci-success')).toBeDisplayed()
+
+    // The cross-repo section is a collapsed, countless toggle by default; its
+    // PR (#17) hasn't been loaded.
+    const otherToggle = await $('.pr-other-toggle')
+    await expect(otherToggle).toHaveText(expect.stringMatching(/your other open prs/i))
+    await expect(otherToggle).not.toHaveText(expect.stringMatching(/\(\d+\)/))
+    await expect(await $('.pr-list-title*=Polish footer branch status')).not.toBeExisting()
+
+    // Expanding loads the cross-repo list and its lazily-fetched CI state.
+    await otherToggle.click()
+    await expect(await $('.pr-list-title*=Polish footer branch status')).toBeDisplayed()
+    await expect(await $('.pr-list-ci-pending')).toBeDisplayed()
 
     await browser.waitUntil(
       async () => {
