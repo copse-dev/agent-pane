@@ -163,10 +163,10 @@ describe('renderMarkdown fixture structure: bold after glob table (markdown-bold
   it('keeps the supporting-files and architecture lists structurally intact', () => {
     const root = render(content)
     // e2e: supportingListItemCount === 3, architectureListLabels === 5
-    const supporting = bySubstring(root.querySelectorAll('h4'), 'Key Supporting Files')
+    const supporting = bySubstring(root.querySelectorAll('h2'), 'Key Supporting Files')
     assert.equal(supporting?.nextElementSibling?.querySelectorAll('li').length, 3)
 
-    const architecture = bySubstring(root.querySelectorAll('h4'), 'Architecture Notes')
+    const architecture = bySubstring(root.querySelectorAll('h2'), 'Architecture Notes')
     assert.equal(architecture?.nextElementSibling?.querySelectorAll('li strong').length, 5)
   })
 })
