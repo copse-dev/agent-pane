@@ -21,6 +21,8 @@ import {
   contextTrimmedChunk,
   contextPressureChunk,
   createTrimNotifier,
+  promptExceedsContextWindow,
+  oversizedTurnMessage,
 } from './history-trimming.ts'
 import {
   runWithAgentRunReadFileLimits,
@@ -235,6 +237,24 @@ export async function runAgent(
     if (wasTrimmed) notifyTrimmed(sendTrimNotice)
 
     sendChunk(contextPressureChunk(prepared, contextWindow))
+
+    // A single turn that overflows the context even after trimming can never
+    // succeed: the trimmer cannot drop the user's own message, so sending it
+    // only earns a provider "context length" rejection and, on metered
+    // providers, burns input-token rate-limit budget on a doomed request.
+    // Fail fast with actionable guidance instead.
+    if (promptExceedsContextWindow(prepared, contextWindow)) {
+      sendChunk({
+        type: 'text',
+        text: oversizedTurnMessage(contextWindow, prepared.estimatedPromptTokens),
+      })
+      sendChunk({ type: 'done' })
+      return {
+        usage: { inputTokens: 0, outputTokens: 0 },
+        messages: trimmed.filter((m) => m.role !== 'system'),
+      }
+    }
+
     const runReadLimits = readFileLimitsFromConversationBudget(conversationBudget)
     const readonlyMode = getSetting<boolean>('defaultReadonlyMode', false)
 

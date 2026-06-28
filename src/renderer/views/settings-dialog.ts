@@ -13,6 +13,7 @@ import { populateModelSelect, populateSmallTasksModelSelect } from './model-opti
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createCustomProvidersSection } from './setup/custom-providers-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
+import { createGhCliSection } from './setup/gh-cli-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
 import {
   DEFAULT_WEB_ALLOWED_ORIGINS,
@@ -255,6 +256,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <div id="settings-model-routing-host"></div>
+
+            <div id="settings-gh-cli-host"></div>
 
             <fieldset>
               <legend>Agent behavior</legend>
@@ -530,6 +533,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   const lmStudioSection = createLmStudioSection(api, { showInstallGuide: false })
   overlay.querySelector('#settings-lm-studio-host')!.append(lmStudioSection.root)
+
+  const ghCliSection = createGhCliSection(api)
+  overlay.querySelector('#settings-gh-cli-host')!.append(ghCliSection.root)
 
   const modelRoutingSection = createModelRoutingSection(api)
   overlay.querySelector('#settings-model-routing-host')!.append(modelRoutingSection.root)
@@ -823,6 +829,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       await refreshLocalModelSelects()
       await lmStudioSection.refreshDetection()
+      await ghCliSection.refreshStatus()
       await refreshMcpServers()
       await refreshCuratedServers()
     })()

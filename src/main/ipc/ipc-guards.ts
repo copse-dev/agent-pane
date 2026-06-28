@@ -26,6 +26,51 @@ export const zNonEmptyString = z.string().min(1)
 export const zPathString = z.string().max(4096)
 export const zSessionId = z.string().uuid()
 
+// Thread ids compose a persisted storage key (`llm-history:${threadId}`), so they
+// must be restricted to a safe charset/length to avoid key-injection.
+export const zThreadId = z.string().regex(/^[\w-]{1,128}$/)
+
+// An outbound URL the main process will fetch (e.g. a local LM Studio server).
+// Restrict to http(s) to deny file:/other schemes used as an SSRF/exfil sink.
+export const zHttpUrl = z
+  .string()
+  .url()
+  .max(2048)
+  .refine((u) => u.startsWith('http://') || u.startsWith('https://'), {
+    message: 'URL must be http or https',
+  })
+
+// Optional provider API key — bounded so a malformed/oversized value is rejected
+// before it reaches the outbound request.
+export const zOptionalApiKey = z.string().max(4096).optional()
+
+// LM Studio model identifier — a bounded non-empty string.
+export const zModelId = z.string().min(1).max(256)
+
+// MCP server name — a bounded non-empty string.
+export const zMcpServerName = z.string().min(1).max(256)
+
+export const lmStudioTestSchema = z.tuple([zHttpUrl, zOptionalApiKey])
+export const lmStudioDetectSchema = z.tuple([zHttpUrl.optional(), zOptionalApiKey])
+export const lmStudioDownloadSchema = z.tuple([zModelId, zHttpUrl.optional(), zOptionalApiKey])
+export const lmStudioDownloadStatusSchema = z.tuple([
+  z.string().min(1).max(256),
+  zHttpUrl.optional(),
+  zOptionalApiKey,
+])
+
+export const estimateContextPayloadSchema = z.object({
+  draftText: z.string().optional(),
+  invokedSkills: z.array(z.string()).optional(),
+  imageCount: z.number().optional(),
+})
+
+export const followUpContextSchema = z.object({
+  userMessage: z.string(),
+  assistantMessage: z.string(),
+  toolNames: z.array(z.string()),
+})
+
 export const INDEX_QUERY_PATTERN = /^[\w.\-/+$@ ]{0,128}$/
 
 export function isIndexQueryPattern(pattern: string): boolean {
