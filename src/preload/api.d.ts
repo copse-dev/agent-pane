@@ -8,6 +8,7 @@ import type {
   GitBranchStatus,
   GitBranchInfo,
   GhCliStatus,
+  GhPrChecksState,
   GhPrDetails,
   GhPrFileDiff,
   GhPrSummary,
@@ -258,6 +259,7 @@ export interface ApiClient {
     status: () => Promise<GhCliStatus>
     listMyOpenPrs: () => Promise<GhPrSummary[] | null>
     listWorkspaceOpenPrs: () => Promise<GhPrSummary[]>
+    prChecks: (owner: string, repo: string, number: number) => Promise<GhPrChecksState>
     prDetails: (owner: string, repo: string, number: number) => Promise<GhPrDetails | null>
     prFileDiff: (
       owner: string,

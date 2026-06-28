@@ -69,6 +69,7 @@ import { getGitBranchStatus } from '../services/pr-context-service.ts'
 import { isGitAvailable } from '../services/tool-availability.ts'
 import {
   getGhCliStatus,
+  getGhPrChecksState,
   getGhPrDetails,
   getGhPrFileDiff,
   listMyOpenPrs,
@@ -339,6 +340,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('gh:status', () => getGhCliStatus())
   ipcMain.handle('gh:listMyOpenPrs', () => listMyOpenPrs())
   ipcMain.handle('gh:listWorkspaceOpenPrs', () => listWorkspaceOpenPrs())
+  ipcMain.handle('gh:prChecks', (_e, owner: unknown, repo: unknown, number: unknown) => {
+    const parsedOwner = parseIpcArgs(z.string().min(1).max(128), [owner])
+    const parsedRepo = parseIpcArgs(z.string().min(1).max(128), [repo])
+    const parsedNumber = parseIpcArgs(z.number().int().positive(), [number])
+    return getGhPrChecksState({ owner: parsedOwner, repo: parsedRepo, number: parsedNumber })
+  })
   ipcMain.handle('gh:prDetails', (_e, owner: unknown, repo: unknown, number: unknown) => {
     const parsedOwner = parseIpcArgs(z.string().min(1).max(128), [owner])
     const parsedRepo = parseIpcArgs(z.string().min(1).max(128), [repo])
