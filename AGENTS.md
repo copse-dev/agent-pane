@@ -106,19 +106,28 @@ Shell command auto-run is gated by a single pure decision function,
 static analysis plus an optional classifier. This is intentional, not a fallback
 ambiguity — the per-platform behavior is:
 
-| Situation                                                        | Sandbox-contained command                                                                                                                                                                                                             | External command (network, `gh`, `git push`, `~/...`)                                                                                                           |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **macOS, ASRT sandbox active**                                   | Auto-runs **inside** the seatbelt sandbox. The classifier is not consulted; seatbelt is the real boundary.                                                                                                                            | Prompts first, then runs **outside** the sandbox. If a sandbox-contained command later fails (e.g. Playwright), `shell-tool` offers a retry-unsandboxed prompt. |
-| **macOS sandbox init failure / Linux / Windows (no OS sandbox)** | Auto-runs **only** if the optional LM Studio safety classifier returns `scope: "sandbox"` with confidence ≥ `lmStudioSafetyConfidenceThreshold` (default `0.85`); otherwise prompts. With the classifier off/unavailable, it prompts. | Always prompts (static analysis flags `external` before the classifier is consulted).                                                                           |
-| **Auto-run disabled in Settings** (`autoRunSandboxCommands` off) | Prompts.                                                                                                                                                                                                                              | Prompts.                                                                                                                                                        |
+| Situation                                                        | Sandbox-contained command                                                                                                                                                                                                             | Hard-external command (network download, `git push`, install, `~/...`)                | Ambiguous "may reach" command (`gh`, `nc`, `aws`/`gcloud`/`az`, `open <url>`)                                                                                                                                  |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **macOS, ASRT sandbox active**                                   | Auto-runs **inside** the seatbelt sandbox. The classifier is not consulted; seatbelt is the real boundary.                                                                                                                            | Prompts first, then runs **outside** the sandbox.                                     | Auto-runs **inside** the seatbelt sandbox (no upfront prompt). If seatbelt blocks it, `shell-tool` offers a retry-unsandboxed prompt — same as a sandbox-contained command that later fails (e.g. Playwright). |
+| **macOS sandbox init failure / Linux / Windows (no OS sandbox)** | Auto-runs **only** if the optional LM Studio safety classifier returns `scope: "sandbox"` with confidence ≥ `lmStudioSafetyConfidenceThreshold` (default `0.85`); otherwise prompts. With the classifier off/unavailable, it prompts. | Always prompts (static analysis flags `external` before the classifier is consulted). | Always prompts (treated like hard-external when no OS sandbox can contain it).                                                                                                                                 |
+| **Auto-run disabled in Settings** (`autoRunSandboxCommands` off) | Prompts.                                                                                                                                                                                                                              | Prompts.                                                                              | Prompts.                                                                                                                                                                                                       |
+
+The ambiguous tier exists because short/overloaded command names (`gh`, `nc`, …)
+collide with file paths and arguments (e.g. `grep … src/.../gh-pr-service.ts`).
+Rather than prompt on a guess, macOS lets seatbelt — the actual boundary — decide:
+the command runs sandboxed and only escalates to an unsandboxed retry if the OS
+truly blocks it. Without an OS sandbox there is nothing to contain a misfire, so
+these still prompt.
 
 Key components:
 
 - `permission-policy.ts` — `decideShellPermission` (pure; the table above),
   `shellRequiresOutsideSandbox`, MCP-tool decisions, and the prompt-body
   formatters that explain _why_ a command is being prompted.
-- `shell-scope.ts` — static `analyzeShellCommand` heuristic (`sandbox` vs
-  `external`), with human-readable `reasons`.
+- `shell-scope.ts` — static `analyzeShellCommand` heuristic (`sandbox`,
+  `ambiguous`, or `external`), with human-readable `reasons`. Fuzzy "may reach"
+  matchers are tagged `ambiguous: true`; a command is only `external` when a
+  definite escape (hard pattern or outside-workspace path) fires.
 - `safety-classifier.ts` — optional LM Studio classifier (`classifyShellScope`),
   used **only** when the OS sandbox is unavailable; returns `null` when disabled
   or unreachable.
