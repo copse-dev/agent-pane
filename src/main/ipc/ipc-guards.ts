@@ -126,3 +126,7 @@ export const cloudProviderSchema = z.enum([
   'gemini',
   'deepseek',
 ])
+
+// Any provider key slug: the fixed providers above plus arbitrary user-added
+// custom-provider slugs (URL-safe, derived from a base-URL hostname).
+export const keyProviderSchema = z.string().regex(/^[a-z0-9-]{1,64}$/)

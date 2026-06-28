@@ -9,6 +9,7 @@ import {
   setThreadStatus,
 } from '@shared/store/thread-helpers.ts'
 import { syncAgentActivity } from '../agent-activity.ts'
+import { isRemoteAgentModel } from '@shared/remote-agent.ts'
 
 function refreshPayload(
   store: AppStore,
@@ -194,6 +195,12 @@ export function sendQueuedMessageNow(
   store.emit('threads_changed')
 
   if (thread.status === 'running') {
+    // Remote agents run on the provider's servers, where aborting cancels the live
+    // run ("Agent already has an active run" on the next turn). Leave the reordered
+    // message queued — it drains onto the same remote agent once this run finishes,
+    // so a follow-up never kills the agent. Local runs interrupt as before.
+    const model = store.getState().settings?.model ?? ''
+    if (isRemoteAgentModel(model)) return
     // Abort the live run; its `done` chunk drains the reordered queue head.
     void api.agent.abort(threadId)
   } else {

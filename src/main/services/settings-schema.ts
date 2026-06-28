@@ -13,6 +13,31 @@ const windowBoundsSchema = z.object({
   height: z.number().positive(),
 })
 
+const extraProviderModelSchema = z.object({
+  id: z.string().min(1).max(256),
+  label: z.string().max(256).optional(),
+  contextWindow: z.number().int().positive().optional(),
+  // Per-MTok USD rates, when the provider reports them (e.g. HF router). Used by
+  // the cost estimator for models absent from the static cloud catalog.
+  inputPricePerMTok: z.number().min(0).optional(),
+  outputPricePerMTok: z.number().min(0).optional(),
+})
+
+// Persisted override (for a built-in preset) or full definition (for a user
+// custom). `slug` matches the URL-safe form derived from a base-URL hostname.
+export const storedExtraProviderSchema = z.object({
+  slug: z.string().regex(/^[a-z0-9-]{1,64}$/),
+  label: z.string().max(256).optional(),
+  baseUrl: z.string().max(2048).optional(),
+  keyPrefix: z.string().max(64).optional(),
+  models: z.array(extraProviderModelSchema).max(256).optional(),
+  fallbackContextWindow: z.number().int().positive().optional(),
+  includeUsage: z.boolean().optional(),
+  extraBody: z.record(z.string(), z.unknown()).optional(),
+})
+
+export const extraProvidersSchema = z.array(storedExtraProviderSchema).max(64)
+
 const MAIN_ONLY_SETTING_SCHEMAS = {
   windowBounds: windowBoundsSchema,
   // Security / safety toggles read in the main process.
@@ -27,6 +52,9 @@ const MAIN_ONLY_SETTING_SCHEMAS = {
   webAllowedOrigins: webAllowedOriginsSchema,
   webAllowUserApproval: z.boolean(),
   browserAllowUserApproval: z.boolean(),
+  // User's OpenAI-compatible providers: preset overrides + custom definitions.
+  // Managed via dedicated IPC (settings:saveExtraProvider), not settings:set.
+  extraProviders: extraProvidersSchema,
 } as const satisfies Record<string, z.ZodType>
 
 const SETTING_SCHEMAS: Record<string, z.ZodType> = {

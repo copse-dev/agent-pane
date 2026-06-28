@@ -3,6 +3,7 @@ import { LM_STUDIO_MODEL_IDS, DEFAULT_LM_STUDIO_URL } from '@shared/lm-studio-de
 import { getModelInfo } from '@shared/llm/model-catalog.ts'
 import { isOpenRouterModel, openRouterModelId } from '@shared/llm/openrouter.ts'
 import { extraProviderContextWindow, isExtraProviderModel } from '@shared/llm/extra-providers.ts'
+import { getResolvedExtraProviders } from './extra-providers-store.ts'
 import { contextLengthForModel, fetchLmStudioModelsCached } from './lm-studio-models.ts'
 import { openRouterModelContextLength } from './openrouter-models.ts'
 
@@ -42,7 +43,7 @@ export async function resolveContextWindow(model: string): Promise<number> {
   }
 
   if (isExtraProviderModel(model)) {
-    return extraProviderContextWindow(model) ?? DEFAULT_CLOUD_CONTEXT
+    return extraProviderContextWindow(getResolvedExtraProviders(), model) ?? DEFAULT_CLOUD_CONTEXT
   }
 
   if (model === 'lm-studio' || model.startsWith('lmstudio:')) {

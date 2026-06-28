@@ -2,10 +2,12 @@ import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { StreamChunk } from '@shared/types'
 import {
+  buildRemoteAgentContextPreamble,
   formatRemoteGitSummary,
   parseSseBlock,
   promptPayloadFromUserContent,
   remoteStreamEventToChunks,
+  userContentToText,
   type RemoteStreamState,
 } from '@shared/remote-agent-stream.ts'
 import {
@@ -277,6 +279,53 @@ describe('fetchRemoteArtifactImageDataUrl', () => {
     assert.equal(first, 'data:image/png;base64,BAUG')
     assert.equal(second, first)
     assert.equal(calls, 2)
+  })
+})
+
+describe('buildRemoteAgentContextPreamble', () => {
+  it('returns empty when there is no prior chat and no branch', () => {
+    assert.equal(buildRemoteAgentContextPreamble({ priorMessages: [] }), '')
+    assert.equal(buildRemoteAgentContextPreamble({ priorMessages: [], branch: '  ' }), '')
+  })
+
+  it('dumps prior user/assistant turns and the branch into the handoff', () => {
+    const preamble = buildRemoteAgentContextPreamble({
+      branch: 'fix-commonmark-heading-support',
+      priorMessages: [
+        { role: 'system', content: 'ignored system prompt' },
+        { role: 'user', content: 'Fix the heading parser' },
+        { role: 'assistant', content: 'Looking into it.' },
+        {
+          role: 'assistant',
+          content: [{ id: 'c1', name: 'read_file', args: { path: 'a.ts' } }],
+        },
+        { role: 'tool', toolResults: [{ toolCallId: 'c1', result: 'contents' }] },
+      ],
+    })
+
+    assert.match(preamble, /Current branch: `fix-commonmark-heading-support`/)
+    assert.match(preamble, /User: Fix the heading parser/)
+    assert.match(preamble, /Assistant: Looking into it\./)
+    assert.match(preamble, /Assistant: \(used tools: read_file\)/)
+    // System prompts and raw tool results stay out of the handoff.
+    assert.doesNotMatch(preamble, /ignored system prompt/)
+    assert.doesNotMatch(preamble, /contents/)
+  })
+
+  it('includes the branch even when there is no prior chat', () => {
+    const preamble = buildRemoteAgentContextPreamble({ priorMessages: [], branch: 'main' })
+    assert.match(preamble, /Current branch: `main`/)
+    assert.doesNotMatch(preamble, /Prior conversation/)
+  })
+
+  it('flattens multimodal user content to its text parts', () => {
+    assert.equal(
+      userContentToText([
+        { type: 'text', text: 'describe this' },
+        { type: 'image', dataUrl: 'data:image/png;base64,abc' },
+      ]),
+      'describe this',
+    )
   })
 })
 
