@@ -18,6 +18,7 @@ import {
   IpcValidationError,
   keyProviderSchema,
   parseIpcArgs,
+  zMcpServerName,
   zNonEmptyString,
   zPathString,
 } from './ipc-guards.ts'
@@ -337,21 +338,38 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return shell.openExternal(href)
   })
 
-  ipcMain.handle('mcp:list', () => getMcpServerStatuses())
-  ipcMain.handle('mcp:reload', async () => {
+  ipcMain.handle('mcp:list', (event) => {
+    assertMainFrameSender(event, win)
+    return getMcpServerStatuses()
+  })
+  ipcMain.handle('mcp:reload', async (event) => {
+    assertMainFrameSender(event, win)
     const statuses = await reloadMcpServers(registry)
     win.webContents.send('mcp:status_changed', statuses)
     return statuses
   })
-  ipcMain.handle('mcp:setEnabled', async (_e, name: string, enabled: boolean) => {
-    await setMcpServerUserEnabled(name, enabled)
+  ipcMain.handle('mcp:setEnabled', async (event, name: unknown, enabled: unknown) => {
+    assertMainFrameSender(event, win)
+    const [parsedName, parsedEnabled] = parseIpcArgs(z.tuple([zMcpServerName, z.boolean()]), [
+      name,
+      enabled,
+    ])
+    await setMcpServerUserEnabled(parsedName, parsedEnabled)
     const statuses = await reloadMcpServers(registry)
     win.webContents.send('mcp:status_changed', statuses)
     return statuses
   })
-  ipcMain.handle('mcp:listCurated', () => getCuratedServerStatuses(getMcpServerStatuses()))
-  ipcMain.handle('mcp:setCuratedEnabled', async (_e, name: string, enabled: boolean) => {
-    await setCuratedServerEnabled(name, enabled)
+  ipcMain.handle('mcp:listCurated', (event) => {
+    assertMainFrameSender(event, win)
+    return getCuratedServerStatuses(getMcpServerStatuses())
+  })
+  ipcMain.handle('mcp:setCuratedEnabled', async (event, name: unknown, enabled: unknown) => {
+    assertMainFrameSender(event, win)
+    const [parsedName, parsedEnabled] = parseIpcArgs(z.tuple([zMcpServerName, z.boolean()]), [
+      name,
+      enabled,
+    ])
+    await setCuratedServerEnabled(parsedName, parsedEnabled)
     const statuses = await reloadMcpServers(registry)
     win.webContents.send('mcp:status_changed', statuses)
     return getCuratedServerStatuses(statuses)
