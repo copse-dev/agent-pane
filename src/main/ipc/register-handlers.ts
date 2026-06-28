@@ -68,6 +68,13 @@ import {
 import { getGitBranchStatus } from '../services/pr-context-service.ts'
 import { isGitAvailable } from '../services/tool-availability.ts'
 import {
+  getGhCliStatus,
+  getGhPrDetails,
+  getGhPrFileDiff,
+  listMyOpenPrs,
+  resolveGithubPrRef,
+} from '../services/gh-pr-service.ts'
+import {
   getMcpServerStatuses,
   reloadMcpServers,
   setMcpServerUserEnabled,
@@ -314,6 +321,32 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   })
   ipcMain.handle('git:listBranches', () => getBranches())
   ipcMain.handle('git:getDefaultBranch', () => getDefaultBranch())
+
+  ipcMain.handle('gh:status', () => getGhCliStatus())
+  ipcMain.handle('gh:listMyOpenPrs', () => listMyOpenPrs())
+  ipcMain.handle('gh:prDetails', (_e, owner: unknown, repo: unknown, number: unknown) => {
+    const parsedOwner = parseIpcArgs(z.string().min(1).max(128), [owner])
+    const parsedRepo = parseIpcArgs(z.string().min(1).max(128), [repo])
+    const parsedNumber = parseIpcArgs(z.number().int().positive(), [number])
+    return getGhPrDetails({ owner: parsedOwner, repo: parsedRepo, number: parsedNumber })
+  })
+  ipcMain.handle(
+    'gh:prFileDiff',
+    (_e, owner: unknown, repo: unknown, number: unknown, path: unknown) => {
+      const parsedOwner = parseIpcArgs(z.string().min(1).max(128), [owner])
+      const parsedRepo = parseIpcArgs(z.string().min(1).max(128), [repo])
+      const parsedNumber = parseIpcArgs(z.number().int().positive(), [number])
+      const parsedPath = parseIpcArgs(zPathString, [path])
+      return getGhPrFileDiff(
+        { owner: parsedOwner, repo: parsedRepo, number: parsedNumber },
+        parsedPath,
+      )
+    },
+  )
+  ipcMain.handle('gh:resolvePrUrl', (_e, url: unknown) => {
+    const parsedUrl = parseIpcArgs(z.string().url().max(2048), [url])
+    return resolveGithubPrRef(parsedUrl)
+  })
   ipcMain.handle('remoteAgent:downloadArtifact', async (event, agentId: unknown, path: unknown) => {
     assertMainFrameSender(event, win)
     const parsedAgentId = parseIpcArgs(z.string().min(1).max(128), [agentId])
