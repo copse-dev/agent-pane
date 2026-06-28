@@ -10,6 +10,7 @@ import {
   getGitDiffText,
   getGitFileDiff,
   parsePorcelainV1,
+  resolveWorkspaceRelativeGitPath,
   toGitShowPath,
 } from './git-service.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
@@ -280,6 +281,41 @@ describe('toGitShowPath', () => {
     assert.equal(toGitShowPath('README.md'), './README.md')
     assert.equal(toGitShowPath('./README.md'), './README.md')
     assert.equal(toGitShowPath('src/foo.ts'), './src/foo.ts')
+  })
+})
+
+describe('resolveWorkspaceRelativeGitPath', () => {
+  let root = ''
+  let restore: (() => void) | undefined
+
+  before(async () => {
+    root = await mkdtemp(join(tmpdir(), 'copse-git-rel-path-'))
+    await mkdir(join(root, 'src'), { recursive: true })
+    restore = setWorkspaceRootForTest(root)
+  })
+
+  after(async () => {
+    restore?.()
+    if (root) await rm(root, { recursive: true, force: true })
+  })
+
+  it('keeps an in-workspace relative path unchanged', () => {
+    assert.equal(resolveWorkspaceRelativeGitPath('src/foo.ts'), join('src', 'foo.ts'))
+  })
+
+  it('normalizes a redundant in-workspace path', () => {
+    assert.equal(resolveWorkspaceRelativeGitPath('./src/../src/foo.ts'), join('src', 'foo.ts'))
+  })
+
+  it('maps an absolute in-workspace path back to workspace-relative', () => {
+    assert.equal(
+      resolveWorkspaceRelativeGitPath(join(root, 'src', 'foo.ts')),
+      join('src', 'foo.ts'),
+    )
+  })
+
+  it('rejects a path that escapes the workspace root', () => {
+    assert.throws(() => resolveWorkspaceRelativeGitPath('../escape.ts'), /outside workspace/)
   })
 })
 

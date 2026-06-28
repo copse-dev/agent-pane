@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { sanitizeMcpInputSchema, flattenMcpContent } from './mcp-schema.ts'
+import { sanitizeMcpInputSchema, flattenMcpContent, extractUiResources } from './mcp-schema.ts'
 
 describe('sanitizeMcpInputSchema', () => {
   it('passes through a valid object schema', () => {
@@ -83,5 +83,71 @@ describe('flattenMcpContent', () => {
   it('returns a string input unchanged and empty for unknown', () => {
     assert.equal(flattenMcpContent('raw'), 'raw')
     assert.equal(flattenMcpContent(undefined), '')
+  })
+
+  it('inlines UI resource bodies by default (legacy shape)', () => {
+    const out = flattenMcpContent([
+      { type: 'resource', resource: { uri: 'ui://x', mimeType: 'text/html', text: '<h1>hi</h1>' } },
+    ])
+    assert.equal(out, '<h1>hi</h1>')
+  })
+
+  it('summarizes UI resources when asked, keeping the body out of the transcript', () => {
+    const out = flattenMcpContent(
+      [
+        { type: 'text', text: 'before' },
+        {
+          type: 'resource',
+          resource: { uri: 'ui://component/dashboard', mimeType: 'text/html', text: '<h1>hi</h1>' },
+        },
+      ],
+      { summarizeUiResources: true },
+    )
+    assert.match(out, /before/)
+    assert.match(
+      out,
+      /\[ui resource: ui:\/\/component\/dashboard \(text\/html, [\d.]+ KB\) — rendered in the canvas\]/,
+    )
+    assert.doesNotMatch(out, /<h1>/)
+  })
+
+  it('leaves non-UI resources untouched when summarizing', () => {
+    const out = flattenMcpContent(
+      [{ type: 'resource', resource: { uri: 'file:///a', mimeType: 'text/plain', text: 'plain' } }],
+      { summarizeUiResources: true },
+    )
+    assert.equal(out, 'plain')
+  })
+})
+
+describe('extractUiResources', () => {
+  it('extracts text/html and text/uri-list resources', () => {
+    const out = extractUiResources([
+      { type: 'text', text: 'noise' },
+      { type: 'resource', resource: { uri: 'ui://a', mimeType: 'text/html', text: '<p>a</p>' } },
+      {
+        type: 'resource',
+        resource: { uri: 'ui://b', mimeType: 'text/uri-list', text: 'https://example.com' },
+      },
+    ])
+    assert.deepEqual(out, [
+      { uri: 'ui://a', mimeType: 'text/html', text: '<p>a</p>' },
+      { uri: 'ui://b', mimeType: 'text/uri-list', text: 'https://example.com' },
+    ])
+  })
+
+  it('ignores non-UI mime types, empty bodies, and oversized payloads', () => {
+    const huge = 'x'.repeat(600 * 1024)
+    const out = extractUiResources([
+      { type: 'resource', resource: { uri: 'file:///a', mimeType: 'text/plain', text: 'plain' } },
+      { type: 'resource', resource: { uri: 'ui://empty', mimeType: 'text/html', text: '' } },
+      { type: 'resource', resource: { uri: 'ui://big', mimeType: 'text/html', text: huge } },
+    ])
+    assert.deepEqual(out, [])
+  })
+
+  it('returns [] for non-array content', () => {
+    assert.deepEqual(extractUiResources('raw'), [])
+    assert.deepEqual(extractUiResources(undefined), [])
   })
 })

@@ -7,15 +7,14 @@ import quote from 'shell-quote'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { posixQuote } from '../services/safe-install.ts'
 import { workspaceSandboxOverlay } from './config.ts'
-
-let enabled = false
+import { isProjectSandboxActive, setProjectSandboxActive } from './state.ts'
 
 export function isProjectSandboxEnabled(): boolean {
-  return enabled && process.platform === 'darwin' && SandboxManager.isSandboxingEnabled()
+  return isProjectSandboxActive() && SandboxManager.isSandboxingEnabled()
 }
 
 export function setProjectSandboxEnabled(active: boolean): void {
-  enabled = active
+  setProjectSandboxActive(active)
 }
 
 /** Join argv for `/bin/sh -c` / ASRT wrap. Uses POSIX single quotes so paths with spaces stay one word. */

@@ -1,5 +1,6 @@
 import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
-import { EXTRA_PROVIDERS, type ExtraProviderId } from '@shared/llm/extra-providers.ts'
+import type { ExtraProvider } from '@shared/llm/extra-providers.ts'
+import { getResolvedExtraProvider } from './extra-providers-store.ts'
 
 export interface ApiKeyValidationResult {
   ok: boolean
@@ -134,13 +135,12 @@ export async function validateOpenRouterApiKey(key: string): Promise<ApiKeyValid
   }
 }
 
-// Mistral, Gemini, and DeepSeek are OpenAI-compatible, so a GET on their
-// `/models` endpoint with the key as a Bearer token doubles as a free auth check.
+// Every extra provider is OpenAI-compatible, so a GET on its `/models` endpoint
+// with the key as a Bearer token doubles as a free auth check.
 export async function validateExtraProviderApiKey(
-  providerId: ExtraProviderId,
+  provider: Pick<ExtraProvider, 'baseUrl' | 'label' | 'keyPrefix'>,
   key: string,
 ): Promise<ApiKeyValidationResult> {
-  const provider = EXTRA_PROVIDERS[providerId]
   const trimmed = key.trim()
   if (!trimmed) return { ok: false, error: 'Key is empty' }
   if (provider.keyPrefix && !trimmed.startsWith(provider.keyPrefix)) {
@@ -168,17 +168,19 @@ export async function validateExtraProviderApiKey(
   }
 }
 
-export type ValidatableProvider = 'anthropic' | 'openai' | 'cursor' | 'openrouter' | ExtraProviderId
+// The fixed cloud providers have bespoke validation; everything else is treated
+// as an extra provider slug and validated against its own base URL.
+export type ValidatableProvider = string
 
 export async function validateApiKey(
   provider: ValidatableProvider,
   key: string,
 ): Promise<ApiKeyValidationResult> {
   if (provider === 'anthropic') return validateAnthropicApiKey(key)
+  if (provider === 'openai') return validateOpenAiApiKey(key)
   if (provider === 'cursor') return validateCursorApiKey(key)
   if (provider === 'openrouter') return validateOpenRouterApiKey(key)
-  if (provider === 'mistral' || provider === 'gemini' || provider === 'deepseek') {
-    return validateExtraProviderApiKey(provider, key)
-  }
-  return validateOpenAiApiKey(key)
+  const extra = getResolvedExtraProvider(provider)
+  if (extra) return validateExtraProviderApiKey(extra, key)
+  return { ok: false, error: `Unknown provider '${provider}'` }
 }

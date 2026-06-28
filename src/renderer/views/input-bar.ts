@@ -1,4 +1,5 @@
 import { el, clear } from '../dom/helpers.ts'
+import { outlineIcon } from '../dom/outline-icon.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
@@ -17,7 +18,7 @@ import {
   textBlockLabel,
 } from '@shared/agent/build-text-with-attachments.ts'
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
-import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
+import { bindFileDropTarget, attachFiles } from '../attachments/handle-file-drop.ts'
 import { initMentionPicker } from './mention-picker.ts'
 import { initSkillPicker } from './skill-picker.ts'
 import { resolveSkillInvocation } from '@shared/skills/parse-skill-invocation.ts'
@@ -30,7 +31,8 @@ import { createContextWheel } from './context-wheel.ts'
 import { bindFooterCompactLayout } from './footer-compact.ts'
 import { mountFooterOverflow } from './footer-overflow.ts'
 import { downloadThreadJsonl, threadHasExportableContent } from '../export-thread.ts'
-import { formatThreadUsageCost } from '@shared/llm/estimate-cost.ts'
+import { formatThreadUsageCost, type ExtraPricing } from '@shared/llm/estimate-cost.ts'
+import { extraProviderPricingMap } from '@shared/llm/extra-providers.ts'
 import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
 import { mountFollowUpSuggestions } from './follow-up-suggestions.ts'
 import {
@@ -54,9 +56,38 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     { class: 'stop-btn', type: 'button', hidden: '', 'aria-label': 'Stop agent' },
     'Stop',
   )
+  // Hidden native file picker driven by the paperclip button — gives an
+  // explicit "browse" affordance alongside drag-and-drop and @-mentions.
+  const fileInput = el('input', {
+    class: 'attach-file-input',
+    type: 'file',
+    multiple: '',
+    hidden: '',
+    'aria-hidden': 'true',
+    tabindex: '-1',
+  })
+  const attachBtn = el(
+    'button',
+    { class: 'attach-btn', type: 'button', 'aria-label': 'Attach files', title: 'Attach files' },
+    outlineIcon(
+      'attach',
+      [
+        'm21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48',
+      ],
+      'attach-btn-icon',
+    ),
+  )
   // The Send button is positioned relative to this row (not the whole input
   // bar), so it sits inside the textarea box and never overlaps the footer.
-  const inputRow = el('div', { class: 'input-row' }, textarea, stopBtn, submitBtn)
+  const inputRow = el(
+    'div',
+    { class: 'input-row' },
+    textarea,
+    attachBtn,
+    fileInput,
+    stopBtn,
+    submitBtn,
+  )
   const branchWarningText = el('span', { class: 'composer-branch-warning-text' })
   const checkoutBranchBtn = el(
     'button',
@@ -146,6 +177,24 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   let mismatchBranch: string | null = null
   let checkoutInProgress = false
   let lastBreakdown: ContextBreakdown | null = null
+  // Pricing for extra-provider models (e.g. HF), keyed by `<slug>:<id>` selection.
+  // The static cloud catalog has no entry for these, so the footer cost reads here.
+  let extraPricing: ExtraPricing = {}
+  function refreshExtraPricing(): void {
+    // Best-effort: a missing/failed provider list just leaves the footer cost
+    // resting on the static cloud catalog, so never let it throw.
+    try {
+      void api.settings
+        .extraProviders()
+        .then((providers) => {
+          extraPricing = extraProviderPricingMap(providers)
+          updateFooter()
+        })
+        .catch(() => {})
+    } catch {
+      /* ignore */
+    }
+  }
 
   function getActiveThreadId() {
     return store.getState().activeThreadId
@@ -233,7 +282,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     const running = thread?.status === 'running'
     if (!total && !running) return null
     if (costVisible) {
-      return `${inputTokens} in / ${outputTokens} out · ${formatThreadUsageCost(thread?.usage ?? { inputTokens: 0, outputTokens: 0 }, model)}`
+      return `${inputTokens} in / ${outputTokens} out · ${formatThreadUsageCost(thread?.usage ?? { inputTokens: 0, outputTokens: 0 }, model, extraPricing)}`
     }
     return total ? `${(total / 1000).toFixed(1)}k tokens` : '0 tokens'
   }
@@ -423,10 +472,27 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     const invocation = resolveSkillInvocation(rawText, skillNames)
     const invokedSkills = invocation ? [invocation.skillName] : []
 
-    if (invocation && !skills.some((skill) => skill.name === invocation.skillName)) {
+    const invokedSkill = invocation
+      ? skills.find((skill) => skill.name === invocation.skillName)
+      : undefined
+
+    if (invocation && !invokedSkill) {
       textarea.setCustomValidity(`Unknown skill: /${invocation.skillName}`)
       textarea.reportValidity()
       return
+    }
+
+    // Warn up front when the invoked skill points the agent at external hosts.
+    // The setting defaults on, so only an explicit `false` suppresses it.
+    if (invokedSkill && invokedSkill.externalLinks.length > 0) {
+      const warnEnabled = (await api.settings.get('skillExternalLinkWarnings')) !== false
+      if (warnEnabled) {
+        showToast(
+          `/${invokedSkill.name} references external links: ${invokedSkill.externalLinks.join(', ')}. ` +
+            `The agent will ask before fetching, installing, or running code from them.`,
+          { variant: 'error', durationMs: 10000 },
+        )
+      }
     }
 
     const text = invocation
@@ -570,6 +636,16 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   }
   const unregisterAttachments = registerPromptAttachments(attachmentHandlers)
 
+  attachBtn.addEventListener('click', () => fileInput.click())
+  const onFileInputChange = () => {
+    const files = Array.from(fileInput.files ?? [])
+    if (files.length === 0) return
+    void attachFiles(files, attachmentHandlers, api, store.getState().workspaceRoot)
+    // Reset so re-selecting the same file fires `change` again.
+    fileInput.value = ''
+  }
+  fileInput.addEventListener('change', onFileInputChange)
+
   const onPaste = (e: ClipboardEvent) => {
     const items = Array.from(e.clipboardData?.items ?? [])
     const img = items.find((i) => i.type.startsWith('image/'))
@@ -655,6 +731,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     }),
     store.on('settings_changed', () => {
       modelPicker.refresh()
+      // An added/edited provider (e.g. a freshly fetched HF list) changes pricing.
+      refreshExtraPricing()
       updateFooter()
       // Model / subagent changes alter the context window and tool set.
       scheduleContextEstimate(0)
@@ -670,6 +748,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   observer.observe(followUps.root, { attributes: true, attributeFilter: ['hidden'] })
 
   updateFooter()
+  refreshExtraPricing()
   syncComposerThread()
   scheduleContextEstimate(0)
   window.addEventListener('beforeunload', stopContextEstimates)
