@@ -435,7 +435,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   // E2e-only: register an ordered mock script so specs can drive multi-turn flows
   // with natural-language prompts (see mock-script.ts). Not exposed in release UX.
-  if (process.env.COPSE_E2E === '1') {
+  if (process.env['COPSE_E2E'] === '1') {
     const mockScriptStepSchema = z
       .object({
         when: z.string().min(1).max(500),
