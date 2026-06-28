@@ -17,6 +17,8 @@ import {
   isResolvedPathInsideWorkspace,
   registerAllowedWorkspaceRoot,
   resolveWorkspacePath,
+  resolveReadablePath,
+  setAttachmentsRoot,
   setWorkspaceRootForTest,
 } from './workspace.ts'
 
@@ -125,6 +127,68 @@ describe('isResolvedPathInsideWorkspace (TOCTOU re-validation)', () => {
     rmSync(watched)
     symlinkSync(join(outside, 'secret.txt'), watched, 'file')
     assert.equal(isResolvedPathInsideWorkspace(watched), false)
+  })
+})
+
+describe('resolveReadablePath (read-only attachments root)', () => {
+  let cleanupRoot: (() => void) | undefined
+
+  afterEach(() => {
+    cleanupRoot?.()
+    cleanupRoot = undefined
+    setAttachmentsRoot(null)
+  })
+
+  it('still resolves workspace files like resolveWorkspacePath', () => {
+    const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+    mkdirSync(join(ws, 'src'))
+    writeFileSync(join(ws, 'src', 'a.ts'), 'ok')
+    cleanupRoot = setWorkspaceRootForTest(ws)
+    assert.equal(resolveReadablePath('src/a.ts'), realpathSync.native(join(ws, 'src', 'a.ts')))
+  })
+
+  it('accepts absolute paths inside the registered attachments root', () => {
+    const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+    const att = mkdtempSync(join(tmpdir(), 'copse-att-'))
+    writeFileSync(join(att, 'big.jsonl'), 'data')
+    cleanupRoot = setWorkspaceRootForTest(ws)
+    setAttachmentsRoot(att)
+    const abs = join(att, 'big.jsonl')
+    assert.equal(resolveReadablePath(abs), realpathSync.native(abs))
+  })
+
+  it('rejects paths outside both the workspace and attachments roots', () => {
+    const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+    const att = mkdtempSync(join(tmpdir(), 'copse-att-'))
+    const outside = mkdtempSync(join(tmpdir(), 'copse-out-'))
+    writeFileSync(join(outside, 'secret.txt'), 'nope')
+    cleanupRoot = setWorkspaceRootForTest(ws)
+    setAttachmentsRoot(att)
+    assert.throws(() => resolveReadablePath(join(outside, 'secret.txt')), /outside workspace/)
+  })
+
+  it('rejects a symlink inside the attachments root that escapes it', () => {
+    const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+    const att = mkdtempSync(join(tmpdir(), 'copse-att-'))
+    const outside = mkdtempSync(join(tmpdir(), 'copse-out-'))
+    writeFileSync(join(outside, 'secret.txt'), 'nope')
+    symlinkSync(outside, join(att, 'link'), 'dir')
+    cleanupRoot = setWorkspaceRootForTest(ws)
+    setAttachmentsRoot(att)
+    assert.throws(() => resolveReadablePath(join(att, 'link', 'secret.txt')), /outside workspace/)
+  })
+
+  it('does not consult the attachments root for relative paths', () => {
+    const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+    const att = mkdtempSync(join(tmpdir(), 'copse-att-'))
+    writeFileSync(join(att, 'big.jsonl'), 'data')
+    cleanupRoot = setWorkspaceRootForTest(ws)
+    setAttachmentsRoot(att)
+    // A bare relative name only ever resolves against the workspace, never the
+    // attachments root — so it maps under ws, not the same-named file in att.
+    const resolved = resolveReadablePath('big.jsonl')
+    assert.equal(resolved, join(realpathSync.native(ws), 'big.jsonl'))
+    assert.notEqual(resolved, join(att, 'big.jsonl'))
   })
 })
 

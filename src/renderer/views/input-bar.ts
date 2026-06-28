@@ -16,6 +16,7 @@ import {
   buildTextWithAttachments,
   isTextBlockAttachment,
   textBlockLabel,
+  ATTACHMENT_MAX_CHARS,
 } from '@shared/agent/build-text-with-attachments.ts'
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import { bindFileDropTarget, attachFiles } from '../attachments/handle-file-drop.ts'
@@ -443,6 +444,31 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     }
   }
 
+  /**
+   * Save any attachment whose content exceeds the inline cap to the read-only
+   * spill store, tagging it with the returned absolute path. Untouched when no
+   * workspace is open or persistence fails — the inline head+tail preview still
+   * keeps the request within the context window.
+   */
+  async function spillOversize<T extends { content: string }>(
+    threadId: string,
+    items: T[],
+    nameOf: (item: T) => string,
+  ): Promise<(T & { savedPath?: string })[]> {
+    if (!store.getState().workspaceRoot) return items
+    return Promise.all(
+      items.map(async (item) => {
+        if (item.content.length <= ATTACHMENT_MAX_CHARS) return item
+        try {
+          const { path } = await api.attachments.persist(threadId, nameOf(item), item.content)
+          return { ...item, savedPath: path }
+        } catch {
+          return item
+        }
+      }),
+    )
+  }
+
   async function performSubmit() {
     followUps.clearSuggestions()
     textarea.placeholder = defaultPlaceholder
@@ -504,17 +530,25 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       : rawText
     textarea.setCustomValidity('')
 
+    // Spill oversized attachments to the read-only store so the agent can read
+    // the full file via read_file/explore instead of the head+tail preview that
+    // gets inlined. Falls back to inline truncation if no workspace or on error.
+    const [spilledFiles, spilledBlocks] = await Promise.all([
+      spillOversize(id, attachedFiles, (f) => f.path),
+      spillOversize(id, attachedTextBlocks, (b) => b.label),
+    ])
+
     let fullContent: UserContent
     if (attachedImages.length > 0) {
       fullContent = [
         ...attachedImages.map((img) => ({ type: 'image' as const, dataUrl: img.dataUrl })),
         {
           type: 'text' as const,
-          text: buildTextWithAttachments(text, attachedFiles, attachedTextBlocks),
+          text: buildTextWithAttachments(text, spilledFiles, spilledBlocks),
         },
       ]
     } else {
-      fullContent = buildTextWithAttachments(text, attachedFiles, attachedTextBlocks)
+      fullContent = buildTextWithAttachments(text, spilledFiles, spilledBlocks)
     }
 
     const priorTodos = thread?.todos ?? []

@@ -147,6 +147,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           if (project.id !== activeProjectId) return
           if (sidebarThreads.length > 1) {
             void api.agent.clearHistory(thread.id)
+            void api.attachments.sweep(thread.id)
             deleteThread(store, thread.id)
           }
         })

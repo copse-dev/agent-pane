@@ -79,6 +79,14 @@ describe('truncateAttachmentContent', () => {
     assert.match(out, /Copse trimmed \d[\d,]* characters \(~\d[\d,]* lines\)/)
   })
 
+  it('points the agent at the saved path when content was spilled to the store', () => {
+    const content = Array.from({ length: 200 }, (_, i) => `row ${i}`).join('\n')
+    const out = truncateAttachmentContent(content, 400, '/home/me/.copse/workspaces/abc/att/x.jsonl')
+    assert.match(out, /saved at \/home\/me\/\.copse\/workspaces\/abc\/att\/x\.jsonl/)
+    assert.match(out, /read it with read_file or explore/)
+    assert.doesNotMatch(out, /ask the user to save/)
+  })
+
   it('cuts on line boundaries (no split partial lines around the marker)', () => {
     const content = Array.from({ length: 100 }, (_, i) => `value-${i}`).join('\n')
     const out = truncateAttachmentContent(content, 300)

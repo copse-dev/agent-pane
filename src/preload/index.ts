@@ -33,6 +33,11 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.off('fs:changed', listener)
     },
   },
+  attachments: {
+    persist: (threadId: string, name: string, content: string) =>
+      ipcRenderer.invoke('attachments:persist', threadId, name, content),
+    sweep: (threadId: string) => ipcRenderer.invoke('attachments:sweep', threadId),
+  },
   agent: {
     run: (threadId: string, prompt: string) => ipcRenderer.invoke('agent:run', threadId, prompt),
     estimateContext: (threadId: string, payload: string) =>

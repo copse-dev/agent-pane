@@ -2,7 +2,12 @@ import * as fs from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { z } from 'zod'
 import type { ToolDefinition } from '@shared/types'
-import { resolveWorkspacePath, toRelativePath, getWorkspaceRoot } from '../services/workspace.ts'
+import {
+  resolveWorkspacePath,
+  resolveReadablePath,
+  toRelativePath,
+  getWorkspaceRoot,
+} from '../services/workspace.ts'
 import { runCommand } from '../services/command-runner.ts'
 import { getIndex } from '../services/file-index.ts'
 import micromatch from 'micromatch'
@@ -54,7 +59,10 @@ export const readFileTool: ToolDefinition = {
     }
     const { maxLines: READ_FILE_MAX_LINES, maxChars: READ_FILE_MAX_CHARS } =
       getAgentRunReadFileLimits()
-    const absPath = resolveWorkspacePath(path)
+    // resolveReadablePath also accepts the app-owned attachment spill store, so
+    // the agent (and explore subagent) can read large attachments saved outside
+    // the workspace. Writes/edits still go through the workspace-only guard.
+    const absPath = resolveReadablePath(path)
 
     let result
     try {

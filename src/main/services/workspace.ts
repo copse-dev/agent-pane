@@ -1,12 +1,27 @@
 import { existsSync, realpathSync, statSync } from 'node:fs'
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { isAbsolute, relative, resolve } from 'node:path'
 import { storageGet, storageSet } from './storage.ts'
+import {
+  isPathInsideRoot,
+  resolveThroughExistingPrefix,
+  resolveWithinRoot,
+} from './path-containment.ts'
 
 const WORKSPACE_KEY = 'workspaceRoot'
 const PROJECTS_KEY = 'projects'
 const ACTIVE_PROJECT_KEY = 'activeProjectId'
 
 let workspaceRoot: string | null = (storageGet(WORKSPACE_KEY) as string | null | undefined) ?? null
+
+/**
+ * App-owned directory whose files the *read* tools may open in addition to the
+ * workspace — the large-attachment spill store (`attachment-store.ts`). It is
+ * read-only by construction: only `resolveReadablePath` consults it, never
+ * `resolveWorkspacePath`, so writes/deletes/git/shell stay confined to the
+ * workspace. Same real-path containment is applied, so a symlink inside the
+ * store pointing elsewhere is still resolved-and-rejected.
+ */
+let attachmentsRoot: string | null = null
 
 /** Roots the renderer may activate via `workspace:set` (dialog-opened or persisted projects). */
 const allowedWorkspaceRoots = new Set<string>()
@@ -94,54 +109,46 @@ export function setWorkspaceRootForTest(root: string | null): () => void {
   }
 }
 
-function isPathInsideRoot(resolved: string, absRoot: string): boolean {
-  const rel = relative(absRoot, resolved)
-  return rel === '' || (!rel.startsWith('..') && !rel.split(sep).includes('..'))
+/** App-owned dir whose files the read tools may open (large-attachment store). */
+export function setAttachmentsRoot(root: string | null): void {
+  attachmentsRoot = root ? resolve(root) : null
 }
 
-function resolveThroughExistingPrefix(absPath: string): string {
-  let probe = absPath
-  while (true) {
-    if (existsSync(probe)) {
-      const realProbe = realpathSync.native(probe)
-      const suffix = relative(probe, absPath)
-      return suffix ? resolve(realProbe, suffix) : realProbe
-    }
-    const parent = dirname(probe)
-    if (parent === probe) return absPath
-    probe = parent
-  }
+export function getAttachmentsRoot(): string | null {
+  return attachmentsRoot
+}
+
+function pathOutsideWorkspaceError(path: string): Error {
+  return new Error(
+    `Path outside workspace: ${path}. File tools require paths relative to the workspace root.`,
+  )
 }
 
 export function resolveWorkspacePath(path: string): string {
   if (!workspaceRoot) throw new Error('No workspace open. Use Open Folder first.')
-  const absRoot = realpathSync.native(resolve(workspaceRoot))
-  let relPath = path
-  if (isAbsolute(path)) {
-    const absInput = resolveThroughExistingPrefix(resolve(path))
-    const fromRoot = relative(absRoot, absInput)
-    if (!isPathInsideRoot(absInput, absRoot)) {
-      throw new Error(
-        `Path outside workspace: ${path}. File tools require paths relative to the workspace root.`,
-      )
-    }
-    relPath = fromRoot === '' ? '.' : fromRoot
-  }
-  const absTarget = resolve(absRoot, relPath)
-
-  if (!isPathInsideRoot(absTarget, absRoot)) {
-    throw new Error(
-      `Path outside workspace: ${path}. File tools require paths relative to the workspace root.`,
-    )
-  }
-
-  const resolved = resolveThroughExistingPrefix(absTarget)
-  if (!isPathInsideRoot(resolved, absRoot)) {
-    throw new Error(
-      `Path outside workspace: ${path}. File tools require paths relative to the workspace root.`,
-    )
-  }
+  const resolved = resolveWithinRoot(path, workspaceRoot)
+  if (resolved === null) throw pathOutsideWorkspaceError(path)
   return resolved
+}
+
+/**
+ * Like {@link resolveWorkspacePath} but also accepts absolute paths inside the
+ * app-owned attachments root. Read-only: used solely by the read tools
+ * (`read_file`) so the agent — and the explore subagent — can open large
+ * attachments spilled outside the workspace, while writes/deletes remain
+ * workspace-confined through `resolveWorkspacePath`.
+ */
+export function resolveReadablePath(path: string): string {
+  if (workspaceRoot) {
+    const inWorkspace = resolveWithinRoot(path, workspaceRoot)
+    if (inWorkspace !== null) return inWorkspace
+  }
+  if (attachmentsRoot && isAbsolute(path)) {
+    const inAttachments = resolveWithinRoot(path, attachmentsRoot)
+    if (inAttachments !== null) return inAttachments
+  }
+  if (!workspaceRoot) throw new Error('No workspace open. Use Open Folder first.')
+  throw pathOutsideWorkspaceError(path)
 }
 
 /**

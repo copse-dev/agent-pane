@@ -50,6 +50,16 @@ export interface ApiClient {
     unwatch: (path: string) => Promise<void>
     onChanged: (handler: (path: string, content: string | null) => void) => () => void
   }
+  attachments: {
+    /** Spill a large attachment to the read-only store; resolves to its absolute path. */
+    persist: (
+      threadId: string,
+      name: string,
+      content: string,
+    ) => Promise<{ path: string; bytes: number }>
+    /** Remove a thread's spilled attachments. */
+    sweep: (threadId: string) => Promise<void>
+  }
   agent: {
     run: (threadId: string, prompt: string) => Promise<void>
     estimateContext: (threadId: string, payload: string) => Promise<ContextBreakdown>

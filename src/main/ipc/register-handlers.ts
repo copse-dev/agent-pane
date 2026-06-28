@@ -11,6 +11,11 @@ import {
   setWorkspaceRoot,
 } from '../services/workspace.ts'
 import {
+  persistAttachment,
+  sweepThreadAttachments,
+  sweepWorkspaceAttachments,
+} from '../services/attachment-store.ts'
+import {
   assertFsWriteContent,
   isIndexQueryPattern,
   assertMainFrameSender,
@@ -20,6 +25,7 @@ import {
   parseIpcArgs,
   zNonEmptyString,
   zPathString,
+  zSessionId,
 } from './ipc-guards.ts'
 import { buildIndex, getIndex } from '../services/file-index.ts'
 import { resolveFileReferences } from '../services/file-reference-resolver.ts'
@@ -101,6 +107,8 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   if (persistedRoot) {
     try {
       registerAllowedWorkspaceRoot(persistedRoot)
+      // Clear last session's spilled attachments and arm the read-only root.
+      void sweepWorkspaceAttachments(persistedRoot)
     } catch {
       // Stale workspaceRoot in config — ignore until user picks a folder.
     }
@@ -111,6 +119,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (result.canceled || !result.filePaths[0]) return null
     const root = registerAllowedWorkspaceRoot(result.filePaths[0])
     setWorkspaceRoot(root)
+    void sweepWorkspaceAttachments(root)
     await buildIndex(root)
     void ensureSemanticIndex(root)
     startWorkspaceIndexWatcher(root)
@@ -126,6 +135,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     seedAllowedWorkspaceRoots(projects.map((p) => p.path))
     const canonical = assertAllowedWorkspaceRoot(root)
     setWorkspaceRoot(canonical)
+    void sweepWorkspaceAttachments(canonical)
     await buildIndex(canonical)
     void ensureSemanticIndex(canonical)
     startWorkspaceIndexWatcher(canonical)
@@ -166,6 +176,24 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return dirents
       .filter((d) => !d.name.startsWith('.') && d.name !== 'node_modules')
       .sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1))
+  })
+
+  ipcMain.handle('attachments:persist', async (event, ...args: unknown[]) => {
+    assertMainFrameSender(event, win)
+    const [threadId, name, content] = parseIpcArgs(
+      z.tuple([zSessionId, zNonEmptyString.max(512), z.string()]),
+      args,
+    )
+    const root = getWorkspaceRoot()
+    if (!root) throw new IpcValidationError('No workspace open; cannot store attachment')
+    return persistAttachment(root, threadId, name, content)
+  })
+
+  ipcMain.handle('attachments:sweep', async (event, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zSessionId, [threadId])
+    const root = getWorkspaceRoot()
+    if (root) await sweepThreadAttachments(root, id)
   })
 
   ipcMain.handle('index:query', (event, pattern: unknown) => {

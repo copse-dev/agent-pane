@@ -1,11 +1,15 @@
 export interface FileAttachment {
   path: string
   content: string
+  /** Absolute path of the full content in the attachment spill store, if saved. */
+  savedPath?: string
 }
 
 export interface TextBlockAttachment {
   label: string
   content: string
+  /** Absolute path of the full content in the attachment spill store, if saved. */
+  savedPath?: string
 }
 
 /** Minimum pasted plain-text length to treat as an attachment instead of inline input. */
@@ -68,6 +72,7 @@ function trimToFirstLine(s: string): string {
 export function truncateAttachmentContent(
   content: string,
   maxChars: number = ATTACHMENT_MAX_CHARS,
+  savedPath?: string,
 ): string {
   if (content.length <= maxChars) return content
 
@@ -82,12 +87,17 @@ export function truncateAttachmentContent(
     countNewlines(content) - countNewlines(head) - countNewlines(tail),
   )
 
+  // When the full content was spilled to the attachment store, point the agent
+  // at the exact path; otherwise fall back to asking the user to save it.
+  const recovery = savedPath
+    ? `The full attachment is saved at ${savedPath} — read it with read_file or explore to see the omitted content.`
+    : `If you need the omitted content, ask the user to save the full file into the workspace so you can read it with read_file or explore.`
+
   const marker =
     `\n\n… [Copse trimmed ${omittedChars.toLocaleString()} characters` +
     `${omittedLines > 0 ? ` (~${omittedLines.toLocaleString()} lines)` : ''}` +
     ` from the middle of this attachment to keep the request within the model's context window. ` +
-    `Only the first and last portions are shown. If you need the omitted content, ask the user ` +
-    `to save the full file into the workspace so you can read it with read_file or explore.] …\n\n`
+    `Only the first and last portions are shown. ${recovery}] …\n\n`
 
   return head + marker + tail
 }
@@ -105,9 +115,12 @@ export function buildTextWithAttachments(
 ): string {
   const cap = options.maxCharsPerAttachment ?? ATTACHMENT_MAX_CHARS
   const blocks = [
-    ...files.map((f) => `\`\`\`\n// ${f.path}\n${truncateAttachmentContent(f.content, cap)}\n\`\`\``),
+    ...files.map(
+      (f) => `\`\`\`\n// ${f.path}\n${truncateAttachmentContent(f.content, cap, f.savedPath)}\n\`\`\``,
+    ),
     ...textBlocks.map(
-      (b) => `\`\`\`\n// ${b.label}\n${truncateAttachmentContent(b.content, cap)}\n\`\`\``,
+      (b) =>
+        `\`\`\`\n// ${b.label}\n${truncateAttachmentContent(b.content, cap, b.savedPath)}\n\`\`\``,
     ),
   ]
   return [text, ...blocks].filter(Boolean).join('\n\n')
