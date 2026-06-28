@@ -1,6 +1,5 @@
 import type { ModelUsage, Thread } from '@shared/types'
-import { isLocalModel } from '@shared/llm/estimate-cost.ts'
-import { costForModelUsage } from '@shared/llm/estimate-cost.ts'
+import { isLocalModel, costForModelUsage, type ExtraPricing } from '@shared/llm/estimate-cost.ts'
 import type { UsageEvent } from './usage-event.ts'
 
 export const DAY_MS = 24 * 60 * 60 * 1000
@@ -89,7 +88,7 @@ export function aggregateThreadUsage(threads: Thread[]): Record<string, ModelUsa
   return byModel
 }
 
-function toBreakdown(model: string, usage: ModelUsage): ModelUsageBreakdown {
+function toBreakdown(model: string, usage: ModelUsage, extra?: ExtraPricing): ModelUsageBreakdown {
   const isLocal = isLocalModel(model)
   return {
     model,
@@ -99,12 +98,15 @@ function toBreakdown(model: string, usage: ModelUsage): ModelUsageBreakdown {
     ...(usage.cacheCreationTokens !== undefined
       ? { cacheCreationTokens: usage.cacheCreationTokens }
       : {}),
-    estimatedCostUsd: isLocal ? 0 : costForModelUsage(model, usage),
+    estimatedCostUsd: isLocal ? 0 : costForModelUsage(model, usage, extra),
     isLocal,
   }
 }
 
-function summarizeByModel(byModel: Record<string, ModelUsage>): UsagePeriodSummary {
+function summarizeByModel(
+  byModel: Record<string, ModelUsage>,
+  extra?: ExtraPricing,
+): UsagePeriodSummary {
   const cloudModels: ModelUsageBreakdown[] = []
   const localModels: ModelUsageBreakdown[] = []
   let totalCostUsd = 0
@@ -113,7 +115,7 @@ function summarizeByModel(byModel: Record<string, ModelUsage>): UsagePeriodSumma
 
   for (const [model, usage] of Object.entries(byModel)) {
     if (!usage.inputTokens && !usage.outputTokens) continue
-    const row = toBreakdown(model, usage)
+    const row = toBreakdown(model, usage, extra)
     totalInputTokens += usage.inputTokens
     totalOutputTokens += usage.outputTokens
     totalCostUsd += row.estimatedCostUsd
@@ -130,23 +132,27 @@ function summarizeByModel(byModel: Record<string, ModelUsage>): UsagePeriodSumma
   return { totalCostUsd, cloudModels, localModels, totalInputTokens, totalOutputTokens }
 }
 
-export function summarizeUsageByModel(byModel: Record<string, ModelUsage>): UsagePeriodSummary {
-  return summarizeByModel(byModel)
+export function summarizeUsageByModel(
+  byModel: Record<string, ModelUsage>,
+  extra?: ExtraPricing,
+): UsagePeriodSummary {
+  return summarizeByModel(byModel, extra)
 }
 
 export function buildUsageSummary(
   events: UsageEvent[],
   threads: Thread[],
   now = Date.now(),
+  extra?: ExtraPricing,
 ): UsageSummary {
   const trackingStartedAt =
     events.length > 0 ? events.reduce((min, e) => Math.min(min, e.at), events[0]!.at) : null
 
   return {
-    day: summarizeByModel(aggregateEventsByModel(events, DAY_MS, now)),
-    month: summarizeByModel(aggregateEventsByModel(events, MONTH_MS, now)),
-    period90d: summarizeByModel(aggregateEventsByModel(events, PERIOD_90D_MS, now)),
-    allTime: summarizeByModel(aggregateThreadUsage(threads)),
+    day: summarizeByModel(aggregateEventsByModel(events, DAY_MS, now), extra),
+    month: summarizeByModel(aggregateEventsByModel(events, MONTH_MS, now), extra),
+    period90d: summarizeByModel(aggregateEventsByModel(events, PERIOD_90D_MS, now), extra),
+    allTime: summarizeByModel(aggregateThreadUsage(threads), extra),
     trackingStartedAt,
     ledgerEventCount: events.length,
   }

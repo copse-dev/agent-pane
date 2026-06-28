@@ -63,7 +63,12 @@ function formatTokenThousands(total: number, estimated: boolean): string {
 /** Footer usage button label (compact or expanded with optional cost). */
 export function formatFooterUsageSummary(
   display: FooterUsageDisplay,
-  opts: { costVisible: boolean; model: string; measuredUsage: ThreadUsage },
+  opts: {
+    costVisible: boolean
+    model: string
+    measuredUsage: ThreadUsage
+    extra?: import('@shared/llm/estimate-cost.ts').ExtraPricing
+  },
 ): string {
   const { inputTokens, outputTokens, estimated } = display
   const total = inputTokens + outputTokens
@@ -71,7 +76,9 @@ export function formatFooterUsageSummary(
   if (opts.costVisible) {
     const inLabel = estimated ? `~${inputTokens}` : `${inputTokens}`
     const outLabel = estimated ? `~${outputTokens}` : `${outputTokens}`
-    const cost = estimated ? 'est.' : formatThreadUsageCost(opts.measuredUsage, opts.model)
+    const cost = estimated
+      ? 'est.'
+      : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.extra)
     return cost ? `${inLabel} in / ${outLabel} out · ${cost}` : `${inLabel} in / ${outLabel} out`
   }
 

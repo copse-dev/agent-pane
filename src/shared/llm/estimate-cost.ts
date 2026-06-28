@@ -48,7 +48,10 @@ export function costForModelUsage(model: string, usage: ModelUsage, extra?: Extr
   )
 }
 
-export function estimateUsageCost(byModel: Record<string, ModelUsage>, extra?: ExtraPricing): string {
+export function estimateUsageCost(
+  byModel: Record<string, ModelUsage>,
+  extra?: ExtraPricing,
+): string {
   const entries = Object.entries(byModel).filter(([, u]) => u.inputTokens > 0 || u.outputTokens > 0)
   if (entries.length === 0) return ''
 
