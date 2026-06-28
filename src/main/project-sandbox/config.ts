@@ -141,7 +141,7 @@ export function baseSandboxConfig(): SandboxRuntimeConfig {
 
 /** Resolve Node/npm toolchain paths so sandboxed shells can run `npm test`, etc. */
 export function resolveNodeToolchainAllowRead(env: NodeJS.ProcessEnv = process.env): string[] {
-  const pathVar = env.PATH ?? ''
+  const pathVar = env['PATH'] ?? ''
   const dirs = pathVar.split(':').filter(Boolean)
   const allow = new Set<string>()
 
