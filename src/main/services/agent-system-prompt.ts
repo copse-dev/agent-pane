@@ -2,6 +2,10 @@ import { loadProjectInstructions } from './project-instructions.ts'
 import { getSetting, getSettingTrimmed } from './settings.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import {
+  BROWSER_TOOLS_ENABLED_SETTING,
+  BROWSER_TOOLS_DEFAULT_ENABLED,
+} from './browser/browser-origin-policy.ts'
+import {
   buildInvokedSkillsBlock,
   buildSkillsCatalogBlock,
   buildSkillsToolsPromptLine,
@@ -13,6 +17,7 @@ import {
   EXTERNAL_API_SAFETY_BLOCK,
 } from './agent-prompt.ts'
 import { buildSemanticSearchPromptBlock } from './semantic-search.ts'
+import { isProjectSandboxActive } from '../project-sandbox/state.ts'
 
 /** Assemble the system prompt for a run from base prompt + skills + instructions. */
 export async function buildSystemPrompt(opts: {
@@ -25,7 +30,10 @@ export async function buildSystemPrompt(opts: {
 
   const basePrompt = subagentsEnabled ? BASE_SYSTEM_PROMPT : BASE_SYSTEM_PROMPT_DIRECT_READS
   const externalApiSafety = getSetting<boolean>('externalApiSafety', false)
-  const browserToolsEnabled = getSetting<boolean>('browserToolsEnabled', false)
+  const browserToolsEnabled = getSetting<boolean>(
+    BROWSER_TOOLS_ENABLED_SETTING,
+    BROWSER_TOOLS_DEFAULT_ENABLED,
+  )
   const customInstructions = getSettingTrimmed('customInstructions')
   return (
     basePrompt
@@ -34,7 +42,7 @@ export async function buildSystemPrompt(opts: {
     (externalApiSafety ? EXTERNAL_API_SAFETY_BLOCK : '') +
     (browserToolsEnabled ? BROWSER_TOOLS_BLOCK : '') +
     buildSkillsCatalogBlock() +
-    (await buildInvokedSkillsBlock(invokedSkills)) +
+    (await buildInvokedSkillsBlock(invokedSkills, { sandboxActive: isProjectSandboxActive() })) +
     buildSemanticSearchPromptBlock() +
     (customInstructions ? `\n\n---\n\n## Custom instructions\n\n${customInstructions}` : '') +
     (projectInstructions ? `\n\n---\n\n## Project instructions\n\n${projectInstructions}` : '')

@@ -64,6 +64,17 @@ async function attachDroppedFile(
   }
 }
 
+export async function attachFiles(
+  files: ElectronFile[],
+  handlers: PromptAttachmentHandlers,
+  api: ApiClient,
+  workspaceRoot: string | null,
+): Promise<void> {
+  for (const file of files) {
+    await attachDroppedFile(file, handlers, api, workspaceRoot)
+  }
+}
+
 export async function handleFileDrop(
   e: DragEvent,
   handlers: PromptAttachmentHandlers,
@@ -80,9 +91,7 @@ export async function handleFileDrop(
   }
 
   const files = Array.from(e.dataTransfer?.files ?? []) as ElectronFile[]
-  for (const file of files) {
-    await attachDroppedFile(file, handlers, api, workspaceRoot)
-  }
+  await attachFiles(files, handlers, api, workspaceRoot)
 }
 
 export function bindFileDropTarget(

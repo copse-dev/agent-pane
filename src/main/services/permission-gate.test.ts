@@ -11,10 +11,16 @@ import {
   SANDBOX_TOOLS,
 } from './permission-policy.ts'
 import { DEFAULT_WEB_ALLOWED_ORIGINS } from './web-origin-policy.ts'
+import { detectSandboxFailure } from './sandbox-failure.ts'
 import { setPermissionGateForTests } from './tool-registry.ts'
 import { ensureToolPermitted, ensureTerminalPermitted } from './permission-gate.ts'
 import { decideMcpPermission, describeMcpAnnotations } from './permission-policy.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
+import { setApprovalHandler } from './approval.ts'
+import {
+  rememberCustomTool,
+  setCustomToolRequiresApprovalForTests,
+} from './custom-tools-registry.ts'
 
 describe('SANDBOX_TOOLS', () => {
   it('includes read_skill so skill reads auto-run without approval', () => {
@@ -42,6 +48,46 @@ describe('ensureToolPermitted', () => {
       await ensureToolPermitted({ toolName: 'gh_pr_list', args: { state: 'open', limit: 20 } }),
       true,
     )
+  })
+})
+
+describe('custom tool permission', () => {
+  it('auto-allows a remembered tool without requiresApproval (no prompt)', async () => {
+    setPermissionGateForTests(null)
+    const toolName = 'custom__remembered_plain'
+    setCustomToolRequiresApprovalForTests(toolName, false)
+    await rememberCustomTool(toolName)
+    let prompted = false
+    setApprovalHandler(async () => {
+      prompted = true
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(await ensureToolPermitted({ toolName, args: {} }), true)
+      assert.equal(prompted, false, 'remembered plain tool must not prompt')
+    } finally {
+      setApprovalHandler(null)
+      setCustomToolRequiresApprovalForTests(toolName, false)
+    }
+  })
+
+  it('still prompts a remembered tool with requiresApproval: true', async () => {
+    setPermissionGateForTests(null)
+    const toolName = 'custom__remembered_always'
+    setCustomToolRequiresApprovalForTests(toolName, true)
+    await rememberCustomTool(toolName)
+    let prompted = false
+    setApprovalHandler(async () => {
+      prompted = true
+      return { approved: true, remember: false }
+    })
+    try {
+      assert.equal(await ensureToolPermitted({ toolName, args: {} }), true)
+      assert.equal(prompted, true, 'requiresApproval tool must prompt even when remembered')
+    } finally {
+      setApprovalHandler(null)
+      setCustomToolRequiresApprovalForTests(toolName, false)
+    }
   })
 })
 
@@ -131,10 +177,26 @@ describe('decideShellPermission', () => {
     assert.equal(shellRequiresOutsideSandbox('git pull origin main', root, true), true)
   })
 
-  it('prompts for gh CLI when OS sandbox is active', () => {
+  it('auto-runs gh CLI inside the OS sandbox and escalates only if blocked', () => {
+    // gh is an ambiguous "may reach" matcher: under seatbelt it runs inside the
+    // sandbox (no upfront prompt — so a grep over a gh-* path isn't gated), and if
+    // the OS blocks it the failure path offers an unsandboxed retry.
     const d = decideShellPermission('gh pr view --json state', {
       workspaceRoot: root,
       sandboxEnabled: true,
+      autoRun: true,
+      classification: null,
+      confidenceThreshold: 0.85,
+    })
+    assert.equal(d.action, 'allow')
+    assert.equal(shellRequiresOutsideSandbox('gh pr view --json state', root, true), false)
+    assert.equal(shellSandboxFailureShouldOfferUnsandboxedRetry('gh pr view', root), true)
+  })
+
+  it('still prompts for gh CLI when there is no OS sandbox', () => {
+    const d = decideShellPermission('gh pr view --json state', {
+      workspaceRoot: root,
+      sandboxEnabled: false,
       autoRun: true,
       classification: null,
       confidenceThreshold: 0.85,
@@ -152,6 +214,31 @@ describe('decideShellPermission', () => {
 
   it('still offers unsandboxed retries for outside-filesystem sandbox failures', () => {
     assert.equal(shellSandboxFailureShouldOfferUnsandboxedRetry('ls ~/.ssh', root), true)
+  })
+
+  // Pins the policy-level half of the ambiguous-command escalation contract: a fuzzy
+  // "may reach" command (gh/nc/cloud CLI/open-URL) auto-runs inside seatbelt, and when
+  // the OS records a violation + non-zero exit, the SAME two pure functions
+  // maybeRetryUnsandboxed() composes (the gate + detectSandboxFailure) must agree to
+  // offer an unsandboxed retry. The live "does seatbelt actually deny gh's network"
+  // behavior is macOS-only and out of scope here; this guards the wiring around it.
+  it('offers an unsandboxed retry when an ambiguous command hits a sandbox violation', () => {
+    const blocked = detectSandboxFailure({ exitCode: 1, violationCount: 1, spawnFailed: false })
+    assert.equal(blocked.likely, true)
+    for (const cmd of ['gh pr create', 'nc -l 4000', 'aws s3 cp a b', 'open https://x.test']) {
+      assert.equal(
+        shellSandboxFailureShouldOfferUnsandboxedRetry(cmd, root) && blocked.likely,
+        true,
+        `expected retry offer for: ${cmd}`,
+      )
+    }
+  })
+
+  it('does not escape the sandbox when an ambiguous command exits 0 despite a violation', () => {
+    // A zero exit means the command succeeded, so a logged violation is incidental —
+    // never offer a full-network re-run. (detectSandboxFailure is the second gate.)
+    const succeeded = detectSandboxFailure({ exitCode: 0, violationCount: 2, spawnFailed: false })
+    assert.equal(succeeded.likely, false)
   })
 
   it('prompts for home-directory paths when OS sandbox is active', () => {
@@ -316,6 +403,19 @@ describe('decideMcpPermission', () => {
       ...baseInput,
       annotations: { readOnlyHint: true, destructiveHint: true },
       autoAllowReadOnly: true,
+    })
+    assert.equal(d.action, 'prompt')
+  })
+
+  it('auto-allows first-party bundled tools without prompting', () => {
+    assert.equal(decideMcpPermission({ ...baseInput, bundled: true }).action, 'allow')
+  })
+
+  it('still prompts for a bundled tool flagged destructive', () => {
+    const d = decideMcpPermission({
+      ...baseInput,
+      bundled: true,
+      annotations: { destructiveHint: true },
     })
     assert.equal(d.action, 'prompt')
   })
