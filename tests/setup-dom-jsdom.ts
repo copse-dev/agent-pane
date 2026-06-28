@@ -7,10 +7,12 @@ import { JSDOM } from 'jsdom'
 // test runner isolates each file in its own process, so this does not affect
 // the happy-dom globals used elsewhere.
 const win = new JSDOM('').window
-;(globalThis as any).document = win.document
-;(globalThis as any).window = win
-;(globalThis as any).customElements = win.customElements
-;(globalThis as any).Event = win.Event
-;(globalThis as any).CustomEvent = win.CustomEvent
-;(globalThis as any).Element = win.Element
-;(globalThis as any).Node = win.Node
+Object.assign(globalThis, {
+  document: win.document,
+  window: win,
+  customElements: win.customElements,
+  Event: win.Event,
+  CustomEvent: win.CustomEvent,
+  Element: win.Element,
+  Node: win.Node,
+})

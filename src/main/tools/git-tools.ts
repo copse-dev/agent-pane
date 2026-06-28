@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ToolDefinition } from '@shared/types'
+import { defineTool } from '@shared/types'
 import {
   commitWithAttribution,
   getGitDiffText,
@@ -20,14 +20,14 @@ function validateGitPath(path: string | undefined): { ok: true } | { ok: false; 
   }
 }
 
-export const gitStatusTool: ToolDefinition = {
+export const gitStatusTool = defineTool({
   name: 'git_status',
   description: 'Show working tree status: staged, unstaged, and untracked files.',
   parameters: z.object({}),
   execute: async () => getGitStatusText(),
-}
+})
 
-export const gitDiffTool: ToolDefinition = {
+export const gitDiffTool = defineTool({
   name: 'git_diff',
   description: 'Show file changes as a unified diff.',
   parameters: z.object({
@@ -46,9 +46,9 @@ export const gitDiffTool: ToolDefinition = {
     if (!valid.ok) return valid.error
     return getGitDiffText(path, staged)
   },
-}
+})
 
-export const gitCommitTool: ToolDefinition = {
+export const gitCommitTool = defineTool({
   name: 'git_commit',
   description:
     'Create a git commit. Copse automatically appends a "Co-Authored-By: Copse" trailer and a "Copse-Models" line naming the model(s) used in this thread — prefer this over `run_shell git commit` so attribution is added reliably. Local only; it never pushes.',
@@ -72,9 +72,9 @@ export const gitCommitTool: ToolDefinition = {
     const models = threadId ? getThreadModels(threadId) : []
     return commitWithAttribution(message, models, stage_all)
   },
-}
+})
 
-export const gitLogTool: ToolDefinition = {
+export const gitLogTool = defineTool({
   name: 'git_log',
   description: 'Show recent commit history.',
   parameters: z.object({
@@ -86,4 +86,4 @@ export const gitLogTool: ToolDefinition = {
     if (!valid.ok) return valid.error
     return getGitLogText(max_count, path)
   },
-}
+})

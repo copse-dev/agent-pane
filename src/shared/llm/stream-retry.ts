@@ -4,8 +4,10 @@ import OpenAI from 'openai'
 export const DEFAULT_STREAM_MAX_ATTEMPTS = 4
 
 function errorHeaders(err: unknown): Headers | undefined {
-  if (err instanceof Anthropic.APIError && err.headers) return err.headers
-  if (err instanceof OpenAI.APIError && err.headers) return err.headers
+  // Both SDKs type APIError.headers via an unconstrained generic (`any` here),
+  // but the runtime value is a Fetch `Headers` (consumed via `.get()` below).
+  if (err instanceof Anthropic.APIError && err.headers) return err.headers as Headers
+  if (err instanceof OpenAI.APIError && err.headers) return err.headers as Headers
   return undefined
 }
 
@@ -46,7 +48,7 @@ export function streamRetryDelayMs(err: unknown, attempt: number): number {
 }
 
 function abortError(signal?: AbortSignal): Error {
-  const reason = signal?.reason
+  const reason: unknown = signal?.reason
   if (reason instanceof Error) return reason
   return new DOMException('Aborted', 'AbortError')
 }

@@ -16,8 +16,8 @@ export interface CiInvestigatorRunnerContext {
 }
 
 export type CiInvestigatorRunner = (opts: {
-  focus?: string
-  prNumber?: number
+  focus?: string | undefined
+  prNumber?: number | undefined
   signal: AbortSignal
 }) => Promise<{ summary: string; usage: ModelUsage }>
 

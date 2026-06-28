@@ -1,7 +1,7 @@
 export type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled'
 
 export type TodoCheck =
-  | { kind: 'shell'; command: string; expectExit?: number }
+  | { kind: 'shell'; command: string; expectExit?: number | undefined }
   | { kind: 'fileExists'; path: string }
   | { kind: 'typecheck' }
 
@@ -16,9 +16,9 @@ export interface TodoItem {
 }
 
 export interface TodoUpdateInput {
-  id?: string
+  id?: string | undefined
   content: string
   status: TodoStatus
-  check?: TodoCheck
-  assignedModel?: TodoAssignedModel
+  check?: TodoCheck | undefined
+  assignedModel?: TodoAssignedModel | undefined
 }

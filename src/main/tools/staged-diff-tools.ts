@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ToolDefinition } from '@shared/types'
+import { defineTool } from '@shared/types'
 import {
   getRecentStagedDiffDecision,
   getStagedDiffEntry,
@@ -36,7 +36,7 @@ function formatGitChanges(status: GitStatusResult | null): string[] {
   return lines.length > 0 ? ['Existing git changes:', ...lines] : ['Existing git changes: none']
 }
 
-export const stagedDiffsTool: ToolDefinition = {
+export const stagedDiffsTool = defineTool({
   name: 'staged_diffs',
   description:
     'List pending Copse staged diffs proposed by write_file/str_replace. These are not git-staged files and are not written to disk until the user approves them.',
@@ -79,9 +79,9 @@ export const stagedDiffsTool: ToolDefinition = {
       'Use read_staged_diff with a path to inspect proposed content. Shell commands, git, and read_file still see only the on-disk file until approval.',
     ].join('\n')
   },
-}
+})
 
-export const readStagedDiffTool: ToolDefinition = {
+export const readStagedDiffTool = defineTool({
   name: 'read_staged_diff',
   description:
     'Inspect a pending Copse staged diff for one file. Use this after write_file/str_replace to see proposed content that is not written to disk yet.',
@@ -127,4 +127,4 @@ export const readStagedDiffTool: ToolDefinition = {
     }
     return `${header}\n\n--- after (proposed pending content) ---\n${cap(entry.after, max_chars)}`
   },
-}
+})
