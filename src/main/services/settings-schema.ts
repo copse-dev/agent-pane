@@ -17,6 +17,10 @@ const extraProviderModelSchema = z.object({
   id: z.string().min(1).max(256),
   label: z.string().max(256).optional(),
   contextWindow: z.number().int().positive().optional(),
+  // Per-MTok USD rates, when the provider reports them (e.g. HF router). Used by
+  // the cost estimator for models absent from the static cloud catalog.
+  inputPricePerMTok: z.number().min(0).optional(),
+  outputPricePerMTok: z.number().min(0).optional(),
 })
 
 // Persisted override (for a built-in preset) or full definition (for a user

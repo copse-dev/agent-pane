@@ -45,6 +45,8 @@ import {
   getResolvedExtraProviders,
   saveExtraProvider,
   deleteExtraProvider,
+  refreshHuggingFaceModels,
+  HUGGINGFACE_SLUG,
 } from '../services/extra-providers-store.ts'
 import { fetchOpenAiCompatibleModels } from '../services/provider-models.ts'
 import { storageGet, storageSet } from '../services/storage.ts'
@@ -213,6 +215,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const p = parseIpcArgs(keyProviderSchema, [provider])
     const apiKey = parseIpcArgs(z.string().max(8192), [key])
     setApiKey(p, apiKey)
+    // Saving an HF token auto-populates its priced, provider-pinned model list so
+    // the picker and cost estimate work without a manual fetch (fire-and-forget).
+    if (p === HUGGINGFACE_SLUG && apiKey.trim()) {
+      void refreshHuggingFaceModels(apiKey).catch(() => {})
+    }
   })
   ipcMain.handle('settings:availableProviders', () => {
     const available: Record<string, boolean> = {
@@ -248,6 +255,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const url = parseIpcArgs(z.string().max(2048), [baseUrl])
     const apiKey = parseIpcArgs(z.string().max(8192).optional(), [key])
     return fetchOpenAiCompatibleModels(url, apiKey)
+  })
+  ipcMain.handle('settings:refreshHuggingFaceModels', async (event, key: unknown) => {
+    assertMainFrameSender(event, win)
+    const apiKey = parseIpcArgs(z.string().max(8192).optional(), [key])
+    return refreshHuggingFaceModels(apiKey)
   })
   ipcMain.handle('app-icon:apply', () => {
     const mainWin = getMainWindow()

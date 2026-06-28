@@ -234,6 +234,8 @@ contextBridge.exposeInMainWorld('api', {
     deleteExtraProvider: (slug: string) => ipcRenderer.invoke('settings:deleteExtraProvider', slug),
     fetchProviderModels: (baseUrl: string, apiKey?: string) =>
       ipcRenderer.invoke('settings:fetchProviderModels', baseUrl, apiKey),
+    refreshHuggingFaceModels: (apiKey?: string) =>
+      ipcRenderer.invoke('settings:refreshHuggingFaceModels', apiKey),
   },
   appIcon: {
     apply: () => ipcRenderer.invoke('app-icon:apply'),

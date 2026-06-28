@@ -12,7 +12,11 @@ import {
   type StoredExtraProvider,
 } from '@shared/llm/extra-providers.ts'
 import { providerSlugFromBaseUrl, uniqueProviderSlug } from '@shared/llm/provider-slug.ts'
-import { getSetting, setSetting, deleteApiKey } from './settings.ts'
+import { getSetting, setSetting, deleteApiKey, resolveApiKey } from './settings.ts'
+import { fetchHuggingFaceModels } from './huggingface-models.ts'
+
+/** Built-in slug of the Hugging Face Inference Providers provider. */
+export const HUGGINGFACE_SLUG = 'huggingface'
 
 function storedProviders(): StoredExtraProvider[] {
   const raw = getSetting<StoredExtraProvider[]>('extraProviders', [])
@@ -66,6 +70,23 @@ export async function saveExtraProvider(
  * For a built-in this drops the override (reverting it to the shipped defaults)
  * but leaves the key in place. Returns the resolved list.
  */
+/**
+ * Fetch the Hugging Face router catalogue with the stored (or env) HF token and
+ * persist the resolved, priced, provider-pinned models onto the `huggingface`
+ * provider. Called automatically when the HF token is saved, and on demand from
+ * the Settings "Fetch models" action. A blank token or failed fetch leaves the
+ * stored models untouched and reports the error.
+ */
+export async function refreshHuggingFaceModels(
+  apiKey?: string,
+): Promise<{ ok: boolean; count: number; error?: string }> {
+  const key = apiKey?.trim() || resolveApiKey(HUGGINGFACE_SLUG) || ''
+  const res = await fetchHuggingFaceModels(key)
+  if (!res.ok) return { ok: false, count: 0, ...(res.error ? { error: res.error } : {}) }
+  await saveExtraProvider({ slug: HUGGINGFACE_SLUG, models: res.models })
+  return { ok: true, count: res.models.length }
+}
+
 export async function deleteExtraProvider(slug: string): Promise<ExtraProvider[]> {
   const current = storedProviders()
   const list = current.filter((p) => p.slug !== slug)
