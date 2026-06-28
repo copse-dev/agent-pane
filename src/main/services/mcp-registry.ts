@@ -420,7 +420,7 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
   // CONNECT_TIMEOUT_MS on a runner with no egress, wedging the whole app and
   // hanging every workspace-loading spec. (Onboarding has no active servers, so
   // it was unaffected.)
-  if (process.env.COPSE_AGENT_EVAL === '1' || process.env.COPSE_E2E === '1') {
+  if (process.env['COPSE_AGENT_EVAL'] === '1' || process.env['COPSE_E2E'] === '1') {
     serverStatuses = []
     return
   }

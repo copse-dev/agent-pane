@@ -46,7 +46,10 @@ describeSkipInCi('context wheel footer live mock', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-context-live-project', { subagentsEnabled: false })
+    seedEmptyProject(process.cwd(), 'e2e-context-live-project', {
+      subagentsEnabled: false,
+      model: 'claude-sonnet-4-6',
+    })
     await browser.reloadSession()
   })
 

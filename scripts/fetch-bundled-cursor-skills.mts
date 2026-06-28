@@ -24,7 +24,7 @@ async function readSourceManifest(cacheDir: string): Promise<BundledCursorSkills
 
 /** Fetch slim SKILL.md cache into vendor/ (gitignored). Idempotent when commit matches. */
 export async function fetchBundledCursorSkills(): Promise<BundledCursorSkillsSource | null> {
-  if (process.env.SKIP_BUNDLED_CURSOR_SKILLS_FETCH === '1') {
+  if (process.env['SKIP_BUNDLED_CURSOR_SKILLS_FETCH'] === '1') {
     console.log('[fetch-bundled-cursor-skills] SKIP_BUNDLED_CURSOR_SKILLS_FETCH=1 — skipping')
     return null
   }

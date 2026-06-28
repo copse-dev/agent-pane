@@ -10,9 +10,9 @@ describe('sanitizeMcpInputSchema', () => {
       required: ['name'],
     }
     const out = sanitizeMcpInputSchema(schema)
-    assert.equal(out.type, 'object')
-    assert.deepEqual(out.properties, { name: { type: 'string' } })
-    assert.deepEqual(out.required, ['name'])
+    assert.equal(out['type'], 'object')
+    assert.deepEqual(out['properties'], { name: { type: 'string' } })
+    assert.deepEqual(out['required'], ['name'])
   })
 
   it('defaults missing/invalid schema to an empty object schema', () => {
@@ -23,8 +23,8 @@ describe('sanitizeMcpInputSchema', () => {
 
   it('forces type:object and ensures properties exists', () => {
     const out = sanitizeMcpInputSchema({ type: 'array' })
-    assert.equal(out.type, 'object')
-    assert.deepEqual(out.properties, {})
+    assert.equal(out['type'], 'object')
+    assert.deepEqual(out['properties'], {})
   })
 
   it('strips $ref / $defs and other reference keywords (#107)', () => {
@@ -33,8 +33,8 @@ describe('sanitizeMcpInputSchema', () => {
       $defs: { Node: { $ref: '#/$defs/Node' } },
       properties: { child: { $ref: '#/$defs/Node' } },
     })
-    assert.equal(out.$defs, undefined)
-    assert.deepEqual(out.properties, { child: {} })
+    assert.equal(out['$defs'], undefined)
+    assert.deepEqual(out['properties'], { child: {} })
   })
 
   it('caps oversized enum arrays (#107)', () => {
@@ -43,15 +43,15 @@ describe('sanitizeMcpInputSchema', () => {
       type: 'object',
       properties: { k: { type: 'number', enum: big } },
     })
-    const props = out.properties as Record<string, { enum: number[] }>
-    assert.equal(props.k?.enum.length, 100)
+    const props = out['properties'] as Record<string, { enum: number[] }>
+    assert.equal(props['k']?.enum.length, 100)
   })
 
   it('truncates deeply nested schemas without throwing (#107)', () => {
     let node: Record<string, unknown> = { type: 'string' }
     for (let i = 0; i < 30; i++) node = { type: 'object', properties: { next: node } }
     const out = sanitizeMcpInputSchema(node)
-    assert.equal(out.type, 'object')
+    assert.equal(out['type'], 'object')
   })
 })
 
