@@ -175,7 +175,7 @@ async function currentGitBranch(): Promise<string | null> {
   const pathPrefix = process.platform === 'win32' ? '' : '/usr/bin:/bin:'
   const { stdout, code } = await runCommand('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
     cwd,
-    env: { PATH: `${pathPrefix}${process.env.PATH ?? ''}` },
+    env: { PATH: `${pathPrefix}${process.env['PATH'] ?? ''}` },
   })
   return code === 0 ? stdout.trim() || null : null
 }
