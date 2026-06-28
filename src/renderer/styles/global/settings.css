@@ -374,3 +374,78 @@ dialog.settings-overlay::backdrop {
 .provider-advanced[open] summary {
   margin-bottom: var(--spacing-sm);
 }
+
+.usage-section-root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+.usage-period-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.usage-period-btn {
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.usage-period-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.usage-period-btn.active {
+  border-color: var(--accent);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.usage-period-label {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.usage-headline {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+.usage-token-total {
+  margin: 0;
+}
+.usage-model-group {
+  margin-top: var(--spacing-md);
+}
+.usage-model-group h4 {
+  margin: 0 0 var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.usage-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.usage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+.usage-table th,
+.usage-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.usage-table th {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.usage-table td code {
+  font-size: 12px;
+}

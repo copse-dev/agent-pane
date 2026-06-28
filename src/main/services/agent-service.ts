@@ -4,7 +4,7 @@ import {
   createAgentRunAbortScheduler,
   DEFAULT_MAX_LLM_CALLS,
 } from '@shared/agent/agent-loop-limits.ts'
-import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
+import type { LLMMessage, UserContent } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { getSetting } from './settings.ts'
@@ -14,6 +14,7 @@ import { resolveParentGoal } from '@shared/agent/working-brief.ts'
 import { buildSystemPrompt } from './agent-system-prompt.ts'
 import { hasLastUsage } from './provider-usage.ts'
 import { clearActiveRunThread, recordThreadModel, setActiveRunThread } from './thread-models.ts'
+import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { buildCommitSteeringPrompt, shouldSteerCommit } from '@shared/git/commit-attribution.ts'
 import {
   buildProvider,
@@ -132,16 +133,15 @@ export async function runAgent(
   const model = getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
   recordThreadModel(threadId, model)
   const remoteProvider = parseRemoteAgentModel(model)
+
+  const sendChunk = createAgentChunkSink(threadId, host)
+
   if (remoteProvider) {
     const controller = new AbortController()
     abortMap.set(threadId, controller)
     setActiveRunThread(threadId)
     const runAbort = createAgentRunAbortScheduler(controller)
     runAbort.schedule()
-    const sendChunk = (chunk: StreamChunk) => {
-      if (chunk.type === 'usage') recordThreadModel(threadId, chunk.model)
-      host.emit(threadId, chunk)
-    }
     try {
       const result = await runRemoteAgentFromSettings({
         threadId,
@@ -184,17 +184,11 @@ export async function runAgent(
   const runAbort = createAgentRunAbortScheduler(controller)
   runAbort.schedule()
 
-  const sendChunk = (chunk: StreamChunk) => {
-    if (chunk.type === 'usage') recordThreadModel(threadId, chunk.model)
-    host.emit(threadId, chunk)
-  }
-
   try {
     const invokedSkills = options?.invokedSkills ?? []
     const subagentsEnabled = getSetting<boolean>('subagentsEnabled', true)
     const contextWindow = await resolveContextWindow(model)
     const toolSchemaReserve = model === 'lm-studio' || model.startsWith('lmstudio:') ? 2_500 : 1_000
-
     const provider = await buildProvider(model)
     const subagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
     const subagentUsageModel = subagentRoute?.usageModel ?? model
