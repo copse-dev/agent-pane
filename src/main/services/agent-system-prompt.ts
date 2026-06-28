@@ -17,6 +17,7 @@ import {
   EXTERNAL_API_SAFETY_BLOCK,
 } from './agent-prompt.ts'
 import { buildSemanticSearchPromptBlock } from './semantic-search.ts'
+import { isProjectSandboxActive } from '../project-sandbox/state.ts'
 
 /** Assemble the system prompt for a run from base prompt + skills + instructions. */
 export async function buildSystemPrompt(opts: {
@@ -41,7 +42,7 @@ export async function buildSystemPrompt(opts: {
     (externalApiSafety ? EXTERNAL_API_SAFETY_BLOCK : '') +
     (browserToolsEnabled ? BROWSER_TOOLS_BLOCK : '') +
     buildSkillsCatalogBlock() +
-    (await buildInvokedSkillsBlock(invokedSkills)) +
+    (await buildInvokedSkillsBlock(invokedSkills, { sandboxActive: isProjectSandboxActive() })) +
     buildSemanticSearchPromptBlock() +
     (customInstructions ? `\n\n---\n\n## Custom instructions\n\n${customInstructions}` : '') +
     (projectInstructions ? `\n\n---\n\n## Project instructions\n\n${projectInstructions}` : '')

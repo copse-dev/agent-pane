@@ -5,6 +5,7 @@ import { el } from '../dom/helpers.ts'
 import { registerTerminalSelectionToChatShortcut } from '../terminal/selection-to-chat.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { installTerminalFileLinks, type TerminalFileLinks } from './terminal-file-links.ts'
 
 const XTERM_THEME = {
   dark: {
@@ -30,6 +31,7 @@ interface TerminalTab {
   tabBtn: HTMLButtonElement
   term: Terminal
   fitAddon: FitAddon
+  fileLinks: TerminalFileLinks
   sessionId: string | null
   creating: boolean
   pendingInput: string[]
@@ -83,6 +85,7 @@ export function mountTerminalsPane(
     for (const tab of tabs.values()) {
       if (tab.sessionId === id) {
         tab.term.write(data)
+        tab.fileLinks.refresh()
         if (tab.commandRan) scheduleAutoName(tab)
       }
     }
@@ -320,6 +323,7 @@ export function mountTerminalsPane(
     panel.append(container)
 
     const { term, fitAddon } = createXterm()
+    const fileLinks = installTerminalFileLinks(term, store, api)
     const tab: TerminalTab = {
       id,
       label,
@@ -329,6 +333,7 @@ export function mountTerminalsPane(
       tabBtn,
       term,
       fitAddon,
+      fileLinks,
       sessionId: null,
       creating: false,
       pendingInput: [],
@@ -367,6 +372,7 @@ export function mountTerminalsPane(
     const tab = tabs.get(tabId)
     if (!tab) return
     if (tab.nameTimer != null) clearTimeout(tab.nameTimer)
+    tab.fileLinks.dispose()
     await destroySession(tab)
     tab.term.dispose()
     tab.tabBtn.remove()
@@ -452,6 +458,7 @@ export function mountTerminalsPane(
     void (async () => {
       for (const tab of tabs.values()) {
         if (tab.nameTimer != null) clearTimeout(tab.nameTimer)
+        tab.fileLinks.dispose()
         await destroySession(tab)
         tab.term.dispose()
       }

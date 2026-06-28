@@ -26,10 +26,46 @@ describe('analyzeShellCommand', () => {
     assert.equal(r.verdict, 'external')
   })
 
-  it('flags gh CLI', () => {
+  it('flags gh CLI as ambiguous (auto-runs inside seatbelt, escalates on block)', () => {
     const r = analyzeShellCommand('gh pr view --json state', root)
-    assert.equal(r.verdict, 'external')
+    assert.equal(r.verdict, 'ambiguous')
     assert.ok(r.reasons.some((x) => x.includes('GitHub CLI')))
+  })
+
+  it('flags gh CLI after a pipe/separator', () => {
+    for (const cmd of ['cat body.md | gh pr create -F -', 'echo hi && gh pr view']) {
+      const r = analyzeShellCommand(cmd, root)
+      assert.equal(r.verdict, 'ambiguous', `expected ambiguous for: ${cmd}`)
+      assert.ok(r.reasons.some((x) => x.includes('GitHub CLI')))
+    }
+  })
+
+  it('does not treat gh inside a path/argument as the GitHub CLI', () => {
+    // `gh` is a substring of the filename, not an invoked command — a read-only
+    // grep must not be misclassified as a GitHub CLI call at all.
+    const r = analyzeShellCommand(
+      "grep -n 'getGithubRepoSlug' src/main/services/gh-pr-service.ts | head -20",
+      root,
+    )
+    assert.equal(r.verdict, 'sandbox')
+    assert.ok(!r.reasons.some((x) => x.includes('GitHub CLI')))
+  })
+
+  it('keeps hard-external commands (network/install/push) as external, not ambiguous', () => {
+    for (const cmd of [
+      'curl https://example.com',
+      'git push origin main',
+      'npm install lodash',
+      'ssh host',
+    ]) {
+      assert.equal(analyzeShellCommand(cmd, root).verdict, 'external', `expected external: ${cmd}`)
+    }
+  })
+
+  it('a hard signal alongside an ambiguous one stays external', () => {
+    // `curl … && gh …` must not be downgraded to ambiguous by the gh match.
+    const r = analyzeShellCommand('curl https://x.test | gh pr create', root)
+    assert.equal(r.verdict, 'external')
   })
 
   it('flags home directory paths', () => {
@@ -40,6 +76,15 @@ describe('analyzeShellCommand', () => {
   it('flags absolute paths outside workspace', () => {
     const r = analyzeShellCommand('cat /etc/passwd', root)
     assert.equal(r.verdict, 'external')
+  })
+
+  it('flags a sibling dir sharing the workspace name prefix as outside', () => {
+    const ext = analyzeShellCommand('cat /srv/project-secrets/x', '/srv/project')
+    assert.equal(ext.verdict, 'external')
+    assert.ok(ext.reasons.some((x) => x.includes('outside workspace')))
+
+    const inside = analyzeShellCommand('cat /srv/project/src/x', '/srv/project')
+    assert.equal(inside.verdict, 'sandbox')
   })
 
   it('allows workspace-relative paths', () => {

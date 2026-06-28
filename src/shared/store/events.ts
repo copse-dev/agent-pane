@@ -17,6 +17,7 @@ export interface StoreEvents {
   // are not re-run on every keystroke while the user is typing.
   thread_draft_changed: [threadId: string]
   panel_changed: []
+  explorer_reveal: [path: string]
   workspace_changed: []
   projects_changed: []
   files_pane_changed: []

@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { runAgentLoop } from './run-agent-loop.ts'
+import { AGENT_RUN_ABORT_REASON_TIMEOUT, AgentRunDeadline } from './agent-loop-limits.ts'
 import { getLastMeasuredInputTokens, setLastMeasuredInputTokens } from './trim-history.ts'
 import type { LLMMessage, LLMProvider, StreamChunk } from '@shared/types'
 
@@ -526,6 +527,82 @@ src/renderer/views/projects-pane.ts
     assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('time or LLM call limit')))
     assert.equal(chunks.at(-1)?.type, 'done')
     assertToolPairingValid(messages)
+  })
+
+  it('surfaces the run limit message when aborted for timeout', async () => {
+    const controller = new AbortController()
+    controller.abort(AGENT_RUN_ABORT_REASON_TIMEOUT)
+    const chunks: StreamChunk[] = []
+    await runAgentLoop({
+      provider: mockProvider([[{ type: 'text', text: 'hi' }, { type: 'done' }]]),
+      messages: [{ role: 'user', content: 'hello' }],
+      tools: [],
+      onChunk: (c) => chunks.push(c),
+      executeTool: async () => '',
+      signal: controller.signal,
+    })
+    assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('time or LLM call limit')))
+    assert.equal(chunks.at(-1)?.type, 'done')
+  })
+
+  it('stays silent on a user-initiated abort (non-timeout reason)', async () => {
+    const controller = new AbortController()
+    controller.abort('user-stop')
+    const chunks: StreamChunk[] = []
+    await runAgentLoop({
+      provider: mockProvider([[{ type: 'text', text: 'hi' }, { type: 'done' }]]),
+      messages: [{ role: 'user', content: 'hello' }],
+      tools: [],
+      onChunk: (c) => chunks.push(c),
+      executeTool: async () => '',
+      signal: controller.signal,
+    })
+    assert.ok(
+      !chunks.some((c) => c.type === 'text' && c.text.includes('time or LLM call limit')),
+      'a user abort must not surface the run-limit message',
+    )
+    assert.equal(chunks.length, 1) // only 'done'
+  })
+
+  it('keeps the idle clock paused while a tool executes', async () => {
+    // The deadline is only polled at loop tops, and activity is recorded right
+    // after each tool batch — so pausing is what protects an in-flight tool from
+    // the idle timeout (it stops the external abort scheduler firing mid-tool).
+    // Assert the wiring directly: the clock must be paused at the instant the tool
+    // runs, and pause/resume must stay balanced. No real time needed.
+    const deadline = new AgentRunDeadline(150, 60_000)
+    const events: string[] = []
+    const origPause = deadline.pause.bind(deadline)
+    const origResume = deadline.resume.bind(deadline)
+    deadline.pause = (now) => {
+      events.push('pause')
+      return origPause(now)
+    }
+    deadline.resume = (now) => {
+      events.push('resume')
+      return origResume(now)
+    }
+    let pausedDuringTool: boolean | null = null
+    const chunks: StreamChunk[] = []
+    await runAgentLoop({
+      provider: mockProvider([
+        [{ type: 'tool_call', toolCall: { id: '1', name: 'slow', args: {} } }, { type: 'done' }],
+        [{ type: 'text', text: 'finished' }, { type: 'done' }],
+      ]),
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [],
+      onChunk: (c) => chunks.push(c),
+      runDeadline: deadline,
+      executeTool: async () => {
+        pausedDuringTool = events.lastIndexOf('pause') > events.lastIndexOf('resume')
+        return 'ok'
+      },
+    })
+    assert.equal(pausedDuringTool, true, 'idle clock must be paused while a tool executes')
+    const pauses = events.filter((e) => e === 'pause').length
+    const resumes = events.filter((e) => e === 'resume').length
+    assert.equal(pauses, resumes, 'every pause must be matched by a resume')
+    assert.ok(chunks.some((c) => c.type === 'text' && c.text === 'finished'))
   })
 
   it('prefers per-stream usage chunks over the shared lastUsage field (#112)', async () => {

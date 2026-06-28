@@ -31,7 +31,8 @@ import { createContextWheel } from './context-wheel.ts'
 import { bindFooterCompactLayout } from './footer-compact.ts'
 import { mountFooterOverflow } from './footer-overflow.ts'
 import { downloadThreadJsonl, threadHasExportableContent } from '../export-thread.ts'
-import { formatThreadUsageCost } from '@shared/llm/estimate-cost.ts'
+import { formatThreadUsageCost, type ExtraPricing } from '@shared/llm/estimate-cost.ts'
+import { extraProviderPricingMap } from '@shared/llm/extra-providers.ts'
 import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
 import { mountFollowUpSuggestions } from './follow-up-suggestions.ts'
 import {
@@ -176,6 +177,24 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   let mismatchBranch: string | null = null
   let checkoutInProgress = false
   let lastBreakdown: ContextBreakdown | null = null
+  // Pricing for extra-provider models (e.g. HF), keyed by `<slug>:<id>` selection.
+  // The static cloud catalog has no entry for these, so the footer cost reads here.
+  let extraPricing: ExtraPricing = {}
+  function refreshExtraPricing(): void {
+    // Best-effort: a missing/failed provider list just leaves the footer cost
+    // resting on the static cloud catalog, so never let it throw.
+    try {
+      void api.settings
+        .extraProviders()
+        .then((providers) => {
+          extraPricing = extraProviderPricingMap(providers)
+          updateFooter()
+        })
+        .catch(() => {})
+    } catch {
+      /* ignore */
+    }
+  }
 
   function getActiveThreadId() {
     return store.getState().activeThreadId
@@ -263,7 +282,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     const running = thread?.status === 'running'
     if (!total && !running) return null
     if (costVisible) {
-      return `${inputTokens} in / ${outputTokens} out · ${formatThreadUsageCost(thread?.usage ?? { inputTokens: 0, outputTokens: 0 }, model)}`
+      return `${inputTokens} in / ${outputTokens} out · ${formatThreadUsageCost(thread?.usage ?? { inputTokens: 0, outputTokens: 0 }, model, extraPricing)}`
     }
     return total ? `${(total / 1000).toFixed(1)}k tokens` : '0 tokens'
   }
@@ -453,10 +472,27 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     const invocation = resolveSkillInvocation(rawText, skillNames)
     const invokedSkills = invocation ? [invocation.skillName] : []
 
-    if (invocation && !skills.some((skill) => skill.name === invocation.skillName)) {
+    const invokedSkill = invocation
+      ? skills.find((skill) => skill.name === invocation.skillName)
+      : undefined
+
+    if (invocation && !invokedSkill) {
       textarea.setCustomValidity(`Unknown skill: /${invocation.skillName}`)
       textarea.reportValidity()
       return
+    }
+
+    // Warn up front when the invoked skill points the agent at external hosts.
+    // The setting defaults on, so only an explicit `false` suppresses it.
+    if (invokedSkill && invokedSkill.externalLinks.length > 0) {
+      const warnEnabled = (await api.settings.get('skillExternalLinkWarnings')) !== false
+      if (warnEnabled) {
+        showToast(
+          `/${invokedSkill.name} references external links: ${invokedSkill.externalLinks.join(', ')}. ` +
+            `The agent will ask before fetching, installing, or running code from them.`,
+          { variant: 'error', durationMs: 10000 },
+        )
+      }
     }
 
     const text = invocation
@@ -695,6 +731,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     }),
     store.on('settings_changed', () => {
       modelPicker.refresh()
+      // An added/edited provider (e.g. a freshly fetched HF list) changes pricing.
+      refreshExtraPricing()
       updateFooter()
       // Model / subagent changes alter the context window and tool set.
       scheduleContextEstimate(0)
@@ -710,6 +748,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   observer.observe(followUps.root, { attributes: true, attributeFilter: ['hidden'] })
 
   updateFooter()
+  refreshExtraPricing()
   syncComposerThread()
   scheduleContextEstimate(0)
   window.addEventListener('beforeunload', stopContextEstimates)

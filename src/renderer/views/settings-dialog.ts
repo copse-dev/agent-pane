@@ -11,6 +11,7 @@ import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
 import { DEFAULT_CURSOR_AGENT_BASE_URL } from '@shared/remote-agent.ts'
 import { populateModelSelect, populateSmallTasksModelSelect } from './model-options.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
+import { createCustomProvidersSection } from './setup/custom-providers-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
 import {
@@ -53,6 +54,8 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'localSubagentsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'localTodoItemsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'bundledCursorSkillsEnabled', kind: 'checkbox', default: true, save: true },
+  { name: 'skillExternalLinkWarnings', kind: 'checkbox', default: true, save: true },
+  { name: 'skillSandboxGuidance', kind: 'checkbox', default: true, save: true },
   // Built-in browser tools (Electron's bundled Chromium); on by default so the
   // agent renders/screenshots web UIs in-app instead of installing a browser.
   { name: 'browserToolsEnabled', kind: 'checkbox', default: true, save: true },
@@ -153,7 +156,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               Cloud API keys, default chat model, and task-specific model choices.
             </p>
 
-            <div id="settings-api-keys-host"></div>
+            <div id="settings-custom-providers-host"></div>
 
             <fieldset>
               <legend>Chat model</legend>
@@ -287,6 +290,24 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <input type="checkbox" name="bundledCursorSkillsEnabled" />
                 Include bundled Cursor skills (CI, code review, verification, and more)
               </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="skillExternalLinkWarnings" />
+                Warn before running a skill that references external links
+              </label>
+              <p class="field-hint">
+                When an invoked skill's <code>SKILL.md</code> points at <code>http(s)</code> hosts,
+                surface a warning up front and tell the agent to treat fetch/install/run-from-network
+                steps as approval-gated.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="skillSandboxGuidance" />
+                Reinforce sandbox confinement for invoked skills
+              </label>
+              <p class="field-hint">
+                Reminds the agent that a skill's shell commands stay inside the project sandbox (or,
+                where no OS sandbox is active, require approval) rather than silently reaching the
+                network or the host filesystem.
+              </p>
             </fieldset>
 
             <fieldset>
@@ -488,10 +509,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   document.body.append(overlay)
   overlayEl = overlay
 
-  const apiKeysSection = createApiKeysSection(api, {
-    providers: ['anthropic', 'openai', 'openrouter', 'mistral', 'gemini', 'deepseek'],
-  })
-  overlay.querySelector('#settings-api-keys-host')!.append(apiKeysSection.root)
+  const customProvidersSection = createCustomProvidersSection(api)
+  overlay.querySelector('#settings-custom-providers-host')!.append(customProvidersSection.root)
 
   const cursorKeySection = createApiKeysSection(api, {
     legend: 'Cursor authentication',
@@ -752,8 +771,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   overlay.addEventListener('settings-open', () => {
     showSection('general')
     void (async () => {
-      await apiKeysSection.refreshKeyStatus()
       await cursorKeySection.refreshKeyStatus()
+      await customProvidersSection.refresh()
 
       const form = overlay.querySelector('form') as HTMLFormElement
       const model = (await api.settings.get('model')) as string | undefined
@@ -805,8 +824,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const form = overlay.querySelector('form') as HTMLFormElement
       const data = new FormData(form)
 
-      await apiKeysSection.saveKeys()
       await cursorKeySection.saveKeys()
+      await customProvidersSection.saveKeys()
       await lmStudioSection.saveConnection()
       const routingValues = modelRoutingSection.readValues()
 
