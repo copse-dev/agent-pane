@@ -123,13 +123,10 @@ describe('staged diff approval UI', () => {
     await acceptBtn.waitForDisplayed({ timeout: 5_000 })
     await acceptBtn.click()
 
-    await browser.waitUntil(
-      async () => !(await $('.git-changes-section-proposed').isDisplayed()),
-      {
-        timeout: 15_000,
-        timeoutMsg: 'expected proposed section to close after accept',
-      },
-    )
+    await browser.waitUntil(async () => !(await $('.git-changes-section-proposed').isDisplayed()), {
+      timeout: 15_000,
+      timeoutMsg: 'expected proposed section to close after accept',
+    })
 
     await browser.pause(3_000)
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'staged-diff-css-accept-no-error.png'))
