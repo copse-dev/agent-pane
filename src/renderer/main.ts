@@ -14,6 +14,7 @@ import { mountContextPanel } from './views/context-panel.ts'
 import { mountRightPanelLayout } from './views/right-panel-layout.ts'
 import { mountTerminalsPane } from './views/terminals-pane.ts'
 import { mountGitChangesPane } from './views/git-changes-pane.ts'
+import { mountPrPane } from './views/pr-pane.ts'
 import { mountBrowserPane } from './views/browser-pane.ts'
 import {
   mountSettingsDialog,
@@ -199,6 +200,13 @@ function mountFullLayout() {
     mountGitChangesPane(
       document.getElementById('git-changes-host')!,
       document.getElementById('git-diff-viewer-host')!,
+      store,
+      api,
+      monaco,
+    )
+    mountPrPane(
+      document.getElementById('pr-list-host')!,
+      document.getElementById('pr-viewer-host')!,
       store,
       api,
       monaco,

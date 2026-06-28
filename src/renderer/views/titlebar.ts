@@ -45,6 +45,19 @@ function browserIcon(): SVGSVGElement {
   )
 }
 
+function prsIcon(): SVGSVGElement {
+  return outlineIcon(
+    'prs',
+    [
+      'M9 6a3 3 0 1 0-6 0 3 3 0 0 0 6 0Z',
+      'M6 9v12',
+      'M21 18a3 3 0 1 0-6 0 3 3 0 0 0 6 0Z',
+      'M13 6h3a2 2 0 0 1 2 2v7',
+    ],
+    'titlebar-btn-icon',
+  )
+}
+
 export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClient): () => void {
   // The structural #titlebar div needs the .titlebar class for its flex layout,
   // height, and traffic-light clearance to apply. Without it the controls
@@ -76,6 +89,12 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
     changesIcon(),
     'Changes',
   )
+  const prsBtn = el(
+    'button',
+    { class: 'titlebar-btn titlebar-text-btn', 'aria-label': 'Open pull requests' },
+    prsIcon(),
+    'PRs',
+  )
   const browserBtn = el(
     'button',
     { class: 'titlebar-btn titlebar-text-btn', 'aria-label': 'Open browser' },
@@ -88,6 +107,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
     filesBtn,
     terminalBtn,
     changesBtn,
+    prsBtn,
     browserBtn,
   )
 
@@ -108,6 +128,11 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
     syncPanelBtns()
   })
 
+  prsBtn.addEventListener('click', () => {
+    toggleRightPanelWithWorkspace(store, _api, 'prs')
+    syncPanelBtns()
+  })
+
   browserBtn.addEventListener('click', () => {
     toggleRightPanelWithWorkspace(store, _api, 'browser')
     syncPanelBtns()
@@ -118,6 +143,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
     filesBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'explorer')
     terminalBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'terminal')
     changesBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'changes')
+    prsBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'prs')
     browserBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'browser')
   }
 
