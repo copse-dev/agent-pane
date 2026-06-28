@@ -117,7 +117,7 @@ describe('markdown browser links', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     const img = root.querySelector('img')!
-    assert.equal(img.dataset.remoteArtifactState, 'loaded')
+    assert.equal(img.dataset['remoteArtifactState'], 'loaded')
     assert.equal(img.src, 'data:image/png;base64,abc123')
   })
 
@@ -137,7 +137,7 @@ describe('markdown browser links', () => {
     }
 
     hydrateRemoteArtifactImages(finalMessage, api)
-    assert.equal(finalMessage.querySelector('img')!.dataset.remoteArtifactState, 'missing-agent')
+    assert.equal(finalMessage.querySelector('img')!.dataset['remoteArtifactState'], 'missing-agent')
 
     const root = document.createElement('div')
     root.className = 'messages-list'
@@ -154,6 +154,6 @@ describe('markdown browser links', () => {
         path: 'artifacts/screenshots/css-new-tab.png',
       },
     ])
-    assert.equal(finalMessage.querySelector('img')!.dataset.remoteArtifactState, 'loaded')
+    assert.equal(finalMessage.querySelector('img')!.dataset['remoteArtifactState'], 'loaded')
   })
 })

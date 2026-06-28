@@ -14,7 +14,7 @@ export async function checkToolAvailability(): Promise<void> {
   // git-changes and search specs rely on it), while gh and the indexed-grep /
   // semantic-backend probes (a spawned codesearch binary) are unused by the
   // seeded suite, so leave them off rather than spawning anything.
-  if (process.env.COPSE_E2E === '1') {
+  if (process.env['COPSE_E2E'] === '1') {
     rgAvail = true
     gitAvail = true
     ghAvail = false
@@ -65,7 +65,7 @@ async function probe(cmd: string, args: string[]): Promise<boolean> {
   try {
     const pathPrefix = process.platform === 'win32' ? '' : '/usr/bin:/bin:'
     await runCommand(cmd, args, {
-      env: { PATH: `${pathPrefix}${process.env.PATH ?? ''}` },
+      env: { PATH: `${pathPrefix}${process.env['PATH'] ?? ''}` },
     })
     return true
   } catch {

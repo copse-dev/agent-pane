@@ -289,7 +289,7 @@ contextBridge.exposeInMainWorld('api', {
   },
 })
 
-if (process.env.COPSE_E2E === '1') {
+if (process.env['COPSE_E2E'] === '1') {
   const errorToasts: string[] = []
   contextBridge.exposeInMainWorld('__copseE2e', {
     pushErrorToast(message: string) {
