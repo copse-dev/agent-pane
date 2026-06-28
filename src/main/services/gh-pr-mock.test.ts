@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   isMockGhEnabled,
+  mockGetGhPrChecksState,
   mockGetGhPrDetails,
   mockGhCliStatus,
   mockListMyOpenPrs,
@@ -13,6 +14,7 @@ import {
 } from './gh-pr-mock.ts'
 import {
   getGhCliStatus,
+  getGhPrChecksState,
   getGhPrDetails,
   listMyOpenPrs,
   listWorkspaceOpenPrs,
@@ -38,6 +40,8 @@ describe('gh-pr-mock', () => {
     assert.ok(prs.some((pr) => pr.number === MOCK_GH_WORKSPACE_PR_NUMBER))
     // Every workspace PR lives in the mock workspace repo.
     assert.ok(prs.every((pr) => pr.owner === MOCK_GH_PR_OWNER && pr.repo === MOCK_GH_PR_REPO))
+    // The repo-scoped listing carries CI rollup, so checks arrive resolved.
+    assert.ok(prs.every((pr) => pr.checks != null))
 
     const details = mockGetGhPrDetails({
       owner: MOCK_GH_PR_OWNER,
@@ -45,6 +49,17 @@ describe('gh-pr-mock', () => {
       number: MOCK_GH_WORKSPACE_PR_NUMBER,
     })
     assert.equal(details?.files.length, 1)
+  })
+
+  it('maps a PR number to a deterministic CI state', () => {
+    const ref = {
+      owner: MOCK_GH_PR_OWNER,
+      repo: MOCK_GH_PR_REPO,
+      number: MOCK_GH_WORKSPACE_PR_NUMBER,
+    }
+    assert.equal(mockGetGhPrChecksState(ref), 'failure')
+    assert.equal(mockGetGhPrChecksState({ ...ref, number: MOCK_GH_PR_NUMBER }), 'success')
+    assert.equal(mockGetGhPrChecksState({ owner: 'x', repo: 'y', number: 1 }), 'no_checks')
   })
 
   it('supports unavailable and unauthenticated status modes', () => {
@@ -76,6 +91,13 @@ describe('gh-pr-service mock wiring', () => {
 
     const workspacePrs = await listWorkspaceOpenPrs()
     assert.ok(workspacePrs.some((pr) => pr.number === MOCK_GH_WORKSPACE_PR_NUMBER))
+
+    const checks = await getGhPrChecksState({
+      owner: MOCK_GH_PR_OWNER,
+      repo: MOCK_GH_PR_REPO,
+      number: MOCK_GH_WORKSPACE_PR_NUMBER,
+    })
+    assert.equal(checks, 'failure')
 
     const details = await getGhPrDetails({
       owner: MOCK_GH_PR_OWNER,

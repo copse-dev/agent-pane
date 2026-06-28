@@ -8,6 +8,7 @@ import type {
   GitBranchStatus,
   GitBranchInfo,
   GhCliStatus,
+  GhPrChecksState,
   GhPrDetails,
   GhPrFileDiff,
   GhPrSummary,
@@ -59,6 +60,7 @@ export interface ApiClient {
     estimateContext: (threadId: string, payload: string) => Promise<ContextBreakdown>
     abort: (threadId: string) => Promise<void>
     clearHistory: (threadId: string) => Promise<void>
+    refreshModelContext: () => Promise<void>
     suggestTitle: (text: string) => Promise<string | null>
     suggestTerminalTitle: (text: string) => Promise<string | null>
     suggestCommandSummary: (commands: string[]) => Promise<string | null>
@@ -257,6 +259,7 @@ export interface ApiClient {
     status: () => Promise<GhCliStatus>
     listMyOpenPrs: () => Promise<GhPrSummary[] | null>
     listWorkspaceOpenPrs: () => Promise<GhPrSummary[]>
+    prChecks: (owner: string, repo: string, number: number) => Promise<GhPrChecksState>
     prDetails: (owner: string, repo: string, number: number) => Promise<GhPrDetails | null>
     prFileDiff: (
       owner: string,

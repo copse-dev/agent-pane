@@ -46,6 +46,7 @@ function createApi(options: {
       abort: async () => {},
       run: async () => {},
       suggestFollowUps: async () => [],
+      refreshModelContext: async () => {},
       onRefreshContextEstimate: () => () => {},
     },
     fs: {

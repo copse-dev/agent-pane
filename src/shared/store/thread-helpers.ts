@@ -92,6 +92,7 @@ export function createThread(store: AppStore): string {
   })
   store.emit('threads_changed')
   store.emit('panel_changed')
+  store.emit('new_thread_opened')
   return id
 }
 
@@ -114,6 +115,7 @@ export function openNewThread(store: AppStore): string {
       stagedDiffs: [],
     })
     store.emit('panel_changed')
+    store.emit('new_thread_opened')
     return existing.id
   }
   store.emit('composer_draft_flush')

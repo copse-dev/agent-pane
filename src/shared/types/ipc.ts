@@ -43,6 +43,7 @@ export interface IpcInvokeMap {
   'agent:run': { args: [threadId: string, prompt: string]; result: void }
   'agent:abort': { args: [threadId: string]; result: void }
   'agent:clearHistory': { args: [threadId: string]; result: void }
+  'agent:refreshModelContext': { args: []; result: void }
   'agent:suggestTitle': { args: [text: string]; result: string | null }
   'agent:suggestTerminalTitle': { args: [text: string]; result: string | null }
   'agent:suggestFollowUps': {
@@ -137,6 +138,10 @@ export interface IpcInvokeMap {
   'gh:status': { args: []; result: import('./git.ts').GhCliStatus }
   'gh:listMyOpenPrs': { args: []; result: import('./git.ts').GhPrSummary[] | null }
   'gh:listWorkspaceOpenPrs': { args: []; result: import('./git.ts').GhPrSummary[] }
+  'gh:prChecks': {
+    args: [owner: string, repo: string, number: number]
+    result: import('./git.ts').GhPrChecksState
+  }
   'gh:prDetails': {
     args: [owner: string, repo: string, number: number]
     result: import('./git.ts').GhPrDetails | null
