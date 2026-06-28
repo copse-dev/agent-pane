@@ -1,52 +1,61 @@
 import { el } from '../dom/helpers.ts'
+import { outlineIcon } from '../dom/outline-icon.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { toggleRightPanelWithWorkspace } from '../controller/panels.ts'
-
-const ICON_SIZE = '16'
-const SVG_NS = 'http://www.w3.org/2000/svg'
 
 function basename(p: string) {
   return p.split('/').pop() ?? p
 }
 
-function outlineIcon(label: string, paths: string[]): SVGSVGElement {
-  const svg = document.createElementNS(SVG_NS, 'svg')
-  svg.setAttribute('class', 'titlebar-btn-icon')
-  svg.setAttribute('viewBox', '0 0 24 24')
-  svg.setAttribute('width', ICON_SIZE)
-  svg.setAttribute('height', ICON_SIZE)
-  svg.setAttribute('aria-hidden', 'true')
-  svg.setAttribute('focusable', 'false')
-  svg.setAttribute('data-icon', label)
-
-  for (const d of paths) {
-    const path = document.createElementNS(SVG_NS, 'path')
-    path.setAttribute('d', d)
-    svg.append(path)
-  }
-
-  return svg
-}
-
 function panelIcon(): SVGSVGElement {
-  return outlineIcon('panel', [
-    'M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z',
-    'M9 4v16',
-  ])
+  return outlineIcon(
+    'panel',
+    ['M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z', 'M9 4v16'],
+    'titlebar-btn-icon',
+  )
 }
 
 function terminalIcon(): SVGSVGElement {
-  return outlineIcon('terminal', ['m7 8 4 4-4 4', 'M13 16h4'])
+  return outlineIcon('terminal', ['m7 8 4 4-4 4', 'M13 16h4'], 'titlebar-btn-icon')
 }
 
 function changesIcon(): SVGSVGElement {
-  return outlineIcon('changes', [
-    'M18 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
-    'M6 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
-    'M15 5H9a3 3 0 0 0-3 3v8',
-    'M9 19h6a3 3 0 0 0 3-3V8',
-  ])
+  return outlineIcon(
+    'changes',
+    [
+      'M18 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
+      'M6 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
+      'M15 5H9a3 3 0 0 0-3 3v8',
+      'M9 19h6a3 3 0 0 0 3-3V8',
+    ],
+    'titlebar-btn-icon',
+  )
+}
+
+function browserIcon(): SVGSVGElement {
+  return outlineIcon(
+    'browser',
+    [
+      'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z',
+      'M2 12h20',
+      'M12 2a15.3 15.3 0 0 1 0 20 15.3 15.3 0 0 1 0-20Z',
+    ],
+    'titlebar-btn-icon',
+  )
+}
+
+function prsIcon(): SVGSVGElement {
+  return outlineIcon(
+    'prs',
+    [
+      'M9 6a3 3 0 1 0-6 0 3 3 0 0 0 6 0Z',
+      'M6 9v12',
+      'M21 18a3 3 0 1 0-6 0 3 3 0 0 0 6 0Z',
+      'M13 6h3a2 2 0 0 1 2 2v7',
+    ],
+    'titlebar-btn-icon',
+  )
 }
 
 export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClient): () => void {
@@ -74,11 +83,25 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
     terminalIcon(),
     'Terminal',
   )
+  const changesBadge = el('span', { class: 'titlebar-btn-badge', hidden: true })
   const changesBtn = el(
     'button',
     { class: 'titlebar-btn titlebar-text-btn', 'aria-label': 'Open changes' },
     changesIcon(),
     'Changes',
+    changesBadge,
+  )
+  const prsBtn = el(
+    'button',
+    { class: 'titlebar-btn titlebar-text-btn', 'aria-label': 'Open pull requests' },
+    prsIcon(),
+    'PRs',
+  )
+  const browserBtn = el(
+    'button',
+    { class: 'titlebar-btn titlebar-text-btn', 'aria-label': 'Open browser' },
+    browserIcon(),
+    'Browser',
   )
   const panelControls = el(
     'div',
@@ -86,6 +109,8 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
     filesBtn,
     terminalBtn,
     changesBtn,
+    prsBtn,
+    browserBtn,
   )
 
   root.append(leftCluster, dragRegion, panelControls)
@@ -105,11 +130,32 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
     syncPanelBtns()
   })
 
+  prsBtn.addEventListener('click', () => {
+    toggleRightPanelWithWorkspace(store, _api, 'prs')
+    syncPanelBtns()
+  })
+
+  browserBtn.addEventListener('click', () => {
+    toggleRightPanelWithWorkspace(store, _api, 'browser')
+    syncPanelBtns()
+  })
+
   function syncPanelBtns() {
     const { filesPaneOpen, rightPanelMode } = store.getState()
     filesBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'explorer')
     terminalBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'terminal')
     changesBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'changes')
+    prsBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'prs')
+    browserBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'browser')
+  }
+
+  // Surface the pending agent-proposed diff count on the Changes button so the
+  // queue is visible without opening the panel.
+  function syncChangesBadge() {
+    const pending = store.getState().stagedDiffs?.length ?? 0
+    changesBadge.hidden = pending === 0
+    changesBadge.textContent = String(pending)
+    changesBtn.classList.toggle('has-pending', pending > 0)
   }
 
   function syncName() {
@@ -120,10 +166,12 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
   // for the no-project case, then again when restoreProject emits workspace_changed.
   syncName()
   syncPanelBtns()
+  syncChangesBadge()
   const unsubs = [
     store.on('workspace_changed', syncName),
     store.on('files_pane_changed', syncPanelBtns),
     store.on('right_panel_mode_changed', syncPanelBtns),
+    store.on('staged_diffs_changed', syncChangesBadge),
   ]
 
   return () => unsubs.forEach((u) => u())

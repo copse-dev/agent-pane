@@ -1,0 +1,78 @@
+/* Cmd/Ctrl+P quick-open palette — a native <dialog> centred near the top. */
+.file-search-overlay {
+  margin: 10vh auto 0;
+  padding: 0;
+  width: min(640px, 90vw);
+  max-height: 60vh;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  overflow: hidden;
+  box-shadow: 0 12px 48px rgb(0 0 0 / 50%);
+}
+.file-search-overlay::backdrop {
+  background: rgb(0 0 0 / 40%);
+}
+.file-search-shell {
+  display: flex;
+  flex-direction: column;
+  max-height: 60vh;
+}
+.file-search-input {
+  width: 100%;
+  padding: var(--spacing-md) var(--spacing-lg);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  outline: none;
+}
+.file-search-input::placeholder {
+  color: var(--text-muted);
+}
+.file-search-results {
+  overflow-y: auto;
+  padding: var(--spacing-xs);
+}
+.file-search-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 6px var(--spacing-sm);
+  border-radius: var(--radius);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.file-search-item.selected,
+.file-search-item:hover {
+  background: var(--bg-hover);
+}
+.file-search-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+}
+.file-search-icon img {
+  width: 16px;
+  height: 16px;
+}
+.file-search-name {
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+.file-search-dir {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.file-search-empty {
+  padding: var(--spacing-md) var(--spacing-lg);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}

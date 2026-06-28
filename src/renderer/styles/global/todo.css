@@ -98,15 +98,38 @@
   padding: var(--spacing-md);
   min-height: 0;
 }
-.plan-viewer-host {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--spacing-md);
-  min-height: 0;
-  background: var(--bg-base);
+/* Post-turn review panel */
+.conversation-review-host {
+  flex-shrink: 0;
+  padding: 0 var(--spacing-md) var(--spacing-sm);
 }
-.plan-pane-empty {
-  color: var(--text-muted);
+.review-panel {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--text-secondary);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  padding: var(--spacing-sm) var(--spacing-md);
   font-size: 13px;
-  margin: 0;
+}
+.review-panel-error {
+  border-left-color: var(--danger, #d9534f);
+}
+.review-panel-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+.review-panel-body {
+  margin-top: var(--spacing-xs);
+}
+.review-panel-body > :first-child {
+  margin-top: 0;
+}
+.review-panel-body > :last-child {
+  margin-bottom: 0;
 }

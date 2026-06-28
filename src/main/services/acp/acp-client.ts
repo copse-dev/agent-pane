@@ -15,6 +15,7 @@ import { spawn } from 'node:child_process'
 import { Readable, Writable } from 'node:stream'
 import type { StreamChunk } from '@shared/types'
 import { sessionUpdateToStreamChunk } from './session-update-adapter.ts'
+import { envForRendererChildProcess } from '../child-process-env.ts'
 
 /**
  * ACP **Client role** for Copse: spawn and drive an external ACP agent
@@ -49,6 +50,16 @@ const UNSUPPORTED = (method: string) => () =>
   Promise.reject(new Error(`Client capability not enabled: ${method}`))
 
 /**
+ * Build the env for the spawned ACP agent. The base is scrubbed of LLM/provider
+ * secrets via {@link envForRendererChildProcess} (an external agent runs its own
+ * model loop and must not inherit Copse's cloud API keys); `config.env` is the
+ * explicit allowlist of vars that agent is meant to receive and is overlaid last.
+ */
+export function buildAcpAgentEnv(config: AcpAgentSpawnConfig): Record<string, string> {
+  return { ...envForRendererChildProcess(), ...(config.env ?? {}) }
+}
+
+/**
  * Run a single prompt turn against an external ACP agent. Spawns the agent,
  * initializes the connection, creates a session, sends the prompt, and pumps
  * `session/update` notifications to `handlers.onChunk` until the turn stops.
@@ -62,7 +73,7 @@ export async function runAcpAgentPrompt(
 ): Promise<{ stopReason: StopReason }> {
   const child = spawn(config.command, config.args ?? [], {
     cwd: config.cwd,
-    env: { ...process.env, ...config.env },
+    env: buildAcpAgentEnv(config),
     stdio: ['pipe', 'pipe', 'inherit'],
   })
 

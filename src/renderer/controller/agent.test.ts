@@ -58,6 +58,41 @@ function setup(
         pr: null,
       }),
     },
+    usage: {
+      record: async () => {},
+      getSummary: async () => ({
+        day: {
+          totalCostUsd: 0,
+          cloudModels: [],
+          localModels: [],
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+        },
+        month: {
+          totalCostUsd: 0,
+          cloudModels: [],
+          localModels: [],
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+        },
+        period90d: {
+          totalCostUsd: 0,
+          cloudModels: [],
+          localModels: [],
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+        },
+        allTime: {
+          totalCostUsd: 0,
+          cloudModels: [],
+          localModels: [],
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+        },
+        trackingStartedAt: null,
+        ledgerEventCount: 0,
+      }),
+    },
   } as unknown as ApiClient
 
   const unsub = startAgentController(store, api)
@@ -197,7 +232,7 @@ test('usage chunks accumulate into the thread total and per-model breakdown', ()
   const usage = getThreadById(store, 't1')!.usage
   assert.equal(usage.inputTokens, 15)
   assert.equal(usage.outputTokens, 5)
-  assert.deepEqual(usage.byModel?.m1, { inputTokens: 15, outputTokens: 5 })
+  assert.deepEqual(usage.byModel?.['m1'], { inputTokens: 15, outputTokens: 5 })
 })
 
 test('done finalizes the message, sets the thread idle, and resets stream state', () => {

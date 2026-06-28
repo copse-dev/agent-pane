@@ -147,6 +147,7 @@ export function mountGitChangesPane(
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
   let cancelPendingDiffReveal: (() => void) | null = null
   const proposedDiffCache = new Map<string, ActiveDiff>()
+  let pendingNavigate: string | null = null
 
   acceptAllBtn.addEventListener('click', () => void api.diff.approveAll())
   rejectAllBtn.addEventListener('click', () => void api.diff.rejectAll())
@@ -390,6 +391,21 @@ export function mountGitChangesPane(
   async function syncSelection() {
     const { stagedDiffs, activeDiff } = store.getState()
     const queue = stagedDiffs ?? []
+
+    // A git_change_navigate request takes priority over the existing selection.
+    const navTarget = pendingNavigate
+    pendingNavigate = null
+    if (navTarget && status) {
+      const inUnstaged = status.unstaged.some((c) => c.path === navTarget)
+      const inStaged = status.staged.some((c) => c.path === navTarget)
+      if (inUnstaged || inStaged) {
+        const staged = !inUnstaged && inStaged
+        selection = { kind: 'git', path: navTarget, staged }
+        await selectGitChange(navTarget, staged)
+        return
+      }
+    }
+
     let current = selection
 
     if (current?.kind === 'proposed') {
@@ -473,6 +489,10 @@ export function mountGitChangesPane(
 
   const unsubs = [
     store.on('right_panel_mode_changed', () => {
+      if (changesModeActive(store)) void refresh()
+    }),
+    store.on('git_change_navigate', (path) => {
+      pendingNavigate = path
       if (changesModeActive(store)) void refresh()
     }),
     store.on('files_pane_changed', () => {

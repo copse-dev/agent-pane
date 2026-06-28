@@ -30,7 +30,10 @@ describe('staged diff approval UI', () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     writeFileSync(DIRTY_TREE_SENTINEL, 'force staged-diff approval path\n')
     resetUserData()
-    seedEmptyProject(process.cwd(), PROJECT_ID, { subagentsEnabled: false })
+    seedEmptyProject(process.cwd(), PROJECT_ID, {
+      subagentsEnabled: false,
+      model: 'claude-sonnet-4-6',
+    })
     await browser.reloadSession()
   })
 
@@ -51,7 +54,7 @@ describe('staged diff approval UI', () => {
       { timeout: 30_000, timeoutMsg: 'expected write_file tool card' },
     )
 
-    await expect($('.right-panel-tab[aria-label="Changes"]')).toHaveElementClass('is-active')
+    await expect($('.titlebar-btn[aria-label="Open changes"]')).toHaveElementClass('active')
     await $('#git-changes-host').waitForDisplayed({ timeout: 30_000 })
     await $('.git-changes-section-proposed').waitForDisplayed({ timeout: 30_000 })
     await $('#git-diff-viewer-host .monaco-diff-editor').waitForDisplayed({ timeout: 30_000 })
