@@ -10,6 +10,7 @@ import {
   mockGetGhPrFileDiff,
   mockGhCliStatus,
   mockListMyOpenPrs,
+  mockListWorkspaceOpenPrs,
 } from './gh-pr-mock.ts'
 import type {
   GhCliStatus,
@@ -364,6 +365,10 @@ export async function resolveGithubPrRef(
 }
 
 export async function listWorkspaceOpenPrs(limit = 20): Promise<GhPrSummary[]> {
+  if (isMockGhEnabled()) {
+    const status = mockGhCliStatus()
+    return status.authenticated ? mockListWorkspaceOpenPrs().slice(0, limit) : []
+  }
   const slug = await getGithubRepoSlug()
   if (!slug) return []
   const [owner, repo] = slug.split('/')
