@@ -172,6 +172,7 @@ export interface ApiClient {
       safetyClassifierEnabled: boolean
       safetyConfidenceThreshold: number
       safetyModel: string
+      reviewModel?: string
       autoRunSandboxCommands: boolean
       mcpAutoAllowReadOnly: boolean
       defaultReadonlyMode: boolean

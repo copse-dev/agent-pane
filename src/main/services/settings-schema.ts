@@ -45,6 +45,7 @@ const MAIN_ONLY_SETTING_SCHEMAS = {
   safetyClassifierEnabled: z.boolean(),
   safetyConfidenceThreshold: z.number().min(0).max(1),
   safetyModel: z.string().max(256),
+  reviewModel: z.string().max(256),
   autoRunSandboxCommands: z.boolean(),
   mcpAutoAllowReadOnly: z.boolean(),
   safeInstallEnabled: z.boolean(),
