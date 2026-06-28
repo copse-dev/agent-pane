@@ -72,6 +72,7 @@ import {
   getGhPrDetails,
   getGhPrFileDiff,
   listMyOpenPrs,
+  listWorkspaceOpenPrs,
   resolveGithubPrRef,
 } from '../services/gh-pr-service.ts'
 import {
@@ -331,6 +332,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   ipcMain.handle('gh:status', () => getGhCliStatus())
   ipcMain.handle('gh:listMyOpenPrs', () => listMyOpenPrs())
+  ipcMain.handle('gh:listWorkspaceOpenPrs', () => listWorkspaceOpenPrs())
   ipcMain.handle('gh:prDetails', (_e, owner: unknown, repo: unknown, number: unknown) => {
     const parsedOwner = parseIpcArgs(z.string().min(1).max(128), [owner])
     const parsedRepo = parseIpcArgs(z.string().min(1).max(128), [repo])
