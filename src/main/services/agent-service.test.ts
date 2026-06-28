@@ -41,8 +41,8 @@ describe('runAgent AgentHost decoupling', () => {
     // Drive the remote-agent branch, which fails fast offline (no Cursor API key)
     // and reports the error back through the host — a deterministic turn that needs
     // neither a network nor a renderer.
-    const priorCursorKey = process.env.CURSOR_API_KEY
-    delete process.env.CURSOR_API_KEY
+    const priorCursorKey = process.env['CURSOR_API_KEY']
+    delete process.env['CURSOR_API_KEY']
     await setSetting('model', 'remote-agent:cursor')
 
     const received: Array<{ threadId: string; chunk: StreamChunk }> = []
@@ -66,7 +66,7 @@ describe('runAgent AgentHost decoupling', () => {
       )
       assert.deepEqual(result.usage, { inputTokens: 0, outputTokens: 0 })
     } finally {
-      if (priorCursorKey !== undefined) process.env.CURSOR_API_KEY = priorCursorKey
+      if (priorCursorKey !== undefined) process.env['CURSOR_API_KEY'] = priorCursorKey
     }
   })
 })

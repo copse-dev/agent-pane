@@ -32,6 +32,14 @@
   padding: var(--spacing-md);
   background: var(--bg-base);
   font-family: inherit;
+  /* Grow with the typed content instead of staying a fixed 3 rows — no JS
+     scrollHeight measuring. field-sizing ignores the `rows` attribute, so
+     min-height carries the 3-row resting floor (the chat layout clamps the
+     composer height to >=72px and expects it above that); max-height caps the
+     growth so a long paste scrolls internally rather than eating the chat. */
+  field-sizing: content;
+  min-height: calc(3lh + 2 * var(--spacing-md));
+  max-height: 40vh;
 }
 .input-row {
   position: relative;
@@ -89,11 +97,40 @@
   cursor: progress;
 }
 .prompt-input {
-  /* leave room for the absolutely-positioned Send button */
+  /* leave room for the absolutely-positioned Send button (right) and the
+     paperclip attach button (left) */
   padding-right: 84px;
+  padding-left: 44px;
 }
 .prompt-input.with-stop {
   padding-right: 148px;
+}
+.attach-btn {
+  position: absolute;
+  left: 8px;
+  bottom: var(--spacing-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+.attach-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.attach-btn-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .stop-btn {
   position: absolute;

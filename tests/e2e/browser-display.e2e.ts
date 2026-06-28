@@ -11,8 +11,8 @@ async function waitForComposer(): Promise<void> {
 }
 
 async function openBrowserMode(): Promise<void> {
-  const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]')
-  await panelBtn.click()
+  const browserBtn = await $('.titlebar-btn[aria-label="Open browser"]')
+  await browserBtn.click()
 
   const pane = await $('#pane-files')
   await browser.waitUntil(async () => await pane.isDisplayed(), {
@@ -20,15 +20,7 @@ async function openBrowserMode(): Promise<void> {
     timeoutMsg: 'expected pane-files to open from titlebar',
   })
 
-  await browser.execute(() => {
-    const tab = document.querySelector(
-      '.right-panel-tab[aria-label="Browser"]',
-    ) as HTMLButtonElement | null
-    tab?.click()
-  })
-
-  const browserTab = await $('.right-panel-tab[aria-label="Browser"]')
-  await expect(browserTab).toHaveElementClass('is-active')
+  await expect(browserBtn).toHaveElementClass('active')
   await $('.browser-url-input').waitForDisplayed({ timeout: 5_000 })
 }
 

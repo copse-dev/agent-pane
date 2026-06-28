@@ -8,7 +8,7 @@
  *
  * How it maps changes → tests:
  *   • e2e specs barely import source — they drive the built app through DOM
- *     selectors and aria-labels (`#pane-files`, `.right-panel-tab`, "Terminal").
+ *     selectors and aria-labels (`#pane-files`, `.titlebar-btn`, "Terminal").
  *     Those same strings live in the renderer/HTML/CSS that defines them, so we
  *     build each spec's *selector vocabulary* and select a spec when a changed
  *     file contains one of its selectors. We also follow real imports (helpers
@@ -146,7 +146,7 @@ function git(args: string[]): string {
 }
 
 /** Changed files: committed-vs-base ∪ staged ∪ unstaged ∪ untracked. */
-function changedFiles(base: string): string[] {
+export function changedFiles(base: string): string[] {
   const set = new Set<string>()
   const mergeBase = git(['merge-base', 'HEAD', base]).trim()
   if (mergeBase) for (const f of git(['diff', '--name-only', mergeBase]).split('\n')) add(f)
@@ -273,6 +273,31 @@ export function extractSpecTokens(src: string): Token[] {
   // getElementById('x') — id without the leading '#'.
   for (const g of src.matchAll(/getElementById\(\s*['"]([\w-]+)['"]/g)) push('id', g[1]!)
   return [...tokens.values()]
+}
+
+/**
+ * Reference-screenshot filenames a spec writes. Only a PNG passed to a
+ * `saveScreenshot` / `save*Screenshot(...)` call counts — a `.png` literal used
+ * as a test fixture (e.g. `clickChange('staged.png')`) is not a committed
+ * reference shot and must not map the spec to one. A `const NAME = 'foo.png'`
+ * alias passed by name (e.g. `saveAppScreenshot(SCREENSHOT)`) is resolved.
+ */
+export function extractSpecScreenshots(src: string): string[] {
+  const out = new Set<string>()
+  // const NAME = 'foo.png' aliases (UPPER_SNAKE consts hold the filename).
+  const aliases = new Map<string, string>()
+  for (const m of src.matchAll(/\b([A-Z][A-Z0-9_]*)\s*=\s*['"`]([\w-]+\.png)['"`]/g))
+    aliases.set(m[1]!, m[2]!)
+  // save…Screenshot( … 'foo.png' … ) — literal filename anywhere in the call
+  // args (covers helper calls and `browser.saveScreenshot(join(DIR, 'x.png'))`).
+  for (const m of src.matchAll(/save\w*Screenshot\(\s*[^)]*?['"`]([\w-]+\.png)['"`]/g))
+    out.add(m[1]!)
+  // save…Screenshot(NAME) — filename supplied via a const alias.
+  for (const m of src.matchAll(/save\w*Screenshot\(\s*([A-Z][A-Z0-9_]*)\s*\)/g)) {
+    const f = aliases.get(m[1]!)
+    if (f) out.add(f)
+  }
+  return [...out]
 }
 
 /** Does a (source/css/html) file body contain a token's literal name? */
@@ -471,6 +496,69 @@ export function computeSelection(changedInput: string[]): Selection {
     selectedUnit,
     e2eReasons,
     unitReasons,
+  }
+}
+
+// ── Reference-screenshot gate ────────────────────────────────────────────────
+const E2E_SCREENSHOT_DIR = 'tests/e2e/screenshots'
+
+/** spec → the reference-screenshot filenames it (re)generates. */
+export function specScreenshots(): Map<string, string[]> {
+  const m = new Map<string, string[]>()
+  for (const s of listSpecs()) m.set(s, extractSpecScreenshots(read(s)))
+  return m
+}
+
+/** Reference screenshots the selected e2e specs (re)generate, sorted & unique. */
+export function affectedScreenshots(sel: Selection, map = specScreenshots()): string[] {
+  const out = new Set<string>()
+  for (const s of sel.selectedE2e) for (const png of map.get(s) ?? []) out.add(png)
+  return [...out].sort()
+}
+
+export type ScreenshotGate = {
+  affected: string[] // reference PNGs the change's specs (re)generate
+  updated: string[] // screenshot PNGs refreshed in this diff
+  missing: string[] // affected − updated: presumed stale
+  labeled: boolean // `update-screenshots` label present
+  ok: boolean
+}
+
+/**
+ * Hard gate (cheap lint tier — pure static analysis, no build/Electron/e2e):
+ * if a diff touches UI that a committed reference screenshot covers (the oracle
+ * maps it to a screenshot-producing spec) but the PNG wasn't refreshed in the
+ * same diff, the shot is presumed stale. Reference shots are pixel-rendered on
+ * the CI runner, so the sanctioned refresh path is letting CI render and commit
+ * them: the e2e gate run re-renders the affected shots and the commit-screenshots
+ * job commits the diff. The `update-screenshots` label forces a full refresh — a
+ * labeled PR always passes. This static gate never reruns the e2e tier itself.
+ *
+ * Only files that can influence rendered output drive the gate: shipped source
+ * (`src/**`) and the e2e harness/fixtures/specs (`tests/e2e/**`). Root-level
+ * infra — a lockfile bump, tsconfig, build scripts, wdio config — is broad for
+ * *test selection* but cannot change a pixel, so it must not demand a full
+ * screenshot regen. (A genuinely visual broad change like global CSS or
+ * index.html lives under `src/` and still fans out to every shot.)
+ */
+export function computeScreenshotGate(changed: string[], labeled: boolean): ScreenshotGate {
+  const renderAffecting = changed.filter(
+    (f) => (f.startsWith('src/') || f.startsWith(`${E2E_DIR}/`)) && !f.endsWith('.test.ts'),
+  )
+  const sel = computeSelection(renderAffecting)
+  const affected = affectedScreenshots(sel)
+  const updated = new Set(
+    changed
+      .filter((f) => f.startsWith(`${E2E_SCREENSHOT_DIR}/`) && f.endsWith('.png'))
+      .map((f) => f.slice(`${E2E_SCREENSHOT_DIR}/`.length)),
+  )
+  const missing = affected.filter((p) => !updated.has(p))
+  return {
+    affected,
+    updated: [...updated].sort(),
+    missing,
+    labeled,
+    ok: labeled || missing.length === 0,
   }
 }
 

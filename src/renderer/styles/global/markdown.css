@@ -33,9 +33,13 @@
   width: 1%;
   white-space: nowrap;
 }
-/* Long branch slugs in a lone code span should wrap inside the cell, not widen the table. */
-.message-text td > code:only-child,
-.message-text th > code:only-child {
+/* A lone code span (e.g. a long branch slug) wraps inside its cell instead of
+   widening the table. Excluded: the pinned first column of a 3+ col table, which
+   is held to width:1% — breaking "anywhere" there shatters a short id (PR number,
+   test name) one character per line. That cell falls back to the base td rule, so
+   it inherits the column's `nowrap` and the id hugs its content on one line. */
+.message-text:not(:has(th:nth-child(3))) :is(td, th) > code:only-child,
+.message-text:has(th:nth-child(3)) :is(td, th):not(:first-child) > code:only-child {
   display: block;
   min-width: 0;
   max-width: 100%;

@@ -1,5 +1,5 @@
 import type { BrowserWindow } from 'electron'
-import { ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
 import { randomUUID } from 'node:crypto'
 import {
   approvalRespondSchema,
@@ -43,6 +43,32 @@ export function requestApproval(req: ApprovalRequest): Promise<ApprovalResponse>
   return handler ? handler(req) : Promise.resolve({ approved: false, remember: false })
 }
 
+/**
+ * The slice of Electron's macOS `app.dock` we use to draw attention while an
+ * approval is pending. Structural so the real `Dock` satisfies it and tests can
+ * pass a fake without pulling in Electron.
+ */
+export interface DockAttention {
+  bounce(type?: 'critical' | 'informational'): number
+  cancelBounce(id: number): void
+}
+
+/**
+ * Bounce the dock icon ('critical' keeps bouncing until the app is focused) to
+ * signal a pending approval, returning a stop function to call once it settles.
+ * No-op when there's no dock (non-macOS / headless), so callers need no guards.
+ */
+export function startDockAttention(dock: DockAttention | undefined): () => void {
+  if (!dock) return () => {}
+  const id = dock.bounce('critical')
+  let stopped = false
+  return () => {
+    if (stopped) return
+    stopped = true
+    dock.cancelBounce(id)
+  }
+}
+
 export function initApproval(win: BrowserWindow): void {
   const pending = new Map<string, (response: ApprovalResponse) => void>()
   const settle = (id: string, response: ApprovalResponse): void => {
@@ -75,6 +101,10 @@ export function initApproval(win: BrowserWindow): void {
       new Promise<ApprovalResponse>((resolve) => {
         const id = randomUUID()
         win.webContents.send('agent:approval_request', { id, ...req })
+        // Bounce the dock until the user returns to answer (macOS only; app.dock
+        // is undefined elsewhere). macOS auto-stops the bounce on focus, and we
+        // also stop it when the approval settles for any reason.
+        const stopDockAttention = startDockAttention(app.dock)
         const timer = setTimeout(
           () => settle(id, { approved: false, remember: false }),
           APPROVAL_TIMEOUT_MS,
@@ -82,6 +112,7 @@ export function initApproval(win: BrowserWindow): void {
         if (typeof timer.unref === 'function') timer.unref()
         pending.set(id, (response) => {
           clearTimeout(timer)
+          stopDockAttention()
           resolve(response)
         })
       }),

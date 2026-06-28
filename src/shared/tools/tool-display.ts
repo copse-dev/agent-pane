@@ -103,15 +103,64 @@ export function getToolDisplayName(name: string): string {
 
 function fileEditPath(args: unknown): string | null {
   if (!args || typeof args !== 'object') return null
-  const path = (args as Record<string, unknown>).path
+  const path = (args as Record<string, unknown>)['path']
   return typeof path === 'string' && path.length > 0 ? path : null
 }
 
-/** Human label for a tool card — file edits show `Edited <path>`. */
+/** Workspace-relative path a file-edit tool touched, or null for non-edit tools. */
+export function getToolEditPath(tc: ToolCall): string | null {
+  if (tc.name !== 'write_file' && tc.name !== 'str_replace') return null
+  return fileEditPath(tc.args)
+}
+
+// Commands are almost always prefixed with `cd <workspace> && ` so the agent
+// runs from the project root. That prefix is noise in the UI — strip a single
+// leading `cd <path> && ` (quoted or bare path).
+const SHELL_CD_PREFIX_RE = /^\s*cd\s+(?:'[^']*'|"[^"]*"|[^\s&|;]+)\s*&&\s*/
+
+export function stripShellCdPrefix(command: string): string {
+  return command.replace(SHELL_CD_PREFIX_RE, '')
+}
+
+const SHELL_LABEL_MAX = 96
+
+/** A compact, single-line command for a tool header: cd-prefix stripped, collapsed, capped. */
+export function shellCommandLabel(command: string): string {
+  const cleaned = stripShellCdPrefix(command).replace(/\s+/g, ' ').trim()
+  if (cleaned.length <= SHELL_LABEL_MAX) return cleaned
+  return `${cleaned.slice(0, SHELL_LABEL_MAX - 1)}…`
+}
+
+function shellCommandArg(args: unknown): string | null {
+  if (!args || typeof args !== 'object') return null
+  const command = (args as Record<string, unknown>)['command']
+  return typeof command === 'string' && command.trim() ? command : null
+}
+
+/** The cd-stripped command strings for any run_shell tool calls in `toolCalls`. */
+export function shellCommandsFromToolCalls(toolCalls: ToolCall[]): string[] {
+  const commands: string[] = []
+  for (const tc of toolCalls) {
+    if (tc.name !== 'run_shell' || tc.status === 'error') continue
+    const command = shellCommandArg(tc.args)
+    if (command) commands.push(stripShellCdPrefix(command).trim())
+  }
+  return commands
+}
+
+/**
+ * Human label for a tool card — file edits show `Edited <path>` and shell
+ * commands surface the actual (cd-stripped) command instead of a generic
+ * "Run command", so the user can see what ran without expanding the card.
+ */
 export function getToolCallLabel(tc: ToolCall): string {
   if (tc.name === 'write_file' || tc.name === 'str_replace') {
     const path = fileEditPath(tc.args)
     if (path) return `Edited ${path}`
+  }
+  if (tc.name === 'run_shell') {
+    const command = shellCommandArg(tc.args)
+    if (command) return shellCommandLabel(command)
   }
   return getToolDisplayName(tc.name)
 }
@@ -145,14 +194,24 @@ export function aggregateToolStatus(toolCalls: ToolCall[]): ToolCall['status'] {
   return 'done'
 }
 
+// Successful and failed calls aggregate into separate cards so a batch of
+// identical failures collapses into one error group rather than spamming the
+// timeline with indistinguishable rows. The suffix keeps the two buckets'
+// group keys (and thus their DOM ids / expansion state) distinct.
+const ERROR_BUCKET_SUFFIX = '::errors'
+
+function bucketKey(groupKey: string, isError: boolean): string {
+  return isError ? `${groupKey}${ERROR_BUCKET_SUFFIX}` : groupKey
+}
+
 export function buildToolCallDisplayItems(toolCalls: ToolCall[]): ToolCallDisplayItem[] {
   if (toolCalls.length === 0) return []
 
   const groupMembers = new Map<string, ToolCall[]>()
   for (const tc of toolCalls) {
-    if (tc.status === 'error') continue
-    const key = getToolGroupKey(tc.name)
-    if (!key) continue
+    const groupKey = getToolGroupKey(tc.name)
+    if (!groupKey) continue
+    const key = bucketKey(groupKey, tc.status === 'error')
     const members = groupMembers.get(key) ?? []
     members.push(tc)
     groupMembers.set(key, members)
@@ -162,17 +221,18 @@ export function buildToolCallDisplayItems(toolCalls: ToolCall[]): ToolCallDispla
   const emittedGroups = new Set<string>()
 
   for (const tc of toolCalls) {
-    if (tc.status === 'error') {
+    const groupKey = getToolGroupKey(tc.name)
+    if (!groupKey) {
       result.push({ type: 'individual', toolCall: tc, label: getToolCallLabel(tc) })
       continue
     }
 
-    const key = getToolGroupKey(tc.name)
-    const members = key ? groupMembers.get(key) : undefined
-    if (key && members && members.length >= 2) {
+    const key = bucketKey(groupKey, tc.status === 'error')
+    const members = groupMembers.get(key)
+    if (members && members.length >= 2) {
       if (!emittedGroups.has(key)) {
         emittedGroups.add(key)
-        result.push({ type: 'group', key, label: getToolGroupLabel(key), toolCalls: members })
+        result.push({ type: 'group', key, label: getToolGroupLabel(groupKey), toolCalls: members })
       }
       continue
     }

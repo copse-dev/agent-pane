@@ -28,6 +28,7 @@ describe('follow-up suggestion bubbles', () => {
       resetUserData()
       seedEmptyProject(process.cwd(), 'e2e-follow-up-mock-project', {
         subagentsEnabled: false,
+        model: 'claude-sonnet-4-6',
         mockFollowUps: true,
       })
       await browser.reloadSession()
@@ -46,7 +47,7 @@ describe('follow-up suggestion bubbles', () => {
       await expect(changesBubble.$('.follow-up-stat-del')).toHaveText('-1')
 
       const ciBubble = await $('.follow-up-bubble[data-id="debug-ci"]')
-      await expect(ciBubble).toHaveText('Investigate CI failure')
+      await expect(ciBubble).toHaveText('Debug CI Failure')
 
       await expect($('.prompt-input')).toHaveAttribute('placeholder', 'Send follow-up')
 

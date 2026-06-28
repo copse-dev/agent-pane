@@ -6,6 +6,8 @@ import { resolveLocalModelId } from './provider-selection.ts'
 import { stripTrailingSlash } from './lm-studio-models.ts'
 import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
+import { recordUsageEvent } from './usage-ledger.ts'
+import { lmStudioChatModelValue } from '@shared/lm-studio-defaults.ts'
 
 export interface ClassificationResult {
   scope: 'sandbox' | 'external'
@@ -93,8 +95,19 @@ export async function classifyShellScope(command: string): Promise<Classificatio
     if (!res.ok) return null
     const json = (await res.json()) as {
       choices?: Array<{ message?: { content?: string } }>
+      usage?: { prompt_tokens?: number; completion_tokens?: number }
     }
     const content = json.choices?.[0]?.message?.content ?? ''
+    const promptTokens = json.usage?.prompt_tokens ?? 0
+    const completionTokens = json.usage?.completion_tokens ?? 0
+    if (promptTokens || completionTokens) {
+      recordUsageEvent({
+        model: lmStudioChatModelValue(model),
+        source: 'safety-classifier',
+        inputTokens: promptTokens,
+        outputTokens: completionTokens,
+      })
+    }
     return parseClassification(content)
   } catch {
     return null

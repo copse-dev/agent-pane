@@ -101,7 +101,8 @@ You also have built-in browser tools (loopback/localhost auto-runs; other origin
 - browser_screenshot: Save a PNG of the page for visual checks
 - browser_click / browser_type: Interact with an element by its snapshot ref
 - browser_tabs: List or close tabs
-Prefer browser_snapshot over browser_screenshot for reading and interacting; take a fresh snapshot after navigation or a click before acting on refs.`
+Prefer browser_snapshot over browser_screenshot for reading and interacting; take a fresh snapshot after navigation or a click before acting on refs.
+This built-in browser uses the app's bundled Chromium — use it for local web/UI verification and screenshots. Do NOT install or spin up a separate browser stack (Playwright, Puppeteer, Selenium, or a standalone Chromium download); start the project's dev server and open its URL with browser_navigate.`
 
 // Optional steering, toggled by the `externalApiSafety` setting. Kept short and
 // appended near the top of the system prompt so it sits ahead of workspace- and

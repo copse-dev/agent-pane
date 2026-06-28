@@ -149,6 +149,7 @@ export function toSkillMetadata(
   parsed: ParsedSkillFile,
   skillPath: string,
   source: SkillSource,
+  externalLinks: string[] = [],
 ): SkillMetadata {
   const parts = skillPath.split(/[/\\]/)
   parts.pop()
@@ -161,5 +162,6 @@ export function toSkillMetadata(
     skillRoot,
     disableModelInvocation: parsed.disableModelInvocation,
     paths: parsed.paths,
+    externalLinks,
   }
 }

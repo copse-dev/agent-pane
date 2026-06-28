@@ -46,12 +46,26 @@ export function buildChangesSuggestion(stats: { additions: number; deletions: nu
   }
 }
 
-export function buildDebugCiSuggestion(): { id: string; label: string; prompt: string } {
+// When the experimental CI investigator is enabled the suggestion points the
+// agent at the `investigate_ci` subagent tool; otherwise it falls back to the
+// original generic "Debug CI Failure" prompt so the bubble never references a
+// tool that isn't registered.
+export function buildDebugCiSuggestion(
+  useInvestigator = false,
+): { id: string; label: string; prompt: string } {
+  if (useInvestigator) {
+    return {
+      id: DETERMINISTIC_FOLLOW_UP_IDS.debugCi,
+      label: 'Investigate CI failure',
+      prompt:
+        'The pull request for this branch has failing CI checks. Use the investigate_ci tool to have a subagent read the failing run logs in depth and report the root cause, then fix it.',
+    }
+  }
   return {
     id: DETERMINISTIC_FOLLOW_UP_IDS.debugCi,
-    label: 'Investigate CI failure',
+    label: 'Debug CI Failure',
     prompt:
-      'The pull request for this branch has failing CI checks. Use the investigate_ci tool to have a subagent read the failing run logs in depth and report the root cause, then fix it.',
+      'The pull request for this branch has failing CI checks. Investigate the failures and fix them.',
   }
 }
 

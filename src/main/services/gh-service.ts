@@ -74,7 +74,7 @@ export async function runGh(
   const commandOpts: Parameters<typeof runCommand>[2] = {
     cwd,
     unsandboxed: true,
-    env: { PATH: `${ghPathPrefix()}${process.env.PATH ?? ''}` },
+    env: { PATH: `${ghPathPrefix()}${process.env['PATH'] ?? ''}` },
   }
   if (opts.timeout_ms !== undefined) commandOpts.timeout_ms = opts.timeout_ms
   if (opts.signal !== undefined) commandOpts.signal = opts.signal

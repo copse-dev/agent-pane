@@ -18,12 +18,12 @@ describe('cursor-plugins', () => {
 
   beforeEach(async () => {
     tempRoot = await mkdtemp(join(tmpdir(), 'copse-panel-cursor-plugins-'))
-    originalHome = process.env.HOME
-    process.env.HOME = tempRoot
+    originalHome = process.env['HOME']
+    process.env['HOME'] = tempRoot
   })
 
   afterEach(async () => {
-    if (originalHome !== undefined) process.env.HOME = originalHome
+    if (originalHome !== undefined) process.env['HOME'] = originalHome
     await rm(tempRoot, { recursive: true, force: true })
   })
 

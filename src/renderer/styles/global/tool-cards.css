@@ -25,6 +25,10 @@
 }
 .tool-name {
   font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .tool-count {
   color: var(--text-muted);
@@ -33,6 +37,22 @@
 .tool-stat {
   font-size: var(--font-size-sm);
   font-weight: 500;
+}
+.tool-edit-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex: none;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+.tool-edit-stats:hover .tool-stat,
+.tool-edit-stats:focus-visible .tool-stat {
+  text-decoration: underline;
 }
 .tool-stat-add {
   color: #3dd68c;

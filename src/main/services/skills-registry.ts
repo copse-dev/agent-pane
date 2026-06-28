@@ -18,6 +18,7 @@ import type {
   SkillSummary,
 } from '@shared/types/skills.ts'
 import { READ_FILE_LIMITS_CEILING } from '@shared/agent/read-file-limits.ts'
+import { extractExternalLinkHosts } from '@shared/skills/extract-skill-links.ts'
 
 /** Max bytes read from a skill file (auto-approved, outside workspace). */
 export const SKILL_READ_MAX_BYTES = READ_FILE_LIMITS_CEILING.maxChars * 4
@@ -125,7 +126,10 @@ async function loadSkillFromFile(
     return
   }
 
-  skills.set(parsed.name, toSkillMetadata(parsed, skillPath, source))
+  // Scan the whole file (description + body) so a link hidden in either surface
+  // is still flagged up front before the skill runs.
+  const externalLinks = extractExternalLinkHosts(raw)
+  skills.set(parsed.name, toSkillMetadata(parsed, skillPath, source, externalLinks))
 }
 
 async function collectDiscoveryRoots(): Promise<Array<{ root: string; source: SkillSource }>> {
@@ -196,11 +200,12 @@ export async function initSkillsRegistry(): Promise<void> {
 }
 
 export function listSkills(): SkillSummary[] {
-  return cachedSkills.map(({ name, description, source, skillPath }) => ({
+  return cachedSkills.map(({ name, description, source, skillPath, externalLinks }) => ({
     name,
     description,
     source,
     skillPath,
+    externalLinks,
   }))
 }
 

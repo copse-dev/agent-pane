@@ -28,6 +28,22 @@ describe('model catalog', () => {
     }
   })
 
+  it('includes Anthropic cache pricing when prompt caching is supported', () => {
+    for (const model of TRACKED_MODELS) {
+      if (!model.startsWith('claude')) continue
+      const info = MODEL_CATALOG[model]
+      assert.ok(
+        info?.cacheReadPricePerMTok && info.cacheReadPricePerMTok > 0,
+        `${model}: cache read`,
+      )
+      assert.ok(
+        info?.cacheCreationPricePerMTok && info.cacheCreationPricePerMTok > 0,
+        `${model}: cache creation`,
+      )
+      assert.ok(info.cacheReadPricePerMTok! < info.inputPricePerMTok)
+    }
+  })
+
   it('getModelInfo returns null for unknown models without throwing', () => {
     assert.equal(getModelInfo('not-a-real-model'), null)
     assert.equal(getModelInfo(''), null)
