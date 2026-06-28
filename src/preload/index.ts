@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('agent:estimateContext', threadId, payload),
     abort: (threadId: string) => ipcRenderer.invoke('agent:abort', threadId),
     clearHistory: (threadId: string) => ipcRenderer.invoke('agent:clearHistory', threadId),
+    refreshModelContext: () => ipcRenderer.invoke('agent:refreshModelContext'),
     suggestTitle: (text: string) => ipcRenderer.invoke('agent:suggestTitle', text),
     suggestTerminalTitle: (text: string) => ipcRenderer.invoke('agent:suggestTerminalTitle', text),
     suggestCommandSummary: (commands: string[]) =>
