@@ -2,7 +2,7 @@ import * as fsp from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { ipcMain } from 'electron'
-import { resolveWorkspacePath } from './workspace.ts'
+import { assertWorkspaceWriteTarget, resolveWorkspacePath } from './workspace.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import { buildIndex } from './file-index.ts'
 import { getGitStatus } from './git-service.ts'
@@ -321,6 +321,7 @@ async function applyWrite(entry: QueueEntry): Promise<ApplyResult> {
     return { status: 'conflict', current }
   }
   try {
+    assertWorkspaceWriteTarget(absPath)
     await fsp.mkdir(dirname(absPath), { recursive: true })
     await fsp.writeFile(absPath, entry.after, 'utf-8')
   } catch (err) {
@@ -370,6 +371,7 @@ async function applyRename(entry: QueueEntry): Promise<ApplyResult> {
     /* destination is free */
   }
   try {
+    assertWorkspaceWriteTarget(toAbs)
     await fsp.mkdir(dirname(toAbs), { recursive: true })
     await fsp.rename(fromAbs, toAbs)
   } catch (err) {
@@ -381,6 +383,7 @@ async function applyRename(entry: QueueEntry): Promise<ApplyResult> {
 async function applyMkdir(entry: QueueEntry): Promise<ApplyResult> {
   const absPath = resolveWorkspacePath(entry.path)
   try {
+    assertWorkspaceWriteTarget(absPath)
     await fsp.mkdir(absPath, { recursive: true })
   } catch (err) {
     return { status: 'error', error: err instanceof Error ? err.message : String(err) }
