@@ -2,7 +2,7 @@
 //
 // `renderMarkdown()` is a deliberately small, app-specific renderer — not a
 // CommonMark implementation (see README.md: "Not a markdown library — keep it
-// that way."). It maps `#`/`##` to <h4>, decorates links with in-app
+// that way."). It maps ATX `#` levels to `<h1>`–`<h6>`, decorates links with in-app
 // attributes, highlights fenced code, etc. So we do not expect full spec
 // conformance and we do not chase 100%.
 //

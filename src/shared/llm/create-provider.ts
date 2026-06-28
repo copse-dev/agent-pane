@@ -84,10 +84,12 @@ export function createOpenRouterProvider(model: string, apiKey: string): LLMProv
   })
 }
 
-// Mistral, Gemini, and DeepSeek are direct OpenAI-compatible cloud providers
-// (see extra-providers.ts), so each reuses OpenAIProvider with the provider's
-// base URL. Like OpenRouter they are billed/usage-reporting, so `includeUsage`
-// stays on. `model` is the upstream id with the provider prefix already stripped.
+// An extra provider (built-in preset or user-added custom) is OpenAI-compatible,
+// so it reuses OpenAIProvider with the provider's base URL. `model` is the
+// upstream id with the provider slug already stripped. `includeUsage` defaults
+// on for billed cloud APIs and off for a localhost server (which rarely reports
+// usage); `extraBody` carries any provider-specific request fields (e.g. an
+// OpenRouter-style routing hint a user pastes into the advanced field).
 export function createExtraCloudProvider(
   provider: ExtraProvider,
   model: string,
@@ -96,6 +98,16 @@ export function createExtraCloudProvider(
   return new OpenAIProvider(model, {
     baseURL: provider.baseUrl,
     apiKey,
-    includeUsage: true,
+    includeUsage: provider.includeUsage ?? !isLocalhostUrl(provider.baseUrl),
+    ...(provider.extraBody ? { extraBody: provider.extraBody } : {}),
   })
+}
+
+function isLocalhostUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase()
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1'
+  } catch {
+    return false
+  }
 }

@@ -90,6 +90,10 @@ export interface IpcInvokeMap {
   }
   'settings:getKey': { args: [provider: Provider]; result: boolean }
   'settings:setKey': { args: [provider: Provider, key: string]; result: void }
+  'settings:refreshHuggingFaceModels': {
+    args: [key?: string]
+    result: { ok: boolean; count: number; error?: string }
+  }
   'settings:availableProviders': {
     args: []
     result: AvailableProviders

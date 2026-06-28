@@ -1,13 +1,22 @@
 import type { ThreadUsage } from '@shared/types'
 import { getModelInfo } from './model-catalog.ts'
+import type { ExtraProviderPricing } from './extra-providers.ts'
 
 export function isLocalModel(model: string): boolean {
   return model === 'lm-studio' || model.startsWith('lmstudio:')
 }
 
-function costForModel(model: string, usage: { inputTokens: number; outputTokens: number }): number {
+/** `model selection → pricing` for extra-provider models absent from the cloud catalog. */
+export type ExtraPricing = Record<string, ExtraProviderPricing>
+
+function costForModel(
+  model: string,
+  usage: { inputTokens: number; outputTokens: number },
+  extra?: ExtraPricing,
+): number {
   if (isLocalModel(model)) return 0
-  const info = getModelInfo(model)
+  // Static cloud catalog first; fall back to stored extra-provider rates (e.g. HF).
+  const info = getModelInfo(model) ?? extra?.[model]
   if (!info) return 0
   return (
     (usage.inputTokens / 1_000_000) * info.inputPricePerMTok +
@@ -17,6 +26,7 @@ function costForModel(model: string, usage: { inputTokens: number; outputTokens:
 
 export function estimateUsageCost(
   byModel: Record<string, { inputTokens: number; outputTokens: number }>,
+  extra?: ExtraPricing,
 ): string {
   const entries = Object.entries(byModel).filter(([, u]) => u.inputTokens > 0 || u.outputTokens > 0)
   if (entries.length === 0) return ''
@@ -30,7 +40,7 @@ export function estimateUsageCost(
       hasLocal = true
       continue
     }
-    const cost = costForModel(model, usage)
+    const cost = costForModel(model, usage, extra)
     if (cost > 0) hasBillable = true
     totalCost += cost
   }
@@ -42,12 +52,19 @@ export function estimateUsageCost(
 }
 
 /** Cost line for the footer; falls back to chat model when usage has no per-model breakdown. */
-export function formatThreadUsageCost(usage: ThreadUsage, fallbackChatModel: string): string {
+export function formatThreadUsageCost(
+  usage: ThreadUsage,
+  fallbackChatModel: string,
+  extra?: ExtraPricing,
+): string {
   if (usage.byModel && Object.keys(usage.byModel).length > 0) {
-    return estimateUsageCost(usage.byModel)
+    return estimateUsageCost(usage.byModel, extra)
   }
   if (!usage.inputTokens && !usage.outputTokens) return ''
-  return estimateUsageCost({
-    [fallbackChatModel]: { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens },
-  })
+  return estimateUsageCost(
+    {
+      [fallbackChatModel]: { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens },
+    },
+    extra,
+  )
 }
