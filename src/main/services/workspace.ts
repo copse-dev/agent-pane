@@ -144,6 +144,25 @@ export function resolveWorkspacePath(path: string): string {
   return resolved
 }
 
+/**
+ * Re-validate that an already-resolved absolute path still resolves (via its
+ * real on-disk location) inside the current workspace root. Used to guard
+ * against TOCTOU symlink swaps between a watch registration and a later read:
+ * the path is re-resolved through its existing prefix at read time so a
+ * component swapped to a symlink pointing outside the workspace is rejected.
+ * Returns false (rather than throwing) so callers can silently skip the event.
+ */
+export function isResolvedPathInsideWorkspace(absPath: string): boolean {
+  if (!workspaceRoot) return false
+  try {
+    const absRoot = realpathSync.native(resolve(workspaceRoot))
+    const resolved = resolveThroughExistingPrefix(resolve(absPath))
+    return isPathInsideRoot(resolved, absRoot)
+  } catch {
+    return false
+  }
+}
+
 export function toRelativePath(absPath: string): string {
   if (!workspaceRoot) return absPath
   const rel = relative(resolve(workspaceRoot), resolve(absPath))

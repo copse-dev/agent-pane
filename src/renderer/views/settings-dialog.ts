@@ -55,6 +55,8 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'localSubagentsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'localTodoItemsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'bundledCursorSkillsEnabled', kind: 'checkbox', default: true, save: true },
+  { name: 'skillExternalLinkWarnings', kind: 'checkbox', default: true, save: true },
+  { name: 'skillSandboxGuidance', kind: 'checkbox', default: true, save: true },
   // Built-in browser tools (Electron's bundled Chromium); on by default so the
   // agent renders/screenshots web UIs in-app instead of installing a browser.
   { name: 'browserToolsEnabled', kind: 'checkbox', default: true, save: true },
@@ -290,6 +292,24 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <input type="checkbox" name="bundledCursorSkillsEnabled" />
                 Include bundled Cursor skills (CI, code review, verification, and more)
               </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="skillExternalLinkWarnings" />
+                Warn before running a skill that references external links
+              </label>
+              <p class="field-hint">
+                When an invoked skill's <code>SKILL.md</code> points at <code>http(s)</code> hosts,
+                surface a warning up front and tell the agent to treat fetch/install/run-from-network
+                steps as approval-gated.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="skillSandboxGuidance" />
+                Reinforce sandbox confinement for invoked skills
+              </label>
+              <p class="field-hint">
+                Reminds the agent that a skill's shell commands stay inside the project sandbox (or,
+                where no OS sandbox is active, require approval) rather than silently reaching the
+                network or the host filesystem.
+              </p>
             </fieldset>
 
             <fieldset>
