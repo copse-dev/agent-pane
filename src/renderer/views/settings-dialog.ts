@@ -64,6 +64,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'browserToolsEnabled', kind: 'checkbox', default: true, save: true },
   // Experimental, opt-in features (off by default).
   { name: 'mcpUiArtefactsEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'ciInvestigatorEnabled', kind: 'checkbox', default: false, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
@@ -524,6 +525,20 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 When an MCP tool returns a UI resource (self-contained HTML or a URL), Copse
                 recognises it and will render it as a fully sandboxed artefact in the Browser pane —
                 no Node, no app access. While off, UI resources are treated as plain tool output.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>CI investigator subagent</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="ciInvestigatorEnabled" />
+                Enable the CI investigator subagent
+              </label>
+              <p class="field-hint">
+                Adds an <code>investigate_ci</code> tool that delegates to a read-only subagent to
+                analyse failing CI run logs in depth and report the root cause, and points the
+                "Investigate CI failure" follow-up at it. While off, CI failures use the plain
+                "Debug CI Failure" follow-up and the tool is not registered.
               </p>
             </fieldset>
           </section>

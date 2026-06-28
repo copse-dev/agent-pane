@@ -38,6 +38,12 @@ describe('experimental settings section', () => {
     // Off by default — opt-in only.
     assert.equal(await toggle.isSelected(), false)
 
+    // The CI investigator subagent is also an opt-in experimental toggle.
+    await expect(experimental.$('legend=CI investigator subagent')).toBeDisplayed()
+    const ciToggle = await experimental.$('input[name="ciInvestigatorEnabled"]')
+    await expect(ciToggle).toBeExisting()
+    assert.equal(await ciToggle.isSelected(), false)
+
     await saveElementScreenshot('#settings-dialog', 'settings-experimental-mcp-ui.png')
   })
 })

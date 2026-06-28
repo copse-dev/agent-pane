@@ -199,6 +199,17 @@ describe('tool-display', () => {
   it('maps gh tools to human-readable names', () => {
     assert.equal(getToolDisplayName('gh_pr_list'), 'List pull requests')
     assert.equal(getToolDisplayName('gh_pr_view'), 'View pull request')
+    assert.equal(getToolDisplayName('gh_run_list'), 'List CI runs')
+    assert.equal(getToolDisplayName('gh_run_view'), 'View CI run logs')
+  })
+
+  it('maps investigate_ci to a human-readable name', () => {
+    assert.equal(getToolDisplayName('investigate_ci'), 'Investigate CI')
+  })
+
+  it('groups gh CI run tools under Git', () => {
+    assert.equal(getToolGroupKey('gh_run_list'), 'git')
+    assert.equal(getToolGroupKey('gh_run_view'), 'git')
   })
 
   it('does not group unrelated tools', () => {
