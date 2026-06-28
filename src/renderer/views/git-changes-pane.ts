@@ -112,6 +112,7 @@ export function mountGitChangesPane(
   let gitAvailable = false
   let selected: { path: string; staged: boolean } | null = null
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
+  let pendingNavigate: string | null = null
 
   function ensureDiffEditor(): Monaco.editor.IStandaloneDiffEditor {
     if (!diffEditor) {
@@ -244,6 +245,16 @@ export function mountGitChangesPane(
       if (!stillExists) clearSelection()
     }
     renderList()
+    const navTarget = pendingNavigate
+    pendingNavigate = null
+    if (navTarget && status) {
+      const inUnstaged = status.unstaged.some((c) => c.path === navTarget)
+      const inStaged = status.staged.some((c) => c.path === navTarget)
+      if (inUnstaged || inStaged) {
+        await selectChange(navTarget, !inUnstaged && inStaged)
+        return
+      }
+    }
     if (selected) {
       await selectChange(selected.path, selected.staged)
     } else {
@@ -264,6 +275,10 @@ export function mountGitChangesPane(
 
   const unsubs = [
     store.on('right_panel_mode_changed', () => {
+      if (changesModeActive(store)) void refresh()
+    }),
+    store.on('git_change_navigate', (path) => {
+      pendingNavigate = path
       if (changesModeActive(store)) void refresh()
     }),
     store.on('files_pane_changed', () => {

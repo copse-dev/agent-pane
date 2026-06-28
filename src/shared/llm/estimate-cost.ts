@@ -1,4 +1,4 @@
-import type { ThreadUsage } from '@shared/types'
+import type { ThreadUsage, ModelUsage } from '@shared/types'
 import { getModelInfo } from './model-catalog.ts'
 import type { ExtraProviderPricing } from './extra-providers.ts'
 
@@ -9,23 +9,47 @@ export function isLocalModel(model: string): boolean {
 /** `model selection → pricing` for extra-provider models absent from the cloud catalog. */
 export type ExtraPricing = Record<string, ExtraProviderPricing>
 
-function costForModel(
-  model: string,
-  usage: { inputTokens: number; outputTokens: number },
-  extra?: ExtraPricing,
-): number {
-  if (isLocalModel(model)) return 0
-  // Static cloud catalog first; fall back to stored extra-provider rates (e.g. HF).
+type PricingInfo = {
+  inputPricePerMTok: number
+  outputPricePerMTok: number
+  cacheReadPricePerMTok?: number
+  cacheCreationPricePerMTok?: number
+}
+
+function pricingForModel(model: string, extra?: ExtraPricing): PricingInfo | null {
+  if (isLocalModel(model)) return null
   const info = getModelInfo(model) ?? extra?.[model]
+  if (!info) return null
+  return info
+}
+
+/** USD estimate for a single model's token usage (cache-aware when breakdown is present). */
+export function costForModelUsage(model: string, usage: ModelUsage, extra?: ExtraPricing): number {
+  const info = pricingForModel(model, extra)
   if (!info) return 0
+
+  const cacheRead = usage.cacheReadTokens ?? 0
+  const cacheCreation = usage.cacheCreationTokens ?? 0
+  const hasCacheBreakdown =
+    usage.cacheReadTokens !== undefined || usage.cacheCreationTokens !== undefined
+  const freshInput = hasCacheBreakdown
+    ? Math.max(0, usage.inputTokens - cacheRead - cacheCreation)
+    : usage.inputTokens
+
+  const inputRate = info.inputPricePerMTok
+  const cacheReadRate = info.cacheReadPricePerMTok ?? inputRate
+  const cacheCreationRate = info.cacheCreationPricePerMTok ?? inputRate
+
   return (
-    (usage.inputTokens / 1_000_000) * info.inputPricePerMTok +
+    (freshInput / 1_000_000) * inputRate +
+    (cacheRead / 1_000_000) * cacheReadRate +
+    (cacheCreation / 1_000_000) * cacheCreationRate +
     (usage.outputTokens / 1_000_000) * info.outputPricePerMTok
   )
 }
 
 export function estimateUsageCost(
-  byModel: Record<string, { inputTokens: number; outputTokens: number }>,
+  byModel: Record<string, ModelUsage>,
   extra?: ExtraPricing,
 ): string {
   const entries = Object.entries(byModel).filter(([, u]) => u.inputTokens > 0 || u.outputTokens > 0)
@@ -40,7 +64,7 @@ export function estimateUsageCost(
       hasLocal = true
       continue
     }
-    const cost = costForModel(model, usage, extra)
+    const cost = costForModelUsage(model, usage, extra)
     if (cost > 0) hasBillable = true
     totalCost += cost
   }

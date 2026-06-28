@@ -85,6 +85,8 @@ import { isWorkspaceTrusted } from '../services/workspace-trust.ts'
 import { applyAppIcon } from '../app-icon.ts'
 import { getMainWindow } from '../windows/create-main-window.ts'
 import { validateApiKey } from '../services/validate-api-key.ts'
+import { getUsageSummary, recordUsageEvent } from '../services/usage-ledger.ts'
+import { parseUsageRecordInput } from '../services/usage-record-schema.ts'
 import {
   fetchRemoteArtifactImageDataUrl,
   resolveRemoteArtifactDownloadUrl,
@@ -281,6 +283,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const mainWin = getMainWindow()
     applyAppIcon(mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
   })
+  ipcMain.handle('usage:record', (event, input: unknown) => {
+    assertMainFrameSender(event, win)
+    recordUsageEvent(parseUsageRecordInput(input))
+  })
+  ipcMain.handle('usage:getSummary', () => getUsageSummary())
   ipcMain.handle('storage:get', (event, key: unknown) => {
     assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(256), [key])

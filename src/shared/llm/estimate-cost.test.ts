@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { estimateUsageCost, formatThreadUsageCost } from './estimate-cost.ts'
+import { estimateUsageCost, formatThreadUsageCost, costForModelUsage } from './estimate-cost.ts'
 
 describe('estimateUsageCost', () => {
   it('prices cloud models only', () => {
@@ -30,6 +30,22 @@ describe('estimateUsageCost', () => {
       formatThreadUsageCost({ inputTokens: 1_000_000, outputTokens: 0 }, 'claude-sonnet-4-6'),
       '~$3.00',
     )
+  })
+
+  it('prices cache-read cheaper than fresh input for Anthropic models', () => {
+    const freshOnly = costForModelUsage('claude-sonnet-4-6', {
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+    })
+    const cacheHeavy = costForModelUsage('claude-sonnet-4-6', {
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      cacheReadTokens: 1_000_000,
+      cacheCreationTokens: 0,
+    })
+    assert.equal(freshOnly, 3)
+    assert.equal(cacheHeavy, 0.3)
+    assert.ok(cacheHeavy < freshOnly)
   })
 
   it('prices extra-provider models from the supplied rate map (e.g. HF)', () => {

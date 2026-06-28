@@ -250,6 +250,21 @@ export function setMessageContent(store: AppStore, messageId: string, content: s
   store.emit('message_token', messageId, content)
 }
 
+export function setMessageCommandSummary(
+  store: AppStore,
+  messageId: string,
+  commandSummary: string,
+): void {
+  const { threads } = store.getState()
+  const updated = threads.map((t) => ({
+    ...t,
+    messages: t.messages.map((m) => (m.id !== messageId ? m : { ...m, commandSummary })),
+  }))
+  store.setState({ threads: updated })
+  // Re-uses the tool-card refresh path so the shell group header updates in place.
+  store.emit('tool_call_updated', messageId, '')
+}
+
 export function addToolCall(store: AppStore, messageId: string, toolCall: ToolCall): void {
   const { threads } = store.getState()
   const updated = threads.map((t) => ({

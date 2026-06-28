@@ -61,6 +61,7 @@ export interface ApiClient {
     clearHistory: (threadId: string) => Promise<void>
     suggestTitle: (text: string) => Promise<string | null>
     suggestTerminalTitle: (text: string) => Promise<string | null>
+    suggestCommandSummary: (commands: string[]) => Promise<string | null>
     suggestFollowUps: (contextJson: string) => Promise<FollowUpSuggestion[]>
     onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => () => void
     onApprovalRequest: (
@@ -215,6 +216,10 @@ export interface ApiClient {
   }
   appIcon: {
     apply: () => Promise<void>
+  }
+  usage: {
+    record: (input: import('@shared/usage/usage-event.ts').UsageRecordInput) => Promise<void>
+    getSummary: () => Promise<import('@shared/usage/aggregate-usage.ts').UsageSummary>
   }
   index: {
     query: (pattern: string) => Promise<string[]>

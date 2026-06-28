@@ -88,6 +88,8 @@ export interface Message {
   /** Pasted image attachments as data URLs (user messages only). */
   images?: string[]
   toolCalls: ToolCall[]
+  /** Small-model rollup label for this message's batch of shell commands. */
+  commandSummary?: string
   createdAt: number
 }
 

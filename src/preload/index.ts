@@ -41,6 +41,8 @@ contextBridge.exposeInMainWorld('api', {
     clearHistory: (threadId: string) => ipcRenderer.invoke('agent:clearHistory', threadId),
     suggestTitle: (text: string) => ipcRenderer.invoke('agent:suggestTitle', text),
     suggestTerminalTitle: (text: string) => ipcRenderer.invoke('agent:suggestTerminalTitle', text),
+    suggestCommandSummary: (commands: string[]) =>
+      ipcRenderer.invoke('agent:suggestCommandSummary', commands),
     suggestFollowUps: (contextJson: string) =>
       ipcRenderer.invoke('agent:suggestFollowUps', contextJson),
     onChunk: (handler: (threadId: string, chunk: unknown) => void) => {
@@ -241,6 +243,11 @@ contextBridge.exposeInMainWorld('api', {
   },
   appIcon: {
     apply: () => ipcRenderer.invoke('app-icon:apply'),
+  },
+  usage: {
+    record: (input: import('@shared/usage/usage-event.ts').UsageRecordInput) =>
+      ipcRenderer.invoke('usage:record', input),
+    getSummary: () => ipcRenderer.invoke('usage:getSummary'),
   },
   index: {
     query: (pattern: string) => ipcRenderer.invoke('index:query', pattern),

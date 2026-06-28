@@ -58,6 +58,41 @@ function setup(
         pr: null,
       }),
     },
+    usage: {
+      record: async () => {},
+      getSummary: async () => ({
+        day: {
+          totalCostUsd: 0,
+          cloudModels: [],
+          localModels: [],
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+        },
+        month: {
+          totalCostUsd: 0,
+          cloudModels: [],
+          localModels: [],
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+        },
+        period90d: {
+          totalCostUsd: 0,
+          cloudModels: [],
+          localModels: [],
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+        },
+        allTime: {
+          totalCostUsd: 0,
+          cloudModels: [],
+          localModels: [],
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+        },
+        trackingStartedAt: null,
+        ledgerEventCount: 0,
+      }),
+    },
   } as unknown as ApiClient
 
   const unsub = startAgentController(store, api)
