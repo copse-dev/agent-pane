@@ -54,13 +54,13 @@ function terminalPayloadFrom(value: unknown): {
   const normalized = normalizeDeep(value)
   if (!isRecord(normalized)) return null
 
-  const success = normalizeValue(normalized.success)
+  const success = normalizeValue(normalized['success'])
   if (isRecord(success)) {
     const { success: _success, error: _error, ...meta } = normalized
     return { status: 'success', payload: success, meta }
   }
 
-  const error = normalizeValue(normalized.error)
+  const error = normalizeValue(normalized['error'])
   if (isRecord(error)) {
     const { success: _success, error: _error, ...meta } = normalized
     return { status: 'error', payload: error, meta }
@@ -72,12 +72,12 @@ function terminalPayloadFrom(value: unknown): {
 
 function isTerminalPayload(value: Record<string, unknown>): boolean {
   return (
-    typeof value.command === 'string' ||
-    typeof value.stdout === 'string' ||
-    typeof value.stderr === 'string' ||
-    typeof value.interleavedOutput === 'string' ||
-    typeof value.exitCode === 'number' ||
-    typeof value.localExecutionTimeMs === 'number'
+    typeof value['command'] === 'string' ||
+    typeof value['stdout'] === 'string' ||
+    typeof value['stderr'] === 'string' ||
+    typeof value['interleavedOutput'] === 'string' ||
+    typeof value['exitCode'] === 'number' ||
+    typeof value['localExecutionTimeMs'] === 'number'
   )
 }
 
@@ -103,23 +103,23 @@ function formatTerminalPayload(value: unknown): string | null {
 
   const { status, payload, meta } = terminal
   const lines: string[] = []
-  appendMultiline(lines, 'Command', firstPresent(payload.command, meta.command))
+  appendMultiline(lines, 'Command', firstPresent(payload['command'], meta['command']))
 
-  const stdout = firstPresent(payload.stdout, payload.output)
+  const stdout = firstPresent(payload['stdout'], payload['output'])
   appendMultiline(lines, 'Output', stdout)
 
-  const stderr = firstPresent(payload.stderr, payload.errorOutput)
+  const stderr = firstPresent(payload['stderr'], payload['errorOutput'])
   appendMultiline(lines, 'Error output', stderr)
 
-  const interleaved = optionalString(payload.interleavedOutput)
+  const interleaved = optionalString(payload['interleavedOutput'])
   if (interleaved && interleaved !== stdout && interleaved !== stderr) {
     appendMultiline(lines, 'Interleaved output', interleaved)
   }
 
-  appendScalar(lines, 'Exit code', payload.exitCode)
-  appendScalar(lines, 'Local execution time', payload.localExecutionTimeMs)
-  appendScalar(lines, 'Timeout', meta.timeout)
-  appendScalar(lines, 'Background', firstPresent(payload.isBackground, meta.isBackground))
+  appendScalar(lines, 'Exit code', payload['exitCode'])
+  appendScalar(lines, 'Local execution time', payload['localExecutionTimeMs'])
+  appendScalar(lines, 'Timeout', meta['timeout'])
+  appendScalar(lines, 'Background', firstPresent(payload['isBackground'], meta['isBackground']))
   appendScalar(lines, 'Status', status)
 
   return lines.join('\n')
@@ -127,7 +127,7 @@ function formatTerminalPayload(value: unknown): string | null {
 
 function entriesForDisplay(value: Record<string, unknown>): Array<[string, unknown]> {
   return Object.entries(value).filter(([key, entry]) => {
-    if (key === 'interleavedOutput' && entry === value.stdout) return false
+    if (key === 'interleavedOutput' && entry === value['stdout']) return false
     return true
   })
 }

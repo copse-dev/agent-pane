@@ -93,7 +93,7 @@ await esbuild.build({
 })
 
 const childEnv = { ...process.env }
-delete childEnv.ELECTRON_RUN_AS_NODE // ensure full Electron runtime (app, BrowserWindow)
+delete childEnv['ELECTRON_RUN_AS_NODE'] // ensure full Electron runtime (app, BrowserWindow)
 const proc = spawnSync(electronBinary as unknown as string, [entryFile], {
   stdio: 'inherit',
   env: childEnv,

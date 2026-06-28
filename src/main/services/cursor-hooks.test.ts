@@ -18,12 +18,12 @@ describe('cursor-hooks', () => {
   beforeEach(async () => {
     tempHome = await mkdtemp(join(tmpdir(), 'copse-cursor-hooks-home-'))
     tempProject = await mkdtemp(join(tmpdir(), 'copse-cursor-hooks-proj-'))
-    originalHome = process.env.HOME
-    process.env.HOME = tempHome
+    originalHome = process.env['HOME']
+    process.env['HOME'] = tempHome
   })
 
   afterEach(async () => {
-    if (originalHome !== undefined) process.env.HOME = originalHome
+    if (originalHome !== undefined) process.env['HOME'] = originalHome
     await rm(tempHome, { recursive: true, force: true })
     await rm(tempProject, { recursive: true, force: true })
   })

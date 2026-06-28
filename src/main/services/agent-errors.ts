@@ -25,13 +25,12 @@ function parseProviderError(err: unknown): ProviderError {
   if (brace !== -1) {
     try {
       const body = JSON.parse(raw.slice(brace)) as Record<string, unknown>
-      const detail = (body.error && typeof body.error === 'object' ? body.error : body) as Record<
-        string,
-        unknown
-      >
-      if (typeof detail.type === 'string') parsed.type = detail.type
-      if (typeof detail.code === 'string') parsed.code = detail.code
-      if (typeof detail.message === 'string') parsed.message = detail.message.trim()
+      const detail = (
+        body['error'] && typeof body['error'] === 'object' ? body['error'] : body
+      ) as Record<string, unknown>
+      if (typeof detail['type'] === 'string') parsed.type = detail['type']
+      if (typeof detail['code'] === 'string') parsed.code = detail['code']
+      if (typeof detail['message'] === 'string') parsed.message = detail['message'].trim()
     } catch {
       // Not JSON (e.g. local-model / chat-template failures) — leave unset.
     }
