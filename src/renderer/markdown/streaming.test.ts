@@ -79,13 +79,14 @@ describe('renderStreamingMarkdown', () => {
   })
 
   it('sanitizes a dangerous element emitted on the pending line (L3 defense-in-depth)', () => {
-    // The renderer re-emits <img> for artifact tags; that element is not in the
-    // DOMPurify allowlist, so the pending fragment must be stripped of it rather
-    // than written to innerHTML verbatim.
+    // The renderer re-emits <img> for artifact tags. The DOMPurify allowlist now
+    // keeps the locked-down `remote-artifact-image` form (hydrated post-sanitize)
+    // but the dangerous src/onerror payload must never reach innerHTML.
     const html = renderStreamingMarkdown('done\n<img src="artifacts/x.png" onerror="alert(1)">')
     assert.match(html, /<span class="stream-pending">/)
-    assert.doesNotMatch(html, /<img/)
+    assert.match(html, /<img class="remote-artifact-image"/)
     assert.doesNotMatch(html, /onerror/)
+    assert.doesNotMatch(html, /src=/)
   })
 })
 
@@ -218,9 +219,13 @@ describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
     const host = document.createElement('div')
     const r = new StreamingMarkdownRenderer(host)
     r.update('done\n<img src="artifacts/x.png" onerror="alert(1)">')
-    assert.equal(host.querySelectorAll('img').length, 0)
+    // The artifact image survives in its locked-down form (class-gated, no src
+    // until hydration); the dangerous src/onerror payload is stripped.
+    const img = host.querySelector('img')
+    assert.ok(img)
+    assert.equal(img!.getAttribute('class'), 'remote-artifact-image')
+    assert.equal(img!.getAttribute('src'), null)
     const pending = host.querySelector('.stream-pending') as HTMLElement
-    assert.doesNotMatch(pending.innerHTML, /<img/)
     assert.doesNotMatch(pending.innerHTML, /onerror/)
   })
 
