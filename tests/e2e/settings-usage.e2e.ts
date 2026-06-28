@@ -54,9 +54,7 @@ describe('settings usage panel', () => {
     }
     assert.equal(config.usageEvents?.length, 2)
 
-    await browser.execute(() => {
-      document.querySelector<HTMLButtonElement>('.titlebar-settings-btn')?.click()
-    })
+    await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="usage"]').click()
     await expect($('.usage-period-body .usage-headline')).toBeDisplayed()
     await expect($('.usage-model-group:nth-of-type(1) tbody tr')).toBeDisplayed()
