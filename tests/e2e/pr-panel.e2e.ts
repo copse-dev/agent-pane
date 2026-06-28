@@ -86,7 +86,7 @@ describe('PR panel (mock gh)', () => {
       { timeout: 10_000, timeoutMsg: 'expected chat PR link to open mock PR viewer' },
     )
 
-    await $('.titlebar-settings-btn').click()
+    await $('[aria-label="Settings"]').click()
     await $('#settings-dialog').waitForDisplayed({ timeout: 10_000 })
     await browser.execute(() => {
       const content = document.querySelector<HTMLElement>('.settings-content')
