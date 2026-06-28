@@ -31,32 +31,6 @@ describe('tool call display live mock', () => {
     await textarea.setValue('list files please')
     await $('.submit-btn').click()
 
-    // Diagnostic: if the tool card never appears, dump what actually rendered so
-    // CI logs reveal whether the agent emitted an error bubble, plain mock text,
-    // or no assistant message at all. Remove once this test is reliably green.
-    try {
-      await $('.tool-card .tool-name').waitForExist({ timeout: 30_000 })
-    } catch {
-      const dump = await browser.execute(() => {
-        const text = (el: Element | null) => (el ? (el as HTMLElement).innerText : null)
-        const all = (sel: string) =>
-          Array.from(document.querySelectorAll(sel)).map((e) => (e as HTMLElement).innerText)
-        return {
-          toolCards: document.querySelectorAll('.tool-card').length,
-          toolNames: all('.tool-card .tool-name'),
-          messages: all('[class*="message"], .msg, .bubble').slice(0, 10),
-          errorsAndToasts: all('.toast, [class*="error"], [class*="toast"]').slice(0, 10),
-          bodyText: text(document.body)?.slice(0, 2000) ?? null,
-        }
-      })
-      // eslint-disable-next-line no-console
-      console.log('=== TOOL-DISPLAY-LIVE-MOCK DIAGNOSTIC ===')
-      // eslint-disable-next-line no-console
-      console.log(JSON.stringify(dump, null, 2))
-      // eslint-disable-next-line no-console
-      console.log('=== END DIAGNOSTIC ===')
-    }
-
     await expect($('.tool-card .tool-name')).toHaveText('List directory', { wait: 30_000 })
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'tool-display-live-mock.png'))
