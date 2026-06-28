@@ -145,7 +145,7 @@ export function createUsageSection(
   function showPeriod(period: UsagePeriodKey): void {
     activePeriod = period
     tabBtns.forEach((btn) => {
-      const selected = btn.dataset.period === period
+      const selected = btn.dataset['period'] === period
       btn.classList.toggle('active', selected)
       btn.setAttribute('aria-selected', selected ? 'true' : 'false')
     })
@@ -160,7 +160,7 @@ export function createUsageSection(
 
   tabBtns.forEach((btn) => {
     btn.addEventListener('click', () => {
-      const period = btn.dataset.period as UsagePeriodKey | undefined
+      const period = btn.dataset['period'] as UsagePeriodKey | undefined
       if (period) showPeriod(period)
     })
   })

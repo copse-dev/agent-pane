@@ -145,7 +145,7 @@ function classify(path: string): Verdict {
 }
 
 function emitOutput(name: string, value: string): void {
-  const file = process.env.GITHUB_OUTPUT
+  const file = process.env['GITHUB_OUTPUT']
   if (!file) return
   if (value.includes('\n')) {
     appendFileSync(file, `${name}<<__EOF__\n${value}\n__EOF__\n`)
@@ -170,7 +170,7 @@ function main(): void {
 
   // Escape hatch: the `update-screenshots` label means "refresh everything",
   // so keep all changed shots — including sub-threshold micro-diffs.
-  if (process.env.UPDATE_SCREENSHOTS_LABEL === 'true') {
+  if (process.env['UPDATE_SCREENSHOTS_LABEL'] === 'true') {
     console.log(
       `screenshot filter: update-screenshots label present — keeping all ${changed.length} changed shot(s) unfiltered`,
     )

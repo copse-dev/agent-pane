@@ -20,27 +20,27 @@ export function hydrateRemoteArtifactImages(
     'img[data-remote-artifact-path]',
   )) {
     if (
-      img.dataset.remoteArtifactState === 'loading' ||
-      img.dataset.remoteArtifactState === 'loaded'
+      img.dataset['remoteArtifactState'] === 'loading' ||
+      img.dataset['remoteArtifactState'] === 'loaded'
     ) {
       continue
     }
-    const path = img.dataset.remoteArtifactPath
-    const agentId = img.dataset.remoteArtifactAgentId ?? agentIdFromThread
+    const path = img.dataset['remoteArtifactPath']
+    const agentId = img.dataset['remoteArtifactAgentId'] ?? agentIdFromThread
     if (!path || !agentId) {
-      img.dataset.remoteArtifactState = 'missing-agent'
+      img.dataset['remoteArtifactState'] = 'missing-agent'
       continue
     }
 
-    img.dataset.remoteArtifactState = 'loading'
+    img.dataset['remoteArtifactState'] = 'loading'
     void api.remoteAgent
       .artifactImageDataUrl(agentId, path)
       .then((dataUrl) => {
         img.src = dataUrl
-        img.dataset.remoteArtifactState = 'loaded'
+        img.dataset['remoteArtifactState'] = 'loaded'
       })
       .catch((err: unknown) => {
-        img.dataset.remoteArtifactState = 'error'
+        img.dataset['remoteArtifactState'] = 'error'
         console.warn('[remote-agent] artifact image load failed:', err)
       })
   }

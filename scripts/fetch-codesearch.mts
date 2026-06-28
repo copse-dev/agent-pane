@@ -48,7 +48,7 @@ async function verifyChecksum(archivePath: string, asset: string): Promise<void>
   const expected = expectedHash(manifest, asset)
   const actual = await sha256File(archivePath)
 
-  if (process.env.UPDATE_CHECKSUMS === '1') {
+  if (process.env['UPDATE_CHECKSUMS'] === '1') {
     manifest[CODESEARCH_VERSION] = { ...(manifest[CODESEARCH_VERSION] ?? {}), [asset]: actual }
     await writeFile(CHECKSUMS_PATH, `${JSON.stringify(manifest, null, 2)}\n`)
     console.log(`[fetch-codesearch] UPDATE_CHECKSUMS=1 — recorded ${asset} = ${actual}`)
@@ -151,7 +151,7 @@ async function findExtractedBinary(root: string): Promise<string | null> {
 }
 
 async function main(): Promise<void> {
-  if (process.env.SKIP_CODESEARCH_FETCH === '1') {
+  if (process.env['SKIP_CODESEARCH_FETCH'] === '1') {
     console.log('[fetch-codesearch] SKIP_CODESEARCH_FETCH=1 — skipping')
     return
   }
@@ -180,7 +180,7 @@ async function main(): Promise<void> {
     await download(url, archivePath)
     // Integrity gate: verify before extracting / chmod / exec (fails closed).
     await verifyChecksum(archivePath, asset)
-    if (process.env.UPDATE_CHECKSUMS === '1') {
+    if (process.env['UPDATE_CHECKSUMS'] === '1') {
       console.log('[fetch-codesearch] UPDATE_CHECKSUMS=1 — checksum recorded, skipping install')
       return
     }

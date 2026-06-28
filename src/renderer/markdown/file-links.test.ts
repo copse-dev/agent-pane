@@ -58,9 +58,9 @@ describe('markdown file links', () => {
     const links = [...root.querySelectorAll<HTMLAnchorElement>('a.file-reference-link')]
     assert.equal(links.length, 3)
     assert.equal(links[0]!.textContent, 'src/main/index.ts')
-    assert.equal(links[0]!.dataset.fileReferencePath, 'src/main/index.ts')
+    assert.equal(links[0]!.dataset['fileReferencePath'], 'src/main/index.ts')
     assert.equal(links[1]!.textContent, 'renderer.ts')
-    assert.equal(links[1]!.dataset.fileReferencePath, 'src/renderer/markdown/renderer.ts')
+    assert.equal(links[1]!.dataset['fileReferencePath'], 'src/renderer/markdown/renderer.ts')
     assert.equal(root.textContent, 'Read src/main/index.ts, renderer.ts, and README.md.')
   })
 

@@ -549,9 +549,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const userExpandedGroups = new Set<string>()
     msgEl.querySelectorAll('.tool-card-group[open]').forEach((node) => {
       const el = node as HTMLElement
-      const key = el.dataset.groupKey
+      const key = el.dataset['groupKey']
       // Running groups are auto-expanded; don't treat that as a user preference.
-      if (key && el.dataset.status !== 'running') userExpandedGroups.add(key)
+      if (key && el.dataset['status'] !== 'running') userExpandedGroups.add(key)
     })
 
     const userExpandedTools = new Set<string>()
@@ -560,7 +560,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         '.tool-card[data-tool-id][open], .tool-group-item[open], .tool-card-subagent[open]',
       )
       .forEach((node) => {
-        const id = (node as HTMLElement).dataset.toolId
+        const id = (node as HTMLElement).dataset['toolId']
         if (id) userExpandedTools.add(id)
       })
 
