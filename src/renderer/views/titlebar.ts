@@ -83,11 +83,13 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
     terminalIcon(),
     'Terminal',
   )
+  const changesBadge = el('span', { class: 'titlebar-btn-badge', hidden: true })
   const changesBtn = el(
     'button',
     { class: 'titlebar-btn titlebar-text-btn', 'aria-label': 'Open changes' },
     changesIcon(),
     'Changes',
+    changesBadge,
   )
   const prsBtn = el(
     'button',
@@ -147,6 +149,15 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
     browserBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'browser')
   }
 
+  // Surface the pending agent-proposed diff count on the Changes button so the
+  // queue is visible without opening the panel.
+  function syncChangesBadge() {
+    const pending = store.getState().stagedDiffs?.length ?? 0
+    changesBadge.hidden = pending === 0
+    changesBadge.textContent = String(pending)
+    changesBtn.classList.toggle('has-pending', pending > 0)
+  }
+
   function syncName() {
     const r = store.getState().workspaceRoot
     workspaceName.textContent = r ? basename(r) : 'No folder'
@@ -155,10 +166,12 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
   // for the no-project case, then again when restoreProject emits workspace_changed.
   syncName()
   syncPanelBtns()
+  syncChangesBadge()
   const unsubs = [
     store.on('workspace_changed', syncName),
     store.on('files_pane_changed', syncPanelBtns),
     store.on('right_panel_mode_changed', syncPanelBtns),
+    store.on('staged_diffs_changed', syncChangesBadge),
   ]
 
   return () => unsubs.forEach((u) => u())
