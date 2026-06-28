@@ -295,6 +295,7 @@ contextBridge.exposeInMainWorld('api', {
   gh: {
     status: () => ipcRenderer.invoke('gh:status'),
     listMyOpenPrs: () => ipcRenderer.invoke('gh:listMyOpenPrs'),
+    listWorkspaceOpenPrs: () => ipcRenderer.invoke('gh:listWorkspaceOpenPrs'),
     prDetails: (owner: string, repo: string, number: number) =>
       ipcRenderer.invoke('gh:prDetails', owner, repo, number),
     prFileDiff: (owner: string, repo: string, number: number, path: string) =>

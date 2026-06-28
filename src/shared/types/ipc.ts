@@ -136,6 +136,7 @@ export interface IpcInvokeMap {
   // GitHub CLI / pull requests
   'gh:status': { args: []; result: import('./git.ts').GhCliStatus }
   'gh:listMyOpenPrs': { args: []; result: import('./git.ts').GhPrSummary[] | null }
+  'gh:listWorkspaceOpenPrs': { args: []; result: import('./git.ts').GhPrSummary[] }
   'gh:prDetails': {
     args: [owner: string, repo: string, number: number]
     result: import('./git.ts').GhPrDetails | null

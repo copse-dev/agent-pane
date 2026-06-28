@@ -5,11 +5,18 @@ import {
   mockGetGhPrDetails,
   mockGhCliStatus,
   mockListMyOpenPrs,
+  mockListWorkspaceOpenPrs,
   MOCK_GH_PR_NUMBER,
   MOCK_GH_PR_OWNER,
   MOCK_GH_PR_REPO,
+  MOCK_GH_WORKSPACE_PR_NUMBER,
 } from './gh-pr-mock.ts'
-import { getGhCliStatus, getGhPrDetails, listMyOpenPrs } from './gh-pr-service.ts'
+import {
+  getGhCliStatus,
+  getGhPrDetails,
+  listMyOpenPrs,
+  listWorkspaceOpenPrs,
+} from './gh-pr-service.ts'
 
 describe('gh-pr-mock', () => {
   it('returns deterministic PR fixtures', () => {
@@ -24,6 +31,20 @@ describe('gh-pr-mock', () => {
     })
     assert.ok(details?.body.includes('PRs'))
     assert.equal(details?.files.length, 4)
+  })
+
+  it('returns workspace-scoped PR fixtures by repo', () => {
+    const prs = mockListWorkspaceOpenPrs()
+    assert.ok(prs.some((pr) => pr.number === MOCK_GH_WORKSPACE_PR_NUMBER))
+    // Every workspace PR lives in the mock workspace repo.
+    assert.ok(prs.every((pr) => pr.owner === MOCK_GH_PR_OWNER && pr.repo === MOCK_GH_PR_REPO))
+
+    const details = mockGetGhPrDetails({
+      owner: MOCK_GH_PR_OWNER,
+      repo: MOCK_GH_PR_REPO,
+      number: MOCK_GH_WORKSPACE_PR_NUMBER,
+    })
+    assert.equal(details?.files.length, 1)
   })
 
   it('supports unavailable and unauthenticated status modes', () => {
@@ -52,6 +73,9 @@ describe('gh-pr-service mock wiring', () => {
 
     const prs = await listMyOpenPrs()
     assert.ok(prs && prs.length >= 2)
+
+    const workspacePrs = await listWorkspaceOpenPrs()
+    assert.ok(workspacePrs.some((pr) => pr.number === MOCK_GH_WORKSPACE_PR_NUMBER))
 
     const details = await getGhPrDetails({
       owner: MOCK_GH_PR_OWNER,
