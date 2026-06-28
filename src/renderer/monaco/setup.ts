@@ -57,7 +57,8 @@ function createMonacoWorkerOnce(label: string): Promise<Worker> {
   const worker = new Worker(hostUrl, { name: label, type: 'module' })
   return new Promise((resolve, reject) => {
     worker.onmessage = (event) => {
-      if (event.data?.type !== 'copse-monaco-worker-ready') return
+      const data = event.data as { type?: string } | null
+      if (data?.type !== 'copse-monaco-worker-ready') return
       worker.onmessage = null
       // Drop the bootstrap error handler once ready so a runtime worker error
       // later in its lifetime can't reject this already-settled promise.

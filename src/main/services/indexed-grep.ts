@@ -9,7 +9,7 @@ export interface CodeContentSearchOptions {
   searchRoot: string
   fixedString?: boolean
   caseSensitive?: boolean
-  fileGlob?: string
+  fileGlob?: string | undefined
   maxResults: number
   /** Lines of surrounding context to show around each match (rg -C). */
   contextLines?: number

@@ -35,14 +35,10 @@ export default ts.config(
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       '@typescript-eslint/no-unnecessary-type-assertion': 'off',
-      '@typescript-eslint/no-unsafe-assignment': 'off',
-      '@typescript-eslint/no-unsafe-member-access': 'off',
-      '@typescript-eslint/no-unsafe-argument': 'off',
-      '@typescript-eslint/no-unsafe-return': 'off',
-      '@typescript-eslint/no-unsafe-call': 'off',
-      '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-this-alias': 'off',
-      '@typescript-eslint/no-misused-promises': 'off',
+      // require-await intentionally left off: de-asyncing functions changes
+      // return types and sync-vs-rejected throw timing (a behavior-change
+      // hazard), so it is deferred to a separate stage.
       '@typescript-eslint/require-await': 'off',
       'no-empty': ['error', { allowEmptyCatch: true }],
       'no-control-regex': 'off',

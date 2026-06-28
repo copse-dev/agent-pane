@@ -27,7 +27,7 @@ export interface SlowCodeSearchOptions {
   maxResults: number
   fixedString?: boolean
   caseSensitive?: boolean
-  fileGlob?: string
+  fileGlob?: string | undefined
 }
 
 export type SlowSearchLineMatcher = (line: string) => boolean

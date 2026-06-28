@@ -22,7 +22,7 @@ export interface LLMTool {
   parameters: Record<string, unknown> // JSON Schema object
 }
 
-export interface ToolDefinition<TArgs = any> {
+export interface ToolDefinition<TArgs = unknown> {
   name: string
   description: string
   parameters: z.ZodType<TArgs>
@@ -34,4 +34,14 @@ export interface ToolDefinition<TArgs = any> {
    * Used by MCP tools whose schemas are JSON Schema, not Zod.
    */
   rawParameters?: Record<string, unknown>
+}
+
+/**
+ * Defines a tool while inferring its argument type from the Zod `parameters`
+ * schema, so `execute` receives fully-typed args. Prefer this over annotating
+ * `: ToolDefinition`, which erases the arg type to `unknown` and forces unsafe
+ * member access inside `execute`.
+ */
+export function defineTool<TArgs>(def: ToolDefinition<TArgs>): ToolDefinition<TArgs> {
+  return def
 }

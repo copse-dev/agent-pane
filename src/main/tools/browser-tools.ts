@@ -1,8 +1,8 @@
 import { z } from 'zod'
-import type { ToolDefinition } from '@shared/types'
+import { type ToolDefinition, defineTool } from '@shared/types'
 import { getBrowserSession } from '../services/browser/session-manager.ts'
 
-export const browserNavigateTool: ToolDefinition = {
+export const browserNavigateTool = defineTool({
   name: 'browser_navigate',
   description:
     'Open a URL in the built-in headless browser. Loopback (localhost) targets run automatically; other origins prompt for approval. Returns the resolved title and URL.',
@@ -15,9 +15,9 @@ export const browserNavigateTool: ToolDefinition = {
     const result = await getBrowserSession().navigate(url, { newTab, viewId })
     return `Opened ${result.viewId}: ${result.title || '(untitled)'}\n${result.url}`
   },
-}
+})
 
-export const browserSnapshotTool: ToolDefinition = {
+export const browserSnapshotTool = defineTool({
   name: 'browser_snapshot',
   description:
     'Capture an accessibility snapshot of the current page as an indented outline. Interactive elements carry [ref=…] handles for browser_click / browser_type. Prefer this over a screenshot for reading or interacting with a page.',
@@ -27,9 +27,9 @@ export const browserSnapshotTool: ToolDefinition = {
   async execute({ viewId }) {
     return getBrowserSession().snapshot(viewId)
   },
-}
+})
 
-export const browserScreenshotTool: ToolDefinition = {
+export const browserScreenshotTool = defineTool({
   name: 'browser_screenshot',
   description:
     'Capture a PNG screenshot of the current page. Returns the saved file path (useful for visual/layout checks).',
@@ -40,9 +40,9 @@ export const browserScreenshotTool: ToolDefinition = {
     const { path, viewId: id } = await getBrowserSession().screenshot(viewId)
     return `Saved screenshot of ${id} to ${path}`
   },
-}
+})
 
-export const browserClickTool: ToolDefinition = {
+export const browserClickTool = defineTool({
   name: 'browser_click',
   description:
     'Click an element by its snapshot ref (e.g. e7). Run browser_snapshot first to obtain refs.',
@@ -53,9 +53,9 @@ export const browserClickTool: ToolDefinition = {
   async execute({ ref, viewId }) {
     return getBrowserSession().click(ref, viewId)
   },
-}
+})
 
-export const browserTypeTool: ToolDefinition = {
+export const browserTypeTool = defineTool({
   name: 'browser_type',
   description: 'Type text into an input/textarea identified by its snapshot ref.',
   parameters: z.object({
@@ -66,9 +66,9 @@ export const browserTypeTool: ToolDefinition = {
   async execute({ ref, text, viewId }) {
     return getBrowserSession().type(ref, text, viewId)
   },
-}
+})
 
-export const browserTabsTool: ToolDefinition = {
+export const browserTabsTool = defineTool({
   name: 'browser_tabs',
   description: 'List open browser tabs, or close one with action "close" and a viewId.',
   parameters: z.object({
@@ -87,8 +87,10 @@ export const browserTabsTool: ToolDefinition = {
       .map((t) => `${t.active ? '* ' : '  '}${t.viewId}: ${t.title || '(untitled)'} — ${t.url}`)
       .join('\n')
   },
-}
+})
 
+// Each tool carries its own arg type; the registry validates args at runtime,
+// so erase to the common ToolDefinition shape for bulk registration.
 export const browserTools: ToolDefinition[] = [
   browserNavigateTool,
   browserSnapshotTool,
@@ -96,4 +98,4 @@ export const browserTools: ToolDefinition[] = [
   browserClickTool,
   browserTypeTool,
   browserTabsTool,
-]
+] as ToolDefinition[]

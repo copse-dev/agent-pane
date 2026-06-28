@@ -1,8 +1,8 @@
 import { z } from 'zod'
-import type { ToolDefinition } from '@shared/types'
+import { defineTool } from '@shared/types'
 import { getExploreSubagentRunner } from '../services/explore-subagent-runner.ts'
 
-export const exploreTool: ToolDefinition = {
+export const exploreTool = defineTool({
   name: 'explore',
   description:
     'Explore the codebase by reading and searching files. Returns a concise summary instead of raw file contents. Use this instead of read_file or search tools.',
@@ -18,4 +18,4 @@ export const exploreTool: ToolDefinition = {
     const result = await runner({ query, paths, signal })
     return result.summary
   },
-}
+})
