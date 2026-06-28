@@ -3,10 +3,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": [
-      "ES2022",
-      "ESNext"
-    ],
+    "lib": ["ES2022", "ESNext"],
     "outDir": "dist-types/node",
     "rootDir": ".",
     "strict": true,
@@ -18,9 +15,7 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "paths": {
-      "@shared/*": [
-        "./src/shared/*"
-      ]
+      "@shared/*": ["./src/shared/*"]
     },
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
@@ -33,10 +28,5 @@
     "noUncheckedSideEffectImports": true,
     "erasableSyntaxOnly": true
   },
-  "include": [
-    "src/main/**/*",
-    "src/preload/**/*",
-    "src/shared/**/*",
-    "scripts/**/*"
-  ]
+  "include": ["src/main/**/*", "src/preload/**/*", "src/shared/**/*", "scripts/**/*"]
 }
