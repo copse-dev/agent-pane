@@ -7,6 +7,10 @@ import type {
   GitStatusResult,
   GitBranchStatus,
   GitBranchInfo,
+  GhCliStatus,
+  GhPrDetails,
+  GhPrFileDiff,
+  GhPrSummary,
 } from '@shared/types/git.ts'
 import type { McpServerStatus, CuratedMcpServerStatus } from '@shared/types/mcp.ts'
 import type { CanvasArtefact } from '@shared/types/canvas.ts'
@@ -171,6 +175,7 @@ export interface ApiClient {
       reviewModel?: string
       autoRunSandboxCommands: boolean
       mcpAutoAllowReadOnly: boolean
+      defaultReadonlyMode: boolean
       webAllowedOrigins: string[]
       webAllowUserApproval: boolean
     }) => Promise<void>
@@ -242,6 +247,18 @@ export interface ApiClient {
     checkoutBranch: (branch: string) => Promise<void>
     listBranches: () => Promise<GitBranchInfo[]>
     getDefaultBranch: () => Promise<string | null>
+  }
+  gh: {
+    status: () => Promise<GhCliStatus>
+    listMyOpenPrs: () => Promise<GhPrSummary[] | null>
+    prDetails: (owner: string, repo: string, number: number) => Promise<GhPrDetails | null>
+    prFileDiff: (
+      owner: string,
+      repo: string,
+      number: number,
+      path: string,
+    ) => Promise<GhPrFileDiff | null>
+    resolvePrUrl: (url: string) => Promise<{ owner: string; repo: string; number: number } | null>
   }
   shell: {
     openExternal: (url: string) => Promise<void>
