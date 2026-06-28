@@ -50,9 +50,11 @@ export function buildChangesSuggestion(stats: { additions: number; deletions: nu
 // agent at the `investigate_ci` subagent tool; otherwise it falls back to the
 // original generic "Debug CI Failure" prompt so the bubble never references a
 // tool that isn't registered.
-export function buildDebugCiSuggestion(
-  useInvestigator = false,
-): { id: string; label: string; prompt: string } {
+export function buildDebugCiSuggestion(useInvestigator = false): {
+  id: string
+  label: string
+  prompt: string
+} {
   if (useInvestigator) {
     return {
       id: DETERMINISTIC_FOLLOW_UP_IDS.debugCi,
