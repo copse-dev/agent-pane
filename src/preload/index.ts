@@ -242,6 +242,11 @@ contextBridge.exposeInMainWorld('api', {
   appIcon: {
     apply: () => ipcRenderer.invoke('app-icon:apply'),
   },
+  usage: {
+    record: (input: import('@shared/usage/usage-event.ts').UsageRecordInput) =>
+      ipcRenderer.invoke('usage:record', input),
+    getSummary: () => ipcRenderer.invoke('usage:getSummary'),
+  },
   index: {
     query: (pattern: string) => ipcRenderer.invoke('index:query', pattern),
     resolveFileReferences: (candidates: string[]) =>

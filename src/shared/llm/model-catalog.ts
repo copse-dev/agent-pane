@@ -20,6 +20,10 @@ export interface ModelInfo {
   inputPricePerMTok: number
   /** USD per million output tokens. */
   outputPricePerMTok: number
+  /** USD per million cache-read input tokens (Anthropic prompt caching). */
+  cacheReadPricePerMTok?: number
+  /** USD per million cache-creation input tokens (Anthropic prompt caching). */
+  cacheCreationPricePerMTok?: number
   /** Max input tokens (context window) at standard pricing. */
   contextWindow: number
   /** Max output tokens per response (Anthropic `max_tokens`, OpenAI completion cap). */

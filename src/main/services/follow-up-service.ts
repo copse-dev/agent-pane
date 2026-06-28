@@ -1,5 +1,3 @@
-import type { LLMProvider } from '@shared/llm/types.ts'
-import type { LLMMessage } from '@shared/types'
 import type { FollowUpContext, FollowUpSuggestion } from '@shared/follow-ups/types.ts'
 import {
   MODEL_FOLLOW_UP_PRESETS,
@@ -7,21 +5,14 @@ import {
   buildDebugCiSuggestion,
   buildFixMergeConflictsSuggestion,
 } from '@shared/follow-ups/presets.ts'
-import { resolveSmallTasksProvider } from './small-tasks-provider.ts'
+import { resolveSmallTasksProvider, resolveSmallTasksModelId } from './small-tasks-provider.ts'
 import { getSetting } from './settings.ts'
 import { getPrWorkspaceContext } from './pr-context-service.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
+import { completeTextWithUsage } from './llm-complete-text.ts'
+import { recordUsageEvent } from './usage-ledger.ts'
 
 const MAX_SUGGESTIONS = 3
-
-async function completeText(provider: LLMProvider, prompt: string): Promise<string> {
-  const messages: LLMMessage[] = [{ role: 'user', content: prompt }]
-  let out = ''
-  for await (const chunk of provider.stream(messages, [], AbortSignal.timeout(15_000))) {
-    if (chunk.type === 'text') out += chunk.text
-  }
-  return out
-}
 
 /** Parse a JSON array of preset ids from model output. */
 export function parseModelFollowUpIds(raw: string): string[] {
@@ -60,7 +51,16 @@ async function pickModelFollowUps(context: FollowUpContext): Promise<FollowUpSug
     toolSummary
 
   try {
-    const out = await completeText(provider, prompt)
+    const model = resolveSmallTasksModelId()
+    const { text: out, usage } = await completeTextWithUsage(provider, prompt, 15_000)
+    if (usage.inputTokens || usage.outputTokens) {
+      recordUsageEvent({
+        model,
+        source: 'small-tasks',
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+      })
+    }
     const ids = parseModelFollowUpIds(out)
     const seen = new Set<string>()
     const suggestions: FollowUpSuggestion[] = []

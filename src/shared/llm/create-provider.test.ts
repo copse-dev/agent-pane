@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import Anthropic from '@anthropic-ai/sdk'
 import { anthropicMaxOutputTokens, getModelInfo } from './model-catalog.ts'
 import { isRetryableStreamError, streamRetryDelayMs } from './stream-retry.ts'
-import { createProvider } from './create-provider.ts'
+import type { StreamChunk } from '@shared/types'
+import { createLocalOpenAIProvider, createProvider } from './create-provider.ts'
+import { OpenAIProvider } from './openai-provider.ts'
 
 describe('anthropicMaxOutputTokens', () => {
   it('uses per-model catalog metadata', () => {
@@ -71,5 +73,41 @@ describe('createProvider routing', () => {
       if (prevOpenai === undefined) delete process.env['OPENAI_API_KEY']
       else process.env['OPENAI_API_KEY'] = prevOpenai
     }
+  })
+})
+
+describe('createLocalOpenAIProvider', () => {
+  it('requests streamed usage so local models populate the usage ledger', async () => {
+    const provider = createLocalOpenAIProvider(
+      'http://localhost:1234/v1',
+      'qwen/qwen3.6-35b-a3b',
+    ) as OpenAIProvider
+    type Captured = { request?: { stream_options?: { include_usage?: boolean } } | undefined }
+    const captured: Captured = {}
+    ;(
+      provider as unknown as {
+        client: {
+          chat: {
+            completions: {
+              create: (request: NonNullable<Captured['request']>) => AsyncIterable<{
+                choices: Array<{ delta?: { content?: string }; finish_reason?: string }>
+              }>
+            }
+          }
+        }
+      }
+    ).client.chat.completions.create = (request) => {
+      captured.request = request
+      return (async function* () {
+        yield { choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }
+      })()
+    }
+
+    const chunks: StreamChunk[] = []
+    for await (const chunk of provider.stream([{ role: 'user', content: 'hi' }], [])) {
+      chunks.push(chunk)
+    }
+
+    assert.equal(captured.request?.stream_options?.include_usage, true)
   })
 })

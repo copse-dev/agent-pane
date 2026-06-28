@@ -216,6 +216,10 @@ export interface ApiClient {
   appIcon: {
     apply: () => Promise<void>
   }
+  usage: {
+    record: (input: import('@shared/usage/usage-event.ts').UsageRecordInput) => Promise<void>
+    getSummary: () => Promise<import('@shared/usage/aggregate-usage.ts').UsageSummary>
+  }
   index: {
     query: (pattern: string) => Promise<string[]>
     resolveFileReferences: (
