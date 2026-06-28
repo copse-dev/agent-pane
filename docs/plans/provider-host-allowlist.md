@@ -32,14 +32,14 @@ provider host:
 
 ### What hosts are reachable today
 
-| Source | Host | Locked? |
-| --- | --- | --- |
-| Anthropic (`anthropic-provider.ts`) | `api.anthropic.com` | hardcoded |
-| OpenAI (`openai-provider.ts`) | `api.openai.com` | hardcoded |
-| OpenRouter (`create-provider.ts`) | `openrouter.ai` | hardcoded |
-| Cursor (`validate-api-key.ts`) | `api.cursor.com` | hardcoded |
-| Mistral / Gemini / DeepSeek / HuggingFace presets | preset `baseUrl` | locked by `mergeBuiltin` in `extra-providers.ts` (label/baseUrl/envVar stay on the preset) |
-| **User-added custom provider** | **arbitrary `baseUrl`** | **not locked** |
+| Source                                            | Host                    | Locked?                                                                                    |
+| ------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------ |
+| Anthropic (`anthropic-provider.ts`)               | `api.anthropic.com`     | hardcoded                                                                                  |
+| OpenAI (`openai-provider.ts`)                     | `api.openai.com`        | hardcoded                                                                                  |
+| OpenRouter (`create-provider.ts`)                 | `openrouter.ai`         | hardcoded                                                                                  |
+| Cursor (`validate-api-key.ts`)                    | `api.cursor.com`        | hardcoded                                                                                  |
+| Mistral / Gemini / DeepSeek / HuggingFace presets | preset `baseUrl`        | locked by `mergeBuiltin` in `extra-providers.ts` (label/baseUrl/envVar stay on the preset) |
+| **User-added custom provider**                    | **arbitrary `baseUrl`** | **not locked**                                                                             |
 
 The only open surface is the **user-added custom OpenAI-compatible provider**.
 `customToProvider` (`extra-providers.ts`) stores whatever `baseUrl` the user
@@ -80,7 +80,7 @@ attacker-controlled host via a **malicious or tampered custom-provider
 - Settings sync / import or a hand-edited settings store seeds a custom provider
   whose `baseUrl` points at `evil.example`. The next completion, key
   validation, or model fetch ships the configured key (as `Authorization:
-  Bearer`) and prompt/transcript to that host.
+Bearer`) and prompt/transcript to that host.
 - A social-engineered "add this provider" with a look-alike host.
 
 The mitigation is a host check at every seam where a custom `baseUrl` becomes a
@@ -95,7 +95,7 @@ contacted.
   by definition.
 - DNS rebinding / a benign hostname resolving to an internal IP. `baseUrl` is a
   hostname allowlist, not an IP allowlist; `assertLowRiskHost` blocks
-  *literal* private IPs and single-label names but not a public name that
+  _literal_ private IPs and single-label names but not a public name that
   resolves inward. Pinning resolved IPs is a possible later hardening, noted but
   not proposed here.
 - Exfiltration through the agent's own tools (covered by the separate web-origin
@@ -204,7 +204,7 @@ per host — symmetric with the web-allowed-origins management. Add the
 
 **Share the primitives, keep the policy lists separate.** Provider egress and
 agent web-tool egress have different trust semantics — the web allowlist defaults
-to DuckDuckGo for *search*, which is irrelevant to provider calls, and a host you
+to DuckDuckGo for _search_, which is irrelevant to provider calls, and a host you
 trust to answer a search is not necessarily one you trust with your API key.
 Conflating them would let a host approved for one purpose receive the other's
 secrets.
@@ -230,7 +230,7 @@ Concretely:
   synced after the model was selected): `assertProviderHostAllowed` throws in
   `createExtraCloudProvider`. The thrown `Error` should carry an actionable
   message — `Provider host "evil.example" is not approved. Re-add it in Settings
-  → Providers.` — surfaced through the same chat/run error path that already
+→ Providers.` — surfaced through the same chat/run error path that already
   renders provider-not-configured errors from `createProvider` (it throws plain
   `Error`s today, e.g. "Anthropic is not configured…"). No partial request is
   sent: the check runs before the SDK client is constructed.
@@ -239,19 +239,19 @@ Concretely:
 
 ## 4. Files to touch (implementation checklist)
 
-| File | Change |
-| --- | --- |
-| `src/shared/llm/provider-host-policy.ts` *(new)* | `assertProviderHostAllowed` / `isProviderHostAllowed` / `builtinProviderHosts` / `providerHostKey`; pure, approved-list passed in. |
-| `src/shared/llm/create-provider.ts` | Gate `createExtraCloudProvider` on the host policy before building the client. |
-| `src/main/services/validate-api-key.ts` | Gate `validateExtraProviderApiKey` before the `/models` fetch. |
-| `src/main/services/provider-models.ts` | Gate `fetchOpenAiCompatibleModels` before the `/models` fetch. |
-| `src/main/services/extra-providers-store.ts` | In `saveExtraProvider`, validate + approval-gate a custom provider's host; read approved hosts from settings to pass into the policy at the runtime seams. |
-| `src/main/services/settings-schema.ts` | Add `approvedProviderHosts` + `providerAllowUserApproval` schemas. |
-| `src/main/services/permission-gate.ts` | `promptProviderHost` (mirror `promptWebOrigin`); persist on "always allow". |
-| `src/main/services/web-origin-policy.ts` | Export / extract the shared host helpers (`normalizeHostname`, low-risk-host, the base-URL rule) for reuse without forking. |
-| `src/renderer/views/setup/custom-providers-section.ts` | Surface approved hosts (list + remove) and the approval toggle. |
-| IPC (settings handlers) | Thread the approval prompt through the `saveExtraProvider` IPC; expose approved-host add/remove. |
-| Tests | `provider-host-policy.test.ts`; extend `create-provider.test.ts`, `validate-api-key`/`provider-models` tests, and `extra-providers-store.test.ts` for the gated paths. |
+| File                                                   | Change                                                                                                                                                                 |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/shared/llm/provider-host-policy.ts` _(new)_       | `assertProviderHostAllowed` / `isProviderHostAllowed` / `builtinProviderHosts` / `providerHostKey`; pure, approved-list passed in.                                     |
+| `src/shared/llm/create-provider.ts`                    | Gate `createExtraCloudProvider` on the host policy before building the client.                                                                                         |
+| `src/main/services/validate-api-key.ts`                | Gate `validateExtraProviderApiKey` before the `/models` fetch.                                                                                                         |
+| `src/main/services/provider-models.ts`                 | Gate `fetchOpenAiCompatibleModels` before the `/models` fetch.                                                                                                         |
+| `src/main/services/extra-providers-store.ts`           | In `saveExtraProvider`, validate + approval-gate a custom provider's host; read approved hosts from settings to pass into the policy at the runtime seams.             |
+| `src/main/services/settings-schema.ts`                 | Add `approvedProviderHosts` + `providerAllowUserApproval` schemas.                                                                                                     |
+| `src/main/services/permission-gate.ts`                 | `promptProviderHost` (mirror `promptWebOrigin`); persist on "always allow".                                                                                            |
+| `src/main/services/web-origin-policy.ts`               | Export / extract the shared host helpers (`normalizeHostname`, low-risk-host, the base-URL rule) for reuse without forking.                                            |
+| `src/renderer/views/setup/custom-providers-section.ts` | Surface approved hosts (list + remove) and the approval toggle.                                                                                                        |
+| IPC (settings handlers)                                | Thread the approval prompt through the `saveExtraProvider` IPC; expose approved-host add/remove.                                                                       |
+| Tests                                                  | `provider-host-policy.test.ts`; extend `create-provider.test.ts`, `validate-api-key`/`provider-models` tests, and `extra-providers-store.test.ts` for the gated paths. |
 
 ## 5. Open questions
 
