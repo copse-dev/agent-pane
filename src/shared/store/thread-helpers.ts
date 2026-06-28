@@ -11,7 +11,7 @@ import type {
   ContextSnapshot,
 } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
-import type { Thread } from '@shared/types'
+import type { Thread, ThreadReview } from '@shared/types'
 
 export function sortThreadsNewestFirst(threads: Thread[]): Thread[] {
   return [...threads].sort((a, b) => b.createdAt - a.createdAt)
@@ -390,6 +390,23 @@ export function setThreadTodos(store: AppStore, threadId: string, todos: TodoIte
     .threads.map((t) => (t.id !== threadId ? t : { ...t, todos, updatedAt: Date.now() }))
   store.setState({ threads })
   store.emit('todos_changed', threadId)
+}
+
+/** Store the post-turn review verdict for a thread (clears with `null`). */
+export function setThreadReview(
+  store: AppStore,
+  threadId: string,
+  review: ThreadReview | null,
+): void {
+  const threads = store.getState().threads.map((t) => {
+    if (t.id !== threadId) return t
+    const next = { ...t, updatedAt: Date.now() }
+    if (review) next.review = review
+    else delete next.review
+    return next
+  })
+  store.setState({ threads })
+  store.emit('review_changed', threadId)
 }
 
 /** Suspend/resume FIFO draining of a thread's queued messages (e.g. while editing). */
