@@ -25,6 +25,7 @@ export interface StoreEvents {
   // Request the Changes panel to reveal a specific workspace-relative file diff.
   git_change_navigate: [path: string]
   browser_url_requested: [url: string]
+  pr_open_requested: [owner: string, repo: string, number: number]
   // An MCP-UI artefact should be rendered in the canvas (Browser pane).
   canvas_artefact_requested: [artefact: CanvasArtefact]
   settings_changed: []

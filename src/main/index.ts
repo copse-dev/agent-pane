@@ -44,14 +44,23 @@ import {
 } from './services/lm-studio-setup.ts'
 import { estimateContextBreakdown } from './services/context-estimate.ts'
 import { suggestFollowUps } from './services/follow-up-service.ts'
-import type { FollowUpContext } from '@shared/follow-ups/types.ts'
 import { storageGet, storageSet } from './services/storage.ts'
 import { getMainWindow } from './windows/create-main-window.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
 import { clearRemoteAgentSession } from './services/remote-agent-client.ts'
 import { shutdownBrowserSession } from './services/browser/session-manager.ts'
 import { drainWriteQueue } from './services/write-queue.ts'
-import { assertMainFrameSender } from './ipc/ipc-guards.ts'
+import {
+  assertMainFrameSender,
+  estimateContextPayloadSchema,
+  followUpContextSchema,
+  lmStudioDetectSchema,
+  lmStudioDownloadSchema,
+  lmStudioDownloadStatusSchema,
+  lmStudioTestSchema,
+  parseIpcArgs,
+  zThreadId,
+} from './ipc/ipc-guards.ts'
 import { destroyAllTerminalSessions } from './services/terminal-service.ts'
 
 // Prevent multiple instances stacking invisible windows at the same position.
@@ -115,8 +124,10 @@ app
     registerAllHandlers(win, registry)
 
     // Register before async bootstrap so onboarding/settings can query models on first paint.
-    ipcMain.handle('lmstudio:test', async (_e, url: string, apiKey?: string) => {
-      const result = await testLmStudio(url, apiKey)
+    ipcMain.handle('lmstudio:test', async (event, url: unknown, apiKey?: unknown) => {
+      assertMainFrameSender(event, win)
+      const [parsedUrl, parsedApiKey] = parseIpcArgs(lmStudioTestSchema, [url, apiKey])
+      const result = await testLmStudio(parsedUrl, parsedApiKey)
       invalidateLmStudioModelsCache() // refetch the dropdown after a manual test
       return result
     })
@@ -125,15 +136,23 @@ app
 
     ipcMain.handle('openrouter:models', () => listFreeOpenRouterModels())
 
-    ipcMain.handle('lmstudio:detect', async (_e, url?: string, apiKey?: string) =>
-      detectLmStudio(url, apiKey),
-    )
+    ipcMain.handle('lmstudio:detect', async (event, url?: unknown, apiKey?: unknown) => {
+      assertMainFrameSender(event, win)
+      const [parsedUrl, parsedApiKey] = parseIpcArgs(lmStudioDetectSchema, [url, apiKey])
+      return detectLmStudio(parsedUrl, parsedApiKey)
+    })
 
     ipcMain.handle(
       'lmstudio:download',
-      async (_e, modelId: string, url?: string, apiKey?: string) => {
-        const baseUrl = url ?? 'http://localhost:1234/v1'
-        const result = await downloadLmStudioModel(modelId, baseUrl, apiKey)
+      async (event, modelId: unknown, url?: unknown, apiKey?: unknown) => {
+        assertMainFrameSender(event, win)
+        const [parsedModelId, parsedUrl, parsedApiKey] = parseIpcArgs(lmStudioDownloadSchema, [
+          modelId,
+          url,
+          apiKey,
+        ])
+        const baseUrl = parsedUrl ?? 'http://localhost:1234/v1'
+        const result = await downloadLmStudioModel(parsedModelId, baseUrl, parsedApiKey)
         if (result.ok) invalidateLmStudioModelsCache()
         return result
       },
@@ -141,9 +160,15 @@ app
 
     ipcMain.handle(
       'lmstudio:downloadStatus',
-      async (_e, jobId: string, url?: string, apiKey?: string) => {
-        const baseUrl = url ?? 'http://localhost:1234/v1'
-        return getLmStudioDownloadStatus(jobId, baseUrl, apiKey)
+      async (event, jobId: unknown, url?: unknown, apiKey?: unknown) => {
+        assertMainFrameSender(event, win)
+        const [parsedJobId, parsedUrl, parsedApiKey] = parseIpcArgs(lmStudioDownloadStatusSchema, [
+          jobId,
+          url,
+          apiKey,
+        ])
+        const baseUrl = parsedUrl ?? 'http://localhost:1234/v1'
+        return getLmStudioDownloadStatus(parsedJobId, baseUrl, parsedApiKey)
       },
     )
 
@@ -152,8 +177,9 @@ app
     // missing handler. The registry these close over is populated lazily below.
     const messageHistory = new Map<string, LLMMessage[]>()
 
-    ipcMain.handle('agent:run', async (event, threadId: string, rawPrompt: string) => {
+    ipcMain.handle('agent:run', async (event, threadIdArg: unknown, rawPrompt: string) => {
       assertMainFrameSender(event, win)
+      const threadId = parseIpcArgs(zThreadId, [threadIdArg])
       const { userContent, invokedSkills, priorTodos, workingBrief } =
         parseAgentRunPayload(rawPrompt)
 
@@ -177,17 +203,20 @@ app
 
     ipcMain.handle(
       'agent:estimateContext',
-      async (event, threadId: string, payloadJson: string) => {
+      async (event, threadIdArg: unknown, payloadJson: string) => {
         assertMainFrameSender(event, win)
-        const {
-          draftText = '',
-          invokedSkills = [],
-          imageCount = 0,
-        } = JSON.parse(payloadJson) as {
-          draftText?: string
-          invokedSkills?: string[]
-          imageCount?: number
+        const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+        let rawPayload: unknown
+        try {
+          rawPayload = JSON.parse(payloadJson)
+        } catch {
+          throw new Error('agent:estimateContext: payload is not valid JSON')
         }
+        const parsed = estimateContextPayloadSchema.safeParse(rawPayload)
+        if (!parsed.success) {
+          throw new Error('agent:estimateContext: payload failed validation')
+        }
+        const { draftText = '', invokedSkills = [], imageCount = 0 } = parsed.data
         if (!messageHistory.has(threadId)) {
           const stored = storageGet(`llm-history:${threadId}`)
           if (Array.isArray(stored)) messageHistory.set(threadId, stored as LLMMessage[])
@@ -202,15 +231,17 @@ app
       },
     )
 
-    ipcMain.handle('agent:clearHistory', (event, threadId: string) => {
+    ipcMain.handle('agent:clearHistory', (event, threadIdArg: unknown) => {
       assertMainFrameSender(event, win)
+      const threadId = parseIpcArgs(zThreadId, [threadIdArg])
       messageHistory.delete(threadId)
       storageSet(`llm-history:${threadId}`, null)
       clearRemoteAgentSession(threadId)
     })
 
-    ipcMain.handle('agent:abort', (event, threadId: string) => {
+    ipcMain.handle('agent:abort', (event, threadIdArg: unknown) => {
       assertMainFrameSender(event, win)
+      const threadId = parseIpcArgs(zThreadId, [threadIdArg])
       abortAgent(threadId)
     })
 
@@ -231,8 +262,17 @@ app
 
     ipcMain.handle('agent:suggestFollowUps', (event, contextJson: string) => {
       assertMainFrameSender(event, win)
-      const context = JSON.parse(contextJson) as FollowUpContext
-      return suggestFollowUps(context)
+      let rawContext: unknown
+      try {
+        rawContext = JSON.parse(contextJson)
+      } catch {
+        throw new Error('agent:suggestFollowUps: context is not valid JSON')
+      }
+      const parsed = followUpContextSchema.safeParse(rawContext)
+      if (!parsed.success) {
+        throw new Error('agent:suggestFollowUps: context failed validation')
+      }
+      return suggestFollowUps(parsed.data)
     })
 
     await initSkillsRegistry()

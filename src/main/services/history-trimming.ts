@@ -13,6 +13,8 @@ export interface PreparedAgentHistory {
   historyBudget: number
   conversationBudget: number
   initialConversationTokens: number
+  /** Estimated tokens of the whole prompt (system + trimmed conversation). */
+  estimatedPromptTokens: number
 }
 
 export function prepareAgentHistory(
@@ -28,7 +30,46 @@ export function prepareAgentHistory(
     reserveTokens: toolSchemaReserve,
   })
   const initialConversationTokens = estimateConversationTokens(trimmed)
-  return { trimmed, wasTrimmed, historyBudget, conversationBudget, initialConversationTokens }
+  const estimatedPromptTokens = estimateMessageTokens(trimmed)
+  return {
+    trimmed,
+    wasTrimmed,
+    historyBudget,
+    conversationBudget,
+    initialConversationTokens,
+    estimatedPromptTokens,
+  }
+}
+
+/**
+ * True when the prompt cannot fit the model context even after trimming.
+ *
+ * Trimming only drops whole non-system messages and never removes the user's
+ * own messages (LM Studio chat templates require a user query), so a single
+ * oversized turn — e.g. a large pasted block or file attachment inlined into
+ * one user message — is irreducible. Sending it anyway guarantees a provider
+ * "context length" rejection and, on metered providers, wastes input-token
+ * rate-limit budget on a request that can never succeed. The `>=` margin keeps
+ * the rough (~4 chars/token) estimate from blocking a turn that would actually
+ * fit: it only triggers when the estimate alone meets or exceeds the entire
+ * window, leaving no room for any completion.
+ */
+export function promptExceedsContextWindow(
+  prepared: PreparedAgentHistory,
+  contextWindow: number,
+): boolean {
+  return prepared.estimatedPromptTokens >= contextWindow
+}
+
+/** User-facing guidance when a single turn is too large for the model. */
+export function oversizedTurnMessage(contextWindow: number, estimatedPromptTokens: number): string {
+  return (
+    `This message is too large for the selected model — it needs roughly ` +
+    `${Math.round(estimatedPromptTokens).toLocaleString()} tokens but the model's context ` +
+    `window is only ${contextWindow.toLocaleString()}. Remove or shorten large attachments or ` +
+    `pasted text, ask the agent to read large files in chunks with read_file, or switch to a ` +
+    `model with a larger context window.`
+  )
 }
 
 export function contextTrimmedChunk(
