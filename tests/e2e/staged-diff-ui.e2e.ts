@@ -30,7 +30,10 @@ describe('staged diff approval UI', () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     writeFileSync(DIRTY_TREE_SENTINEL, 'force staged-diff approval path\n')
     resetUserData()
-    seedEmptyProject(process.cwd(), PROJECT_ID, { subagentsEnabled: false })
+    seedEmptyProject(process.cwd(), PROJECT_ID, {
+      subagentsEnabled: false,
+      model: 'claude-sonnet-4-6',
+    })
     await browser.reloadSession()
   })
 
