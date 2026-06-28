@@ -62,6 +62,23 @@ export function parseBrowserUrl(raw: string): ParsedBrowserUrl | null {
   return { protocol: url.protocol, hostname, port, origin: `${url.protocol}//${hostname}:${port}` }
 }
 
+/**
+ * Scheme allowlist for the in-app browser guest's own navigations (`will-navigate`
+ * / `will-redirect`). The guest may browse the public web freely, but must never be
+ * driven to local or privileged schemes (`file:`, `chrome:`, `data:`, …) by a
+ * hostile page or redirect, which would render local files inside the guest.
+ */
+export function isAllowedBrowserNavigationUrl(url: string): boolean {
+  if (url === 'about:blank') return true
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return false
+  }
+  return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+}
+
 function stripIpv6Brackets(hostname: string): string {
   return hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname
 }

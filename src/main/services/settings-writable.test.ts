@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   isRendererWritableSettingKey,
+  isSecretSettingKey,
   parseRendererWritableSetting,
   securitySettingsSchema,
 } from './settings-writable.ts'
@@ -53,6 +54,21 @@ describe('settings-writable', () => {
     })
     assert.equal(parsed.cursorHooksEnabled, undefined)
     assert.equal('cursorHooksEnabled' in parsed, false)
+  })
+
+  it('treats api-key records as secret (not readable via settings:get)', () => {
+    assert.equal(isSecretSettingKey('apiKey'), true)
+    assert.equal(isSecretSettingKey('apiKey.anthropic'), true)
+    assert.equal(isSecretSettingKey('apiKey.openrouter'), true)
+    // Secret keys are not renderer-writable either.
+    assert.equal(isRendererWritableSettingKey('apiKey.anthropic'), false)
+  })
+
+  it('does not treat ordinary settings as secret', () => {
+    assert.equal(isSecretSettingKey('model'), false)
+    assert.equal(isSecretSettingKey('theme'), false)
+    // Guard against prefix-style false positives.
+    assert.equal(isSecretSettingKey('apiKeyboardShortcut'), false)
   })
 
   it('accepts safe remoteAgentBaseUrl values', () => {
