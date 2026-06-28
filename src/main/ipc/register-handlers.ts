@@ -37,6 +37,7 @@ import {
 } from '../services/settings.ts'
 import {
   isRendererWritableSettingKey,
+  isSecretSettingKey,
   parseRendererWritableSetting,
   securitySettingsSchema,
 } from '../services/settings-writable.ts'
@@ -187,8 +188,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return resolveFileReferences(candidates)
   })
 
-  ipcMain.handle('settings:get', (_e, key: unknown) => {
+  ipcMain.handle('settings:get', (event, key: unknown) => {
+    assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(128), [key])
+    // Never hand stored API-key records back to the renderer — it only needs the
+    // boolean `settings:getKey`. Reading `apiKey.*` here would expose the key
+    // (base64 plaintext when the OS keyring is unavailable).
+    if (isSecretSettingKey(k)) {
+      throw new IpcValidationError(`Setting key not readable from renderer: ${k}`)
+    }
     return getSetting(k, null)
   })
   ipcMain.handle('settings:set', async (event, key: unknown, value: unknown) => {

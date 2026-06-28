@@ -10,9 +10,11 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { rmSync } from 'node:fs'
 import {
   assertAllowedWorkspaceRoot,
   clearAllowedWorkspaceRootsForTest,
+  isResolvedPathInsideWorkspace,
   registerAllowedWorkspaceRoot,
   resolveWorkspacePath,
   setWorkspaceRootForTest,
@@ -84,6 +86,45 @@ describe('workspace path containment', () => {
     const resolved = resolveWorkspacePath('src/new-file.ts')
     assert.equal(resolved, join(realpathSync.native(ws), 'src', 'new-file.ts'))
     assert.ok(!existsSync(resolved))
+  })
+})
+
+describe('isResolvedPathInsideWorkspace (TOCTOU re-validation)', () => {
+  let cleanupRoot: (() => void) | undefined
+
+  afterEach(() => {
+    cleanupRoot?.()
+    cleanupRoot = undefined
+  })
+
+  it('returns false when no workspace is open', () => {
+    cleanupRoot = setWorkspaceRootForTest(null)
+    assert.equal(isResolvedPathInsideWorkspace('/anything'), false)
+  })
+
+  it('accepts a normal file under the workspace root', () => {
+    const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+    mkdirSync(join(ws, 'src'))
+    writeFileSync(join(ws, 'src', 'a.ts'), 'ok')
+    cleanupRoot = setWorkspaceRootForTest(ws)
+    assert.equal(isResolvedPathInsideWorkspace(join(realpathSync.native(ws), 'src', 'a.ts')), true)
+  })
+
+  it('rejects a path swapped to a symlink pointing outside the workspace', () => {
+    const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+    const outside = mkdtempSync(join(tmpdir(), 'copse-out-'))
+    writeFileSync(join(outside, 'secret.txt'), 'nope')
+    cleanupRoot = setWorkspaceRootForTest(ws)
+
+    // Path that was originally a regular in-workspace file...
+    const watched = join(realpathSync.native(ws), 'watched.txt')
+    writeFileSync(watched, 'ok')
+    assert.equal(isResolvedPathInsideWorkspace(watched), true)
+
+    // ...is later swapped to a symlink escaping the workspace (TOCTOU).
+    rmSync(watched)
+    symlinkSync(join(outside, 'secret.txt'), watched, 'file')
+    assert.equal(isResolvedPathInsideWorkspace(watched), false)
   })
 })
 

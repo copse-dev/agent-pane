@@ -37,6 +37,9 @@ issues #128 and #174).
   network commands, disable safety checks, or override the user's explicit
   instructions/safety constraints. _Non-invoked_ skills in the startup catalog
   remain pure data (name/description only, never instructions to act on).
+  Additionally, every skill (regardless of source) is scanned for external
+  `http(s)` links and is reminded that its work stays sandbox/approval-confined —
+  see "Skill external-link warnings & sandbox confinement" below.
 - **Build-time fetches** — _pin_ (phase 3).
 
 ## What has landed (this change — phase 1, #128 + #174)
@@ -75,6 +78,30 @@ issues #128 and #174).
 - Existing infrastructure already covered: Socket Firewall wrapping of detected
   installs and `npm_config_ignore_scripts` for JS managers (`safe-install.ts`,
   `shell-tool.ts`).
+
+### Skill external-link warnings & sandbox confinement
+
+Two defaults harden every invoked skill, trusted or not (both toggleable in
+**Settings → Skills**):
+
+- **External-link warnings** (`skillExternalLinkWarnings`, default on). At
+  registry-load time each `SKILL.md` is scanned for external `http(s)` hosts
+  (`extract-skill-links.ts`); the de-duplicated host list rides on
+  `SkillMetadata`/`SkillSummary` (`externalLinks`). When the user invokes a skill
+  that references external hosts, the renderer surfaces an up-front toast
+  (`input-bar.ts`) and the system prompt tags the skill body with an
+  `EXTERNAL LINKS:` notice plus guidance that any fetch/install/run-from-network
+  step is approval-gated and must not exfiltrate workspace contents or secrets
+  (`skill-prompt.ts`).
+- **Sandbox confinement reminder** (`skillSandboxGuidance`, default on). The
+  invoked-skills block states that skill shell commands run inside the macOS
+  project sandbox (no network, no out-of-workspace FS), and — where no OS sandbox
+  is active (Linux/Windows, or ASRT init failed) — that the only boundary is
+  approval, so network/install/out-of-workspace commands must be surfaced rather
+  than auto-run. The live sandbox state is read via a native-free flag
+  (`project-sandbox/state.ts`) so the prompt builder doesn't pull the seatbelt/
+  pty native modules. This is steering layered on top of the real boundary
+  (`decideShellPermission` + the seatbelt sandbox), not a new boundary itself.
 
 ## Remaining phased plan
 
