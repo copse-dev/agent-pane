@@ -711,6 +711,11 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
 
   const unsubs = [
     api.agent.onRefreshContextEstimate(() => scheduleContextEstimate(0)),
+    store.on('new_thread_opened', () => {
+      // Refresh provider-reported context windows for the new chat, then re-estimate
+      // once the caches are cleared so the footer reflects the current model limit.
+      void api.agent.refreshModelContext().finally(() => scheduleContextEstimate(0))
+    }),
     store.on('composer_draft_flush', persistComposerDraft),
     store.on('thread_status_changed', (tid) => {
       if (tid === getActiveThreadId()) {

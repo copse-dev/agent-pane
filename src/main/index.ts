@@ -36,7 +36,10 @@ import {
   listLmStudioModels,
   invalidateLmStudioModelsCache,
 } from './services/agent-service.ts'
-import { listFreeOpenRouterModels } from './services/openrouter-models.ts'
+import {
+  listFreeOpenRouterModels,
+  invalidateOpenRouterModelsCache,
+} from './services/openrouter-models.ts'
 import {
   detectLmStudio,
   downloadLmStudioModel,
@@ -237,6 +240,15 @@ app
       messageHistory.delete(threadId)
       storageSet(`llm-history:${threadId}`, null)
       clearRemoteAgentSession(threadId)
+    })
+
+    // Opening a new chat drops the cached model catalogs so the next context
+    // estimate re-fetches the provider's current window (e.g. an LM Studio model
+    // reloaded with a different length, or an updated OpenRouter context limit).
+    ipcMain.handle('agent:refreshModelContext', (event) => {
+      assertMainFrameSender(event, win)
+      invalidateLmStudioModelsCache()
+      invalidateOpenRouterModelsCache()
     })
 
     ipcMain.handle('agent:abort', (event, threadIdArg: unknown) => {
