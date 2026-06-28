@@ -170,6 +170,7 @@ export interface ApiClient {
       safetyModel: string
       autoRunSandboxCommands: boolean
       mcpAutoAllowReadOnly: boolean
+      defaultReadonlyMode: boolean
       webAllowedOrigins: string[]
       webAllowUserApproval: boolean
     }) => Promise<void>
