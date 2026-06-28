@@ -188,7 +188,7 @@ function resolveBaseUrl(provider: RemoteAgentProvider): string {
 }
 
 function resolveApiKey(): string {
-  const apiKey = getApiKey('cursor') ?? process.env.CURSOR_API_KEY ?? null
+  const apiKey = getApiKey('cursor') ?? process.env['CURSOR_API_KEY'] ?? null
   if (!apiKey) {
     throw new Error('Configure a Cursor API key in Settings before using remote agents.')
   }

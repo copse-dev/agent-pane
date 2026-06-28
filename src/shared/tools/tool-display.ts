@@ -98,7 +98,7 @@ export function getToolDisplayName(name: string): string {
 
 function fileEditPath(args: unknown): string | null {
   if (!args || typeof args !== 'object') return null
-  const path = (args as Record<string, unknown>).path
+  const path = (args as Record<string, unknown>)['path']
   return typeof path === 'string' && path.length > 0 ? path : null
 }
 

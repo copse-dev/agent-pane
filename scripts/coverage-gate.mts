@@ -34,7 +34,7 @@ async function readJson(path: string): Promise<Record<string, unknown>> {
 }
 
 const summary = await readJson(SUMMARY)
-const total = (summary.total as { lines?: { pct?: number } } | undefined)?.lines
+const total = (summary['total'] as { lines?: { pct?: number } } | undefined)?.lines
 if (typeof total?.pct !== 'number') {
   console.error(
     `coverage-gate: ${SUMMARY} has no total.lines.pct — run \`npm run coverage\` first.`,
@@ -50,7 +50,7 @@ if (update) {
 }
 
 const baseline = await readJson(BASELINE)
-const required = typeof baseline.lines === 'number' ? baseline.lines : 0
+const required = typeof baseline['lines'] === 'number' ? baseline['lines'] : 0
 const delta = current - required
 
 const summaryLine =
@@ -59,7 +59,7 @@ const summaryLine =
 console.log(summaryLine)
 
 // Surface the result on the GitHub Actions run summary when available.
-const stepSummary = process.env.GITHUB_STEP_SUMMARY
+const stepSummary = process.env['GITHUB_STEP_SUMMARY']
 if (stepSummary) {
   await writeFile(stepSummary, `### Coverage\n\n${summaryLine}\n`, { flag: 'a' })
 }

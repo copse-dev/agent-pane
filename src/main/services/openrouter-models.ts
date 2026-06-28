@@ -43,7 +43,7 @@ function priceValue(value: unknown): number {
 function isFreePricing(pricing: unknown): boolean {
   if (!pricing || typeof pricing !== 'object') return false
   const p = pricing as Record<string, unknown>
-  return priceValue(p.prompt) === 0 && priceValue(p.completion) === 0
+  return priceValue(p['prompt']) === 0 && priceValue(p['completion']) === 0
 }
 
 // Keep text-output chat models; drop image/audio/video generators that also show
@@ -51,8 +51,8 @@ function isFreePricing(pricing: unknown): boolean {
 function outputsText(architecture: unknown): boolean {
   if (!architecture || typeof architecture !== 'object') return true
   const arch = architecture as Record<string, unknown>
-  if (Array.isArray(arch.output_modalities)) return arch.output_modalities.includes('text')
-  const modality = typeof arch.modality === 'string' ? arch.modality : ''
+  if (Array.isArray(arch['output_modalities'])) return arch['output_modalities'].includes('text')
+  const modality = typeof arch['modality'] === 'string' ? arch['modality'] : ''
   if (!modality) return true
   const output = modality.includes('->') ? (modality.split('->').pop() ?? '') : modality
   return output.includes('text')
@@ -65,15 +65,15 @@ function supportsTools(supportedParameters: unknown): boolean {
 function parseModelRow(row: unknown): OpenRouterModelSummary | null {
   if (!row || typeof row !== 'object') return null
   const rec = row as Record<string, unknown>
-  const id = typeof rec.id === 'string' ? rec.id : null
+  const id = typeof rec['id'] === 'string' ? rec['id'] : null
   if (!id) return null
-  if (!outputsText(rec.architecture)) return null
+  if (!outputsText(rec['architecture'])) return null
   return {
     id,
-    name: typeof rec.name === 'string' && rec.name ? rec.name : id,
-    contextLength: parsePositiveInt(rec.context_length),
-    free: isFreePricing(rec.pricing),
-    supportsTools: supportsTools(rec.supported_parameters),
+    name: typeof rec['name'] === 'string' && rec['name'] ? rec['name'] : id,
+    contextLength: parsePositiveInt(rec['context_length']),
+    free: isFreePricing(rec['pricing']),
+    supportsTools: supportsTools(rec['supported_parameters']),
   }
 }
 

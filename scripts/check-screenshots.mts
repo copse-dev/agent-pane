@@ -37,14 +37,14 @@ function parseBase(argv: string[]): string {
 
 /** Set a GitHub Actions step output when running in CI; a no-op locally. */
 function emitOutput(name: string, value: string): void {
-  const file = process.env.GITHUB_OUTPUT
+  const file = process.env['GITHUB_OUTPUT']
   if (file) appendFileSync(file, `${name}=${value}\n`)
 }
 
 function main(): void {
   const argv = process.argv.slice(2)
   const base = parseBase(argv)
-  const labeled = process.env.UPDATE_SCREENSHOTS_LABEL === 'true'
+  const labeled = process.env['UPDATE_SCREENSHOTS_LABEL'] === 'true'
   const gate = computeScreenshotGate(changedFiles(base), labeled)
 
   // Regenerate when the change touches reference shots and they aren't already
