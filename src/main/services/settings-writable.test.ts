@@ -14,6 +14,7 @@ describe('settings-writable', () => {
     assert.equal(isRendererWritableSettingKey('safetyClassifierEnabled'), false)
     assert.equal(isRendererWritableSettingKey('safetyConfidenceThreshold'), false)
     assert.equal(isRendererWritableSettingKey('mcpAutoAllowReadOnly'), false)
+    assert.equal(isRendererWritableSettingKey('defaultReadonlyMode'), false)
   })
 
   it('allows benign UI keys', () => {
@@ -34,6 +35,7 @@ describe('settings-writable', () => {
       autoRunSandboxCommands: false,
       mcpAutoAllowReadOnly: true,
       cursorHooksEnabled: false,
+      defaultReadonlyMode: true,
       webAllowedOrigins: ['https://duckduckgo.com', 'http://localhost:*'],
       webAllowUserApproval: true,
     })
@@ -49,6 +51,7 @@ describe('settings-writable', () => {
       safetyModel: '',
       autoRunSandboxCommands: false,
       mcpAutoAllowReadOnly: true,
+      defaultReadonlyMode: false,
       webAllowedOrigins: ['https://duckduckgo.com'],
       webAllowUserApproval: true,
     })
@@ -115,6 +118,7 @@ describe('settings-writable', () => {
         autoRunSandboxCommands: true,
         mcpAutoAllowReadOnly: false,
         cursorHooksEnabled: false,
+        defaultReadonlyMode: false,
         webAllowedOrigins: ['https://example.com/path'],
         webAllowUserApproval: true,
       }),
