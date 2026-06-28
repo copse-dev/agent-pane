@@ -2,10 +2,12 @@ import { runGh } from './gh-service.ts'
 import { getGithubRepoSlug } from './git-service.ts'
 import { isGhAvailable } from './tool-availability.ts'
 import { detectLanguage } from './language.ts'
+import { deriveOverallState, rollupToCiChecks } from './github-ci-service.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
 import { parseGithubPrUrl } from '@shared/git/github-pr-url.ts'
 import {
   isMockGhEnabled,
+  mockGetGhPrChecksState,
   mockGetGhPrDetails,
   mockGetGhPrFileDiff,
   mockGhCliStatus,
@@ -15,6 +17,7 @@ import {
 import type {
   GhCliStatus,
   GhPrChangedFile,
+  GhPrChecksState,
   GhPrDetails,
   GhPrFileDiff,
   GhPrSummary,
@@ -44,6 +47,15 @@ interface GhPrViewJson {
   createdAt?: string
   updatedAt?: string
   repository?: { name?: string; owner?: { login?: string } }
+  statusCheckRollup?: Array<{
+    __typename?: string
+    name?: string
+    context?: string
+    status?: string
+    conclusion?: string
+    state?: string
+    detailsUrl?: string
+  }>
   files?: Array<{
     path?: string
     additions?: number
@@ -99,6 +111,12 @@ function toGhPrSummary(
   if (entry.author?.login) summary.authorLogin = entry.author.login
   if (entry.createdAt) summary.createdAt = entry.createdAt
   if (entry.updatedAt) summary.updatedAt = entry.updatedAt
+  // Only listings that request statusCheckRollup carry it; `gh search prs`
+  // (used for cross-repo "your PRs") omits it, leaving checks undefined so the
+  // renderer can fetch lazily on demand.
+  if (entry.statusCheckRollup) {
+    summary.checks = deriveOverallState(rollupToCiChecks(entry.statusCheckRollup))
+  }
   return summary
 }
 
@@ -355,6 +373,30 @@ export async function getGhPrFileDiff(
   }
 }
 
+/**
+ * Overall CI state for a single PR. Used to fill in checks for PRs whose
+ * listing query didn't include the rollup (chat-linked PRs in other repos and
+ * the lazily-loaded cross-repo "your PRs"), so each row can show a CI dot.
+ */
+export async function getGhPrChecksState(ref: {
+  owner: string
+  repo: string
+  number: number
+}): Promise<GhPrChecksState> {
+  if (isMockGhEnabled()) return mockGetGhPrChecksState(ref)
+  if (!isGhAvailable()) return 'no_checks'
+  const { stdout, code } = await runGh([
+    'pr',
+    'view',
+    ...prRefToArgs(ref),
+    '--json',
+    'statusCheckRollup',
+  ])
+  if (code !== 0) return 'no_checks'
+  const pr = safeJsonParse<GhPrViewJson>(stdout.trim())
+  return deriveOverallState(rollupToCiChecks(pr?.statusCheckRollup))
+}
+
 /** Resolve a PR URL against the workspace origin when possible. */
 export async function resolveGithubPrRef(
   url: string,
@@ -385,7 +427,7 @@ export async function listWorkspaceOpenPrs(limit = 20): Promise<GhPrSummary[]> {
     '--limit',
     String(limit),
     '--json',
-    'number,title,url,state,headRefName,author,createdAt,updatedAt',
+    'number,title,url,state,headRefName,author,createdAt,updatedAt,statusCheckRollup',
   ]
   const { stdout, stderr, code } = await runGh(args)
   if (code !== 0) throw new Error(formatGhError(stderr, code))

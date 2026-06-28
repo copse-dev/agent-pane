@@ -2,7 +2,7 @@ import type * as Monaco from 'monaco-editor'
 import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { GhCliStatus, GhPrDetails, GhPrSummary } from '@shared/types/git.ts'
+import type { GhCliStatus, GhPrChecksState, GhPrDetails, GhPrSummary } from '@shared/types/git.ts'
 import { getActiveThread } from '@shared/store/thread-helpers.ts'
 import { extractGithubPrUrls, githubPrKey } from '@shared/git/github-pr-url.ts'
 import { renderMarkdown } from '../markdown/renderer.ts'
@@ -125,6 +125,59 @@ export function mountPrPane(
   let diffLoadQueue: Promise<void> = Promise.resolve()
   let pendingOpen: PrRef | null = null
 
+  // Cross-repo "your PRs" are lazy: not queried until the section is expanded,
+  // so the default view costs only the workspace + chat-linked lookups.
+  let otherExpanded = false
+  let otherLoaded = false
+  let otherLoading = false
+
+  // Per-PR CI rollup. Workspace summaries arrive with `checks` already set;
+  // chat-linked / cross-repo rows are filled in lazily and cached by PR key.
+  // `ciGen` invalidates in-flight fetches across refreshes / workspace switches.
+  const checksCache = new Map<string, GhPrChecksState>()
+  const checksInFlight = new Set<string>()
+  let ciEls = new Map<string, HTMLElement>()
+  let ciGen = 0
+
+  const CI_LABEL: Record<GhPrChecksState | 'loading', string> = {
+    loading: 'Checking CI…',
+    pending: 'CI running',
+    success: 'CI passing',
+    failure: 'CI failing',
+    no_checks: 'No CI checks',
+  }
+
+  function knownChecks(pr: GhPrSummary): GhPrChecksState | undefined {
+    return pr.checks ?? checksCache.get(githubPrKey(pr))
+  }
+
+  function applyCiClass(node: HTMLElement, state: GhPrChecksState | 'loading') {
+    node.className = `pr-list-ci pr-list-ci-${state}`
+    node.title = CI_LABEL[state]
+  }
+
+  function ensureCheck(pr: GhPrSummary) {
+    const key = githubPrKey(pr)
+    if (knownChecks(pr) || checksInFlight.has(key)) return
+    if (!ghStatus?.authenticated) return
+    checksInFlight.add(key)
+    const gen = ciGen
+    void api.gh
+      .prChecks(pr.owner, pr.repo, pr.number)
+      .then((state) => {
+        checksCache.set(key, state ?? 'no_checks')
+      })
+      .catch(() => {
+        checksCache.set(key, 'no_checks')
+      })
+      .finally(() => {
+        checksInFlight.delete(key)
+        if (gen !== ciGen) return
+        const node = ciEls.get(key)
+        if (node) applyCiClass(node, checksCache.get(key) ?? 'no_checks')
+      })
+  }
+
   function ensureDiffEditor(): Monaco.editor.IStandaloneDiffEditor {
     if (!diffEditor) {
       const theme = store.getState().theme === 'dark' ? 'vs-dark' : 'vs'
@@ -156,6 +209,10 @@ export function mountPrPane(
       selectedPr?.owner === pr.owner &&
       selectedPr.repo === pr.repo &&
       selectedPr.number === pr.number
+    const ci = el('span', {})
+    const state = knownChecks(pr)
+    applyCiClass(ci, state ?? 'loading')
+    ciEls.set(githubPrKey(pr), ci)
     const row = el(
       'button',
       {
@@ -165,13 +222,16 @@ export function mountPrPane(
       },
       el('span', { class: 'pr-list-number' }, `#${pr.number}`),
       el('span', { class: 'git-change-path pr-list-title' }, pr.title),
+      ci,
     )
     row.addEventListener('click', () => void selectPr(pr))
+    if (!state) ensureCheck(pr)
     return row
   }
 
   function renderList() {
     clear(listBody)
+    ciEls = new Map()
 
     const linkedKeys = new Set(linkedRefs.map((ref) => githubPrKey(ref)))
     const workspaceKeys = new Set(workspacePrs.map((pr) => githubPrKey(pr)))
@@ -198,9 +258,6 @@ export function mountPrPane(
               : 'Install GitHub CLI (`gh`) to load diffs and your open PRs.'),
         ),
       )
-    } else if (prList.length === 0) {
-      listBody.append(el('div', { class: 'git-changes-empty' }, 'No open pull requests'))
-      return
     }
 
     if (linkedPrs.length > 0) {
@@ -219,22 +276,59 @@ export function mountPrPane(
         el(
           'div',
           { class: 'git-changes-section-title', title: `Open pull requests in ${slug}` },
-          `In ${slug} (${repoPrs.length})`,
+          `${slug} (${repoPrs.length})`,
         ),
       )
       for (const pr of repoPrs) section.append(renderPrRow(pr, 'workspace'))
       listBody.append(section)
     }
 
-    if (otherPrs.length > 0 && ghStatus?.authenticated) {
-      const title = repoPrs.length > 0 ? 'Your other open PRs' : 'Your open PRs'
+    // "Your (other) open PRs" — collapsed by default and queried only on expand,
+    // so we never spend a cross-repo search just to show a count.
+    if (ghStatus?.authenticated) {
+      const title =
+        repoPrs.length > 0 || linkedPrs.length > 0 ? 'Your other open PRs' : 'Your open PRs'
       const section = el('div', { class: 'git-changes-section' })
-      section.append(
-        el('div', { class: 'git-changes-section-title' }, `${title} (${otherPrs.length})`),
+      const header = el(
+        'button',
+        {
+          type: 'button',
+          class: 'git-changes-section-title pr-other-toggle',
+          'aria-expanded': String(otherExpanded),
+        },
+        el('span', { class: 'pr-other-chevron' }, otherExpanded ? '▾' : '▸'),
+        el('span', {}, title),
       )
-      for (const pr of otherPrs) section.append(renderPrRow(pr, 'mine'))
+      header.addEventListener('click', () => void toggleOther())
+      section.append(header)
+      if (otherExpanded) {
+        if (otherLoading) {
+          section.append(el('div', { class: 'git-changes-empty' }, 'Loading…'))
+        } else if (otherPrs.length > 0) {
+          for (const pr of otherPrs) section.append(renderPrRow(pr, 'mine'))
+        } else {
+          section.append(el('div', { class: 'git-changes-empty' }, 'No other open pull requests'))
+        }
+      }
       listBody.append(section)
     }
+  }
+
+  async function toggleOther() {
+    otherExpanded = !otherExpanded
+    if (otherExpanded && !otherLoaded && !otherLoading) {
+      otherLoading = true
+      renderList()
+      try {
+        myPrs = (await api.gh.listMyOpenPrs()) ?? []
+      } catch {
+        myPrs = []
+      }
+      otherLoaded = true
+      otherLoading = false
+      prList = mergePrLists(linkedRefs, [workspacePrs, myPrs])
+    }
+    renderList()
   }
 
   function renderMeta() {
@@ -421,11 +515,23 @@ export function mountPrPane(
     emptyState.textContent = 'Select a changed file'
   }
 
+  function resetOther() {
+    // A new listing context invalidates any in-flight CI fetches and the lazy
+    // cross-repo list, which belongs to the previous workspace.
+    ciGen++
+    otherExpanded = false
+    otherLoaded = false
+    otherLoading = false
+    myPrs = []
+    checksCache.clear()
+    checksInFlight.clear()
+  }
+
   async function refresh() {
     ghStatus = await api.gh.status()
     linkedRefs = collectLinkedPrs(store)
+    resetOther()
     if (!ghStatus.installed || !ghStatus.authenticated) {
-      myPrs = []
       workspacePrs = []
       prList = linkedRefs.map((ref) => ({
         ...ref,
@@ -437,16 +543,10 @@ export function mountPrPane(
       return
     }
 
-    // Workspace PRs (the current repo's open PRs, any author) take precedence
-    // over the cross-repo "your open PRs" list so the pane reflects the repo
-    // you're actually working in.
-    const [mine, repo] = await Promise.all([
-      api.gh.listMyOpenPrs().catch(() => [] as GhPrSummary[]),
-      api.gh.listWorkspaceOpenPrs().catch(() => [] as GhPrSummary[]),
-    ])
-    myPrs = mine ?? []
-    workspacePrs = repo
-    prList = mergePrLists(linkedRefs, [workspacePrs, myPrs])
+    // Only the workspace repo's open PRs (plus chat-linked ones) are fetched up
+    // front; the cross-repo "your PRs" list is loaded lazily when expanded.
+    workspacePrs = await api.gh.listWorkspaceOpenPrs().catch(() => [] as GhPrSummary[])
+    prList = mergePrLists(linkedRefs, [workspacePrs])
     renderList()
 
     const openTarget = pendingOpen
@@ -492,9 +592,11 @@ export function mountPrPane(
     store.on('workspace_changed', () => {
       selectedPr = null
       prDetails = null
-      // The repo-scoped list belongs to the previous workspace; drop it so the
-      // stale "in this repo" section can't flash before the refresh completes.
+      // Everything below belongs to the previous workspace; drop it so a stale
+      // repo section or CI dot can't flash before the refresh completes.
       workspacePrs = []
+      prList = []
+      resetOther()
       if (prsModeActive(store)) void refresh()
       else renderList()
     }),
