@@ -61,6 +61,7 @@ export interface ApiClient {
     clearHistory: (threadId: string) => Promise<void>
     suggestTitle: (text: string) => Promise<string | null>
     suggestTerminalTitle: (text: string) => Promise<string | null>
+    suggestCommandSummary: (commands: string[]) => Promise<string | null>
     suggestFollowUps: (contextJson: string) => Promise<FollowUpSuggestion[]>
     onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => () => void
     onApprovalRequest: (

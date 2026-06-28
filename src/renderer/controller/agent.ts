@@ -7,6 +7,7 @@ import {
   updateToolCall,
   findToolCall,
   setMessageContent,
+  setMessageCommandSummary,
   setThreadStatus,
   setThreadTitle,
   addUsageDelta,
@@ -18,6 +19,7 @@ import {
 } from '@shared/store/thread-helpers.ts'
 import { syncThreadGitBranchAfterShell } from './sync-thread-branch-after-shell.ts'
 import { shellCommandMayChangeBranch } from '@shared/git/sync-thread-branch.ts'
+import { shellCommandsFromToolCalls } from '@shared/tools/tool-display.ts'
 import {
   initSubagent,
   appendSubagentText,
@@ -53,12 +55,26 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
   // one so the final answer renders BELOW the tool cards rather than above them.
   const state = new Map<
     string,
-    { msgId: string | null; toolSinceText: boolean; writing: boolean }
+    {
+      msgId: string | null
+      toolSinceText: boolean
+      writing: boolean
+      // Which message we've already requested a command summary for, and at what
+      // shell-command count, so we re-summarize only when more commands arrive.
+      summaryMsgId: string | null
+      summaryCount: number
+    }
   >()
   const get = (tid: string) => {
     let st = state.get(tid)
     if (!st) {
-      st = { msgId: null, toolSinceText: false, writing: false }
+      st = {
+        msgId: null,
+        toolSinceText: false,
+        writing: false,
+        summaryMsgId: null,
+        summaryCount: 0,
+      }
       state.set(tid, st)
     }
     return st
@@ -128,6 +144,10 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
             }
             tryOpenFileFromResult(store, chunk.result)
           }
+          // Tools are now executing — the model is idle. Kick off a small-model
+          // rollup summary for this message's shell batch so the group header is
+          // ready by the time the commands finish.
+          maybeSummarizeCommands(store, api, threadId, st)
         }
         st.writing = false
         activity(threadId)
@@ -297,6 +317,45 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
   })
 
   return unsub
+}
+
+type AgentState = {
+  msgId: string | null
+  summaryMsgId: string | null
+  summaryCount: number
+}
+
+// Generate (or regenerate) a rolled-up label for the current message's batch of
+// shell commands using the small-tasks model. Fired while tools execute so the
+// summary lands during the model's idle window; guarded so each message is only
+// summarized once per distinct command count. Silently no-ops for <2 commands
+// (nothing to roll up) or when no small-tasks model is configured.
+function maybeSummarizeCommands(
+  store: AppStore,
+  api: ApiClient,
+  threadId: string,
+  st: AgentState,
+): void {
+  const msgId = st.msgId
+  if (!msgId) return
+  const msg = getThreadById(store, threadId)?.messages.find((m) => m.id === msgId)
+  if (!msg) return
+
+  const commands = shellCommandsFromToolCalls(msg.toolCalls)
+  if (commands.length < 2) return
+  if (st.summaryMsgId === msgId && st.summaryCount === commands.length) return
+  st.summaryMsgId = msgId
+  st.summaryCount = commands.length
+
+  void (async () => {
+    let summary: string | null
+    try {
+      summary = await api.agent.suggestCommandSummary(commands)
+    } catch {
+      summary = null
+    }
+    if (summary?.trim()) setMessageCommandSummary(store, msgId, summary.trim())
+  })()
 }
 
 // Threads we've already attempted to auto-name, to avoid repeat calls.

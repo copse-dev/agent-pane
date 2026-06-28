@@ -77,7 +77,11 @@ export {
   invalidateLmStudioModelsCache,
   testLmStudio,
 } from './provider-selection.ts'
-export { suggestThreadTitle, suggestTerminalTitle } from './title-generator.ts'
+export {
+  suggestThreadTitle,
+  suggestTerminalTitle,
+  suggestCommandSummary,
+} from './title-generator.ts'
 
 const abortMap = new Map<string, AbortController>()
 
