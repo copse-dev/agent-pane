@@ -14,10 +14,43 @@ describe('sanitizeRenderedMarkdown', () => {
 
   it('strips event-handler attributes and unknown tags', () => {
     const html = sanitizeRenderedMarkdown('<img src=x onerror=alert(1)><p onclick="evil()">x</p>')
+    // A non-artifact `<img>` (wrong/absent class) is dropped entirely, so the
+    // `onerror` payload can never reach `innerHTML`.
     assert.doesNotMatch(html, /<img/i)
     assert.doesNotMatch(html, /onerror/i)
     assert.doesNotMatch(html, /onclick/i)
     assert.match(html, /<p>x<\/p>/)
+  })
+
+  it('drops arbitrary LLM <img> even when it claims the artifact class', () => {
+    // An attacker who guesses the gate class still cannot smuggle a `src`
+    // (and therefore no `onerror`/scheme payload) past the sanitizer.
+    const html = sanitizeRenderedMarkdown(
+      '<img class="remote-artifact-image" src="x" onerror="alert(1)">' +
+        '<img class="evil" src="x" onerror="alert(1)">',
+    )
+    assert.doesNotMatch(html, /onerror/i)
+    assert.doesNotMatch(html, /src=/i)
+    // The wrong-class image is removed entirely.
+    assert.doesNotMatch(html, /class="evil"/i)
+  })
+
+  it('preserves a renderer-produced remote-artifact image with its data-* attributes', () => {
+    const html = sanitizeRenderedMarkdown(
+      '<img class="remote-artifact-image" ' +
+        'data-remote-artifact-path="artifacts/diagram.png" ' +
+        'data-remote-artifact-agent-id="bc-123" ' +
+        'alt="Remote agent artifact" loading="lazy">',
+    )
+    assert.match(html, /<img[^>]*class="remote-artifact-image"/i)
+    assert.match(html, /data-remote-artifact-path="artifacts\/diagram\.png"/)
+    assert.match(html, /data-remote-artifact-agent-id="bc-123"/)
+    assert.match(html, /alt="Remote agent artifact"/)
+    assert.match(html, /loading="lazy"/)
+    // No event handlers and no src survive sanitization (hydration sets src later).
+    assert.doesNotMatch(html, /onerror/i)
+    assert.doesNotMatch(html, /\bon\w+=/i)
+    assert.doesNotMatch(html, /src=/i)
   })
 
   it('drops javascript: hrefs while keeping the link text', () => {
