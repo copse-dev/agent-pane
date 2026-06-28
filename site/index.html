@@ -10,12 +10,12 @@
     />
     <meta
       name="description"
-      content="Copse is a desktop AI coding assistant with agent tools, Monaco editor, git integration, MCP, semantic search, and local or cloud models."
+      content="Copse is a desktop AI coding assistant with agent tools, Monaco editor, git integration, MCP, semantic search, browser automation, and local or cloud models from OpenRouter, Anthropic, OpenAI and more."
     />
     <meta property="og:title" content="Copse — AI coding assistant for your desktop" />
     <meta
       property="og:description"
-      content="Copse is a desktop AI coding assistant with agent tools, Monaco editor, git integration, MCP, semantic search, and local or cloud models."
+      content="Copse is a desktop AI coding assistant with agent tools, Monaco editor, git integration, MCP, semantic search, browser automation, and local or cloud models from OpenRouter, Anthropic, OpenAI and more."
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://copse.dev/" />
@@ -23,7 +23,7 @@
     <meta name="twitter:title" content="Copse — AI coding assistant for your desktop" />
     <meta
       name="twitter:description"
-      content="Copse is a desktop AI coding assistant with agent tools, Monaco editor, git integration, MCP, semantic search, and local or cloud models."
+      content="Copse is a desktop AI coding assistant with agent tools, Monaco editor, git integration, MCP, semantic search, browser automation, and local or cloud models from OpenRouter, Anthropic, OpenAI and more."
     />
     <script type="application/ld+json">
       {
@@ -31,8 +31,8 @@
         "@type": "SoftwareApplication",
         "name": "Copse",
         "applicationCategory": "DeveloperApplication",
-        "operatingSystem": "macOS",
-        "description": "Copse is a desktop AI coding assistant with agent tools, Monaco editor, git integration, MCP, semantic search, and local or cloud models.",
+        "operatingSystem": "macOS, Windows, Linux",
+        "description": "Copse is a desktop AI coding assistant with agent tools, Monaco editor, git integration, MCP, semantic search, browser automation, and local or cloud models from OpenRouter, Anthropic, OpenAI and more.",
         "url": "https://copse.dev/",
         "offers": {
           "@type": "Offer",
@@ -263,7 +263,8 @@
             </div>
             <h3>Local + cloud models</h3>
             <p>
-              LM Studio for on-device inference; Anthropic and OpenAI when you need cloud models
+              Claude, GPT, Gemini, Llama and more via OpenRouter; native Mistral, Gemini, DeepSeek
+              and Hugging Face; LM Studio or any OpenAI-compatible endpoint for local inference
             </p>
           </div>
 
@@ -375,6 +376,93 @@
             <p>
               Slash commands and <span class="inline-code">.cursor/skills/</span> for reusable agent
               workflows
+            </p>
+          </div>
+
+          <div class="feature">
+            <div class="feature-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect
+                  x="3"
+                  y="4"
+                  width="18"
+                  height="14"
+                  rx="2"
+                  stroke="url(#fg)"
+                  stroke-width="1.5"
+                />
+                <path d="M3 8h18" stroke="url(#fg)" stroke-width="1.5" />
+                <path
+                  d="m10 11 6 2.5-2.6 1 1.4 2.6-1.4.8-1.4-2.6-2 1.7z"
+                  stroke="url(#fg)"
+                  stroke-width="1.5"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </div>
+            <h3>Browser automation</h3>
+            <p>
+              Let the agent drive a real browser — navigate, snapshot, click, type, and screenshot —
+              off by default and origin-gated when you turn it on
+            </p>
+          </div>
+
+          <div class="feature">
+            <div class="feature-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M9 4.5a2 2 0 1 1 4 0V6h3a1 1 0 0 1 1 1v3h1.5a2 2 0 1 1 0 4H17v3a1 1 0 0 1-1 1h-3v-1.5a2 2 0 1 0-4 0V18H6a1 1 0 0 1-1-1v-3"
+                  stroke="url(#fg)"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </div>
+            <h3>Custom tools</h3>
+            <p>
+              Drop your own JavaScript tools into a folder to extend the agent — no MCP server
+              required, and every call still asks first
+            </p>
+          </div>
+
+          <div class="feature">
+            <div class="feature-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M3 12a9 9 0 0 1 15-6.7L21 8"
+                  stroke="url(#fg)"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M21 4v4h-4"
+                  stroke="url(#fg)"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M21 12a9 9 0 0 1-15 6.7L3 16"
+                  stroke="url(#fg)"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M3 20v-4h4"
+                  stroke="url(#fg)"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </div>
+            <h3>Cursor-compatible</h3>
+            <p>
+              Reuses your Cursor setup — skills, marketplace plugins, and permission hooks from
+              <span class="inline-code">.cursor/</span> work out of the box
             </p>
           </div>
         </section>
@@ -512,9 +600,10 @@
               <div class="showcase-copy">
                 <h3>Terminal &amp; browser panes</h3>
                 <p>
-                  The right panel switches between Explorer, Changes, Plan, Terminal, and Browser.
-                  Run shell commands beside the agent, or load a local dev server in the embedded
-                  browser.
+                  The right panel switches between Explorer, Changes, Terminal, Browser, and a
+                  GitHub PR view. Run shell commands beside the agent, Cmd/Ctrl-click file paths in
+                  terminal output to jump to them in the editor, or load a local dev server in the
+                  embedded browser.
                 </p>
               </div>
               <div class="showcase-image">
@@ -551,14 +640,14 @@
               <div class="showcase-copy">
                 <h3>Plan &amp; todos</h3>
                 <p>
-                  The agent maintains a todo list and optional plan tab so you can track multi-step
-                  work across long sessions without losing the thread.
+                  The agent keeps a to-do and plan list inline in the conversation so you can track
+                  multi-step work across long sessions without losing the thread.
                 </p>
               </div>
               <figure class="showcase-image">
                 <img
-                  src="screenshots/todo-plan-tab.png"
-                  alt="Plan tab showing agent todos and progress"
+                  src="screenshots/todo-inline-panel.png"
+                  alt="Agent to-do and plan list tracked inline in the conversation"
                   width="1280"
                   height="800"
                   loading="lazy"
@@ -590,8 +679,8 @@
                 <h3>Model routing</h3>
                 <p>
                   Route everyday tasks to a fast local model and reserve cloud models for harder
-                  work. The onboarding wizard walks through API keys, LM Studio, and routing in a
-                  few steps.
+                  work. The onboarding wizard walks through API keys, OpenRouter, LM Studio, and
+                  routing in a few steps.
                 </p>
               </div>
               <figure class="showcase-image">
@@ -645,8 +734,8 @@
                 <h4>Prerequisites</h4>
                 <p>
                   Node.js 22 or newer. For the packaged macOS app, you need macOS and Xcode
-                  command-line tools. Optional: LM Studio for local models; Anthropic or OpenAI API
-                  keys for cloud models.
+                  command-line tools. Optional: LM Studio for local models; an OpenRouter,
+                  Anthropic, or OpenAI API key for cloud models.
                 </p>
               </div>
             </div>
@@ -746,8 +835,9 @@
             <div class="why-item">
               <h4>Hybrid models</h4>
               <p>
-                Run everyday tasks on local hardware with LM Studio, then route complex work to
-                cloud models when you need them.
+                Run everyday tasks locally with LM Studio, reach Claude, GPT, Gemini and more
+                through OpenRouter or native provider keys, and route complex work to the cloud when
+                you need it.
               </p>
             </div>
           </div>
