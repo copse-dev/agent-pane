@@ -65,6 +65,7 @@ export async function suggestCommandSummary(commands: string[]): Promise<string 
   if (!Array.isArray(commands) || commands.length < 2) return null
   const provider = await resolveSmallTasksProvider()
   if (!provider) return null
+  const model = resolveSmallTasksModelId()
 
   const list = commands
     .slice(0, 12)
@@ -78,7 +79,9 @@ export async function suggestCommandSummary(commands: string[]): Promise<string 
     'Commands:\n' +
     list
   try {
-    return cleanPhrase(await completeText(provider, prompt))
+    const { text, usage } = await completeTextWithUsage(provider, prompt, 20_000)
+    await recordSmallTasksUsage(model, usage)
+    return cleanPhrase(text)
   } catch {
     return null
   }
