@@ -3,11 +3,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": [
-      "ES2022",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "outDir": "dist-types/web",
     "rootDir": ".",
     "strict": true,
@@ -19,9 +15,7 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "paths": {
-      "@shared/*": [
-        "./src/shared/*"
-      ]
+      "@shared/*": ["./src/shared/*"]
     },
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
@@ -34,9 +28,5 @@
     "noUncheckedSideEffectImports": true,
     "erasableSyntaxOnly": true
   },
-  "include": [
-    "src/renderer/**/*",
-    "src/shared/**/*",
-    "tests/setup-dom.ts"
-  ]
+  "include": ["src/renderer/**/*", "src/shared/**/*", "tests/setup-dom.ts"]
 }
