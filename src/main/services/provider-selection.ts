@@ -89,6 +89,29 @@ export async function buildSubagentRoute(parentModel: string): Promise<SubagentR
   }
 }
 
+/**
+ * Route for the post-turn review subagent. Returns a distinct route ONLY when
+ * the user has explicitly configured a `reviewModel`; otherwise returns null so
+ * the caller reuses the parent chat model (reviewing a diff is judgment work, so
+ * the capable chat model is the sensible default rather than a weak local one).
+ */
+export async function buildReviewRoute(): Promise<SubagentRoute | null> {
+  const configured = getSettingTrimmed('reviewModel', '')
+  if (!configured) return null
+
+  const url = getSetting<string>('localServerUrl', DEFAULT_LM_STUDIO_URL)
+  const modelId = await resolveLocalModelId('reviewModel', url)
+  if (!modelId) return null
+
+  const contextWindow = await resolveContextWindow(`lmstudio:${modelId}`)
+  return {
+    provider: createLocalOpenAIProvider(url, modelId, getLmStudioApiKey()),
+    usageModel: `lmstudio:${modelId}`,
+    contextWindow,
+    toolSchemaReserve: 2_500,
+  }
+}
+
 // Builds the provider for the main agent loop. LM Studio models are encoded as
 // `lmstudio:<modelId>`; the legacy `lm-studio` value resolves to the configured
 // model or the first one the server has loaded (never the bogus "local-model").

@@ -13,6 +13,7 @@ import {
   recordContextTrim,
   updateContextSnapshot,
   setThreadTodos,
+  setThreadReview,
   getThreadById,
 } from '@shared/store/thread-helpers.ts'
 import { syncThreadGitBranchAfterShell } from './sync-thread-branch-after-shell.ts'
@@ -219,6 +220,11 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
       case 'todo_worker_start':
       case 'todo_worker_done': {
         activity(threadId)
+        break
+      }
+      case 'post_turn_review': {
+        setThreadReview(store, threadId, { status: chunk.status, summary: chunk.summary })
+        if (chunk.status === 'running') store.emit('agent_activity', threadId, 'Reviewing changes…')
         break
       }
       case 'done': {
