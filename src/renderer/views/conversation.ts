@@ -342,7 +342,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const statsBtn = (e.target as HTMLElement | null)?.closest(
       '.tool-edit-stats',
     ) as HTMLElement | null
-    const path = statsBtn?.dataset.editPath
+    const path = statsBtn?.dataset['editPath']
     if (!path) return
     e.preventDefault()
     e.stopPropagation()
