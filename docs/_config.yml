@@ -1,0 +1,19 @@
+# GitHub Pages (Jekyll) configuration for the published copse.dev site.
+#
+# The copse.dev marketing site is served from this docs/ folder. The engineering
+# notes below also live here for proximity to the code (and are linked from
+# README.md, AGENTS.md, and source comments), but they are internal design docs
+# and should NOT be published on copse.dev. Exclude them from the Pages build so
+# only the marketing site (index.html, privacy.html, styles.css, screenshots/)
+# ships. Files stay in the repo; only the published output is trimmed.
+exclude:
+  - ci-runner-security.md
+  - computer-use-tools.md
+  - cursor-hooks.md
+  - cursor-plugins.md
+  - custom-tools.md
+  - e2e-component-migration.md
+  - supply-chain-security.md
+  - testing-strategy.md
+  - ui-taste.md
+  - plans/
