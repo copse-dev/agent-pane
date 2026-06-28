@@ -79,11 +79,11 @@ const MOCK_FILE_DIFFS: Record<string, GhPrFileDiff> = {
 }
 
 export function isMockGhEnabled(): boolean {
-  return process.env.COPSE_PANEL_MOCK_GH === '1'
+  return process.env['COPSE_PANEL_MOCK_GH'] === '1'
 }
 
 export function mockGhCliStatus(): GhCliStatus {
-  if (process.env.COPSE_PANEL_MOCK_GH_STATUS === 'unavailable') {
+  if (process.env['COPSE_PANEL_MOCK_GH_STATUS'] === 'unavailable') {
     return {
       installed: false,
       authenticated: false,
@@ -91,7 +91,7 @@ export function mockGhCliStatus(): GhCliStatus {
       message: 'GitHub CLI (gh) is not installed or not on PATH.',
     }
   }
-  if (process.env.COPSE_PANEL_MOCK_GH_STATUS === 'unauthenticated') {
+  if (process.env['COPSE_PANEL_MOCK_GH_STATUS'] === 'unauthenticated') {
     return {
       installed: true,
       authenticated: false,

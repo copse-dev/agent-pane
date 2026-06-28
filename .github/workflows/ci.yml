@@ -429,6 +429,11 @@ jobs:
         run: |
           npm install --no-save --no-audit --no-fund --ignore-scripts \
             --prefix /tmp/ssfilter pixelmatch pngjs
+          # `node_modules` is committed as a symlink, so a bare `mkdir -p` errors
+          # with "File exists". Drop it first so the copied deps resolve from a
+          # real directory. (This job only commits screenshots, so removing the
+          # symlink has no other effect.)
+          rm -rf node_modules
           mkdir -p node_modules
           cp -r /tmp/ssfilter/node_modules/. node_modules/
           node scripts/filter-screenshots.mts

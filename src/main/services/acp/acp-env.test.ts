@@ -16,21 +16,21 @@ describe('buildAcpAgentEnv', () => {
   })
 
   it('strips LLM API keys from the spawned env but keeps non-LLM tool tokens', () => {
-    process.env.ANTHROPIC_API_KEY = 'sk-ant-secret'
-    process.env.OPENAI_API_KEY = 'sk-openai-secret'
-    process.env.OPENROUTER_API_KEY = 'sk-or-secret'
-    process.env.GITHUB_TOKEN = 'gh-token'
+    process.env['ANTHROPIC_API_KEY'] = 'sk-ant-secret'
+    process.env['OPENAI_API_KEY'] = 'sk-openai-secret'
+    process.env['OPENROUTER_API_KEY'] = 'sk-or-secret'
+    process.env['GITHUB_TOKEN'] = 'gh-token'
 
     const env = buildAcpAgentEnv({ command: 'agent', cwd: '/tmp/project' })
 
-    assert.equal(env.ANTHROPIC_API_KEY, undefined)
-    assert.equal(env.OPENAI_API_KEY, undefined)
-    assert.equal(env.OPENROUTER_API_KEY, undefined)
-    assert.equal(env.GITHUB_TOKEN, 'gh-token')
+    assert.equal(env['ANTHROPIC_API_KEY'], undefined)
+    assert.equal(env['OPENAI_API_KEY'], undefined)
+    assert.equal(env['OPENROUTER_API_KEY'], undefined)
+    assert.equal(env['GITHUB_TOKEN'], 'gh-token')
   })
 
   it('overlays config.env on top of the scrubbed base', () => {
-    process.env.ANTHROPIC_API_KEY = 'sk-ant-secret'
+    process.env['ANTHROPIC_API_KEY'] = 'sk-ant-secret'
 
     const env = buildAcpAgentEnv({
       command: 'agent',
@@ -40,9 +40,9 @@ describe('buildAcpAgentEnv', () => {
 
     // A secret the agent is explicitly meant to receive is honored when passed
     // through config.env, even though it would otherwise be scrubbed.
-    assert.equal(env.GEMINI_API_KEY, 'explicitly-allowed')
-    assert.equal(env.AGENT_FLAG, '1')
+    assert.equal(env['GEMINI_API_KEY'], 'explicitly-allowed')
+    assert.equal(env['AGENT_FLAG'], '1')
     // But the ambient process.env secret is still not leaked.
-    assert.equal(env.ANTHROPIC_API_KEY, undefined)
+    assert.equal(env['ANTHROPIC_API_KEY'], undefined)
   })
 })

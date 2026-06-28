@@ -37,12 +37,16 @@ export class AgentRunDeadline {
   private lastActivityAt: number
   private pauseStartedAt: number | null = null
   private accumulatedPauseMs = 0
+  private readonly idleTimeoutMs: number
+  private readonly hardMaxMs: number
 
   constructor(
-    private readonly idleTimeoutMs = AGENT_RUN_IDLE_TIMEOUT_MS,
-    private readonly hardMaxMs = AGENT_RUN_HARD_MAX_MS,
+    idleTimeoutMs = AGENT_RUN_IDLE_TIMEOUT_MS,
+    hardMaxMs = AGENT_RUN_HARD_MAX_MS,
     now = Date.now(),
   ) {
+    this.idleTimeoutMs = idleTimeoutMs
+    this.hardMaxMs = hardMaxMs
     this.runStartedAt = now
     this.lastActivityAt = now
   }
