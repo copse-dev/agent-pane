@@ -128,7 +128,7 @@ export function shellCommandLabel(command: string): string {
 
 function shellCommandArg(args: unknown): string | null {
   if (!args || typeof args !== 'object') return null
-  const command = (args as Record<string, unknown>).command
+  const command = (args as Record<string, unknown>)['command']
   return typeof command === 'string' && command.trim() ? command : null
 }
 
