@@ -89,13 +89,60 @@ Copse would otherwise ask about.
 - **Fail open.** A missing config, crash, timeout (5s), or unparseable response is
   treated as `allow`, so a broken hook never silently wedges the agent.
 - **No LLM secrets.** Hook processes inherit `envForRendererChildProcess()` — the same
-  scrubbed environment as `run_shell`, so provider API keys never reach hook scripts.
+  scrubbed environment as `run_shell`, so provider _LLM_ API keys never reach hook
+  scripts. Note this is **not** an empty environment: non-LLM tool tokens that the agent
+  uses (for example `GITHUB_TOKEN`) are still present — see the Security section below.
 - **Output is capped** at 1 MB to bound a runaway hook.
 
 | Source                        | Trust                                                         |
 | ----------------------------- | ------------------------------------------------------------- |
 | `~/.cursor/hooks.json` (user) | Trusted — the user authored it                                |
 | `<root>/.cursor/hooks.json`   | Requires workspace trust (#100); skipped for untrusted clones |
+
+## Security
+
+Enabling Cursor hooks hands real, local execution authority to whoever authored the
+`hooks.json`. Read this before turning the feature on.
+
+**Enabling `cursorHooksEnabled` and trusting a workspace grants that repo's
+`.cursor/hooks.json` arbitrary local code execution on every gated tool call.** Each
+matching hook `command` is spawned through a shell (`shell: true`) on the agent's hot
+path, with the directory of the `hooks.json` as its working directory. A trusted repo's
+hooks run with the same authority as any other process you launch — they are **not**
+confined to the agent's project sandbox.
+
+Concretely, "trusting a workspace" with hooks enabled also means:
+
+- **Arbitrary code on every tool call.** Any tool call that maps to a hook event
+  (`beforeShellExecution`, `beforeMCPExecution`, `beforeReadFile`) spawns the repo's
+  hook command first. A cloned or third-party repo can ship a `hooks.json` that runs
+  whatever it likes, repeatedly, for the lifetime of the session.
+- **Runs outside the sandbox.** Hook commands are ordinary child processes; they are not
+  subject to the project sandbox that constrains agent shell/file tools. They can read
+  and write anywhere your user account can.
+- **Tool tokens are in the environment.** Hook processes inherit the scrubbed
+  `envForRendererChildProcess()` environment. That strips _LLM provider_ keys, but
+  **non-LLM tool tokens used by the agent (e.g. `GITHUB_TOKEN`) remain in `env`** and are
+  therefore readable by a hook script.
+- **Fail open — can tighten, never relied on to block.** Hooks fail open by design
+  (timeout, crash, non-JSON, or oversized output → treated as `allow`). A hook can
+  _tighten_ Copse's permission gate (a `deny` blocks a call), but it can never be relied
+  upon to block: do not treat a `deny`-returning hook as a security control, because any
+  failure path silently degrades to `allow`.
+
+**Mitigations and guidance:**
+
+- The feature is **off by default**. Leave it off unless you specifically need it.
+- Only enable it for workspaces you would already trust to run arbitrary code on your
+  machine — the same bar as running the repo's build scripts or `npm install`.
+- Project hooks are only honoured when the workspace is trusted (#100); untrusted clones
+  are skipped entirely. Trust is the gate — granting it is the consent.
+- When a **project-supplied** hook command runs for the first time in a session, Copse
+  logs a one-time warning naming the command, so it is auditable in the logs.
+
+This is the same trust boundary described in
+[`docs/supply-chain-security.md`](./supply-chain-security.md): trusting a workspace means
+trusting the code it can cause to run.
 
 ## Gaps and future work
 

@@ -31,7 +31,28 @@ if (process.env.SKIP_ELECTRON_REBUILD === '1') {
   process.exit(0)
 }
 
-const result = spawnSync('npx', ['electron-rebuild', '-f', '-w', 'node-pty'], {
+// Invoke the LOCAL electron-rebuild binary (pinned devDependency) instead of
+// `npx electron-rebuild`. `npx` would implicitly fetch-and-execute an unpinned
+// version from the network if it were ever missing locally; resolving the
+// already-installed bin avoids any implicit network fetch and arbitrary
+// lifecycle-script execution (supply-chain hardening, finding L5).
+const rebuildBin = join(
+  process.cwd(),
+  'node_modules',
+  '.bin',
+  process.platform === 'win32' ? 'electron-rebuild.cmd' : 'electron-rebuild',
+)
+
+if (!existsSync(rebuildBin)) {
+  console.error(
+    `[postinstall] electron-rebuild not found at ${rebuildBin}. ` +
+      'It is a pinned devDependency — run a full `npm install` first, ' +
+      'or set SKIP_ELECTRON_REBUILD=1 to skip the native rebuild.',
+  )
+  process.exit(1)
+}
+
+const result = spawnSync(rebuildBin, ['-f', '-w', 'node-pty'], {
   stdio: 'inherit',
   shell: process.platform === 'win32',
 })

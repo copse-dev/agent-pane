@@ -27,6 +27,12 @@ import {
   shouldShowOnboarding,
 } from './views/onboarding-dialog.ts'
 import { mountApprovalDialog } from './views/approval-dialog.ts'
+import {
+  mountFileSearchDialog,
+  openFileSearchDialog,
+  closeFileSearchDialog,
+  isFileSearchDialogOpen,
+} from './views/file-search-dialog.ts'
 import { startAgentController } from './controller/agent.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
 import {
@@ -38,6 +44,7 @@ import {
   openRightPanelWithWorkspace,
   toggleFilesPaneWithWorkspace,
   syncFilesPaneDom,
+  openCanvasArtefact,
 } from './controller/panels.ts'
 import { loadMonaco } from './monaco/setup.ts'
 import { mountPaneResizers, parseSavedLayout } from './views/pane-resizer.ts'
@@ -67,6 +74,7 @@ async function boot() {
   mountSettingsDialog(store, api)
   mountOnboardingDialog(store, api)
   mountApprovalDialog(api)
+  mountFileSearchDialog(store, api)
 
   // Load persisted user preferences before the main layout mounts.
   const savedModel = (await api.settings.get('model')) as string | null
@@ -116,6 +124,13 @@ async function boot() {
   api.menu.onShowBrowser(() => {
     ensureLayout()
     openRightPanelWithWorkspace(store, api, 'browser')
+  })
+
+  // MCP-UI canvas: an artefact from a (bundled or external) MCP server opens in
+  // the Browser pane, rendered fully sandboxed.
+  api.canvas.onArtefact((artefact) => {
+    ensureLayout()
+    openCanvasArtefact(store, artefact)
   })
 
   // File ▸ Open Folder… registers the chosen folder as a project and switches.
@@ -214,6 +229,11 @@ function registerKeyboardShortcuts() {
       e.preventDefault()
       openNewThread(store)
     }
+    // Cmd/Ctrl+P opens the file quick-open palette (needs a workspace to search).
+    if (meta && e.key === 'p') {
+      e.preventDefault()
+      if (store.getState().workspaceRoot) openFileSearchDialog()
+    }
     // Cmd/Ctrl+O is handled by the native File ▸ Open Folder… menu accelerator.
     if (meta && e.key === ',') {
       e.preventDefault()
@@ -224,6 +244,10 @@ function registerKeyboardShortcuts() {
       confirmDeleteThread()
     }
     if (e.key === 'Escape') {
+      if (isFileSearchDialogOpen()) {
+        closeFileSearchDialog()
+        return
+      }
       if (isSettingsDialogOpen()) {
         closeSettingsDialog()
         return
