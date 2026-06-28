@@ -6,6 +6,9 @@ import {
   validateOpenAiApiKey,
   validateOpenRouterApiKey,
 } from './validate-api-key.ts'
+import { BUILTIN_EXTRA_PROVIDERS } from '@shared/llm/extra-providers.ts'
+
+const PRESET = (slug: string) => BUILTIN_EXTRA_PROVIDERS.find((p) => p.id === slug)!
 
 describe('validateAnthropicApiKey', () => {
   it('rejects empty keys', async () => {
@@ -50,20 +53,20 @@ describe('validateOpenRouterApiKey', () => {
 
 describe('validateExtraProviderApiKey', () => {
   it('rejects empty keys', async () => {
-    const result = await validateExtraProviderApiKey('mistral', '   ')
+    const result = await validateExtraProviderApiKey(PRESET('mistral'), '   ')
     assert.equal(result.ok, false)
     assert.equal(result.formatOk, undefined)
   })
 
   it('rejects a Gemini key with the wrong prefix without a network call', async () => {
-    const result = await validateExtraProviderApiKey('gemini', 'not-a-google-key')
+    const result = await validateExtraProviderApiKey(PRESET('gemini'), 'not-a-google-key')
     assert.equal(result.ok, false)
     assert.equal(result.formatOk, false)
     assert.match(result.error ?? '', /AIza/)
   })
 
   it('rejects a DeepSeek key with the wrong prefix without a network call', async () => {
-    const result = await validateExtraProviderApiKey('deepseek', 'dk-1234')
+    const result = await validateExtraProviderApiKey(PRESET('deepseek'), 'dk-1234')
     assert.equal(result.ok, false)
     assert.equal(result.formatOk, false)
   })
@@ -73,7 +76,7 @@ describe('validateExtraProviderApiKey', () => {
     globalThis.fetch = (async () =>
       ({ ok: true, status: 200, statusText: 'OK' }) as Response) as typeof fetch
     try {
-      const result = await validateExtraProviderApiKey('mistral', 'any-shaped-key')
+      const result = await validateExtraProviderApiKey(PRESET('mistral'), 'any-shaped-key')
       assert.equal(result.ok, true)
       assert.equal(result.formatOk, true)
     } finally {

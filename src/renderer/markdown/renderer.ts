@@ -70,9 +70,16 @@ export function renderMarkdown(raw: string): string {
     t = applyOutsideInlineHtml(t, /\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
     t = applyOutsideInlineHtml(t, /_([^_\n]+)_/g, '<em>$1</em>')
     t = applyOutsideInlineHtml(t, /(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
+    // ATX headings: # → h1 through ###### → h6
+    t = t.replace(/^###### (.+)$/gm, '<h6>$1</h6>')
+    t = t.replace(/^##### (.+)$/gm, '<h5>$1</h5>')
+    t = t.replace(/^#### (.+)$/gm, '<h4>$1</h4>')
     t = t.replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    t = t.replace(/^## (.+)$/gm, '<h4>$1</h4>')
-    t = t.replace(/^# (.+)$/gm, '<h4>$1</h4>')
+    t = t.replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    t = t.replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    // Setext headings (=== → h3, --- → h4)
+    t = t.replace(/^(.+)\n={3,}$/gm, '<h3>$1</h3>')
+    t = t.replace(/^(.+)\n-{3,}$/gm, '<h4>$1</h4>')
     t = t.replace(/^(?:[-*+] )(.+)$/gm, '<li>$1</li>')
     t = wrapLooseListItems(t)
     return t
@@ -266,9 +273,9 @@ function renderBareHttpLinks(text: string): string {
     .join('')
 }
 
-const BLOCK_START_RE = /^<(pre|ul|ol|h[34]|table|hr|img|div class="mermaid-diagram\b)/
-const BLOCK_CLOSE_RE = /<\/(pre|ul|ol|h[34]|table|hr|div)>$/
-const CONTAINS_BLOCK_RE = /<(ul|ol|h[34]|pre|table|hr|img|div class="mermaid-diagram\b)[\s>]/
+const BLOCK_START_RE = /^<(pre|ul|ol|h[1-6]|table|hr|img|div class="mermaid-diagram\b)/
+const BLOCK_CLOSE_RE = /<\/(pre|ul|ol|h[1-6]|table|hr|div)>$/
+const CONTAINS_BLOCK_RE = /<(ul|ol|h[1-6]|pre|table|hr|img|div class="mermaid-diagram\b)[\s>]/
 const ORDERED_ITEM_RE = /^(\d+)\. (.+)$/
 
 function isOrderedItemLine(line: string): boolean {

@@ -9,6 +9,8 @@ export interface OpenFile {
   path: string
   content: string
   language: string
+  /** When set, the viewer scrolls to and positions the caret at this location. */
+  reveal?: { line: number; column?: number }
 }
 
 export interface ActiveDiff {

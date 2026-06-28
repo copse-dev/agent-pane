@@ -141,6 +141,16 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.off('mcp:status_changed', listener)
     },
   },
+  canvas: {
+    onArtefact: (handler: (artefact: import('@shared/types/canvas.ts').CanvasArtefact) => void) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        artefact: import('@shared/types/canvas.ts').CanvasArtefact,
+      ) => handler(artefact)
+      ipcRenderer.on('canvas:artefact', listener)
+      return () => ipcRenderer.off('canvas:artefact', listener)
+    },
+  },
   storage: {
     get: (key: string) => ipcRenderer.invoke('storage:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('storage:set', key, value),
@@ -218,6 +228,14 @@ contextBridge.exposeInMainWorld('api', {
     availableProviders: () => ipcRenderer.invoke('settings:availableProviders'),
     validateKey: (provider: string, key: string) =>
       ipcRenderer.invoke('settings:validateKey', provider, key),
+    extraProviders: () => ipcRenderer.invoke('settings:extraProviders'),
+    saveExtraProvider: (record: unknown) =>
+      ipcRenderer.invoke('settings:saveExtraProvider', record),
+    deleteExtraProvider: (slug: string) => ipcRenderer.invoke('settings:deleteExtraProvider', slug),
+    fetchProviderModels: (baseUrl: string, apiKey?: string) =>
+      ipcRenderer.invoke('settings:fetchProviderModels', baseUrl, apiKey),
+    refreshHuggingFaceModels: (apiKey?: string) =>
+      ipcRenderer.invoke('settings:refreshHuggingFaceModels', apiKey),
   },
   appIcon: {
     apply: () => ipcRenderer.invoke('app-icon:apply'),

@@ -10,13 +10,14 @@ import {
 } from './file-links.ts'
 
 function apiWithFileReferences(
-  resolutions: { candidate: string; path: string }[],
+  resolutions: { candidate: string; path: string; kind?: 'file' | 'directory' }[],
   fileContent = 'file contents',
 ): ApiClient {
   return {
     index: {
       query: async () => [],
-      resolveFileReferences: async () => resolutions,
+      resolveFileReferences: async () =>
+        resolutions.map((r) => ({ ...r, kind: r.kind ?? ('file' as const) })),
     },
     fs: {
       readFile: async () => fileContent,

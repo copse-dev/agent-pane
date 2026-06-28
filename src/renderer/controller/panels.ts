@@ -1,6 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
+import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import { addProject } from './projects.ts'
 
 /** Keep `#pane-files` visibility in sync with store state (also wired via `files_pane_changed`). */
@@ -44,6 +45,12 @@ export function openPullRequest(
 ): void {
   openRightPanel(store, 'prs')
   store.emit('pr_open_requested', ref.owner, ref.repo, ref.number)
+}
+
+/** Surface an MCP-UI artefact in the canvas (Browser pane). */
+export function openCanvasArtefact(store: AppStore, artefact: CanvasArtefact): void {
+  openRightPanel(store, 'browser')
+  store.emit('canvas_artefact_requested', artefact)
 }
 
 export function toggleRightPanel(store: AppStore, mode: RightPanelMode): void {
