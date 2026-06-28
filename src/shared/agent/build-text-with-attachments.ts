@@ -105,7 +105,9 @@ export function buildTextWithAttachments(
 ): string {
   const cap = options.maxCharsPerAttachment ?? ATTACHMENT_MAX_CHARS
   const blocks = [
-    ...files.map((f) => `\`\`\`\n// ${f.path}\n${truncateAttachmentContent(f.content, cap)}\n\`\`\``),
+    ...files.map(
+      (f) => `\`\`\`\n// ${f.path}\n${truncateAttachmentContent(f.content, cap)}\n\`\`\``,
+    ),
     ...textBlocks.map(
       (b) => `\`\`\`\n// ${b.label}\n${truncateAttachmentContent(b.content, cap)}\n\`\`\``,
     ),
