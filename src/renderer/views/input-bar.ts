@@ -696,12 +696,13 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   refreshSkillsCache()
   // Skills are workspace-scoped; drop the stale list when the workspace changes
   // so inline /skill detection and validation use the new workspace's skills.
-  const unsubWorkspace = store.on('workspace_changed', () => {
+  const onSkillsChanged = (): void => {
     skillsCache = null
     refreshSkillsCache()
-    // Skills, tools, and instructions are workspace-scoped — re-estimate.
     scheduleContextEstimate(0)
-  })
+  }
+  const unsubWorkspace = store.on('workspace_changed', onSkillsChanged)
+  window.addEventListener('copse:skills-changed', onSkillsChanged)
 
   const skillPicker = initSkillPicker({
     textarea,
@@ -774,6 +775,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     }
     unsubs.forEach((u) => u())
     unsubWorkspace()
+    window.removeEventListener('copse:skills-changed', onSkillsChanged)
     document.removeEventListener('paste', onPaste)
     observer.disconnect()
     followUps.destroy()
