@@ -181,9 +181,7 @@ export function assertWorkspaceWriteTarget(absPath: string): void {
     if (info.isSymbolicLink()) {
       const target = resolve(dirname(current), readlinkSync(current))
       if (!isPathInsideRoot(resolveThroughExistingPrefix(target), absRoot)) {
-        throw new Error(
-          `Refusing to write through a symlink that escapes the workspace: ${rel}`,
-        )
+        throw new Error(`Refusing to write through a symlink that escapes the workspace: ${rel}`)
       }
     }
   }
