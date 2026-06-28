@@ -24,6 +24,7 @@ function* yieldAssembledToolCalls(
 
 export class OpenAIProvider implements LLMProvider {
   private client: OpenAI
+  private readonly model: string
   lastUsage: { inputTokens: number; outputTokens: number } | null = null
 
   // `baseURL` lets this provider talk to any OpenAI-compatible server (e.g.
@@ -32,7 +33,7 @@ export class OpenAIProvider implements LLMProvider {
   // request body — used to pass provider-specific fields (e.g. OpenRouter's
   // `provider: { require_parameters: true }`) that aren't in the OpenAI schema.
   constructor(
-    private readonly model: string,
+    model: string,
     opts: {
       baseURL?: string
       apiKey?: string
@@ -40,10 +41,11 @@ export class OpenAIProvider implements LLMProvider {
       extraBody?: Record<string, unknown>
     } = {},
   ) {
+    this.model = model
     this.includeUsage = opts.includeUsage ?? !opts.baseURL
     this.extraBody = opts.extraBody
     this.client = new OpenAI({
-      apiKey: opts.apiKey ?? process.env.OPENAI_API_KEY ?? 'not-needed',
+      apiKey: opts.apiKey ?? process.env['OPENAI_API_KEY'] ?? 'not-needed',
       ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
     })
   }

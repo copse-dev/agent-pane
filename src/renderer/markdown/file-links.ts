@@ -56,10 +56,10 @@ function replaceTextNodeReferences(
     const link = document.createElement('a')
     link.href = '#'
     link.className = 'file-reference-link'
-    link.dataset.fileReferencePath = path
-    link.dataset.fileReferenceKind = kind
-    if (match.line != null) link.dataset.fileReferenceLine = String(match.line)
-    if (match.column != null) link.dataset.fileReferenceColumn = String(match.column)
+    link.dataset['fileReferencePath'] = path
+    link.dataset['fileReferenceKind'] = kind
+    if (match.line != null) link.dataset['fileReferenceLine'] = String(match.line)
+    if (match.column != null) link.dataset['fileReferenceColumn'] = String(match.column)
     link.title = match.line != null ? `${path}:${match.line}` : path
     link.textContent = match.text
     fragment.append(link)
@@ -100,11 +100,11 @@ export function bindFileReferenceClicks(
     event.preventDefault()
     event.stopPropagation()
 
-    const path = link.dataset.fileReferencePath
+    const path = link.dataset['fileReferencePath']
     if (!path) return
-    const kind = link.dataset.fileReferenceKind === 'directory' ? 'directory' : 'file'
-    const line = link.dataset.fileReferenceLine
-    const column = link.dataset.fileReferenceColumn
+    const kind = link.dataset['fileReferenceKind'] === 'directory' ? 'directory' : 'file'
+    const line = link.dataset['fileReferenceLine']
+    const column = link.dataset['fileReferenceColumn']
     const reveal = line
       ? { line: Number(line), ...(column ? { column: Number(column) } : {}) }
       : undefined
