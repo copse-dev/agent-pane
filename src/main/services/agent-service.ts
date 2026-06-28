@@ -122,6 +122,7 @@ export async function runAgent(
         threadId,
         provider: remoteProvider,
         userPrompt,
+        priorMessages,
         signal: controller.signal,
         onChunk: sendChunk,
       })
