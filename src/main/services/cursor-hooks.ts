@@ -118,6 +118,32 @@ export interface CursorHookDecision {
   agentMessage?: string
 }
 
+/**
+ * Project (repo-supplied) hook commands already logged this session, so we warn at most
+ * once per distinct command rather than on every gated tool call.
+ */
+const warnedProjectHookCommands = new Set<string>()
+
+/**
+ * Emit a one-time audit warning the first time a project-supplied hook command runs.
+ *
+ * Honouring a project hook means executing arbitrary shell from a possibly-cloned repo,
+ * outside the sandbox, with non-LLM tool tokens in `env` (see "Security" in
+ * `docs/cursor-hooks.md`). Trust is the consent for that; this log just makes it
+ * auditable. Best-effort and side-effect-free w.r.t. the decision — it must never affect
+ * the fail-open semantics or the agent loop.
+ */
+function auditProjectHook(hook: DiscoveredHook): void {
+  if (hook.scope !== 'project') return
+  if (warnedProjectHookCommands.has(hook.command)) return
+  warnedProjectHookCommands.add(hook.command)
+  console.warn(
+    `[cursor-hooks] executing project (repo-supplied) hook for "${hook.event}": ${hook.command} ` +
+      `(from ${hook.source}). Project hooks run outside the sandbox with tool tokens in env; ` +
+      `see docs/cursor-hooks.md#security.`,
+  )
+}
+
 /** Spawn one hook, feed it the JSON payload on stdin, and parse its stdout JSON. */
 function runHookCommand(
   hook: DiscoveredHook,
@@ -133,6 +159,11 @@ function runHookCommand(
       resolve(value)
     }
 
+    auditProjectHook(hook)
+
+    // Project hooks are arbitrary repo-supplied shell, run outside the project sandbox
+    // with non-LLM tool tokens (e.g. GITHUB_TOKEN) present in `env`. This is gated by
+    // workspace trust + `cursorHooksEnabled`; see "Security" in docs/cursor-hooks.md.
     const child = spawn(hook.command, {
       cwd: hook.cwd,
       shell: true,

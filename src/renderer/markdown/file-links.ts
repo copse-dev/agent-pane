@@ -1,49 +1,11 @@
 import type { AppStore } from '@shared/store/store.ts'
+import { fileReferenceMatches } from '@shared/fs/file-reference.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { openWorkspaceFile } from '../controller/files.ts'
+import { activateWorkspaceReference } from '../controller/files.ts'
 import { showErrorToast } from '../views/toast.ts'
-
-const FILE_REFERENCE_RE =
-  /(^|[^A-Za-z0-9_./-])((?:\.\/)?(?:[A-Za-z0-9_@+$.-]+\/)+[A-Za-z0-9_@+$.-]+|[A-Za-z0-9_@+$-]+\.[A-Za-z0-9][A-Za-z0-9.-]{0,15}|Dockerfile|Makefile)(?=$|[^A-Za-z0-9_./-])/g
 
 const SKIP_SELECTOR = 'a, button, textarea, select, pre, svg, .mermaid-diagram'
 const TREE_WALKER_SHOW_TEXT = 4
-const TRAILING_PROSE_PUNCTUATION_RE = /[.,;:!?]+$/
-
-interface FileReferenceMatch {
-  candidate: string
-  start: number
-  end: number
-}
-
-/**
- * The filename regex runs over prose, so it can consume punctuation from text
- * like `renderer.ts.`. Keep that punctuation outside the link by shortening
- * the matched range while leaving the surrounding text node intact.
- */
-function trimTrailingProsePunctuation(candidate: string, start: number): FileReferenceMatch {
-  const trimmed = candidate.replace(TRAILING_PROSE_PUNCTUATION_RE, '')
-  return {
-    candidate: trimmed,
-    start,
-    end: start + trimmed.length,
-  }
-}
-
-function fileReferenceMatches(text: string): FileReferenceMatch[] {
-  const matches: FileReferenceMatch[] = []
-  FILE_REFERENCE_RE.lastIndex = 0
-  for (let match = FILE_REFERENCE_RE.exec(text); match; match = FILE_REFERENCE_RE.exec(text)) {
-    const prefix = match[1] ?? ''
-    const candidate = match[2]
-    if (!candidate) continue
-    const start = match.index + prefix.length
-    const trimmed = trimTrailingProsePunctuation(candidate, start)
-    if (trimmed.candidate === '') continue
-    matches.push(trimmed)
-  }
-  return matches
-}
 
 function shouldScanTextNode(node: Text, root: HTMLElement): boolean {
   const parent = node.parentElement
@@ -74,7 +36,7 @@ export function findFileReferenceCandidates(root: HTMLElement): string[] {
 
 function replaceTextNodeReferences(
   node: Text,
-  resolutions: ReadonlyMap<string, string>,
+  resolutions: ReadonlyMap<string, { path: string; kind: 'file' | 'directory' }>,
   root: HTMLElement,
 ): void {
   if (!node.parentNode || !shouldScanTextNode(node, root)) return
@@ -89,13 +51,17 @@ function replaceTextNodeReferences(
     if (match.start > cursor) {
       fragment.append(document.createTextNode(node.data.slice(cursor, match.start)))
     }
-    const path = resolutions.get(match.candidate)!
+    const target = resolutions.get(match.candidate)!
+    const { path, kind } = target
     const link = document.createElement('a')
     link.href = '#'
     link.className = 'file-reference-link'
     link.dataset.fileReferencePath = path
-    link.title = path
-    link.textContent = match.candidate
+    link.dataset.fileReferenceKind = kind
+    if (match.line != null) link.dataset.fileReferenceLine = String(match.line)
+    if (match.column != null) link.dataset.fileReferenceColumn = String(match.column)
+    link.title = match.line != null ? `${path}:${match.line}` : path
+    link.textContent = match.text
     fragment.append(link)
     cursor = match.end
   }
@@ -112,7 +78,9 @@ export async function annotateFileReferences(root: HTMLElement, api: ApiClient):
   const resolved = (await api.index.resolveFileReferences(candidates)) ?? []
   if (resolved.length === 0) return
 
-  const resolutions = new Map(resolved.map(({ candidate, path }) => [candidate, path]))
+  const resolutions = new Map(
+    resolved.map(({ candidate, path, kind }) => [candidate, { path, kind }]),
+  )
   for (const node of textNodesToScan(root)) {
     replaceTextNodeReferences(node, resolutions, root)
   }
@@ -134,7 +102,13 @@ export function bindFileReferenceClicks(
 
     const path = link.dataset.fileReferencePath
     if (!path) return
-    void openWorkspaceFile(store, api, path).catch((error) => {
+    const kind = link.dataset.fileReferenceKind === 'directory' ? 'directory' : 'file'
+    const line = link.dataset.fileReferenceLine
+    const column = link.dataset.fileReferenceColumn
+    const reveal = line
+      ? { line: Number(line), ...(column ? { column: Number(column) } : {}) }
+      : undefined
+    void activateWorkspaceReference(store, api, path, kind, reveal).catch((error) => {
       showErrorToast(`Failed to open ${path}`, error)
     })
   }

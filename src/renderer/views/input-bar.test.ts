@@ -62,6 +62,7 @@ function createApi(options: {
     },
     settings: {
       availableProviders: async () => ({ anthropic: true, openai: true }),
+      extraProviders: async () => [],
       set: async () => {},
     },
     skills: {
@@ -73,6 +74,11 @@ function createApi(options: {
 async function settle(): Promise<void> {
   await Promise.resolve()
   await Promise.resolve()
+}
+
+async function flush(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await settle()
 }
 
 afterEach(() => {
@@ -121,5 +127,55 @@ describe('input bar branch mismatch warning', () => {
     assert.equal(checkedOutBranch, 'feature/thread-branch')
     assert.equal(branchRefreshes, 1)
     assert.equal(warning.hidden, true)
+  })
+})
+
+describe('input bar browse button', () => {
+  it('opens the native file picker when the attach button is clicked', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const attachBtn = host.querySelector<HTMLButtonElement>('.attach-btn')!
+    const fileInput = host.querySelector<HTMLInputElement>('.attach-file-input')!
+    assert.ok(attachBtn, 'attach button is rendered')
+    assert.equal(attachBtn.getAttribute('aria-label'), 'Attach files')
+    assert.equal(fileInput.type, 'file')
+    assert.equal(fileInput.multiple, true)
+
+    let clicked = false
+    fileInput.click = () => {
+      clicked = true
+    }
+    attachBtn.click()
+    assert.equal(clicked, true, 'clicking the attach button opens the file picker')
+  })
+
+  it('attaches a selected file as a chip', async () => {
+    const store = createStore({
+      workspaceRoot: null,
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const fileInput = host.querySelector<HTMLInputElement>('.attach-file-input')!
+    const file = new File(['hello world'], 'notes.txt', { type: 'text/plain' })
+    Object.defineProperty(fileInput, 'files', { value: [file], configurable: true })
+    fileInput.dispatchEvent(new Event('change'))
+    await flush()
+
+    const chip = host.querySelector<HTMLElement>('.attachment-chips .attachment-chip')
+    assert.ok(chip, 'an attachment chip is rendered for the selected file')
+    assert.match(chip!.textContent ?? '', /notes\.txt/)
   })
 })

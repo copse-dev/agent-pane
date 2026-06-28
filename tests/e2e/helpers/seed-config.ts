@@ -1682,3 +1682,47 @@ export function seedMarkdownTableWrapFixture(workspaceRoot: string): void {
     'utf8',
   )
 }
+
+/** 3-column table whose first column is a lone code span (e.g. a test name).
+ * Regression for the first column shattering one character per line. */
+export function seedMarkdownTableCodeFirstColumnFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-markdown-table-code-first-project'
+  const threadId = 'e2e-markdown-table-code-first-thread'
+  const content = [
+    '### Remaining failures:',
+    '',
+    '| Test | Status | Reason |',
+    '| --- | --- | --- |',
+    '| `terminateProcessTree` | ❌ | Environment issue (process tree killing does not work in this test environment) |',
+    '| `renderMarkdown` | ❌ | 3 subtests fail — the heading-level assertions in `renderer.test.ts` |',
+    '| `sanitizeRenderedMarkdown` | ❌ | 1 subtest fails — the "is a no-op" test expects `<h2>` tags to survive sanitization |',
+  ].join('\n')
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Remaining failures',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-table-code-first',
+              role: 'assistant',
+              content,
+              toolCalls: [],
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}

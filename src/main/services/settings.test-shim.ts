@@ -3,19 +3,11 @@ import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
 const settings = new Map<string, unknown>()
 const apiKeys = new Map<string, string>()
 
-export type KeyProvider =
-  | 'anthropic'
-  | 'openai'
-  | 'lmstudio'
-  | 'cursor'
-  | 'openrouter'
-  | 'mistral'
-  | 'gemini'
-  | 'deepseek'
+export type KeyProvider = string
 
-export type CloudKeyProvider = Exclude<KeyProvider, 'lmstudio'>
+export type CloudKeyProvider = string
 
-const ENV_VARS: Partial<Record<KeyProvider, string>> = {
+const ENV_VARS: Record<string, string> = {
   anthropic: 'ANTHROPIC_API_KEY',
   openai: 'OPENAI_API_KEY',
   cursor: 'CURSOR_API_KEY',
@@ -37,9 +29,20 @@ export function setApiKey(provider: KeyProvider, key: string): void {
   apiKeys.set(provider, key.trim())
 }
 
+export function deleteApiKey(provider: KeyProvider): void {
+  apiKeys.delete(provider)
+}
+
 export function isProviderAvailable(provider: CloudKeyProvider): boolean {
   const envVar = ENV_VARS[provider]
   return !!((envVar && process.env[envVar]) || hasApiKey(provider))
+}
+
+export function resolveApiKey(provider: KeyProvider): string | null {
+  const stored = getApiKey(provider)
+  if (stored) return stored
+  const envVar = ENV_VARS[provider]
+  return (envVar && process.env[envVar]) || null
 }
 
 export function getLmStudioApiKey(): string {

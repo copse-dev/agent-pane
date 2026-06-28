@@ -17,6 +17,12 @@ npm run dev
 
 Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for cloud models, add an `OPENROUTER_API_KEY` (Settings → API Keys) to reach Claude, GPT, Gemini, Llama and more through [OpenRouter](https://openrouter.ai), or configure a local provider in Settings. For cheap/free tiers you can also add a `MISTRAL_API_KEY` (Mistral's free Experiment tier), `GEMINI_API_KEY` (Google's free-tier Gemini Flash models), or `DEEPSEEK_API_KEY` (low-cost DeepSeek) — each appears as its own group in the model picker. Without keys, the app falls back to a built-in mock LLM for development.
 
+### How API keys are stored
+
+API keys entered in **Settings → API Keys** are persisted in the app's `settings.json` (inside the `copse-panel` userData directory). When an OS secure-storage backend is available they are encrypted at rest via Electron's [`safeStorage`](https://www.electronjs.org/docs/latest/api/safe-storage) — the macOS Keychain, Windows DPAPI, or a Linux keyring (gnome-keyring / kwallet via libsecret).
+
+If **no keyring is available** — common on a headless or minimal Linux install — `safeStorage` cannot encrypt, so keys are stored as **base64 plaintext** instead (the app logs a one-line warning and keeps working so it is still usable without a keyring). In that case anyone with read access to your profile directory can recover the keys. To get encryption at rest on Linux, install and unlock a keyring such as `gnome-keyring` (with `libsecret`) before launching the app. Prefer not to store a key on disk at all? Provide it via the matching environment variable (e.g. `ANTHROPIC_API_KEY`) instead — env-var keys are never written to `settings.json`.
+
 ## Commands
 
 | Command            | Purpose                                  |

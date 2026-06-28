@@ -30,8 +30,6 @@ const ALLOWED_UNLINKED: Record<string, string> = {
   // the app wiring (model-picker `acp:*` routing + settings UI) and exercised via
   // the loopback test against the SDK directly, so nothing imports these yet.
   // Tracked in #264 (Track 1); drop these once the client is wired into the router.
-  'src/main/services/acp/acp-client.ts':
-    'ACP client role; wired into the model router in a follow-up (#264)',
   'src/shared/types/acp.ts':
     'AcpAgentConfig for the ACP client registry; consumed once client config persistence lands (#264)',
 }
