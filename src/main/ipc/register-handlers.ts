@@ -18,7 +18,6 @@ import {
   IpcValidationError,
   keyProviderSchema,
   parseIpcArgs,
-  providerSchema,
   zMcpServerName,
   zNonEmptyString,
   zPathString,
