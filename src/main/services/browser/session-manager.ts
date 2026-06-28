@@ -81,7 +81,7 @@ export class BrowserSessionManager {
 
   async navigate(
     url: string,
-    opts?: { newTab?: boolean; viewId?: string },
+    opts?: { newTab?: boolean | undefined; viewId?: string | undefined },
   ): Promise<NavigateResult> {
     const tab = opts?.newTab ? this.createTab() : this.resolveTab(opts?.viewId)
     this.lastActiveId = tab.id

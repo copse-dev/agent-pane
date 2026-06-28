@@ -1,13 +1,13 @@
 import { z } from 'zod'
 import micromatch from 'micromatch'
-import type { ToolDefinition } from '@shared/types'
+import { defineTool } from '@shared/types'
 import { resolveWorkspacePath, getWorkspaceRoot } from '../services/workspace.ts'
 import { isRgAvailable } from '../services/tool-availability.ts'
 import { getIndex } from '../services/file-index.ts'
 import { formatCodeSearchResults, searchCodeContent } from '../services/indexed-grep.ts'
 import { slowCodeSearch } from '../services/slow-code-search.ts'
 
-export const searchCodeTool: ToolDefinition = {
+export const searchCodeTool = defineTool({
   name: 'search_code',
   description:
     'Search for a text pattern or regex in the workspace. Uses a local content index when available (ig/trigrep), otherwise ripgrep (respects .gitignore). Without ripgrep, a bounded workspace walk applies .gitignore, glob, and case options. Returns matching lines with file:line format.',
@@ -59,9 +59,9 @@ export const searchCodeTool: ToolDefinition = {
 
     return formatCodeSearchResults(lines, max_results, backend)
   },
-}
+})
 
-export const findFilesTool: ToolDefinition = {
+export const findFilesTool = defineTool({
   name: 'find_files',
   description: 'Find files in the workspace by name or glob pattern. Fast — uses pre-built index.',
   parameters: z.object({
@@ -80,4 +80,4 @@ export const findFilesTool: ToolDefinition = {
     const matches = truncated ? found.slice(0, max_results) : found
     return matches.join('\n') + (truncated ? `\n[Truncated at ${max_results}]` : '')
   },
-}
+})

@@ -1,8 +1,8 @@
 import { z } from 'zod'
-import type { ToolDefinition } from '@shared/types'
+import { defineTool } from '@shared/types'
 import { getCiInvestigatorRunner } from '../services/ci-investigator-runner.ts'
 
-export const investigateCiTool: ToolDefinition = {
+export const investigateCiTool = defineTool({
   name: 'investigate_ci',
   description:
     'Investigate failing CI checks for a pull request. Spawns a focused subagent that reads the failing workflow run logs in depth, ties the error back to the source, and returns a structured findings report (root cause + suggested fix) instead of raw logs. Use this when a PR has failing CI before attempting a fix.',
@@ -26,4 +26,4 @@ export const investigateCiTool: ToolDefinition = {
     const result = await runner({ focus, prNumber: pr_number, signal })
     return result.summary
   },
-}
+})

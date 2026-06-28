@@ -8,7 +8,7 @@ type TextEncoding = 'utf8' | 'utf16le' | 'utf16be'
 
 export interface ReadTextLineRangeOptions {
   startLine: number
-  endLine?: number
+  endLine?: number | undefined
   maxLines: number
   maxChars: number
 }

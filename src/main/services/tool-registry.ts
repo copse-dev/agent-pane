@@ -28,8 +28,8 @@ export function setPermissionGateForTests(fn: PermissionGateFn | null): void {
 export class ToolRegistry {
   private tools = new Map<string, ToolDefinition>()
 
-  register(tool: ToolDefinition): void {
-    this.tools.set(tool.name, tool)
+  register<TArgs>(tool: ToolDefinition<TArgs>): void {
+    this.tools.set(tool.name, tool as ToolDefinition)
   }
 
   unregister(name: string): void {

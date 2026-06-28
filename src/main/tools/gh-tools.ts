@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ToolDefinition } from '@shared/types'
+import { defineTool } from '@shared/types'
 import {
   getGhPrListText,
   getGhPrViewText,
@@ -7,7 +7,7 @@ import {
   getGhRunLogText,
 } from '../services/gh-service.ts'
 
-export const ghPrListTool: ToolDefinition = {
+export const ghPrListTool = defineTool({
   name: 'gh_pr_list',
   description:
     'List pull requests for the current repository via GitHub CLI (read-only). Prefer over run_shell + gh.',
@@ -31,9 +31,9 @@ export const ghPrListTool: ToolDefinition = {
       .describe('Filter to PRs whose head branch matches this name (e.g. current feature branch).'),
   }),
   execute: async ({ state, limit, head }) => getGhPrListText({ state, limit, head }),
-}
+})
 
-export const ghPrViewTool: ToolDefinition = {
+export const ghPrViewTool = defineTool({
   name: 'gh_pr_view',
   description:
     'Show details for one pull request via GitHub CLI (read-only). Omit number for the PR on the current branch.',
@@ -52,9 +52,9 @@ export const ghPrViewTool: ToolDefinition = {
   }),
   execute: async ({ number, include_checks }) =>
     getGhPrViewText({ number, includeChecks: include_checks }),
-}
+})
 
-export const ghRunListTool: ToolDefinition = {
+export const ghRunListTool = defineTool({
   name: 'gh_run_list',
   description:
     'List recent CI workflow runs for a branch via GitHub CLI (read-only). Use to find the run id of a failing check before fetching its logs.',
@@ -79,9 +79,9 @@ export const ghRunListTool: ToolDefinition = {
   }),
   execute: async ({ branch, limit, failed_only }) =>
     getGhRunListText({ branch, limit, failedOnly: failed_only }),
-}
+})
 
-export const ghRunViewTool: ToolDefinition = {
+export const ghRunViewTool = defineTool({
   name: 'gh_run_view',
   description:
     'Fetch the logs of a CI workflow run via GitHub CLI (read-only). Defaults to only the failed steps; long logs are truncated to the tail. Use after gh_run_list to read why a check failed.',
@@ -95,4 +95,4 @@ export const ghRunViewTool: ToolDefinition = {
   }),
   execute: async ({ run_id, failed_only }) =>
     getGhRunLogText({ runId: run_id, failedOnly: failed_only }),
-}
+})

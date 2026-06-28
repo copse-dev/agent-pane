@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import type { ToolDefinition } from '@shared/types'
+import { defineTool } from '@shared/types'
 import { resolveWorkspacePath, toRelativePath, getWorkspaceRoot } from '../services/workspace.ts'
 import { runCommand } from '../services/command-runner.ts'
 import { getIndex } from '../services/file-index.ts'
@@ -39,7 +39,7 @@ function friendlyFsError(err: unknown, relPath: string, op: 'read' | 'list'): st
   }
 }
 
-export const readFileTool: ToolDefinition = {
+export const readFileTool = defineTool({
   name: 'read_file',
   description:
     'Read a file from the workspace. Output size is capped per agent run based on available context; use start_line / end_line to read more.',
@@ -83,9 +83,9 @@ export const readFileTool: ToolDefinition = {
       : ''
     return result.text + formatReadFilePageFooter(pageMeta, result.charTruncated) + pendingNote
   },
-}
+})
 
-export const listDirTool: ToolDefinition = {
+export const listDirTool = defineTool({
   name: 'list_dir',
   description:
     'List files and directories at a path. Use recursive: true for a full tree (limited to 1000 entries, respects .gitignore).',
@@ -143,4 +143,4 @@ export const listDirTool: ToolDefinition = {
       (entries.length > LIST_DIR_MAX_ENTRIES ? '\n[Truncated at 1000 entries]' : '')
     )
   },
-}
+})

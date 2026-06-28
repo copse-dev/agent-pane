@@ -102,9 +102,9 @@ const bundled = await esbuild.build({
   write: false,
   external: ['electron', 'node-pty', 'jsdom', '@mozilla/readability', 'turndown'],
 })
-const harness: Harness = await import(
+const harness = (await import(
   'data:text/javascript;base64,' + Buffer.from(bundled.outputFiles[0]!.text).toString('base64')
-)
+)) as Harness
 
 const spec = harness.loadCommonMarkSpec()
 

@@ -17,7 +17,7 @@ export interface ExploreSubagentRunnerContext {
 
 export type ExploreSubagentRunner = (opts: {
   query: string
-  paths?: string[]
+  paths?: string[] | undefined
   signal: AbortSignal
 }) => Promise<{ summary: string; usage: ModelUsage }>
 

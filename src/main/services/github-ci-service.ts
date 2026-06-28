@@ -255,7 +255,11 @@ export async function getCiStatus(prNumber?: number): Promise<CiStatus> {
 }
 
 export async function waitForCiChecks(
-  opts: { prNumber?: number; timeoutMs?: number; pollIntervalSec?: number },
+  opts: {
+    prNumber?: number | undefined
+    timeoutMs?: number | undefined
+    pollIntervalSec?: number | undefined
+  },
   signal: AbortSignal,
 ): Promise<CiStatus> {
   const timeoutMs = opts.timeoutMs ?? COMMAND_RUNNER_LONG_TIMEOUT_MS
@@ -276,9 +280,9 @@ export async function waitForCiChecks(
 }
 
 export async function getCiFailureLogs(opts: {
-  prNumber?: number
-  runId?: number
-  maxBytes?: number
+  prNumber?: number | undefined
+  runId?: number | undefined
+  maxBytes?: number | undefined
 }): Promise<string> {
   const maxBytes = opts.maxBytes ?? COMMAND_OUTPUT_MAX_BYTES
   const pr = await loadOpenPr(opts.prNumber)
