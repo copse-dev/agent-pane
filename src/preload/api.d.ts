@@ -59,6 +59,7 @@ export interface ApiClient {
     estimateContext: (threadId: string, payload: string) => Promise<ContextBreakdown>
     abort: (threadId: string) => Promise<void>
     clearHistory: (threadId: string) => Promise<void>
+    refreshModelContext: () => Promise<void>
     suggestTitle: (text: string) => Promise<string | null>
     suggestTerminalTitle: (text: string) => Promise<string | null>
     suggestCommandSummary: (commands: string[]) => Promise<string | null>
