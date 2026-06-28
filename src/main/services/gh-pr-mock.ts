@@ -1,4 +1,10 @@
-import type { GhCliStatus, GhPrDetails, GhPrFileDiff, GhPrSummary } from '@shared/types/git.ts'
+import type {
+  GhCliStatus,
+  GhPrChecksState,
+  GhPrDetails,
+  GhPrFileDiff,
+  GhPrSummary,
+} from '@shared/types/git.ts'
 
 export const MOCK_GH_PR_OWNER = 'copse-dev'
 export const MOCK_GH_PR_REPO = 'copse-panel'
@@ -127,7 +133,30 @@ export function mockListMyOpenPrs(): GhPrSummary[] {
 }
 
 export function mockListWorkspaceOpenPrs(): GhPrSummary[] {
-  return [MOCK_LINKED_PR, MOCK_WORKSPACE_PR]
+  // The repo-scoped listing carries CI rollup, so its summaries arrive with
+  // checks already resolved (search-based "your PRs" does not).
+  return [
+    { ...MOCK_LINKED_PR, checks: 'success' },
+    { ...MOCK_WORKSPACE_PR, checks: 'failure' },
+  ]
+}
+
+export function mockGetGhPrChecksState(ref: {
+  owner: string
+  repo: string
+  number: number
+}): GhPrChecksState {
+  if (ref.owner !== MOCK_GH_PR_OWNER || ref.repo !== MOCK_GH_PR_REPO) return 'no_checks'
+  switch (ref.number) {
+    case MOCK_GH_PR_NUMBER:
+      return 'success'
+    case MOCK_GH_WORKSPACE_PR_NUMBER:
+      return 'failure'
+    case MOCK_OTHER_PR.number:
+      return 'pending'
+    default:
+      return 'no_checks'
+  }
 }
 
 export function mockGetGhPrDetails(ref: {

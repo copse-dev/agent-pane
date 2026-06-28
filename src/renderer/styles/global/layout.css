@@ -521,6 +521,49 @@
 .pr-list-title {
   flex: 1;
 }
+.pr-list-ci {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  margin-left: var(--spacing-xs);
+  border-radius: 50%;
+  background: transparent;
+}
+.pr-list-ci-success {
+  background: #73c991;
+}
+.pr-list-ci-failure {
+  background: #f14c4c;
+}
+.pr-list-ci-pending {
+  background: #e2b340;
+}
+.pr-list-ci-loading {
+  background: transparent;
+  border: 1px solid var(--text-muted);
+  opacity: 0.5;
+}
+/* no_checks keeps the transparent default — an empty slot, no dot. */
+.pr-other-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+.pr-other-toggle:hover {
+  color: var(--text-primary);
+}
+.pr-other-chevron {
+  flex-shrink: 0;
+  width: 10px;
+  font-size: 9px;
+}
 .pr-viewer-host {
   gap: 0;
 }

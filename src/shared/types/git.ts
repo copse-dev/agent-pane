@@ -50,6 +50,9 @@ export interface GhCliStatus {
   message: string | null
 }
 
+/** Overall CI rollup for a PR head, mirroring github-ci-service's CiOverallState. */
+export type GhPrChecksState = 'pending' | 'success' | 'failure' | 'no_checks'
+
 export interface GhPrSummary {
   owner: string
   repo: string
@@ -61,6 +64,8 @@ export interface GhPrSummary {
   authorLogin?: string
   createdAt?: string
   updatedAt?: string
+  /** Overall CI state, when known from the listing query (else fetched lazily). */
+  checks?: GhPrChecksState
 }
 
 export interface GhPrDetails extends GhPrSummary {
