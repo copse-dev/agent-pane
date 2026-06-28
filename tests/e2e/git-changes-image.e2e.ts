@@ -9,6 +9,13 @@ import {
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
+async function waitForWorkspace(): Promise<void> {
+  await browser.waitUntil(
+    async () => (await (await $('.workspace-name')).getText()) !== 'No folder',
+    { timeout: 60_000, timeoutMsg: 'expected a restored workspace before opening Changes' },
+  )
+}
+
 async function openChangesPanel(): Promise<void> {
   const changesBtn = await $('.titlebar-btn[aria-label="Open changes"]')
   await changesBtn.waitForExist({ timeout: 30_000 })
@@ -26,6 +33,9 @@ async function openChangesPanel(): Promise<void> {
     { timeout: 30_000, interval: 1000, timeoutMsg: 'Changes button did not become active' },
   )
   await $('#git-changes-host').waitForDisplayed({ timeout: 30_000 })
+  // The event-driven refresh on panel activation can race the seeded git
+  // fixture; force a refresh explicitly so the change rows are populated.
+  await (await $('.git-changes-refresh-btn')).click()
   await browser.waitUntil(async () => (await $$('.git-change-row')).length >= 3, {
     timeout: 30_000,
     timeoutMsg: 'expected at least 3 changed image rows',
@@ -48,6 +58,7 @@ describe('git changes image preview', () => {
     resetUserData()
     repoRoot = seedGitImageChangesFixture()
     await browser.reloadSession()
+    await waitForWorkspace()
   })
 
   after(() => {
