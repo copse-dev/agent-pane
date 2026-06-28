@@ -60,4 +60,41 @@ describe('MockLLMProvider', () => {
     await collectChunks(provider, [{ role: 'user', content: 'hello [[mock:delay_ms 5]]' }], [])
     assert.ok(Date.now() - startedAt >= 5)
   })
+
+  it('honors an ordered mock script on matching user turns', async () => {
+    const { setMockScript, clearMockScript } = await import('./mock-script.ts')
+    setMockScript([
+      { when: 'list src', tool: { name: 'list_dir', args: { path: 'src' } } },
+      { when: 'wrap up', text: 'All set.' },
+    ])
+    try {
+      const provider = new MockLLMProvider()
+      const tools: LLMTool[] = [{ name: 'list_dir', description: 'list', parameters: {} }]
+      const turn1 = await collectChunks(
+        provider,
+        [{ role: 'user', content: 'Please list src' }],
+        tools,
+      )
+      assert.ok(turn1.some((c) => c.type === 'tool_call' && c.toolCall.name === 'list_dir'))
+
+      const turn2 = await collectChunks(
+        provider,
+        [
+          { role: 'user', content: 'Please list src' },
+          { role: 'assistant', content: [{ id: '1', name: 'list_dir', args: { path: 'src' } }] },
+          { role: 'tool', toolResults: [{ toolCallId: '1', result: 'ok' }] },
+          { role: 'assistant', content: 'listed' },
+          { role: 'user', content: 'Please wrap up' },
+        ],
+        tools,
+      )
+      const text = turn2
+        .filter((c) => c.type === 'text')
+        .map((c) => c.text)
+        .join('')
+      assert.equal(text, 'All set.')
+    } finally {
+      clearMockScript()
+    }
+  })
 })

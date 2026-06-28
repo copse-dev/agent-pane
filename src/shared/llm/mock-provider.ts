@@ -1,4 +1,5 @@
 import type { LLMProvider, LLMMessage, LLMTool, StreamChunk } from '@shared/types'
+import { takeMockScriptStep } from './mock-script.ts'
 const randomUUID = () => globalThis.crypto.randomUUID()
 const MAX_MOCK_DELAY_MS = 5_000
 
@@ -65,6 +66,28 @@ export class MockLLMProvider implements LLMProvider {
       // for the current user turn — not on later agent-loop passes that still see
       // the same user message in history.
       if (awaitingAssistantReply && !demoSkillLoaded) {
+        const step = takeMockScriptStep(fullUserText, tools)
+        if (step) {
+          if (signal?.aborted) return
+          if (step.tool) {
+            yield {
+              type: 'tool_call',
+              toolCall: { id: randomUUID(), name: step.tool.name, args: step.tool.args },
+            }
+            yield { type: 'done' }
+            return
+          }
+          if (step.text) {
+            for (const char of step.text) {
+              if (signal?.aborted) return
+              yield { type: 'text', text: char }
+              await new Promise((r) => setTimeout(r, 10))
+            }
+            yield { type: 'done' }
+            return
+          }
+        }
+
         const directive = fullUserText.match(/\[\[mcp:([^\s\]]+)(\s+\{[^]*?\})?\]\]/)
         if (directive && tools.some((t) => t.name === directive[1])) {
           if (signal?.aborted) return
