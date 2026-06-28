@@ -36,6 +36,7 @@ export default ts.config(
       ],
       '@typescript-eslint/no-unnecessary-type-assertion': 'off',
       '@typescript-eslint/no-this-alias': 'off',
+      '@typescript-eslint/explicit-module-boundary-types': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],
       'no-control-regex': 'off',
     },
