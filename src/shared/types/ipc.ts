@@ -43,6 +43,7 @@ export interface IpcInvokeMap {
   'agent:run': { args: [threadId: string, prompt: string]; result: void }
   'agent:abort': { args: [threadId: string]; result: void }
   'agent:clearHistory': { args: [threadId: string]; result: void }
+  'agent:refreshModelContext': { args: []; result: void }
   'agent:suggestTitle': { args: [text: string]; result: string | null }
   'agent:suggestTerminalTitle': { args: [text: string]; result: string | null }
   'agent:suggestFollowUps': {

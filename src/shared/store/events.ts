@@ -16,6 +16,9 @@ export interface StoreEvents {
   // `threads_changed` so high-cost listeners (e.g. the conversation rebuild)
   // are not re-run on every keystroke while the user is typing.
   thread_draft_changed: [threadId: string]
+  // A fresh chat was opened (new blank thread reused or created). Used to refresh
+  // provider-reported model context windows so the new chat reflects current limits.
+  new_thread_opened: []
   panel_changed: []
   explorer_reveal: [path: string]
   workspace_changed: []
