@@ -57,6 +57,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   localTodoItemsEnabled: z.boolean(),
   bundledCursorSkillsEnabled: z.boolean(),
   skillsEnabled: z.boolean(),
+  // Skill safety toggles (default on). Warn up front when an invoked skill
+  // references external links; reinforce sandbox/approval confinement for skills.
+  skillExternalLinkWarnings: z.boolean(),
+  skillSandboxGuidance: z.boolean(),
   skillPluginPaths: z.array(z.string().max(4096)).max(64),
   subagentsEnabled: z.boolean(),
   externalApiSafety: z.boolean(),
