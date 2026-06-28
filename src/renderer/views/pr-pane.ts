@@ -49,18 +49,19 @@ function collectLinkedPrs(store: AppStore): PrRef[] {
   return refs
 }
 
-function mergePrLists(linked: PrRef[], mine: GhPrSummary[]): GhPrSummary[] {
+function mergePrLists(linked: PrRef[], pools: GhPrSummary[][]): GhPrSummary[] {
   const seen = new Set<string>()
   const merged: GhPrSummary[] = []
+  const known = pools.flat()
   for (const ref of linked) {
     const key = githubPrKey(ref)
     if (seen.has(key)) continue
     seen.add(key)
-    const fromMine = mine.find(
+    const fromPools = known.find(
       (pr) => pr.owner === ref.owner && pr.repo === ref.repo && pr.number === ref.number,
     )
     merged.push(
-      fromMine ?? {
+      fromPools ?? {
         ...ref,
         title: `PR #${ref.number}`,
         url: `https://github.com/${ref.owner}/${ref.repo}/pull/${ref.number}`,
@@ -68,11 +69,13 @@ function mergePrLists(linked: PrRef[], mine: GhPrSummary[]): GhPrSummary[] {
       },
     )
   }
-  for (const pr of mine) {
-    const key = githubPrKey(pr)
-    if (seen.has(key)) continue
-    seen.add(key)
-    merged.push(pr)
+  for (const pool of pools) {
+    for (const pr of pool) {
+      const key = githubPrKey(pr)
+      if (seen.has(key)) continue
+      seen.add(key)
+      merged.push(pr)
+    }
   }
   return merged
 }
@@ -112,6 +115,7 @@ export function mountPrPane(
   let ghStatus: GhCliStatus | null = null
   let linkedRefs: PrRef[] = []
   let myPrs: GhPrSummary[] = []
+  let workspacePrs: GhPrSummary[] = []
   let prList: GhPrSummary[] = []
   let selectedPr: PrRef | null = null
   let prDetails: GhPrDetails | null = null
@@ -147,7 +151,7 @@ export function mountPrPane(
       : 'GitHub CLI is not available'
   }
 
-  function renderPrRow(pr: GhPrSummary, section: 'linked' | 'mine') {
+  function renderPrRow(pr: GhPrSummary, section: 'linked' | 'workspace' | 'mine') {
     const isSelected =
       selectedPr?.owner === pr.owner &&
       selectedPr.repo === pr.repo &&
@@ -170,8 +174,14 @@ export function mountPrPane(
     clear(listBody)
 
     const linkedKeys = new Set(linkedRefs.map((ref) => githubPrKey(ref)))
+    const workspaceKeys = new Set(workspacePrs.map((pr) => githubPrKey(pr)))
     const linkedPrs = prList.filter((pr) => linkedKeys.has(githubPrKey(pr)))
-    const otherPrs = prList.filter((pr) => !linkedKeys.has(githubPrKey(pr)))
+    const repoPrs = prList.filter(
+      (pr) => !linkedKeys.has(githubPrKey(pr)) && workspaceKeys.has(githubPrKey(pr)),
+    )
+    const otherPrs = prList.filter(
+      (pr) => !linkedKeys.has(githubPrKey(pr)) && !workspaceKeys.has(githubPrKey(pr)),
+    )
 
     if (!ghStatus?.installed || !ghStatus.authenticated) {
       if (linkedPrs.length === 0) {
@@ -202,10 +212,25 @@ export function mountPrPane(
       listBody.append(section)
     }
 
-    if (otherPrs.length > 0 && ghStatus?.authenticated) {
+    if (repoPrs.length > 0 && ghStatus?.authenticated) {
+      const slug = `${repoPrs[0]!.owner}/${repoPrs[0]!.repo}`
       const section = el('div', { class: 'git-changes-section' })
       section.append(
-        el('div', { class: 'git-changes-section-title' }, `Your open PRs (${otherPrs.length})`),
+        el(
+          'div',
+          { class: 'git-changes-section-title', title: `Open pull requests in ${slug}` },
+          `In ${slug} (${repoPrs.length})`,
+        ),
+      )
+      for (const pr of repoPrs) section.append(renderPrRow(pr, 'workspace'))
+      listBody.append(section)
+    }
+
+    if (otherPrs.length > 0 && ghStatus?.authenticated) {
+      const title = repoPrs.length > 0 ? 'Your other open PRs' : 'Your open PRs'
+      const section = el('div', { class: 'git-changes-section' })
+      section.append(
+        el('div', { class: 'git-changes-section-title' }, `${title} (${otherPrs.length})`),
       )
       for (const pr of otherPrs) section.append(renderPrRow(pr, 'mine'))
       listBody.append(section)
@@ -401,6 +426,7 @@ export function mountPrPane(
     linkedRefs = collectLinkedPrs(store)
     if (!ghStatus.installed || !ghStatus.authenticated) {
       myPrs = []
+      workspacePrs = []
       prList = linkedRefs.map((ref) => ({
         ...ref,
         title: `PR #${ref.number}`,
@@ -411,12 +437,16 @@ export function mountPrPane(
       return
     }
 
-    try {
-      myPrs = (await api.gh.listMyOpenPrs()) ?? []
-    } catch {
-      myPrs = []
-    }
-    prList = mergePrLists(linkedRefs, myPrs)
+    // Workspace PRs (the current repo's open PRs, any author) take precedence
+    // over the cross-repo "your open PRs" list so the pane reflects the repo
+    // you're actually working in.
+    const [mine, repo] = await Promise.all([
+      api.gh.listMyOpenPrs().catch(() => [] as GhPrSummary[]),
+      api.gh.listWorkspaceOpenPrs().catch(() => [] as GhPrSummary[]),
+    ])
+    myPrs = mine ?? []
+    workspacePrs = repo
+    prList = mergePrLists(linkedRefs, [workspacePrs, myPrs])
     renderList()
 
     const openTarget = pendingOpen
@@ -462,13 +492,16 @@ export function mountPrPane(
     store.on('workspace_changed', () => {
       selectedPr = null
       prDetails = null
+      // The repo-scoped list belongs to the previous workspace; drop it so the
+      // stale "in this repo" section can't flash before the refresh completes.
+      workspacePrs = []
       if (prsModeActive(store)) void refresh()
       else renderList()
     }),
     store.on('threads_changed', () => {
       if (!prsModeActive(store)) return
       linkedRefs = collectLinkedPrs(store)
-      prList = mergePrLists(linkedRefs, myPrs)
+      prList = mergePrLists(linkedRefs, [workspacePrs, myPrs])
       renderList()
     }),
     store.on('pr_open_requested', (owner, repo, number) => {

@@ -256,6 +256,7 @@ export interface ApiClient {
   gh: {
     status: () => Promise<GhCliStatus>
     listMyOpenPrs: () => Promise<GhPrSummary[] | null>
+    listWorkspaceOpenPrs: () => Promise<GhPrSummary[]>
     prDetails: (owner: string, repo: string, number: number) => Promise<GhPrDetails | null>
     prFileDiff: (
       owner: string,

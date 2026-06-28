@@ -41,19 +41,25 @@ describe('PR panel (mock gh)', () => {
 
     await openPrTab()
 
-    await browser.waitUntil(async () => (await $$('.pr-list-row')).length >= 2, {
+    await browser.waitUntil(async () => (await $$('.pr-list-row')).length >= 3, {
       timeout: 15_000,
-      timeoutMsg: 'expected linked and open PR rows',
+      timeoutMsg: 'expected linked, workspace, and open PR rows',
     })
 
     await expect(await $('.git-changes-section-title*=From chat')).toHaveText(
       expect.stringMatching(/from chat \(1\)/i),
     )
-    await expect(await $('.git-changes-section-title*=Your open PRs')).toHaveText(
-      expect.stringMatching(/your open prs \(1\)/i),
+    await expect(await $('.git-changes-section-title*=copse-panel')).toHaveText(
+      expect.stringMatching(/in copse-dev\/copse-panel \(1\)/i),
+    )
+    await expect(await $('.git-changes-section-title*=Your other open PRs')).toHaveText(
+      expect.stringMatching(/your other open prs \(1\)/i),
     )
     await expect(await $('.pr-list-row[data-pr-section="linked"] .pr-list-title')).toHaveText(
       'Add GitHub PR panel tab',
+    )
+    await expect(await $('.pr-list-row[data-pr-section="workspace"] .pr-list-title')).toHaveText(
+      'Tidy up workspace status polling',
     )
 
     await browser.waitUntil(
