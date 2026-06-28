@@ -38,7 +38,10 @@ describe('mock script multi-turn', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-mock-script-project', { subagentsEnabled: false })
+    seedEmptyProject(process.cwd(), 'e2e-mock-script-project', {
+      subagentsEnabled: false,
+      model: 'claude-sonnet-4-6',
+    })
     await browser.reloadSession()
   })
 
