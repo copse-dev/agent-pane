@@ -78,6 +78,15 @@ describe('analyzeShellCommand', () => {
     assert.equal(r.verdict, 'external')
   })
 
+  it('flags a sibling dir sharing the workspace name prefix as outside', () => {
+    const ext = analyzeShellCommand('cat /srv/project-secrets/x', '/srv/project')
+    assert.equal(ext.verdict, 'external')
+    assert.ok(ext.reasons.some((x) => x.includes('outside workspace')))
+
+    const inside = analyzeShellCommand('cat /srv/project/src/x', '/srv/project')
+    assert.equal(inside.verdict, 'sandbox')
+  })
+
   it('allows workspace-relative paths', () => {
     const r = analyzeShellCommand('cat src/index.ts', root)
     assert.equal(r.verdict, 'sandbox')

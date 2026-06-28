@@ -175,7 +175,9 @@ function referencesOutsideWorkspace(command: string, workspaceRoot: string | nul
     if (resolved.startsWith(home + '/') && !resolved.startsWith(root + '/')) {
       return `absolute path outside workspace: ${p}`
     }
-    if (!resolved.startsWith(root)) return `absolute path outside workspace: ${p}`
+    if (resolved !== root && !resolved.startsWith(root + '/')) {
+      return `absolute path outside workspace: ${p}`
+    }
   }
 
   return null
