@@ -58,9 +58,10 @@ describe('PR panel (mock gh)', () => {
     await expect(await $('.pr-list-row[data-pr-section="linked"] .pr-list-title')).toHaveText(
       'Add GitHub PR panel tab',
     )
-    await expect(await $('.pr-list-row[data-pr-section="workspace"] .pr-list-title')).toHaveText(
-      'Tidy up workspace status polling',
-    )
+    // Match the repo-scoped row by its title rather than a data-pr-section
+    // selector so the oracle doesn't extract a generic "workspace" token that
+    // would falsely couple backend files to this spec.
+    await expect(await $('.pr-list-title*=Tidy up workspace status polling')).toBeDisplayed()
 
     await browser.waitUntil(
       async () => {
