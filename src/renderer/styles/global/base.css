@@ -10,6 +10,13 @@
 [hidden] {
   display: none !important;
 }
+/* The UA's default selection highlight washes out against the dark surfaces
+   (selected text becomes near-invisible — e.g. read-only inputs). Force a
+   readable accent highlight in both themes. */
+::selection {
+  background: var(--accent);
+  color: #fff;
+}
 html,
 body {
   height: 100%;
@@ -21,6 +28,13 @@ body {
   /* Desktop-app chrome (tabs, sidebars, footers) should not highlight on drag. */
   user-select: none;
   -webkit-user-select: none;
+}
+/* Theme every scroll container's scrollbar to match the surface (inherited by
+   all descendants). --border tracks the active theme, so light and dark stay
+   in sync without per-scroller rules. */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
 #app {
   display: flex;

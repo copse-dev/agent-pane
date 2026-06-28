@@ -1,6 +1,6 @@
 import * as fsp from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
-import { getWorkspaceRoot, resolveWorkspacePath } from './workspace.ts'
+import { getWorkspaceRoot, resolveWorkspacePath, toRelativePath } from './workspace.ts'
 import { runCommand } from './command-runner.ts'
 import { isGitAvailable } from './tool-availability.ts'
 import { detectLanguage } from './language.ts'
@@ -172,8 +172,17 @@ export function classifyGitBlob(stdout: string, code: number): GitBlobResult {
   return { content: stdout, exists: true, isBinary: false }
 }
 
+/**
+ * Resolve a renderer-supplied path against the workspace boundary (throws when
+ * it escapes the root) and return it workspace-relative, so blob pathspecs are
+ * normalized the same way working-tree reads are (`resolveWorkspacePath`).
+ */
+export function resolveWorkspaceRelativeGitPath(path: string): string {
+  return toRelativePath(resolveWorkspacePath(path))
+}
+
 function gitObjectSpec(ref: string, path: string): string {
-  const gitPath = toGitShowPath(path)
+  const gitPath = toGitShowPath(resolveWorkspaceRelativeGitPath(path))
   return ref === ':' ? `:${gitPath}` : `${ref}:${gitPath}`
 }
 
@@ -330,6 +339,15 @@ export async function getBranches(): Promise<GitBranchInfo[]> {
     })
   }
   return branches
+}
+
+/** Current checked-out branch, or null when detached / outside a repo. */
+export async function getCurrentBranchName(): Promise<string | null> {
+  if (!getWorkspaceRoot()) return null
+  const { stdout, code } = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'])
+  if (code !== 0) return null
+  const branch = stdout.trim()
+  return branch && branch !== 'HEAD' ? branch : null
 }
 
 /** Return the default branch name for the current repository. */

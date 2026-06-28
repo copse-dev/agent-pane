@@ -4,7 +4,9 @@ import {
   BASE_SYSTEM_PROMPT,
   BASE_SYSTEM_PROMPT_DIRECT_READS,
   EXTERNAL_API_SAFETY_BLOCK,
+  BROWSER_TOOLS_BLOCK,
 } from './agent-prompt.ts'
+import { BROWSER_TOOLS_DEFAULT_ENABLED } from './browser/browser-origin-policy.ts'
 
 describe('agent-prompt', () => {
   it('includes shared placeholders and tool tail in both modes', () => {
@@ -30,5 +32,15 @@ describe('agent-prompt', () => {
   it('external API safety block warns about secrets', () => {
     assert.match(EXTERNAL_API_SAFETY_BLOCK, /Never hardcode, commit, or log secrets or API keys/)
     assert.match(EXTERNAL_API_SAFETY_BLOCK, /manifest\/lockfile/)
+  })
+
+  it('built-in browser tools are on by default', () => {
+    assert.equal(BROWSER_TOOLS_DEFAULT_ENABLED, true)
+  })
+
+  it('browser block steers away from installing a separate browser stack', () => {
+    assert.match(BROWSER_TOOLS_BLOCK, /browser_navigate/)
+    assert.match(BROWSER_TOOLS_BLOCK, /do NOT install/i)
+    assert.match(BROWSER_TOOLS_BLOCK, /Playwright/)
   })
 })

@@ -90,7 +90,7 @@ flake/cost reduction:
 | #   | Spec                   | Quarantined for               | Unit-test target                                            |
 | --- | ---------------------- | ----------------------------- | ----------------------------------------------------------- |
 | 1   | new-thread-keeps-panel | new-thread `$$` race          | `controller/panels.ts` + projects-pane _(prototype landed)_ |
-| 2   | subagent-display       | runner OOM                    | tool-card / subagent view                                   |
+| 2   | subagent-display ✓     | runner OOM (live-mock half)   | `subagent-display.test.ts` (DOM) + quarantined visual smoke |
 | 3   | context-breakdown      | OOM                           | footer context-breakdown view + store                       |
 | 4   | message-queue          | timing                        | message-queue controller                                    |
 | 5   | queued-message-edit    | timing                        | message-queue / composer controller                         |
