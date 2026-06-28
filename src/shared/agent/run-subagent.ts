@@ -88,12 +88,8 @@ export interface RunSubagentOptions {
   /** Replace the default "exploration query" user-task framing with a ready-made task. */
   userTask?: string
   usageModel?: string
-  /** Base system prompt for this subagent. Defaults to the explore prompt. */
-  systemPrompt?: string
   /** Session kind reported to the renderer (drives the tool card label). */
   kind?: SubagentSession['kind']
-  /** Override the user task message. Defaults to the explore-style task builder. */
-  userTask?: string
 }
 
 export interface RunSubagentResult {
@@ -127,9 +123,7 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
     systemPrompt,
     userTask,
     usageModel,
-    systemPrompt = SUBAGENT_SYSTEM_PROMPT,
     kind = 'explore',
-    userTask,
   } = opts
 
   const sessionId = randomUUID()
