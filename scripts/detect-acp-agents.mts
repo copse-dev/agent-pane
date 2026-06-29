@@ -21,6 +21,8 @@ interface KnownAgent {
   command: string
   args: string[]
   envHints?: string[]
+  install?: string
+  setup?: string
   note?: string
 }
 
@@ -31,15 +33,29 @@ const KNOWN_AGENTS: KnownAgent[] = [
     command: 'gemini',
     args: ['--experimental-acp'],
     envHints: ['GEMINI_API_KEY'],
-    note: 'Google Gemini CLI. Needs GEMINI_API_KEY or its own `gemini` login.',
+    install: 'npm install -g @google/gemini-cli',
+    setup: 'gemini',
+    note: 'Sign in by running `gemini` once, or set GEMINI_API_KEY.',
+  },
+  {
+    id: 'claude-agent-acp',
+    title: 'Claude Agent (ACP)',
+    command: 'claude-agent-acp',
+    args: [],
+    envHints: ['ANTHROPIC_API_KEY'],
+    install: 'npm install -g @agentclientprotocol/claude-agent-acp',
+    setup: 'claude setup-token',
+    note: 'Claude Agent SDK over ACP. Auth with `claude setup-token` or ANTHROPIC_API_KEY.',
   },
   {
     id: 'claude-code-acp',
-    title: 'Claude Code (ACP)',
+    title: 'Claude Code (ACP, Zed)',
     command: 'claude-code-acp',
     args: [],
     envHints: ['ANTHROPIC_API_KEY'],
-    note: "Zed's Claude Code ACP adapter (npm @zed-industries/claude-code-acp).",
+    install: 'npm install -g @zed-industries/claude-code-acp',
+    setup: 'claude setup-token',
+    note: "Zed's Claude Code ACP adapter. Auth with `claude setup-token` or ANTHROPIC_API_KEY.",
   },
 ]
 
@@ -82,17 +98,20 @@ const detected = await Promise.all(
 
 console.log('ACP agents on this device\n')
 for (const agent of detected) {
-  const mark = agent.installed ? '✓ installed' : '✗ not found'
+  const mark = agent.installed ? '✓ installed' : '✗ not installed'
   const run = agent.running ? ', running now' : ''
   console.log(`${mark}${run}  ${agent.title}  (command: ${agent.command})`)
-  if (agent.installed && agent.path) console.log(`    path: ${agent.path}`)
-  if (agent.note) console.log(`    note: ${agent.note}`)
+  if (agent.installed && agent.path) console.log(`    path:    ${agent.path}`)
+  else if (agent.install) console.log(`    install: ${agent.install}`)
+  if (agent.setup) console.log(`    sign in: ${agent.setup}`)
+  if (agent.note) console.log(`    note:    ${agent.note}`)
 }
 
 const installed = detected.filter((agent) => agent.installed)
 if (installed.length === 0) {
-  console.log('\nNo known ACP agents found on PATH. Install one (e.g. Gemini CLI) or')
-  console.log('configure a custom command — see docs/acp-agents.md.')
+  console.log('\nNo known ACP agents found on PATH. Install one with the `install` command')
+  console.log('above (the agent is a separate program, not bundled with Copse), then')
+  console.log('authenticate with its `sign in` command. See docs/acp-agents.md.')
   process.exit(0)
 }
 
