@@ -21,16 +21,16 @@ function providerLabel(slug: string): string {
 
 export interface EnvKeyDetectSection {
   root: HTMLFieldSetElement
-  /** Reload the persisted consent state (call when the host dialog opens). */
+  /** Reset the section to its initial state (call when the host dialog opens). */
   refresh: () => Promise<void>
 }
 
 /**
  * Opt-in "detect API keys from my environment" control, shared by first-run
- * setup and Settings. The user must tick the consent checkbox before the scan
- * button is enabled; scanning shows a masked preview of what was found, and a
- * single click then imports any keys for providers that aren't already
- * configured. Raw secrets stay in the main process throughout.
+ * setup and Settings. Clicking **Scan environment** is the explicit opt-in: it
+ * records consent (so the gated import IPC will run), shows a masked preview of
+ * any keys found, and a second click imports those for providers that aren't
+ * already configured. Raw secrets stay in the main process throughout.
  */
 export function createEnvKeyDetectSection(
   api: ApiClient,
@@ -38,23 +38,7 @@ export function createEnvKeyDetectSection(
 ): EnvKeyDetectSection {
   const legend = opts.legend ?? 'Detect existing API keys'
 
-  const consent = el('input', {
-    type: 'checkbox',
-    name: 'envKeyAutoDetectEnabled',
-  }) as HTMLInputElement
-
-  const consentLabel = el(
-    'label',
-    { class: 'checkbox-label' },
-    consent,
-    'Let Copse look for API keys in my shell environment',
-  )
-
-  const scanBtn = el(
-    'button',
-    { type: 'button', disabled: true },
-    'Scan environment',
-  ) as HTMLButtonElement
+  const scanBtn = el('button', { type: 'button' }, 'Scan environment') as HTMLButtonElement
   const importBtn = el(
     'button',
     {
@@ -76,11 +60,10 @@ export function createEnvKeyDetectSection(
     el(
       'p',
       { class: 'field-hint' },
-      'Reads your exported environment and shell start-up files (e.g. ~/.zshrc, ~/.bashrc) ' +
-        'for keys like ANTHROPIC_API_KEY or OPENAI_API_KEY and saves any it finds. ' +
-        'Nothing is read until you opt in, and existing keys are never overwritten.',
+      'Scans your exported environment and shell start-up files (e.g. ~/.zshrc, ~/.bashrc) ' +
+        'for keys like ANTHROPIC_API_KEY or OPENAI_API_KEY. Nothing is read until you click ' +
+        'Scan, and existing keys are never overwritten.',
     ),
-    consentLabel,
     actions,
     results,
   ) as HTMLFieldSetElement
@@ -90,13 +73,10 @@ export function createEnvKeyDetectSection(
     status.className = kind ? `key-status ${kind}` : 'key-status'
   }
 
-  function syncEnabled(): void {
-    scanBtn.disabled = !consent.checked
-    if (!consent.checked) {
-      importBtn.hidden = true
-      clear(results)
-      setStatus('')
-    }
+  function reset(): void {
+    importBtn.hidden = true
+    clear(results)
+    setStatus('')
   }
 
   function renderDetections(detected: readonly DetectedEnvKey[]): void {
@@ -132,22 +112,19 @@ export function createEnvKeyDetectSection(
     )
   }
 
-  consent.addEventListener('change', () => {
-    void api.settings.set('envKeyAutoDetectEnabled', consent.checked)
-    syncEnabled()
-  })
-
   scanBtn.addEventListener('click', () => {
     void (async () => {
       scanBtn.disabled = true
       setStatus('Scanning…')
       try {
-        const detected = await api.settings.scanEnvKeys()
-        renderDetections(detected)
+        // Clicking Scan is the explicit opt-in; record it so the gated import
+        // IPC will run.
+        await api.settings.set('envKeyAutoDetectEnabled', true)
+        renderDetections(await api.settings.scanEnvKeys())
       } catch (err) {
         setStatus(err instanceof Error ? err.message : 'Scan failed', 'err')
       } finally {
-        scanBtn.disabled = !consent.checked
+        scanBtn.disabled = false
       }
     })()
   })
@@ -175,10 +152,9 @@ export function createEnvKeyDetectSection(
     })()
   })
 
-  async function refresh(): Promise<void> {
-    const enabled = (await api.settings.get('envKeyAutoDetectEnabled')) as boolean | null
-    consent.checked = enabled === true
-    syncEnabled()
+  function refresh(): Promise<void> {
+    reset()
+    return Promise.resolve()
   }
 
   return { root: fieldset, refresh }
