@@ -2,16 +2,11 @@ import '../../../tests/setup-dom.ts'
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { showToast, showErrorToast } from './toast.ts'
+import { qsRequired } from '../dom/helpers.ts'
 
 afterEach(() => {
   document.getElementById('toast-host')?.remove()
 })
-
-function requireElement(selector: string): Element {
-  const el = document.querySelector(selector)
-  assert.ok(el, `expected an element matching ${selector}`)
-  return el
-}
 
 describe('toast (#119 surface IPC errors)', () => {
   it('appends a toast to a shared host and returns a dismiss fn', () => {
@@ -35,19 +30,19 @@ describe('toast (#119 surface IPC errors)', () => {
 
   it('renders error messages as text (no HTML injection)', () => {
     showErrorToast('Failed to save', new Error('<img src=x onerror=alert(1)>'))
-    const toast = requireElement('.toast-error')
+    const toast = qsRequired(document, '.toast-error')
     assert.equal(document.querySelectorAll('#toast-host img').length, 0)
     assert.match(toast.textContent, /Failed to save: <img src=x onerror=alert\(1\)>/)
   })
 
   it('normalizes non-Error rejection reasons', () => {
     showErrorToast('Oops', 'plain string reason')
-    assert.match(requireElement('.toast-error').textContent, /Oops: plain string reason/)
+    assert.match(qsRequired(document, '.toast-error').textContent, /Oops: plain string reason/)
   })
 
   it('extracts a readable message from an ErrorEvent (not "[object ErrorEvent]")', () => {
     showErrorToast('Unexpected error', new ErrorEvent('error', { message: 'Worker boom' }))
-    const text = requireElement('.toast-error').textContent
+    const text = qsRequired(document, '.toast-error').textContent
     assert.match(text, /Unexpected error: Worker boom/)
     assert.doesNotMatch(text, /\[object ErrorEvent\]/)
   })
@@ -57,7 +52,7 @@ describe('toast (#119 surface IPC errors)', () => {
       'Unexpected error',
       new ErrorEvent('error', { error: new Error('nested cause') }),
     )
-    assert.match(requireElement('.toast-error').textContent, /Unexpected error: nested cause/)
+    assert.match(qsRequired(document, '.toast-error').textContent, /Unexpected error: nested cause/)
   })
 
   it('appends the source location to an ErrorEvent message', () => {
@@ -71,7 +66,7 @@ describe('toast (#119 surface IPC errors)', () => {
       }),
     )
     assert.match(
-      requireElement('.toast-error').textContent,
+      qsRequired(document, '.toast-error').textContent,
       /Unexpected error: Failed to fetch module \(file:\/\/\/app\/ts\.worker\.js:12:5\)/,
     )
   })
@@ -81,7 +76,7 @@ describe('toast (#119 surface IPC errors)', () => {
       'Unexpected error',
       new ErrorEvent('error', { filename: 'file:///app/ts.worker.js', lineno: 3 }),
     )
-    const text = requireElement('.toast-error').textContent
+    const text = qsRequired(document, '.toast-error').textContent
     assert.match(text, /Unexpected error: script error at file:\/\/\/app\/ts\.worker\.js:3/)
     assert.doesNotMatch(text, /\[object ErrorEvent\]/)
   })
@@ -98,7 +93,7 @@ describe('toast (#119 surface IPC errors)', () => {
     showErrorToast('Unexpected error', captured)
     img.remove()
     assert.match(
-      requireElement('.toast-error').textContent,
+      qsRequired(document, '.toast-error').textContent,
       /Unexpected error: failed to load <img> https:\/\/example\.com\/missing\.png/,
     )
   })
