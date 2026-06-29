@@ -31,6 +31,7 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   str_replace: 'Replace in file',
   run_shell: 'Run command',
   update_todos: 'Update plan',
+  ask_question: 'Ask a question',
 }
 
 const TOOL_GROUPS: Record<string, { tools: string[]; label: string }> = {

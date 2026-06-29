@@ -23,6 +23,9 @@ export const READONLY_AGENT_TOOLS = new Set<string>([
   'read_staged_diff',
   'read_skill',
   'explore',
+  // Asking the user a clarifying question mutates nothing — it is especially
+  // useful in read-only mode where the agent cannot probe by editing.
+  'ask_question',
   // Reading back stored OKF memories is non-mutating; `remember` (a write) stays
   // denied by default in read-only mode.
   'recall',
