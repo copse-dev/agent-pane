@@ -5,16 +5,7 @@ import { createStore } from '@shared/store/store.ts'
 import { bindBrowserLinkClicks } from './browser-links.ts'
 import { hydrateRemoteArtifactImages } from './remote-artifact-images.ts'
 import { renderMarkdown } from './renderer.ts'
-
-// `E` appears once in the signature because this is a deliberate query-and-assert
-// helper: callers (e.g. requireEl<HTMLImageElement>) choose the element type, which
-// `querySelector` cannot infer from a string selector.
-// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
-function requireEl<E extends Element>(root: ParentNode, selector: string): E {
-  const el = root.querySelector<E>(selector)
-  if (!el) throw new Error(`Expected element matching "${selector}"`)
-  return el
-}
+import { qsRequired } from '../dom/helpers.ts'
 
 describe('markdown browser links', () => {
   it('opens HTTP links in the browser panel', () => {
@@ -26,7 +17,7 @@ describe('markdown browser links', () => {
     const unbind = bindBrowserLinkClicks(root, store)
 
     const event = new window.MouseEvent('click', { bubbles: true, cancelable: true })
-    requireEl(root, 'a').dispatchEvent(event)
+    qsRequired(root, 'a').dispatchEvent(event)
 
     unbind()
     assert.equal(event.defaultPrevented, true)
@@ -46,7 +37,7 @@ describe('markdown browser links', () => {
     const unbind = bindBrowserLinkClicks(root, store)
 
     const event = new window.MouseEvent('click', { bubbles: true, cancelable: true })
-    requireEl(root, 'a').dispatchEvent(event)
+    qsRequired(root, 'a').dispatchEvent(event)
 
     unbind()
     assert.equal(event.defaultPrevented, true)
@@ -65,7 +56,7 @@ describe('markdown browser links', () => {
     const unbind = bindBrowserLinkClicks(root, store)
 
     const event = new window.MouseEvent('click', { bubbles: true, cancelable: true })
-    requireEl(root, 'a').dispatchEvent(event)
+    qsRequired(root, 'a').dispatchEvent(event)
 
     unbind()
     assert.equal(event.defaultPrevented, false)
@@ -91,7 +82,7 @@ describe('markdown browser links', () => {
     })
 
     const event = new window.MouseEvent('click', { bubbles: true, cancelable: true })
-    requireEl(root, 'a').dispatchEvent(event)
+    qsRequired(root, 'a').dispatchEvent(event)
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     unbind()
@@ -127,7 +118,7 @@ describe('markdown browser links', () => {
     })
 
     const event = new window.MouseEvent('click', { bubbles: true, cancelable: true })
-    requireEl(root, 'a').dispatchEvent(event)
+    qsRequired(root, 'a').dispatchEvent(event)
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     unbind()
@@ -157,7 +148,7 @@ describe('markdown browser links', () => {
     })
 
     const event = new window.MouseEvent('click', { bubbles: true, cancelable: true })
-    requireEl(root, 'a').dispatchEvent(event)
+    qsRequired(root, 'a').dispatchEvent(event)
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     unbind()
@@ -188,7 +179,7 @@ describe('markdown browser links', () => {
     })
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    const img = requireEl<HTMLImageElement>(root, 'img')
+    const img = qsRequired<HTMLImageElement>(root, 'img')
     assert.equal(img.dataset['remoteArtifactState'], 'loaded')
     assert.equal(img.src, 'data:image/png;base64,abc123')
   })
@@ -210,7 +201,7 @@ describe('markdown browser links', () => {
 
     hydrateRemoteArtifactImages(finalMessage, api)
     assert.equal(
-      requireEl<HTMLImageElement>(finalMessage, 'img').dataset['remoteArtifactState'],
+      qsRequired<HTMLImageElement>(finalMessage, 'img').dataset['remoteArtifactState'],
       'missing-agent',
     )
 
@@ -230,7 +221,7 @@ describe('markdown browser links', () => {
       },
     ])
     assert.equal(
-      requireEl<HTMLImageElement>(finalMessage, 'img').dataset['remoteArtifactState'],
+      qsRequired<HTMLImageElement>(finalMessage, 'img').dataset['remoteArtifactState'],
       'loaded',
     )
   })
