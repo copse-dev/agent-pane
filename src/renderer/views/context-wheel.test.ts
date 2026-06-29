@@ -80,12 +80,13 @@ describe('context wheel breakdown (component)', () => {
     assert.ok(!wheel.root.classList.contains('has-breakdown'))
     assert.equal(wheel.root.querySelectorAll('.context-wheel g circle').length, 0)
 
-    const popover = wheel.root.querySelector<HTMLElement>('.context-wheel-popover')!
+    const popover = wheel.root.querySelector<HTMLElement>('.context-wheel-popover')
+    assert.ok(popover)
     assert.equal(popover.hidden, true)
     wheel.root.dispatchEvent(new Event('mouseenter'))
     assert.equal(popover.hidden, false)
-    assert.match(popover.textContent!, /System prompt/)
-    assert.match(popover.textContent!, /Conversation/)
+    assert.match(popover.textContent, /System prompt/)
+    assert.match(popover.textContent, /Conversation/)
   })
 
   it('shows no hover breakdown when none is provided (subagent/remote window)', () => {
@@ -103,7 +104,8 @@ describe('context wheel breakdown (component)', () => {
     }
     wheel.update(snapshot, false, { breakdown: null, breakdownRing: false })
 
-    const popover = wheel.root.querySelector<HTMLElement>('.context-wheel-popover')!
+    const popover = wheel.root.querySelector<HTMLElement>('.context-wheel-popover')
+    assert.ok(popover)
     assert.equal(popover.hidden, true)
     wheel.root.dispatchEvent(new Event('mouseenter'))
     // Still hidden: breakdownActive was never set, so the hover does nothing.
