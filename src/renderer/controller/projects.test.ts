@@ -141,6 +141,36 @@ test('switchProject uses cached threads in sidebar while activation is in flight
   await new Promise((r) => setTimeout(r, 0))
 })
 
+test('switchProject keeps the right panel open in the same mode (issue #502)', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [thread('t-a')],
+    filesPaneOpen: true,
+    rightPanelMode: 'terminal',
+  })
+
+  const api = makeApi({
+    storageGet: async (key) => {
+      if (key === 'threads:b') return [thread('t-b')]
+      return null
+    },
+  })
+
+  switchProject(store, api, 'b')
+  await waitUntil(() => store.getState().activeProjectId === 'b')
+
+  assert.equal(store.getState().filesPaneOpen, true)
+  assert.equal(store.getState().rightPanelMode, 'terminal')
+  assert.equal(store.getState().openFile, null)
+})
+
 test('switchProjectThread selects the clicked thread after activation', async () => {
   resetProjectSwitchStateForTest()
   const store = createStore({
