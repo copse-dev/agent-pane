@@ -36,7 +36,7 @@ export class AnthropicProvider implements LLMProvider {
                   system: [
                     {
                       type: 'text' as const,
-                      text: systemMsg.content as string,
+                      text: systemMsg.content,
                       cache_control: { type: 'ephemeral' as const },
                     },
                   ],
@@ -149,9 +149,7 @@ function toAnthropicMessages(messages: LLMMessage[]): Anthropic.MessageParam[] {
       return [
         {
           role: 'user',
-          content: toAnthropicContent(
-            m.content as Array<{ type: string; text?: string; dataUrl?: string }>,
-          ),
+          content: toAnthropicContent(m.content),
         },
       ]
     }

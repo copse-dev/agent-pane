@@ -5,7 +5,6 @@ import {
   PROTOCOL_VERSION,
   type AgentApp,
   type AgentConnection,
-  type CancelNotification,
   type PromptRequest,
   type RequestPermissionOutcome,
   type StopReason,
@@ -133,7 +132,7 @@ export function buildAcpAgentApp(runner: AcpTurnRunner, options: AcpAgentOptions
       }
     })
     .onNotification('session/cancel', (ctx) => {
-      const params = ctx.params as CancelNotification
+      const params = ctx.params
       pending.get(params.sessionId)?.abort()
     })
 }

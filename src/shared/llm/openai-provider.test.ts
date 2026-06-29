@@ -269,7 +269,7 @@ describe('OpenAIProvider stream parsing', () => {
     )
     assert.ok(toolCall)
     assert.ok(toolCall.toolCall.argsError)
-    assert.match(toolCall.toolCall.argsError!, /Could not parse tool arguments/)
+    assert.match(toolCall.toolCall.argsError, /Could not parse tool arguments/)
   })
 
   it('does not emit a usage chunk when the stream reports no usage', async () => {

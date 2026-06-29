@@ -40,7 +40,7 @@ describe('model catalog', () => {
         info?.cacheCreationPricePerMTok && info.cacheCreationPricePerMTok > 0,
         `${model}: cache creation`,
       )
-      assert.ok(info.cacheReadPricePerMTok! < info.inputPricePerMTok)
+      assert.ok(info.cacheReadPricePerMTok < info.inputPricePerMTok)
     }
   })
 

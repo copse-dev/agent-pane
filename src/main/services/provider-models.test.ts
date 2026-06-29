@@ -38,7 +38,7 @@ describe('fetchOpenAiCompatibleModels', () => {
             { notAnId: true }, // skipped
           ],
         }),
-      } as Partial<Response>
+      }
     })
     const res = await fetchOpenAiCompatibleModels('https://api.example.com/v1/')
     assert.equal(requested, 'https://api.example.com/v1/models') // single slash
@@ -51,23 +51,23 @@ describe('fetchOpenAiCompatibleModels', () => {
   })
 
   it('surfaces an HTTP error', async () => {
-    stubFetch(() => ({ ok: false, status: 401, statusText: 'Unauthorized' }) as Partial<Response>)
+    stubFetch(() => ({ ok: false, status: 401, statusText: 'Unauthorized' }))
     const res = await fetchOpenAiCompatibleModels('https://api.example.com/v1', 'bad-key')
     assert.equal(res.ok, false)
     assert.match(res.error ?? '', /401/)
   })
 
   it('returns an empty list when the payload has no data array', async () => {
-    stubFetch(() => ({ ok: true, status: 200, json: async () => ({}) }) as Partial<Response>)
+    stubFetch(() => ({ ok: true, status: 200, json: async () => ({}) }))
     const res = await fetchOpenAiCompatibleModels('https://api.example.com/v1')
     assert.equal(res.ok, true)
     assert.deepEqual(res.models, [])
   })
 
   it('catches network errors', async () => {
-    globalThis.fetch = (async () => {
+    globalThis.fetch = async () => {
       throw new Error('boom')
-    }) as typeof fetch
+    }
     const res = await fetchOpenAiCompatibleModels('https://api.example.com/v1')
     assert.equal(res.ok, false)
     assert.match(res.error ?? '', /boom/)

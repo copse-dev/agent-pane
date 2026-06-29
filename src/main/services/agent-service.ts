@@ -229,14 +229,14 @@ export async function runAgent(
     if (steeringBlocks.length && messages[0]?.role === 'system') {
       messages[0] = {
         role: 'system',
-        content: (messages[0].content as string) + `\n\n${steeringBlocks.join('\n\n')}`,
+        content: messages[0].content + `\n\n${steeringBlocks.join('\n\n')}`,
       }
     }
     const priorTodos = options?.priorTodos ?? []
     if (priorTodos.length && messages[0]?.role === 'system') {
       messages[0] = {
         role: 'system',
-        content: (messages[0].content as string) + formatTodosForPrompt(priorTodos),
+        content: messages[0].content + formatTodosForPrompt(priorTodos),
       }
     }
 

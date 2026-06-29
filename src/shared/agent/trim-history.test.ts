@@ -52,7 +52,7 @@ describe('trimMessagesInPlace', () => {
     ]
     trimMessagesInPlace(messages, 100, { minTailMessages: 2 })
     assert.equal(messages[0]?.role, 'system')
-    assert.match(messages[0]?.content as string, /keep me/)
+    assert.match(messages[0]?.content, /keep me/)
   })
 
   it('never drops user messages (LM Studio prompt templates need a user query)', () => {

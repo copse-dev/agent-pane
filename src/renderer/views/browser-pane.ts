@@ -341,7 +341,7 @@ export function mountBrowserPane(
       { type: 'button', class: 'browser-tabs-tab', 'data-tab-id': id },
       tabLabelEl,
       closeBtn,
-    ) as HTMLButtonElement
+    )
 
     const backBtn = el(
       'button',
@@ -353,7 +353,7 @@ export function mountBrowserPane(
         disabled: true,
       },
       '←',
-    ) as HTMLButtonElement
+    )
     const forwardBtn = el(
       'button',
       {
@@ -364,18 +364,18 @@ export function mountBrowserPane(
         disabled: true,
       },
       '→',
-    ) as HTMLButtonElement
+    )
     const reloadBtn = el(
       'button',
       { type: 'button', class: 'browser-nav-btn', 'aria-label': 'Reload', title: 'Reload' },
       '↻',
-    ) as HTMLButtonElement
+    )
     const urlInput = el('input', {
       type: 'text',
       class: 'browser-url-input',
       placeholder: 'Enter URL or search',
       spellcheck: 'false',
-    }) as HTMLInputElement
+    })
     const goBtn = el(
       'button',
       { type: 'button', class: 'browser-go-btn', 'aria-label': 'Go', title: 'Go' },

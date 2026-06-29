@@ -68,7 +68,7 @@ export class OpenAIProvider implements LLMProvider {
               function: {
                 name: t.name,
                 description: t.description,
-                parameters: t.parameters as Record<string, unknown>,
+                parameters: t.parameters,
               },
             }))
           : undefined
@@ -150,16 +150,14 @@ export class OpenAIProvider implements LLMProvider {
 
 function toOpenAIMessages(messages: LLMMessage[]): OpenAI.ChatCompletionMessageParam[] {
   return messages.flatMap((m): OpenAI.ChatCompletionMessageParam[] => {
-    if (m.role === 'system') return [{ role: 'system', content: m.content as string }]
+    if (m.role === 'system') return [{ role: 'system', content: m.content }]
     if (m.role === 'user' && typeof m.content === 'string')
       return [{ role: 'user', content: m.content }]
     if (m.role === 'user' && Array.isArray(m.content)) {
       return [
         {
           role: 'user',
-          content: toOpenAIContent(
-            m.content as Array<{ type: string; text?: string; dataUrl?: string }>,
-          ),
+          content: toOpenAIContent(m.content),
         },
       ]
     }

@@ -167,7 +167,7 @@ describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
     const r = new StreamingMarkdownRenderer(host)
     r.update('## Title\n- item')
     const completed = host.querySelector('.stream-complete')!
-    const pending = host.querySelector('.stream-pending')! as HTMLElement
+    const pending = host.querySelector<HTMLElement>('.stream-pending')!
     assert.match(completed.innerHTML, /<h2>Title<\/h2>/)
     assert.equal(pending.textContent, '- item')
     assert.equal(pending.hidden, false)
@@ -223,8 +223,8 @@ describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
     // until hydration); the dangerous src/onerror payload is stripped.
     const img = host.querySelector('img')
     assert.ok(img)
-    assert.equal(img!.getAttribute('class'), 'remote-artifact-image')
-    assert.equal(img!.getAttribute('src'), null)
+    assert.equal(img.getAttribute('class'), 'remote-artifact-image')
+    assert.equal(img.getAttribute('src'), null)
     const pending = host.querySelector('.stream-pending') as HTMLElement
     assert.doesNotMatch(pending.innerHTML, /onerror/)
   })

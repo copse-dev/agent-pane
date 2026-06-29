@@ -25,10 +25,10 @@ function routingField(label: string, control: HTMLElement, hint: string): HTMLDi
 }
 
 export function createModelRoutingSection(api: ApiClient): ModelRoutingSection {
-  const localDefaultModel = el('select', { name: 'localDefaultModel' }) as HTMLSelectElement
-  const subagentModel = el('select', { name: 'subagentModel' }) as HTMLSelectElement
-  const safetyModel = el('select', { name: 'safetyModel' }) as HTMLSelectElement
-  const reviewModel = el('select', { name: 'reviewModel' }) as HTMLSelectElement
+  const localDefaultModel = el('select', { name: 'localDefaultModel' })
+  const subagentModel = el('select', { name: 'subagentModel' })
+  const safetyModel = el('select', { name: 'safetyModel' })
+  const reviewModel = el('select', { name: 'reviewModel' })
 
   const fieldset = el(
     'fieldset',
@@ -59,7 +59,7 @@ export function createModelRoutingSection(api: ApiClient): ModelRoutingSection {
       reviewModel,
       'Reviews the diff after an editing turn (auto reuses the chat model)',
     ),
-  ) as HTMLFieldSetElement
+  )
 
   async function refresh(): Promise<void> {
     let models: string[]
