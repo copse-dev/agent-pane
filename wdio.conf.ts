@@ -5,6 +5,7 @@ import { randomInt } from 'node:crypto'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
+import { E2E_GIT_BRANCH } from './tests/e2e/helpers/e2e-env.ts'
 
 const electronShell = join(process.cwd(), 'tests/e2e/electron-shell')
 const e2eEnvFile = join(electronShell, '.e2e-env.json')
@@ -88,6 +89,9 @@ export const config: Options.Testrunner = {
       COPSE_E2E: '1',
       COPSE_PANEL_MOCK_LLM: '1',
       COPSE_PANEL_MOCK_GH: '1',
+      // Pin the branch the app reports so footer/branch-picker screenshots stay
+      // stable regardless of which branch the PR is built from.
+      COPSE_PANEL_MOCK_BRANCH: E2E_GIT_BRANCH,
       COPSE_PANEL_USER_DATA: e2eUserDataDir,
       ANTHROPIC_API_KEY: '',
       OPENAI_API_KEY: '',
