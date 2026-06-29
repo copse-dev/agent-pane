@@ -27,7 +27,7 @@ We design for that.
 
 We do not assume a specific attacker. We assume the agent's effective behaviour
 can be steered by any untrusted input it ingests, and design controls that hold
-regardless of *why* it deviates. Concretely, the agent's actions may be driven by:
+regardless of _why_ it deviates. Concretely, the agent's actions may be driven by:
 
 - **Untrusted content** reaching the model — a cloned repo, an MCP/tool result, a
   fetched web page, or a file the agent itself just wrote (prompt injection /
@@ -43,12 +43,12 @@ human approval** before it can reach the host or the network, and should leave a
 
 ## Trust boundaries
 
-| Boundary | Trusted side | Untrusted side |
-| --- | --- | --- |
-| Workspace vs. host | The host and the user's own config | The opened project's contents |
-| User dir vs. workspace | `<userData>/tools/`, global MCP config | Project-supplied `.mcp.json` / `.cursor/mcp.json` |
-| Main process vs. renderer | Electron main, `contextBridge` API | Rendered web/markdown/browser content |
-| Approved vs. auto-run | Commands the user OK'd | Agent-proposed shell commands and writes |
+| Boundary                  | Trusted side                           | Untrusted side                                    |
+| ------------------------- | -------------------------------------- | ------------------------------------------------- |
+| Workspace vs. host        | The host and the user's own config     | The opened project's contents                     |
+| User dir vs. workspace    | `<userData>/tools/`, global MCP config | Project-supplied `.mcp.json` / `.cursor/mcp.json` |
+| Main process vs. renderer | Electron main, `contextBridge` API     | Rendered web/markdown/browser content             |
+| Approved vs. auto-run     | Commands the user OK'd                 | Agent-proposed shell commands and writes          |
 
 The existing design already encodes several of these: custom tools load **only**
 from the user-controlled `<userData>/tools/` directory (never the workspace),
@@ -58,19 +58,19 @@ project-defined MCP servers are gated behind workspace trust, the
 ## Threat scenarios
 
 1. **Indirect prompt injection.** Untrusted repo/tool/web content instructs the
-   agent to exfiltrate secrets or run a destructive command. *Backstop:* writes
+   agent to exfiltrate secrets or run a destructive command. _Backstop:_ writes
    and shell commands wait for approval; outbound network actions are visible.
 2. **Write-then-run.** The agent writes a benign-looking script, then proposes
    running it via an interpreter (`node x.js`, `bash x.sh`). The approval prompt
-   shows only the launcher, not the payload. *This is a known gap — see below.*
+   shows only the launcher, not the payload. _This is a known gap — see below._
 3. **Privilege via project config.** A cloned repo ships an MCP server or tool
-   config hoping to auto-execute. *Backstop:* project MCP config is trust-gated;
+   config hoping to auto-execute. _Backstop:_ project MCP config is trust-gated;
    full-privilege custom tools never load from the workspace.
 4. **Secret egress.** The agent reads a key from the environment or settings and
-   sends it outbound. *Backstop:* secrets are scrubbed from child-process
+   sends it outbound. _Backstop:_ secrets are scrubbed from child-process
    environments; env-var keys are never written to `settings.json`.
 5. **Swapped/hostile model.** The configured provider returns actions aimed at
-   harming the host. *Backstop:* the approval boundary is provider-agnostic — the
+   harming the host. _Backstop:_ the approval boundary is provider-agnostic — the
    same gates apply no matter which model produced the action.
 
 ## Design principles
@@ -87,7 +87,7 @@ project-defined MCP servers are gated behind workspace trust, the
    allowlists and remembered decisions — rather than on every benign command, so
    users keep the gate on instead of switching it off.
 4. **Observability.** The user should be able to answer, during and after a run,
-   *what did the agent actually do?* Actions that touch the host, the workspace,
+   _what did the agent actually do?_ Actions that touch the host, the workspace,
    or the network should leave an inspectable trail.
 
 ## Current controls
@@ -105,7 +105,7 @@ project-defined MCP servers are gated behind workspace trust, the
   strict DOMPurify on rendered content.
 - **Persisted thread history + export.** Every thread is autosaved to the
   main-process electron-store (a JSON file under the `copse-panel` userData dir),
-  with each message's tool calls — args *and* results — retained inline. Any
+  with each message's tool calls — args _and_ results — retained inline. Any
   thread can be exported to JSONL (`downloadThreadJsonl`), giving an inspectable,
   greppable record of what the agent did across a run.
 
