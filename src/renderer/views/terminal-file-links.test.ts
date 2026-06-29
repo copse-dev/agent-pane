@@ -82,10 +82,10 @@ describe('terminal file links', () => {
 
     const provided = provideLinksAt(term, 1)
     assert.equal(provided?.length, 1)
-    assert.equal(provided![0]!.text, 'src/main/index.ts')
+    assert.equal(provided[0]!.text, 'src/main/index.ts')
     // Range spans exactly the path: 1-based, end inclusive of the last cell.
-    assert.deepEqual(provided![0]!.range.start, { x: 6, y: 1 })
-    assert.deepEqual(provided![0]!.range.end, { x: 22, y: 1 })
+    assert.deepEqual(provided[0]!.range.start, { x: 6, y: 1 })
+    assert.deepEqual(provided[0]!.range.end, { x: 22, y: 1 })
     links.dispose()
   })
 

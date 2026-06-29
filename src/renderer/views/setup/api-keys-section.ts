@@ -72,7 +72,7 @@ export function createApiKeysSection(
       name: config.name,
       placeholder: config.placeholder,
       autocomplete: 'off',
-    }) as HTMLInputElement
+    })
     const status = el('span', { class: 'key-status', 'data-key': provider })
     const label = el(
       'label',
@@ -90,7 +90,7 @@ export function createApiKeysSection(
     {},
     el('legend', {}, legend),
     ...fields.map((field) => field.label),
-  ) as HTMLFieldSetElement
+  )
 
   const validationTimers = new Map<string, ReturnType<typeof setTimeout>>()
 

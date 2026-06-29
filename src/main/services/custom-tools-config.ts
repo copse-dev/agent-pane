@@ -122,7 +122,7 @@ export function normalizeCustomTool(
     rawParameters,
     ...(raw.requiresApproval === true ? { requiresApproval: true } : {}),
     async execute(args, signal) {
-      const out = await userExecute((args ?? {}) as unknown, signal)
+      const out = await userExecute(args ?? {}, signal)
       return coerceResult(out)
     },
   }

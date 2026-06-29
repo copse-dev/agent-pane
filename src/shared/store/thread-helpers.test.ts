@@ -103,7 +103,7 @@ describe('blank thread reuse', () => {
     const draftBlank = store.getState().threads.find((t) => t.id === draftBlankId)
     assert.ok(draftBlank)
     assert.equal(draftBlank?.draftPrompt, 'still typing…')
-    assert.equal(hasUnsubmittedPrompt(draftBlank!), true)
+    assert.equal(hasUnsubmittedPrompt(draftBlank), true)
   })
 
   it('openNewThread creates a new blank when the only blank has a draft', () => {

@@ -12,8 +12,7 @@ class TestResizeObserver {
   disconnect(): void {}
 }
 
-;(globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver =
-  TestResizeObserver as typeof ResizeObserver
+;(globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver = TestResizeObserver
 ;(globalThis as { requestAnimationFrame?: typeof requestAnimationFrame }).requestAnimationFrame = (
   callback,
 ) => setTimeout(() => callback(Date.now()), 0) as unknown as number
@@ -177,6 +176,6 @@ describe('input bar browse button', () => {
 
     const chip = host.querySelector<HTMLElement>('.attachment-chips .attachment-chip')
     assert.ok(chip, 'an attachment chip is rendered for the selected file')
-    assert.match(chip!.textContent ?? '', /notes\.txt/)
+    assert.match(chip.textContent ?? '', /notes\.txt/)
   })
 })
