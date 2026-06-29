@@ -34,7 +34,7 @@ export async function fetchOpenAiCompatibleModels(
       }
     }
     const json: unknown = await res.json()
-    const data = (json as { data?: unknown }).data
+    const data = (json as { data?: unknown } | null | undefined)?.data
     if (!Array.isArray(data)) return { ok: true, models: [] }
     const models: FetchedProviderModel[] = []
     for (const row of data) {
