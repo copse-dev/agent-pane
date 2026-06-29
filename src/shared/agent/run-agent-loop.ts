@@ -237,6 +237,7 @@ async function streamTextOnlyTurn(
   try {
     for await (const chunk of provider.stream(turnMessages, [], signal)) {
       if (signal?.aborted) break
+      if (chunk.type === 'reasoning') onChunk(chunk)
       if (chunk.type === 'text') {
         assistantText += chunk.text
         onChunk(chunk)
@@ -526,6 +527,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     try {
       for await (const chunk of provider.stream(messages, tools, signal)) {
         if (signal?.aborted) break
+        if (chunk.type === 'reasoning') onChunk(chunk)
         if (chunk.type === 'text') {
           assistantText += chunk.text
           onChunk(chunk)

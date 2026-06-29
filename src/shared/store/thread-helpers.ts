@@ -246,6 +246,18 @@ export function appendToken(store: AppStore, messageId: string, text: string): v
   store.emit('message_token', messageId, text)
 }
 
+export function appendReasoning(store: AppStore, messageId: string, text: string): void {
+  const { threads } = store.getState()
+  const updated = threads.map((t) => ({
+    ...t,
+    messages: t.messages.map((m) =>
+      m.id !== messageId ? m : { ...m, reasoning: (m.reasoning ?? '') + text },
+    ),
+  }))
+  store.setState({ threads: updated })
+  store.emit('message_reasoning', messageId, text)
+}
+
 export function setMessageContent(store: AppStore, messageId: string, content: string): void {
   const { threads } = store.getState()
   const updated = threads.map((t) => ({

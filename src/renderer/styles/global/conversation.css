@@ -100,9 +100,54 @@
     transform: scale(1);
   }
 }
+.agent-activity-clickable {
+  cursor: pointer;
+}
+.agent-activity-clickable:hover {
+  color: var(--text-primary);
+}
 .msg {
   padding: var(--spacing-sm) var(--spacing-md);
   border-radius: var(--radius);
+}
+/* Reasoning ("thinking") disclosure, shown above the answer. */
+.message-reasoning {
+  margin-bottom: var(--spacing-sm);
+  border-left: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  padding-left: var(--spacing-sm);
+}
+.message-reasoning-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  cursor: pointer;
+  list-style: none;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  user-select: none;
+}
+.message-reasoning-summary::-webkit-details-marker {
+  display: none;
+}
+.message-reasoning-icon {
+  width: 0;
+  height: 0;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 0.12s ease;
+}
+.message-reasoning[open] .message-reasoning-icon {
+  transform: rotate(90deg);
+}
+.message-reasoning-text {
+  margin-top: var(--spacing-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+  line-height: 1.5;
 }
 .message-body {
   position: relative;
