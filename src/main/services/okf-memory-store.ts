@@ -3,6 +3,7 @@ import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'n
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { splitSkillMarkdown } from './parse-skill-frontmatter.ts'
+import { at } from '@shared/array-utils.ts'
 import { getActiveProjectRoot } from './workspace.ts'
 
 /**
@@ -130,13 +131,13 @@ function unquoteScalar(value: string): string {
 
 function frontmatterField(yaml: string, key: string): string {
   const match = yaml.match(new RegExp(`^${key}:[ \\t]*(.*)$`, 'm'))
-  return match ? unquoteScalar(match[1]!) : ''
+  return match ? unquoteScalar(at(match, 1)) : ''
 }
 
 function parseTags(yaml: string): string[] {
   const match = yaml.match(/^tags:[ \t]*\[(.*)\][ \t]*$/m)
   if (!match) return []
-  return match[1]!
+  return at(match, 1)
     .split(',')
     .map((tag) => tag.trim())
     .filter(Boolean)

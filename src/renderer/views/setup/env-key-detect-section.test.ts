@@ -14,12 +14,15 @@ interface StubState {
 function stubApi(state: StubState): ApiClient {
   const api = {
     settings: {
-      get: async (key: string) => state.settings[key] ?? null,
-      set: async (key: string, value: unknown) => {
+      get: async (key: string): Promise<unknown> => state.settings[key] ?? null,
+      set: async (key: string, value: unknown): Promise<void> => {
         state.settings[key] = value
       },
-      scanEnvKeys: async () => state.scanResult,
-      importEnvKeys: async () => {
+      scanEnvKeys: async (): Promise<DetectedEnvKey[]> => state.scanResult,
+      importEnvKeys: async (): Promise<{
+        imported: { provider: string; source: string }[]
+        skipped: string[]
+      }> => {
         state.importCalls += 1
         return { imported: state.imported, skipped: [] }
       },
@@ -28,7 +31,7 @@ function stubApi(state: StubState): ApiClient {
   return api as unknown as ApiClient
 }
 
-const flush = () => new Promise((r) => setTimeout(r, 0))
+const flush = (): Promise<unknown> => new Promise((r) => setTimeout(r, 0))
 
 describe('env-key-detect-section', () => {
   let state: StubState
@@ -59,14 +62,15 @@ describe('env-key-detect-section', () => {
     document.body.append(section.root)
 
     const [scanBtn, importBtn] = section.root.querySelectorAll('button')
-    scanBtn!.dispatchEvent(new Event('click'))
+    assert.ok(scanBtn)
+    scanBtn.dispatchEvent(new Event('click'))
     await flush()
 
     // Clicking scan is the explicit opt-in.
     assert.equal(state.settings['envKeyAutoDetectEnabled'], true)
     const rows = section.root.querySelectorAll('.env-key-row')
     assert.equal(rows.length, 2)
-    assert.match(section.root.textContent ?? '', /sk-…ab/)
+    assert.match(section.root.textContent, /sk-…ab/)
     // One new key → import button visible and labelled for a single key.
     assert.equal((importBtn as HTMLButtonElement).hidden, false)
     assert.equal((importBtn as HTMLButtonElement).textContent, 'Import 1 key')
@@ -86,7 +90,8 @@ describe('env-key-detect-section', () => {
     document.body.append(section.root)
 
     const [scanBtn, importBtn] = section.root.querySelectorAll('button')
-    scanBtn!.dispatchEvent(new Event('click'))
+    assert.ok(scanBtn)
+    scanBtn.dispatchEvent(new Event('click'))
     await flush()
 
     assert.equal(section.root.querySelectorAll('.env-key-row').length, 1)
@@ -113,9 +118,11 @@ describe('env-key-detect-section', () => {
     document.body.append(section.root)
 
     const [scanBtn, importBtn] = section.root.querySelectorAll('button')
-    scanBtn!.dispatchEvent(new Event('click'))
+    assert.ok(scanBtn)
+    scanBtn.dispatchEvent(new Event('click'))
     await flush()
-    importBtn!.dispatchEvent(new Event('click'))
+    assert.ok(importBtn)
+    importBtn.dispatchEvent(new Event('click'))
     await flush()
 
     assert.equal(state.importCalls, 1)

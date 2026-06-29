@@ -592,7 +592,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       void customProvidersSection.refresh()
     },
   })
-  overlay.querySelector('#settings-env-detect-host')!.append(envKeyDetectSection.root)
+  overlay.querySelector('#settings-env-detect-host')?.append(envKeyDetectSection.root)
 
   const cursorKeySection = createApiKeysSection(api, {
     legend: 'Cursor authentication',
