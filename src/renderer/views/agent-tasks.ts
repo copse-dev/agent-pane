@@ -3,6 +3,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { shellCommandLabel } from '@shared/tools/tool-display.ts'
 import { at } from '@shared/array-utils.ts'
+import { isTabVisibleForProject } from './project-scoped-tabs.ts'
 
 // How many finished tasks to keep around before the oldest are dropped. The
 // running task (and recent history) stay viewable; ancient ones are pruned so
@@ -27,6 +28,8 @@ type TaskStatus = 'running' | 'done' | 'error'
 
 interface AgentTask {
   id: string
+  /** Project this run belongs to; only the active project's runs are shown. */
+  projectId: string | null
   command: string
   status: TaskStatus
   output: string
@@ -70,8 +73,20 @@ export function mountAgentTasks(
   const order: string[] = []
   let selectedId: string | null = null
 
+  function currentProjectId(): string | null {
+    return store.getState().activeProjectId
+  }
+
+  function visibleTaskCount(): number {
+    let count = 0
+    for (const task of tasks.values()) {
+      if (isTabVisibleForProject(task, currentProjectId())) count++
+    }
+    return count
+  }
+
   function syncSectionVisibility(): void {
-    section.hidden = tasks.size === 0
+    section.hidden = visibleTaskCount() === 0
   }
 
   function showTaskView(show: boolean): void {
@@ -141,7 +156,15 @@ export function mountAgentTasks(
     })
     panel.hidden = true
 
-    const task: AgentTask = { id, command, status: 'running', output: '', tab, panel }
+    const task: AgentTask = {
+      id,
+      projectId: currentProjectId(),
+      command,
+      status: 'running',
+      output: '',
+      tab,
+      panel,
+    }
     tab.addEventListener('click', () => {
       selectTask(id)
     })
@@ -151,6 +174,7 @@ export function mountAgentTasks(
     order.push(id)
     tabList.append(tab)
     viewerHost.append(panel)
+    if (!isTabVisibleForProject(task, currentProjectId())) tab.hidden = true
     prune()
     syncSectionVisibility()
   }
@@ -193,14 +217,18 @@ export function mountAgentTasks(
     return null
   }
 
-  function clearAll(): void {
-    clearSelection()
+  // Project switch: keep each project's agent runs but only show the active
+  // project's (issue #502 part c). Switching back restores the prior runs rather
+  // than resetting them.
+  function onProjectSwitch(): void {
+    const active = currentProjectId()
     for (const task of tasks.values()) {
-      task.tab.remove()
-      task.panel.remove()
+      const visible = isTabVisibleForProject(task, active)
+      task.tab.hidden = !visible
+      if (!visible) task.panel.hidden = true
     }
-    tasks.clear()
-    order.length = 0
+    const selected = selectedId ? tasks.get(selectedId) : null
+    if (selected && !isTabVisibleForProject(selected, active)) clearSelection()
     syncSectionVisibility()
   }
 
@@ -221,7 +249,7 @@ export function mountAgentTasks(
 
   // A shell tab took over the viewer — yield the task panel back to it.
   const unsubShell = store.on('shell_tab_activated', clearSelection)
-  const unsubWorkspace = store.on('workspace_changed', clearAll)
+  const unsubWorkspace = store.on('workspace_changed', onProjectSwitch)
 
   return () => {
     unsubChunk()
