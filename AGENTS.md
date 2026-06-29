@@ -80,35 +80,15 @@ changed renderer UI or e2e fixtures, also run **`npm run build && npm run test:e
 
 ### Type-safety & lint discipline
 
-The three gates that keep the codebase honest run together under **`npm run check`** (and again in
-CI's `precheck` job): **`tsc`** (`typecheck`, both tsconfig projects), **ESLint** (`lint`, flat
-config in `eslint.config.mjs`, on `strictTypeChecked`), and **Prettier** (`format:check`). Run that
-command before every commit — never hand-format or eyeball types in place of it. If you touched only
-a few files and want a fast inner loop, `npx tsc --noEmit -p tsconfig.web.json`,
-`npx eslint <files>`, and `npx prettier --write <files>` are the same tools `check` invokes.
+Three gates keep the codebase honest and run together under **`npm run check`** (also CI's
+`precheck`): **`tsc`** (`typecheck`), **ESLint** (`lint`, on `strictTypeChecked`), and **Prettier**
+(`format:check`). Run it before every commit — never hand-format or eyeball types in place of it.
 
-Write code the linter never has to flag. In particular:
-
-- **Minimise `as` casts.** A cast asserts a type the compiler can't verify, so each one is a place a
-  refactor can silently go wrong. Prefer the typed alternative: a narrowing type guard
-  (`if (typeof x === 'string')`), a discriminated union, a zod-validated boundary (use
-  `defineTool()` so tool args are inferred, not cast), `satisfies` to check a value against a type
-  without widening it, or the `at()` helper in `src/shared/array-utils.ts` for safe indexed access.
-  `as const` is fine. `as unknown as T` double-casts are a code smell — reach for a real type first.
-- **Never cast object literals.** `{ ... } as T` is banned in production code
-  (`@typescript-eslint/consistent-type-assertions`) because it skips excess-property checking, so a
-  typo'd or stale field passes silently. Annotate the binding instead: `const x: T = { ... }`, or
-  `{ ... } satisfies T`. (Tests may cast partial mocks — that override is intentional.)
-- **Don't reach for an escape hatch to silence a real error.** `eslint-disable` and
-  `@ts-expect-error`/`@ts-ignore` hide a finding rather than fix it. Fix the underlying type or
-  logic first. If a suppression is genuinely unavoidable (e.g. a defensive `no-unnecessary-condition`
-  guard against legacy persisted data), it **must** carry a trailing `-- reason` explaining why —
-  `ban-ts-comment` requires a description, and `reportUnusedDisableDirectives` is set to `error`, so
-  a suppression that no longer suppresses anything fails the build. Keep the inventory small and
-  justified.
-- **No `any`, no unsafe flow.** `no-explicit-any` and the `no-unsafe-*` family are on. Type values at
-  the boundary where they enter the code (parse/validate untyped input) rather than letting `any`
-  propagate.
+Write code the linter never has to flag: minimise `as` casts (prefer type guards, `satisfies`,
+zod-validated boundaries, and the typed DOM/array helpers), never cast object literals, never reach
+for `eslint-disable` / `@ts-expect-error` to silence a real error. The full reference — techniques,
+which rules are on and why, the escape-hatch rules — is in
+[`docs/type-safety.md`](docs/type-safety.md).
 
 ### Visual changes require evals
 
