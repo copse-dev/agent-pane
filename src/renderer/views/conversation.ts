@@ -328,12 +328,21 @@ function buildReasoningEl(reasoning: string, open: boolean): HTMLDetailsElement 
     el('span', { class: 'message-reasoning-title' }, 'Thinking'),
   )
   const text = el('div', { class: 'message-reasoning-text' })
-  text.textContent = reasoning
+  renderReasoningText(text, reasoning)
   summary.addEventListener('click', () => {
     details.dataset['userToggled'] = '1'
   })
   details.append(summary, text)
   return details
+}
+
+/**
+ * Render reasoning text as markdown into a <div>. Uses the same pipeline as
+ * the answer body but without post-processing (file links, mermaid, remote
+ * images) — reasoning is self-contained and doesn't reference external resources.
+ */
+function renderReasoningText(el: HTMLElement, text: string): void {
+  el.innerHTML = sanitizeRenderedMarkdown(renderMarkdown(text))
 }
 
 /**
@@ -354,7 +363,7 @@ function syncReasoningEl(msgEl: HTMLElement, msg: { content: string; reasoning?:
     body.prepend(details)
   } else {
     const text = details.querySelector('.message-reasoning-text')
-    if (text) text.textContent = msg.reasoning
+    if (text) renderReasoningText(text, msg.reasoning)
   }
   // Keep the trail open while it is still live, unless the user collapsed it.
   if (!details.dataset['userToggled'] && !msg.content.trim()) details.open = true
