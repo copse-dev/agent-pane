@@ -52,9 +52,8 @@ describe('browser pane requested URLs', () => {
     try {
       openBrowserUrl(store, 'https://example.com/docs')
 
-      const urlInput = viewer.querySelector('.browser-url-input')
+      const urlInput = viewer.querySelector<HTMLInputElement>('.browser-url-input')
       assert.ok(urlInput)
-      assert.ok(urlInput instanceof HTMLInputElement)
       assert.match(urlInput.value, /example\.com\/docs/)
 
       const tabLabel = list.querySelector('.browser-tabs-tab-label')?.textContent
