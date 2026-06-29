@@ -11,7 +11,7 @@ export function parseAgentRunPayload(rawPrompt: string): {
   try {
     const parsed = JSON.parse(rawPrompt) as AgentRunPayload | UserContent
     if (parsed && typeof parsed === 'object' && 'content' in parsed) {
-      const payload = parsed as AgentRunPayload
+      const payload = parsed
       return {
         userContent: payload.content,
         invokedSkills: payload.invokedSkills ?? [],
@@ -19,7 +19,7 @@ export function parseAgentRunPayload(rawPrompt: string): {
         ...(payload.workingBrief !== undefined ? { workingBrief: payload.workingBrief } : {}),
       }
     }
-    return { userContent: parsed as UserContent, invokedSkills: [], priorTodos: [] }
+    return { userContent: parsed, invokedSkills: [], priorTodos: [] }
   } catch {
     return { userContent: rawPrompt, invokedSkills: [], priorTodos: [] }
   }

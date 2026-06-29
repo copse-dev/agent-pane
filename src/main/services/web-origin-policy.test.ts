@@ -84,7 +84,7 @@ describe('fetchWithWebOriginPolicy abort composition', () => {
     globalThis.fetch = ((_url: unknown, init?: RequestInit) => {
       captured = init?.signal
       return Promise.resolve(new Response('ok', { status: 200 }))
-    }) as typeof fetch
+    })
     return () => captured
   }
 
@@ -115,6 +115,6 @@ describe('fetchWithWebOriginPolicy abort composition', () => {
     // The signal handed to fetch is AbortSignal.any([caller, timeout]); aborting
     // the caller must propagate to it.
     caller.abort()
-    assert.equal(signal!.aborted, true)
+    assert.equal(signal.aborted, true)
   })
 })

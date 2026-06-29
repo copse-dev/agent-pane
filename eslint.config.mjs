@@ -34,7 +34,7 @@ export default ts.config(
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
-      '@typescript-eslint/no-unnecessary-type-assertion': 'off',
+      "@typescript-eslint/no-unnecessary-type-assertion": "error",
       '@typescript-eslint/no-this-alias': 'off',
       '@typescript-eslint/explicit-module-boundary-types': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],

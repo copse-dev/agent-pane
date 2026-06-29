@@ -100,7 +100,7 @@ src/renderer/views/projects-pane.ts
     const { toolCalls } = recoverTextToolCalls(text, (name, args) => {
       if (name !== 'read_file') return null
       const parsed = readFileSchema.safeParse(args)
-      return parsed.success ? (parsed.data as Record<string, unknown>) : null
+      return parsed.success ? (parsed.data) : null
     })
     assert.equal(toolCalls.length, 1)
     assert.equal((toolCalls[0]!.args as { start_line: number }).start_line, 10)

@@ -43,7 +43,7 @@ describe('browser pane requested URLs', () => {
       unobserve() {}
       disconnect() {}
     }
-    globalThis.ResizeObserver = NoopResizeObserver as unknown as typeof ResizeObserver
+    globalThis.ResizeObserver = NoopResizeObserver
 
     const { list, viewer } = mountBrowserHosts()
     const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
@@ -52,8 +52,9 @@ describe('browser pane requested URLs', () => {
     try {
       openBrowserUrl(store, 'https://example.com/docs')
 
-      const urlInput = viewer.querySelector('.browser-url-input') as HTMLInputElement | null
+      const urlInput = viewer.querySelector('.browser-url-input')
       assert.ok(urlInput)
+      assert.ok(urlInput instanceof HTMLInputElement)
       assert.match(urlInput.value, /example\.com\/docs/)
 
       const tabLabel = list.querySelector('.browser-tabs-tab-label')?.textContent
@@ -78,7 +79,7 @@ describe('browser pane requested URLs', () => {
       unobserve() {}
       disconnect() {}
     }
-    globalThis.ResizeObserver = NoopResizeObserver as unknown as typeof ResizeObserver
+    globalThis.ResizeObserver = NoopResizeObserver
 
     const { list, viewer } = mountBrowserHosts()
     const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })

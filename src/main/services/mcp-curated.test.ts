@@ -22,8 +22,8 @@ describe('curated MCP catalog', () => {
   it('ships the MDN server in the catalog', () => {
     const mdn = CURATED_MCP_SERVERS.find((s) => s.name === 'mdn')
     assert.ok(mdn, 'MDN entry should exist')
-    assert.equal(mdn!.transport, 'http')
-    assert.equal(mdn!.url, 'https://mcp.mdn.mozilla.net/')
+    assert.equal(mdn.transport, 'http')
+    assert.equal(mdn.url, 'https://mcp.mdn.mozilla.net/')
   })
 
   it('sends the Mozilla analytics opt-out header for MDN by default', () => {

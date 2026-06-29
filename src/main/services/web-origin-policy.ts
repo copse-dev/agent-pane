@@ -75,7 +75,7 @@ function parseOriginPattern(input: string): OriginPattern {
   }
 
   return {
-    protocol: hasScheme ? (parsed.protocol as 'http:' | 'https:') : null,
+    protocol: hasScheme ? (parsed.protocol) : null,
     hostname,
     port: wildcardPort ? '*' : parsed.port || null,
   }

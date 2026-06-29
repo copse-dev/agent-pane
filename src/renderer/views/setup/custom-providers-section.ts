@@ -84,29 +84,29 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
       type: 'text',
       placeholder: 'model-id',
       autocomplete: 'off',
-    }) as HTMLInputElement
+    })
     const ctx = el('input', {
       type: 'number',
       min: '1',
       placeholder: 'context',
-    }) as HTMLInputElement
+    })
     const inPrice = el('input', {
       type: 'number',
       min: '0',
       step: 'any',
       placeholder: 'in $/Mtok',
-    }) as HTMLInputElement
+    })
     const outPrice = el('input', {
       type: 'number',
       min: '0',
       step: 'any',
       placeholder: 'out $/Mtok',
-    }) as HTMLInputElement
+    })
     const label = el('input', {
       type: 'text',
       placeholder: 'label (optional)',
       autocomplete: 'off',
-    }) as HTMLInputElement
+    })
     if (model) {
       id.value = model.id
       if (model.contextWindow) ctx.value = String(model.contextWindow)
@@ -120,7 +120,7 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
       'button',
       { type: 'button', class: 'provider-model-remove', title: 'Remove model' },
       '✕',
-    ) as HTMLButtonElement
+    )
     const row = el(
       'div',
       { class: 'provider-model-row' },
@@ -141,7 +141,7 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
     'button',
     { type: 'button', class: 'provider-add-model' },
     '+ Add model',
-  ) as HTMLButtonElement
+  )
   addBtn.addEventListener('click', () => addRow())
 
   const header = el(
@@ -203,7 +203,7 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
     ),
     chipRow,
     formHost,
-  ) as HTMLFieldSetElement
+  )
 
   // Keys typed but not yet saved, kept across chip switches; flushed by saveKeys().
   const pendingKeys = new Map<string, string>()
@@ -240,7 +240,7 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
           role: 'tab',
         },
         chipLabel(key),
-      ) as HTMLButtonElement
+      )
       chip.classList.toggle('active', key === selected)
       if (key !== 'other' && configured.has(key)) {
         chip.append(el('span', { class: 'provider-chip-dot', title: 'Key configured' }))
@@ -260,7 +260,7 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
       type: 'password',
       placeholder,
       autocomplete: 'off',
-    }) as HTMLInputElement
+    })
     input.value = pendingKeys.get(slug) ?? ''
     const status = el('span', { class: 'key-status' })
     status.textContent = configured.has(slug) ? '● saved' : '○ not set'
@@ -269,7 +269,7 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
       else pendingKeys.delete(slug)
     })
 
-    const test = el('button', { type: 'button' }, 'Test key') as HTMLButtonElement
+    const test = el('button', { type: 'button' }, 'Test key')
     test.addEventListener('click', () => {
       void (async () => {
         const key = input.value.trim()
@@ -327,14 +327,14 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
       value: provider.baseUrl,
       autocomplete: 'off',
       ...(provider.builtin ? { readonly: true } : {}),
-    }) as HTMLInputElement
+    })
     form.append(el('label', {}, 'Base URL', urlInput))
 
     form.append(keyField(provider.id, provider.keyLabel, provider.keyPlaceholder, provider.keyHint))
 
     const editor = createModelsEditor(provider.models)
     const isHuggingFace = provider.id === 'huggingface'
-    const fetchBtn = el('button', { type: 'button' }, 'Fetch models') as HTMLButtonElement
+    const fetchBtn = el('button', { type: 'button' }, 'Fetch models')
     const fetchStatus = el('span', { class: 'key-status' })
     fetchBtn.addEventListener('click', () => {
       void (async () => {
@@ -385,17 +385,17 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
     const usageBox = el('input', {
       type: 'checkbox',
       ...((provider.includeUsage ?? true) ? { checked: true } : {}),
-    }) as HTMLInputElement
+    })
     const ctxInput = el('input', {
       type: 'number',
       min: '1',
       value: String(provider.fallbackContextWindow),
-    }) as HTMLInputElement
+    })
     const extraBodyArea = el('textarea', {
       rows: '3',
       spellcheck: false,
       placeholder: '{ "provider": { "require_parameters": true } }',
-    }) as HTMLTextAreaElement
+    })
     extraBodyArea.value = provider.extraBody ? JSON.stringify(provider.extraBody, null, 2) : ''
     const advanced = el(
       'details',
@@ -433,7 +433,7 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
       'button',
       { type: 'button', class: 'provider-save' },
       'Save provider settings',
-    ) as HTMLButtonElement
+    )
     const saveStatus = el('span', { class: 'key-status' })
     saveBtn.addEventListener('click', () => {
       void (async () => {
@@ -478,7 +478,7 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
         'button',
         { type: 'button', class: 'provider-delete' },
         'Delete',
-      ) as HTMLButtonElement
+      )
       del.addEventListener('click', () => {
         void (async () => {
           await api.settings.deleteExtraProvider(provider.id)
@@ -495,7 +495,7 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
 
   // ---- "Other" (add a provider) form --------------------------------------
   function otherForm(): HTMLElement {
-    const presetSelect = el('select', {}) as HTMLSelectElement
+    const presetSelect = el('select', {})
     presetSelect.append(new Option('Custom (enter URL)', ''))
     for (const ep of KNOWN_ENDPOINTS) presetSelect.append(new Option(ep.label, ep.baseUrl))
 
@@ -503,27 +503,27 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
       type: 'text',
       placeholder: 'Display name',
       autocomplete: 'off',
-    }) as HTMLInputElement
+    })
     const urlInput = el('input', {
       type: 'url',
       placeholder: 'https://api.example.com/v1',
       autocomplete: 'off',
-    }) as HTMLInputElement
+    })
     const slugInput = el('input', {
       type: 'text',
       placeholder: 'slug (auto)',
       autocomplete: 'off',
-    }) as HTMLInputElement
+    })
     const keyInput = el('input', {
       type: 'password',
       placeholder: 'API key (optional)',
       autocomplete: 'off',
-    }) as HTMLInputElement
+    })
     const addBtn = el(
       'button',
       { type: 'button', class: 'provider-save' },
       'Add provider',
-    ) as HTMLButtonElement
+    )
     const status = el('span', { class: 'key-status' })
 
     // Track manual edits so a preset switch overwrites auto-filled values but

@@ -21,15 +21,15 @@ describe('parseToolArgs', () => {
     const result = parseToolArgs('{"path":"a.ts"')
     assert.deepEqual(result.args, {})
     assert.ok(result.error, 'expected an error message')
-    assert.match(result.error!, /Could not parse tool arguments/)
-    assert.match(result.error!, /\{"path":"a\.ts"/)
+    assert.match(result.error, /Could not parse tool arguments/)
+    assert.match(result.error, /\{"path":"a\.ts"/)
   })
 
   it('truncates very large raw payloads in the error', () => {
     const big = `{"x":"${'a'.repeat(2000)}`
     const result = parseToolArgs(big)
     assert.ok(result.error)
-    assert.ok(result.error!.length < big.length)
-    assert.match(result.error!, /…/)
+    assert.ok(result.error.length < big.length)
+    assert.match(result.error, /…/)
   })
 })
