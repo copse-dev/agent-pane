@@ -79,14 +79,14 @@ const dynamicImport = new Function('p', 'return import(p)') as (p: string) => Pr
 
 function asRawArray(value: unknown): RawCustomTool[] {
   if (Array.isArray(value)) return value as RawCustomTool[]
-  if (value && typeof value === 'object') return [value as RawCustomTool]
+  if (value && typeof value === 'object') return [value]
   return []
 }
 
 /** Resolve a loaded module's default export (object | array | factory) to raw tools. */
 async function extractRawTools(mod: unknown): Promise<RawCustomTool[]> {
   let value: unknown =
-    mod && typeof mod === 'object' && 'default' in mod ? (mod as { default: unknown }).default : mod
+    mod && typeof mod === 'object' && 'default' in mod ? (mod).default : mod
   if (typeof value === 'function') value = await (value as () => unknown)()
   return asRawArray(value)
 }

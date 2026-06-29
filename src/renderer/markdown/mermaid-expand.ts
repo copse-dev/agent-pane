@@ -187,7 +187,7 @@ function openMermaidExpand(source: HTMLElement): void {
   if (!svg) return
 
   const dialog = ensureExpandDialog()
-  stageEl!.replaceChildren(svg.cloneNode(true) as Node)
+  stageEl!.replaceChildren(svg.cloneNode(true))
   dialog.showModal()
   requestAnimationFrame(() => {
     requestAnimationFrame(() => fitToViewport())

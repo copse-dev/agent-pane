@@ -36,7 +36,7 @@ export function mountFileSearchDialog(store: AppStore, api: ApiClient): void {
     'aria-label': 'Search files',
     spellcheck: 'false',
     autocomplete: 'off',
-  }) as HTMLInputElement
+  })
 
   const list = el('div', { class: 'file-search-results', role: 'listbox' })
   const empty = el('div', { class: 'file-search-empty' }, 'No matching files')

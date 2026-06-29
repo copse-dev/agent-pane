@@ -74,7 +74,7 @@ describe('validateExtraProviderApiKey', () => {
   it('accepts Mistral keys regardless of shape (no fixed prefix) and reaches the network', async () => {
     const original = globalThis.fetch
     globalThis.fetch = (async () =>
-      ({ ok: true, status: 200, statusText: 'OK' }) as Response) as typeof fetch
+      ({ ok: true, status: 200, statusText: 'OK' }) as Response)
     try {
       const result = await validateExtraProviderApiKey(PRESET('mistral'), 'any-shaped-key')
       assert.equal(result.ok, true)

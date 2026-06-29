@@ -63,7 +63,7 @@ export async function renderMermaidIn(root: ParentNode): Promise<void> {
   await runMermaidNodes(mermaid, elements)
 
   for (const node of elements) {
-    const container = node.closest('.mermaid-diagram') as HTMLElement | null
+    const container = node.closest('.mermaid-diagram')
     if (!container || container.querySelector('.mermaid-fallback-title')) continue
 
     if (!diagramRenderFailed(container)) continue
