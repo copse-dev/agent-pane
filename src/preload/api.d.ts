@@ -90,7 +90,7 @@ export interface ApiClient {
         rememberLabel?: string
       }) => void,
     ) => () => void
-    onShellOutput: (handler: (data: string) => void) => () => void
+    onShellOutput: (handler: (data: string, toolCallId: string | null) => void) => () => void
     onUsage: (handler: (threadId: string, usage: UsageDelta) => void) => () => void
     onRefreshContextEstimate: (handler: () => void) => () => void
   }
