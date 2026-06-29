@@ -362,8 +362,8 @@ function syncReasoningEl(msgEl: HTMLElement, msg: { content: string; reasoning?:
     details = buildReasoningEl(msg.reasoning, true) as HTMLDetailsElement
     body.prepend(details)
   } else {
-    const text = details.querySelector('.message-reasoning-text')
-    if (text) renderReasoningText(text, msg.reasoning)
+    const textEl = (body?.querySelector('.message-reasoning-text') as HTMLElement | null)
+    if (textEl) renderReasoningText(textEl, msg.reasoning)
   }
   // Keep the trail open while it is still live, unless the user collapsed it.
   if (!details.dataset['userToggled'] && !msg.content.trim()) details.open = true
