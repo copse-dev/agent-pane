@@ -75,7 +75,7 @@ export const browserTabsTool = defineTool({
     action: z.enum(['list', 'close']).optional().default('list'),
     viewId: z.string().optional().describe('Tab id to close when action is "close"'),
   }),
-  async execute({ action, viewId }) {
+  execute({ action, viewId }) {
     const session = getBrowserSession()
     if (action === 'close') {
       if (!viewId) throw new Error('viewId is required to close a tab')
@@ -89,8 +89,9 @@ export const browserTabsTool = defineTool({
   },
 })
 
-// Each tool carries its own arg type; the registry validates args at runtime,
-// so erase to the common ToolDefinition shape for bulk registration.
+// Single source of truth for registration. ToolDefinition<TArgs> is invariant
+// in TArgs, so a heterogeneous list can't be typed as ToolDefinition[] without
+// erasing here; the registry validates each tool's args at runtime.
 export const browserTools: ToolDefinition[] = [
   browserNavigateTool,
   browserSnapshotTool,

@@ -101,7 +101,7 @@ export const readStagedDiffTool = defineTool({
       .default(DEFAULT_MAX_CHARS)
       .describe('Maximum characters per returned content block.'),
   }),
-  async execute({ path, view, max_chars }) {
+  execute({ path, view, max_chars }) {
     const entry = getStagedDiffEntry(path)
     if (!entry) {
       const recent = getRecentStagedDiffDecision(path)

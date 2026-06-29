@@ -12,10 +12,10 @@ function cleanTitle(out: string): string | null {
   return title || null
 }
 
-async function recordSmallTasksUsage(
+function recordSmallTasksUsage(
   model: string,
   usage: { inputTokens: number; outputTokens: number },
-): Promise<void> {
+): void {
   if (!usage.inputTokens && !usage.outputTokens) return
   recordUsageEvent({
     model,
@@ -39,7 +39,7 @@ export async function suggestThreadTitle(text: string): Promise<string | null> {
     text.slice(0, 500)
   try {
     const { text: out, usage } = await completeTextWithUsage(provider, prompt, 20_000)
-    await recordSmallTasksUsage(model, usage)
+    recordSmallTasksUsage(model, usage)
     return cleanTitle(out)
   } catch {
     return null
@@ -80,7 +80,7 @@ export async function suggestCommandSummary(commands: string[]): Promise<string 
     list
   try {
     const { text, usage } = await completeTextWithUsage(provider, prompt, 20_000)
-    await recordSmallTasksUsage(model, usage)
+    recordSmallTasksUsage(model, usage)
     return cleanPhrase(text)
   } catch {
     return null
@@ -102,7 +102,7 @@ export async function suggestTerminalTitle(text: string): Promise<string | null>
     text.slice(-1500)
   try {
     const { text: out, usage } = await completeTextWithUsage(provider, prompt, 20_000)
-    await recordSmallTasksUsage(model, usage)
+    recordSmallTasksUsage(model, usage)
     return cleanTitle(out)
   } catch {
     return null

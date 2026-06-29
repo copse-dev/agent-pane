@@ -398,9 +398,9 @@ export async function getGhPrChecksState(ref: {
 }
 
 /** Resolve a PR URL against the workspace origin when possible. */
-export async function resolveGithubPrRef(
+export function resolveGithubPrRef(
   url: string,
-): Promise<{ owner: string; repo: string; number: number } | null> {
+): { owner: string; repo: string; number: number } | null {
   const parsed = parseGithubPrUrl(url)
   if (!parsed) return null
   return { owner: parsed.owner, repo: parsed.repo, number: parsed.number }

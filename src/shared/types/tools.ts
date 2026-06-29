@@ -26,7 +26,11 @@ export interface ToolDefinition<TArgs = unknown> {
   name: string
   description: string
   parameters: z.ZodType<TArgs>
-  execute: (args: TArgs, signal: AbortSignal) => Promise<ToolExecuteResult>
+  /**
+   * Run the tool. May be sync or async — the registry always awaits the result,
+   * so a purely synchronous tool need not be marked `async`.
+   */
+  execute: (args: TArgs, signal: AbortSignal) => ToolExecuteResult | Promise<ToolExecuteResult>
   requiresApproval?: boolean
   /**
    * Pre-built JSON Schema for the tool's parameters. When set, the registry

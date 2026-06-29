@@ -226,6 +226,7 @@ function bufferToDataUrl(buf: Buffer, mime: string): string {
   return `data:${mime};base64,${buf.toString('base64')}`
 }
 
+// eslint-disable-next-line @typescript-eslint/require-await -- mirrors the async readWorkingTreeImage; both feed the async blob fallback
 async function readGitBlobImage(ref: string, path: string, mime: string): Promise<string | null> {
   const { stdout, code } = runGitBuffer(['show', gitObjectSpec(ref, path)])
   if (code !== 0 || stdout.length === 0) return null
