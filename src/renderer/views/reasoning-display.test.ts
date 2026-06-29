@@ -51,7 +51,7 @@ describe('reasoning display (component)', () => {
     assert.equal(details.open, true)
     assert.equal(details.querySelector('.message-reasoning-title')?.textContent, 'Thinking')
     assert.equal(
-      details.querySelector('.message-reasoning-text')?.textContent,
+      details.querySelector('.message-reasoning-text')?.innerHTML,
       'Let me check the file.',
     )
     // Sits before the answer text in the body.
@@ -64,6 +64,18 @@ describe('reasoning display (component)', () => {
       children.indexOf(details) < children.indexOf(answer),
       'reasoning should render above the answer',
     )
+  })
+
+  it('renders markdown formatting in reasoning text', () => {
+    const { store, messageId } = mountWithReasoning()
+
+    appendReasoning(store, messageId, '**bold** and *italic* and `code`')
+
+    const textEl = document.querySelector('.message-reasoning-text') as HTMLElement
+    assert.ok(textEl)
+    assert.ok(textEl.innerHTML.includes('<strong>bold</strong>'))
+    assert.ok(textEl.innerHTML.includes('<em>italic</em>'))
+    assert.ok(textEl.innerHTML.includes('<code>code</code>'))
   })
 
   it('collapses the trail once the answer arrives, unless the user opened it', () => {
