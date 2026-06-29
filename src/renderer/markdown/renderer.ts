@@ -309,9 +309,9 @@ function renderBareHttpLinks(text: string): string {
     .join('')
 }
 
-const BLOCK_START_RE = /^<(pre|ul|ol|h[1-6]|table|hr|img|div class="mermaid-diagram\b)/
-const BLOCK_CLOSE_RE = /<\/(pre|ul|ol|h[1-6]|table|hr|div)>$/
-const CONTAINS_BLOCK_RE = /<(ul|ol|h[1-6]|pre|table|hr|img|div class="mermaid-diagram\b)[\s>]/
+const BLOCK_START_RE = /^<(pre|ul|ol|h[1-6]|table|hr|blockquote|img|div class="mermaid-diagram\b)/
+const BLOCK_CLOSE_RE = /<\/(pre|ul|ol|h[1-6]|table|blockquote|div)>$/
+const CONTAINS_BLOCK_RE = /<(ul|ol|h[1-6]|pre|table|hr|blockquote|img|div class="mermaid-diagram\b)[\s>]/
 const ORDERED_ITEM_RE = /^(\d+)\. (.+)$/
 
 function isOrderedItemLine(line: string): boolean {
@@ -321,6 +321,14 @@ function isOrderedItemLine(line: string): boolean {
 function orderedItemContent(line: string): string {
   const m = line.trim().match(ORDERED_ITEM_RE)
   return m?.[2] ?? line
+}
+
+function isBlockquoteLine(line: string): boolean {
+  return /^&gt;/.test(line)
+}
+
+function stripBlockquotePrefix(line: string): string {
+  return line.replace(/^&gt;\s?/, '')
 }
 
 /** Group `1. item` blocks and their following prose into a single `<ol>`. */
@@ -335,6 +343,29 @@ function wrapProseBlocks(seg: string): string {
     const block = rawBlocks[i]
     if (block === undefined) break
     const lines = block.split('\n').map((l) => l.trim())
+
+    // Blockquote: all lines begin with > (HTML-escaped to &gt; after escapeHtml).
+    // Collect consecutive blockquote blocks into one <blockquote> element.
+    if (lines.every(isBlockquoteLine)) {
+      const bqContent: string[] = []
+      while (i < rawBlocks.length) {
+        const b = rawBlocks[i]!
+        const bLines = b.split('\n').map((l) => l.trim())
+        if (!bLines.every(isBlockquoteLine)) break
+        if (bqContent.length > 0) bqContent.push('')
+        bqContent.push(...bLines.map(stripBlockquotePrefix))
+        i++
+      }
+      const inner = bqContent
+        .join('\n')
+        .split(/\n\n+/)
+        .filter((p) => p.trim() !== '')
+        .map((p) => `<p>${p.replace(/\n/g, '<br>')}</p>`)
+        .join('')
+      out.push(`<blockquote>${inner}</blockquote>`)
+      continue
+    }
+
     if (lines.length > 1 && lines.every(isOrderedItemLine)) {
       out.push(`<ol>${lines.map((l) => `<li>${orderedItemContent(l)}</li>`).join('')}</ol>`)
       i++
