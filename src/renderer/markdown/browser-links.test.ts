@@ -6,6 +6,10 @@ import { bindBrowserLinkClicks } from './browser-links.ts'
 import { hydrateRemoteArtifactImages } from './remote-artifact-images.ts'
 import { renderMarkdown } from './renderer.ts'
 
+// `E` appears once in the signature because this is a deliberate query-and-assert
+// helper: callers (e.g. requireEl<HTMLImageElement>) choose the element type, which
+// `querySelector` cannot infer from a string selector.
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
 function requireEl<E extends Element>(root: ParentNode, selector: string): E {
   const el = root.querySelector<E>(selector)
   if (!el) throw new Error(`Expected element matching "${selector}"`)

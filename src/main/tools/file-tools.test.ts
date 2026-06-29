@@ -83,7 +83,7 @@ describe('file tools', () => {
   })
 
   it('read_file enforces the line cap even with an explicit end_line (#123)', async () => {
-    const lines = Array.from({ length: 500 }, (_, i) => `line${i + 1}`).join('\n')
+    const lines = Array.from({ length: 500 }, (_, i) => `line${String(i + 1)}`).join('\n')
     await writeFile(join(tempRoot, 'big.txt'), lines + '\n', 'utf8')
     const result = await runTool(
       registry,
@@ -94,7 +94,7 @@ describe('file tools', () => {
     const body = result.split('\n').filter((l) => /^line\d+$/.test(l))
     assert.ok(
       body.length <= TEST_READ_LIMITS.maxLines,
-      `expected <= ${TEST_READ_LIMITS.maxLines} lines, got ${body.length}`,
+      `expected <= ${String(TEST_READ_LIMITS.maxLines)} lines, got ${String(body.length)}`,
     )
   })
 
@@ -112,7 +112,7 @@ describe('file tools', () => {
   it('list_dir caps non-recursive entries', async () => {
     await mkdir(join(tempRoot, 'many'), { recursive: true })
     for (let i = 0; i < LIST_DIR_MAX_ENTRIES + 5; i++) {
-      await writeFile(join(tempRoot, 'many', `f-${i}.txt`), 'x', 'utf8')
+      await writeFile(join(tempRoot, 'many', `f-${String(i)}.txt`), 'x', 'utf8')
     }
     const result = await runTool(
       registry,

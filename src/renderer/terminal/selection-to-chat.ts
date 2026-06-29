@@ -42,7 +42,7 @@ export function attachTerminalSelectionToChat(
 /** Cmd/Ctrl+L (no alt/shift), matching the Monaco selection-to-chat shortcut. */
 export function isSelectionToChatKey(event: KeyboardEvent): boolean {
   const meta = event.ctrlKey || event.metaKey
-  return Boolean(meta) && !event.altKey && !event.shiftKey && event.code === 'KeyL'
+  return meta && !event.altKey && !event.shiftKey && event.code === 'KeyL'
 }
 
 /**

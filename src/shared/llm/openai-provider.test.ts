@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { at } from '@shared/array-utils.ts'
 import type { StreamChunk } from '@shared/types'
 import { OpenAIProvider } from './openai-provider.ts'
 
@@ -134,7 +135,7 @@ describe('OpenAIProvider request options', () => {
     await collect(provider)
 
     assert.deepEqual(captured.request?.provider, { require_parameters: true })
-    assert.equal(captured.request?.stream_options?.include_usage, true)
+    assert.equal(captured.request.stream_options?.include_usage, true)
   })
 })
 
@@ -157,7 +158,7 @@ describe('OpenAIProvider stream parsing', () => {
     assert.equal(text, 'Hello world')
 
     const usage = chunks.find((c) => c.type === 'usage')
-    assert.ok(usage && usage.type === 'usage')
+    assert.ok(usage)
     assert.equal(usage.inputTokens, 12)
     assert.equal(usage.outputTokens, 3)
     assert.deepEqual(provider.lastUsage, { inputTokens: 12, outputTokens: 3 })
@@ -198,10 +199,10 @@ describe('OpenAIProvider stream parsing', () => {
       (c): c is Extract<StreamChunk, { type: 'tool_call' }> => c.type === 'tool_call',
     )
     assert.equal(toolCalls.length, 1)
-    assert.equal(toolCalls[0]!.toolCall.id, 'call_1')
-    assert.equal(toolCalls[0]!.toolCall.name, 'read_file')
-    assert.deepEqual(toolCalls[0]!.toolCall.args, { path: 'a.ts' })
-    assert.equal(toolCalls[0]!.toolCall.argsError, undefined)
+    assert.equal(at(toolCalls, 0).toolCall.id, 'call_1')
+    assert.equal(at(toolCalls, 0).toolCall.name, 'read_file')
+    assert.deepEqual(at(toolCalls, 0).toolCall.args, { path: 'a.ts' })
+    assert.equal(at(toolCalls, 0).toolCall.argsError, undefined)
 
     const done = chunks.at(-1)
     assert.ok(done && done.type === 'done')
@@ -241,8 +242,8 @@ describe('OpenAIProvider stream parsing', () => {
       (c): c is Extract<StreamChunk, { type: 'tool_call' }> => c.type === 'tool_call',
     )
     assert.equal(toolCalls.length, 1)
-    assert.equal(toolCalls[0]!.toolCall.name, 'list_dir')
-    assert.deepEqual(toolCalls[0]!.toolCall.args, { path: '.' })
+    assert.equal(at(toolCalls, 0).toolCall.name, 'list_dir')
+    assert.deepEqual(at(toolCalls, 0).toolCall.args, { path: '.' })
   })
 
   it('surfaces a parse error when tool-call arguments are malformed JSON', async () => {

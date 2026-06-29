@@ -52,7 +52,7 @@ describe('AnthropicProvider usage accounting (#111)', () => {
 
     const chunks = await collect(provider)
     const usage = chunks.find((c) => c.type === 'usage')
-    assert.ok(usage && usage.type === 'usage')
+    assert.ok(usage)
     // input = fresh + cache_creation + cache_read = 1200 + 300 + 500
     assert.equal(usage.inputTokens, 2000)
     // output comes from the final message_delta
@@ -79,7 +79,7 @@ describe('AnthropicProvider usage accounting (#111)', () => {
 
     const chunks = await collect(provider)
     const usage = chunks.find((c) => c.type === 'usage')
-    assert.ok(usage && usage.type === 'usage')
+    assert.ok(usage)
     assert.equal(usage.inputTokens, 800)
     assert.equal(usage.outputTokens, 9)
   })

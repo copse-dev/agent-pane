@@ -82,7 +82,15 @@ export async function runGh(
   return { stdout, stderr, code }
 }
 
-/** Parse JSON stdout from `gh`, or null when empty/invalid. */
+/**
+ * Parse JSON stdout from `gh`, or null when empty/invalid.
+ *
+ * The `T` type parameter is a caller-supplied cast for the parsed value relied
+ * on by call sites (e.g. `parseGhJson<GhPrView>(raw)`); removing it would change
+ * this exported signature and break those callers, so the single-use type
+ * parameter is intentional here.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
 export function parseGhJson<T = unknown>(stdout: string): T | null {
   const trimmed = stdout.trim()
   if (!trimmed) return null

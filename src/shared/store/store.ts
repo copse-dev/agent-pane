@@ -37,8 +37,12 @@ export function createStore(initial?: Partial<AppState>): AppStore {
   const listeners = new Map<keyof StoreEvents, Set<AnyHandler>>()
 
   function on<K extends keyof StoreEvents>(event: K, handler: EventHandler<K>): Unsubscribe {
-    if (!listeners.has(event)) listeners.set(event, new Set())
-    listeners.get(event)!.add(handler as AnyHandler)
+    let set = listeners.get(event)
+    if (!set) {
+      set = new Set()
+      listeners.set(event, set)
+    }
+    set.add(handler as AnyHandler)
     return () => listeners.get(event)?.delete(handler as AnyHandler)
   }
 

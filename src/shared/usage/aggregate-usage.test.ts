@@ -110,7 +110,7 @@ describe('aggregate usage', () => {
     assert.equal(summary.day.cloudModels.length, 1)
     assert.equal(summary.day.localModels.length, 1)
     assert.ok(summary.day.totalCostUsd > 0)
-    assert.equal(summary.day.localModels[0]!.estimatedCostUsd, 0)
+    assert.equal(summary.day.localModels[0]?.estimatedCostUsd, 0)
     assert.equal(summary.trackingStartedAt, NOW - 1000)
     assert.equal(summary.ledgerEventCount, 2)
   })
@@ -131,6 +131,6 @@ describe('aggregate usage', () => {
     ]
     const pruned = pruneUsageEvents(events, NOW)
     assert.equal(pruned.length, 1)
-    assert.equal(pruned[0]!.inputTokens, 2)
+    assert.equal(pruned[0]?.inputTokens, 2)
   })
 })

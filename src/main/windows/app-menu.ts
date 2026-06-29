@@ -33,7 +33,7 @@ export function buildAppMenu(win: BrowserWindow): void {
               {
                 label: 'Settings…',
                 accelerator: 'CmdOrCtrl+,',
-                click: () => {
+                click: (): void => {
                   win.webContents.send('menu:settings')
                 },
               },
@@ -55,7 +55,7 @@ export function buildAppMenu(win: BrowserWindow): void {
         {
           label: 'New Thread',
           accelerator: 'CmdOrCtrl+N',
-          click: () => {
+          click: (): void => {
             win.webContents.send('menu:newThread')
           },
         },
@@ -72,7 +72,7 @@ export function buildAppMenu(win: BrowserWindow): void {
               {
                 label: 'Settings…',
                 accelerator: 'CmdOrCtrl+,',
-                click: () => {
+                click: (): void => {
                   win.webContents.send('menu:settings')
                 },
               },
@@ -99,35 +99,35 @@ export function buildAppMenu(win: BrowserWindow): void {
         {
           label: 'Toggle Panel',
           accelerator: 'CmdOrCtrl+B',
-          click: () => {
+          click: (): void => {
             win.webContents.send('menu:togglePanel')
           },
         },
         {
           label: 'Explorer',
           accelerator: 'CmdOrCtrl+Shift+E',
-          click: () => {
+          click: (): void => {
             win.webContents.send('menu:showExplorer')
           },
         },
         {
           label: 'Terminal',
           accelerator: 'CmdOrCtrl+`',
-          click: () => {
+          click: (): void => {
             win.webContents.send('menu:showTerminal')
           },
         },
         {
           label: 'Changes',
           accelerator: 'CmdOrCtrl+Shift+G',
-          click: () => {
+          click: (): void => {
             win.webContents.send('menu:showChanges')
           },
         },
         {
           label: 'Browser',
           accelerator: 'CmdOrCtrl+Shift+B',
-          click: () => {
+          click: (): void => {
             win.webContents.send('menu:showBrowser')
           },
         },

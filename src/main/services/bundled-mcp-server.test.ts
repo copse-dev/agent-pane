@@ -72,7 +72,8 @@ describe('bundled MCP servers', () => {
   })
 
   it('errors for a path outside the workspace and when neither path nor html is given', async () => {
-    const canvas = servers.find((s) => s.name === CANVAS_SERVER_NAME)!
+    const canvas = servers.find((s) => s.name === CANVAS_SERVER_NAME)
+    assert.ok(canvas, 'canvas server should be present')
     const root = await mkdtemp(join(tmpdir(), 'agent-pane-canvas-'))
     const restore = setWorkspaceRootForTest(root)
     try {

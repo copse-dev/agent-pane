@@ -128,7 +128,8 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
       language: 'plaintext',
     })
     assert.equal(result.status, 'error')
-    if (result.status === 'error') assert.match(result.error, /EISDIR|illegal|directory/i)
+    // `assert.equal` (strict mode) narrows `result` to the error variant.
+    assert.match(result.error, /EISDIR|illegal|directory/i)
   })
 })
 
@@ -339,8 +340,8 @@ describe('stageDiff same-path coalescing (#118)', () => {
     const entries = queue.filter((e) => e.path === 'a.txt')
     assert.equal(entries.length, 1, 'duplicate same-path entries must be coalesced')
     // Baseline stays the first staged `before`; content is the latest proposal.
-    assert.equal(entries[0]!.before, 'orig\n')
-    assert.equal(entries[0]!.after, 'v2\n')
+    assert.equal(entries[0]?.before, 'orig\n')
+    assert.equal(entries[0]?.after, 'v2\n')
   })
 
   it('keeps distinct entries for distinct paths', async () => {
@@ -380,8 +381,8 @@ describe('approveAllStagedDiffs', () => {
     assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'newA\n')
     const queue = getDiffQueueForTest()
     assert.equal(queue.length, 1)
-    assert.equal(queue[0]!.path, 'b.txt')
-    assert.equal(queue[0]!.before, 'formatted\n', 'conflict re-stages against current disk content')
+    assert.equal(queue[0]?.path, 'b.txt')
+    assert.equal(queue[0]?.before, 'formatted\n', 'conflict re-stages against current disk content')
     assert.equal(await readFile(join(tempRoot, 'b.txt'), 'utf-8'), 'formatted\n')
   })
 

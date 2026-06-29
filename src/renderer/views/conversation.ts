@@ -665,7 +665,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     list.append(msgEl)
     hydrateRemoteArtifactImages(list, api)
     // Re-render any tool cards this message already carries (restored threads).
-    renderToolCards(msgEl, msg.toolCalls ?? [], msg.commandSummary)
+    renderToolCards(msgEl, msg.toolCalls, msg.commandSummary)
     scrollToBottom(msg.role === 'user')
   }
 
@@ -716,7 +716,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       .find((m) => m.id === msgId)
     const msgEl = list.querySelector(`[data-message-id="${msgId}"]`)
     if (!msg || !msgEl) return
-    renderToolCards(msgEl as HTMLElement, msg.toolCalls ?? [], msg.commandSummary)
+    renderToolCards(msgEl as HTMLElement, msg.toolCalls, msg.commandSummary)
     scrollToBottom()
   }
 

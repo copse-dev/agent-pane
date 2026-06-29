@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { at } from '@shared/array-utils.ts'
 import { z } from 'zod'
 import {
   recoverTextToolCalls,
@@ -24,12 +25,12 @@ describe('parse-text-tool-calls', () => {
   it('extracts run_shell from Cursor-style XML', () => {
     const { cleanedText, toolCalls } = recoverTextToolCalls(SAMPLE)
     assert.equal(toolCalls.length, 1)
-    assert.equal(toolCalls[0]!.name, 'run_shell')
+    assert.equal(at(toolCalls, 0).name, 'run_shell')
     assert.equal(
-      (toolCalls[0]!.args as { command: string }).command,
+      (at(toolCalls, 0).args as { command: string } | undefined)?.command,
       'npx eslint . --format compact 2>&1 | head -50',
     )
-    assert.equal((toolCalls[0]!.args as { timeout_ms: number }).timeout_ms, 60000)
+    assert.equal((at(toolCalls, 0).args as { timeout_ms: number } | undefined)?.timeout_ms, 60000)
     assert.ok(cleanedText.includes("I'll run eslint"))
     assert.ok(!cleanedText.includes('<tool_call>'))
   })
@@ -41,7 +42,7 @@ describe('parse-text-tool-calls', () => {
 </function>
 </tool_call>`
     const { toolCalls } = recoverTextToolCalls(text)
-    assert.equal(toolCalls[0]!.name, 'run_shell')
+    assert.equal(at(toolCalls, 0).name, 'run_shell')
   })
 
   it('extracts multiple functions in one tool_call block', () => {
@@ -55,8 +56,8 @@ describe('parse-text-tool-calls', () => {
 </tool_call>`
     const { toolCalls } = recoverTextToolCalls(text)
     assert.equal(toolCalls.length, 2)
-    assert.equal(toolCalls[0]!.name, 'read_file')
-    assert.equal(toolCalls[1]!.name, 'list_dir')
+    assert.equal(at(toolCalls, 0).name, 'read_file')
+    assert.equal(toolCalls[1]?.name, 'list_dir')
   })
 
   it('parses phantom export XML with multiline path parameters', () => {
@@ -77,9 +78,12 @@ src/renderer/views/projects-pane.ts
     const { toolCalls, keptRawBlocks } = recoverTextToolCalls(text)
     assert.equal(toolCalls.length, 2)
     assert.equal(keptRawBlocks, false)
-    assert.equal((toolCalls[0]!.args as { path: string }).path, 'src/renderer/views/titlebar.ts')
     assert.equal(
-      (toolCalls[1]!.args as { path: string }).path,
+      (at(toolCalls, 0).args as { path: string } | undefined)?.path,
+      'src/renderer/views/titlebar.ts',
+    )
+    assert.equal(
+      (toolCalls[1]?.args as { path: string } | undefined)?.path,
       'src/renderer/views/projects-pane.ts',
     )
   })
@@ -103,8 +107,8 @@ src/renderer/views/projects-pane.ts
       return parsed.success ? parsed.data : null
     })
     assert.equal(toolCalls.length, 1)
-    assert.equal((toolCalls[0]!.args as { start_line: number }).start_line, 10)
-    assert.equal((toolCalls[0]!.args as { end_line: number }).end_line, 20)
+    assert.equal((at(toolCalls, 0).args as { start_line: number } | undefined)?.start_line, 10)
+    assert.equal((at(toolCalls, 0).args as { end_line: number } | undefined)?.end_line, 20)
   })
 
   it('keeps raw XML when blocks fail to parse', () => {

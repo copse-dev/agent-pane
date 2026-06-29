@@ -104,14 +104,15 @@ export class OpenAIProvider implements LLMProvider {
           if (delta.tool_calls) {
             for (const tc of delta.tool_calls) {
               const idx = tc.index
-              if (!toolCallBuilders.has(idx)) {
-                toolCallBuilders.set(idx, {
+              let builder = toolCallBuilders.get(idx)
+              if (!builder) {
+                builder = {
                   id: tc.id ?? '',
                   name: tc.function?.name ?? '',
                   argsJson: '',
-                })
+                }
+                toolCallBuilders.set(idx, builder)
               }
-              const builder = toolCallBuilders.get(idx)!
               if (tc.id) builder.id = tc.id
               if (tc.function?.name) builder.name = tc.function.name
               if (tc.function?.arguments) builder.argsJson += tc.function.arguments

@@ -4,6 +4,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GhCliStatus, GhPrChecksState, GhPrDetails, GhPrSummary } from '@shared/types/git.ts'
 import { getActiveThread } from '@shared/store/thread-helpers.ts'
+import { at } from '@shared/array-utils.ts'
 import { extractGithubPrUrls, githubPrKey } from '@shared/git/github-pr-url.ts'
 import { renderMarkdown } from '../markdown/renderer.ts'
 import { sanitizeRenderedMarkdown } from '../markdown/sanitize.ts'
@@ -63,8 +64,8 @@ function mergePrLists(linked: PrRef[], pools: GhPrSummary[][]): GhPrSummary[] {
     merged.push(
       fromPools ?? {
         ...ref,
-        title: `PR #${ref.number}`,
-        url: `https://github.com/${ref.owner}/${ref.repo}/pull/${ref.number}`,
+        title: `PR #${String(ref.number)}`,
+        url: `https://github.com/${ref.owner}/${ref.repo}/pull/${String(ref.number)}`,
         state: 'OPEN',
       },
     )
@@ -165,7 +166,7 @@ export function mountPrPane(
     void api.gh
       .prChecks(pr.owner, pr.repo, pr.number)
       .then((state) => {
-        checksCache.set(key, state ?? 'no_checks')
+        checksCache.set(key, state)
       })
       .catch(() => {
         checksCache.set(key, 'no_checks')
@@ -223,7 +224,7 @@ export function mountPrPane(
         class: `git-change-row pr-list-row${isSelected ? ' is-selected' : ''}`,
         'data-pr-section': section,
       },
-      el('span', { class: 'pr-list-number' }, `#${pr.number}`),
+      el('span', { class: 'pr-list-number' }, `#${String(pr.number)}`),
       el('span', { class: 'git-change-path pr-list-title' }, pr.title),
       ci,
     )
@@ -266,20 +267,25 @@ export function mountPrPane(
     if (linkedPrs.length > 0) {
       const section = el('div', { class: 'git-changes-section' })
       section.append(
-        el('div', { class: 'git-changes-section-title' }, `From chat (${linkedPrs.length})`),
+        el(
+          'div',
+          { class: 'git-changes-section-title' },
+          `From chat (${String(linkedPrs.length)})`,
+        ),
       )
       for (const pr of linkedPrs) section.append(renderPrRow(pr, 'linked'))
       listBody.append(section)
     }
 
     if (repoPrs.length > 0 && ghStatus?.authenticated) {
-      const slug = `${repoPrs[0]!.owner}/${repoPrs[0]!.repo}`
+      const firstRepoPr = at(repoPrs, 0)
+      const slug = `${firstRepoPr.owner}/${firstRepoPr.repo}`
       const section = el('div', { class: 'git-changes-section' })
       section.append(
         el(
           'div',
           { class: 'git-changes-section-title', title: `Open pull requests in ${slug}` },
-          `${slug} (${repoPrs.length})`,
+          `${slug} (${String(repoPrs.length)})`,
         ),
       )
       for (const pr of repoPrs) section.append(renderPrRow(pr, 'workspace'))
@@ -352,9 +358,10 @@ export function mountPrPane(
     })
 
     const stats: string[] = []
-    if (typeof prDetails.changedFiles === 'number') stats.push(`${prDetails.changedFiles} files`)
+    if (typeof prDetails.changedFiles === 'number')
+      stats.push(`${String(prDetails.changedFiles)} files`)
     if (typeof prDetails.additions === 'number' || typeof prDetails.deletions === 'number') {
-      stats.push(`+${prDetails.additions ?? 0} -${prDetails.deletions ?? 0}`)
+      stats.push(`+${String(prDetails.additions ?? 0)} -${String(prDetails.deletions ?? 0)}`)
     }
     if (prDetails.headRefName && prDetails.baseRefName) {
       stats.push(`${prDetails.headRefName} → ${prDetails.baseRefName}`)
@@ -369,7 +376,7 @@ export function mountPrPane(
       el(
         'div',
         { class: 'pr-viewer-subtitle' },
-        `#${prDetails.number} · ${prDetails.owner}/${prDetails.repo}`,
+        `#${String(prDetails.number)} · ${prDetails.owner}/${prDetails.repo}`,
         stats.length > 0 ? ` · ${stats.join(' · ')}` : '',
       ),
       el('div', { class: 'pr-viewer-actions' }, openBtn),
@@ -396,7 +403,7 @@ export function mountPrPane(
     const header = el(
       'div',
       { class: 'pr-files-header' },
-      `Changed files (${prDetails.files.length})`,
+      `Changed files (${String(prDetails.files.length)})`,
     )
     const list = el('div', { class: 'pr-files-list' })
     for (const file of prDetails.files) {
@@ -479,12 +486,12 @@ export function mountPrPane(
         el(
           'div',
           { class: 'pr-viewer-title-row' },
-          el('h3', { class: 'pr-viewer-title' }, `#${ref.number} ${ref.owner}/${ref.repo}`),
+          el('h3', { class: 'pr-viewer-title' }, `#${String(ref.number)} ${ref.owner}/${ref.repo}`),
         ),
         el(
           'div',
           { class: 'pr-viewer-subtitle' },
-          `https://github.com/${ref.owner}/${ref.repo}/pull/${ref.number}`,
+          `https://github.com/${ref.owner}/${ref.repo}/pull/${String(ref.number)}`,
         ),
       )
       return
@@ -538,8 +545,8 @@ export function mountPrPane(
       workspacePrs = []
       prList = linkedRefs.map((ref) => ({
         ...ref,
-        title: `PR #${ref.number}`,
-        url: `https://github.com/${ref.owner}/${ref.repo}/pull/${ref.number}`,
+        title: `PR #${String(ref.number)}`,
+        url: `https://github.com/${ref.owner}/${ref.repo}/pull/${String(ref.number)}`,
         state: 'OPEN',
       }))
       renderList()
@@ -560,11 +567,10 @@ export function mountPrPane(
     }
 
     if (selectedPr) {
+      const current = selectedPr
       const stillExists = prList.some(
         (pr) =>
-          pr.owner === selectedPr!.owner &&
-          pr.repo === selectedPr!.repo &&
-          pr.number === selectedPr!.number,
+          pr.owner === current.owner && pr.repo === current.repo && pr.number === current.number,
       )
       if (stillExists) {
         await selectPr(selectedPr)
@@ -573,7 +579,7 @@ export function mountPrPane(
     }
 
     if (linkedRefs.length > 0) {
-      await selectPr(linkedRefs[0]!)
+      await selectPr(at(linkedRefs, 0))
       return
     }
     if (prList[0]) await selectPr(prList[0])

@@ -5,7 +5,7 @@ const COPIED_LABEL = 'Copied'
 const FEEDBACK_MS = 1200
 
 function copyButtonText(code: HTMLElement): string {
-  return (code.textContent ?? '').trimStart()
+  return code.textContent.trimStart()
 }
 
 export function attachCodeBlockCopyButtons(root: ParentNode): void {

@@ -276,7 +276,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       return
     }
     queueIndicator.hidden = false
-    queueIndicator.textContent = count === 1 ? '1 queued' : `${count} queued`
+    queueIndicator.textContent = count === 1 ? '1 queued' : `${String(count)} queued`
   }
 
   function usageSummaryText(): string | null {
@@ -472,8 +472,9 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     const branchStatus = await api.git.branchStatus()
     const currentBranch = branchStatus.currentBranch
     const thread = getThreadById(store, id)
-    if (threadGitBranchMismatch(thread?.gitBranch, currentBranch)) {
-      showBranchMismatch(thread!.gitBranch!)
+    const threadBranch = thread?.gitBranch
+    if (threadBranch && threadGitBranchMismatch(threadBranch, currentBranch)) {
+      showBranchMismatch(threadBranch)
       return
     }
     hideBranchMismatch()

@@ -156,7 +156,7 @@ const pyPass = new Set<number>()
 for (const e of spec) {
   const js = jsNorm.get(e.example)
   const py = pyNorm[String(e.example)]
-  if (!js || !py) die(`missing normalized output for example #${e.example}`)
+  if (!js || !py) die(`missing normalized output for example #${String(e.example)}`)
   if (js.expected === js.rendered) jsPass.add(e.example)
   if (py.expected === py.rendered) pyPass.add(e.example)
 }
@@ -169,7 +169,7 @@ const usedAllow = new Set<number>()
 for (const e of spec) {
   const js = jsNorm.get(e.example)
   const py = pyNorm[String(e.example)]
-  if (!js || !py) die(`missing normalized output for example #${e.example}`)
+  if (!js || !py) die(`missing normalized output for example #${String(e.example)}`)
   const expectedDiffers = js.expected !== py.expected
   const renderedDiffers = js.rendered !== py.rendered
   if (!expectedDiffers && !renderedDiffers) continue

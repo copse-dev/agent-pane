@@ -43,7 +43,9 @@ describe('readonly-tools', () => {
       'some_future_tool',
     ]) {
       assert.equal(isToolAllowedInReadonlyMode(name), false, name)
-      assert.match(getReadonlyToolBlockReason(name)!, new RegExp(READONLY_MODE_BLOCK_MESSAGE), name)
+      const reason = getReadonlyToolBlockReason(name)
+      assert.ok(reason, name)
+      assert.match(reason, new RegExp(READONLY_MODE_BLOCK_MESSAGE), name)
     }
   })
 

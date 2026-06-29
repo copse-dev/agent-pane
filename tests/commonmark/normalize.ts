@@ -229,7 +229,10 @@ function decodeRefs(value: string): string {
 function parseAttrs(raw: string): Attr[] {
   const attrs: Attr[] = []
   for (const m of raw.matchAll(ATTR_RE)) {
-    const name = m[1]!.toLowerCase()
+    // Group 1 is a mandatory capture in ATTR_RE, so it is always present when
+    // the regex matches; guard only to satisfy the type checker.
+    if (m[1] === undefined) continue
+    const name = m[1].toLowerCase()
     let value = m[2]
     if (value === undefined) {
       attrs.push([name, null])
@@ -249,7 +252,11 @@ function parseAttrs(raw: string): Attr[] {
 function parseStartTag(inner: string): ParsedStartTag | null {
   const m = inner.match(/^([a-zA-Z][^\s/>]*)([\s\S]*?)(\/?)$/)
   if (!m) return null
-  return { tag: m[1]!.toLowerCase(), attrs: parseAttrs(m[2]!), selfClosing: m[3] === '/' }
+  // Groups 1 and 2 are mandatory captures, always present on a successful match.
+  const tag = m[1]
+  const attrs = m[2]
+  if (tag === undefined || attrs === undefined) return null
+  return { tag: tag.toLowerCase(), attrs: parseAttrs(attrs), selfClosing: m[3] === '/' }
 }
 
 /** Normalize HTML the same way the CommonMark spec conformance runner does. */
@@ -264,7 +271,9 @@ export function normalizeHtml(html: string): string {
     }
   }
   while (i < html.length) {
-    const ch = html[i]!
+    const ch = html[i]
+    // i < html.length guarantees an in-bounds character; guard for the type checker.
+    if (ch === undefined) break
     if (html.startsWith('<![CDATA[', i)) {
       flush()
       const end = html.indexOf(']]>', i)
@@ -314,16 +323,16 @@ export function normalizeHtml(html: string): string {
     }
     if (ch === '&') {
       const charMatch = html.slice(i).match(/^&#([xX][0-9a-fA-F]+|[0-9]+);?/)
-      if (charMatch) {
+      if (charMatch?.[1] !== undefined) {
         flush()
-        n.charRef(charMatch[1]!)
+        n.charRef(charMatch[1])
         i += charMatch[0].length
         continue
       }
       const nameMatch = html.slice(i).match(/^&([a-zA-Z][a-zA-Z0-9]*);?/)
-      if (nameMatch) {
+      if (nameMatch?.[1] !== undefined) {
         flush()
-        n.entityRef(nameMatch[1]!)
+        n.entityRef(nameMatch[1])
         i += nameMatch[0].length
         continue
       }

@@ -24,7 +24,7 @@ describe('todo steering prompt matrix', () => {
       assert.equal(
         shouldSteerTodos(prompt),
         true,
-        `expected steering for (${prompt.length} chars): ${prompt.slice(0, 80)}`,
+        `expected steering for (${String(prompt.length)} chars): ${prompt.slice(0, 80)}`,
       )
     })
   }

@@ -245,7 +245,7 @@ test('restoreProject does not emit projects_changed before threads are loaded', 
 })
 
 test('paginateSidebarThreads shows the first page by default', () => {
-  const threads = Array.from({ length: 15 }, (_, i) => thread(`t-${i}`))
+  const threads = Array.from({ length: 15 }, (_, i) => thread(`t-${String(i)}`))
   const result = paginateSidebarThreads(threads, SIDEBAR_THREADS_PAGE_SIZE, null)
   assert.equal(result.visibleThreads.length, SIDEBAR_THREADS_PAGE_SIZE)
   assert.equal(result.visibleCount, SIDEBAR_THREADS_PAGE_SIZE)
@@ -253,7 +253,7 @@ test('paginateSidebarThreads shows the first page by default', () => {
 })
 
 test('paginateSidebarThreads expands to the next page when the active thread is hidden', () => {
-  const threads = Array.from({ length: 25 }, (_, i) => thread(`t-${i}`))
+  const threads = Array.from({ length: 25 }, (_, i) => thread(`t-${String(i)}`))
   const result = paginateSidebarThreads(threads, SIDEBAR_THREADS_PAGE_SIZE, 't-12')
   assert.equal(result.visibleThreads.length, 20)
   assert.equal(result.visibleCount, 20)
@@ -262,7 +262,7 @@ test('paginateSidebarThreads expands to the next page when the active thread is 
 })
 
 test('paginateSidebarThreads expands through the final partial page', () => {
-  const threads = Array.from({ length: 15 }, (_, i) => thread(`t-${i}`))
+  const threads = Array.from({ length: 15 }, (_, i) => thread(`t-${String(i)}`))
   const result = paginateSidebarThreads(threads, SIDEBAR_THREADS_PAGE_SIZE, 't-12')
   assert.equal(result.visibleThreads.length, 15)
   assert.equal(result.visibleCount, 15)
@@ -270,7 +270,7 @@ test('paginateSidebarThreads expands through the final partial page', () => {
 })
 
 test('paginateSidebarThreads hides Show more when all threads fit', () => {
-  const threads = Array.from({ length: 8 }, (_, i) => thread(`t-${i}`))
+  const threads = Array.from({ length: 8 }, (_, i) => thread(`t-${String(i)}`))
   const result = paginateSidebarThreads(threads, SIDEBAR_THREADS_PAGE_SIZE, null)
   assert.equal(result.visibleThreads.length, 8)
   assert.equal(result.hasMore, false)

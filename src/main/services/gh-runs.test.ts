@@ -61,6 +61,7 @@ describe('truncateLogTail', () => {
   })
 
   it('uses a sane default cap', () => {
-    assert.ok(GH_RUN_LOG_MAX_CHARS > 0)
+    const cap: number = GH_RUN_LOG_MAX_CHARS
+    assert.ok(cap > 0)
   })
 })
