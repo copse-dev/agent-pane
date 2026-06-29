@@ -1,0 +1,178 @@
+name: Reconcile PR screenshots after main
+
+# When main re-renders a reference PNG, every open PR that also touched that PNG
+# silently goes `dirty` — a binary file git can't 3-way merge. Nothing re-runs a
+# PR's CI when its *base* moves (the `pull_request` event only fires on head
+# changes), so the commit-screenshots reconcile in ci.yml would never get a
+# chance to clear the conflict on an idle PR. This workflow closes that gap: on a
+# main push that changes screenshots, it merges the new main into each conflicting
+# PR head and keeps the PR's own shots for any screenshot-only conflict — the same
+# policy as ci.yml's reconcile, but driven reactively by the base moving.
+#
+# It is intentionally cheap: a pure git merge, no build/e2e. The push that
+# resolves the conflict fires the PR's normal `synchronize` CI once (which, for a
+# PNG/merge head, the oracle thins to lint/check/build), so the PR re-validates
+# without this workflow ever running the suite itself.
+on:
+  push:
+    branches: [main]
+    # Only screenshot churn on main can create a screenshot conflict, so don't
+    # wake on unrelated main commits.
+    paths:
+      - 'tests/e2e/screenshots/**'
+
+# A burst of main pushes only needs the latest reconcile pass; collapse them.
+concurrency:
+  group: reconcile-screenshots
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  # Enumerate open, same-repo PRs that currently conflict with main. Forks are
+  # skipped (CI can't push to a fork branch). mergeable_state is computed async by
+  # GitHub, so poll past the transient `unknown` before deciding.
+  list:
+    runs-on: ubuntu-latest
+    outputs:
+      prs: ${{ steps.find.outputs.prs }}
+    steps:
+      - id: find
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+            const self = `${context.repo.owner}/${context.repo.repo}`;
+            const open = await github.paginate(github.rest.pulls.list, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const out = [];
+            for (const pr of open) {
+              if (pr.head.repo?.full_name !== self) continue; // fork — can't push
+              let state = pr.mergeable_state;
+              // The list payload omits a freshly-computed state; re-fetch and let
+              // `unknown` settle (GitHub computes mergeability on demand).
+              for (let i = 0; i < 4 && (state === 'unknown' || state == null); i++) {
+                await sleep(2000);
+                const { data } = await github.rest.pulls.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: pr.number,
+                });
+                state = data.mergeable_state;
+              }
+              // `dirty` == conflicting. Treat a stuck `unknown` as a maybe: the
+              // merge step is the real source of truth and no-ops when clean.
+              if (state === 'dirty' || state === 'unknown') {
+                out.push({ number: pr.number, head: pr.head.ref });
+              }
+            }
+            console.log(`Conflicting PR(s): ${JSON.stringify(out)}`);
+            core.setOutput('prs', JSON.stringify(out));
+
+  reconcile:
+    needs: list
+    if: needs.list.outputs.prs != '[]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    strategy:
+      # One PR's source conflict (which we deliberately don't auto-resolve) must
+      # not cancel reconciling the others.
+      fail-fast: false
+      matrix:
+        pr: ${{ fromJSON(needs.list.outputs.prs) }}
+    steps:
+      # PAT so the resolving push re-triggers the PR's CI (GITHUB_TOKEN pushes are
+      # recursion-guarded and wouldn't fire `synchronize`, leaving ci-passed stale
+      # on the new head). Falls back to github.token: the conflict still clears,
+      # just without the CI re-trigger.
+      - uses: actions/checkout@v6.0.3
+        with:
+          ref: ${{ matrix.pr.head }}
+          fetch-depth: 0
+          token: ${{ secrets.SCREENSHOTS_PAT || github.token }}
+      - name: Merge main, auto-resolving screenshot-only conflicts
+        id: merge
+        env:
+          PR_NUMBER: ${{ matrix.pr.number }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --no-tags origin main
+          if git merge --no-commit --no-ff origin/main; then
+            git merge --abort 2>/dev/null || true
+            echo "PR #$PR_NUMBER: no conflict with main — nothing to do"
+            exit 0
+          fi
+          conflicts="$(git diff --name-only --diff-filter=U)"
+          non_ss="$(printf '%s\n' "$conflicts" | grep -vE '^tests/e2e/screenshots/' || true)"
+          if [ -n "$non_ss" ]; then
+            echo "PR #$PR_NUMBER: non-screenshot conflicts need a human — not auto-resolving:"
+            printf '%s\n' "$non_ss"
+            git merge --abort
+            {
+              echo "manual=true"
+              echo "manual-files<<EOF"
+              printf '%s\n' "$non_ss"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "PR #$PR_NUMBER: screenshot-only conflict — keeping the PR's shots"
+          git checkout --ours -- tests/e2e/screenshots/
+          git add tests/e2e/screenshots/
+          git commit --no-edit
+          git push
+          echo "resolved=true" >> "$GITHUB_OUTPUT"
+      - name: Comment when manual resolution is needed
+        if: steps.merge.outputs.manual == 'true'
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ matrix.pr.number }}
+          MANUAL_FILES: ${{ steps.merge.outputs.manual-files }}
+        with:
+          script: |
+            const marker = '<!-- reconcile-screenshots-manual -->';
+            const files = (process.env.MANUAL_FILES || '').split('\n').filter(Boolean);
+            const lines = files.map((p) => `- \`${p}\``);
+            const body = [
+              marker,
+              '### Merge conflict needs a human',
+              '',
+              '`main` advanced and screenshot conflicts were resolved automatically, but ' +
+                'these **non-screenshot** files conflict and can\'t be auto-merged. ' +
+                'Resolve them by hand (merge or rebase `main`):',
+              '',
+              lines.join('\n'),
+            ].join('\n');
+            const number = Number(process.env.PR_NUMBER);
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: number,
+            });
+            const existing = comments.find(
+              (c) => c.user?.type === 'Bot' && typeof c.body === 'string' && c.body.includes(marker),
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: number,
+                body,
+              });
+            }
