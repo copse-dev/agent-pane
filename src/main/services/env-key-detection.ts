@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { at } from '@shared/array-utils.ts'
 
 /**
  * Opt-in detection of LLM provider API keys the user already has exported in
@@ -124,17 +125,17 @@ export function parseEnvAssignments(content: string): Map<string, string> {
 
     const assign = line.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/)
     if (assign) {
-      out.set(assign[1]!, stripQuotes(assign[2]!))
+      out.set(at(assign, 1), stripQuotes(at(assign, 2)))
       continue
     }
     const setenv = line.match(/^setenv\s+([A-Za-z_][A-Za-z0-9_]*)\s+(.+)$/)
     if (setenv) {
-      out.set(setenv[1]!, stripQuotes(setenv[2]!))
+      out.set(at(setenv, 1), stripQuotes(at(setenv, 2)))
       continue
     }
     const fish = line.match(/^set\s+(?:-[A-Za-z]+\s+)*([A-Za-z_][A-Za-z0-9_]*)\s+(.+)$/)
     if (fish) {
-      out.set(fish[1]!, stripQuotes(fish[2]!))
+      out.set(at(fish, 1), stripQuotes(at(fish, 2)))
     }
   }
   return out
@@ -189,7 +190,7 @@ export function scanEnvForKeys(deps: ScanEnvDeps = {}): DetectedKey[] {
   const env = deps.env ?? process.env
   const home = deps.homeDir ?? homedir()
   const fileExists = deps.fileExists ?? existsSync
-  const readFile = deps.readFile ?? ((p: string) => readFileSync(p, 'utf8'))
+  const readFile = deps.readFile ?? ((p: string): string => readFileSync(p, 'utf8'))
 
   const sources: EnvSource[] = [{ source: 'environment', vars: env }]
   for (const rel of WELL_KNOWN_ENV_FILES) {

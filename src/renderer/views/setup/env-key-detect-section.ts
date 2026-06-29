@@ -38,7 +38,7 @@ export function createEnvKeyDetectSection(
 ): EnvKeyDetectSection {
   const legend = opts.legend ?? 'Detect existing API keys'
 
-  const scanBtn = el('button', { type: 'button' }, 'Scan environment') as HTMLButtonElement
+  const scanBtn = el('button', { type: 'button' }, 'Scan environment')
   const importBtn = el(
     'button',
     {
@@ -47,10 +47,10 @@ export function createEnvKeyDetectSection(
       hidden: true,
     },
     'Import keys',
-  ) as HTMLButtonElement
+  )
 
-  const status = el('span', { class: 'key-status' }) as HTMLElement
-  const results = el('div', { class: 'env-key-results' }) as HTMLElement
+  const status = el('span', { class: 'key-status' })
+  const results = el('div', { class: 'env-key-results' })
   const actions = el('div', { class: 'env-key-actions' }, scanBtn, importBtn, status)
 
   const fieldset = el(
@@ -66,7 +66,7 @@ export function createEnvKeyDetectSection(
     ),
     actions,
     results,
-  ) as HTMLFieldSetElement
+  )
 
   function setStatus(text: string, kind: 'ok' | 'err' | '' = ''): void {
     status.textContent = text
@@ -104,16 +104,16 @@ export function createEnvKeyDetectSection(
     }
     importBtn.hidden = importable.length === 0
     importBtn.textContent =
-      importable.length === 1 ? 'Import 1 key' : `Import ${importable.length} keys`
+      importable.length === 1 ? 'Import 1 key' : `Import ${String(importable.length)} keys`
     setStatus(
       importable.length > 0
-        ? `Found ${importable.length} new key${importable.length === 1 ? '' : 's'}.`
+        ? `Found ${String(importable.length)} new key${importable.length === 1 ? '' : 's'}.`
         : 'All detected keys are already configured.',
     )
   }
 
   scanBtn.addEventListener('click', () => {
-    void (async () => {
+    void (async (): Promise<void> => {
       scanBtn.disabled = true
       setStatus('Scanning…')
       try {
@@ -130,7 +130,7 @@ export function createEnvKeyDetectSection(
   })
 
   importBtn.addEventListener('click', () => {
-    void (async () => {
+    void (async (): Promise<void> => {
       importBtn.disabled = true
       setStatus('Importing…')
       try {
@@ -138,7 +138,7 @@ export function createEnvKeyDetectSection(
         setStatus(
           imported.length === 0
             ? 'Nothing new to import.'
-            : `Imported ${imported.length} key${imported.length === 1 ? '' : 's'}.`,
+            : `Imported ${String(imported.length)} key${imported.length === 1 ? '' : 's'}.`,
           'ok',
         )
         // Re-scan so rows flip to "already set" and the import button hides.
