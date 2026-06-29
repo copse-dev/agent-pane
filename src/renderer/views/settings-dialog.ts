@@ -9,6 +9,7 @@ import {
 } from '@shared/app-icon-variants.ts'
 import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
 import { DEFAULT_CURSOR_AGENT_BASE_URL } from '@shared/remote-agent.ts'
+import { qsRequired } from '../dom/helpers.ts'
 import { populateModelSelect, populateSmallTasksModelSelect } from './model-options.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createCustomProvidersSection } from './setup/custom-providers-section.ts'
@@ -574,18 +575,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   document.body.append(overlay)
   overlayEl = overlay
 
-  // Every selector below targets an element baked into the static template
-  // above; a miss means the template and this code drifted, which we surface
-  // as a loud error rather than a silent non-null assertion.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters -- the generic return type lets call sites request the concrete element type
-  function mustQuery<E extends Element = HTMLElement>(selector: string): E {
-    const found = overlay.querySelector<E>(selector)
-    if (!found) throw new Error(`Settings dialog template is missing "${selector}"`)
-    return found
-  }
-
+  // Every `qsRequired(overlay, …)` below targets an element baked into the static
+  // template above; a miss throws a loud error (template/code drift) rather than a
+  // silent non-null assertion.
   const customProvidersSection = createCustomProvidersSection(api)
-  mustQuery('#settings-custom-providers-host').append(customProvidersSection.root)
+  qsRequired(overlay, '#settings-custom-providers-host').append(customProvidersSection.root)
 
   const envKeyDetectSection = createEnvKeyDetectSection(api, {
     onImported: () => {
@@ -599,19 +593,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     legend: 'Cursor authentication',
     providers: ['cursor'],
   })
-  mustQuery('#settings-cursor-key-host').append(cursorKeySection.root)
+  qsRequired(overlay, '#settings-cursor-key-host').append(cursorKeySection.root)
 
   const lmStudioSection = createLmStudioSection(api, { showInstallGuide: false })
-  mustQuery('#settings-lm-studio-host').append(lmStudioSection.root)
+  qsRequired(overlay, '#settings-lm-studio-host').append(lmStudioSection.root)
 
   const ghCliSection = createGhCliSection(api)
-  mustQuery('#settings-gh-cli-host').append(ghCliSection.root)
+  qsRequired(overlay, '#settings-gh-cli-host').append(ghCliSection.root)
 
   const modelRoutingSection = createModelRoutingSection(api)
-  mustQuery('#settings-model-routing-host').append(modelRoutingSection.root)
+  qsRequired(overlay, '#settings-model-routing-host').append(modelRoutingSection.root)
 
   const usageSection = createUsageSection(api, store)
-  mustQuery('#settings-usage-host').append(usageSection.root)
+  qsRequired(overlay, '#settings-usage-host').append(usageSection.root)
 
   const navBtns = overlay.querySelectorAll<HTMLButtonElement>('.settings-nav-btn')
   const sections = overlay.querySelectorAll<HTMLElement>('.settings-section')
@@ -636,7 +630,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   }
 
   function renderMcpServers(allStatuses: import('@shared/types/mcp.ts').McpServerStatus[]): void {
-    const listEl = mustQuery('#mcp-server-list')
+    const listEl = qsRequired(overlay, '#mcp-server-list')
     // Curated ("Copse reviewed") servers have their own section below.
     const statuses = allStatuses.filter((s) => !s.curated)
     if (statuses.length === 0) {
@@ -760,7 +754,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   function renderCuratedServers(
     servers: import('@shared/types/mcp.ts').CuratedMcpServerStatus[],
   ): void {
-    const listEl = mustQuery('#mcp-curated-list')
+    const listEl = qsRequired(overlay, '#mcp-curated-list')
     listEl.innerHTML = ''
     if (servers.length === 0) {
       listEl.textContent = 'No reviewed servers available.'
@@ -844,8 +838,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     }
   }
 
-  mustQuery('#mcp-reload-btn').addEventListener('click', () => {
-    const statusEl = mustQuery('#mcp-reload-status')
+  qsRequired(overlay, '#mcp-reload-btn').addEventListener('click', () => {
+    const statusEl = qsRequired(overlay, '#mcp-reload-status')
     statusEl.textContent = 'Reloading…'
     statusEl.className = 'lmstudio-test-status'
     void api.mcp
@@ -871,7 +865,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await customProvidersSection.refresh()
       await envKeyDetectSection.refresh()
 
-      const form = mustQuery<HTMLFormElement>('form')
+      const form = qsRequired<HTMLFormElement>(overlay, 'form')
       const model = (await api.settings.get('model')) as string | undefined
       await populateModelSelect(
         form.elements.namedItem('model') as HTMLSelectElement,
@@ -977,6 +971,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     })()
   })
 
-  mustQuery('#settings-cancel').addEventListener('click', closeSettingsDialog)
-  mustQuery('#settings-close').addEventListener('click', closeSettingsDialog)
+  qsRequired(overlay, '#settings-cancel').addEventListener('click', closeSettingsDialog)
+  qsRequired(overlay, '#settings-close').addEventListener('click', closeSettingsDialog)
 }
