@@ -42,6 +42,42 @@ describe('markdown file links', () => {
     ])
   })
 
+  it('collects file-like references inside .tool-result pre elements', () => {
+    const root = document.createElement('div')
+    root.innerHTML = [
+      '<p>Normal text renderer.ts</p>',
+      '<pre>skipped/outside.ts</pre>',
+      '<div class="tool-result"><pre>src/main/index.ts\nREADME.md</pre></div>',
+    ].join('')
+
+    // skipped/outside.ts is inside a bare <pre> (not .tool-result) and must be excluded;
+    // src/main/index.ts and README.md inside .tool-result <pre> must be included.
+    assert.deepEqual(findFileReferenceCandidates(root), [
+      'renderer.ts',
+      'src/main/index.ts',
+      'README.md',
+    ])
+  })
+
+  it('annotates file references inside .tool-result pre elements', async () => {
+    const root = document.createElement('div')
+    root.innerHTML =
+      '<div class="tool-result"><pre>src/main/index.ts\nREADME.md</pre></div>'
+
+    await annotateFileReferences(
+      root,
+      apiWithFileReferences([
+        { candidate: 'src/main/index.ts', path: 'src/main/index.ts' },
+        { candidate: 'README.md', path: 'README.md' },
+      ]),
+    )
+
+    const links = [...root.querySelectorAll<HTMLAnchorElement>('a.file-reference-link')]
+    assert.equal(links.length, 2)
+    assert.equal(links[0]?.dataset['fileReferencePath'], 'src/main/index.ts')
+    assert.equal(links[1]?.dataset['fileReferencePath'], 'README.md')
+  })
+
   it('annotates resolved references as workspace file links', async () => {
     const root = document.createElement('div')
     root.innerHTML = '<p>Read src/main/index.ts, renderer.ts, and README.md.</p>'
