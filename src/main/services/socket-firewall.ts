@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { getMainWindow } from '../windows/create-main-window.ts'
+import { getCurrentShellTaskId } from './shell-output-context.ts'
 
 /**
  * Socket Firewall (`sfw`) integration. `sfw` wraps a package manager, proxies its
@@ -54,7 +55,8 @@ export function isSocketFirewallAvailable(): boolean {
 export function installSocketFirewall(signal: AbortSignal): Promise<boolean> {
   return new Promise((resolve) => {
     const win = getMainWindow()
-    const emit = (text: string) => win?.webContents.send('agent:shell_output', text)
+    const emit = (text: string) =>
+      win?.webContents.send('agent:shell_output', text, getCurrentShellTaskId())
     const args = sfwInstallArgs()
     emit(`[safe-install] installing Socket Firewall (npm ${args.join(' ')})…\n`)
 

@@ -40,4 +40,11 @@ export interface StoreEvents {
   review_changed: [threadId: string]
   git_branch_changed: []
   composer_draft_flush: []
+  // Terminal tab: the user selected an agent task to view (id) or cleared it
+  // (null). Lets the shells list drop its active highlight while a task panel
+  // takes over the viewer, and vice versa.
+  agent_task_selected: [taskId: string | null]
+  // Terminal tab: a shell tab was activated, so any agent-task panel showing in
+  // the viewer should yield back to the live terminal.
+  shell_tab_activated: []
 }
