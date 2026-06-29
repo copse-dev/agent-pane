@@ -20,6 +20,7 @@ import { readSkillTool } from '../tools/read-skill-tool.ts'
 import { updateTodosTool } from '../tools/todo-tool.ts'
 import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
 import { browserTools } from '../tools/browser-tools.ts'
+import { rememberTool, recallTool } from '../tools/memory-tools.ts'
 import { listSkills } from './skills-registry.ts'
 import { getSetting } from './settings.ts'
 import {
@@ -27,6 +28,7 @@ import {
   BROWSER_TOOLS_DEFAULT_ENABLED,
 } from './browser/browser-origin-policy.ts'
 import { CI_INVESTIGATOR_ENABLED_SETTING } from './ci-investigator-service.ts'
+import { OKF_MEMORIES_ENABLED_SETTING } from './okf-memory-store.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
@@ -62,6 +64,9 @@ export function createRegistry(): ToolRegistry {
     registry.register(ghRunViewTool)
     registry.register(investigateCiTool)
   }
+  // Experimental OKF memories (off by default). Adds remember/recall tools that
+  // persist project knowledge as Open Knowledge Format notes under ~/.copse.
+  syncOkfMemoryTools(registry)
   registry.register(webSearchTool)
   registry.register(fetchUrlTool)
   registry.register(updateTodosTool)
@@ -69,6 +74,25 @@ export function createRegistry(): ToolRegistry {
     for (const tool of browserTools) registry.register(tool)
   }
   return registry
+}
+
+/**
+ * Register or unregister the experimental OKF memory tools to match the current
+ * `okfMemoriesEnabled` setting. Called at startup (via createRegistry) and again
+ * whenever the setting is toggled, so the tools appear or disappear live without
+ * an app restart. This keeps the registry in sync with the memory system-prompt
+ * block, which is rebuilt every turn from the same setting — otherwise enabling
+ * the feature mid-session would advertise remember/recall in the prompt while the
+ * registry still rejected the calls as "Unknown tool".
+ */
+export function syncOkfMemoryTools(registry: ToolRegistry): void {
+  if (getSetting<boolean>(OKF_MEMORIES_ENABLED_SETTING, false)) {
+    if (!registry.has('remember')) registry.register(rememberTool)
+    if (!registry.has('recall')) registry.register(recallTool)
+  } else {
+    registry.unregister('remember')
+    registry.unregister('recall')
+  }
 }
 
 /** Register skill tools after the skills registry has been populated. */
