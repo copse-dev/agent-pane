@@ -3,7 +3,8 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { createRegistry, registerSkillTools } from './registry-bootstrap.ts'
+import { createRegistry, registerSkillTools, syncOkfMemoryTools } from './registry-bootstrap.ts'
+import { ToolRegistry } from './tool-registry.ts'
 import { refreshSkillsRegistry, setSkillsForTest } from './skills-registry.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 import { setSetting } from './settings.test-shim.ts'
@@ -49,5 +50,34 @@ description: Demo skill for tests
     registerSkillTools(registry)
 
     assert.equal(registry.has('read_skill'), true)
+  })
+})
+
+describe('syncOkfMemoryTools', () => {
+  afterEach(() => {
+    setSetting('okfMemoriesEnabled', false)
+  })
+
+  it('adds the memory tools when enabled and removes them when disabled', () => {
+    const registry = new ToolRegistry()
+
+    setSetting('okfMemoriesEnabled', false)
+    syncOkfMemoryTools(registry)
+    assert.equal(registry.has('remember'), false)
+    assert.equal(registry.has('recall'), false)
+
+    setSetting('okfMemoriesEnabled', true)
+    syncOkfMemoryTools(registry)
+    assert.equal(registry.has('remember'), true)
+    assert.equal(registry.has('recall'), true)
+
+    // Idempotent while enabled — a second sync keeps the tools registered.
+    syncOkfMemoryTools(registry)
+    assert.equal(registry.has('remember'), true)
+
+    setSetting('okfMemoriesEnabled', false)
+    syncOkfMemoryTools(registry)
+    assert.equal(registry.has('remember'), false)
+    assert.equal(registry.has('recall'), false)
   })
 })
