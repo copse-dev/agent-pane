@@ -311,7 +311,8 @@ function renderBareHttpLinks(text: string): string {
 
 const BLOCK_START_RE = /^<(pre|ul|ol|h[1-6]|table|hr|blockquote|img|div class="mermaid-diagram\b)/
 const BLOCK_CLOSE_RE = /<\/(pre|ul|ol|h[1-6]|table|blockquote|div)>$/
-const CONTAINS_BLOCK_RE = /<(ul|ol|h[1-6]|pre|table|hr|blockquote|img|div class="mermaid-diagram\b)[\s>]/
+const CONTAINS_BLOCK_RE =
+  /<(ul|ol|h[1-6]|pre|table|hr|blockquote|img|div class="mermaid-diagram\b)[\s>]/
 const ORDERED_ITEM_RE = /^(\d+)\. (.+)$/
 
 function isOrderedItemLine(line: string): boolean {
