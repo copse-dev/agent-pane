@@ -103,6 +103,11 @@ project-defined MCP servers are gated behind workspace trust, the
   keys never persisted to disk.
 - **Renderer hardening.** Narrow `contextBridge` API, main-frame IPC gating,
   strict DOMPurify on rendered content.
+- **Persisted thread history + export.** Every thread is autosaved to the
+  main-process electron-store (a JSON file under the `copse-panel` userData dir),
+  with each message's tool calls — args *and* results — retained inline. Any
+  thread can be exported to JSONL (`downloadThreadJsonl`), giving an inspectable,
+  greppable record of what the agent did across a run.
 
 ## Known gaps
 
@@ -117,9 +122,17 @@ enforced, ordered by how much they widen the blast radius:
   matching over the raw command string, which is evadable (quote-splitting,
   interpreter-run of agent-written files, `git` transport tricks). It should fail
   toward prompting, and treat "run a file the agent just wrote" as approval-worthy.
-- **No durable action log.** There is no persistent, inspectable record of the
-  host/workspace/network actions an agent took across a session, so a run can't be
-  audited after the fact.
+- **The action record is a transcript, not an audit log.** Tool calls (args +
+  results) are persisted and exportable, which covers most of "what did the agent
+  do?". But the record has three audit-grade weaknesses: (1) it's plaintext JSON
+  in the userData dir — the same trust zone as the app — so it is neither
+  append-only nor tamper-evident, and a host compromise could edit or delete it;
+  (2) it captures the tool I/O the agent reported through the registry, not an
+  independent OS-level record of everything a spawned shell process did once
+  approved; (3) export is a manual, per-thread action rather than a continuous
+  stream.
 
-Closing the Linux/Windows isolation gap and adding a durable action log are the
-two highest-leverage changes for moving these from principles to guarantees.
+Closing the Linux/Windows isolation gap is the single highest-leverage change.
+Hardening the existing thread record into a tamper-evident, append-only audit log
+is the natural follow-up — the data is already captured; what's missing are the
+audit-grade properties.
