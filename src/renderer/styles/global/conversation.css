@@ -142,12 +142,37 @@
 }
 .message-reasoning-text {
   margin-top: var(--spacing-xs);
-  white-space: pre-wrap;
+  white-space: normal;
   word-break: break-word;
   font-size: var(--font-size-sm);
   color: var(--text-muted);
-  font-family: var(--font-mono, monospace);
   line-height: 1.5;
+}
+.message-reasoning-text p {
+  margin: 0;
+}
+.message-reasoning-text p + p,
+.message-reasoning-text p + ul,
+.message-reasoning-text p + ol,
+.message-reasoning-text ul + p,
+.message-reasoning-text ol + p {
+  margin-top: var(--spacing-sm);
+}
+.message-reasoning-text > :first-child {
+  margin-top: 0;
+}
+.message-reasoning-text ul,
+.message-reasoning-text ol {
+  margin: var(--spacing-sm) 0;
+  padding-inline-start: 1.5em;
+  list-style-position: outside;
+  white-space: normal;
+}
+.message-reasoning-text code {
+  font-family: var(--font-mono);
+  padding: 1px 4px;
+  background: var(--bg-muted);
+  border-radius: 3px;
 }
 .message-body {
   position: relative;
