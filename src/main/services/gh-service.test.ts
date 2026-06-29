@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { formatGhPrFiles, formatGhPrList, formatGhPrView } from './gh-service.ts'
+import { formatGhPrFiles, formatGhPrList, formatGhPrView, ghEnv } from './gh-service.ts'
 
 describe('formatGhPrList', () => {
   it('formats PR rows with branch and author', () => {
@@ -20,6 +20,34 @@ describe('formatGhPrList', () => {
 
   it('returns empty message for no PRs', () => {
     assert.equal(formatGhPrList([]), '(no pull requests)')
+  })
+})
+
+describe('ghEnv', () => {
+  it('always sets a PATH', () => {
+    const env = ghEnv({ PATH: '/custom/bin' })
+    assert.match(env['PATH'] ?? '', /\/custom\/bin/)
+  })
+
+  it('forwards GitHub auth tokens so gh works without a readable config dir (#521)', () => {
+    const env = ghEnv({
+      PATH: '/bin',
+      GH_TOKEN: 'gh-tok',
+      GITHUB_TOKEN: 'github-tok',
+      GH_HOST: 'github.example.com',
+      GH_CONFIG_DIR: '/tmp/gh',
+    })
+    assert.equal(env['GH_TOKEN'], 'gh-tok')
+    assert.equal(env['GITHUB_TOKEN'], 'github-tok')
+    assert.equal(env['GH_HOST'], 'github.example.com')
+    assert.equal(env['GH_CONFIG_DIR'], '/tmp/gh')
+  })
+
+  it('omits auth vars that are absent and never forwards unrelated secrets', () => {
+    const env = ghEnv({ PATH: '/bin', ANTHROPIC_API_KEY: 'secret' })
+    assert.ok(!('GH_TOKEN' in env))
+    assert.ok(!('GITHUB_TOKEN' in env))
+    assert.ok(!('ANTHROPIC_API_KEY' in env))
   })
 })
 
