@@ -69,6 +69,14 @@ describe('deriveOverallState', () => {
       'success',
     )
   })
+
+  it('returns no_checks for an empty list with no pending signal', () => {
+    assert.equal(deriveOverallState([]), 'no_checks')
+  })
+
+  it('returns pending for an empty list when checks are queued but not yet reported (#521)', () => {
+    assert.equal(deriveOverallState([], { checksPending: true }), 'pending')
+  })
 })
 
 describe('parseGhPrChecks', () => {
