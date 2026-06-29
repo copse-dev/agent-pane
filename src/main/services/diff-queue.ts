@@ -1,3 +1,4 @@
+import { errorMessage } from '@shared/errors.ts'
 import * as fsp from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { BrowserWindow } from 'electron'
@@ -330,7 +331,7 @@ async function applyWrite(entry: QueueEntry): Promise<ApplyResult> {
     await fsp.mkdir(dirname(absPath), { recursive: true })
     await fsp.writeFile(absPath, entry.after, 'utf-8')
   } catch (err) {
-    return { status: 'error', error: err instanceof Error ? err.message : String(err) }
+    return { status: 'error', error: errorMessage(err) }
   }
   return { status: 'written' }
 }
@@ -350,7 +351,7 @@ async function applyDelete(entry: QueueEntry): Promise<ApplyResult> {
   try {
     await fsp.rm(absPath)
   } catch (err) {
-    return { status: 'error', error: err instanceof Error ? err.message : String(err) }
+    return { status: 'error', error: errorMessage(err) }
   }
   return { status: 'written' }
 }
@@ -380,7 +381,7 @@ async function applyRename(entry: QueueEntry): Promise<ApplyResult> {
     await fsp.mkdir(dirname(toAbs), { recursive: true })
     await fsp.rename(fromAbs, toAbs)
   } catch (err) {
-    return { status: 'error', error: err instanceof Error ? err.message : String(err) }
+    return { status: 'error', error: errorMessage(err) }
   }
   return { status: 'written' }
 }
@@ -391,7 +392,7 @@ async function applyMkdir(entry: QueueEntry): Promise<ApplyResult> {
     assertWorkspaceWriteTarget(absPath)
     await fsp.mkdir(absPath, { recursive: true })
   } catch (err) {
-    return { status: 'error', error: err instanceof Error ? err.message : String(err) }
+    return { status: 'error', error: errorMessage(err) }
   }
   return { status: 'written' }
 }

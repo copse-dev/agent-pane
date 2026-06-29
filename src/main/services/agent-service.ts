@@ -1,3 +1,4 @@
+import { errorMessage } from '@shared/errors.ts'
 import { runAgentLoop } from '@shared/agent/run-agent-loop.ts'
 import type { AgentHost } from '@shared/agent/agent-host.ts'
 import {
@@ -338,7 +339,7 @@ export async function runAgent(
             passed,
           })
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err)
+          const msg = errorMessage(err)
           extraMessage = `Local worker failed: ${msg}`
           sendChunk({
             type: 'todo_worker_done',

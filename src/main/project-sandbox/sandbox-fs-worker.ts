@@ -11,6 +11,7 @@
  *
  * Must stay free of electron imports so it bundles as a standalone script.
  */
+import { errorMessage } from '@shared/errors.ts'
 import * as fsp from 'node:fs/promises'
 import { dirname } from 'node:path'
 
@@ -53,7 +54,7 @@ async function handle(req: Request): Promise<ResponseBody> {
 }
 
 function errorBody(err: unknown): ResponseBody {
-  return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  return { ok: false, error: errorMessage(err) }
 }
 
 function oneShot(): void {

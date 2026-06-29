@@ -108,7 +108,10 @@ for (const key of ['CFBundleName', 'CFBundleDisplayName']) {
   try {
     execFileSync('plutil', ['-replace', key, '-string', DISPLAY_NAME, targetPlist])
   } catch (err) {
-    console.warn(`[patch-dev-name] could not set ${key}:`, (err as Error).message)
+    console.warn(
+      `[patch-dev-name] could not set ${key}:`,
+      err instanceof Error ? err.message : String(err),
+    )
   }
 }
 try {
@@ -120,7 +123,10 @@ try {
     targetPlist,
   ])
 } catch (err) {
-  console.warn('[patch-dev-name] could not set CFBundleIdentifier:', (err as Error).message)
+  console.warn(
+    '[patch-dev-name] could not set CFBundleIdentifier:',
+    err instanceof Error ? err.message : String(err),
+  )
 }
 
 const ICNS = join('assets', 'icons', 'app.icns')
@@ -148,7 +154,10 @@ if (existsSync(ICNS)) {
       targetPlist,
     ])
   } catch (err) {
-    console.warn('[patch-dev-name] could not set icon plist keys:', (err as Error).message)
+    console.warn(
+      '[patch-dev-name] could not set icon plist keys:',
+      err instanceof Error ? err.message : String(err),
+    )
   }
 } else {
   console.warn(
@@ -159,7 +168,10 @@ if (existsSync(ICNS)) {
 try {
   execFileSync('codesign', ['--force', '--deep', '-s', '-', TARGET_APP])
 } catch (err) {
-  console.warn('[patch-dev-name] codesign failed:', (err as Error).message)
+  console.warn(
+    '[patch-dev-name] codesign failed:',
+    err instanceof Error ? err.message : String(err),
+  )
 }
 
 writeFileSync(PATH_TXT, EXEC_REL)

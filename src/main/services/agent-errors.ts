@@ -1,3 +1,5 @@
+import { errorMessage } from '@shared/errors.ts'
+
 interface ProviderError {
   status?: number
   type?: string
@@ -17,7 +19,7 @@ interface ProviderError {
  * `type`/`request_id` noise.
  */
 function parseProviderError(err: unknown): ProviderError {
-  const raw = err instanceof Error ? err.message : String(err)
+  const raw = errorMessage(err)
   const parsed: ProviderError = {}
   const status = /^\s*(\d{3})\b/.exec(raw)
   if (status) parsed.status = Number(status[1])
@@ -41,7 +43,7 @@ function parseProviderError(err: unknown): ProviderError {
 /** Map provider / local-model failures to user-facing chat text. */
 export function classifyAgentError(err: unknown): string {
   const { status, type, code, message } = parseProviderError(err)
-  const raw = err instanceof Error ? err.message : String(err)
+  const raw = errorMessage(err)
   const detail = message ?? raw
 
   if (status === 401 || type === 'authentication_error' || detail.includes('Unauthorized'))
