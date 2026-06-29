@@ -90,6 +90,12 @@ export function managedAgentEventToChunks(
   if (type === 'agent.message') {
     const text = extractText(payload.content)
     if (!text) return []
+    // TODO(api-verify): This assumes `agent.message` events carry incremental
+    // deltas, so each event's text is appended (`+=`). If the API instead sends
+    // cumulative snapshots (each event repeating all text so far), this both
+    // duplicates `assistantText` and re-emits the whole message as a text chunk
+    // on every event. Confirm delta-vs-snapshot semantics; if snapshots, replace
+    // the append with a diff/replace against the prior content.
     state.assistantText += text
     return [{ type: 'text', text }]
   }

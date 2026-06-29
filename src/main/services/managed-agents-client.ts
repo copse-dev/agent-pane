@@ -161,6 +161,13 @@ async function createAgent(input: {
     name: 'Copse Claude Agent',
     model: DEFAULT_MANAGED_AGENT_MODEL,
     system: input.system,
+    // TODO(api-verify): The GitHub MCP server is registered with no auth here, yet
+    // the system prompt instructs the agent to push branches / open PRs via these
+    // MCP tools. This only works if the platform injects the `github_repository`
+    // session resource's `authorization_token` (see createSession) into the MCP
+    // server automatically. If it does NOT, the MCP server needs its own auth
+    // (e.g. an Authorization header) and PR creation will fail silently. Confirm
+    // against the Managed Agents API before relying on auto PR creation.
     mcp_servers: [{ type: 'url', name: GITHUB_MCP_SERVER_NAME, url: GITHUB_MCP_SERVER_URL }],
     tools: [
       { type: AGENT_TOOLSET_TYPE },
