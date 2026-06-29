@@ -24,7 +24,8 @@ export function estimateAssistantOutputTokens(messages: Message[]): number {
   for (const message of messages) {
     if (message.role !== 'assistant') continue
     chars += message.content.length
-    for (const toolCall of message.toolCalls) {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
+    for (const toolCall of message.toolCalls ?? []) {
       for (const subMessage of toolCall.subagent?.messages ?? []) {
         if (subMessage.role === 'assistant') chars += subMessage.content.length
       }
