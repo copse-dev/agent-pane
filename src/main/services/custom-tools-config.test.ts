@@ -54,7 +54,7 @@ describe('normalizeCustomTool', () => {
       name: 'envbad',
       execute: () => ({ content: [{ type: 'text', text: 'boom' }], isError: true }),
     }).tool!
-    await assert.rejects(() => bad.execute({}, signal), /boom/)
+    await assert.rejects(async () => bad.execute({}, signal), /boom/)
   })
 
   it('passes requiresApproval through only when explicitly true', () => {

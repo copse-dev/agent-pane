@@ -307,6 +307,7 @@ export async function ensureShellCommandPermitted(command: string): Promise<bool
 }
 
 /** Integrated terminal is a direct user UI action; PTY always runs outside seatbelt (#180). */
+// eslint-disable-next-line @typescript-eslint/require-await -- part of the uniformly-async permission-gate API (awaited by the terminal IPC handler)
 export async function ensureTerminalPermitted(): Promise<boolean> {
   if (!getWorkspaceRoot()) throw new Error('No workspace open.')
   return true
