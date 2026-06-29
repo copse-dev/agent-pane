@@ -147,6 +147,10 @@ async function finishActivate(
       ? pendingThreadId
       : (loaded[0]?.id ?? null)
 
+  // Preserve right-panel open state and mode across the switch (issue #502).
+  // Only the file viewer content belongs to the old workspace and must be
+  // cleared; the panel itself stays open in the same mode so panels do not
+  // close when moving between projects.
   store.setState({
     activeProjectId: id,
     expandedProjectId: id,
@@ -155,7 +159,6 @@ async function finishActivate(
     activeThreadId,
     openFile: null,
     panelTab: 'file',
-    filesPaneOpen: false,
   })
   if (loaded.length === 0) createThread(store)
   else normalizeBlankThreads(store)
