@@ -152,7 +152,7 @@ description: Bundled skill for tests
     assert.ok(demo)
     const outside = await mkdtemp(join(tmpdir(), 'copse-skill-out-'))
     await writeFile(join(outside, 'leak.txt'), 'leak', 'utf8')
-    await symlink(join(outside, 'leak.txt'), join(demo!.skillRoot, 'link.txt'))
+    await symlink(join(outside, 'leak.txt'), join(demo.skillRoot, 'link.txt'))
     try {
       await assert.rejects(() => readSkill('demo-skill', 'link.txt'), /outside skill root/)
     } finally {

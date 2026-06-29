@@ -166,9 +166,9 @@ describe('getGitFileDiff staged blob', { skip: !gitOk && 'git not installed' }, 
   it('reads HEAD and index blobs for a staged file', async () => {
     const diff = await getGitFileDiff('staged.ts', true)
     assert.ok(diff)
-    assert.match(diff!.before, /value = 1/)
-    assert.match(diff!.after, /value = 2/)
-    assert.notEqual(diff!.before, diff!.after)
+    assert.match(diff.before, /value = 1/)
+    assert.match(diff.after, /value = 2/)
+    assert.notEqual(diff.before, diff.after)
   })
 })
 
@@ -206,9 +206,9 @@ describe('getGitFileDiff image preview', { skip: !gitOk && 'git not installed' }
     )
     const diff = await getGitFileDiff('logo.png', false)
     assert.ok(diff)
-    assert.match(diff!.beforeImage ?? '', /^data:image\/png;base64,/)
-    assert.match(diff!.afterImage ?? '', /^data:image\/png;base64,/)
-    assert.notEqual(diff!.beforeImage, diff!.afterImage)
+    assert.match(diff.beforeImage ?? '', /^data:image\/png;base64,/)
+    assert.match(diff.afterImage ?? '', /^data:image\/png;base64,/)
+    assert.notEqual(diff.beforeImage, diff.afterImage)
   })
 
   it('returns only the after image for an untracked image', async () => {
@@ -218,8 +218,8 @@ describe('getGitFileDiff image preview', { skip: !gitOk && 'git not installed' }
     )
     const diff = await getGitFileDiff('new.png', false)
     assert.ok(diff)
-    assert.equal(diff!.beforeImage, null)
-    assert.match(diff!.afterImage ?? '', /^data:image\/png;base64,/)
+    assert.equal(diff.beforeImage, null)
+    assert.match(diff.afterImage ?? '', /^data:image\/png;base64,/)
   })
 
   it('returns before and after images for a staged modification', async () => {
@@ -230,9 +230,9 @@ describe('getGitFileDiff image preview', { skip: !gitOk && 'git not installed' }
     git('add', 'logo.png')
     const diff = await getGitFileDiff('logo.png', true)
     assert.ok(diff)
-    assert.match(diff!.beforeImage ?? '', /^data:image\/png;base64,/)
-    assert.match(diff!.afterImage ?? '', /^data:image\/png;base64,/)
-    assert.notEqual(diff!.beforeImage, diff!.afterImage)
+    assert.match(diff.beforeImage ?? '', /^data:image\/png;base64,/)
+    assert.match(diff.afterImage ?? '', /^data:image\/png;base64,/)
+    assert.notEqual(diff.beforeImage, diff.afterImage)
   })
 })
 
@@ -270,9 +270,9 @@ describe('getGitFileDiff unstaged blob', { skip: !gitOk && 'git not installed' }
   it('returns index content as before and working tree as after for unstaged edits', async () => {
     const diff = await getGitFileDiff('README.md', false)
     assert.ok(diff)
-    assert.match(diff!.before, /Intro paragraph\.\n\n## Section/)
-    assert.match(diff!.after, /Intro paragraph\.\n\n\n\n\n\n## Section/)
-    assert.notEqual(diff!.before, diff!.after)
+    assert.match(diff.before, /Intro paragraph\.\n\n## Section/)
+    assert.match(diff.after, /Intro paragraph\.\n\n\n\n\n\n## Section/)
+    assert.notEqual(diff.before, diff.after)
   })
 })
 
@@ -354,9 +354,9 @@ describe('getGitFileDiff subdirectory workspace', { skip: !gitOk && 'git not ins
   it('reads index/HEAD blobs when the workspace is a repo subdirectory', async () => {
     const diff = await getGitFileDiff('README.md', false)
     assert.ok(diff)
-    assert.match(diff!.before, /Intro paragraph\.\n\n## Section/)
-    assert.match(diff!.after, /Intro paragraph\.\n\n\n\n\n\n## Section/)
-    assert.notEqual(diff!.before, diff!.after)
+    assert.match(diff.before, /Intro paragraph\.\n\n## Section/)
+    assert.match(diff.after, /Intro paragraph\.\n\n\n\n\n\n## Section/)
+    assert.notEqual(diff.before, diff.after)
   })
 })
 

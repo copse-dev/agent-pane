@@ -35,7 +35,7 @@ describe('terminateProcessTree', () => {
       ],
       { stdio: ['ignore', 'pipe', 'ignore'], detached: true },
     )
-    await once(proc.stdout!, 'data')
+    await once(proc.stdout, 'data')
 
     terminateProcessTree(proc, 100)
     const [code, signalName] = (await once(proc, 'exit')) as [number | null, NodeJS.Signals | null]
@@ -57,7 +57,7 @@ describe('terminateProcessTree', () => {
     })
     await once(proc, 'spawn')
 
-    const [chunk] = (await once(proc.stdout!, 'data')) as [Buffer]
+    const [chunk] = (await once(proc.stdout, 'data')) as [Buffer]
     const grandchildPid = Number(chunk.toString().trim())
     assert.ok(grandchildPid > 0)
 

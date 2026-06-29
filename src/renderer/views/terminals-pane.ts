@@ -166,7 +166,7 @@ export function mountTerminalsPane(
     const input = el('input', {
       type: 'text',
       class: 'terminals-tab-rename',
-    }) as HTMLInputElement
+    })
     input.value = tab.label
     let done = false
     const finish = (save: boolean) => {
@@ -316,7 +316,7 @@ export function mountTerminalsPane(
       { type: 'button', class: 'terminals-tab', 'data-tab-id': id, title: label },
       labelSpan,
       closeBtn,
-    ) as HTMLButtonElement
+    )
 
     const panel = el('div', { class: 'terminals-tab-panel', 'data-tab-id': id })
     const container = el('div', { class: 'terminal-container' })

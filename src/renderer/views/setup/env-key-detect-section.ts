@@ -38,7 +38,7 @@ export function createEnvKeyDetectSection(
 ): EnvKeyDetectSection {
   const legend = opts.legend ?? 'Detect existing API keys'
 
-  const scanBtn = el('button', { type: 'button' }, 'Scan environment') as HTMLButtonElement
+  const scanBtn = el('button', { type: 'button' }, 'Scan environment')
   const importBtn = el(
     'button',
     {
@@ -47,9 +47,9 @@ export function createEnvKeyDetectSection(
       hidden: true,
     },
     'Import keys',
-  ) as HTMLButtonElement
+  )
 
-  const status = el('span', { class: 'key-status' }) as HTMLElement
+  const status = el('span', { class: 'key-status' })
   const results = el('div', { class: 'env-key-results' }) as HTMLElement
   const actions = el('div', { class: 'env-key-actions' }, scanBtn, importBtn, status)
 
@@ -66,7 +66,7 @@ export function createEnvKeyDetectSection(
     ),
     actions,
     results,
-  ) as HTMLFieldSetElement
+  )
 
   function setStatus(text: string, kind: 'ok' | 'err' | '' = ''): void {
     status.textContent = text

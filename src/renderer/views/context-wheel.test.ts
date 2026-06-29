@@ -29,7 +29,7 @@ describe('context wheel breakdown (component)', () => {
 
     assert.equal(wheel.root.hidden, false)
     assert.ok(wheel.root.classList.contains('has-breakdown'))
-    assert.match(wheel.root.querySelector('.context-wheel-label')!.textContent!, /\d+%/)
+    assert.match(wheel.root.querySelector('.context-wheel-label')!.textContent, /\d+%/)
 
     const arcs = wheel.root.querySelectorAll('.context-wheel g circle')
     assert.ok(arcs.length >= 2, `expected ≥2 arc segments, got ${arcs.length}`)
@@ -51,7 +51,7 @@ describe('context wheel breakdown (component)', () => {
     wheel.root.dispatchEvent(new Event('mouseenter'))
     assert.equal(popover.hidden, false)
 
-    assert.match(popover.textContent!, /System prompt/)
-    assert.match(popover.textContent!, /Your message/)
+    assert.match(popover.textContent, /System prompt/)
+    assert.match(popover.textContent, /Your message/)
   })
 })

@@ -241,7 +241,7 @@ function createTransport(cfg: McpServerConfig): CreatedTransport {
     stderr = appendFlatCapped(stderr, chunk.toString(), COMMAND_OUTPUT_MAX_BYTES)
   })
   return {
-    transport: transport as unknown as Transport,
+    transport: transport,
     stderrOutput: () => stderr.trim(),
   }
 }
