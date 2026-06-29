@@ -584,7 +584,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
   let pinnedToBottom = true
   let lastScrollTop = 0
-  let suppressScrollPinUpdate = false
+  // The scrollTop our own scrollToBottom() last landed on. Used to tell our
+  // programmatic scroll echo apart from a genuine user scroll, so a user scroll
+  // (especially scrolling up mid-stream) is never mistaken for autoscroll (#468).
+  let lastProgrammaticScrollTop = -1
   let userScrolledUpAt = 0
 
   function isNearBottom(): boolean {
@@ -601,9 +604,18 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   function handleUserScroll(): void {
-    if (suppressScrollPinUpdate) return
-
     const scrollTop = list.scrollTop
+    // Ignore the scroll event emitted by our own scrollToBottom(): it lands on
+    // an exact, known position. Everything else is a real user scroll. Matching
+    // the position (rather than suppressing for a time window) means a user
+    // scroll-up during rapid autoscroll is never dropped, so the view reliably
+    // unpins instead of being yanked back to the bottom (#468). Consume the echo
+    // once so a later user scroll to the same pixel isn't swallowed too.
+    if (scrollTop === lastProgrammaticScrollTop) {
+      lastProgrammaticScrollTop = -1
+      lastScrollTop = scrollTop
+      return
+    }
     if (scrollTop < lastScrollTop - 1) {
       userScrolledUpAt = Date.now()
       pinnedToBottom = false
@@ -660,12 +672,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   function scrollToBottom(force = false): void {
     if (!force && !shouldAutoScroll()) return
     // The scrollable element is the messages list, not the mount root.
-    suppressScrollPinUpdate = true
     list.scrollTop = list.scrollHeight
     lastScrollTop = list.scrollTop
-    requestAnimationFrame(() => {
-      suppressScrollPinUpdate = false
-    })
+    // Remember exactly where we landed so the resulting scroll event is
+    // recognized as ours and not treated as a user scroll (see handleUserScroll).
+    lastProgrammaticScrollTop = list.scrollTop
     if (force) {
       userScrolledUpAt = 0
       pinnedToBottom = true
@@ -797,9 +808,21 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       .find((m) => m.id === msgId)
     const msgEl = list.querySelector(`[data-message-id="${msgId}"]`)
     if (!msg || !msgEl) return
+    // renderToolCards tears down and rebuilds every tool card, which destroys the
+    // browser's scroll anchor and can jump a user who has scrolled up to read.
+    // Preserve their position across the rebuild; only autoscroll when the view
+    // is still pinned to the bottom (#468).
+    const prevScrollTop = list.scrollTop
+    const wasPinned = pinnedToBottom
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
     renderToolCards(msgEl as HTMLElement, msg.toolCalls ?? [], msg.commandSummary)
-    scrollToBottom()
+    if (wasPinned) {
+      scrollToBottom()
+    } else if (list.scrollTop !== prevScrollTop) {
+      list.scrollTop = prevScrollTop
+      lastScrollTop = prevScrollTop
+      lastProgrammaticScrollTop = prevScrollTop
+    }
   }
 
   const unsubs = [
