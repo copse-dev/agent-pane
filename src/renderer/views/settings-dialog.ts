@@ -650,11 +650,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         id: 'lmstudio',
         label: 'LM Studio',
         element: lmStudioSection.root,
-        refresh: () => lmStudioSection.refreshDetection(),
+        refresh: (): Promise<void> => lmStudioSection.refreshDetection(),
       },
     ],
   })
-  overlay.querySelector('#settings-local-providers-host')!.append(localProvidersSection.root)
+  mustQuery('#settings-local-providers-host').append(localProvidersSection.root)
 
   const ghCliSection = createGhCliSection(api)
   qsRequired(overlay, '#settings-gh-cli-host').append(ghCliSection.root)

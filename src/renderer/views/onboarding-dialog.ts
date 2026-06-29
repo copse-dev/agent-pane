@@ -136,7 +136,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
     'button',
     { type: 'button', class: 'setup-test-btn' },
     'Scan for local servers',
-  ) as HTMLButtonElement
+  )
 
   let detecting = false
   async function runLocalDetection(): Promise<void> {
@@ -158,7 +158,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
         const status = el(
           'span',
           { class: r.reachable ? 'preferred-model-status ok' : 'preferred-model-status' },
-          r.reachable ? `✓ running — ${r.models.length} model(s)` : '○ not found',
+          r.reachable ? `✓ running — ${String(r.models.length)} model(s)` : '○ not found',
         )
         detectList.append(el('div', { class: 'preferred-model-row' }, meta, status))
       }
@@ -172,7 +172,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
         await importDetectedPreset(api, r)
       }
       detectStatus.textContent = reachable.length
-        ? `Found ${reachable.length} local server(s)`
+        ? `Found ${String(reachable.length)} local server(s)`
         : 'No local servers detected'
       detectStatus.className = `setup-detection-status ${reachable.length ? 'ok' : 'warn'}`
       await lmStudio.refreshDetection()

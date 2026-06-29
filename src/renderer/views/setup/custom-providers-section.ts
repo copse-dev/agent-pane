@@ -696,7 +696,7 @@ export function createCustomProvidersSection(
       selected = defaultSelected
     }
     // Let native providers (LM Studio) re-run their own detection.
-    await Promise.all(nativeProviders.map((p) => p.refresh?.()))
+    await Promise.all(nativeProviders.map(async (p) => p.refresh?.()))
     // Refresh the configured-key indicators for the chips.
     configured.clear()
     const slugs = [...fixedProviders.map((p) => p.id), ...providers.map((p) => p.id)]

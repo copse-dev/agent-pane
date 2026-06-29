@@ -43,7 +43,7 @@ export async function detectLocalServers(api: ApiClient): Promise<LocalServerRes
         const res = await api.lmStudio.test(target.baseUrl)
         return {
           ...target,
-          reachable: !!res.ok,
+          reachable: res.ok,
           models: res.models ?? [],
           ...(res.error ? { error: res.error } : {}),
         }

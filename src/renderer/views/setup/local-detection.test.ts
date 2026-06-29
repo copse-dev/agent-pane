@@ -12,7 +12,7 @@ import { setSetting } from '../../../main/services/settings.ts'
 // main-process store. This exercises the actual read-modify-write of the single
 // `extraProviders` setting that importDetectedPreset relies on — the surface the
 // concurrency bug lived on.
-function fakeApi() {
+function fakeApi(): Parameters<typeof importDetectedPreset>[0] {
   return {
     settings: {
       extraProviders: async () => getResolvedExtraProviders(),
