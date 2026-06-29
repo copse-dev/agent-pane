@@ -374,6 +374,12 @@ jobs:
   # branch) and only after a green e2e run, so we never commit half-rendered shots.
   # Deliberately NOT in `ci-passed`'s needs: it's a side effect, not a gate.
   #
+  # It also reconciles screenshot conflicts: if main re-rendered the same reference
+  # PNG, that binary file can't 3-way merge and the PR goes `dirty`. The reconcile
+  # step merges main, keeping the freshly re-rendered shots for any screenshot-path
+  # conflict (regenerated PNGs have no meaningful merge). Source-code conflicts are
+  # NEVER auto-resolved — they abort the merge and get a "needs a human" PR comment.
+  #
   # The checkout uses a PAT (secrets.SCREENSHOTS_PAT) rather than the default
   # GITHUB_TOKEN: GitHub will not start a new workflow run for a commit pushed with
   # GITHUB_TOKEN (recursion guard), so a token-pushed screenshot commit would land
@@ -453,7 +459,6 @@ jobs:
           } >> "$GITHUB_OUTPUT"
       - name: Commit screenshot updates
         if: steps.diff.outputs.changed == 'true'
-        id: commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -464,18 +469,71 @@ jobs:
           # skip the e2e tier, so CI re-runs only lint/check/build, renders nothing,
           # and this job finds no further screenshots to commit.
           git commit -m "chore(e2e): update reference screenshots from CI"
+      # Clear screenshot conflicts against main. A reference PNG re-rendered on BOTH
+      # main and this PR is a binary file git can't merge, so the PR goes `dirty`
+      # and STAYS that way: the render commit above only updates the head branch, it
+      # never incorporates main, so head's PNG keeps conflicting with main's PNG.
+      # Bring main in here so the conflict actually resolves. Generated PNGs have no
+      # meaningful 3-way merge — for any screenshot-path conflict we just keep the
+      # freshly re-rendered shot (--ours). But we NEVER auto-resolve source code:
+      # if anything outside tests/e2e/screenshots/ conflicts, abort and leave it to
+      # a human (the `manual` output drives a PR comment below).
+      #
+      # The probe merge is --no-commit so a conflict-free PR is left byte-identical
+      # — no needless merge commit baked onto a tidy branch, only onto one that was
+      # genuinely conflicting. Runs regardless of the render diff above: a conflict
+      # can exist even when this run re-rendered nothing new (the noise filter may
+      # have reverted the wobble), so gating on `changed` would miss it.
+      - name: Reconcile reference screenshots with main
+        id: reconcile
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --no-tags origin main
+          if git merge --no-commit --no-ff origin/main; then
+            # Clean (or already up to date) — don't bake a merge commit onto an
+            # otherwise-tidy PR. --abort is a no-op / harmless when no merge started.
+            git merge --abort 2>/dev/null || true
+            echo "main merges cleanly; nothing to reconcile"
+            exit 0
+          fi
+          conflicts="$(git diff --name-only --diff-filter=U)"
+          non_ss="$(printf '%s\n' "$conflicts" | grep -vE '^tests/e2e/screenshots/' || true)"
+          if [ -n "$non_ss" ]; then
+            echo "Source conflicts need manual resolution — not auto-resolving:"
+            printf '%s\n' "$non_ss"
+            {
+              echo "manual=true"
+              echo "manual-files<<EOF"
+              printf '%s\n' "$non_ss"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            git merge --abort
+            exit 0
+          fi
+          echo "Screenshot-only conflict — keeping the freshly re-rendered shots"
+          git checkout --ours -- tests/e2e/screenshots/
+          git add tests/e2e/screenshots/
+          git commit --no-edit
+      - name: Push
+        id: push
+        run: |
+          # No-op ("Everything up-to-date") when nothing was committed or merged, so
+          # this is safe to run unconditionally — even on the manual-merge path it
+          # just pushes the render commit (the aborted merge left HEAD untouched).
           git push
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Comment on PR with updated screenshots
-        # Post when real shots were committed OR when shots were ignored as noise —
-        # the ignored list is offered for manual acceptance, so it's worth surfacing
-        # even on a run that committed nothing.
-        if: steps.diff.outputs.changed == 'true' || steps.filter.outputs.ignored-count != '0'
+        # Post when real shots were committed, shots were ignored as noise (the
+        # ignored list is offered for manual acceptance), OR main couldn't be merged
+        # automatically because source conflicts need a human.
+        if: steps.diff.outputs.changed == 'true' || steps.filter.outputs.ignored-count != '0' || steps.reconcile.outputs.manual == 'true'
         uses: actions/github-script@v7
         env:
           CHANGED_FILES: ${{ steps.diff.outputs.files }}
-          COMMIT_SHA: ${{ steps.commit.outputs.sha }}
+          COMMIT_SHA: ${{ steps.push.outputs.sha }}
           IGNORED_JSON: ${{ steps.filter.outputs.ignored-json }}
+          MANUAL_MERGE_FILES: ${{ steps.reconcile.outputs.manual-files }}
         with:
           script: |
             const marker = '<!-- copse-e2e-screenshots -->';
@@ -483,7 +541,18 @@ jobs:
             const repo = context.repo.owner + '/' + context.repo.repo;
             const files = (process.env.CHANGED_FILES || '').split('\n').filter(Boolean);
             const ignored = JSON.parse(process.env.IGNORED_JSON || '[]');
+            const manualMerge = (process.env.MANUAL_MERGE_FILES || '').split('\n').filter(Boolean);
             const sections = [];
+            if (manualMerge.length) {
+              const lines = manualMerge.map((path) => `- \`${path}\``);
+              sections.push(
+                `### Merge conflict needs a human (${manualMerge.length})\n\n` +
+                  `Screenshot conflicts with \`main\` are resolved automatically, but these ` +
+                  `**non-screenshot** files conflict and can't be auto-merged. Resolve them by ` +
+                  `hand (merge or rebase \`main\`) — the screenshot reconcile was skipped:\n\n` +
+                  lines.join('\n'),
+              );
+            }
             if (files.length) {
               const lines = files.map((path) => {
                 const name = path.split('/').pop();
