@@ -50,7 +50,7 @@ export function createEnvKeyDetectSection(
   )
 
   const status = el('span', { class: 'key-status' })
-  const results = el('div', { class: 'env-key-results' }) as HTMLElement
+  const results = el('div', { class: 'env-key-results' })
   const actions = el('div', { class: 'env-key-actions' }, scanBtn, importBtn, status)
 
   const fieldset = el(
