@@ -29,6 +29,9 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   get_ci_failure_logs: 'CI failure logs',
   write_file: 'Write file',
   str_replace: 'Replace in file',
+  delete_file: 'Delete file',
+  rename_file: 'Rename file',
+  make_directory: 'Create directory',
   run_shell: 'Run command',
   update_todos: 'Update plan',
 }
@@ -66,7 +69,10 @@ const TOOL_GROUPS: Record<string, { tools: string[]; label: string }> = {
     ],
     label: 'Git',
   },
-  writing: { tools: ['write_file', 'str_replace'], label: 'Writing files' },
+  writing: {
+    tools: ['write_file', 'str_replace', 'delete_file', 'rename_file', 'make_directory'],
+    label: 'Writing files',
+  },
   shell: { tools: ['run_shell'], label: 'Running commands' },
 }
 
@@ -101,16 +107,31 @@ export function getToolDisplayName(name: string): string {
   return formatToolNameFallback(name)
 }
 
-function fileEditPath(args: unknown): string | null {
+function stringArg(args: unknown, key: string): string | null {
   if (!args || typeof args !== 'object') return null
-  const path = (args as Record<string, unknown>)['path']
-  return typeof path === 'string' && path.length > 0 ? path : null
+  const value = (args as Record<string, unknown>)[key]
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+function fileEditPath(args: unknown): string | null {
+  return stringArg(args, 'path')
+}
+
+// File-edit tools surface a workspace-relative path so the card can deep-link to
+// the file's diff. `rename_file` keys its source on `from` instead of `path`.
+const FILE_EDIT_PATH_ARG: Record<string, string> = {
+  write_file: 'path',
+  str_replace: 'path',
+  delete_file: 'path',
+  rename_file: 'from',
+  make_directory: 'path',
 }
 
 /** Workspace-relative path a file-edit tool touched, or null for non-edit tools. */
 export function getToolEditPath(tc: ToolCall): string | null {
-  if (tc.name !== 'write_file' && tc.name !== 'str_replace') return null
-  return fileEditPath(tc.args)
+  const key = FILE_EDIT_PATH_ARG[tc.name]
+  if (!key) return null
+  return stringArg(tc.args, key)
 }
 
 // Commands are almost always prefixed with `cd <workspace> && ` so the agent
@@ -157,6 +178,19 @@ export function getToolCallLabel(tc: ToolCall): string {
   if (tc.name === 'write_file' || tc.name === 'str_replace') {
     const path = fileEditPath(tc.args)
     if (path) return `Edited ${path}`
+  }
+  if (tc.name === 'delete_file') {
+    const path = fileEditPath(tc.args)
+    if (path) return `Deleted ${path}`
+  }
+  if (tc.name === 'rename_file') {
+    const from = stringArg(tc.args, 'from')
+    const to = stringArg(tc.args, 'to')
+    if (from && to) return `Renamed ${from} → ${to}`
+  }
+  if (tc.name === 'make_directory') {
+    const path = fileEditPath(tc.args)
+    if (path) return `Created directory ${path}`
   }
   if (tc.name === 'run_shell') {
     const command = shellCommandArg(tc.args)
