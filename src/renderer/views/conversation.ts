@@ -353,16 +353,16 @@ function renderReasoningText(el: HTMLElement, text: string): void {
 function syncReasoningEl(msgEl: HTMLElement, msg: { content: string; reasoning?: string }): void {
   const body = msgEl.querySelector('.message-body')
   if (!body) return
-  let details = body.querySelector('.message-reasoning') as HTMLDetailsElement | null
+  let details = body.querySelector<HTMLDetailsElement>('.message-reasoning')
   if (!msg.reasoning) {
     details?.remove()
     return
   }
   if (!details) {
-    details = buildReasoningEl(msg.reasoning, true) as HTMLDetailsElement
+    details = buildReasoningEl(msg.reasoning, true)
     body.prepend(details)
   } else {
-    const textEl = (body?.querySelector('.message-reasoning-text') as HTMLElement | null)
+    const textEl = body.querySelector<HTMLElement>('.message-reasoning-text')
     if (textEl) renderReasoningText(textEl, msg.reasoning)
   }
   // Keep the trail open while it is still live, unless the user collapsed it.
