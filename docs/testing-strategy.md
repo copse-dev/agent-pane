@@ -120,8 +120,8 @@ Rules for anything that lands in a captured frame:
 - **Randomness.** No `Math.random()` / `randomUUID()` in rendered output. Derive
   visible ids/order from fixture data.
 
-When you add an e2e screenshot, ask: *if I rebuild this on a different branch,
-on a different day, on a different machine — does any pixel move?* If yes, pin
+When you add an e2e screenshot, ask: _if I rebuild this on a different branch,
+on a different day, on a different machine — does any pixel move?_ If yes, pin
 the source through a fixture or an e2e env override before committing the PNG.
 
 ## Quick rule of thumb
