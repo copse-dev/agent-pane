@@ -124,6 +124,59 @@ src/renderer/views/projects-pane.ts
     assert.ok(cleanedText.includes('<tool_call>'))
   })
 
+  it('parses MiniMax `<invoke>` tool calls wrapped in `]<]minimax[>[` delimiters (#519)', () => {
+    const text = `Let me check the branch.
+
+]<]minimax[>[<tool_call>
+]<]minimax[>[<invoke name="run_shell">]<]minimax[>[<command>git fetch origin main 2>&1 | tail -5]<]minimax[>[</command>]<]minimax[>[<timeout_ms>30000]<]minimax[>[</timeout_ms>]<]minimax[>[</invoke>
+]<]minimax[>[</tool_call>`
+    const { cleanedText, toolCalls, keptRawBlocks } = recoverTextToolCalls(text)
+    assert.equal(keptRawBlocks, false)
+    assert.equal(toolCalls.length, 1)
+    assert.equal(at(toolCalls, 0).name, 'run_shell')
+    assert.equal(
+      (at(toolCalls, 0).args as { command: string } | undefined)?.command,
+      'git fetch origin main 2>&1 | tail -5',
+    )
+    assert.equal((at(toolCalls, 0).args as { timeout_ms: number } | undefined)?.timeout_ms, 30000)
+    assert.ok(cleanedText.includes('Let me check the branch'))
+    assert.ok(!cleanedText.includes('minimax'))
+    assert.ok(!cleanedText.includes('<invoke'))
+  })
+
+  it('parses an `<invoke>` block with no `<tool_call>` wrapper', () => {
+    const text = `<invoke name="read_file"><path>src/a.ts</path></invoke>`
+    const { toolCalls } = recoverTextToolCalls(text)
+    assert.equal(toolCalls.length, 1)
+    assert.equal(at(toolCalls, 0).name, 'read_file')
+    assert.equal((at(toolCalls, 0).args as { path: string } | undefined)?.path, 'src/a.ts')
+  })
+
+  it('parses Anthropic-style `<parameter name="x">` inside an invoke block', () => {
+    const text = `<tool_call><invoke name="run_shell"><parameter name="command">echo hi</parameter></invoke></tool_call>`
+    const { toolCalls } = recoverTextToolCalls(text)
+    assert.equal(toolCalls.length, 1)
+    assert.equal(at(toolCalls, 0).name, 'run_shell')
+    assert.equal((at(toolCalls, 0).args as { command: string } | undefined)?.command, 'echo hi')
+  })
+
+  it('stripTextToolCallBlocks removes MiniMax delimiters and invoke blocks', () => {
+    const text = `Done.]<]minimax[>[<invoke name="run_shell"><command>ls</command></invoke>`
+    const stripped = stripTextToolCallBlocks(text)
+    assert.equal(stripped, 'Done.')
+    assert.ok(!stripped.includes('minimax'))
+    assert.ok(!stripped.includes('<invoke'))
+  })
+
+  it('stripTextToolCallBlocks holds an unterminated invoke opener while streaming', () => {
+    const stripped = stripTextToolCallBlocks(
+      'Working on it ]<]minimax[>[<invoke name="run_shell"><command>git fe',
+    )
+    assert.equal(stripped, 'Working on it')
+    assert.ok(!stripped.includes('<invoke'))
+    assert.ok(!stripped.includes('minimax'))
+  })
+
   it('coerceStringlyTypedToolArgs converts numeric strings', () => {
     assert.deepEqual(coerceStringlyTypedToolArgs({ timeout_ms: '60000' }), { timeout_ms: 60000 })
   })
