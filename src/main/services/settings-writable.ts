@@ -76,6 +76,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // section in Settings.
   mcpUiArtefactsEnabled: z.boolean(),
   ciInvestigatorEnabled: z.boolean(),
+  okfMemoriesEnabled: z.boolean(),
   customInstructions: z.string().max(8192),
   onboardingCompleted: z.boolean(),
 } as const satisfies Record<string, z.ZodType>

@@ -65,6 +65,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // Experimental, opt-in features (off by default).
   { name: 'mcpUiArtefactsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'ciInvestigatorEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'okfMemoriesEnabled', kind: 'checkbox', default: false, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
@@ -539,6 +540,22 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 analyse failing CI run logs in depth and report the root cause, and points the
                 "Investigate CI failure" follow-up at it. While off, CI failures use the plain
                 "Debug CI Failure" follow-up and the tool is not registered.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Memories (Open Knowledge Format)</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="okfMemoriesEnabled" />
+                Let the agent remember and recall project knowledge
+              </label>
+              <p class="field-hint">
+                Adds <code>remember</code> and <code>recall</code> tools so the agent can persist
+                durable project knowledge — conventions, decisions, gotchas — across sessions. Notes
+                are saved per project as portable
+                <a href="https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing" target="_blank" rel="noreferrer">Open Knowledge Format</a>
+                markdown files (YAML frontmatter plus a markdown body) under
+                <code>~/.copse/memories</code>. While off, neither tool is registered.
               </p>
             </fieldset>
           </section>
