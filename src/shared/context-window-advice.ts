@@ -28,8 +28,8 @@ export function isContextWindowLow(
 }
 
 function formatTokens(tokens: number): string {
-  if (tokens >= 1000 && tokens % 1000 === 0) return `${tokens / 1000}K`
-  if (tokens >= 1000) return `${Math.round(tokens / 1000)}K`
+  if (tokens >= 1000 && tokens % 1000 === 0) return `${String(tokens / 1000)}K`
+  if (tokens >= 1000) return `${String(Math.round(tokens / 1000))}K`
   return String(tokens)
 }
 

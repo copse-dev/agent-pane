@@ -38,15 +38,15 @@ describe('lowContextAdvice', () => {
   it('builds a message that names the model and mentions LM Studio', () => {
     const msg = lowContextAdvice(4096, { modelId: 'tiny-model' })
     assert.ok(msg)
-    assert.match(msg!, /tiny-model/)
-    assert.match(msg!, /4K/)
-    assert.match(msg!, /16K/)
-    assert.match(msg!, /LM Studio/)
+    assert.match(msg, /tiny-model/)
+    assert.match(msg, /4K/)
+    assert.match(msg, /16K/)
+    assert.match(msg, /LM Studio/)
   })
 
   it('falls back to a generic subject without a model id', () => {
     const msg = lowContextAdvice(4096)
     assert.ok(msg)
-    assert.match(msg!, /This model/)
+    assert.match(msg, /This model/)
   })
 })

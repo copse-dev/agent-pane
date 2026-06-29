@@ -289,7 +289,7 @@ export function createLmStudioSection(
           { href: VRAM_CALCULATOR_URL, target: '_blank', rel: 'noopener' },
           'VRAM calculator',
         ),
-        `. Aim for at least ${RECOMMENDED_MIN_CONTEXT_WINDOW / 1024}K tokens.`,
+        `. Aim for at least ${String(RECOMMENDED_MIN_CONTEXT_WINDOW / 1024)}K tokens.`,
       ),
     )
     contextAdvisory.hidden = false
@@ -297,7 +297,7 @@ export function createLmStudioSection(
 
   async function refreshDetection(): Promise<void> {
     const detection = await api.lmStudio.detect(urlInput.value.trim(), keyInput.value.trim())
-    renderContextAdvisory(detection.modelContexts ?? {})
+    renderContextAdvisory(detection.modelContexts)
     if (detection.serverRunning) {
       detectionStatus.textContent = `✓ LM Studio server reachable at ${detection.serverUrl}`
       detectionStatus.className = 'setup-detection-status ok'
