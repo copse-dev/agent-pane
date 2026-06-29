@@ -99,6 +99,14 @@ export class OpenAIProvider implements LLMProvider {
           const delta = event.choices[0]?.delta
           if (!delta) continue
 
+          // Reasoning ("thinking") tokens. Not part of the OpenAI schema, but
+          // widely emitted by OpenAI-compatible servers under one of these field
+          // names: `reasoning_content` (DeepSeek, vLLM, LM Studio) or `reasoning`
+          // (OpenRouter). Surfaced as a separate chunk so it never leaks into the
+          // answer text or the history sent back upstream.
+          const reasoning = readReasoningDelta(delta as unknown as Record<string, unknown>)
+          if (reasoning) yield { type: 'reasoning', text: reasoning }
+
           if (delta.content) yield { type: 'text', text: delta.content }
 
           if (delta.tool_calls) {
@@ -147,6 +155,16 @@ export class OpenAIProvider implements LLMProvider {
       { ...(signal ? { signal } : {}) },
     )
   }
+}
+
+/**
+ * Pull a reasoning-token string out of a streamed chat-completion delta. OpenAI's
+ * own schema has no reasoning field, so compatible servers bolt one on under
+ * different names — accept the two common ones and ignore non-string values.
+ */
+function readReasoningDelta(delta: Record<string, unknown>): string {
+  const raw = delta['reasoning_content'] ?? delta['reasoning']
+  return typeof raw === 'string' ? raw : ''
 }
 
 function toOpenAIMessages(messages: LLMMessage[]): OpenAI.ChatCompletionMessageParam[] {

@@ -5,6 +5,13 @@ export type StreamChunk =
   | { type: 'text'; text: string }
   /** Replace accumulated assistant text (e.g. after stripping embedded pseudo tool XML). */
   | { type: 'text_replace'; text: string }
+  /**
+   * Incremental reasoning / "thinking" text the model emits before (or alongside)
+   * its answer. Surfaced live so the user can click the "Thinking" disclosure and
+   * watch what the model is doing. Carried separately from `text` so it never
+   * lands in the assistant's answer or the conversation history sent upstream.
+   */
+  | { type: 'reasoning'; text: string }
   | { type: 'tool_call'; toolCall: ToolCallChunk }
   | {
       type: 'tool_result'
