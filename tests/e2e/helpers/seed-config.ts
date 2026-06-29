@@ -1,5 +1,6 @@
 import { mkdirSync, mkdtempSync, writeFileSync, rmSync, existsSync, copyFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
+import { e2eGitBranch } from './e2e-env.ts'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -1503,10 +1504,7 @@ export function seedFooterBranchFixture(workspaceRoot: string): FooterBranchSeed
   const projectId = 'e2e-footer-branch-project'
   const matchThreadId = 'e2e-footer-branch-match'
   const mismatchThreadId = 'e2e-footer-branch-mismatch'
-  const currentBranch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-    cwd: workspaceRoot,
-    encoding: 'utf8',
-  }).trim()
+  const currentBranch = e2eGitBranch()
   const mismatchBranch = currentBranch === 'main' ? 'feature-branch' : 'main'
   const now = Date.now()
 
@@ -1576,10 +1574,7 @@ export function seedFooterBranchPickerFixture(workspaceRoot: string): {
 } {
   const projectId = 'e2e-footer-branch-picker-project'
   const blankThreadId = 'e2e-footer-branch-picker-blank'
-  const currentBranch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-    cwd: workspaceRoot,
-    encoding: 'utf8',
-  }).trim()
+  const currentBranch = e2eGitBranch()
   const now = Date.now()
 
   mkdirSync(USER_DATA, { recursive: true })
@@ -1612,10 +1607,7 @@ export function seedFooterBranchMismatchFixture(workspaceRoot: string): FooterBr
   const projectId = 'e2e-footer-branch-project'
   const matchThreadId = 'e2e-footer-branch-match'
   const mismatchThreadId = 'e2e-footer-branch-mismatch'
-  const currentBranch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-    cwd: workspaceRoot,
-    encoding: 'utf8',
-  }).trim()
+  const currentBranch = e2eGitBranch()
   const mismatchBranch = currentBranch === 'main' ? 'feature-branch' : 'main'
   const now = Date.now()
 
