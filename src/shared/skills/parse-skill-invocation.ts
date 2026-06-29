@@ -28,8 +28,10 @@ export function parseSkillInvocation(
   const trimmed = text.trim()
   const match = trimmed.match(LEADING_SKILL_RE)
   if (!match) return null
+  const skillName = match[1]
+  if (skillName === undefined) return null
   return {
-    skillName: match[1]!,
+    skillName,
     remainder: (match[2] ?? '').trim(),
   }
 }

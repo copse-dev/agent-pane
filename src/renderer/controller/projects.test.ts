@@ -77,7 +77,9 @@ test('switchProject expands sidebar before workspace activation finishes', async
 
   let releaseWorkspace!: () => void
   const workspaceGate = new Promise<string>((resolve) => {
-    releaseWorkspace = (): void => resolve('/b')
+    releaseWorkspace = (): void => {
+      resolve('/b')
+    }
   })
 
   const api = makeApi({
@@ -121,7 +123,9 @@ test('switchProject uses cached threads in sidebar while activation is in flight
 
   let releaseWorkspace!: () => void
   const workspaceGate = new Promise<string>((resolve) => {
-    releaseWorkspace = (): void => resolve('/b')
+    releaseWorkspace = (): void => {
+      resolve('/b')
+    }
   })
 
   const api = makeApi({ workspaceSet: () => workspaceGate })
@@ -217,7 +221,9 @@ test('restoreProject does not emit projects_changed before threads are loaded', 
 
   let releaseWorkspace!: () => void
   const workspaceGate = new Promise<string>((resolve) => {
-    releaseWorkspace = (): void => resolve('/a')
+    releaseWorkspace = (): void => {
+      resolve('/a')
+    }
   })
 
   const api = makeApi({

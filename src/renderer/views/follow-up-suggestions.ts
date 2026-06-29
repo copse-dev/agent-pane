@@ -59,12 +59,12 @@ export function mountFollowUpSuggestions(
           el(
             'span',
             { class: 'follow-up-stat follow-up-stat-add' },
-            `+${suggestion.additions ?? 0}`,
+            `+${String(suggestion.additions ?? 0)}`,
           ),
           el(
             'span',
             { class: 'follow-up-stat follow-up-stat-del' },
-            `-${suggestion.deletions ?? 0}`,
+            `-${String(suggestion.deletions ?? 0)}`,
           ),
         )
       } else {
@@ -95,7 +95,7 @@ export function mountFollowUpSuggestions(
     const lastAssistant = assistantMessages.at(-1)
     if (!lastUser?.content.trim() || !lastAssistant) return null
 
-    const toolNames = lastAssistant.toolCalls?.map((tc) => tc.name) ?? []
+    const toolNames = lastAssistant.toolCalls.map((tc) => tc.name)
     return {
       turnKey: `${threadId}:${lastUser.id}:${lastAssistant.id}`,
       context: {
@@ -124,6 +124,8 @@ export function mountFollowUpSuggestions(
 
     const token = ++fetchToken
     try {
+      // Result crosses the IPC boundary; the runtime value may be undefined despite the typed contract.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       const suggestions = (await api.agent.suggestFollowUps(JSON.stringify(exchange.context))) ?? []
       if (token !== fetchToken) return
       suggestionsByThread.set(threadId, { turnKey: exchange.turnKey, suggestions })
@@ -182,7 +184,9 @@ export function mountFollowUpSuggestions(
     clearSuggestions,
     destroy: (): void => {
       fetchToken++
-      unsubs.forEach((u) => u())
+      unsubs.forEach((u) => {
+        u()
+      })
       suggestionsByThread.clear()
       clearSuggestions()
     },

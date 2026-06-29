@@ -53,6 +53,18 @@ function stubApi(calls: ApiCalls, queryResult: () => string[]): ApiClient {
 
 const tick = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
+function at<T>(list: ArrayLike<T>, i: number): T {
+  const value = list[i]
+  if (value === undefined) throw new Error(`expected element at index ${String(i)}`)
+  return value
+}
+
+function requireQuery(root: Element, selector: string): Element {
+  const found = root.querySelector(selector)
+  if (!found) throw new Error(`expected element matching '${selector}'`)
+  return found
+}
+
 describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
   let dialog: HTMLDialogElement
   let calls: ApiCalls
@@ -84,10 +96,10 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
     const items = dialog.querySelectorAll('.file-search-item')
     assert.equal(items.length, 2)
     // Filename and directory are split into separate cells.
-    assert.equal(items[0]!.querySelector('.file-search-name')!.textContent, 'main.ts')
-    assert.equal(items[0]!.querySelector('.file-search-dir')!.textContent, 'src')
+    assert.equal(requireQuery(at(items, 0), '.file-search-name').textContent, 'main.ts')
+    assert.equal(requireQuery(at(items, 0), '.file-search-dir').textContent, 'src')
     // First row is selected by default.
-    assert.ok(items[0]!.classList.contains('selected'))
+    assert.ok(at(items, 0).classList.contains('selected'))
   })
 
   it('queries the index as the user types (debounced)', async () => {
@@ -101,7 +113,7 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
     assert.ok(calls.queries.includes('tree'))
     const items = dialog.querySelectorAll('.file-search-item')
     assert.equal(items.length, 1)
-    assert.equal(items[0]!.querySelector('.file-search-name')!.textContent, 'file-tree.ts')
+    assert.equal(requireQuery(at(items, 0), '.file-search-name').textContent, 'file-tree.ts')
   })
 
   it('shows an empty state when nothing matches', async () => {

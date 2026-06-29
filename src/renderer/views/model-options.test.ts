@@ -43,8 +43,10 @@ describe('fetchModelOptions visibility', () => {
   it('shows a single guiding message when nothing is configured', async () => {
     const options = await fetchModelOptions(mockApi(), '')
     assert.equal(options.length, 1)
-    assert.match(options[0]!.label, /No models available/)
-    assert.equal(options[0]!.disabled, true)
+    const [option] = options
+    assert.ok(option)
+    assert.match(option.label, /No models available/)
+    assert.equal(option.disabled, true)
   })
 
   it('omits unconfigured providers entirely (no "add a key" rows)', async () => {

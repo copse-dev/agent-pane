@@ -63,12 +63,12 @@ export async function setGitFileDiffModel(
     original: monaco.editor.createModel(
       diff.before,
       diff.language,
-      monaco.Uri.parse(`inmemory://git-changes/${version}/original/${safePath}`),
+      monaco.Uri.parse(`inmemory://git-changes/${String(version)}/original/${safePath}`),
     ),
     modified: monaco.editor.createModel(
       diff.after,
       diff.language,
-      monaco.Uri.parse(`inmemory://git-changes/${version}/modified/${safePath}`),
+      monaco.Uri.parse(`inmemory://git-changes/${String(version)}/modified/${safePath}`),
     ),
   })
 
@@ -97,5 +97,7 @@ export function observeDiffHostLayout(
     getDiffEditor()?.layout()
   })
   observer.observe(host)
-  return () => observer.disconnect()
+  return () => {
+    observer.disconnect()
+  }
 }

@@ -51,8 +51,9 @@ describe('trimMessagesInPlace', () => {
       { role: 'assistant', content: 'y'.repeat(4000) },
     ]
     trimMessagesInPlace(messages, 100, { minTailMessages: 2 })
-    assert.equal(messages[0]?.role, 'system')
-    assert.match(messages[0]?.content, /keep me/)
+    const first = messages[0]
+    assert.ok(first?.role === 'system')
+    assert.match(first.content, /keep me/)
   })
 
   it('never drops user messages (LM Studio prompt templates need a user query)', () => {
@@ -111,8 +112,9 @@ describe('repairToolUseToolResultPairing', () => {
     ]
     repairToolUseToolResultPairing(messages)
     assert.equal(messages.length, 2)
-    assert.equal(messages[1]?.role, 'tool')
-    const results = messages[1]?.role === 'tool' ? messages[1].toolResults : []
+    const second = messages[1]
+    assert.ok(second?.role === 'tool')
+    const results = second.toolResults
     assert.equal(results[0]?.result, CANCELLED_TOOL_RESULT)
   })
 

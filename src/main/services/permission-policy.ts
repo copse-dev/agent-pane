@@ -210,8 +210,9 @@ function shellReasonRequiresOutsideSandbox(reason: string): boolean {
 
 export function mcpToolLabel(toolName: string): string {
   const parts = toolName.split('__')
-  if (parts[0] === 'mcp' && parts.length >= 3) {
-    return `${parts[1]}/${parts.slice(2).join('__')}`
+  const server = parts[1]
+  if (parts[0] === 'mcp' && parts.length >= 3 && server !== undefined) {
+    return `${server}/${parts.slice(2).join('__')}`
   }
   return toolName
 }

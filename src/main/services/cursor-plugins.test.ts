@@ -102,9 +102,9 @@ describe('cursor-plugins', () => {
     assert.equal(plugins.length, 2)
     const withMcp = plugins.find((p) => p.name === 'with-mcp')
     assert.ok(withMcp?.skillsDir)
-    assert.ok(withMcp?.mcpConfigPath)
-    assert.equal(withMcp?.description, 'Has MCP')
-    assert.equal(withMcp?.version, '1.0.0')
+    assert.ok(withMcp.mcpConfigPath)
+    assert.equal(withMcp.description, 'Has MCP')
+    assert.equal(withMcp.version, '1.0.0')
   })
 
   it('detects plugin MCP config paths for env interpolation trust', () => {

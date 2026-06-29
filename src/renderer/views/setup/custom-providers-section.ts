@@ -131,14 +131,18 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
       label,
       remove,
     )
-    remove.addEventListener('click', () => row.remove())
+    remove.addEventListener('click', () => {
+      row.remove()
+    })
     rows.append(row)
   }
 
   for (const model of initial) addRow(model)
 
   const addBtn = el('button', { type: 'button', class: 'provider-add-model' }, '+ Add model')
-  addBtn.addEventListener('click', () => addRow())
+  addBtn.addEventListener('click', () => {
+    addRow()
+  })
 
   const header = el(
     'div',

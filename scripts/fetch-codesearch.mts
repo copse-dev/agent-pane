@@ -100,7 +100,7 @@ async function binaryReady(): Promise<boolean> {
 
 async function download(url: string, dest: string): Promise<void> {
   const res = await fetch(url)
-  if (!res.ok) throw new Error(`download failed (${res.status}): ${url}`)
+  if (!res.ok) throw new Error(`download failed (${String(res.status)}): ${url}`)
   if (!res.body) throw new Error(`empty response body: ${url}`)
   await writeFile(dest, Buffer.from(await res.arrayBuffer()))
 }
@@ -170,7 +170,7 @@ async function main(): Promise<void> {
   }
 
   const url = `https://github.com/${REPO}/releases/download/${CODESEARCH_VERSION}/${asset}`
-  const tmpRoot = join(tmpdir(), `copse-panel-codesearch-${Date.now()}`)
+  const tmpRoot = join(tmpdir(), `copse-panel-codesearch-${String(Date.now())}`)
   const archivePath = join(tmpRoot, asset)
   const extractDir = join(tmpRoot, 'extract')
 
@@ -206,7 +206,7 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
+main().catch((err: unknown) => {
   console.error('[fetch-codesearch]', err instanceof Error ? err.message : err)
   process.exit(1)
 })

@@ -20,7 +20,7 @@ function render(md: string): HTMLElement {
 }
 
 function bySubstring<T extends Element>(els: Iterable<T>, text: string): T | undefined {
-  return [...els].find((e) => e.textContent?.includes(text))
+  return [...els].find((e) => e.textContent.includes(text))
 }
 
 describe('renderMarkdown fixture structure: multi-section list (markdown-list-indent)', () => {

@@ -77,6 +77,10 @@ function coerceResult(out: unknown): string {
       return text
     }
     try {
+      // JSON.stringify is typed to return string here, but at runtime returns
+      // undefined when the value serializes to nothing (e.g. a toJSON yielding
+      // undefined), so the ?? '' fallback guards a genuine case.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       return JSON.stringify(out) ?? ''
     } catch {
       return '[unserializable custom tool result]'

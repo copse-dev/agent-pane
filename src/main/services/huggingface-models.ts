@@ -106,7 +106,7 @@ export function selectBestHfProvider(providers: unknown): HfProviderEntry | null
  * Each model id is rewritten to `org/model:<provider>` so the route is fixed.
  */
 export function parseHuggingFaceModels(json: unknown): ExtraProviderModel[] {
-  const data = (json as { data?: unknown })?.data
+  const data = (json as { data?: unknown } | null)?.data
   if (!Array.isArray(data)) return []
   const out: ExtraProviderModel[] = []
   for (const row of data) {
@@ -151,7 +151,7 @@ export async function fetchHuggingFaceModels(
       return {
         ok: false,
         models: [],
-        error: `HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ''}`,
+        error: `HTTP ${String(res.status)}${res.statusText ? ` ${res.statusText}` : ''}`,
       }
     }
     const json: unknown = await res.json()

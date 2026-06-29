@@ -11,7 +11,9 @@ import {
 const req: ApprovalRequest = { title: 'Run shell', body: 'rm -rf build', type: 'shell' }
 
 describe('requestApproval pluggable transport', () => {
-  afterEach(() => setApprovalHandler(null))
+  afterEach(() => {
+    setApprovalHandler(null)
+  })
 
   it('denies (without hanging) when no handler is registered', async () => {
     setApprovalHandler(null)

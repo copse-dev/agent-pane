@@ -30,7 +30,7 @@ describe('resolveContextWindow', () => {
   it('uses context from /models when the server reports it', async () => {
     const restoreFetch = stubFetch(async (input) => {
       const url = requestUrl(input)
-      if (String(url).includes('/api/v1/models')) {
+      if (url.includes('/api/v1/models')) {
         return {
           ok: true,
           json: async () => ({
@@ -59,7 +59,7 @@ describe('resolveContextWindow', () => {
   it('defaults local models to 8192 when the server omits context', async () => {
     const restoreFetch = stubFetch(async (input) => {
       const url = requestUrl(input)
-      if (String(url).includes('/api/v1/models')) {
+      if (url.includes('/api/v1/models')) {
         return { ok: true, json: async () => ({ models: [{ key: 'qwen' }] }) } as Response
       }
       return {
@@ -90,7 +90,7 @@ describe('fetchLmStudioModelContextLength', () => {
   it('reads max_context_length from /models when present', async () => {
     restoreFetch = stubFetch(async (input) => {
       const url = requestUrl(input)
-      if (String(url).includes('/api/v1/models')) {
+      if (url.includes('/api/v1/models')) {
         return {
           ok: true,
           json: async () => ({

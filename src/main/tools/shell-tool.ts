@@ -93,7 +93,7 @@ async function runShellOnce(
         if (!settled) {
           settled = true
           signal.removeEventListener('abort', onAbort)
-          reject(new Error(`Command timed out after ${timeout_ms}ms`))
+          reject(new Error(`Command timed out after ${String(timeout_ms)}ms`))
         }
       }, timeout_ms)
 
@@ -229,7 +229,7 @@ function formatShellSuccess(result: ShellRunResult): string {
 
 function formatShellFailure(result: ShellRunResult): Error {
   const clean = stripTerminalControlSequences(result.output).trim()
-  return new Error(`Exited with code ${result.exitCode}:\n${clean}`)
+  return new Error(`Exited with code ${String(result.exitCode)}:\n${clean}`)
 }
 
 export const runShellTool = defineTool({

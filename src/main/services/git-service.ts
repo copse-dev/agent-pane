@@ -83,8 +83,9 @@ const STATUS_CODES = new Set([' ', 'M', 'A', 'D', 'R', 'C', 'U', 'T', '?', '!'])
  * keep `-z` parsing aligned when a rename record is missing its source token.
  */
 function looksLikeStatusRecord(token: string): boolean {
-  if (token.length < 3 || token[2] !== ' ') return false
-  return STATUS_CODES.has(token[0]!) && STATUS_CODES.has(token[1]!)
+  const [x, y, sep] = token
+  if (token.length < 3 || sep !== ' ' || x === undefined || y === undefined) return false
+  return STATUS_CODES.has(x) && STATUS_CODES.has(y)
 }
 
 /** Parse `git status --porcelain=v1 -z` into staged and unstaged file lists. */
@@ -95,14 +96,18 @@ export function parsePorcelainV1(raw: string): GitStatusResult {
 
   const entries = raw.split('\0').filter(Boolean)
   for (let i = 0; i < entries.length; ) {
-    const entry = entries[i]!
-    if (entry.length < 3) {
+    const entry = entries[i]
+    if (entry === undefined || entry.length < 3) {
       i++
       continue
     }
 
-    const x = entry[0]!
-    const y = entry[1]!
+    const x = entry[0]
+    const y = entry[1]
+    if (x === undefined || y === undefined) {
+      i++
+      continue
+    }
     const pathPart = entry.slice(3)
 
     if (x === '?' && y === '?') {

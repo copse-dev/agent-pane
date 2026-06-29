@@ -105,7 +105,7 @@ export function createContextWheel(): {
 
     const { totalTokens, contextWindow, segments } = breakdown
     const pct = pctOf(totalTokens, contextWindow)
-    label.textContent = `${pct}%`
+    label.textContent = `${String(pct)}%`
 
     // When the draft already exceeds the window, fill the whole ring proportionally.
     const denom = Math.max(contextWindow, totalTokens, 1)
@@ -121,8 +121,8 @@ export function createContextWheel(): {
       arc.setAttribute('fill', 'none')
       arc.setAttribute('stroke-width', '2')
       arc.setAttribute('stroke', SEGMENT_COLORS[segment.key])
-      arc.setAttribute('stroke-dasharray', `${len} ${CIRCUMFERENCE}`)
-      arc.setAttribute('stroke-dashoffset', `${-offset}`)
+      arc.setAttribute('stroke-dasharray', `${String(len)} ${String(CIRCUMFERENCE)}`)
+      arc.setAttribute('stroke-dashoffset', `${String(-offset)}`)
       segGroup.append(arc)
       offset += len
     }
@@ -132,7 +132,7 @@ export function createContextWheel(): {
     header.className = 'context-wheel-popover-header'
     header.textContent = `Context · ${formatTokenCount(totalTokens)} / ${formatTokenCount(
       contextWindow,
-    )} (${pct}%)`
+    )} (${String(pct)}%)`
     popover.append(header)
     for (const segment of segments) {
       const row = document.createElement('div')
@@ -145,26 +145,26 @@ export function createContextWheel(): {
       name.textContent = segment.label
       const value = document.createElement('span')
       value.className = 'context-wheel-popover-value'
-      value.textContent = `${formatTokenCount(segment.tokens)} · ${pctOf(
-        segment.tokens,
-        contextWindow,
+      value.textContent = `${formatTokenCount(segment.tokens)} · ${String(
+        pctOf(segment.tokens, contextWindow),
       )}%`
       row.append(swatch, name, value)
       popover.append(row)
     }
 
     const lines = segments.map(
-      (s) => `${s.label}: ${formatTokenCount(s.tokens)} (${pctOf(s.tokens, contextWindow)}%)`,
+      (s) =>
+        `${s.label}: ${formatTokenCount(s.tokens)} (${String(pctOf(s.tokens, contextWindow))}%)`,
     )
     root.title = [
-      `Context: ${formatTokenCount(totalTokens)} / ${formatTokenCount(contextWindow)} (${pct}%)`,
+      `Context: ${formatTokenCount(totalTokens)} / ${formatTokenCount(contextWindow)} (${String(pct)}%)`,
       ...lines,
     ].join('\n')
     root.setAttribute(
       'aria-label',
-      `Estimated context ${pct}% of window, ${formatTokenCount(totalTokens)} of ${formatTokenCount(
-        contextWindow,
-      )} tokens`,
+      `Estimated context ${String(pct)}% of window, ${formatTokenCount(
+        totalTokens,
+      )} of ${formatTokenCount(contextWindow)} tokens`,
     )
   }
 
@@ -192,8 +192,11 @@ export function createContextWheel(): {
     root.hidden = !visible
     if (!visible) return
 
-    fill.setAttribute('stroke-dasharray', `${ratio * CIRCUMFERENCE} ${CIRCUMFERENCE}`)
-    label.textContent = `${pct}%`
+    fill.setAttribute(
+      'stroke-dasharray',
+      `${String(ratio * CIRCUMFERENCE)} ${String(CIRCUMFERENCE)}`,
+    )
+    label.textContent = `${String(pct)}%`
     const contextLine = `Context: ${formatTokenCount(snapshot.conversationTokens)} / ${formatTokenCount(snapshot.conversationBudget)} (${pct}%)`
     const usageLine = options?.usageLine?.trim()
     root.title = usageLine ? `${contextLine}\n${usageLine}` : contextLine

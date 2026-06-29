@@ -10,7 +10,7 @@ export const usageRecordSchema = z.object({
   cacheCreationTokens: z.number().int().min(0).optional(),
   projectId: z.string().min(1).max(128).optional(),
   threadId: z.string().min(1).max(128).optional(),
-  at: z.number().finite().optional(),
+  at: z.number().optional(),
 })
 
 export function parseUsageRecordInput(raw: unknown): UsageRecordInput {

@@ -33,7 +33,7 @@ function diagramRenderFailed(container: HTMLElement): boolean {
   const svg = container.querySelector('svg')
   if (svg && !container.querySelector('.error-icon')) return false
   if (container.querySelector('.error-icon')) return true
-  if ((container.textContent ?? '').includes('Syntax error in text')) return true
+  if (container.textContent.includes('Syntax error in text')) return true
   return !svg
 }
 
@@ -54,7 +54,7 @@ export async function renderMermaidIn(root: ParentNode): Promise<void> {
   const sourceByNode = new Map<HTMLElement, string>()
 
   for (const node of elements) {
-    const raw = node.textContent ?? ''
+    const raw = node.textContent
     const source = prepareMermaidSource(raw)
     sourceByNode.set(node, source)
     node.textContent = source
@@ -68,7 +68,7 @@ export async function renderMermaidIn(root: ParentNode): Promise<void> {
 
     if (!diagramRenderFailed(container)) continue
 
-    const candidates = mermaidSourceCandidates(sourceByNode.get(node) ?? node.textContent ?? '')
+    const candidates = mermaidSourceCandidates(sourceByNode.get(node) ?? node.textContent)
     const retrySource = candidates.find((c) => c !== node.textContent)
     if (retrySource) {
       node.textContent = retrySource
@@ -77,7 +77,7 @@ export async function renderMermaidIn(root: ParentNode): Promise<void> {
       if (!diagramRenderFailed(container)) continue
     }
 
-    renderMermaidFallback(container, sourceByNode.get(node) ?? node.textContent ?? '')
+    renderMermaidFallback(container, sourceByNode.get(node) ?? node.textContent)
     node.remove()
   }
 

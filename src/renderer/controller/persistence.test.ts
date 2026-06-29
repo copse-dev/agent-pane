@@ -172,7 +172,9 @@ test('attachAutosave pagehide flush triggers a final save', async () => {
   const autosave = attachAutosave(store, api)
 
   // Simulate window teardown firing pagehide.
-  pagehideHandlers.forEach((h) => h())
+  pagehideHandlers.forEach((h) => {
+    h()
+  })
   await tick()
   assert.ok(calls.includes('threads:p1'))
   autosave.detach()

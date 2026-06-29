@@ -10,8 +10,9 @@ function findToolCall(
   const { threads } = store.getState()
   for (const t of threads) {
     const msgIdx = t.messages.findIndex((m) => m.id === messageId)
-    if (msgIdx < 0) continue
-    const tcIdx = t.messages[msgIdx]!.toolCalls.findIndex((tc) => tc.id === toolCallId)
+    const message = t.messages[msgIdx]
+    if (!message) continue
+    const tcIdx = message.toolCalls.findIndex((tc) => tc.id === toolCallId)
     if (tcIdx >= 0) return { msgIdx: threads.indexOf(t), tcIdx }
   }
   return null

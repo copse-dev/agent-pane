@@ -74,6 +74,10 @@ export function mountFooterOverflow(
 
   return {
     update: renderMenu,
-    destroy: () => cleanups.forEach((u) => u()),
+    destroy: (): void => {
+      cleanups.forEach((u) => {
+        u()
+      })
+    },
   }
 }

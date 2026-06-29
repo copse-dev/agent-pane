@@ -83,7 +83,7 @@ export async function fetchUrlMarkdown(url: string, signal?: AbortSignal): Promi
   if (signal) init.signal = signal
   try {
     const res = await fetchWithWebOriginPolicy(parsed, init, allowedOrigins)
-    if (!res.ok) throw new Error(`Fetch failed (${res.status}): ${url}`)
+    if (!res.ok) throw new Error(`Fetch failed (${String(res.status)}): ${url}`)
     const html = await readWebResponseText(res)
     return htmlToMarkdown(html)
   } finally {

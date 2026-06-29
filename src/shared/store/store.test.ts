@@ -41,7 +41,10 @@ describe('store', () => {
     appendToken(store, msgId, '## Title')
     appendToken(store, msgId, '\n')
     appendToken(store, msgId, '- item')
-    const msg = store.getState().threads[0]!.messages[0]!
+    const thread = store.getState().threads[0]
+    assert.ok(thread)
+    const msg = thread.messages[0]
+    assert.ok(msg)
     assert.equal(msg.content, '## Title\n- item')
   })
 

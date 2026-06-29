@@ -61,7 +61,9 @@ export function parseContextFromModelRecord(record: Record<string, unknown>): nu
 }
 
 function parseOpenAiModelsPayload(json: unknown): LmStudioModelInfo[] {
-  const data = (json as { data?: unknown })?.data
+  // `json` comes from JSON.parse of an external HTTP response and can genuinely
+  // be null/undefined, so the optional chain is load-bearing.
+  const data = (json as { data?: unknown } | null | undefined)?.data
   if (!Array.isArray(data)) return []
   const out: LmStudioModelInfo[] = []
   for (const row of data) {
@@ -179,7 +181,7 @@ export async function fetchLmStudioModels(
     return {
       ok: false,
       models: [],
-      error: `HTTP ${status}${statusText ? ` ${statusText}` : ''}`,
+      error: `HTTP ${String(status)}${statusText ? ` ${statusText}` : ''}`,
     }
   }
   return {

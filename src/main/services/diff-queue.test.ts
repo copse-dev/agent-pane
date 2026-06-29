@@ -325,8 +325,12 @@ describe('upsertStagedDiffEntry', () => {
 })
 
 describe('stageDiff same-path coalescing (#118)', () => {
-  beforeEach(() => clearDiffQueueForTest())
-  afterEach(() => clearDiffQueueForTest())
+  beforeEach(() => {
+    clearDiffQueueForTest()
+  })
+  afterEach(() => {
+    clearDiffQueueForTest()
+  })
 
   it('keeps a single queue entry for a path and preserves the original before snapshot', async () => {
     await stageDiff('a.txt', 'orig\n', 'v1\n', 'plaintext')

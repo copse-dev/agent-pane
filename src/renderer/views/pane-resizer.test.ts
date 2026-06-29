@@ -78,7 +78,8 @@ describe('pane resizer', () => {
     const store = createStore({ filesPaneOpen: true })
     mountPaneResizers(body, store, apiStub())
 
-    const filesResizer = document.getElementById('resizer-files')!
+    const filesResizer = document.getElementById('resizer-files')
+    assert.ok(filesResizer)
     dispatchPointer(filesResizer, 'pointerdown', { clientX: 200, clientY: 400, button: 0 })
     dispatchPointer(document, 'pointermove', { clientX: 200, clientY: 300 })
     assert.equal(store.getState().layout.filesPaneHeight, DEFAULT_LAYOUT.filesPaneHeight + 100)

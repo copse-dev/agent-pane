@@ -29,7 +29,7 @@ function extractFencedBlocks(raw: string): { text: string; blocks: string[] } {
   const text = raw.replace(FENCE_RE, (_, lang: string, code: string) => {
     const idx = blocks.length
     blocks.push(renderFencedBlock(lang, code))
-    return `\x00FENCE${idx}\x00`
+    return `\x00FENCE${String(idx)}\x00`
   })
   return { text, blocks }
 }
@@ -102,8 +102,9 @@ function renderInlineCode(text: string): string {
   let out = ''
   let i = 0
   while (i < text.length) {
-    if (text[i] !== '`') {
-      out += text[i]
+    const ch = text[i]
+    if (ch !== '`') {
+      out += ch ?? ''
       i++
       continue
     }
@@ -198,7 +199,9 @@ function parseHtmlAttributes(tag: string): Record<string, string> {
   const attrs: Record<string, string> = {}
   const decodedTag = decodeEscapedHref(tag)
   for (const match of decodedTag.matchAll(/\b([a-zA-Z][\w:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) {
-    attrs[match[1]!.toLowerCase()] = match[2] ?? match[3] ?? ''
+    const name = match[1]
+    if (name === undefined) continue
+    attrs[name.toLowerCase()] = match[2] ?? match[3] ?? ''
   }
   return attrs
 }
@@ -296,7 +299,8 @@ function wrapProseBlocks(seg: string): string {
   const out: string[] = []
   let i = 0
   while (i < rawBlocks.length) {
-    const block = rawBlocks[i]!
+    const block = rawBlocks[i]
+    if (block === undefined) break
     const lines = block.split('\n').map((l) => l.trim())
     if (lines.length > 1 && lines.every(isOrderedItemLine)) {
       out.push(`<ol>${lines.map((l) => `<li>${orderedItemContent(l)}</li>`).join('')}</ol>`)
@@ -306,12 +310,13 @@ function wrapProseBlocks(seg: string): string {
     if (isOrderedItemLine(block) && !block.includes('\n')) {
       const items: string[] = []
       while (i < rawBlocks.length) {
-        const b = rawBlocks[i]!
-        if (!isOrderedItemLine(b) || b.includes('\n')) break
+        const b = rawBlocks[i]
+        if (b === undefined || !isOrderedItemLine(b) || b.includes('\n')) break
         let content = orderedItemContent(b)
         i++
         while (i < rawBlocks.length) {
-          const next = rawBlocks[i]!
+          const next = rawBlocks[i]
+          if (next === undefined) break
           const trimmed = next.trim()
           if (isOrderedItemLine(trimmed)) break
           if (BLOCK_START_RE.test(trimmed)) break

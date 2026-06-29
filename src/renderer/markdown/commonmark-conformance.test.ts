@@ -43,14 +43,14 @@ const SPEC_VERSION = commonMarkSpecVersion()
 const ROOT = process.cwd()
 const BASELINE_PATH = resolve(ROOT, 'tests/fixtures/commonmark/conformance-baseline.json')
 
-function readJson<T>(path: string, hint: string): T {
+function readJson(path: string, hint: string): unknown {
   let raw: string
   try {
     raw = readFileSync(path, 'utf8')
   } catch {
     throw new Error(`Missing ${path}. ${hint}`)
   }
-  return JSON.parse(raw) as T
+  return JSON.parse(raw)
 }
 
 const spec = loadCommonMarkSpec()
@@ -93,10 +93,10 @@ describe('CommonMark conformance (at rest)', () => {
     return
   }
 
-  const baseline = readJson<Baseline>(
+  const baseline = readJson(
     BASELINE_PATH,
     'Run `UPDATE_COMMONMARK_BASELINE=1 npm test` to generate it.',
-  )
+  ) as Baseline
 
   it('pins the spec fixture version', () => {
     assert.equal(baseline.specVersion, SPEC_VERSION)
@@ -111,7 +111,7 @@ describe('CommonMark conformance (at rest)', () => {
       nums
         .map((n) => {
           const ex = spec.find((e) => e.example === n)
-          return `#${n} (${ex?.section ?? '?'})`
+          return `#${String(n)} (${ex?.section ?? '?'})`
         })
         .join(', ')
     assert.deepEqual(

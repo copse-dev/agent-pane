@@ -20,7 +20,11 @@ export const GIT_CHANGES_DIFF_EDITOR_OPTIONS: Monaco.editor.IDiffEditorConstruct
 }
 
 function nextAnimationFrame(): Promise<void> {
-  return new Promise((resolve) => requestAnimationFrame(() => resolve()))
+  return new Promise((resolve) =>
+    requestAnimationFrame(() => {
+      resolve()
+    }),
+  )
 }
 
 /** Re-apply collapse after setModel; Monaco can drop hidden regions until options refresh (#4903). */

@@ -219,7 +219,8 @@ describe('testLmStudio', () => {
     const result = await testLmStudio('http://127.0.0.1:1234/v1/', 'test-key')
     assert.deepEqual(result, { ok: true, models: ['qwen2.5-3b', 'llama-3'] })
 
-    const call = fetchMock.mock.calls[0]!
+    const call = fetchMock.mock.calls[0]
+    assert.ok(call)
     assert.equal(call.arguments[0], 'http://127.0.0.1:1234/v1/models')
     assert.equal(authHeader(call.arguments[1] as RequestInit), 'Bearer test-key')
   })

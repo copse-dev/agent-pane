@@ -36,7 +36,7 @@ export async function validateAnthropicApiKey(key: string): Promise<ApiKeyValida
       return { ok: false, error: 'Key rejected by Anthropic', formatOk: true }
     }
     if (!res.ok) {
-      return { ok: false, error: `Anthropic returned HTTP ${res.status}`, formatOk: true }
+      return { ok: false, error: `Anthropic returned HTTP ${String(res.status)}`, formatOk: true }
     }
     return { ok: true, formatOk: true }
   } catch (err) {
@@ -64,7 +64,7 @@ export async function validateOpenAiApiKey(key: string): Promise<ApiKeyValidatio
       return { ok: false, error: 'Key rejected by OpenAI', formatOk: true }
     }
     if (!res.ok) {
-      return { ok: false, error: `OpenAI returned HTTP ${res.status}`, formatOk: true }
+      return { ok: false, error: `OpenAI returned HTTP ${String(res.status)}`, formatOk: true }
     }
     return { ok: true, formatOk: true }
   } catch (err) {
@@ -93,7 +93,7 @@ export async function validateCursorApiKey(key: string): Promise<ApiKeyValidatio
       return { ok: false, error: 'Key rejected by Cursor', formatOk: true }
     }
     if (!res.ok) {
-      return { ok: false, error: `Cursor returned HTTP ${res.status}`, formatOk: true }
+      return { ok: false, error: `Cursor returned HTTP ${String(res.status)}`, formatOk: true }
     }
     return { ok: true, formatOk: true }
   } catch (err) {
@@ -123,7 +123,7 @@ export async function validateOpenRouterApiKey(key: string): Promise<ApiKeyValid
       return { ok: false, error: 'Key rejected by OpenRouter', formatOk: true }
     }
     if (!res.ok) {
-      return { ok: false, error: `OpenRouter returned HTTP ${res.status}`, formatOk: true }
+      return { ok: false, error: `OpenRouter returned HTTP ${String(res.status)}`, formatOk: true }
     }
     return { ok: true, formatOk: true }
   } catch (err) {
@@ -156,7 +156,11 @@ export async function validateExtraProviderApiKey(
       return { ok: false, error: `Key rejected by ${provider.label}`, formatOk: true }
     }
     if (!res.ok) {
-      return { ok: false, error: `${provider.label} returned HTTP ${res.status}`, formatOk: true }
+      return {
+        ok: false,
+        error: `${provider.label} returned HTTP ${String(res.status)}`,
+        formatOk: true,
+      }
     }
     return { ok: true, formatOk: true }
   } catch (err) {

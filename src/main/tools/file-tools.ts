@@ -50,7 +50,7 @@ export const readFileTool = defineTool({
   }),
   async execute({ path, start_line, end_line }) {
     if (start_line !== undefined && end_line !== undefined && end_line < start_line) {
-      return `Invalid range: end_line (${end_line}) must be >= start_line (${start_line}).`
+      return `Invalid range: end_line (${String(end_line)}) must be >= start_line (${String(start_line)}).`
     }
     const { maxLines: READ_FILE_MAX_LINES, maxChars: READ_FILE_MAX_CHARS } =
       getAgentRunReadFileLimits()

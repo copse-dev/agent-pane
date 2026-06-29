@@ -247,7 +247,9 @@ export function mountFooterBranchStatus(
     void navigator.clipboard
       .writeText(branch)
       .then(() => showToast(COPIED_BRANCH_TOAST, { durationMs: COPY_FEEDBACK_MS }))
-      .catch((error: unknown) => showErrorToast('Failed to copy branch name', error))
+      .catch((error: unknown) => {
+        showErrorToast('Failed to copy branch name', error)
+      })
   }
 
   trigger.addEventListener('click', () => {
@@ -274,10 +276,14 @@ export function mountFooterBranchStatus(
   const unsubs = [
     store.on('workspace_changed', () => void refresh()),
     store.on('threads_changed', () => void refresh()),
-    store.on('thread_status_changed', () => scheduleRefresh()),
+    store.on('thread_status_changed', () => {
+      scheduleRefresh()
+    }),
     store.on('message_added', () => void refresh()),
     store.on('git_branch_changed', () => void refresh()),
-    api.fs.onChanged(() => scheduleRefresh()),
+    api.fs.onChanged(() => {
+      scheduleRefresh()
+    }),
     on(document, 'click', (e) => {
       if (!open) return
       if (!wrap.contains(e.target as Node)) setOpen(false)
@@ -293,7 +299,9 @@ export function mountFooterBranchStatus(
     refresh: () => void refresh(),
     destroy: (): void => {
       if (refreshTimer) clearTimeout(refreshTimer)
-      unsubs.forEach((u) => u())
+      unsubs.forEach((u) => {
+        u()
+      })
       wrap.remove()
     },
   }

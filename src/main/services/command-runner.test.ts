@@ -11,7 +11,7 @@ describe('runCommand stdoutMaxBytes', () => {
     const size = COMMAND_OUTPUT_MAX_BYTES + 4096
     const { stdout, code } = await runCommand(
       process.execPath,
-      ['-e', `process.stdout.write('a'.repeat(${size}))`],
+      ['-e', `process.stdout.write('a'.repeat(${String(size)}))`],
       { unsandboxed: true },
     )
     assert.equal(code, 0)
@@ -23,7 +23,7 @@ describe('runCommand stdoutMaxBytes', () => {
     const size = COMMAND_OUTPUT_MAX_BYTES + 4096
     const { stdout, code } = await runCommand(
       process.execPath,
-      ['-e', `process.stdout.write('a'.repeat(${size}))`],
+      ['-e', `process.stdout.write('a'.repeat(${String(size)}))`],
       { unsandboxed: true, stdoutMaxBytes: size + 1024 },
     )
     assert.equal(code, 0)

@@ -21,7 +21,8 @@ describe('parseMcpConfig', () => {
     )
     assert.equal(errors.length, 0)
     assert.equal(servers.length, 1)
-    const s = servers[0]!
+    const s = servers[0]
+    assert.ok(s)
     assert.equal(s.name, 'fs')
     assert.equal(s.transport, 'stdio')
     assert.equal(s.command, 'npx')

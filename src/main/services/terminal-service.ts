@@ -84,6 +84,8 @@ function attachPtyHandlers(
   const onExit = ptyProcess.onExit(({ exitCode }) => {
     disposeSessionListeners(session)
     sessions.delete(sessionId)
+    // exitCode comes from node-pty (external); guard against a missing code at runtime.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     sendTerminalEvent(win, 'terminal:exit', sessionId, exitCode ?? 1)
   })
   session.listeners = { onData, onExit }

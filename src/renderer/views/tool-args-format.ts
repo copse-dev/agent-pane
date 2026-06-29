@@ -143,8 +143,9 @@ function unwrapResultEnvelope(value: unknown): unknown {
   value = normalizeValue(value)
   if (!isRecord(value)) return value
   const entries = Object.entries(value)
-  if (entries.length !== 1) return value
-  const [key, rawEntry] = entries[0]!
+  const [firstEntry] = entries
+  if (entries.length !== 1 || !firstEntry) return value
+  const [key, rawEntry] = firstEntry
   const entry = normalizeValue(rawEntry)
   if ((key === 'success' || key === 'error') && isRecord(entry)) return entry
   return value
@@ -156,7 +157,7 @@ function formatReadableValue(value: unknown, indent = 0): string {
     return unwrapped
       .map((entry, index) => {
         const rendered = formatReadableValue(entry, indent + 2)
-        return `${' '.repeat(indent)}- ${index}:${
+        return `${' '.repeat(indent)}- ${String(index)}:${
           rendered.includes('\n') ? `\n${rendered}` : ` ${rendered.trim()}`
         }`
       })

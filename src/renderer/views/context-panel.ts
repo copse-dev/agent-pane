@@ -97,7 +97,7 @@ export function mountContextPanel(
   fileEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
     const { openFile } = store.getState()
     if (openFile) {
-      void api.fs.writeFile(openFile.path, fileEditor.getValue()).catch((err) => {
+      void api.fs.writeFile(openFile.path, fileEditor.getValue()).catch((err: unknown) => {
         showErrorToast(`Failed to save ${openFile.path}`, err)
       })
     }
@@ -204,7 +204,9 @@ export function mountContextPanel(
   const unbindBrowserLinks = bindBrowserLinkClicks(previewContainer, store, api)
 
   return () => {
-    unsubs.forEach((u) => u())
+    unsubs.forEach((u) => {
+      u()
+    })
     unsubFsChanged()
     unbindDrop()
     unbindFileLinks()

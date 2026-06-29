@@ -24,7 +24,7 @@ export function parseIpcArgs<T extends z.ZodType>(schema: T, args: unknown[]): z
 
 export const zNonEmptyString = z.string().min(1)
 export const zPathString = z.string().max(4096)
-export const zSessionId = z.string().uuid()
+export const zSessionId = z.uuid()
 
 // Thread ids compose a persisted storage key (`llm-history:${threadId}`), so they
 // must be restricted to a safe charset/length to avoid key-injection.
@@ -33,7 +33,6 @@ export const zThreadId = z.string().regex(/^[\w-]{1,128}$/)
 // An outbound URL the main process will fetch (e.g. a local LM Studio server).
 // Restrict to http(s) to deny file:/other schemes used as an SSRF/exfil sink.
 export const zHttpUrl = z
-  .string()
   .url()
   .max(2048)
   .refine((u) => u.startsWith('http://') || u.startsWith('https://'), {
@@ -98,11 +97,7 @@ export function assertStorageKey(key: string): void {
   }
 }
 
-export const approvalRespondSchema = z.tuple([
-  z.string().uuid(),
-  z.boolean(),
-  z.boolean().optional(),
-])
+export const approvalRespondSchema = z.tuple([z.uuid(), z.boolean(), z.boolean().optional()])
 
 export const providerSchema = z.enum([
   'anthropic',

@@ -47,5 +47,5 @@ export function readFileLimitsForSubagent(conversationBudgetTokens: number): Rea
 }
 
 export function formatReadFileLimitHint(limits: ReadFileLimits): string {
-  return `capped at ${limits.maxLines} lines and ~${limits.maxChars.toLocaleString()} characters per call for this run`
+  return `capped at ${String(limits.maxLines)} lines and ~${limits.maxChars.toLocaleString()} characters per call for this run`
 }

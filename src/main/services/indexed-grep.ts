@@ -172,11 +172,11 @@ export function parseRipgrepJson(stdout: string, maxResults: number): string[] {
       if (matchCount >= maxResults) break
       matchCount++
       out.push(
-        `${toRelativePath(data.path.text)}:${data.line_number}: ${data.lines.text.trimEnd()}`,
+        `${toRelativePath(data.path.text)}:${String(data.line_number)}: ${data.lines.text.trimEnd()}`,
       )
     } else {
       out.push(
-        `${toRelativePath(data.path.text)}-${data.line_number}- ${data.lines.text.trimEnd()}`,
+        `${toRelativePath(data.path.text)}-${String(data.line_number)}- ${data.lines.text.trimEnd()}`,
       )
     }
   }
@@ -215,7 +215,7 @@ export function formatCodeSearchResults(
   const matchLineCount = lines.filter((l) => /:\d+: /.test(l)).length || lines.length
   const suffix =
     matchLineCount >= maxResults
-      ? `\n[Truncated at ${maxResults} results. Narrow your search.]`
+      ? `\n[Truncated at ${String(maxResults)} results. Narrow your search.]`
       : ''
   const backendNote = backend === 'rg' ? '' : `\n[Searched via indexed ${backend} backend.]`
   return lines.join('\n') + suffix + backendNote

@@ -138,7 +138,7 @@ export async function loadCustomToolsFromDir(
       for (const raw of raws) {
         const { tool, error } = normalizeCustomTool(raw, entry.name)
         if (!tool) {
-          const fallback = typeof raw?.name === 'string' ? raw.name : entry.name
+          const fallback = typeof raw.name === 'string' ? raw.name : entry.name
           const message = error ?? 'invalid custom tool definition'
           statuses.push({ name: fallback, source: full, registered: false, error: message })
           console.warn(`[custom-tools] ${message}`)

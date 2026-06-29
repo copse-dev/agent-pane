@@ -39,7 +39,7 @@ export function detectSandboxFailure(signals: SandboxFailureSignals): SandboxFai
     reasons.push(
       signals.violationCount === 1
         ? 'the OS sandbox blocked 1 operation this command attempted'
-        : `the OS sandbox blocked ${signals.violationCount} operations this command attempted`,
+        : `the OS sandbox blocked ${String(signals.violationCount)} operations this command attempted`,
     )
   }
 

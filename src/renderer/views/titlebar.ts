@@ -219,6 +219,8 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
 
   return () => {
     if (branchTimer) clearTimeout(branchTimer)
-    unsubs.forEach((u) => u())
+    unsubs.forEach((u) => {
+      u()
+    })
   }
 }

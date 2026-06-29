@@ -130,7 +130,9 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
         clearTimeout(timer)
         timer = null
       }
-      unsubscribes.forEach((u) => u())
+      unsubscribes.forEach((u) => {
+        u()
+      })
       window.removeEventListener('pagehide', onPagehide)
     },
   }

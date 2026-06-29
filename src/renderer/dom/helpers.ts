@@ -24,5 +24,7 @@ export function on<K extends keyof HTMLElementEventMap>(
   opts?: AddEventListenerOptions,
 ): () => void {
   target.addEventListener(event, handler as EventListener, opts)
-  return () => target.removeEventListener(event, handler as EventListener, opts)
+  return () => {
+    target.removeEventListener(event, handler as EventListener, opts)
+  }
 }

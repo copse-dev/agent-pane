@@ -206,7 +206,8 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
         }
         if (chunk.type === 'text') {
           const msgId = ensureAssistantMessage()
-          const msg = session.messages.find((m) => m.id === msgId)!
+          const msg = session.messages.find((m) => m.id === msgId)
+          if (!msg) throw new Error(`subagent message ${msgId} not found`)
           msg.content += chunk.text
           onSubagentChunk({
             type: 'subagent_text',
@@ -217,7 +218,8 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
         }
         if (chunk.type === 'tool_call') {
           const msgId = ensureAssistantMessage()
-          const msg = session.messages.find((m) => m.id === msgId)!
+          const msg = session.messages.find((m) => m.id === msgId)
+          if (!msg) throw new Error(`subagent message ${msgId} not found`)
           msg.toolCalls.push({
             id: chunk.toolCall.id,
             name: chunk.toolCall.name,

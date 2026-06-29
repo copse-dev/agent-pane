@@ -10,7 +10,7 @@ import {
 
 /** An Error carrying an HTTP status, matching the duck-typed retry path. */
 function httpError(status: number): Error {
-  return Object.assign(new Error(`HTTP ${status}`), { status })
+  return Object.assign(new Error(`HTTP ${String(status)}`), { status })
 }
 
 /**

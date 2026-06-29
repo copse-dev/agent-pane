@@ -12,7 +12,9 @@ function runFindFiles(args: { pattern: string; max_results?: number }): Promise<
 }
 
 describe('findFilesTool truncation flag', () => {
-  afterEach(() => setIndexForTest(null))
+  afterEach(() => {
+    setIndexForTest(null)
+  })
 
   it('does NOT report truncation when total matches equal max_results (off-by-one)', async () => {
     setIndexForTest(['a.ts', 'b.ts', 'c.ts'])

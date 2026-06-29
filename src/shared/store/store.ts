@@ -43,7 +43,9 @@ export function createStore(initial?: Partial<AppState>): AppStore {
   }
 
   function emit<K extends keyof StoreEvents>(event: K, ...args: StoreEvents[K]): void {
-    listeners.get(event)?.forEach((h) => (h as (...a: StoreEvents[K]) => void)(...args))
+    listeners.get(event)?.forEach((h) => {
+      ;(h as (...a: StoreEvents[K]) => void)(...args)
+    })
   }
 
   function setState(partial: Partial<AppState>): void {

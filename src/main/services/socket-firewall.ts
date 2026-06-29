@@ -70,10 +70,14 @@ export function installSocketFirewall(signal: AbortSignal): Promise<boolean> {
       return
     }
 
-    const stream = (data: Buffer): void => emit(data.toString())
-    proc.stdout?.on('data', stream)
-    proc.stderr?.on('data', stream)
-    proc.on('error', () => resolve(false))
+    const stream = (data: Buffer): void => {
+      emit(data.toString())
+    }
+    proc.stdout.on('data', stream)
+    proc.stderr.on('data', stream)
+    proc.on('error', () => {
+      resolve(false)
+    })
     proc.on('close', (code) => {
       const ok = code === 0
       if (ok) cachedAvailable = true

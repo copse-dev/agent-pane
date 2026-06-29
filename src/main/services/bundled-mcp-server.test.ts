@@ -31,7 +31,8 @@ describe('bundled MCP servers', () => {
   })
 
   it('returns a text/html UI resource the host can extract', async () => {
-    const canvas = servers.find((s) => s.name === CANVAS_SERVER_NAME)!
+    const canvas = servers.find((s) => s.name === CANVAS_SERVER_NAME)
+    assert.ok(canvas, 'canvas server should be present')
     const result = await canvas.client.callTool({
       name: 'render_html_artefact',
       arguments: { title: 'Sales Dashboard', html: '<!doctype html><h1>Sales</h1>' },
@@ -39,13 +40,16 @@ describe('bundled MCP servers', () => {
 
     const resources = extractUiResources(result.content)
     assert.equal(resources.length, 1)
-    assert.equal(resources[0]!.mimeType, 'text/html')
-    assert.match(resources[0]!.uri, /^ui:\/\/canvas\//)
-    assert.match(resources[0]!.text, /<h1>Sales<\/h1>/)
+    const [resource] = resources
+    assert.ok(resource, 'expected one UI resource')
+    assert.equal(resource.mimeType, 'text/html')
+    assert.match(resource.uri, /^ui:\/\/canvas\//)
+    assert.match(resource.text, /<h1>Sales<\/h1>/)
   })
 
   it('renders an HTML file from the workspace by path, titled from the filename', async () => {
-    const canvas = servers.find((s) => s.name === CANVAS_SERVER_NAME)!
+    const canvas = servers.find((s) => s.name === CANVAS_SERVER_NAME)
+    assert.ok(canvas, 'canvas server should be present')
     const root = await mkdtemp(join(tmpdir(), 'agent-pane-canvas-'))
     const restore = setWorkspaceRootForTest(root)
     try {
@@ -57,8 +61,10 @@ describe('bundled MCP servers', () => {
       assert.notEqual(result.isError, true)
       const resources = extractUiResources(result.content)
       assert.equal(resources.length, 1)
-      assert.match(resources[0]!.text, /<h1>From File<\/h1>/)
-      assert.equal(resources[0]!.uri, 'ui://canvas/merge-export-demo')
+      const [resource] = resources
+      assert.ok(resource, 'expected one UI resource')
+      assert.match(resource.text, /<h1>From File<\/h1>/)
+      assert.equal(resource.uri, 'ui://canvas/merge-export-demo')
     } finally {
       restore()
       await rm(root, { recursive: true, force: true })
