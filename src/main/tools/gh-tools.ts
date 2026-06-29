@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import {
+  getGhPrFilesText,
   getGhPrListText,
   getGhPrViewText,
   getGhRunListText,
@@ -52,6 +53,21 @@ export const ghPrViewTool = defineTool({
   }),
   execute: async ({ number, include_checks }) =>
     getGhPrViewText({ number, includeChecks: include_checks }),
+})
+
+export const ghPrFilesTool = defineTool({
+  name: 'gh_pr_files',
+  description:
+    'List the files changed in a pull request, with per-file change type and +/- line counts, via GitHub CLI (read-only). Use this to answer "what files changed" instead of run_shell + gh/curl. Omit number for the PR on the current branch.',
+  parameters: z.object({
+    number: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Pull request number. Omit to use the open PR for the checked-out branch.'),
+  }),
+  execute: async ({ number }) => getGhPrFilesText({ number }),
 })
 
 export const ghRunListTool = defineTool({

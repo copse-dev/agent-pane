@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { formatGhPrList, formatGhPrView } from './gh-service.ts'
+import { formatGhPrFiles, formatGhPrList, formatGhPrView } from './gh-service.ts'
 
 describe('formatGhPrList', () => {
   it('formats PR rows with branch and author', () => {
@@ -46,5 +46,52 @@ describe('formatGhPrView', () => {
     assert.match(text, /Diff: \+10 -2/)
     assert.match(text, /CI: SUCCESS/)
     assert.match(text, /Fixes the crash\./)
+  })
+})
+
+describe('formatGhPrFiles', () => {
+  it('lists each changed file with change type and line counts', () => {
+    const text = formatGhPrFiles({
+      number: 9,
+      title: 'Add memories',
+      url: 'https://github.com/org/repo/pull/9',
+      changedFiles: 2,
+      additions: 120,
+      deletions: 4,
+      files: [
+        {
+          path: 'src/main/services/okf-memory-store.ts',
+          additions: 100,
+          deletions: 0,
+          changeType: 'ADDED',
+        },
+        {
+          path: 'src/shared/tools/readonly-tools.ts',
+          additions: 20,
+          deletions: 4,
+          changeType: 'MODIFIED',
+        },
+      ],
+    })
+    assert.match(text, /#9 Add memories — 2 files changed/)
+    assert.match(text, /added\s+src\/main\/services\/okf-memory-store\.ts \(\+100 -0\)/)
+    assert.match(text, /modified\s+src\/shared\/tools\/readonly-tools\.ts \(\+20 -4\)/)
+    assert.match(text, /Total: \+120 -4/)
+  })
+
+  it('handles a PR with no per-file list', () => {
+    const text = formatGhPrFiles({ number: 1, title: 'Empty', changedFiles: 0, files: [] })
+    assert.match(text, /#1 Empty — 0 files changed/)
+    assert.match(text, /no per-file list/)
+  })
+
+  it('singularizes a one-file change', () => {
+    const text = formatGhPrFiles({
+      number: 2,
+      title: 'One',
+      changedFiles: 1,
+      files: [{ path: 'a.ts', additions: 1, deletions: 1, changeType: 'MODIFIED' }],
+    })
+    assert.match(text, /— 1 file changed/)
   })
 })
