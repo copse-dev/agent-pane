@@ -103,7 +103,7 @@ describe('wrapWithSocketFirewall', () => {
   })
 
   it('supports a custom quoter for other shells', () => {
-    const winQuote = (v: string) => `"${v.replace(/"/g, '""')}"`
+    const winQuote = (v: string): string => `"${v.replace(/"/g, '""')}"`
     assert.equal(
       wrapWithSocketFirewall('npm install', { path: 'cmd', cArg: '/c' }, winQuote),
       `sfw cmd /c "npm install"`,

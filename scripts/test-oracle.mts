@@ -122,7 +122,7 @@ function parseArgs(argv: string[]): Args {
     if (arg === '--help' || arg === '-h') {
       console.log(HELP)
       process.exit(0)
-    } else if (arg === '--base') a.base = argv[++i]!
+    } else if (arg === '--base') a.base = argv[++i] ?? a.base
     else if (arg === '--explain') a.explain = true
     else if (arg === '--json') a.json = true
     else if (arg === '--plan') a.plan = true
@@ -130,8 +130,14 @@ function parseArgs(argv: string[]): Args {
       const v = argv[i + 1]
       a.run = v === 'unit' || v === 'all' ? (++i, v) : 'e2e'
     } else if (arg === '--files') {
-      a.files = []
-      while (i + 1 < argv.length && !argv[i + 1]!.startsWith('--')) a.files.push(argv[++i]!)
+      const files: string[] = []
+      a.files = files
+      let next = argv[i + 1]
+      while (next !== undefined && !next.startsWith('--')) {
+        files.push(next)
+        i++
+        next = argv[i + 1]
+      }
     }
   }
   return a
@@ -184,7 +190,7 @@ export function read(rel: string): string {
 function ciExcludedSpecs(): Set<string> {
   const out = new Set<string>()
   for (const m of read('wdio.ci.conf.ts').matchAll(/['"]\.\/(tests\/e2e\/[^'"]+\.e2e\.ts)['"]/g))
-    out.add(m[1]!)
+    if (m[1] !== undefined) out.add(m[1])
   return out
 }
 
@@ -221,7 +227,7 @@ export function computePlan(sel: Selection): CiPlan {
 function emitCiPlan(sel: Selection): void {
   const { mode, specs, count } = computePlan(sel)
   process.stdout.write(`mode=${mode}\n`)
-  process.stdout.write(`count=${count}\n`)
+  process.stdout.write(`count=${String(count)}\n`)
   process.stdout.write(`specs=${specs.join(' ')}\n`)
 }
 
@@ -255,7 +261,7 @@ const TOKEN_STOPLIST = new Set([
  */
 export function extractSpecTokens(src: string): Token[] {
   const tokens = new Map<string, Token>()
-  const push = (kind: Token['kind'], value: string) => {
+  const push = (kind: Token['kind'], value: string): void => {
     if (!value || TOKEN_STOPLIST.has(value)) return
     if (!tokens.has(kind + value)) tokens.set(kind + value, { kind, value })
   }
@@ -263,15 +269,17 @@ export function extractSpecTokens(src: string): Token[] {
     /(?:\$\$?|querySelector(?:All)?|closest|matches)\(\s*(['"`])((?:\\.|(?!\1).)*)\1/g
   let m: RegExpExecArray | null
   while ((m = selectorCall.exec(src))) {
-    const sel = m[2]!
-    if (sel.includes('/')) continue // not a selector (path / url)
-    for (const id of sel.matchAll(/#([A-Za-z][\w-]*)/g)) push('id', id[1]!)
-    for (const cls of sel.matchAll(/\.([A-Za-z][\w-]*)/g)) push('cls', cls[1]!)
+    const sel = m[2]
+    if (sel === undefined || sel.includes('/')) continue // not a selector (path / url)
+    for (const id of sel.matchAll(/#([A-Za-z][\w-]*)/g)) if (id[1] !== undefined) push('id', id[1])
+    for (const cls of sel.matchAll(/\.([A-Za-z][\w-]*)/g))
+      if (cls[1] !== undefined) push('cls', cls[1])
     for (const at of sel.matchAll(/(?:aria-label|title|data-[\w-]+)=["']([^"']+)["']/g))
-      push('txt', at[1]!)
+      if (at[1] !== undefined) push('txt', at[1])
   }
   // getElementById('x') — id without the leading '#'.
-  for (const g of src.matchAll(/getElementById\(\s*['"]([\w-]+)['"]/g)) push('id', g[1]!)
+  for (const g of src.matchAll(/getElementById\(\s*['"]([\w-]+)['"]/g))
+    if (g[1] !== undefined) push('id', g[1])
   return [...tokens.values()]
 }
 
@@ -287,14 +295,15 @@ export function extractSpecScreenshots(src: string): string[] {
   // const NAME = 'foo.png' aliases (UPPER_SNAKE consts hold the filename).
   const aliases = new Map<string, string>()
   for (const m of src.matchAll(/\b([A-Z][A-Z0-9_]*)\s*=\s*['"`]([\w-]+\.png)['"`]/g))
-    aliases.set(m[1]!, m[2]!)
+    if (m[1] !== undefined && m[2] !== undefined) aliases.set(m[1], m[2])
   // save…Screenshot( … 'foo.png' … ) — literal filename anywhere in the call
   // args (covers helper calls and `browser.saveScreenshot(join(DIR, 'x.png'))`).
   for (const m of src.matchAll(/save\w*Screenshot\(\s*[^)]*?['"`]([\w-]+\.png)['"`]/g))
-    out.add(m[1]!)
+    if (m[1] !== undefined) out.add(m[1])
   // save…Screenshot(NAME) — filename supplied via a const alias.
   for (const m of src.matchAll(/save\w*Screenshot\(\s*([A-Z][A-Z0-9_]*)\s*\)/g)) {
-    const f = aliases.get(m[1]!)
+    const name = m[1]
+    const f = name !== undefined ? aliases.get(name) : undefined
     if (f) out.add(f)
   }
   return [...out]
@@ -329,7 +338,8 @@ function directImports(rel: string): string[] {
   const body = read(rel)
   const out: string[] = []
   for (const m of body.matchAll(/(?:from|import\(|require\()\s*['"]([^'"]+)['"]/g)) {
-    const resolved = resolveImport(rel, m[1]!)
+    if (m[1] === undefined) continue
+    const resolved = resolveImport(rel, m[1])
     if (resolved) out.push(resolved)
   }
   return out
@@ -342,7 +352,8 @@ export function reachableFiles(entry: string, cache: Map<string, Set<string>>): 
   const seen = new Set<string>()
   const stack = [entry]
   while (stack.length) {
-    const cur = stack.pop()!
+    const cur = stack.pop()
+    if (cur === undefined) break
     for (const dep of directImports(cur)) {
       if (!seen.has(dep)) {
         seen.add(dep)
@@ -414,7 +425,7 @@ export function computeSelection(changedInput: string[]): Selection {
   // Reasons per spec / unit test (for --explain).
   const e2eReasons = new Map<string, string[]>()
   const unitReasons = new Map<string, string[]>()
-  const addReason = (m: Map<string, string[]>, k: string, why: string) => {
+  const addReason = (m: Map<string, string[]>, k: string, why: string): void => {
     const list = m.get(k) ?? []
     list.push(why)
     m.set(k, list)
@@ -436,12 +447,12 @@ export function computeSelection(changedInput: string[]): Selection {
 
     // Import-graph: any spec/test that reaches this changed file.
     for (const s of specs)
-      if (specImports.get(s)!.has(f)) {
+      if (specImports.get(s)?.has(f) ?? false) {
         addReason(e2eReasons, s, `imports ${f}`)
         e2eMappedFiles.add(f)
       }
     for (const t of unitTests)
-      if (unitImports.get(t)!.has(f)) addReason(unitReasons, t, `imports ${f}`)
+      if (unitImports.get(t)?.has(f) ?? false) addReason(unitReasons, t, `imports ${f}`)
 
     // Selector vocabulary: which specs' selectors appear in this changed file?
     // Only shipped source — test files carry selector strings of their own that
@@ -454,9 +465,9 @@ export function computeSelection(changedInput: string[]): Selection {
     if (isSelectorHost) {
       const body = read(f)
       for (const s of specs) {
-        const hits = specTokens
-          .get(s)!
-          .filter((tok) => fileContainsToken(body, tok) && !SELECTOR_STOPLIST.has(tok.value))
+        const hits = (specTokens.get(s) ?? []).filter(
+          (tok) => fileContainsToken(body, tok) && !SELECTOR_STOPLIST.has(tok.value),
+        )
         if (hits.length) {
           addReason(
             e2eReasons,
@@ -605,9 +616,9 @@ function main(): void {
 }
 
 function report(args: Args, c: Selection): void {
-  const dim = (s: string) => `\x1b[2m${s}\x1b[0m`
-  const bold = (s: string) => `\x1b[1m${s}\x1b[0m`
-  console.log(bold(`\nTest oracle — ${c.changed.length} changed file(s)`))
+  const dim = (s: string): string => `\x1b[2m${s}\x1b[0m`
+  const bold = (s: string): string => `\x1b[1m${s}\x1b[0m`
+  console.log(bold(`\nTest oracle — ${String(c.changed.length)} changed file(s)`))
   if (!c.changed.length) {
     console.log(dim('  (no changes detected vs base / working tree)'))
     return
@@ -630,14 +641,16 @@ function report(args: Args, c: Selection): void {
     for (const f of c.unmapped) console.log(dim(`    ${f}`))
   }
 
-  console.log(`\ne2e: ${bold(`${c.selectedE2e.length}`)} / ${c.specs.length} spec(s)`)
+  console.log(`\ne2e: ${bold(String(c.selectedE2e.length))} / ${String(c.specs.length)} spec(s)`)
   for (const s of c.selectedE2e) {
     console.log(`  ${s.replace(`${E2E_DIR}/`, '')}`)
     if (args.explain)
       for (const why of dedupe(c.e2eReasons.get(s) ?? [])) console.log(dim(`      ${why}`))
   }
 
-  console.log(`\nunit: ${bold(`${c.selectedUnit.length}`)} / ${c.unitTests.length} test(s)`)
+  console.log(
+    `\nunit: ${bold(String(c.selectedUnit.length))} / ${String(c.unitTests.length)} test(s)`,
+  )
   for (const t of c.selectedUnit) {
     console.log(`  ${t}`)
     if (args.explain)
@@ -669,7 +682,7 @@ function runSelected(
   totalE2e: number,
   _totalUnit: number,
 ): void {
-  const run = (cmd: string, cmdArgs: string[]) => {
+  const run = (cmd: string, cmdArgs: string[]): void => {
     console.log(`\n$ ${cmd} ${cmdArgs.join(' ')}`)
     execFileSync(cmd, cmdArgs, { cwd: ROOT, stdio: 'inherit' })
   }

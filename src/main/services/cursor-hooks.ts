@@ -58,6 +58,9 @@ async function parseHooksConfig(path: string, scope: CursorHookScope): Promise<D
     return []
   }
 
+  // parsed comes from JSON.parse and can legitimately be null (e.g. `null`/`false`);
+  // the cast type hides that, so the optional chain guards the real runtime case.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   const hooks = (parsed as { hooks?: unknown })?.hooks
   if (typeof hooks !== 'object' || hooks === null) return []
 
@@ -66,6 +69,9 @@ async function parseHooksConfig(path: string, scope: CursorHookScope): Promise<D
   for (const [event, entries] of Object.entries(hooks as Record<string, unknown>)) {
     if (!isHookEvent(event) || !Array.isArray(entries)) continue
     for (const entry of entries) {
+      // entry is an element of a parsed JSON array and can be null; the cast type
+      // hides that, so the optional chain guards the genuine runtime case.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       const command = (entry as { command?: unknown })?.command
       if (typeof command !== 'string' || !command.trim()) continue
       out.push({ event, command: command.trim(), cwd, source: path, scope })
@@ -183,10 +189,15 @@ function runHookCommand(
       // Cap captured output so a runaway hook can't exhaust memory.
       if (stdout.length > 1_000_000) child.kill('SIGKILL')
     })
-    child.on('error', () => finish(null))
+    child.on('error', () => {
+      finish(null)
+    })
     child.on('close', () => {
       const text = stdout.trim()
-      if (!text) return finish(null)
+      if (!text) {
+        finish(null)
+        return
+      }
       try {
         finish(JSON.parse(text) as HookPermissionResponse)
       } catch {

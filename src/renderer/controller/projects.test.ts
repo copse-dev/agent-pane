@@ -43,11 +43,11 @@ function makeApi(handlers: {
 }): ApiClient {
   return {
     workspace: {
-      set: handlers.workspaceSet ?? (async (path) => path),
+      set: handlers.workspaceSet ?? (async (path): Promise<string> => path),
     },
     storage: {
-      get: handlers.storageGet ?? (async () => null),
-      set: handlers.storageSet ?? (async () => undefined),
+      get: handlers.storageGet ?? (async (): Promise<unknown> => null),
+      set: handlers.storageSet ?? (async (): Promise<void> => undefined),
     },
   } as unknown as ApiClient
 }
@@ -77,7 +77,9 @@ test('switchProject expands sidebar before workspace activation finishes', async
 
   let releaseWorkspace!: () => void
   const workspaceGate = new Promise<string>((resolve) => {
-    releaseWorkspace = () => resolve('/b')
+    releaseWorkspace = (): void => {
+      resolve('/b')
+    }
   })
 
   const api = makeApi({
@@ -121,7 +123,9 @@ test('switchProject uses cached threads in sidebar while activation is in flight
 
   let releaseWorkspace!: () => void
   const workspaceGate = new Promise<string>((resolve) => {
-    releaseWorkspace = () => resolve('/b')
+    releaseWorkspace = (): void => {
+      resolve('/b')
+    }
   })
 
   const api = makeApi({ workspaceSet: () => workspaceGate })
@@ -217,7 +221,9 @@ test('restoreProject does not emit projects_changed before threads are loaded', 
 
   let releaseWorkspace!: () => void
   const workspaceGate = new Promise<string>((resolve) => {
-    releaseWorkspace = () => resolve('/a')
+    releaseWorkspace = (): void => {
+      resolve('/a')
+    }
   })
 
   const api = makeApi({
@@ -239,7 +245,7 @@ test('restoreProject does not emit projects_changed before threads are loaded', 
 })
 
 test('paginateSidebarThreads shows the first page by default', () => {
-  const threads = Array.from({ length: 15 }, (_, i) => thread(`t-${i}`))
+  const threads = Array.from({ length: 15 }, (_, i) => thread(`t-${String(i)}`))
   const result = paginateSidebarThreads(threads, SIDEBAR_THREADS_PAGE_SIZE, null)
   assert.equal(result.visibleThreads.length, SIDEBAR_THREADS_PAGE_SIZE)
   assert.equal(result.visibleCount, SIDEBAR_THREADS_PAGE_SIZE)
@@ -247,7 +253,7 @@ test('paginateSidebarThreads shows the first page by default', () => {
 })
 
 test('paginateSidebarThreads expands to the next page when the active thread is hidden', () => {
-  const threads = Array.from({ length: 25 }, (_, i) => thread(`t-${i}`))
+  const threads = Array.from({ length: 25 }, (_, i) => thread(`t-${String(i)}`))
   const result = paginateSidebarThreads(threads, SIDEBAR_THREADS_PAGE_SIZE, 't-12')
   assert.equal(result.visibleThreads.length, 20)
   assert.equal(result.visibleCount, 20)
@@ -256,7 +262,7 @@ test('paginateSidebarThreads expands to the next page when the active thread is 
 })
 
 test('paginateSidebarThreads expands through the final partial page', () => {
-  const threads = Array.from({ length: 15 }, (_, i) => thread(`t-${i}`))
+  const threads = Array.from({ length: 15 }, (_, i) => thread(`t-${String(i)}`))
   const result = paginateSidebarThreads(threads, SIDEBAR_THREADS_PAGE_SIZE, 't-12')
   assert.equal(result.visibleThreads.length, 15)
   assert.equal(result.visibleCount, 15)
@@ -264,7 +270,7 @@ test('paginateSidebarThreads expands through the final partial page', () => {
 })
 
 test('paginateSidebarThreads hides Show more when all threads fit', () => {
-  const threads = Array.from({ length: 8 }, (_, i) => thread(`t-${i}`))
+  const threads = Array.from({ length: 8 }, (_, i) => thread(`t-${String(i)}`))
   const result = paginateSidebarThreads(threads, SIDEBAR_THREADS_PAGE_SIZE, null)
   assert.equal(result.visibleThreads.length, 8)
   assert.equal(result.hasMore, false)

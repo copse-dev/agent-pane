@@ -20,7 +20,7 @@ function render(md: string): HTMLElement {
 }
 
 function bySubstring<T extends Element>(els: Iterable<T>, text: string): T | undefined {
-  return [...els].find((e) => e.textContent?.includes(text))
+  return [...els].find((e) => e.textContent.includes(text))
 }
 
 describe('renderMarkdown fixture structure: multi-section list (markdown-list-indent)', () => {
@@ -53,8 +53,12 @@ describe('renderMarkdown fixture structure: multi-section list (markdown-list-in
     // e2e: architectureHeadingIsFollowedByUl === true
     const archHeading = bySubstring(root.querySelectorAll('h3'), 'Architecture Highlights')
     assert.ok(archHeading, 'expected an Architecture Highlights heading')
-    assert.equal(archHeading.nextElementSibling?.tagName, 'UL')
-    assert.equal(archHeading.nextElementSibling?.querySelectorAll('li').length, 5)
+    // Annotate as nullable so the optional access is honest under the DOM lib
+    // (where nextElementSibling is `Element | null`).
+    const archSibling: Element | null = archHeading.nextElementSibling
+    assert.ok(archSibling, 'Architecture Highlights heading should be followed by a sibling')
+    assert.equal(archSibling.tagName, 'UL')
+    assert.equal(archSibling.querySelectorAll('li').length, 5)
 
     // e2e: knownFailuresHeadingIsFollowedByUl === true — the bold "Unit tests"
     // subheading is its own paragraph, with the list as the next sibling.
@@ -65,7 +69,7 @@ describe('renderMarkdown fixture structure: multi-section list (markdown-list-in
 
   it('renders bold markers as <strong>, leaving no literal asterisks', () => {
     const root = render(content)
-    assert.ok(!root.textContent?.includes('**'), 'no literal ** should survive')
+    assert.ok(!root.textContent.includes('**'), 'no literal ** should survive')
   })
 })
 
@@ -98,7 +102,7 @@ describe('renderMarkdown fixture structure: git summary ordered list (markdown-o
     const root = render(content)
     // e2e: numberedParagraphs === 1 (just the intro), hasNumberedParagraph === false
     assert.equal(root.querySelectorAll('p').length, 1)
-    assert.ok(!/^\d+\./.test(root.textContent?.trim() ?? ''))
+    assert.ok(!/^\d+\./.test(root.textContent.trim()))
   })
 
   it('folds the path code and bold prose into the list item, not a trailing paragraph', () => {
@@ -152,8 +156,9 @@ describe('renderMarkdown fixture structure: bold after glob table (markdown-bold
     // hasMalformedStrong === false — the regression was the bold label after the
     // glob table rendering as a literal `**MCP host**` / malformed </strong>.
     const mcpItem = bySubstring(root.querySelectorAll('li'), 'MCP host')
-    assert.equal(mcpItem?.querySelector('strong')?.textContent, 'MCP host')
-    assert.ok(!mcpItem?.textContent?.includes('**'), 'no literal ** in the MCP item')
+    assert.ok(mcpItem)
+    assert.equal(mcpItem.querySelector('strong')?.textContent, 'MCP host')
+    assert.ok(!mcpItem.textContent.includes('**'), 'no literal ** in the MCP item')
     assert.ok(
       !root.innerHTML.includes('</strong>MCP host**'),
       'no malformed strong around the MCP label',

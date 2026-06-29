@@ -45,7 +45,6 @@ describe('estimateUsageCost', () => {
     })
     assert.equal(freshOnly, 3)
     assert.equal(cacheHeavy, 0.3)
-    assert.ok(cacheHeavy < freshOnly)
   })
 
   it('prices extra-provider models from the supplied rate map (e.g. HF)', () => {

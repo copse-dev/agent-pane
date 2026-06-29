@@ -23,13 +23,13 @@ export function computeLineDiffStats(before: string, after: string): LineDiffSta
   const m = b.length
   const dp = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0))
   for (let i = 1; i <= n; i++) {
+    const prevRow = dp[i - 1] ?? []
+    const curRow = dp[i] ?? []
     for (let j = 1; j <= m; j++) {
-      const prevRow = dp[i - 1]!
-      const curRow = dp[i]!
-      if (a[i - 1] === b[j - 1]) curRow[j] = prevRow[j - 1]! + 1
-      else curRow[j] = Math.max(prevRow[j]!, curRow[j - 1]!)
+      if (a[i - 1] === b[j - 1]) curRow[j] = (prevRow[j - 1] ?? 0) + 1
+      else curRow[j] = Math.max(prevRow[j] ?? 0, curRow[j - 1] ?? 0)
     }
   }
-  const lcs = dp[n]![m]!
+  const lcs = dp[n]?.[m] ?? 0
   return { additions: m - lcs, deletions: n - lcs }
 }

@@ -14,7 +14,7 @@ export interface MonacoSelectionContext {
 export function selectionLineRangeLabel(startLineNumber: number, endLineNumber: number): string {
   return startLineNumber === endLineNumber
     ? String(startLineNumber)
-    : `${startLineNumber}-${endLineNumber}`
+    : `${String(startLineNumber)}-${String(endLineNumber)}`
 }
 
 export function buildMonacoSelectionAttachment(

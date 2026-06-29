@@ -84,7 +84,7 @@ export function truncateAttachmentContent(
 
   const marker =
     `\n\n… [Copse trimmed ${omittedChars.toLocaleString()} characters` +
-    `${omittedLines > 0 ? ` (~${omittedLines.toLocaleString()} lines)` : ''}` +
+    (omittedLines > 0 ? ` (~${omittedLines.toLocaleString()} lines)` : '') +
     ` from the middle of this attachment to keep the request within the model's context window. ` +
     `Only the first and last portions are shown. If you need the omitted content, ask the user ` +
     `to save the full file into the workspace so you can read it with read_file or explore.] …\n\n`

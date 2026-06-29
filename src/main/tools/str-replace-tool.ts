@@ -49,7 +49,7 @@ export const strReplaceTool = defineTool({
       return 'old_string was not found in the file. Re-read the file and copy the exact snippet to replace.'
     }
     if (!replace_all && occurrences > 1) {
-      return `old_string appears ${occurrences} times; include more surrounding context so it is unique, or set replace_all to true.`
+      return `old_string appears ${String(occurrences)} times; include more surrounding context so it is unique, or set replace_all to true.`
     }
 
     const after = replace_all

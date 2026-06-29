@@ -6,6 +6,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { StreamChunk } from '@shared/types'
 import { el } from '../dom/helpers.ts'
+import { at } from '@shared/array-utils.ts'
 import { mountAgentTasks } from './agent-tasks.ts'
 
 type ChunkHandler = (threadId: string, chunk: StreamChunk) => void
@@ -32,11 +33,11 @@ function mount(): Harness {
   let outputHandler: OutputHandler = () => {}
   const api = {
     agent: {
-      onChunk: (h: ChunkHandler) => {
+      onChunk: (h: ChunkHandler): (() => void) => {
         chunkHandler = h
         return () => {}
       },
-      onShellOutput: (h: OutputHandler) => {
+      onShellOutput: (h: OutputHandler): (() => void) => {
         outputHandler = h
         return () => {}
       },
@@ -48,8 +49,12 @@ function mount(): Harness {
     viewerParent,
     viewerHost,
     store,
-    emitChunk: (tid, chunk) => chunkHandler(tid, chunk),
-    emitOutput: (data, id) => outputHandler(data, id),
+    emitChunk: (tid, chunk): void => {
+      chunkHandler(tid, chunk)
+    },
+    emitOutput: (data, id): void => {
+      outputHandler(data, id)
+    },
     dispose,
   }
 }
@@ -67,7 +72,9 @@ function panels(h: Harness): HTMLElement[] {
 }
 
 function section(h: Harness): HTMLElement {
-  return h.listRoot.querySelector<HTMLElement>('.agent-tasks-section')!
+  const el = h.listRoot.querySelector<HTMLElement>('.agent-tasks-section')
+  if (!el) throw new Error('missing .agent-tasks-section')
+  return el
 }
 
 describe('agent-tasks', () => {
@@ -87,21 +94,21 @@ describe('agent-tasks', () => {
 
   it('shows the stripped command label and a running status on the tab', () => {
     startShell(h, 'a', 'cd /repo && npm run build')
-    const tab = tabs(h)[0]!
+    const tab = at(tabs(h), 0)
     assert.equal(tab.dataset['status'], 'running')
-    assert.equal(tab.querySelector('.agent-task-label')!.textContent, 'npm run build')
+    assert.equal(tab.querySelector('.agent-task-label')?.textContent, 'npm run build')
   })
 
   it('routes streamed output to the matching task panel by id', () => {
     startShell(h, 'a', 'echo hi')
     h.emitOutput('hello\nworld\n', 'a')
-    assert.match(panels(h)[0]!.textContent!, /hello\nworld/)
+    assert.match(at(panels(h), 0).textContent, /hello\nworld/)
   })
 
   it('strips ANSI escape sequences from output', () => {
     startShell(h, 'a', 'ls')
     h.emitOutput('\x1b[31mred\x1b[0m text', 'a')
-    assert.equal(panels(h)[0]!.textContent, 'red text')
+    assert.equal(at(panels(h), 0).textContent, 'red text')
   })
 
   it('falls back to the latest running task when output has no id', () => {
@@ -109,18 +116,18 @@ describe('agent-tasks', () => {
     h.emitChunk('t1', { type: 'tool_result', toolCallId: 'a', result: '', isError: false })
     startShell(h, 'b', 'second')
     h.emitOutput('streamed', null)
-    assert.equal(panels(h)[0]!.textContent, '')
-    assert.equal(panels(h)[1]!.textContent, 'streamed')
+    assert.equal(at(panels(h), 0).textContent, '')
+    assert.equal(at(panels(h), 1).textContent, 'streamed')
   })
 
   it('marks a task done/error on tool_result', () => {
     startShell(h, 'a', 'ok')
     h.emitChunk('t1', { type: 'tool_result', toolCallId: 'a', result: 'fine', isError: false })
-    assert.equal(tabs(h)[0]!.dataset['status'], 'done')
+    assert.equal(at(tabs(h), 0).dataset['status'], 'done')
 
     startShell(h, 'b', 'boom')
     h.emitChunk('t1', { type: 'tool_result', toolCallId: 'b', result: 'nope', isError: true })
-    assert.equal(tabs(h)[1]!.dataset['status'], 'error')
+    assert.equal(at(tabs(h), 1).dataset['status'], 'error')
   })
 
   it('uses the tool result as output when nothing streamed', () => {
@@ -131,7 +138,7 @@ describe('agent-tasks', () => {
       result: 'final output',
       isError: false,
     })
-    assert.equal(panels(h)[0]!.textContent, 'final output')
+    assert.equal(at(panels(h), 0).textContent, 'final output')
   })
 
   it('shows the task panel and takes over the viewer when a tab is clicked', () => {
@@ -139,22 +146,22 @@ describe('agent-tasks', () => {
     startShell(h, 'b', 'two')
     // Nothing selected yet — viewer still belongs to the terminal.
     assert.equal(h.viewerParent.classList.contains('showing-agent-task'), false)
-    assert.equal(panels(h)[0]!.hidden, true)
+    assert.equal(at(panels(h), 0).hidden, true)
 
     let selected: string | null | undefined
     h.store.on('agent_task_selected', (id) => (selected = id))
-    tabs(h)[0]!.click()
+    at(tabs(h), 0).click()
 
     assert.equal(h.viewerParent.classList.contains('showing-agent-task'), true)
-    assert.equal(tabs(h)[0]!.classList.contains('is-active'), true)
-    assert.equal(panels(h)[0]!.hidden, false)
-    assert.equal(panels(h)[1]!.hidden, true)
+    assert.equal(at(tabs(h), 0).classList.contains('is-active'), true)
+    assert.equal(at(panels(h), 0).hidden, false)
+    assert.equal(at(panels(h), 1).hidden, true)
     assert.equal(selected, 'a')
   })
 
   it('yields the viewer back to the terminal on shell_tab_activated', () => {
     startShell(h, 'a', 'one')
-    tabs(h)[0]!.click()
+    at(tabs(h), 0).click()
     assert.equal(h.viewerParent.classList.contains('showing-agent-task'), true)
 
     let cleared = false
@@ -164,8 +171,8 @@ describe('agent-tasks', () => {
     h.store.emit('shell_tab_activated')
 
     assert.equal(h.viewerParent.classList.contains('showing-agent-task'), false)
-    assert.equal(tabs(h)[0]!.classList.contains('is-active'), false)
-    assert.equal(panels(h)[0]!.hidden, true)
+    assert.equal(at(tabs(h), 0).classList.contains('is-active'), false)
+    assert.equal(at(panels(h), 0).hidden, true)
     assert.equal(cleared, true)
   })
 

@@ -41,10 +41,15 @@ async function stopElectron(signal: NodeJS.Signals = 'SIGINT'): Promise<void> {
 
   child.kill(signal)
   await waitForExit(child, 5_000)
+  // exitCode/signalCode are mutated by the OS as the child exits during the await above;
+  // TS narrows them to null from the line-40 guard but they are genuinely re-read here.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   if (child.exitCode !== null || child.signalCode !== null) return
 
   child.kill('SIGTERM')
   await waitForExit(child, 2_000)
+  // Same async-mutation caveat as above: re-read post-await, not the narrowed null.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
 }
 
@@ -56,7 +61,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   process.exitCode = signal === 'SIGINT' ? 130 : 143
 }
 
-function startElectron() {
+function startElectron(): void {
   if (shuttingDown) return
   const serial = ++restartSerial
   void stopElectron('SIGTERM').finally(() => {
@@ -84,7 +89,7 @@ const sharedAlias = { '@shared': new URL('../src/shared', import.meta.url).pathn
 
 const onEndPlugin = (cb: () => void): esbuild.Plugin => ({
   name: 'on-end',
-  setup(build) {
+  setup(build): void {
     build.onEnd(() => {
       if (restartOnBuild) cb()
     })

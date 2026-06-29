@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { at } from '@shared/array-utils.ts'
 import {
   deriveOverallState,
   ghPrHasCiFailures,
@@ -29,12 +30,12 @@ describe('rollupToCiChecks', () => {
       { __typename: 'CheckRun', name: 'lint', status: 'IN_PROGRESS' },
     ])
     assert.equal(checks.length, 3)
-    assert.equal(checks[0]?.name, 'check')
-    assert.equal(checks[0]?.bucket, 'fail')
-    assert.equal(checks[1]?.name, 'ci/circle')
-    assert.equal(checks[1]?.bucket, 'pass')
-    assert.equal(checks[2]?.name, 'lint')
-    assert.equal(checks[2]?.bucket, 'pending')
+    assert.equal(at(checks, 0).name, 'check')
+    assert.equal(at(checks, 0).bucket, 'fail')
+    assert.equal(at(checks, 1).name, 'ci/circle')
+    assert.equal(at(checks, 1).bucket, 'pass')
+    assert.equal(at(checks, 2).name, 'lint')
+    assert.equal(at(checks, 2).bucket, 'pending')
   })
 })
 
@@ -78,10 +79,10 @@ describe('parseGhPrChecks', () => {
       ]),
     )
     assert.equal(checks.length, 1)
-    assert.equal(checks[0]?.name, 'check')
-    assert.equal(checks[0]?.state, 'FAIL')
-    assert.equal(checks[0]?.bucket, 'fail')
-    assert.equal(checks[0]?.link, 'https://example.com')
+    assert.equal(at(checks, 0).name, 'check')
+    assert.equal(at(checks, 0).state, 'FAIL')
+    assert.equal(at(checks, 0).bucket, 'fail')
+    assert.equal(at(checks, 0).link, 'https://example.com')
   })
 })
 

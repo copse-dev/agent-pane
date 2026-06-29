@@ -9,7 +9,6 @@ import {
   defaultMaxLlmCallsForSteps,
   DEFAULT_MAX_LLM_CALLS,
   isAgentRunTimeoutAbort,
-  isRunPastDeadline,
 } from './agent-loop-limits.ts'
 
 describe('agent-loop-limits', () => {
@@ -20,8 +19,12 @@ describe('agent-loop-limits', () => {
 
   it('detects elapsed run deadline', () => {
     const start = Date.now() - 100
-    assert.equal(isRunPastDeadline(start, 50), true)
-    assert.equal(isRunPastDeadline(start, 10_000), false)
+    // Drive the hard wall-clock cap from run start; keep the idle window wide so
+    // only the hard cap decides, mirroring the old run-timeout-elapsed check.
+    const expired = new AgentRunDeadline(10_000, 50, start)
+    assert.equal(expired.isExpired(), true)
+    const notExpired = new AgentRunDeadline(10_000, 10_000, start)
+    assert.equal(notExpired.isExpired(), false)
   })
 
   it('resets the idle window on activity', () => {
@@ -144,7 +147,11 @@ describe('agent-loop-limits', () => {
       // Advance well past the idle window; paused time must not count.
       for (let i = 1; i <= 4; i++) {
         mock.timers.tick(1_000)
-        assert.equal(controller.signal.aborted, false, `must not abort at ${i}s while paused`)
+        assert.equal(
+          controller.signal.aborted,
+          false,
+          `must not abort at ${String(i)}s while paused`,
+        )
       }
       // The hard wall-clock cap (5s) still applies and aborts.
       mock.timers.tick(1_000)

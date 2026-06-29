@@ -1,6 +1,6 @@
 import type { TodoItem, TodoStatus, TodoUpdateInput } from '@shared/types/todo.ts'
 
-const randomUUID = () => globalThis.crypto.randomUUID()
+const randomUUID = (): string => globalThis.crypto.randomUUID()
 
 export function todoProgress(todos: readonly TodoItem[]): { done: number; total: number } {
   const active = todos.filter((t) => t.status !== 'cancelled')
@@ -15,7 +15,7 @@ export function hasOpenTodos(todos: readonly TodoItem[]): boolean {
 export function formatTodoProgress(todos: readonly TodoItem[]): string | null {
   const { done, total } = todoProgress(todos)
   if (total === 0) return null
-  return `${done}/${total} done`
+  return `${String(done)}/${String(total)} done`
 }
 
 /** Light steering: multi-step work that benefits from an explicit plan. */

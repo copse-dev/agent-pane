@@ -25,10 +25,16 @@ export function isRetryableStreamError(err: unknown): boolean {
   if (err instanceof OpenAI.APIConnectionError) return true
   if (err instanceof OpenAI.InternalServerError) return true
 
+  // err is an unknown thrown value and can be null/undefined; the cast type hides
+  // that, so the optional chain guards the genuine runtime case.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   const status = (err as { status?: number })?.status
   if (status === 429 || status === 529) return true
   if (typeof status === 'number' && status >= 500 && status < 600) return true
 
+  // err is an unknown thrown value and can be null/undefined; the cast type hides
+  // that, so the optional chain guards the genuine runtime case.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   const body = (err as { error?: { type?: string } })?.error
   if (body?.type === 'overloaded_error') return true
 
@@ -60,7 +66,7 @@ export function sleepMs(ms: number, signal?: AbortSignal): Promise<void> {
       signal?.removeEventListener('abort', onAbort)
       resolve()
     }, ms)
-    const onAbort = () => {
+    const onAbort = (): void => {
       clearTimeout(timer)
       signal?.removeEventListener('abort', onAbort)
       reject(abortError(signal))

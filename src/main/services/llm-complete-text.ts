@@ -46,7 +46,9 @@ export async function completeTextWithUsage(
   let text = ''
   let usage = { ...EMPTY_USAGE }
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  const timer = setTimeout(() => {
+    controller.abort()
+  }, timeoutMs)
   try {
     for await (const chunk of provider.stream(messages, [], controller.signal)) {
       if (chunk.type === 'text') text += chunk.text

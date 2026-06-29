@@ -217,7 +217,7 @@ describe('formatRemoteArtifactsSummary', () => {
 describe('fetchRemoteArtifactImageDataUrl', () => {
   it('resolves the artifact download URL and returns image data', async () => {
     const calls: string[] = []
-    const fetchImpl = async (url: string) => {
+    const fetchImpl = async (url: string): Promise<Response> => {
       calls.push(url)
       if (url.includes('/artifacts/download')) {
         return new Response(
@@ -250,7 +250,7 @@ describe('fetchRemoteArtifactImageDataUrl', () => {
 
   it('caches artifact image data by agent and path for the app session', async () => {
     let calls = 0
-    const fetchImpl = async (url: string) => {
+    const fetchImpl = async (url: string): Promise<Response> => {
       calls++
       if (url.includes('/artifacts/download')) {
         return new Response(

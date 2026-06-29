@@ -125,15 +125,17 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const footerOverflow = mountFooterOverflow(footer, [
     {
       label: 'Export',
-      hidden: () => !threadHasExportableContent(getActiveThread(store)),
-      onClick: () => {
+      hidden: (): boolean => !threadHasExportableContent(getActiveThread(store)),
+      onClick: (): void => {
         const thread = getActiveThread(store)
         if (threadHasExportableContent(thread)) downloadThreadJsonl(thread)
       },
     },
   ])
   footer.append(usageGroup)
-  const footerCompact = bindFooterCompactLayout(footer, () => updateFooter())
+  const footerCompact = bindFooterCompactLayout(footer, () => {
+    updateFooter()
+  })
   let costVisible = false
 
   const modelPicker = mountFooterModelPicker(
@@ -197,10 +199,10 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     }
   }
 
-  function getActiveThreadId() {
+  function getActiveThreadId(): string | null {
     return store.getState().activeThreadId
   }
-  function isRunning() {
+  function isRunning(): boolean {
     const t = getActiveThread(store)
     return t?.status === 'running'
   }
@@ -230,14 +232,16 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const draftAutosave = createComposerDraftAutosave({
     getActiveThreadId,
     getValue: () => textarea.value,
-    save: (id, value) => setThreadDraftPrompt(store, id, value),
+    save: (id, value) => {
+      setThreadDraftPrompt(store, id, value)
+    },
   })
   textarea.addEventListener('input', () => {
     scheduleContextEstimate()
     draftAutosave.schedule()
   })
 
-  function updateState() {
+  function updateState(): void {
     const running = isRunning()
     stopBtn.hidden = !running
     submitBtn.classList.toggle('with-stop', running)
@@ -263,7 +267,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     checkoutBranchBtn.textContent = 'Check out'
   }
 
-  function updateQueueIndicator() {
+  function updateQueueIndicator(): void {
     const thread = store.getState().threads.find((t) => t.id === getActiveThreadId())
     const count = thread?.pendingMessages?.length ?? 0
     if (count === 0) {
@@ -272,7 +276,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       return
     }
     queueIndicator.hidden = false
-    queueIndicator.textContent = count === 1 ? '1 queued' : `${count} queued`
+    queueIndicator.textContent = count === 1 ? '1 queued' : `${String(count)} queued`
   }
 
   function usageSummaryText(): string | null {
@@ -295,7 +299,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     })
   }
 
-  function updateFooter() {
+  function updateFooter(): void {
     const thread = getActiveThread(store)
     const running = thread?.status === 'running'
     const usageText = usageSummaryText()
@@ -422,7 +426,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       })
   })
 
-  function isAutocompletePickerOpen() {
+  function isAutocompletePickerOpen(): boolean {
     return root.querySelector('.mention-picker:not([hidden])') !== null
   }
 
@@ -441,7 +445,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   // each read the same un-cleared text and send the message more than once.
   let submitInProgress = false
 
-  async function submit() {
+  async function submit(): Promise<void> {
     if (submitInProgress) return
     submitInProgress = true
     try {
@@ -451,7 +455,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     }
   }
 
-  async function performSubmit() {
+  async function performSubmit(): Promise<void> {
     followUps.clearSuggestions()
     textarea.placeholder = defaultPlaceholder
     const rawText = textarea.value.trim()
@@ -468,8 +472,9 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     const branchStatus = await api.git.branchStatus()
     const currentBranch = branchStatus.currentBranch
     const thread = getThreadById(store, id)
-    if (threadGitBranchMismatch(thread?.gitBranch, currentBranch)) {
-      showBranchMismatch(thread!.gitBranch!)
+    const threadBranch = thread?.gitBranch
+    if (threadBranch && threadGitBranchMismatch(threadBranch, currentBranch)) {
+      showBranchMismatch(threadBranch)
       return
     }
     hideBranchMismatch()
@@ -572,7 +577,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     scheduleContextEstimate(0)
   }
 
-  function addChip(file: { path: string; content: string }) {
+  function addChip(file: { path: string; content: string }): void {
     attachedFiles.push(file)
     const chip = document.createElement('span')
     chip.className = 'attachment-chip'
@@ -589,7 +594,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     scheduleContextEstimate()
   }
 
-  function addTextChip(content: string, explicitLabel?: string) {
+  function addTextChip(content: string, explicitLabel?: string): void {
     const id = crypto.randomUUID()
     const label = explicitLabel ?? textBlockLabel(content)
     attachedTextBlocks.push({ id, label, content })
@@ -608,7 +613,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     scheduleContextEstimate()
   }
 
-  function addImageChip(dataUrl: string, mimeType: string) {
+  function addImageChip(dataUrl: string, mimeType: string): void {
     attachedImages.push({ dataUrl, mimeType })
     const chip = document.createElement('span')
     chip.className = 'attachment-chip image-chip'
@@ -631,7 +636,9 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   function readAsDataUrl(blob: Blob): Promise<string> {
     return new Promise((res, rej) => {
       const r = new FileReader()
-      r.onload = () => res(r.result as string)
+      r.onload = (): void => {
+        res(r.result as string)
+      }
       r.onerror = rej
       r.readAsDataURL(blob)
     })
@@ -644,8 +651,10 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   }
   const unregisterAttachments = registerPromptAttachments(attachmentHandlers)
 
-  attachBtn.addEventListener('click', () => fileInput.click())
-  const onFileInputChange = () => {
+  attachBtn.addEventListener('click', () => {
+    fileInput.click()
+  })
+  const onFileInputChange = (): void => {
     const files = Array.from(fileInput.files ?? [])
     if (files.length === 0) return
     void attachFiles(files, attachmentHandlers, api, store.getState().workspaceRoot)
@@ -654,14 +663,16 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   }
   fileInput.addEventListener('change', onFileInputChange)
 
-  const onPaste = (e: ClipboardEvent) => {
+  const onPaste = (e: ClipboardEvent): void => {
     const items = Array.from(e.clipboardData?.items ?? [])
     const img = items.find((i) => i.type.startsWith('image/'))
     if (img) {
       e.preventDefault()
       const blob = img.getAsFile()
       if (!blob) return
-      void readAsDataUrl(blob).then((dataUrl) => addImageChip(dataUrl, blob.type))
+      void readAsDataUrl(blob).then((dataUrl) => {
+        addImageChip(dataUrl, blob.type)
+      })
       return
     }
 
@@ -711,11 +722,15 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   })
 
   const unsubs = [
-    api.agent.onRefreshContextEstimate(() => scheduleContextEstimate(0)),
+    api.agent.onRefreshContextEstimate(() => {
+      scheduleContextEstimate(0)
+    }),
     store.on('new_thread_opened', () => {
       // Refresh provider-reported context windows for the new chat, then re-estimate
       // once the caches are cleared so the footer reflects the current model limit.
-      void api.agent.refreshModelContext().finally(() => scheduleContextEstimate(0))
+      void api.agent.refreshModelContext().finally(() => {
+        scheduleContextEstimate(0)
+      })
     }),
     store.on('composer_draft_flush', persistComposerDraft),
     store.on('thread_status_changed', (tid) => {
@@ -751,8 +766,12 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       // Model / subagent changes alter the context window and tool set.
       scheduleContextEstimate(0)
     }),
-    store.on('workspace_changed', () => branchControl.refresh()),
-    store.on('git_branch_changed', () => branchControl.refresh()),
+    store.on('workspace_changed', () => {
+      branchControl.refresh()
+    }),
+    store.on('git_branch_changed', () => {
+      branchControl.refresh()
+    }),
   ]
 
   const observer = new MutationObserver(() => {
@@ -773,7 +792,9 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     if (activeComposerThreadId) {
       setThreadDraftPrompt(store, activeComposerThreadId, textarea.value)
     }
-    unsubs.forEach((u) => u())
+    unsubs.forEach((u) => {
+      u()
+    })
     unsubWorkspace()
     window.removeEventListener('copse:skills-changed', onSkillsChanged)
     document.removeEventListener('paste', onPaste)

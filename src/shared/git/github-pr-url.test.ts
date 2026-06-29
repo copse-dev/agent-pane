@@ -35,7 +35,9 @@ describe('extractGithubPrUrls', () => {
       'Also https://github.com/other/app/pull/9.'
     const refs = extractGithubPrUrls(text)
     assert.equal(refs.length, 2)
-    assert.equal(githubPrKey(refs[0]!), 'org/repo#204')
-    assert.equal(githubPrKey(refs[1]!), 'other/app#9')
+    const [first, second] = refs
+    assert.ok(first && second)
+    assert.equal(githubPrKey(first), 'org/repo#204')
+    assert.equal(githubPrKey(second), 'other/app#9')
   })
 })

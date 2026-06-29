@@ -14,7 +14,9 @@ async function readSourceManifest(cacheDir: string): Promise<BundledCursorSkills
     const { readFile } = await import('node:fs/promises')
     const raw = await readFile(resolve(cacheDir, 'SOURCE.json'), 'utf8')
     const parsed = JSON.parse(raw) as BundledCursorSkillsSource
-    if (parsed.commit !== BUNDLED_CURSOR_PLUGINS_COMMIT || parsed.slim !== true) return null
+    // parsed comes from untyped JSON on disk; `slim` may be missing/false at runtime
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if (parsed.commit !== BUNDLED_CURSOR_PLUGINS_COMMIT || !parsed.slim) return null
     if (parsed.skillCount <= 0) return null
     return parsed
   } catch {
@@ -32,7 +34,7 @@ export async function fetchBundledCursorSkills(): Promise<BundledCursorSkillsSou
   const existing = await readSourceManifest(BUNDLED_CURSOR_SKILLS_OUT_DIR)
   if (existing) {
     console.log(
-      `[fetch-bundled-cursor-skills] ${existing.skillCount} skills already present @ ${existing.commit.slice(0, 12)}`,
+      `[fetch-bundled-cursor-skills] ${String(existing.skillCount)} skills already present @ ${existing.commit.slice(0, 12)}`,
     )
     return existing
   }
@@ -41,7 +43,7 @@ export async function fetchBundledCursorSkills(): Promise<BundledCursorSkillsSou
     await mkdir(BUNDLED_CURSOR_SKILLS_OUT_DIR, { recursive: true })
     const source = await syncBundledCursorSkills(BUNDLED_CURSOR_SKILLS_OUT_DIR)
     console.log(
-      `[fetch-bundled-cursor-skills] synced ${source.skillCount} skills from ${source.pluginCount} plugins`,
+      `[fetch-bundled-cursor-skills] synced ${String(source.skillCount)} skills from ${String(source.pluginCount)} plugins`,
     )
     return source
   } catch (err) {

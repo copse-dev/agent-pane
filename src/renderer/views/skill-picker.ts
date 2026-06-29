@@ -36,7 +36,7 @@ export function initSkillPicker(opts: SkillPickerOptions): () => void {
     )
   }
 
-  function renderPicker() {
+  function renderPicker(): void {
     clear(picker)
     selectedIdx = 0
     currentSkills.forEach((skill, i) => {
@@ -59,13 +59,13 @@ export function initSkillPicker(opts: SkillPickerOptions): () => void {
     picker.hidden = currentSkills.length === 0
   }
 
-  async function updatePicker(query: string) {
+  async function updatePicker(query: string): Promise<void> {
     await ensureSkills()
     currentSkills = filterSkills(query)
     renderPicker()
   }
 
-  function selectItem(idx: number) {
+  function selectItem(idx: number): void {
     const skill = currentSkills[idx]
     if (!skill) {
       hidePicker()
@@ -81,12 +81,12 @@ export function initSkillPicker(opts: SkillPickerOptions): () => void {
     textarea.focus()
   }
 
-  function hidePicker() {
+  function hidePicker(): void {
     picker.hidden = true
     slashStart = -1
   }
 
-  function updateSelection() {
+  function updateSelection(): void {
     picker
       .querySelectorAll('.mention-item')
       .forEach((el, i) => el.classList.toggle('selected', i === selectedIdx))

@@ -19,7 +19,7 @@ export function shouldUsePortraitRightPanelLayout(
 }
 
 export function mountPortraitRightPanelLayout(body: HTMLElement, store: AppStore): () => void {
-  const sync = () => {
+  const sync = (): void => {
     body.classList.toggle(
       PORTRAIT_RIGHT_PANEL_CLASS,
       shouldUsePortraitRightPanelLayout(
@@ -38,7 +38,9 @@ export function mountPortraitRightPanelLayout(body: HTMLElement, store: AppStore
 
   return () => {
     window.removeEventListener('resize', sync)
-    unsubs.forEach((unsub) => unsub())
+    unsubs.forEach((unsub) => {
+      unsub()
+    })
     body.classList.remove(PORTRAIT_RIGHT_PANEL_CLASS)
   }
 }

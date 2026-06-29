@@ -82,8 +82,16 @@ export async function runGh(
   return { stdout, stderr, code }
 }
 
-/** Parse JSON stdout from `gh`, or null when empty/invalid. */
-export function parseGhJson<T>(stdout: string): T | null {
+/**
+ * Parse JSON stdout from `gh`, or null when empty/invalid.
+ *
+ * The `T` type parameter is a caller-supplied cast for the parsed value relied
+ * on by call sites (e.g. `parseGhJson<GhPrView>(raw)`); removing it would change
+ * this exported signature and break those callers, so the single-use type
+ * parameter is intentional here.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
+export function parseGhJson<T = unknown>(stdout: string): T | null {
   const trimmed = stdout.trim()
   if (!trimmed) return null
   return safeJsonParse<T>(trimmed)
@@ -93,7 +101,7 @@ function formatGhError(stderr: string, code: number): string {
   const msg = stderr.trim()
   if (msg) return msg
   if (code === 127) return 'gh is not available on this system.'
-  return `gh exited with code ${code}`
+  return `gh exited with code ${String(code)}`
 }
 
 export function formatGhPrList(entries: GhPrListEntry[]): string {
@@ -102,7 +110,7 @@ export function formatGhPrList(entries: GhPrListEntry[]): string {
     .map((pr) => {
       const head = pr.headRefName ? ` (${pr.headRefName})` : ''
       const author = pr.author?.login ? ` by ${pr.author.login}` : ''
-      return `#${pr.number} ${pr.title} — ${pr.state}${head}${author}\n  ${pr.url}`
+      return `#${String(pr.number)} ${pr.title} — ${pr.state}${head}${author}\n  ${pr.url}`
     })
     .join('\n')
 }
@@ -118,7 +126,7 @@ function formatCheckStatus(
 export function formatGhPrView(pr: GhPrViewDetails): string {
   if (!pr.number || !pr.url) return '(invalid PR data)'
   const lines = [
-    `#${pr.number} ${pr.title ?? '(no title)'}`,
+    `#${String(pr.number)} ${pr.title ?? '(no title)'}`,
     `State: ${pr.state ?? 'unknown'}`,
     `URL: ${pr.url}`,
   ]
@@ -129,10 +137,10 @@ export function formatGhPrView(pr: GhPrViewDetails): string {
   if (pr.mergeable) lines.push(`Mergeable: ${pr.mergeable}`)
   if (pr.mergeStateStatus) lines.push(`Merge state: ${pr.mergeStateStatus}`)
   if (typeof pr.changedFiles === 'number') {
-    lines.push(`Files changed: ${pr.changedFiles}`)
+    lines.push(`Files changed: ${String(pr.changedFiles)}`)
   }
   if (typeof pr.additions === 'number' || typeof pr.deletions === 'number') {
-    lines.push(`Diff: +${pr.additions ?? 0} -${pr.deletions ?? 0}`)
+    lines.push(`Diff: +${String(pr.additions ?? 0)} -${String(pr.deletions ?? 0)}`)
   }
   const checks = pr.statusCheckRollup ?? []
   if (checks.length > 0) {
@@ -188,7 +196,7 @@ export function formatGhRunList(entries: GhRunEntry[]): string {
   if (entries.length === 0) return '(no workflow runs)'
   return entries
     .map((run) => {
-      const id = run.databaseId !== undefined ? `#${run.databaseId}` : '(no id)'
+      const id = run.databaseId !== undefined ? `#${String(run.databaseId)}` : '(no id)'
       const workflow = run.workflowName ?? run.name ?? 'workflow'
       const outcome = (run.conclusion ?? run.status ?? 'unknown').toUpperCase()
       const where = `${run.headBranch ?? '?'} @ ${shortSha(run.headSha)}`
@@ -204,7 +212,7 @@ export function truncateLogTail(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text
   const tail = text.slice(text.length - maxChars)
   const dropped = text.length - maxChars
-  return `… [${dropped} earlier characters truncated; showing the last ${maxChars}]\n${tail}`
+  return `… [${String(dropped)} earlier characters truncated; showing the last ${String(maxChars)}]\n${tail}`
 }
 
 export async function getGhRunListText(opts: {

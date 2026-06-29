@@ -120,9 +120,10 @@ async function loadSkillFromFile(
     return
   }
 
-  if (skills.has(parsed.name)) {
+  const existing = skills.get(parsed.name)
+  if (existing) {
     console.warn(
-      `[skills] Duplicate skill "${parsed.name}" — keeping first from ${skills.get(parsed.name)!.skillPath}`,
+      `[skills] Duplicate skill "${parsed.name}" — keeping first from ${existing.skillPath}`,
     )
     return
   }
@@ -229,7 +230,7 @@ export async function readSkill(name: string, relativePath = 'SKILL.md'): Promis
   const stat = await fsp.stat(target)
   if (stat.size > SKILL_READ_MAX_BYTES) {
     throw new Error(
-      `Skill file too large (${stat.size} bytes; max ${SKILL_READ_MAX_BYTES}): ${relativePath}`,
+      `Skill file too large (${String(stat.size)} bytes; max ${String(SKILL_READ_MAX_BYTES)}): ${relativePath}`,
     )
   }
 

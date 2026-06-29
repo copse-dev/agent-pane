@@ -1,7 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import type { Message } from '@shared/types'
+import type { Message, Thread } from '@shared/types'
+import { at } from '@shared/array-utils.ts'
 import {
   addMessage,
   createThread,
@@ -41,6 +42,18 @@ function fakeApi(): ApiClient & { runs: Array<[string, string]>; aborts: string[
   } as unknown as ApiClient & { runs: Array<[string, string]>; aborts: string[] }
 }
 
+function getThread(store: ReturnType<typeof createStore>, threadId: string): Thread {
+  const thread = store.getState().threads.find((t) => t.id === threadId)
+  if (!thread) throw new Error(`thread not found: ${threadId}`)
+  return thread
+}
+
+function firstRun(api: { runs: Array<[string, string]> }): [string, string] {
+  const run = api.runs[0]
+  if (!run) throw new Error('expected at least one agent run')
+  return run
+}
+
 test('enqueueUserMessage appends to thread.pendingMessages and emits message_queued', () => {
   const store = createStore()
   const api = fakeApi()
@@ -54,9 +67,10 @@ test('enqueueUserMessage appends to thread.pendingMessages and emits message_que
     createdAt: 1,
   })
 
-  const thread = store.getState().threads.find((t) => t.id === threadId)!
-  assert.equal(thread.pendingMessages?.length, 1)
-  assert.equal(thread.pendingMessages?.[0]?.messageId, 'msg-1')
+  const thread = getThread(store, threadId)
+  const pending = thread.pendingMessages ?? []
+  assert.equal(pending.length, 1)
+  assert.equal(at(pending, 0).messageId, 'msg-1')
   assert.deepEqual(queued, ['msg-1'])
   assert.equal(api.runs.length, 0)
 })
@@ -73,12 +87,13 @@ test('drainMessageQueue dispatches the next payload when idle', () => {
 
   drainMessageQueue(store, api, threadId)
 
-  const thread = store.getState().threads.find((t) => t.id === threadId)!
+  const thread = getThread(store, threadId)
   assert.equal(thread.status, 'running')
   assert.equal(thread.pendingMessages, undefined)
   assert.equal(api.runs.length, 1)
-  assert.equal(api.runs[0]![0], threadId)
-  assert.match(api.runs[0]![1], /queued prompt/)
+  const run = firstRun(api)
+  assert.equal(run[0], threadId)
+  assert.match(run[1], /queued prompt/)
 })
 
 test('drainMessageQueue moves pending user messages after the completed turn', () => {
@@ -96,7 +111,7 @@ test('drainMessageQueue moves pending user messages after the completed turn', (
 
   drainMessageQueue(store, api, threadId)
 
-  const thread = store.getState().threads.find((t) => t.id === threadId)!
+  const thread = getThread(store, threadId)
   assert.deepEqual(
     thread.messages.map((message) => message.id),
     [firstMessageId, assistantMessageId, queuedMessageId],
@@ -138,7 +153,7 @@ test('drainMessageQueue refreshes priorTodos from the live thread state', () => 
 
   drainMessageQueue(store, api, threadId)
 
-  const payload = JSON.parse(api.runs[0]![1]) as { priorTodos: Array<{ id: string }> }
+  const payload = JSON.parse(firstRun(api)[1]) as { priorTodos: Array<{ id: string }> }
   assert.deepEqual(payload.priorTodos, [{ id: 'live', content: 'live', status: 'pending' }])
 })
 
@@ -238,7 +253,7 @@ test('updateQueuedMessageText edits the payload text and the displayed bubble', 
 
   updateQueuedMessageText(store, threadId, messageId, 'edited prompt')
 
-  const thread = store.getState().threads.find((t) => t.id === threadId)!
+  const thread = getThread(store, threadId)
   assert.equal(thread.pendingMessages?.[0]?.payload.content, 'edited prompt')
   assert.equal(thread.messages.find((m) => m.id === messageId)?.content, 'edited prompt')
 })
@@ -260,8 +275,7 @@ test('updateQueuedMessageText preserves images when editing an array payload', (
 
   updateQueuedMessageText(store, threadId, messageId, 'edited')
 
-  const content = store.getState().threads.find((t) => t.id === threadId)!.pendingMessages?.[0]
-    ?.payload.content
+  const content = getThread(store, threadId).pendingMessages?.[0]?.payload.content
   assert.deepEqual(content, [
     { type: 'image', dataUrl: 'data:img' },
     { type: 'text', text: 'edited' },
@@ -286,7 +300,7 @@ test('sendQueuedMessageNow reorders to the front and aborts the running thread',
 
   sendQueuedMessageNow(store, api, threadId, 'second')
 
-  const thread = store.getState().threads.find((t) => t.id === threadId)!
+  const thread = getThread(store, threadId)
   assert.deepEqual(
     thread.pendingMessages?.map((p) => p.messageId),
     ['second', 'first'],
@@ -313,7 +327,7 @@ test('sendQueuedMessageNow reorders but does not abort a running remote agent', 
 
   sendQueuedMessageNow(store, api, threadId, 'second')
 
-  const thread = store.getState().threads.find((t) => t.id === threadId)!
+  const thread = getThread(store, threadId)
   assert.deepEqual(
     thread.pendingMessages?.map((p) => p.messageId),
     ['second', 'first'],
@@ -337,11 +351,11 @@ test('sendQueuedMessageNow lifts pause and drains immediately when idle', () => 
 
   sendQueuedMessageNow(store, api, threadId, 'msg-1')
 
-  const thread = store.getState().threads.find((t) => t.id === threadId)!
+  const thread = getThread(store, threadId)
   assert.equal(thread.queuePaused, undefined)
   assert.equal(thread.status, 'running')
   assert.equal(api.runs.length, 1)
-  assert.match(api.runs[0]![1], /go now/)
+  assert.match(firstRun(api)[1], /go now/)
 })
 
 test('resumePendingQueues clears a stale pause then drains', () => {
@@ -357,7 +371,7 @@ test('resumePendingQueues clears a stale pause then drains', () => {
 
   resumePendingQueues(store, api)
 
-  const thread = store.getState().threads.find((t) => t.id === threadId)!
+  const thread = getThread(store, threadId)
   assert.equal(thread.queuePaused, undefined)
   assert.equal(api.runs.length, 1)
 })
@@ -370,7 +384,7 @@ test('resumePendingQueues resets a stale running status when the queue is empty'
 
   resumePendingQueues(store, api)
 
-  const thread = store.getState().threads.find((t) => t.id === threadId)!
+  const thread = getThread(store, threadId)
   assert.equal(thread.status, 'idle')
   assert.equal(api.runs.length, 0)
 })

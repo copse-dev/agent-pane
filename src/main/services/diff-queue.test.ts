@@ -1,5 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { at } from '@shared/array-utils.ts'
 import { mkdtemp, readFile, writeFile, rm, mkdir } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
@@ -128,7 +129,8 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
       language: 'plaintext',
     })
     assert.equal(result.status, 'error')
-    if (result.status === 'error') assert.match(result.error, /EISDIR|illegal|directory/i)
+    // `assert.equal` (strict mode) narrows `result` to the error variant.
+    assert.match(result.error, /EISDIR|illegal|directory/i)
   })
 })
 
@@ -325,8 +327,12 @@ describe('upsertStagedDiffEntry', () => {
 })
 
 describe('stageDiff same-path coalescing (#118)', () => {
-  beforeEach(() => clearDiffQueueForTest())
-  afterEach(() => clearDiffQueueForTest())
+  beforeEach(() => {
+    clearDiffQueueForTest()
+  })
+  afterEach(() => {
+    clearDiffQueueForTest()
+  })
 
   it('keeps a single queue entry for a path and preserves the original before snapshot', async () => {
     await stageDiff('a.txt', 'orig\n', 'v1\n', 'plaintext')
@@ -335,8 +341,8 @@ describe('stageDiff same-path coalescing (#118)', () => {
     const entries = queue.filter((e) => e.path === 'a.txt')
     assert.equal(entries.length, 1, 'duplicate same-path entries must be coalesced')
     // Baseline stays the first staged `before`; content is the latest proposal.
-    assert.equal(entries[0]!.before, 'orig\n')
-    assert.equal(entries[0]!.after, 'v2\n')
+    assert.equal(at(entries, 0).before, 'orig\n')
+    assert.equal(at(entries, 0).after, 'v2\n')
   })
 
   it('keeps distinct entries for distinct paths', async () => {
@@ -376,8 +382,12 @@ describe('approveAllStagedDiffs', () => {
     assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'newA\n')
     const queue = getDiffQueueForTest()
     assert.equal(queue.length, 1)
-    assert.equal(queue[0]!.path, 'b.txt')
-    assert.equal(queue[0]!.before, 'formatted\n', 'conflict re-stages against current disk content')
+    assert.equal(at(queue, 0).path, 'b.txt')
+    assert.equal(
+      at(queue, 0).before,
+      'formatted\n',
+      'conflict re-stages against current disk content',
+    )
     assert.equal(await readFile(join(tempRoot, 'b.txt'), 'utf-8'), 'formatted\n')
   })
 

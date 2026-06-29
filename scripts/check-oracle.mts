@@ -90,8 +90,8 @@ function expectGate(files: string[], labeled: boolean, ok: boolean): string | nu
   const gate = computeScreenshotGate(files, labeled)
   return gate.ok === ok
     ? null
-    : `expected screenshot gate ok=${ok} for ${files.join(', ')} (labeled=${labeled}); ` +
-        `got ok=${gate.ok} (affected=[${gate.affected.join(', ')}], missing=[${gate.missing.join(', ')}])`
+    : `expected screenshot gate ok=${String(ok)} for ${files.join(', ')} (labeled=${String(labeled)}); ` +
+        `got ok=${String(gate.ok)} (affected=[${gate.affected.join(', ')}], missing=[${gate.missing.join(', ')}])`
 }
 
 // A screenshot-producing spec + the reference PNGs it writes. Changing the spec
@@ -159,13 +159,13 @@ function main(): void {
 
   if (!liveness.length && !failedInvariants.length) {
     console.log(
-      `✓ oracle check: ${listSpecs().length} specs live, ${INVARIANTS.length} invariants hold`,
+      `✓ oracle check: ${String(listSpecs().length)} specs live, ${String(INVARIANTS.length)} invariants hold`,
     )
     return
   }
 
   if (liveness.length) {
-    console.error(`\n✗ ${liveness.length} spec(s) not selectable by the oracle (liveness):`)
+    console.error(`\n✗ ${String(liveness.length)} spec(s) not selectable by the oracle (liveness):`)
     for (const v of liveness) console.error(`    ${v.spec.replace('tests/e2e/', '')} — ${v.reason}`)
     console.error(
       '\n  Fix: ensure the spec queries a selector that exists in source, or imports the\n' +
@@ -175,8 +175,9 @@ function main(): void {
     )
   }
   if (failedInvariants.length) {
-    console.error(`\n✗ ${failedInvariants.length} oracle invariant(s) broken:`)
-    for (const { inv, err } of failedInvariants) console.error(`    ${inv.name}\n        ${err}`)
+    console.error(`\n✗ ${String(failedInvariants.length)} oracle invariant(s) broken:`)
+    for (const { inv, err } of failedInvariants)
+      console.error(`    ${inv.name}\n        ${err ?? ''}`)
   }
   process.exit(1)
 }

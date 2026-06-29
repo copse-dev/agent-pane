@@ -29,7 +29,7 @@ export function bindFooterCompactLayout(
   let compact = footer.classList.contains('is-compact')
   let frame = 0
 
-  const sync = () => {
+  const sync = (): void => {
     cancelAnimationFrame(frame)
     frame = requestAnimationFrame(() => {
       footer.classList.remove('is-compact')
@@ -51,7 +51,7 @@ export function bindFooterCompactLayout(
 
   return {
     isCompact: () => footer.classList.contains('is-compact'),
-    destroy: () => {
+    destroy: (): void => {
       cancelAnimationFrame(frame)
       observer.disconnect()
       window.removeEventListener('resize', sync)

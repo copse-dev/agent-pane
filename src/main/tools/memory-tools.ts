@@ -50,7 +50,7 @@ export const recallTool = defineTool({
         ? `No memories match "${trimmed}".`
         : 'No memories stored yet for this project. Use the remember tool to add one.'
     }
-    const header = `Found ${memories.length} ${memories.length === 1 ? 'memory' : 'memories'}:`
+    const header = `Found ${String(memories.length)} ${memories.length === 1 ? 'memory' : 'memories'}:`
     return [header, ...memories.map(formatMemory)].join('\n\n')
   },
 })

@@ -78,7 +78,7 @@ export function uniqueProviderSlug(desired: string, taken: readonly string[] = [
   const used = new Set<string>([...RESERVED_PROVIDER_SLUGS, ...taken])
   if (!used.has(base)) return base
   for (let n = 2; ; n++) {
-    const candidate = `${base}-${n}`
+    const candidate = `${base}-${String(n)}`
     if (!used.has(candidate)) return candidate
   }
 }

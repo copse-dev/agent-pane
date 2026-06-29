@@ -27,14 +27,14 @@ export function mountFooterModelPicker(
   let open = false
   const cleanups: Array<() => void> = []
 
-  function setOpen(next: boolean) {
+  function setOpen(next: boolean): void {
     open = next
     trigger.setAttribute('aria-expanded', String(next))
     if (next) menu.removeAttribute('hidden')
     else menu.setAttribute('hidden', '')
   }
 
-  function renderMenu(options: Awaited<ReturnType<typeof fetchModelOptions>>) {
+  function renderMenu(options: Awaited<ReturnType<typeof fetchModelOptions>>): void {
     clear(menu)
     const current = getCurrent()
     let lastGroup: string | undefined
@@ -66,12 +66,12 @@ export function mountFooterModelPicker(
     }
   }
 
-  function updateTrigger() {
+  function updateTrigger(): void {
     labelEl.textContent = modelDisplayLabel(getCurrent())
     labelEl.title = getCurrent()
   }
 
-  async function refresh() {
+  async function refresh(): Promise<void> {
     const options = await fetchModelOptions(api, getCurrent())
     renderMenu(options)
     updateTrigger()
@@ -95,6 +95,10 @@ export function mountFooterModelPicker(
 
   return {
     refresh: () => void refresh(),
-    destroy: () => cleanups.forEach((u) => u()),
+    destroy: (): void => {
+      cleanups.forEach((u) => {
+        u()
+      })
+    },
   }
 }

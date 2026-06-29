@@ -33,17 +33,17 @@ export interface IpcInvokeMap {
 
   // File system
   'fs:readFile': { args: [path: string]; result: string }
-  'fs:writeFile': { args: [path: string, content: string]; result: void }
+  'fs:writeFile': { args: [path: string, content: string]; result: undefined }
   'fs:readdir': { args: [path: string]; result: string[] }
   'fs:listDir': { args: [path: string]; result: { name: string; isDir: boolean }[] }
-  'fs:watch': { args: [path: string]; result: void }
-  'fs:unwatch': { args: [path: string]; result: void }
+  'fs:watch': { args: [path: string]; result: undefined }
+  'fs:unwatch': { args: [path: string]; result: undefined }
 
   // Agent
-  'agent:run': { args: [threadId: string, prompt: string]; result: void }
-  'agent:abort': { args: [threadId: string]; result: void }
-  'agent:clearHistory': { args: [threadId: string]; result: void }
-  'agent:refreshModelContext': { args: []; result: void }
+  'agent:run': { args: [threadId: string, prompt: string]; result: undefined }
+  'agent:abort': { args: [threadId: string]; result: undefined }
+  'agent:clearHistory': { args: [threadId: string]; result: undefined }
+  'agent:refreshModelContext': { args: []; result: undefined }
   'agent:suggestTitle': { args: [text: string]; result: string | null }
   'agent:suggestTerminalTitle': { args: [text: string]; result: string | null }
   'agent:suggestFollowUps': {
@@ -52,13 +52,16 @@ export interface IpcInvokeMap {
   }
 
   // Diff approval
-  'diff:approve': { args: [path: string]; result: void }
-  'diff:reject': { args: [path: string]; result: void }
-  'diff:approveAll': { args: []; result: void }
-  'diff:rejectAll': { args: []; result: void }
+  'diff:approve': { args: [path: string]; result: undefined }
+  'diff:reject': { args: [path: string]; result: undefined }
+  'diff:approveAll': { args: []; result: undefined }
+  'diff:rejectAll': { args: []; result: undefined }
 
   // Approval gate (shell / MCP)
-  'approval:respond': { args: [id: string, approved: boolean, remember?: boolean]; result: void }
+  'approval:respond': {
+    args: [id: string, approved: boolean, remember?: boolean]
+    result: undefined
+  }
 
   // MCP servers
   'mcp:list': { args: []; result: McpServerStatus[] }
@@ -72,7 +75,7 @@ export interface IpcInvokeMap {
 
   // Settings
   'settings:get': { args: [key: string]; result: unknown }
-  'settings:set': { args: [key: string, value: unknown]; result: void }
+  'settings:set': { args: [key: string, value: unknown]; result: undefined }
   'settings:setSecurity': {
     args: [
       prefs: {
@@ -87,10 +90,10 @@ export interface IpcInvokeMap {
         webAllowUserApproval: boolean
       },
     ]
-    result: void
+    result: undefined
   }
   'settings:getKey': { args: [provider: Provider]; result: boolean }
-  'settings:setKey': { args: [provider: Provider, key: string]; result: void }
+  'settings:setKey': { args: [provider: Provider, key: string]; result: undefined }
   'settings:refreshHuggingFaceModels': {
     args: [key?: string]
     result: { ok: boolean; count: number; error?: string }
@@ -124,34 +127,34 @@ export interface IpcInvokeMap {
   }
 
   // App icon
-  'app-icon:apply': { args: []; result: void }
+  'app-icon:apply': { args: []; result: undefined }
 
   // Usage ledger
   'usage:record': {
     args: [input: import('@shared/usage/usage-event.ts').UsageRecordInput]
-    result: void
+    result: undefined
   }
   'usage:getSummary': { args: []; result: import('@shared/usage/aggregate-usage.ts').UsageSummary }
 
   // Storage (generic electron-store access)
   'storage:get': { args: [key: string]; result: unknown }
-  'storage:set': { args: [key: string, value: unknown]; result: void }
+  'storage:set': { args: [key: string, value: unknown]; result: undefined }
 
   // Index
   'index:query': { args: [pattern: string]; result: string[] }
 
   // Terminal
   'terminal:create': { args: [cols: number, rows: number]; result: string }
-  'terminal:write': { args: [sessionId: string, data: string]; result: void }
-  'terminal:resize': { args: [sessionId: string, cols: number, rows: number]; result: void }
-  'terminal:destroy': { args: [sessionId: string]; result: void }
+  'terminal:write': { args: [sessionId: string, data: string]; result: undefined }
+  'terminal:resize': { args: [sessionId: string, cols: number, rows: number]; result: undefined }
+  'terminal:destroy': { args: [sessionId: string]; result: undefined }
 
   // Git
   'git:status': { args: []; result: GitStatusResult | null }
   'git:fileDiff': { args: [path: string, staged: boolean]; result: GitFileDiff | null }
   'git:isAvailable': { args: []; result: boolean }
   'git:branchStatus': { args: [forBranch?: string]; result: GitBranchStatus }
-  'git:checkoutBranch': { args: [branch: string]; result: void }
+  'git:checkoutBranch': { args: [branch: string]; result: undefined }
 
   // GitHub CLI / pull requests
   'gh:status': { args: []; result: import('./git.ts').GhCliStatus }
@@ -179,7 +182,7 @@ export interface IpcInvokeMap {
   'remoteAgent:artifactImageDataUrl': { args: [agentId: string, path: string]; result: string }
 
   // Shell
-  'shell:openExternal': { args: [url: string]; result: void }
+  'shell:openExternal': { args: [url: string]; result: undefined }
 
   // LM Studio
   'lmstudio:test': {

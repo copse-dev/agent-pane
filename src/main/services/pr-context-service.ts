@@ -42,9 +42,8 @@ export function parseDiffNumstat(raw: string): { additions: number; deletions: n
 /** True when porcelain status marks an unmerged path (UU, AA, DD, …). */
 export function porcelainHasMergeConflicts(raw: string): boolean {
   for (const entry of raw.split('\0').filter(Boolean)) {
-    if (entry.length < 2) continue
-    const x = entry[0]!
-    const y = entry[1]!
+    const [x, y] = entry
+    if (x === undefined || y === undefined) continue
     if (x === 'U' || y === 'U') return true
     if (x === 'A' && y === 'A') return true
     if (x === 'D' && y === 'D') return true
@@ -65,11 +64,11 @@ export function parseGhOpenPrList(raw: string): GitOpenPr | null {
   if (!raw.trim()) return null
   const list = safeJsonParse<GhPrView[]>(raw)
   if (!Array.isArray(list) || list.length === 0) return null
-  const pr = list[0]!
-  if (typeof pr.number !== 'number' || !pr.url) return null
+  const pr = list[0]
+  if (!pr || typeof pr.number !== 'number' || !pr.url) return null
   return {
     number: pr.number,
-    title: pr.title?.trim() || `PR #${pr.number}`,
+    title: pr.title?.trim() || `PR #${String(pr.number)}`,
     url: pr.url,
   }
 }
@@ -98,7 +97,7 @@ export function parseGhOpenPr(raw: string): GitOpenPr | null {
   if (typeof pr.number !== 'number' || !pr.url) return null
   return {
     number: pr.number,
-    title: pr.title?.trim() || `PR #${pr.number}`,
+    title: pr.title?.trim() || `PR #${String(pr.number)}`,
     url: pr.url,
   }
 }

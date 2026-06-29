@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 
-async function loadWebSearch() {
+async function loadWebSearch(): Promise<typeof import('../services/web-search/index.ts')> {
   return import('../services/web-search/index.ts')
 }
 
@@ -33,7 +33,7 @@ export const fetchUrlTool = defineTool({
   description:
     'Fetch a public HTTP/HTTPS URL and return readable Markdown extracted from the page content.',
   parameters: z.object({
-    url: z.string().url().describe('HTTP/HTTPS URL to fetch'),
+    url: z.url().describe('HTTP/HTTPS URL to fetch'),
   }),
   async execute({ url }, signal) {
     const { fetchUrlMarkdown } = await loadWebSearch()

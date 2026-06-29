@@ -9,7 +9,7 @@ import { sortThreadsNewestFirst } from '@shared/store/thread-helpers.ts'
 
 const KEY_PROJECTS = 'projects'
 const KEY_ACTIVE = 'activeProjectId'
-const threadsKey = (projectId: string) => `threads:${projectId}`
+const threadsKey = (projectId: string): string => `threads:${projectId}`
 
 // Autosave fires several events per turn and project switches save/load
 // concurrently, so writes to the same key could overlap and land out of order
@@ -97,7 +97,7 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
     return writeNow()
   }
 
-  const scheduleSave = () => {
+  const scheduleSave = (): void => {
     if (timer !== null) return // a save is already pending; coalesce into it
     timer = setTimeout(() => {
       timer = null
@@ -120,17 +120,19 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
   // electron-store IPC is dispatched synchronously when the call is made, so
   // kicking the (debounced) write here — bypassing the timer via flush() — gives
   // the final save the best chance to be delivered before the window dies.
-  const onPagehide = () => void flush()
+  const onPagehide = (): void => void flush()
   window.addEventListener('pagehide', onPagehide)
 
   return {
     flush,
-    detach() {
+    detach(): void {
       if (timer !== null) {
         clearTimeout(timer)
         timer = null
       }
-      unsubscribes.forEach((u) => u())
+      unsubscribes.forEach((u) => {
+        u()
+      })
       window.removeEventListener('pagehide', onPagehide)
     },
   }

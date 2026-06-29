@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { at } from '@shared/array-utils.ts'
 import { runAgentLoop } from './run-agent-loop.ts'
 import { AGENT_RUN_ABORT_REASON_TIMEOUT, AgentRunDeadline } from './agent-loop-limits.ts'
 import { getLastMeasuredInputTokens, setLastMeasuredInputTokens } from './trim-history.ts'
@@ -8,8 +9,8 @@ import type { LLMMessage, LLMProvider, StreamChunk } from '@shared/types'
 function mockProvider(chunks: StreamChunk[][]): LLMProvider {
   let call = 0
   return {
-    async *stream() {
-      for (const chunk of chunks[call++ % chunks.length]!) yield chunk
+    async *stream(): AsyncGenerator<StreamChunk> {
+      for (const chunk of at(chunks, call++ % chunks.length)) yield chunk
     },
   }
 }
@@ -20,12 +21,11 @@ function assertToolPairingValid(messages: LLMMessage[]): void {
     const m = messages[i]
     if (m?.role !== 'assistant' || !Array.isArray(m.content)) continue
     const next = messages[i + 1]
-    assert.equal(
-      next?.role,
-      'tool',
-      `assistant tool_use at ${i} must be followed by a tool message`,
+    assert.ok(
+      next?.role === 'tool',
+      `assistant tool_use at ${String(i)} must be followed by a tool message`,
     )
-    const have = new Set(next?.role === 'tool' ? next.toolResults.map((r) => r.toolCallId) : [])
+    const have = new Set(next.toolResults.map((r) => r.toolCallId))
     for (const tc of m.content) {
       assert.ok(have.has(tc.id), `tool_use ${tc.id} has no matching tool_result`)
     }
@@ -105,8 +105,8 @@ describe('runAgentLoop', () => {
     assert.equal(executed, false, 'tool must not run with malformed args')
     const errorResult = chunks.find((c) => c.type === 'tool_result')
     assert.ok(errorResult)
-    assert.equal(errorResult.type === 'tool_result' && errorResult.isError, true)
-    assert.match(errorResult.type === 'tool_result' ? errorResult.result : '', /bad JSON/)
+    assert.equal(errorResult.isError, true)
+    assert.match(errorResult.result, /bad JSON/)
   })
 
   it('stops after maxSteps', async () => {
@@ -273,7 +273,7 @@ src/renderer/views/projects-pane.ts
         listDirCalls++
         yield {
           type: 'tool_call',
-          toolCall: { id: `ld-${listDirCalls}`, name: 'list_dir', args: { path: '.' } },
+          toolCall: { id: `ld-${String(listDirCalls)}`, name: 'list_dir', args: { path: '.' } },
         }
         yield { type: 'done' }
       },
@@ -574,13 +574,13 @@ src/renderer/views/projects-pane.ts
     const events: string[] = []
     const origPause = deadline.pause.bind(deadline)
     const origResume = deadline.resume.bind(deadline)
-    deadline.pause = (now) => {
+    deadline.pause = (now): void => {
       events.push('pause')
-      return origPause(now)
+      origPause(now)
     }
-    deadline.resume = (now) => {
+    deadline.resume = (now): void => {
       events.push('resume')
-      return origResume(now)
+      origResume(now)
     }
     let pausedDuringTool: boolean | null = null
     const chunks: StreamChunk[] = []
@@ -625,7 +625,7 @@ src/renderer/views/projects-pane.ts
       executeTool: async () => '',
     })
     const usage = chunks.find((c) => c.type === 'usage')
-    assert.ok(usage && usage.type === 'usage')
+    assert.ok(usage)
     assert.equal(usage.inputTokens, 321)
     assert.equal(usage.outputTokens, 12)
     assert.equal(usage.model, 'attributed-model')
@@ -650,7 +650,7 @@ src/renderer/views/projects-pane.ts
       executeTool: async () => '',
     })
     const usage = chunks.find((c) => c.type === 'usage')
-    assert.ok(usage && usage.type === 'usage')
+    assert.ok(usage)
     assert.equal(usage.inputTokens, 120)
     assert.equal(usage.outputTokens, 80)
   })

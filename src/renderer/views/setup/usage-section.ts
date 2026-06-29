@@ -52,7 +52,8 @@ function renderModelTable(
     </thead>
     <tbody></tbody>
   `
-  const tbody = table.querySelector('tbody')!
+  const tbody = table.querySelector('tbody')
+  if (!tbody) throw new Error('usage table is missing its tbody')
   for (const row of rows) {
     const tr = document.createElement('tr')
     tr.innerHTML = `
@@ -95,7 +96,7 @@ function renderPeriodSummary(
         ? new Date(meta.trackingStartedAt).toLocaleString()
         : 'not yet'
     note.textContent =
-      `Ledger: ${meta.ledgerEventCount} event(s) tracked (since ${trackedSince}). ` +
+      `Ledger: ${String(meta.ledgerEventCount)} event(s) tracked (since ${trackedSince}). ` +
       'Time windows include cloud and local models recorded on each agent turn. ' +
       'All-time totals come from saved threads and may include older usage.'
     host.append(note)

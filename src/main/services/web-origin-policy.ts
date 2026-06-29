@@ -239,7 +239,7 @@ export async function fetchWithWebOriginPolicy(
     if (!location) return res
     url = new URL(location, url)
   }
-  throw new Error(`Fetch exceeded ${MAX_REDIRECTS} redirects: ${initialUrl.toString()}`)
+  throw new Error(`Fetch exceeded ${String(MAX_REDIRECTS)} redirects: ${initialUrl.toString()}`)
 }
 
 export async function readWebResponseText(res: Response): Promise<string> {
@@ -251,11 +251,10 @@ export async function readWebResponseText(res: Response): Promise<string> {
   for (;;) {
     const { done, value } = await reader.read()
     if (done) break
-    if (!value) continue
     received += value.byteLength
     if (received > MAX_WEB_FETCH_BYTES) {
       await reader.cancel()
-      throw new Error(`Fetch response exceeded ${MAX_WEB_FETCH_BYTES} bytes`)
+      throw new Error(`Fetch response exceeded ${String(MAX_WEB_FETCH_BYTES)} bytes`)
     }
     chunks.push(value)
   }

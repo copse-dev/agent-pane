@@ -36,7 +36,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
     selectedRow = row
   }
 
-  async function openFile(path: string) {
+  async function openFile(path: string): Promise<void> {
     try {
       await openWorkspaceFile(store, api, path)
     } catch {
@@ -50,7 +50,9 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
     let dir = ''
     const expandThrough = isDirectory ? segments.length : segments.length - 1
     for (let i = 0; i < expandThrough; i++) {
-      dir = join(dir, segments[i]!)
+      const segment = segments[i]
+      if (segment === undefined) break
+      dir = join(dir, segment)
       const controller = dirByPath.get(dir)
       if (!controller) return
       await controller.expand()
@@ -80,7 +82,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
       icon,
       el('span', {}, entry.name),
     )
-    row.style.paddingLeft = `${8 + depth * 14}px`
+    row.style.paddingLeft = `${String(8 + depth * 14)}px`
     rowByPath.set(path, row)
 
     const container = el('div', {})
@@ -92,13 +94,13 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
       container.append(childrenEl)
       let loaded = false
       let expanded = false
-      const expand = async () => {
+      const expand = async (): Promise<void> => {
         if (expanded) return
-        expanded = !expanded
-        twisty.textContent = expanded ? '▼' : '▶'
+        expanded = true
+        twisty.textContent = '▼'
         mountMaterialIcon(icon, materialFolderIconUrl(path, expanded), `${entry.name} folder`)
-        childrenEl.hidden = !expanded
-        if (expanded && !loaded) {
+        childrenEl.hidden = false
+        if (!loaded) {
           loaded = true
           await loadInto(childrenEl, path, depth + 1)
         }
@@ -128,7 +130,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
     return container
   }
 
-  async function loadInto(target: HTMLElement, dirPath: string, depth: number) {
+  async function loadInto(target: HTMLElement, dirPath: string, depth: number): Promise<void> {
     try {
       const entries = await api.fs.listDir(dirPath)
       clear(target)
@@ -147,7 +149,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
     }
   }
 
-  function refresh() {
+  function refresh(): void {
     if (!store.getState().workspaceRoot) {
       clear(treeEl)
       treeEl.append(el('div', { class: 'sidebar-empty' }, 'No folder open'))
@@ -176,5 +178,9 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
   ]
 
   refresh()
-  return () => unsubs.forEach((unsub) => unsub())
+  return () => {
+    unsubs.forEach((unsub) => {
+      unsub()
+    })
+  }
 }

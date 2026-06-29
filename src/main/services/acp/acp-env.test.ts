@@ -12,7 +12,7 @@ describe('buildAcpAgentEnv', () => {
   const injected = ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY', 'GITHUB_TOKEN']
 
   afterEach(() => {
-    for (const key of injected) delete process.env[key]
+    for (const key of injected) Reflect.deleteProperty(process.env, key)
   })
 
   it('strips LLM API keys from the spawned env but keeps non-LLM tool tokens', () => {

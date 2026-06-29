@@ -21,7 +21,7 @@ export default ts.config(
     ],
   },
   js.configs.recommended,
-  ...ts.configs.recommendedTypeChecked,
+  ...ts.configs.strictTypeChecked,
   prettier,
   {
     languageOptions: {
@@ -37,6 +37,7 @@ export default ts.config(
       '@typescript-eslint/no-unnecessary-type-assertion': 'error',
       '@typescript-eslint/no-this-alias': 'off',
       '@typescript-eslint/explicit-module-boundary-types': 'error',
+      '@typescript-eslint/explicit-function-return-type': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],
       'no-control-regex': 'off',
     },
@@ -68,6 +69,11 @@ export default ts.config(
         __dirname: 'readonly',
         __filename: 'readonly',
       },
+    },
+    rules: {
+      // .cjs files are executed directly by node and can't carry TypeScript
+      // return-type annotations, so this rule can't be satisfied here.
+      '@typescript-eslint/explicit-function-return-type': 'off',
     },
   },
   {

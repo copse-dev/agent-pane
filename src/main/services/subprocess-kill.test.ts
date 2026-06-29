@@ -6,7 +6,10 @@ import { terminateProcessTree, SUBPROCESS_KILL_GRACE_MS } from './subprocess-kil
 
 describe('terminateProcessTree', () => {
   it('SIGTERMs a well-behaved process and cancels the pending SIGKILL', async (t) => {
-    if (process.platform === 'win32') return t.skip('POSIX signal semantics')
+    if (process.platform === 'win32') {
+      t.skip('POSIX signal semantics')
+      return
+    }
 
     const proc = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
       stdio: 'ignore',
@@ -23,7 +26,10 @@ describe('terminateProcessTree', () => {
   })
 
   it('escalates to SIGKILL after the grace period when SIGTERM is ignored', async (t) => {
-    if (process.platform === 'win32') return t.skip('POSIX signal semantics')
+    if (process.platform === 'win32') {
+      t.skip('POSIX signal semantics')
+      return
+    }
 
     // Trap SIGTERM so only SIGKILL can stop it; announce readiness so we don't
     // signal before the handler is installed (interpreter-startup race).
@@ -45,7 +51,10 @@ describe('terminateProcessTree', () => {
   })
 
   it('targets the process group so grandchildren are reaped (group leader detached)', async (t) => {
-    if (process.platform === 'win32') return t.skip('POSIX process groups')
+    if (process.platform === 'win32') {
+      t.skip('POSIX process groups')
+      return
+    }
 
     // Parent sh spawns a sleeping grandchild then waits; both share the parent's
     // process group (pgid === parent pid) because it was spawned detached. A
@@ -63,8 +72,8 @@ describe('terminateProcessTree', () => {
 
     // Sanity-check the precondition group kill relies on: the grandchild lives in
     // the detached child's process group.
-    const pgid = spawnSync('ps', ['-o', 'pgid=', '-p', String(grandchildPid)]).stdout?.toString()
-    const sameGroup = pgid !== undefined && Number(pgid.trim()) === proc.pid
+    const pgid = spawnSync('ps', ['-o', 'pgid=', '-p', String(grandchildPid)]).stdout.toString()
+    const sameGroup = Number(pgid.trim()) === proc.pid
 
     terminateProcessTree(proc, SUBPROCESS_KILL_GRACE_MS)
     await once(proc, 'exit')

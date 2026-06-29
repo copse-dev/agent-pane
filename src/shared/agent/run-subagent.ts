@@ -10,7 +10,7 @@ import type {
   ToolExecuteResult,
 } from '@shared/types'
 
-const randomUUID = () => globalThis.crypto.randomUUID()
+const randomUUID = (): string => globalThis.crypto.randomUUID()
 
 interface ProviderWithUsage {
   lastUsage: { inputTokens: number; outputTokens: number } | null
@@ -172,7 +172,7 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
   // the loop emits (#58). Each chunk reflects exactly one stream, so subagent
   // usage is attributed once and never read from the shared mutable
   // provider.lastUsage that the parent also writes to (#112).
-  const recordUsage = (chunk: Extract<StreamChunk, { type: 'usage' }>) => {
+  const recordUsage = (chunk: Extract<StreamChunk, { type: 'usage' }>): void => {
     const prev = session.usage ?? { inputTokens: 0, outputTokens: 0 }
     const next: NonNullable<SubagentSession['usage']> = {
       inputTokens: prev.inputTokens + chunk.inputTokens,
@@ -206,7 +206,8 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
         }
         if (chunk.type === 'text') {
           const msgId = ensureAssistantMessage()
-          const msg = session.messages.find((m) => m.id === msgId)!
+          const msg = session.messages.find((m) => m.id === msgId)
+          if (!msg) throw new Error(`subagent message ${msgId} not found`)
           msg.content += chunk.text
           onSubagentChunk({
             type: 'subagent_text',
@@ -217,7 +218,8 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
         }
         if (chunk.type === 'tool_call') {
           const msgId = ensureAssistantMessage()
-          const msg = session.messages.find((m) => m.id === msgId)!
+          const msg = session.messages.find((m) => m.id === msgId)
+          if (!msg) throw new Error(`subagent message ${msgId} not found`)
           msg.toolCalls.push({
             id: chunk.toolCall.id,
             name: chunk.toolCall.name,

@@ -61,7 +61,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
   const visibleThreadCounts = new Map<string, number>()
 
-  function render() {
+  function render(): void {
     clear(list)
     const { projects, activeProjectId, expandedProjectId, activeThreadId } = store.getState()
     const expandedId = expandedProjectId ?? activeProjectId
@@ -79,7 +79,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         el('span', { class: 'project-twisty' }, isExpanded ? '▼' : '▶'),
         el('span', { class: 'project-name' }, project.name),
       )
-      projectRow.addEventListener('click', () => switchProject(store, api, project.id))
+      projectRow.addEventListener('click', () => {
+        switchProject(store, api, project.id)
+      })
 
       if (isExpanded) {
         const projectLine = el('div', { class: 'project-line' })
@@ -137,9 +139,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           },
           el('span', { class: 'chat-title' }, thread.title || 'New Thread'),
         )
-        chatRow.addEventListener('click', () =>
-          switchProjectThread(store, api, project.id, thread.id),
-        )
+        chatRow.addEventListener('click', () => {
+          switchProjectThread(store, api, project.id, thread.id)
+        })
 
         const del = el('button', { class: 'chat-delete', 'aria-label': 'Delete thread' }, '✕')
         del.addEventListener('click', (e) => {
@@ -174,5 +176,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   ]
 
   render()
-  return () => unsubs.forEach((u) => u())
+  return () => {
+    unsubs.forEach((u) => {
+      u()
+    })
+  }
 }

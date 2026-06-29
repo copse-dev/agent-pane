@@ -71,7 +71,7 @@ if (!existsSync(NORMALIZE_PY)) {
 const probe = spawnSync(PYTHON, ['--version'], { encoding: 'utf8' })
 if (probe.status !== 0) {
   die(
-    `could not run '${PYTHON}' (set $PYTHON to override). ${probe.error?.message ?? probe.stderr ?? ''}`,
+    `could not run '${PYTHON}' (set $PYTHON to override). ${probe.error?.message ?? probe.stderr}`,
   )
 }
 
@@ -102,8 +102,10 @@ const bundled = await esbuild.build({
   write: false,
   external: ['electron', 'node-pty', 'jsdom', '@mozilla/readability', 'turndown'],
 })
+const bundledOutput = bundled.outputFiles[0]
+if (!bundledOutput) die('esbuild produced no output files')
 const harness = (await import(
-  'data:text/javascript;base64,' + Buffer.from(bundled.outputFiles[0]!.text).toString('base64')
+  'data:text/javascript;base64,' + Buffer.from(bundledOutput.text).toString('base64')
 )) as Harness
 
 const spec = harness.loadCommonMarkSpec()
@@ -142,7 +144,7 @@ writeFileSync(
   ].join('\n'),
 )
 const run = spawnSync(PYTHON, [driverPath], { encoding: 'utf8' })
-if (run.status !== 0) die(`python normalizer failed:\n${run.stderr ?? run.stdout ?? ''}`)
+if (run.status !== 0) die(`python normalizer failed:\n${run.stderr}`)
 const pyNorm = JSON.parse(readFileSync(outputsPath, 'utf8')) as Record<
   string,
   { expected: string; rendered: string }
@@ -152,8 +154,9 @@ const pyNorm = JSON.parse(readFileSync(outputsPath, 'utf8')) as Record<
 const jsPass = new Set<number>()
 const pyPass = new Set<number>()
 for (const e of spec) {
-  const js = jsNorm.get(e.example)!
-  const py = pyNorm[String(e.example)]!
+  const js = jsNorm.get(e.example)
+  const py = pyNorm[String(e.example)]
+  if (!js || !py) die(`missing normalized output for example #${String(e.example)}`)
   if (js.expected === js.rendered) jsPass.add(e.example)
   if (py.expected === py.rendered) pyPass.add(e.example)
 }
@@ -164,8 +167,9 @@ const pyOnly = [...pyPass].filter((n) => !jsPass.has(n)).sort((a, b) => a - b)
 const unexpected: string[] = []
 const usedAllow = new Set<number>()
 for (const e of spec) {
-  const js = jsNorm.get(e.example)!
-  const py = pyNorm[String(e.example)]!
+  const js = jsNorm.get(e.example)
+  const py = pyNorm[String(e.example)]
+  if (!js || !py) die(`missing normalized output for example #${String(e.example)}`)
   const expectedDiffers = js.expected !== py.expected
   const renderedDiffers = js.rendered !== py.rendered
   if (!expectedDiffers && !renderedDiffers) continue
@@ -182,7 +186,7 @@ for (const e of spec) {
   const which = [expectedDiffers ? 'expected' : '', renderedDiffers ? 'rendered' : '']
     .filter(Boolean)
     .join('+')
-  unexpected.push(`#${e.example} (${e.section}) [${which}]`)
+  unexpected.push(`#${String(e.example)} (${e.section}) [${which}]`)
 }
 const staleAllow = Object.keys(ALLOWED_STRING_DIVERGENCES)
   .map(Number)
@@ -199,7 +203,7 @@ if (jsOnly.length || pyOnly.length) {
 }
 if (unexpected.length) {
   problems.push(
-    `Unexpected normalization divergence on ${unexpected.length} example(s) — JS normalizer drifted from normalize.py:\n  ${unexpected.join('\n  ')}\n` +
+    `Unexpected normalization divergence on ${String(unexpected.length)} example(s) — JS normalizer drifted from normalize.py:\n  ${unexpected.join('\n  ')}\n` +
       'If a new divergence is genuinely a pathological raw-HTML case, add it to ALLOWED_STRING_DIVERGENCES with a reason; otherwise fix tests/commonmark/normalize.ts.',
   )
 }
@@ -212,6 +216,6 @@ if (staleAllow.length) {
 if (problems.length) die(problems.join('\n\n'))
 
 console.log(
-  `check-normalizer-parity: OK — JS normalizer matches normalize.py across all ${spec.length} examples ` +
-    `(pass set ${jsPass.size}/${spec.length}; ${usedAllow.size} documented raw-HTML divergence(s)).`,
+  `check-normalizer-parity: OK — JS normalizer matches normalize.py across all ${String(spec.length)} examples ` +
+    `(pass set ${String(jsPass.size)}/${String(spec.length)}; ${String(usedAllow.size)} documented raw-HTML divergence(s)).`,
 )

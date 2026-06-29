@@ -73,7 +73,7 @@ export function attachWebContentsLockdown(contents: WebContents): void {
     hardenWebviewPreferences(webPreferences)
   })
 
-  const blockIfDisallowed = (event: Electron.Event, url: string) => {
+  const blockIfDisallowed = (event: Electron.Event, url: string): void => {
     if (!isAllowedRendererNavigation(url)) {
       event.preventDefault()
       if (isExternalHttpUrl(url)) void shell.openExternal(url)

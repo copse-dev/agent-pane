@@ -8,8 +8,7 @@ function ensureNodePtySpawnHelperExecutable(): void {
   if (!existsSync(prebuildsRoot)) return
 
   const queue = [prebuildsRoot]
-  while (queue.length > 0) {
-    const dir = queue.pop()!
+  for (let dir = queue.pop(); dir !== undefined; dir = queue.pop()) {
     for (const entry of readdirSync(dir)) {
       const path = join(dir, entry)
       const stat = statSync(path)

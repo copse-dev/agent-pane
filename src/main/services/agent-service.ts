@@ -4,7 +4,7 @@ import {
   createAgentRunAbortScheduler,
   DEFAULT_MAX_LLM_CALLS,
 } from '@shared/agent/agent-loop-limits.ts'
-import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
+import type { LLMMessage, LLMTool, StreamChunk, UserContent } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { getSetting } from './settings.ts'
@@ -95,7 +95,11 @@ export const PARENT_DELEGATED_TOOLS = [
 /** Tools that only function as subagent entry points; hidden when subagents are off. */
 const SUBAGENT_ENTRY_TOOLS = new Set<string>(['explore', 'investigate_ci'])
 
-function parentTools(registry: ToolRegistry, subagentsEnabled: boolean, readonlyMode: boolean) {
+function parentTools(
+  registry: ToolRegistry,
+  subagentsEnabled: boolean,
+  readonlyMode: boolean,
+): LLMTool[] {
   let tools = registry.toLLMTools()
   if (!subagentsEnabled) {
     tools = tools
@@ -245,7 +249,7 @@ export async function runAgent(
     trimmed = prepared.trimmed
     const { wasTrimmed, conversationBudget } = prepared
     const { notifyTrimmed } = createTrimNotifier(wasTrimmed)
-    const sendTrimNotice = () => {
+    const sendTrimNotice = (): void => {
       sendChunk(contextTrimmedChunk(trimmed, contextWindow, prepared.historyBudget))
     }
     if (wasTrimmed) notifyTrimmed(sendTrimNotice)
@@ -416,7 +420,9 @@ export async function runAgent(
           signal: controller.signal,
           maxContextTokens: contextWindow,
           toolSchemaReserveTokens: toolSchemaReserve,
-          onHistoryTrimmed: () => notifyTrimmed(sendTrimNotice),
+          onHistoryTrimmed: () => {
+            notifyTrimmed(sendTrimNotice)
+          },
           getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
           onChunk: (chunk) => {
             if (chunk.type === 'done') {
@@ -454,6 +460,7 @@ export async function runAgent(
     // Post-turn review: when this turn changed files, run a read-only review
     // subagent over the working diff and surface its verdict. Runs before the
     // deferred `done` so the thread stays "running" until the review lands.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated inside the runAgentLoop callback above; TS narrows to the `false` initializer
     if (turnChangedFiles && getSetting<boolean>('postTurnReviewEnabled', true)) {
       sendChunk({ type: 'post_turn_review', status: 'running', summary: '' })
       try {
@@ -485,6 +492,7 @@ export async function runAgent(
       }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- assigned inside the onChunk callback above; TS narrows to the `null` initializer
     sendChunk(deferredDone ?? { type: 'done' })
   } catch (err) {
     const msg = classifyAgentError(err)

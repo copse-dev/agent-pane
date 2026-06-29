@@ -38,21 +38,24 @@ export function loadCommonMarkSpec(): SpecExample[] {
   const examples: SpecExample[] = []
   let section = ''
   let number = 0
-  text.replace(EXAMPLE_RE, (_match, markdown: string, html: string, heading: string) => {
-    if (heading !== undefined) {
-      section = heading
-    } else {
-      number++
-      // spec.txt renders tabs as a visible `→` glyph; the spec's own test
-      // extractor (spec_tests.py) substitutes real tabs back in.
-      examples.push({
-        markdown: markdown.replace(/→/g, '\t'),
-        html: html.replace(/→/g, '\t'),
-        example: number,
-        section,
-      })
-    }
-    return ''
-  })
+  text.replace(
+    EXAMPLE_RE,
+    (_match, markdown: string, html: string, heading: string | undefined) => {
+      if (heading !== undefined) {
+        section = heading
+      } else {
+        number++
+        // spec.txt renders tabs as a visible `→` glyph; the spec's own test
+        // extractor (spec_tests.py) substitutes real tabs back in.
+        examples.push({
+          markdown: markdown.replace(/→/g, '\t'),
+          html: html.replace(/→/g, '\t'),
+          example: number,
+          section,
+        })
+      }
+      return ''
+    },
+  )
   return examples
 }

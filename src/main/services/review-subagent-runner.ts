@@ -9,6 +9,7 @@ import {
 import type {
   LLMProvider,
   LLMMessage,
+  LLMTool,
   ModelUsage,
   StreamChunk,
   ToolExecuteResult,
@@ -35,7 +36,7 @@ export interface PostTurnReviewResult {
   usage: ModelUsage
 }
 
-function filterReviewTools(registry: ToolRegistry) {
+function filterReviewTools(registry: ToolRegistry): LLMTool[] {
   const names = new Set<string>(REVIEW_TOOL_NAMES)
   return registry.toLLMTools().filter((t) => names.has(t.name))
 }

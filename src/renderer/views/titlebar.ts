@@ -4,7 +4,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { toggleRightPanelWithWorkspace } from '../controller/panels.ts'
 
-function basename(p: string) {
+function basename(p: string): string {
   return p.split('/').pop() ?? p
 }
 
@@ -141,7 +141,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     syncPanelBtns()
   })
 
-  function syncPanelBtns() {
+  function syncPanelBtns(): void {
     const { filesPaneOpen, rightPanelMode } = store.getState()
     filesBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'explorer')
     terminalBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'terminal')
@@ -152,14 +152,14 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
 
   // Surface the pending agent-proposed diff count on the Changes button so the
   // queue is visible without opening the panel.
-  function syncChangesBadge() {
-    const pending = store.getState().stagedDiffs?.length ?? 0
+  function syncChangesBadge(): void {
+    const pending = store.getState().stagedDiffs.length
     changesBadge.hidden = pending === 0
     changesBadge.textContent = String(pending)
     changesBtn.classList.toggle('has-pending', pending > 0)
   }
 
-  function syncName() {
+  function syncName(): void {
     const r = store.getState().workspaceRoot
     workspaceName.textContent = r ? basename(r) : 'No folder'
   }
@@ -169,7 +169,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
   // independent of which thread's branch is bound. A request token guards against
   // a slow response landing after the workspace has already changed.
   let branchToken = 0
-  function syncBranch() {
+  function syncBranch(): void {
     const token = ++branchToken
     const root = store.getState().workspaceRoot
     if (!root) {
@@ -194,7 +194,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
   }
 
   let branchTimer: ReturnType<typeof setTimeout> | null = null
-  function scheduleBranchSync() {
+  function scheduleBranchSync(): void {
     if (branchTimer) clearTimeout(branchTimer)
     branchTimer = setTimeout(syncBranch, 500)
   }
@@ -219,6 +219,8 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
 
   return () => {
     if (branchTimer) clearTimeout(branchTimer)
-    unsubs.forEach((u) => u())
+    unsubs.forEach((u) => {
+      u()
+    })
   }
 }

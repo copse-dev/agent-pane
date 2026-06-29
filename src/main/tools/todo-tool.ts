@@ -82,7 +82,7 @@ export const updateTodosTool = defineTool({
     const progress = updated.filter((t) => t.status !== 'cancelled')
     const done = progress.filter((t) => t.status === 'completed').length
     const lines = [
-      `Plan updated (${done}/${progress.length} done).`,
+      `Plan updated (${String(done)}/${String(progress.length)} done).`,
       ...updated.map((t) => `- [${t.status}] ${t.content}`),
     ]
     if (messages.length) lines.push('', ...messages)

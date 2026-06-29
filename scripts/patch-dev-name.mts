@@ -92,7 +92,9 @@ function isPatchApplied(): boolean {
 ensureElectronDist()
 
 if (isPatchApplied() && process.env['COPSE_PANEL_REFRESH_DOCK'] !== '1') {
-  console.log(`[patch-dev-name] ${APP_BUNDLE} already patched for Electron ${readDistVersion()}`)
+  console.log(
+    `[patch-dev-name] ${APP_BUNDLE} already patched for Electron ${readDistVersion() ?? 'unknown'}`,
+  )
   process.exit(0)
 }
 

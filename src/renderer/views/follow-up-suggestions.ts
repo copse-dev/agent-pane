@@ -1,7 +1,7 @@
 import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
+import type { FollowUpSuggestion, FollowUpContext } from '@shared/follow-ups/types.ts'
 import { switchThread, getThreadById } from '@shared/store/thread-helpers.ts'
 
 export interface FollowUpSuggestionsMount {
@@ -31,13 +31,13 @@ export function mountFollowUpSuggestions(
   let displayedThreadId: string | null = null
   const suggestionsByThread = new Map<string, CachedSuggestions>()
 
-  function clearSuggestions() {
+  function clearSuggestions(): void {
     clear(root)
     root.hidden = true
     displayedThreadId = null
   }
 
-  function renderSuggestions(threadId: string, suggestions: FollowUpSuggestion[]) {
+  function renderSuggestions(threadId: string, suggestions: FollowUpSuggestion[]): void {
     clear(root)
     if (suggestions.length === 0) {
       root.hidden = true
@@ -59,12 +59,12 @@ export function mountFollowUpSuggestions(
           el(
             'span',
             { class: 'follow-up-stat follow-up-stat-add' },
-            `+${suggestion.additions ?? 0}`,
+            `+${String(suggestion.additions ?? 0)}`,
           ),
           el(
             'span',
             { class: 'follow-up-stat follow-up-stat-del' },
-            `-${suggestion.deletions ?? 0}`,
+            `-${String(suggestion.deletions ?? 0)}`,
           ),
         )
       } else {
@@ -85,7 +85,7 @@ export function mountFollowUpSuggestions(
     displayedThreadId = threadId
   }
 
-  function lastExchange(threadId: string) {
+  function lastExchange(threadId: string): { turnKey: string; context: FollowUpContext } | null {
     const thread = getThreadById(store, threadId)
     if (!thread) return null
 
@@ -95,7 +95,8 @@ export function mountFollowUpSuggestions(
     const lastAssistant = assistantMessages.at(-1)
     if (!lastUser?.content.trim() || !lastAssistant) return null
 
-    const toolNames = lastAssistant.toolCalls?.map((tc) => tc.name) ?? []
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
+    const toolNames = (lastAssistant.toolCalls ?? []).map((tc) => tc.name)
     return {
       turnKey: `${threadId}:${lastUser.id}:${lastAssistant.id}`,
       context: {
@@ -106,7 +107,7 @@ export function mountFollowUpSuggestions(
     }
   }
 
-  async function maybeFetchSuggestions(threadId: string) {
+  async function maybeFetchSuggestions(threadId: string): Promise<void> {
     const exchange = lastExchange(threadId)
     if (!exchange) {
       suggestionsByThread.delete(threadId)
@@ -124,6 +125,8 @@ export function mountFollowUpSuggestions(
 
     const token = ++fetchToken
     try {
+      // Result crosses the IPC boundary; the runtime value may be undefined despite the typed contract.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       const suggestions = (await api.agent.suggestFollowUps(JSON.stringify(exchange.context))) ?? []
       if (token !== fetchToken) return
       suggestionsByThread.set(threadId, { turnKey: exchange.turnKey, suggestions })
@@ -137,7 +140,7 @@ export function mountFollowUpSuggestions(
     }
   }
 
-  function showForActiveThread() {
+  function showForActiveThread(): void {
     const activeId = store.getState().activeThreadId
     if (!activeId) {
       clearSuggestions()
@@ -180,9 +183,11 @@ export function mountFollowUpSuggestions(
   return {
     root,
     clearSuggestions,
-    destroy: () => {
+    destroy: (): void => {
       fetchToken++
-      unsubs.forEach((u) => u())
+      unsubs.forEach((u) => {
+        u()
+      })
       suggestionsByThread.clear()
       clearSuggestions()
     },

@@ -126,8 +126,7 @@ function analyze(path: string, scenario?: Scenario): void {
   const records = loadJsonl(path)
   const thread = records[0]
   const user = records.find((r) => r.role === 'user')
-  const userText =
-    typeof user?.content === 'string' ? user.content : JSON.stringify(user?.content ?? '')
+  const userText = typeof user?.content === 'string' ? user.content : JSON.stringify('')
 
   const toolHist: Record<string, number> = {}
   let exploreCount = 0
@@ -192,10 +191,10 @@ function analyze(path: string, scenario?: Scenario): void {
     violations.push('expected at least one update_todos call')
   }
   if (exp?.maxExplore !== undefined && exploreCount > exp.maxExplore) {
-    violations.push(`explore count ${exploreCount} > max ${exp.maxExplore}`)
+    violations.push(`explore count ${String(exploreCount)} > max ${String(exp.maxExplore)}`)
   }
   if (exp?.minExplore !== undefined && exploreCount < exp.minExplore) {
-    violations.push(`explore count ${exploreCount} < min ${exp.minExplore}`)
+    violations.push(`explore count ${String(exploreCount)} < min ${String(exp.minExplore)}`)
   }
   for (const t of exp?.requireTools ?? []) {
     if ((toolHist[t] ?? 0) <= 0) violations.push(`missing required tool: ${t}`)
@@ -204,11 +203,11 @@ function analyze(path: string, scenario?: Scenario): void {
     if ((toolHist[t] ?? 0) > 0) violations.push(`forbidden tool used: ${t}`)
   }
   if (exp?.maxInputTokens !== undefined && (usage.inputTokens ?? 0) > exp.maxInputTokens) {
-    violations.push(`input tokens ${usage.inputTokens} > max ${exp.maxInputTokens}`)
+    violations.push(`input tokens ${String(usage.inputTokens)} > max ${String(exp.maxInputTokens)}`)
   }
   if (exp?.forbidParallelExploreTurn1 && firstAssistantExploreCount > 1) {
     violations.push(
-      `first assistant turn had ${firstAssistantExploreCount} parallel explore calls (turn had ${firstAssistantToolCount} tools total)`,
+      `first assistant turn had ${String(firstAssistantExploreCount)} parallel explore calls (turn had ${String(firstAssistantToolCount)} tools total)`,
     )
   }
 

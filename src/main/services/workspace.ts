@@ -101,7 +101,7 @@ function isPathInsideRoot(resolved: string, absRoot: string): boolean {
 
 function resolveThroughExistingPrefix(absPath: string): string {
   let probe = absPath
-  while (true) {
+  for (;;) {
     if (existsSync(probe)) {
       const realProbe = realpathSync.native(probe)
       const suffix = relative(probe, absPath)

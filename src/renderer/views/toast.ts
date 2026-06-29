@@ -87,14 +87,18 @@ export function showToast(
   toast.textContent = message
   host.append(toast)
 
-  let timer = setTimeout(() => toast.remove(), duration)
-  const dismiss = () => {
+  let timer = setTimeout(() => {
+    toast.remove()
+  }, duration)
+  const dismiss = (): void => {
     clearTimeout(timer)
     toast.remove()
   }
-  const refresh = (ms: number) => {
+  const refresh = (ms: number): void => {
     clearTimeout(timer)
-    timer = setTimeout(() => toast.remove(), ms)
+    timer = setTimeout(() => {
+      toast.remove()
+    }, ms)
   }
   toastControls.set(toast, { dismiss, refresh })
   toast.addEventListener('click', dismiss)

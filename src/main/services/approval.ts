@@ -105,10 +105,9 @@ export function initApproval(win: BrowserWindow): void {
         // is undefined elsewhere). macOS auto-stops the bounce on focus, and we
         // also stop it when the approval settles for any reason.
         const stopDockAttention = startDockAttention(app.dock)
-        const timer = setTimeout(
-          () => settle(id, { approved: false, remember: false }),
-          APPROVAL_TIMEOUT_MS,
-        )
+        const timer = setTimeout(() => {
+          settle(id, { approved: false, remember: false })
+        }, APPROVAL_TIMEOUT_MS)
         if (typeof timer.unref === 'function') timer.unref()
         pending.set(id, (response) => {
           clearTimeout(timer)

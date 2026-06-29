@@ -45,7 +45,7 @@ async function runShellOnce(
   const win = getMainWindow()
 
   return new Promise<ShellRunResult>((resolve, reject) => {
-    void (async () => {
+    void (async (): Promise<void> => {
       let proc
       try {
         proc = await spawnShellInProjectSandbox(command, {
@@ -71,19 +71,19 @@ async function runShellOnce(
       const outputAcc = new CappedOutputAccumulator()
       let settled = false
       let cancelKill: (() => void) | undefined
-      const stream = (data: Buffer) => {
+      const stream = (data: Buffer): void => {
         const toStream = outputAcc.append(data.toString())
         if (toStream) win?.webContents.send('agent:shell_output', toStream, getCurrentShellTaskId())
       }
       proc.stdout?.on('data', stream)
       proc.stderr?.on('data', stream)
 
-      const onAbort = () => {
+      const onAbort = (): void => {
         clearTimeout(timer)
         cancelKill = terminateProcessTree(proc)
       }
 
-      const cleanup = () => {
+      const cleanup = (): void => {
         clearTimeout(timer)
         cancelKill?.()
         signal.removeEventListener('abort', onAbort)
@@ -94,14 +94,14 @@ async function runShellOnce(
         if (!settled) {
           settled = true
           signal.removeEventListener('abort', onAbort)
-          reject(new Error(`Command timed out after ${timeout_ms}ms`))
+          reject(new Error(`Command timed out after ${String(timeout_ms)}ms`))
         }
       }, timeout_ms)
 
-      const sandboxViolationCount = () =>
+      const sandboxViolationCount = (): number =>
         unsandboxed ? 0 : sandboxViolationCountForCommand(command)
 
-      const finish = () => {
+      const finish = (): void => {
         if (!unsandboxed) afterSandboxedCommand()
       }
 
@@ -230,7 +230,7 @@ function formatShellSuccess(result: ShellRunResult): string {
 
 function formatShellFailure(result: ShellRunResult): Error {
   const clean = stripTerminalControlSequences(result.output).trim()
-  return new Error(`Exited with code ${result.exitCode}:\n${clean}`)
+  return new Error(`Exited with code ${String(result.exitCode)}:\n${clean}`)
 }
 
 export const runShellTool = defineTool({
@@ -248,7 +248,7 @@ export const runShellTool = defineTool({
     const prepared = await prepareCommand(command, signal)
     if ('refused' in prepared) return prepared.refused
     const { command: finalCommand, env, banner } = prepared
-    const withBanner = (output: string) => (banner ? `${banner}\n${output}` : output)
+    const withBanner = (output: string): string => (banner ? `${banner}\n${output}` : output)
 
     const outsideSandbox = shellRequiresOutsideSandbox(finalCommand, cwd, isProjectSandboxEnabled())
 

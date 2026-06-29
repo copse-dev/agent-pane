@@ -8,16 +8,24 @@ contextBridge.exposeInMainWorld('api', {
     isTrusted: () => ipcRenderer.invoke('workspace:isTrusted'),
     setTrusted: (trusted: boolean) => ipcRenderer.invoke('workspace:setTrusted', trusted),
     onOpened: (handler: (root: string) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, root: string) => handler(root)
+      const listener = (_e: Electron.IpcRendererEvent, root: string): void => {
+        handler(root)
+      }
       ipcRenderer.on('workspace:opened', listener)
-      return () => ipcRenderer.off('workspace:opened', listener)
+      return (): void => {
+        ipcRenderer.off('workspace:opened', listener)
+      }
     },
   },
   browser: {
     onOpenTab: (handler: (url: string) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, url: string) => handler(url)
+      const listener = (_e: Electron.IpcRendererEvent, url: string): void => {
+        handler(url)
+      }
       ipcRenderer.on('browser:open-tab', listener)
-      return () => ipcRenderer.off('browser:open-tab', listener)
+      return (): void => {
+        ipcRenderer.off('browser:open-tab', listener)
+      }
     },
   },
   fs: {
@@ -28,9 +36,13 @@ contextBridge.exposeInMainWorld('api', {
     watch: (path: string) => ipcRenderer.invoke('fs:watch', path),
     unwatch: (path: string) => ipcRenderer.invoke('fs:unwatch', path),
     onChanged: (handler: (path: string, content: string | null) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, p: string, c: string | null) => handler(p, c)
+      const listener = (_e: Electron.IpcRendererEvent, p: string, c: string | null): void => {
+        handler(p, c)
+      }
       ipcRenderer.on('fs:changed', listener)
-      return () => ipcRenderer.off('fs:changed', listener)
+      return (): void => {
+        ipcRenderer.off('fs:changed', listener)
+      }
     },
   },
   agent: {
@@ -47,10 +59,13 @@ contextBridge.exposeInMainWorld('api', {
     suggestFollowUps: (contextJson: string) =>
       ipcRenderer.invoke('agent:suggestFollowUps', contextJson),
     onChunk: (handler: (threadId: string, chunk: unknown) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, tid: string, chunk: unknown) =>
+      const listener = (_e: Electron.IpcRendererEvent, tid: string, chunk: unknown): void => {
         handler(tid, chunk)
+      }
       ipcRenderer.on('agent:chunk', listener)
-      return () => ipcRenderer.off('agent:chunk', listener)
+      return (): void => {
+        ipcRenderer.off('agent:chunk', listener)
+      }
     },
     onApprovalRequest: (
       handler: (req: {
@@ -72,29 +87,48 @@ contextBridge.exposeInMainWorld('api', {
           allowRemember?: boolean
           rememberLabel?: string
         },
-      ) => handler(req)
+      ): void => {
+        handler(req)
+      }
       ipcRenderer.on('agent:approval_request', listener)
-      return () => ipcRenderer.off('agent:approval_request', listener)
+      return (): void => {
+        ipcRenderer.off('agent:approval_request', listener)
+      }
     },
     onShellOutput: (handler: (data: string, toolCallId: string | null) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, data: string, toolCallId: string | null) =>
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        data: string,
+        toolCallId: string | null,
+      ): void => {
         handler(data, toolCallId)
+      }
       ipcRenderer.on('agent:shell_output', listener)
-      return () => ipcRenderer.off('agent:shell_output', listener)
+      return (): void => {
+        ipcRenderer.off('agent:shell_output', listener)
+      }
     },
     onUsage: (handler: (threadId: string, usage: import('@shared/types').UsageDelta) => void) => {
       const listener = (
         _e: Electron.IpcRendererEvent,
         threadId: string,
         usage: import('@shared/types').UsageDelta,
-      ) => handler(threadId, usage)
+      ): void => {
+        handler(threadId, usage)
+      }
       ipcRenderer.on('agent:usage', listener)
-      return () => ipcRenderer.off('agent:usage', listener)
+      return (): void => {
+        ipcRenderer.off('agent:usage', listener)
+      }
     },
     onRefreshContextEstimate: (handler: () => void) => {
-      const listener = () => handler()
+      const listener = (): void => {
+        handler()
+      }
       ipcRenderer.on('agent:refresh_context_estimate', listener)
-      return () => ipcRenderer.off('agent:refresh_context_estimate', listener)
+      return (): void => {
+        ipcRenderer.off('agent:refresh_context_estimate', listener)
+      }
     },
   },
   diff: {
@@ -109,22 +143,34 @@ contextBridge.exposeInMainWorld('api', {
         b: string,
         a: string,
         l: string,
-      ) => handler(p, b, a, l)
+      ): void => {
+        handler(p, b, a, l)
+      }
       ipcRenderer.on('agent:show_diff', listener)
-      return () => ipcRenderer.off('agent:show_diff', listener)
+      return (): void => {
+        ipcRenderer.off('agent:show_diff', listener)
+      }
     },
     onQueued: (handler: (entries: { path: string; language: string }[]) => void) => {
       const listener = (
         _e: Electron.IpcRendererEvent,
         entries: { path: string; language: string }[],
-      ) => handler(entries)
+      ): void => {
+        handler(entries)
+      }
       ipcRenderer.on('diff:queued', listener)
-      return () => ipcRenderer.off('diff:queued', listener)
+      return (): void => {
+        ipcRenderer.off('diff:queued', listener)
+      }
     },
     onConflict: (handler: (paths: string[]) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, paths: string[]) => handler(paths)
+      const listener = (_e: Electron.IpcRendererEvent, paths: string[]): void => {
+        handler(paths)
+      }
       ipcRenderer.on('diff:conflict', listener)
-      return () => ipcRenderer.off('diff:conflict', listener)
+      return (): void => {
+        ipcRenderer.off('diff:conflict', listener)
+      }
     },
   },
   approval: {
@@ -140,9 +186,13 @@ contextBridge.exposeInMainWorld('api', {
     setCuratedEnabled: (name: string, enabled: boolean) =>
       ipcRenderer.invoke('mcp:setCuratedEnabled', name, enabled),
     onStatusChanged: (handler: (statuses: unknown) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, statuses: unknown) => handler(statuses)
+      const listener = (_e: Electron.IpcRendererEvent, statuses: unknown): void => {
+        handler(statuses)
+      }
       ipcRenderer.on('mcp:status_changed', listener)
-      return () => ipcRenderer.off('mcp:status_changed', listener)
+      return (): void => {
+        ipcRenderer.off('mcp:status_changed', listener)
+      }
     },
   },
   canvas: {
@@ -150,9 +200,13 @@ contextBridge.exposeInMainWorld('api', {
       const listener = (
         _e: Electron.IpcRendererEvent,
         artefact: import('@shared/types/canvas.ts').CanvasArtefact,
-      ) => handler(artefact)
+      ): void => {
+        handler(artefact)
+      }
       ipcRenderer.on('canvas:artefact', listener)
-      return () => ipcRenderer.off('canvas:artefact', listener)
+      return (): void => {
+        ipcRenderer.off('canvas:artefact', listener)
+      }
     },
   },
   storage: {
@@ -173,39 +227,67 @@ contextBridge.exposeInMainWorld('api', {
   },
   menu: {
     onSettings: (handler: () => void) => {
-      const listener = () => handler()
+      const listener = (): void => {
+        handler()
+      }
       ipcRenderer.on('menu:settings', listener)
-      return () => ipcRenderer.off('menu:settings', listener)
+      return (): void => {
+        ipcRenderer.off('menu:settings', listener)
+      }
     },
     onNewThread: (handler: () => void) => {
-      const listener = () => handler()
+      const listener = (): void => {
+        handler()
+      }
       ipcRenderer.on('menu:newThread', listener)
-      return () => ipcRenderer.off('menu:newThread', listener)
+      return (): void => {
+        ipcRenderer.off('menu:newThread', listener)
+      }
     },
     onTogglePanel: (handler: () => void) => {
-      const listener = () => handler()
+      const listener = (): void => {
+        handler()
+      }
       ipcRenderer.on('menu:togglePanel', listener)
-      return () => ipcRenderer.off('menu:togglePanel', listener)
+      return (): void => {
+        ipcRenderer.off('menu:togglePanel', listener)
+      }
     },
     onShowExplorer: (handler: () => void) => {
-      const listener = () => handler()
+      const listener = (): void => {
+        handler()
+      }
       ipcRenderer.on('menu:showExplorer', listener)
-      return () => ipcRenderer.off('menu:showExplorer', listener)
+      return (): void => {
+        ipcRenderer.off('menu:showExplorer', listener)
+      }
     },
     onShowTerminal: (handler: () => void) => {
-      const listener = () => handler()
+      const listener = (): void => {
+        handler()
+      }
       ipcRenderer.on('menu:showTerminal', listener)
-      return () => ipcRenderer.off('menu:showTerminal', listener)
+      return (): void => {
+        ipcRenderer.off('menu:showTerminal', listener)
+      }
     },
     onShowChanges: (handler: () => void) => {
-      const listener = () => handler()
+      const listener = (): void => {
+        handler()
+      }
       ipcRenderer.on('menu:showChanges', listener)
-      return () => ipcRenderer.off('menu:showChanges', listener)
+      return (): void => {
+        ipcRenderer.off('menu:showChanges', listener)
+      }
     },
     onShowBrowser: (handler: () => void) => {
-      const listener = () => handler()
+      const listener = (): void => {
+        handler()
+      }
       ipcRenderer.on('menu:showBrowser', listener)
-      return () => ipcRenderer.off('menu:showBrowser', listener)
+      return (): void => {
+        ipcRenderer.off('menu:showBrowser', listener)
+      }
     },
   },
   remoteAgent: {
@@ -275,16 +357,22 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('terminal:resize', sessionId, cols, rows),
     destroy: (sessionId: string) => ipcRenderer.invoke('terminal:destroy', sessionId),
     onOutput: (handler: (sessionId: string, data: string) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, id: string, data: string) =>
+      const listener = (_e: Electron.IpcRendererEvent, id: string, data: string): void => {
         handler(id, data)
+      }
       ipcRenderer.on('terminal:output', listener)
-      return () => ipcRenderer.off('terminal:output', listener)
+      return (): void => {
+        ipcRenderer.off('terminal:output', listener)
+      }
     },
     onExit: (handler: (sessionId: string, code: number) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, id: string, code: number) =>
+      const listener = (_e: Electron.IpcRendererEvent, id: string, code: number): void => {
         handler(id, code)
+      }
       ipcRenderer.on('terminal:exit', listener)
-      return () => ipcRenderer.off('terminal:exit', listener)
+      return (): void => {
+        ipcRenderer.off('terminal:exit', listener)
+      }
     },
   },
   git: {

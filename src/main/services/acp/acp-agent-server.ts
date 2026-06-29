@@ -46,7 +46,9 @@ export interface AcpTurnContext {
   requestPermission(req: AcpPermissionRequest): Promise<AcpPermissionDecision>
 }
 
-export type AcpTurnRunner = (ctx: AcpTurnContext) => Promise<{ stopReason?: StopReason } | void>
+export type AcpTurnRunner = (
+  ctx: AcpTurnContext,
+) => Promise<{ stopReason?: StopReason } | undefined>
 
 export interface AcpAgentOptions {
   /** Advertised agent name in `initialize`. */

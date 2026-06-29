@@ -78,6 +78,9 @@ function parseModelRow(row: unknown): OpenRouterModelSummary | null {
 }
 
 export function parseOpenRouterModelsPayload(json: unknown): OpenRouterModelSummary[] {
+  // json is parsed from the network and can be null; the cast type hides that, so
+  // the optional chain guards the genuine runtime case.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   const data = (json as { data?: unknown })?.data
   if (!Array.isArray(data)) return []
   const out: OpenRouterModelSummary[] = []
@@ -102,7 +105,7 @@ async function fetchOpenRouterModels(): Promise<{
       return {
         ok: false,
         models: [],
-        error: `HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ''}`,
+        error: `HTTP ${String(res.status)}${res.statusText ? ` ${res.statusText}` : ''}`,
       }
     }
     return { ok: true, models: parseOpenRouterModelsPayload(await res.json()) }
