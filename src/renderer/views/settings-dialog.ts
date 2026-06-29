@@ -374,8 +374,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               Connect to an LM Studio (or other OpenAI-compatible) server.
             </p>
 
-            <div id="settings-lm-studio-host"></div>
-
             <div id="settings-local-providers-host"></div>
 
             <fieldset>
@@ -638,13 +636,24 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   }
   showRemoteTab('cursor')
 
+  // Unified Local providers panel: LM Studio leads as a native chip (its bespoke
+  // server-connection + recommended-models UI), followed by the OpenAI-compatible
+  // local presets (Ollama, llama.cpp, Jan, vLLM) and an add-your-own form. The
+  // cloud Providers panel above filters local providers out via the `local` flag
+  // so each provider appears in exactly one place. The dialog keeps the LM Studio
+  // handle for getUrl()/saveConnection() in the security-bundle save below.
   const lmStudioSection = createLmStudioSection(api, { showInstallGuide: false })
-  qsRequired(overlay, '#settings-lm-studio-host').append(lmStudioSection.root)
-
-  // The same Providers panel, scoped to local OpenAI-compatible servers (Ollama,
-  // llama.cpp, Jan, vLLM, + add-your-own). The cloud instance above filters these
-  // out via the `local` flag so each provider appears in exactly one place.
-  const localProvidersSection = createCustomProvidersSection(api, { variant: 'local' })
+  const localProvidersSection = createCustomProvidersSection(api, {
+    variant: 'local',
+    nativeProviders: [
+      {
+        id: 'lmstudio',
+        label: 'LM Studio',
+        element: lmStudioSection.root,
+        refresh: () => lmStudioSection.refreshDetection(),
+      },
+    ],
+  })
   overlay.querySelector('#settings-local-providers-host')!.append(localProvidersSection.root)
 
   const ghCliSection = createGhCliSection(api)
@@ -954,7 +963,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       if (iconRadio) iconRadio.checked = true
 
       await refreshLocalModelSelects()
-      await lmStudioSection.refreshDetection()
       await ghCliSection.refreshStatus()
       await refreshMcpServers()
       await refreshCuratedServers()

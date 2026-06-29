@@ -16,6 +16,21 @@ export interface ProvidersSection {
   saveKeys: () => Promise<void>
 }
 
+/**
+ * A provider with its own bespoke form (not the generic OpenAI-compatible editor),
+ * shown as a leading chip in the local panel. LM Studio uses this so its dedicated
+ * server-connection + model-download UI lives inside the unified Local providers
+ * panel as the first chip, while keeping its separate backend wiring.
+ */
+export interface NativeProvider {
+  id: string
+  label: string
+  /** Pre-built form element rendered when this chip is selected. */
+  element: HTMLElement
+  /** Re-run any detection/refresh when the panel refreshes (e.g. dialog open). */
+  refresh?: () => void | Promise<void>
+}
+
 // Fixed cloud providers with bespoke key validation (not OpenAI-compatible customs).
 interface FixedProvider {
   id: string
@@ -207,18 +222,25 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
 
 export function createCustomProvidersSection(
   api: ApiClient,
-  opts: { variant?: 'cloud' | 'local' } = {},
+  opts: { variant?: 'cloud' | 'local'; nativeProviders?: readonly NativeProvider[] } = {},
 ): ProvidersSection {
   // The same panel renders two ways: the cloud variant (General settings) shows
   // hosted providers; the local variant (Local models settings) shows loopback
   // OpenAI-compatible servers. Providers are partitioned by their `local` flag so
   // a given provider appears in exactly one panel.
   const isLocal = opts.variant === 'local'
+  // Native providers (e.g. LM Studio) lead the local chip row with their own form.
+  const nativeProviders = isLocal ? (opts.nativeProviders ?? []) : []
+  const nativeById = new Map(nativeProviders.map((p) => [p.id, p]))
   const fixedProviders: readonly FixedProvider[] = isLocal ? [] : FIXED_PROVIDERS
   const fixedById = new Map(fixedProviders.map((p) => [p.id, p]))
-  const chipOrder = isLocal ? LOCAL_CHIP_ORDER : CHIP_ORDER
+  const chipOrder = isLocal
+    ? [...nativeProviders.map((p) => p.id), ...LOCAL_CHIP_ORDER]
+    : CHIP_ORDER
   const knownEndpoints = isLocal ? LOCAL_KNOWN_ENDPOINTS : CLOUD_KNOWN_ENDPOINTS
-  const defaultSelected = isLocal ? (LOCAL_CHIP_ORDER[0] ?? 'other') : 'openai'
+  const defaultSelected = isLocal
+    ? (nativeProviders[0]?.id ?? LOCAL_CHIP_ORDER[0] ?? 'other')
+    : 'openai'
 
   const chipRow = el('div', { class: 'provider-chips', role: 'tablist' })
   const formHost = el('div', { class: 'provider-form-host' })
@@ -231,7 +253,7 @@ export function createCustomProvidersSection(
       'p',
       { class: 'settings-fieldset-desc' },
       isLocal
-        ? 'Connect OpenAI-compatible local servers (Ollama, llama.cpp, Jan, vLLM ship built in). They run on your machine and need no API key; pick one, Fetch models, and Save — or choose “Other” to add another local endpoint.'
+        ? 'Connect OpenAI-compatible local servers — LM Studio, Ollama, llama.cpp, Jan, and vLLM ship built in. They run on your machine and need no API key; pick one, set its URL or Fetch models, and Save — or choose “Other” to add another local endpoint.'
         : 'Pick a provider to add or edit its API key. OpenAI-compatible endpoints (Mistral, Gemini, DeepSeek ship built in) also let you set models and options; choose “Other” to add your own.',
     ),
     chipRow,
@@ -250,7 +272,7 @@ export function createCustomProvidersSection(
     const extraById = new Map(providers.map((p) => [p.id, p]))
     const ordered: string[] = []
     for (const id of chipOrder) {
-      if (fixedById.has(id) || extraById.has(id)) ordered.push(id)
+      if (nativeById.has(id) || fixedById.has(id) || extraById.has(id)) ordered.push(id)
     }
     for (const p of providers) if (!ordered.includes(p.id)) ordered.push(p.id)
     ordered.push('other')
@@ -259,7 +281,12 @@ export function createCustomProvidersSection(
 
   function chipLabel(key: string): string {
     if (key === 'other') return 'Other'
-    return fixedById.get(key)?.label ?? providers.find((p) => p.id === key)?.label ?? key
+    return (
+      nativeById.get(key)?.label ??
+      fixedById.get(key)?.label ??
+      providers.find((p) => p.id === key)?.label ??
+      key
+    )
   }
 
   function renderChips(): void {
@@ -637,6 +664,11 @@ export function createCustomProvidersSection(
       formHost.append(otherForm())
       return
     }
+    const native = nativeById.get(selected)
+    if (native) {
+      formHost.append(native.element)
+      return
+    }
     const fixed = fixedById.get(selected)
     if (fixed) {
       formHost.append(fixedForm(fixed))
@@ -657,11 +689,14 @@ export function createCustomProvidersSection(
     }
     if (
       selected !== 'other' &&
+      !nativeById.has(selected) &&
       !fixedById.has(selected) &&
       !providers.some((p) => p.id === selected)
     ) {
       selected = defaultSelected
     }
+    // Let native providers (LM Studio) re-run their own detection.
+    await Promise.all(nativeProviders.map((p) => p.refresh?.()))
     // Refresh the configured-key indicators for the chips.
     configured.clear()
     const slugs = [...fixedProviders.map((p) => p.id), ...providers.map((p) => p.id)]
