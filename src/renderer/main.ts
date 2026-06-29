@@ -13,6 +13,7 @@ import { mountInputBar } from './views/input-bar.ts'
 import { mountContextPanel } from './views/context-panel.ts'
 import { mountRightPanelLayout } from './views/right-panel-layout.ts'
 import { mountTerminalsPane } from './views/terminals-pane.ts'
+import { mountAgentTasks } from './views/agent-tasks.ts'
 import { mountGitChangesPane } from './views/git-changes-pane.ts'
 import { mountPrPane } from './views/pr-pane.ts'
 import { mountBrowserPane } from './views/browser-pane.ts'
@@ -190,6 +191,7 @@ function mountFullLayout() {
     store,
     api,
   )
+  mountAgentTasks(document.getElementById('agent-tasks-host')!, store, api)
   mountBrowserPane(
     document.getElementById('browser-tabs-host')!,
     document.getElementById('browser-viewer-host')!,
