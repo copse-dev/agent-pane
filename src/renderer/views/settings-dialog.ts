@@ -577,8 +577,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // Every selector below targets an element baked into the static template
   // above; a miss means the template and this code drifted, which we surface
   // as a loud error rather than a silent non-null assertion.
-  function mustQuery(selector: string): HTMLElement {
-    const found = overlay.querySelector<HTMLElement>(selector)
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters -- the generic return type lets call sites request the concrete element type
+  function mustQuery<E extends Element = HTMLElement>(selector: string): E {
+    const found = overlay.querySelector<E>(selector)
     if (!found) throw new Error(`Settings dialog template is missing "${selector}"`)
     return found
   }
@@ -635,7 +636,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   }
 
   function renderMcpServers(allStatuses: import('@shared/types/mcp.ts').McpServerStatus[]): void {
-    const listEl = overlay.querySelector('#mcp-server-list') as HTMLElement
+    const listEl = mustQuery('#mcp-server-list')
     // Curated ("Copse reviewed") servers have their own section below.
     const statuses = allStatuses.filter((s) => !s.curated)
     if (statuses.length === 0) {
@@ -759,7 +760,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   function renderCuratedServers(
     servers: import('@shared/types/mcp.ts').CuratedMcpServerStatus[],
   ): void {
-    const listEl = overlay.querySelector('#mcp-curated-list') as HTMLElement
+    const listEl = mustQuery('#mcp-curated-list')
     listEl.innerHTML = ''
     if (servers.length === 0) {
       listEl.textContent = 'No reviewed servers available.'
@@ -844,7 +845,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   }
 
   mustQuery('#mcp-reload-btn').addEventListener('click', () => {
-    const statusEl = overlay.querySelector('#mcp-reload-status') as HTMLElement
+    const statusEl = mustQuery('#mcp-reload-status')
     statusEl.textContent = 'Reloading…'
     statusEl.className = 'lmstudio-test-status'
     void api.mcp
@@ -870,7 +871,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await customProvidersSection.refresh()
       await envKeyDetectSection.refresh()
 
-      const form = overlay.querySelector('form') as HTMLFormElement
+      const form = mustQuery<HTMLFormElement>('form')
       const model = (await api.settings.get('model')) as string | undefined
       await populateModelSelect(
         form.elements.namedItem('model') as HTMLSelectElement,

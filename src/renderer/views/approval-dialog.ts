@@ -1,4 +1,4 @@
-import { el } from '../dom/helpers.ts'
+import { el, qsRequired } from '../dom/helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 
 export function mountApprovalDialog(api: ApiClient): void {
@@ -22,16 +22,10 @@ export function mountApprovalDialog(api: ApiClient): void {
   )
   document.body.append(dialog)
 
-  const rememberInput = rememberLabel.querySelector('.approval-remember-input') as HTMLInputElement
+  const rememberInput = qsRequired<HTMLInputElement>(rememberLabel, '.approval-remember-input')
 
-  function mustQuery(selector: string): Element {
-    const found = dialog.querySelector(selector)
-    if (!found) throw new Error(`approval dialog missing element '${selector}'`)
-    return found
-  }
-
-  const approvalTitle = mustQuery('.approval-title')
-  const approvalBody = mustQuery('.approval-body')
+  const approvalTitle = qsRequired(dialog, '.approval-title')
+  const approvalBody = qsRequired(dialog, '.approval-body')
   const rememberLabelTextNode = rememberLabel.childNodes[1]
   if (!rememberLabelTextNode) throw new Error('approval dialog missing remember label text node')
   // Bind to an explicitly non-optional type so the narrowing survives into the
@@ -79,10 +73,10 @@ export function mountApprovalDialog(api: ApiClient): void {
     if (!active) showNext()
   })
 
-  mustQuery('.approval-approve').addEventListener('click', () => {
+  qsRequired(dialog, '.approval-approve').addEventListener('click', () => {
     resolve(true, rememberInput.checked)
   })
-  mustQuery('.approval-reject').addEventListener('click', () => {
+  qsRequired(dialog, '.approval-reject').addEventListener('click', () => {
     resolve(false, false)
   })
 }

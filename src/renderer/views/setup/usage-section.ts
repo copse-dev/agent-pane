@@ -6,6 +6,7 @@ import {
   formatTokenCount,
   formatUsd,
 } from '@shared/usage/format-usage-summary.ts'
+import { qsRequired } from '../../dom/helpers.ts'
 
 export type UsagePeriodKey = 'day' | 'month' | 'period90d' | 'allTime'
 
@@ -137,8 +138,8 @@ export function createUsageSection(
     <div class="usage-period-body" id="usage-period-body"></div>
   `
 
-  const bodyEl = root.querySelector('#usage-period-body') as HTMLElement
-  const labelEl = root.querySelector('#usage-period-label') as HTMLElement
+  const bodyEl = qsRequired(root, '#usage-period-body')
+  const labelEl = qsRequired(root, '#usage-period-label')
   const tabBtns = root.querySelectorAll<HTMLButtonElement>('.usage-period-btn')
   let activePeriod: UsagePeriodKey = 'day'
   let cachedSummary: UsageSummary | null = null
