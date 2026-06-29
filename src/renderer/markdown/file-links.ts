@@ -1,5 +1,5 @@
 import type { AppStore } from '@shared/store/store.ts'
-import { fileReferenceMatches } from '@shared/fs/file-reference.ts'
+import { fileReferenceMatches, resolveFileReferencesInBatches } from '@shared/fs/file-reference.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { activateWorkspaceReference } from '../controller/files.ts'
 import { showErrorToast } from '../views/toast.ts'
@@ -82,10 +82,11 @@ export async function annotateFileReferences(root: HTMLElement, api: ApiClient):
   const candidates = findFileReferenceCandidates(root)
   if (candidates.length === 0) return
 
-  // IPC boundary: declared as a non-null array, but the value crosses the
-  // preload/IPC bridge and could be malformed at runtime, so guard defensively.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  const resolved = (await api.index.resolveFileReferences(candidates)) ?? []
+  // The IPC handler caps each call at a fixed number of candidates, so resolve
+  // large messages in batches (the helper also guards the IPC boundary).
+  const resolved = await resolveFileReferencesInBatches(candidates, (batch) =>
+    api.index.resolveFileReferences(batch),
+  )
   if (resolved.length === 0) return
 
   const resolutions = new Map(

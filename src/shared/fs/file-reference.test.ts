@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { fileReferenceMatches } from './file-reference.ts'
+import {
+  fileReferenceMatches,
+  FILE_REFERENCE_RESOLVE_BATCH_SIZE,
+  resolveFileReferencesInBatches,
+} from './file-reference.ts'
 
 describe('fileReferenceMatches', () => {
   it('matches nested paths and bare filenames', () => {
@@ -64,5 +68,47 @@ describe('fileReferenceMatches', () => {
     const [match] = fileReferenceMatches(text)
     assert.ok(match)
     assert.equal(text.slice(match.start, match.end), 'src/a/b.ts:10:2')
+  })
+})
+
+describe('resolveFileReferencesInBatches', () => {
+  it('splits candidates into batches that respect the IPC cap', async () => {
+    const candidates = Array.from(
+      { length: FILE_REFERENCE_RESOLVE_BATCH_SIZE * 2 + 5 },
+      (_, i) => `file-${String(i)}.ts`,
+    )
+    const batchSizes: number[] = []
+    const resolved = await resolveFileReferencesInBatches(candidates, (batch) => {
+      batchSizes.push(batch.length)
+      return Promise.resolve(batch.map((candidate) => ({ candidate })))
+    })
+
+    assert.deepEqual(batchSizes, [
+      FILE_REFERENCE_RESOLVE_BATCH_SIZE,
+      FILE_REFERENCE_RESOLVE_BATCH_SIZE,
+      5,
+    ])
+    assert.equal(resolved.length, candidates.length)
+    assert.deepEqual(
+      resolved.map((r) => r.candidate),
+      candidates,
+    )
+  })
+
+  it('returns an empty array for no candidates without calling resolve', async () => {
+    let calls = 0
+    const resolved = await resolveFileReferencesInBatches<{ candidate: string }>([], () => {
+      calls += 1
+      return Promise.resolve([])
+    })
+    assert.deepEqual(resolved, [])
+    assert.equal(calls, 0)
+  })
+
+  it('guards a null result from the IPC boundary', async () => {
+    const resolved = await resolveFileReferencesInBatches(['a.ts'], () =>
+      Promise.resolve(null as unknown as { candidate: string }[]),
+    )
+    assert.deepEqual(resolved, [])
   })
 })

@@ -66,3 +66,31 @@ export function fileReferenceMatches(text: string): FileReferenceMatch[] {
   }
   return matches
 }
+
+/**
+ * The main-process IPC guard for `index:resolveFileReferences` rejects calls
+ * carrying more than this many candidates. A single message or terminal viewport
+ * can legitimately reference more (e.g. a long directory/skill listing), so
+ * callers resolve in batches of this size rather than overflowing the cap.
+ */
+export const FILE_REFERENCE_RESOLVE_BATCH_SIZE = 200
+
+/**
+ * Resolve candidates against the workspace index in batches that stay within the
+ * IPC cap, concatenating every batch's resolutions. `resolve` performs the IPC
+ * call for one batch.
+ */
+export async function resolveFileReferencesInBatches<T>(
+  candidates: string[],
+  resolve: (batch: string[]) => Promise<T[]>,
+): Promise<T[]> {
+  const out: T[] = []
+  for (let i = 0; i < candidates.length; i += FILE_REFERENCE_RESOLVE_BATCH_SIZE) {
+    const batch = candidates.slice(i, i + FILE_REFERENCE_RESOLVE_BATCH_SIZE)
+    // IPC boundary: declared non-null, but the value crosses the preload bridge
+    // and could be malformed at runtime, so guard defensively.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    out.push(...((await resolve(batch)) ?? []))
+  }
+  return out
+}
