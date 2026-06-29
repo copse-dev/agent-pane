@@ -12,6 +12,7 @@ import { DEFAULT_CURSOR_AGENT_BASE_URL } from '@shared/remote-agent.ts'
 import { populateModelSelect, populateSmallTasksModelSelect } from './model-options.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createCustomProvidersSection } from './setup/custom-providers-section.ts'
+import { createEnvKeyDetectSection } from './setup/env-key-detect-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createGhCliSection } from './setup/gh-cli-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
@@ -163,6 +164,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </p>
 
             <div id="settings-custom-providers-host"></div>
+
+            <div id="settings-env-detect-host"></div>
 
             <fieldset>
               <legend>Chat model</legend>
@@ -557,6 +560,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   const customProvidersSection = createCustomProvidersSection(api)
   overlay.querySelector('#settings-custom-providers-host')!.append(customProvidersSection.root)
 
+  const envKeyDetectSection = createEnvKeyDetectSection(api, {
+    onImported: () => {
+      void cursorKeySection.refreshKeyStatus()
+      void customProvidersSection.refresh()
+    },
+  })
+  overlay.querySelector('#settings-env-detect-host')!.append(envKeyDetectSection.root)
+
   const cursorKeySection = createApiKeysSection(api, {
     legend: 'Cursor authentication',
     providers: ['cursor'],
@@ -827,6 +838,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     void (async () => {
       await cursorKeySection.refreshKeyStatus()
       await customProvidersSection.refresh()
+      await envKeyDetectSection.refresh()
 
       const form = overlay.querySelector('form') as HTMLFormElement
       const model = (await api.settings.get('model')) as string | undefined

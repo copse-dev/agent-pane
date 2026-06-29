@@ -6,6 +6,7 @@ import {
   lmStudioChatModelValue,
 } from '@shared/lm-studio-defaults.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
+import { createEnvKeyDetectSection } from './setup/env-key-detect-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
 
@@ -103,6 +104,10 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
 
   const cloudPanel = overlay.querySelector('.onboarding-panel[data-step="cloud"]') as HTMLElement
   const apiKeys = createApiKeysSection(api, { legend: 'Cloud API keys (optional)' })
+  const envKeyDetect = createEnvKeyDetectSection(api, {
+    legend: 'Already have keys in your environment?',
+    onImported: () => void apiKeys.refreshKeyStatus(),
+  })
   cloudPanel.append(
     Object.assign(document.createElement('p'), {
       className: 'settings-section-desc',
@@ -110,6 +115,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
         'Add one or both keys if you want frontier models in chat. Keys are validated with a free models request — no tokens are charged.',
     }),
     apiKeys.root,
+    envKeyDetect.root,
   )
 
   const localPanel = overlay.querySelector('.onboarding-panel[data-step="local"]') as HTMLElement
@@ -215,6 +221,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
   overlay.addEventListener('onboarding-open', () => {
     showStep('welcome')
     void apiKeys.refreshKeyStatus()
+    void envKeyDetect.refresh()
     void lmStudio.refreshDetection()
     void routing.refresh()
   })
