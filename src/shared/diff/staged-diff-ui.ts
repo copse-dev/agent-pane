@@ -10,6 +10,21 @@ export function pruneStagedDiffCache(
   }
 }
 
+/**
+ * Decide whether a freshly proposed diff should be jumped to. A proposal the
+ * agent just made is the file it is now waiting on, so it takes priority over a
+ * stale-but-still-valid current selection (#484). The target is only honored
+ * once it is actually queued — `agent:show_diff` arrives before the `diff:queued`
+ * broadcast that adds the path — so callers keep it pending until then.
+ */
+export function shouldJumpToProposed(
+  pendingProposedPath: string | null,
+  entries: StagedDiffEntry[],
+): boolean {
+  if (!pendingProposedPath) return false
+  return entries.some((e) => e.path === pendingProposedPath)
+}
+
 export function resolveStagedDiffView(
   entries: StagedDiffEntry[],
   cache: Map<string, ActiveDiff>,
