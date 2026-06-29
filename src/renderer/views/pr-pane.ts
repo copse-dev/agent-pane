@@ -95,16 +95,6 @@ export function mountPrPane(
       'button',
       {
         type: 'button',
-        class: 'git-changes-refresh-btn pr-pane-popout-btn',
-        'aria-label': 'Pop out pull requests',
-        title: 'Pop out into its own window',
-      },
-      '⧉',
-    ),
-    el(
-      'button',
-      {
-        type: 'button',
         class: 'git-changes-refresh-btn pr-pane-refresh-btn',
         'aria-label': 'Refresh pull requests',
         title: 'Refresh',

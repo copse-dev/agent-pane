@@ -66,13 +66,16 @@ const api = window.api
 // mode we boot the app normally (so the pane gets the real workspace/threads),
 // but force the pane open and let popout.css hide the projects sidebar, chat,
 // and titlebar so the detached window shows only that pane.
-const POPOUT_MODES = new Set<RightPanelMode>(['prs'])
+const POPOUT_MODES = new Set<RightPanelMode>(['explorer', 'terminal', 'changes', 'prs', 'browser'])
 function getPopoutMode(): RightPanelMode | null {
   const raw = new URLSearchParams(window.location.search).get('popout')
   return raw && POPOUT_MODES.has(raw as RightPanelMode) ? (raw as RightPanelMode) : null
 }
 const popoutMode = getPopoutMode()
-if (popoutMode) document.documentElement.classList.add('is-popout')
+if (popoutMode) {
+  document.documentElement.classList.add('is-popout')
+  document.documentElement.setAttribute('data-popout-mode', popoutMode)
+}
 
 // The app shell ships these mount points in index.html; a missing one is a
 // build/markup bug we want to surface loudly rather than silently no-op.

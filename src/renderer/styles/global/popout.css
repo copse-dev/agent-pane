@@ -28,8 +28,3 @@ html.is-popout #pane-files {
   width: 100% !important;
   height: 100%;
 }
-
-/* No "pop out" affordance inside an already-detached window. */
-html.is-popout .pr-pane-popout-btn {
-  display: none;
-}

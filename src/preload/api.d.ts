@@ -1,4 +1,5 @@
 import type { StreamChunk, UsageDelta, ContextBreakdown } from '@shared/types'
+import type { RightPanelMode } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import type { CursorHookSummary } from '@shared/types/cursor-hooks.ts'
@@ -302,7 +303,7 @@ export interface ApiClient {
   }
   panes: {
     /** Detach a right-panel pane into its own window. */
-    popout: (mode: 'prs') => Promise<void>
+    popout: (mode: RightPanelMode) => Promise<void>
   }
 }
 

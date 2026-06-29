@@ -1,14 +1,19 @@
 import { BrowserWindow } from 'electron'
 import { join } from 'node:path'
+import type { RightPanelMode } from '@shared/types/state.ts'
 import { getAppIcon } from '../app-icon.ts'
 import { attachWebContentsLockdown } from './web-contents-lockdown.ts'
 import { registerTrustedAppFrame, unregisterTrustedAppFrame } from './app-frames.ts'
 
-/** Pane modes that can be detached into their own window. */
-export type PopoutMode = 'prs'
+/** Any right-panel pane can be detached into its own window. */
+export type PopoutMode = RightPanelMode
 
 const TITLES: Record<PopoutMode, string> = {
+  explorer: 'Explorer — Copse',
+  terminal: 'Terminal — Copse',
+  changes: 'Changes — Copse',
   prs: 'Pull requests — Copse',
+  browser: 'Browser — Copse',
 }
 
 // One window per mode: re-invoking "Pop out" focuses the existing window rather

@@ -58,6 +58,14 @@ function prsIcon(): SVGSVGElement {
   )
 }
 
+function popoutIcon(): SVGSVGElement {
+  return outlineIcon(
+    'popout',
+    ['M14 4h6v6', 'M10 14 20 4', 'M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5'],
+    'titlebar-btn-icon',
+  )
+}
+
 export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   // The structural #titlebar div needs the .titlebar class for its flex layout,
   // height, and traffic-light clearance to apply. Without it the controls
@@ -104,6 +112,12 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     browserIcon(),
     'Browser',
   )
+  const popoutBtn = el('button', {
+    class: 'titlebar-btn titlebar-icon-btn titlebar-popout-btn',
+    'aria-label': 'Pop out panel',
+    title: 'Pop the open panel out into its own window',
+  })
+  popoutBtn.append(popoutIcon())
   const panelControls = el(
     'div',
     { class: 'titlebar-panel-controls' },
@@ -112,9 +126,17 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     changesBtn,
     prsBtn,
     browserBtn,
+    popoutBtn,
   )
 
   root.append(leftCluster, dragRegion, panelControls)
+
+  // Detach whichever pane is currently open into its own window. Disabled while
+  // the right panel is closed (there is nothing to pop out).
+  popoutBtn.addEventListener('click', () => {
+    const { filesPaneOpen, rightPanelMode } = store.getState()
+    if (filesPaneOpen) void api.panes.popout(rightPanelMode)
+  })
 
   filesBtn.addEventListener('click', () => {
     toggleRightPanelWithWorkspace(store, api, 'explorer')
@@ -148,6 +170,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     changesBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'changes')
     prsBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'prs')
     browserBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'browser')
+    popoutBtn.disabled = !filesPaneOpen
   }
 
   // Surface the pending agent-proposed diff count on the Changes button so the

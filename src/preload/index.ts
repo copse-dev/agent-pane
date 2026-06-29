@@ -400,7 +400,7 @@ contextBridge.exposeInMainWorld('api', {
     openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   },
   panes: {
-    popout: (mode: 'prs') => ipcRenderer.invoke('panes:popout', mode),
+    popout: (mode: string) => ipcRenderer.invoke('panes:popout', mode),
   },
 })
 

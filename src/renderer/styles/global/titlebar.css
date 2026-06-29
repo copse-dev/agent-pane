@@ -58,6 +58,23 @@
 .titlebar-text-btn.has-pending:not(.active) {
   color: var(--text-secondary);
 }
+.titlebar-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px;
+}
+.titlebar-icon-btn:not(:disabled):hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.titlebar-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
 .titlebar-btn-badge {
   display: inline-flex;
   align-items: center;
