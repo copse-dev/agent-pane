@@ -156,8 +156,9 @@ describe('renderMarkdown fixture structure: bold after glob table (markdown-bold
     // hasMalformedStrong === false — the regression was the bold label after the
     // glob table rendering as a literal `**MCP host**` / malformed </strong>.
     const mcpItem = bySubstring(root.querySelectorAll('li'), 'MCP host')
-    assert.equal(mcpItem?.querySelector('strong')?.textContent, 'MCP host')
-    assert.ok(!mcpItem?.textContent.includes('**'), 'no literal ** in the MCP item')
+    assert.ok(mcpItem)
+    assert.equal(mcpItem.querySelector('strong')?.textContent, 'MCP host')
+    assert.ok(!mcpItem.textContent.includes('**'), 'no literal ** in the MCP item')
     assert.ok(
       !root.innerHTML.includes('</strong>MCP host**'),
       'no malformed strong around the MCP label',

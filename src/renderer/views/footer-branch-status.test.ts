@@ -7,6 +7,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitBranchInfo, GitBranchStatus } from '@shared/types/git.ts'
 import { mountFooterBranchStatus } from './footer-branch-status.ts'
 
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters -- the generic return type lets call sites request the concrete element type
 function requireEl<E extends Element>(root: ParentNode, selector: string): E {
   const el = root.querySelector<E>(selector)
   if (!el) throw new Error(`Expected element matching "${selector}"`)

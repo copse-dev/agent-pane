@@ -153,7 +153,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
   // Surface the pending agent-proposed diff count on the Changes button so the
   // queue is visible without opening the panel.
   function syncChangesBadge(): void {
-    const pending = store.getState().stagedDiffs?.length ?? 0
+    const pending = store.getState().stagedDiffs.length
     changesBadge.hidden = pending === 0
     changesBadge.textContent = String(pending)
     changesBtn.classList.toggle('has-pending', pending > 0)

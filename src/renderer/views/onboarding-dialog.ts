@@ -1,5 +1,6 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { at } from '@shared/array-utils.ts'
 import {
   DEFAULT_APP_CHAT_MODEL,
   LM_STUDIO_MODEL_IDS,
@@ -158,7 +159,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
 
   backBtn.addEventListener('click', () => {
     const idx = stepOrder.indexOf(currentStep)
-    if (idx > 0) showStep(stepOrder[idx - 1]!)
+    if (idx > 0) showStep(at(stepOrder, idx - 1))
   })
 
   async function finishSetup(): Promise<void> {
@@ -202,13 +203,13 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
       void finishSetup()
       return
     }
-    if (idx < stepOrder.length - 1) showStep(stepOrder[idx + 1]!)
+    if (idx < stepOrder.length - 1) showStep(at(stepOrder, idx + 1))
   })
 
-  overlay.querySelector('#onboarding-skip')!.addEventListener('click', () => {
+  overlay.querySelector('#onboarding-skip')?.addEventListener('click', () => {
     void skipSetup()
   })
-  overlay.querySelector('#onboarding-close')!.addEventListener('click', () => {
+  overlay.querySelector('#onboarding-close')?.addEventListener('click', () => {
     void skipSetup()
   })
 

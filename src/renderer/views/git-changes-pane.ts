@@ -1,5 +1,6 @@
 import type * as Monaco from 'monaco-editor'
 import { el, clear } from '../dom/helpers.ts'
+import { at } from '@shared/array-utils.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitChange, GitChangeStatus, GitFileDiff, GitStatusResult } from '@shared/types/git.ts'
@@ -240,7 +241,7 @@ export function mountGitChangesPane(
   }
 
   function renderList(): void {
-    const queue = store.getState().stagedDiffs ?? []
+    const queue = store.getState().stagedDiffs
     syncBulkActions(queue.length)
     clear(listBody)
 
@@ -282,7 +283,7 @@ export function mountGitChangesPane(
     cancelPendingDiffReveal = revealFirstDiffChangeOnNextUpdate(ensureDiffEditor())
 
     await whenDiffHostVisible(viewerRoot)
-    if (requestId !== selectRequestId || pendingSelect?.path !== view.path) return
+    if (requestId !== selectRequestId || pendingSelect.path !== view.path) return
 
     emptyState.hidden = true
     imageWrap.hidden = true
@@ -311,7 +312,7 @@ export function mountGitChangesPane(
 
   async function selectProposed(path: string): Promise<void> {
     const { stagedDiffs, activeDiff } = store.getState()
-    const queue = stagedDiffs ?? []
+    const queue = stagedDiffs
     pruneStagedDiffCache(proposedDiffCache, queue)
     if (activeDiff) proposedDiffCache.set(activeDiff.path, activeDiff)
     selection = { kind: 'proposed', path }
@@ -333,7 +334,6 @@ export function mountGitChangesPane(
     const diff = await api.git.fileDiff(path, staged)
     if (
       requestId !== selectRequestId ||
-      pendingSelect?.kind !== 'git' ||
       pendingSelect.path !== path ||
       pendingSelect.staged !== staged
     ) {
@@ -393,7 +393,7 @@ export function mountGitChangesPane(
 
   async function syncSelection(): Promise<void> {
     const { stagedDiffs, activeDiff } = store.getState()
-    const queue = stagedDiffs ?? []
+    const queue = stagedDiffs
 
     // A git_change_navigate request takes priority over the existing selection.
     const navTarget = pendingNavigate
@@ -479,8 +479,8 @@ export function mountGitChangesPane(
     conflictBanner.hidden = false
     conflictBanner.textContent =
       paths.length === 1
-        ? `${paths[0]} changed on disk since this diff was staged. The diff was refreshed against the current file — review and re-approve to keep your changes.`
-        : `${paths.length} files changed on disk since they were staged. Their diffs were refreshed against the current files — review and re-approve.`
+        ? `${at(paths, 0)} changed on disk since this diff was staged. The diff was refreshed against the current file — review and re-approve to keep your changes.`
+        : `${String(paths.length)} files changed on disk since they were staged. Their diffs were refreshed against the current files — review and re-approve.`
     if (paths[0]) {
       store.setState({ rightPanelMode: 'changes', filesPaneOpen: true })
       store.emit('right_panel_mode_changed')
@@ -512,7 +512,7 @@ export function mountGitChangesPane(
       monaco.editor.setTheme(theme === 'dark' ? 'vs-dark' : 'vs')
     }),
     store.on('staged_diffs_changed', () => {
-      const queue = store.getState().stagedDiffs ?? []
+      const queue = store.getState().stagedDiffs
       if (queue.length === 0) conflictBanner.hidden = true
       if (changesModeActive(store)) void syncFromStore()
       else renderList()

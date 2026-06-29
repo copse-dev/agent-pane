@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { at } from '@shared/array-utils.ts'
 import { runSubagent, CI_INVESTIGATOR_SYSTEM_PROMPT } from './run-subagent.ts'
 import type { LLMMessage, LLMProvider, StreamChunk } from '@shared/types'
 
@@ -7,7 +8,7 @@ function mockProvider(chunks: StreamChunk[][]): LLMProvider {
   let call = 0
   return {
     async *stream(): AsyncGenerator<StreamChunk> {
-      for (const chunk of chunks[call++ % chunks.length]!) yield chunk
+      for (const chunk of at(chunks, call++ % chunks.length)) yield chunk
     },
   }
 }
@@ -67,7 +68,7 @@ describe('runSubagent', () => {
     const provider = {
       lastUsage: null as { inputTokens: number; outputTokens: number } | null,
       async *stream(): AsyncGenerator<StreamChunk> {
-        const u = usages[call]!
+        const u = at(usages, call)
         provider.lastUsage = u
         const chunks =
           call++ === 0
@@ -174,7 +175,7 @@ describe('runSubagent', () => {
       cacheCreationTokens: 50,
     })
     const done = subagentChunks.find((c) => c.type === 'subagent_done')
-    assert.ok(done && done.type === 'subagent_done')
+    assert.ok(done)
     assert.deepEqual(done.usage, {
       inputTokens: 1000,
       outputTokens: 20,
@@ -229,7 +230,7 @@ describe('runSubagent', () => {
       kind: 'investigate_ci',
     })
     const start = chunks.find((c) => c.type === 'subagent_start')
-    assert.ok(start && start.type === 'subagent_start')
+    assert.ok(start)
     assert.equal(start.session.kind, 'investigate_ci')
   })
 

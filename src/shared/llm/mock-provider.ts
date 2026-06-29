@@ -1,5 +1,6 @@
 import type { LLMProvider, LLMMessage, LLMTool, StreamChunk } from '@shared/types'
 import { takeMockScriptStep } from './mock-script.ts'
+import { at } from '@shared/array-utils.ts'
 const randomUUID = (): string => globalThis.crypto.randomUUID()
 const MAX_MOCK_DELAY_MS = 5_000
 
@@ -93,7 +94,7 @@ export class MockLLMProvider implements LLMProvider {
         if (directiveToolName && tools.some((t) => t.name === directiveToolName)) {
           if (signal?.aborted) return
           let args: Record<string, unknown> = {}
-          if (directive?.[2]) {
+          if (directive[2]) {
             try {
               args = JSON.parse(directive[2].trim()) as Record<string, unknown>
             } catch {
@@ -118,7 +119,7 @@ export class MockLLMProvider implements LLMProvider {
         ? { id: randomUUID(), name: 'explore', args: { query: 'List the workspace root' } }
         : listDir
           ? { id: randomUUID(), name: 'list_dir', args: { path: '.' } }
-          : { id: randomUUID(), name: tools[0]!.name, args: {} }
+          : { id: randomUUID(), name: at(tools, 0).name, args: {} }
       yield { type: 'tool_call', toolCall }
       yield { type: 'done' }
       return

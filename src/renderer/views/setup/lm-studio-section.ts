@@ -1,5 +1,6 @@
 import type { ApiClient } from '../../../preload/api.d.ts'
 import { PREFERRED_MODELS } from '@shared/preferred-models.ts'
+import { at } from '@shared/array-utils.ts'
 import {
   DEFAULT_WEB_ALLOWED_ORIGINS,
   WEB_ALLOWED_ORIGINS_SETTING,
@@ -293,7 +294,7 @@ export function createLmStudioSection(
       localServerUrl: lmUrl,
       safetyClassifierEnabled: currentSafetyEnabled ?? true,
       safetyConfidenceThreshold: currentThreshold ?? 0.85,
-      safetyModel: opts?.safetyModel ?? currentSafety ?? PREFERRED_MODELS[2]!.id,
+      safetyModel: opts?.safetyModel ?? currentSafety ?? at(PREFERRED_MODELS, 2).id,
       autoRunSandboxCommands: currentAutoRun ?? true,
       mcpAutoAllowReadOnly: currentMcpAuto ?? false,
       defaultReadonlyMode: currentReadonly ?? false,

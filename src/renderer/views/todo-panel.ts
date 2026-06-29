@@ -22,7 +22,7 @@ export function createTodoListEl(todos: TodoItem[], opts?: { compact?: boolean }
   header.append(
     el('span', { class: 'todo-panel-title' }, 'To-dos'),
     el('span', { class: 'todo-panel-count' }, String(total)),
-    el('span', { class: 'todo-panel-progress' }, `${done}/${total} done`),
+    el('span', { class: 'todo-panel-progress' }, `${String(done)}/${String(total)} done`),
   )
   panel.append(header)
 
