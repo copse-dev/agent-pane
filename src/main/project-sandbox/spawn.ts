@@ -218,6 +218,6 @@ export async function spawnPtyInProjectSandbox(
     ...ptyOpts,
     // Workspace tmp wins over the host TMPDIR carried in termEnv: this branch is
     // sandbox-wrapped, so the system temp dir is denied (issue #481).
-    env: withWorkspaceTmpEnv({ ...env, ...termEnv }) as Record<string, string>,
+    env: withWorkspaceTmpEnv({ ...env, ...termEnv }),
   })
 }
