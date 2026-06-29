@@ -161,7 +161,9 @@ export async function buildInvokedSkillsBlock(
     ? opts.sandboxActive
       ? `Skill commands run inside the project sandbox (macOS seatbelt): no network and no ` +
         `out-of-workspace filesystem access. A command that needs either will prompt for approval ` +
-        `before running outside the sandbox — do not try to work around the sandbox. `
+        `before running outside the sandbox — do not try to work around the sandbox. For temporary ` +
+        `files, write under the workspace or use $TMPDIR (already pointed at a writable, ` +
+        `workspace-owned scratch dir); do not hardcode /tmp, which the sandbox denies. `
       : `No OS sandbox is active for this session, so a skill's shell commands are confined only by ` +
         `approval. Keep skill work inside the workspace, and surface any network, install, or ` +
         `out-of-workspace command for explicit user approval rather than auto-running it. `
