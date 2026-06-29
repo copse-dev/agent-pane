@@ -22,7 +22,7 @@ import {
   formatEphemeralRunnerPromptBody,
   shellRequiresOutsideSandbox,
   mcpToolLabel,
-  GITHUB_CI_TOOLS,
+  GITHUB_READONLY_CI_TOOLS,
 } from './permission-policy.ts'
 import { detectPackageInstall } from './safe-install.ts'
 import {
@@ -395,7 +395,7 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
   // Read-only GitHub CI reads (status/logs/wait) reach github.com via the `gh`
   // CLI but never mutate anything — the same shape as gh_pr_view in SANDBOX_TOOLS.
   // They auto-run without prompting; nothing they do needs user approval.
-  if (GITHUB_CI_TOOLS.has(toolName)) {
+  if (GITHUB_READONLY_CI_TOOLS.has(toolName)) {
     return true
   }
 

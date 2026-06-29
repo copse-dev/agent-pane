@@ -29,7 +29,7 @@ export const SANDBOX_TOOLS = new Set([
  * read CI status/logs (no mutation), so the gate auto-runs them without
  * prompting — same treatment as the read-only gh_pr_* tools in SANDBOX_TOOLS.
  */
-export const GITHUB_CI_TOOLS = new Set([
+export const GITHUB_READONLY_CI_TOOLS = new Set([
   'get_ci_status',
   'wait_for_ci_checks',
   'get_ci_failure_logs',
