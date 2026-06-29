@@ -13,6 +13,7 @@ import { qsRequired } from '../dom/helpers.ts'
 import { populateModelSelect, populateSmallTasksModelSelect } from './model-options.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createCustomProvidersSection } from './setup/custom-providers-section.ts'
+import { createAcpAgentsSection } from './setup/acp-agents-section.ts'
 import { createEnvKeyDetectSection } from './setup/env-key-detect-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createGhCliSection } from './setup/gh-cli-section.ts'
@@ -251,6 +252,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Push directly to the starting ref instead of a new branch
               </label>
             </fieldset>
+
+            <div id="settings-acp-agents-host"></div>
 
             <fieldset>
               <legend>Small tasks</legend>
@@ -581,6 +584,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   const customProvidersSection = createCustomProvidersSection(api)
   qsRequired(overlay, '#settings-custom-providers-host').append(customProvidersSection.root)
 
+  const acpAgentsSection = createAcpAgentsSection(api)
+  qsRequired(overlay, '#settings-acp-agents-host').append(acpAgentsSection.root)
+
   const envKeyDetectSection = createEnvKeyDetectSection(api, {
     onImported: () => {
       void cursorKeySection.refreshKeyStatus()
@@ -905,6 +911,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await cursorKeySection.refreshKeyStatus()
       await claudeAgentKeySection.refreshKeyStatus()
       await customProvidersSection.refresh()
+      await acpAgentsSection.refresh()
       await envKeyDetectSection.refresh()
 
       const form = qsRequired<HTMLFormElement>(overlay, 'form')

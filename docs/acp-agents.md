@@ -9,9 +9,8 @@ model loop (and brings its own auth), while Copse keeps ownership of the
 workspace and the approval UX.
 
 > Status: this is the first slice of the client role (issue #264, Track 1).
-> Terminals, cross-turn session resume, and a Settings UI for managing agents
-> are not here yet — see [Limitations](#limitations). For now agents are
-> configured through the `registeredAcpAgents` setting as described below.
+> Terminals and cross-turn session resume are not here yet — see
+> [Limitations](#limitations).
 
 ## How it works
 
@@ -31,7 +30,32 @@ workspace and the approval UX.
 
 ## Configure an agent
 
-Add an entry to the `registeredAcpAgents` setting. Each entry matches the
+### Settings panel (recommended)
+
+Open **Settings → General → ACP agents**. From there you can:
+
+- **Detect installed agents** — scans your device (PATH + running processes) for
+  known ACP agents and adds any it finds with one click.
+- **Add an agent** — fill in id, title, command, arguments (one per line),
+  environment (`KEY=value` per line), and an enabled toggle.
+- **Edit / remove** existing agents.
+
+Changes are saved immediately; reopen the model dropdown to see them.
+
+### Detect from the command line
+
+Prefer the terminal? Run the standalone detector, which prints what's installed
+plus a ready-to-paste config block:
+
+```sh
+npm run detect:acp     # or: node scripts/detect-acp-agents.mts
+```
+
+### The underlying setting
+
+Both the panel and the detector write the `registeredAcpAgents` setting. You can
+also edit it directly (e.g. from the app DevTools console with
+`window.api.settings.set('registeredAcpAgents', [...])`). Each entry matches the
 `AcpAgentConfig` shape:
 
 | Field     | Required | Notes                                                              |
@@ -79,8 +103,6 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   so follow-ups keep context, but the agent has no durable session memory yet.
 - **Text only on input.** Image attachments are dropped before the prompt is
   sent (the agent receives the text blocks).
-- **No Settings UI.** Agents are configured via the `registeredAcpAgents`
-  setting, not a dedicated screen.
 - **No MCP forwarding.** Your configured MCP servers are not yet forwarded to the
   external agent.
 
