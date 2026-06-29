@@ -1,4 +1,4 @@
-import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
+import type { LLMMessage, StreamChunk } from '@shared/types'
 import {
   buildRemoteAgentContextPreamble,
   parseSseStream,
@@ -11,14 +11,23 @@ import {
   DEFAULT_CURSOR_AGENT_BASE_URL,
   REMOTE_AGENT_MODELS,
   REMOTE_AGENT_MODEL_PREFIX,
+  REMOTE_AGENT_PROVIDER_ANTHROPIC,
   REMOTE_AGENT_PROVIDER_CURSOR,
   type RemoteAgentProvider,
 } from '@shared/remote-agent.ts'
 import { getApiKey, getSetting } from './settings.ts'
 import { validateRemoteAgentBaseUrl } from './web-origin-policy.ts'
-import { getCurrentBranchName, getGithubRepoSlug } from './git-service.ts'
+import { getCurrentBranchName } from './git-service.ts'
 import { storageGet, storageSet } from './storage.ts'
-import { getActiveProjectRoot, getWorkspaceRoot } from './workspace.ts'
+import { clearManagedAgentSession, runManagedAgentFromSettings } from './managed-agents-client.ts'
+import {
+  resolveRemoteAgentRepository,
+  type RemoteAgentRunOptions,
+  type RemoteAgentRunResult,
+} from './remote-agent-shared.ts'
+
+// Re-exported for callers/tests that import the repository resolver from here.
+export { resolveRemoteAgentRepository } from './remote-agent-shared.ts'
 
 const REMOTE_AGENT_SESSION_PREFIX = 'remote-agent-session:'
 const REMOTE_AGENT_MODE = 'agent'
@@ -32,24 +41,6 @@ interface RemoteAgentSession {
   agentId: string
   /** Web URL for the remote run (e.g. cursor.com/agents/...), shown in the transcript. */
   url?: string
-}
-
-interface RemoteAgentRunResult {
-  assistantText: string
-  inputTokens: number
-  outputTokens: number
-  messages: Array<{ role: 'assistant'; content: string }>
-}
-
-interface RemoteAgentRunOptions {
-  threadId: string
-  provider: RemoteAgentProvider
-  userPrompt: UserContent
-  signal: AbortSignal
-  onChunk: (chunk: StreamChunk) => void
-  /** Prior local conversation, dumped into the first prompt on remote hand-off. */
-  priorMessages?: LLMMessage[]
-  fetchImpl?: typeof fetch
 }
 
 interface CursorCreateAgentResponse {
@@ -117,6 +108,9 @@ function writeSession(threadId: string, session: RemoteAgentSession): void {
 
 export function clearRemoteAgentSession(threadId: string): void {
   storageSet(sessionKey(threadId), null)
+  // Clear the Claude Managed Agents session for this thread too, so a fresh chat
+  // starts a new remote session regardless of which provider was last used.
+  clearManagedAgentSession(threadId)
 }
 
 function cursorAuthHeader(apiKey: string): string {
@@ -208,29 +202,6 @@ function assertArtifactPath(path: string): string {
 
 function artifactCacheKey(agentId: string, path: string): string {
   return `${agentId}\0${path}`
-}
-
-type GithubRepoSlugResolver = (root: string | null) => Promise<string | null>
-
-function normalizeRepository(raw: string): string {
-  const value = raw.trim()
-  if (!value) return value
-  if (/^https?:\/\//i.test(value)) return value
-  if (/^[\w.-]+\/[\w.-]+$/.test(value)) return `https://github.com/${value}`
-  return value
-}
-
-export async function resolveRemoteAgentRepository(
-  options: { getGithubRepoSlug?: GithubRepoSlugResolver } = {},
-): Promise<string> {
-  const configured = normalizeRepository(getSetting<string>('remoteAgentRepository', ''))
-  if (configured) return configured
-  const resolveSlug = options.getGithubRepoSlug ?? getGithubRepoSlug
-  const slug = await resolveSlug(getActiveProjectRoot() ?? getWorkspaceRoot())
-  if (slug) return `https://github.com/${slug}`
-  throw new Error(
-    'Could not infer a GitHub repository from the active project. Configure Settings → Remote agents → Repository.',
-  )
 }
 
 async function createRemoteAgent(input: {
@@ -556,6 +527,11 @@ async function streamRemoteRun(input: {
 export async function runRemoteAgentFromSettings(
   options: RemoteAgentRunOptions,
 ): Promise<RemoteAgentRunResult> {
+  // Each remote provider has its own API shape; route to the matching adapter.
+  if (options.provider === REMOTE_AGENT_PROVIDER_ANTHROPIC) {
+    return runManagedAgentFromSettings(options)
+  }
+
   const fetchImpl = options.fetchImpl ?? fetch
   const baseUrl = resolveBaseUrl(options.provider)
   const apiKey = resolveApiKey()

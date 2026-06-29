@@ -197,16 +197,21 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset>
-              <legend>Remote agents (Cursor Cloud)</legend>
+              <legend>Remote agents</legend>
               <p class="settings-fieldset-desc">
-                Choose <strong>Cursor Cloud Agent</strong> as your model to run chat turns on Cursor
-                Cloud. The conversation streams back here just like a normal chat, but the work
-                happens on a remote machine: the agent runs its own tools, pushes commits to a
-                branch, and (optionally) opens a pull request. It does <strong>not</strong> edit the
-                files in this local workspace — review its changes in the branch / PR it links in the
-                reply.
+                Choose <strong>Cursor Cloud Agent</strong> or <strong>Claude Agent</strong> as your
+                model to run chat turns on a remote machine. The conversation streams back here just
+                like a normal chat, but the work happens in the cloud: the agent runs its own tools,
+                pushes commits to a branch, and (optionally) opens a pull request. It does
+                <strong>not</strong> edit the files in this local workspace — review its changes in
+                the branch / PR it links in the reply.
               </p>
               <div id="settings-cursor-key-host"></div>
+              <div id="settings-claude-agent-key-host"></div>
+              <p class="field-hint">
+                Claude Agent needs an Anthropic API key (above) plus a GitHub token: the token is
+                used only to clone and push the repository — the agent never handles it directly.
+              </p>
               <label>
                 Agent API base URL
                 <input
@@ -216,8 +221,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   autocomplete="off"
                 />
                 <span class="field-hint">
-                  Usually leave this as <code>https://api.cursor.com</code>. Change it only for
-                  Cursor API development or testing.
+                  Applies to Cursor Cloud Agent — usually leave this as
+                  <code>https://api.cursor.com</code>. Claude Agent always uses
+                  <code>https://api.anthropic.com</code>.
                 </span>
               </label>
               <label>
@@ -596,6 +602,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   })
   qsRequired(overlay, '#settings-cursor-key-host').append(cursorKeySection.root)
 
+  // The GitHub token has no validation endpoint, so skip on-input validation for
+  // this section (the Anthropic key still shows a saved/not-set status).
+  const claudeAgentKeySection = createApiKeysSection(api, {
+    legend: 'Claude authentication',
+    providers: ['anthropic', 'github'],
+    validateOnInput: false,
+  })
+  overlay.querySelector('#settings-claude-agent-key-host')!.append(claudeAgentKeySection.root)
+
   const lmStudioSection = createLmStudioSection(api, { showInstallGuide: false })
   qsRequired(overlay, '#settings-lm-studio-host').append(lmStudioSection.root)
 
@@ -863,6 +878,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     showSection('general')
     void (async (): Promise<void> => {
       await cursorKeySection.refreshKeyStatus()
+      await claudeAgentKeySection.refreshKeyStatus()
       await customProvidersSection.refresh()
       await envKeyDetectSection.refresh()
 
@@ -919,6 +935,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const data = new FormData(settingsForm)
 
       await cursorKeySection.saveKeys()
+      await claudeAgentKeySection.saveKeys()
       await customProvidersSection.saveKeys()
       await lmStudioSection.saveConnection()
       const routingValues = modelRoutingSection.readValues()

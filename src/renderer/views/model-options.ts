@@ -19,7 +19,6 @@ type AvailableProviders = Awaited<ReturnType<ApiClient['settings']['availablePro
 import {
   REMOTE_AGENT_MODELS,
   REMOTE_AGENT_MODEL_PREFIX,
-  REMOTE_AGENT_PROVIDER_CURSOR,
   parseRemoteAgentModel,
 } from '@shared/remote-agent.ts'
 import { clear } from '../dom/helpers.ts'
@@ -157,13 +156,11 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
     options.push(...extraProviderOptions(provider, isAvailable(provider.id), current))
   }
 
-  // Remote agents (Cursor Cloud): only listed once configured.
+  // Remote agents (Cursor Cloud, Claude Cloud): only listed once the matching
+  // provider key is configured. Each remote model gates on its own provider.
   const remoteGroup = 'Remote agents'
   for (const remote of REMOTE_AGENT_MODELS) {
-    // RemoteAgentProvider is a single-member union today, so this discriminator is
-    // always true per types; it stays so future providers gate on their own key.
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    if (remote.provider === REMOTE_AGENT_PROVIDER_CURSOR && isAvailable('cursor')) {
+    if (isAvailable(remote.provider)) {
       options.push({ value: remote.value, label: remote.label, group: remoteGroup })
     }
   }
