@@ -12,8 +12,7 @@ class TestResizeObserver {
   disconnect(): void {}
 }
 
-;(globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver =
-  TestResizeObserver
+;(globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver = TestResizeObserver
 ;(globalThis as { requestAnimationFrame?: typeof requestAnimationFrame }).requestAnimationFrame = (
   callback,
 ) => setTimeout(() => callback(Date.now()), 0) as unknown as number

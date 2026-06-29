@@ -149,9 +149,7 @@ function toAnthropicMessages(messages: LLMMessage[]): Anthropic.MessageParam[] {
       return [
         {
           role: 'user',
-          content: toAnthropicContent(
-            m.content,
-          ),
+          content: toAnthropicContent(m.content),
         },
       ]
     }

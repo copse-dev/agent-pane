@@ -65,9 +65,9 @@ describe('fetchOpenAiCompatibleModels', () => {
   })
 
   it('catches network errors', async () => {
-    globalThis.fetch = (async () => {
+    globalThis.fetch = async () => {
       throw new Error('boom')
-    })
+    }
     const res = await fetchOpenAiCompatibleModels('https://api.example.com/v1')
     assert.equal(res.ok, false)
     assert.match(res.error ?? '', /boom/)
