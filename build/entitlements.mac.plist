@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Electron runs a V8 JIT, so the hardened runtime must permit JIT-mapped
+         and unsigned executable memory or the renderer/main crash on launch. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <!-- Copse loads native node addons (node-pty) and spawns Node/helper
+         binaries that aren't signed by our Team ID; library validation would
+         otherwise refuse to load them. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <!-- Child processes (shells, agent tools, codesearch) rely on inherited
+         DYLD_* / environment configuration. -->
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+</dict>
+</plist>

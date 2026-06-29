@@ -1,0 +1,73 @@
+name: Release (macOS)
+
+# Build, sign (Developer ID Application), notarize, and publish a macOS
+# pre-release of Copse. Runs on a `v*` tag push, or manually via the Actions UI.
+#
+# electron-builder produces a DMG (first install) + zip (electron-updater feed)
+# for arm64 and x64, signs them with the Developer ID cert, submits them to
+# Apple's notary service, staples the ticket, and — when publishing — uploads
+# them plus `latest-mac.yml` to a GitHub *prerelease* (see package.json
+# `build.publish`).
+#
+# Signing/notarization/publish only happen when the secrets below are set. With
+# them absent the job still builds an unsigned DMG/zip (useful for a dry run),
+# because `release:mac` only flips notarization on when credentials are present.
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish artifacts to a GitHub prerelease
+        type: boolean
+        default: true
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-mac-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-mac:
+    # Apple-Silicon GitHub-hosted runner; electron-builder downloads the x64
+    # Electron to cross-build the Intel artifacts in the same run.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v6.0.3
+      - uses: ./.github/actions/setup
+      # Build + package. release:mac signs (CSC_*), notarizes (APPLE_* +
+      # `-c.mac.notarize=true`), and publishes; dist:mac is the unsigned dry run
+      # used when nothing should be published.
+      - name: Build, sign, notarize${{ (github.event_name == 'push' || inputs.publish) && ', publish' || '' }}
+        env:
+          # Developer ID Application certificate, base64-encoded .p12 + password.
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          # Apple notary (notarytool) credentials: an Apple ID + app-specific
+          # password + Team ID. electron-builder reads these when notarize=true.
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # electron-builder's GitHub publisher token (default token has the
+          # contents:write granted above).
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.publish }}" = "true" ]; then
+            npm run release:mac
+          else
+            npm run dist:mac
+          fi
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: copse-macos
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/latest-mac.yml
+          if-no-files-found: warn
+          retention-days: 7

@@ -9,6 +9,7 @@ import { applyAppIcon } from './app-icon.ts'
 import type { LLMMessage } from '@shared/types'
 import { createMainWindow } from './windows/create-main-window.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
+import { initAutoUpdate } from './services/auto-update.ts'
 import { checkToolAvailability } from './services/tool-availability.ts'
 import { createRegistry, registerSkillTools } from './services/registry-bootstrap.ts'
 import {
@@ -110,6 +111,8 @@ app
     const win = createMainWindow()
     applyAppIcon([win])
     buildAppMenu(win)
+    // Packaged macOS build only: background update check + prompts (no-op elsewhere).
+    initAutoUpdate(win)
     const registry = createRegistry()
     // The only Electron-specific seam the agent run needs: forward stream chunks
     // to the renderer. Injecting it as an AgentHost keeps runAgent free of BrowserWindow.
