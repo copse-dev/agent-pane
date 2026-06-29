@@ -76,8 +76,12 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // section in Settings.
   mcpUiArtefactsEnabled: z.boolean(),
   ciInvestigatorEnabled: z.boolean(),
+  okfMemoriesEnabled: z.boolean(),
   customInstructions: z.string().max(8192),
   onboardingCompleted: z.boolean(),
+  // Opt-in consent for scanning the shell environment / start-up files for
+  // provider API keys (default off; see env-key-detection.ts).
+  envKeyAutoDetectEnabled: z.boolean(),
 } as const satisfies Record<string, z.ZodType>
 
 export type RendererWritableSettingKey = keyof typeof RENDERER_WRITABLE_SETTING_SCHEMAS
