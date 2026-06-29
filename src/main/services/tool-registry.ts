@@ -29,6 +29,9 @@ export class ToolRegistry {
   private tools = new Map<string, ToolDefinition>()
 
   register<TArgs>(tool: ToolDefinition<TArgs>): void {
+    // Erase the per-tool arg type for uniform storage. ToolDefinition<TArgs> is
+    // invariant in TArgs, so this widening can't be expressed without a cast;
+    // execute() is only ever called with args validated by this tool's own schema.
     this.tools.set(tool.name, tool as ToolDefinition)
   }
 

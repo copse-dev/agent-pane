@@ -104,6 +104,15 @@ You also have built-in browser tools (loopback/localhost auto-runs; other origin
 Prefer browser_snapshot over browser_screenshot for reading and interacting; take a fresh snapshot after navigation or a click before acting on refs.
 This built-in browser uses the app's bundled Chromium — use it for local web/UI verification and screenshots. Do NOT install or spin up a separate browser stack (Playwright, Puppeteer, Selenium, or a standalone Chromium download); start the project's dev server and open its URL with browser_navigate.`
 
+// Optional steering, toggled by the experimental `okfMemoriesEnabled` setting.
+// Only appended when the remember/recall tools are actually registered.
+export const MEMORY_TOOLS_BLOCK = `
+
+You have a persistent memory for this project, stored as Open Knowledge Format markdown notes:
+- remember: Save a durable fact worth recalling in future sessions — a project convention, decision, gotcha, or environment detail. Re-use a title to update that memory.
+- recall: Look up what you previously stored, optionally filtered by a query.
+Use recall early when a task may depend on prior context, and remember when you learn something durable the user would not want to re-explain. Keep memories concise and project-specific; do not store secrets.`
+
 // Optional steering, toggled by the `externalApiSafety` setting. Kept short and
 // appended near the top of the system prompt so it sits ahead of workspace- and
 // user-supplied instructions.

@@ -19,6 +19,7 @@ import type {
 } from '@shared/types/skills.ts'
 import { READ_FILE_LIMITS_CEILING } from '@shared/agent/read-file-limits.ts'
 import { extractExternalLinkHosts } from '@shared/skills/extract-skill-links.ts'
+import { notifyRefreshContextEstimate } from './context-estimate-notify.ts'
 
 /** Max bytes read from a skill file (auto-approved, outside workspace). */
 export const SKILL_READ_MAX_BYTES = READ_FILE_LIMITS_CEILING.maxChars * 4
@@ -197,6 +198,7 @@ export async function initSkillsRegistry(): Promise<void> {
   refreshPromise = refreshSkillsRegistry()
   await refreshPromise
   refreshPromise = null
+  notifyRefreshContextEstimate()
 }
 
 export function listSkills(): SkillSummary[] {
