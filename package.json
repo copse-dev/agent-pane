@@ -1,6 +1,6 @@
 {
   "name": "copse-panel",
-  "version": "0.1.0",
+  "version": "0.1.0-beta.1",
   "private": true,
   "license": "Apache-2.0",
   "description": "Copse — AI coding assistant desktop app",
@@ -41,7 +41,9 @@
     "analyze:thread": "node scripts/run-analyze-thread.mts",
     "sync:models": "node scripts/sync-model-catalog.mts",
     "sync:cursor-skills": "npx tsx scripts/fetch-bundled-cursor-skills.mts",
-    "pack:mac": "npm run build:release && npm run icons:mac && electron-builder --mac dir",
+    "pack:mac": "npm run build:release && npm run icons:mac && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
+    "dist:mac": "npm run build:release && electron-builder --mac",
+    "release:mac": "npm run build:release && electron-builder --mac -c.mac.notarize=true --publish always",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run check:dead-code && npm run check:oracle && npm test"
   },
   "build": {
@@ -57,14 +59,40 @@
     ],
     "asarUnpack": [
       "**/node_modules/node-pty/**/*",
-      "**/node_modules/@anthropic-ai/sandbox-runtime/**/*"
+      "**/node_modules/@anthropic-ai/sandbox-runtime/**/*",
+      "dist/resources/codesearch/**"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "jonathanKingston",
+        "repo": "agent-pane",
+        "releaseType": "prerelease"
+      }
     ],
     "mac": {
       "icon": "assets/icons/app.icns",
       "category": "public.app-category.developer-tools",
       "target": [
-        "dir"
-      ]
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     }
   },
   "dependencies": {
@@ -78,6 +106,7 @@
     "ddg-search": "^2026.2.16",
     "dompurify": "^3.4.11",
     "electron-store": "^11.0.2",
+    "electron-updater": "^6.8.9",
     "highlight.js": "^11.11.1",
     "jsdom": "^29.1.1",
     "mermaid": "^11.15.0",

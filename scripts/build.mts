@@ -37,6 +37,11 @@ const nodeOpts = {
     'jsdom',
     '@mozilla/readability',
     'turndown',
+    // electron-updater lazy-requires its provider backends (GitHub/S3/generic)
+    // and js-yaml at runtime; bundling breaks those dynamic requires. It ships as
+    // a production dependency, so electron-builder packs it into the app's
+    // node_modules where the asar-aware require resolves it at runtime.
+    'electron-updater',
   ],
   sourcemap: true,
   target: 'node22',

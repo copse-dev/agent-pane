@@ -1,6 +1,7 @@
 import { app, Menu, dialog, type BrowserWindow } from 'electron'
 import { registerAllowedWorkspaceRoot, setWorkspaceRoot } from '../services/workspace.ts'
 import { buildIndex } from '../services/file-index.ts'
+import { checkForUpdatesManually } from '../services/auto-update.ts'
 
 // Builds the native application menu. The File ▸ Open Folder… item drives the
 // same flow as the renderer's Open Folder button: pick a directory, set it as
@@ -29,6 +30,13 @@ export function buildAppMenu(win: BrowserWindow): void {
             label: app.name,
             submenu: [
               { role: 'about' as const },
+              { type: 'separator' as const },
+              {
+                label: 'Check for Updates…',
+                click: (): void => {
+                  checkForUpdatesManually(win)
+                },
+              },
               { type: 'separator' as const },
               {
                 label: 'Settings…',
