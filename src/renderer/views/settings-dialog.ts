@@ -856,7 +856,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       ;(form.elements.namedItem('autoPortraitRightPanel') as HTMLInputElement).checked =
         store.getState().autoPortraitRightPanel
 
-      const savedIconVariant = (await api.settings.get('appIconVariant')) as unknown
+      const savedIconVariant = await api.settings.get('appIconVariant')
       const appIconVariant = isAppIconVariant(savedIconVariant)
         ? savedIconVariant
         : DEFAULT_APP_ICON_VARIANT

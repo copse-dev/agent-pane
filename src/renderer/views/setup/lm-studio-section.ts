@@ -39,13 +39,13 @@ export function createLmStudioSection(
     name: 'localServerUrl',
     placeholder: 'http://localhost:1234/v1',
     autocomplete: 'off',
-  }) as HTMLInputElement
+  })
   const keyInput = el('input', {
     type: 'password',
     name: 'lmStudioKey',
     placeholder: 'leave blank if disabled',
     autocomplete: 'off',
-  }) as HTMLInputElement
+  })
   const keyStatus = el('span', { class: 'key-status', 'data-key': 'lmstudio' })
   const testStatus = el('span', { class: 'lmstudio-test-status', id: 'lmstudio-test-status' })
   const detectionStatus = el('div', { class: 'setup-detection-status' })

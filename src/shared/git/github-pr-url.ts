@@ -34,7 +34,7 @@ export function extractGithubPrUrls(text: string): GithubPrRef[] {
   const seen = new Set<string>()
   const refs: GithubPrRef[] = []
   for (const match of text.matchAll(GITHUB_PR_URL_RE)) {
-    const raw = match[0]!.replace(/[.,;:)\]>]+$/, '')
+    const raw = match[0].replace(/[.,;:)\]>]+$/, '')
     const parsed = parseGithubPrUrl(raw)
     if (!parsed) continue
     const key = `${parsed.owner}/${parsed.repo}#${parsed.number}`
