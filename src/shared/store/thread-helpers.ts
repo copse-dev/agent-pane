@@ -1,5 +1,5 @@
 // Use the Web Crypto API available in both browsers and Node 19+
-const randomUUID = () => globalThis.crypto.randomUUID()
+const randomUUID = (): string => globalThis.crypto.randomUUID()
 import type { AppStore } from './store.ts'
 import type {
   Message,

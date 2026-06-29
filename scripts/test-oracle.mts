@@ -255,7 +255,7 @@ const TOKEN_STOPLIST = new Set([
  */
 export function extractSpecTokens(src: string): Token[] {
   const tokens = new Map<string, Token>()
-  const push = (kind: Token['kind'], value: string) => {
+  const push = (kind: Token['kind'], value: string): void => {
     if (!value || TOKEN_STOPLIST.has(value)) return
     if (!tokens.has(kind + value)) tokens.set(kind + value, { kind, value })
   }
@@ -414,7 +414,7 @@ export function computeSelection(changedInput: string[]): Selection {
   // Reasons per spec / unit test (for --explain).
   const e2eReasons = new Map<string, string[]>()
   const unitReasons = new Map<string, string[]>()
-  const addReason = (m: Map<string, string[]>, k: string, why: string) => {
+  const addReason = (m: Map<string, string[]>, k: string, why: string): void => {
     const list = m.get(k) ?? []
     list.push(why)
     m.set(k, list)
@@ -605,8 +605,8 @@ function main(): void {
 }
 
 function report(args: Args, c: Selection): void {
-  const dim = (s: string) => `\x1b[2m${s}\x1b[0m`
-  const bold = (s: string) => `\x1b[1m${s}\x1b[0m`
+  const dim = (s: string): string => `\x1b[2m${s}\x1b[0m`
+  const bold = (s: string): string => `\x1b[1m${s}\x1b[0m`
   console.log(bold(`\nTest oracle — ${c.changed.length} changed file(s)`))
   if (!c.changed.length) {
     console.log(dim('  (no changes detected vs base / working tree)'))
@@ -669,7 +669,7 @@ function runSelected(
   totalE2e: number,
   _totalUnit: number,
 ): void {
-  const run = (cmd: string, cmdArgs: string[]) => {
+  const run = (cmd: string, cmdArgs: string[]): void => {
     console.log(`\n$ ${cmd} ${cmdArgs.join(' ')}`)
     execFileSync(cmd, cmdArgs, { cwd: ROOT, stdio: 'inherit' })
   }

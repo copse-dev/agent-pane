@@ -123,7 +123,7 @@ function summarizeByModel(
     else cloudModels.push(row)
   }
 
-  const byTokens = (a: ModelUsageBreakdown, b: ModelUsageBreakdown) =>
+  const byTokens = (a: ModelUsageBreakdown, b: ModelUsageBreakdown): number =>
     b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens)
 
   cloudModels.sort(byTokens)

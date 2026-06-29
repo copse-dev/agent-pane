@@ -32,7 +32,7 @@ function mountResizableDom(): HTMLElement {
   })
   document.body.append(body)
   for (const handle of body.querySelectorAll<HTMLElement>('div')) {
-    handle.setPointerCapture = () => {}
+    handle.setPointerCapture = (): void => {}
   }
   return body
 }

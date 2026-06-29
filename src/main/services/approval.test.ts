@@ -37,7 +37,10 @@ describe('requestApproval pluggable transport', () => {
 })
 
 describe('startDockAttention', () => {
-  function fakeDock() {
+  function fakeDock(): {
+    dock: DockAttention
+    calls: { bounce: Array<string | undefined>; cancel: number[] }
+  } {
     const calls: { bounce: Array<string | undefined>; cancel: number[] } = {
       bounce: [],
       cancel: [],

@@ -23,9 +23,9 @@ function fakeTerm(lines: string[]): FakeTerm {
   return {
     rows: lines.length,
     provider: null,
-    registerLinkProvider(provider) {
+    registerLinkProvider(provider): { dispose(): void } {
       this.provider = provider
-      return { dispose() {} }
+      return { dispose(): void {} }
     },
     buffer: {
       active: {

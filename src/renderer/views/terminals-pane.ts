@@ -110,7 +110,7 @@ export function mountTerminalsPane(
     return { term, fitAddon }
   }
 
-  function setTabLabel(tab: TerminalTab, label: string) {
+  function setTabLabel(tab: TerminalTab, label: string): void {
     tab.label = label
     tab.labelSpan.textContent = label
     tab.tabBtn.title = label
@@ -129,7 +129,7 @@ export function mountTerminalsPane(
     return lines.join('\n').trim()
   }
 
-  async function autoNameTab(tab: TerminalTab) {
+  async function autoNameTab(tab: TerminalTab): Promise<void> {
     if (tab.renamed || tab.autoNamed || tab.naming) return
     const text = readTerminalText(tab)
     if (text.length < 8) return
@@ -148,7 +148,7 @@ export function mountTerminalsPane(
   }
 
   // Debounce naming until terminal output settles after a command.
-  function scheduleAutoName(tab: TerminalTab) {
+  function scheduleAutoName(tab: TerminalTab): void {
     if (tab.renamed || tab.autoNamed || tab.naming) return
     if (tab.nameTimer != null) clearTimeout(tab.nameTimer)
     tab.nameTimer = setTimeout(() => {
@@ -158,7 +158,7 @@ export function mountTerminalsPane(
   }
 
   // Replace the tab label with an inline text field for manual renaming.
-  function beginRename(tab: TerminalTab) {
+  function beginRename(tab: TerminalTab): void {
     if (tab.nameTimer != null) {
       clearTimeout(tab.nameTimer)
       tab.nameTimer = null
@@ -169,7 +169,7 @@ export function mountTerminalsPane(
     })
     input.value = tab.label
     let done = false
-    const finish = (save: boolean) => {
+    const finish = (save: boolean): void => {
       if (done) return
       done = true
       const next = input.value.trim()
@@ -198,13 +198,13 @@ export function mountTerminalsPane(
     input.select()
   }
 
-  function openTerminalSurface(tab: TerminalTab) {
+  function openTerminalSurface(tab: TerminalTab): void {
     if (tab.termOpened) return
     tab.term.open(tab.container)
     tab.termOpened = true
   }
 
-  async function flushPendingInput(tab: TerminalTab) {
+  async function flushPendingInput(tab: TerminalTab): Promise<void> {
     if (!tab.sessionId) return
     while (tab.pendingInput.length > 0) {
       const chunk = tab.pendingInput.shift()!
@@ -212,7 +212,7 @@ export function mountTerminalsPane(
     }
   }
 
-  async function ensureSession(tab: TerminalTab) {
+  async function ensureSession(tab: TerminalTab): Promise<void> {
     if (tab.sessionId || tab.creating) return
     if (!store.getState().workspaceRoot) {
       tab.term.writeln('\x1b[90mOpen a folder to use the terminal.\x1b[0m')
@@ -231,14 +231,14 @@ export function mountTerminalsPane(
     }
   }
 
-  async function destroySession(tab: TerminalTab) {
+  async function destroySession(tab: TerminalTab): Promise<void> {
     if (!tab.sessionId) return
     const old = tab.sessionId
     tab.sessionId = null
     await api.terminal.destroy(old)
   }
 
-  function fitTab(tab: TerminalTab) {
+  function fitTab(tab: TerminalTab): void {
     if (!terminalModeActive(store) || !tab.panel.classList.contains('is-active') || !tab.termOpened)
       return
     try {
@@ -251,13 +251,13 @@ export function mountTerminalsPane(
     }
   }
 
-  function focusTab(tab: TerminalTab) {
+  function focusTab(tab: TerminalTab): void {
     openTerminalSurface(tab)
     fitTab(tab)
     tab.term.focus()
   }
 
-  function setActiveTab(tabId: string) {
+  function setActiveTab(tabId: string): void {
     if (activeTabId === tabId) return
     activeTabId = tabId
     for (const tab of tabs.values()) {
@@ -275,7 +275,7 @@ export function mountTerminalsPane(
     }
   }
 
-  function wireTabInput(tab: TerminalTab) {
+  function wireTabInput(tab: TerminalTab): void {
     // Cmd/Ctrl+L attaches the terminal's current selection to the chat so
     // command output can be referenced as a prompt attachment.
     registerTerminalSelectionToChatShortcut(tab.term, () => tab.label)
@@ -368,7 +368,7 @@ export function mountTerminalsPane(
     return id
   }
 
-  async function removeTab(tabId: string) {
+  async function removeTab(tabId: string): Promise<void> {
     const tab = tabs.get(tabId)
     if (!tab) return
     if (tab.nameTimer != null) clearTimeout(tab.nameTimer)
@@ -389,7 +389,7 @@ export function mountTerminalsPane(
     }
   }
 
-  async function restartAllSessions() {
+  async function restartAllSessions(): Promise<void> {
     for (const tab of tabs.values()) {
       await destroySession(tab)
       tab.term.clear()
@@ -404,7 +404,7 @@ export function mountTerminalsPane(
     if (tab) fitTab(tab)
   })
 
-  function onTerminalModeChange() {
+  function onTerminalModeChange(): void {
     const active = terminalModeActive(store)
     if (active) {
       if (tabs.size === 0) addTab()
@@ -421,13 +421,13 @@ export function mountTerminalsPane(
     }
   }
 
-  function onThemeChange(theme: 'light' | 'dark') {
+  function onThemeChange(theme: 'light' | 'dark'): void {
     for (const tab of tabs.values()) {
       tab.term.options.theme = XTERM_THEME[theme]
     }
   }
 
-  function onFontSizeChange() {
+  function onFontSizeChange(): void {
     const size = store.getState().fontSize
     for (const tab of tabs.values()) {
       tab.term.options.fontSize = size
@@ -455,7 +455,7 @@ export function mountTerminalsPane(
     resizeObserver.disconnect()
     unsubOutput()
     unsubExit()
-    void (async () => {
+    void (async (): Promise<void> => {
       for (const tab of tabs.values()) {
         if (tab.nameTimer != null) clearTimeout(tab.nameTimer)
         tab.fileLinks.dispose()

@@ -88,11 +88,11 @@ export function showToast(
   host.append(toast)
 
   let timer = setTimeout(() => toast.remove(), duration)
-  const dismiss = () => {
+  const dismiss = (): void => {
     clearTimeout(timer)
     toast.remove()
   }
-  const refresh = (ms: number) => {
+  const refresh = (ms: number): void => {
     clearTimeout(timer)
     timer = setTimeout(() => toast.remove(), ms)
   }

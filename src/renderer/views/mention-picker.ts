@@ -23,7 +23,7 @@ export function initMentionPicker(opts: MentionPickerOptions): () => void {
   let selectedIdx = 0
   let currentFiles: string[] = []
 
-  async function updatePicker(query: string) {
+  async function updatePicker(query: string): Promise<void> {
     try {
       currentFiles = await api.index.query(query)
     } catch {
@@ -46,7 +46,7 @@ export function initMentionPicker(opts: MentionPickerOptions): () => void {
     picker.hidden = currentFiles.length === 0
   }
 
-  async function selectItem(idx: number) {
+  async function selectItem(idx: number): Promise<void> {
     const path = currentFiles[idx]
     if (!path) {
       hidePicker()
@@ -63,12 +63,12 @@ export function initMentionPicker(opts: MentionPickerOptions): () => void {
     hidePicker()
   }
 
-  function hidePicker() {
+  function hidePicker(): void {
     picker.hidden = true
     mentionStart = -1
   }
 
-  function updateSelection() {
+  function updateSelection(): void {
     picker
       .querySelectorAll('.mention-item')
       .forEach((el, i) => el.classList.toggle('selected', i === selectedIdx))

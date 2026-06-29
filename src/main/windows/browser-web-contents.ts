@@ -57,7 +57,7 @@ export function attachBrowserGuestWindowOpen(contents: WebContents): void {
   // The guest browses the public web freely, but a hostile page or redirect must
   // not be able to drive it to file:/chrome:/data: and render local or privileged
   // content inside the guest. Restrict its own navigations to web schemes.
-  const blockNonWebScheme = (event: Electron.Event, url: string) => {
+  const blockNonWebScheme = (event: Electron.Event, url: string): void => {
     if (!isAllowedBrowserNavigationUrl(url)) event.preventDefault()
   }
   contents.on('will-navigate', blockNonWebScheme)

@@ -368,7 +368,7 @@ async function connectServer(
     return { ...base, state: 'disabled' }
   }
 
-  let stderrOutput = () => ''
+  let stderrOutput = (): string => ''
   try {
     const created = createTransport(cfg)
     stderrOutput = created.stderrOutput

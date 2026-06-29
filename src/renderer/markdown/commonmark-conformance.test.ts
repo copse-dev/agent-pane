@@ -107,7 +107,7 @@ describe('CommonMark conformance (at rest)', () => {
     const expected = new Set(baseline.passing)
     const regressions = baseline.passing.filter((n) => !passingSet.has(n))
     const improvements = passing.filter((n) => !expected.has(n))
-    const detail = (nums: number[]) =>
+    const detail = (nums: number[]): string =>
       nums
         .map((n) => {
           const ex = spec.find((e) => e.example === n)

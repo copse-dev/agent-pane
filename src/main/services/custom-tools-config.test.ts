@@ -77,8 +77,8 @@ describe('normalizeCustomTool', () => {
     )
     assert.match(normalizeCustomTool({ name: 'noexec' }).error!, /missing an "execute"/)
     for (const r of [
-      { execute: () => 'x' },
-      { name: 'bad name', execute: () => 'x' },
+      { execute: (): string => 'x' },
+      { name: 'bad name', execute: (): string => 'x' },
       { name: 'noexec' },
     ]) {
       assert.equal(normalizeCustomTool(r).tool, undefined)

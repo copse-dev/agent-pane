@@ -26,7 +26,11 @@ function fakeApi(): ApiClient {
 // with the three seeded tool calls. The message text is left empty on purpose:
 // the e2e never asserted it, and an empty assistant body skips the markdown /
 // file-annotation path so the test stays focused on tool-card rendering.
-function mountWithTools() {
+function mountWithTools(): {
+  store: ReturnType<typeof createStore>
+  threadId: string
+  messageId: string
+} {
   const store = createStore()
   const threadId = createThread(store)
   const messageId = addMessage(store, threadId, 'assistant', '')

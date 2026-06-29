@@ -74,7 +74,7 @@ export function runCommand(
   }
 
   return new Promise((resolve, reject) => {
-    void (async () => {
+    void (async (): Promise<void> => {
       let proc
       try {
         const spawnOpts: Parameters<typeof spawnInProjectSandbox>[2] = {
@@ -96,7 +96,7 @@ export function runCommand(
       let settled = false
       let cancelKill: (() => void) | undefined
 
-      const onAbort = () => {
+      const onAbort = (): void => {
         if (timer) clearTimeout(timer)
         cancelKill = terminateProcessTree(proc)
       }
@@ -113,7 +113,7 @@ export function runCommand(
             }, timeout_ms)
           : undefined
 
-      const finish = (fn: () => void) => {
+      const finish = (fn: () => void): void => {
         if (timer) clearTimeout(timer)
         cancelKill?.()
         opts.signal?.removeEventListener('abort', onAbort)

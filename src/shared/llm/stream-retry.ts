@@ -60,7 +60,7 @@ export function sleepMs(ms: number, signal?: AbortSignal): Promise<void> {
       signal?.removeEventListener('abort', onAbort)
       resolve()
     }, ms)
-    const onAbort = () => {
+    const onAbort = (): void => {
       clearTimeout(timer)
       signal?.removeEventListener('abort', onAbort)
       reject(abortError(signal))

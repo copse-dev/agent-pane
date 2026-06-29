@@ -188,7 +188,8 @@ async function main(): Promise<void> {
   // the `Last synced:` header line so a re-run on a day with no upstream
   // changes is a true no-op.
   const existing = await readFile(GENERATED_PATH, 'utf8').catch(() => '')
-  const stripSyncDate = (s: string) => s.replace(/\/\/ Last synced: \d{4}-\d{2}-\d{2}\n/, '')
+  const stripSyncDate = (s: string): string =>
+    s.replace(/\/\/ Last synced: \d{4}-\d{2}-\d{2}\n/, '')
   if (stripSyncDate(existing) === stripSyncDate(content)) {
     console.log(
       `[sync-model-catalog] No upstream changes for ${TRACKED_MODELS.length} tracked models.`,

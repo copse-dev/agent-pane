@@ -6,9 +6,9 @@ import {
   validateOpenAiApiKey,
   validateOpenRouterApiKey,
 } from './validate-api-key.ts'
-import { BUILTIN_EXTRA_PROVIDERS } from '@shared/llm/extra-providers.ts'
+import { BUILTIN_EXTRA_PROVIDERS, type ExtraProvider } from '@shared/llm/extra-providers.ts'
 
-const PRESET = (slug: string) => BUILTIN_EXTRA_PROVIDERS.find((p) => p.id === slug)!
+const PRESET = (slug: string): ExtraProvider => BUILTIN_EXTRA_PROVIDERS.find((p) => p.id === slug)!
 
 describe('validateAnthropicApiKey', () => {
   it('rejects empty keys', async () => {
@@ -73,7 +73,8 @@ describe('validateExtraProviderApiKey', () => {
 
   it('accepts Mistral keys regardless of shape (no fixed prefix) and reaches the network', async () => {
     const original = globalThis.fetch
-    globalThis.fetch = async () => ({ ok: true, status: 200, statusText: 'OK' }) as Response
+    globalThis.fetch = async (): Promise<Response> =>
+      ({ ok: true, status: 200, statusText: 'OK' }) as Response
     try {
       const result = await validateExtraProviderApiKey(PRESET('mistral'), 'any-shaped-key')
       assert.equal(result.ok, true)

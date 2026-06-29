@@ -29,14 +29,14 @@ export function mountFooterOverflow(
   let open = false
   const cleanups: Array<() => void> = []
 
-  function setOpen(next: boolean) {
+  function setOpen(next: boolean): void {
     open = next
     trigger.setAttribute('aria-expanded', String(next))
     if (next) menu.removeAttribute('hidden')
     else menu.setAttribute('hidden', '')
   }
 
-  function renderMenu() {
+  function renderMenu(): void {
     const visibleItems = items.filter((item) => !item.hidden?.())
     wrap.hidden = visibleItems.length === 0
     if (visibleItems.length === 0) setOpen(false)

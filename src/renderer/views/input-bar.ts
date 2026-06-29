@@ -125,8 +125,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const footerOverflow = mountFooterOverflow(footer, [
     {
       label: 'Export',
-      hidden: () => !threadHasExportableContent(getActiveThread(store)),
-      onClick: () => {
+      hidden: (): boolean => !threadHasExportableContent(getActiveThread(store)),
+      onClick: (): void => {
         const thread = getActiveThread(store)
         if (threadHasExportableContent(thread)) downloadThreadJsonl(thread)
       },
@@ -197,10 +197,10 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     }
   }
 
-  function getActiveThreadId() {
+  function getActiveThreadId(): string | null {
     return store.getState().activeThreadId
   }
-  function isRunning() {
+  function isRunning(): boolean {
     const t = getActiveThread(store)
     return t?.status === 'running'
   }
@@ -237,7 +237,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     draftAutosave.schedule()
   })
 
-  function updateState() {
+  function updateState(): void {
     const running = isRunning()
     stopBtn.hidden = !running
     submitBtn.classList.toggle('with-stop', running)
@@ -263,7 +263,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     checkoutBranchBtn.textContent = 'Check out'
   }
 
-  function updateQueueIndicator() {
+  function updateQueueIndicator(): void {
     const thread = store.getState().threads.find((t) => t.id === getActiveThreadId())
     const count = thread?.pendingMessages?.length ?? 0
     if (count === 0) {
@@ -295,7 +295,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     })
   }
 
-  function updateFooter() {
+  function updateFooter(): void {
     const thread = getActiveThread(store)
     const running = thread?.status === 'running'
     const usageText = usageSummaryText()
@@ -422,7 +422,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       })
   })
 
-  function isAutocompletePickerOpen() {
+  function isAutocompletePickerOpen(): boolean {
     return root.querySelector('.mention-picker:not([hidden])') !== null
   }
 
@@ -441,7 +441,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   // each read the same un-cleared text and send the message more than once.
   let submitInProgress = false
 
-  async function submit() {
+  async function submit(): Promise<void> {
     if (submitInProgress) return
     submitInProgress = true
     try {
@@ -451,7 +451,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     }
   }
 
-  async function performSubmit() {
+  async function performSubmit(): Promise<void> {
     followUps.clearSuggestions()
     textarea.placeholder = defaultPlaceholder
     const rawText = textarea.value.trim()
@@ -572,7 +572,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     scheduleContextEstimate(0)
   }
 
-  function addChip(file: { path: string; content: string }) {
+  function addChip(file: { path: string; content: string }): void {
     attachedFiles.push(file)
     const chip = document.createElement('span')
     chip.className = 'attachment-chip'
@@ -589,7 +589,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     scheduleContextEstimate()
   }
 
-  function addTextChip(content: string, explicitLabel?: string) {
+  function addTextChip(content: string, explicitLabel?: string): void {
     const id = crypto.randomUUID()
     const label = explicitLabel ?? textBlockLabel(content)
     attachedTextBlocks.push({ id, label, content })
@@ -608,7 +608,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     scheduleContextEstimate()
   }
 
-  function addImageChip(dataUrl: string, mimeType: string) {
+  function addImageChip(dataUrl: string, mimeType: string): void {
     attachedImages.push({ dataUrl, mimeType })
     const chip = document.createElement('span')
     chip.className = 'attachment-chip image-chip'
@@ -631,7 +631,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   function readAsDataUrl(blob: Blob): Promise<string> {
     return new Promise((res, rej) => {
       const r = new FileReader()
-      r.onload = () => res(r.result as string)
+      r.onload = (): void => res(r.result as string)
       r.onerror = rej
       r.readAsDataURL(blob)
     })
@@ -645,7 +645,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const unregisterAttachments = registerPromptAttachments(attachmentHandlers)
 
   attachBtn.addEventListener('click', () => fileInput.click())
-  const onFileInputChange = () => {
+  const onFileInputChange = (): void => {
     const files = Array.from(fileInput.files ?? [])
     if (files.length === 0) return
     void attachFiles(files, attachmentHandlers, api, store.getState().workspaceRoot)
@@ -654,7 +654,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   }
   fileInput.addEventListener('change', onFileInputChange)
 
-  const onPaste = (e: ClipboardEvent) => {
+  const onPaste = (e: ClipboardEvent): void => {
     const items = Array.from(e.clipboardData?.items ?? [])
     const img = items.find((i) => i.type.startsWith('image/'))
     if (img) {

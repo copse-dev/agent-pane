@@ -105,7 +105,7 @@ export function createAgentRunAbortScheduler(
 } {
   let timer: ReturnType<typeof setTimeout> | null = null
 
-  const schedule = () => {
+  const schedule = (): void => {
     if (timer) clearTimeout(timer)
     if (deadline.isExpired()) {
       controller.abort(AGENT_RUN_ABORT_REASON_TIMEOUT)
@@ -120,7 +120,7 @@ export function createAgentRunAbortScheduler(
     )
   }
 
-  const clear = () => {
+  const clear = (): void => {
     if (timer) clearTimeout(timer)
     timer = null
   }

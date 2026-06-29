@@ -53,19 +53,17 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
   // whether a tool call has arrived since the last text chunk. When text
   // resumes after tool calls, we finalize the current message and start a new
   // one so the final answer renders BELOW the tool cards rather than above them.
-  const state = new Map<
-    string,
-    {
-      msgId: string | null
-      toolSinceText: boolean
-      writing: boolean
-      // Which message we've already requested a command summary for, and at what
-      // shell-command count, so we re-summarize only when more commands arrive.
-      summaryMsgId: string | null
-      summaryCount: number
-    }
-  >()
-  const get = (tid: string) => {
+  type ThreadStreamState = {
+    msgId: string | null
+    toolSinceText: boolean
+    writing: boolean
+    // Which message we've already requested a command summary for, and at what
+    // shell-command count, so we re-summarize only when more commands arrive.
+    summaryMsgId: string | null
+    summaryCount: number
+  }
+  const state = new Map<string, ThreadStreamState>()
+  const get = (tid: string): ThreadStreamState => {
     let st = state.get(tid)
     if (!st) {
       st = {
@@ -79,7 +77,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     }
     return st
   }
-  const activity = (tid: string) => syncAgentActivity(store, tid, get(tid).writing)
+  const activity = (tid: string): void => syncAgentActivity(store, tid, get(tid).writing)
 
   const unsub = api.agent.onChunk((threadId, chunk) => {
     const st = get(threadId)
@@ -345,7 +343,7 @@ function maybeSummarizeCommands(
   st.summaryMsgId = msgId
   st.summaryCount = commands.length
 
-  void (async () => {
+  void (async (): Promise<void> => {
     let summary: string | null
     try {
       summary = await api.agent.suggestCommandSummary(commands)
@@ -383,7 +381,7 @@ async function maybeNameThread(store: AppStore, api: ApiClient, threadId: string
   setThreadTitle(store, threadId, title?.trim() || firstWords(firstUser.content))
 }
 
-function tryOpenFileFromResult(_store: AppStore, _result: string) {
+function tryOpenFileFromResult(_store: AppStore, _result: string): void {
   // If tool result is file content (read_file), open it in the panel
   // Convention: read_file returns the content directly; we use the store's pending openFile
   // The main process sends agent:show_diff for write_file — handled separately

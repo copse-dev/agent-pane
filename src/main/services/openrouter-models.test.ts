@@ -50,7 +50,7 @@ function stubFetch(json: unknown): () => void {
     ok: true,
     status: 200,
     statusText: 'OK',
-    json: async () => json,
+    json: async (): Promise<unknown> => json,
   })) as unknown as typeof fetch
   return () => {
     globalThis.fetch = original

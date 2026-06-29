@@ -9,7 +9,7 @@ const store = new ElectronStore<Record<string, unknown>>({ name: 'settings' })
 
 // Distinct write-queue namespace so settings keys can't collide with the shared
 // electron-store keys serialized elsewhere.
-const queueKey = (key: string) => `settings:${key}`
+const queueKey = (key: string): string => `settings:${key}`
 
 interface StoredKey {
   v: 1

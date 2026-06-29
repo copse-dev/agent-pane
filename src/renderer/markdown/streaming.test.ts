@@ -91,7 +91,7 @@ describe('renderStreamingMarkdown', () => {
 })
 
 describe('pendingHoldIndex (defer unresolved inline markup)', () => {
-  const visible = (s: string) => s.slice(0, pendingHoldIndex(s))
+  const visible = (s: string): string => s.slice(0, pendingHoldIndex(s))
 
   it('does not cut a line with no inline delimiters', () => {
     assert.equal(pendingHoldIndex('plain text'), 'plain text'.length)

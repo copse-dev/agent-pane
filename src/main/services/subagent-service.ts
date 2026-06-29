@@ -4,6 +4,7 @@ import { readFileLimitsForSubagent } from '@shared/agent/read-file-limits.ts'
 import type {
   LLMProvider,
   LLMMessage,
+  LLMTool,
   ModelUsage,
   StreamChunk,
   ToolExecuteResult,
@@ -33,7 +34,7 @@ export interface ExploreSubagentResult {
   usage: ModelUsage
 }
 
-function filterExploreTools(registry: ToolRegistry) {
+function filterExploreTools(registry: ToolRegistry): LLMTool[] {
   const names = new Set<string>(EXPLORE_TOOL_NAMES)
   return registry.toLLMTools().filter((t) => names.has(t.name))
 }

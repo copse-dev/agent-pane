@@ -15,10 +15,10 @@ interface FakeWebview extends HTMLElement {
 
 /** Stub the guest-webview methods jsdom lacks so `dom-ready` handlers can run. */
 function stubWebviewMethods(webview: FakeWebview): void {
-  webview.getURL = () => 'about:blank'
-  webview.canGoBack = () => false
-  webview.canGoForward = () => false
-  webview.reload = () => {}
+  webview.getURL = (): string => 'about:blank'
+  webview.canGoBack = (): boolean => false
+  webview.canGoForward = (): boolean => false
+  webview.reload = (): void => {}
 }
 
 function mountBrowserHosts(): { list: HTMLElement; viewer: HTMLElement } {
@@ -33,15 +33,15 @@ function mountBrowserHosts(): { list: HTMLElement; viewer: HTMLElement } {
 describe('browser pane requested URLs', () => {
   it('opens a requested URL in the active tab address bar', () => {
     const raf = globalThis.requestAnimationFrame
-    globalThis.requestAnimationFrame = (cb: FrameRequestCallback) => {
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
       cb(0)
       return 0
     }
     const ResizeObserverCtor = globalThis.ResizeObserver
     class NoopResizeObserver {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
     }
     globalThis.ResizeObserver = NoopResizeObserver
 
@@ -68,15 +68,15 @@ describe('browser pane requested URLs', () => {
 
   it('renders an HTML artefact in a sandboxed tab via a data: URL', () => {
     const raf = globalThis.requestAnimationFrame
-    globalThis.requestAnimationFrame = (cb: FrameRequestCallback) => {
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
       cb(0)
       return 0
     }
     const ResizeObserverCtor = globalThis.ResizeObserver
     class NoopResizeObserver {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
     }
     globalThis.ResizeObserver = NoopResizeObserver
 

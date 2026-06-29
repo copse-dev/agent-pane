@@ -26,7 +26,11 @@ const EDITED = 'Then add unit tests AND integration tests for the parser.'
 
 // Mount conversation with one queued follow-up on a running thread, exactly as
 // the submit-while-running path produces it (addMessage then enqueueUserMessage).
-function mountWithQueued() {
+function mountWithQueued(): {
+  store: ReturnType<typeof createStore>
+  threadId: string
+  messageId: string
+} {
   const store = createStore()
   const threadId = createThread(store)
   setThreadStatus(store, threadId, 'running')

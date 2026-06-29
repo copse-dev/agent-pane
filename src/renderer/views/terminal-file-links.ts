@@ -118,7 +118,7 @@ export function installTerminalFileLinks(
 
   return {
     refresh,
-    dispose() {
+    dispose(): void {
       if (timer != null) clearTimeout(timer)
       timer = null
       disposable.dispose()

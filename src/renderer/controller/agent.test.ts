@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { startAgentController } from './agent.ts'
 import { createStore } from '@shared/store/store.ts'
+import type { AppStore } from '@shared/store/store.ts'
 import { getThreadById } from '@shared/store/thread-helpers.ts'
 import type { Message, Thread, StreamChunk } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -27,7 +28,15 @@ function setup(
   initial: Thread[] = [thread('t1')],
   activeThreadId = 't1',
   options?: { currentBranch?: string | null },
-) {
+): {
+  store: AppStore
+  send: (chunk: StreamChunk, threadId?: string) => void
+  unsub: () => void
+  titleCalls: string[]
+  messageDone: string[]
+  messages: (id?: string) => Message[]
+  gitBranchChanged: number[]
+} {
   const store = createStore({ threads: initial, activeThreadId })
   let chunkHandler: ((threadId: string, chunk: StreamChunk) => void) | null = null
   const titleCalls: string[] = []
@@ -40,17 +49,17 @@ function setup(
     agent: {
       onChunk: (h: (threadId: string, chunk: StreamChunk) => void) => {
         chunkHandler = h
-        return () => {}
+        return (): void => {}
       },
-      onUsage: () => () => {},
+      onUsage: () => (): void => {},
       suggestTitle: async (text: string) => {
         titleCalls.push(text)
         return 'Generated Title'
       },
     },
     diff: {
-      onShowDiff: () => () => {},
-      onQueued: () => () => {},
+      onShowDiff: () => (): void => {},
+      onQueued: () => (): void => {},
     },
     git: {
       branchStatus: async () => ({
@@ -96,8 +105,8 @@ function setup(
   } as unknown as ApiClient
 
   const unsub = startAgentController(store, api)
-  const send = (chunk: StreamChunk, threadId = 't1') => chunkHandler!(threadId, chunk)
-  const messages = (id = 't1') => getThreadById(store, id)!.messages
+  const send = (chunk: StreamChunk, threadId = 't1'): void => chunkHandler!(threadId, chunk)
+  const messages = (id = 't1'): Message[] => getThreadById(store, id)!.messages
   return { store, send, unsub, titleCalls, messageDone, messages, gitBranchChanged }
 }
 

@@ -1,6 +1,6 @@
 import type { LLMProvider, LLMMessage, LLMTool, StreamChunk } from '@shared/types'
 import { takeMockScriptStep } from './mock-script.ts'
-const randomUUID = () => globalThis.crypto.randomUUID()
+const randomUUID = (): string => globalThis.crypto.randomUUID()
 const MAX_MOCK_DELAY_MS = 5_000
 
 async function sleep(ms: number, signal?: AbortSignal): Promise<void> {

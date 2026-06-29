@@ -2,6 +2,7 @@ import { el, clear, on } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitBranchInfo, GitBranchStatus } from '@shared/types/git.ts'
+import type { Thread } from '@shared/types'
 import {
   threadGitBranchMismatch,
   threadGitBranchMismatchMessage,
@@ -53,7 +54,7 @@ export function mountFooterBranchStatus(
   let defaultBranch: string | null = null
   let open = false
 
-  function getActiveThread() {
+  function getActiveThread(): Thread | undefined {
     return getThreadById(store, store.getState().activeThreadId)
   }
 
@@ -66,14 +67,14 @@ export function mountFooterBranchStatus(
     return thread ? isBlankThread(thread) : false
   }
 
-  function setOpen(next: boolean) {
+  function setOpen(next: boolean): void {
     open = next
     trigger.setAttribute('aria-expanded', String(next))
     if (next) menu.removeAttribute('hidden')
     else menu.setAttribute('hidden', '')
   }
 
-  function renderTrigger() {
+  function renderTrigger(): void {
     const threadBranch = getActiveThreadBranch()
     const currentBranch = status?.currentBranch ?? null
     const displayBranch = threadBranch ?? currentBranch
@@ -146,7 +147,7 @@ export function mountFooterBranchStatus(
     }
   }
 
-  function renderMenu() {
+  function renderMenu(): void {
     clear(menu)
     if (!isPickerMode()) return
 
@@ -207,7 +208,7 @@ export function mountFooterBranchStatus(
     }
   }
 
-  async function loadBranches() {
+  async function loadBranches(): Promise<void> {
     const [listed, defaultName] = await Promise.all([
       api.git.listBranches(),
       api.git.getDefaultBranch(),
@@ -216,7 +217,7 @@ export function mountFooterBranchStatus(
     defaultBranch = defaultName
   }
 
-  async function refresh() {
+  async function refresh(): Promise<void> {
     if (!store.getState().workspaceRoot) {
       status = null
       branches = []
@@ -235,12 +236,12 @@ export function mountFooterBranchStatus(
     if (open) renderMenu()
   }
 
-  function scheduleRefresh() {
+  function scheduleRefresh(): void {
     if (refreshTimer) clearTimeout(refreshTimer)
     refreshTimer = setTimeout(() => void refresh(), 500)
   }
 
-  function copyBranchName() {
+  function copyBranchName(): void {
     const branch = branchToCopy
     if (!branch) return
     void navigator.clipboard
@@ -263,7 +264,7 @@ export function mountFooterBranchStatus(
     const next = !open
     setOpen(next)
     if (next) {
-      void (async () => {
+      void (async (): Promise<void> => {
         await loadBranches()
         renderMenu()
       })()
@@ -290,7 +291,7 @@ export function mountFooterBranchStatus(
 
   return {
     refresh: () => void refresh(),
-    destroy: () => {
+    destroy: (): void => {
       if (refreshTimer) clearTimeout(refreshTimer)
       unsubs.forEach((u) => u())
       wrap.remove()

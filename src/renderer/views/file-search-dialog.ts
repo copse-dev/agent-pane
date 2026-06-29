@@ -143,7 +143,7 @@ export function mountFileSearchDialog(store: AppStore, api: ApiClient): void {
     if (e.target === dialog) closeFileSearchDialog()
   })
 
-  openImpl = () => {
+  openImpl = (): void => {
     if (dialog.open) return
     input.value = ''
     results = []

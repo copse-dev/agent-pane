@@ -12,18 +12,21 @@ import { setWorkspaceRootForTest } from './workspace.ts'
 const OWNER = 1
 const OTHER_OWNER = 2
 
-function mockWindow() {
+function mockWindow(): import('electron').BrowserWindow & {
+  sent: Array<[string, ...unknown[]]>
+  markDestroyed: () => void
+} {
   let destroyed = false
   const sent: Array<[string, ...unknown[]]> = []
   const win = {
-    isDestroyed: () => destroyed,
+    isDestroyed: (): boolean => destroyed,
     webContents: {
-      isDestroyed: () => destroyed,
-      send(channel: string, ...args: unknown[]) {
+      isDestroyed: (): boolean => destroyed,
+      send(channel: string, ...args: unknown[]): void {
         sent.push([channel, ...args])
       },
     },
-    markDestroyed() {
+    markDestroyed(): void {
       destroyed = true
     },
     sent,

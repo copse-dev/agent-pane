@@ -61,7 +61,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
   const visibleThreadCounts = new Map<string, number>()
 
-  function render() {
+  function render(): void {
     clear(list)
     const { projects, activeProjectId, expandedProjectId, activeThreadId } = store.getState()
     const expandedId = expandedProjectId ?? activeProjectId

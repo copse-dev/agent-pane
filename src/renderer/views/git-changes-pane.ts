@@ -208,7 +208,7 @@ export function mountGitChangesPane(
     listBody.append(section)
   }
 
-  function renderGitSection(title: string, changes: GitChange[], staged: boolean) {
+  function renderGitSection(title: string, changes: GitChange[], staged: boolean): void {
     if (changes.length === 0) return
     const section = el('div', { class: 'git-changes-section' })
     section.append(
@@ -236,7 +236,7 @@ export function mountGitChangesPane(
     listBody.append(section)
   }
 
-  function renderList() {
+  function renderList(): void {
     const queue = store.getState().stagedDiffs ?? []
     syncBulkActions(queue.length)
     clear(listBody)
@@ -272,8 +272,8 @@ export function mountGitChangesPane(
     pendingSelect = { kind: 'proposed', path: view.path }
     acceptBtn.hidden = false
     rejectBtn.hidden = false
-    acceptBtn.onclick = () => void api.diff.approve(view.path)
-    rejectBtn.onclick = () => void api.diff.reject(view.path)
+    acceptBtn.onclick = (): void => void api.diff.approve(view.path)
+    rejectBtn.onclick = (): void => void api.diff.reject(view.path)
 
     cancelPendingDiffReveal?.()
     cancelPendingDiffReveal = revealFirstDiffChangeOnNextUpdate(ensureDiffEditor())
@@ -321,7 +321,7 @@ export function mountGitChangesPane(
     await showProposedDiff(view)
   }
 
-  async function selectGitChange(path: string, staged: boolean) {
+  async function selectGitChange(path: string, staged: boolean): Promise<void> {
     const requestId = ++selectRequestId
     selection = { kind: 'git', path, staged }
     pendingSelect = { kind: 'git', path, staged }
@@ -369,7 +369,7 @@ export function mountGitChangesPane(
     await diffLoadQueue
   }
 
-  function clearViewer() {
+  function clearViewer(): void {
     selectRequestId++
     pendingSelect = null
     cancelPendingDiffReveal?.()
@@ -383,12 +383,12 @@ export function mountGitChangesPane(
     if (diffEditor) disposeDiffModels(diffEditor)
   }
 
-  function clearSelection() {
+  function clearSelection(): void {
     selection = null
     clearViewer()
   }
 
-  async function syncSelection() {
+  async function syncSelection(): Promise<void> {
     const { stagedDiffs, activeDiff } = store.getState()
     const queue = stagedDiffs ?? []
 
@@ -444,7 +444,7 @@ export function mountGitChangesPane(
     }
   }
 
-  async function refresh() {
+  async function refresh(): Promise<void> {
     gitAvailable = await api.git.isAvailable()
     if (!gitAvailable) {
       status = null
@@ -457,12 +457,12 @@ export function mountGitChangesPane(
     await syncSelection()
   }
 
-  async function syncFromStore() {
+  async function syncFromStore(): Promise<void> {
     renderList()
     await syncSelection()
   }
 
-  function scheduleRefresh() {
+  function scheduleRefresh(): void {
     if (!changesModeActive(store)) return
     if (refreshTimer) clearTimeout(refreshTimer)
     refreshTimer = setTimeout(() => void refresh(), 500)

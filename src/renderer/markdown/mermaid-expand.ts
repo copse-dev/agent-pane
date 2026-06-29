@@ -107,7 +107,7 @@ function bindViewportInteractions(viewport: HTMLDivElement): void {
     applyTransform()
   })
 
-  const endPan = (event: PointerEvent) => {
+  const endPan = (event: PointerEvent): void => {
     if (!panning) return
     panning = false
     viewport.classList.remove('is-panning')

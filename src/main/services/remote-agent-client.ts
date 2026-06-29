@@ -597,7 +597,7 @@ export async function runRemoteAgentFromSettings(
     }),
   })
 
-  const abortCancel = () => {
+  const abortCancel = (): void => {
     void cancelRemoteRun({
       fetchImpl,
       baseUrl,

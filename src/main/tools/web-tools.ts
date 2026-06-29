@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 
-async function loadWebSearch() {
+async function loadWebSearch(): Promise<typeof import('../services/web-search/index.ts')> {
   return import('../services/web-search/index.ts')
 }
 

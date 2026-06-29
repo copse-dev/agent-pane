@@ -71,7 +71,7 @@ async function openRouterOptions(
 
   const seen = new Set<string>()
   const entries: ModelOption[] = []
-  const add = (id: string, label: string) => {
+  const add = (id: string, label: string): void => {
     const value = toOpenRouterModel(id)
     if (!id || seen.has(value)) return
     seen.add(value)
@@ -109,7 +109,7 @@ function extraProviderOptions(
 
   const seen = new Set<string>()
   const entries: ModelOption[] = []
-  const add = (id: string, label: string) => {
+  const add = (id: string, label: string): void => {
     const value = toExtraProviderModel(provider.id, id)
     if (!id || seen.has(value)) return
     seen.add(value)
