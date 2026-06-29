@@ -1,4 +1,5 @@
 import type { AppStore } from '@shared/store/store.ts'
+import type { RightPanelPosition } from '@shared/types/state.ts'
 
 export const PORTRAIT_RIGHT_PANEL_CLASS = 'is-right-panel-horizontal'
 export const PORTRAIT_RIGHT_PANEL_MIN_ASPECT_RATIO = 1.35
@@ -11,9 +12,14 @@ export interface ViewportSize {
 
 export function shouldUsePortraitRightPanelLayout(
   viewport: ViewportSize,
-  opts: { autoEnabled: boolean; filesPaneOpen: boolean },
+  opts: { autoEnabled: boolean; filesPaneOpen: boolean; position?: RightPanelPosition },
 ): boolean {
-  if (!opts.autoEnabled || !opts.filesPaneOpen) return false
+  if (!opts.filesPaneOpen) return false
+  // An explicit position pin wins over the auto heuristic so users can force the
+  // panel below chat (e.g. a readable terminal on a small landscape screen).
+  if (opts.position === 'bottom') return true
+  if (opts.position === 'side') return false
+  if (!opts.autoEnabled) return false
   if (viewport.width <= 0 || viewport.height < PORTRAIT_RIGHT_PANEL_MIN_HEIGHT) return false
   return viewport.height / viewport.width >= PORTRAIT_RIGHT_PANEL_MIN_ASPECT_RATIO
 }
@@ -27,6 +33,7 @@ export function mountPortraitRightPanelLayout(body: HTMLElement, store: AppStore
         {
           autoEnabled: store.getState().autoPortraitRightPanel,
           filesPaneOpen: store.getState().filesPaneOpen,
+          position: store.getState().rightPanelPosition,
         },
       ),
     )

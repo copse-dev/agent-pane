@@ -69,6 +69,7 @@ export function seedEmptyProject(
     subagentModel?: string
     localSubagentsEnabled?: boolean
     autoPortraitRightPanel?: boolean
+    rightPanelPosition?: 'auto' | 'side' | 'bottom'
   },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
@@ -105,6 +106,9 @@ export function seedEmptyProject(
   }
   if (options?.autoPortraitRightPanel !== undefined) {
     settings.autoPortraitRightPanel = options.autoPortraitRightPanel
+  }
+  if (options?.rightPanelPosition !== undefined) {
+    settings.rightPanelPosition = options.rightPanelPosition
   }
   if (Object.keys(settings).length > 0) {
     writeSettings(settings)
