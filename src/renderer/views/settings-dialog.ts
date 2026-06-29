@@ -9,7 +9,6 @@ import {
   type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
 import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
-import { DEFAULT_CURSOR_AGENT_BASE_URL } from '@shared/remote-agent.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { populateModelSelect, populateSmallTasksModelSelect } from './model-options.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
@@ -51,7 +50,6 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'customInstructions', kind: 'text', default: '', save: true },
   { name: 'openRouterModel', kind: 'text', default: '', save: true },
   { name: 'externalApiSafety', kind: 'checkbox', default: false, save: true },
-  { name: 'remoteAgentBaseUrl', kind: 'text', default: DEFAULT_CURSOR_AGENT_BASE_URL, save: true },
   { name: 'remoteAgentRepository', kind: 'text', default: '', save: true },
   { name: 'remoteAgentStartingRef', kind: 'text', default: '', save: true },
   { name: 'remoteAgentAutoCreatePR', kind: 'checkbox', default: true, save: true },
@@ -206,26 +204,21 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <strong>not</strong> edit the files in this local workspace — review its changes in
                 the branch / PR it links in the reply.
               </p>
-              <div id="settings-cursor-key-host"></div>
-              <div id="settings-claude-agent-key-host"></div>
-              <p class="field-hint">
-                Claude Agent needs an Anthropic API key (above) plus a GitHub token: the token is
-                used only to clone and push the repository — the agent never handles it directly.
+              <div class="provider-chips" role="tablist" id="settings-remote-agent-tabs"></div>
+              <div id="settings-cursor-panel" class="remote-agent-panel">
+                <div id="settings-cursor-key-host"></div>
+              </div>
+              <div id="settings-claude-panel" class="remote-agent-panel" hidden>
+                <div id="settings-claude-agent-key-host"></div>
+                <p class="field-hint">
+                  Claude Agent needs an Anthropic API key plus a GitHub token: the token is used only
+                  to clone and push the repository — the agent never handles it directly. It always
+                  uses <code>https://api.anthropic.com</code>.
+                </p>
+              </div>
+              <p class="settings-fieldset-desc remote-agent-common-note">
+                These apply to whichever remote agent you run:
               </p>
-              <label>
-                Agent API base URL
-                <input
-                  type="url"
-                  name="remoteAgentBaseUrl"
-                  placeholder="https://api.cursor.com"
-                  autocomplete="off"
-                />
-                <span class="field-hint">
-                  Applies to Cursor Cloud Agent — usually leave this as
-                  <code>https://api.cursor.com</code>. Claude Agent always uses
-                  <code>https://api.anthropic.com</code>.
-                </span>
-              </label>
               <label>
                 Repository
                 <input
@@ -255,7 +248,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </label>
               <label class="checkbox-label">
                 <input type="checkbox" name="remoteAgentWorkOnCurrentBranch" />
-                Push directly to the starting ref instead of a new <code>cursor/…</code> branch
+                Push directly to the starting ref instead of a new branch
               </label>
             </fieldset>
 
@@ -610,6 +603,36 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     validateOnInput: false,
   })
   overlay.querySelector('#settings-claude-agent-key-host')!.append(claudeAgentKeySection.root)
+
+  // Provider tabs for the Remote agents section: a chip selects one provider and
+  // shows just its auth panel (mirrors the Providers chip row). The common run
+  // options below the panels apply to whichever remote agent is run.
+  const remoteTabsRow = overlay.querySelector('#settings-remote-agent-tabs') as HTMLElement
+  const remoteTabs: ReadonlyArray<{ id: string; label: string }> = [
+    { id: 'cursor', label: 'Cursor Cloud Agent' },
+    { id: 'anthropic', label: 'Claude Agent' },
+  ]
+  const remotePanels: Record<string, HTMLElement> = {
+    cursor: overlay.querySelector('#settings-cursor-panel') as HTMLElement,
+    anthropic: overlay.querySelector('#settings-claude-panel') as HTMLElement,
+  }
+  function showRemoteTab(id: string): void {
+    for (const [provider, panel] of Object.entries(remotePanels)) panel.hidden = provider !== id
+    remoteTabsRow
+      .querySelectorAll<HTMLButtonElement>('.provider-chip')
+      .forEach((btn) => btn.classList.toggle('active', btn.dataset['provider'] === id))
+  }
+  for (const tab of remoteTabs) {
+    const chip = document.createElement('button')
+    chip.type = 'button'
+    chip.className = 'provider-chip'
+    chip.setAttribute('role', 'tab')
+    chip.dataset['provider'] = tab.id
+    chip.textContent = tab.label
+    chip.addEventListener('click', () => showRemoteTab(tab.id))
+    remoteTabsRow.append(chip)
+  }
+  showRemoteTab('cursor')
 
   const lmStudioSection = createLmStudioSection(api, { showInstallGuide: false })
   qsRequired(overlay, '#settings-lm-studio-host').append(lmStudioSection.root)
