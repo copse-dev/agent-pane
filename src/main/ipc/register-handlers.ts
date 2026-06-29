@@ -36,6 +36,7 @@ import {
   setApiKey,
   isProviderAvailable,
 } from '../services/settings.ts'
+import { scanEnvForKeys, maskSecret } from '../services/env-key-detection.ts'
 import {
   isRendererWritableSettingKey,
   isSecretSettingKey,
@@ -270,6 +271,39 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const p = parseIpcArgs(keyProviderSchema, [provider])
     const apiKey = parseIpcArgs(z.string().max(8192), [key])
     return validateApiKey(p, apiKey)
+  })
+  // Opt-in environment scan: look for provider API keys the user already has
+  // exported (process.env + well-known shell files) and offer to import them.
+  // Raw secrets stay in the main process — the renderer only sees the masked
+  // preview. Both handlers re-scan on each call; the import handler is gated on
+  // the persisted consent flag set when the user approves the scan.
+  ipcMain.handle('settings:scanEnvKeys', (event) => {
+    assertMainFrameSender(event, win)
+    return scanEnvForKeys().map((d) => ({
+      provider: d.provider,
+      envVar: d.envVar,
+      source: d.source,
+      masked: maskSecret(d.value),
+      alreadyConfigured: hasApiKey(d.provider),
+    }))
+  })
+  ipcMain.handle('settings:importEnvKeys', (event) => {
+    assertMainFrameSender(event, win)
+    if (!getSetting<boolean>('envKeyAutoDetectEnabled', false)) {
+      throw new IpcValidationError('Environment key detection has not been enabled')
+    }
+    const imported: { provider: string; source: string }[] = []
+    const skipped: { provider: string; reason: string }[] = []
+    for (const d of scanEnvForKeys()) {
+      // Never overwrite a key the user has already configured.
+      if (hasApiKey(d.provider)) {
+        skipped.push({ provider: d.provider, reason: 'already-configured' })
+        continue
+      }
+      setApiKey(d.provider, d.value)
+      imported.push({ provider: d.provider, source: d.source })
+    }
+    return { imported, skipped }
   })
   ipcMain.handle('settings:extraProviders', () => getResolvedExtraProviders())
   ipcMain.handle('settings:saveExtraProvider', async (event, record: unknown) => {
