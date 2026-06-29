@@ -390,6 +390,18 @@ describe('renderMarkdown sanitization (#115)', () => {
     assert.doesNotMatch(html, /src="/)
   })
 
+  it('wraps a block that contains but cannot be split around a block element without infinite recursion', () => {
+    // The rendered artifact <img> makes CONTAINS_BLOCK_RE match, but the block
+    // does not start with a block element, so splitBlockElements returns the
+    // single unchanged block. wrapParagraphBlock must wrap it as a paragraph and
+    // stop rather than recurse on the identical block forever (the guard in
+    // wrapParagraphBlock). Reaching this assertion at all proves no infinite loop.
+    const html = renderMarkdown(
+      'Inline <img src="/opt/cursor/artifacts/screenshots/x.png"> trailing text',
+    )
+    assert.match(html, /^<p>Inline <img class="remote-artifact-image"[^>]*> trailing text<\/p>$/)
+  })
+
   it('escapes script tags rather than executing them', () => {
     const html = renderMarkdown('<script>alert(document.cookie)</script>')
     assert.doesNotMatch(html, /<script>/)

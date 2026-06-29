@@ -27,8 +27,12 @@ function mapOutsideFencedHtml(html: string, transform: (segment: string) => stri
 // cells have their inline markup applied per-cell in parseTables; running the
 // global inline pass over the finished <table> again would re-pair `**` across
 // cells (the bug in #469), so the inline pass skips table regions entirely.
+// `<table\b[^>]*>` (not a bare `<table>`) keeps the shield matching parseTables's
+// `<table>...</table>` output even if that output ever gains attributes/classes
+// (e.g. `<table class=...>`); a bare match would silently break and the
+// cross-cell bold bug (#469) would return.
 const FENCED_OR_TABLE_SPLIT_RE =
-  /(<pre>[\s\S]*?<\/pre>|<div class="mermaid-diagram[^>]*>[\s\S]*?<\/div>|<table>[\s\S]*?<\/table>)/
+  /(<pre>[\s\S]*?<\/pre>|<div class="mermaid-diagram[^>]*>[\s\S]*?<\/div>|<table\b[^>]*>[\s\S]*?<\/table>)/
 
 function mapOutsideFencedOrTableHtml(html: string, transform: (segment: string) => string): string {
   return html
@@ -391,6 +395,9 @@ function wrapParagraphBlock(block: string): string {
   if (BLOCK_START_RE.test(trimmed)) return block
   if (CONTAINS_BLOCK_RE.test(trimmed)) {
     const parts = splitBlockElements(block)
+    // Guard against infinite recursion: if splitBlockElements can't break the
+    // block apart (it returns the single, unchanged input), recursing on the
+    // same `block` would loop forever. Wrap it as a paragraph and stop instead.
     if (parts.length === 1 && parts[0] === block) {
       return `<p>${block.replace(/\n/g, '<br>')}</p>`
     }
