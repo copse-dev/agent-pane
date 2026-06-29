@@ -60,6 +60,7 @@ describe('browser pane requested URLs', () => {
       assert.match(tabLabel ?? '', /example\.com/)
     } finally {
       globalThis.requestAnimationFrame = raf
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
       if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
       else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
       unmount()
@@ -113,6 +114,7 @@ describe('browser pane requested URLs', () => {
       assert.equal(store.getState().rightPanelMode, 'browser')
     } finally {
       globalThis.requestAnimationFrame = raf
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
       if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
       else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
       unmount()

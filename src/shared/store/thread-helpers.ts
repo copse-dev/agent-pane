@@ -1,6 +1,7 @@
 // Use the Web Crypto API available in both browsers and Node 19+
 const randomUUID = (): string => globalThis.crypto.randomUUID()
 import type { AppStore } from './store.ts'
+import { at } from '@shared/array-utils.ts'
 import type {
   Message,
   ModelUsage,
@@ -62,7 +63,10 @@ export function normalizeBlankThreads(store: AppStore): void {
   if (emptyBlanks.length <= 1) return
   const keepEmptyId =
     emptyBlanks.find((t) => t.id === activeThreadId)?.id ??
-    emptyBlanks.sort((a, b) => b.createdAt - a.createdAt)[0]!.id
+    at(
+      emptyBlanks.sort((a, b) => b.createdAt - a.createdAt),
+      0,
+    ).id
   const keepIds = new Set([...blanks.filter(hasUnsubmittedPrompt).map((t) => t.id), keepEmptyId])
   pruneBlankThreads(store, keepIds)
 }

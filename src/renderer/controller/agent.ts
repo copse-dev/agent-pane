@@ -96,7 +96,8 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           st.msgId = addMessage(store, threadId, 'assistant')
         }
         st.toolSinceText = nextState.toolSinceText
-        appendToken(store, st.msgId!, plan.text)
+        if (st.msgId === null) throw new Error('assistant message id missing for text chunk')
+        appendToken(store, st.msgId, plan.text)
 
         if (plan.text.trim()) {
           st.writing = true

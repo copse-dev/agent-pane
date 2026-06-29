@@ -60,7 +60,7 @@ export function installTerminalFileLinks(
     const unknown = collectVisibleCandidates(term).filter((c) => !resolved.has(c))
     if (unknown.length === 0) return
     try {
-      const list = (await api.index.resolveFileReferences(unknown)) ?? []
+      const list = await api.index.resolveFileReferences(unknown)
       for (const { candidate, path, kind } of list) resolved.set(candidate, { path, kind })
     } catch {
       // Leave candidates unresolved; the next refresh retries them.
@@ -103,9 +103,11 @@ export function installTerminalFileLinks(
             // Match IDE/terminal convention: only open on cmd/ctrl-click so
             // plain clicks still place the cursor and start text selection.
             if (!event.metaKey && !event.ctrlKey) return
-            void activateWorkspaceReference(store, api, path, kind, reveal).catch((error) => {
-              showErrorToast(`Failed to open ${path}`, error)
-            })
+            void activateWorkspaceReference(store, api, path, kind, reveal).catch(
+              (error: unknown) => {
+                showErrorToast(`Failed to open ${path}`, error)
+              },
+            )
           },
           decorations: { pointerCursor: true, underline: true },
         })

@@ -1,4 +1,5 @@
 import type { LLMMessage, StreamChunk, UserContent } from './types/index.ts'
+import { at } from '@shared/array-utils.ts'
 
 export interface PromptPayload {
   text: string
@@ -45,7 +46,7 @@ export function formatRemoteGitSummary(git: RemoteGitInfo | undefined): string {
   const lines = branches.map((b) => {
     const repo = b.repoUrl ? ` on ${b.repoUrl}` : ''
     const pr = b.prUrl ? ` — ${b.prUrl}` : ''
-    return `- Pushed branch \`${b.branch}\`${repo}${pr}`
+    return `- Pushed branch \`${String(b.branch)}\`${repo}${pr}`
   })
   return `\n\n---\n_Remote agent updated the repository:_\n${lines.join('\n')}`
 }
@@ -55,7 +56,7 @@ function parseDataUrl(dataUrl: string): { mimeType: string; data: string } {
   if (!match) {
     throw new Error('Remote agents only support image attachments encoded as base64 data URLs.')
   }
-  return { mimeType: match[1]!, data: match[2]! }
+  return { mimeType: at(match, 1), data: at(match, 2) }
 }
 
 export function userContentToText(content: UserContent): string {
@@ -150,9 +151,9 @@ function isRemoteToolError(value: unknown): boolean {
   )
 }
 
-function parseJsonEventData<T>(event: SseEvent): T {
+function parseJsonEventData(event: SseEvent): unknown {
   try {
-    return JSON.parse(event.data) as T
+    return JSON.parse(event.data)
   } catch {
     throw new Error(`Remote agent stream returned invalid JSON for ${event.event}`)
   }
@@ -211,14 +212,14 @@ export function remoteStreamEventToChunks(
   state: RemoteStreamState,
 ): StreamChunk[] {
   if (event.event === 'assistant') {
-    const payload = parseJsonEventData<{ text?: string }>(event)
+    const payload = parseJsonEventData(event) as { text?: string }
     if (!payload.text) return []
     state.assistantText += payload.text
     return [{ type: 'text', text: payload.text }]
   }
 
   if (event.event === 'tool_call') {
-    const payload = parseJsonEventData<CursorToolCallEvent>(event)
+    const payload = parseJsonEventData(event) as CursorToolCallEvent
     if (!payload.callId || !payload.name) return []
 
     const chunks: StreamChunk[] = []
@@ -248,9 +249,11 @@ export function remoteStreamEventToChunks(
   }
 
   if (event.event === 'result') {
-    const payload = parseJsonEventData<{ status?: string; text?: string; git?: RemoteGitInfo }>(
-      event,
-    )
+    const payload = parseJsonEventData(event) as {
+      status?: string
+      text?: string
+      git?: RemoteGitInfo
+    }
     state.terminalStatus = payload.status ?? null
     state.resultText = payload.text ?? ''
     const chunks: StreamChunk[] = []
@@ -264,7 +267,7 @@ export function remoteStreamEventToChunks(
   }
 
   if (event.event === 'error') {
-    const payload = parseJsonEventData<{ code?: string; message?: string }>(event)
+    const payload = parseJsonEventData(event) as { code?: string; message?: string }
     const suffix = payload.code ? ` (${payload.code})` : ''
     throw new Error(`Remote agent stream error${suffix}: ${payload.message ?? 'unknown error'}`)
   }
