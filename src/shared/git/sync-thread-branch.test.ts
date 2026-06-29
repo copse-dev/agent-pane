@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { at } from '@shared/array-utils.ts'
 import { createStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
 import {
@@ -64,20 +65,20 @@ describe('syncThreadGitBranchIfChanged', () => {
     const store = createStore({ threads: [thread('t1', 'main')] })
     const changed = syncThreadGitBranchIfChanged(store, 't1', 'feature/acp')
     assert.equal(changed, true)
-    assert.equal(store.getState().threads[0]!.gitBranch, 'feature/acp')
+    assert.equal(at(store.getState().threads, 0).gitBranch, 'feature/acp')
   })
 
   it('binds an unset thread branch to the current checkout', () => {
     const store = createStore({ threads: [thread('t1')] })
     const changed = syncThreadGitBranchIfChanged(store, 't1', 'feature/acp')
     assert.equal(changed, true)
-    assert.equal(store.getState().threads[0]!.gitBranch, 'feature/acp')
+    assert.equal(at(store.getState().threads, 0).gitBranch, 'feature/acp')
   })
 
   it('is a no-op when checkout already matches', () => {
     const store = createStore({ threads: [thread('t1', 'main')] })
     const changed = syncThreadGitBranchIfChanged(store, 't1', 'main')
     assert.equal(changed, false)
-    assert.equal(store.getState().threads[0]!.gitBranch, 'main')
+    assert.equal(at(store.getState().threads, 0).gitBranch, 'main')
   })
 })
