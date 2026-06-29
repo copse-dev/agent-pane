@@ -4,7 +4,7 @@ import { el } from '../../dom/helpers.ts'
 // Fixed cloud providers with bespoke key validation. OpenAI-compatible presets
 // (Mistral/Gemini/DeepSeek) and user customs are managed in the separate
 // custom-providers section, not here.
-export type ApiKeyProvider = 'anthropic' | 'openai' | 'cursor' | 'openrouter'
+export type ApiKeyProvider = 'anthropic' | 'openai' | 'cursor' | 'openrouter' | 'github'
 
 export interface ApiKeysSection {
   root: HTMLFieldSetElement
@@ -48,6 +48,13 @@ const API_KEY_PROVIDER_CONFIGS: Record<ApiKeyProvider, ApiKeyProviderConfig> = {
     label: 'OpenRouter API key',
     placeholder: 'sk-or-…',
     hint: 'For OpenRouter models (Claude, GPT, Gemini, Llama, and more via one key). Validated via a free key request.',
+  },
+  github: {
+    provider: 'github',
+    name: 'githubKey',
+    label: 'GitHub token',
+    placeholder: 'github_pat_… or ghp_…',
+    hint: 'For Claude Cloud Agent: clones the repo and pushes branches / opens PRs. Use a fine-grained token with repo scope.',
   },
 }
 

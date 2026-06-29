@@ -30,6 +30,9 @@ const FIXED_PROVIDER_ENV_VARS: Record<string, string> = {
   openai: 'OPENAI_API_KEY',
   cursor: 'CURSOR_API_KEY',
   openrouter: 'OPENROUTER_API_KEY',
+  // GitHub token for the Claude Cloud Agent's github_repository resource (clone +
+  // push + PR). Not a model provider — stored like an API key, env fallback below.
+  github: 'GITHUB_TOKEN',
 }
 
 // Env-var fallback for every provider that ships one: the fixed cloud providers

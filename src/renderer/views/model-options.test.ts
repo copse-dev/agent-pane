@@ -62,18 +62,27 @@ describe('fetchModelOptions visibility', () => {
     assert.ok(!labels.some((l) => /No models available/.test(l)))
   })
 
-  it('hides the Cursor remote agent until its key is configured', async () => {
-    const without = await fetchModelOptions(
+  it('hides each remote agent until its own provider key is configured', async () => {
+    // No relevant keys → neither remote agent is offered.
+    const none = await fetchModelOptions(mockApi(), 'claude-sonnet-4-6')
+    assert.ok(!none.some((o) => o.value === 'remote-agent:cursor'))
+    assert.ok(!none.some((o) => o.value === 'remote-agent:anthropic'))
+
+    // An Anthropic key surfaces Claude Agent but not the Cursor agent.
+    const anthropicOnly = await fetchModelOptions(
       mockApi({ available: { anthropic: true } }),
       'claude-sonnet-4-6',
     )
-    assert.ok(!without.some((o) => o.group === 'Remote agents'))
+    assert.ok(anthropicOnly.some((o) => o.value === 'remote-agent:anthropic'))
+    assert.ok(!anthropicOnly.some((o) => o.value === 'remote-agent:cursor'))
 
-    const withKey = await fetchModelOptions(
-      mockApi({ available: { anthropic: true, cursor: true } }),
+    // A Cursor key surfaces the Cursor agent.
+    const cursorKey = await fetchModelOptions(
+      mockApi({ available: { cursor: true } }),
       'claude-sonnet-4-6',
     )
-    assert.ok(withKey.some((o) => o.group === 'Remote agents'))
+    assert.ok(cursorKey.some((o) => o.value === 'remote-agent:cursor'))
+    assert.ok(cursorKey.some((o) => o.group === 'Remote agents'))
   })
 
   it('groups hosted cloud models under a heading', async () => {
