@@ -602,7 +602,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     providers: ['anthropic', 'github'],
     validateOnInput: false,
   })
-  overlay.querySelector('#settings-claude-agent-key-host')!.append(claudeAgentKeySection.root)
+  mustQuery('#settings-claude-agent-key-host').append(claudeAgentKeySection.root)
 
   // Provider tabs for the Remote agents section: a chip selects one provider and
   // shows just its auth panel (mirrors the Providers chip row). The common run
@@ -629,7 +629,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     chip.setAttribute('role', 'tab')
     chip.dataset['provider'] = tab.id
     chip.textContent = tab.label
-    chip.addEventListener('click', () => showRemoteTab(tab.id))
+    chip.addEventListener('click', () => {
+      showRemoteTab(tab.id)
+    })
     remoteTabsRow.append(chip)
   }
   showRemoteTab('cursor')

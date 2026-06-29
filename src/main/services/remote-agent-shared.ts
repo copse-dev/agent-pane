@@ -54,7 +54,10 @@ export async function resolveRemoteAgentRepository(
 export function parseGithubOwnerRepo(repository: string): { owner: string; repo: string } | null {
   const trimmed = repository.trim()
   const slugMatch = /^([\w.-]+)\/([\w.-]+?)(?:\.git)?$/.exec(trimmed)
-  if (slugMatch) return { owner: slugMatch[1]!, repo: slugMatch[2]! }
+  if (slugMatch) {
+    const [, owner, repo] = slugMatch
+    if (owner && repo) return { owner, repo }
+  }
   try {
     const url = new URL(trimmed)
     const parts = url.pathname.replace(/^\/+/, '').split('/')

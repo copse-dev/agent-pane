@@ -1,13 +1,14 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { StreamChunk } from './types/index.ts'
+import type { SseEvent } from './remote-agent-stream.ts'
 import {
   createManagedAgentStreamState,
   managedAgentEventToChunks,
 } from './managed-agents-stream.ts'
 import { buildManagedAgentSystemPrompt, MANAGED_AGENT_REPO_MOUNT_PATH } from './managed-agents.ts'
 
-function evt(payload: Record<string, unknown>) {
+function evt(payload: Record<string, unknown>): SseEvent {
   return { event: 'message', data: JSON.stringify(payload) }
 }
 

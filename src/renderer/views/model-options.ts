@@ -38,9 +38,6 @@ export function modelDisplayLabel(model: string): string {
   if (isExtraProviderModel(model)) return extraProviderDisplayLabel(model)
   const remoteProvider = parseRemoteAgentModel(model)
   if (remoteProvider) {
-    // RemoteAgentProvider is a single-member union today, so the match is always
-    // true per types; the comparison stays so new providers select their own label.
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     return REMOTE_AGENT_MODELS.find((option) => option.provider === remoteProvider)?.label ?? model
   }
   return model

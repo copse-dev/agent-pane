@@ -109,7 +109,7 @@ export function managedAgentEventToChunks(
     return [
       {
         type: 'tool_call',
-        toolCall: { id, name, args: (payload.input as Record<string, unknown>) ?? {} },
+        toolCall: { id, name, args: payload.input ?? {} },
       },
     ]
   }

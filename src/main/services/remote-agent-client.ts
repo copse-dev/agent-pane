@@ -160,10 +160,8 @@ async function readJsonResponse<T>(response: Response, label: string): Promise<T
  */
 function readValidatedBaseUrl(provider: RemoteAgentProvider): string {
   const raw = getSetting<string>('remoteAgentBaseUrl', '').trim()
-  // Provider dispatch: cursor is currently the only RemoteAgentProvider, but this
-  // branch intentionally scopes the safe-default fallback to it so other providers
+  // Provider dispatch: scope the safe-default fallback to Cursor so other providers
   // added later must fix the setting rather than inherit Cursor's default.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   if (provider === REMOTE_AGENT_PROVIDER_CURSOR) {
     if (!raw) return DEFAULT_CURSOR_AGENT_BASE_URL
     try {
@@ -263,9 +261,6 @@ async function buildFirstHandoffPrompt(
 }
 
 function remoteAgentLabel(provider: RemoteAgentProvider): string {
-  // cursor is currently the only provider, so this match is always true today, but
-  // the lookup is written to scale as more RemoteAgentProviders/models are added.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   return REMOTE_AGENT_MODELS.find((option) => option.provider === provider)?.label ?? 'remote agent'
 }
 

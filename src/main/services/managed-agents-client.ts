@@ -142,7 +142,7 @@ function resolveGithubToken(): string {
 async function readJson<T>(response: Response, label: string): Promise<T> {
   const text = await response.text()
   if (!response.ok) {
-    throw new Error(`${label} failed with HTTP ${response.status}${text ? `: ${text}` : ''}`)
+    throw new Error(`${label} failed with HTTP ${String(response.status)}${text ? `: ${text}` : ''}`)
   }
   try {
     return (text ? JSON.parse(text) : {}) as T
@@ -267,7 +267,7 @@ async function sendUserMessage(input: {
   if (!response.ok) {
     const details = await response.text()
     throw new Error(
-      `Claude Agent message send failed with HTTP ${response.status}${details ? `: ${details}` : ''}`,
+      `Claude Agent message send failed with HTTP ${String(response.status)}${details ? `: ${details}` : ''}`,
     )
   }
 }
@@ -289,7 +289,7 @@ async function interruptSession(input: {
   if (!response.ok && response.status !== 409) {
     const details = await response.text()
     throw new Error(
-      `Claude Agent interrupt failed with HTTP ${response.status}${details ? `: ${details}` : ''}`,
+      `Claude Agent interrupt failed with HTTP ${String(response.status)}${details ? `: ${details}` : ''}`,
     )
   }
 }
@@ -335,7 +335,7 @@ async function streamSession(input: {
   if (!response.ok) {
     const details = await response.text()
     throw new Error(
-      `Claude Agent stream failed with HTTP ${response.status}${details ? `: ${details}` : ''}`,
+      `Claude Agent stream failed with HTTP ${String(response.status)}${details ? `: ${details}` : ''}`,
     )
   }
   if (!response.body) throw new Error('Claude Agent stream response did not include a body')
@@ -393,7 +393,7 @@ export async function runManagedAgentFromSettings(
 
   let session: ManagedAgentSession
   let turnPrompt: PromptPayload
-  if (canReuse && priorSession) {
+  if (priorSession && canReuse) {
     session = priorSession
     // The remote session already holds the repo mount and prior history, so a
     // follow-up is just the new message — no context preamble needed.
@@ -438,9 +438,11 @@ export async function runManagedAgentFromSettings(
 
   options.onChunk({ type: 'text', text: buildLaunchNotice(canReuse) })
 
-  const onAbort = () => {
+  const onAbort = (): void => {
     void interruptSession({ fetchImpl, baseUrl, apiKey, sessionId: session.sessionId }).catch(
-      (err: unknown) => console.warn('[managed-agent] interrupt failed:', err),
+      (err: unknown) => {
+        console.warn('[managed-agent] interrupt failed:', err)
+      },
     )
   }
   options.signal.addEventListener('abort', onAbort, { once: true })
