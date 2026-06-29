@@ -253,8 +253,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </label>
             </fieldset>
 
-            <div id="settings-acp-agents-host"></div>
-
             <fieldset>
               <legend>Small tasks</legend>
               <p class="settings-fieldset-desc">
@@ -523,6 +521,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               and are off by default.
             </p>
 
+            <div id="settings-acp-agents-host"></div>
+
             <fieldset>
               <legend>MCP UI artefacts (canvas)</legend>
               <label class="checkbox-label">
@@ -668,6 +668,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       if (id) {
         showSection(id)
         if (id === 'usage') void usageSection.refresh()
+        // Defer the ACP device scan until its tab is opened, so users who never
+        // visit Experimental don't trigger a which/ps scan on every settings open.
+        if (id === 'experimental') void acpAgentsSection.refresh()
       }
     })
   })
@@ -911,7 +914,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await cursorKeySection.refreshKeyStatus()
       await claudeAgentKeySection.refreshKeyStatus()
       await customProvidersSection.refresh()
-      await acpAgentsSection.refresh()
       await envKeyDetectSection.refresh()
 
       const form = qsRequired<HTMLFormElement>(overlay, 'form')
