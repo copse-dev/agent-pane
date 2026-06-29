@@ -61,8 +61,7 @@ describe('markdown file links', () => {
 
   it('annotates file references inside .tool-result pre elements', async () => {
     const root = document.createElement('div')
-    root.innerHTML =
-      '<div class="tool-result"><pre>src/main/index.ts\nREADME.md</pre></div>'
+    root.innerHTML = '<div class="tool-result"><pre>src/main/index.ts\nREADME.md</pre></div>'
 
     await annotateFileReferences(
       root,
