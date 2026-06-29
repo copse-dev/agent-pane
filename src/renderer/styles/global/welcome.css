@@ -57,6 +57,20 @@
   color: var(--text-secondary);
   line-height: var(--titlebar-height);
 }
+.workspace-branch {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  line-height: var(--titlebar-height);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-branch::before {
+  content: '⎇';
+  margin-right: 4px;
+  opacity: 0.7;
+}
 .titlebar-btn {
   display: inline-flex;
   align-items: center;

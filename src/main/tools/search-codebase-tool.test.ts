@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { normalizeToolExecuteResult } from '@shared/types'
 import { ToolRegistry, setPermissionGateForTests } from '../services/tool-registry.ts'
-import { createSearchCodebaseTool } from './search-codebase-tool.ts'
+import { searchCodebaseTool } from './search-codebase-tool.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
 import { setIndexedGrepBackendForTest } from '../services/indexed-grep.ts'
 import { setRgAvailableForTest } from '../services/tool-availability.ts'
@@ -24,7 +24,7 @@ describe('search_codebase tool', () => {
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
     await writeFile(join(tempRoot, 'auth.ts'), 'export function authenticate() {}\n', 'utf-8')
     registry = new ToolRegistry()
-    registry.register(createSearchCodebaseTool())
+    registry.register(searchCodebaseTool)
     setPermissionGateForTests(async () => true)
     setIndexedGrepBackendForTest('rg')
     setRgAvailableForTest(true)
