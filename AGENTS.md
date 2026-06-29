@@ -78,6 +78,12 @@ build/e2e. If a file is intentionally unreferenced, add it to `ALLOWED_UNLINKED`
 changed renderer UI or e2e fixtures, also run **`npm run build && npm run test:e2e`** locally
 (macOS/Linux paths for seeded `electron-store` data must match `src/main/app-init.ts`).
 
+### Type-safety & lint discipline
+
+Minimise `as` casts, never cast object literals, and never reach for `eslint-disable` /
+`@ts-expect-error` to silence a real error. Conventions and the rules behind them:
+[`docs/type-safety.md`](docs/type-safety.md).
+
 ### Visual changes require evals
 
 Any change that affects what a user can see in the Electron app must include a focused visual eval

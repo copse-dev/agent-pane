@@ -1,5 +1,5 @@
 import type * as Monaco from 'monaco-editor'
-import { el, clear } from '../dom/helpers.ts'
+import { el, clear, qsRequired } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GhCliStatus, GhPrChecksState, GhPrDetails, GhPrSummary } from '@shared/types/git.ts'
@@ -102,7 +102,7 @@ export function mountPrPane(
       '↻',
     ),
   )
-  const refreshBtn = listHeader.querySelector('.pr-pane-refresh-btn') as HTMLButtonElement
+  const refreshBtn = qsRequired<HTMLButtonElement>(listHeader, '.pr-pane-refresh-btn')
   const listBody = el('div', { class: 'git-changes-list pr-list-body' })
   listRoot.append(listHeader, listBody)
 

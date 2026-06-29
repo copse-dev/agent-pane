@@ -172,12 +172,12 @@ export async function spawnPtyInProjectSandbox(
   shell: string,
   opts: SpawnPtyOptions,
 ): Promise<IPty> {
-  const termEnv = {
+  const termEnv: NodeJS.ProcessEnv = {
     ...process.env,
     ...opts.env,
     TERM: 'xterm-256color',
     COLORTERM: 'truecolor',
-  } as Record<string, string>
+  }
 
   const ptyOpts = {
     name: 'xterm-256color',

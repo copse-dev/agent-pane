@@ -104,7 +104,10 @@ function generateVariant(variant: IconVariant): void {
       execFileSync('iconutil', ['-c', 'icns', iconsetDir, '-o', icnsPath])
       console.log(`Wrote ${icnsPath}`)
     } catch (err) {
-      console.warn(`[generate-icon] iconutil failed for ${variant.id}:`, (err as Error).message)
+      console.warn(
+        `[generate-icon] iconutil failed for ${variant.id}:`,
+        err instanceof Error ? err.message : String(err),
+      )
     }
   } else if (variant.id === 'classic') {
     console.log(

@@ -1,3 +1,4 @@
+import { errorMessage } from '@shared/errors.ts'
 import { runAgentLoop } from './run-agent-loop.ts'
 import { defaultMaxLlmCallsForSteps } from './agent-loop-limits.ts'
 import type {
@@ -276,7 +277,7 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
       ...(session.usage ? { usage: session.usage } : {}),
     })
   } catch (err) {
-    const error = err instanceof Error ? err.message : String(err)
+    const error = errorMessage(err)
     session.status = 'error'
     session.summary = `Subagent error: ${error}`
     summary = session.summary

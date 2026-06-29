@@ -1,3 +1,4 @@
+import { errorMessage } from '@shared/errors.ts'
 import { access } from 'node:fs/promises'
 import type { TodoCheck } from '@shared/types/todo.ts'
 import { isProjectSandboxEnabled } from '../project-sandbox/index.ts'
@@ -31,7 +32,7 @@ export async function verifyTodoCheck(
       try {
         absPath = resolveWorkspacePath(check.path)
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
+        const msg = errorMessage(err)
         return { passed: false, detail: msg }
       }
       try {
