@@ -913,6 +913,11 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           pendingToolCalls.push(chunk.toolCall)
           onChunk(chunk)
         }
+        if (chunk.type === 'prompt_progress') {
+          // Prefill progress arrives before any text/tool delta; forward it so the
+          // UI can show a processing indicator on the current step.
+          onChunk(chunk)
+        }
         if (chunk.type === 'usage') {
           streamUsage = {
             inputTokens: chunk.inputTokens,
