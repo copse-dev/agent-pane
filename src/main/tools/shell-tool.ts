@@ -1,3 +1,4 @@
+import { errorMessage } from '@shared/errors.ts'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { getWorkspaceRoot } from '../services/workspace.ts'
@@ -60,7 +61,7 @@ async function runShellOnce(
         // output). For a sandboxed run, surface it as spawnFailed so an unsandboxed
         // retry can be offered (issue #104); for an unsandboxed run it's a real error.
         if (!unsandboxed) {
-          const message = err instanceof Error ? err.message : String(err)
+          const message = errorMessage(err)
           resolve({ output: message, exitCode: -1, spawnFailed: true })
         } else {
           reject(err instanceof Error ? err : new Error(String(err)))
@@ -116,7 +117,7 @@ async function runShellOnce(
         // with spawnFailed so an unsandboxed retry can be offered (issue #104), but
         // only when this was a sandboxed run.
         if (!unsandboxed) {
-          const message = err instanceof Error ? err.message : String(err)
+          const message = errorMessage(err)
           resolve({
             output: message,
             exitCode: -1,

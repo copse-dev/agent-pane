@@ -1,3 +1,4 @@
+import { errorMessage } from '@shared/errors.ts'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import {
@@ -16,7 +17,7 @@ function validateGitPath(path: string | undefined): { ok: true } | { ok: false; 
     resolveWorkspacePath(path)
     return { ok: true }
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    return { ok: false, error: errorMessage(err) }
   }
 }
 

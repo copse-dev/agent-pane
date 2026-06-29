@@ -125,7 +125,11 @@ function classify(path: string): Verdict {
     newPng = PNG.sync.read(readFileSync(resolve(ROOT, path)))
   } catch (err) {
     // Undecodable on either side → don't gamble, let it commit for human review.
-    return { path, decision: 'keep', reason: `decode failed (${(err as Error).message})` }
+    return {
+      path,
+      decision: 'keep',
+      reason: `decode failed (${err instanceof Error ? err.message : String(err)})`,
+    }
   }
 
   if (oldPng.width !== newPng.width || oldPng.height !== newPng.height) {

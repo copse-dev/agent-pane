@@ -32,7 +32,9 @@ if (existsSync(DEST) && sha256(readFileSync(DEST)) === EXPECTED_SHA256) {
   process.exit(0)
 }
 
-const res = await fetch(URL).catch((e: unknown) => die(`download failed: ${(e as Error).message}`))
+const res = await fetch(URL).catch((e: unknown) =>
+  die(`download failed: ${e instanceof Error ? e.message : String(e)}`),
+)
 if (!res.ok) die(`download failed: ${String(res.status)} ${res.statusText} for ${URL}`)
 const bytes = new Uint8Array(await res.arrayBuffer())
 const actual = sha256(bytes)

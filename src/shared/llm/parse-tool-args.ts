@@ -5,6 +5,8 @@
 // no input); instead we surface an `error` so the agent loop can return an
 // is_error tool result and let the model retry the call. See #114.
 
+import { errorMessage } from '@shared/errors.ts'
+
 export interface ParsedToolArgs {
   /** Parsed args on success; `{}` when there were no args; `{}` on failure. */
   args: unknown
@@ -22,7 +24,7 @@ export function parseToolArgs(rawJson: string | undefined | null): ParsedToolArg
   try {
     return { args: JSON.parse(trimmed) }
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err)
+    const reason = errorMessage(err)
     const snippet =
       trimmed.length > MAX_RAW_SNIPPET ? `${trimmed.slice(0, MAX_RAW_SNIPPET)}…` : trimmed
     return {

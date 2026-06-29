@@ -1,3 +1,4 @@
+import { errorMessage } from '@shared/errors.ts'
 import type { ApiClient } from '../../../preload/api.d.ts'
 import { el } from '../../dom/helpers.ts'
 
@@ -26,7 +27,7 @@ export function createGhCliSection(api: ApiClient): GhCliSection {
       const user = status.username ? `@${status.username}` : 'your GitHub account'
       statusEl.innerHTML = `<strong>Ready.</strong> Signed in as ${user}. Pull request links in chat open in the PRs panel.`
     } catch (err) {
-      statusEl.textContent = err instanceof Error ? err.message : String(err)
+      statusEl.textContent = errorMessage(err)
     }
   }
 

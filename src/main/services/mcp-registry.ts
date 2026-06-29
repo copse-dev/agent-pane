@@ -1,3 +1,4 @@
+import { errorMessage } from '@shared/errors.ts'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
@@ -336,7 +337,7 @@ async function connectBundledServers(
         `[MCP] Connected bundled "${name}" (in-process) — ${String(tools.length)} tool(s)`,
       )
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
+      const message = errorMessage(err)
       console.error(`[MCP] Failed to register bundled "${name}":`, message)
       statuses.push({
         name,
@@ -405,7 +406,7 @@ async function connectServer(
     return { ...base, state: 'connected', toolCount: toolNames.length, tools: toolNames }
   } catch (err) {
     const stderr = stderrOutput()
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     const error = stderr ? `${message}\n${stderr}` : message
     console.error(`[MCP] Failed to connect "${cfg.name}":`, message)
     if (stderr) console.error(`[MCP] "${cfg.name}" stderr:\n${stderr}`)
