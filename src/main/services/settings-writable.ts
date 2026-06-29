@@ -19,6 +19,19 @@ export const remoteAgentBaseUrlSchema = z
     }
   })
 
+// One external ACP agent Copse can spawn and drive (client role). Mirrors
+// `AcpAgentConfig` in src/shared/types/acp.ts; the model value is `acp:<id>`.
+export const acpAgentConfigSchema = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/, 'id must be a lowercase slug (a-z, 0-9, -)'),
+  title: z.string().min(1).max(256),
+  command: z.string().min(1).max(4096),
+  args: z.array(z.string().max(4096)).max(64).optional(),
+  env: z.record(z.string().max(256), z.string().max(8192)).optional(),
+  enabled: z.boolean(),
+})
+
+export const registeredAcpAgentsSchema = z.array(acpAgentConfigSchema).max(64)
+
 export const webAllowedOriginsSchema = z
   .array(
     z
@@ -70,6 +83,8 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   remoteAgentStartingRef: z.string().max(256),
   remoteAgentAutoCreatePR: z.boolean(),
   remoteAgentWorkOnCurrentBranch: z.boolean(),
+  // External ACP agents Copse drives as a client (model value `acp:<id>`).
+  registeredAcpAgents: registeredAcpAgentsSchema,
   browserToolsEnabled: z.boolean(),
   browserAllowedOrigins: z.array(z.string().max(2048)).max(256),
   // Experimental features, opt-in and off by default. See the experimental
