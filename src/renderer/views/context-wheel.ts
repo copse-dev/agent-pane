@@ -122,7 +122,7 @@ export function createContextWheel(): {
       arc.setAttribute('stroke-width', '2')
       arc.setAttribute('stroke', SEGMENT_COLORS[segment.key])
       arc.setAttribute('stroke-dasharray', `${String(len)} ${String(CIRCUMFERENCE)}`)
-      arc.setAttribute('stroke-dashoffset', `${String(-offset)}`)
+      arc.setAttribute('stroke-dashoffset', String(-offset))
       segGroup.append(arc)
       offset += len
     }
@@ -197,13 +197,13 @@ export function createContextWheel(): {
       `${String(ratio * CIRCUMFERENCE)} ${String(CIRCUMFERENCE)}`,
     )
     label.textContent = `${String(pct)}%`
-    const contextLine = `Context: ${formatTokenCount(snapshot.conversationTokens)} / ${formatTokenCount(snapshot.conversationBudget)} (${pct}%)`
+    const contextLine = `Context: ${formatTokenCount(snapshot.conversationTokens)} / ${formatTokenCount(snapshot.conversationBudget)} (${String(pct)}%)`
     const usageLine = options?.usageLine?.trim()
     root.title = usageLine ? `${contextLine}\n${usageLine}` : contextLine
     const ariaUsage = usageLine ? `; ${usageLine}` : ''
     root.setAttribute(
       'aria-label',
-      `Context ${pct}% used, ${formatTokenCount(snapshot.conversationTokens)} of ${formatTokenCount(snapshot.conversationBudget)} tokens${ariaUsage}`,
+      `Context ${String(pct)}% used, ${formatTokenCount(snapshot.conversationTokens)} of ${formatTokenCount(snapshot.conversationBudget)} tokens${ariaUsage}`,
     )
   }
 

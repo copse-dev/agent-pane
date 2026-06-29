@@ -102,7 +102,7 @@ describe('blank thread reuse', () => {
     switchThread(store, usedId)
     const draftBlank = store.getState().threads.find((t) => t.id === draftBlankId)
     assert.ok(draftBlank)
-    assert.equal(draftBlank?.draftPrompt, 'still typing…')
+    assert.equal(draftBlank.draftPrompt, 'still typing…')
     assert.equal(hasUnsubmittedPrompt(draftBlank), true)
   })
 
@@ -157,7 +157,9 @@ describe('blank thread reuse', () => {
       cacheCreationTokens: 0,
     })
 
-    const usage = getThreadById(store, threadId)!.usage
+    const thread = getThreadById(store, threadId)
+    assert.ok(thread)
+    const usage = thread.usage
     assert.equal(usage.inputTokens, 1500)
     assert.equal(usage.outputTokens, 70)
     assert.equal(usage.cacheReadTokens, 1250)
@@ -175,7 +177,9 @@ describe('blank thread reuse', () => {
     const threadId = createThread(store)
     addUsageDelta(store, threadId, { model: 'lmstudio:qwen', inputTokens: 300, outputTokens: 30 })
 
-    const usage = getThreadById(store, threadId)!.usage
+    const thread = getThreadById(store, threadId)
+    assert.ok(thread)
+    const usage = thread.usage
     assert.equal(usage.inputTokens, 300)
     assert.equal('cacheReadTokens' in usage, false)
     assert.equal('cacheCreationTokens' in usage, false)

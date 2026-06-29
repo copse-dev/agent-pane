@@ -146,7 +146,7 @@ export function buildUsageSummary(
   extra?: ExtraPricing,
 ): UsageSummary {
   const trackingStartedAt =
-    events.length > 0 ? events.reduce((min, e) => Math.min(min, e.at), events[0]!.at) : null
+    events.length > 0 ? events.reduce((min, e) => Math.min(min, e.at), Infinity) : null
 
   return {
     day: summarizeByModel(aggregateEventsByModel(events, DAY_MS, now), extra),

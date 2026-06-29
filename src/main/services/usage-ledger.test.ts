@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { at } from '@shared/array-utils.ts'
 import { storageSet } from './storage.ts'
 import { getUsageSummary, recordUsageEvent } from './usage-ledger.ts'
 import { USAGE_EVENTS_STORAGE_KEY } from '@shared/usage/usage-event.ts'
@@ -23,8 +24,8 @@ describe('usage ledger', () => {
     const summary = getUsageSummary()
     assert.equal(summary.ledgerEventCount, 1)
     assert.equal(summary.day.cloudModels.length, 1)
-    assert.equal(summary.day.cloudModels[0]!.inputTokens, 500)
-    assert.equal(summary.month.cloudModels[0]!.outputTokens, 50)
+    assert.equal(summary.day.cloudModels[0]?.inputTokens, 500)
+    assert.equal(summary.month.cloudModels[0]?.outputTokens, 50)
     assert.equal(summary.allTime.totalInputTokens, 0)
   })
 
@@ -39,8 +40,8 @@ describe('usage ledger', () => {
     })
     const summary = getUsageSummary()
     assert.equal(summary.day.localModels.length, 1)
-    assert.equal(summary.day.localModels[0]!.model, 'lmstudio:qwen/qwen3.6-35b-a3b')
-    assert.equal(summary.day.localModels[0]!.estimatedCostUsd, 0)
+    assert.equal(at(summary.day.localModels, 0).model, 'lmstudio:qwen/qwen3.6-35b-a3b')
+    assert.equal(at(summary.day.localModels, 0).estimatedCostUsd, 0)
   })
 
   it('dedupes identical back-to-back records from main and renderer', () => {

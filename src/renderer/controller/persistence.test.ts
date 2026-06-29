@@ -52,7 +52,9 @@ test('serializedSet applies writes to the same key in submission order', async (
   await tick()
   assert.deepEqual(calls, [['k', 'first']])
 
-  resolvers[0]!()
+  const resolveFirst = resolvers[0]
+  assert.ok(resolveFirst, 'first resolver should be registered')
+  resolveFirst()
   await p1
   await tick()
   assert.deepEqual(calls, [
@@ -60,7 +62,9 @@ test('serializedSet applies writes to the same key in submission order', async (
     ['k', 'second'],
   ])
 
-  resolvers[1]!()
+  const resolveSecond = resolvers[1]
+  assert.ok(resolveSecond, 'second resolver should be registered')
+  resolveSecond()
   await p2
 })
 

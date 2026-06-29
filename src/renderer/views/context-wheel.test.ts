@@ -29,10 +29,12 @@ describe('context wheel breakdown (component)', () => {
 
     assert.equal(wheel.root.hidden, false)
     assert.ok(wheel.root.classList.contains('has-breakdown'))
-    assert.match(wheel.root.querySelector('.context-wheel-label')!.textContent, /\d+%/)
+    const label = wheel.root.querySelector('.context-wheel-label')
+    assert.ok(label)
+    assert.match(label.textContent ?? '', /\d+%/)
 
     const arcs = wheel.root.querySelectorAll('.context-wheel g circle')
-    assert.ok(arcs.length >= 2, `expected ≥2 arc segments, got ${arcs.length}`)
+    assert.ok(arcs.length >= 2, `expected ≥2 arc segments, got ${String(arcs.length)}`)
   })
 
   it('adds a "Your message" segment and reveals the hover breakdown', () => {
@@ -44,14 +46,15 @@ describe('context wheel breakdown (component)', () => {
     const breakdown = composeContextBreakdown({ system: 1800, message: 60 }, 200_000)
     wheel.update(null, false, { breakdown })
 
-    const popover = wheel.root.querySelector<HTMLElement>('.context-wheel-popover')!
+    const popover = wheel.root.querySelector<HTMLElement>('.context-wheel-popover')
+    assert.ok(popover)
     // Hidden until hovered/focused, just like the e2e (moveTo → popover shows).
     assert.equal(popover.hidden, true)
 
     wheel.root.dispatchEvent(new Event('mouseenter'))
     assert.equal(popover.hidden, false)
 
-    assert.match(popover.textContent, /System prompt/)
-    assert.match(popover.textContent, /Your message/)
+    assert.match(popover.textContent ?? '', /System prompt/)
+    assert.match(popover.textContent ?? '', /Your message/)
   })
 })

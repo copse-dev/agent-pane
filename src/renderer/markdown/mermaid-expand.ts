@@ -19,8 +19,8 @@ function clamp(n: number, min: number, max: number): number {
 
 function applyTransform(): void {
   if (!stageEl) return
-  stageEl.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`
-  if (zoomLabelEl) zoomLabelEl.textContent = `${Math.round(scale * 100)}%`
+  stageEl.style.transform = `translate(${String(translateX)}px, ${String(translateY)}px) scale(${String(scale)})`
+  if (zoomLabelEl) zoomLabelEl.textContent = `${String(Math.round(scale * 100))}%`
 }
 
 function resetTransform(): void {
@@ -191,7 +191,8 @@ function openMermaidExpand(source: HTMLElement): void {
   if (!svg) return
 
   const dialog = ensureExpandDialog()
-  stageEl!.replaceChildren(svg.cloneNode(true))
+  if (!stageEl) return
+  stageEl.replaceChildren(svg.cloneNode(true))
   dialog.showModal()
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {

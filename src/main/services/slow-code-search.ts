@@ -39,7 +39,7 @@ export function compileSlowSearchMatcher(
   const trimmed = pattern.trim()
   if (!trimmed) return { error: 'Empty search pattern.' }
   if (trimmed.length > SLOW_SEARCH_MAX_PATTERN_LEN) {
-    return { error: `Search pattern exceeds ${SLOW_SEARCH_MAX_PATTERN_LEN} characters.` }
+    return { error: `Search pattern exceeds ${String(SLOW_SEARCH_MAX_PATTERN_LEN)} characters.` }
   }
 
   if (opts.fixedString) {
@@ -200,7 +200,7 @@ async function walkSearch(ctx: WalkSearchCtx): Promise<void> {
 async function inodeKey(path: string): Promise<string | null> {
   try {
     const st = await fsStat(path)
-    return `${st.dev}:${st.ino}`
+    return `${String(st.dev)}:${String(st.ino)}`
   } catch {
     return null
   }
@@ -227,7 +227,7 @@ async function scanFile(
     try {
       const probe = Buffer.alloc(BINARY_PROBE_BYTES)
       const { bytesRead } = await handle.read(probe, 0, BINARY_PROBE_BYTES, 0)
-      if (probe.slice(0, bytesRead).includes(0)) return
+      if (probe.subarray(0, bytesRead).includes(0)) return
     } finally {
       await handle.close()
     }
@@ -237,7 +237,7 @@ async function scanFile(
     for (let i = 0; i < lines.length; i++) {
       if (out.length >= max) break
       const line = lines[i] ?? ''
-      if (matcher(line)) out.push(`${displayPath}:${i + 1}: ${line.trimEnd()}`)
+      if (matcher(line)) out.push(`${displayPath}:${String(i + 1)}: ${line.trimEnd()}`)
     }
   } catch {
     /* unreadable */

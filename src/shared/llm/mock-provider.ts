@@ -54,8 +54,8 @@ export class MockLLMProvider implements LLMProvider {
     // dead-code-eliminates this whole block and the parser never ships (#DSL).
     if (__COPSE_TEST_DIRECTIVES__) {
       const delayDirective = fullUserText.match(/\[\[mock:delay_ms\s+(\d+)\]\]/)
-      if (delayDirective) {
-        const requestedDelay = Number.parseInt(delayDirective[1]!, 10)
+      if (delayDirective?.[1]) {
+        const requestedDelay = Number.parseInt(delayDirective[1], 10)
         const delayMs = Math.min(requestedDelay, MAX_MOCK_DELAY_MS)
         await sleep(delayMs, signal)
         if (signal?.aborted) return
@@ -89,17 +89,18 @@ export class MockLLMProvider implements LLMProvider {
         }
 
         const directive = fullUserText.match(/\[\[mcp:([^\s\]]+)(\s+\{[^]*?\})?\]\]/)
-        if (directive && tools.some((t) => t.name === directive[1])) {
+        const directiveToolName = directive?.[1]
+        if (directiveToolName && tools.some((t) => t.name === directiveToolName)) {
           if (signal?.aborted) return
           let args: Record<string, unknown> = {}
-          if (directive[2]) {
+          if (directive?.[2]) {
             try {
               args = JSON.parse(directive[2].trim()) as Record<string, unknown>
             } catch {
               args = {}
             }
           }
-          yield { type: 'tool_call', toolCall: { id: randomUUID(), name: directive[1]!, args } }
+          yield { type: 'tool_call', toolCall: { id: randomUUID(), name: directiveToolName, args } }
           yield { type: 'done' }
           return
         }

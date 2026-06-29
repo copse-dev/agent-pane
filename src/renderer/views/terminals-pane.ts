@@ -305,7 +305,7 @@ export function mountTerminalsPane(
   function addTab(options?: { activate?: boolean }): string {
     tabCounter += 1
     const id = crypto.randomUUID()
-    const label = `Terminal ${tabCounter}`
+    const label = `Terminal ${String(tabCounter)}`
     const closeBtn = el(
       'span',
       {
@@ -387,8 +387,9 @@ export function mountTerminalsPane(
 
     if (activeTabId !== tabId) return
     const remaining = [...tabs.keys()]
-    if (remaining.length > 0) {
-      setActiveTab(remaining[remaining.length - 1]!)
+    const lastRemaining = remaining[remaining.length - 1]
+    if (lastRemaining !== undefined) {
+      setActiveTab(lastRemaining)
     } else {
       activeTabId = null
       if (terminalModeActive(store)) addTab()

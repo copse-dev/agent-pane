@@ -79,8 +79,9 @@ export function resolveFileReferences(candidates: string[]): FileReferenceResolu
     if (normalized.includes('/')) continue
 
     const basenameMatches = pathsByBasename.get(normalized) ?? []
-    if (basenameMatches.length === 1) {
-      resolutions.push({ candidate, path: basenameMatches[0]!, kind: 'file' })
+    const [onlyMatch] = basenameMatches
+    if (basenameMatches.length === 1 && onlyMatch !== undefined) {
+      resolutions.push({ candidate, path: onlyMatch, kind: 'file' })
     }
   }
   return resolutions

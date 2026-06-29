@@ -37,7 +37,7 @@ describe('browser pane requested URLs', () => {
       cb(0)
       return 0
     }
-    const ResizeObserverCtor = globalThis.ResizeObserver
+    const ResizeObserverCtor: typeof ResizeObserver | undefined = globalThis.ResizeObserver
     class NoopResizeObserver {
       observe(): void {}
       unobserve(): void {}
@@ -72,7 +72,7 @@ describe('browser pane requested URLs', () => {
       cb(0)
       return 0
     }
-    const ResizeObserverCtor = globalThis.ResizeObserver
+    const ResizeObserverCtor: typeof ResizeObserver | undefined = globalThis.ResizeObserver
     class NoopResizeObserver {
       observe(): void {}
       unobserve(): void {}

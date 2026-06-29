@@ -247,8 +247,9 @@ export async function restoreProject(store: AppStore, api: ApiClient, id: string
   if (!proj) return
   if (!(await trySetWorkspace(api, proj.path))) {
     await dropMissingProject(store, api, id)
-    if (store.getState().activeProjectId) {
-      await restoreProject(store, api, store.getState().activeProjectId!)
+    const nextProjectId = store.getState().activeProjectId
+    if (nextProjectId) {
+      await restoreProject(store, api, nextProjectId)
     }
     return
   }

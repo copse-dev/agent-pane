@@ -19,7 +19,7 @@ export interface LmStudioSection {
 function formatBytes(bytes: number): string {
   if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`
   if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(0)} MB`
-  return `${bytes} B`
+  return `${String(bytes)} B`
 }
 
 function formatDownloadEta(gb: number): string {
@@ -131,7 +131,7 @@ export function createLmStudioSection(
         result.models && result.models.length
           ? result.models.slice(0, 3).join(', ')
           : 'no models loaded'
-      testStatus.textContent = `✓ Connected — ${result.models?.length ?? 0} model(s): ${list}`
+      testStatus.textContent = `✓ Connected — ${String(result.models?.length ?? 0)} model(s): ${list}`
       testStatus.classList.add('ok')
       await refreshDetection()
     } else {
@@ -190,7 +190,7 @@ export function createLmStudioSection(
               const eta = formatDownloadEta(model.downloadGb)
               const sizeHint = job.totalSizeBytes
                 ? formatBytes(job.totalSizeBytes)
-                : `~${model.downloadGb} GB`
+                : `~${String(model.downloadGb)} GB`
               progress.textContent = `Downloading ${sizeHint} — may take ${eta}…`
               pollDownload(job.jobId, progress, () => {
                 downloadBtn.disabled = false
@@ -204,7 +204,7 @@ export function createLmStudioSection(
           el(
             'span',
             { class: 'field-hint' },
-            `~${model.downloadGb} GB · ${formatDownloadEta(model.downloadGb)} once the server is running`,
+            `~${String(model.downloadGb)} GB · ${formatDownloadEta(model.downloadGb)} once the server is running`,
           ),
         )
       }
@@ -244,7 +244,7 @@ export function createLmStudioSection(
           }
           if (status.totalSizeBytes && status.downloadedBytes) {
             const pct = Math.round((status.downloadedBytes / status.totalSizeBytes) * 100)
-            progressEl.textContent = `Downloading… ${pct}% (${formatBytes(status.downloadedBytes)} / ${formatBytes(status.totalSizeBytes)})`
+            progressEl.textContent = `Downloading… ${String(pct)}% (${formatBytes(status.downloadedBytes)} / ${formatBytes(status.totalSizeBytes)})`
           }
         })
     }, 2000)

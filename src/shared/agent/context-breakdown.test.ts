@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { at } from '@shared/array-utils.ts'
 import {
   composeContextBreakdown,
   CONTEXT_SEGMENT_LABELS,
@@ -16,8 +17,8 @@ describe('composeContextBreakdown', () => {
       result.segments.map((s) => s.key),
       ['system', 'tools', 'skills', 'message'],
     )
-    assert.equal(result.segments[0]?.tokens, 101)
-    assert.equal(result.segments[0]?.label, CONTEXT_SEGMENT_LABELS.system)
+    assert.equal(at(result.segments, 0).tokens, 101)
+    assert.equal(at(result.segments, 0).label, CONTEXT_SEGMENT_LABELS.system)
     assert.equal(result.totalTokens, 101 + 50 + 5 + 10)
     assert.equal(result.contextWindow, 200_000)
   })

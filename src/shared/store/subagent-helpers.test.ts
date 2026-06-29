@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { at } from '@shared/array-utils.ts'
 import { createStore } from './store.ts'
 import { createThread, addMessage, addToolCall } from './thread-helpers.ts'
 import {
@@ -46,14 +47,18 @@ describe('subagent-helpers', () => {
     })
     finishSubagent(store, msgId, 'tc-explore', 'Auth lives in auth.ts', 'done')
 
-    const tc = store
-      .getState()
-      .threads[0]!.messages.find((m) => m.id === msgId)!
-      .toolCalls.find((t) => t.id === 'tc-explore')!
+    const thread = store.getState().threads[0]
+    assert.ok(thread)
+    const message = thread.messages.find((m) => m.id === msgId)
+    assert.ok(message)
+    const tc = message.toolCalls.find((t) => t.id === 'tc-explore')
+    assert.ok(tc)
+    const subagent = tc.subagent
+    assert.ok(subagent)
 
-    assert.equal(tc.subagent?.status, 'done')
-    assert.equal(tc.subagent?.summary, 'Auth lives in auth.ts')
-    assert.equal(tc.subagent?.messages[0]?.content, 'Reading files…')
-    assert.equal(tc.subagent?.messages[0]?.toolCalls[0]?.result, 'export function auth() {}')
+    assert.equal(subagent.status, 'done')
+    assert.equal(subagent.summary, 'Auth lives in auth.ts')
+    assert.equal(at(subagent.messages, 0).content, 'Reading files…')
+    assert.equal(at(subagent.messages, 0).toolCalls[0]?.result, 'export function auth() {}')
   })
 })

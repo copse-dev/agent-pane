@@ -50,7 +50,9 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
     let dir = ''
     const expandThrough = isDirectory ? segments.length : segments.length - 1
     for (let i = 0; i < expandThrough; i++) {
-      dir = join(dir, segments[i]!)
+      const segment = segments[i]
+      if (segment === undefined) break
+      dir = join(dir, segment)
       const controller = dirByPath.get(dir)
       if (!controller) return
       await controller.expand()
@@ -80,7 +82,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
       icon,
       el('span', {}, entry.name),
     )
-    row.style.paddingLeft = `${8 + depth * 14}px`
+    row.style.paddingLeft = `${String(8 + depth * 14)}px`
     rowByPath.set(path, row)
 
     const container = el('div', {})
@@ -94,11 +96,11 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
       let expanded = false
       const expand = async (): Promise<void> => {
         if (expanded) return
-        expanded = !expanded
-        twisty.textContent = expanded ? '▼' : '▶'
+        expanded = true
+        twisty.textContent = '▼'
         mountMaterialIcon(icon, materialFolderIconUrl(path, expanded), `${entry.name} folder`)
-        childrenEl.hidden = !expanded
-        if (expanded && !loaded) {
+        childrenEl.hidden = false
+        if (!loaded) {
           loaded = true
           await loadInto(childrenEl, path, depth + 1)
         }

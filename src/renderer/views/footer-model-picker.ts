@@ -95,7 +95,7 @@ export function mountFooterModelPicker(
 
   return {
     refresh: () => void refresh(),
-    destroy: () => {
+    destroy: (): void => {
       cleanups.forEach((u) => {
         u()
       })

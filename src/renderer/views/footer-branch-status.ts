@@ -88,6 +88,11 @@ export function mountFooterBranchStatus(
     }
 
     const mismatch = threadGitBranchMismatch(threadBranch, currentBranch)
+    // `mismatch` is only true when threadBranch is a non-empty string, but that
+    // implication can't survive into the branches below — capture the message
+    // here while threadBranch is narrowed to a defined value.
+    const mismatchMessage =
+      mismatch && threadBranch ? threadGitBranchMismatchMessage(threadBranch) : ''
     wrap.hidden = false
     wrap.classList.toggle('is-picker-mode', pickerMode)
     trigger.classList.toggle('is-mismatch', mismatch)
@@ -102,24 +107,22 @@ export function mountFooterBranchStatus(
     }
 
     if (status?.pr) {
-      label.textContent = `PR #${status.pr.number}`
-      trigger.title = mismatch
-        ? `${threadGitBranchMismatchMessage(threadBranch!)} (${status.pr.title})`
-        : status.pr.title
+      label.textContent = `PR #${String(status.pr.number)}`
+      trigger.title = mismatch ? `${mismatchMessage} (${status.pr.title})` : status.pr.title
       trigger.classList.add('is-link')
       trigger.classList.remove('is-copyable')
       branchToCopy = null
       trigger.setAttribute(
         'aria-label',
         pickerMode
-          ? `Open pull request #${status.pr.number}`
-          : `Open pull request #${status.pr.number}`,
+          ? `Open pull request #${String(status.pr.number)}`
+          : `Open pull request #${String(status.pr.number)}`,
       )
     } else {
       label.textContent = displayBranch
       if (pickerMode) {
         trigger.title = mismatch
-          ? `${threadGitBranchMismatchMessage(threadBranch!)} Switch git branch.`
+          ? `${mismatchMessage} Switch git branch.`
           : `Switch git branch: ${displayBranch}`
         trigger.classList.remove('is-link')
         trigger.classList.remove('is-copyable')
@@ -127,21 +130,19 @@ export function mountFooterBranchStatus(
         trigger.setAttribute(
           'aria-label',
           mismatch
-            ? `${threadGitBranchMismatchMessage(threadBranch!)} Switch git branch.`
+            ? `${mismatchMessage} Switch git branch.`
             : `Switch git branch: ${displayBranch}`,
         )
       } else {
         trigger.title = mismatch
-          ? `${threadGitBranchMismatchMessage(threadBranch!)} Click to copy branch name.`
+          ? `${mismatchMessage} Click to copy branch name.`
           : `Click to copy branch name: ${displayBranch}`
         trigger.classList.remove('is-link')
         trigger.classList.add('is-copyable')
         branchToCopy = displayBranch
         trigger.setAttribute(
           'aria-label',
-          mismatch
-            ? `${threadGitBranchMismatchMessage(threadBranch!)} Copy branch name.`
-            : `Copy branch name: ${displayBranch}`,
+          mismatch ? `${mismatchMessage} Copy branch name.` : `Copy branch name: ${displayBranch}`,
         )
       }
     }
@@ -158,7 +159,7 @@ export function mountFooterBranchStatus(
       const prItem = el(
         'button',
         { type: 'button', class: 'branch-picker-option branch-picker-action' },
-        `Open PR #${pr.number}`,
+        `Open PR #${String(pr.number)}`,
       )
       prItem.addEventListener('click', () => {
         setOpen(false)

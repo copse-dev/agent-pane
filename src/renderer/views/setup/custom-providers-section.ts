@@ -352,7 +352,7 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
             fetchStatus.className = 'key-status err'
             return
           }
-          fetchStatus.textContent = `✓ ${res.count} model(s) imported with pricing`
+          fetchStatus.textContent = `✓ ${String(res.count)} model(s) imported with pricing`
           fetchStatus.className = 'key-status ok'
           await refresh()
           return
@@ -372,7 +372,7 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
             ...(m.contextLength ? { contextWindow: m.contextLength } : {}),
           })),
         )
-        fetchStatus.textContent = `✓ ${res.models.length} model(s) — review and Save`
+        fetchStatus.textContent = `✓ ${String(res.models.length)} model(s) — review and Save`
         fetchStatus.className = 'key-status ok'
       })()
     })
