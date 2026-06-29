@@ -28,6 +28,12 @@ export interface GhPrViewDetails {
   additions?: number
   deletions?: number
   changedFiles?: number
+  files?: Array<{
+    path?: string
+    additions?: number
+    deletions?: number
+    changeType?: string
+  }>
   statusCheckRollup?: Array<{
     name?: string
     conclusion?: string
@@ -289,4 +295,40 @@ export async function getGhPrViewText(opts: {
   const pr = safeJsonParse<GhPrViewDetails>(stdout.trim())
   if (!pr) return stdout.trim() || '(no output)'
   return formatGhPrView(pr)
+}
+
+export function formatGhPrFiles(pr: GhPrViewDetails): string {
+  if (!pr.number) return '(invalid PR data)'
+  const files = pr.files ?? []
+  const count = typeof pr.changedFiles === 'number' ? pr.changedFiles : files.length
+  const header = `#${String(pr.number)} ${pr.title ?? '(no title)'} — ${String(count)} file${
+    count === 1 ? '' : 's'
+  } changed`
+  if (files.length === 0) {
+    return `${header}\n(no per-file list returned by gh)`
+  }
+  const lines = files.map((file) => {
+    const path = file.path ?? '(unknown)'
+    const change = (file.changeType ?? '').toLowerCase()
+    const tag = change ? `${change.padEnd(8)} ` : ''
+    return `  ${tag}${path} (+${String(file.additions ?? 0)} -${String(file.deletions ?? 0)})`
+  })
+  const totals = `Total: +${String(pr.additions ?? 0)} -${String(pr.deletions ?? 0)}`
+  return [header, ...lines, totals].join('\n')
+}
+
+export async function getGhPrFilesText(opts: { number?: number | undefined }): Promise<string> {
+  if (!isGhAvailable()) return 'gh is not available on this system.'
+  const args = [
+    'pr',
+    'view',
+    '--json',
+    ['number', 'title', 'url', 'additions', 'deletions', 'changedFiles', 'files'].join(','),
+  ]
+  if (opts.number !== undefined) args.push(String(opts.number))
+  const { stdout, stderr, code } = await runGh(args)
+  if (code !== 0) return formatGhError(stderr, code)
+  const pr = safeJsonParse<GhPrViewDetails>(stdout.trim())
+  if (!pr) return stdout.trim() || '(no output)'
+  return formatGhPrFiles(pr)
 }

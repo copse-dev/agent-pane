@@ -3,7 +3,13 @@ import { readFileTool, listDirTool } from '../tools/file-tools.ts'
 import { searchCodeTool, findFilesTool } from '../tools/search-tools.ts'
 import { searchCodebaseTool, semanticSearchTool } from '../tools/search-codebase-tool.ts'
 import { gitStatusTool, gitDiffTool, gitLogTool, gitCommitTool } from '../tools/git-tools.ts'
-import { ghPrListTool, ghPrViewTool, ghRunListTool, ghRunViewTool } from '../tools/gh-tools.ts'
+import {
+  ghPrFilesTool,
+  ghPrListTool,
+  ghPrViewTool,
+  ghRunListTool,
+  ghRunViewTool,
+} from '../tools/gh-tools.ts'
 import { investigateCiTool } from '../tools/investigate-ci-tool.ts'
 import {
   getCiStatusTool,
@@ -51,6 +57,7 @@ export function createRegistry(): ToolRegistry {
   registry.register(gitCommitTool)
   registry.register(ghPrListTool)
   registry.register(ghPrViewTool)
+  registry.register(ghPrFilesTool)
   registry.register(getCiStatusTool)
   registry.register(waitForCiChecksTool)
   registry.register(getCiFailureLogsTool)
