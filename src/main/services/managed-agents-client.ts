@@ -142,7 +142,9 @@ function resolveGithubToken(): string {
 async function readJson<T>(response: Response, label: string): Promise<T> {
   const text = await response.text()
   if (!response.ok) {
-    throw new Error(`${label} failed with HTTP ${String(response.status)}${text ? `: ${text}` : ''}`)
+    throw new Error(
+      `${label} failed with HTTP ${String(response.status)}${text ? `: ${text}` : ''}`,
+    )
   }
   try {
     return (text ? JSON.parse(text) : {}) as T
