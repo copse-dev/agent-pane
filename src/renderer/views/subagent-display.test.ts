@@ -27,6 +27,19 @@ function fakeApi(): ApiClient {
   } as unknown as ApiClient
 }
 
+function apiWithFiles(
+  resolutions: { candidate: string; path: string; kind?: 'file' | 'directory' }[],
+): ApiClient {
+  return {
+    agent: { run: () => Promise.resolve(), abort: () => Promise.resolve() },
+    index: {
+      resolveFileReferences: () =>
+        Promise.resolve(resolutions.map((r) => ({ ...r, kind: r.kind ?? ('file' as const) }))),
+    },
+    fs: { readFile: () => Promise.resolve('') },
+  } as unknown as ApiClient
+}
+
 // Mirrors seedSubagentFixture(): one assistant message with a done `explore`
 // tool call whose subagent session read README.md and summarised it.
 const exploreCall: ToolCall = {
@@ -104,5 +117,64 @@ describe('subagent display (component)', () => {
     assert.equal(card.querySelector('.subagent-message-assistant strong')?.textContent, 'README.md')
     // e2e (after expand): .subagent-inner-tool .tool-name === 'Read file'
     assert.equal(card.querySelector('.subagent-inner-tool .tool-name')?.textContent, 'Read file')
+  })
+
+  it('makes file paths in inner tool results clickable', async () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', 'Here is what the subagent found.')
+    const tcWithFileResult: ToolCall = {
+      id: 'tc-glob-1',
+      name: 'explore',
+      args: { query: 'Find TypeScript files' },
+      status: 'done',
+      result: 'Found 2 files.',
+      subagent: {
+        id: 'sub-session-2',
+        kind: 'explore',
+        status: 'done',
+        prompt: 'Find TypeScript files',
+        summary: 'Found 2 files.',
+        messages: [
+          {
+            id: 'sub-msg-1',
+            role: 'assistant',
+            content: 'Searching for files.',
+            toolCalls: [
+              {
+                id: 'inner-glob-1',
+                name: 'glob',
+                args: { pattern: 'src/**/*.ts' },
+                status: 'done',
+                result: 'src/main/index.ts\nsrc/renderer/index.ts',
+              },
+            ],
+          },
+        ],
+      },
+    }
+    addToolCall(store, messageId, tcWithFileResult)
+
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(
+      host,
+      store,
+      apiWithFiles([
+        { candidate: 'src/main/index.ts', path: 'src/main/index.ts' },
+        { candidate: 'src/renderer/index.ts', path: 'src/renderer/index.ts' },
+      ]),
+    )
+
+    // Allow async annotateFileReferences to complete
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const links = host.querySelectorAll('.subagent-inner-tool .tool-result a.file-reference-link')
+    assert.equal(links.length, 2)
+    assert.equal((links[0] as HTMLAnchorElement).dataset['fileReferencePath'], 'src/main/index.ts')
+    assert.equal(
+      (links[1] as HTMLAnchorElement).dataset['fileReferencePath'],
+      'src/renderer/index.ts',
+    )
   })
 })

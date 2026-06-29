@@ -219,6 +219,7 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
         toolsWrap.append(createInnerToolCard(inner))
       }
       timeline.append(toolsWrap)
+      void annotateFileReferences(toolsWrap, api)
     }
   }
   card.append(timeline)
