@@ -90,6 +90,40 @@ self-hosted runner with LM Studio installed is a valid home for them — nightly
 on-demand, or label-gated. Keep the seams (provider abstraction, `COPSE_AGENT_EVAL`,
 the eval config) intact so this stays runnable as the rest of CI gets leaner.
 
+## Deterministic screenshots
+
+Committed reference screenshots (`tests/e2e/screenshots/*.png`) are regenerated
+from e2e runs and diffed in review. They must depend **only on seeded fixtures**,
+never on the live machine, repo, or clock — otherwise an unrelated PR (a lint
+sweep, a dependency bump) re-renders them and every PR carries spurious PNG
+churn. A change to a committed screenshot should always trace back to a UI
+change, not to which branch the PR was built from.
+
+Rules for anything that lands in a captured frame:
+
+- **Git branch.** The app reads the live checkout for the footer branch-status
+  and branch-picker. Under e2e the main process reports a fixed branch instead,
+  via `COPSE_PANEL_MOCK_BRANCH` (default [`E2E_GIT_BRANCH`](../tests/e2e/helpers/e2e-env.ts),
+  set in `wdio.conf.ts` `beforeSession`). The override is honored in
+  `git-service.ts` (`getCurrentBranchName`, `getBranches`) and flows through
+  `pr-context-service.ts` `getGitBranchStatus`. Fixtures that bind a thread to a
+  branch must use `e2eGitBranch()` — never `git rev-parse` — so the seeded
+  branch matches the one the footer renders.
+- **Live `gh` / PR data.** `checkToolAvailability` forces `gh` unavailable under
+  `COPSE_E2E`, so `getGitBranchStatus` never embeds a real PR number/title.
+  Keep it that way; route any new PR-derived UI through the `COPSE_PANEL_MOCK_GH`
+  fixtures (`gh-pr-mock.ts`), not real `gh`.
+- **Clocks, versions, hosts, absolute paths.** Don't render `new Date()`,
+  relative time ("2m ago"), app/Electron/Node versions, hostname/username, or
+  home-dir paths in a captured view. Seed timestamps to fixed values; show
+  workspace-relative paths.
+- **Randomness.** No `Math.random()` / `randomUUID()` in rendered output. Derive
+  visible ids/order from fixture data.
+
+When you add an e2e screenshot, ask: *if I rebuild this on a different branch,
+on a different day, on a different machine — does any pixel move?* If yes, pin
+the source through a fixture or an e2e env override before committing the PNG.
+
 ## Quick rule of thumb
 
 | Question the test answers              | Tier             |
