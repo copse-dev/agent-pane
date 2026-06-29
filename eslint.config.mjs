@@ -24,6 +24,12 @@ export default ts.config(
   ...ts.configs.strictTypeChecked,
   prettier,
   {
+    // A stale `// eslint-disable` is as misleading as a missing one: it implies a
+    // rule fires here when it no longer does. Fail the build on unused directives
+    // so the inline-suppression inventory stays honest as the code changes.
+    linterOptions: { reportUnusedDisableDirectives: 'error' },
+  },
+  {
     languageOptions: {
       parserOptions: { project: ['./tsconfig.node.json', './tsconfig.web.json'] },
     },
@@ -35,6 +41,14 @@ export default ts.config(
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       '@typescript-eslint/no-unnecessary-type-assertion': 'error',
+      // Ban `{ ... } as T` object-literal casts: they silently bypass excess-property
+      // checks, so a typo'd or stale field type-checks clean. Annotate the binding
+      // (`const x: T = { ... }`) or use `satisfies T` instead. Other `as` casts stay
+      // allowed for now — narrowing those further is tracked separately.
+      '@typescript-eslint/consistent-type-assertions': [
+        'error',
+        { assertionStyle: 'as', objectLiteralTypeAssertions: 'never' },
+      ],
       '@typescript-eslint/no-this-alias': 'off',
       '@typescript-eslint/explicit-module-boundary-types': 'error',
       '@typescript-eslint/explicit-function-return-type': 'error',
@@ -51,6 +65,10 @@ export default ts.config(
       // internal await; de-asyncing would break their type contract.
       '@typescript-eslint/require-await': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
+      // Tests build partial doubles as object literals cast to the real type
+      // (a fake `Response`, a stub `HTMLElement`). That's the deliberate test
+      // pattern, so the object-literal-cast ban only applies to production code.
+      '@typescript-eslint/consistent-type-assertions': 'off',
     },
   },
   {
