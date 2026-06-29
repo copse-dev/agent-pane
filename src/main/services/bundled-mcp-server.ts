@@ -9,6 +9,7 @@
  * returns a `text/html` MCP-UI resource for the host to render as a sandboxed
  * artefact. Gated by the `mcpUiArtefactsEnabled` setting.
  */
+import { errorMessage } from '@shared/errors.ts'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
@@ -100,7 +101,7 @@ function buildCanvasServer(): { name: string; server: McpServer } {
         resolved = await resolveArtefactHtml({ html, path, title })
       } catch (err) {
         return {
-          content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
+          content: [{ type: 'text', text: errorMessage(err) }],
           isError: true,
         }
       }

@@ -1,3 +1,4 @@
+import { errorMessage } from '@shared/errors.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
@@ -853,7 +854,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         statusEl.classList.add('ok')
       })
       .catch((err: unknown) => {
-        statusEl.textContent = `✗ ${err instanceof Error ? err.message : String(err)}`
+        statusEl.textContent = `✗ ${errorMessage(err)}`
         statusEl.classList.add('err')
       })
   })

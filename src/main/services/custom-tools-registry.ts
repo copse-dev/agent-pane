@@ -1,3 +1,4 @@
+import { errorMessage } from '@shared/errors.ts'
 import * as fs from 'node:fs/promises'
 import type { Dirent } from 'node:fs'
 import { extname, join } from 'node:path'
@@ -150,7 +151,7 @@ export async function loadCustomToolsFromDir(
         console.log(`[custom-tools] registered "${tool.name}" from ${entry.name}`)
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
+      const message = errorMessage(err)
       statuses.push({ name: entry.name, source: full, registered: false, error: message })
       console.error(`[custom-tools] failed to load ${entry.name}:`, message)
     }

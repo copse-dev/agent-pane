@@ -28,7 +28,9 @@ async function readJson(path: string): Promise<Record<string, unknown>> {
   try {
     return JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>
   } catch (err) {
-    console.error(`coverage-gate: could not read ${path}: ${(err as Error).message}`)
+    console.error(
+      `coverage-gate: could not read ${path}: ${err instanceof Error ? err.message : String(err)}`,
+    )
     process.exit(1)
   }
 }

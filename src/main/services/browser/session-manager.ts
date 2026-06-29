@@ -1,3 +1,4 @@
+import { errorMessage } from '@shared/errors.ts'
 import { BrowserWindow, app } from 'electron'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -96,7 +97,7 @@ export class BrowserSessionManager {
           ? (err as { code?: unknown }).code
           : undefined
       if (code !== 'ERR_ABORTED') {
-        throw new Error(`navigation failed: ${err instanceof Error ? err.message : String(err)}`, {
+        throw new Error(`navigation failed: ${errorMessage(err)}`, {
           cause: err,
         })
       }

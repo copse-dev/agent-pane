@@ -1,3 +1,4 @@
+import { errorMessage } from '@shared/errors.ts'
 import type {
   LLMProvider,
   LLMMessage,
@@ -363,7 +364,7 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
           ...(editStats ? { editStats } : {}),
         })
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
+        const msg = errorMessage(err)
         toolResults.push({ toolCallId: tc.id, result: `Error: ${msg}` })
         onChunk({ type: 'tool_result', toolCallId: tc.id, result: `Error: ${msg}`, isError: true })
       }
