@@ -39,7 +39,8 @@ approval UX.
 
 ### Settings panel (recommended)
 
-Open **Settings → General → ACP agents**. It scans your device on open and shows:
+Open **Settings → Experimental → ACP agents** (it's opt-in and still evolving). It
+scans your device when you open the tab and shows:
 
 - **Known agents** — a shortlist (Gemini CLI, Claude Agent, Claude Code) with, for
   each: whether it's installed, the **Install** command to get it, the **Sign in**
