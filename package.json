@@ -44,8 +44,8 @@
     "pack:mac": "npm run build:release && npm run icons:mac && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
     "dist:mac": "npm run build:release && electron-builder --mac",
     "release:mac": "npm run build:release && electron-builder --mac -c.mac.notarize=true --publish always",
-    "release:dry": "npm run build:release && electron-builder --mac -c.mac.notarize=true --publish never",
-    "release": "npm run release:mac",
+    "release:dry": "set -a; [ -f .env ] && . ./.env; set +a; npm run build:release && electron-builder --mac -c.mac.notarize=true --publish never",
+    "release": "set -a; [ -f .env ] && . ./.env; set +a; npm run release:mac",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run check:dead-code && npm run check:oracle && npm test"
   },
   "build": {

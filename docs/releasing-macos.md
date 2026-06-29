@@ -66,22 +66,33 @@ packaging changes.
 
 ## Releasing locally
 
-First load your Apple credentials into the shell (notarization needs them; signing
-auto-discovers the Developer ID identity from your Keychain):
+Put your Apple credentials in a `.env` at the repo root (gitignored) — `release`
+and `release:dry` auto-load it, so a real release is a single command:
 
 ```bash
-set -a; source .env; set +a   # APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID (+ GH_TOKEN to publish)
+# .env
+APPLE_ID=you@example.com
+APPLE_APP_SPECIFIC_PASSWORD=abcd-efgh-ijkl-mnop
+APPLE_TEAM_ID=VRQQV62MK3
+GH_TOKEN=ghp_…            # only needed to publish (npm run release)
 ```
 
-Then pick a command — each builds arm64 + x64:
+```bash
+npm run release          # auto-loads .env, then signs + notarizes + publishes
+```
 
-| Command               | Signs | Notarizes | Publishes | Use for                                  |
-| --------------------- | :---: | :-------: | :-------: | ---------------------------------------- |
-| `npm run dist:mac`    |  ✓\*  |           |           | Fast packaging check                     |
-| `npm run release:dry` |   ✓   |     ✓     |           | Verify signing + notarization, no upload |
-| `npm run release`     |   ✓   |     ✓     |     ✓     | Cut the actual GitHub prerelease         |
+Pick a command — each builds arm64 + x64:
 
-\* `dist:mac` signs only if a Developer ID identity is in your Keychain.
+| Command               | Loads `.env` | Signs | Notarizes | Publishes | Use for                                  |
+| --------------------- | :----------: | :---: | :-------: | :-------: | ---------------------------------------- |
+| `npm run dist:mac`    |              |  ✓\*  |           |           | Fast packaging check                     |
+| `npm run release:dry` |      ✓       |   ✓   |     ✓     |           | Verify signing + notarization, no upload |
+| `npm run release`     |      ✓       |   ✓   |     ✓     |     ✓     | Cut the actual GitHub prerelease         |
+
+\* `dist:mac` signs only if a Developer ID identity is in your Keychain. Signing
+auto-discovers that identity from the Keychain; only notarization/publish need
+`.env`. (`release:mac` is the same as `release` but without the `.env` auto-load —
+it's what CI calls, injecting the secrets as env vars itself.)
 
 `npm run pack:mac` produces a quick **unsigned** `.app` (`--mac dir`) for local
 poking; it isn't a distributable.
