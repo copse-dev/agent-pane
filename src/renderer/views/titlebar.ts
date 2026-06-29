@@ -58,7 +58,7 @@ function prsIcon(): SVGSVGElement {
   )
 }
 
-export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClient): () => void {
+export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   // The structural #titlebar div needs the .titlebar class for its flex layout,
   // height, and traffic-light clearance to apply. Without it the controls
   // collapse and hide under the macOS window buttons.
@@ -66,7 +66,8 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
 
   const leftCluster = el('div', { class: 'titlebar-left' })
   const workspaceName = el('span', { class: 'workspace-name' }, 'No folder')
-  leftCluster.append(workspaceName)
+  const workspaceBranch = el('span', { class: 'workspace-branch', hidden: true })
+  leftCluster.append(workspaceName, workspaceBranch)
 
   const dragRegion = el('div', { class: 'titlebar-drag' })
   // Opening projects lives in the projects panel; the titlebar only toggles the
@@ -116,27 +117,27 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
   root.append(leftCluster, dragRegion, panelControls)
 
   filesBtn.addEventListener('click', () => {
-    toggleRightPanelWithWorkspace(store, _api, 'explorer')
+    toggleRightPanelWithWorkspace(store, api, 'explorer')
     syncPanelBtns()
   })
 
   terminalBtn.addEventListener('click', () => {
-    toggleRightPanelWithWorkspace(store, _api, 'terminal')
+    toggleRightPanelWithWorkspace(store, api, 'terminal')
     syncPanelBtns()
   })
 
   changesBtn.addEventListener('click', () => {
-    toggleRightPanelWithWorkspace(store, _api, 'changes')
+    toggleRightPanelWithWorkspace(store, api, 'changes')
     syncPanelBtns()
   })
 
   prsBtn.addEventListener('click', () => {
-    toggleRightPanelWithWorkspace(store, _api, 'prs')
+    toggleRightPanelWithWorkspace(store, api, 'prs')
     syncPanelBtns()
   })
 
   browserBtn.addEventListener('click', () => {
-    toggleRightPanelWithWorkspace(store, _api, 'browser')
+    toggleRightPanelWithWorkspace(store, api, 'browser')
     syncPanelBtns()
   })
 
@@ -162,17 +163,62 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, _api: ApiClien
     const r = store.getState().workspaceRoot
     workspaceName.textContent = r ? basename(r) : 'No folder'
   }
+
+  // The current checked-out branch of the active workspace. branchStatus() reads
+  // the single active workspace root, so this tracks whatever is checked out now,
+  // independent of which thread's branch is bound. A request token guards against
+  // a slow response landing after the workspace has already changed.
+  let branchToken = 0
+  function syncBranch() {
+    const token = ++branchToken
+    const root = store.getState().workspaceRoot
+    if (!root) {
+      workspaceBranch.hidden = true
+      workspaceBranch.textContent = ''
+      return
+    }
+    void api.git.branchStatus().then(
+      (s) => {
+        if (token !== branchToken) return
+        const branch = s.currentBranch
+        workspaceBranch.hidden = !branch
+        workspaceBranch.textContent = branch ?? ''
+        if (branch) workspaceBranch.title = `On branch ${branch}`
+      },
+      () => {
+        if (token !== branchToken) return
+        workspaceBranch.hidden = true
+        workspaceBranch.textContent = ''
+      },
+    )
+  }
+
+  let branchTimer: ReturnType<typeof setTimeout> | null = null
+  function scheduleBranchSync() {
+    if (branchTimer) clearTimeout(branchTimer)
+    branchTimer = setTimeout(syncBranch, 500)
+  }
+
   // Titlebar mounts before persisted projects restore on boot; sync on mount
   // for the no-project case, then again when restoreProject emits workspace_changed.
   syncName()
+  syncBranch()
   syncPanelBtns()
   syncChangesBadge()
   const unsubs = [
-    store.on('workspace_changed', syncName),
+    store.on('workspace_changed', () => {
+      syncName()
+      syncBranch()
+    }),
+    store.on('git_branch_changed', syncBranch),
+    api.fs.onChanged(scheduleBranchSync),
     store.on('files_pane_changed', syncPanelBtns),
     store.on('right_panel_mode_changed', syncPanelBtns),
     store.on('staged_diffs_changed', syncChangesBadge),
   ]
 
-  return () => unsubs.forEach((u) => u())
+  return () => {
+    if (branchTimer) clearTimeout(branchTimer)
+    unsubs.forEach((u) => u())
+  }
 }

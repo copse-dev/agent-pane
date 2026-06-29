@@ -42,9 +42,9 @@ export async function checkToolAvailability(): Promise<void> {
   if (!ghAvail) console.warn('[copse-panel] gh not found — GitHub PR tools will be unavailable')
 }
 
-export const isRgAvailable = () => rgAvail === true
-export const isGitAvailable = () => gitAvail === true
-export const isGhAvailable = () => ghAvail === true
+export const isRgAvailable = (): boolean => rgAvail === true
+export const isGitAvailable = (): boolean => gitAvail === true
+export const isGhAvailable = (): boolean => ghAvail === true
 
 /** Test hook — force ripgrep availability without probing PATH. */
 export function setRgAvailableForTest(value: boolean | null): void {
