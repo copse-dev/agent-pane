@@ -34,6 +34,20 @@ export type ApiKeyProvider =
 
 export type { ExtraProvider, ExtraProviderModel, StoredExtraProvider }
 
+/** A provider API key discovered in the environment, masked for display. */
+export interface DetectedEnvKey {
+  /** Provider slug (e.g. `anthropic`, `lmstudio`). */
+  provider: string
+  /** The environment variable it was read from (e.g. `ANTHROPIC_API_KEY`). */
+  envVar: string
+  /** Where it was found: `environment` or a shell file label (e.g. `~/.zshrc`). */
+  source: string
+  /** Masked preview of the key — the raw value never crosses IPC. */
+  masked: string
+  /** Whether a key for this provider is already saved in Settings. */
+  alreadyConfigured: boolean
+}
+
 export interface ApiClient {
   workspace: {
     open: () => Promise<string | null>
@@ -190,6 +204,20 @@ export interface ApiClient {
       provider: string,
       key: string,
     ) => Promise<{ ok: boolean; error?: string; formatOk?: boolean }>
+    /**
+     * Scan `process.env` and well-known shell start-up files for provider API
+     * keys the user already has. Returns masked previews only — raw secrets never
+     * cross IPC. Requires no consent (read-only preview); importing does.
+     */
+    scanEnvKeys: () => Promise<DetectedEnvKey[]>
+    /**
+     * Import detected environment keys into Settings for any provider not already
+     * configured. Gated on the `envKeyAutoDetectEnabled` consent flag.
+     */
+    importEnvKeys: () => Promise<{
+      imported: { provider: string; source: string }[]
+      skipped: { provider: string; reason: string }[]
+    }>
     /** Effective extra-provider list: shipped presets merged with stored overrides/customs. */
     extraProviders: () => Promise<ExtraProvider[]>
     /** Insert/replace a preset override or custom provider; returns the resolved list. */

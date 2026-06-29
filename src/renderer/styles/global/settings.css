@@ -247,6 +247,45 @@ dialog.settings-overlay::backdrop {
   color: var(--error);
 }
 
+/* Opt-in environment key detection: action row + masked results list. */
+.env-key-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+}
+.env-key-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs, 4px);
+  margin-top: var(--spacing-sm);
+}
+.env-key-results:empty {
+  display: none;
+}
+.env-key-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  font-size: 12px;
+}
+.env-key-provider {
+  font-weight: 600;
+  min-width: 7em;
+}
+.env-key-source {
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+}
+.env-key-masked {
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+  margin-left: auto;
+}
+
 /* Providers panel: chip row selects one provider; its form shows below. */
 .provider-chips {
   display: flex;
