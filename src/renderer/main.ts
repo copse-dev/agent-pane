@@ -30,6 +30,7 @@ import {
   shouldShowOnboarding,
 } from './views/onboarding-dialog.ts'
 import { mountApprovalDialog } from './views/approval-dialog.ts'
+import { mountAskUserDialog } from './views/ask-user-dialog.ts'
 import {
   mountFileSearchDialog,
   openFileSearchDialog,
@@ -102,6 +103,7 @@ async function boot(): Promise<void> {
   mountSettingsDialog(store, api)
   mountOnboardingDialog(store, api)
   mountApprovalDialog(api)
+  mountAskUserDialog(api)
   mountFileSearchDialog(store, api)
 
   // Load persisted user preferences before the main layout mounts.

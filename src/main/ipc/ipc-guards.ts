@@ -103,6 +103,11 @@ export function assertStorageKey(key: string): void {
 
 export const approvalRespondSchema = z.tuple([z.uuid(), z.boolean(), z.boolean().optional()])
 
+// Answer payload for a pending ask_user question: the request id plus one answer
+// string per question, in order. Answers are bounded so a runaway/hostile
+// renderer can't feed an unbounded blob back into the agent's context.
+export const askRespondSchema = z.tuple([z.uuid(), z.array(z.string().max(8192)).max(10)])
+
 export const providerSchema = z.enum([
   'anthropic',
   'openai',

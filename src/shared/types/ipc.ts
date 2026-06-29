@@ -63,6 +63,12 @@ export interface IpcInvokeMap {
     result: undefined
   }
 
+  // ask_user tool — the renderer returns one answer per question, in order.
+  'ask:respond': {
+    args: [id: string, answers: string[]]
+    result: undefined
+  }
+
   // MCP servers
   'mcp:list': { args: []; result: McpServerStatus[] }
   'mcp:reload': { args: []; result: McpServerStatus[] }
@@ -241,6 +247,12 @@ export interface IpcEventMap {
       type: 'shell' | 'mcp' | 'web'
       allowRemember?: boolean
       rememberLabel?: string
+    },
+  ]
+  'agent:ask_user_request': [
+    {
+      id: string
+      questions: { question: string; options?: string[] }[]
     },
   ]
   'mcp:status_changed': [statuses: McpServerStatus[]]
