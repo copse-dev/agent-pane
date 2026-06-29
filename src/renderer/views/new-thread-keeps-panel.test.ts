@@ -58,7 +58,7 @@ describe('new thread keeps the side panel open (component)', () => {
     document.body.append(projectsHost, pane)
     mountProjectsPane(projectsHost, store, apiStub)
 
-    const chatRows = () => document.querySelectorAll('.chats-list .chat-row')
+    const chatRows = (): NodeListOf<Element> => document.querySelectorAll('.chats-list .chat-row')
 
     // One seeded thread; the panel starts closed.
     syncFilesPaneDom(store)

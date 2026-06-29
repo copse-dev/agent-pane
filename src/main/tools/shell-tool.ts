@@ -44,7 +44,7 @@ async function runShellOnce(
   const win = getMainWindow()
 
   return new Promise<ShellRunResult>((resolve, reject) => {
-    void (async () => {
+    void (async (): Promise<void> => {
       let proc
       try {
         proc = await spawnShellInProjectSandbox(command, {
@@ -70,19 +70,19 @@ async function runShellOnce(
       const outputAcc = new CappedOutputAccumulator()
       let settled = false
       let cancelKill: (() => void) | undefined
-      const stream = (data: Buffer) => {
+      const stream = (data: Buffer): void => {
         const toStream = outputAcc.append(data.toString())
         if (toStream) win?.webContents.send('agent:shell_output', toStream)
       }
       proc.stdout?.on('data', stream)
       proc.stderr?.on('data', stream)
 
-      const onAbort = () => {
+      const onAbort = (): void => {
         clearTimeout(timer)
         cancelKill = terminateProcessTree(proc)
       }
 
-      const cleanup = () => {
+      const cleanup = (): void => {
         clearTimeout(timer)
         cancelKill?.()
         signal.removeEventListener('abort', onAbort)
@@ -97,10 +97,10 @@ async function runShellOnce(
         }
       }, timeout_ms)
 
-      const sandboxViolationCount = () =>
+      const sandboxViolationCount = (): number =>
         unsandboxed ? 0 : sandboxViolationCountForCommand(command)
 
-      const finish = () => {
+      const finish = (): void => {
         if (!unsandboxed) afterSandboxedCommand()
       }
 
@@ -247,7 +247,7 @@ export const runShellTool = defineTool({
     const prepared = await prepareCommand(command, signal)
     if ('refused' in prepared) return prepared.refused
     const { command: finalCommand, env, banner } = prepared
-    const withBanner = (output: string) => (banner ? `${banner}\n${output}` : output)
+    const withBanner = (output: string): string => (banner ? `${banner}\n${output}` : output)
 
     const outsideSandbox = shellRequiresOutsideSandbox(finalCommand, cwd, isProjectSandboxEnabled())
 

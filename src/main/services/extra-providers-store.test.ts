@@ -9,7 +9,7 @@ import {
 import { setSetting, setApiKey, hasApiKey } from './settings.ts'
 import { BUILTIN_EXTRA_PROVIDER_SLUGS } from '@shared/llm/extra-providers.ts'
 
-const slugs = () => getResolvedExtraProviders().map((p) => p.id)
+const slugs = (): string[] => getResolvedExtraProviders().map((p) => p.id)
 const PRESETS = [...BUILTIN_EXTRA_PROVIDER_SLUGS]
 
 describe('extra-providers-store', () => {

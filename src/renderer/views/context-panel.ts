@@ -55,7 +55,7 @@ export function mountContextPanel(
   let lastMarkdownPath: string | null = null
   let revealedFor: OpenFile | null = null
 
-  function syncToolbarActive() {
+  function syncToolbarActive(): void {
     previewBtn.classList.toggle('is-active', markdownViewMode === 'preview')
     sourceBtn.classList.toggle('is-active', markdownViewMode === 'source')
   }
@@ -108,7 +108,7 @@ export function mountContextPanel(
     return openFile ? { path: openFile.path } : null
   })
 
-  function updatePanel() {
+  function updatePanel(): void {
     const { openFile } = store.getState()
 
     if (openFile) {
@@ -174,7 +174,7 @@ export function mountContextPanel(
 
   const unsubFsChanged = api.fs.onChanged((path, newContent) => {
     if (path !== store.getState().openFile?.path) return
-    void (async () => {
+    void (async (): Promise<void> => {
       let content: string
       try {
         content = newContent ?? (await api.fs.readFile(path))

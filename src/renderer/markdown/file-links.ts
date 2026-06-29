@@ -91,7 +91,7 @@ export function bindFileReferenceClicks(
   store: AppStore,
   api: ApiClient,
 ): () => void {
-  const onClick = (event: MouseEvent) => {
+  const onClick = (event: MouseEvent): void => {
     const target = event.target
     if (!target || typeof (target as Element).closest !== 'function') return
     const link = (target as Element).closest<HTMLAnchorElement>('a[data-file-reference-path]')

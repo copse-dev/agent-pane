@@ -824,7 +824,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   overlay.addEventListener('settings-open', () => {
     showSection('general')
-    void (async () => {
+    void (async (): Promise<void> => {
       await cursorKeySection.refreshKeyStatus()
       await customProvidersSection.refresh()
 
@@ -875,7 +875,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   overlay.querySelector('form')!.addEventListener('submit', (e) => {
     e.preventDefault()
-    void (async () => {
+    void (async (): Promise<void> => {
       const form = overlay.querySelector('form') as HTMLFormElement
       const data = new FormData(form)
 

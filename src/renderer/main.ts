@@ -71,7 +71,7 @@ window.addEventListener('unhandledrejection', (event) => {
 
 let layoutMounted = false
 
-async function boot() {
+async function boot(): Promise<void> {
   mountSettingsDialog(store, api)
   mountOnboardingDialog(store, api)
   mountApprovalDialog(api)
@@ -160,7 +160,7 @@ async function boot() {
   }
 }
 
-function ensureLayout() {
+function ensureLayout(): void {
   if (layoutMounted) return
   mountFullLayout()
   layoutMounted = true
@@ -169,7 +169,7 @@ function ensureLayout() {
   registerPanelKeyboardShortcuts(store, api)
 }
 
-function mountFullLayout() {
+function mountFullLayout(): void {
   // Kick off the Monaco bundle immediately so it loads in parallel with the rest
   // of the layout, but mount the editor-backed panes only once it resolves — the
   // editor library is no longer part of the initial app.js.
@@ -226,11 +226,11 @@ function mountFullLayout() {
 
 // The right pane (explorer + file viewer) is hidden by default so chat is
 // full width; it shows when filesPaneOpen is set (toggle, or auto on file open).
-function updateFilesPane() {
+function updateFilesPane(): void {
   syncFilesPaneDom(store)
 }
 
-function registerKeyboardShortcuts() {
+function registerKeyboardShortcuts(): void {
   document.addEventListener('keydown', (e) => {
     const meta = e.ctrlKey || e.metaKey
     if (meta && e.key === 't') {
@@ -271,7 +271,7 @@ function registerKeyboardShortcuts() {
   })
 }
 
-function confirmDeleteThread() {
+function confirmDeleteThread(): void {
   const { activeThreadId, threads } = store.getState()
   if (!activeThreadId || threads.length <= 1) return
   if (confirm('Delete this thread?')) {
@@ -284,13 +284,13 @@ function confirmDeleteThread() {
   }
 }
 
-function switchToPrevThread() {
+function switchToPrevThread(): void {
   const { threads, activeThreadId } = store.getState()
   const idx = threads.findIndex((t) => t.id === activeThreadId)
   if (idx > 0) switchThread(store, threads[idx - 1]!.id)
 }
 
-function switchToNextThread() {
+function switchToNextThread(): void {
   const { threads, activeThreadId } = store.getState()
   const idx = threads.findIndex((t) => t.id === activeThreadId)
   if (idx < threads.length - 1) switchThread(store, threads[idx + 1]!.id)

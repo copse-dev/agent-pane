@@ -154,7 +154,7 @@ export async function ensureSemanticIndex(workspaceRoot: string): Promise<void> 
     return
   }
 
-  const promise = (async () => {
+  const promise = (async (): Promise<void> => {
     try {
       switch (backend) {
         case 'codesearch':

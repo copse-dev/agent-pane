@@ -46,7 +46,7 @@ export interface AcpAgentSpawnConfig {
   cwd: string
 }
 
-const UNSUPPORTED = (method: string) => () =>
+const UNSUPPORTED = (method: string) => (): Promise<never> =>
   Promise.reject(new Error(`Client capability not enabled: ${method}`))
 
 /**
@@ -88,13 +88,13 @@ export async function runAcpAgentPrompt(
     .onRequest(
       methods.client.fs.readTextFile,
       handlers.readTextFile
-        ? (ctx) => handlers.readTextFile!(ctx.params)
+        ? (ctx): Promise<ReadTextFileResponse> => handlers.readTextFile!(ctx.params)
         : UNSUPPORTED('fs/read_text_file'),
     )
     .onRequest(
       methods.client.fs.writeTextFile,
       handlers.writeTextFile
-        ? (ctx) => handlers.writeTextFile!(ctx.params)
+        ? (ctx): Promise<WriteTextFileResponse> => handlers.writeTextFile!(ctx.params)
         : UNSUPPORTED('fs/write_text_file'),
     )
 
@@ -111,7 +111,8 @@ export async function runAcpAgentPrompt(
       })
 
       return ctx.buildSession(config.cwd).withSession(async (session) => {
-        const cancel = () => void ctx.notify('session/cancel', { sessionId: session.sessionId })
+        const cancel = (): void =>
+          void ctx.notify('session/cancel', { sessionId: session.sessionId })
         if (signal) {
           if (signal.aborted) cancel()
           else signal.addEventListener('abort', cancel, { once: true })

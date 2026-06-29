@@ -191,7 +191,7 @@ describe('markdown browser links', () => {
     const calls: Array<{ agentId: string; path: string }> = []
     const api = {
       remoteAgent: {
-        artifactImageDataUrl: async (agentId: string, path: string) => {
+        artifactImageDataUrl: async (agentId: string, path: string): Promise<string> => {
           calls.push({ agentId, path })
           return 'data:image/png;base64,abc123'
         },

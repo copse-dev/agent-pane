@@ -4,7 +4,7 @@ import {
   createAgentRunAbortScheduler,
   DEFAULT_MAX_LLM_CALLS,
 } from '@shared/agent/agent-loop-limits.ts'
-import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
+import type { LLMMessage, LLMTool, StreamChunk, UserContent } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { getSetting } from './settings.ts'
@@ -94,7 +94,11 @@ export const PARENT_DELEGATED_TOOLS = [
 /** Tools that only function as subagent entry points; hidden when subagents are off. */
 const SUBAGENT_ENTRY_TOOLS = new Set<string>(['explore', 'investigate_ci'])
 
-function parentTools(registry: ToolRegistry, subagentsEnabled: boolean, readonlyMode: boolean) {
+function parentTools(
+  registry: ToolRegistry,
+  subagentsEnabled: boolean,
+  readonlyMode: boolean,
+): LLMTool[] {
   let tools = registry.toLLMTools()
   if (!subagentsEnabled) {
     tools = tools
@@ -244,7 +248,7 @@ export async function runAgent(
     trimmed = prepared.trimmed
     const { wasTrimmed, conversationBudget } = prepared
     const { notifyTrimmed } = createTrimNotifier(wasTrimmed)
-    const sendTrimNotice = () => {
+    const sendTrimNotice = (): void => {
       sendChunk(contextTrimmedChunk(trimmed, contextWindow, prepared.historyBudget))
     }
     if (wasTrimmed) notifyTrimmed(sendTrimNotice)

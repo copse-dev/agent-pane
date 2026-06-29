@@ -39,7 +39,12 @@ function fakeApi(): ApiClient & { runs: Array<[string, string]>; aborts: string[
 // Mount the real conversation view and queue one user message on the active
 // thread exactly as input-bar's submit path does: addMessage, then (while the
 // turn is running) enqueueUserMessage.
-function mountWithQueued(status: 'idle' | 'running') {
+function mountWithQueued(status: 'idle' | 'running'): {
+  store: ReturnType<typeof createStore>
+  api: ReturnType<typeof fakeApi>
+  threadId: string
+  messageId: string
+} {
   const store = createStore()
   const api = fakeApi()
   const threadId = createThread(store)

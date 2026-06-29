@@ -16,7 +16,7 @@ function viewerVisible(host: HTMLElement): boolean {
 export async function whenDiffHostVisible(host: HTMLElement): Promise<void> {
   if (viewerVisible(host)) return
   await new Promise<void>((resolve) => {
-    const tryResolve = () => {
+    const tryResolve = (): void => {
       if (!viewerVisible(host)) return
       obs.disconnect()
       resolve()

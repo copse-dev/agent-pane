@@ -151,12 +151,12 @@ export function mountPrPane(
     return pr.checks ?? checksCache.get(githubPrKey(pr))
   }
 
-  function applyCiClass(node: HTMLElement, state: GhPrChecksState | 'loading') {
+  function applyCiClass(node: HTMLElement, state: GhPrChecksState | 'loading'): void {
     node.className = `pr-list-ci pr-list-ci-${state}`
     node.title = CI_LABEL[state]
   }
 
-  function ensureCheck(pr: GhPrSummary) {
+  function ensureCheck(pr: GhPrSummary): void {
     const key = githubPrKey(pr)
     if (knownChecks(pr) || checksInFlight.has(key)) return
     if (!ghStatus?.authenticated) return
@@ -186,7 +186,7 @@ export function mountPrPane(
     return diffEditor
   }
 
-  function renderGhUnavailable() {
+  function renderGhUnavailable(): void {
     clear(listBody)
     const message =
       ghStatus?.message ??
@@ -204,7 +204,10 @@ export function mountPrPane(
       : 'GitHub CLI is not available'
   }
 
-  function renderPrRow(pr: GhPrSummary, section: 'linked' | 'workspace' | 'mine') {
+  function renderPrRow(
+    pr: GhPrSummary,
+    section: 'linked' | 'workspace' | 'mine',
+  ): HTMLButtonElement {
     const isSelected =
       selectedPr?.owner === pr.owner &&
       selectedPr.repo === pr.repo &&
@@ -229,7 +232,7 @@ export function mountPrPane(
     return row
   }
 
-  function renderList() {
+  function renderList(): void {
     clear(listBody)
     ciEls = new Map()
 
@@ -314,7 +317,7 @@ export function mountPrPane(
     }
   }
 
-  async function toggleOther() {
+  async function toggleOther(): Promise<void> {
     otherExpanded = !otherExpanded
     if (otherExpanded && !otherLoaded && !otherLoading) {
       otherLoading = true
@@ -331,7 +334,7 @@ export function mountPrPane(
     renderList()
   }
 
-  function renderMeta() {
+  function renderMeta(): void {
     clear(metaHost)
     if (!prDetails || !selectedPr) return
     const openBtn = el(
@@ -373,7 +376,7 @@ export function mountPrPane(
     )
   }
 
-  function renderDescription() {
+  function renderDescription(): void {
     clear(descriptionHost)
     if (!prDetails?.body.trim()) {
       descriptionHost.hidden = true
@@ -383,7 +386,7 @@ export function mountPrPane(
     descriptionHost.innerHTML = sanitizeRenderedMarkdown(renderMarkdown(prDetails.body))
   }
 
-  function renderFiles() {
+  function renderFiles(): void {
     clear(filesHost)
     if (!prDetails) {
       filesHost.hidden = true
@@ -417,7 +420,7 @@ export function mountPrPane(
     filesHost.append(header, list)
   }
 
-  function clearDiff() {
+  function clearDiff(): void {
     selectRequestId++
     selectedFile = null
     diffWrap.hidden = true
@@ -426,7 +429,7 @@ export function mountPrPane(
     if (diffEditor) disposeDiffModels(diffEditor)
   }
 
-  async function selectFile(path: string) {
+  async function selectFile(path: string): Promise<void> {
     if (!selectedPr) return
     const requestId = ++selectRequestId
     selectedFile = path
@@ -457,7 +460,7 @@ export function mountPrPane(
     await diffLoadQueue
   }
 
-  async function selectPr(ref: PrRef | GhPrSummary) {
+  async function selectPr(ref: PrRef | GhPrSummary): Promise<void> {
     selectedPr = { owner: ref.owner, repo: ref.repo, number: ref.number }
     prDetails = null
     selectedFile = null
@@ -515,7 +518,7 @@ export function mountPrPane(
     emptyState.textContent = 'Select a changed file'
   }
 
-  function resetOther() {
+  function resetOther(): void {
     // A new listing context invalidates any in-flight CI fetches and the lazy
     // cross-repo list, which belongs to the previous workspace.
     ciGen++
@@ -527,7 +530,7 @@ export function mountPrPane(
     checksInFlight.clear()
   }
 
-  async function refresh() {
+  async function refresh(): Promise<void> {
     ghStatus = await api.gh.status()
     linkedRefs = collectLinkedPrs(store)
     resetOther()

@@ -116,7 +116,7 @@ export function mountBrowserPane(
   let activeTabId: string | null = null
   let resizeObserver: ResizeObserver | null = null
 
-  function updateNavButtons(tab: BrowserTab) {
+  function updateNavButtons(tab: BrowserTab): void {
     const webview = tab.webview
     if (!webview || !tab.webviewReady) {
       tab.backBtn.disabled = true
@@ -127,7 +127,7 @@ export function mountBrowserPane(
     tab.forwardBtn.disabled = !webview.canGoForward()
   }
 
-  function syncTabLabel(tab: BrowserTab) {
+  function syncTabLabel(tab: BrowserTab): void {
     if (tab.artefactTitle) {
       tab.label = tab.artefactTitle
       tab.tabLabelEl.textContent = tab.label
@@ -147,7 +147,7 @@ export function mountBrowserPane(
     return loaded === 'about:blank' ? '' : loaded
   }
 
-  function syncAddressBar(tab: BrowserTab) {
+  function syncAddressBar(tab: BrowserTab): void {
     const url = displayUrl(tab)
     if (document.activeElement !== tab.urlInput) {
       tab.urlInput.value = url
@@ -156,7 +156,7 @@ export function mountBrowserPane(
     syncTabLabel(tab)
   }
 
-  function syncWebviewSize(tab: BrowserTab) {
+  function syncWebviewSize(tab: BrowserTab): void {
     const webview = tab.webview
     if (!webview || !tab.panel.classList.contains('is-active')) return
     const { width, height } = tab.webviewHost.getBoundingClientRect()
@@ -165,7 +165,7 @@ export function mountBrowserPane(
     webview.style.height = `${Math.round(height)}px`
   }
 
-  function whenWebviewReady(tab: BrowserTab, fn: () => void) {
+  function whenWebviewReady(tab: BrowserTab, fn: () => void): void {
     const webview = tab.webview
     if (!webview) return
     if (tab.webviewReady) {
@@ -182,7 +182,7 @@ export function mountBrowserPane(
     )
   }
 
-  function navigateWebview(tab: BrowserTab, url: string) {
+  function navigateWebview(tab: BrowserTab, url: string): void {
     tab.loadError = null
     tab.urlInput.classList.remove('has-error')
     whenWebviewReady(tab, () => {
@@ -202,7 +202,7 @@ export function mountBrowserPane(
     tab.webviewHost.append(webview)
     tab.webview = webview
 
-    const onNavigate = () => {
+    const onNavigate = (): void => {
       if (activeTabId === tab.id) syncAddressBar(tab)
     }
 
@@ -228,7 +228,7 @@ export function mountBrowserPane(
     return webview
   }
 
-  function navigateTab(tab: BrowserTab, rawUrl: string) {
+  function navigateTab(tab: BrowserTab, rawUrl: string): void {
     const url = normalizeBrowserUrl(rawUrl)
     tab.pendingUrl = url === 'about:blank' ? null : url
     tab.urlInput.value = url === 'about:blank' ? '' : url
@@ -239,7 +239,7 @@ export function mountBrowserPane(
     syncTabLabel(tab)
   }
 
-  function wireToolbar(tab: BrowserTab) {
+  function wireToolbar(tab: BrowserTab): void {
     tab.backBtn.addEventListener('click', () => {
       tab.webview?.goBack()
     })
@@ -250,7 +250,7 @@ export function mountBrowserPane(
       if (tab.webview && tab.webviewReady) tab.webview.reload()
       else navigateTab(tab, tab.urlInput.value)
     })
-    const submitUrl = () => navigateTab(tab, tab.urlInput.value)
+    const submitUrl = (): void => navigateTab(tab, tab.urlInput.value)
     tab.urlInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault()
@@ -259,7 +259,7 @@ export function mountBrowserPane(
     })
   }
 
-  function setActiveTab(tabId: string) {
+  function setActiveTab(tabId: string): void {
     if (activeTabId === tabId) return
     activeTabId = tabId
     for (const tab of tabs.values()) {
@@ -289,7 +289,7 @@ export function mountBrowserPane(
     return !loaded || loaded === 'about:blank'
   }
 
-  function openRequestedBrowserUrl(rawUrl: string) {
+  function openRequestedBrowserUrl(rawUrl: string): void {
     const url = normalizeBrowserUrl(rawUrl)
     let tab = activeTabId ? tabs.get(activeTabId) : undefined
     if (!tab || !isIdleBrowserTab(tab)) {
@@ -301,7 +301,7 @@ export function mountBrowserPane(
     navigateTab(tab, url)
   }
 
-  function openArtefact(artefact: CanvasArtefact) {
+  function openArtefact(artefact: CanvasArtefact): void {
     // text/html renders inline via an opaque data: URL; a URL-list artefact
     // navigates normally (and is still subject to the browser origin policy).
     const isHtml = artefact.mimeType === 'text/html'
@@ -433,7 +433,7 @@ export function mountBrowserPane(
     return id
   }
 
-  function removeTab(tabId: string) {
+  function removeTab(tabId: string): void {
     const tab = tabs.get(tabId)
     if (!tab) return
     tab.webview?.remove()
@@ -451,7 +451,7 @@ export function mountBrowserPane(
     }
   }
 
-  function onBrowserModeChange() {
+  function onBrowserModeChange(): void {
     const active = browserModeActive(store)
     if (active) {
       if (tabs.size === 0) addTab()

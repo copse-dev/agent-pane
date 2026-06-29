@@ -4,7 +4,7 @@ import type { WebHit } from './types.ts'
 export const DDG_BLOCKED_HELP =
   'DuckDuckGo blocked this search — their anti-bot system often flags automated requests after only a few searches from the same IP. Wait a minute and try again, or use fetch_url on a known documentation URL instead.'
 
-const silentStderr = { write: () => true, isTTY: false }
+const silentStderr = { write: (): boolean => true, isTTY: false }
 
 /** Decode DuckDuckGo redirect links (uddg=...) to the destination URL. */
 export function decodeDdgRedirectUrl(href: string): string {

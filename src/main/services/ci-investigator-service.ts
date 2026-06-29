@@ -8,6 +8,7 @@ import { readFileLimitsForSubagent } from '@shared/agent/read-file-limits.ts'
 import type {
   LLMProvider,
   LLMMessage,
+  LLMTool,
   ModelUsage,
   StreamChunk,
   ToolExecuteResult,
@@ -40,7 +41,7 @@ export interface CiInvestigatorSubagentResult {
   usage: ModelUsage
 }
 
-function filterCiTools(registry: ToolRegistry) {
+function filterCiTools(registry: ToolRegistry): LLMTool[] {
   const names = new Set<string>(CI_INVESTIGATOR_TOOL_NAMES)
   return registry.toLLMTools().filter((t) => names.has(t.name))
 }

@@ -11,9 +11,9 @@ import type { StreamChunk } from '@shared/types'
 function withFakeStream(provider: AnthropicProvider, events: unknown[]): void {
   const fakeClient = {
     messages: {
-      stream() {
+      stream(): AsyncIterable<unknown> {
         return {
-          async *[Symbol.asyncIterator]() {
+          async *[Symbol.asyncIterator](): AsyncGenerator<unknown> {
             for (const e of events) yield e
           },
         }

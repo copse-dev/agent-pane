@@ -15,10 +15,10 @@ class TestResizeObserver {
 ;(globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver = TestResizeObserver
 ;(globalThis as { requestAnimationFrame?: typeof requestAnimationFrame }).requestAnimationFrame = (
   callback,
-) => setTimeout(() => callback(Date.now()), 0) as unknown as number
+): number => setTimeout(() => callback(Date.now()), 0) as unknown as number
 ;(globalThis as { cancelAnimationFrame?: typeof cancelAnimationFrame }).cancelAnimationFrame = (
   id,
-) => clearTimeout(id)
+): void => clearTimeout(id)
 ;(globalThis as { MutationObserver?: typeof MutationObserver }).MutationObserver =
   window.MutationObserver
 
@@ -53,7 +53,7 @@ function createApi(options: {
     },
     git: {
       branchStatus: async () => ({ currentBranch: options.currentBranch, pr: null }),
-      checkoutBranch: options.onCheckoutBranch ?? (async () => {}),
+      checkoutBranch: options.onCheckoutBranch ?? (async (): Promise<void> => {}),
       listBranches: async () => [{ name: options.currentBranch, lastCommitDate: '2024-01-01' }],
       getDefaultBranch: async () => 'main',
     },
@@ -150,7 +150,7 @@ describe('input bar browse button', () => {
     assert.equal(fileInput.multiple, true)
 
     let clicked = false
-    fileInput.click = () => {
+    fileInput.click = (): void => {
       clicked = true
     }
     attachBtn.click()

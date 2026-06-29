@@ -5,8 +5,8 @@ import { createThread, normalizeBlankThreads, switchThread } from '@shared/store
 import { loadThreads, saveThreads, saveProjects } from './persistence.ts'
 import { resumePendingQueues } from './message-queue.ts'
 
-const uuid = () => globalThis.crypto.randomUUID()
-const basename = (p: string) => p.split('/').pop() ?? p
+const uuid = (): string => globalThis.crypto.randomUUID()
+const basename = (p: string): string => p.split('/').pop() ?? p
 
 export const SIDEBAR_THREADS_PAGE_SIZE = 10
 

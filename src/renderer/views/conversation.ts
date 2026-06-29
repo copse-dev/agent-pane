@@ -291,7 +291,7 @@ function appendMessageContent(
   body: HTMLElement,
   msg: { role: string; content: string; images?: string[] },
   api: ApiClient,
-) {
+): void {
   if (msg.role === 'user' && msg.images?.length) {
     body.append(createMessageImages(msg.images))
   }
@@ -356,7 +356,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   let editingMessageId: string | null = null
   let editingDraft = ''
 
-  function startEditing(messageId: string) {
+  function startEditing(messageId: string): void {
     const threadId = store.getState().activeThreadId
     if (!threadId) return
     const thread = store.getState().threads.find((t) => t.id === threadId)
@@ -368,12 +368,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     setQueuePaused(store, threadId, true)
   }
 
-  function stopEditing() {
+  function stopEditing(): void {
     editingMessageId = null
     editingDraft = ''
   }
 
-  function cancelEditing() {
+  function cancelEditing(): void {
     const threadId = store.getState().activeThreadId
     stopEditing()
     if (!threadId) return
@@ -381,7 +381,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     drainMessageQueue(store, api, threadId)
   }
 
-  function saveEditing(messageId: string, sendNow: boolean) {
+  function saveEditing(messageId: string, sendNow: boolean): void {
     const threadId = store.getState().activeThreadId
     if (!threadId) return
     const text = editingDraft.trim()
@@ -476,7 +476,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     return item
   }
 
-  function renderQueuedPanel(threadId: string) {
+  function renderQueuedPanel(threadId: string): void {
     if (threadId !== store.getState().activeThreadId) return
     const thread = store.getState().threads.find((t) => t.id === threadId)
     const pending = thread?.pendingMessages ?? []
@@ -512,11 +512,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     return pinnedToBottom && Date.now() - userScrolledUpAt > USER_SCROLL_UP_DEBOUNCE_MS
   }
 
-  function updateScrollButton() {
+  function updateScrollButton(): void {
     scrollToBottomBtn.hidden = isNearBottom()
   }
 
-  function handleUserScroll() {
+  function handleUserScroll(): void {
     if (suppressScrollPinUpdate) return
 
     const scrollTop = list.scrollTop
@@ -547,7 +547,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     scrollToBottom(true)
   })
 
-  function setActivity(label: string | null) {
+  function setActivity(label: string | null): void {
     if (!label) {
       activityBar.hidden = true
       return
@@ -557,7 +557,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     scrollToBottom()
   }
 
-  function syncFromStore() {
+  function syncFromStore(): void {
     const tid = store.getState().activeThreadId
     if (!tid) {
       setActivity(null)
@@ -568,7 +568,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     setActivity(agentActivityLabel(thread, false))
   }
 
-  function scrollToBottom(force = false) {
+  function scrollToBottom(force = false): void {
     if (!force && !shouldAutoScroll()) return
     // The scrollable element is the messages list, not the mount root.
     suppressScrollPinUpdate = true
@@ -584,7 +584,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     updateScrollButton()
   }
 
-  function renderToolCards(msgEl: HTMLElement, toolCalls: ToolCall[], commandSummary?: string) {
+  function renderToolCards(
+    msgEl: HTMLElement,
+    toolCalls: ToolCall[],
+    commandSummary?: string,
+  ): void {
     const userExpandedGroups = new Set<string>()
     msgEl.querySelectorAll('.tool-card-group[open]').forEach((node) => {
       const el = node as HTMLElement
@@ -625,7 +629,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
   }
 
-  function appendMessageEl(threadId: string, msgId: string) {
+  function appendMessageEl(threadId: string, msgId: string): void {
     if (threadId !== store.getState().activeThreadId) return
     const thread = getThreadById(store, threadId)
     const msg = thread?.messages.find((m) => m.id === msgId)
@@ -654,7 +658,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     scrollToBottom(msg.role === 'user')
   }
 
-  function syncTodoPanel() {
+  function syncTodoPanel(): void {
     todoHost.replaceChildren()
     const thread = getActiveThread(store)
     if (thread?.todos?.length) {
@@ -662,7 +666,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
   }
 
-  function syncReviewPanel() {
+  function syncReviewPanel(): void {
     reviewHost.replaceChildren()
     const thread = getActiveThread(store)
     if (thread?.review) {
@@ -670,7 +674,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
   }
 
-  function rebuildForThread() {
+  function rebuildForThread(): void {
     pinnedToBottom = true
     userScrolledUpAt = 0
     lastScrollTop = 0
@@ -683,7 +687,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     updateScrollButton()
   }
 
-  function refreshToolCards(msgId: string) {
+  function refreshToolCards(msgId: string): void {
     const msg = store
       .getState()
       .threads.flatMap((t) => t.messages)
@@ -757,7 +761,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   }
 }
 
-function attachCopyButton(body: HTMLElement, msgId: string, store: AppStore) {
+function attachCopyButton(body: HTMLElement, msgId: string, store: AppStore): void {
   const copyBtn = el('button', { class: 'msg-copy', 'aria-label': 'Copy response' }, 'Copy')
   copyBtn.addEventListener('click', () => {
     const current = store

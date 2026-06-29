@@ -90,7 +90,12 @@ export function createModelRoutingSection(api: ApiClient): ModelRoutingSection {
     populateLocalModelSelect(reviewModel, models, review ?? '', '(auto — use chat model)')
   }
 
-  function readValues() {
+  function readValues(): {
+    localDefaultModel: string
+    subagentModel: string
+    safetyModel: string
+    reviewModel: string
+  } {
     return {
       localDefaultModel: localDefaultModel.value.trim(),
       subagentModel: subagentModel.value.trim(),

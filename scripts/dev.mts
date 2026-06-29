@@ -56,7 +56,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   process.exitCode = signal === 'SIGINT' ? 130 : 143
 }
 
-function startElectron() {
+function startElectron(): void {
   if (shuttingDown) return
   const serial = ++restartSerial
   void stopElectron('SIGTERM').finally(() => {
@@ -84,7 +84,7 @@ const sharedAlias = { '@shared': new URL('../src/shared', import.meta.url).pathn
 
 const onEndPlugin = (cb: () => void): esbuild.Plugin => ({
   name: 'on-end',
-  setup(build) {
+  setup(build): void {
     build.onEnd(() => {
       if (restartOnBuild) cb()
     })

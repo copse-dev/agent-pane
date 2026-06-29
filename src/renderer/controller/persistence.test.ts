@@ -9,10 +9,10 @@ import type { ApiClient } from '../../preload/api.d.ts'
 // (node test env has no DOM).
 const pagehideHandlers = new Set<() => void>()
 ;(globalThis as Record<string, unknown>)['window'] = {
-  addEventListener: (event: string, handler: () => void) => {
+  addEventListener: (event: string, handler: () => void): void => {
     if (event === 'pagehide') pagehideHandlers.add(handler)
   },
-  removeEventListener: (event: string, handler: () => void) => {
+  removeEventListener: (event: string, handler: () => void): void => {
     if (event === 'pagehide') pagehideHandlers.delete(handler)
   },
 }
@@ -33,8 +33,9 @@ function thread(id: string): Thread {
   }
 }
 
-const tick = () => new Promise((r) => setTimeout(r, 0))
-const waitDebounce = () => new Promise((r) => setTimeout(r, AUTOSAVE_DEBOUNCE_MS + 20))
+const tick = (): Promise<unknown> => new Promise((r) => setTimeout(r, 0))
+const waitDebounce = (): Promise<unknown> =>
+  new Promise((r) => setTimeout(r, AUTOSAVE_DEBOUNCE_MS + 20))
 
 test('serializedSet applies writes to the same key in submission order', async () => {
   const calls: Array<[string, unknown]> = []

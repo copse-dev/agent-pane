@@ -66,7 +66,7 @@ describe('settings dialog (native <dialog>)', () => {
     // openSettingsDialog dispatches 'settings-open' to kick off an async data
     // load we don't exercise here (and can't satisfy without a full API).
     // Neutralise it so the test stays focused on the open/close contract.
-    dialog.dispatchEvent = () => true
+    dialog.dispatchEvent = (): boolean => true
   })
 
   it('mounts as a native dialog element, initially closed', () => {

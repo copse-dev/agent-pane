@@ -210,7 +210,9 @@ describe('testLmStudio', () => {
       ok: true,
       status: 200,
       statusText: 'OK',
-      json: async () => ({ data: [{ id: 'qwen2.5-3b' }, { id: 'llama-3' }] }),
+      json: async (): Promise<{ data: { id: string }[] }> => ({
+        data: [{ id: 'qwen2.5-3b' }, { id: 'llama-3' }],
+      }),
     }))
     restoreFetch = stubFetch(fetchMock as unknown as typeof fetch)
 
@@ -250,7 +252,7 @@ describe('listLmStudioModels cache', () => {
       ok: true,
       status: 200,
       statusText: 'OK',
-      json: async () => ({ data: [{ id: 'local-model' }] }),
+      json: async (): Promise<{ data: { id: string }[] }> => ({ data: [{ id: 'local-model' }] }),
     }))
     restoreFetch = stubFetch(fetchMock as unknown as typeof fetch)
   })

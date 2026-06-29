@@ -34,8 +34,8 @@ const ALLOWED_UNLINKED: Record<string, string> = {
     'AcpAgentConfig for the ACP client registry; consumed once client config persistence lands (#264)',
 }
 
-const abs = (p: string) => resolve(ROOT, p)
-const isModuleTs = (p: string) => /\.(mts|cts|tsx|ts)$/.test(p) && !p.endsWith('.d.ts')
+const abs = (p: string): string => resolve(ROOT, p)
+const isModuleTs = (p: string): boolean => /\.(mts|cts|tsx|ts)$/.test(p) && !p.endsWith('.d.ts')
 
 function git(...args: string[]): string[] {
   return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean)

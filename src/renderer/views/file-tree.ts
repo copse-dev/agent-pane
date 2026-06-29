@@ -36,7 +36,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
     selectedRow = row
   }
 
-  async function openFile(path: string) {
+  async function openFile(path: string): Promise<void> {
     try {
       await openWorkspaceFile(store, api, path)
     } catch {
@@ -92,7 +92,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
       container.append(childrenEl)
       let loaded = false
       let expanded = false
-      const expand = async () => {
+      const expand = async (): Promise<void> => {
         if (expanded) return
         expanded = !expanded
         twisty.textContent = expanded ? '▼' : '▶'
@@ -128,7 +128,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
     return container
   }
 
-  async function loadInto(target: HTMLElement, dirPath: string, depth: number) {
+  async function loadInto(target: HTMLElement, dirPath: string, depth: number): Promise<void> {
     try {
       const entries = await api.fs.listDir(dirPath)
       clear(target)
@@ -147,7 +147,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
     }
   }
 
-  function refresh() {
+  function refresh(): void {
     if (!store.getState().workspaceRoot) {
       clear(treeEl)
       treeEl.append(el('div', { class: 'sidebar-empty' }, 'No folder open'))

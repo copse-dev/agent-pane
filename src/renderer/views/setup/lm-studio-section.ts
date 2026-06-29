@@ -308,7 +308,7 @@ export function createLmStudioSection(
     keyStatus.className = 'key-status'
   }
 
-  void (async () => {
+  void (async (): Promise<void> => {
     const lmUrl = (await api.settings.get('localServerUrl')) as string | undefined
     urlInput.value = lmUrl ?? 'http://localhost:1234/v1'
     const lmSet = await api.settings.getKey('lmstudio')

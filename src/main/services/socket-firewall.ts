@@ -54,7 +54,7 @@ export function isSocketFirewallAvailable(): boolean {
 export function installSocketFirewall(signal: AbortSignal): Promise<boolean> {
   return new Promise((resolve) => {
     const win = getMainWindow()
-    const emit = (text: string) => win?.webContents.send('agent:shell_output', text)
+    const emit = (text: string): void => win?.webContents.send('agent:shell_output', text)
     const args = sfwInstallArgs()
     emit(`[safe-install] installing Socket Firewall (npm ${args.join(' ')})…\n`)
 
@@ -70,7 +70,7 @@ export function installSocketFirewall(signal: AbortSignal): Promise<boolean> {
       return
     }
 
-    const stream = (data: Buffer) => emit(data.toString())
+    const stream = (data: Buffer): void => emit(data.toString())
     proc.stdout?.on('data', stream)
     proc.stderr?.on('data', stream)
     proc.on('error', () => resolve(false))

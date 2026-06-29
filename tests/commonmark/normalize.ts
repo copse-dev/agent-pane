@@ -257,7 +257,7 @@ export function normalizeHtml(html: string): string {
   const n = new HtmlNormalizer()
   let i = 0
   let textBuf = ''
-  const flush = () => {
+  const flush = (): void => {
     if (textBuf) {
       n.data(textBuf)
       textBuf = ''

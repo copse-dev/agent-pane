@@ -1,6 +1,6 @@
 import type { TodoItem, TodoStatus, TodoUpdateInput } from '@shared/types/todo.ts'
 
-const randomUUID = () => globalThis.crypto.randomUUID()
+const randomUUID = (): string => globalThis.crypto.randomUUID()
 
 export function todoProgress(todos: readonly TodoItem[]): { done: number; total: number } {
   const active = todos.filter((t) => t.status !== 'cancelled')

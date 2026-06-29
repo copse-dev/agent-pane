@@ -36,13 +36,13 @@ interface ApiCalls {
 function stubApi(calls: ApiCalls, queryResult: () => string[]): ApiClient {
   const api = {
     index: {
-      query: (pattern: string) => {
+      query: (pattern: string): Promise<string[]> => {
         calls.queries.push(pattern)
         return Promise.resolve(queryResult())
       },
     },
     fs: {
-      readFile: (path: string) => {
+      readFile: (path: string): Promise<string> => {
         calls.reads.push(path)
         return Promise.resolve(`contents of ${path}`)
       },

@@ -6,7 +6,7 @@ import type { LLMMessage, LLMProvider, StreamChunk } from '@shared/types'
 function mockProvider(chunks: StreamChunk[][]): LLMProvider {
   let call = 0
   return {
-    async *stream() {
+    async *stream(): AsyncGenerator<StreamChunk> {
       for (const chunk of chunks[call++ % chunks.length]!) yield chunk
     },
   }
@@ -66,7 +66,7 @@ describe('runSubagent', () => {
     ]
     const provider = {
       lastUsage: null as { inputTokens: number; outputTokens: number } | null,
-      async *stream() {
+      async *stream(): AsyncGenerator<StreamChunk> {
         const u = usages[call]!
         provider.lastUsage = u
         const chunks =
@@ -104,7 +104,7 @@ describe('runSubagent', () => {
     let call = 0
     const provider = {
       lastUsage: { inputTokens: 99999, outputTokens: 88888 },
-      async *stream() {
+      async *stream(): AsyncGenerator<StreamChunk> {
         const chunks =
           call++ === 0
             ? ([
@@ -142,7 +142,7 @@ describe('runSubagent', () => {
     const subagentChunks: StreamChunk[] = []
     const provider = {
       lastUsage: null as { inputTokens: number; outputTokens: number } | null,
-      async *stream() {
+      async *stream(): AsyncGenerator<StreamChunk> {
         yield { type: 'text' as const, text: 'Summary' }
         yield {
           type: 'usage' as const,

@@ -66,7 +66,7 @@ const exploreCall: ToolCall = {
   },
 }
 
-function mountWithSubagent() {
+function mountWithSubagent(): void {
   const store = createStore()
   const threadId = createThread(store)
   const messageId = addMessage(store, threadId, 'assistant', 'Here is what the subagent found.')

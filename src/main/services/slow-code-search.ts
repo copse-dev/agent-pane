@@ -45,7 +45,7 @@ export function compileSlowSearchMatcher(
   if (opts.fixedString) {
     const needle = opts.caseSensitive ? trimmed : trimmed.toLowerCase()
     return {
-      matcher: (line) => {
+      matcher: (line): boolean => {
         const hay = opts.caseSensitive ? line : line.toLowerCase()
         return hay.includes(needle)
       },
@@ -63,7 +63,7 @@ export function compileSlowSearchMatcher(
     const flags = opts.caseSensitive ? '' : 'i'
     const re = new RegExp(trimmed, flags)
     return {
-      matcher: (line) => {
+      matcher: (line): boolean => {
         const slice = line.length > MAX_LINE_LEN ? line.slice(0, MAX_LINE_LEN) : line
         return re.test(slice)
       },
@@ -109,7 +109,7 @@ export function createGitignoreMatcher(patterns: string[]): GitignoreMatcher {
     return p.includes('/') ? p : `**/${p}`
   })
   return {
-    isIgnored(relativePath: string, isDirectory: boolean) {
+    isIgnored(relativePath: string, isDirectory: boolean): boolean {
       const path = relativePath.replace(/\\/g, '/')
       const withSlash = isDirectory && !path.endsWith('/') ? `${path}/` : path
       return normalized.some((pat) =>

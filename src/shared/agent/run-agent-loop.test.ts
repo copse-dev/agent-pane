@@ -8,7 +8,7 @@ import type { LLMMessage, LLMProvider, StreamChunk } from '@shared/types'
 function mockProvider(chunks: StreamChunk[][]): LLMProvider {
   let call = 0
   return {
-    async *stream() {
+    async *stream(): AsyncGenerator<StreamChunk> {
       for (const chunk of chunks[call++ % chunks.length]!) yield chunk
     },
   }
@@ -574,11 +574,11 @@ src/renderer/views/projects-pane.ts
     const events: string[] = []
     const origPause = deadline.pause.bind(deadline)
     const origResume = deadline.resume.bind(deadline)
-    deadline.pause = (now) => {
+    deadline.pause = (now): void => {
       events.push('pause')
       return origPause(now)
     }
-    deadline.resume = (now) => {
+    deadline.resume = (now): void => {
       events.push('resume')
       return origResume(now)
     }

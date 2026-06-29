@@ -30,7 +30,7 @@ export function bindBrowserLinkClicks(
     gh?: Pick<ApiClient['gh'], 'status'>
   },
 ): () => void {
-  const onClick = (event: MouseEvent) => {
+  const onClick = (event: MouseEvent): void => {
     const target = event.target
     if (!target || typeof (target as Element).closest !== 'function') return
     const link = (target as Element).closest<HTMLAnchorElement>('a[href]')

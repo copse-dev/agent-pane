@@ -8,7 +8,7 @@ type ElectronFile = File & { path?: string }
 function readAsDataUrl(blob: Blob): Promise<string> {
   return new Promise((res, rej) => {
     const r = new FileReader()
-    r.onload = () => res(r.result as string)
+    r.onload = (): void => res(r.result as string)
     r.onerror = rej
     r.readAsDataURL(blob)
   })
@@ -100,20 +100,20 @@ export function bindFileDropTarget(
   api: ApiClient,
   getWorkspaceRoot: () => string | null,
 ): () => void {
-  const onDragOver = (e: DragEvent) => {
+  const onDragOver = (e: DragEvent): void => {
     if (!getHandlers()) return
     e.preventDefault()
     if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
     el.classList.add('is-drop-target')
   }
 
-  const onDragLeave = (e: DragEvent) => {
+  const onDragLeave = (e: DragEvent): void => {
     if (!el.contains(e.relatedTarget as Node)) {
       el.classList.remove('is-drop-target')
     }
   }
 
-  const onDrop = (e: DragEvent) => {
+  const onDrop = (e: DragEvent): void => {
     el.classList.remove('is-drop-target')
     const handlers = getHandlers()
     if (!handlers) return

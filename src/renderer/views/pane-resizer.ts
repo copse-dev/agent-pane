@@ -81,7 +81,7 @@ function mountResizeHandle(
     const initial = opts.startSize()
     const cursor = opts.cursor()
 
-    const onMove = (ev: PointerEvent) => {
+    const onMove = (ev: PointerEvent): void => {
       const size = clamp(
         opts.deltaToSize(initial, ev.clientX - startX, ev.clientY - startY),
         opts.min(),
@@ -90,7 +90,7 @@ function mountResizeHandle(
       opts.applySize(size)
     }
 
-    const onUp = () => {
+    const onUp = (): void => {
       handle.classList.remove('is-dragging')
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
@@ -114,7 +114,7 @@ export function mountPaneResizers(body: HTMLElement, store: AppStore, api: ApiCl
 
   applyLayout(body, store.getState().layout)
 
-  const commitLayout = () => {
+  const commitLayout = (): void => {
     const layout = store.getState().layout
     const rounded: LayoutState = {
       projectsPaneWidth: Math.round(layout.projectsPaneWidth),
@@ -127,7 +127,7 @@ export function mountPaneResizers(body: HTMLElement, store: AppStore, api: ApiCl
     void api.settings.set('layout', rounded)
   }
 
-  const setLayout = (partial: Partial<LayoutState>) => {
+  const setLayout = (partial: Partial<LayoutState>): void => {
     const layout = { ...store.getState().layout, ...partial }
     store.setState({ layout })
     applyLayout(body, layout)
@@ -143,7 +143,7 @@ export function mountPaneResizers(body: HTMLElement, store: AppStore, api: ApiCl
     onCommit: commitLayout,
   })
 
-  const filesPanelStacked = () => body.classList.contains(PORTRAIT_RIGHT_PANEL_CLASS)
+  const filesPanelStacked = (): boolean => body.classList.contains(PORTRAIT_RIGHT_PANEL_CLASS)
   mountResizeHandle(filesResizer, {
     startSize: () =>
       filesPanelStacked()
@@ -168,7 +168,7 @@ export function mountPaneResizers(body: HTMLElement, store: AppStore, api: ApiCl
     onCommit: commitLayout,
   })
 
-  const syncFilesResizer = () => {
+  const syncFilesResizer = (): void => {
     filesResizer.hidden = !store.getState().filesPaneOpen
   }
 
