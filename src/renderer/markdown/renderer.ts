@@ -364,8 +364,8 @@ function wrapProseBlocks(seg: string): string {
     if (isBlockquoteBlock(block)) {
       const bqBlocks: string[] = []
       while (i < rawBlocks.length) {
-        const b = rawBlocks[i]!
-        if (!isBlockquoteBlock(b)) break
+        const b = rawBlocks[i]
+        if (b === undefined || !isBlockquoteBlock(b)) break
         // Strip one marker from quote lines; lazy-continuation lines (no marker
         // directly after a quote line) keep their text. A bare `&gt;` strips to an
         // empty line, which stays in place so the recursion treats it as a
