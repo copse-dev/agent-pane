@@ -15,6 +15,8 @@ interface ChatCompletionChunk {
   choices: Array<{
     delta?: {
       content?: string
+      reasoning?: string
+      reasoning_content?: string
       tool_calls?: Array<{
         index: number
         id?: string
@@ -271,6 +273,32 @@ describe('OpenAIProvider stream parsing', () => {
     assert.ok(toolCall)
     assert.ok(toolCall.toolCall.argsError)
     assert.match(toolCall.toolCall.argsError, /Could not parse tool arguments/)
+  })
+
+  it('emits reasoning chunks from reasoning_content and reasoning deltas', async () => {
+    const provider = new OpenAIProvider('local-model', {
+      baseURL: 'http://localhost:1234/v1',
+      apiKey: 'local-key',
+    })
+    withFakeStream(provider, [
+      // DeepSeek/LM Studio style.
+      { choices: [{ delta: { reasoning_content: 'Think ' }, finish_reason: null }] },
+      // OpenRouter style.
+      { choices: [{ delta: { reasoning: 'harder.' }, finish_reason: null }] },
+      { choices: [{ delta: { content: 'Answer' }, finish_reason: 'stop' }] },
+    ])
+
+    const chunks = await collect(provider)
+    const reasoning = chunks
+      .filter((c): c is Extract<StreamChunk, { type: 'reasoning' }> => c.type === 'reasoning')
+      .map((c) => c.text)
+      .join('')
+    assert.equal(reasoning, 'Think harder.')
+    const text = chunks
+      .filter((c): c is Extract<StreamChunk, { type: 'text' }> => c.type === 'text')
+      .map((c) => c.text)
+      .join('')
+    assert.equal(text, 'Answer')
   })
 
   it('does not emit a usage chunk when the stream reports no usage', async () => {

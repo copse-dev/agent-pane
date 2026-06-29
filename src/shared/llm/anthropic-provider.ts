@@ -82,6 +82,12 @@ export class AnthropicProvider implements LLMProvider {
             if (event.delta.type === 'text_delta') {
               yield { type: 'text', text: event.delta.text }
             }
+            // Extended-thinking tokens (when the model is configured to think).
+            // The matching `signature_delta` is verification metadata, not text,
+            // so it is intentionally ignored.
+            if (event.delta.type === 'thinking_delta') {
+              yield { type: 'reasoning', text: event.delta.thinking }
+            }
             if (event.delta.type === 'input_json_delta') {
               toolJson += event.delta.partial_json
             }

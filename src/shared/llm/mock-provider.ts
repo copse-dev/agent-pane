@@ -62,6 +62,18 @@ export class MockLLMProvider implements LLMProvider {
         if (signal?.aborted) return
       }
 
+      // `[[mock:reasoning <text>]]` streams reasoning tokens before the answer so
+      // e2e/evals can exercise the live "Thinking" disclosure without a real model.
+      const reasoningDirective = fullUserText.match(/\[\[mock:reasoning\s+([^\]]+)\]\]/)
+      const reasoningText = reasoningDirective?.[1]
+      if (reasoningText && awaitingAssistantReply) {
+        for (const char of reasoningText) {
+          if (signal?.aborted) return
+          yield { type: 'reasoning', text: char }
+          await new Promise((r) => setTimeout(r, 10))
+        }
+      }
+
       // `[[mcp:<toolName> {json args}]]` drives a specific tool call (used by e2e
       // to exercise the MCP path). Real prompts never contain it. Only honor it
       // for the current user turn — not on later agent-loop passes that still see

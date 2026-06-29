@@ -3,6 +3,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import {
   addMessage,
   appendToken,
+  appendReasoning,
   addToolCall,
   updateToolCall,
   findToolCall,
@@ -103,6 +104,21 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           st.writing = true
           activity(threadId)
         }
+        break
+      }
+      case 'reasoning': {
+        // Reasoning precedes this step's answer. If the previous step ended with
+        // tool calls, start a fresh assistant message (and clear toolSinceText)
+        // so the reasoning groups with the answer below the tool cards — and the
+        // subsequent text chunk lands in the same bubble rather than a new one.
+        if (!st.msgId || st.toolSinceText) {
+          if (st.toolSinceText && st.msgId) store.emit('message_done', st.msgId)
+          st.msgId = addMessage(store, threadId, 'assistant')
+          st.toolSinceText = false
+        }
+        appendReasoning(store, st.msgId, chunk.text)
+        st.writing = false
+        activity(threadId)
         break
       }
       case 'text_replace': {
