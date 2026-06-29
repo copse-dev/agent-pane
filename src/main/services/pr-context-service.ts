@@ -2,7 +2,7 @@ import { runCommand } from './command-runner.ts'
 import { runGh, parseGhJson } from './gh-service.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import { isGitAvailable, isGhAvailable } from './tool-availability.ts'
-import { isInsideGitWorkTree } from './git-service.ts'
+import { isInsideGitWorkTree, getCurrentBranchName } from './git-service.ts'
 import type { PrWorkspaceContext } from '@shared/follow-ups/types.ts'
 import type { GitBranchStatus, GitOpenPr } from '@shared/types/git.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
@@ -175,8 +175,9 @@ export async function getGitBranchStatus(forBranch?: string): Promise<GitBranchS
   const empty: GitBranchStatus = { currentBranch: null, pr: null }
   if (!getWorkspaceRoot()) return empty
 
-  const branchResult = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'])
-  const currentBranch = branchResult.code === 0 ? branchResult.stdout.trim() || null : null
+  // Routes through getCurrentBranchName so the e2e branch override (screenshot
+  // determinism) is honored here too, not just bypassed by a raw rev-parse.
+  const currentBranch = await getCurrentBranchName()
   if (!currentBranch) return empty
 
   // gh may be absent (minimal installs, the e2e runner image) — checkToolAvailability

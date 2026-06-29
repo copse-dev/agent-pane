@@ -312,6 +312,8 @@ contextBridge.exposeInMainWorld('api', {
     availableProviders: () => ipcRenderer.invoke('settings:availableProviders'),
     validateKey: (provider: string, key: string) =>
       ipcRenderer.invoke('settings:validateKey', provider, key),
+    scanEnvKeys: () => ipcRenderer.invoke('settings:scanEnvKeys'),
+    importEnvKeys: () => ipcRenderer.invoke('settings:importEnvKeys'),
     extraProviders: () => ipcRenderer.invoke('settings:extraProviders'),
     saveExtraProvider: (record: unknown) =>
       ipcRenderer.invoke('settings:saveExtraProvider', record),

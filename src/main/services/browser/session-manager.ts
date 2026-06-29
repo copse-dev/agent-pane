@@ -1,7 +1,7 @@
 import { BrowserWindow, app } from 'electron'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { getInAppBrowserSession } from '../../windows/browser-web-contents.ts'
+import { getAgentBrowserSession } from '../../windows/browser-web-contents.ts'
 import { DOM_SNAPSHOT_SCRIPT, renderSnapshot, type PageSnapshot } from './snapshot-format.ts'
 
 const MAX_TABS = 8
@@ -45,10 +45,12 @@ export class BrowserSessionManager {
       width: DEFAULT_WIDTH,
       height: DEFAULT_HEIGHT,
       webPreferences: {
-        // Share the isolated in-app browser session so automation reuses the
-        // same cookies/storage as the visible browser pane and is recognized by
-        // isBrowserWebContents (skips the renderer lockdown meant for app pages).
-        session: getInAppBrowserSession(),
+        // Dedicated agent browser profile, isolated from the user's interactive
+        // browser pane, so automation never inherits the user's logged-in
+        // cookies/storage and the user never browses under the agent (#467).
+        // Still recognized by isBrowserWebContents, so guest lockdown — not the
+        // renderer lockdown meant for app pages — applies to these tabs.
+        session: getAgentBrowserSession(),
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,

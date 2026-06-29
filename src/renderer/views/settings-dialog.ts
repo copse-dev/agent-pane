@@ -12,6 +12,7 @@ import { DEFAULT_CURSOR_AGENT_BASE_URL } from '@shared/remote-agent.ts'
 import { populateModelSelect, populateSmallTasksModelSelect } from './model-options.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createCustomProvidersSection } from './setup/custom-providers-section.ts'
+import { createEnvKeyDetectSection } from './setup/env-key-detect-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createGhCliSection } from './setup/gh-cli-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
@@ -65,6 +66,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // Experimental, opt-in features (off by default).
   { name: 'mcpUiArtefactsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'ciInvestigatorEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'okfMemoriesEnabled', kind: 'checkbox', default: false, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
@@ -163,6 +165,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </p>
 
             <div id="settings-custom-providers-host"></div>
+
+            <div id="settings-env-detect-host"></div>
 
             <fieldset>
               <legend>Chat model</legend>
@@ -541,6 +545,22 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 "Debug CI Failure" follow-up and the tool is not registered.
               </p>
             </fieldset>
+
+            <fieldset>
+              <legend>Memories (Open Knowledge Format)</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="okfMemoriesEnabled" />
+                Let the agent remember and recall project knowledge
+              </label>
+              <p class="field-hint">
+                Adds <code>remember</code> and <code>recall</code> tools so the agent can persist
+                durable project knowledge — conventions, decisions, gotchas — across sessions. Notes
+                are saved per project as portable
+                <a href="https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing" target="_blank" rel="noreferrer">Open Knowledge Format</a>
+                markdown files (YAML frontmatter plus a markdown body) under
+                <code>~/.copse/memories</code>. While off, neither tool is registered.
+              </p>
+            </fieldset>
           </section>
 
           <div class="settings-buttons">
@@ -565,6 +585,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   const customProvidersSection = createCustomProvidersSection(api)
   mustQuery('#settings-custom-providers-host').append(customProvidersSection.root)
+
+  const envKeyDetectSection = createEnvKeyDetectSection(api, {
+    onImported: () => {
+      void cursorKeySection.refreshKeyStatus()
+      void customProvidersSection.refresh()
+    },
+  })
+  overlay.querySelector('#settings-env-detect-host')!.append(envKeyDetectSection.root)
 
   const cursorKeySection = createApiKeysSection(api, {
     legend: 'Cursor authentication',
@@ -840,6 +868,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     void (async (): Promise<void> => {
       await cursorKeySection.refreshKeyStatus()
       await customProvidersSection.refresh()
+      await envKeyDetectSection.refresh()
 
       const form = overlay.querySelector('form') as HTMLFormElement
       const model = (await api.settings.get('model')) as string | undefined
