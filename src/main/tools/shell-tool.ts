@@ -24,6 +24,7 @@ import {
 } from '../services/subprocess-output-cap.ts'
 import { terminateProcessTree } from '../services/subprocess-kill.ts'
 import { adoptWorktreeChangesSince, captureWorktreeBaseline } from '../services/diff-queue.ts'
+import { getCurrentShellTaskId } from '../services/shell-output-context.ts'
 
 interface ShellRunResult {
   output: string
@@ -72,7 +73,7 @@ async function runShellOnce(
       let cancelKill: (() => void) | undefined
       const stream = (data: Buffer) => {
         const toStream = outputAcc.append(data.toString())
-        if (toStream) win?.webContents.send('agent:shell_output', toStream)
+        if (toStream) win?.webContents.send('agent:shell_output', toStream, getCurrentShellTaskId())
       }
       proc.stdout?.on('data', stream)
       proc.stderr?.on('data', stream)
@@ -218,7 +219,7 @@ async function prepareCommand(command: string, signal: AbortSignal): Promise<Pre
     ...(detection.jsManager ? ['install scripts disabled (npm_config_ignore_scripts)'] : []),
   ]
   const banner = `[safe-install] ${notes.join('; ')}\n$ ${wrapped}\n`
-  getMainWindow()?.webContents.send('agent:shell_output', banner)
+  getMainWindow()?.webContents.send('agent:shell_output', banner, getCurrentShellTaskId())
   return { command: wrapped, env, banner }
 }
 

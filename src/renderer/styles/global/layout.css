@@ -729,6 +729,109 @@
   /* Keep IME/focus target above any pane chrome. */
   z-index: 10;
 }
+
+/* Agent tasks — collapsible list of shell commands the agent runs, pinned above
+   the interactive terminal in the Terminal tab. Capped height so it never
+   crowds out the live shell; both the list and each task's output scroll. */
+.agent-tasks-host {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  max-height: 45%;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+}
+.agent-tasks-header {
+  padding: var(--spacing-sm);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.agent-tasks-list {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+.agent-task {
+  border-bottom: 1px solid var(--border);
+}
+.agent-task-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  width: 100%;
+  text-align: left;
+  padding: 5px var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.agent-task-header:hover {
+  background: var(--bg-hover);
+}
+.agent-task-status {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.agent-task[data-status='running'] .agent-task-status {
+  background: var(--accent);
+  animation: agent-task-pulse 1.2s ease-in-out infinite;
+}
+.agent-task[data-status='done'] .agent-task-status {
+  background: var(--success);
+}
+.agent-task[data-status='error'] .agent-task-status {
+  background: var(--error);
+}
+@keyframes agent-task-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.agent-task-cmd {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+.agent-task-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.12s ease;
+}
+.agent-task-chevron::before {
+  content: '\25B8'; /* ▸ */
+}
+.agent-task.is-expanded .agent-task-chevron {
+  transform: rotate(90deg);
+}
+.agent-task-output {
+  margin: 0;
+  padding: var(--spacing-xs) var(--spacing-sm) var(--spacing-sm);
+  max-height: 220px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+}
 .browser-tabs-host {
   flex: 1;
   display: flex;
