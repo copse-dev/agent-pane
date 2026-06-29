@@ -229,7 +229,7 @@ export interface IpcEventMap {
   'agent:chunk': [threadId: string, chunk: StreamChunk]
   'agent:usage': [threadId: string, usage: UsageDelta]
   'agent:show_diff': [path: string, before: string, after: string, language: string]
-  'agent:shell_output': [data: string]
+  'agent:shell_output': [data: string, toolCallId: string | null]
   'agent:approval_request': [
     {
       id: string
