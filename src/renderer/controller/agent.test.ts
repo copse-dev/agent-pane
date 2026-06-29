@@ -248,6 +248,37 @@ test('text after a tool call finalizes the prior bubble and starts a new one bel
   assert.deepEqual(messageDone, [at(msgs, 0).id])
 })
 
+test('reasoning chunks accumulate onto the message that carries the answer', () => {
+  const { send, messages } = setup()
+  send({ type: 'reasoning', text: 'Let me ' })
+  send({ type: 'reasoning', text: 'think.' })
+  send({ type: 'text', text: 'Done.' })
+
+  const msgs = messages()
+  assert.equal(msgs.length, 1)
+  assert.equal(at(msgs, 0).reasoning, 'Let me think.')
+  assert.equal(at(msgs, 0).content, 'Done.')
+})
+
+test('reasoning after a tool call starts a fresh bubble for the next step', () => {
+  const { send, messages, messageDone } = setup()
+  send({ type: 'reasoning', text: 'first' })
+  send({ type: 'tool_call', toolCall: { id: 'tc1', name: 'read_file', args: {} } })
+  send({ type: 'tool_result', toolCallId: 'tc1', result: 'ok', isError: false })
+  send({ type: 'reasoning', text: 'second' })
+  send({ type: 'text', text: 'answer' })
+
+  const msgs = messages()
+  assert.equal(msgs.length, 2)
+  // First bubble: pre-tool reasoning + the tool card.
+  assert.equal(at(msgs, 0).reasoning, 'first')
+  assert.equal(at(msgs, 0).toolCalls.length, 1)
+  // Second bubble: the next step's reasoning groups with its answer.
+  assert.equal(at(msgs, 1).reasoning, 'second')
+  assert.equal(at(msgs, 1).content, 'answer')
+  assert.deepEqual(messageDone, [at(msgs, 0).id])
+})
+
 test('usage chunks accumulate into the thread total and per-model breakdown', () => {
   const { store, send } = setup()
   send({ type: 'usage', model: 'm1', inputTokens: 10, outputTokens: 4 })

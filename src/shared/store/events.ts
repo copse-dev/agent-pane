@@ -6,6 +6,7 @@ export interface StoreEvents {
   message_added: [threadId: string, messageId: string]
   message_queued: [threadId: string, messageId: string]
   message_token: [messageId: string, text: string]
+  message_reasoning: [messageId: string, text: string]
   message_done: [messageId: string]
   tool_call_started: [messageId: string, toolCall: ToolCall]
   tool_call_updated: [messageId: string, toolCallId: string]

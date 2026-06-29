@@ -60,6 +60,30 @@ describe('AnthropicProvider usage accounting (#111)', () => {
     assert.deepEqual(provider.lastUsage, { inputTokens: 2000, outputTokens: 42 })
   })
 
+  it('emits thinking_delta as reasoning chunks, separate from answer text', async () => {
+    const provider = new AnthropicProvider('claude-test', { apiKey: 'test' })
+    withFakeStream(provider, [
+      { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'Let me ' } },
+      { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'check.' } },
+      // signature_delta is verification metadata and must not surface as text.
+      { type: 'content_block_delta', delta: { type: 'signature_delta', signature: 'abc' } },
+      { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hello' } },
+      { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 5 } },
+    ])
+
+    const chunks = await collect(provider)
+    const reasoning = chunks
+      .filter((c): c is Extract<StreamChunk, { type: 'reasoning' }> => c.type === 'reasoning')
+      .map((c) => c.text)
+      .join('')
+    assert.equal(reasoning, 'Let me check.')
+    const text = chunks
+      .filter((c): c is Extract<StreamChunk, { type: 'text' }> => c.type === 'text')
+      .map((c) => c.text)
+      .join('')
+    assert.equal(text, 'Hello')
+  })
+
   it('does not zero out input when message_delta reports null input_tokens', async () => {
     const provider = new AnthropicProvider('claude-test', { apiKey: 'test' })
     withFakeStream(provider, [

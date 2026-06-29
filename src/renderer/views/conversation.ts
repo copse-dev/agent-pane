@@ -292,11 +292,17 @@ function createMessageImages(images: string[]): HTMLElement {
 
 function appendMessageContent(
   body: HTMLElement,
-  msg: { role: string; content: string; images?: string[] },
+  msg: { role: string; content: string; images?: string[]; reasoning?: string },
   api: ApiClient,
 ): void {
   if (msg.role === 'user' && msg.images?.length) {
     body.append(createMessageImages(msg.images))
+  }
+  // Reasoning disclosure sits above the answer so the "Thinking" trail reads
+  // top-to-bottom. Collapsed once the answer has arrived; the live handler keeps
+  // it open while it is still streaming and the answer is empty.
+  if (msg.role === 'assistant' && msg.reasoning) {
+    body.append(buildReasoningEl(msg.reasoning, !msg.content.trim()))
   }
   const textEl = el('div', { class: 'message-text' })
   if (msg.role === 'assistant' && msg.content) {
@@ -305,6 +311,62 @@ function appendMessageContent(
     textEl.textContent = msg.content
   }
   body.append(textEl)
+}
+
+/**
+ * A `<details>` disclosure holding the model's reasoning trail. `open` reflects
+ * whether the answer is still pending so live thinking is visible by default but
+ * past turns stay collapsed. A click on the summary marks it user-controlled so
+ * later streaming updates never fight the user's choice.
+ */
+function buildReasoningEl(reasoning: string, open: boolean): HTMLDetailsElement {
+  const details = el('details', { class: 'message-reasoning', open })
+  const summary = el(
+    'summary',
+    { class: 'message-reasoning-summary' },
+    el('span', { class: 'message-reasoning-icon', 'aria-hidden': 'true' }),
+    el('span', { class: 'message-reasoning-title' }, 'Thinking'),
+  )
+  const text = el('div', { class: 'message-reasoning-text' })
+  renderReasoningText(text, reasoning)
+  summary.addEventListener('click', () => {
+    details.dataset['userToggled'] = '1'
+  })
+  details.append(summary, text)
+  return details
+}
+
+/**
+ * Render reasoning text as markdown into a <div>. Uses the same pipeline as
+ * the answer body but without post-processing (file links, mermaid, remote
+ * images) — reasoning is self-contained and doesn't reference external resources.
+ */
+function renderReasoningText(el: HTMLElement, text: string): void {
+  el.innerHTML = sanitizeRenderedMarkdown(renderMarkdown(text))
+}
+
+/**
+ * Create or update the reasoning disclosure for a streaming assistant message.
+ * Reuses the existing element so re-entrant reasoning events keep the user's
+ * open/closed choice and avoid rebuilding the DOM each token.
+ */
+function syncReasoningEl(msgEl: HTMLElement, msg: { content: string; reasoning?: string }): void {
+  const body = msgEl.querySelector('.message-body')
+  if (!body) return
+  let details = body.querySelector<HTMLDetailsElement>('.message-reasoning')
+  if (!msg.reasoning) {
+    details?.remove()
+    return
+  }
+  if (!details) {
+    details = buildReasoningEl(msg.reasoning, true)
+    body.prepend(details)
+  } else {
+    const textEl = body.querySelector<HTMLElement>('.message-reasoning-text')
+    if (textEl) renderReasoningText(textEl, msg.reasoning)
+  }
+  // Keep the trail open while it is still live, unless the user collapsed it.
+  if (!details.dataset['userToggled'] && !msg.content.trim()) details.open = true
 }
 
 const SCROLL_PIN_THRESHOLD_PX = 48
@@ -334,6 +396,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     el('span', { class: 'agent-activity-pulse', 'aria-hidden': 'true' }),
     activityLabel,
   )
+  // Clicking the activity row jumps to and opens the latest reasoning trail so the
+  // "Thinking…" indicator is itself the way in to watching the model think.
+  activityBar.addEventListener('click', () => {
+    const trails = list.querySelectorAll('.msg-assistant .message-reasoning')
+    const details = trails[trails.length - 1] as HTMLDetailsElement | undefined
+    if (!details) return
+    details.dataset['userToggled'] = '1'
+    details.open = true
+    details.scrollIntoView({ block: 'nearest' })
+  })
   // Queued follow-ups live in a pinned panel below the scroll area so they stay
   // visible at the bottom of the screen instead of getting buried under the
   // streaming response inside the scrollable message list.
@@ -564,6 +636,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       return
     }
     activityLabel.textContent = label
+    // Only advertise the row as clickable once there's a reasoning trail to open.
+    activityBar.classList.toggle(
+      'agent-activity-clickable',
+      !!list.querySelector('.msg-assistant .message-reasoning'),
+    )
     activityBar.hidden = false
     scrollToBottom()
   }
@@ -740,6 +817,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         scrollToBottom()
       }
     }),
+    store.on('message_reasoning', (mid) => {
+      const thread = getActiveThread(store)
+      const msg = thread?.messages.find((m) => m.id === mid)
+      const msgEl = list.querySelector(`[data-message-id="${mid}"]`)
+      if (msg?.role === 'assistant' && msgEl) {
+        syncReasoningEl(msgEl as HTMLElement, msg)
+        activityBar.classList.add('agent-activity-clickable')
+        scrollToBottom()
+      }
+    }),
     store.on('message_done', (mid) => {
       const msgEl = list.querySelector(`[data-message-id="${mid}"]`)
       const textEl = msgEl?.querySelector('.message-text')
@@ -753,6 +840,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         const body = msgEl?.querySelector('.message-body')
         if (body && !body.querySelector('.msg-copy'))
           attachCopyButton(body as HTMLElement, mid, store)
+        // Answer is in: tuck the reasoning trail away unless the user opened it.
+        const reasoning = body?.querySelector('.message-reasoning') as HTMLDetailsElement | null
+        if (reasoning && !reasoning.dataset['userToggled']) reasoning.open = false
       }
     }),
     store.on('tool_call_started', (mid) => {

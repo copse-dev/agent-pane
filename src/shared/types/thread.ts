@@ -85,6 +85,11 @@ export interface Message {
   id: string
   role: 'user' | 'assistant' | 'error'
   content: string // accumulated text (appended during streaming)
+  /**
+   * Accumulated reasoning / "thinking" text streamed before the answer, shown in
+   * a collapsible disclosure. Never sent back upstream as conversation history.
+   */
+  reasoning?: string
   /** Pasted image attachments as data URLs (user messages only). */
   images?: string[]
   toolCalls: ToolCall[]
