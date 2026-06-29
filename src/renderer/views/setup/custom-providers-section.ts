@@ -56,14 +56,24 @@ const CHIP_ORDER: readonly string[] = [
   'huggingface',
 ]
 
-// Well-known OpenAI-compatible cloud endpoints offered as add-form prefills.
-const KNOWN_ENDPOINTS: ReadonlyArray<{ label: string; baseUrl: string }> = [
+// Well-known OpenAI-compatible endpoints offered as add-form prefills. The
+// `slug` is an optional friendlier default than the URL-derived one: every
+// loopback host slugs to "localhost", so without it adding a second local
+// server collides to "localhost-2". Cloud endpoints omit it and fall back to
+// the hostname-derived slug.
+const KNOWN_ENDPOINTS: ReadonlyArray<{ label: string; baseUrl: string; slug?: string }> = [
   { label: 'Together AI', baseUrl: 'https://api.together.xyz/v1' },
   { label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1' },
   { label: 'Fireworks AI', baseUrl: 'https://api.fireworks.ai/inference/v1' },
   { label: 'Perplexity', baseUrl: 'https://api.perplexity.ai' },
   { label: 'xAI (Grok)', baseUrl: 'https://api.x.ai/v1' },
-  { label: 'LM Studio (local)', baseUrl: 'http://localhost:1234/v1' },
+  // Local OpenAI-compatible servers. http://localhost is treated as a trusted
+  // local endpoint (no usage billing, http allowed) by the provider plumbing.
+  { label: 'LM Studio (local)', baseUrl: 'http://localhost:1234/v1', slug: 'lmstudio-local' },
+  { label: 'Ollama (local)', baseUrl: 'http://localhost:11434/v1', slug: 'ollama' },
+  { label: 'llama.cpp (local)', baseUrl: 'http://localhost:8080/v1', slug: 'llamacpp' },
+  { label: 'Jan (local)', baseUrl: 'http://localhost:1337/v1', slug: 'jan' },
+  { label: 'vLLM (local)', baseUrl: 'http://localhost:8000/v1', slug: 'vllm' },
 ]
 
 // A small structured editor for a provider's model shortlist: one row of
@@ -537,7 +547,10 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
       if (ep) {
         urlInput.value = ep.baseUrl
         if (!labelEdited) labelInput.value = ep.label
-        repredict()
+        // Loopback hosts all derive the slug "localhost", so prefer the preset's
+        // explicit slug when it supplies one; otherwise fall back to prediction.
+        if (!slugEdited && ep.slug) slugInput.value = ep.slug
+        else repredict()
       }
     })
 
