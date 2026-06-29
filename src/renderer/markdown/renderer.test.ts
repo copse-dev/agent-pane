@@ -404,7 +404,10 @@ describe('renderMarkdown', () => {
   it('does not render > inside fenced code as a blockquote', () => {
     const html = renderMarkdown('```\n> not a blockquote\n```')
     assert.doesNotMatch(html, /<blockquote>/)
-    assert.match(html, /&gt; not a blockquote/)
+    // The line stays inside the code block as escaped text. highlight.js may wrap
+    // individual tokens in <span>s, so assert the escaped `>` marker survives
+    // within <pre><code> rather than matching the whole literal line.
+    assert.match(html, /<pre><code[\s\S]*&gt; not/)
   })
 
   it('renders blockquote between surrounding prose without bleeding', () => {
