@@ -20,6 +20,7 @@ import { readSkillTool } from '../tools/read-skill-tool.ts'
 import { updateTodosTool } from '../tools/todo-tool.ts'
 import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
 import { browserTools } from '../tools/browser-tools.ts'
+import { rememberTool, recallTool } from '../tools/memory-tools.ts'
 import { listSkills } from './skills-registry.ts'
 import { getSetting } from './settings.ts'
 import {
@@ -27,6 +28,7 @@ import {
   BROWSER_TOOLS_DEFAULT_ENABLED,
 } from './browser/browser-origin-policy.ts'
 import { CI_INVESTIGATOR_ENABLED_SETTING } from './ci-investigator-service.ts'
+import { OKF_MEMORIES_ENABLED_SETTING } from './okf-memory-store.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
@@ -61,6 +63,12 @@ export function createRegistry(): ToolRegistry {
     registry.register(ghRunListTool)
     registry.register(ghRunViewTool)
     registry.register(investigateCiTool)
+  }
+  // Experimental OKF memories (off by default). Adds remember/recall tools that
+  // persist project knowledge as Open Knowledge Format notes under ~/.copse.
+  if (getSetting<boolean>(OKF_MEMORIES_ENABLED_SETTING, false)) {
+    registry.register(rememberTool)
+    registry.register(recallTool)
   }
   registry.register(webSearchTool)
   registry.register(fetchUrlTool)
