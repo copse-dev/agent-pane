@@ -411,7 +411,7 @@ export function mountGitChangesPane(
     // path to the queue, so the target is consumed only once it is queued —
     // until then it is kept pending for the follow-up sync.
     if (shouldJumpToProposed(pendingProposedNavigate, queue)) {
-      const proposedNavTarget = pendingProposedNavigate!
+      const proposedNavTarget = pendingProposedNavigate
       pendingProposedNavigate = null
       selection = { kind: 'proposed', path: proposedNavTarget }
       await selectProposed(proposedNavTarget)

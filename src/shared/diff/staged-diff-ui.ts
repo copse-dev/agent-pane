@@ -20,7 +20,7 @@ export function pruneStagedDiffCache(
 export function shouldJumpToProposed(
   pendingProposedPath: string | null,
   entries: StagedDiffEntry[],
-): boolean {
+): pendingProposedPath is string {
   if (!pendingProposedPath) return false
   return entries.some((e) => e.path === pendingProposedPath)
 }
