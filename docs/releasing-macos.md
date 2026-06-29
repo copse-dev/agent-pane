@@ -13,11 +13,13 @@ build as a direct download, and auto-update it from GitHub Releases.
 `electron-builder` (config in `package.json` → `build`) emits, per architecture
 (`arm64`, `x64`), into `release/`:
 
-| Artifact                              | Purpose                                                        |
-| ------------------------------------- | -------------------------------------------------------------- |
-| `Copse-<ver>.dmg`                     | First install — the disk image testers download and open.      |
-| `Copse-<ver>-mac.zip` (+ `.blockmap`) | The payload `electron-updater` downloads for updates.          |
-| `latest-mac.yml`                      | The update feed `electron-updater` reads to detect new builds. |
+| Artifact                                 | Purpose                                                        |
+| ---------------------------------------- | -------------------------------------------------------------- |
+| `Copse-<ver>-<arch>.dmg`                 | First install — the disk image testers download and open.      |
+| `Copse-<ver>-<arch>.zip` (+ `.blockmap`) | The payload `electron-updater` downloads for updates.          |
+| `latest-mac.yml`                         | The update feed `electron-updater` reads to detect new builds. |
+
+`<arch>` is `arm64` (Apple Silicon) or `x64` (Intel).
 
 The app is signed with the **hardened runtime** and the entitlements in
 [`build/entitlements.mac.plist`](../build/entitlements.mac.plist) (JIT / unsigned
