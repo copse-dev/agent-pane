@@ -23,6 +23,24 @@ function mapOutsideFencedHtml(html: string, transform: (segment: string) => stri
     .join('')
 }
 
+// Like FENCED_BLOCK_SPLIT_RE, but also shields already-rendered tables. Table
+// cells have their inline markup applied per-cell in parseTables; running the
+// global inline pass over the finished <table> again would re-pair `**` across
+// cells (the bug in #469), so the inline pass skips table regions entirely.
+// `<table\b[^>]*>` (not a bare `<table>`) keeps the shield matching parseTables's
+// `<table>...</table>` output even if that output ever gains attributes/classes
+// (e.g. `<table class=...>`); a bare match would silently break and the
+// cross-cell bold bug (#469) would return.
+const FENCED_OR_TABLE_SPLIT_RE =
+  /(<pre>[\s\S]*?<\/pre>|<div class="mermaid-diagram[^>]*>[\s\S]*?<\/div>|<table\b[^>]*>[\s\S]*?<\/table>)/
+
+function mapOutsideFencedOrTableHtml(html: string, transform: (segment: string) => string): string {
+  return html
+    .split(FENCED_OR_TABLE_SPLIT_RE)
+    .map((seg, i) => (i % 2 === 1 ? seg : transform(seg)))
+    .join('')
+}
+
 /** Extract fenced blocks before prose escaping so code and diagram syntax stay intact. */
 function extractFencedBlocks(raw: string): { text: string; blocks: string[] } {
   const blocks: string[] = []
@@ -49,27 +67,17 @@ export function renderMarkdown(raw: string): string {
   s = restoreFencedBlocks(s, blocks)
   s = mapOutsideFencedHtml(s, (seg) => renderArtifactImageTags(seg))
 
-  // Tables + inline/block markdown only outside fenced code and mermaid diagrams.
+  // Tables first: parseTables renders each cell's inline markup in isolation
+  // (renderInlineSpans), then the finished <table> is shielded from the pass
+  // below via mapOutsideFencedOrTableHtml so emphasis can't pair across cells.
   s = mapOutsideFencedHtml(s, (seg) => parseTables(seg))
-  s = mapOutsideFencedHtml(s, (seg) => {
+  s = mapOutsideFencedOrTableHtml(s, (seg) => {
     let t = seg
-    t = renderInlineCode(t)
-    t = renderMarkdownLinks(t)
-    t = renderBareHttpLinks(t)
     // Thematic break: a line of 3+ of the same -, *, or _ marker, optionally
     // separated by spaces/tabs. Detect before the inline `*`/`_` passes so a
     // spaced break like `* * *` / `_ _ _` is not chewed into stray <em> spans.
     t = t.replace(/^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/gm, '\n\n<hr>\n\n')
-    // Bold around inline HTML first (`**` + text + <code>/<a>/<img> + text + `**`);
-    // then prose bold outside code spans. A single [^*]+ pass breaks on globs like
-    // src/**/*.test.ts inside <code> and can pair ** across table rows, leaving
-    // stray markers (e.g. MCP host**:).
-    t = t.replace(/\*\*(<code>[\s\S]*?<\/code>)\*\*/g, '<strong>$1</strong>')
-    t = renderBoldAroundInlineHtml(t)
-    t = renderItalicAroundInlineHtml(t)
-    t = applyOutsideInlineHtml(t, /\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
-    t = applyOutsideInlineHtml(t, /_([^_\n]+)_/g, '<em>$1</em>')
-    t = applyOutsideInlineHtml(t, /(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
+    t = renderInlineSpans(t)
     // ATX headings: # → h1 through ###### → h6
     t = t.replace(/^###### (.+)$/gm, '<h6>$1</h6>')
     t = t.replace(/^##### (.+)$/gm, '<h5>$1</h5>')
@@ -152,6 +160,31 @@ function wrapLooseListItems(text: string): string {
     const items = match.match(/<li>[\s\S]*?<\/li>/g) ?? []
     return `<ul>${items.join('')}</ul>`
   })
+}
+
+/**
+ * Inline span markup (code, links, bold, italic) for a single line/segment of
+ * already-escaped text. Shared by the main render pass and per-cell table
+ * rendering so a table cell gets the same emphasis treatment as prose without
+ * any `**` pairing leaking across cell boundaries. Block-level constructs
+ * (headings, lists, thematic breaks) are intentionally not handled here — they
+ * only apply to the main pass, never inside a table cell.
+ */
+function renderInlineSpans(t: string): string {
+  t = renderInlineCode(t)
+  t = renderMarkdownLinks(t)
+  t = renderBareHttpLinks(t)
+  // Bold around inline HTML first (`**` + text + <code>/<a>/<img> + text + `**`);
+  // then prose bold outside code spans. A single [^*]+ pass breaks on globs like
+  // src/**/*.test.ts inside <code> and can pair ** across spans, leaving stray
+  // markers (e.g. MCP host**:).
+  t = t.replace(/\*\*(<code>[\s\S]*?<\/code>)\*\*/g, '<strong>$1</strong>')
+  t = renderBoldAroundInlineHtml(t)
+  t = renderItalicAroundInlineHtml(t)
+  t = applyOutsideInlineHtml(t, /\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+  t = applyOutsideInlineHtml(t, /_([^_\n]+)_/g, '<em>$1</em>')
+  t = applyOutsideInlineHtml(t, /(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
+  return t
 }
 
 function applyOutsideInlineHtml(text: string, pattern: RegExp, replacement: string): string {
@@ -361,9 +394,14 @@ function wrapParagraphBlock(block: string): string {
   if (trimmed === '') return ''
   if (BLOCK_START_RE.test(trimmed)) return block
   if (CONTAINS_BLOCK_RE.test(trimmed)) {
-    return splitBlockElements(block)
-      .map((part) => wrapParagraphBlock(part))
-      .join('\n')
+    const parts = splitBlockElements(block)
+    // Guard against infinite recursion: if splitBlockElements can't break the
+    // block apart (it returns the single, unchanged input), recursing on the
+    // same `block` would loop forever. Wrap it as a paragraph and stop instead.
+    if (parts.length === 1 && parts[0] === block) {
+      return `<p>${block.replace(/\n/g, '<br>')}</p>`
+    }
+    return parts.map((part) => wrapParagraphBlock(part)).join('\n')
   }
   return `<p>${block.replace(/\n/g, '<br>')}</p>`
 }
@@ -395,9 +433,13 @@ function parseTables(text: string): string {
         body.push(splitRow(row))
         j++
       }
-      const thead = `<thead><tr>${headerCells.map((c) => `<th>${c}</th>`).join('')}</tr></thead>`
+      // Render each cell's inline markup in isolation so emphasis (`**bold**`)
+      // is scoped to the cell and never pairs `**` across adjacent cells (#469).
+      const thead = `<thead><tr>${headerCells
+        .map((c) => `<th>${renderInlineSpans(c)}</th>`)
+        .join('')}</tr></thead>`
       const tbody = `<tbody>${body
-        .map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`)
+        .map((r) => `<tr>${r.map((c) => `<td>${renderInlineSpans(c)}</td>`).join('')}</tr>`)
         .join('')}</tbody>`
       out.push(`<table>${thead}${tbody}</table>`)
       i = j

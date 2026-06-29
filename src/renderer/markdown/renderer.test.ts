@@ -320,6 +320,37 @@ describe('renderMarkdown', () => {
     assert.doesNotMatch(html, /<li><\/strong>/)
   })
 
+  it('bolds emphasis inside every table cell without leaking ** across cells', () => {
+    // Regression for #469: parseTables emitted the whole table on one line, so
+    // the global bold pass paired `**` across cells (via the code span in each
+    // description), leaving the first/last `**Label**` cells as literal markers.
+    const html = renderMarkdown(
+      [
+        '| Area | Details |',
+        '|---|---|',
+        '| **Storage** | `okf-memory-store.ts` — saves notes |',
+        '| **Agent tools** | `memory-tools.ts` — two tools |',
+        '| **Read-only mode** | `recall` allowed; `remember` denied |',
+        '| **Tests** | Unit tests for persistence and search |',
+      ].join('\n'),
+    )
+    assert.match(html, /<td><strong>Storage<\/strong><\/td>/)
+    assert.match(html, /<td><strong>Agent tools<\/strong><\/td>/)
+    assert.match(html, /<td><strong>Read-only mode<\/strong><\/td>/)
+    assert.match(html, /<td><strong>Tests<\/strong><\/td>/)
+    // No stray literal markers survive in any cell.
+    assert.doesNotMatch(html, /\*\*/)
+    // Inline code in description cells is still rendered.
+    assert.match(html, /<code>okf-memory-store\.ts<\/code>/)
+    assert.match(html, /<code>recall<\/code>/)
+  })
+
+  it('renders bold and inline code together in a header cell', () => {
+    const html = renderMarkdown('| **Name** | Note |\n| --- | --- |\n| `id` | ok |')
+    assert.match(html, /<th><strong>Name<\/strong><\/th>/)
+    assert.match(html, /<td><code>id<\/code><\/td>/)
+  })
+
   it('bolds captions that mix inline code and prose', () => {
     const html = renderMarkdown('**`css-new-tab.png` — NTP rendered end-to-end**')
 
@@ -357,6 +388,18 @@ describe('renderMarkdown sanitization (#115)', () => {
     assert.match(html, /data-remote-artifact-path="artifacts\/screenshots\/css-new-tab\.png"/)
     assert.match(html, /alt="C-S-S New Tab Page rendered"/)
     assert.doesNotMatch(html, /src="/)
+  })
+
+  it('wraps a block that contains but cannot be split around a block element without infinite recursion', () => {
+    // The rendered artifact <img> makes CONTAINS_BLOCK_RE match, but the block
+    // does not start with a block element, so splitBlockElements returns the
+    // single unchanged block. wrapParagraphBlock must wrap it as a paragraph and
+    // stop rather than recurse on the identical block forever (the guard in
+    // wrapParagraphBlock). Reaching this assertion at all proves no infinite loop.
+    const html = renderMarkdown(
+      'Inline <img src="/opt/cursor/artifacts/screenshots/x.png"> trailing text',
+    )
+    assert.match(html, /^<p>Inline <img class="remote-artifact-image"[^>]*> trailing text<\/p>$/)
   })
 
   it('escapes script tags rather than executing them', () => {
