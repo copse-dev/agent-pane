@@ -27,6 +27,13 @@ function pctOf(part: number, whole: number): number {
 export interface ContextWheelOptions {
   usageLine?: string | null
   breakdown?: ContextBreakdown | null
+  /**
+   * When true the multi-arc breakdown ring replaces the live snapshot fill
+   * (pre-send / fresh threads). When false the measured snapshot ring stays,
+   * but a provided `breakdown` is still surfaced as the hover popover so
+   * already-run primary chats keep their context-window breakdown on hover.
+   */
+  breakdownRing?: boolean
 }
 
 export function createContextWheel(): {
@@ -96,6 +103,37 @@ export function createContextWheel(): {
     while (segGroup.firstChild) segGroup.firstChild.remove()
   }
 
+  /** Build the hover popover (header + one row per segment) from a breakdown. */
+  function renderPopover(breakdown: ContextBreakdown): void {
+    const { totalTokens, contextWindow, segments } = breakdown
+    const pct = pctOf(totalTokens, contextWindow)
+    clearPopover()
+    const header = document.createElement('div')
+    header.className = 'context-wheel-popover-header'
+    header.textContent = `Context · ${formatTokenCount(totalTokens)} / ${formatTokenCount(
+      contextWindow,
+    )} (${pct}%)`
+    popover.append(header)
+    for (const segment of segments) {
+      const row = document.createElement('div')
+      row.className = 'context-wheel-popover-row'
+      const swatch = document.createElement('span')
+      swatch.className = 'context-wheel-popover-swatch'
+      swatch.style.background = SEGMENT_COLORS[segment.key]
+      const name = document.createElement('span')
+      name.className = 'context-wheel-popover-name'
+      name.textContent = segment.label
+      const value = document.createElement('span')
+      value.className = 'context-wheel-popover-value'
+      value.textContent = `${formatTokenCount(segment.tokens)} · ${pctOf(
+        segment.tokens,
+        contextWindow,
+      )}%`
+      row.append(swatch, name, value)
+      popover.append(row)
+    }
+  }
+
   function renderBreakdown(breakdown: ContextBreakdown): void {
     breakdownActive = true
     root.hidden = false
@@ -127,31 +165,7 @@ export function createContextWheel(): {
       offset += len
     }
 
-    clearPopover()
-    const header = document.createElement('div')
-    header.className = 'context-wheel-popover-header'
-    header.textContent = `Context · ${formatTokenCount(totalTokens)} / ${formatTokenCount(
-      contextWindow,
-    )} (${pct}%)`
-    popover.append(header)
-    for (const segment of segments) {
-      const row = document.createElement('div')
-      row.className = 'context-wheel-popover-row'
-      const swatch = document.createElement('span')
-      swatch.className = 'context-wheel-popover-swatch'
-      swatch.style.background = SEGMENT_COLORS[segment.key]
-      const name = document.createElement('span')
-      name.className = 'context-wheel-popover-name'
-      name.textContent = segment.label
-      const value = document.createElement('span')
-      value.className = 'context-wheel-popover-value'
-      value.textContent = `${formatTokenCount(segment.tokens)} · ${pctOf(
-        segment.tokens,
-        contextWindow,
-      )}%`
-      row.append(swatch, name, value)
-      popover.append(row)
-    }
+    renderPopover(breakdown)
 
     const lines = segments.map(
       (s) => `${s.label}: ${formatTokenCount(s.tokens)} (${pctOf(s.tokens, contextWindow)}%)`,
@@ -202,6 +216,17 @@ export function createContextWheel(): {
       'aria-label',
       `Context ${pct}% used, ${formatTokenCount(snapshot.conversationTokens)} of ${formatTokenCount(snapshot.conversationBudget)} tokens${ariaUsage}`,
     )
+
+    // Existing (already-run) chats keep the measured live-fill ring, but still
+    // expose the part-by-part breakdown on hover when one is available. Subagent
+    // and remote-agent windows don't report a breakdown, so they fall through
+    // here with no popover — matching their non-interactive presentation.
+    const breakdown = options?.breakdown
+    if (breakdown && breakdown.totalTokens > 0 && breakdown.contextWindow > 0) {
+      breakdownActive = true
+      root.tabIndex = 0
+      renderPopover(breakdown)
+    }
   }
 
   function update(
@@ -210,7 +235,13 @@ export function createContextWheel(): {
     options?: ContextWheelOptions,
   ): void {
     const breakdown = options?.breakdown
-    if (!running && breakdown && breakdown.totalTokens > 0 && breakdown.contextWindow > 0) {
+    if (
+      !running &&
+      options?.breakdownRing &&
+      breakdown &&
+      breakdown.totalTokens > 0 &&
+      breakdown.contextWindow > 0
+    ) {
       renderBreakdown(breakdown)
       return
     }
