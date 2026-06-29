@@ -735,6 +735,115 @@
   /* Keep IME/focus target above any pane chrome. */
   z-index: 10;
 }
+
+/* Agent tasks — the shell commands the agent runs. Listed as their own section
+   in the Terminal tab's left rail (under the shells); selecting one shows its
+   full output as a panel on the right, swapping out the live terminal. */
+.agent-tasks-section {
+  flex-shrink: 0;
+  max-height: 50%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+}
+.agent-tasks-section-header {
+  padding: var(--spacing-sm);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.agent-tasks-tablist {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: var(--spacing-xs) 0;
+}
+.agent-task-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  width: 100%;
+  text-align: left;
+  padding: 5px var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.agent-task-tab:hover {
+  background: var(--bg-hover);
+}
+.agent-task-tab.is-active {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+.agent-task-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.agent-task-tab[data-status='running'] .agent-task-dot {
+  background: var(--accent);
+  animation: agent-task-pulse 1.2s ease-in-out infinite;
+}
+.agent-task-tab[data-status='done'] .agent-task-dot {
+  background: var(--success);
+}
+.agent-task-tab[data-status='error'] .agent-task-dot {
+  background: var(--error);
+}
+@keyframes agent-task-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.agent-task-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+/* Viewer side: hidden until a task is selected, then it takes over the viewer
+   from the terminal body (toggled via .showing-agent-task on the host). */
+.agent-tasks-host {
+  display: none;
+  flex-direction: column;
+  min-height: 0;
+}
+.terminals-viewer-host.showing-agent-task .agent-tasks-host {
+  display: flex;
+  flex: 1;
+}
+.terminals-viewer-host.showing-agent-task .terminals-body {
+  display: none;
+}
+.agent-task-output-panel {
+  flex: 1;
+  margin: 0;
+  padding: var(--spacing-sm);
+  overflow: auto;
+  min-height: 0;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+}
 .browser-tabs-host {
   flex: 1;
   display: flex;

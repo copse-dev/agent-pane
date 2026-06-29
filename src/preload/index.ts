@@ -95,9 +95,13 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('agent:approval_request', listener)
       }
     },
-    onShellOutput: (handler: (data: string) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, data: string): void => {
-        handler(data)
+    onShellOutput: (handler: (data: string, toolCallId: string | null) => void) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        data: string,
+        toolCallId: string | null,
+      ): void => {
+        handler(data, toolCallId)
       }
       ipcRenderer.on('agent:shell_output', listener)
       return (): void => {

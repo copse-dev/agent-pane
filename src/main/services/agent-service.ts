@@ -42,6 +42,7 @@ import { isToolAllowedInReadonlyMode } from '@shared/tools/readonly-tools.ts'
 import { getMcpToolMeta } from './mcp-registry.ts'
 import { formatReadFileLimitHint } from '@shared/agent/read-file-limits.ts'
 import { setExploreSubagentContext } from './explore-subagent-runner.ts'
+import { setCurrentShellTaskId } from './shell-output-context.ts'
 import { setCiInvestigatorContext } from './ci-investigator-runner.ts'
 import { resetSubagentUsage, getAccumulatedSubagentUsage } from './subagent-usage.ts'
 import { setAgentRunTodoContext, clearAgentRunTodos, getAgentRunTodos } from './agent-run-todos.ts'
@@ -402,6 +403,16 @@ export async function runAgent(
                 return await registry.execute(name, args, signal)
               } finally {
                 setCiInvestigatorContext(null)
+              }
+            }
+            if (name === 'run_shell') {
+              // Tag the command's streamed output with this tool-call id so the
+              // terminal pane can route it into the matching "Agent tasks" card.
+              setCurrentShellTaskId(toolCallId)
+              try {
+                return await registry.executeNormalized(name, args, signal)
+              } finally {
+                setCurrentShellTaskId(null)
               }
             }
             return registry.executeNormalized(name, args, signal)
