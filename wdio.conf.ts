@@ -89,8 +89,22 @@ export const config: Options.Testrunner = {
       COPSE_PANEL_MOCK_LLM: '1',
       COPSE_PANEL_MOCK_GH: '1',
       COPSE_PANEL_USER_DATA: e2eUserDataDir,
+      // Blank every provider key the app recognises so e2e is deterministic:
+      // the mock LLM is used (no real key), and the env-key-detection scan
+      // (Settings → General) finds nothing from the runner's environment.
       ANTHROPIC_API_KEY: '',
       OPENAI_API_KEY: '',
+      CURSOR_API_KEY: '',
+      OPENROUTER_API_KEY: '',
+      MISTRAL_API_KEY: '',
+      GEMINI_API_KEY: '',
+      GOOGLE_GENERATIVE_AI_API_KEY: '',
+      DEEPSEEK_API_KEY: '',
+      HF_TOKEN: '',
+      HUGGINGFACE_API_KEY: '',
+      LM_STUDIO_API_KEY: '',
+      LMSTUDIO_API_KEY: '',
+      LM_API_TOKEN: '',
     }
     if (process.env.COPSE_PANEL_MOCK_GH_STATUS) {
       e2eEnv.COPSE_PANEL_MOCK_GH_STATUS = process.env.COPSE_PANEL_MOCK_GH_STATUS
