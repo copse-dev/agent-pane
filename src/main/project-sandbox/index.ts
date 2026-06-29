@@ -1,6 +1,7 @@
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { baseSandboxConfig } from './config.ts'
 import { setProjectSandboxEnabled } from './spawn.ts'
+import { shutdownSandboxFsServer } from './sandbox-fs-server.ts'
 
 export {
   spawnInProjectSandbox,
@@ -43,6 +44,7 @@ export async function initProjectSandbox(): Promise<void> {
 }
 
 export async function shutdownProjectSandbox(): Promise<void> {
+  shutdownSandboxFsServer()
   if (SandboxManager.isSandboxingEnabled()) {
     await SandboxManager.reset()
   }
