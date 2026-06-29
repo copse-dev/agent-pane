@@ -1,12 +1,19 @@
 # Using other agents on the same device (ACP client)
 
 Copse can drive an external [ACP](https://agentclientprotocol.com/) agent that
-runs **locally on the same machine** — Gemini CLI, Codex, Cline, OpenCode,
-Copilot CLI, or anything else that speaks the Agent Client Protocol over stdio.
-Copse acts as the **ACP client**: it spawns the agent, hands it your workspace,
-and renders its activity in the normal chat UI. The external agent runs its own
-model loop (and brings its own auth), while Copse keeps ownership of the
-workspace and the approval UX.
+runs **locally on the same machine** — Gemini CLI, Claude (via an ACP adapter),
+or anything else that speaks the Agent Client Protocol over stdio. Copse acts as
+the **ACP client**: it spawns the agent, hands it your workspace, and renders its
+activity in the normal chat UI. The external agent runs its own model loop (and
+brings its own auth), while Copse keeps ownership of the workspace and the
+approval UX.
+
+> **The agent is a separate program — it is not bundled with Copse.** Copse ships
+> only `@agentclientprotocol/sdk` (the client/protocol half). The agent half (the
+> thing that wraps Claude/Gemini and speaks ACP) is installed by you, e.g.
+> `npm install -g @agentclientprotocol/claude-agent-acp` for Claude, then
+> authenticated with its own command (e.g. `claude setup-token`). The Settings
+> panel shows the exact install and sign-in commands per agent.
 
 > Status: this is the first slice of the client role (issue #264, Track 1).
 > Terminals and cross-turn session resume are not here yet — see
@@ -32,15 +39,20 @@ workspace and the approval UX.
 
 ### Settings panel (recommended)
 
-Open **Settings → General → ACP agents**. From there you can:
+Open **Settings → General → ACP agents**. It scans your device on open and shows:
 
-- **Detect installed agents** — scans your device (PATH + running processes) for
-  known ACP agents and adds any it finds with one click.
-- **Add an agent** — fill in id, title, command, arguments (one per line),
-  environment (`KEY=value` per line), and an enabled toggle.
-- **Edit / remove** existing agents.
+- **Known agents** — a shortlist (Gemini CLI, Claude Agent, Claude Code) with, for
+  each: whether it's installed, the **Install** command to get it, the **Sign in**
+  command to authenticate it (e.g. `claude setup-token`), and an **Add** button.
+- **Configured agents** — edit / enable / remove what you've added.
+- **Add an agent** — a custom form (id, title, command, args one-per-line,
+  `KEY=value` env, enabled) for anything not in the shortlist.
 
-Changes are saved immediately; reopen the model dropdown to see them.
+Changes are saved immediately; reopen the model dropdown to see them. **Re-scan
+device** refreshes the installed/running status after you install something.
+
+> Tip: you can **Add** a known agent before installing it — Copse stores the
+> config now, and you run the shown Install/Sign in commands when ready.
 
 ### Detect from the command line
 

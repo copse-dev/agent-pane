@@ -1,9 +1,9 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
-import type { DetectedAcpAgent } from '@shared/acp-known-agents.ts'
+import type { KnownAcpAgent } from '@shared/acp-known-agents.ts'
 import {
-  detectedToConfig,
+  knownToConfig,
   formatArgsText,
   formatEnvText,
   parseArgsText,
@@ -75,19 +75,18 @@ describe('upsertAgent / removeAgent', () => {
   })
 })
 
-describe('detectedToConfig', () => {
-  it('blanks env-hint values and keeps args when present', () => {
-    const detected: DetectedAcpAgent = {
+describe('knownToConfig', () => {
+  it('blanks env-hint values and keeps args, dropping install/setup metadata', () => {
+    const known: KnownAcpAgent = {
       id: 'gemini-cli',
       title: 'Gemini CLI',
       command: 'gemini',
       args: ['--experimental-acp'],
       envHints: ['GEMINI_API_KEY'],
-      installed: true,
-      path: '/usr/bin/gemini',
-      running: false,
+      install: 'npm install -g @google/gemini-cli',
+      setup: 'gemini',
     }
-    assert.deepEqual(detectedToConfig(detected), {
+    assert.deepEqual(knownToConfig(known), {
       id: 'gemini-cli',
       title: 'Gemini CLI',
       command: 'gemini',
@@ -98,16 +97,8 @@ describe('detectedToConfig', () => {
   })
 
   it('omits args and env when the agent has none', () => {
-    const detected: DetectedAcpAgent = {
-      id: 'bare',
-      title: 'Bare',
-      command: 'bare',
-      args: [],
-      installed: true,
-      path: '/usr/bin/bare',
-      running: true,
-    }
-    assert.deepEqual(detectedToConfig(detected), {
+    const known: KnownAcpAgent = { id: 'bare', title: 'Bare', command: 'bare', args: [] }
+    assert.deepEqual(knownToConfig(known), {
       id: 'bare',
       title: 'Bare',
       command: 'bare',

@@ -533,3 +533,56 @@ dialog.settings-overlay::backdrop {
   padding-top: var(--spacing-md);
   border-top: 1px solid var(--border);
 }
+
+/* ACP known-agents list: status + install/sign-in commands per agent. */
+.acp-known-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+.acp-known-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md);
+}
+.acp-known-head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+.acp-known-status {
+  font-size: 12px;
+}
+.acp-known-status.ok {
+  color: var(--success, var(--accent));
+}
+.acp-known-status.missing {
+  color: var(--text-muted);
+}
+.acp-known-add {
+  margin-left: auto;
+}
+.acp-cmd-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+}
+.acp-cmd-label {
+  color: var(--text-muted);
+  font-size: 12px;
+  min-width: 52px;
+}
+.acp-cmd {
+  flex: 1;
+  user-select: all;
+  font-size: 12px;
+  background: var(--bg-subtle, var(--bg));
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  overflow-x: auto;
+}
+.acp-cmd-copy {
+  flex: none;
+}

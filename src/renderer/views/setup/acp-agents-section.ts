@@ -1,14 +1,19 @@
 import type { ApiClient } from '../../../preload/api.d.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
-import type { DetectedAcpAgent } from '@shared/acp-known-agents.ts'
+import {
+  KNOWN_ACP_AGENTS,
+  type DetectedAcpAgent,
+  type KnownAcpAgent,
+} from '@shared/acp-known-agents.ts'
 import { el, clear } from '../../dom/helpers.ts'
 
 // Settings panel for external ACP agents Copse drives as a client (the `acp:<id>`
-// models). CRUD over the `registeredAcpAgents` setting, plus a "Detect" button
-// that scans the device (acp:detectAgents) and one-click adds what it finds.
+// models). It scans the device (acp:detectAgents) and lists the known agents with
+// their install + sign-in commands ("preinstall" guidance), one-click add, plus a
+// CRUD editor over the `registeredAcpAgents` setting for configured/custom agents.
 //
-// Pure helpers (parse/format/upsert) are exported and unit-tested; the rest is
-// thin DOM glue that persists on every change via settings.set.
+// Pure helpers (parse/format/upsert/knownToConfig) are exported and unit-tested;
+// the rest is thin DOM glue that persists on every change via settings.set.
 
 export interface AcpAgentsSection {
   root: HTMLFieldSetElement
@@ -70,16 +75,16 @@ export function removeAgent(list: AcpAgentConfig[], id: string): AcpAgentConfig[
   return list.filter((a) => a.id !== id)
 }
 
-/** Turn a detected agent into a config entry ready to persist (env values blanked). */
-export function detectedToConfig(detected: DetectedAcpAgent): AcpAgentConfig {
-  const env = detected.envHints?.length
-    ? Object.fromEntries(detected.envHints.map((name) => [name, '']))
+/** Turn a known/detected agent into a config entry ready to persist (env values blanked). */
+export function knownToConfig(known: KnownAcpAgent): AcpAgentConfig {
+  const env = known.envHints?.length
+    ? Object.fromEntries(known.envHints.map((name) => [name, '']))
     : undefined
   return {
-    id: detected.id,
-    title: detected.title,
-    command: detected.command,
-    ...(detected.args.length ? { args: detected.args } : {}),
+    id: known.id,
+    title: known.title,
+    command: known.command,
+    ...(known.args.length ? { args: known.args } : {}),
     ...(env ? { env } : {}),
     enabled: true,
   }
@@ -96,16 +101,33 @@ export function validateDraft(
   return null
 }
 
+/** A label + monospace command + copy button (used for install / sign-in lines). */
+function commandRow(label: string, command: string): HTMLElement {
+  const code = el('code', { class: 'acp-cmd' }, command)
+  const copy = el('button', { type: 'button', class: 'acp-cmd-copy', title: 'Copy' }, 'Copy')
+  copy.addEventListener('click', () => {
+    void navigator.clipboard.writeText(command)
+  })
+  return el(
+    'div',
+    { class: 'acp-cmd-row' },
+    el('span', { class: 'acp-cmd-label' }, label),
+    code,
+    copy,
+  )
+}
+
 export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
   let agents: AcpAgentConfig[] = []
+  let detectedById = new Map<string, DetectedAcpAgent>()
 
+  const knownHost = el('div', { class: 'acp-known-list' })
+  const scanStatus = el('span', { class: 'key-status' })
   const listHost = el('div', { class: 'acp-agent-list' })
-  const detectStatus = el('span', { class: 'key-status' })
-  const detectResults = el('div', { class: 'acp-detect-results' })
   const addHost = el('div', { class: 'acp-agent-add' })
 
-  const detectBtn = el('button', { type: 'button' }, 'Detect installed agents')
-  detectBtn.addEventListener('click', () => void runDetect())
+  const rescanBtn = el('button', { type: 'button' }, 'Re-scan device')
+  rescanBtn.addEventListener('click', () => void scan())
 
   const fieldset = el(
     'fieldset',
@@ -115,12 +137,16 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
       'p',
       { class: 'settings-fieldset-desc' },
       'Drive an external coding agent that runs locally on this device (Gemini CLI, ' +
-        'Claude Code, …) over the Agent Client Protocol. Configured agents appear in the ' +
-        'model picker as their own group. Open a folder before using one — the agent acts ' +
-        'in that workspace, and its file writes go through the diff-approval queue.',
+        'Claude Code, …) over the Agent Client Protocol. The agent is a separate program, ' +
+        'not bundled with Copse — install it with the command shown, then sign it in. ' +
+        'Configured agents appear in the model picker as their own group; open a folder ' +
+        "before using one, since it acts in that workspace and its writes go through Copse's " +
+        'diff-approval queue.',
     ),
-    el('div', { class: 'provider-actions' }, detectBtn, detectStatus),
-    detectResults,
+    el('h4', { class: 'provider-form-title' }, 'Known agents'),
+    knownHost,
+    el('div', { class: 'provider-actions' }, rescanBtn, scanStatus),
+    el('h4', { class: 'provider-form-title' }, 'Configured agents'),
     listHost,
     addHost,
   )
@@ -131,38 +157,58 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
     render()
   }
 
-  async function runDetect(): Promise<void> {
-    detectStatus.textContent = 'Scanning…'
-    detectStatus.className = 'key-status'
-    clear(detectResults)
-    let found: DetectedAcpAgent[]
+  async function scan(): Promise<void> {
+    scanStatus.textContent = 'Scanning…'
+    scanStatus.className = 'key-status'
     try {
-      found = await api.acp.detectAgents()
+      const found = await api.acp.detectAgents()
+      detectedById = new Map(found.map((agent) => [agent.id, agent]))
+      const installed = found.filter((agent) => agent.installed).length
+      scanStatus.textContent = installed ? `✓ ${String(installed)} installed` : 'None installed yet'
+      scanStatus.className = `key-status ${installed ? 'ok' : ''}`
     } catch {
-      detectStatus.textContent = '✗ Could not scan'
-      detectStatus.className = 'key-status err'
-      return
+      detectedById = new Map()
+      scanStatus.textContent = '✗ Could not scan'
+      scanStatus.className = 'key-status err'
     }
-    const installed = found.filter((agent) => agent.installed)
-    detectStatus.textContent = installed.length
-      ? `✓ Found ${String(installed.length)} installed`
-      : 'No known agents found on PATH'
-    detectStatus.className = `key-status ${installed.length ? 'ok' : ''}`
+    renderKnown()
+  }
 
-    for (const agent of installed) {
-      const already = agents.some((a) => a.id === agent.id)
+  function renderKnown(): void {
+    clear(knownHost)
+    for (const known of KNOWN_ACP_AGENTS) {
+      const detected = detectedById.get(known.id)
+      const installed = detected?.installed ?? false
+      const configured = agents.some((a) => a.id === known.id)
+
+      const status = el(
+        'span',
+        { class: `acp-known-status ${installed ? 'ok' : 'missing'}` },
+        installed ? `✓ installed${detected?.running ? ' · running' : ''}` : '○ not installed',
+      )
       const add = el(
         'button',
-        { type: 'button', ...(already ? { disabled: true } : {}) },
-        already ? 'Added' : 'Add',
+        { type: 'button', ...(configured ? { disabled: true } : {}) },
+        configured ? 'Added' : 'Add',
       )
-      add.addEventListener('click', () => {
-        void persist(upsertAgent(agents, detectedToConfig(agent)))
-      })
-      const meta = [agent.command, agent.running ? 'running now' : ''].filter(Boolean).join(' · ')
-      detectResults.append(
-        el('div', { class: 'acp-detect-row' }, el('span', {}, `${agent.title} (${meta})`), add),
+      add.addEventListener('click', () => void persist(upsertAgent(agents, knownToConfig(known))))
+
+      const card = el(
+        'div',
+        { class: 'acp-known-card' },
+        el(
+          'div',
+          { class: 'acp-known-head' },
+          el('strong', {}, known.title),
+          status,
+          el('span', { class: 'acp-known-add' }, add),
+        ),
       )
+      // Show how to install (only when missing) and how to authenticate.
+      if (!installed && known.install) card.append(commandRow('Install', known.install))
+      if (known.setup) card.append(commandRow('Sign in', known.setup))
+      if (known.note) card.append(el('p', { class: 'field-hint' }, known.note))
+      knownHost.append(card)
     }
   }
 
@@ -252,10 +298,11 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
   }
 
   function render(): void {
+    renderKnown() // keep the "Add"/"Added" state in sync with the configured list
     clear(listHost)
     if (agents.length === 0) {
       listHost.append(
-        el('p', { class: 'field-hint' }, 'No ACP agents configured yet. Detect or add one below.'),
+        el('p', { class: 'field-hint' }, 'No ACP agents configured yet. Add one above or below.'),
       )
     }
     for (const agent of agents) {
@@ -296,9 +343,8 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
     } catch {
       agents = []
     }
-    clear(detectResults)
-    detectStatus.textContent = ''
     render()
+    await scan()
   }
 
   return { root: fieldset, refresh }
