@@ -22,17 +22,30 @@ import { REMOTE_AGENT_MODEL_PREFIX } from '../remote-agent.ts'
 export const DEFAULT_EXTRA_PROVIDER_CONTEXT = 128_000
 
 /**
- * True when a base URL points at a loopback host (localhost / 127.0.0.1 / ::1).
- * Such providers are local OpenAI-compatible servers (LM Studio, Ollama,
- * llama.cpp, …): they are surfaced in Settings → Local models, usually need no
- * API key, and `http:` is acceptable. A single derived predicate so the new
- * local presets and any user-added local endpoint are classified the same way.
+ * True when a base URL points at a loopback / local-bind host. This covers the
+ * full 127.0.0.0/8 range (127.0.0.1, 127.0.1.1, …), localhost / *.localhost,
+ * IPv6 loopback (::1), and the unspecified bind addresses 0.0.0.0 and :: that
+ * vLLM/llama.cpp commonly listen on. Such providers are local OpenAI-compatible
+ * servers (LM Studio, Ollama, llama.cpp, …): they are surfaced in Settings →
+ * Local models, usually need no API key, and `http:` is acceptable. A single
+ * derived predicate so the new local presets and any user-added local endpoint
+ * are classified the same way.
  */
 export function isLocalBaseUrl(baseUrl: string): boolean {
   try {
-    const host = new URL(baseUrl).hostname.toLowerCase().replace(/^\[|\]$/g, '')
+    let host = new URL(baseUrl).hostname.toLowerCase()
+    // Unwrap a properly-bracketed IPv6 literal ([::1] → ::1); leave any host
+    // with mismatched brackets untouched so it can't masquerade as local.
+    const bracketed = /^\[(.*)\]$/.exec(host)
+    if (bracketed) host = bracketed[1] ?? host
     return (
-      host === 'localhost' || host.endsWith('.localhost') || host === '127.0.0.1' || host === '::1'
+      host === 'localhost' ||
+      host.endsWith('.localhost') ||
+      // Entire 127.0.0.0/8 loopback range.
+      /^127(?:\.\d{1,3}){3}$/.test(host) ||
+      host === '0.0.0.0' ||
+      host === '::1' ||
+      host === '::'
     )
   } catch {
     return false

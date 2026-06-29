@@ -63,14 +63,23 @@ export async function detectLocalServers(api: ApiClient): Promise<LocalServerRes
  * Persist the discovered models for a reachable built-in preset so they show up
  * in the model picker and routing selects immediately. LM Studio is skipped — it
  * has its own dedicated server/model wiring (localServerUrl + lmstudio: prefix).
+ *
+ * A re-scan MERGES rather than replaces: any models the user already curated for
+ * this provider (with their labels/context windows) are preserved, and only
+ * freshly-probed ids that aren't already saved are appended. This stops a second
+ * detection run from clobbering a hand-tuned shortlist.
  */
 export async function importDetectedPreset(
   api: ApiClient,
   result: LocalServerResult,
 ): Promise<void> {
   if (result.id === 'lmstudio' || !result.reachable || result.models.length === 0) return
+  const existing = (await api.settings.extraProviders()).find((p) => p.id === result.id)
+  const existingModels = existing?.models ?? []
+  const seen = new Set(existingModels.map((m) => m.id))
+  const added = result.models.filter((id) => !seen.has(id)).map((id) => ({ id }))
   await api.settings.saveExtraProvider({
     slug: result.id,
-    models: result.models.map((id) => ({ id })),
+    models: [...existingModels, ...added],
   })
 }

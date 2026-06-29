@@ -191,6 +191,27 @@ describe('local providers', () => {
     assert.equal(isLocalBaseUrl('not a url'), false)
   })
 
+  it('treats the full 127.0.0.0/8 range and unspecified bind addresses as local', () => {
+    // Rest of the loopback /8 range (not just 127.0.0.1).
+    assert.equal(isLocalBaseUrl('http://127.0.1.1:8000/v1'), true)
+    assert.equal(isLocalBaseUrl('http://127.255.255.254:8080/v1'), true)
+    // Common vLLM/llama.cpp bind-all addresses.
+    assert.equal(isLocalBaseUrl('http://0.0.0.0:8000/v1'), true)
+    assert.equal(isLocalBaseUrl('http://[::]:8000/v1'), true)
+    // Non-loopback addresses stay cloud.
+    assert.equal(isLocalBaseUrl('http://128.0.0.1:8000/v1'), false)
+    assert.equal(isLocalBaseUrl('http://192.168.1.5:8000/v1'), false)
+  })
+
+  it('only unwraps a properly-bracketed IPv6 literal', () => {
+    // A matched-bracket form is unwrapped and recognised…
+    assert.equal(isLocalBaseUrl('http://[::1]/v1'), true)
+    // …while a host the URL parser can still resolve but that does not match a
+    // loopback literal is cloud. (Mismatched brackets are rejected by the URL
+    // parser itself, so they degrade to `false` via the catch.)
+    assert.equal(isLocalBaseUrl('http://[::1/v1'), false)
+  })
+
   it('ships the local server presets flagged local with empty model lists', () => {
     const providers = resolveExtraProviders(undefined)
     for (const slug of ['ollama', 'llamacpp', 'jan', 'vllm']) {

@@ -164,8 +164,13 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
       }
       const reachable = results.filter((r) => r.reachable)
       // Persist discovered models for reachable presets so they're immediately
-      // selectable; LM Studio is handled by its own section below.
-      await Promise.all(reachable.map((r) => importDetectedPreset(api, r)))
+      // selectable; LM Studio is handled by its own section below. Import
+      // SEQUENTIALLY: each importDetectedPreset does a read-modify-write of the
+      // single `extraProviders` setting, so running them concurrently would have
+      // them clobber each other and drop all but one discovered preset.
+      for (const r of reachable) {
+        await importDetectedPreset(api, r)
+      }
       detectStatus.textContent = reachable.length
         ? `Found ${reachable.length} local server(s)`
         : 'No local servers detected'
