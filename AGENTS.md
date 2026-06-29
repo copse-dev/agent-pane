@@ -80,14 +80,8 @@ changed renderer UI or e2e fixtures, also run **`npm run build && npm run test:e
 
 ### Type-safety & lint discipline
 
-Three gates keep the codebase honest and run together under **`npm run check`** (also CI's
-`precheck`): **`tsc`** (`typecheck`), **ESLint** (`lint`, on `strictTypeChecked`), and **Prettier**
-(`format:check`). Run it before every commit — never hand-format or eyeball types in place of it.
-
-Write code the linter never has to flag: minimise `as` casts (prefer type guards, `satisfies`,
-zod-validated boundaries, and the typed DOM/array helpers), never cast object literals, never reach
-for `eslint-disable` / `@ts-expect-error` to silence a real error. The full reference — techniques,
-which rules are on and why, the escape-hatch rules — is in
+Minimise `as` casts, never cast object literals, and never reach for `eslint-disable` /
+`@ts-expect-error` to silence a real error. Conventions and the rules behind them:
 [`docs/type-safety.md`](docs/type-safety.md).
 
 ### Visual changes require evals
