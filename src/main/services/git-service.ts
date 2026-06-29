@@ -224,6 +224,9 @@ function runGitBuffer(args: string[]): { stdout: Buffer; code: number } {
     encoding: 'buffer',
     maxBuffer: GIT_IMAGE_MAX_BYTES,
   })
+  // spawnSync types stdout as non-null, but it is null at runtime when the
+  // process fails to spawn (e.g. ENOENT), so the fallback is a real guard.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   return { stdout: result.stdout ?? Buffer.alloc(0), code: result.status ?? 1 }
 }
 
@@ -320,7 +323,7 @@ export async function checkoutGitBranch(branch: string): Promise<void> {
   const { stdout, stderr, code } = await runGit(['switch', '--', branch])
   if (code !== 0) {
     const message = (stderr || stdout).trim()
-    throw new Error(message || `git switch exited with code ${code}`)
+    throw new Error(message || `git switch exited with code ${String(code)}`)
   }
 }
 
@@ -449,7 +452,7 @@ function normalizeGitDiffText(text: string): string {
 export async function getGitStatusText(): Promise<string> {
   if (!isGitAvailable()) return 'git is not available on this system.'
   const { stdout, stderr, code } = await runGit(['status', '--short'])
-  if (code !== 0) return stderr.trim() || `git exited with code ${code}`
+  if (code !== 0) return stderr.trim() || `git exited with code ${String(code)}`
   return stdout.trim() || '(no output)'
 }
 
@@ -469,7 +472,7 @@ export async function getGitDiffText(path?: string, staged = false): Promise<str
   if (!isGitAvailable()) return 'git is not available on this system.'
   const args = ['diff', ...(staged ? ['--cached'] : []), '--', ...(path ? [path] : [])]
   const { stdout, stderr, code } = await runGit(args)
-  if (code !== 0) return stderr.trim() || `git exited with code ${code}`
+  if (code !== 0) return stderr.trim() || `git exited with code ${String(code)}`
 
   let combined = stdout.trimEnd()
 
@@ -505,22 +508,28 @@ export async function commitWithAttribution(
 
   if (stageAll) {
     const add = await runGit(['add', '-A'])
-    if (add.code !== 0) return add.stderr.trim() || `git add exited with code ${add.code}`
+    if (add.code !== 0) return add.stderr.trim() || `git add exited with code ${String(add.code)}`
   }
 
   const fullMessage = appendCommitAttribution(message, models)
   const { stdout, stderr, code } = await runGit(['commit', '-m', fullMessage])
   if (code !== 0) {
     // `git commit` reports "nothing to commit" and similar on stdout, not stderr.
-    return stderr.trim() || stdout.trim() || `git commit exited with code ${code}`
+    return stderr.trim() || stdout.trim() || `git commit exited with code ${String(code)}`
   }
   return stdout.trim() || '(committed)'
 }
 
 export async function getGitLogText(maxCount: number, path?: string): Promise<string> {
   if (!isGitAvailable()) return 'git is not available on this system.'
-  const args = ['log', `--max-count=${maxCount}`, '--oneline', '--', ...(path ? [path] : [])]
+  const args = [
+    'log',
+    `--max-count=${String(maxCount)}`,
+    '--oneline',
+    '--',
+    ...(path ? [path] : []),
+  ]
   const { stdout, stderr, code } = await runGit(args)
-  if (code !== 0) return stderr.trim() || `git exited with code ${code}`
+  if (code !== 0) return stderr.trim() || `git exited with code ${String(code)}`
   return stdout.trim() || '(no output)'
 }

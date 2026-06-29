@@ -1,6 +1,7 @@
 import '../../../tests/setup-dom.ts'
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { at } from '@shared/array-utils.ts'
 import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { ILink, ILinkProvider } from '@xterm/xterm'
@@ -32,7 +33,7 @@ function fakeTerm(lines: string[]): FakeTerm {
         viewportY: 0,
         length: lines.length,
         getLine: (i) =>
-          i >= 0 && i < lines.length ? { translateToString: () => lines[i]! } : undefined,
+          i >= 0 && i < lines.length ? { translateToString: () => at(lines, i) } : undefined,
       },
     },
   }
@@ -54,7 +55,8 @@ function apiWith(
 
 function provideLinksAt(term: FakeTerm, bufferLineNumber: number): ILink[] | undefined {
   let captured: ILink[] | undefined
-  term.provider!.provideLinks(bufferLineNumber, (links) => {
+  assert.ok(term.provider)
+  term.provider.provideLinks(bufferLineNumber, (links) => {
     captured = links
   })
   return captured
@@ -81,11 +83,12 @@ describe('terminal file links', () => {
     await new Promise((r) => setTimeout(r, 300))
 
     const provided = provideLinksAt(term, 1)
-    assert.equal(provided?.length, 1)
-    assert.equal(provided[0]!.text, 'src/main/index.ts')
+    assert.ok(provided)
+    assert.equal(provided.length, 1)
+    assert.equal(at(provided, 0).text, 'src/main/index.ts')
     // Range spans exactly the path: 1-based, end inclusive of the last cell.
-    assert.deepEqual(provided[0]!.range.start, { x: 6, y: 1 })
-    assert.deepEqual(provided[0]!.range.end, { x: 22, y: 1 })
+    assert.deepEqual(at(provided, 0).range.start, { x: 6, y: 1 })
+    assert.deepEqual(at(provided, 0).range.end, { x: 22, y: 1 })
     links.dispose()
   })
 
@@ -103,7 +106,7 @@ describe('terminal file links', () => {
     links.refresh()
     await new Promise((r) => setTimeout(r, 300))
 
-    const link = provideLinksAt(term, 1)![0]!
+    const link = at(provideLinksAt(term, 1) ?? [], 0)
     link.activate(new window.MouseEvent('click', { metaKey: true }), link.text)
     await new Promise((r) => setTimeout(r, 0))
 
@@ -123,7 +126,7 @@ describe('terminal file links', () => {
     links.refresh()
     await new Promise((r) => setTimeout(r, 300))
 
-    const link = provideLinksAt(term, 1)![0]!
+    const link = at(provideLinksAt(term, 1) ?? [], 0)
     assert.equal(link.text, 'src/foo.ts:42:7')
 
     // Plain click: no navigation.
