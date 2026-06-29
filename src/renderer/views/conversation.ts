@@ -666,7 +666,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     reviewHost.replaceChildren()
     const thread = getActiveThread(store)
     if (thread?.review) {
-      reviewHost.append(createReviewCardEl(thread.review))
+      reviewHost.append(createReviewCardEl(thread.review, api))
     }
   }
 
