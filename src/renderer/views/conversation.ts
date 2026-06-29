@@ -61,8 +61,8 @@ function createToolHeader(
   const children: (Node | string)[] = [el('span', { class: 'tool-name' }, label)]
   if (editStats) {
     const stats = [
-      el('span', { class: 'tool-stat tool-stat-add' }, `+${editStats.additions}`),
-      el('span', { class: 'tool-stat tool-stat-del' }, `-${editStats.deletions}`),
+      el('span', { class: 'tool-stat tool-stat-add' }, `+${String(editStats.additions)}`),
+      el('span', { class: 'tool-stat tool-stat-del' }, `-${String(editStats.deletions)}`),
     ]
     if (editPath) {
       // Clickable: reveal this file's diff in the Changes panel. Delegated
@@ -85,7 +85,7 @@ function createToolHeader(
     }
   }
   if (count !== undefined && count > 1) {
-    children.push(el('span', { class: 'tool-count' }, `×${count}`))
+    children.push(el('span', { class: 'tool-count' }, `×${String(count)}`))
   }
   children.push(el('span', { class: 'tool-status-icon', 'aria-label': status }, statusIcon(status)))
   return el('summary', { class: summaryClass }, ...children)
@@ -177,7 +177,8 @@ function createSubagentMessageEl(content: string, streaming: boolean, api: ApiCl
 }
 
 function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HTMLElement {
-  const session = tc.subagent!
+  const session = tc.subagent
+  if (!session) throw new Error('createSubagentToolCard requires tc.subagent')
   const status =
     tc.status === 'running' || session.status === 'running'
       ? 'running'
@@ -210,9 +211,11 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
       const isLast = i === session.messages.length - 1
       timeline.append(createSubagentMessageEl(msg.content, status === 'running' && isLast, api))
     }
-    if ((msg.toolCalls ?? []).length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
+    const innerToolCalls = msg.toolCalls ?? []
+    if (innerToolCalls.length > 0) {
       const toolsWrap = el('div', { class: 'subagent-inner-tools' })
-      for (const inner of msg.toolCalls ?? []) {
+      for (const inner of innerToolCalls) {
         toolsWrap.append(createInnerToolCard(inner))
       }
       timeline.append(toolsWrap)
@@ -291,7 +294,7 @@ function appendMessageContent(
   body: HTMLElement,
   msg: { role: string; content: string; images?: string[] },
   api: ApiClient,
-) {
+): void {
   if (msg.role === 'user' && msg.images?.length) {
     body.append(createMessageImages(msg.images))
   }
@@ -356,7 +359,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   let editingMessageId: string | null = null
   let editingDraft = ''
 
-  function startEditing(messageId: string) {
+  function startEditing(messageId: string): void {
     const threadId = store.getState().activeThreadId
     if (!threadId) return
     const thread = store.getState().threads.find((t) => t.id === threadId)
@@ -368,12 +371,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     setQueuePaused(store, threadId, true)
   }
 
-  function stopEditing() {
+  function stopEditing(): void {
     editingMessageId = null
     editingDraft = ''
   }
 
-  function cancelEditing() {
+  function cancelEditing(): void {
     const threadId = store.getState().activeThreadId
     stopEditing()
     if (!threadId) return
@@ -381,7 +384,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     drainMessageQueue(store, api, threadId)
   }
 
-  function saveEditing(messageId: string, sendNow: boolean) {
+  function saveEditing(messageId: string, sendNow: boolean): void {
     const threadId = store.getState().activeThreadId
     if (!threadId) return
     const text = editingDraft.trim()
@@ -394,7 +397,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
   function buildQueuedActions(messageId: string): HTMLElement {
     const editBtn = el('button', { class: 'queued-action queued-edit', type: 'button' }, 'Edit')
-    editBtn.addEventListener('click', () => startEditing(messageId))
+    editBtn.addEventListener('click', () => {
+      startEditing(messageId)
+    })
     const sendNowBtn = el(
       'button',
       { class: 'queued-action queued-send-now', type: 'button' },
@@ -432,19 +437,25 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       }
     })
     const sendBtn = el('button', { class: 'queued-action queued-send', type: 'button' }, 'Send')
-    sendBtn.addEventListener('click', () => saveEditing(messageId, false))
+    sendBtn.addEventListener('click', () => {
+      saveEditing(messageId, false)
+    })
     const sendNowBtn = el(
       'button',
       { class: 'queued-action queued-send-now', type: 'button' },
       'Send now',
     )
-    sendNowBtn.addEventListener('click', () => saveEditing(messageId, true))
+    sendNowBtn.addEventListener('click', () => {
+      saveEditing(messageId, true)
+    })
     const cancelBtn = el(
       'button',
       { class: 'queued-action queued-cancel', type: 'button' },
       'Cancel',
     )
-    cancelBtn.addEventListener('click', () => cancelEditing())
+    cancelBtn.addEventListener('click', () => {
+      cancelEditing()
+    })
     const wrap = el(
       'div',
       { class: 'message-queued-ui' },
@@ -476,7 +487,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     return item
   }
 
-  function renderQueuedPanel(threadId: string) {
+  function renderQueuedPanel(threadId: string): void {
     if (threadId !== store.getState().activeThreadId) return
     const thread = store.getState().threads.find((t) => t.id === threadId)
     const pending = thread?.pendingMessages ?? []
@@ -512,11 +523,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     return pinnedToBottom && Date.now() - userScrolledUpAt > USER_SCROLL_UP_DEBOUNCE_MS
   }
 
-  function updateScrollButton() {
+  function updateScrollButton(): void {
     scrollToBottomBtn.hidden = isNearBottom()
   }
 
-  function handleUserScroll() {
+  function handleUserScroll(): void {
     if (suppressScrollPinUpdate) return
 
     const scrollTop = list.scrollTop
@@ -547,7 +558,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     scrollToBottom(true)
   })
 
-  function setActivity(label: string | null) {
+  function setActivity(label: string | null): void {
     if (!label) {
       activityBar.hidden = true
       return
@@ -557,7 +568,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     scrollToBottom()
   }
 
-  function syncFromStore() {
+  function syncFromStore(): void {
     const tid = store.getState().activeThreadId
     if (!tid) {
       setActivity(null)
@@ -568,7 +579,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     setActivity(agentActivityLabel(thread, false))
   }
 
-  function scrollToBottom(force = false) {
+  function scrollToBottom(force = false): void {
     if (!force && !shouldAutoScroll()) return
     // The scrollable element is the messages list, not the mount root.
     suppressScrollPinUpdate = true
@@ -584,7 +595,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     updateScrollButton()
   }
 
-  function renderToolCards(msgEl: HTMLElement, toolCalls: ToolCall[], commandSummary?: string) {
+  function renderToolCards(
+    msgEl: HTMLElement,
+    toolCalls: ToolCall[],
+    commandSummary?: string,
+  ): void {
     const userExpandedGroups = new Set<string>()
     msgEl.querySelectorAll('.tool-card-group[open]').forEach((node) => {
       const el = node as HTMLElement
@@ -603,7 +618,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         if (id) userExpandedTools.add(id)
       })
 
-    msgEl.querySelectorAll('.tool-card').forEach((node) => node.remove())
+    msgEl.querySelectorAll('.tool-card').forEach((node) => {
+      node.remove()
+    })
 
     for (const item of buildToolCallDisplayItems(toolCalls)) {
       // LLM-only rollup: a small-model summary, when ready, replaces the generic
@@ -625,7 +642,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
   }
 
-  function appendMessageEl(threadId: string, msgId: string) {
+  function appendMessageEl(threadId: string, msgId: string): void {
     if (threadId !== store.getState().activeThreadId) return
     const thread = getThreadById(store, threadId)
     const msg = thread?.messages.find((m) => m.id === msgId)
@@ -650,11 +667,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     list.append(msgEl)
     hydrateRemoteArtifactImages(list, api)
     // Re-render any tool cards this message already carries (restored threads).
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
     renderToolCards(msgEl, msg.toolCalls ?? [], msg.commandSummary)
     scrollToBottom(msg.role === 'user')
   }
 
-  function syncTodoPanel() {
+  function syncTodoPanel(): void {
     todoHost.replaceChildren()
     const thread = getActiveThread(store)
     if (thread?.todos?.length) {
@@ -662,7 +680,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
   }
 
-  function syncReviewPanel() {
+  function syncReviewPanel(): void {
     reviewHost.replaceChildren()
     const thread = getActiveThread(store)
     if (thread?.review) {
@@ -670,33 +688,49 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
   }
 
-  function rebuildForThread() {
+  function rebuildForThread(): void {
     pinnedToBottom = true
     userScrolledUpAt = 0
     lastScrollTop = 0
     clear(list)
     const thread = getActiveThread(store)
-    thread?.messages.forEach((m) => appendMessageEl(store.getState().activeThreadId!, m.id))
+    if (thread) {
+      thread.messages.forEach((m) => {
+        appendMessageEl(thread.id, m.id)
+      })
+    }
     syncTodoPanel()
     syncReviewPanel()
-    renderQueuedPanel(store.getState().activeThreadId!)
+    if (thread) {
+      renderQueuedPanel(thread.id)
+    } else {
+      // No active thread: hide the queued panel (matches the prior call, which
+      // passed a null active id and fell through to the empty-state branch).
+      queuedHost.replaceChildren()
+      queuedHost.hidden = true
+    }
     updateScrollButton()
   }
 
-  function refreshToolCards(msgId: string) {
+  function refreshToolCards(msgId: string): void {
     const msg = store
       .getState()
       .threads.flatMap((t) => t.messages)
       .find((m) => m.id === msgId)
     const msgEl = list.querySelector(`[data-message-id="${msgId}"]`)
     if (!msg || !msgEl) return
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
     renderToolCards(msgEl as HTMLElement, msg.toolCalls ?? [], msg.commandSummary)
     scrollToBottom()
   }
 
   const unsubs = [
-    store.on('message_added', (tid, mid) => appendMessageEl(tid, mid)),
-    store.on('message_queued', (tid) => renderQueuedPanel(tid)),
+    store.on('message_added', (tid, mid) => {
+      appendMessageEl(tid, mid)
+    }),
+    store.on('message_queued', (tid) => {
+      renderQueuedPanel(tid)
+    }),
     store.on('message_token', (mid) => {
       const thread = getActiveThread(store)
       const msg = thread?.messages.find((m) => m.id === mid)
@@ -721,8 +755,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           attachCopyButton(body as HTMLElement, mid, store)
       }
     }),
-    store.on('tool_call_started', (mid) => refreshToolCards(mid)),
-    store.on('tool_call_updated', (mid) => refreshToolCards(mid)),
+    store.on('tool_call_started', (mid) => {
+      refreshToolCards(mid)
+    }),
+    store.on('tool_call_updated', (mid) => {
+      refreshToolCards(mid)
+    }),
     store.on('threads_changed', () => {
       rebuildForThread()
       syncFromStore()
@@ -753,11 +791,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   return () => {
     unbindFileLinks()
     unbindBrowserLinks()
-    unsubs.forEach((u) => u())
+    unsubs.forEach((u) => {
+      u()
+    })
   }
 }
 
-function attachCopyButton(body: HTMLElement, msgId: string, store: AppStore) {
+function attachCopyButton(body: HTMLElement, msgId: string, store: AppStore): void {
   const copyBtn = el('button', { class: 'msg-copy', 'aria-label': 'Copy response' }, 'Copy')
   copyBtn.addEventListener('click', () => {
     const current = store

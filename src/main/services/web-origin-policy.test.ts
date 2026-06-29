@@ -81,7 +81,7 @@ describe('fetchWithWebOriginPolicy abort composition', () => {
   // composed, and return a terminal 200 so there's no redirect follow-up.
   function stubFetch(): () => AbortSignal | null | undefined {
     let captured: AbortSignal | null | undefined
-    globalThis.fetch = (_url: unknown, init?: RequestInit) => {
+    globalThis.fetch = (_url: unknown, init?: RequestInit): Promise<Response> => {
       captured = init?.signal
       return Promise.resolve(new Response('ok', { status: 200 }))
     }

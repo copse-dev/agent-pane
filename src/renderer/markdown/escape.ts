@@ -13,7 +13,7 @@ const HTML_ESCAPES: Record<string, string> = {
  * quotes so untrusted text can never break out into an attribute context.
  */
 export function escapeHtml(text: string): string {
-  return text.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch]!)
+  return text.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch] ?? ch)
 }
 
 /**
@@ -22,5 +22,5 @@ export function escapeHtml(text: string): string {
  * in one order-independent pass.
  */
 export function escapeMermaidHtml(text: string): string {
-  return text.replace(/[&<"']/g, (ch) => HTML_ESCAPES[ch]!)
+  return text.replace(/[&<"']/g, (ch) => HTML_ESCAPES[ch] ?? ch)
 }

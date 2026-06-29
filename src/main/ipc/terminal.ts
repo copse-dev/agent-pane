@@ -45,7 +45,7 @@ export function initTerminal(win: BrowserWindow): () => void {
     destroyTerminalSession(id, event.sender.id)
   })
 
-  const onWindowClose = () => {
+  const onWindowClose = (): void => {
     destroyAllTerminalSessions()
   }
   win.on('close', onWindowClose)

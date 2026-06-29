@@ -11,7 +11,9 @@ import {
 const req: ApprovalRequest = { title: 'Run shell', body: 'rm -rf build', type: 'shell' }
 
 describe('requestApproval pluggable transport', () => {
-  afterEach(() => setApprovalHandler(null))
+  afterEach(() => {
+    setApprovalHandler(null)
+  })
 
   it('denies (without hanging) when no handler is registered', async () => {
     setApprovalHandler(null)
@@ -37,7 +39,10 @@ describe('requestApproval pluggable transport', () => {
 })
 
 describe('startDockAttention', () => {
-  function fakeDock() {
+  function fakeDock(): {
+    dock: DockAttention
+    calls: { bounce: Array<string | undefined>; cancel: number[] }
+  } {
     const calls: { bounce: Array<string | undefined>; cancel: number[] } = {
       bounce: [],
       cancel: [],

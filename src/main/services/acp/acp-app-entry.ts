@@ -56,7 +56,9 @@ export async function runAcpAgentMode(): Promise<void> {
     )
 
     // Bridge ACP session/cancel to runAgent's abort (it keys aborts by thread id).
-    const onAbort = () => abortAgent(ctx.sessionId)
+    const onAbort = (): void => {
+      abortAgent(ctx.sessionId)
+    }
     ctx.signal.addEventListener('abort', onAbort, { once: true })
 
     try {

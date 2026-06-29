@@ -29,7 +29,7 @@ export function formatReadFilePageFooter(meta: ReadFilePageMeta, charTruncated: 
   const lines: string[] = []
   if (meta.truncated) {
     lines.push(
-      `[Showing lines ${meta.startLine}–${meta.endLine} of ${meta.totalLines}. Call read_file again with start_line=${meta.nextStartLine ?? meta.endLine + 1} to continue.]`,
+      `[Showing lines ${String(meta.startLine)}–${String(meta.endLine)} of ${String(meta.totalLines)}. Call read_file again with start_line=${String(meta.nextStartLine ?? meta.endLine + 1)} to continue.]`,
     )
   }
   if (charTruncated) {

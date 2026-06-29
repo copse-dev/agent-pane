@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { spawnSync } from 'node:child_process'
+import { spawnSync, type SpawnSyncReturns } from 'node:child_process'
 import {
   classifyGitBlob,
   getDefaultBranch,
@@ -102,7 +102,7 @@ describe('getGitDiffText untracked files', { skip: !gitOk && 'git not installed'
   let repo = ''
   let restore: (() => void) | undefined
 
-  const git = (...args: string[]) => spawnSync('git', args, { cwd: repo })
+  const git = (...args: string[]): SpawnSyncReturns<Buffer> => spawnSync('git', args, { cwd: repo })
 
   before(async () => {
     repo = await mkdtemp(join(tmpdir(), 'copse-git-diff-'))
@@ -140,7 +140,8 @@ describe('getGitFileDiff staged blob', { skip: !gitOk && 'git not installed' }, 
   let repo = ''
   let restore: (() => void) | undefined
 
-  const git = (...args: string[]) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
+  const git = (...args: string[]): SpawnSyncReturns<string> =>
+    spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
 
   before(async () => {
     repo = await mkdtemp(join(tmpdir(), 'copse-git-file-diff-'))
@@ -176,7 +177,7 @@ describe('getGitFileDiff image preview', { skip: !gitOk && 'git not installed' }
   let repo = ''
   let restore: (() => void) | undefined
 
-  const git = (...args: string[]) => spawnSync('git', args, { cwd: repo })
+  const git = (...args: string[]): SpawnSyncReturns<Buffer> => spawnSync('git', args, { cwd: repo })
 
   before(async () => {
     repo = await mkdtemp(join(tmpdir(), 'copse-git-image-'))
@@ -240,7 +241,8 @@ describe('getGitFileDiff unstaged blob', { skip: !gitOk && 'git not installed' }
   let repo = ''
   let restore: (() => void) | undefined
 
-  const git = (...args: string[]) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
+  const git = (...args: string[]): SpawnSyncReturns<string> =>
+    spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
 
   before(async () => {
     repo = await mkdtemp(join(tmpdir(), 'copse-git-unstaged-diff-'))
@@ -323,7 +325,8 @@ describe('getGitFileDiff subdirectory workspace', { skip: !gitOk && 'git not ins
   let repo = ''
   let restore: (() => void) | undefined
 
-  const git = (...args: string[]) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
+  const git = (...args: string[]): SpawnSyncReturns<string> =>
+    spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
 
   before(async () => {
     repo = await mkdtemp(join(tmpdir(), 'copse-git-subdir-diff-'))
@@ -364,7 +367,8 @@ describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
   let repo = ''
   let restore: (() => void) | undefined
 
-  const git = (...args: string[]) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
+  const git = (...args: string[]): SpawnSyncReturns<string> =>
+    spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
 
   afterEach(() => {
     restore?.()

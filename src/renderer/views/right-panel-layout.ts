@@ -4,7 +4,7 @@ import type { AppStore } from '@shared/store/store.ts'
 // chosen from the titlebar buttons; this controller just keeps the matching host
 // elements visible for the current `rightPanelMode`.
 export function mountRightPanelLayout(store: AppStore): () => void {
-  function syncLayout() {
+  function syncLayout(): void {
     const mode = store.getState().rightPanelMode
     const isExplorer = mode === 'explorer'
     const isTerminal = mode === 'terminal'
@@ -43,5 +43,9 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     store.on('files_pane_changed', syncLayout),
   ]
 
-  return () => unsubs.forEach((u) => u())
+  return () => {
+    unsubs.forEach((u) => {
+      u()
+    })
+  }
 }

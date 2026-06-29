@@ -96,9 +96,15 @@ describe('createLocalOpenAIProvider', () => {
           }
         }
       }
-    ).client.chat.completions.create = (request) => {
+    ).client.chat.completions.create = (
+      request,
+    ): AsyncIterable<{
+      choices: Array<{ delta?: { content?: string }; finish_reason?: string }>
+    }> => {
       captured.request = request
-      return (async function* () {
+      return (async function* (): AsyncGenerator<{
+        choices: Array<{ delta?: { content?: string }; finish_reason?: string }>
+      }> {
         yield { choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }
       })()
     }

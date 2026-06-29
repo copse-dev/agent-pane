@@ -172,7 +172,7 @@ function main(): void {
   // so keep all changed shots — including sub-threshold micro-diffs.
   if (process.env['UPDATE_SCREENSHOTS_LABEL'] === 'true') {
     console.log(
-      `screenshot filter: update-screenshots label present — keeping all ${changed.length} changed shot(s) unfiltered`,
+      `screenshot filter: update-screenshots label present — keeping all ${String(changed.length)} changed shot(s) unfiltered`,
     )
     emitOutput('ignored-count', '0')
     emitOutput('kept-count', String(changed.length))
@@ -185,20 +185,22 @@ function main(): void {
   const kept = verdicts.filter((v) => v.decision === 'keep')
 
   console.log(
-    `screenshot filter: ${changed.length} changed, ${kept.length} kept (real), ` +
-      `${ignored.length} ignored (noise) ` +
-      `[color-threshold=${COLOR_THRESHOLD}, ignore-ratio=${IGNORE_RATIO}, min-pixels=${IGNORE_MIN_PIXELS}]`,
+    `screenshot filter: ${String(changed.length)} changed, ${String(kept.length)} kept (real), ` +
+      `${String(ignored.length)} ignored (noise) ` +
+      `[color-threshold=${String(COLOR_THRESHOLD)}, ignore-ratio=${String(IGNORE_RATIO)}, min-pixels=${String(IGNORE_MIN_PIXELS)}]`,
   )
 
   for (const v of kept) {
     const detail =
-      v.diffPixels !== undefined ? ` (${v.diffPixels} px, ${pct(v.ratio ?? 0)})` : ` (${v.reason})`
+      v.diffPixels !== undefined
+        ? ` (${String(v.diffPixels)} px, ${pct(v.ratio ?? 0)})`
+        : ` (${v.reason})`
     console.log(`  keep   ${v.path}${detail}`)
   }
 
   // Revert the noise shots so the commit job never stages them.
   for (const v of ignored) {
-    console.log(`  ignore ${v.path} (${v.diffPixels} px, ${pct(v.ratio)})`)
+    console.log(`  ignore ${v.path} (${String(v.diffPixels)} px, ${pct(v.ratio)})`)
     if (!DRY_RUN) git(['checkout', 'HEAD', '--', v.path])
   }
 

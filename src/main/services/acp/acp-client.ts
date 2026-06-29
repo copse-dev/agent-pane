@@ -46,7 +46,7 @@ export interface AcpAgentSpawnConfig {
   cwd: string
 }
 
-const UNSUPPORTED = (method: string) => () =>
+const UNSUPPORTED = (method: string) => (): Promise<never> =>
   Promise.reject(new Error(`Client capability not enabled: ${method}`))
 
 /**
@@ -81,20 +81,22 @@ export async function runAcpAgentPrompt(
   const readable = Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>
   const stream = ndJsonStream(writable, readable)
 
+  const readTextFile = handlers.readTextFile
+  const writeTextFile = handlers.writeTextFile
   const app = client({ name: 'copse' })
     .onRequest(methods.client.session.requestPermission, (ctx) =>
       handlers.requestPermission(ctx.params),
     )
     .onRequest(
       methods.client.fs.readTextFile,
-      handlers.readTextFile
-        ? (ctx) => handlers.readTextFile!(ctx.params)
+      readTextFile
+        ? (ctx): Promise<ReadTextFileResponse> => readTextFile(ctx.params)
         : UNSUPPORTED('fs/read_text_file'),
     )
     .onRequest(
       methods.client.fs.writeTextFile,
-      handlers.writeTextFile
-        ? (ctx) => handlers.writeTextFile!(ctx.params)
+      writeTextFile
+        ? (ctx): Promise<WriteTextFileResponse> => writeTextFile(ctx.params)
         : UNSUPPORTED('fs/write_text_file'),
     )
 
@@ -111,7 +113,8 @@ export async function runAcpAgentPrompt(
       })
 
       return ctx.buildSession(config.cwd).withSession(async (session) => {
-        const cancel = () => void ctx.notify('session/cancel', { sessionId: session.sessionId })
+        const cancel = (): void =>
+          void ctx.notify('session/cancel', { sessionId: session.sessionId })
         if (signal) {
           if (signal.aborted) cancel()
           else signal.addEventListener('abort', cancel, { once: true })

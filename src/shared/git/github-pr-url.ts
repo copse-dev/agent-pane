@@ -16,9 +16,13 @@ export function parseGithubPrUrl(rawUrl: string): GithubPrRef | null {
     if (url.hostname.replace(/^www\./i, '').toLowerCase() !== 'github.com') return null
     const match = url.pathname.match(GITHUB_PR_PATH_RE)
     if (!match) return null
-    const owner = match[1]!
-    const repo = match[2]!.replace(/\.git$/i, '')
-    const number = Number.parseInt(match[3]!, 10)
+    const [, ownerGroup, repoGroup, numberGroup] = match
+    if (ownerGroup === undefined || repoGroup === undefined || numberGroup === undefined) {
+      return null
+    }
+    const owner = ownerGroup
+    const repo = repoGroup.replace(/\.git$/i, '')
+    const number = Number.parseInt(numberGroup, 10)
     if (!Number.isFinite(number) || number <= 0) return null
     return { owner, repo, number, url: trimmed }
   } catch {
@@ -37,7 +41,7 @@ export function extractGithubPrUrls(text: string): GithubPrRef[] {
     const raw = match[0].replace(/[.,;:)\]>]+$/, '')
     const parsed = parseGithubPrUrl(raw)
     if (!parsed) continue
-    const key = `${parsed.owner}/${parsed.repo}#${parsed.number}`
+    const key = `${parsed.owner}/${parsed.repo}#${String(parsed.number)}`
     if (seen.has(key)) continue
     seen.add(key)
     refs.push(parsed)
@@ -47,5 +51,5 @@ export function extractGithubPrUrls(text: string): GithubPrRef[] {
 
 /** Stable key for deduplicating PR references across the UI. */
 export function githubPrKey(ref: Pick<GithubPrRef, 'owner' | 'repo' | 'number'>): string {
-  return `${ref.owner}/${ref.repo}#${ref.number}`
+  return `${ref.owner}/${ref.repo}#${String(ref.number)}`
 }

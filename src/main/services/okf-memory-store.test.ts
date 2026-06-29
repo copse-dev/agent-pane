@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { at } from '@shared/array-utils.ts'
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -84,7 +85,7 @@ describe('okf-memory-store', () => {
 
     const memories = loadMemories()
     assert.equal(memories.length, 1)
-    assert.match(memories[0]!.body, /second version/)
+    assert.match(at(memories, 0).body, /second version/)
     assert.equal(readdirSync(memoriesDir()).length, 1)
   })
 

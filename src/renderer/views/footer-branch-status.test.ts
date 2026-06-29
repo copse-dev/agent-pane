@@ -7,6 +7,13 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitBranchInfo, GitBranchStatus } from '@shared/types/git.ts'
 import { mountFooterBranchStatus } from './footer-branch-status.ts'
 
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters -- the generic return type lets call sites request the concrete element type
+function requireEl<E extends Element>(root: ParentNode, selector: string): E {
+  const el = root.querySelector<E>(selector)
+  if (!el) throw new Error(`Expected element matching "${selector}"`)
+  return el
+}
+
 function thread(branch?: string, withMessages = false): Thread {
   const value: Thread = {
     id: 'thread-1',
@@ -61,7 +68,7 @@ async function settle(): Promise<void> {
 }
 
 async function openBranchMenu(host: HTMLElement): Promise<void> {
-  host.querySelector<HTMLButtonElement>('.branch-picker-trigger')!.click()
+  requireEl<HTMLButtonElement>(host, '.branch-picker-trigger').click()
   await settle()
 }
 
@@ -94,10 +101,10 @@ describe('footer branch status', () => {
     )
     await settle()
 
-    const button = host.querySelector<HTMLButtonElement>('.footer-branch-status')!
+    const button = requireEl<HTMLButtonElement>(host, '.footer-branch-status')
     assert.equal(button.querySelector('.footer-branch-label')?.textContent, 'feature/footer-copy')
     assert.ok(button.classList.contains('is-copyable'))
-    assert.ok(host.querySelector<HTMLElement>('.branch-picker-chevron')!.hidden)
+    assert.ok(requireEl<HTMLElement>(host, '.branch-picker-chevron').hidden)
 
     button.click()
     await settle()
@@ -142,7 +149,7 @@ describe('footer branch status', () => {
     )
     await settle()
 
-    const button = host.querySelector<HTMLButtonElement>('.footer-branch-status')!
+    const button = requireEl<HTMLButtonElement>(host, '.footer-branch-status')
     assert.equal(button.querySelector('.footer-branch-label')?.textContent, 'PR #12')
     assert.ok(button.classList.contains('is-link'))
     assert.ok(!button.classList.contains('is-copyable'))
@@ -179,9 +186,9 @@ describe('footer branch status', () => {
     )
     await settle()
 
-    const picker = host.querySelector<HTMLElement>('.branch-picker')!
+    const picker = requireEl<HTMLElement>(host, '.branch-picker')
     assert.ok(picker.classList.contains('is-picker-mode'))
-    assert.ok(!host.querySelector<HTMLElement>('.branch-picker-chevron')!.hidden)
+    assert.ok(!requireEl<HTMLElement>(host, '.branch-picker-chevron').hidden)
 
     await openBranchMenu(host)
 

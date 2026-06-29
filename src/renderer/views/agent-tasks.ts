@@ -2,6 +2,7 @@ import { el } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { shellCommandLabel } from '@shared/tools/tool-display.ts'
+import { at } from '@shared/array-utils.ts'
 
 // How many finished tasks to keep around before the oldest are dropped. The
 // running task (and recent history) stay viewable; ancient ones are pruned so
@@ -69,24 +70,24 @@ export function mountAgentTasks(
   const order: string[] = []
   let selectedId: string | null = null
 
-  function syncSectionVisibility() {
+  function syncSectionVisibility(): void {
     section.hidden = tasks.size === 0
   }
 
-  function showTaskView(show: boolean) {
+  function showTaskView(show: boolean): void {
     viewerParent?.classList.toggle('showing-agent-task', show)
   }
 
-  function setStatus(task: AgentTask, status: TaskStatus) {
+  function setStatus(task: AgentTask, status: TaskStatus): void {
     task.status = status
     task.tab.dataset['status'] = status
   }
 
-  function scrollPanelToBottom(task: AgentTask) {
+  function scrollPanelToBottom(task: AgentTask): void {
     task.panel.scrollTop = task.panel.scrollHeight
   }
 
-  function selectTask(id: string) {
+  function selectTask(id: string): void {
     const task = tasks.get(id)
     if (!task) return
     selectedId = id
@@ -101,7 +102,7 @@ export function mountAgentTasks(
     store.emit('agent_task_selected', id)
   }
 
-  function clearSelection() {
+  function clearSelection(): void {
     if (selectedId === null) return
     selectedId = null
     for (const t of tasks.values()) {
@@ -112,9 +113,9 @@ export function mountAgentTasks(
     store.emit('agent_task_selected', null)
   }
 
-  function prune() {
+  function prune(): void {
     while (order.length > MAX_TASKS) {
-      const oldestId = order[0]!
+      const oldestId = at(order, 0)
       const oldest = tasks.get(oldestId)
       // Never prune a still-running or currently-viewed task.
       if (oldest && (oldest.status === 'running' || oldest.id === selectedId)) break
@@ -127,26 +128,23 @@ export function mountAgentTasks(
     }
   }
 
-  function addTask(id: string, rawCommand: string) {
+  function addTask(id: string, rawCommand: string): void {
     if (tasks.has(id)) return
     const command = shellCommandLabel(rawCommand)
 
     const dot = el('span', { class: 'agent-task-dot', 'aria-hidden': 'true' })
     const label = el('span', { class: 'agent-task-label', title: command }, command)
-    const tab = el(
-      'button',
-      { type: 'button', class: 'agent-task-tab' },
-      dot,
-      label,
-    ) as HTMLButtonElement
+    const tab = el('button', { type: 'button', class: 'agent-task-tab' }, dot, label)
     const panel = el('pre', {
       class: 'agent-task-output-panel',
       'data-task-id': id,
-    }) as HTMLPreElement
+    })
     panel.hidden = true
 
     const task: AgentTask = { id, command, status: 'running', output: '', tab, panel }
-    tab.addEventListener('click', () => selectTask(id))
+    tab.addEventListener('click', () => {
+      selectTask(id)
+    })
 
     setStatus(task, 'running')
     tasks.set(id, task)
@@ -157,7 +155,7 @@ export function mountAgentTasks(
     syncSectionVisibility()
   }
 
-  function appendOutput(id: string | null, data: string) {
+  function appendOutput(id: string | null, data: string): void {
     const task = id ? tasks.get(id) : latestRunningTask()
     if (!task) return
     const clean = stripAnsi(data)
@@ -174,7 +172,7 @@ export function mountAgentTasks(
     if (showing && atBottom) scrollPanelToBottom(task)
   }
 
-  function completeTask(id: string, result: string, isError: boolean) {
+  function completeTask(id: string, result: string, isError: boolean): void {
     const task = tasks.get(id)
     if (!task) return
     setStatus(task, isError ? 'error' : 'done')
@@ -189,13 +187,13 @@ export function mountAgentTasks(
 
   function latestRunningTask(): AgentTask | null {
     for (let i = order.length - 1; i >= 0; i--) {
-      const task = tasks.get(order[i]!)
+      const task = tasks.get(at(order, i))
       if (task && task.status === 'running') return task
     }
     return null
   }
 
-  function clearAll() {
+  function clearAll(): void {
     clearSelection()
     for (const task of tasks.values()) {
       task.tab.remove()

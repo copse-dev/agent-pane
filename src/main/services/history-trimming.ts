@@ -103,7 +103,7 @@ export function createTrimNotifier(wasTrimmedInitially: boolean): {
   notifyTrimmed: (send: () => void) => void
 } {
   let trimNoticeSent = wasTrimmedInitially
-  const notifyTrimmed = (send: () => void) => {
+  const notifyTrimmed = (send: () => void): void => {
     if (trimNoticeSent) return
     trimNoticeSent = true
     send()

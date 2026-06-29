@@ -20,6 +20,7 @@ function estimateUserContentTokens(content: UserContent): number {
   let total = 0
   for (const block of content) {
     if (block.type === 'text') total += block.text.length / 4
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- explicit guard so future non-image block types are not miscounted as images
     else if (block.type === 'image') total += ESTIMATED_IMAGE_TOKENS
   }
   return total

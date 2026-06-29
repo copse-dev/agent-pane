@@ -7,7 +7,7 @@ export const browserNavigateTool = defineTool({
   description:
     'Open a URL in the built-in headless browser. Loopback (localhost) targets run automatically; other origins prompt for approval. Returns the resolved title and URL.',
   parameters: z.object({
-    url: z.string().url().describe('http/https URL to open'),
+    url: z.url().describe('http/https URL to open'),
     newTab: z.boolean().optional().describe('Open in a new tab instead of reusing the active one'),
     viewId: z.string().optional().describe('Target tab id (defaults to the last used tab)'),
   }),

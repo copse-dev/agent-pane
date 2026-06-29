@@ -8,6 +8,7 @@ import { readFileLimitsForSubagent } from '@shared/agent/read-file-limits.ts'
 import type {
   LLMProvider,
   LLMMessage,
+  LLMTool,
   ModelUsage,
   StreamChunk,
   ToolExecuteResult,
@@ -40,7 +41,7 @@ export interface CiInvestigatorSubagentResult {
   usage: ModelUsage
 }
 
-function filterCiTools(registry: ToolRegistry) {
+function filterCiTools(registry: ToolRegistry): LLMTool[] {
   const names = new Set<string>(CI_INVESTIGATOR_TOOL_NAMES)
   return registry.toLLMTools().filter((t) => names.has(t.name))
 }
@@ -60,7 +61,7 @@ async function executeCiTool(
 function buildCiTask(focus: string | undefined, prNumber: number | undefined): string {
   const parts = [
     prNumber !== undefined
-      ? `Investigate the failing CI checks for pull request #${prNumber}.`
+      ? `Investigate the failing CI checks for pull request #${String(prNumber)}.`
       : 'Investigate the failing CI checks for the pull request on the current branch.',
   ]
   if (focus?.trim()) parts.push('', `Focus: ${focus.trim()}`)
@@ -92,7 +93,7 @@ export async function runCiInvestigatorSubagent(
   const userTask = buildCiTask(focus, prNumber)
   const prompt =
     prNumber !== undefined
-      ? `Investigate CI failures for PR #${prNumber}`
+      ? `Investigate CI failures for PR #${String(prNumber)}`
       : 'Investigate CI failures for the current branch'
 
   const subagentMessages: LLMMessage[] = [

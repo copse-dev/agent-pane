@@ -19,7 +19,7 @@ describe('isTextBlockAttachment', () => {
     assert.equal(isTextBlockAttachment('line one\nline two'), true)
   })
 
-  it(`accepts long single-line text (>= ${TEXT_BLOCK_MIN_CHARS} chars)`, () => {
+  it(`accepts long single-line text (>= ${String(TEXT_BLOCK_MIN_CHARS)} chars)`, () => {
     assert.equal(isTextBlockAttachment('a'.repeat(TEXT_BLOCK_MIN_CHARS)), true)
   })
 
@@ -52,7 +52,7 @@ describe('buildTextWithAttachments', () => {
   })
 
   it('caps oversized attachment content so a single paste cannot overflow context', () => {
-    const huge = Array.from({ length: 5000 }, (_, i) => `line ${i}`).join('\n')
+    const huge = Array.from({ length: 5000 }, (_, i) => `line ${String(i)}`).join('\n')
     assert.ok(huge.length > ATTACHMENT_MAX_CHARS)
     const result = buildTextWithAttachments('review', [{ path: 'big.log', content: huge }])
     assert.ok(result.length < huge.length)
@@ -71,7 +71,7 @@ describe('truncateAttachmentContent', () => {
   })
 
   it('keeps head and tail and records what was dropped when over the cap', () => {
-    const content = Array.from({ length: 200 }, (_, i) => `row ${i}`).join('\n')
+    const content = Array.from({ length: 200 }, (_, i) => `row ${String(i)}`).join('\n')
     const out = truncateAttachmentContent(content, 400)
     assert.ok(out.length <= content.length)
     assert.match(out, /^row 0\b/)
@@ -80,7 +80,7 @@ describe('truncateAttachmentContent', () => {
   })
 
   it('cuts on line boundaries (no split partial lines around the marker)', () => {
-    const content = Array.from({ length: 100 }, (_, i) => `value-${i}`).join('\n')
+    const content = Array.from({ length: 100 }, (_, i) => `value-${String(i)}`).join('\n')
     const out = truncateAttachmentContent(content, 300)
     const [beforeMarker, afterMarker] = out.split(/\n\n… \[Copse trimmed[^\n]*\] …\n\n/)
     assert.ok(beforeMarker && afterMarker)

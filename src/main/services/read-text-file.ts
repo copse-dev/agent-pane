@@ -178,8 +178,8 @@ export async function readTextLineRange(
     const joined = selected.join('\n')
     if (joined.length > opts.maxChars) {
       const over = joined.length - opts.maxChars
-      const last = selected.pop()!
-      const trimmedLast = last.slice(0, Math.max(0, last.length - over))
+      selected.pop() // remove the `line` just pushed above; re-add a trimmed copy below
+      const trimmedLast = line.slice(0, Math.max(0, line.length - over))
       if (trimmedLast.length > 0) selected.push(trimmedLast)
       charTruncated = true
     }

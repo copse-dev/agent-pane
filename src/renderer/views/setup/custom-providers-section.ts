@@ -131,14 +131,18 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
       label,
       remove,
     )
-    remove.addEventListener('click', () => row.remove())
+    remove.addEventListener('click', () => {
+      row.remove()
+    })
     rows.append(row)
   }
 
   for (const model of initial) addRow(model)
 
   const addBtn = el('button', { type: 'button', class: 'provider-add-model' }, '+ Add model')
-  addBtn.addEventListener('click', () => addRow())
+  addBtn.addEventListener('click', () => {
+    addRow()
+  })
 
   const header = el(
     'div',
@@ -267,7 +271,7 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
 
     const test = el('button', { type: 'button' }, 'Test key')
     test.addEventListener('click', () => {
-      void (async () => {
+      void (async (): Promise<void> => {
         const key = input.value.trim()
         if (!key) {
           status.textContent = '✗ Enter a key first'
@@ -333,7 +337,7 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
     const fetchBtn = el('button', { type: 'button' }, 'Fetch models')
     const fetchStatus = el('span', { class: 'key-status' })
     fetchBtn.addEventListener('click', () => {
-      void (async () => {
+      void (async (): Promise<void> => {
         fetchStatus.textContent = 'Fetching…'
         fetchStatus.className = 'key-status'
         const key = (pendingKeys.get(provider.id) ?? '').trim()
@@ -348,7 +352,7 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
             fetchStatus.className = 'key-status err'
             return
           }
-          fetchStatus.textContent = `✓ ${res.count} model(s) imported with pricing`
+          fetchStatus.textContent = `✓ ${String(res.count)} model(s) imported with pricing`
           fetchStatus.className = 'key-status ok'
           await refresh()
           return
@@ -368,7 +372,7 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
             ...(m.contextLength ? { contextWindow: m.contextLength } : {}),
           })),
         )
-        fetchStatus.textContent = `✓ ${res.models.length} model(s) — review and Save`
+        fetchStatus.textContent = `✓ ${String(res.models.length)} model(s) — review and Save`
         fetchStatus.className = 'key-status ok'
       })()
     })
@@ -432,7 +436,7 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
     )
     const saveStatus = el('span', { class: 'key-status' })
     saveBtn.addEventListener('click', () => {
-      void (async () => {
+      void (async (): Promise<void> => {
         let extraBody: Record<string, unknown> | undefined
         const raw = extraBodyArea.value.trim()
         if (raw) {
@@ -472,7 +476,7 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
     if (!provider.builtin) {
       const del = el('button', { type: 'button', class: 'provider-delete' }, 'Delete')
       del.addEventListener('click', () => {
-        void (async () => {
+        void (async (): Promise<void> => {
           await api.settings.deleteExtraProvider(provider.id)
           pendingKeys.delete(provider.id)
           selected = 'openai'
@@ -538,7 +542,7 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
     })
 
     addBtn.addEventListener('click', () => {
-      void (async () => {
+      void (async (): Promise<void> => {
         const baseUrl = urlInput.value.trim()
         if (!baseUrl) {
           status.textContent = '✗ Enter a base URL'

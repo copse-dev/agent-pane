@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { at } from '@shared/array-utils.ts'
 import {
   parseMcpConfig,
   mergeMcpConfigs,
@@ -21,7 +22,8 @@ describe('parseMcpConfig', () => {
     )
     assert.equal(errors.length, 0)
     assert.equal(servers.length, 1)
-    const s = servers[0]!
+    const s = servers[0]
+    assert.ok(s)
     assert.equal(s.name, 'fs')
     assert.equal(s.transport, 'stdio')
     assert.equal(s.command, 'npx')
@@ -37,16 +39,16 @@ describe('parseMcpConfig', () => {
         },
       }),
     )
-    assert.equal(servers[0]!.transport, 'http')
-    assert.equal(servers[0]!.url, 'https://x.test/mcp')
-    assert.deepEqual(servers[0]!.headers, { Authorization: 'Bearer t' })
+    assert.equal(at(servers, 0).transport, 'http')
+    assert.equal(at(servers, 0).url, 'https://x.test/mcp')
+    assert.deepEqual(at(servers, 0).headers, { Authorization: 'Bearer t' })
   })
 
   it('honors explicit type=http even with a command-less entry', () => {
     const { servers } = parseMcpConfig(
       JSON.stringify({ mcpServers: { r: { type: 'http', url: 'https://x.test/mcp' } } }),
     )
-    assert.equal(servers[0]!.transport, 'http')
+    assert.equal(at(servers, 0).transport, 'http')
   })
 
   it('reads the legacy { servers: [...] } shape', () => {
@@ -54,15 +56,15 @@ describe('parseMcpConfig', () => {
       JSON.stringify({ servers: [{ name: 'old', command: 'node', args: ['s.js'] }] }),
     )
     assert.equal(errors.length, 0)
-    assert.equal(servers[0]!.name, 'old')
-    assert.equal(servers[0]!.transport, 'stdio')
+    assert.equal(at(servers, 0).name, 'old')
+    assert.equal(at(servers, 0).transport, 'stdio')
   })
 
   it('captures the disabled flag', () => {
     const { servers } = parseMcpConfig(
       JSON.stringify({ mcpServers: { s: { command: 'x', disabled: true } } }),
     )
-    assert.equal(servers[0]!.disabled, true)
+    assert.equal(at(servers, 0).disabled, true)
   })
 
   it('ignores an unknown "trusted" flag (no blanket auto-run)', () => {
@@ -71,7 +73,9 @@ describe('parseMcpConfig', () => {
     )
     assert.equal(errors.length, 0)
     assert.equal(servers.length, 1)
-    assert.equal('trusted' in servers[0]!, false)
+    const [server] = servers
+    assert.ok(server)
+    assert.equal('trusted' in server, false)
   })
 
   it('reports an error for entries with neither command nor url', () => {
@@ -83,7 +87,7 @@ describe('parseMcpConfig', () => {
   it('reports invalid JSON', () => {
     const { servers, errors } = parseMcpConfig('{ not json', 'x.json')
     assert.equal(servers.length, 0)
-    assert.match(errors[0]!, /Invalid JSON/)
+    assert.match(errors[0] ?? '', /Invalid JSON/)
   })
 
   it('flags a config with no mcpServers or servers', () => {
@@ -101,7 +105,7 @@ describe('mergeMcpConfigs', () => {
     ]
     const merged = mergeMcpConfigs([project, global])
     assert.equal(merged.length, 2)
-    assert.equal(merged.find((m) => m.name === 'dup')!.command, 'project')
+    assert.equal(merged.find((m) => m.name === 'dup')?.command, 'project')
   })
 })
 

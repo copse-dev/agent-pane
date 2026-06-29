@@ -114,7 +114,9 @@ describe('assertWorkspaceWriteTarget (symlink write escape)', () => {
     // resolveWorkspacePath still returns an in-workspace-looking path...
     const resolved = resolveWorkspacePath('deploy.conf')
     // ...but the write guard must refuse to follow the escaping symlink.
-    assert.throws(() => assertWorkspaceWriteTarget(resolved), /symlink that escapes/)
+    assert.throws(() => {
+      assertWorkspaceWriteTarget(resolved)
+    }, /symlink that escapes/)
   })
 
   it('rejects writing through a symlinked parent directory that points outside', () => {
@@ -123,10 +125,9 @@ describe('assertWorkspaceWriteTarget (symlink write escape)', () => {
     symlinkSync(outside, join(ws, 'link'), 'dir')
     registerAllowedWorkspaceRoot(ws)
     cleanupRoot = setWorkspaceRootForTest(ws)
-    assert.throws(
-      () => assertWorkspaceWriteTarget(join(realpathSync.native(ws), 'link', 'x.txt')),
-      /escapes the workspace|outside workspace/,
-    )
+    assert.throws(() => {
+      assertWorkspaceWriteTarget(join(realpathSync.native(ws), 'link', 'x.txt'))
+    }, /escapes the workspace|outside workspace/)
   })
 
   it('allows a symlink whose target stays inside the workspace', () => {
@@ -135,7 +136,9 @@ describe('assertWorkspaceWriteTarget (symlink write escape)', () => {
     symlinkSync(join(ws, 'real', 'file.ts'), join(ws, 'alias.ts'))
     registerAllowedWorkspaceRoot(ws)
     cleanupRoot = setWorkspaceRootForTest(ws)
-    assert.doesNotThrow(() => assertWorkspaceWriteTarget(join(realpathSync.native(ws), 'alias.ts')))
+    assert.doesNotThrow(() => {
+      assertWorkspaceWriteTarget(join(realpathSync.native(ws), 'alias.ts'))
+    })
   })
 
   it('allows creating an ordinary new file (no symlink in the path)', () => {
@@ -143,9 +146,9 @@ describe('assertWorkspaceWriteTarget (symlink write escape)', () => {
     mkdirSync(join(ws, 'src'))
     registerAllowedWorkspaceRoot(ws)
     cleanupRoot = setWorkspaceRootForTest(ws)
-    assert.doesNotThrow(() =>
-      assertWorkspaceWriteTarget(join(realpathSync.native(ws), 'src', 'new.ts')),
-    )
+    assert.doesNotThrow(() => {
+      assertWorkspaceWriteTarget(join(realpathSync.native(ws), 'src', 'new.ts'))
+    })
   })
 })
 

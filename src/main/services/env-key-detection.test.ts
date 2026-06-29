@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { at } from '@shared/array-utils.ts'
 import { BUILTIN_EXTRA_PROVIDERS } from '@shared/llm/extra-providers.ts'
 import {
   PROVIDER_ENV_VARS,
@@ -64,11 +65,11 @@ describe('collectDetectedKeys', () => {
       },
     ]
     const detected = collectDetectedKeys(sources)
-    const byProvider = Object.fromEntries(detected.map((d) => [d.provider, d]))
-    assert.equal(byProvider['anthropic']?.value, 'sk-ant-abcdefgh')
-    assert.equal(byProvider['openai']?.value, 'sk-openai-1234')
-    assert.equal(byProvider['huggingface']?.envVar, 'HF_TOKEN')
-    assert.equal(byProvider['huggingface']?.provider, 'huggingface')
+    const byProvider = new Map(detected.map((d) => [d.provider, d]))
+    assert.equal(byProvider.get('anthropic')?.value, 'sk-ant-abcdefgh')
+    assert.equal(byProvider.get('openai')?.value, 'sk-openai-1234')
+    assert.equal(byProvider.get('huggingface')?.envVar, 'HF_TOKEN')
+    assert.equal(byProvider.get('huggingface')?.provider, 'huggingface')
     assert.equal(
       detected.find((d) => d.provider === 'mistral'),
       undefined,
@@ -82,8 +83,8 @@ describe('collectDetectedKeys', () => {
     ]
     const detected = collectDetectedKeys(sources)
     assert.equal(detected.length, 1)
-    assert.equal(detected[0]?.value, 'sk-ant-from-env')
-    assert.equal(detected[0]?.source, 'environment')
+    assert.equal(at(detected, 0).value, 'sk-ant-from-env')
+    assert.equal(at(detected, 0).source, 'environment')
   })
 
   it('falls back to a file when env lacks the key', () => {
@@ -92,15 +93,15 @@ describe('collectDetectedKeys', () => {
       { source: '~/.zshrc', vars: parseEnvAssignments('export OPENAI_API_KEY=sk-from-file-1') },
     ]
     const detected = collectDetectedKeys(sources)
-    assert.equal(detected[0]?.provider, 'openai')
-    assert.equal(detected[0]?.source, '~/.zshrc')
+    assert.equal(at(detected, 0).provider, 'openai')
+    assert.equal(at(detected, 0).source, '~/.zshrc')
   })
 
   it('recognises provider aliases', () => {
     const detected = collectDetectedKeys([
       { source: 'environment', vars: { GOOGLE_GENERATIVE_AI_API_KEY: 'AIza-aliased-key' } },
     ])
-    assert.equal(detected[0]?.provider, 'gemini')
+    assert.equal(at(detected, 0).provider, 'gemini')
   })
 
   it('skips placeholders, shell refs, and too-short values', () => {
@@ -145,7 +146,7 @@ describe('scanEnvForKeys', () => {
       env: { ANTHROPIC_API_KEY: 'sk-ant-from-env-1' },
       homeDir: '/home/u',
       fileExists: (p) => p in files,
-      readFile: (p) => files[p]!,
+      readFile: (p) => files[p] ?? '',
     })
     const providers = detected.map((d) => d.provider).sort()
     assert.deepEqual(providers, ['anthropic', 'cursor', 'openai'])

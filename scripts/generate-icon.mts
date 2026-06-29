@@ -72,7 +72,7 @@ function generateVariant(variant: IconVariant): void {
   mkdirSync(outDir, { recursive: true })
 
   for (const size of sizes) {
-    writeFileSync(join(outDir, `icon-${size}.png`), renderPng(appSvg, size))
+    writeFileSync(join(outDir, `icon-${String(size)}.png`), renderPng(appSvg, size))
   }
 
   writeFileSync(join(outDir, 'icon-dock-512.png'), renderPng(dockSvg, 512))
@@ -95,7 +95,7 @@ function generateVariant(variant: IconVariant): void {
   ]
 
   for (const [name, size] of iconsetMap) {
-    cpSync(join(outDir, `icon-${size}.png`), join(iconsetDir, name))
+    cpSync(join(outDir, `icon-${String(size)}.png`), join(iconsetDir, name))
   }
 
   const icnsPath = join(outDir, 'app.icns')

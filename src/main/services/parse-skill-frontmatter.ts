@@ -25,7 +25,7 @@ export function splitSkillMarkdown(raw: string): { frontmatter: string; body: st
 
   let closeIndex = -1
   for (let i = 1; i < lines.length; i++) {
-    if (lines[i]!.trim() === '---') {
+    if (lines[i]?.trim() === '---') {
       closeIndex = i
       break
     }
@@ -97,7 +97,7 @@ function parseScalarBlock(yaml: string, key: string): string | undefined {
   const inlineRe = new RegExp(`^${key}:[ \\t]*(.*)$`, 'm')
   const inline = yaml.match(inlineRe)
   if (!inline) return undefined
-  const rawValue = inline[1]!
+  const rawValue = inline[1] ?? ''
   if (rawValue.trim().length === 0) return undefined
   return unwrapScalar(rawValue)
 }
@@ -112,7 +112,7 @@ function parsePaths(yaml: string): string[] {
   const listRe = /^paths:[ \t]*\n((?:[ \t]+-[ \t]+.+\n?)+)/m
   const list = yaml.match(listRe)
   if (list) {
-    return list[1]!
+    return (list[1] ?? '')
       .split('\n')
       .map((line) => line.match(/^[ \t]+-[ \t]+(.+)$/)?.[1])
       .filter((value): value is string => value !== undefined)

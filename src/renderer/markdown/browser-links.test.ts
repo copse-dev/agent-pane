@@ -6,6 +6,16 @@ import { bindBrowserLinkClicks } from './browser-links.ts'
 import { hydrateRemoteArtifactImages } from './remote-artifact-images.ts'
 import { renderMarkdown } from './renderer.ts'
 
+// `E` appears once in the signature because this is a deliberate query-and-assert
+// helper: callers (e.g. requireEl<HTMLImageElement>) choose the element type, which
+// `querySelector` cannot infer from a string selector.
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
+function requireEl<E extends Element>(root: ParentNode, selector: string): E {
+  const el = root.querySelector<E>(selector)
+  if (!el) throw new Error(`Expected element matching "${selector}"`)
+  return el
+}
+
 describe('markdown browser links', () => {
   it('opens HTTP links in the browser panel', () => {
     const root = document.createElement('div')
@@ -16,7 +26,7 @@ describe('markdown browser links', () => {
     const unbind = bindBrowserLinkClicks(root, store)
 
     const event = new window.MouseEvent('click', { bubbles: true, cancelable: true })
-    root.querySelector('a')!.dispatchEvent(event)
+    requireEl(root, 'a').dispatchEvent(event)
 
     unbind()
     assert.equal(event.defaultPrevented, true)
@@ -36,7 +46,7 @@ describe('markdown browser links', () => {
     const unbind = bindBrowserLinkClicks(root, store)
 
     const event = new window.MouseEvent('click', { bubbles: true, cancelable: true })
-    root.querySelector('a')!.dispatchEvent(event)
+    requireEl(root, 'a').dispatchEvent(event)
 
     unbind()
     assert.equal(event.defaultPrevented, true)
@@ -55,7 +65,7 @@ describe('markdown browser links', () => {
     const unbind = bindBrowserLinkClicks(root, store)
 
     const event = new window.MouseEvent('click', { bubbles: true, cancelable: true })
-    root.querySelector('a')!.dispatchEvent(event)
+    requireEl(root, 'a').dispatchEvent(event)
 
     unbind()
     assert.equal(event.defaultPrevented, false)
@@ -81,7 +91,7 @@ describe('markdown browser links', () => {
     })
 
     const event = new window.MouseEvent('click', { bubbles: true, cancelable: true })
-    root.querySelector('a')!.dispatchEvent(event)
+    requireEl(root, 'a').dispatchEvent(event)
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     unbind()
@@ -117,7 +127,7 @@ describe('markdown browser links', () => {
     })
 
     const event = new window.MouseEvent('click', { bubbles: true, cancelable: true })
-    root.querySelector('a')!.dispatchEvent(event)
+    requireEl(root, 'a').dispatchEvent(event)
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     unbind()
@@ -147,7 +157,7 @@ describe('markdown browser links', () => {
     })
 
     const event = new window.MouseEvent('click', { bubbles: true, cancelable: true })
-    root.querySelector('a')!.dispatchEvent(event)
+    requireEl(root, 'a').dispatchEvent(event)
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     unbind()
@@ -178,7 +188,7 @@ describe('markdown browser links', () => {
     })
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    const img = root.querySelector('img')!
+    const img = requireEl<HTMLImageElement>(root, 'img')
     assert.equal(img.dataset['remoteArtifactState'], 'loaded')
     assert.equal(img.src, 'data:image/png;base64,abc123')
   })
@@ -191,7 +201,7 @@ describe('markdown browser links', () => {
     const calls: Array<{ agentId: string; path: string }> = []
     const api = {
       remoteAgent: {
-        artifactImageDataUrl: async (agentId: string, path: string) => {
+        artifactImageDataUrl: async (agentId: string, path: string): Promise<string> => {
           calls.push({ agentId, path })
           return 'data:image/png;base64,abc123'
         },
@@ -199,7 +209,10 @@ describe('markdown browser links', () => {
     }
 
     hydrateRemoteArtifactImages(finalMessage, api)
-    assert.equal(finalMessage.querySelector('img')!.dataset['remoteArtifactState'], 'missing-agent')
+    assert.equal(
+      requireEl<HTMLImageElement>(finalMessage, 'img').dataset['remoteArtifactState'],
+      'missing-agent',
+    )
 
     const root = document.createElement('div')
     root.className = 'messages-list'
@@ -216,6 +229,9 @@ describe('markdown browser links', () => {
         path: 'artifacts/screenshots/css-new-tab.png',
       },
     ])
-    assert.equal(finalMessage.querySelector('img')!.dataset['remoteArtifactState'], 'loaded')
+    assert.equal(
+      requireEl<HTMLImageElement>(finalMessage, 'img').dataset['remoteArtifactState'],
+      'loaded',
+    )
   })
 })

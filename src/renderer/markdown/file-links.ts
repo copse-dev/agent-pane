@@ -48,10 +48,11 @@ function replaceTextNodeReferences(
   const fragment = document.createDocumentFragment()
   let cursor = 0
   for (const match of matches) {
+    const target = resolutions.get(match.candidate)
+    if (!target) continue
     if (match.start > cursor) {
       fragment.append(document.createTextNode(node.data.slice(cursor, match.start)))
     }
-    const target = resolutions.get(match.candidate)!
     const { path, kind } = target
     const link = document.createElement('a')
     link.href = '#'
@@ -60,7 +61,7 @@ function replaceTextNodeReferences(
     link.dataset['fileReferenceKind'] = kind
     if (match.line != null) link.dataset['fileReferenceLine'] = String(match.line)
     if (match.column != null) link.dataset['fileReferenceColumn'] = String(match.column)
-    link.title = match.line != null ? `${path}:${match.line}` : path
+    link.title = match.line != null ? `${path}:${String(match.line)}` : path
     link.textContent = match.text
     fragment.append(link)
     cursor = match.end
@@ -75,6 +76,9 @@ export async function annotateFileReferences(root: HTMLElement, api: ApiClient):
   const candidates = findFileReferenceCandidates(root)
   if (candidates.length === 0) return
 
+  // IPC boundary: declared as a non-null array, but the value crosses the
+  // preload/IPC bridge and could be malformed at runtime, so guard defensively.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   const resolved = (await api.index.resolveFileReferences(candidates)) ?? []
   if (resolved.length === 0) return
 
@@ -91,7 +95,7 @@ export function bindFileReferenceClicks(
   store: AppStore,
   api: ApiClient,
 ): () => void {
-  const onClick = (event: MouseEvent) => {
+  const onClick = (event: MouseEvent): void => {
     const target = event.target
     if (!target || typeof (target as Element).closest !== 'function') return
     const link = (target as Element).closest<HTMLAnchorElement>('a[data-file-reference-path]')
@@ -108,10 +112,12 @@ export function bindFileReferenceClicks(
     const reveal = line
       ? { line: Number(line), ...(column ? { column: Number(column) } : {}) }
       : undefined
-    void activateWorkspaceReference(store, api, path, kind, reveal).catch((error) => {
+    void activateWorkspaceReference(store, api, path, kind, reveal).catch((error: unknown) => {
       showErrorToast(`Failed to open ${path}`, error)
     })
   }
   root.addEventListener('click', onClick)
-  return () => root.removeEventListener('click', onClick)
+  return () => {
+    root.removeEventListener('click', onClick)
+  }
 }

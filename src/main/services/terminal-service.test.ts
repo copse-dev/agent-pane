@@ -12,18 +12,21 @@ import { setWorkspaceRootForTest } from './workspace.ts'
 const OWNER = 1
 const OTHER_OWNER = 2
 
-function mockWindow() {
+function mockWindow(): import('electron').BrowserWindow & {
+  sent: Array<[string, ...unknown[]]>
+  markDestroyed: () => void
+} {
   let destroyed = false
   const sent: Array<[string, ...unknown[]]> = []
   const win = {
-    isDestroyed: () => destroyed,
+    isDestroyed: (): boolean => destroyed,
     webContents: {
-      isDestroyed: () => destroyed,
-      send(channel: string, ...args: unknown[]) {
+      isDestroyed: (): boolean => destroyed,
+      send(channel: string, ...args: unknown[]): void {
         sent.push([channel, ...args])
       },
     },
-    markDestroyed() {
+    markDestroyed(): void {
       destroyed = true
     },
     sent,
@@ -84,7 +87,9 @@ describe('terminal-service', () => {
     try {
       sessionId = await createTerminalSession(win, OWNER)
       destroyTerminalSession(sessionId, OWNER)
-      assert.throws(() => writeTerminalSession(sessionId, OWNER, 'x'), /Unknown terminal session/)
+      assert.throws(() => {
+        writeTerminalSession(sessionId, OWNER, 'x')
+      }, /Unknown terminal session/)
     } finally {
       restore()
     }
@@ -126,15 +131,15 @@ describe('terminal-service', () => {
     let sessionId = ''
     try {
       sessionId = await createTerminalSession(win, OWNER)
-      assert.throws(
-        () => writeTerminalSession(sessionId, OTHER_OWNER, 'x'),
-        /not owned by the caller/,
-      )
-      assert.throws(
-        () => resizeTerminalSession(sessionId, OTHER_OWNER, 80, 24),
-        /not owned by the caller/,
-      )
-      assert.throws(() => destroyTerminalSession(sessionId, OTHER_OWNER), /not owned by the caller/)
+      assert.throws(() => {
+        writeTerminalSession(sessionId, OTHER_OWNER, 'x')
+      }, /not owned by the caller/)
+      assert.throws(() => {
+        resizeTerminalSession(sessionId, OTHER_OWNER, 80, 24)
+      }, /not owned by the caller/)
+      assert.throws(() => {
+        destroyTerminalSession(sessionId, OTHER_OWNER)
+      }, /not owned by the caller/)
       // The owner can still operate on its own session.
       writeTerminalSession(sessionId, OWNER, 'x')
     } finally {

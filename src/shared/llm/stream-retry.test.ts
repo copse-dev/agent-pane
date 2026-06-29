@@ -10,7 +10,7 @@ import {
 
 /** An Error carrying an HTTP status, matching the duck-typed retry path. */
 function httpError(status: number): Error {
-  return Object.assign(new Error(`HTTP ${status}`), { status })
+  return Object.assign(new Error(`HTTP ${String(status)}`), { status })
 }
 
 /**
@@ -115,7 +115,7 @@ describe('sleepMs', () => {
 
 describe('yieldStreamWithRetry', () => {
   it('passes through items from a successful stream', async () => {
-    async function* run() {
+    async function* run(): AsyncGenerator<number> {
       yield 1
       yield 2
       yield 3
@@ -127,7 +127,7 @@ describe('yieldStreamWithRetry', () => {
 
   it('retries a retryable error before any item is yielded', async () => {
     let attempts = 0
-    async function* run() {
+    async function* run(): AsyncGenerator<string> {
       attempts++
       if (attempts === 1) throw httpError(503)
       yield 'ok'
@@ -140,7 +140,7 @@ describe('yieldStreamWithRetry', () => {
 
   it('does NOT retry once an item has been yielded (no duplicate output)', async () => {
     let attempts = 0
-    async function* run() {
+    async function* run(): AsyncGenerator<string> {
       attempts++
       yield 'partial'
       throw httpError(503)

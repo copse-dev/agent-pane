@@ -210,14 +210,17 @@ describe('testLmStudio', () => {
       ok: true,
       status: 200,
       statusText: 'OK',
-      json: async () => ({ data: [{ id: 'qwen2.5-3b' }, { id: 'llama-3' }] }),
+      json: async (): Promise<{ data: { id: string }[] }> => ({
+        data: [{ id: 'qwen2.5-3b' }, { id: 'llama-3' }],
+      }),
     }))
     restoreFetch = stubFetch(fetchMock as unknown as typeof fetch)
 
     const result = await testLmStudio('http://127.0.0.1:1234/v1/', 'test-key')
     assert.deepEqual(result, { ok: true, models: ['qwen2.5-3b', 'llama-3'] })
 
-    const call = fetchMock.mock.calls[0]!
+    const call = fetchMock.mock.calls[0]
+    assert.ok(call)
     assert.equal(call.arguments[0], 'http://127.0.0.1:1234/v1/models')
     assert.equal(authHeader(call.arguments[1] as RequestInit), 'Bearer test-key')
   })
@@ -250,7 +253,7 @@ describe('listLmStudioModels cache', () => {
       ok: true,
       status: 200,
       statusText: 'OK',
-      json: async () => ({ data: [{ id: 'local-model' }] }),
+      json: async (): Promise<{ data: { id: string }[] }> => ({ data: [{ id: 'local-model' }] }),
     }))
     restoreFetch = stubFetch(fetchMock as unknown as typeof fetch)
   })

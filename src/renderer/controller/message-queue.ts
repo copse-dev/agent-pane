@@ -132,6 +132,9 @@ function withPayloadText(content: UserContent, text: string): UserContent {
     replaced = true
     return { ...block, text }
   })
+  // `replaced` is mutated inside the .map callback above, which ESLint's
+  // control-flow analysis cannot track, so it wrongly flags this as falsy.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   return replaced ? next : [...next, { type: 'text' as const, text }]
 }
 

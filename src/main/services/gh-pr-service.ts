@@ -75,7 +75,7 @@ function formatGhError(stderr: string, code: number): string {
   const msg = stderr.trim()
   if (msg) return msg
   if (code === 127) return 'GitHub CLI (gh) is not installed.'
-  return `gh exited with code ${code}`
+  return `gh exited with code ${String(code)}`
 }
 
 function decodeBase64Content(raw: string): string {
@@ -103,7 +103,7 @@ function toGhPrSummary(
     owner: ref.owner,
     repo: ref.repo,
     number: ref.number,
-    title: entry.title?.trim() || `PR #${ref.number}`,
+    title: entry.title?.trim() || `PR #${String(ref.number)}`,
     url: entry.url,
     state: entry.state ?? 'OPEN',
   }
@@ -133,7 +133,7 @@ function toGhPrDetails(
     owner: ref.owner,
     repo: ref.repo,
     number: pr.number,
-    title: pr.title?.trim() || `PR #${pr.number}`,
+    title: pr.title?.trim() || `PR #${String(pr.number)}`,
     url: pr.url,
     state: pr.state ?? 'UNKNOWN',
     body: pr.body?.trim() ?? '',
@@ -298,7 +298,7 @@ async function listGhPrFiles(
 
   const { stdout, code } = await runGh([
     'api',
-    `repos/${owner}/${repo}/pulls/${number}/files`,
+    `repos/${owner}/${repo}/pulls/${String(number)}/files`,
     '--paginate',
   ])
   if (code !== 0) return []

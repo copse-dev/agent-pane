@@ -23,7 +23,7 @@ await esbuild.build({
   plugins: [
     {
       name: 'main-services-test-shims',
-      setup(build) {
+      setup(build): void {
         build.onResolve({ filter: /\/settings\.ts$/ }, (args) => {
           if (!args.path.includes('settings.test-shim')) return { path: settingsShim }
           return undefined

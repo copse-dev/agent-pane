@@ -70,8 +70,8 @@ export class AnthropicProvider implements LLMProvider {
             cacheReadTokens = u.cache_read_input_tokens ?? 0
             cacheCreationTokens = u.cache_creation_input_tokens ?? 0
             // Total input = fresh input + cache-creation + cache-read tokens.
-            inputTokens = (u.input_tokens ?? 0) + cacheCreationTokens + cacheReadTokens
-            outputTokens = u.output_tokens ?? 0
+            inputTokens = u.input_tokens + cacheCreationTokens + cacheReadTokens
+            outputTokens = u.output_tokens
           }
           if (event.type === 'content_block_start' && event.content_block.type === 'tool_use') {
             currentToolId = event.content_block.id
@@ -103,13 +103,11 @@ export class AnthropicProvider implements LLMProvider {
           }
           if (event.type === 'message_delta') {
             if (event.delta.stop_reason) stopReason = event.delta.stop_reason
-            if (event.usage) {
-              // message_delta carries the final output_tokens; input_tokens is
-              // usually null/0 here, so keep the message_start value if larger.
-              outputTokens = event.usage.output_tokens ?? outputTokens
-              if (event.usage.input_tokens) {
-                inputTokens = Math.max(inputTokens, event.usage.input_tokens)
-              }
+            // message_delta carries the final output_tokens; input_tokens is
+            // usually null/0 here, so keep the message_start value if larger.
+            outputTokens = event.usage.output_tokens
+            if (event.usage.input_tokens) {
+              inputTokens = Math.max(inputTokens, event.usage.input_tokens)
             }
           }
         }

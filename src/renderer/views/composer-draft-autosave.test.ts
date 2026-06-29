@@ -1,10 +1,21 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createComposerDraftAutosave } from './composer-draft-autosave.ts'
+import {
+  createComposerDraftAutosave,
+  type ComposerDraftAutosave,
+} from './composer-draft-autosave.ts'
 
 type SaveCall = { threadId: string; value: string }
 
-function setup(initialThreadId: string, initialValue: string) {
+function setup(
+  initialThreadId: string,
+  initialValue: string,
+): {
+  autosave: ComposerDraftAutosave
+  saves: SaveCall[]
+  setActiveThreadId: (id: string | null) => string | null
+  setValue: (v: string) => string
+} {
   let activeThreadId: string | null = initialThreadId
   let value = initialValue
   const saves: SaveCall[] = []

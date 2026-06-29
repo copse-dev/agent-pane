@@ -74,7 +74,7 @@ export function runCommand(
   }
 
   return new Promise((resolve, reject) => {
-    void (async () => {
+    void (async (): Promise<void> => {
       let proc
       try {
         const spawnOpts: Parameters<typeof spawnInProjectSandbox>[2] = {
@@ -96,7 +96,7 @@ export function runCommand(
       let settled = false
       let cancelKill: (() => void) | undefined
 
-      const onAbort = () => {
+      const onAbort = (): void => {
         if (timer) clearTimeout(timer)
         cancelKill = terminateProcessTree(proc)
       }
@@ -108,12 +108,12 @@ export function runCommand(
               if (!settled) {
                 settled = true
                 opts.signal?.removeEventListener('abort', onAbort)
-                reject(new Error(`Command timed out after ${timeout_ms}ms: ${cmd}`))
+                reject(new Error(`Command timed out after ${String(timeout_ms)}ms: ${cmd}`))
               }
             }, timeout_ms)
           : undefined
 
-      const finish = (fn: () => void) => {
+      const finish = (fn: () => void): void => {
         if (timer) clearTimeout(timer)
         cancelKill?.()
         opts.signal?.removeEventListener('abort', onAbort)
@@ -131,13 +131,17 @@ export function runCommand(
       proc.on('close', (code) => {
         if (settled) return
         settled = true
-        finish(() => resolve({ stdout, stderr, code: code ?? 0 }))
+        finish(() => {
+          resolve({ stdout, stderr, code: code ?? 0 })
+        })
       })
 
       proc.on('error', (err) => {
         if (settled) return
         settled = true
-        finish(() => reject(err instanceof Error ? err : new Error(String(err))))
+        finish(() => {
+          reject(err instanceof Error ? err : new Error(String(err)))
+        })
       })
 
       opts.signal?.addEventListener('abort', onAbort)

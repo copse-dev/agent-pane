@@ -123,10 +123,13 @@ export function parseGhPrChecks(raw: string): CiCheck[] {
   const rows = parseGhJson<GhPrCheckRow[]>(raw)
   if (!Array.isArray(rows)) return []
   return rows
-    .filter((row) => typeof row.name === 'string' && row.name.length > 0)
+    .filter(
+      (row): row is GhPrCheckRow & { name: string } =>
+        typeof row.name === 'string' && row.name.length > 0,
+    )
     .map((row) => {
       const check: CiCheck = {
-        name: row.name!,
+        name: row.name,
         state: row.state ?? 'UNKNOWN',
         bucket: normalizeCheckBucket(row.bucket),
       }

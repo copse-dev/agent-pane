@@ -37,9 +37,9 @@ export class BrowserSessionManager {
 
   private createTab(): Tab {
     if (this.tabs.length >= MAX_TABS) {
-      throw new Error(`browser tab limit reached (${MAX_TABS}); close a tab first`)
+      throw new Error(`browser tab limit reached (${String(MAX_TABS)}); close a tab first`)
     }
-    const id = `tab-${++this.counter}`
+    const id = `tab-${String(++this.counter)}`
     const window = new BrowserWindow({
       show: false,
       width: DEFAULT_WIDTH,
@@ -91,7 +91,10 @@ export class BrowserSessionManager {
       await tab.window.webContents.loadURL(url)
     } catch (err) {
       // Client-side redirects abort the original load; surface other failures.
-      const code = (err as { code?: string })?.code
+      const code =
+        typeof err === 'object' && err !== null && 'code' in err
+          ? (err as { code?: unknown }).code
+          : undefined
       if (code !== 'ERR_ABORTED') {
         throw new Error(`navigation failed: ${err instanceof Error ? err.message : String(err)}`, {
           cause: err,
@@ -116,7 +119,7 @@ export class BrowserSessionManager {
     const image = await tab.window.webContents.capturePage()
     const dir = join(app.getPath('userData'), 'browser-screenshots')
     await mkdir(dir, { recursive: true })
-    const path = join(dir, `${tab.id}-${Date.now()}.png`)
+    const path = join(dir, `${tab.id}-${String(Date.now())}.png`)
     await writeFile(path, image.toPNG())
     return { path, viewId: tab.id }
   }

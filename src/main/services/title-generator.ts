@@ -4,11 +4,8 @@ import { recordUsageEvent } from './usage-ledger.ts'
 
 // Trim model output down to a single clean title line.
 function cleanTitle(out: string): string | null {
-  const title = out
-    .trim()
-    .split('\n')[0]!
-    .replace(/^["'#\s-]+|["'.\s]+$/g, '')
-    .slice(0, 60)
+  const firstLine = out.trim().split('\n')[0] ?? ''
+  const title = firstLine.replace(/^["'#\s-]+|["'.\s]+$/g, '').slice(0, 60)
   return title || null
 }
 
@@ -48,11 +45,8 @@ export async function suggestThreadTitle(text: string): Promise<string | null> {
 
 // Trim model output to a single clean phrase (sentence case left as-is).
 function cleanPhrase(out: string, max = 64): string | null {
-  const phrase = out
-    .trim()
-    .split('\n')[0]!
-    .replace(/^["'#\s-]+|["'.\s]+$/g, '')
-    .slice(0, max)
+  const firstLine = out.trim().split('\n')[0] ?? ''
+  const phrase = firstLine.replace(/^["'#\s-]+|["'.\s]+$/g, '').slice(0, max)
   return phrase || null
 }
 
@@ -69,7 +63,7 @@ export async function suggestCommandSummary(commands: string[]): Promise<string 
 
   const list = commands
     .slice(0, 12)
-    .map((c, i) => `${i + 1}. ${c}`)
+    .map((c, i) => `${String(i + 1)}. ${c}`)
     .join('\n')
     .slice(0, 1500)
   const prompt =

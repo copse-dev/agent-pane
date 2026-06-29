@@ -91,7 +91,7 @@ describe('renderStreamingMarkdown', () => {
 })
 
 describe('pendingHoldIndex (defer unresolved inline markup)', () => {
-  const visible = (s: string) => s.slice(0, pendingHoldIndex(s))
+  const visible = (s: string): string => s.slice(0, pendingHoldIndex(s))
 
   it('does not cut a line with no inline delimiters', () => {
     assert.equal(pendingHoldIndex('plain text'), 'plain text'.length)
@@ -166,11 +166,13 @@ describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
     const host = document.createElement('div')
     const r = new StreamingMarkdownRenderer(host)
     r.update('## Title\n- item')
-    const completed = host.querySelector('.stream-complete')!
-    const pending = host.querySelector('.stream-pending')!
+    const completed = host.querySelector('.stream-complete')
+    const pending = host.querySelector<HTMLElement>('.stream-pending')
+    assert.ok(completed)
+    assert.ok(pending)
     assert.match(completed.innerHTML, /<h2>Title<\/h2>/)
     assert.equal(pending.textContent, '- item')
-    assert.equal((pending as HTMLElement).hidden, false)
+    assert.equal(pending.hidden, false)
   })
 
   it('renders inline markdown in the live tail without rebuilding completed content', () => {

@@ -30,7 +30,7 @@ describe('fetchOpenAiCompatibleModels', () => {
       return {
         ok: true,
         status: 200,
-        json: async () => ({
+        json: async (): Promise<unknown> => ({
           data: [
             { id: 'a-model' },
             { id: 'b-model', context_length: 32768 },
@@ -58,14 +58,14 @@ describe('fetchOpenAiCompatibleModels', () => {
   })
 
   it('returns an empty list when the payload has no data array', async () => {
-    stubFetch(() => ({ ok: true, status: 200, json: async () => ({}) }))
+    stubFetch(() => ({ ok: true, status: 200, json: async (): Promise<unknown> => ({}) }))
     const res = await fetchOpenAiCompatibleModels('https://api.example.com/v1')
     assert.equal(res.ok, true)
     assert.deepEqual(res.models, [])
   })
 
   it('catches network errors', async () => {
-    globalThis.fetch = async () => {
+    globalThis.fetch = async (): Promise<never> => {
       throw new Error('boom')
     }
     const res = await fetchOpenAiCompatibleModels('https://api.example.com/v1')

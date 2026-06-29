@@ -2,14 +2,14 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { runSerialized, drainWriteQueue } from './write-queue.ts'
 
-const tick = () => new Promise((r) => setTimeout(r, 0))
+const tick = (): Promise<unknown> => new Promise((r) => setTimeout(r, 0))
 
 describe('write-queue', () => {
   it('serializes ops on the same key (no lost concurrent updates)', async () => {
     // Simulate the read-modify-write race: two callers each read the shared
     // value, append, and write back. Without serialization one update is lost.
     let store: string[] = []
-    const slowAppend = (item: string) =>
+    const slowAppend = (item: string): Promise<void> =>
       runSerialized('k', async () => {
         const current = store // read
         await tick() // yield: lets a concurrent caller interleave if unserialized
@@ -22,7 +22,7 @@ describe('write-queue', () => {
 
   it('runs ops on the same key in submission order', async () => {
     const order: number[] = []
-    const mk = (n: number) =>
+    const mk = (n: number): Promise<void> =>
       runSerialized('order', async () => {
         await tick()
         order.push(n)

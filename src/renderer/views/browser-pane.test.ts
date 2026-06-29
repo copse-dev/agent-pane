@@ -15,10 +15,10 @@ interface FakeWebview extends HTMLElement {
 
 /** Stub the guest-webview methods jsdom lacks so `dom-ready` handlers can run. */
 function stubWebviewMethods(webview: FakeWebview): void {
-  webview.getURL = () => 'about:blank'
-  webview.canGoBack = () => false
-  webview.canGoForward = () => false
-  webview.reload = () => {}
+  webview.getURL = (): string => 'about:blank'
+  webview.canGoBack = (): boolean => false
+  webview.canGoForward = (): boolean => false
+  webview.reload = (): void => {}
 }
 
 function mountBrowserHosts(): { list: HTMLElement; viewer: HTMLElement } {
@@ -33,15 +33,15 @@ function mountBrowserHosts(): { list: HTMLElement; viewer: HTMLElement } {
 describe('browser pane requested URLs', () => {
   it('opens a requested URL in the active tab address bar', () => {
     const raf = globalThis.requestAnimationFrame
-    globalThis.requestAnimationFrame = (cb: FrameRequestCallback) => {
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
       cb(0)
       return 0
     }
-    const ResizeObserverCtor = globalThis.ResizeObserver
+    const ResizeObserverCtor: typeof ResizeObserver | undefined = globalThis.ResizeObserver
     class NoopResizeObserver {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
     }
     globalThis.ResizeObserver = NoopResizeObserver
 
@@ -60,6 +60,7 @@ describe('browser pane requested URLs', () => {
       assert.match(tabLabel ?? '', /example\.com/)
     } finally {
       globalThis.requestAnimationFrame = raf
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
       if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
       else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
       unmount()
@@ -68,15 +69,15 @@ describe('browser pane requested URLs', () => {
 
   it('renders an HTML artefact in a sandboxed tab via a data: URL', () => {
     const raf = globalThis.requestAnimationFrame
-    globalThis.requestAnimationFrame = (cb: FrameRequestCallback) => {
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
       cb(0)
       return 0
     }
-    const ResizeObserverCtor = globalThis.ResizeObserver
+    const ResizeObserverCtor: typeof ResizeObserver | undefined = globalThis.ResizeObserver
     class NoopResizeObserver {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
     }
     globalThis.ResizeObserver = NoopResizeObserver
 
@@ -113,6 +114,7 @@ describe('browser pane requested URLs', () => {
       assert.equal(store.getState().rightPanelMode, 'browser')
     } finally {
       globalThis.requestAnimationFrame = raf
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
       if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
       else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
       unmount()

@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { at } from '@shared/array-utils.ts'
 import { compactAtTodoBoundary } from './todo-context.ts'
 import type { LLMMessage } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
@@ -23,9 +24,9 @@ describe('compactAtTodoBoundary', () => {
     const changed = compactAtTodoBoundary(messages, todos, { keepRecentPairs: 1 })
     assert.equal(changed, true)
     assert.ok(messages.length < beforeLen)
-    const sys = messages[0]
-    assert.equal(sys?.role, 'system')
-    const sysText = sys && 'content' in sys && typeof sys.content === 'string' ? sys.content : ''
+    const sys = at(messages, 0)
+    assert.equal(sys.role, 'system')
+    const sysText = 'content' in sys && typeof sys.content === 'string' ? sys.content : ''
     assert.match(sysText, /Active plan/)
     assert.match(sysText, /Next step/)
   })

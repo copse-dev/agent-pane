@@ -274,7 +274,7 @@ export function extraProviderContextWindow(
   if (!provider) return null
   const id = extraProviderModelId(model)
   const known = provider.models.find((m) => m.id === id)?.contextWindow
-  return known ?? provider.fallbackContextWindow ?? DEFAULT_EXTRA_PROVIDER_CONTEXT
+  return known ?? provider.fallbackContextWindow
 }
 
 /** Per-MTok USD pricing for an extra-provider model, when one was stored. */
@@ -406,6 +406,9 @@ export function resolveExtraProviders(
   const overrides = new Map<string, StoredExtraProvider>()
   const customs: StoredExtraProvider[] = []
   for (const s of stored ?? []) {
+    // `stored` is persisted/external data typed as StoredExtraProvider[]; a null
+    // or malformed entry is still possible at runtime, so guard defensively.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (!s || typeof s.slug !== 'string') continue
     if (BUILTIN_BY_SLUG.has(s.slug)) overrides.set(s.slug, s)
     else customs.push(s)

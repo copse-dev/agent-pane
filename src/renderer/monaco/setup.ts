@@ -41,7 +41,7 @@ function createMonacoWorker(label: string): Promise<Worker> {
   const cached = workerPromises.get(label)
   if (cached) return cached
 
-  const promise = createMonacoWorkerOnce(label).catch((err) => {
+  const promise = createMonacoWorkerOnce(label).catch((err: unknown) => {
     workerPromises.delete(label)
     throw err
   })
@@ -56,7 +56,7 @@ function createMonacoWorkerOnce(label: string): Promise<Worker> {
   hostUrl.searchParams.set('entry', workerEntryRelativeToMonacoRoot(label))
   const worker = new Worker(hostUrl, { name: label, type: 'module' })
   return new Promise((resolve, reject) => {
-    worker.onmessage = (event) => {
+    worker.onmessage = (event): void => {
       const data: unknown = event.data
       if (typeof data !== 'object' || data === null || !('type' in data)) return
       if (data.type !== 'copse-monaco-worker-ready') return
@@ -69,7 +69,7 @@ function createMonacoWorkerOnce(label: string): Promise<Worker> {
     // `onerror` fires with an ErrorEvent if the worker bootstrap import fails.
     // Reject with a real Error carrying its message so callers (and the global
     // unhandledrejection toast) get something readable, not "[object ErrorEvent]".
-    worker.onerror = (event) => {
+    worker.onerror = (event): void => {
       const detail = event instanceof ErrorEvent ? event.message : String(event)
       reject(new Error(`Monaco ${label} worker failed to load: ${detail || 'unknown error'}`))
     }
@@ -101,12 +101,12 @@ function loadMonacoBundle(): Promise<typeof Monaco> {
   bundlePromise = new Promise((resolve, reject) => {
     const script = document.createElement('script')
     script.src = new URL('./monaco-bundle.js', window.location.href).href
-    script.onload = () => {
+    script.onload = (): void => {
       const loaded = window.__copseMonaco
       if (loaded) resolve(loaded)
       else reject(new Error('monaco-bundle.js loaded but did not expose the editor namespace'))
     }
-    script.onerror = () => {
+    script.onerror = (): void => {
       // Allow a later call to retry the injection rather than wedging on a
       // failed network fetch.
       bundlePromise = undefined
@@ -129,7 +129,7 @@ export function loadMonaco(): Promise<typeof Monaco> {
     // Monaco calls getWorker for language services too; each label needs its own
     // ESM worker or requests such as TypeScript diagnostics hit the editor worker.
     window.MonacoEnvironment = {
-      getWorker(_workerId: string, label: string) {
+      getWorker(_workerId: string, label: string): Promise<Worker> {
         return createMonacoWorker(label)
       },
     }

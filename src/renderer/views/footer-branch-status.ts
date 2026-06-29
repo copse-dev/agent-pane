@@ -2,6 +2,7 @@ import { el, clear, on } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitBranchInfo, GitBranchStatus } from '@shared/types/git.ts'
+import type { Thread } from '@shared/types'
 import {
   threadGitBranchMismatch,
   threadGitBranchMismatchMessage,
@@ -53,7 +54,7 @@ export function mountFooterBranchStatus(
   let defaultBranch: string | null = null
   let open = false
 
-  function getActiveThread() {
+  function getActiveThread(): Thread | undefined {
     return getThreadById(store, store.getState().activeThreadId)
   }
 
@@ -66,14 +67,14 @@ export function mountFooterBranchStatus(
     return thread ? isBlankThread(thread) : false
   }
 
-  function setOpen(next: boolean) {
+  function setOpen(next: boolean): void {
     open = next
     trigger.setAttribute('aria-expanded', String(next))
     if (next) menu.removeAttribute('hidden')
     else menu.setAttribute('hidden', '')
   }
 
-  function renderTrigger() {
+  function renderTrigger(): void {
     const threadBranch = getActiveThreadBranch()
     const currentBranch = status?.currentBranch ?? null
     const displayBranch = threadBranch ?? currentBranch
@@ -87,6 +88,11 @@ export function mountFooterBranchStatus(
     }
 
     const mismatch = threadGitBranchMismatch(threadBranch, currentBranch)
+    // `mismatch` is only true when threadBranch is a non-empty string, but that
+    // implication can't survive into the branches below — capture the message
+    // here while threadBranch is narrowed to a defined value.
+    const mismatchMessage =
+      mismatch && threadBranch ? threadGitBranchMismatchMessage(threadBranch) : ''
     wrap.hidden = false
     wrap.classList.toggle('is-picker-mode', pickerMode)
     trigger.classList.toggle('is-mismatch', mismatch)
@@ -101,24 +107,22 @@ export function mountFooterBranchStatus(
     }
 
     if (status?.pr) {
-      label.textContent = `PR #${status.pr.number}`
-      trigger.title = mismatch
-        ? `${threadGitBranchMismatchMessage(threadBranch!)} (${status.pr.title})`
-        : status.pr.title
+      label.textContent = `PR #${String(status.pr.number)}`
+      trigger.title = mismatch ? `${mismatchMessage} (${status.pr.title})` : status.pr.title
       trigger.classList.add('is-link')
       trigger.classList.remove('is-copyable')
       branchToCopy = null
       trigger.setAttribute(
         'aria-label',
         pickerMode
-          ? `Open pull request #${status.pr.number}`
-          : `Open pull request #${status.pr.number}`,
+          ? `Open pull request #${String(status.pr.number)}`
+          : `Open pull request #${String(status.pr.number)}`,
       )
     } else {
       label.textContent = displayBranch
       if (pickerMode) {
         trigger.title = mismatch
-          ? `${threadGitBranchMismatchMessage(threadBranch!)} Switch git branch.`
+          ? `${mismatchMessage} Switch git branch.`
           : `Switch git branch: ${displayBranch}`
         trigger.classList.remove('is-link')
         trigger.classList.remove('is-copyable')
@@ -126,27 +130,25 @@ export function mountFooterBranchStatus(
         trigger.setAttribute(
           'aria-label',
           mismatch
-            ? `${threadGitBranchMismatchMessage(threadBranch!)} Switch git branch.`
+            ? `${mismatchMessage} Switch git branch.`
             : `Switch git branch: ${displayBranch}`,
         )
       } else {
         trigger.title = mismatch
-          ? `${threadGitBranchMismatchMessage(threadBranch!)} Click to copy branch name.`
+          ? `${mismatchMessage} Click to copy branch name.`
           : `Click to copy branch name: ${displayBranch}`
         trigger.classList.remove('is-link')
         trigger.classList.add('is-copyable')
         branchToCopy = displayBranch
         trigger.setAttribute(
           'aria-label',
-          mismatch
-            ? `${threadGitBranchMismatchMessage(threadBranch!)} Copy branch name.`
-            : `Copy branch name: ${displayBranch}`,
+          mismatch ? `${mismatchMessage} Copy branch name.` : `Copy branch name: ${displayBranch}`,
         )
       }
     }
   }
 
-  function renderMenu() {
+  function renderMenu(): void {
     clear(menu)
     if (!isPickerMode()) return
 
@@ -157,7 +159,7 @@ export function mountFooterBranchStatus(
       const prItem = el(
         'button',
         { type: 'button', class: 'branch-picker-option branch-picker-action' },
-        `Open PR #${pr.number}`,
+        `Open PR #${String(pr.number)}`,
       )
       prItem.addEventListener('click', () => {
         setOpen(false)
@@ -207,7 +209,7 @@ export function mountFooterBranchStatus(
     }
   }
 
-  async function loadBranches() {
+  async function loadBranches(): Promise<void> {
     const [listed, defaultName] = await Promise.all([
       api.git.listBranches(),
       api.git.getDefaultBranch(),
@@ -216,7 +218,7 @@ export function mountFooterBranchStatus(
     defaultBranch = defaultName
   }
 
-  async function refresh() {
+  async function refresh(): Promise<void> {
     if (!store.getState().workspaceRoot) {
       status = null
       branches = []
@@ -235,18 +237,20 @@ export function mountFooterBranchStatus(
     if (open) renderMenu()
   }
 
-  function scheduleRefresh() {
+  function scheduleRefresh(): void {
     if (refreshTimer) clearTimeout(refreshTimer)
     refreshTimer = setTimeout(() => void refresh(), 500)
   }
 
-  function copyBranchName() {
+  function copyBranchName(): void {
     const branch = branchToCopy
     if (!branch) return
     void navigator.clipboard
       .writeText(branch)
       .then(() => showToast(COPIED_BRANCH_TOAST, { durationMs: COPY_FEEDBACK_MS }))
-      .catch((error: unknown) => showErrorToast('Failed to copy branch name', error))
+      .catch((error: unknown) => {
+        showErrorToast('Failed to copy branch name', error)
+      })
   }
 
   trigger.addEventListener('click', () => {
@@ -263,7 +267,7 @@ export function mountFooterBranchStatus(
     const next = !open
     setOpen(next)
     if (next) {
-      void (async () => {
+      void (async (): Promise<void> => {
         await loadBranches()
         renderMenu()
       })()
@@ -273,10 +277,14 @@ export function mountFooterBranchStatus(
   const unsubs = [
     store.on('workspace_changed', () => void refresh()),
     store.on('threads_changed', () => void refresh()),
-    store.on('thread_status_changed', () => scheduleRefresh()),
+    store.on('thread_status_changed', () => {
+      scheduleRefresh()
+    }),
     store.on('message_added', () => void refresh()),
     store.on('git_branch_changed', () => void refresh()),
-    api.fs.onChanged(() => scheduleRefresh()),
+    api.fs.onChanged(() => {
+      scheduleRefresh()
+    }),
     on(document, 'click', (e) => {
       if (!open) return
       if (!wrap.contains(e.target as Node)) setOpen(false)
@@ -290,9 +298,11 @@ export function mountFooterBranchStatus(
 
   return {
     refresh: () => void refresh(),
-    destroy: () => {
+    destroy: (): void => {
       if (refreshTimer) clearTimeout(refreshTimer)
-      unsubs.forEach((u) => u())
+      unsubs.forEach((u) => {
+        u()
+      })
       wrap.remove()
     },
   }

@@ -58,6 +58,8 @@ async function notifyFileChanged(
 }
 
 export function closeAllWatchers(): void {
-  watchers.forEach((w) => w.close())
+  watchers.forEach((w) => {
+    w.close()
+  })
   watchers.clear()
 }

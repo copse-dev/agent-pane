@@ -9,7 +9,7 @@ import type {
 export const MOCK_GH_PR_OWNER = 'copse-dev'
 export const MOCK_GH_PR_REPO = 'copse-panel'
 export const MOCK_GH_PR_NUMBER = 42
-export const MOCK_GH_PR_URL = `https://github.com/${MOCK_GH_PR_OWNER}/${MOCK_GH_PR_REPO}/pull/${MOCK_GH_PR_NUMBER}`
+export const MOCK_GH_PR_URL = `https://github.com/${MOCK_GH_PR_OWNER}/${MOCK_GH_PR_REPO}/pull/${String(MOCK_GH_PR_NUMBER)}`
 
 const MOCK_LINKED_PR: GhPrSummary = {
   owner: MOCK_GH_PR_OWNER,
@@ -42,7 +42,7 @@ const MOCK_WORKSPACE_PR: GhPrSummary = {
   repo: MOCK_GH_PR_REPO,
   number: MOCK_GH_WORKSPACE_PR_NUMBER,
   title: 'Tidy up workspace status polling',
-  url: `https://github.com/${MOCK_GH_PR_OWNER}/${MOCK_GH_PR_REPO}/pull/${MOCK_GH_WORKSPACE_PR_NUMBER}`,
+  url: `https://github.com/${MOCK_GH_PR_OWNER}/${MOCK_GH_PR_REPO}/pull/${String(MOCK_GH_WORKSPACE_PR_NUMBER)}`,
   state: 'OPEN',
   headRefName: 'chore/workspace-status',
   authorLogin: 'octo-dev',

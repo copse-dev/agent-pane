@@ -55,7 +55,7 @@ export function mountContextPanel(
   let lastMarkdownPath: string | null = null
   let revealedFor: OpenFile | null = null
 
-  function syncToolbarActive() {
+  function syncToolbarActive(): void {
     previewBtn.classList.toggle('is-active', markdownViewMode === 'preview')
     sourceBtn.classList.toggle('is-active', markdownViewMode === 'source')
   }
@@ -97,7 +97,7 @@ export function mountContextPanel(
   fileEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
     const { openFile } = store.getState()
     if (openFile) {
-      void api.fs.writeFile(openFile.path, fileEditor.getValue()).catch((err) => {
+      void api.fs.writeFile(openFile.path, fileEditor.getValue()).catch((err: unknown) => {
         showErrorToast(`Failed to save ${openFile.path}`, err)
       })
     }
@@ -108,7 +108,7 @@ export function mountContextPanel(
     return openFile ? { path: openFile.path } : null
   })
 
-  function updatePanel() {
+  function updatePanel(): void {
     const { openFile } = store.getState()
 
     if (openFile) {
@@ -174,7 +174,7 @@ export function mountContextPanel(
 
   const unsubFsChanged = api.fs.onChanged((path, newContent) => {
     if (path !== store.getState().openFile?.path) return
-    void (async () => {
+    void (async (): Promise<void> => {
       let content: string
       try {
         content = newContent ?? (await api.fs.readFile(path))
@@ -204,7 +204,9 @@ export function mountContextPanel(
   const unbindBrowserLinks = bindBrowserLinkClicks(previewContainer, store, api)
 
   return () => {
-    unsubs.forEach((u) => u())
+    unsubs.forEach((u) => {
+      u()
+    })
     unsubFsChanged()
     unbindDrop()
     unbindFileLinks()

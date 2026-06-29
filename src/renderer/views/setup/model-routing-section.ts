@@ -1,5 +1,6 @@
 import type { ApiClient } from '../../../preload/api.d.ts'
 import { PREFERRED_MODELS } from '@shared/preferred-models.ts'
+import { at } from '@shared/array-utils.ts'
 import { populateLocalModelSelect } from '../model-options.ts'
 import { el } from '../../dom/helpers.ts'
 
@@ -74,7 +75,7 @@ export function createModelRoutingSection(api: ApiClient): ModelRoutingSection {
     const safety = (await api.settings.get('safetyModel')) as string | undefined
     const review = (await api.settings.get('reviewModel')) as string | undefined
 
-    populateLocalModelSelect(localDefaultModel, models, localModel ?? PREFERRED_MODELS[0]!.id)
+    populateLocalModelSelect(localDefaultModel, models, localModel ?? at(PREFERRED_MODELS, 0).id)
     populateLocalModelSelect(
       subagentModel,
       models,
@@ -84,13 +85,18 @@ export function createModelRoutingSection(api: ApiClient): ModelRoutingSection {
     populateLocalModelSelect(
       safetyModel,
       models,
-      safety ?? PREFERRED_MODELS[2]!.id,
+      safety ?? at(PREFERRED_MODELS, 2).id,
       '(auto — use default local model)',
     )
     populateLocalModelSelect(reviewModel, models, review ?? '', '(auto — use chat model)')
   }
 
-  function readValues() {
+  function readValues(): {
+    localDefaultModel: string
+    subagentModel: string
+    safetyModel: string
+    reviewModel: string
+  } {
     return {
       localDefaultModel: localDefaultModel.value.trim(),
       subagentModel: subagentModel.value.trim(),

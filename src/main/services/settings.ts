@@ -9,7 +9,7 @@ const store = new ElectronStore<Record<string, unknown>>({ name: 'settings' })
 
 // Distinct write-queue namespace so settings keys can't collide with the shared
 // electron-store keys serialized elsewhere.
-const queueKey = (key: string) => `settings:${key}`
+const queueKey = (key: string): string => `settings:${key}`
 
 interface StoredKey {
   v: 1
@@ -93,7 +93,7 @@ export function setApiKey(provider: KeyProvider, key: string): void {
 export function deleteApiKey(provider: KeyProvider): void {
   store.delete(`apiKey.${provider}`)
   const envVar = envVarFor(provider)
-  if (envVar) delete process.env[envVar]
+  if (envVar) Reflect.deleteProperty(process.env, envVar)
 }
 
 /**

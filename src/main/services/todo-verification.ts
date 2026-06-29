@@ -55,7 +55,7 @@ export async function verifyTodoCheck(
         passed,
         detail: passed
           ? 'typecheck passed'
-          : `typecheck failed (exit ${r.code}): ${(r.stderr || r.stdout).slice(0, 500)}`,
+          : `typecheck failed (exit ${String(r.code)}): ${(r.stderr || r.stdout).slice(0, 500)}`,
       }
     }
     case 'shell': {
@@ -63,8 +63,8 @@ export async function verifyTodoCheck(
       if (rejected) return rejected
 
       const parts = check.command.trim().split(/\s+/)
-      const cmd = parts[0]!
-      const args = parts.slice(1)
+      const [cmd, ...args] = parts
+      if (!cmd) return { passed: false, detail: 'empty shell command' }
       const workspaceRoot = getWorkspaceRoot()
       const unsandboxed = shellRequiresOutsideSandbox(
         check.command,
@@ -83,7 +83,7 @@ export async function verifyTodoCheck(
         passed,
         detail: passed
           ? `Command succeeded: ${check.command}`
-          : `Command failed (exit ${r.code}): ${(r.stderr || r.stdout).slice(0, 500)}`,
+          : `Command failed (exit ${String(r.code)}): ${(r.stderr || r.stdout).slice(0, 500)}`,
       }
     }
   }

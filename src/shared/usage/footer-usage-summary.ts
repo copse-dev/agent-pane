@@ -24,6 +24,7 @@ export function estimateAssistantOutputTokens(messages: Message[]): number {
   for (const message of messages) {
     if (message.role !== 'assistant') continue
     chars += message.content.length
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
     for (const toolCall of message.toolCalls ?? []) {
       for (const subMessage of toolCall.subagent?.messages ?? []) {
         if (subMessage.role === 'assistant') chars += subMessage.content.length
@@ -74,8 +75,8 @@ export function formatFooterUsageSummary(
   const total = inputTokens + outputTokens
 
   if (opts.costVisible) {
-    const inLabel = estimated ? `~${inputTokens}` : `${inputTokens}`
-    const outLabel = estimated ? `~${outputTokens}` : `${outputTokens}`
+    const inLabel = estimated ? `~${String(inputTokens)}` : String(inputTokens)
+    const outLabel = estimated ? `~${String(outputTokens)}` : String(outputTokens)
     const cost = estimated
       ? 'est.'
       : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.extra)

@@ -12,7 +12,9 @@ import { storageGet, storageSet } from './storage.ts'
 import type { McpServerStatus } from '@shared/types/mcp.ts'
 
 const ENABLED_KEY = 'mcpEnabledCuratedServers'
-const SAMPLE = CURATED_MCP_SERVERS[0]!.name
+const firstCuratedServer = CURATED_MCP_SERVERS[0]
+if (!firstCuratedServer) throw new Error('CURATED_MCP_SERVERS is empty')
+const SAMPLE = firstCuratedServer.name
 
 describe('curated MCP catalog', () => {
   beforeEach(() => {
@@ -27,13 +29,15 @@ describe('curated MCP catalog', () => {
   })
 
   it('sends the Mozilla analytics opt-out header for MDN by default', () => {
-    const mdn = CURATED_MCP_SERVERS.find((s) => s.name === 'mdn')!
+    const mdn = CURATED_MCP_SERVERS.find((s) => s.name === 'mdn')
+    assert.ok(mdn, 'MDN entry should exist')
     assert.equal(mdn.headers?.['X-Moz-1st-Party-Data-Opt-Out'], '1')
   })
 
   it('propagates curated headers into the built config', async () => {
     await setCuratedServerEnabled('mdn', true)
-    const config = getEnabledCuratedConfigs().find((c) => c.name === 'mdn')!
+    const config = getEnabledCuratedConfigs().find((c) => c.name === 'mdn')
+    assert.ok(config, 'enabled MDN config should exist')
     assert.equal(config.headers?.['X-Moz-1st-Party-Data-Opt-Out'], '1')
   })
 
@@ -50,8 +54,10 @@ describe('curated MCP catalog', () => {
 
     const configs = getEnabledCuratedConfigs()
     assert.equal(configs.length, 1)
-    assert.equal(configs[0]!.name, SAMPLE)
-    assert.equal(configs[0]!.source, CURATED_MCP_SOURCE)
+    const [firstConfig] = configs
+    assert.ok(firstConfig, 'expected one enabled config')
+    assert.equal(firstConfig.name, SAMPLE)
+    assert.equal(firstConfig.source, CURATED_MCP_SOURCE)
   })
 
   it('disabling removes only that server', async () => {
@@ -91,7 +97,8 @@ describe('curated MCP catalog', () => {
         curated: true,
       },
     ]
-    const status = getCuratedServerStatuses(live).find((s) => s.name === SAMPLE)!
+    const status = getCuratedServerStatuses(live).find((s) => s.name === SAMPLE)
+    assert.ok(status, 'expected status for sample server')
     assert.equal(status.enabled, true)
     assert.equal(status.state, 'connected')
     assert.equal(status.toolCount, 3)
@@ -100,7 +107,8 @@ describe('curated MCP catalog', () => {
 
   it('reports connecting when enabled but no live status yet', async () => {
     await setCuratedServerEnabled(SAMPLE, true)
-    const status = getCuratedServerStatuses([]).find((s) => s.name === SAMPLE)!
+    const status = getCuratedServerStatuses([]).find((s) => s.name === SAMPLE)
+    assert.ok(status, 'expected status for sample server')
     assert.equal(status.state, 'connecting')
   })
 })

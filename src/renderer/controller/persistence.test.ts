@@ -9,10 +9,10 @@ import type { ApiClient } from '../../preload/api.d.ts'
 // (node test env has no DOM).
 const pagehideHandlers = new Set<() => void>()
 ;(globalThis as Record<string, unknown>)['window'] = {
-  addEventListener: (event: string, handler: () => void) => {
+  addEventListener: (event: string, handler: () => void): void => {
     if (event === 'pagehide') pagehideHandlers.add(handler)
   },
-  removeEventListener: (event: string, handler: () => void) => {
+  removeEventListener: (event: string, handler: () => void): void => {
     if (event === 'pagehide') pagehideHandlers.delete(handler)
   },
 }
@@ -33,8 +33,9 @@ function thread(id: string): Thread {
   }
 }
 
-const tick = () => new Promise((r) => setTimeout(r, 0))
-const waitDebounce = () => new Promise((r) => setTimeout(r, AUTOSAVE_DEBOUNCE_MS + 20))
+const tick = (): Promise<unknown> => new Promise((r) => setTimeout(r, 0))
+const waitDebounce = (): Promise<unknown> =>
+  new Promise((r) => setTimeout(r, AUTOSAVE_DEBOUNCE_MS + 20))
 
 test('serializedSet applies writes to the same key in submission order', async () => {
   const calls: Array<[string, unknown]> = []
@@ -51,7 +52,9 @@ test('serializedSet applies writes to the same key in submission order', async (
   await tick()
   assert.deepEqual(calls, [['k', 'first']])
 
-  resolvers[0]!()
+  const resolveFirst = resolvers[0]
+  assert.ok(resolveFirst, 'first resolver should be registered')
+  resolveFirst()
   await p1
   await tick()
   assert.deepEqual(calls, [
@@ -59,7 +62,9 @@ test('serializedSet applies writes to the same key in submission order', async (
     ['k', 'second'],
   ])
 
-  resolvers[1]!()
+  const resolveSecond = resolvers[1]
+  assert.ok(resolveSecond, 'second resolver should be registered')
+  resolveSecond()
   await p2
 })
 
@@ -171,7 +176,9 @@ test('attachAutosave pagehide flush triggers a final save', async () => {
   const autosave = attachAutosave(store, api)
 
   // Simulate window teardown firing pagehide.
-  pagehideHandlers.forEach((h) => h())
+  pagehideHandlers.forEach((h) => {
+    h()
+  })
   await tick()
   assert.ok(calls.includes('threads:p1'))
   autosave.detach()

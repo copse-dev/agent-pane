@@ -30,7 +30,7 @@ export function bindBrowserLinkClicks(
     gh?: Pick<ApiClient['gh'], 'status'>
   },
 ): () => void {
-  const onClick = (event: MouseEvent) => {
+  const onClick = (event: MouseEvent): void => {
     const target = event.target
     if (!target || typeof (target as Element).closest !== 'function') return
     const link = (target as Element).closest<HTMLAnchorElement>('a[href]')
@@ -46,7 +46,9 @@ export function bindBrowserLinkClicks(
     if (artifact && api) {
       void api.remoteAgent
         .downloadArtifact(artifact.agentId, artifact.path)
-        .then((url) => openBrowserUrl(store, url))
+        .then((url) => {
+          openBrowserUrl(store, url)
+        })
         .catch((err: unknown) => {
           console.warn('[remote-agent] artifact download failed:', err)
         })
@@ -69,5 +71,7 @@ export function bindBrowserLinkClicks(
   }
 
   root.addEventListener('click', onClick)
-  return () => root.removeEventListener('click', onClick)
+  return () => {
+    root.removeEventListener('click', onClick)
+  }
 }

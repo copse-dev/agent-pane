@@ -15,10 +15,15 @@ class TestResizeObserver {
 ;(globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver = TestResizeObserver
 ;(globalThis as { requestAnimationFrame?: typeof requestAnimationFrame }).requestAnimationFrame = (
   callback,
-) => setTimeout(() => callback(Date.now()), 0) as unknown as number
+): number =>
+  setTimeout(() => {
+    callback(Date.now())
+  }, 0) as unknown as number
 ;(globalThis as { cancelAnimationFrame?: typeof cancelAnimationFrame }).cancelAnimationFrame = (
   id,
-) => clearTimeout(id)
+): void => {
+  clearTimeout(id)
+}
 ;(globalThis as { MutationObserver?: typeof MutationObserver }).MutationObserver =
   window.MutationObserver
 
@@ -53,7 +58,7 @@ function createApi(options: {
     },
     git: {
       branchStatus: async () => ({ currentBranch: options.currentBranch, pr: null }),
-      checkoutBranch: options.onCheckoutBranch ?? (async () => {}),
+      checkoutBranch: options.onCheckoutBranch ?? (async (): Promise<void> => {}),
       listBranches: async () => [{ name: options.currentBranch, lastCommitDate: '2024-01-01' }],
       getDefaultBranch: async () => 'main',
     },
@@ -112,16 +117,22 @@ describe('input bar branch mismatch warning', () => {
     )
     await settle()
 
-    const textarea = host.querySelector<HTMLTextAreaElement>('.prompt-input')!
+    const textarea = host.querySelector<HTMLTextAreaElement>('.prompt-input')
+    assert.ok(textarea)
     textarea.value = 'Continue'
-    host.querySelector<HTMLButtonElement>('.submit-btn')!.click()
+    const submitBtn = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(submitBtn)
+    submitBtn.click()
     await settle()
 
-    const warning = host.querySelector<HTMLElement>('.composer-branch-warning')!
+    const warning = host.querySelector<HTMLElement>('.composer-branch-warning')
+    assert.ok(warning)
     assert.equal(warning.hidden, false)
-    assert.match(warning.textContent ?? '', /This thread is for branch "feature\/thread-branch"/)
+    assert.match(warning.textContent, /This thread is for branch "feature\/thread-branch"/)
 
-    host.querySelector<HTMLButtonElement>('.composer-branch-checkout-btn')!.click()
+    const checkoutBtn = host.querySelector<HTMLButtonElement>('.composer-branch-checkout-btn')
+    assert.ok(checkoutBtn)
+    checkoutBtn.click()
     await settle()
 
     assert.equal(checkedOutBranch, 'feature/thread-branch')
@@ -142,15 +153,16 @@ describe('input bar browse button', () => {
     mountInputBar(host, store, createApi({ currentBranch: 'main' }))
     await settle()
 
-    const attachBtn = host.querySelector<HTMLButtonElement>('.attach-btn')!
-    const fileInput = host.querySelector<HTMLInputElement>('.attach-file-input')!
+    const attachBtn = host.querySelector<HTMLButtonElement>('.attach-btn')
     assert.ok(attachBtn, 'attach button is rendered')
+    const fileInput = host.querySelector<HTMLInputElement>('.attach-file-input')
+    assert.ok(fileInput)
     assert.equal(attachBtn.getAttribute('aria-label'), 'Attach files')
     assert.equal(fileInput.type, 'file')
     assert.equal(fileInput.multiple, true)
 
     let clicked = false
-    fileInput.click = () => {
+    fileInput.click = (): void => {
       clicked = true
     }
     attachBtn.click()
@@ -168,7 +180,8 @@ describe('input bar browse button', () => {
     mountInputBar(host, store, createApi({ currentBranch: 'main' }))
     await settle()
 
-    const fileInput = host.querySelector<HTMLInputElement>('.attach-file-input')!
+    const fileInput = host.querySelector<HTMLInputElement>('.attach-file-input')
+    assert.ok(fileInput)
     const file = new File(['hello world'], 'notes.txt', { type: 'text/plain' })
     Object.defineProperty(fileInput, 'files', { value: [file], configurable: true })
     fileInput.dispatchEvent(new Event('change'))
@@ -176,6 +189,6 @@ describe('input bar browse button', () => {
 
     const chip = host.querySelector<HTMLElement>('.attachment-chips .attachment-chip')
     assert.ok(chip, 'an attachment chip is rendered for the selected file')
-    assert.match(chip.textContent ?? '', /notes\.txt/)
+    assert.match(chip.textContent, /notes\.txt/)
   })
 })

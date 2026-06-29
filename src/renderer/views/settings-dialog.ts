@@ -98,7 +98,7 @@ async function saveSimpleFields(data: FormData, api: ApiClient): Promise<void> {
     if (field.kind === 'checkbox') {
       await api.settings.set(field.name, data.get(field.name) === 'on')
     } else {
-      const value = (data.get(field.name) as string) ?? ''
+      const value = (data.get(field.name) as string | null) ?? ''
       const trimmed = field.name === 'customInstructions' || field.name === 'openRouterModel'
       await api.settings.set(field.name, trimmed ? value.trim() : value)
     }
@@ -574,8 +574,17 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   document.body.append(overlay)
   overlayEl = overlay
 
+  // Every selector below targets an element baked into the static template
+  // above; a miss means the template and this code drifted, which we surface
+  // as a loud error rather than a silent non-null assertion.
+  function mustQuery(selector: string): HTMLElement {
+    const found = overlay.querySelector<HTMLElement>(selector)
+    if (!found) throw new Error(`Settings dialog template is missing "${selector}"`)
+    return found
+  }
+
   const customProvidersSection = createCustomProvidersSection(api)
-  overlay.querySelector('#settings-custom-providers-host')!.append(customProvidersSection.root)
+  mustQuery('#settings-custom-providers-host').append(customProvidersSection.root)
 
   const envKeyDetectSection = createEnvKeyDetectSection(api, {
     onImported: () => {
@@ -583,25 +592,25 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       void customProvidersSection.refresh()
     },
   })
-  overlay.querySelector('#settings-env-detect-host')!.append(envKeyDetectSection.root)
+  overlay.querySelector('#settings-env-detect-host')?.append(envKeyDetectSection.root)
 
   const cursorKeySection = createApiKeysSection(api, {
     legend: 'Cursor authentication',
     providers: ['cursor'],
   })
-  overlay.querySelector('#settings-cursor-key-host')!.append(cursorKeySection.root)
+  mustQuery('#settings-cursor-key-host').append(cursorKeySection.root)
 
   const lmStudioSection = createLmStudioSection(api, { showInstallGuide: false })
-  overlay.querySelector('#settings-lm-studio-host')!.append(lmStudioSection.root)
+  mustQuery('#settings-lm-studio-host').append(lmStudioSection.root)
 
   const ghCliSection = createGhCliSection(api)
-  overlay.querySelector('#settings-gh-cli-host')!.append(ghCliSection.root)
+  mustQuery('#settings-gh-cli-host').append(ghCliSection.root)
 
   const modelRoutingSection = createModelRoutingSection(api)
-  overlay.querySelector('#settings-model-routing-host')!.append(modelRoutingSection.root)
+  mustQuery('#settings-model-routing-host').append(modelRoutingSection.root)
 
   const usageSection = createUsageSection(api, store)
-  overlay.querySelector('#settings-usage-host')!.append(usageSection.root)
+  mustQuery('#settings-usage-host').append(usageSection.root)
 
   const navBtns = overlay.querySelectorAll<HTMLButtonElement>('.settings-nav-btn')
   const sections = overlay.querySelectorAll<HTMLElement>('.settings-section')
@@ -650,7 +659,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         trustBtn.disabled = true
         void api.workspace
           .setTrusted(true)
-          .then((next) => renderMcpServers(next))
+          .then((next) => {
+            renderMcpServers(next)
+          })
           .catch(() => {
             trustBtn.disabled = false
           })
@@ -716,7 +727,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       let detailText =
         s.state === 'connected'
-          ? `${s.toolCount} tool(s)${s.tools.length ? `: ${s.tools.join(', ')}` : ''}`
+          ? `${String(s.toolCount)} tool(s)${s.tools.length ? `: ${s.tools.join(', ')}` : ''}`
           : (s.error ?? '')
       if (s.configDisabled) {
         detailText = detailText
@@ -773,7 +784,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         toggle.disabled = true
         void api.mcp
           .setCuratedEnabled(s.name, toggle.checked)
-          .then((next) => renderCuratedServers(next))
+          .then((next) => {
+            renderCuratedServers(next)
+          })
           .catch(() => {
             toggle.checked = !toggle.checked
             toggle.disabled = false
@@ -810,7 +823,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         status.className = 'mcp-curated-status'
         status.textContent =
           s.state === 'connected'
-            ? `● connected — ${s.toolCount} tool(s)${s.tools.length ? `: ${s.tools.join(', ')}` : ''}`
+            ? `● connected — ${String(s.toolCount)} tool(s)${s.tools.length ? `: ${s.tools.join(', ')}` : ''}`
             : s.state === 'error'
               ? `✗ ${s.error ?? 'error'}`
               : '… connecting'
@@ -830,7 +843,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     }
   }
 
-  overlay.querySelector('#mcp-reload-btn')!.addEventListener('click', () => {
+  mustQuery('#mcp-reload-btn').addEventListener('click', () => {
     const statusEl = overlay.querySelector('#mcp-reload-status') as HTMLElement
     statusEl.textContent = 'Reloading…'
     statusEl.className = 'lmstudio-test-status'
@@ -841,10 +854,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         void refreshCuratedServers()
         const visible = statuses.filter((s) => !s.curated)
         const ok = visible.filter((s) => s.state === 'connected').length
-        statusEl.textContent = `✓ ${ok}/${visible.length} server(s) connected`
+        statusEl.textContent = `✓ ${String(ok)}/${String(visible.length)} server(s) connected`
         statusEl.classList.add('ok')
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         statusEl.textContent = `✗ ${err instanceof Error ? err.message : String(err)}`
         statusEl.classList.add('err')
       })
@@ -852,7 +865,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   overlay.addEventListener('settings-open', () => {
     showSection('general')
-    void (async () => {
+    void (async (): Promise<void> => {
       await cursorKeySection.refreshKeyStatus()
       await customProvidersSection.refresh()
       await envKeyDetectSection.refresh()
@@ -902,11 +915,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     })()
   })
 
-  overlay.querySelector('form')!.addEventListener('submit', (e) => {
+  const settingsForm = overlay.querySelector('form')
+  if (!settingsForm) throw new Error('Settings dialog template is missing "form"')
+  settingsForm.addEventListener('submit', (e) => {
     e.preventDefault()
-    void (async () => {
-      const form = overlay.querySelector('form') as HTMLFormElement
-      const data = new FormData(form)
+    void (async (): Promise<void> => {
+      const data = new FormData(settingsForm)
 
       await cursorKeySection.saveKeys()
       await customProvidersSection.saveKeys()
@@ -923,7 +937,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await api.settings.set('model', model)
       await api.settings.set(
         'smallTasksModel',
-        ((data.get('smallTasksModel') as string) ?? '').trim(),
+        ((data.get('smallTasksModel') as string | null) ?? '').trim(),
       )
       await saveSimpleFields(data, api)
       await api.settings.set('theme', theme)
@@ -962,6 +976,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     })()
   })
 
-  overlay.querySelector('#settings-cancel')!.addEventListener('click', closeSettingsDialog)
-  overlay.querySelector('#settings-close')!.addEventListener('click', closeSettingsDialog)
+  mustQuery('#settings-cancel').addEventListener('click', closeSettingsDialog)
+  mustQuery('#settings-close').addEventListener('click', closeSettingsDialog)
 }

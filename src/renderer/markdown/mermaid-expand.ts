@@ -19,8 +19,8 @@ function clamp(n: number, min: number, max: number): number {
 
 function applyTransform(): void {
   if (!stageEl) return
-  stageEl.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`
-  if (zoomLabelEl) zoomLabelEl.textContent = `${Math.round(scale * 100)}%`
+  stageEl.style.transform = `translate(${String(translateX)}px, ${String(translateY)}px) scale(${String(scale)})`
+  if (zoomLabelEl) zoomLabelEl.textContent = `${String(Math.round(scale * 100))}%`
 }
 
 function resetTransform(): void {
@@ -107,7 +107,7 @@ function bindViewportInteractions(viewport: HTMLDivElement): void {
     applyTransform()
   })
 
-  const endPan = (event: PointerEvent) => {
+  const endPan = (event: PointerEvent): void => {
     if (!panning) return
     panning = false
     viewport.classList.remove('is-panning')
@@ -166,7 +166,9 @@ function ensureExpandDialog(): HTMLDialogElement {
     const rect = viewportEl.getBoundingClientRect()
     zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, ZOOM_STEP)
   })
-  resetBtn.addEventListener('click', () => fitToViewport())
+  resetBtn.addEventListener('click', () => {
+    fitToViewport()
+  })
 
   const closeBtn = el('button', { type: 'button', class: 'mermaid-expand-close' }, 'Close')
 
@@ -177,7 +179,9 @@ function ensureExpandDialog(): HTMLDialogElement {
   expandDialog.addEventListener('click', (event) => {
     if (event.target === expandDialog) expandDialog?.close()
   })
-  expandDialog.addEventListener('close', () => resetTransform())
+  expandDialog.addEventListener('close', () => {
+    resetTransform()
+  })
 
   return expandDialog
 }
@@ -187,10 +191,13 @@ function openMermaidExpand(source: HTMLElement): void {
   if (!svg) return
 
   const dialog = ensureExpandDialog()
-  stageEl!.replaceChildren(svg.cloneNode(true))
+  if (!stageEl) return
+  stageEl.replaceChildren(svg.cloneNode(true))
   dialog.showModal()
   requestAnimationFrame(() => {
-    requestAnimationFrame(() => fitToViewport())
+    requestAnimationFrame(() => {
+      fitToViewport()
+    })
   })
 }
 
@@ -209,7 +216,9 @@ export function attachMermaidExpand(root: ParentNode): void {
     diagram.setAttribute('tabindex', '0')
     diagram.setAttribute('aria-label', 'Expand diagram')
 
-    diagram.addEventListener('click', () => openMermaidExpand(diagram))
+    diagram.addEventListener('click', () => {
+      openMermaidExpand(diagram)
+    })
     diagram.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return
       event.preventDefault()

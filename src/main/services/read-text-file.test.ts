@@ -40,7 +40,11 @@ describe('read-text-file', () => {
   it('reads a line range without including unrelated tail lines', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'copse-read-'))
     const file = join(dir, 'many.txt')
-    const lines = ['first', ...Array.from({ length: 200 }, (_, i) => `line-${i}`), 'LAST-UNIQUE']
+    const lines = [
+      'first',
+      ...Array.from({ length: 200 }, (_, i) => `line-${String(i)}`),
+      'LAST-UNIQUE',
+    ]
     await writeFile(file, lines.join('\n'), 'utf8')
     try {
       const result = await readTextLineRange(file, {
