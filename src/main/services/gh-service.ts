@@ -70,6 +70,36 @@ function ghPathPrefix(): string {
   return process.platform === 'win32' ? '' : '/usr/bin:/bin:/exec-daemon:'
 }
 
+/**
+ * gh authenticates from these environment variables when present, which keeps
+ * working even when its config dir (`~/.config/gh`) is unreadable — e.g. under a
+ * sandbox that denies the home directory, where `gh auth status` otherwise fails
+ * with "operation not permitted" and demands `gh auth login`. (#521)
+ */
+const GH_AUTH_ENV_KEYS = [
+  'GH_TOKEN',
+  'GITHUB_TOKEN',
+  'GH_HOST',
+  'GH_ENTERPRISE_TOKEN',
+  'GITHUB_ENTERPRISE_TOKEN',
+  'GH_CONFIG_DIR',
+] as const
+
+/**
+ * Environment for the gh subprocess: a minimal PATH plus any GitHub auth tokens
+ * present in the parent environment. runGh runs gh with an explicit env (not the
+ * inherited one), so without forwarding these gh would never see a token and
+ * would fall back to the config file alone. (#521)
+ */
+export function ghEnv(base: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const env: Record<string, string> = { PATH: `${ghPathPrefix()}${base['PATH'] ?? ''}` }
+  for (const key of GH_AUTH_ENV_KEYS) {
+    const value = base[key]
+    if (value) env[key] = value
+  }
+  return env
+}
+
 /** Run GitHub CLI outside the project sandbox so read-only API calls can reach GitHub. */
 export async function runGh(
   args: string[],
@@ -80,7 +110,7 @@ export async function runGh(
   const commandOpts: Parameters<typeof runCommand>[2] = {
     cwd,
     unsandboxed: true,
-    env: { PATH: `${ghPathPrefix()}${process.env['PATH'] ?? ''}` },
+    env: ghEnv(),
   }
   if (opts.timeout_ms !== undefined) commandOpts.timeout_ms = opts.timeout_ms
   if (opts.signal !== undefined) commandOpts.signal = opts.signal
