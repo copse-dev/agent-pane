@@ -21,6 +21,24 @@ import { REMOTE_AGENT_MODEL_PREFIX } from '../remote-agent.ts'
 /** Fallback context window for any provider/model whose size we don't know. */
 export const DEFAULT_EXTRA_PROVIDER_CONTEXT = 128_000
 
+/**
+ * True when a base URL points at a loopback host (localhost / 127.0.0.1 / ::1).
+ * Such providers are local OpenAI-compatible servers (LM Studio, Ollama,
+ * llama.cpp, …): they are surfaced in Settings → Local models, usually need no
+ * API key, and `http:` is acceptable. A single derived predicate so the new
+ * local presets and any user-added local endpoint are classified the same way.
+ */
+export function isLocalBaseUrl(baseUrl: string): boolean {
+  try {
+    const host = new URL(baseUrl).hostname.toLowerCase().replace(/^\[|\]$/g, '')
+    return (
+      host === 'localhost' || host.endsWith('.localhost') || host === '127.0.0.1' || host === '::1'
+    )
+  } catch {
+    return false
+  }
+}
+
 export interface ExtraProviderModel {
   /** Upstream model id sent to the provider. */
   id: string
@@ -45,6 +63,12 @@ export interface ExtraProvider {
   baseUrl: string
   /** True for a shipped preset (locked label/base URL, env-var fallback). */
   builtin: boolean
+  /**
+   * True when the base URL is a loopback/local server. Local providers render in
+   * Settings → Local models (not the cloud Providers panel) and are usable
+   * without an API key. Derived from the base URL via `isLocalBaseUrl`.
+   */
+  local: boolean
   /** Env var that can also supply the key (presets only). */
   envVar?: string
   /** Settings → API Keys field copy. */
@@ -90,6 +114,7 @@ export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
     prefix: 'mistral:',
     baseUrl: 'https://api.mistral.ai/v1',
     builtin: true,
+    local: false,
     envVar: 'MISTRAL_API_KEY',
     keyLabel: 'Mistral API key',
     keyPlaceholder: 'Mistral API key',
@@ -118,6 +143,7 @@ export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
     // Google's OpenAI-compatibility layer (accepts an `Authorization: Bearer` key).
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     builtin: true,
+    local: false,
     envVar: 'GEMINI_API_KEY',
     keyLabel: 'Google Gemini API key',
     keyPlaceholder: 'AIza…',
@@ -155,6 +181,7 @@ export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
     prefix: 'deepseek:',
     baseUrl: 'https://api.deepseek.com',
     builtin: true,
+    local: false,
     envVar: 'DEEPSEEK_API_KEY',
     keyLabel: 'DeepSeek API key',
     keyPlaceholder: 'sk-…',
@@ -182,6 +209,7 @@ export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
     // `zai-org/GLM-5.2:fastest`; the routing suffix survives our slug strip.
     baseUrl: 'https://router.huggingface.co/v1',
     builtin: true,
+    local: false,
     envVar: 'HF_TOKEN',
     keyLabel: 'Hugging Face token',
     keyPlaceholder: 'hf_…',
@@ -192,6 +220,70 @@ export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
     fallbackContextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
     includeUsage: true,
     // Bring-your-own model id (huge, fast-moving catalog): no curated shortlist.
+    models: [],
+  },
+  // Local OpenAI-compatible servers. Loopback base URLs mark them `local` (see
+  // isLocalBaseUrl): they render in Settings → Local models, accept `http:`, and
+  // work without an API key. Models are bring-your-own — use "Fetch models" in
+  // the Local providers panel to import what the running server exposes.
+  {
+    id: 'ollama',
+    label: 'Ollama',
+    prefix: 'ollama:',
+    baseUrl: 'http://localhost:11434/v1',
+    builtin: true,
+    local: true,
+    keyLabel: 'Ollama API key',
+    keyPlaceholder: 'usually none',
+    keyHint:
+      'Local Ollama server (OpenAI-compatible). No API key unless you configured one. Start it with `ollama serve`, then Fetch models.',
+    fallbackContextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
+    includeUsage: false,
+    models: [],
+  },
+  {
+    id: 'llamacpp',
+    label: 'llama.cpp',
+    prefix: 'llamacpp:',
+    baseUrl: 'http://localhost:8080/v1',
+    builtin: true,
+    local: true,
+    keyLabel: 'llama.cpp API key',
+    keyPlaceholder: 'usually none',
+    keyHint:
+      "Local llama.cpp server (`llama-server`, OpenAI-compatible). No API key unless you set --api-key. Fetch models to import what's loaded.",
+    fallbackContextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
+    includeUsage: false,
+    models: [],
+  },
+  {
+    id: 'jan',
+    label: 'Jan',
+    prefix: 'jan:',
+    baseUrl: 'http://localhost:1337/v1',
+    builtin: true,
+    local: true,
+    keyLabel: 'Jan API key',
+    keyPlaceholder: 'usually none',
+    keyHint:
+      'Local Jan server (OpenAI-compatible). Enable the local API server in Jan, then Fetch models.',
+    fallbackContextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
+    includeUsage: false,
+    models: [],
+  },
+  {
+    id: 'vllm',
+    label: 'vLLM',
+    prefix: 'vllm:',
+    baseUrl: 'http://localhost:8000/v1',
+    builtin: true,
+    local: true,
+    keyLabel: 'vLLM API key',
+    keyPlaceholder: 'usually none',
+    keyHint:
+      'Self-hosted vLLM server (OpenAI-compatible). No API key unless you set --api-key. Fetch models to import the served model.',
+    fallbackContextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
+    includeUsage: false,
     models: [],
   },
 ]
@@ -377,6 +469,7 @@ function customToProvider(stored: StoredExtraProvider): ExtraProvider | null {
     prefix: `${slug}:`,
     baseUrl,
     builtin: false,
+    local: isLocalBaseUrl(baseUrl),
     keyLabel: `${label} API key`,
     keyPlaceholder: 'API key',
     keyHint: `For ${label} (OpenAI-compatible). Validated via a models request.`,

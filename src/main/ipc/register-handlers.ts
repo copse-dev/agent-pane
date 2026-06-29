@@ -262,7 +262,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       openrouter: isProviderAvailable('openrouter'),
     }
     for (const provider of getResolvedExtraProviders()) {
-      available[provider.id] = isProviderAvailable(provider.id)
+      // Local servers need no API key, so treat them as available; their models
+      // only surface in the picker once the user fetches/saves them anyway.
+      available[provider.id] = provider.local ? true : isProviderAvailable(provider.id)
     }
     return available
   })

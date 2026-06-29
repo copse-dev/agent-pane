@@ -376,6 +376,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
             <div id="settings-lm-studio-host"></div>
 
+            <div id="settings-local-providers-host"></div>
+
             <fieldset>
               <legend>Routing behavior</legend>
               <label class="checkbox-label">
@@ -638,6 +640,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   const lmStudioSection = createLmStudioSection(api, { showInstallGuide: false })
   qsRequired(overlay, '#settings-lm-studio-host').append(lmStudioSection.root)
+
+  // The same Providers panel, scoped to local OpenAI-compatible servers (Ollama,
+  // llama.cpp, Jan, vLLM, + add-your-own). The cloud instance above filters these
+  // out via the `local` flag so each provider appears in exactly one place.
+  const localProvidersSection = createCustomProvidersSection(api, { variant: 'local' })
+  overlay.querySelector('#settings-local-providers-host')!.append(localProvidersSection.root)
 
   const ghCliSection = createGhCliSection(api)
   qsRequired(overlay, '#settings-gh-cli-host').append(ghCliSection.root)
@@ -906,6 +914,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await claudeAgentKeySection.refreshKeyStatus()
       await customProvidersSection.refresh()
       await envKeyDetectSection.refresh()
+      await localProvidersSection.refresh()
 
       const form = qsRequired<HTMLFormElement>(overlay, 'form')
       const model = (await api.settings.get('model')) as string | undefined
@@ -962,6 +971,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await cursorKeySection.saveKeys()
       await claudeAgentKeySection.saveKeys()
       await customProvidersSection.saveKeys()
+      await localProvidersSection.saveKeys()
       await lmStudioSection.saveConnection()
       const routingValues = modelRoutingSection.readValues()
 
