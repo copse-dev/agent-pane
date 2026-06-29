@@ -6,7 +6,7 @@ import type { IPty } from 'node-pty'
 import quote from 'shell-quote'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { posixQuote } from '../services/safe-install.ts'
-import { workspaceSandboxOverlay } from './config.ts'
+import { ensureWorkspaceTmpDir, workspaceSandboxOverlay } from './config.ts'
 import { isProjectSandboxActive, setProjectSandboxActive } from './state.ts'
 
 export function isProjectSandboxEnabled(): boolean {
@@ -29,6 +29,18 @@ function shellCommand(executable: string, args: string[]): string {
 function mergeSpawnEnv(base: NodeJS.ProcessEnv, override?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   if (!override) return base
   return { ...base, ...override }
+}
+
+/**
+ * Point the shell's temp-dir env vars at the workspace-owned scratch dir so
+ * commands using $TMPDIR (mktemp, build tools, test runners) write to a path the
+ * seatbelt allows instead of the system /tmp it denies (issue #481). An explicit
+ * `opts.env` override still wins via {@link mergeSpawnEnv}. No-op outside the
+ * sandbox, where the system temp dir is fully writable.
+ */
+function withWorkspaceTmpEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const tmpDir = ensureWorkspaceTmpDir()
+  return { ...env, TMPDIR: tmpDir, TMP: tmpDir, TEMP: tmpDir }
 }
 
 /** POSIX-only: run the child as its own process-group leader so the group can be killed together. */
@@ -86,7 +98,7 @@ export async function spawnInProjectSandbox(
   if (!file) throw new Error('sandbox wrap produced empty argv')
   return spawn(file, argv.slice(1), {
     cwd: opts.cwd,
-    env: mergeSpawnEnv(env, opts.env),
+    env: mergeSpawnEnv(withWorkspaceTmpEnv(env), opts.env),
     stdio: opts.stdio,
     signal: opts.signal,
     detached: detachForGroupKill,
@@ -127,7 +139,7 @@ export async function spawnShellInProjectSandbox(
   if (!file) throw new Error('sandbox wrap produced empty argv')
   return spawn(file, argv.slice(1), {
     cwd: opts.cwd,
-    env: mergeSpawnEnv(env, opts.env),
+    env: mergeSpawnEnv(withWorkspaceTmpEnv(env), opts.env),
     stdio: opts.stdio,
     signal: opts.signal,
     detached: detachForGroupKill,
@@ -204,6 +216,8 @@ export async function spawnPtyInProjectSandbox(
   if (!file) throw new Error('sandbox wrap produced empty argv')
   return pty.spawn(file, argv.slice(1), {
     ...ptyOpts,
-    env: { ...env, ...termEnv },
+    // Workspace tmp wins over the host TMPDIR carried in termEnv: this branch is
+    // sandbox-wrapped, so the system temp dir is denied (issue #481).
+    env: withWorkspaceTmpEnv({ ...env, ...termEnv }) as Record<string, string>,
   })
 }

@@ -1,4 +1,4 @@
-import { accessSync, realpathSync, statSync } from 'node:fs'
+import { accessSync, mkdirSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
@@ -82,6 +82,36 @@ function gitConfigReadPaths(): string[] {
     join(home, '.gitignore'),
     join(home, '.gitignore_global'),
   ]
+}
+
+/**
+ * A workspace-owned scratch directory the sandbox permits writes to, used to
+ * redirect $TMPDIR away from the system temp dir.
+ *
+ * Commands that write to the OS temp dir (`/tmp`, `$TMPDIR`, `/var/folders/...`)
+ * get blocked by the workspace-scoped seatbelt, whose only writable roots are the
+ * project and this dir (issue #481). Routing temp writes here keeps them on the
+ * allow-list without widening it to all of `/tmp`. Lives under `~/.copse/` next
+ * to the memories store rather than inside the repo so scratch files never dirty
+ * the user's working tree.
+ */
+export function workspaceTmpDir(): string {
+  return join(homedir(), '.copse', 'workspace', 'tmp')
+}
+
+/**
+ * Create {@link workspaceTmpDir} if missing and return it. Best-effort: returns
+ * the path even if creation fails (e.g. read-only home) so callers can still set
+ * $TMPDIR — the spawn just falls back to the system temp dir as before.
+ */
+export function ensureWorkspaceTmpDir(): string {
+  const dir = workspaceTmpDir()
+  try {
+    mkdirSync(dir, { recursive: true })
+  } catch {
+    // Best-effort: a missing dir only means the redirect is a no-op this run.
+  }
+  return dir
 }
 
 function sandboxAllowedDomainsFromSettings(): string[] {
@@ -226,6 +256,12 @@ export function fsWorkerSandboxOverlay(
 export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxRuntimeConfig> {
   const root = canonicalizeWorkspaceRoot(workspaceRoot)
   const toolchainRead = resolveNodeToolchainAllowRead()
+  // A workspace-owned scratch dir so commands writing to $TMPDIR stay on the
+  // allow-list instead of hitting the system /tmp deny (issue #481). Created
+  // here (best-effort) so the path the seatbelt allows actually exists; spawn
+  // points $TMPDIR at it. Falls under the home denyRead, so it must be
+  // re-allowed for both read and write.
+  const tmpDir = ensureWorkspaceTmpDir()
   return {
     // Auto-run, sandbox-contained commands get NO network (see
     // containedSandboxNetworkConfig); only user-approved commands run with
@@ -235,8 +271,15 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
       // Deny home reads, re-allow only this project plus the user's git config
       // files (ASRT deny-then-allow; a more-specific allow overrides the deny).
       denyRead: [homedir()],
-      allowRead: [root, `${root}/**`, ...toolchainRead, ...gitConfigReadPaths()],
-      allowWrite: [root, `${root}/**`],
+      allowRead: [
+        root,
+        `${root}/**`,
+        tmpDir,
+        `${tmpDir}/**`,
+        ...toolchainRead,
+        ...gitConfigReadPaths(),
+      ],
+      allowWrite: [root, `${root}/**`, tmpDir, `${tmpDir}/**`],
       denyWrite: workspaceMandatoryWriteDenyPaths(root),
       allowGitConfig: true,
     },
