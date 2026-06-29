@@ -31,8 +31,8 @@ function initMermaid(mermaid: MermaidModule): void {
 
 function diagramRenderFailed(container: HTMLElement): boolean {
   const svg = container.querySelector('svg')
-  if (svg && !container.querySelector('.error-icon')) return false
-  if (container.querySelector('.error-icon')) return true
+  if (svg && !container.querySelector<HTMLElement>('.error-icon')) return false
+  if (container.querySelector<HTMLElement>('.error-icon')) return true
   if ((container.textContent ?? '').includes('Syntax error in text')) return true
   return !svg
 }
@@ -63,7 +63,7 @@ export async function renderMermaidIn(root: ParentNode): Promise<void> {
   await runMermaidNodes(mermaid, elements)
 
   for (const node of elements) {
-    const container = node.closest('.mermaid-diagram')
+    const container = node.closest<HTMLElement>('.mermaid-diagram')
     if (!container || container.querySelector('.mermaid-fallback-title')) continue
 
     if (!diagramRenderFailed(container)) continue

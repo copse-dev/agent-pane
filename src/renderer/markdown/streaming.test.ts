@@ -170,7 +170,7 @@ describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
     const pending = host.querySelector('.stream-pending')!
     assert.match(completed.innerHTML, /<h2>Title<\/h2>/)
     assert.equal(pending.textContent, '- item')
-    assert.equal(pending.hidden, false)
+    assert.equal((pending as HTMLElement).hidden, false)
   })
 
   it('renders inline markdown in the live tail without rebuilding completed content', () => {
