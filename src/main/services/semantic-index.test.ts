@@ -1,6 +1,9 @@
+import { cpus } from 'node:os'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  codesearchCpuLimitEnv,
+  codesearchThreadCap,
   formatSemanticSearchResults,
   parseCodesearchJson,
   parseVeraJson,
@@ -95,6 +98,24 @@ describe('semantic-index parsing', () => {
     assert.equal(resolveSemanticSearchRoot(root, 'src/main'), `${root}/src/main`)
     assert.equal(resolveSemanticSearchRoot(root, root), root)
     assert.equal(resolveSemanticSearchRoot(root, `${root}/src`), `${root}/src`)
+  })
+
+  it('caps codesearch threads to keep CPU bounded (#517)', () => {
+    const cap = codesearchThreadCap()
+    const cores = Math.max(1, cpus().length)
+    // Never zero/negative, never more than half the cores, never above the ceiling.
+    assert.ok(cap >= 1)
+    assert.ok(cap <= 4)
+    assert.ok(cap <= Math.max(1, Math.floor(cores / 2)))
+  })
+
+  it('exposes thread-cap env vars for the codesearch process (#517)', () => {
+    const env = codesearchCpuLimitEnv()
+    const threads = String(codesearchThreadCap())
+    assert.equal(env['RAYON_NUM_THREADS'], threads)
+    assert.equal(env['TOKIO_WORKER_THREADS'], threads)
+    assert.equal(env['OMP_NUM_THREADS'], threads)
+    assert.equal(env['CODESEARCH_THREADS'], threads)
   })
 
   it('formats semantic hits with backend note', () => {
