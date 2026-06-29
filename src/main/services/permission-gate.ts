@@ -23,7 +23,6 @@ import {
   shellRequiresOutsideSandbox,
   mcpToolLabel,
   GITHUB_CI_TOOLS,
-  formatGithubCiPromptBody,
 } from './permission-policy.ts'
 import { detectPackageInstall } from './safe-install.ts'
 import {
@@ -264,19 +263,6 @@ async function rememberBrowserOrigin(origin: string): Promise<void> {
   }
 }
 
-async function checkGithubCiPermission(toolName: string, args: unknown): Promise<boolean> {
-  if (getSetting<boolean>('githubCiAutoAllow', false)) return true
-  const { approved, remember } = await requestApproval({
-    title: `GitHub CI tool: ${toolName}`,
-    body: formatGithubCiPromptBody(toolName, args),
-    type: 'mcp',
-    allowRemember: true,
-    rememberLabel: 'Always allow GitHub CI tools',
-  })
-  if (approved && remember) await setSetting('githubCiAutoAllow', true)
-  return approved
-}
-
 async function checkBrowserNavigatePermission(args: unknown): Promise<boolean> {
   const url = browserUrlFromArgs(args)
   if (!url) throw new Error('browser_navigate requires a url argument')
@@ -406,8 +392,11 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
     return checkWebSearchPermission()
   }
 
+  // Read-only GitHub CI reads (status/logs/wait) reach github.com via the `gh`
+  // CLI but never mutate anything — the same shape as gh_pr_view in SANDBOX_TOOLS.
+  // They auto-run without prompting; nothing they do needs user approval.
   if (GITHUB_CI_TOOLS.has(toolName)) {
-    return checkGithubCiPermission(toolName, args)
+    return true
   }
 
   if (toolName.startsWith('mcp__')) {
