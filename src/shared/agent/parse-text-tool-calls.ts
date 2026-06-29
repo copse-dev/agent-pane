@@ -9,6 +9,28 @@ const FUNCTION_RE =
   /<\s*function\s*=\s*([^>\s]+)\s*>([\s\S]*?)(?:<\s*\/\s*function\s*>|(?=<\s*function\s*=)|(?=<\s*\/\s*tool_call\s*>))/gi
 const PARAMETER_RE = /<\s*parameter\s*=\s*([^>\s]+)\s*>([\s\S]*?)<\s*\/\s*parameter\s*>/gi
 
+/**
+ * MiniMax models (e.g. MiniMax-M3 via the Novita / Hugging Face router) wrap every
+ * emitted token in this delimiter. Nothing downstream strips it, so it otherwise
+ * leaks into the transcript as literal `]<]minimax[>[` garbage around the model's
+ * tool-call XML. Strip it before parsing and before display. (#519)
+ */
+const MINIMAX_DELIMITER_RE = /\]<\]minimax\[>\[/gi
+/** Anthropic / MiniMax-style `<invoke name="tool">…</invoke>` tool call embedded in text. */
+const INVOKE_BLOCK_RE =
+  /<\s*invoke\s+name\s*=\s*["']?([^"'>\s]+)["']?\s*>([\s\S]*?)<\s*\/\s*invoke\s*>/gi
+/** An `<invoke …>` opener with no matching closer (block still streaming in). */
+const OPEN_INVOKE_RE = /<\s*invoke\b/i
+/** Anthropic-style parameter inside an invoke block: `<parameter name="x">value</parameter>`. */
+const INVOKE_PARAM_NAMED_RE =
+  /<\s*parameter\s+name\s*=\s*["']?([^"'>\s]+)["']?\s*>([\s\S]*?)<\s*\/\s*parameter\s*>/gi
+/** Bare child tag inside an invoke block naming a parameter: `<command>value</command>`. */
+const INVOKE_PARAM_BARE_RE = /<\s*([a-zA-Z_][\w-]*)\s*>([\s\S]*?)<\s*\/\s*\1\s*>/g
+
+function stripMinimaxDelimiters(text: string): string {
+  return text.replace(MINIMAX_DELIMITER_RE, '')
+}
+
 const TOOL_NAME_ALIASES: Record<string, string> = {
   runshell: 'run_shell',
   run_shell: 'run_shell',
@@ -97,6 +119,51 @@ function parseFunctionsInBlock(inner: string, coerceToolArgs?: CoerceToolArgsFn)
   return toolCalls
 }
 
+/** Parameters of an `<invoke>` block: named `<parameter name="x">` first, else bare `<x>` child tags. */
+function parseInvokeParameters(body: string): Record<string, unknown> {
+  const named: Record<string, unknown> = {}
+  for (const match of body.matchAll(INVOKE_PARAM_NAMED_RE)) {
+    const name = match[1]?.trim()
+    if (!name) continue
+    named[name] = (match[2] ?? '').trim()
+  }
+  if (Object.keys(named).length > 0) return named
+  const bare: Record<string, unknown> = {}
+  for (const match of body.matchAll(INVOKE_PARAM_BARE_RE)) {
+    const name = match[1]?.trim()
+    if (!name) continue
+    bare[name] = (match[2] ?? '').trim()
+  }
+  return bare
+}
+
+/**
+ * Parse Anthropic / MiniMax-style `<invoke name="tool">…</invoke>` blocks. MiniMax
+ * emits these (often wrapped in `<tool_call>`) instead of the Cursor-style
+ * `<function=…>` dialect, so the function parser finds nothing and the call leaks. (#519)
+ */
+function parseInvokeBlocks(
+  text: string,
+  coerceToolArgs?: CoerceToolArgsFn,
+): { toolCalls: ToolCallChunk[]; sawInvoke: boolean } {
+  const toolCalls: ToolCallChunk[] = []
+  let sawInvoke = false
+  for (const match of text.matchAll(INVOKE_BLOCK_RE)) {
+    sawInvoke = true
+    const name = normalizeToolName(match[1] ?? '')
+    if (!name) continue
+    const coerced = coerceStringlyTypedToolArgs(parseInvokeParameters(match[2] ?? ''))
+    const args = coerceToolArgs ? coerceToolArgs(name, coerced) : coerced
+    if (coerceToolArgs && args === null) continue
+    toolCalls.push({
+      id: globalThis.crypto.randomUUID(),
+      name,
+      args: args ?? coerced,
+    })
+  }
+  return { toolCalls, sawInvoke }
+}
+
 export interface TextToolCallRecovery {
   cleanedText: string
   toolCalls: ToolCallChunk[]
@@ -127,45 +194,68 @@ function trailingPartialToolCallIndex(s: string): number {
  * appears, not once it closes.
  */
 export function stripTextToolCallBlocks(text: string): string {
-  let out = text.replace(TOOL_CALL_BLOCK_RE, '')
+  let out = stripMinimaxDelimiters(text)
+  out = out.replace(TOOL_CALL_BLOCK_RE, '').replace(INVOKE_BLOCK_RE, '')
   const open = out.search(OPEN_TOOL_CALL_RE)
   if (open !== -1) {
     out = out.slice(0, open)
   } else {
-    const partial = trailingPartialToolCallIndex(out)
-    if (partial !== -1) out = out.slice(0, partial)
+    const invokeOpen = out.search(OPEN_INVOKE_RE)
+    if (invokeOpen !== -1) {
+      out = out.slice(0, invokeOpen)
+    } else {
+      const partial = trailingPartialToolCallIndex(out)
+      if (partial !== -1) out = out.slice(0, partial)
+    }
   }
   return out.replace(/\n{3,}/g, '\n\n').trimEnd()
 }
 
 /**
- * When the model emits Cursor-style `<tool_call>` XML in text with no native tool_calls,
- * extract executable tool calls and return prose without the XML blocks.
+ * When the model emits Cursor-style `<tool_call>` XML — or Anthropic / MiniMax-style
+ * `<invoke name="tool">…</invoke>` blocks (optionally wrapped in MiniMax `]<]minimax[>[`
+ * delimiters) — in text with no native tool_calls, extract executable tool calls and
+ * return prose without the XML blocks.
  */
 export function recoverTextToolCalls(
   text: string,
   coerceToolArgs?: CoerceToolArgsFn,
 ): TextToolCallRecovery {
+  // MiniMax wraps each token in a delimiter; strip it so the XML beneath is parseable. (#519)
+  const normalized = stripMinimaxDelimiters(text)
   const toolCalls: ToolCallChunk[] = []
-  let sawToolCallBlock = false
+  let sawBlock = false
   let anyBlockUnparsed = false
 
-  for (const match of text.matchAll(TOOL_CALL_BLOCK_RE)) {
-    sawToolCallBlock = true
+  for (const match of normalized.matchAll(TOOL_CALL_BLOCK_RE)) {
+    sawBlock = true
     const inner = match[1]
     if (!inner?.trim()) {
       anyBlockUnparsed = true
       continue
     }
-    const fromBlock = parseFunctionsInBlock(inner, coerceToolArgs)
+    // Cursor `<function=…>` dialect first, then the Anthropic/MiniMax `<invoke>` dialect.
+    let fromBlock = parseFunctionsInBlock(inner, coerceToolArgs)
+    if (fromBlock.length === 0) fromBlock = parseInvokeBlocks(inner, coerceToolArgs).toolCalls
     if (fromBlock.length === 0) anyBlockUnparsed = true
     toolCalls.push(...fromBlock)
   }
 
-  const keptRawBlocks = sawToolCallBlock && toolCalls.length === 0 && anyBlockUnparsed
+  // MiniMax may emit `<invoke>` blocks without a surrounding `<tool_call>` wrapper.
+  if (!sawBlock) {
+    const { toolCalls: invokeCalls, sawInvoke } = parseInvokeBlocks(normalized, coerceToolArgs)
+    if (sawInvoke) {
+      sawBlock = true
+      if (invokeCalls.length === 0) anyBlockUnparsed = true
+      toolCalls.push(...invokeCalls)
+    }
+  }
+
+  const keptRawBlocks = sawBlock && toolCalls.length === 0 && anyBlockUnparsed
 
   return {
-    cleanedText: keptRawBlocks ? text : stripTextToolCallBlocks(text),
+    // Even when nothing parsed, never leak the MiniMax delimiters into the transcript.
+    cleanedText: keptRawBlocks ? stripMinimaxDelimiters(text) : stripTextToolCallBlocks(text),
     toolCalls,
     keptRawBlocks,
   }
