@@ -627,6 +627,12 @@ export function mountPrPane(
   renderList()
   clearDiff()
 
+  // This pane is mounted asynchronously, once the Monaco bundle resolves. If the
+  // right panel is already in "prs" mode by the time we mount, no
+  // right_panel_mode_changed event will arrive to trigger the first refresh — so
+  // catch up to the current state here. See #459.
+  if (prsModeActive(store)) void refresh()
+
   return () => {
     stopObservingLayout()
     unbindBrowserLinks()
