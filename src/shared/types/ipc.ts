@@ -103,6 +103,25 @@ export interface IpcInvokeMap {
     args: [provider: CloudProvider, key: string]
     result: { ok: boolean; error?: string; formatOk?: boolean }
   }
+  // Opt-in environment scan for provider API keys. Scan returns masked previews
+  // (never raw secrets); import populates Settings for any not-yet-configured key.
+  'settings:scanEnvKeys': {
+    args: []
+    result: {
+      provider: string
+      envVar: string
+      source: string
+      masked: string
+      alreadyConfigured: boolean
+    }[]
+  }
+  'settings:importEnvKeys': {
+    args: []
+    result: {
+      imported: { provider: string; source: string }[]
+      skipped: { provider: string; reason: string }[]
+    }
+  }
 
   // App icon
   'app-icon:apply': { args: []; result: void }
