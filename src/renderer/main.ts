@@ -191,7 +191,12 @@ function mountFullLayout() {
     store,
     api,
   )
-  mountAgentTasks(document.getElementById('agent-tasks-host')!, store, api)
+  mountAgentTasks(
+    document.getElementById('terminals-list-host')!,
+    document.getElementById('agent-tasks-host')!,
+    store,
+    api,
+  )
   mountBrowserPane(
     document.getElementById('browser-tabs-host')!,
     document.getElementById('browser-viewer-host')!,

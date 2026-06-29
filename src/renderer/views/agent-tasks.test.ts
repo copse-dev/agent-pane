@@ -2,23 +2,31 @@ import '../../../tests/setup-dom.ts'
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
+import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { StreamChunk } from '@shared/types'
+import { el } from '../dom/helpers.ts'
 import { mountAgentTasks } from './agent-tasks.ts'
 
 type ChunkHandler = (threadId: string, chunk: StreamChunk) => void
 type OutputHandler = (data: string, toolCallId: string | null) => void
 
 interface Harness {
-  host: HTMLElement
+  listRoot: HTMLElement
+  viewerParent: HTMLElement
+  viewerHost: HTMLElement
+  store: AppStore
   emitChunk: ChunkHandler
   emitOutput: OutputHandler
   dispose: () => void
 }
 
 function mount(): Harness {
-  const host = document.createElement('div')
-  document.body.append(host)
+  const listRoot = el('div', { class: 'terminals-list-host' })
+  const viewerParent = el('div', { class: 'terminals-viewer-host' })
+  const viewerHost = el('div', { class: 'agent-tasks-host' })
+  viewerParent.append(viewerHost)
+  document.body.append(listRoot, viewerParent)
   const store = createStore()
   let chunkHandler: ChunkHandler = () => {}
   let outputHandler: OutputHandler = () => {}
@@ -34,9 +42,12 @@ function mount(): Harness {
       },
     },
   } as unknown as ApiClient
-  const dispose = mountAgentTasks(host, store, api)
+  const dispose = mountAgentTasks(listRoot, viewerHost, store, api)
   return {
-    host,
+    listRoot,
+    viewerParent,
+    viewerHost,
+    store,
     emitChunk: (tid, chunk) => chunkHandler(tid, chunk),
     emitOutput: (data, id) => outputHandler(data, id),
     dispose,
@@ -47,8 +58,16 @@ function startShell(h: Harness, id: string, command: string): void {
   h.emitChunk('t1', { type: 'tool_call', toolCall: { id, name: 'run_shell', args: { command } } })
 }
 
-function rows(h: Harness): HTMLElement[] {
-  return [...h.host.querySelectorAll<HTMLElement>('.agent-task')]
+function tabs(h: Harness): HTMLButtonElement[] {
+  return [...h.listRoot.querySelectorAll<HTMLButtonElement>('.agent-task-tab')]
+}
+
+function panels(h: Harness): HTMLElement[] {
+  return [...h.viewerHost.querySelectorAll<HTMLElement>('.agent-task-output-panel')]
+}
+
+function section(h: Harness): HTMLElement {
+  return h.listRoot.querySelector<HTMLElement>('.agent-tasks-section')!
 }
 
 describe('agent-tasks', () => {
@@ -58,52 +77,50 @@ describe('agent-tasks', () => {
     h = mount()
   })
 
-  it('is hidden until the agent runs a shell command', () => {
-    assert.equal(h.host.hidden, true)
+  it('keeps the left section hidden until the agent runs a shell command', () => {
+    assert.equal(section(h).hidden, true)
     startShell(h, 'a', 'npm test')
-    assert.equal(h.host.hidden, false)
-    assert.equal(rows(h).length, 1)
+    assert.equal(section(h).hidden, false)
+    assert.equal(tabs(h).length, 1)
+    assert.equal(panels(h).length, 1)
   })
 
-  it('shows the command label and starts running + expanded', () => {
+  it('shows the stripped command label and a running status on the tab', () => {
     startShell(h, 'a', 'cd /repo && npm run build')
-    const row = rows(h)[0]!
-    assert.equal(row.dataset['status'], 'running')
-    assert.equal(row.classList.contains('is-expanded'), true)
-    // cd-prefix is stripped from the displayed command.
-    assert.equal(row.querySelector('.agent-task-cmd')!.textContent, 'npm run build')
+    const tab = tabs(h)[0]!
+    assert.equal(tab.dataset['status'], 'running')
+    assert.equal(tab.querySelector('.agent-task-label')!.textContent, 'npm run build')
   })
 
-  it('routes streamed output to the matching task by id', () => {
+  it('routes streamed output to the matching task panel by id', () => {
     startShell(h, 'a', 'echo hi')
     h.emitOutput('hello\nworld\n', 'a')
-    assert.match(rows(h)[0]!.querySelector('.agent-task-output')!.textContent!, /hello\nworld/)
+    assert.match(panels(h)[0]!.textContent!, /hello\nworld/)
   })
 
   it('strips ANSI escape sequences from output', () => {
     startShell(h, 'a', 'ls')
     h.emitOutput('\x1b[31mred\x1b[0m text', 'a')
-    assert.equal(rows(h)[0]!.querySelector('.agent-task-output')!.textContent, 'red text')
+    assert.equal(panels(h)[0]!.textContent, 'red text')
   })
 
   it('falls back to the latest running task when output has no id', () => {
     startShell(h, 'a', 'first')
-    // Empty result so completeTask doesn't backfill task "a" with output.
     h.emitChunk('t1', { type: 'tool_result', toolCallId: 'a', result: '', isError: false })
     startShell(h, 'b', 'second')
     h.emitOutput('streamed', null)
-    assert.equal(rows(h)[0]!.querySelector('.agent-task-output')!.textContent, '')
-    assert.equal(rows(h)[1]!.querySelector('.agent-task-output')!.textContent, 'streamed')
+    assert.equal(panels(h)[0]!.textContent, '')
+    assert.equal(panels(h)[1]!.textContent, 'streamed')
   })
 
   it('marks a task done/error on tool_result', () => {
     startShell(h, 'a', 'ok')
     h.emitChunk('t1', { type: 'tool_result', toolCallId: 'a', result: 'fine', isError: false })
-    assert.equal(rows(h)[0]!.dataset['status'], 'done')
+    assert.equal(tabs(h)[0]!.dataset['status'], 'done')
 
     startShell(h, 'b', 'boom')
     h.emitChunk('t1', { type: 'tool_result', toolCallId: 'b', result: 'nope', isError: true })
-    assert.equal(rows(h)[1]!.dataset['status'], 'error')
+    assert.equal(tabs(h)[1]!.dataset['status'], 'error')
   })
 
   it('uses the tool result as output when nothing streamed', () => {
@@ -114,32 +131,47 @@ describe('agent-tasks', () => {
       result: 'final output',
       isError: false,
     })
-    assert.equal(rows(h)[0]!.querySelector('.agent-task-output')!.textContent, 'final output')
+    assert.equal(panels(h)[0]!.textContent, 'final output')
   })
 
-  it('collapses earlier tasks when a new command starts', () => {
+  it('shows the task panel and takes over the viewer when a tab is clicked', () => {
     startShell(h, 'a', 'one')
-    assert.equal(rows(h)[0]!.classList.contains('is-expanded'), true)
     startShell(h, 'b', 'two')
-    assert.equal(rows(h)[0]!.classList.contains('is-expanded'), false)
-    assert.equal(rows(h)[1]!.classList.contains('is-expanded'), true)
+    // Nothing selected yet — viewer still belongs to the terminal.
+    assert.equal(h.viewerParent.classList.contains('showing-agent-task'), false)
+    assert.equal(panels(h)[0]!.hidden, true)
+
+    let selected: string | null | undefined
+    h.store.on('agent_task_selected', (id) => (selected = id))
+    tabs(h)[0]!.click()
+
+    assert.equal(h.viewerParent.classList.contains('showing-agent-task'), true)
+    assert.equal(tabs(h)[0]!.classList.contains('is-active'), true)
+    assert.equal(panels(h)[0]!.hidden, false)
+    assert.equal(panels(h)[1]!.hidden, true)
+    assert.equal(selected, 'a')
   })
 
-  it('toggles a task open/closed when its header is clicked', () => {
+  it('yields the viewer back to the terminal on shell_tab_activated', () => {
     startShell(h, 'a', 'one')
-    startShell(h, 'b', 'two')
-    const first = rows(h)[0]!
-    const header = first.querySelector<HTMLButtonElement>('.agent-task-header')!
-    assert.equal(first.classList.contains('is-expanded'), false)
-    header.click()
-    assert.equal(first.classList.contains('is-expanded'), true)
-    header.click()
-    assert.equal(first.classList.contains('is-expanded'), false)
+    tabs(h)[0]!.click()
+    assert.equal(h.viewerParent.classList.contains('showing-agent-task'), true)
+
+    let cleared = false
+    h.store.on('agent_task_selected', (id) => {
+      if (id === null) cleared = true
+    })
+    h.store.emit('shell_tab_activated')
+
+    assert.equal(h.viewerParent.classList.contains('showing-agent-task'), false)
+    assert.equal(tabs(h)[0]!.classList.contains('is-active'), false)
+    assert.equal(panels(h)[0]!.hidden, true)
+    assert.equal(cleared, true)
   })
 
   it('ignores non-shell tool calls', () => {
     h.emitChunk('t1', { type: 'tool_call', toolCall: { id: 'x', name: 'read_file', args: {} } })
-    assert.equal(rows(h).length, 0)
-    assert.equal(h.host.hidden, true)
+    assert.equal(tabs(h).length, 0)
+    assert.equal(section(h).hidden, true)
   })
 })
