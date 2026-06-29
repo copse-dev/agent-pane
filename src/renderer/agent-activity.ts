@@ -10,7 +10,8 @@ export function runningToolName(thread: Thread): string | null {
   for (let i = thread.messages.length - 1; i >= 0; i--) {
     const m = thread.messages[i]
     if (!m) continue
-    const toolCalls = m.toolCalls
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
+    const toolCalls = m.toolCalls ?? []
     for (let j = toolCalls.length - 1; j >= 0; j--) {
       const tc = toolCalls[j]
       if (!tc) continue

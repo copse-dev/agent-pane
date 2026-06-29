@@ -95,7 +95,8 @@ export function mountFollowUpSuggestions(
     const lastAssistant = assistantMessages.at(-1)
     if (!lastUser?.content.trim() || !lastAssistant) return null
 
-    const toolNames = lastAssistant.toolCalls.map((tc) => tc.name)
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
+    const toolNames = (lastAssistant.toolCalls ?? []).map((tc) => tc.name)
     return {
       turnKey: `${threadId}:${lastUser.id}:${lastAssistant.id}`,
       context: {

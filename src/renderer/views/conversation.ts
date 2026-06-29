@@ -211,9 +211,11 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
       const isLast = i === session.messages.length - 1
       timeline.append(createSubagentMessageEl(msg.content, status === 'running' && isLast, api))
     }
-    if (msg.toolCalls.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
+    const innerToolCalls = msg.toolCalls ?? []
+    if (innerToolCalls.length > 0) {
       const toolsWrap = el('div', { class: 'subagent-inner-tools' })
-      for (const inner of msg.toolCalls) {
+      for (const inner of innerToolCalls) {
         toolsWrap.append(createInnerToolCard(inner))
       }
       timeline.append(toolsWrap)
@@ -665,7 +667,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     list.append(msgEl)
     hydrateRemoteArtifactImages(list, api)
     // Re-render any tool cards this message already carries (restored threads).
-    renderToolCards(msgEl, msg.toolCalls, msg.commandSummary)
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
+    renderToolCards(msgEl, msg.toolCalls ?? [], msg.commandSummary)
     scrollToBottom(msg.role === 'user')
   }
 
@@ -716,7 +719,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       .find((m) => m.id === msgId)
     const msgEl = list.querySelector(`[data-message-id="${msgId}"]`)
     if (!msg || !msgEl) return
-    renderToolCards(msgEl as HTMLElement, msg.toolCalls, msg.commandSummary)
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
+    renderToolCards(msgEl as HTMLElement, msg.toolCalls ?? [], msg.commandSummary)
     scrollToBottom()
   }
 
