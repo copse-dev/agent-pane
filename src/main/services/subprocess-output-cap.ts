@@ -1,3 +1,5 @@
+import { stripAnsiSequences } from '@shared/text/strip-ansi.ts'
+
 /** Max bytes retained from subprocess stdout/stderr (matches run_shell tool). */
 export const COMMAND_OUTPUT_MAX_BYTES = 100 * 1024
 
@@ -11,7 +13,7 @@ export const COMMAND_RUNNER_LONG_TIMEOUT_MS = 3_600_000
 
 /** Strip ANSI/VT control sequences; anchor on ESC so literal `[..m` text is preserved. */
 export function stripTerminalControlSequences(text: string): string {
-  return text.replace(/\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '')
+  return stripAnsiSequences(text)
 }
 
 function utf8ByteLength(text: string): number {

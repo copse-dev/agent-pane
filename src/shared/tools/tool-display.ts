@@ -131,7 +131,8 @@ export function shellCommandLabel(command: string): string {
   return `${cleaned.slice(0, SHELL_LABEL_MAX - 1)}…`
 }
 
-function shellCommandArg(args: unknown): string | null {
+/** The raw `command` string from a run_shell tool call's args, or null. */
+export function shellCommandArg(args: unknown): string | null {
   if (!args || typeof args !== 'object') return null
   const command = (args as Record<string, unknown>)['command']
   return typeof command === 'string' && command.trim() ? command : null

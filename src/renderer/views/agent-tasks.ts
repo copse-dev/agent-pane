@@ -1,26 +1,21 @@
 import { el } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { shellCommandLabel } from '@shared/tools/tool-display.ts'
+import { shellCommandArg, shellCommandLabel } from '@shared/tools/tool-display.ts'
+import { stripAnsiSequences } from '@shared/text/strip-ansi.ts'
 
 // How many finished tasks to keep around before the oldest are dropped. The
 // running task (and recent history) stay viewable; ancient ones are pruned so
 // the list can't grow without bound across a long session.
 const MAX_TASKS = 60
 
-// Per-task output is already capped to ~100KB on the main side
-// (CappedOutputAccumulator), but guard here too in case a task accumulates from
-// many streamed chunks plus a final tool result.
+// Per-task output is already capped on the main side (CappedOutputAccumulator,
+// COMMAND_OUTPUT_MAX_BYTES = 100KB of UTF-8 *bytes*), but guard here too in case
+// a task accumulates from many streamed chunks plus a final tool result. Note the
+// units differ: the main cap counts bytes, whereas this guard counts JS string
+// chars, so they're not directly comparable for multi-byte content — this is a
+// loose upper bound, not a mirror of the main cap.
 const MAX_OUTPUT_CHARS = 200_000
-
-// Strip ANSI/VT control sequences for display. Mirrors
-// `stripTerminalControlSequences` in src/main/services/subprocess-output-cap.ts
-// (anchored on ESC so literal `[..m` text survives); kept inline to avoid
-// importing a main-process module into the renderer bundle.
-const ANSI_RE = /\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g
-function stripAnsi(text: string): string {
-  return text.replace(ANSI_RE, '')
-}
 
 type TaskStatus = 'running' | 'done' | 'error'
 
@@ -31,12 +26,6 @@ interface AgentTask {
   output: string
   tab: HTMLButtonElement
   panel: HTMLPreElement
-}
-
-function shellCommandFromArgs(args: unknown): string | null {
-  if (!args || typeof args !== 'object') return null
-  const command = (args as Record<string, unknown>)['command']
-  return typeof command === 'string' && command.trim() ? command : null
 }
 
 /**
@@ -160,7 +149,7 @@ export function mountAgentTasks(
   function appendOutput(id: string | null, data: string) {
     const task = id ? tasks.get(id) : latestRunningTask()
     if (!task) return
-    const clean = stripAnsi(data)
+    const clean = stripAnsiSequences(data)
     if (!clean) return
     const showing = task.id === selectedId
     const atBottom = task.panel.scrollHeight - task.panel.scrollTop - task.panel.clientHeight < 16
@@ -181,7 +170,7 @@ export function mountAgentTasks(
     // If nothing streamed (e.g. a fast command, or output we didn't capture
     // live), fall back to the final tool result so the panel isn't empty.
     if (!task.output.trim() && result.trim()) {
-      task.output = stripAnsi(result)
+      task.output = stripAnsiSequences(result)
       task.panel.textContent = task.output
     }
     if (task.id === selectedId) scrollPanelToBottom(task)
@@ -210,7 +199,7 @@ export function mountAgentTasks(
 
   const unsubChunk = api.agent.onChunk((_threadId, chunk) => {
     if (chunk.type === 'tool_call' && chunk.toolCall.name === 'run_shell') {
-      const command = shellCommandFromArgs(chunk.toolCall.args)
+      const command = shellCommandArg(chunk.toolCall.args)
       if (command) addTask(chunk.toolCall.id, command)
     } else if (chunk.type === 'tool_result' && tasks.has(chunk.toolCallId)) {
       completeTask(chunk.toolCallId, chunk.result, chunk.isError)
