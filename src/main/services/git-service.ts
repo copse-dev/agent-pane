@@ -320,9 +320,9 @@ export async function checkoutGitBranch(branch: string): Promise<void> {
 
 /**
  * E2E screenshot determinism: when COPSE_PANEL_MOCK_BRANCH is set under e2e, the
- * app reports this fixed branch instead of the live checkout so committed
- * reference screenshots don't churn with whatever branch a PR is built from.
- * See docs/testing-strategy.md ("Deterministic screenshots").
+ * main process reports this fixed branch instead of the live checkout so the
+ * committed reference images don't churn with whatever branch a PR is built
+ * from. See docs/testing-strategy.md ("Deterministic screenshots").
  */
 function e2eBranchOverride(): string | null {
   if (process.env['COPSE_E2E'] !== '1') return null
@@ -334,8 +334,8 @@ export async function getBranches(): Promise<GitBranchInfo[]> {
   if (!getWorkspaceRoot()) return []
   const override = e2eBranchOverride()
   if (override) {
-    // Fixed two-branch list (override + default) keeps the branch-picker menu
-    // stable; the rendered menu shows names only, so the date is a placeholder.
+    // Fixed two-branch list (override + default) keeps the picker menu stable;
+    // the rendered menu shows names only, so the date is a placeholder.
     return [
       { name: override, lastCommitDate: '2020-01-01 00:00:00 +0000' },
       { name: DEFAULT_GIT_BRANCH, lastCommitDate: '2020-01-01 00:00:00 +0000' },
