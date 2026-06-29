@@ -45,7 +45,7 @@ describe('reasoning display (component)', () => {
     appendReasoning(store, messageId, 'Let me ')
     appendReasoning(store, messageId, 'check the file.')
 
-    const details = document.querySelector('.message-reasoning') as HTMLDetailsElement | null
+    const details = document.querySelector<HTMLDetailsElement>('.message-reasoning')
     assert.ok(details, 'expected a reasoning disclosure')
     // Live (no answer yet): open by default so the user sees the thinking.
     assert.equal(details.open, true)
