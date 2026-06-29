@@ -21,7 +21,11 @@ import {
   REMOTE_AGENT_MODEL_PREFIX,
   parseRemoteAgentModel,
 } from '@shared/remote-agent.ts'
+import { ACP_MODEL_PREFIX, acpModelValue, parseAcpModel } from '@shared/acp.ts'
+import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { clear } from '../dom/helpers.ts'
+
+const ACP_GROUP = 'ACP agents'
 
 const OPENROUTER_GROUP = 'OpenRouter'
 
@@ -40,7 +44,25 @@ export function modelDisplayLabel(model: string): string {
   if (remoteProvider) {
     return REMOTE_AGENT_MODELS.find((option) => option.provider === remoteProvider)?.label ?? model
   }
+  // Without the configured-agents list to resolve a title, fall back to the id.
+  const acpId = parseAcpModel(model)
+  if (acpId) return acpId
   return model
+}
+
+// External ACP agents the user has configured. Only enabled agents are offered;
+// a stale `acp:<id>` selection for a removed/disabled agent is surfaced via the
+// "(not configured)" fallback below rather than silently vanishing.
+async function acpAgentOptions(api: ApiClient): Promise<ModelOption[]> {
+  let agents: AcpAgentConfig[] = []
+  try {
+    agents = ((await api.settings.get('registeredAcpAgents')) as AcpAgentConfig[] | null) ?? []
+  } catch {
+    /* none configured */
+  }
+  return agents
+    .filter((agent) => agent.enabled)
+    .map((agent) => ({ value: acpModelValue(agent.id), label: agent.title, group: ACP_GROUP }))
 }
 
 // OpenRouter's free, tool-capable models fetched live from its catalog, plus any
@@ -162,6 +184,9 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
     }
   }
 
+  // ACP agents (external coding agents Copse drives): only listed once configured.
+  options.push(...(await acpAgentOptions(api)))
+
   // Local models: only listed when a local server is reachable and exposes some.
   const lmGroup = 'Local models'
   let models: string[]
@@ -184,6 +209,12 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
         value: current,
         label: `${modelDisplayLabel(current)} (not configured)`,
         group: remoteGroup,
+      })
+    } else if (current.startsWith(ACP_MODEL_PREFIX)) {
+      options.push({
+        value: current,
+        label: `${modelDisplayLabel(current)} (not configured)`,
+        group: ACP_GROUP,
       })
     } else {
       options.push({ value: current, label: `${current} (no key)` })
