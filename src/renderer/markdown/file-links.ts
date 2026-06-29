@@ -9,7 +9,13 @@ const TREE_WALKER_SHOW_TEXT = 4
 
 function shouldScanTextNode(node: Text, root: HTMLElement): boolean {
   const parent = node.parentElement
-  return Boolean(parent && root.contains(parent) && !parent.closest(SKIP_SELECTOR))
+  if (!parent || !root.contains(parent)) return false
+  const skipMatch = parent.closest(SKIP_SELECTOR)
+  if (!skipMatch) return true
+  // Allow file references inside <pre> within .tool-result: tool output is raw
+  // text (not a markdown code block) and users expect those paths to be clickable.
+  if (skipMatch.tagName === 'PRE' && Boolean(skipMatch.closest('.tool-result'))) return true
+  return false
 }
 
 function textNodesToScan(root: HTMLElement): Text[] {
