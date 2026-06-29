@@ -654,7 +654,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       },
     ],
   })
-  mustQuery('#settings-local-providers-host').append(localProvidersSection.root)
+  qsRequired(overlay, '#settings-local-providers-host').append(localProvidersSection.root)
 
   const ghCliSection = createGhCliSection(api)
   qsRequired(overlay, '#settings-gh-cli-host').append(ghCliSection.root)

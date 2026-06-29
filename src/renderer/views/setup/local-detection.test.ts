@@ -61,10 +61,7 @@ describe('importDetectedPreset', () => {
     await importDetectedPreset(fakeApi(), reachable('ollama', ['my-model', 'fresh-model']))
     const models = getResolvedExtraProvider('ollama')?.models ?? []
     // Curated entry preserved with its label; new id appended; no duplicate.
-    assert.deepEqual(models, [
-      { id: 'my-model', label: 'My Model' },
-      { id: 'fresh-model' },
-    ])
+    assert.deepEqual(models, [{ id: 'my-model', label: 'My Model' }, { id: 'fresh-model' }])
   })
 
   it('imports every reachable preset when run sequentially (no lost-update)', async () => {
@@ -76,9 +73,21 @@ describe('importDetectedPreset', () => {
     ]
     // The onboarding loop runs these sequentially; doing so must not drop any.
     for (const r of results) await importDetectedPreset(fakeApi(), r)
-    assert.deepEqual(getResolvedExtraProvider('ollama')?.models.map((m) => m.id), ['a'])
-    assert.deepEqual(getResolvedExtraProvider('llamacpp')?.models.map((m) => m.id), ['b'])
-    assert.deepEqual(getResolvedExtraProvider('jan')?.models.map((m) => m.id), ['c'])
-    assert.deepEqual(getResolvedExtraProvider('vllm')?.models.map((m) => m.id), ['d'])
+    assert.deepEqual(
+      getResolvedExtraProvider('ollama')?.models.map((m) => m.id),
+      ['a'],
+    )
+    assert.deepEqual(
+      getResolvedExtraProvider('llamacpp')?.models.map((m) => m.id),
+      ['b'],
+    )
+    assert.deepEqual(
+      getResolvedExtraProvider('jan')?.models.map((m) => m.id),
+      ['c'],
+    )
+    assert.deepEqual(
+      getResolvedExtraProvider('vllm')?.models.map((m) => m.id),
+      ['d'],
+    )
   })
 })
