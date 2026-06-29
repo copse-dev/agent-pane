@@ -6,6 +6,18 @@ import { formatTodoProgress } from '@shared/todos/todo-logic.ts'
 
 export const CONTEXT_TRIM_ACTIVITY = 'Shortened earlier messages'
 
+/**
+ * Label for the prefill phase shown on the live status line. `fraction` (0–1)
+ * is rendered as a percentage when the provider reports it (LM Studio's native
+ * progress events); without it the label is the indeterminate "Processing
+ * prompt…".
+ */
+export function promptProgressLabel(fraction: number | undefined): string {
+  if (fraction === undefined || !Number.isFinite(fraction)) return 'Processing prompt…'
+  const pct = Math.round(Math.min(1, Math.max(0, fraction)) * 100)
+  return `Processing prompt… ${pct.toString()}%`
+}
+
 export function runningToolName(thread: Thread): string | null {
   for (let i = thread.messages.length - 1; i >= 0; i--) {
     const m = thread.messages[i]

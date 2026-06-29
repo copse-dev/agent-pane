@@ -126,6 +126,13 @@ export type ProviderStreamChunk =
       /** Token counts are a local ~4 chars/token estimate, not agent-reported. */
       estimated?: boolean
     }
+  /**
+   * Prefill progress while the model ingests the prompt (the time-to-first-token
+   * phase). `fraction` is 0–1 when the provider reports it (e.g. LM Studio's
+   * native `prompt_processing.progress` events); omit it for an indeterminate
+   * "processing…" state. Cloud OpenAI/Anthropic do not expose this.
+   */
+  | { type: 'prompt_progress'; fraction?: number }
   | { type: 'done'; stopReason?: string }
 
 // ── The provider contract ────────────────────────────────────────────────────

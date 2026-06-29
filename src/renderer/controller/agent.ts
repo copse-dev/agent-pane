@@ -31,7 +31,7 @@ import {
   finishSubagent,
 } from '@shared/store/subagent-helpers.ts'
 import { planAgentTextChunk } from '@copse/agent/agent-text-chunk.ts'
-import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY } from '../agent-activity.ts'
+import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY, promptProgressLabel } from '../agent-activity.ts'
 import { drainMessageQueue, enqueueHookMessage, foldBackContinuationUsed } from './message-queue.ts'
 import { usageRecordFromAgentDelta } from '@shared/usage/usage-record-input.ts'
 import type { UsageDelta } from '@shared/types'
@@ -225,6 +225,13 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         }
         recordUsageToLedger(api, store, threadId, delta)
         addUsageDelta(store, threadId, delta)
+        break
+      }
+      case 'prompt_progress': {
+        // Prefill happens before the first token; surface it on the live status
+        // line. The next text/tool chunk recomputes the label (Writing…/Running…)
+        // so this naturally clears once generation starts.
+        store.emit('agent_activity', threadId, promptProgressLabel(chunk.fraction))
         break
       }
       case 'context_pressure': {
