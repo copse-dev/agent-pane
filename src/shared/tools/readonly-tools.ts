@@ -35,7 +35,7 @@ export const READONLY_MODE_BLOCK_MESSAGE =
  * auto-approves them.
  */
 export function isMcpToolAllowedInReadonlyMode(annotations?: McpToolAnnotations): boolean {
-  return !!annotations?.readOnlyHint && !annotations?.destructiveHint
+  return !!annotations?.readOnlyHint && !annotations.destructiveHint
 }
 
 /** Whether a tool may run during a read-only agent run. Default-deny. */

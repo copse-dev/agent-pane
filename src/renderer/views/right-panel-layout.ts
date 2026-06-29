@@ -43,5 +43,9 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     store.on('files_pane_changed', syncLayout),
   ]
 
-  return () => unsubs.forEach((u) => u())
+  return () => {
+    unsubs.forEach((u) => {
+      u()
+    })
+  }
 }

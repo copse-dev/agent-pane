@@ -61,7 +61,9 @@ describe('file-ops tools (#122)', () => {
 
     const queue = getDiffQueueForTest()
     assert.equal(queue.length, 1)
-    const result = await applyDiffEntry(queue[0]!)
+    const [entry] = queue
+    assert.ok(entry)
+    const result = await applyDiffEntry(entry)
     assert.deepEqual(result, { status: 'written' })
     assert.equal(await exists(join(tempRoot, 'gone.txt')), false)
   })
@@ -78,7 +80,9 @@ describe('file-ops tools (#122)', () => {
     assert.match(msg, /Rename of old\.txt/)
     assert.equal(await exists(join(tempRoot, 'old.txt')), true)
 
-    const result = await applyDiffEntry(getDiffQueueForTest()[0]!)
+    const [entry] = getDiffQueueForTest()
+    assert.ok(entry)
+    const result = await applyDiffEntry(entry)
     assert.deepEqual(result, { status: 'written' })
     assert.equal(await exists(join(tempRoot, 'old.txt')), false)
     assert.equal(await readFile(join(tempRoot, 'sub/new.txt'), 'utf8'), 'data\n')
@@ -97,7 +101,9 @@ describe('file-ops tools (#122)', () => {
     assert.match(msg, /Creation of directory new\/nested\/dir staged/)
     assert.equal(await exists(join(tempRoot, 'new/nested/dir')), false)
 
-    const result = await applyDiffEntry(getDiffQueueForTest()[0]!)
+    const [entry] = getDiffQueueForTest()
+    assert.ok(entry)
+    const result = await applyDiffEntry(entry)
     assert.deepEqual(result, { status: 'written' })
     assert.equal(await exists(join(tempRoot, 'new/nested/dir')), true)
   })

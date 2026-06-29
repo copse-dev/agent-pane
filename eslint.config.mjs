@@ -21,7 +21,7 @@ export default ts.config(
     ],
   },
   js.configs.recommended,
-  ...ts.configs.recommendedTypeChecked,
+  ...ts.configs.strictTypeChecked,
   prettier,
   {
     languageOptions: {

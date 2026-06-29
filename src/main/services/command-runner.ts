@@ -108,7 +108,7 @@ export function runCommand(
               if (!settled) {
                 settled = true
                 opts.signal?.removeEventListener('abort', onAbort)
-                reject(new Error(`Command timed out after ${timeout_ms}ms: ${cmd}`))
+                reject(new Error(`Command timed out after ${String(timeout_ms)}ms: ${cmd}`))
               }
             }, timeout_ms)
           : undefined
@@ -131,13 +131,17 @@ export function runCommand(
       proc.on('close', (code) => {
         if (settled) return
         settled = true
-        finish(() => resolve({ stdout, stderr, code: code ?? 0 }))
+        finish(() => {
+          resolve({ stdout, stderr, code: code ?? 0 })
+        })
       })
 
       proc.on('error', (err) => {
         if (settled) return
         settled = true
-        finish(() => reject(err instanceof Error ? err : new Error(String(err))))
+        finish(() => {
+          reject(err instanceof Error ? err : new Error(String(err)))
+        })
       })
 
       opts.signal?.addEventListener('abort', onAbort)

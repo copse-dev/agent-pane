@@ -56,7 +56,7 @@ description: Demo skill for tests
     const skills = listSkills()
     const demo = skills.find((skill) => skill.name === 'demo-skill' && skill.source === 'project')
     assert.ok(demo, 'expected demo-skill from project .cursor/skills')
-    assert.deepEqual(demo?.externalLinks, [], 'link-free skill reports no external links')
+    assert.deepEqual(demo.externalLinks, [], 'link-free skill reports no external links')
   })
 
   it('records external link hosts referenced by a skill', async () => {
@@ -102,7 +102,7 @@ description: Bundled skill for tests
     await refreshSkillsRegistry()
     const skill = listSkills().find((s) => s.name === 'bundled-skill')
     assert.ok(skill)
-    assert.equal(skill?.source, 'bundled')
+    assert.equal(skill.source, 'bundled')
 
     await rm(bundledRoot, { recursive: true, force: true })
   })

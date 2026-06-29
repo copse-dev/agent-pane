@@ -42,7 +42,7 @@ export function scheduleIndexRebuild(): void {
     debounceTimer = null
     rebuildInFlight = Promise.all([buildIndex(root), updateSemanticIndex(root)])
       .then(() => {})
-      .catch((err) => {
+      .catch((err: unknown) => {
         console.warn('[copse-panel] workspace index rebuild failed:', err)
       })
   }, REBUILD_DEBOUNCE_MS)

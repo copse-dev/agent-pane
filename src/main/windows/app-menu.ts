@@ -33,7 +33,9 @@ export function buildAppMenu(win: BrowserWindow): void {
               {
                 label: 'Settings…',
                 accelerator: 'CmdOrCtrl+,',
-                click: () => win.webContents.send('menu:settings'),
+                click: () => {
+                  win.webContents.send('menu:settings')
+                },
               },
               { type: 'separator' as const },
               { role: 'services' as const },
@@ -53,7 +55,9 @@ export function buildAppMenu(win: BrowserWindow): void {
         {
           label: 'New Thread',
           accelerator: 'CmdOrCtrl+N',
-          click: () => win.webContents.send('menu:newThread'),
+          click: () => {
+            win.webContents.send('menu:newThread')
+          },
         },
         { type: 'separator' as const },
         {
@@ -68,7 +72,9 @@ export function buildAppMenu(win: BrowserWindow): void {
               {
                 label: 'Settings…',
                 accelerator: 'CmdOrCtrl+,',
-                click: () => win.webContents.send('menu:settings'),
+                click: () => {
+                  win.webContents.send('menu:settings')
+                },
               },
             ]),
         { type: 'separator' as const },
@@ -93,27 +99,37 @@ export function buildAppMenu(win: BrowserWindow): void {
         {
           label: 'Toggle Panel',
           accelerator: 'CmdOrCtrl+B',
-          click: () => win.webContents.send('menu:togglePanel'),
+          click: () => {
+            win.webContents.send('menu:togglePanel')
+          },
         },
         {
           label: 'Explorer',
           accelerator: 'CmdOrCtrl+Shift+E',
-          click: () => win.webContents.send('menu:showExplorer'),
+          click: () => {
+            win.webContents.send('menu:showExplorer')
+          },
         },
         {
           label: 'Terminal',
           accelerator: 'CmdOrCtrl+`',
-          click: () => win.webContents.send('menu:showTerminal'),
+          click: () => {
+            win.webContents.send('menu:showTerminal')
+          },
         },
         {
           label: 'Changes',
           accelerator: 'CmdOrCtrl+Shift+G',
-          click: () => win.webContents.send('menu:showChanges'),
+          click: () => {
+            win.webContents.send('menu:showChanges')
+          },
         },
         {
           label: 'Browser',
           accelerator: 'CmdOrCtrl+Shift+B',
-          click: () => win.webContents.send('menu:showBrowser'),
+          click: () => {
+            win.webContents.send('menu:showBrowser')
+          },
         },
         { type: 'separator' as const },
         { role: 'reload' as const },

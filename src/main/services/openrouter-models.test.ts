@@ -67,12 +67,14 @@ describe('parseOpenRouterModelsPayload', () => {
 
   it('flags free pricing and tool support', () => {
     const models = parseOpenRouterModelsPayload(SAMPLE)
-    const qwen = models.find((m) => m.id === 'qwen/qwen3-235b-a22b:free')!
+    const qwen = models.find((m) => m.id === 'qwen/qwen3-235b-a22b:free')
+    assert.ok(qwen)
     assert.equal(qwen.free, true)
     assert.equal(qwen.supportsTools, true)
     assert.equal(qwen.contextLength, 262144)
 
-    const claude = models.find((m) => m.id === 'anthropic/claude-3.5-sonnet')!
+    const claude = models.find((m) => m.id === 'anthropic/claude-3.5-sonnet')
+    assert.ok(claude)
     assert.equal(claude.free, false)
   })
 })

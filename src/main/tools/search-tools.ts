@@ -78,6 +78,6 @@ export const findFilesTool = defineTool({
     if (found.length === 0) return `No files match: ${pattern}`
     const truncated = found.length > max_results
     const matches = truncated ? found.slice(0, max_results) : found
-    return matches.join('\n') + (truncated ? `\n[Truncated at ${max_results}]` : '')
+    return matches.join('\n') + (truncated ? `\n[Truncated at ${String(max_results)}]` : '')
   },
 })

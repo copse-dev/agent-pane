@@ -33,13 +33,14 @@ export interface DiffDecision {
 /** One row per path; later edits update `after` but keep the original `before` snapshot. */
 export function upsertStagedDiffEntry(entries: QueueEntry[], entry: QueueEntry): void {
   const idx = entries.findIndex((e) => e.path === entry.path)
-  if (idx === -1) {
+  const existing = idx === -1 ? undefined : entries[idx]
+  if (idx === -1 || !existing) {
     entries.push({ ...entry, op: entry.op ?? 'write' })
     return
   }
   entries[idx] = {
     path: entry.path,
-    before: entries[idx]!.before,
+    before: existing.before,
     after: entry.after,
     language: entry.language,
     op: entry.op ?? 'write',
@@ -89,9 +90,11 @@ export function setStagedDiffResolver(resolver: StagedDiffResolver | null): void
 async function resolveStagedEntry(path: string): Promise<string> {
   const entry = queue.find((e) => e.path === path)
   if (!entry) return `No staged change found for ${path}.`
+  const resolver = stagedDiffResolver
+  if (!resolver) return `No staged change found for ${path}.`
   let approved: boolean
   try {
-    approved = await stagedDiffResolver!(cloneEntry(entry))
+    approved = await resolver(cloneEntry(entry))
   } catch {
     approved = false
   }
@@ -471,14 +474,15 @@ export async function approveAllStagedDiffs(): Promise<void> {
     const root = getWorkspaceRoot()
     if (root) await buildIndex(root)
     for (let i = queue.length - 1; i >= 0; i--) {
-      if (appliedEntries.has(queue[i]!)) queue.splice(i, 1)
+      const queued = queue[i]
+      if (queued && appliedEntries.has(queued)) queue.splice(i, 1)
     }
   }
   if (conflicts.length) mainWindow?.webContents.send('diff:conflict', conflicts)
   broadcastQueue()
   if (failures.length > 0) {
     throw new Error(
-      `Failed to write ${failures.length} file(s):\n${failures
+      `Failed to write ${String(failures.length)} file(s):\n${failures
         .map((f) => `  ${f.path}: ${f.error}`)
         .join('\n')}`,
     )
@@ -510,7 +514,8 @@ export function stageDiff(
   if (isAgentRunReadonly()) return Promise.resolve(READONLY_MODE_BLOCK_MESSAGE)
   const hadPending = queue.some((e) => e.path === path)
   upsertStagedDiffEntry(queue, { path, before, after, language, op: 'write' })
-  const entry = queue.find((e) => e.path === path)!
+  const entry = queue.find((e) => e.path === path)
+  if (!entry) throw new Error(`Staged diff entry for ${path} missing immediately after upsert`)
   // Payload before queue broadcast so the renderer can populate activeDiff first.
   mainWindow?.webContents.send('agent:show_diff', path, entry.before, entry.after, entry.language)
   broadcastQueue()
@@ -595,7 +600,7 @@ export function stageFileOp(entry: {
     entry.op === 'delete'
       ? `Deletion of ${entry.path}`
       : entry.op === 'rename'
-        ? `Rename of ${entry.path} → ${entry.renameTo}`
+        ? `Rename of ${entry.path} → ${entry.renameTo ?? '(unknown target)'}`
         : `Creation of directory ${entry.path}`
   return Promise.resolve(
     `${verb} staged. Approve or reject in the diff panel — nothing changes on disk until accepted.`,
@@ -614,7 +619,7 @@ export function clearDiffQueueForTest(): void {
 
 function removeEntry(path: string): void {
   for (let i = queue.length - 1; i >= 0; i--) {
-    if (queue[i]!.path === path) queue.splice(i, 1)
+    if (queue[i]?.path === path) queue.splice(i, 1)
   }
   broadcastQueue()
 }

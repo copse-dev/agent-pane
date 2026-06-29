@@ -166,8 +166,10 @@ describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
     const host = document.createElement('div')
     const r = new StreamingMarkdownRenderer(host)
     r.update('## Title\n- item')
-    const completed = host.querySelector('.stream-complete')!
-    const pending = host.querySelector<HTMLElement>('.stream-pending')!
+    const completed = host.querySelector('.stream-complete')
+    const pending = host.querySelector<HTMLElement>('.stream-pending')
+    assert.ok(completed)
+    assert.ok(pending)
     assert.match(completed.innerHTML, /<h2>Title<\/h2>/)
     assert.equal(pending.textContent, '- item')
     assert.equal(pending.hidden, false)

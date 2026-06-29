@@ -20,7 +20,7 @@ function estimateUserContentTokens(content: UserContent): number {
   let total = 0
   for (const block of content) {
     if (block.type === 'text') total += block.text.length / 4
-    else if (block.type === 'image') total += ESTIMATED_IMAGE_TOKENS
+    else total += ESTIMATED_IMAGE_TOKENS
   }
   return total
 }

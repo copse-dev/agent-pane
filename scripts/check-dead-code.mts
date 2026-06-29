@@ -104,7 +104,8 @@ function resolveSpecifier(spec: string, fromFile: string): string | null {
 const visited = new Set<string>()
 const queue = [...roots]
 while (queue.length > 0) {
-  const file = queue.pop()!
+  const file = queue.pop()
+  if (file === undefined) continue
   if (visited.has(file)) continue
   visited.add(file)
   let source: string
@@ -133,12 +134,12 @@ if (staleAllow.length > 0) {
 }
 
 if (dead.length === 0) {
-  console.log(`check-dead-code: OK — all ${candidates.length} src modules are reachable.`)
+  console.log(`check-dead-code: OK — all ${String(candidates.length)} src modules are reachable.`)
   if (staleAllow.length > 0) process.exit(1)
   process.exit(0)
 }
 
-console.error(`check-dead-code: found ${dead.length} unlinked file(s) under src/:\n`)
+console.error(`check-dead-code: found ${String(dead.length)} unlinked file(s) under src/:\n`)
 for (const p of dead) console.error(`  ${p}`)
 console.error(
   '\nNothing in the build graph (entry points, tests, scripts) imports these files.\n' +

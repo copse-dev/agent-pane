@@ -94,7 +94,7 @@ export function mountTerminalsPane(
   const unsubExit = api.terminal.onExit((id, code) => {
     const tab = [...tabs.values()].find((t) => t.sessionId === id)
     if (!tab) return
-    tab.term.writeln(`\r\n\x1b[90m[Process exited with code ${code}]\x1b[0m`)
+    tab.term.writeln(`\r\n\x1b[90m[Process exited with code ${String(code)}]\x1b[0m`)
     tab.sessionId = null
   })
 
@@ -136,6 +136,7 @@ export function mountTerminalsPane(
     tab.naming = true
     try {
       const title = await api.agent.suggestTerminalTitle(text)
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- tab.renamed can be set by a user rename during the await above
       if (title && !tab.renamed) {
         setTabLabel(tab, title)
         tab.autoNamed = true
@@ -189,9 +190,13 @@ export function mountTerminalsPane(
         finish(false)
       }
     })
-    input.addEventListener('blur', () => finish(true))
+    input.addEventListener('blur', () => {
+      finish(true)
+    })
     for (const evt of ['click', 'dblclick', 'mousedown'] as const) {
-      input.addEventListener(evt, (e) => e.stopPropagation())
+      input.addEventListener(evt, (e) => {
+        e.stopPropagation()
+      })
     }
     tab.labelSpan.replaceWith(input)
     input.focus()
@@ -206,9 +211,10 @@ export function mountTerminalsPane(
 
   async function flushPendingInput(tab: TerminalTab): Promise<void> {
     if (!tab.sessionId) return
-    while (tab.pendingInput.length > 0) {
-      const chunk = tab.pendingInput.shift()!
+    let chunk = tab.pendingInput.shift()
+    while (chunk !== undefined) {
       await api.terminal.write(tab.sessionId, chunk)
+      chunk = tab.pendingInput.shift()
     }
   }
 
@@ -414,7 +420,9 @@ export function mountTerminalsPane(
         openTerminalSurface(tab)
         fitTab(tab)
         void ensureSession(tab)
-        requestAnimationFrame(() => focusTab(tab))
+        requestAnimationFrame(() => {
+          focusTab(tab)
+        })
       }
     } else {
       resizeObserver.disconnect()
@@ -451,7 +459,9 @@ export function mountTerminalsPane(
   ]
 
   return () => {
-    unsubs.forEach((u) => u())
+    unsubs.forEach((u) => {
+      u()
+    })
     resizeObserver.disconnect()
     unsubOutput()
     unsubExit()

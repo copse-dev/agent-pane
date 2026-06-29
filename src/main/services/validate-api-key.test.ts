@@ -8,7 +8,11 @@ import {
 } from './validate-api-key.ts'
 import { BUILTIN_EXTRA_PROVIDERS, type ExtraProvider } from '@shared/llm/extra-providers.ts'
 
-const PRESET = (slug: string): ExtraProvider => BUILTIN_EXTRA_PROVIDERS.find((p) => p.id === slug)!
+const PRESET = (slug: string): ExtraProvider => {
+  const preset = BUILTIN_EXTRA_PROVIDERS.find((p) => p.id === slug)
+  if (!preset) throw new Error(`No builtin extra provider with id '${slug}'`)
+  return preset
+}
 
 describe('validateAnthropicApiKey', () => {
   it('rejects empty keys', async () => {

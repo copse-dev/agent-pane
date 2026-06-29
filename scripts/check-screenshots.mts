@@ -32,7 +32,8 @@ import { changedFiles, computeScreenshotGate } from './test-oracle.mts'
 
 function parseBase(argv: string[]): string {
   const i = argv.indexOf('--base')
-  return i >= 0 && argv[i + 1] ? argv[i + 1]! : 'origin/main'
+  const next = i >= 0 ? argv[i + 1] : undefined
+  return next ? next : 'origin/main'
 }
 
 /** Set a GitHub Actions step output when running in CI; a no-op locally. */
@@ -58,14 +59,14 @@ function main(): void {
     } else if (needsRegen) {
       const shots = gate.missing.length ? gate.missing : gate.affected
       console.log(
-        `screenshot plan: ${shots.length} reference shot(s) will be regenerated and ` +
+        `screenshot plan: ${String(shots.length)} reference shot(s) will be regenerated and ` +
           'auto-committed on a hosted runner ' +
           (gate.labeled ? '(update-screenshots label present):' : '(stale shots detected):'),
       )
       for (const p of shots) console.log(`      tests/e2e/screenshots/${p}`)
     } else {
       console.log(
-        `✓ screenshot plan: ${gate.affected.length} shot(s) affected, all refreshed in this diff — no regen needed`,
+        `✓ screenshot plan: ${String(gate.affected.length)} shot(s) affected, all refreshed in this diff — no regen needed`,
       )
     }
     return
@@ -76,18 +77,18 @@ function main(): void {
     if (!gate.affected.length) console.log('✓ screenshot gate: no reference screenshots affected')
     else if (gate.labeled)
       console.log(
-        `✓ screenshot gate: ${gate.affected.length} shot(s) affected; ` +
+        `✓ screenshot gate: ${String(gate.affected.length)} shot(s) affected; ` +
           'update-screenshots label present (CI will regenerate them)',
       )
     else
       console.log(
-        `✓ screenshot gate: ${gate.affected.length} shot(s) affected, all refreshed in this diff`,
+        `✓ screenshot gate: ${String(gate.affected.length)} shot(s) affected, all refreshed in this diff`,
       )
     return
   }
 
   console.error(
-    `\n✗ screenshot gate: ${gate.missing.length} reference screenshot(s) look stale.\n\n` +
+    `\n✗ screenshot gate: ${String(gate.missing.length)} reference screenshot(s) look stale.\n\n` +
       '  This change is mapped (by the test oracle) to screenshot-producing e2e\n' +
       '  spec(s), but these committed reference PNGs were not refreshed in the diff:\n',
   )

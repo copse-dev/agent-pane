@@ -107,7 +107,7 @@ export async function downloadLmStudioModel(
       signal: AbortSignal.timeout(FETCH_TIMEOUTS.downloadStart),
     })
     if (!res.ok) {
-      let detail = `HTTP ${res.status}`
+      let detail = `HTTP ${String(res.status)}`
       try {
         const errJson = (await res.json()) as { error?: { message?: string } }
         if (errJson.error?.message) detail = errJson.error.message
@@ -141,7 +141,7 @@ export async function getLmStudioDownloadStatus(
       },
     )
     if (!res.ok) {
-      return { ok: false, jobId, error: `HTTP ${res.status}` }
+      return { ok: false, jobId, error: `HTTP ${String(res.status)}` }
     }
     const row = (await res.json()) as Record<string, unknown>
     return {

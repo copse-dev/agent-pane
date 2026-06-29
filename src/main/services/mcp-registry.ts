@@ -206,7 +206,9 @@ function envAllowlistFor(cfg: McpServerConfig): ReadonlySet<string> | undefined 
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${String(ms)}ms`))
+    }, ms)
     promise.then(
       (v) => {
         clearTimeout(timer)
@@ -222,15 +224,21 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 
 function createTransport(cfg: McpServerConfig): CreatedTransport {
   if (cfg.transport === 'http') {
+    if (cfg.url === undefined) {
+      throw new Error(`MCP server "${cfg.name}" uses http transport but has no url`)
+    }
     const transport = new StreamableHTTPClientTransport(
-      new URL(cfg.url!),
+      new URL(cfg.url),
       cfg.headers ? { requestInit: { headers: cfg.headers } } : undefined,
     )
     return { transport: transport as unknown as Transport, stderrOutput: () => '' }
   }
+  if (cfg.command === undefined) {
+    throw new Error(`MCP server "${cfg.name}" uses stdio transport but has no command`)
+  }
   const cwd = cfg.cwd ?? getWorkspaceRoot() ?? undefined
   const transport = new StdioClientTransport({
-    command: cfg.command!,
+    command: cfg.command,
     args: cfg.args ?? [],
     env: { ...envForRendererChildProcess(), ...(cfg.env ?? {}) },
     stderr: 'pipe',
@@ -324,7 +332,9 @@ async function connectBundledServers(
         userEnabled: true,
         configDisabled: false,
       })
-      console.log(`[MCP] Connected bundled "${name}" (in-process) — ${tools.length} tool(s)`)
+      console.log(
+        `[MCP] Connected bundled "${name}" (in-process) — ${String(tools.length)} tool(s)`,
+      )
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       console.error(`[MCP] Failed to register bundled "${name}":`, message)
@@ -389,7 +399,9 @@ async function connectServer(
 
     const toolNames = await registerClientTools(registry, client, cfg.name)
 
-    console.log(`[MCP] Connected to "${cfg.name}" (${cfg.transport}) — ${toolNames.length} tool(s)`)
+    console.log(
+      `[MCP] Connected to "${cfg.name}" (${cfg.transport}) — ${String(toolNames.length)} tool(s)`,
+    )
     return { ...base, state: 'connected', toolCount: toolNames.length, tools: toolNames }
   } catch (err) {
     const stderr = stderrOutput()

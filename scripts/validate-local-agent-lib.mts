@@ -117,7 +117,9 @@ export async function validateLocalAgentFinalAnswer(): Promise<void> {
 
   const chunks: StreamChunk[] = []
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), RUN_TIMEOUT_MS)
+  const timer = setTimeout(() => {
+    controller.abort()
+  }, RUN_TIMEOUT_MS)
 
   console.log(`validate:local-agent model=${model} workspace=${workspace}`)
 
@@ -151,13 +153,13 @@ export async function validateLocalAgentFinalAnswer(): Promise<void> {
   if (chunks.at(-1)?.type !== 'done') fail('Run ended without a done chunk.')
   if (!combined) fail('No assistant text was streamed.')
   if (combined.includes(INCOMPLETE)) fail('Incomplete-run stub instead of a real final answer.')
-  if (combined.length < 80) fail(`Final answer too short (${combined.length} chars).`)
+  if (combined.length < 80) fail(`Final answer too short (${String(combined.length)} chars).`)
 
   console.log('\nvalidate:local-agent PASS')
 }
 
 if (require.main === module) {
-  validateLocalAgentFinalAnswer().catch((err) => {
+  validateLocalAgentFinalAnswer().catch((err: unknown) => {
     console.error(err)
     process.exit(1)
   })

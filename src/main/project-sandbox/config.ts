@@ -180,7 +180,8 @@ export function electronRuntimeAllowReadPaths(): string[] {
   }
   const paths = [exec, dirname(exec), `${dirname(exec)}/**`]
   if (process.platform === 'darwin' && exec.includes('.app/')) {
-    const appRoot = `${exec.split('.app/')[0]!}.app`
+    const [appPrefix] = exec.split('.app/')
+    const appRoot = `${appPrefix ?? exec}.app`
     try {
       const realAppRoot = realpathSync.native(resolve(appRoot))
       paths.push(realAppRoot, `${realAppRoot}/**`)
@@ -202,7 +203,10 @@ export function fsWorkerSandboxOverlay(
 ): Partial<SandboxRuntimeConfig> {
   const workspace = workspaceSandboxOverlay(workspaceRoot)
   const workerDir = dirname(resolve(workerJsPath))
-  const fs = workspace.filesystem!
+  const fs = workspace.filesystem
+  if (!fs) {
+    throw new Error('workspaceSandboxOverlay must define a filesystem config')
+  }
   const allowRead = [
     ...new Set([
       ...(fs.allowRead ?? []),
@@ -214,9 +218,9 @@ export function fsWorkerSandboxOverlay(
   return {
     ...workspace,
     filesystem: {
-      denyRead: fs.denyRead ?? [],
-      allowWrite: fs.allowWrite ?? [],
-      denyWrite: fs.denyWrite ?? [],
+      denyRead: fs.denyRead,
+      allowWrite: fs.allowWrite,
+      denyWrite: fs.denyWrite,
       allowGitConfig: fs.allowGitConfig,
       allowRead,
     },

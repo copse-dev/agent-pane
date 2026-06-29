@@ -22,14 +22,15 @@ interface Bounds {
 // If the saved rect isn't substantially visible on a currently-connected
 // display, drop the position so Electron centres the window instead.
 function sanitizeBounds(saved: Bounds): Bounds {
-  if (saved.x === undefined || saved.y === undefined) return saved
+  const { x: savedX, y: savedY } = saved
+  if (savedX === undefined || savedY === undefined) return saved
 
   const displays = screen.getAllDisplays()
   const visible = displays.some((d) => {
     const wa = d.workArea
     // Require the window's top-left region to fall within a display's work area.
-    const xOk = saved.x! >= wa.x - 8 && saved.x! < wa.x + wa.width - 80
-    const yOk = saved.y! >= wa.y - 8 && saved.y! < wa.y + wa.height - 40
+    const xOk = savedX >= wa.x - 8 && savedX < wa.x + wa.width - 80
+    const yOk = savedY >= wa.y - 8 && savedY < wa.y + wa.height - 40
     return xOk && yOk
   })
 
@@ -67,7 +68,9 @@ export function createMainWindow(): BrowserWindow {
   })
   mainWin = win
   attachWebContentsLockdown(win.webContents)
-  win.once('ready-to-show', () => win.show())
+  win.once('ready-to-show', () => {
+    win.show()
+  })
   // Fallback: if ready-to-show somehow never fires, force-show so the window
   // can never get stuck invisible.
   setTimeout(() => {

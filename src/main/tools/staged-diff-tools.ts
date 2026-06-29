@@ -14,7 +14,7 @@ const MAX_CHARS_LIMIT = 80_000
 
 function cap(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text
-  return `${text.slice(0, maxChars)}\n\n[Truncated ${text.length - maxChars} chars]`
+  return `${text.slice(0, maxChars)}\n\n[Truncated ${String(text.length - maxChars)} chars]`
 }
 
 function firstChangedLine(before: string, after: string): number | null {
@@ -69,8 +69,8 @@ export const stagedDiffsTool = defineTool({
       'Pending Copse staged diffs (not written to disk until user approval):',
       ...entries.map((entry) => {
         const changedLine = firstChangedLine(entry.before, entry.after)
-        const changed = changedLine ? `, first changed line ${changedLine}` : ''
-        return `- ${entry.path} (${entry.language}${changed}; before ${entry.before.length} chars, proposed after ${entry.after.length} chars)`
+        const changed = changedLine ? `, first changed line ${String(changedLine)}` : ''
+        return `- ${entry.path} (${entry.language}${changed}; before ${String(entry.before.length)} chars, proposed after ${String(entry.after.length)} chars)`
       }),
       ...recent,
       '',
@@ -115,7 +115,7 @@ export const readStagedDiffTool = defineTool({
     const header = [
       `Pending Copse staged diff for ${entry.path}`,
       `Language: ${entry.language}`,
-      `First changed line: ${changedLine ?? 'none'}`,
+      `First changed line: ${changedLine === null ? 'none' : String(changedLine)}`,
       'Status: pending user approval; not written to disk.',
     ].join('\n')
 

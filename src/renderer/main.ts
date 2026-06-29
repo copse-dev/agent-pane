@@ -58,6 +58,14 @@ import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layo
 const store = createStore()
 const api = window.api
 
+// The app shell ships these mount points in index.html; a missing one is a
+// build/markup bug we want to surface loudly rather than silently no-op.
+function requireElement(id: string): HTMLElement {
+  const el = document.getElementById(id)
+  if (!el) throw new Error(`Required element #${id} not found`)
+  return el
+}
+
 // Catch-all for IPC/promise failures that would otherwise vanish silently
 // (many call sites dispatch with `void api.…()`). Surface them to the user.
 window.addEventListener('unhandledrejection', (event) => {
@@ -91,7 +99,7 @@ async function boot(): Promise<void> {
   attachAutosave(store, api)
   attachProjectThreadCache(store)
 
-  mountTitlebar(document.getElementById('titlebar')!, store, api)
+  mountTitlebar(requireElement('titlebar'), store, api)
 
   // File ▸ Settings… (Cmd+,) from the native menu opens the settings dialog.
   api.menu.onSettings(() => {
@@ -142,12 +150,13 @@ async function boot(): Promise<void> {
   const { projects, activeProjectId } = await loadProjects(api)
   store.setState({ projects, activeProjectId })
 
-  if (projects.length > 0) {
-    const active = projects.find((p) => p.id === activeProjectId) ?? projects[0]!
+  const [firstProject] = projects
+  if (firstProject) {
+    const active = projects.find((p) => p.id === activeProjectId) ?? firstProject
     await restoreProject(store, api, active.id)
     ensureLayout()
   } else {
-    const unmountWelcome = mountWelcome(document.getElementById('welcome')!, store, api)
+    const unmountWelcome = mountWelcome(requireElement('welcome'), store, api)
     const unsubWelcome = store.on('workspace_changed', () => {
       unsubWelcome()
       unmountWelcome()
@@ -174,44 +183,44 @@ function mountFullLayout(): void {
   // of the layout, but mount the editor-backed panes only once it resolves — the
   // editor library is no longer part of the initial app.js.
   const monacoReady = loadMonaco()
-  mountProjectsPane(document.getElementById('pane-projects')!, store, api)
-  const inputRoot = document.getElementById('input-bar')!
+  mountProjectsPane(requireElement('pane-projects'), store, api)
+  const inputRoot = requireElement('input-bar')
   mountInputBar(inputRoot, store, api)
-  mountConversation(document.getElementById('conversation')!, store, api)
+  mountConversation(requireElement('conversation'), store, api)
   if (!inputRoot.querySelector('.prompt-input')) {
     throw new Error('Chat composer failed to mount (#input-bar missing .prompt-input)')
   }
   bindChatComposerLayout(store)
-  mountFileTree(document.getElementById('file-tree-host')!, store, api)
+  mountFileTree(requireElement('file-tree-host'), store, api)
   mountRightPanelLayout(store)
   mountTerminalsPane(
-    document.getElementById('terminals-list-host')!,
-    document.getElementById('terminals-viewer-host')!,
+    requireElement('terminals-list-host'),
+    requireElement('terminals-viewer-host'),
     store,
     api,
   )
   mountBrowserPane(
-    document.getElementById('browser-tabs-host')!,
-    document.getElementById('browser-viewer-host')!,
+    requireElement('browser-tabs-host'),
+    requireElement('browser-viewer-host'),
     store,
     api,
   )
   void monacoReady.then((monaco) => {
     mountGitChangesPane(
-      document.getElementById('git-changes-host')!,
-      document.getElementById('git-diff-viewer-host')!,
+      requireElement('git-changes-host'),
+      requireElement('git-diff-viewer-host'),
       store,
       api,
       monaco,
     )
     mountPrPane(
-      document.getElementById('pr-list-host')!,
-      document.getElementById('pr-viewer-host')!,
+      requireElement('pr-list-host'),
+      requireElement('pr-viewer-host'),
       store,
       api,
       monaco,
     )
-    mountContextPanel(document.getElementById('file-viewer')!, store, api, monaco)
+    mountContextPanel(requireElement('file-viewer'), store, api, monaco)
   })
 
   const body = document.getElementById('body')
@@ -287,13 +296,15 @@ function confirmDeleteThread(): void {
 function switchToPrevThread(): void {
   const { threads, activeThreadId } = store.getState()
   const idx = threads.findIndex((t) => t.id === activeThreadId)
-  if (idx > 0) switchThread(store, threads[idx - 1]!.id)
+  const prev = idx > 0 ? threads[idx - 1] : undefined
+  if (prev) switchThread(store, prev.id)
 }
 
 function switchToNextThread(): void {
   const { threads, activeThreadId } = store.getState()
   const idx = threads.findIndex((t) => t.id === activeThreadId)
-  if (idx < threads.length - 1) switchThread(store, threads[idx + 1]!.id)
+  const next = idx >= 0 && idx < threads.length - 1 ? threads[idx + 1] : undefined
+  if (next) switchThread(store, next.id)
 }
 
 void boot()

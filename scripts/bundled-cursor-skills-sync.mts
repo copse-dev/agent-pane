@@ -37,7 +37,7 @@ export interface BundledCursorSkillsSource {
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { headers: GITHUB_HEADERS })
   if (!res.ok) {
-    throw new Error(`GitHub fetch failed (${res.status}): ${url}`)
+    throw new Error(`GitHub fetch failed (${String(res.status)}): ${url}`)
   }
   return (await res.json()) as T
 }
@@ -45,7 +45,7 @@ async function fetchJson<T>(url: string): Promise<T> {
 async function fetchText(url: string): Promise<string> {
   const res = await fetch(url)
   if (!res.ok) {
-    throw new Error(`Download failed (${res.status}): ${url}`)
+    throw new Error(`Download failed (${String(res.status)}): ${url}`)
   }
   return res.text()
 }

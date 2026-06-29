@@ -176,5 +176,9 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
   ]
 
   refresh()
-  return () => unsubs.forEach((unsub) => unsub())
+  return () => {
+    unsubs.forEach((unsub) => {
+      unsub()
+    })
+  }
 }

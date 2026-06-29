@@ -113,5 +113,7 @@ export function bindFileReferenceClicks(
     })
   }
   root.addEventListener('click', onClick)
-  return () => root.removeEventListener('click', onClick)
+  return () => {
+    root.removeEventListener('click', onClick)
+  }
 }

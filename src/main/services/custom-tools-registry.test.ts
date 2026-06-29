@@ -60,7 +60,8 @@ describe('loadCustomToolsFromDir', () => {
 
     // Registered tools surface their JSON Schema verbatim to providers.
     const echo = registry.toLLMTools().find((t) => t.name === 'custom__echo')
-    assert.equal((echo!.parameters as { type: string }).type, 'object')
+    assert.ok(echo)
+    assert.equal((echo.parameters as { type: string }).type, 'object')
   })
 
   it('isolates a malformed file: reports an error without registering it', async () => {
@@ -70,7 +71,8 @@ describe('loadCustomToolsFromDir', () => {
     assert.ok(!registry.has('custom__nope'))
     const broken = statuses.find((s) => s.source.endsWith('broken.mjs'))
     assert.ok(broken && !broken.registered)
-    assert.match(broken.error!, /missing an "execute"/)
+    assert.ok(broken.error)
+    assert.match(broken.error, /missing an "execute"/)
   })
 
   it('ignores non-loadable extensions', async () => {

@@ -24,6 +24,20 @@ export function mountApprovalDialog(api: ApiClient): void {
 
   const rememberInput = rememberLabel.querySelector('.approval-remember-input') as HTMLInputElement
 
+  function mustQuery(selector: string): Element {
+    const found = dialog.querySelector(selector)
+    if (!found) throw new Error(`approval dialog missing element '${selector}'`)
+    return found
+  }
+
+  const approvalTitle = mustQuery('.approval-title')
+  const approvalBody = mustQuery('.approval-body')
+  const rememberLabelTextNode = rememberLabel.childNodes[1]
+  if (!rememberLabelTextNode) throw new Error('approval dialog missing remember label text node')
+  // Bind to an explicitly non-optional type so the narrowing survives into the
+  // showNext() closure below.
+  const rememberLabelText: ChildNode = rememberLabelTextNode
+
   interface PendingApproval {
     id: string
     title: string
@@ -43,9 +57,9 @@ export function mountApprovalDialog(api: ApiClient): void {
   function showNext(): void {
     active = queue.shift() ?? null
     if (!active) return
-    dialog.querySelector('.approval-title')!.textContent = active.title
-    dialog.querySelector('.approval-body')!.textContent = active.body
-    rememberLabel.childNodes[1]!.textContent = active.rememberLabel ?? 'Always allow this tool'
+    approvalTitle.textContent = active.title
+    approvalBody.textContent = active.body
+    rememberLabelText.textContent = active.rememberLabel ?? 'Always allow this tool'
     rememberInput.checked = false
     rememberLabel.hidden = !active.allowRemember
     dialog.showModal()
@@ -65,10 +79,10 @@ export function mountApprovalDialog(api: ApiClient): void {
     if (!active) showNext()
   })
 
-  dialog.querySelector('.approval-approve')!.addEventListener('click', () => {
+  mustQuery('.approval-approve').addEventListener('click', () => {
     resolve(true, rememberInput.checked)
   })
-  dialog.querySelector('.approval-reject')!.addEventListener('click', () => {
+  mustQuery('.approval-reject').addEventListener('click', () => {
     resolve(false, false)
   })
 }

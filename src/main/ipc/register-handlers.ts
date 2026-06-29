@@ -366,7 +366,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     },
   )
   ipcMain.handle('gh:resolvePrUrl', (_e, url: unknown) => {
-    const parsedUrl = parseIpcArgs(z.string().url().max(2048), [url])
+    const parsedUrl = parseIpcArgs(z.url().max(2048), [url])
     return resolveGithubPrRef(parsedUrl)
   })
   ipcMain.handle('remoteAgent:downloadArtifact', async (event, agentId: unknown, path: unknown) => {
@@ -386,7 +386,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   )
   ipcMain.handle('shell:openExternal', (event, url: unknown) => {
     assertMainFrameSender(event, win)
-    const href = parseIpcArgs(z.string().url().max(2048), [url])
+    const href = parseIpcArgs(z.url().max(2048), [url])
     if (!href.startsWith('http://') && !href.startsWith('https://')) {
       throw new IpcValidationError('URL must be http or https')
     }

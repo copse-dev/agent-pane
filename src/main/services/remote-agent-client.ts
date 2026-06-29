@@ -148,7 +148,7 @@ async function readJsonResponse<T>(response: Response, label: string): Promise<T
   const text = await response.text()
   if (!response.ok) {
     const details = text ? `: ${text}` : ''
-    throw new Error(`${label} failed with HTTP ${response.status}${details}`)
+    throw new Error(`${label} failed with HTTP ${String(response.status)}${details}`)
   }
   try {
     return (text ? JSON.parse(text) : {}) as T
@@ -166,6 +166,10 @@ async function readJsonResponse<T>(response: Response, label: string): Promise<T
  */
 function readValidatedBaseUrl(provider: RemoteAgentProvider): string {
   const raw = getSetting<string>('remoteAgentBaseUrl', '').trim()
+  // Provider dispatch: cursor is currently the only RemoteAgentProvider, but this
+  // branch intentionally scopes the safe-default fallback to it so other providers
+  // added later must fix the setting rather than inherit Cursor's default.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   if (provider === REMOTE_AGENT_PROVIDER_CURSOR) {
     if (!raw) return DEFAULT_CURSOR_AGENT_BASE_URL
     try {
@@ -288,6 +292,9 @@ async function buildFirstHandoffPrompt(
 }
 
 function remoteAgentLabel(provider: RemoteAgentProvider): string {
+  // cursor is currently the only provider, so this match is always true today, but
+  // the lookup is written to scale as more RemoteAgentProviders/models are added.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   return REMOTE_AGENT_MODELS.find((option) => option.provider === provider)?.label ?? 'remote agent'
 }
 
@@ -350,7 +357,7 @@ async function cancelRemoteRun(input: {
   if (!response.ok && response.status !== 409) {
     const details = await response.text()
     throw new Error(
-      `Remote agent cancel failed with HTTP ${response.status}${details ? `: ${details}` : ''}`,
+      `Remote agent cancel failed with HTTP ${String(response.status)}${details ? `: ${details}` : ''}`,
     )
   }
 }
@@ -449,12 +456,12 @@ export async function fetchRemoteArtifactImageDataUrl(input: {
   if (!response.ok) {
     const details = await response.text()
     throw new Error(
-      `Remote agent artifact image fetch failed with HTTP ${response.status}${details ? `: ${details}` : ''}`,
+      `Remote agent artifact image fetch failed with HTTP ${String(response.status)}${details ? `: ${details}` : ''}`,
     )
   }
   const contentLength = Number(response.headers.get('content-length') ?? 0)
   if (contentLength > MAX_REMOTE_ARTIFACT_IMAGE_BYTES) {
-    throw new Error(`Remote agent artifact image is too large (${contentLength} bytes).`)
+    throw new Error(`Remote agent artifact image is too large (${String(contentLength)} bytes).`)
   }
   const mimeType =
     response.headers.get('content-type')?.split(';')[0]?.trim() || imageMimeTypeForPath(path)
@@ -463,7 +470,9 @@ export async function fetchRemoteArtifactImageDataUrl(input: {
   }
   const buffer = Buffer.from(await response.arrayBuffer())
   if (buffer.byteLength > MAX_REMOTE_ARTIFACT_IMAGE_BYTES) {
-    throw new Error(`Remote agent artifact image is too large (${buffer.byteLength} bytes).`)
+    throw new Error(
+      `Remote agent artifact image is too large (${String(buffer.byteLength)} bytes).`,
+    )
   }
   const dataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`
   artifactImageDataUrlCache.set(cacheKey, dataUrl)
@@ -472,7 +481,7 @@ export async function fetchRemoteArtifactImageDataUrl(input: {
 
 function formatBytes(bytes: number | undefined): string {
   if (bytes === undefined) return ''
-  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024) return `${String(bytes)} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
@@ -524,7 +533,7 @@ async function streamRemoteRun(input: {
   if (!response.ok) {
     const details = await response.text()
     throw new Error(
-      `Remote agent stream failed with HTTP ${response.status}${details ? `: ${details}` : ''}`,
+      `Remote agent stream failed with HTTP ${String(response.status)}${details ? `: ${details}` : ''}`,
     )
   }
   if (!response.body) throw new Error('Remote agent stream response did not include a body')

@@ -45,7 +45,7 @@ const current = total.pct
 
 if (update) {
   await writeFile(BASELINE, JSON.stringify({ lines: current }, null, 2) + '\n')
-  console.log(`coverage-gate: baseline updated to ${current}% lines.`)
+  console.log(`coverage-gate: baseline updated to ${String(current)}% lines.`)
   process.exit(0)
 }
 
@@ -54,7 +54,7 @@ const required = typeof baseline['lines'] === 'number' ? baseline['lines'] : 0
 const delta = current - required
 
 const summaryLine =
-  `Line coverage: ${current}% (baseline ${required}%, ` +
+  `Line coverage: ${String(current)}% (baseline ${String(required)}%, ` +
   `${delta >= 0 ? '+' : ''}${delta.toFixed(2)}%)`
 console.log(summaryLine)
 
@@ -66,7 +66,7 @@ if (stepSummary) {
 
 if (current + TOLERANCE < required) {
   console.error(
-    `coverage-gate: line coverage regressed to ${current}% (below baseline ${required}%).\n` +
+    `coverage-gate: line coverage regressed to ${String(current)}% (below baseline ${String(required)}%).\n` +
       `Add tests to restore coverage, or — if this drop is intentional — lower the\n` +
       `baseline in coverage-baseline.json.`,
   )

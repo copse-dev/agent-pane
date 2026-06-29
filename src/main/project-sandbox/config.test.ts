@@ -47,9 +47,11 @@ describe('workspaceSandboxOverlay', () => {
     // must allow no domains and no local socket binding. User-approved network
     // commands run fully unsandboxed, never through this overlay.
     const overlay = workspaceSandboxOverlay('/tmp/project')
-    assert.deepEqual(overlay.network?.allowedDomains, [])
-    assert.deepEqual(overlay.network?.deniedDomains, [])
-    assert.equal(overlay.network?.allowLocalBinding, false)
+    const { network } = overlay
+    assert.ok(network)
+    assert.deepEqual(network.allowedDomains, [])
+    assert.deepEqual(network.deniedDomains, [])
+    assert.equal(network.allowLocalBinding, false)
   })
 
   it('re-allows node toolchain paths alongside the workspace', () => {
@@ -67,13 +69,15 @@ describe('workspaceSandboxOverlay', () => {
   it('denies home reads but re-allows git config files', () => {
     const overlay = workspaceSandboxOverlay('/Users/me/project')
     const home = homedir()
+    const { filesystem } = overlay
+    assert.ok(filesystem)
     // Home is broadly denied so projects cannot read unrelated user files...
-    assert.ok(overlay.filesystem?.denyRead?.includes(home))
+    assert.ok(filesystem.denyRead.includes(home))
     // ...but git's user-level config must stay readable or seatbelt EPERM makes
     // every git command fatal (exit 128).
-    assert.ok(overlay.filesystem?.allowRead?.includes(join(home, '.gitconfig')))
-    assert.ok(overlay.filesystem?.allowRead?.includes(join(home, '.config/git/**')))
-    assert.equal(overlay.filesystem?.allowGitConfig, true)
+    assert.ok(filesystem.allowRead?.includes(join(home, '.gitconfig')))
+    assert.ok(filesystem.allowRead?.includes(join(home, '.config/git/**')))
+    assert.equal(filesystem.allowGitConfig, true)
   })
 
   it('includes workspace-scoped mandatory write deny paths', () => {

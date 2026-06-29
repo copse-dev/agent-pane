@@ -20,10 +20,11 @@ describe('selectBestHfProvider', () => {
         pricing: { input: 1.5, output: 3.0 },
       },
     ])
-    assert.equal(best?.provider, 'novita')
-    assert.equal(best?.contextLength, 512_000)
-    assert.equal(best?.inputPricePerMTok, 1.5)
-    assert.equal(best?.outputPricePerMTok, 3.0)
+    assert.ok(best)
+    assert.equal(best.provider, 'novita')
+    assert.equal(best.contextLength, 512_000)
+    assert.equal(best.inputPricePerMTok, 1.5)
+    assert.equal(best.outputPricePerMTok, 3.0)
   })
 
   it('skips non-live providers and ones flagged unable to use tools', () => {
@@ -51,8 +52,9 @@ describe('selectBestHfProvider', () => {
 
   it('defaults output to the input rate when only input is reported', () => {
     const best = selectBestHfProvider([{ provider: 'p', pricing: { input: 5 } }])
-    assert.equal(best?.inputPricePerMTok, 5)
-    assert.equal(best?.outputPricePerMTok, 5)
+    assert.ok(best)
+    assert.equal(best.inputPricePerMTok, 5)
+    assert.equal(best.outputPricePerMTok, 5)
   })
 })
 

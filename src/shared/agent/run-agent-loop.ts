@@ -40,7 +40,7 @@ import {
 } from '../llm/provider-stop-reason.ts'
 import {
   AGENT_RUN_HARD_MAX_MS,
-  AGENT_RUN_TIMEOUT_MS,
+  AGENT_RUN_IDLE_TIMEOUT_MS,
   AgentRunDeadline,
   defaultMaxLlmCallsForSteps,
   isAgentRunTimeoutAbort,
@@ -419,7 +419,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     usageModel,
     maxLlmCalls = defaultMaxLlmCallsForSteps(maxSteps),
     runDeadline,
-    runTimeoutMs = AGENT_RUN_TIMEOUT_MS,
+    runTimeoutMs = AGENT_RUN_IDLE_TIMEOUT_MS,
     runHardMaxMs = AGENT_RUN_HARD_MAX_MS,
     onRunDeadlineActivity,
     coerceTextToolCallArgs,
@@ -462,11 +462,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       }
       const pressure = measureConversationPressure(escalationInput)
 
-      if (
-        !finishedWithAnswer &&
-        !forceTextAttempted &&
-        shouldForceTextAnswer(escalationInput, pressure)
-      ) {
+      if (!forceTextAttempted && shouldForceTextAnswer(escalationInput, pressure)) {
         forceTextAttempted = true
         const forced = await streamTextOnlyTurn(
           provider,

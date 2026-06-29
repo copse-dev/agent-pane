@@ -83,7 +83,7 @@ describe('tool-display', () => {
   it('shell groups keep the generic label (LLM summary applied at render)', () => {
     const items = buildToolCallDisplayItems([shell('1', 'npm test'), shell('2', 'git diff')])
     assert.equal(items[0]?.type, 'group')
-    if (items[0]?.type === 'group') assert.equal(items[0].label, 'Running commands')
+    assert.equal(items[0].label, 'Running commands')
   })
 
   it('maps known tools to human-readable names', () => {
@@ -101,10 +101,8 @@ describe('tool-display', () => {
     const items = buildToolCallDisplayItems([tc('1', 'explore'), tc('2', 'read_file')])
     assert.equal(items.length, 1)
     assert.equal(items[0]?.type, 'group')
-    if (items[0]?.type === 'group') {
-      assert.equal(items[0].label, 'Reading files')
-      assert.equal(items[0].toolCalls.length, 2)
-    }
+    assert.equal(items[0].label, 'Reading files')
+    assert.equal(items[0].toolCalls.length, 2)
   })
 
   it('groups multiple successful reading tools', () => {
@@ -115,19 +113,15 @@ describe('tool-display', () => {
     ])
     assert.equal(items.length, 1)
     assert.equal(items[0]?.type, 'group')
-    if (items[0]?.type === 'group') {
-      assert.equal(items[0].label, 'Reading files')
-      assert.equal(items[0].toolCalls.length, 3)
-    }
+    assert.equal(items[0].label, 'Reading files')
+    assert.equal(items[0].toolCalls.length, 3)
   })
 
   it('keeps a single tool as an individual card', () => {
     const items = buildToolCallDisplayItems([tc('1', 'read_file')])
     assert.equal(items.length, 1)
     assert.equal(items[0]?.type, 'individual')
-    if (items[0]?.type === 'individual') {
-      assert.equal(items[0].label, 'Read file')
-    }
+    assert.equal(items[0].label, 'Read file')
   })
 
   it('lists failed tools outside their group', () => {
@@ -139,14 +133,10 @@ describe('tool-display', () => {
     assert.equal(items.length, 2)
     assert.equal(items[0]?.type, 'group')
     assert.equal(items[1]?.type, 'individual')
-    if (items[0]?.type === 'group') {
-      assert.equal(items[0].toolCalls.length, 2)
-      assert.ok(items[0].toolCalls.every((t) => t.status !== 'error'))
-    }
-    if (items[1]?.type === 'individual') {
-      assert.equal(items[1].toolCall.id, '2')
-      assert.equal(items[1].label, 'Read file')
-    }
+    assert.equal(items[0].toolCalls.length, 2)
+    assert.ok(items[0].toolCalls.every((t) => t.status !== 'error'))
+    assert.equal(items[1].toolCall.id, '2')
+    assert.equal(items[1].label, 'Read file')
   })
 
   it('collapses repeated failures into a single error group', () => {
@@ -157,11 +147,9 @@ describe('tool-display', () => {
     ])
     assert.equal(items.length, 1)
     assert.equal(items[0]?.type, 'group')
-    if (items[0]?.type === 'group') {
-      assert.equal(items[0].label, 'mdn (MCP)')
-      assert.equal(items[0].toolCalls.length, 3)
-      assert.equal(aggregateToolStatus(items[0].toolCalls), 'error')
-    }
+    assert.equal(items[0].label, 'mdn (MCP)')
+    assert.equal(items[0].toolCalls.length, 3)
+    assert.equal(aggregateToolStatus(items[0].toolCalls), 'error')
   })
 
   it('separates successful and failed calls into distinct groups', () => {
@@ -174,15 +162,13 @@ describe('tool-display', () => {
     assert.equal(items.length, 2)
     assert.equal(items[0]?.type, 'group')
     assert.equal(items[1]?.type, 'group')
-    if (items[0]?.type === 'group' && items[1]?.type === 'group') {
-      // Error group emitted at the position of the first failed call.
-      assert.equal(aggregateToolStatus(items[0].toolCalls), 'error')
-      assert.equal(items[0].toolCalls.length, 2)
-      assert.equal(aggregateToolStatus(items[1].toolCalls), 'done')
-      assert.equal(items[1].toolCalls.length, 2)
-      // Distinct keys so expansion state and DOM ids never collide.
-      assert.notEqual(items[0].key, items[1].key)
-    }
+    // Error group emitted at the position of the first failed call.
+    assert.equal(aggregateToolStatus(items[0].toolCalls), 'error')
+    assert.equal(items[0].toolCalls.length, 2)
+    assert.equal(aggregateToolStatus(items[1].toolCalls), 'done')
+    assert.equal(items[1].toolCalls.length, 2)
+    // Distinct keys so expansion state and DOM ids never collide.
+    assert.notEqual(items[0].key, items[1].key)
   })
 
   it('groups git tools together', () => {
@@ -193,7 +179,7 @@ describe('tool-display', () => {
     ])
     assert.equal(items.length, 1)
     assert.equal(items[0]?.type, 'group')
-    if (items[0]?.type === 'group') assert.equal(items[0].label, 'Git')
+    assert.equal(items[0].label, 'Git')
   })
 
   it('maps gh tools to human-readable names', () => {
@@ -231,7 +217,7 @@ describe('tool-display', () => {
     ])
     assert.equal(items.length, 1)
     assert.equal(items[0]?.type, 'group')
-    if (items[0]?.type === 'group') assert.equal(items[0].label, 'github (MCP)')
+    assert.equal(items[0].label, 'github (MCP)')
   })
 
   it('does not group MCP tools from different servers', () => {

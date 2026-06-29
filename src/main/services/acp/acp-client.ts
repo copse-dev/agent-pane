@@ -81,20 +81,22 @@ export async function runAcpAgentPrompt(
   const readable = Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>
   const stream = ndJsonStream(writable, readable)
 
+  const readTextFile = handlers.readTextFile
+  const writeTextFile = handlers.writeTextFile
   const app = client({ name: 'copse' })
     .onRequest(methods.client.session.requestPermission, (ctx) =>
       handlers.requestPermission(ctx.params),
     )
     .onRequest(
       methods.client.fs.readTextFile,
-      handlers.readTextFile
-        ? (ctx): Promise<ReadTextFileResponse> => handlers.readTextFile!(ctx.params)
+      readTextFile
+        ? (ctx): Promise<ReadTextFileResponse> => readTextFile(ctx.params)
         : UNSUPPORTED('fs/read_text_file'),
     )
     .onRequest(
       methods.client.fs.writeTextFile,
-      handlers.writeTextFile
-        ? (ctx): Promise<WriteTextFileResponse> => handlers.writeTextFile!(ctx.params)
+      writeTextFile
+        ? (ctx): Promise<WriteTextFileResponse> => writeTextFile(ctx.params)
         : UNSUPPORTED('fs/write_text_file'),
     )
 

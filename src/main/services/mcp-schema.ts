@@ -109,6 +109,8 @@ export function extractUiResources(content: unknown): McpUiResource[] {
   if (!Array.isArray(content)) return []
   const out: McpUiResource[] = []
   for (const raw of content as McpContentBlock[]) {
+    // raw comes from an untrusted MCP server via an `as`-cast, so it may be null/undefined at runtime.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (!raw || typeof raw !== 'object' || raw.type !== 'resource') continue
     const mime = uiResourceMimeType(raw.resource)
     if (!mime) continue
@@ -149,6 +151,8 @@ export function flattenMcpContent(content: unknown, options: FlattenOptions = {}
 
   const parts: string[] = []
   for (const raw of content as McpContentBlock[]) {
+    // raw comes from an untrusted MCP server via an `as`-cast, so it may be null/undefined at runtime.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (!raw || typeof raw !== 'object') continue
     switch (raw.type) {
       case 'text':
@@ -166,8 +170,8 @@ export function flattenMcpContent(content: unknown, options: FlattenOptions = {}
         break
       }
       case 'resource':
-        if (options.summarizeUiResources && uiResourceMimeType(raw.resource)) {
-          parts.push(describeUiResource(raw.resource!))
+        if (options.summarizeUiResources && raw.resource && uiResourceMimeType(raw.resource)) {
+          parts.push(describeUiResource(raw.resource))
         } else if (raw.resource?.text) {
           parts.push(raw.resource.text)
         } else if (raw.resource?.uri) {

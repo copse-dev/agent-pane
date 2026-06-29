@@ -15,10 +15,15 @@ class TestResizeObserver {
 ;(globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver = TestResizeObserver
 ;(globalThis as { requestAnimationFrame?: typeof requestAnimationFrame }).requestAnimationFrame = (
   callback,
-): number => setTimeout(() => callback(Date.now()), 0) as unknown as number
+): number =>
+  setTimeout(() => {
+    callback(Date.now())
+  }, 0) as unknown as number
 ;(globalThis as { cancelAnimationFrame?: typeof cancelAnimationFrame }).cancelAnimationFrame = (
   id,
-): void => clearTimeout(id)
+): void => {
+  clearTimeout(id)
+}
 ;(globalThis as { MutationObserver?: typeof MutationObserver }).MutationObserver =
   window.MutationObserver
 

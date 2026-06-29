@@ -26,7 +26,7 @@ export function bindChatComposerLayout(store: AppStore): () => void {
     }
 
     const height = Math.max(Math.ceil(input.getBoundingClientRect().height), 72)
-    pane.style.setProperty('--chat-composer-height', `${height}px`)
+    pane.style.setProperty('--chat-composer-height', `${String(height)}px`)
   }
 
   sync()
@@ -40,7 +40,9 @@ export function bindChatComposerLayout(store: AppStore): () => void {
   const unsubs = [store.on('threads_changed', sync), store.on('message_added', sync)]
 
   return () => {
-    unsubs.forEach((u) => u())
+    unsubs.forEach((u) => {
+      u()
+    })
     observer.disconnect()
     window.removeEventListener('resize', sync)
   }

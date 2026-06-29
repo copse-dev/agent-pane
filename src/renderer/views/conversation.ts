@@ -61,8 +61,8 @@ function createToolHeader(
   const children: (Node | string)[] = [el('span', { class: 'tool-name' }, label)]
   if (editStats) {
     const stats = [
-      el('span', { class: 'tool-stat tool-stat-add' }, `+${editStats.additions}`),
-      el('span', { class: 'tool-stat tool-stat-del' }, `-${editStats.deletions}`),
+      el('span', { class: 'tool-stat tool-stat-add' }, `+${String(editStats.additions)}`),
+      el('span', { class: 'tool-stat tool-stat-del' }, `-${String(editStats.deletions)}`),
     ]
     if (editPath) {
       // Clickable: reveal this file's diff in the Changes panel. Delegated
@@ -85,7 +85,7 @@ function createToolHeader(
     }
   }
   if (count !== undefined && count > 1) {
-    children.push(el('span', { class: 'tool-count' }, `×${count}`))
+    children.push(el('span', { class: 'tool-count' }, `×${String(count)}`))
   }
   children.push(el('span', { class: 'tool-status-icon', 'aria-label': status }, statusIcon(status)))
   return el('summary', { class: summaryClass }, ...children)
@@ -177,7 +177,8 @@ function createSubagentMessageEl(content: string, streaming: boolean, api: ApiCl
 }
 
 function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HTMLElement {
-  const session = tc.subagent!
+  const session = tc.subagent
+  if (!session) throw new Error('createSubagentToolCard requires tc.subagent')
   const status =
     tc.status === 'running' || session.status === 'running'
       ? 'running'
@@ -210,9 +211,9 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
       const isLast = i === session.messages.length - 1
       timeline.append(createSubagentMessageEl(msg.content, status === 'running' && isLast, api))
     }
-    if ((msg.toolCalls ?? []).length > 0) {
+    if (msg.toolCalls.length > 0) {
       const toolsWrap = el('div', { class: 'subagent-inner-tools' })
-      for (const inner of msg.toolCalls ?? []) {
+      for (const inner of msg.toolCalls) {
         toolsWrap.append(createInnerToolCard(inner))
       }
       timeline.append(toolsWrap)
@@ -394,7 +395,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
   function buildQueuedActions(messageId: string): HTMLElement {
     const editBtn = el('button', { class: 'queued-action queued-edit', type: 'button' }, 'Edit')
-    editBtn.addEventListener('click', () => startEditing(messageId))
+    editBtn.addEventListener('click', () => {
+      startEditing(messageId)
+    })
     const sendNowBtn = el(
       'button',
       { class: 'queued-action queued-send-now', type: 'button' },
@@ -432,19 +435,25 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       }
     })
     const sendBtn = el('button', { class: 'queued-action queued-send', type: 'button' }, 'Send')
-    sendBtn.addEventListener('click', () => saveEditing(messageId, false))
+    sendBtn.addEventListener('click', () => {
+      saveEditing(messageId, false)
+    })
     const sendNowBtn = el(
       'button',
       { class: 'queued-action queued-send-now', type: 'button' },
       'Send now',
     )
-    sendNowBtn.addEventListener('click', () => saveEditing(messageId, true))
+    sendNowBtn.addEventListener('click', () => {
+      saveEditing(messageId, true)
+    })
     const cancelBtn = el(
       'button',
       { class: 'queued-action queued-cancel', type: 'button' },
       'Cancel',
     )
-    cancelBtn.addEventListener('click', () => cancelEditing())
+    cancelBtn.addEventListener('click', () => {
+      cancelEditing()
+    })
     const wrap = el(
       'div',
       { class: 'message-queued-ui' },
@@ -607,7 +616,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         if (id) userExpandedTools.add(id)
       })
 
-    msgEl.querySelectorAll('.tool-card').forEach((node) => node.remove())
+    msgEl.querySelectorAll('.tool-card').forEach((node) => {
+      node.remove()
+    })
 
     for (const item of buildToolCallDisplayItems(toolCalls)) {
       // LLM-only rollup: a small-model summary, when ready, replaces the generic
@@ -680,10 +691,21 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     lastScrollTop = 0
     clear(list)
     const thread = getActiveThread(store)
-    thread?.messages.forEach((m) => appendMessageEl(store.getState().activeThreadId!, m.id))
+    if (thread) {
+      thread.messages.forEach((m) => {
+        appendMessageEl(thread.id, m.id)
+      })
+    }
     syncTodoPanel()
     syncReviewPanel()
-    renderQueuedPanel(store.getState().activeThreadId!)
+    if (thread) {
+      renderQueuedPanel(thread.id)
+    } else {
+      // No active thread: hide the queued panel (matches the prior call, which
+      // passed a null active id and fell through to the empty-state branch).
+      queuedHost.replaceChildren()
+      queuedHost.hidden = true
+    }
     updateScrollButton()
   }
 
@@ -699,8 +721,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   const unsubs = [
-    store.on('message_added', (tid, mid) => appendMessageEl(tid, mid)),
-    store.on('message_queued', (tid) => renderQueuedPanel(tid)),
+    store.on('message_added', (tid, mid) => {
+      appendMessageEl(tid, mid)
+    }),
+    store.on('message_queued', (tid) => {
+      renderQueuedPanel(tid)
+    }),
     store.on('message_token', (mid) => {
       const thread = getActiveThread(store)
       const msg = thread?.messages.find((m) => m.id === mid)
@@ -725,8 +751,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           attachCopyButton(body as HTMLElement, mid, store)
       }
     }),
-    store.on('tool_call_started', (mid) => refreshToolCards(mid)),
-    store.on('tool_call_updated', (mid) => refreshToolCards(mid)),
+    store.on('tool_call_started', (mid) => {
+      refreshToolCards(mid)
+    }),
+    store.on('tool_call_updated', (mid) => {
+      refreshToolCards(mid)
+    }),
     store.on('threads_changed', () => {
       rebuildForThread()
       syncFromStore()
@@ -757,7 +787,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   return () => {
     unbindFileLinks()
     unbindBrowserLinks()
-    unsubs.forEach((u) => u())
+    unsubs.forEach((u) => {
+      u()
+    })
   }
 }
 

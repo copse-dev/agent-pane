@@ -624,7 +624,9 @@ export function mountPrPane(
   return () => {
     stopObservingLayout()
     unbindBrowserLinks()
-    unsubs.forEach((u) => u())
+    unsubs.forEach((u) => {
+      u()
+    })
     diffEditor?.dispose()
     diffEditor = null
   }

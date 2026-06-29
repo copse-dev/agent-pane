@@ -133,7 +133,9 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     },
   ])
   footer.append(usageGroup)
-  const footerCompact = bindFooterCompactLayout(footer, () => updateFooter())
+  const footerCompact = bindFooterCompactLayout(footer, () => {
+    updateFooter()
+  })
   let costVisible = false
 
   const modelPicker = mountFooterModelPicker(
@@ -230,7 +232,9 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const draftAutosave = createComposerDraftAutosave({
     getActiveThreadId,
     getValue: () => textarea.value,
-    save: (id, value) => setThreadDraftPrompt(store, id, value),
+    save: (id, value) => {
+      setThreadDraftPrompt(store, id, value)
+    },
   })
   textarea.addEventListener('input', () => {
     scheduleContextEstimate()
@@ -631,7 +635,9 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   function readAsDataUrl(blob: Blob): Promise<string> {
     return new Promise((res, rej) => {
       const r = new FileReader()
-      r.onload = (): void => res(r.result as string)
+      r.onload = (): void => {
+        res(r.result as string)
+      }
       r.onerror = rej
       r.readAsDataURL(blob)
     })
@@ -644,7 +650,9 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   }
   const unregisterAttachments = registerPromptAttachments(attachmentHandlers)
 
-  attachBtn.addEventListener('click', () => fileInput.click())
+  attachBtn.addEventListener('click', () => {
+    fileInput.click()
+  })
   const onFileInputChange = (): void => {
     const files = Array.from(fileInput.files ?? [])
     if (files.length === 0) return
@@ -661,7 +669,9 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       e.preventDefault()
       const blob = img.getAsFile()
       if (!blob) return
-      void readAsDataUrl(blob).then((dataUrl) => addImageChip(dataUrl, blob.type))
+      void readAsDataUrl(blob).then((dataUrl) => {
+        addImageChip(dataUrl, blob.type)
+      })
       return
     }
 
@@ -711,11 +721,15 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   })
 
   const unsubs = [
-    api.agent.onRefreshContextEstimate(() => scheduleContextEstimate(0)),
+    api.agent.onRefreshContextEstimate(() => {
+      scheduleContextEstimate(0)
+    }),
     store.on('new_thread_opened', () => {
       // Refresh provider-reported context windows for the new chat, then re-estimate
       // once the caches are cleared so the footer reflects the current model limit.
-      void api.agent.refreshModelContext().finally(() => scheduleContextEstimate(0))
+      void api.agent.refreshModelContext().finally(() => {
+        scheduleContextEstimate(0)
+      })
     }),
     store.on('composer_draft_flush', persistComposerDraft),
     store.on('thread_status_changed', (tid) => {
@@ -751,8 +765,12 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       // Model / subagent changes alter the context window and tool set.
       scheduleContextEstimate(0)
     }),
-    store.on('workspace_changed', () => branchControl.refresh()),
-    store.on('git_branch_changed', () => branchControl.refresh()),
+    store.on('workspace_changed', () => {
+      branchControl.refresh()
+    }),
+    store.on('git_branch_changed', () => {
+      branchControl.refresh()
+    }),
   ]
 
   const observer = new MutationObserver(() => {
@@ -773,7 +791,9 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     if (activeComposerThreadId) {
       setThreadDraftPrompt(store, activeComposerThreadId, textarea.value)
     }
-    unsubs.forEach((u) => u())
+    unsubs.forEach((u) => {
+      u()
+    })
     unsubWorkspace()
     window.removeEventListener('copse:skills-changed', onSkillsChanged)
     document.removeEventListener('paste', onPaste)

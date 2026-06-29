@@ -161,22 +161,22 @@ export function mountBrowserPane(
     if (!webview || !tab.panel.classList.contains('is-active')) return
     const { width, height } = tab.webviewHost.getBoundingClientRect()
     if (width <= 0 || height <= 0) return
-    webview.style.width = `${Math.round(width)}px`
-    webview.style.height = `${Math.round(height)}px`
+    webview.style.width = `${String(Math.round(width))}px`
+    webview.style.height = `${String(Math.round(height))}px`
   }
 
-  function whenWebviewReady(tab: BrowserTab, fn: () => void): void {
+  function whenWebviewReady(tab: BrowserTab, fn: (webview: BrowserWebviewElement) => void): void {
     const webview = tab.webview
     if (!webview) return
     if (tab.webviewReady) {
-      fn()
+      fn(webview)
       return
     }
     webview.addEventListener(
       'dom-ready',
       () => {
         tab.webviewReady = true
-        fn()
+        fn(webview)
       },
       { once: true },
     )
@@ -185,8 +185,7 @@ export function mountBrowserPane(
   function navigateWebview(tab: BrowserTab, url: string): void {
     tab.loadError = null
     tab.urlInput.classList.remove('has-error')
-    whenWebviewReady(tab, () => {
-      const webview = tab.webview!
+    whenWebviewReady(tab, (webview) => {
       const current = webview.getURL()
       tab.pendingUrl = null
       if (current === url && url !== 'about:blank') webview.reload()
@@ -250,7 +249,9 @@ export function mountBrowserPane(
       if (tab.webview && tab.webviewReady) tab.webview.reload()
       else navigateTab(tab, tab.urlInput.value)
     })
-    const submitUrl = (): void => navigateTab(tab, tab.urlInput.value)
+    const submitUrl = (): void => {
+      navigateTab(tab, tab.urlInput.value)
+    }
     tab.urlInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault()
@@ -412,7 +413,9 @@ export function mountBrowserPane(
       artefactTitle: null,
     }
 
-    goBtn.addEventListener('click', () => navigateTab(tab, tab.urlInput.value))
+    goBtn.addEventListener('click', () => {
+      navigateTab(tab, tab.urlInput.value)
+    })
     wireToolbar(tab)
 
     tabBtn.addEventListener('click', (e) => {
@@ -443,8 +446,9 @@ export function mountBrowserPane(
 
     if (activeTabId !== tabId) return
     const remaining = [...tabs.keys()]
-    if (remaining.length > 0) {
-      setActiveTab(remaining[remaining.length - 1]!)
+    const last = remaining[remaining.length - 1]
+    if (last !== undefined) {
+      setActiveTab(last)
     } else {
       activeTabId = null
       if (browserModeActive(store)) addTab()

@@ -118,16 +118,16 @@ export function pendingHoldIndex(s: string): number {
 
   let i = 0
   while (i < limit) {
-    const ch = s[i]!
-    if ((ch !== '*' && ch !== '_') || mask[i]) {
+    const ch = s[i]
+    if (ch === undefined || (ch !== '*' && ch !== '_') || mask[i]) {
       i++
       continue
     }
     let j = i
     while (j < limit && s[j] === ch && !mask[j]) j++
     const len = j - i
-    const prev = i > 0 ? s[i - 1]! : ''
-    const next = j < s.length ? s[j]! : ''
+    const prev = i > 0 ? (s[i - 1] ?? '') : ''
+    const next = j < s.length ? (s[j] ?? '') : ''
     const lf = isLeftFlanking(prev, next)
     const rf = isRightFlanking(prev, next)
     // `_` cannot open/close inside a word (so identifiers like some_var_name are
@@ -138,14 +138,14 @@ export function pendingHoldIndex(s: string): number {
     let matched = -1
     if (canClose) {
       for (let t = stack.length - 1; t >= 0; t--) {
-        if (stack[t]!.char === ch) {
+        if (stack[t]?.char === ch) {
           matched = t
           break
         }
       }
     }
-    if (matched >= 0) {
-      const open = stack[matched]!
+    const open = matched >= 0 ? stack[matched] : undefined
+    if (open) {
       const used = Math.min(open.len, len)
       // Openers between the match and the top become literal text.
       stack.length = matched
@@ -160,7 +160,8 @@ export function pendingHoldIndex(s: string): number {
 
   let cut = s.length
   if (unresolvedAt !== null) cut = Math.min(cut, unresolvedAt)
-  if (stack.length > 0) cut = Math.min(cut, stack[0]!.index)
+  const firstOpen = stack[0]
+  if (firstOpen) cut = Math.min(cut, firstOpen.index)
 
   // A trailing `*`/`**` run can't be classified yet (the lookahead char hasn't
   // streamed in), so hold it unless it already closed earlier emphasis.
@@ -216,31 +217,34 @@ export class StreamingMarkdownRenderer {
   /** Render `content` (the full message text so far) into the host incrementally. */
   update(content: string): void {
     const { complete, pending } = splitAtLastNewline(content)
-    this.ensureNodes()
+    const { completedEl, pendingEl } = this.ensureNodes()
 
     if (complete !== this.lastComplete) {
-      this.completedEl!.innerHTML = complete
-        ? sanitizeRenderedMarkdown(renderMarkdown(complete))
-        : ''
+      completedEl.innerHTML = complete ? sanitizeRenderedMarkdown(renderMarkdown(complete)) : ''
       this.lastComplete = complete
     }
 
     // The completed region (and any selection within it) is untouched. Pending
     // content is still rendered through the markdown sanitizer before insertion.
-    this.pendingEl!.innerHTML = pending
+    pendingEl.innerHTML = pending
       ? sanitizeRenderedMarkdown(renderPendingInlineMarkdown(pending))
       : ''
-    this.pendingEl!.hidden = pending === ''
+    pendingEl.hidden = pending === ''
   }
 
-  private ensureNodes(): void {
-    if (this.completedEl && this.host.contains(this.completedEl)) return
+  private ensureNodes(): { completedEl: HTMLElement; pendingEl: HTMLSpanElement } {
+    if (this.completedEl && this.pendingEl && this.host.contains(this.completedEl)) {
+      return { completedEl: this.completedEl, pendingEl: this.pendingEl }
+    }
     this.host.replaceChildren()
-    this.completedEl = document.createElement('div')
-    this.completedEl.className = 'stream-complete'
-    this.pendingEl = document.createElement('span')
-    this.pendingEl.className = 'stream-pending'
-    this.host.append(this.completedEl, this.pendingEl)
+    const completedEl = document.createElement('div')
+    completedEl.className = 'stream-complete'
+    const pendingEl = document.createElement('span')
+    pendingEl.className = 'stream-pending'
+    this.host.append(completedEl, pendingEl)
+    this.completedEl = completedEl
+    this.pendingEl = pendingEl
     this.lastComplete = ''
+    return { completedEl, pendingEl }
   }
 }

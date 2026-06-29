@@ -26,20 +26,25 @@ describe('normalizeCustomTool', () => {
       parameters: { type: 'object', properties: { x: { type: 'number' } } },
       execute: () => 'ok',
     })
-    assert.equal((withAlias.tool!.rawParameters as { type: string }).type, 'object')
+    assert.ok(withAlias.tool)
+    assert.equal((withAlias.tool.rawParameters as { type: string }).type, 'object')
 
     const noSchema = normalizeCustomTool({ name: 'b', execute: () => 'ok' })
-    assert.deepEqual(noSchema.tool!.rawParameters, { type: 'object', properties: {} })
+    assert.ok(noSchema.tool)
+    assert.deepEqual(noSchema.tool.rawParameters, { type: 'object', properties: {} })
   })
 
   it('coerces non-string return values: JSON for objects, "" for nullish', async () => {
-    const json = normalizeCustomTool({ name: 'j', execute: () => ({ a: 1 }) }).tool!
+    const json = normalizeCustomTool({ name: 'j', execute: () => ({ a: 1 }) }).tool
+    assert.ok(json)
     assert.equal(await json.execute({}, signal), '{"a":1}')
 
-    const nullish = normalizeCustomTool({ name: 'n', execute: () => undefined }).tool!
+    const nullish = normalizeCustomTool({ name: 'n', execute: () => undefined }).tool
+    assert.ok(nullish)
     assert.equal(await nullish.execute({}, signal), '')
 
-    const num = normalizeCustomTool({ name: 'm', execute: () => 42 }).tool!
+    const num = normalizeCustomTool({ name: 'm', execute: () => 42 }).tool
+    assert.ok(num)
     assert.equal(await num.execute({}, signal), '42')
   })
 
@@ -47,35 +52,44 @@ describe('normalizeCustomTool', () => {
     const ok = normalizeCustomTool({
       name: 'env',
       execute: () => ({ content: [{ type: 'text', text: 'hello' }] }),
-    }).tool!
+    }).tool
+    assert.ok(ok)
     assert.equal(await ok.execute({}, signal), 'hello')
 
     const bad = normalizeCustomTool({
       name: 'envbad',
       execute: () => ({ content: [{ type: 'text', text: 'boom' }], isError: true }),
-    }).tool!
+    }).tool
+    assert.ok(bad)
     await assert.rejects(async () => bad.execute({}, signal), /boom/)
   })
 
   it('passes requiresApproval through only when explicitly true', () => {
-    assert.equal(
-      normalizeCustomTool({ name: 'r', requiresApproval: true, execute: () => 'x' }).tool!
-        .requiresApproval,
-      true,
-    )
-    assert.equal(
-      normalizeCustomTool({ name: 'r2', execute: () => 'x' }).tool!.requiresApproval,
-      undefined,
-    )
+    const withApproval = normalizeCustomTool({
+      name: 'r',
+      requiresApproval: true,
+      execute: () => 'x',
+    }).tool
+    assert.ok(withApproval)
+    assert.equal(withApproval.requiresApproval, true)
+
+    const withoutApproval = normalizeCustomTool({ name: 'r2', execute: () => 'x' }).tool
+    assert.ok(withoutApproval)
+    assert.equal(withoutApproval.requiresApproval, undefined)
   })
 
   it('rejects malformed definitions with an error and no tool', () => {
-    assert.match(normalizeCustomTool({ execute: () => 'x' }).error!, /missing or empty "name"/)
-    assert.match(
-      normalizeCustomTool({ name: 'bad name', execute: () => 'x' }).error!,
-      /invalid name/,
-    )
-    assert.match(normalizeCustomTool({ name: 'noexec' }).error!, /missing an "execute"/)
+    const missingName = normalizeCustomTool({ execute: () => 'x' }).error
+    assert.ok(missingName)
+    assert.match(missingName, /missing or empty "name"/)
+
+    const invalidName = normalizeCustomTool({ name: 'bad name', execute: () => 'x' }).error
+    assert.ok(invalidName)
+    assert.match(invalidName, /invalid name/)
+
+    const missingExec = normalizeCustomTool({ name: 'noexec' }).error
+    assert.ok(missingExec)
+    assert.match(missingExec, /missing an "execute"/)
     for (const r of [
       { execute: (): string => 'x' },
       { name: 'bad name', execute: (): string => 'x' },

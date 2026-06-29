@@ -44,7 +44,8 @@ export function takeMockScriptStep(
     return null
   }
   if (!pattern.test(userText.trim())) return null
-  if (step.tool && !tools.some((t) => t.name === step.tool!.name)) return null
+  const stepTool = step.tool
+  if (stepTool && !tools.some((t) => t.name === stepTool.name)) return null
 
   cursor++
   return step

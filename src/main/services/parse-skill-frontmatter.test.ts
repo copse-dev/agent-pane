@@ -22,7 +22,7 @@ description: >
 disable-model-invocation: false`
     const parsed = parseSkillFrontmatter(yaml)
     assert.equal(parsed?.name, 'hf-cli')
-    assert.match(parsed?.description ?? '', /Hugging Face Hub CLI/)
+    assert.match(parsed.description, /Hugging Face Hub CLI/)
   })
 
   it('splits markdown frontmatter from body', () => {
@@ -88,7 +88,7 @@ not a real close
 description: "\\"Quoted desc\\""`
     const parsed = parseSkillFrontmatter(yaml)
     assert.equal(parsed?.name, 'demo-skill')
-    assert.equal(parsed?.description, 'Quoted desc')
+    assert.equal(parsed.description, 'Quoted desc')
   })
 
   it('strips trailing comments only from unquoted scalars', () => {
@@ -96,7 +96,7 @@ description: "\\"Quoted desc\\""`
 description: A clean description`
     const parsed = parseSkillFrontmatter(yaml)
     assert.equal(parsed?.name, 'demo-skill')
-    assert.equal(parsed?.description, 'A clean description')
+    assert.equal(parsed.description, 'A clean description')
   })
 
   it('parses single-quoted scalars with doubled-quote escapes', () => {

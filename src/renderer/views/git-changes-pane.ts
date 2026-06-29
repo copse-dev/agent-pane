@@ -91,9 +91,10 @@ function defaultProposedPath(
   queue: { path: string }[],
   activeDiff: ActiveDiff | null,
 ): string | null {
-  if (queue.length === 0) return null
+  const [first] = queue
+  if (!first) return null
   if (activeDiff && queue.some((e) => e.path === activeDiff.path)) return activeDiff.path
-  return queue[0]!.path
+  return first.path
 }
 
 export function mountGitChangesPane(
@@ -190,7 +191,9 @@ export function mountGitChangesPane(
   function renderProposedSection(queue: { path: string }[]): void {
     if (queue.length === 0) return
     const section = el('div', { class: 'git-changes-section git-changes-section-proposed' })
-    section.append(el('div', { class: 'git-changes-section-title' }, `Proposed (${queue.length})`))
+    section.append(
+      el('div', { class: 'git-changes-section-title' }, `Proposed (${String(queue.length)})`),
+    )
     for (const entry of queue) {
       const isSelected = selection?.kind === 'proposed' && selection.path === entry.path
       const row = el(
@@ -212,7 +215,7 @@ export function mountGitChangesPane(
     if (changes.length === 0) return
     const section = el('div', { class: 'git-changes-section' })
     section.append(
-      el('div', { class: 'git-changes-section-title' }, `${title} (${changes.length})`),
+      el('div', { class: 'git-changes-section-title' }, `${title} (${String(changes.length)})`),
     )
     for (const change of changes) {
       const isSelected =
@@ -517,7 +520,9 @@ export function mountGitChangesPane(
     store.on('panel_changed', () => {
       if (changesModeActive(store)) void syncFromStore()
     }),
-    api.fs.onChanged(() => scheduleRefresh()),
+    api.fs.onChanged(() => {
+      scheduleRefresh()
+    }),
   ]
 
   renderList()
@@ -527,7 +532,9 @@ export function mountGitChangesPane(
     if (refreshTimer) clearTimeout(refreshTimer)
     stopObservingLayout()
     unsubDiffConflict()
-    unsubs.forEach((u) => u())
+    unsubs.forEach((u) => {
+      u()
+    })
     cancelPendingDiffReveal?.()
     diffEditor?.dispose()
     diffEditor = null

@@ -19,7 +19,11 @@ export function parseGithubRepoSlug(remoteUrl: string): string | null {
   if (!trimmed) return null
 
   const scp = trimmed.match(/^git@github\.com:([^/\s]+)\/([^/\s]+?)(?:\.git)?$/i)
-  if (scp) return `${scp[1]}/${scp[2]!.replace(/\.git$/i, '')}`
+  if (scp) {
+    const owner = scp[1] ?? ''
+    const repo = (scp[2] ?? '').replace(/\.git$/i, '')
+    return `${owner}/${repo}`
+  }
 
   try {
     const url = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`)

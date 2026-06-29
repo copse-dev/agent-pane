@@ -43,7 +43,7 @@ async function invokeWorker<T extends Record<string, unknown>>(
   )
 
   if (code !== 0) {
-    throw new Error(stderr.trim() || stdout.trim() || `sandbox fs worker exited ${code}`)
+    throw new Error(stderr.trim() || stdout.trim() || `sandbox fs worker exited ${String(code)}`)
   }
 
   let parsed: { ok: boolean; error?: string } & T

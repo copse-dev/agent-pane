@@ -77,7 +77,9 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     }
     return st
   }
-  const activity = (tid: string): void => syncAgentActivity(store, tid, get(tid).writing)
+  const activity = (tid: string): void => {
+    syncAgentActivity(store, tid, get(tid).writing)
+  }
 
   const unsub = api.agent.onChunk((threadId, chunk) => {
     const st = get(threadId)

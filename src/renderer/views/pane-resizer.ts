@@ -44,10 +44,10 @@ export function parseSavedLayout(raw: unknown): LayoutState {
 }
 
 export function applyLayout(body: HTMLElement, layout: LayoutState): void {
-  body.style.setProperty('--projects-width', `${layout.projectsPaneWidth}px`)
-  body.style.setProperty('--files-width', `${layout.filesPaneWidth}px`)
-  body.style.setProperty('--files-height', `${layout.filesPaneHeight}px`)
-  body.style.setProperty('--tree-width', `${layout.fileTreeWidth}px`)
+  body.style.setProperty('--projects-width', `${String(layout.projectsPaneWidth)}px`)
+  body.style.setProperty('--files-width', `${String(layout.filesPaneWidth)}px`)
+  body.style.setProperty('--files-height', `${String(layout.filesPaneHeight)}px`)
+  body.style.setProperty('--tree-width', `${String(layout.fileTreeWidth)}px`)
 }
 
 function maxFilesWidth(body: HTMLElement): number {
@@ -136,7 +136,9 @@ export function mountPaneResizers(body: HTMLElement, store: AppStore, api: ApiCl
   mountResizeHandle(projectsResizer, {
     startSize: () => store.getState().layout.projectsPaneWidth,
     deltaToSize: (start, deltaX) => start + deltaX,
-    applySize: (width) => setLayout({ projectsPaneWidth: width }),
+    applySize: (width) => {
+      setLayout({ projectsPaneWidth: width })
+    },
     min: () => LAYOUT_LIMITS.projects.min,
     max: () => LAYOUT_LIMITS.projects.max,
     cursor: () => 'col-resize',
@@ -150,8 +152,9 @@ export function mountPaneResizers(body: HTMLElement, store: AppStore, api: ApiCl
         ? store.getState().layout.filesPaneHeight
         : store.getState().layout.filesPaneWidth,
     deltaToSize: (start, deltaX, deltaY) => start + (filesPanelStacked() ? -deltaY : -deltaX),
-    applySize: (size) =>
-      setLayout(filesPanelStacked() ? { filesPaneHeight: size } : { filesPaneWidth: size }),
+    applySize: (size) => {
+      setLayout(filesPanelStacked() ? { filesPaneHeight: size } : { filesPaneWidth: size })
+    },
     min: () => (filesPanelStacked() ? LAYOUT_LIMITS.filesStacked.min : LAYOUT_LIMITS.files.min),
     max: () => (filesPanelStacked() ? maxStackedFilesHeight(body) : maxFilesWidth(body)),
     cursor: () => (filesPanelStacked() ? 'row-resize' : 'col-resize'),
@@ -161,7 +164,9 @@ export function mountPaneResizers(body: HTMLElement, store: AppStore, api: ApiCl
   mountResizeHandle(treeResizer, {
     startSize: () => store.getState().layout.fileTreeWidth,
     deltaToSize: (start, deltaX) => start + deltaX,
-    applySize: (width) => setLayout({ fileTreeWidth: width }),
+    applySize: (width) => {
+      setLayout({ fileTreeWidth: width })
+    },
     min: () => LAYOUT_LIMITS.tree.min,
     max: () => LAYOUT_LIMITS.tree.max,
     cursor: () => 'col-resize',
@@ -175,5 +180,7 @@ export function mountPaneResizers(body: HTMLElement, store: AppStore, api: ApiCl
   syncFilesResizer()
   const unsub = store.on('files_pane_changed', syncFilesResizer)
 
-  return () => unsub()
+  return () => {
+    unsub()
+  }
 }

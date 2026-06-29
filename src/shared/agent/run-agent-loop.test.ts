@@ -576,11 +576,11 @@ src/renderer/views/projects-pane.ts
     const origResume = deadline.resume.bind(deadline)
     deadline.pause = (now): void => {
       events.push('pause')
-      return origPause(now)
+      origPause(now)
     }
     deadline.resume = (now): void => {
       events.push('resume')
-      return origResume(now)
+      origResume(now)
     }
     let pausedDuringTool: boolean | null = null
     const chunks: StreamChunk[] = []

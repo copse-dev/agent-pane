@@ -93,7 +93,7 @@ export function setApiKey(provider: KeyProvider, key: string): void {
 export function deleteApiKey(provider: KeyProvider): void {
   store.delete(`apiKey.${provider}`)
   const envVar = envVarFor(provider)
-  if (envVar) delete process.env[envVar]
+  if (envVar) Reflect.deleteProperty(process.env, envVar)
 }
 
 /**

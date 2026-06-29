@@ -13,7 +13,7 @@ function withFakeStream(provider: AnthropicProvider, events: unknown[]): void {
     messages: {
       stream(): AsyncIterable<unknown> {
         return {
-          async *[Symbol.asyncIterator](): AsyncGenerator<unknown> {
+          async *[Symbol.asyncIterator](): AsyncGenerator {
             for (const e of events) yield e
           },
         }

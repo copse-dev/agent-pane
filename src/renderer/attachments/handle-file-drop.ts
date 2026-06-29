@@ -8,7 +8,9 @@ type ElectronFile = File & { path?: string }
 function readAsDataUrl(blob: Blob): Promise<string> {
   return new Promise((res, rej) => {
     const r = new FileReader()
-    r.onload = (): void => res(r.result as string)
+    r.onload = (): void => {
+      res(r.result as string)
+    }
     r.onerror = rej
     r.readAsDataURL(blob)
   })

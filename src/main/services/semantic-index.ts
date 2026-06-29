@@ -344,15 +344,14 @@ function normalizeCodesearchHit(item: unknown): SemanticSearchHit | null {
     readString(record, ['snippet', 'content', 'text', 'signature']) ??
     readString(record, ['summary']) ??
     ''
+  const score = readNumber(record, ['score', 'rrf_score', 'relevance'])
 
   return {
     path: toRelativePath(path),
     startLine,
     ...(endLine !== undefined ? { endLine } : {}),
     text: text.trim(),
-    ...(readNumber(record, ['score', 'rrf_score', 'relevance']) !== undefined
-      ? { score: readNumber(record, ['score', 'rrf_score', 'relevance'])! }
-      : {}),
+    ...(score !== undefined ? { score } : {}),
   }
 }
 
@@ -365,15 +364,14 @@ function normalizeVeraHit(item: unknown): SemanticSearchHit | null {
   const startLine = readNumber(record, ['line', 'start_line', 'line_number']) ?? 1
   const endLine = readNumber(record, ['end_line', 'endLine'])
   const text = readString(record, ['snippet', 'content', 'text', 'signature', 'preview']) ?? ''
+  const score = readNumber(record, ['score', 'rerank_score', 'relevance'])
 
   return {
     path: toRelativePath(path),
     startLine,
     ...(endLine !== undefined ? { endLine } : {}),
     text: text.trim(),
-    ...(readNumber(record, ['score', 'rerank_score', 'relevance']) !== undefined
-      ? { score: readNumber(record, ['score', 'rerank_score', 'relevance'])! }
-      : {}),
+    ...(score !== undefined ? { score } : {}),
   }
 }
 
@@ -403,7 +401,7 @@ export function formatSemanticSearchResults(
   const lines = hits.map((hit) => {
     const range =
       hit.endLine && hit.endLine !== hit.startLine
-        ? `${hit.startLine}-${hit.endLine}`
+        ? `${String(hit.startLine)}-${String(hit.endLine)}`
         : String(hit.startLine)
     const score = hit.score !== undefined ? ` score=${hit.score.toFixed(3)}` : ''
     const body = hit.text ? `: ${hit.text}` : ''
@@ -411,6 +409,8 @@ export function formatSemanticSearchResults(
   })
 
   const suffix =
-    hits.length >= maxResults ? `\n[Truncated at ${maxResults} results. Narrow your search.]` : ''
+    hits.length >= maxResults
+      ? `\n[Truncated at ${String(maxResults)} results. Narrow your search.]`
+      : ''
   return lines.join('\n') + suffix + `\n[Searched via native ${backend} backend.]`
 }

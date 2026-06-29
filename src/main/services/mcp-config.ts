@@ -119,6 +119,9 @@ export function parseMcpConfig(rawText: string, source?: string): McpConfigParse
 
   if (parsed.mcpServers && typeof parsed.mcpServers === 'object') {
     for (const [name, raw] of Object.entries(parsed.mcpServers)) {
+      // raw is typed as RawStdioOrHttp but originates from JSON.parse: a value of
+      // `null` (e.g. {"mcpServers":{"foo":null}}) is genuinely possible at runtime.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (!raw || typeof raw !== 'object') {
         errors.push(`Server "${name}" is not an object.`)
         continue
@@ -129,6 +132,9 @@ export function parseMcpConfig(rawText: string, source?: string): McpConfigParse
   } else if (Array.isArray(parsed.servers)) {
     // Legacy copse-panel shape.
     for (const entry of parsed.servers) {
+      // entry is typed as LegacyServerEntry but comes from JSON.parse: a `null`
+      // array element is genuinely possible at runtime.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (!entry || typeof entry !== 'object' || typeof entry.name !== 'string') {
         errors.push('Legacy server entry missing a string "name".')
         continue

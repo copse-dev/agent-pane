@@ -41,7 +41,7 @@ function createMonacoWorker(label: string): Promise<Worker> {
   const cached = workerPromises.get(label)
   if (cached) return cached
 
-  const promise = createMonacoWorkerOnce(label).catch((err) => {
+  const promise = createMonacoWorkerOnce(label).catch((err: unknown) => {
     workerPromises.delete(label)
     throw err
   })

@@ -27,7 +27,7 @@ export function formatPeriodHeadline(summary: UsagePeriodSummary): string {
   const localCount = summary.localModels.length
   const cloudCount = summary.cloudModels.length
   const parts: string[] = [formatUsd(summary.totalCostUsd)]
-  if (cloudCount) parts.push(`${cloudCount} cloud model${cloudCount === 1 ? '' : 's'}`)
-  if (localCount) parts.push(`${localCount} local model${localCount === 1 ? '' : 's'}`)
+  if (cloudCount) parts.push(`${String(cloudCount)} cloud model${cloudCount === 1 ? '' : 's'}`)
+  if (localCount) parts.push(`${String(localCount)} local model${localCount === 1 ? '' : 's'}`)
   return parts.join(' · ')
 }

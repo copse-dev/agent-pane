@@ -622,7 +622,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         trustBtn.disabled = true
         void api.workspace
           .setTrusted(true)
-          .then((next) => renderMcpServers(next))
+          .then((next) => {
+            renderMcpServers(next)
+          })
           .catch(() => {
             trustBtn.disabled = false
           })
@@ -745,7 +747,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         toggle.disabled = true
         void api.mcp
           .setCuratedEnabled(s.name, toggle.checked)
-          .then((next) => renderCuratedServers(next))
+          .then((next) => {
+            renderCuratedServers(next)
+          })
           .catch(() => {
             toggle.checked = !toggle.checked
             toggle.disabled = false
