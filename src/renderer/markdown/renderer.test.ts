@@ -414,6 +414,34 @@ describe('renderMarkdown', () => {
     assert.match(html, /<p>After<\/p>/)
     assert.doesNotMatch(html, /&gt;/)
   })
+
+  it('keeps a lazy continuation line inside the blockquote (no leaked &gt;)', () => {
+    const html = renderMarkdown('> line one\nlazy continuation')
+    assert.match(html, /<blockquote>/)
+    assert.match(html, /line one<br>lazy continuation/)
+    assert.doesNotMatch(html, /&gt;/)
+  })
+
+  it('renders nested blockquotes as nested elements', () => {
+    const html = renderMarkdown('> > quoted')
+    assert.match(html, /<blockquote><blockquote><p>quoted<\/p><\/blockquote><\/blockquote>/)
+    assert.doesNotMatch(html, /&gt;/)
+  })
+
+  it('does not emit an empty blockquote for a bare > line', () => {
+    const html = renderMarkdown('>')
+    assert.doesNotMatch(html, /<blockquote><\/blockquote>/)
+    assert.doesNotMatch(html, /&gt;/)
+  })
+
+  it('drops a bare > separator line within a blockquote without leaking &gt;', () => {
+    const html = renderMarkdown('> first\n>\n> second')
+    assert.match(html, /<blockquote>/)
+    assert.match(html, /first/)
+    assert.match(html, /second/)
+    assert.doesNotMatch(html, /&gt;/)
+    assert.doesNotMatch(html, /<p><\/p>/)
+  })
 })
 
 describe('renderMarkdown sanitization (#115)', () => {

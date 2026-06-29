@@ -328,8 +328,19 @@ function isBlockquoteLine(line: string): boolean {
   return /^&gt;/.test(line)
 }
 
+/** Strip exactly one `&gt;` marker (plus an optional following space). */
 function stripBlockquotePrefix(line: string): string {
-  return line.replace(/^&gt;\s?/, '')
+  return line.replace(/^&gt; ?/, '')
+}
+
+/**
+ * A block opens a blockquote when its first line begins with `&gt;`. Later lines
+ * may be CommonMark lazy continuations — a non-`&gt;` line directly following a
+ * quote line stays inside the quote — so only the first line is checked here.
+ */
+function isBlockquoteBlock(block: string): boolean {
+  const first = block.split('\n')[0]?.trim() ?? ''
+  return isBlockquoteLine(first)
 }
 
 /** Group `1. item` blocks and their following prose into a single `<ol>`. */
@@ -345,25 +356,34 @@ function wrapProseBlocks(seg: string): string {
     if (block === undefined) break
     const lines = block.split('\n').map((l) => l.trim())
 
-    // Blockquote: all lines begin with > (HTML-escaped to &gt; after escapeHtml).
-    // Collect consecutive blockquote blocks into one <blockquote> element.
-    if (lines.every(isBlockquoteLine)) {
-      const bqContent: string[] = []
+    // Blockquote: a block whose first line begins with > (HTML-escaped to &gt;).
+    // Collect consecutive blockquote blocks into one <blockquote>, strip ONE
+    // marker level per line (lazy-continuation lines keep their text), then build
+    // the inner HTML by recursing through wrapProseBlocks. Recursion gives nested
+    // blockquotes, lazy continuation, and consistent paragraph rules for free.
+    if (isBlockquoteBlock(block)) {
+      const bqBlocks: string[] = []
       while (i < rawBlocks.length) {
         const b = rawBlocks[i]!
-        const bLines = b.split('\n').map((l) => l.trim())
-        if (!bLines.every(isBlockquoteLine)) break
-        if (bqContent.length > 0) bqContent.push('')
-        bqContent.push(...bLines.map(stripBlockquotePrefix))
+        if (!isBlockquoteBlock(b)) break
+        // Strip one marker from quote lines; lazy-continuation lines (no marker
+        // directly after a quote line) keep their text. A bare `&gt;` strips to an
+        // empty line, which stays in place so the recursion treats it as a
+        // paragraph break (e.g. `> foo` / `>` / `> bar` -> two paragraphs).
+        const stripped = b.split('\n').map((l) => stripBlockquotePrefix(l.trim()))
+        bqBlocks.push(stripped.join('\n'))
         i++
       }
-      const inner = bqContent
-        .join('\n')
-        .split(/\n\n+/)
-        .filter((p) => p.trim() !== '')
-        .map((p) => `<p>${p.replace(/\n/g, '<br>')}</p>`)
-        .join('')
-      out.push(`<blockquote>${inner}</blockquote>`)
+      // Rejoin collected blocks with a blank line, then collapse runs of blank
+      // lines and trim, so a leading/trailing or lone bare `&gt;` cannot leave a
+      // stray empty paragraph. Recursing through wrapProseBlocks then gives nested
+      // blockquotes and consistent prose/paragraph handling for free.
+      const innerSource = bqBlocks
+        .join('\n\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .replace(/^\n+|\n+$/g, '')
+      const inner = innerSource.trim() === '' ? '' : wrapProseBlocks(innerSource)
+      if (inner !== '') out.push(`<blockquote>${inner}</blockquote>`)
       continue
     }
 
