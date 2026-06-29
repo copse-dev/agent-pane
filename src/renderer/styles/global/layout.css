@@ -498,6 +498,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Elide file paths from the left so the filename (the meaningful end) stays
+   visible. PR titles read left-to-right, so keep their default right elision. */
+.git-change-path:not(.pr-list-title) {
+  direction: rtl;
+  text-align: left;
+}
 .git-changes-empty {
   padding: var(--spacing-md) var(--spacing-sm);
   font-size: var(--font-size-sm);

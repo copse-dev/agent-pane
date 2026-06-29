@@ -36,10 +36,7 @@ export default ts.config(
       ],
       '@typescript-eslint/no-unnecessary-type-assertion': 'off',
       '@typescript-eslint/no-this-alias': 'off',
-      // require-await intentionally left off: de-asyncing functions changes
-      // return types and sync-vs-rejected throw timing (a behavior-change
-      // hazard), so it is deferred to a separate stage.
-      '@typescript-eslint/require-await': 'off',
+      '@typescript-eslint/explicit-module-boundary-types': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],
       'no-control-regex': 'off',
     },
@@ -48,6 +45,9 @@ export default ts.config(
     files: ['src/**/*.test.ts', 'tests/**/*.ts'],
     rules: {
       '@typescript-eslint/no-floating-promises': 'off',
+      // Test doubles must stay `async` to match the real async interfaces they
+      // stand in for (provider `stream`, tool `executeTool`, etc.) even with no
+      // internal await; de-asyncing would break their type contract.
       '@typescript-eslint/require-await': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
     },
