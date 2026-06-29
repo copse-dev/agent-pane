@@ -370,6 +370,81 @@ describe('renderMarkdown', () => {
     assert.doesNotMatch(html, /\*\*MCP support/)
     assert.doesNotMatch(html, /<strong> — Can host/)
   })
+
+  it('renders a simple blockquote', () => {
+    const html = renderMarkdown('> This is a quoted line')
+    assert.match(html, /<blockquote>/)
+    assert.match(html, /<p>This is a quoted line<\/p>/)
+    assert.doesNotMatch(html, /&gt;/)
+  })
+
+  it('renders multi-line blockquotes with a line break', () => {
+    const html = renderMarkdown('> First line\n> Second line')
+    assert.match(html, /<blockquote>/)
+    assert.match(html, /First line<br>Second line/)
+    assert.doesNotMatch(html, /&gt;/)
+  })
+
+  it('groups consecutive blockquote paragraphs into one blockquote element', () => {
+    const html = renderMarkdown('> First paragraph\n\n> Second paragraph')
+    assert.match(html, /<blockquote>/)
+    assert.match(html, /<p>First paragraph<\/p>/)
+    assert.match(html, /<p>Second paragraph<\/p>/)
+    assert.doesNotMatch(html, /<\/blockquote>[\s\S]*<blockquote>/)
+  })
+
+  it('renders inline formatting inside blockquotes', () => {
+    const html = renderMarkdown('> **Important**: read this `carefully`')
+    assert.match(html, /<blockquote>/)
+    assert.match(html, /<strong>Important<\/strong>/)
+    assert.match(html, /<code>carefully<\/code>/)
+    assert.doesNotMatch(html, /&gt;/)
+  })
+
+  it('does not render > inside fenced code as a blockquote', () => {
+    const html = renderMarkdown('```\n> not a blockquote\n```')
+    assert.doesNotMatch(html, /<blockquote>/)
+    // The line stays inside the code block as escaped text. highlight.js may wrap
+    // individual tokens in <span>s, so assert the escaped `>` marker survives
+    // within <pre><code> rather than matching the whole literal line.
+    assert.match(html, /<pre><code[\s\S]*&gt; not/)
+  })
+
+  it('renders blockquote between surrounding prose without bleeding', () => {
+    const html = renderMarkdown('Before\n\n> quoted text\n\nAfter')
+    assert.match(html, /<p>Before<\/p>/)
+    assert.match(html, /<blockquote><p>quoted text<\/p><\/blockquote>/)
+    assert.match(html, /<p>After<\/p>/)
+    assert.doesNotMatch(html, /&gt;/)
+  })
+
+  it('keeps a lazy continuation line inside the blockquote (no leaked &gt;)', () => {
+    const html = renderMarkdown('> line one\nlazy continuation')
+    assert.match(html, /<blockquote>/)
+    assert.match(html, /line one<br>lazy continuation/)
+    assert.doesNotMatch(html, /&gt;/)
+  })
+
+  it('renders nested blockquotes as nested elements', () => {
+    const html = renderMarkdown('> > quoted')
+    assert.match(html, /<blockquote><blockquote><p>quoted<\/p><\/blockquote><\/blockquote>/)
+    assert.doesNotMatch(html, /&gt;/)
+  })
+
+  it('does not emit an empty blockquote for a bare > line', () => {
+    const html = renderMarkdown('>')
+    assert.doesNotMatch(html, /<blockquote><\/blockquote>/)
+    assert.doesNotMatch(html, /&gt;/)
+  })
+
+  it('drops a bare > separator line within a blockquote without leaking &gt;', () => {
+    const html = renderMarkdown('> first\n>\n> second')
+    assert.match(html, /<blockquote>/)
+    assert.match(html, /first/)
+    assert.match(html, /second/)
+    assert.doesNotMatch(html, /&gt;/)
+    assert.doesNotMatch(html, /<p><\/p>/)
+  })
 })
 
 describe('renderMarkdown sanitization (#115)', () => {
