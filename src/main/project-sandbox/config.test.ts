@@ -7,11 +7,13 @@ import {
   baseSandboxConfig,
   containedSandboxNetworkConfig,
   electronRuntimeAllowReadPaths,
+  ensureWorkspaceTmpDir,
   fsWorkerSandboxOverlay,
   resolveNodeToolchainAllowRead,
   sandboxNetworkConfig,
   workspaceMandatoryWriteDenyPaths,
   workspaceSandboxOverlay,
+  workspaceTmpDir,
 } from './config.ts'
 
 describe('resolveNodeToolchainAllowRead', () => {
@@ -113,11 +115,36 @@ describe('workspaceSandboxOverlay', () => {
     }
   })
 
+  it('allows the workspace-owned tmp dir for read and write ($TMPDIR escape, #481)', () => {
+    // Commands writing to the OS temp dir get blocked by the workspace seatbelt;
+    // the overlay must also permit a workspace-owned scratch dir that spawn
+    // points $TMPDIR at. It lives under the home dir, which is broadly denyRead,
+    // so it must be re-allowed for read as well as write.
+    const overlay = workspaceSandboxOverlay('/Users/me/project')
+    const tmpDir = workspaceTmpDir()
+    assert.ok(tmpDir.endsWith(join('.copse', 'workspace', 'tmp')))
+    const allowWrite = overlay.filesystem?.allowWrite ?? []
+    const allowRead = overlay.filesystem?.allowRead ?? []
+    assert.ok(allowWrite.includes(tmpDir))
+    assert.ok(allowWrite.some((p) => p === `${tmpDir}/**`))
+    assert.ok(allowRead.includes(tmpDir))
+    assert.ok(allowRead.some((p) => p === `${tmpDir}/**`))
+  })
+
   it('falls back to resolve for a non-existent workspace root', () => {
     const ghost = join(tmpdir(), 'copse-nonexistent-workspace-xyz')
     const overlay = workspaceSandboxOverlay(ghost)
     const allowWrite = overlay.filesystem?.allowWrite ?? []
     assert.ok(allowWrite.includes(resolve(ghost)))
+  })
+})
+
+describe('ensureWorkspaceTmpDir', () => {
+  it('creates the workspace tmp dir and returns its path', () => {
+    const dir = ensureWorkspaceTmpDir()
+    assert.equal(dir, workspaceTmpDir())
+    // Best-effort creation: the dir should exist after the call in a normal home.
+    accessSync(dir)
   })
 })
 
