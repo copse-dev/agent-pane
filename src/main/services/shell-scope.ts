@@ -33,14 +33,25 @@ const CMD_POS = String.raw`(?:^|[\n|;&(])\s*`
 const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: string; ambiguous?: boolean }> = [
   { re: /\bcurl\b|\bwget\b|\bfetch\b/i, reason: 'network download (curl/wget/fetch)' },
   {
-    re: /\b(npm|yarn|pnpm|bun)\s+(i|in|install|ci|update|upgrade|publish|add|dlx|exec|create)\b/i,
+    // `dlx` is intentionally absent: it's an ephemeral runner, handled by the
+    // ambiguous ephemeral-runner matcher below so it gets the same in-sandbox
+    // treatment as npx/bunx rather than a hard prompt. (#500)
+    re: /\b(npm|yarn|pnpm|bun)\s+(i|in|install|ci|update|upgrade|publish|add|exec|create)\b/i,
     reason: 'package install/update (may fetch + run code from network)',
   },
   // Ephemeral package runners auto-fetch and execute the *latest* (typo-squattable)
   // package with no pinning or integrity check — a supply-chain RCE surface (#174).
+  // Marked `ambiguous` so that, when an OS sandbox is the real boundary, they
+  // auto-run *inside* it (where Socket Firewall wraps the install and seatbelt
+  // confines FS/network) instead of prompting up front: a runner that only needs an
+  // already-installed binary (`npx tsx scripts/x.mts`) just works, while one that
+  // must fetch is blocked by the sandbox and escalates to an unsandboxed retry
+  // prompt. Without an OS sandbox they still prompt like any external command, so no
+  // unpinned code is ever fetched unprompted. (#500, option 1)
   {
     re: /\bnpx\b|\bpnpm\s+dlx\b|\byarn\s+dlx\b|\bbunx\b|\buvx\b|\bpipx\s+run\b|\bpipx\s+install\b/i,
-    reason: 'ephemeral package runner (npx/dlx/bunx/uvx/pipx — fetches & runs unpinned code)',
+    reason: 'ephemeral package runner (npx/dlx/bunx/uvx/pipx — may fetch & run unpinned code)',
+    ambiguous: true,
   },
   { re: /\bcorepack\b/i, reason: 'corepack (downloads package-manager binaries)' },
   {
