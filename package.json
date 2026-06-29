@@ -73,6 +73,7 @@
     "mac": {
       "icon": "assets/icons/app.icns",
       "category": "public.app-category.developer-tools",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
       "target": [
         {
           "target": "dmg",
