@@ -390,9 +390,11 @@ function wrapParagraphBlock(block: string): string {
   if (trimmed === '') return ''
   if (BLOCK_START_RE.test(trimmed)) return block
   if (CONTAINS_BLOCK_RE.test(trimmed)) {
-    return splitBlockElements(block)
-      .map((part) => wrapParagraphBlock(part))
-      .join('\n')
+    const parts = splitBlockElements(block)
+    if (parts.length === 1 && parts[0] === block) {
+      return `<p>${block.replace(/\n/g, '<br>')}</p>`
+    }
+    return parts.map((part) => wrapParagraphBlock(part)).join('\n')
   }
   return `<p>${block.replace(/\n/g, '<br>')}</p>`
 }
