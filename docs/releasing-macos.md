@@ -64,27 +64,39 @@ packaging changes.
 
 ## Releasing locally
 
-```bash
-# Unsigned dry run (no certs needed) — produces release/*.dmg + *.zip:
-npm run dist:mac
+First load your Apple credentials into the shell (notarization needs them; signing
+auto-discovers the Developer ID identity from your Keychain):
 
-# Signed + notarized + published to GitHub Releases (needs the env vars below):
-export CSC_LINK=base64-or-path-to.p12 CSC_KEY_PASSWORD=…
-export APPLE_ID=… APPLE_APP_SPECIFIC_PASSWORD=… APPLE_TEAM_ID=…
-export GH_TOKEN=…   # a token with repo contents:write
-npm run release:mac
+```bash
+set -a; source .env; set +a   # APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID (+ GH_TOKEN to publish)
 ```
 
-`npm run pack:mac` still produces a quick **unsigned** `.app` (`--mac dir`) for
-local poking; it isn't a distributable.
+Then pick a command — each builds arm64 + x64:
+
+| Command               | Signs | Notarizes | Publishes | Use for                                  |
+| --------------------- | :---: | :-------: | :-------: | ---------------------------------------- |
+| `npm run dist:mac`    |  ✓\*  |           |           | Fast packaging check                     |
+| `npm run release:dry` |   ✓   |     ✓     |           | Verify signing + notarization, no upload |
+| `npm run release`     |   ✓   |     ✓     |     ✓     | Cut the actual GitHub prerelease         |
+
+\* `dist:mac` signs only if a Developer ID identity is in your Keychain.
+
+`npm run pack:mac` produces a quick **unsigned** `.app` (`--mac dir`) for local
+poking; it isn't a distributable.
 
 ### Verifying a signed build
+
+The notarization ticket is stapled to the **`.app`** (then wrapped in the DMG), so
+validate the app, not the DMG:
 
 ```bash
 spctl -a -vvv -t install "release/mac-arm64/Copse.app"   # → "accepted, source=Notarized Developer ID"
 codesign --verify --deep --strict --verbose=2 "release/mac-arm64/Copse.app"
-stapler validate "release/Copse-<ver>.dmg"
+stapler validate "release/mac-arm64/Copse.app"
 ```
+
+Artifacts are named with their architecture — `Copse-<ver>-arm64.dmg` (Apple
+Silicon) and `Copse-<ver>-x64.dmg` (Intel) — so testers don't grab the wrong one.
 
 ## How testers install & update
 
