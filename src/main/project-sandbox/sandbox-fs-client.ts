@@ -6,6 +6,7 @@ import { getWorkspaceRoot } from '../services/workspace.ts'
 import { runCommand } from '../services/command-runner.ts'
 import { fsWorkerSandboxOverlay } from './config.ts'
 import { isProjectSandboxEnabled } from './spawn.ts'
+import { requestViaServer, SandboxFsServerUnavailable } from './sandbox-fs-server.ts'
 
 /** JSON-wrapped readFile payloads can be ~2× raw bytes when heavily escaped. */
 export const SANDBOX_FS_WORKER_STDOUT_MAX_BYTES = MAX_FS_WRITE_BYTES * 2 + 4096
@@ -19,6 +20,27 @@ export function sandboxFsWorkerPath(): string {
 export const SANDBOX_FS_REQUEST_ENV = 'COPSE_SANDBOX_FS_REQUEST'
 
 async function invokeWorker<T extends Record<string, unknown>>(
+  request: Record<string, unknown>,
+): Promise<T> {
+  // Prefer the long-lived worker (no per-call process spawn). Only transport failures fall
+  // back to a one-shot spawn; a `{ ok: false }` filesystem error is surfaced as-is.
+  try {
+    const res = await requestViaServer(request)
+    assertWorkerOk(res)
+    return res as T
+  } catch (err) {
+    if (!(err instanceof SandboxFsServerUnavailable)) throw err
+  }
+  return invokeWorkerOneShot<T>(request)
+}
+
+function assertWorkerOk(parsed: { ok: boolean; error?: string }): void {
+  if (!parsed.ok) {
+    throw new Error(parsed.error ?? 'sandbox fs worker failed')
+  }
+}
+
+async function invokeWorkerOneShot<T extends Record<string, unknown>>(
   request: Record<string, unknown>,
 ): Promise<T> {
   const root = getWorkspaceRoot()
@@ -54,10 +76,7 @@ async function invokeWorker<T extends Record<string, unknown>>(
     throw new Error(`sandbox fs worker returned invalid JSON: ${detail.slice(0, 200)}`)
   }
 
-  if (!parsed.ok) {
-    throw new Error(parsed.error ?? 'sandbox fs worker failed')
-  }
-
+  assertWorkerOk(parsed)
   return parsed
 }
 
