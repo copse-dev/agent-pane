@@ -1504,9 +1504,6 @@ export function seedFooterBranchFixture(workspaceRoot: string): FooterBranchSeed
   const projectId = 'e2e-footer-branch-project'
   const matchThreadId = 'e2e-footer-branch-match'
   const mismatchThreadId = 'e2e-footer-branch-mismatch'
-  // Bind to the same fixed branch the app reports under e2e (not the live PR
-  // branch) so the seeded thread's match/mismatch state — and the captured
-  // footer label — stay deterministic. See e2e-env.ts.
   const currentBranch = e2eGitBranch()
   const mismatchBranch = currentBranch === 'main' ? 'feature-branch' : 'main'
   const now = Date.now()
@@ -1577,9 +1574,6 @@ export function seedFooterBranchPickerFixture(workspaceRoot: string): {
 } {
   const projectId = 'e2e-footer-branch-picker-project'
   const blankThreadId = 'e2e-footer-branch-picker-blank'
-  // Bind to the same fixed branch the app reports under e2e (not the live PR
-  // branch) so the seeded thread's match/mismatch state — and the captured
-  // footer label — stay deterministic. See e2e-env.ts.
   const currentBranch = e2eGitBranch()
   const now = Date.now()
 
@@ -1613,9 +1607,6 @@ export function seedFooterBranchMismatchFixture(workspaceRoot: string): FooterBr
   const projectId = 'e2e-footer-branch-project'
   const matchThreadId = 'e2e-footer-branch-match'
   const mismatchThreadId = 'e2e-footer-branch-mismatch'
-  // Bind to the same fixed branch the app reports under e2e (not the live PR
-  // branch) so the seeded thread's match/mismatch state — and the captured
-  // footer label — stay deterministic. See e2e-env.ts.
   const currentBranch = e2eGitBranch()
   const mismatchBranch = currentBranch === 'main' ? 'feature-branch' : 'main'
   const now = Date.now()
