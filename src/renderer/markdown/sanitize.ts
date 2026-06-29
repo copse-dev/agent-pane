@@ -38,6 +38,7 @@ const ALLOWED_TAGS = [
   'tr',
   'th',
   'td',
+  'blockquote',
   // Remote-agent artifact images. The renderer only ever emits the locked-down
   // form `<img class="remote-artifact-image" data-remote-artifact-path="…" …>`
   // (no `src`); `hydrateRemoteArtifactImages()` resolves the `src` to a

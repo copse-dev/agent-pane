@@ -69,6 +69,20 @@
   border-top: 1px solid var(--border);
   margin: var(--spacing-md) 0;
 }
+.message-text blockquote {
+  border-left: 3px solid var(--border);
+  margin: var(--spacing-sm) 0;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.message-text blockquote p {
+  margin: 0;
+}
+.message-text blockquote p + p {
+  margin-top: var(--spacing-xs);
+}
 .message-text .mermaid-diagram {
   /* Cap height before/after mermaid.run so large source/SVG cannot blow flex layout. */
   max-height: min(280px, 42vh);
