@@ -44,6 +44,12 @@ describe('experimental settings section', () => {
     await expect(ciToggle).toBeExisting()
     assert.equal(await ciToggle.isSelected(), false)
 
+    // OKF memories are likewise an opt-in experimental toggle, off by default.
+    await expect(experimental.$('legend=Memories (Open Knowledge Format)')).toBeDisplayed()
+    const memoriesToggle = await experimental.$('input[name="okfMemoriesEnabled"]')
+    await expect(memoriesToggle).toBeExisting()
+    assert.equal(await memoriesToggle.isSelected(), false)
+
     await saveElementScreenshot('#settings-dialog', 'settings-experimental-mcp-ui.png')
   })
 })
