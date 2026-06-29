@@ -98,12 +98,11 @@
   padding: var(--spacing-md);
   min-height: 0;
 }
-/* Post-turn review panel */
-.conversation-review-host {
-  flex-shrink: 0;
-  padding: 0 var(--spacing-md) var(--spacing-sm);
-}
+/* Post-turn review panel. Rendered inline as the last child of the message
+   list (see syncReviewPanel) so it scrolls with the transcript rather than
+   sticking to the bottom of the conversation. */
 .review-panel {
+  margin-top: var(--spacing-sm);
   border: 1px solid var(--border);
   border-left: 3px solid var(--text-secondary);
   border-radius: var(--radius);
