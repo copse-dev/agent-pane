@@ -4,7 +4,11 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitChange, GitChangeStatus, GitFileDiff, GitStatusResult } from '@shared/types/git.ts'
 import type { ActiveDiff } from '@shared/types/state.ts'
-import { pruneStagedDiffCache, resolveStagedDiffView } from '@shared/diff/staged-diff-ui.ts'
+import {
+  pruneStagedDiffCache,
+  resolveStagedDiffView,
+  shouldJumpToProposed,
+} from '@shared/diff/staged-diff-ui.ts'
 import {
   createGitChangesDiffEditor,
   disposeDiffModels,
@@ -148,12 +152,18 @@ export function mountGitChangesPane(
   let cancelPendingDiffReveal: (() => void) | null = null
   const proposedDiffCache = new Map<string, ActiveDiff>()
   let pendingNavigate: string | null = null
+  // Path of a freshly proposed diff the pane should jump to on the next sync,
+  // even if an earlier (still-valid) selection would otherwise be preserved.
+  let pendingProposedNavigate: string | null = null
 
   acceptAllBtn.addEventListener('click', () => void api.diff.approveAll())
   rejectAllBtn.addEventListener('click', () => void api.diff.rejectAll())
 
   api.diff.onShowDiff((path, before, after, language) => {
     proposedDiffCache.set(path, { path, before, after, language })
+    // A just-proposed change is the file the agent is now waiting on; jump to it
+    // even when a stale-but-valid selection would otherwise stick (#484).
+    pendingProposedNavigate = path
     if (changesModeActive(store)) void syncFromStore()
   })
 
@@ -392,6 +402,19 @@ export function mountGitChangesPane(
     const { stagedDiffs, activeDiff } = store.getState()
     const queue = stagedDiffs ?? []
 
+    // A freshly proposed diff takes priority over any existing selection so the
+    // pane jumps to the file the agent just proposed and is waiting on (#484).
+    // `agent:show_diff` arrives before the `diff:queued` broadcast that adds the
+    // path to the queue, so the target is consumed only once it is queued —
+    // until then it is kept pending for the follow-up sync.
+    if (shouldJumpToProposed(pendingProposedNavigate, queue)) {
+      const proposedNavTarget = pendingProposedNavigate!
+      pendingProposedNavigate = null
+      selection = { kind: 'proposed', path: proposedNavTarget }
+      await selectProposed(proposedNavTarget)
+      return
+    }
+
     // A git_change_navigate request takes priority over the existing selection.
     const navTarget = pendingNavigate
     pendingNavigate = null
@@ -500,6 +523,7 @@ export function mountGitChangesPane(
     }),
     store.on('workspace_changed', () => {
       status = null
+      pendingProposedNavigate = null
       clearSelection()
       conflictBanner.hidden = true
       if (changesModeActive(store)) void refresh()
