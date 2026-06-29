@@ -3,6 +3,7 @@ import type { LLMProvider, LLMMessage, LLMTool, StreamChunk } from '@shared/type
 import { anthropicMaxOutputTokens } from './model-catalog.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
+import { redactMessages } from './redact-secrets.ts'
 
 export class AnthropicProvider implements LLMProvider {
   private client: Anthropic
@@ -21,8 +22,13 @@ export class AnthropicProvider implements LLMProvider {
   ): AsyncIterable<StreamChunk> {
     const { client, model } = this
     const self = this
-    const systemMsg = messages.find((m) => m.role === 'system')
-    const apiMessages = toAnthropicMessages(messages.filter((m) => m.role !== 'system'))
+    // Anthropic is always a remote/third-party provider, so deterministically
+    // scrub known secrets (GitHub tokens, API keys, private keys, auth headers)
+    // out of everything we send (#518). The system prompt is app-authored and
+    // left untouched by redactMessages.
+    const safeMessages = redactMessages(messages)
+    const systemMsg = safeMessages.find((m) => m.role === 'system')
+    const apiMessages = toAnthropicMessages(safeMessages.filter((m) => m.role !== 'system'))
     const maxTokens = anthropicMaxOutputTokens(model)
 
     return yieldStreamWithRetry(
