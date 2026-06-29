@@ -348,6 +348,17 @@ export function mountTerminalsPane(
     tabBtn.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest('.terminals-tab-close')) return
       setActiveTab(id)
+      // Reclaim the viewer from any agent-task panel that was showing. Done after
+      // setActiveTab so a same-tab click (which setActiveTab skips) still returns
+      // to the live terminal and re-fits it once the panel is hidden.
+      store.emit('shell_tab_activated')
+      const tab = tabs.get(id)
+      if (tab && terminalModeActive(store)) {
+        requestAnimationFrame(() => {
+          fitTab(tab)
+          focusTab(tab)
+        })
+      }
     })
     labelSpan.addEventListener('dblclick', (e) => {
       e.stopPropagation()
@@ -440,9 +451,18 @@ export function mountTerminalsPane(
 
   onTerminalModeChange()
 
+  // While an agent task panel owns the viewer, the shells list drops its active
+  // highlight; when the task is cleared (taskId null), restore it.
+  function onAgentTaskSelected(taskId: string | null) {
+    for (const tab of tabs.values()) {
+      tab.tabBtn.classList.toggle('is-active', taskId ? false : tab.id === activeTabId)
+    }
+  }
+
   const unsubs = [
     store.on('right_panel_mode_changed', onTerminalModeChange),
     store.on('files_pane_changed', onTerminalModeChange),
+    store.on('agent_task_selected', onAgentTaskSelected),
     store.on('theme_changed', onThemeChange),
     store.on('settings_changed', onFontSizeChange),
     store.on('workspace_changed', () => {

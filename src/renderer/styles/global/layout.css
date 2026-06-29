@@ -730,18 +730,18 @@
   z-index: 10;
 }
 
-/* Agent tasks — collapsible list of shell commands the agent runs, pinned above
-   the interactive terminal in the Terminal tab. Capped height so it never
-   crowds out the live shell; both the list and each task's output scroll. */
-.agent-tasks-host {
+/* Agent tasks — the shell commands the agent runs. Listed as their own section
+   in the Terminal tab's left rail (under the shells); selecting one shows its
+   full output as a panel on the right, swapping out the live terminal. */
+.agent-tasks-section {
+  flex-shrink: 0;
+  max-height: 50%;
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
-  max-height: 45%;
   overflow: hidden;
-  border-bottom: 1px solid var(--border);
+  border-top: 1px solid var(--border);
 }
-.agent-tasks-header {
+.agent-tasks-section-header {
   padding: var(--spacing-sm);
   font-size: 11px;
   text-transform: uppercase;
@@ -750,15 +750,13 @@
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
-.agent-tasks-list {
+.agent-tasks-tablist {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+  padding: var(--spacing-xs) 0;
 }
-.agent-task {
-  border-bottom: 1px solid var(--border);
-}
-.agent-task-header {
+.agent-task-tab {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
@@ -771,24 +769,28 @@
   border: none;
   cursor: pointer;
 }
-.agent-task-header:hover {
+.agent-task-tab:hover {
   background: var(--bg-hover);
 }
-.agent-task-status {
+.agent-task-tab.is-active {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+.agent-task-dot {
   flex-shrink: 0;
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--text-muted);
 }
-.agent-task[data-status='running'] .agent-task-status {
+.agent-task-tab[data-status='running'] .agent-task-dot {
   background: var(--accent);
   animation: agent-task-pulse 1.2s ease-in-out infinite;
 }
-.agent-task[data-status='done'] .agent-task-status {
+.agent-task-tab[data-status='done'] .agent-task-dot {
   background: var(--success);
 }
-.agent-task[data-status='error'] .agent-task-status {
+.agent-task-tab[data-status='error'] .agent-task-dot {
   background: var(--error);
 }
 @keyframes agent-task-pulse {
@@ -800,7 +802,7 @@
     opacity: 0.35;
   }
 }
-.agent-task-cmd {
+.agent-task-label {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -808,22 +810,26 @@
   white-space: nowrap;
   font-family: var(--font-mono);
 }
-.agent-task-chevron {
-  flex-shrink: 0;
-  color: var(--text-muted);
-  transition: transform 0.12s ease;
+/* Viewer side: hidden until a task is selected, then it takes over the viewer
+   from the terminal body (toggled via .showing-agent-task on the host). */
+.agent-tasks-host {
+  display: none;
+  flex-direction: column;
+  min-height: 0;
 }
-.agent-task-chevron::before {
-  content: '\25B8'; /* ▸ */
+.terminals-viewer-host.showing-agent-task .agent-tasks-host {
+  display: flex;
+  flex: 1;
 }
-.agent-task.is-expanded .agent-task-chevron {
-  transform: rotate(90deg);
+.terminals-viewer-host.showing-agent-task .terminals-body {
+  display: none;
 }
-.agent-task-output {
+.agent-task-output-panel {
+  flex: 1;
   margin: 0;
-  padding: var(--spacing-xs) var(--spacing-sm) var(--spacing-sm);
-  max-height: 220px;
+  padding: var(--spacing-sm);
   overflow: auto;
+  min-height: 0;
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
   line-height: 1.4;

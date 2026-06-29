@@ -4,7 +4,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { shellCommandLabel } from '@shared/tools/tool-display.ts'
 
 // How many finished tasks to keep around before the oldest are dropped. The
-// running task (and recent history) stay scrollable; ancient ones are pruned so
+// running task (and recent history) stay viewable; ancient ones are pruned so
 // the list can't grow without bound across a long session.
 const MAX_TASKS = 60
 
@@ -29,11 +29,8 @@ interface AgentTask {
   command: string
   status: TaskStatus
   output: string
-  expanded: boolean
-  row: HTMLElement
-  header: HTMLButtonElement
-  statusDot: HTMLElement
-  outputEl: HTMLPreElement
+  tab: HTMLButtonElement
+  panel: HTMLPreElement
 }
 
 function shellCommandFromArgs(args: unknown): string | null {
@@ -43,54 +40,88 @@ function shellCommandFromArgs(args: unknown): string | null {
 }
 
 /**
- * Renders the live "Agent tasks" list shown in the Terminal tab: one collapsible
- * card per shell command the agent runs, with its streamed output. The running
- * task is expanded; when a new command starts the previous ones collapse but
- * remain in the list so their full output can be re-opened and scrolled.
+ * Renders the agent's shell commands in the Terminal tab. Each command becomes
+ * an entry in an "Agent tasks" section of the left rail (alongside the shells);
+ * selecting one shows its full, scrollable output as a panel on the right,
+ * taking over the viewer from the live terminal until a shell tab is clicked
+ * again. The running task is marked live in the list and keeps capturing output
+ * even while another view is shown.
  */
-export function mountAgentTasks(host: HTMLElement, store: AppStore, api: ApiClient): () => void {
-  const header = el('div', { class: 'agent-tasks-header' }, 'Agent tasks')
-  const list = el('div', { class: 'agent-tasks-list' })
-  host.append(header, list)
+export function mountAgentTasks(
+  listRoot: HTMLElement,
+  viewerHost: HTMLElement,
+  store: AppStore,
+  api: ApiClient,
+): () => void {
+  // Left-rail section (sits under the shells list in the same host).
+  const section = el('div', { class: 'agent-tasks-section' })
+  const sectionHeader = el('div', { class: 'agent-tasks-section-header' }, 'Agent tasks')
+  const tabList = el('div', { class: 'agent-tasks-tablist' })
+  section.append(sectionHeader, tabList)
+  listRoot.append(section)
+
+  // Viewer container — its output panels show one at a time. The parent
+  // (terminals-viewer-host) gets a class that swaps the terminal body out for
+  // this panel while a task is selected.
+  const viewerParent = viewerHost.parentElement
 
   const tasks = new Map<string, AgentTask>()
-  // Insertion order, oldest first — drives pruning and the "latest running" fallback.
   const order: string[] = []
+  let selectedId: string | null = null
 
-  function syncHostVisibility() {
-    host.hidden = tasks.size === 0
+  function syncSectionVisibility() {
+    section.hidden = tasks.size === 0
   }
 
-  function collapseAll() {
-    for (const task of tasks.values()) setExpanded(task, false)
-  }
-
-  function setExpanded(task: AgentTask, expanded: boolean) {
-    task.expanded = expanded
-    task.row.classList.toggle('is-expanded', expanded)
-    task.outputEl.hidden = !expanded
-    task.header.setAttribute('aria-expanded', String(expanded))
-    if (expanded) scrollOutputToBottom(task)
-  }
-
-  function scrollOutputToBottom(task: AgentTask) {
-    task.outputEl.scrollTop = task.outputEl.scrollHeight
+  function showTaskView(show: boolean) {
+    viewerParent?.classList.toggle('showing-agent-task', show)
   }
 
   function setStatus(task: AgentTask, status: TaskStatus) {
     task.status = status
-    task.row.dataset['status'] = status
+    task.tab.dataset['status'] = status
+  }
+
+  function scrollPanelToBottom(task: AgentTask) {
+    task.panel.scrollTop = task.panel.scrollHeight
+  }
+
+  function selectTask(id: string) {
+    const task = tasks.get(id)
+    if (!task) return
+    selectedId = id
+    for (const t of tasks.values()) {
+      const active = t.id === id
+      t.tab.classList.toggle('is-active', active)
+      t.panel.hidden = !active
+    }
+    showTaskView(true)
+    scrollPanelToBottom(task)
+    // Let the shells list drop its active highlight while the task panel shows.
+    store.emit('agent_task_selected', id)
+  }
+
+  function clearSelection() {
+    if (selectedId === null) return
+    selectedId = null
+    for (const t of tasks.values()) {
+      t.tab.classList.remove('is-active')
+      t.panel.hidden = true
+    }
+    showTaskView(false)
+    store.emit('agent_task_selected', null)
   }
 
   function prune() {
     while (order.length > MAX_TASKS) {
       const oldestId = order[0]!
       const oldest = tasks.get(oldestId)
-      // Never prune a still-running task.
-      if (oldest && oldest.status === 'running') break
+      // Never prune a still-running or currently-viewed task.
+      if (oldest && (oldest.status === 'running' || oldest.id === selectedId)) break
       order.shift()
       if (oldest) {
-        oldest.row.remove()
+        oldest.tab.remove()
+        oldest.panel.remove()
         tasks.delete(oldestId)
       }
     }
@@ -98,44 +129,32 @@ export function mountAgentTasks(host: HTMLElement, store: AppStore, api: ApiClie
 
   function addTask(id: string, rawCommand: string) {
     if (tasks.has(id)) return
-    // A new command is starting — collapse everything else so the list stays
-    // focused on what's currently running.
-    collapseAll()
-
     const command = shellCommandLabel(rawCommand)
-    const statusDot = el('span', { class: 'agent-task-status', 'aria-hidden': 'true' })
-    const cmd = el('span', { class: 'agent-task-cmd', title: command }, command)
-    const chevron = el('span', { class: 'agent-task-chevron', 'aria-hidden': 'true' })
-    const headerBtn = el(
-      'button',
-      { type: 'button', class: 'agent-task-header', 'aria-expanded': 'true' },
-      statusDot,
-      cmd,
-      chevron,
-    ) as HTMLButtonElement
-    const outputEl = el('pre', { class: 'agent-task-output' }) as HTMLPreElement
-    const row = el('div', { class: 'agent-task', 'data-task-id': id }, headerBtn, outputEl)
 
-    const task: AgentTask = {
-      id,
-      command,
-      status: 'running',
-      output: '',
-      expanded: true,
-      row,
-      header: headerBtn,
-      statusDot,
-      outputEl,
-    }
-    headerBtn.addEventListener('click', () => setExpanded(task, !task.expanded))
+    const dot = el('span', { class: 'agent-task-dot', 'aria-hidden': 'true' })
+    const label = el('span', { class: 'agent-task-label', title: command }, command)
+    const tab = el(
+      'button',
+      { type: 'button', class: 'agent-task-tab' },
+      dot,
+      label,
+    ) as HTMLButtonElement
+    const panel = el('pre', {
+      class: 'agent-task-output-panel',
+      'data-task-id': id,
+    }) as HTMLPreElement
+    panel.hidden = true
+
+    const task: AgentTask = { id, command, status: 'running', output: '', tab, panel }
+    tab.addEventListener('click', () => selectTask(id))
 
     setStatus(task, 'running')
-    setExpanded(task, true)
     tasks.set(id, task)
     order.push(id)
-    list.append(row)
+    tabList.append(tab)
+    viewerHost.append(panel)
     prune()
-    syncHostVisibility()
+    syncSectionVisibility()
   }
 
   function appendOutput(id: string | null, data: string) {
@@ -143,16 +162,16 @@ export function mountAgentTasks(host: HTMLElement, store: AppStore, api: ApiClie
     if (!task) return
     const clean = stripAnsi(data)
     if (!clean) return
-    const atBottom =
-      task.outputEl.scrollHeight - task.outputEl.scrollTop - task.outputEl.clientHeight < 16
+    const showing = task.id === selectedId
+    const atBottom = task.panel.scrollHeight - task.panel.scrollTop - task.panel.clientHeight < 16
     task.output += clean
     if (task.output.length > MAX_OUTPUT_CHARS) {
       task.output = task.output.slice(task.output.length - MAX_OUTPUT_CHARS)
-      task.outputEl.textContent = task.output
+      task.panel.textContent = task.output
     } else {
-      task.outputEl.append(document.createTextNode(clean))
+      task.panel.append(document.createTextNode(clean))
     }
-    if (task.expanded && atBottom) scrollOutputToBottom(task)
+    if (showing && atBottom) scrollPanelToBottom(task)
   }
 
   function completeTask(id: string, result: string, isError: boolean) {
@@ -160,12 +179,12 @@ export function mountAgentTasks(host: HTMLElement, store: AppStore, api: ApiClie
     if (!task) return
     setStatus(task, isError ? 'error' : 'done')
     // If nothing streamed (e.g. a fast command, or output we didn't capture
-    // live), fall back to the final tool result so the card isn't empty.
+    // live), fall back to the final tool result so the panel isn't empty.
     if (!task.output.trim() && result.trim()) {
       task.output = stripAnsi(result)
-      task.outputEl.textContent = task.output
+      task.panel.textContent = task.output
     }
-    if (task.expanded) scrollOutputToBottom(task)
+    if (task.id === selectedId) scrollPanelToBottom(task)
   }
 
   function latestRunningTask(): AgentTask | null {
@@ -177,13 +196,17 @@ export function mountAgentTasks(host: HTMLElement, store: AppStore, api: ApiClie
   }
 
   function clearAll() {
-    for (const task of tasks.values()) task.row.remove()
+    clearSelection()
+    for (const task of tasks.values()) {
+      task.tab.remove()
+      task.panel.remove()
+    }
     tasks.clear()
     order.length = 0
-    syncHostVisibility()
+    syncSectionVisibility()
   }
 
-  syncHostVisibility()
+  syncSectionVisibility()
 
   const unsubChunk = api.agent.onChunk((_threadId, chunk) => {
     if (chunk.type === 'tool_call' && chunk.toolCall.name === 'run_shell') {
@@ -198,11 +221,16 @@ export function mountAgentTasks(host: HTMLElement, store: AppStore, api: ApiClie
     appendOutput(toolCallId, data)
   })
 
+  // A shell tab took over the viewer — yield the task panel back to it.
+  const unsubShell = store.on('shell_tab_activated', clearSelection)
   const unsubWorkspace = store.on('workspace_changed', clearAll)
 
   return () => {
     unsubChunk()
     unsubOutput()
+    unsubShell()
     unsubWorkspace()
+    showTaskView(false)
+    section.remove()
   }
 }
