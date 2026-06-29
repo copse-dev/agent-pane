@@ -56,7 +56,8 @@ import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills-registry.ts'
 import { listCursorPlugins } from '../services/cursor-plugins.ts'
 import { listCursorHooks } from '../services/cursor-hooks.ts'
-import { registerSkillTools } from '../services/registry-bootstrap.ts'
+import { registerSkillTools, syncOkfMemoryTools } from '../services/registry-bootstrap.ts'
+import { OKF_MEMORIES_ENABLED_SETTING } from '../services/okf-memory-store.ts'
 import {
   checkoutGitBranch,
   getBranches,
@@ -225,6 +226,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (SKILLS_RELOAD_KEYS.has(k)) {
       await initSkillsRegistry()
       registerSkillTools(registry)
+    }
+    // Toggling the experimental OKF memories feature adds/removes its tools on the
+    // live registry so it takes effect without an app restart.
+    if (k === OKF_MEMORIES_ENABLED_SETTING) {
+      syncOkfMemoryTools(registry)
     }
   })
   ipcMain.handle('settings:setSecurity', async (event, raw: unknown) => {
