@@ -12,6 +12,8 @@ export interface LmStudioDetection {
   serverUrl: string
   installDetected: boolean
   models: string[]
+  /** Per-model loaded/effective context length (tokens) when the server reports it. */
+  modelContexts: Record<string, number>
   preferredPresent: string[]
   preferredMissing: string[]
   error?: string
@@ -58,6 +60,10 @@ export async function detectLmStudio(url?: string, apiKey?: string): Promise<LmS
   )
   const result = await fetchLmStudioModelsCached(serverUrl, apiKey)
   const models = result.models.map((m) => m.id)
+  const modelContexts: Record<string, number> = {}
+  for (const m of result.models) {
+    if (m.contextLength) modelContexts[m.id] = m.contextLength
+  }
   const preferredPresent = PREFERRED_MODEL_IDS.filter((id) => models.includes(id))
   const preferredMissing = PREFERRED_MODEL_IDS.filter((id) => !models.includes(id))
 
@@ -66,6 +72,7 @@ export async function detectLmStudio(url?: string, apiKey?: string): Promise<LmS
     serverUrl,
     installDetected: detectLmStudioInstall(),
     models,
+    modelContexts,
     preferredPresent,
     preferredMissing,
     ...(result.error ? { error: result.error } : {}),
