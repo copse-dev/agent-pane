@@ -46,6 +46,10 @@ const ALLOWED_STRING_DIVERGENCES: Record<
     reason: 'HTML block: bare attribute (<div class foo) parsed differently',
   },
   158: { kind: 'expected', reason: 'HTML block: stray < inside raw text parsed differently' },
+  173: {
+    kind: 'expected',
+    reason: 'HTML block: <style> raw-text element swallows following text in HTMLParser',
+  },
   616: {
     kind: 'expected',
     reason: 'Raw HTML: malformed tag with quoted attribute parsed differently',
