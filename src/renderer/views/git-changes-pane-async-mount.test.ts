@@ -25,7 +25,7 @@ import { mountGitChangesPane } from './git-changes-pane.ts'
 const emptyStatus: GitStatusResult = { staged: [], unstaged: [] }
 
 function makeApi(calls: { isAvailable: number; status: number }): ApiClient {
-  const noopUnsub = () => () => {}
+  const noopUnsub = (): (() => void) => () => {}
   return {
     git: {
       isAvailable: async () => {
@@ -61,11 +61,11 @@ const monacoStub = {} as unknown as typeof Monaco
 before(() => {
   if (!('ResizeObserver' in globalThis)) {
     class NoopResizeObserver {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
     }
-    globalThis.ResizeObserver = NoopResizeObserver as unknown as typeof ResizeObserver
+    globalThis.ResizeObserver = NoopResizeObserver
   }
 })
 
