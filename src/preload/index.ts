@@ -399,6 +399,9 @@ contextBridge.exposeInMainWorld('api', {
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   },
+  panes: {
+    popout: (mode: 'prs') => ipcRenderer.invoke('panes:popout', mode),
+  },
 })
 
 if (process.env['COPSE_E2E'] === '1') {

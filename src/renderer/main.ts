@@ -1,6 +1,7 @@
 import './styles/tokens.css'
 import './styles/global.css'
 import './styles/themes.css'
+import './styles/global/popout.css'
 
 import { createStore } from '@shared/store/store.ts'
 import { openNewThread, switchThread, getActiveThread } from '@shared/store/thread-helpers.ts'
@@ -43,11 +44,13 @@ import {
   restoreProject,
 } from './controller/projects.ts'
 import {
+  openRightPanel,
   openRightPanelWithWorkspace,
   toggleFilesPaneWithWorkspace,
   syncFilesPaneDom,
   openCanvasArtefact,
 } from './controller/panels.ts'
+import type { RightPanelMode } from '@shared/types/state.ts'
 import { loadMonaco } from './monaco/setup.ts'
 import { mountPaneResizers, parseSavedLayout } from './views/pane-resizer.ts'
 import { bindChatComposerLayout } from './views/chat-layout.ts'
@@ -58,6 +61,18 @@ import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layo
 
 const store = createStore()
 const api = window.api
+
+// A pane pop-out window loads this same renderer with `?popout=<mode>`. In that
+// mode we boot the app normally (so the pane gets the real workspace/threads),
+// but force the pane open and let popout.css hide the projects sidebar, chat,
+// and titlebar so the detached window shows only that pane.
+const POPOUT_MODES = new Set<RightPanelMode>(['prs'])
+function getPopoutMode(): RightPanelMode | null {
+  const raw = new URLSearchParams(window.location.search).get('popout')
+  return raw && POPOUT_MODES.has(raw as RightPanelMode) ? (raw as RightPanelMode) : null
+}
+const popoutMode = getPopoutMode()
+if (popoutMode) document.documentElement.classList.add('is-popout')
 
 // The app shell ships these mount points in index.html; a missing one is a
 // build/markup bug we want to surface loudly rather than silently no-op.
@@ -96,8 +111,12 @@ async function boot(): Promise<void> {
     autoPortraitRightPanel:
       typeof savedAutoPortraitRightPanel === 'boolean' ? savedAutoPortraitRightPanel : true,
   })
-  startAgentController(store, api)
-  attachAutosave(store, api)
+  // A pop-out window is a secondary view of the same workspace; let the main
+  // window own the agent loop and config autosave so the two don't race.
+  if (!popoutMode) {
+    startAgentController(store, api)
+    attachAutosave(store, api)
+  }
   attachProjectThreadCache(store)
 
   mountTitlebar(requireElement('titlebar'), store, api)
@@ -163,6 +182,14 @@ async function boot(): Promise<void> {
       unmountWelcome()
       ensureLayout()
     })
+  }
+
+  // In a pop-out window, force the detached pane open once the workspace is
+  // restored; popout.css collapses everything else to a single-pane window.
+  if (popoutMode && store.getState().workspaceRoot) {
+    ensureLayout()
+    openRightPanel(store, popoutMode)
+    return
   }
 
   if (await shouldShowOnboarding(api)) {

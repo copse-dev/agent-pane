@@ -300,6 +300,10 @@ export interface ApiClient {
   shell: {
     openExternal: (url: string) => Promise<void>
   }
+  panes: {
+    /** Detach a right-panel pane into its own window. */
+    popout: (mode: 'prs') => Promise<void>
+  }
 }
 
 declare global {
