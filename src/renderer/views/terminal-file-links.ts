@@ -1,6 +1,6 @@
 import type { Terminal, ILink, ILinkProvider, IBufferRange } from '@xterm/xterm'
 import type { AppStore } from '@shared/store/store.ts'
-import { fileReferenceMatches } from '@shared/fs/file-reference.ts'
+import { fileReferenceMatches, resolveFileReferencesInBatches } from '@shared/fs/file-reference.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { activateWorkspaceReference } from '../controller/files.ts'
 import { showErrorToast } from './toast.ts'
@@ -60,7 +60,9 @@ export function installTerminalFileLinks(
     const unknown = collectVisibleCandidates(term).filter((c) => !resolved.has(c))
     if (unknown.length === 0) return
     try {
-      const list = await api.index.resolveFileReferences(unknown)
+      const list = await resolveFileReferencesInBatches(unknown, (batch) =>
+        api.index.resolveFileReferences(batch),
+      )
       for (const { candidate, path, kind } of list) resolved.set(candidate, { path, kind })
     } catch {
       // Leave candidates unresolved; the next refresh retries them.
