@@ -157,9 +157,7 @@ function toOpenAIMessages(messages: LLMMessage[]): OpenAI.ChatCompletionMessageP
       return [
         {
           role: 'user',
-          content: toOpenAIContent(
-            m.content,
-          ),
+          content: toOpenAIContent(m.content),
         },
       ]
     }

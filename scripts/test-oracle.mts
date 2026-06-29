@@ -128,7 +128,7 @@ function parseArgs(argv: string[]): Args {
     else if (arg === '--plan') a.plan = true
     else if (arg === '--run') {
       const v = argv[i + 1]
-      a.run = v === 'unit' || v === 'all' ? ((++i, v)) : 'e2e'
+      a.run = v === 'unit' || v === 'all' ? (++i, v) : 'e2e'
     } else if (arg === '--files') {
       a.files = []
       while (i + 1 < argv.length && !argv[i + 1]!.startsWith('--')) a.files.push(argv[++i]!)

@@ -85,8 +85,7 @@ function asRawArray(value: unknown): RawCustomTool[] {
 
 /** Resolve a loaded module's default export (object | array | factory) to raw tools. */
 async function extractRawTools(mod: unknown): Promise<RawCustomTool[]> {
-  let value: unknown =
-    mod && typeof mod === 'object' && 'default' in mod ? (mod).default : mod
+  let value: unknown = mod && typeof mod === 'object' && 'default' in mod ? mod.default : mod
   if (typeof value === 'function') value = await (value as () => unknown)()
   return asRawArray(value)
 }

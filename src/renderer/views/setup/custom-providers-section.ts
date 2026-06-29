@@ -137,11 +137,7 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
 
   for (const model of initial) addRow(model)
 
-  const addBtn = el(
-    'button',
-    { type: 'button', class: 'provider-add-model' },
-    '+ Add model',
-  )
+  const addBtn = el('button', { type: 'button', class: 'provider-add-model' }, '+ Add model')
   addBtn.addEventListener('click', () => addRow())
 
   const header = el(
@@ -474,11 +470,7 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
       saveStatus,
     )
     if (!provider.builtin) {
-      const del = el(
-        'button',
-        { type: 'button', class: 'provider-delete' },
-        'Delete',
-      )
+      const del = el('button', { type: 'button', class: 'provider-delete' }, 'Delete')
       del.addEventListener('click', () => {
         void (async () => {
           await api.settings.deleteExtraProvider(provider.id)
@@ -519,11 +511,7 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
       placeholder: 'API key (optional)',
       autocomplete: 'off',
     })
-    const addBtn = el(
-      'button',
-      { type: 'button', class: 'provider-save' },
-      'Add provider',
-    )
+    const addBtn = el('button', { type: 'button', class: 'provider-save' }, 'Add provider')
     const status = el('span', { class: 'key-status' })
 
     // Track manual edits so a preset switch overwrites auto-filled values but
