@@ -1,5 +1,6 @@
 import type * as Monaco from 'monaco-editor'
 import { el, clear } from '../dom/helpers.ts'
+import { panePopoutButton } from './pane-popout-button.ts'
 import { at } from '@shared/array-utils.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -122,7 +123,12 @@ export function mountGitChangesPane(
     },
     '↻',
   )
-  listHeader.append(headerTitle, bulkActions, refreshBtn)
+  listHeader.append(
+    headerTitle,
+    bulkActions,
+    panePopoutButton(api, 'changes', 'changes'),
+    refreshBtn,
+  )
 
   const listBody = el('div', { class: 'git-changes-list' })
   listRoot.append(listHeader, listBody)
