@@ -14,10 +14,30 @@ import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
 // this sandbox. The pop-out path is identical to the panes covered here — the
 // only difference is the pane the detached window renders.
 const PANES = [
-  { mode: 'explorer', openLabel: 'Toggle right panel', host: '#file-tree-host' },
-  { mode: 'changes', openLabel: 'Open changes', host: '#git-changes-host' },
-  { mode: 'prs', openLabel: 'Open pull requests', host: '.pr-list-body' },
-  { mode: 'browser', openLabel: 'Open browser', host: '#browser-tabs-host' },
+  {
+    mode: 'explorer',
+    openLabel: 'Toggle right panel',
+    listHost: '#file-tree-host',
+    probe: '#file-tree-host .file-tree',
+  },
+  {
+    mode: 'changes',
+    openLabel: 'Open changes',
+    listHost: '#git-changes-host',
+    probe: '#git-changes-host .git-changes-list',
+  },
+  {
+    mode: 'prs',
+    openLabel: 'Open pull requests',
+    listHost: '#pr-list-host',
+    probe: '.pr-list-body',
+  },
+  {
+    mode: 'browser',
+    openLabel: 'Open browser',
+    listHost: '#browser-tabs-host',
+    probe: '#browser-tabs-host .browser-tabs-list',
+  },
 ] as const
 
 describe('Pane pop-out (mock gh)', () => {
@@ -55,10 +75,14 @@ describe('Pane pop-out (mock gh)', () => {
 
       // Make this pane the active one in the docked right panel.
       await $(`.titlebar-panel-controls [aria-label="${pane.openLabel}"]`).click()
-      await $(pane.host).waitForDisplayed({ timeout: 20_000 })
+      await $(pane.listHost).waitForDisplayed({ timeout: 20_000 })
+
+      // The pop-out control lives inside the pane header, not the titlebar.
+      const popoutBtn = await $(`${pane.listHost} .pane-popout-btn`)
+      await popoutBtn.waitForClickable({ timeout: 10_000 })
 
       const before = await browser.getWindowHandles()
-      await $('[aria-label="Pop out panel"]').click()
+      await popoutBtn.click()
       await browser.waitUntil(
         async () => (await browser.getWindowHandles()).length > before.length,
         { timeout: 15_000, timeoutMsg: `expected a pop-out window for ${pane.mode}` },
@@ -66,7 +90,8 @@ describe('Pane pop-out (mock gh)', () => {
       const popoutHandle = (await browser.getWindowHandles()).find((h) => !before.includes(h))
       expect(popoutHandle).toBeDefined()
 
-      // The detached window renders only this pane; app chrome is collapsed.
+      // The detached window renders only this pane; app chrome is collapsed and
+      // the (now redundant) in-panel pop-out control is hidden.
       await browser.switchToWindow(popoutHandle as string)
       await browser.waitUntil(
         async () =>
@@ -76,11 +101,12 @@ describe('Pane pop-out (mock gh)', () => {
           )) === true,
         { timeout: 20_000, timeoutMsg: `popout window did not boot in ${pane.mode} mode` },
       )
-      await $(pane.host).waitForDisplayed({ timeout: 30_000 })
+      await $(pane.probe).waitForDisplayed({ timeout: 30_000 })
       await expect(await $('#pane-files')).toBeDisplayed()
       await expect(await $('#titlebar')).not.toBeDisplayed()
       await expect(await $('#pane-projects')).not.toBeDisplayed()
       await expect(await $('#pane-chat')).not.toBeDisplayed()
+      await expect(await $('.pane-popout-btn')).not.toBeDisplayed()
 
       if (pane.mode === 'prs') {
         await browser.waitUntil(async () => (await $$('.pr-list-row')).length >= 2, {
@@ -102,10 +128,12 @@ describe('Pane pop-out (mock gh)', () => {
       await browser.switchToWindow(mainHandle)
     }
 
-    // The main window keeps its full three-pane layout and the pop-out control.
+    // The main window keeps its full three-pane layout; the pop-out control
+    // lives inside the (currently open) pane, and not in the titlebar.
     await expect(await $('#pane-projects')).toBeDisplayed()
     await expect(await $('.prompt-input')).toBeExisting()
-    await expect(await $('[aria-label="Pop out panel"]')).toBeDisplayed()
+    await expect(await $('.titlebar-popout-btn')).not.toBeExisting()
+    await expect(await $('#browser-tabs-host .pane-popout-btn')).toBeDisplayed()
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'pane-popout-main.png'))
   })
 })

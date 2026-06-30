@@ -1,5 +1,6 @@
 import type * as Monaco from 'monaco-editor'
 import { el, clear, qsRequired } from '../dom/helpers.ts'
+import { panePopoutButton } from './pane-popout-button.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GhCliStatus, GhPrChecksState, GhPrDetails, GhPrSummary } from '@shared/types/git.ts'
@@ -91,6 +92,7 @@ export function mountPrPane(
   const listHeader = el('div', { class: 'git-changes-header' })
   listHeader.append(
     el('span', { class: 'git-changes-title' }, 'Pull requests'),
+    panePopoutButton(api, 'prs', 'pull requests'),
     el(
       'button',
       {
@@ -103,8 +105,6 @@ export function mountPrPane(
     ),
   )
   const refreshBtn = qsRequired<HTMLButtonElement>(listHeader, '.pr-pane-refresh-btn')
-  const popoutBtn = qsRequired<HTMLButtonElement>(listHeader, '.pr-pane-popout-btn')
-  popoutBtn.addEventListener('click', () => void api.panes.popout('prs'))
   const listBody = el('div', { class: 'git-changes-list pr-list-body' })
   listRoot.append(listHeader, listBody)
 
