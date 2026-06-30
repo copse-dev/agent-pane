@@ -142,12 +142,14 @@ export async function buildProvider(model: string): Promise<LLMProvider> {
   const extra = extraProviderForModel(getResolvedExtraProviders(), model)
   if (extra) {
     const apiKey = storedOrEnvApiKey(extra.id)
-    if (!apiKey) {
+    // Local servers (Ollama, llama.cpp, …) typically run without auth, so a
+    // missing key is fine; createExtraCloudProvider supplies a placeholder.
+    if (!apiKey && !extra.local) {
       throw new Error(
         `${extra.label} is not configured. Add a ${extra.label} API key in Settings or choose another model.`,
       )
     }
-    return createExtraCloudProvider(extra, extraProviderModelId(model), apiKey)
+    return createExtraCloudProvider(extra, extraProviderModelId(model), apiKey ?? '')
   }
   if (model.startsWith('claude')) {
     return createProvider(model, {
