@@ -65,6 +65,7 @@ export function mountAskUserDialog(api: ApiClient): void {
       el(
         'div',
         { class: 'ask-user-buttons' },
+        el('button', { type: 'button', class: 'ask-user-cancel' }, 'Cancel'),
         el('button', { type: 'submit', class: 'ask-user-submit' }, 'Send answer'),
       ),
     )
@@ -78,19 +79,35 @@ export function mountAskUserDialog(api: ApiClient): void {
     renderActive()
   }
 
-  function submit(): void {
+  function respond(answers: string[]): void {
     const current = active
     if (!current) return
-    const answers = inputs.map((input) => input.value)
     dialog.close()
     active = null
     void api.ask.respond(current.id, answers)
     showNext()
   }
 
+  function submit(): void {
+    respond(inputs.map((input) => input.value))
+  }
+
+  function cancel(): void {
+    if (!active) return
+    respond(active.questions.map(() => ''))
+  }
+
   form.addEventListener('submit', (event) => {
     event.preventDefault()
     submit()
+  })
+
+  form.addEventListener('click', (event) => {
+    const target = event.target
+    if (!(target instanceof HTMLElement)) return
+    if (!target.classList.contains('ask-user-cancel')) return
+    event.preventDefault()
+    cancel()
   })
 
   api.agent.onAskUserRequest((req) => {

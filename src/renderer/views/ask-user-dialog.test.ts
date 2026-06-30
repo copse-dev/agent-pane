@@ -147,6 +147,22 @@ describe('ask_user dialog (component)', () => {
     assert.deepEqual(harness.responses, [{ id: 'q3', answers: ['Postgres', 'Yes'] }])
   })
 
+  it('returns blank answers when the user cancels', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit({
+      id: 'q-cancel',
+      questions: [{ question: 'Which DB?' }, { question: 'Async?' }],
+    })
+
+    const cancelBtn = document.querySelector<HTMLButtonElement>('.ask-user-cancel')
+    if (!cancelBtn) throw new Error('cancel button not found')
+    cancelBtn.click()
+
+    assert.deepEqual(harness.responses, [{ id: 'q-cancel', answers: ['', ''] }])
+    assert.equal(dialog().open, false)
+  })
+
   it('queues a second request and shows it after the first is answered', () => {
     const { api, harness } = stubApi()
     mount(api)

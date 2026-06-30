@@ -43,7 +43,15 @@
 }
 .ask-user-buttons {
   display: flex;
+  gap: var(--spacing-sm);
   justify-content: flex-end;
+}
+.ask-user-cancel {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 16px;
 }
 .ask-user-submit {
   background: var(--accent);
