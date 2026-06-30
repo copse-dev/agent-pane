@@ -76,7 +76,7 @@ function replaceOutsideCode(
 ): string {
   return text.replace(re, (...args) => {
     const offset = args[args.length - 2] as number
-    return isIndexInCode(offset, ranges) ? (args[0] as string) : ''
+    return isIndexInCode(offset, ranges) ? args[0] : ''
   })
 }
 
@@ -88,8 +88,7 @@ function firstMatchOutsideCode(
 ): number {
   const global = re.flags.includes('g') ? re : new RegExp(re.source, `${re.flags}g`)
   for (const match of text.matchAll(global)) {
-    const idx = match.index ?? -1
-    if (idx !== -1 && !isIndexInCode(idx, ranges)) return idx
+    if (!isIndexInCode(match.index, ranges)) return match.index
   }
   return -1
 }
@@ -214,7 +213,7 @@ function parseInvokeBlocks(
   let sawInvoke = false
   for (const match of text.matchAll(INVOKE_BLOCK_RE)) {
     // A documented `<invoke>` inside markdown code is not a real call to recover.
-    if (codeRanges && isIndexInCode(match.index ?? 0, codeRanges)) continue
+    if (codeRanges && isIndexInCode(match.index, codeRanges)) continue
     sawInvoke = true
     const name = normalizeToolName(match[1] ?? '')
     if (!name) continue
@@ -301,7 +300,7 @@ export function recoverTextToolCalls(
   let anyBlockUnparsed = false
 
   for (const match of normalized.matchAll(TOOL_CALL_BLOCK_RE)) {
-    if (isIndexInCode(match.index ?? 0, codeRanges)) continue
+    if (isIndexInCode(match.index, codeRanges)) continue
     sawBlock = true
     const inner = match[1]
     if (!inner?.trim()) {

@@ -64,8 +64,8 @@ describe('isLikelyIncompleteText', () => {
 
 describe('incomplete-answer constants', () => {
   it('caps continue retries to a small positive number', () => {
-    assert.ok(MAX_INCOMPLETE_CONTINUE_RETRIES >= 1)
-    assert.ok(MAX_INCOMPLETE_CONTINUE_RETRIES <= 3)
+    assert.ok((MAX_INCOMPLETE_CONTINUE_RETRIES as number) >= 1)
+    assert.ok((MAX_INCOMPLETE_CONTINUE_RETRIES as number) <= 3)
   })
 
   it('exposes a non-empty user-facing note', () => {
