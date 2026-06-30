@@ -68,6 +68,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'mcpUiArtefactsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'ciInvestigatorEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'okfMemoriesEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'longHorizonTasksEnabled', kind: 'checkbox', default: false, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
@@ -563,6 +564,22 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <a href="https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing" target="_blank" rel="noreferrer">Open Knowledge Format</a>
                 markdown files (YAML frontmatter plus a markdown body) under
                 <code>~/.copse/memories</code>. While off, neither tool is registered.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Long-horizon tasks</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="longHorizonTasksEnabled" />
+                Let the agent keep a durable checklist for long grind tasks
+              </label>
+              <p class="field-hint">
+                Adds a <code>track_long_task</code> tool so the agent can keep a durable, resumable
+                checklist for a long task within a PR — clearing a lint/type-safety backlog, a deep
+                research pass — with done/remaining state that survives across sessions, so it can
+                resume from the last checkpoint and know when every step is complete. Tasks are
+                stored per project under <code>~/.copse/long-tasks</code>. While off, the tool is not
+                registered.
               </p>
             </fieldset>
           </section>

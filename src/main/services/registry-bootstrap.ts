@@ -35,6 +35,8 @@ import {
 } from './browser/browser-origin-policy.ts'
 import { CI_INVESTIGATOR_ENABLED_SETTING } from './ci-investigator-service.ts'
 import { OKF_MEMORIES_ENABLED_SETTING } from './okf-memory-store.ts'
+import { LONG_HORIZON_TASKS_ENABLED_SETTING } from './long-task-tracker.ts'
+import { trackLongTaskTool } from '../tools/long-task-tool.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
@@ -74,6 +76,12 @@ export function createRegistry(): ToolRegistry {
   // Experimental OKF memories (off by default). Adds remember/recall tools that
   // persist project knowledge as Open Knowledge Format notes under ~/.copse.
   syncOkfMemoryTools(registry)
+  // Experimental long-horizon tasks (off by default, issue #558). Adds a
+  // track_long_task tool that keeps a durable, resumable checklist for grind
+  // work within a PR (lint backlogs, deep research) across sessions.
+  if (getSetting<boolean>(LONG_HORIZON_TASKS_ENABLED_SETTING, false)) {
+    registry.register(trackLongTaskTool)
+  }
   registry.register(webSearchTool)
   registry.register(fetchUrlTool)
   registry.register(updateTodosTool)
