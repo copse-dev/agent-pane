@@ -1,4 +1,5 @@
 import type { StreamChunk, UsageDelta, ContextBreakdown } from '@shared/types'
+import type { RightPanelMode } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import type { CursorHookSummary } from '@shared/types/cursor-hooks.ts'
@@ -21,6 +22,9 @@ import type {
   ExtraProviderModel,
   StoredExtraProvider,
 } from '@shared/llm/extra-providers.ts'
+import type { DetectedAcpAgent } from '@shared/acp-known-agents.ts'
+
+export type { DetectedAcpAgent }
 
 /** Fixed cloud providers with a user-supplied API key (presets/customs use slugs). */
 export type ApiKeyProvider =
@@ -172,6 +176,10 @@ export interface ApiClient {
     downloadArtifact: (agentId: string, path: string) => Promise<string>
     artifactImageDataUrl: (agentId: string, path: string) => Promise<string>
   }
+  acp: {
+    /** Detect known ACP agents installed/running on this device (for the Settings panel). */
+    detectAgents: () => Promise<DetectedAcpAgent[]>
+  }
   menu: {
     onSettings: (handler: () => void) => () => void
     onNewThread: (handler: () => void) => () => void
@@ -299,6 +307,10 @@ export interface ApiClient {
   }
   shell: {
     openExternal: (url: string) => Promise<void>
+  }
+  panes: {
+    /** Detach a right-panel pane into its own window. */
+    popout: (mode: RightPanelMode) => Promise<void>
   }
 }
 

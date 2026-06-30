@@ -1,6 +1,12 @@
 # ACP Client Support Plan
 
-Status: **Planning** (no implementation yet)
+Status: **In progress.** The protocol core and the first app-wiring slice (model
+routing `acp:<id>`, settings-backed agent registry, picker entries, text
+streaming, `session/request_permission` → approval, `fs/read_text_file` and
+`fs/write_text_file` → workspace + diff-approval queue, `session/cancel` →
+abort) have landed. See [`docs/acp-agents.md`](../acp-agents.md) for setup and
+the remaining work (terminals, session resume, MCP forwarding, Settings UI) in
+issue #264, Track 1 (C2/C3).
 
 ## Goal
 
