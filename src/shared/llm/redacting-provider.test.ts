@@ -16,8 +16,8 @@ function fakeProvider(): {
       _signal?: AbortSignal,
     ): AsyncIterable<StreamChunk> {
       seen.messages = messages
-      return (async function* () {
-        yield { type: 'done' } as StreamChunk
+      return (async function* (): AsyncIterable<StreamChunk> {
+        yield { type: 'done' }
       })()
     },
   }
