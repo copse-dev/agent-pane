@@ -32,6 +32,8 @@ interface AgentTask {
   output: string
   tab: HTMLButtonElement
   panel: HTMLPreElement
+  /** Holds the echoed command line at the top of the panel; the rest is output. */
+  outputNode: Text
 }
 
 function shellCommandFromArgs(args: unknown): string | null {
@@ -141,7 +143,14 @@ export function mountAgentTasks(
     })
     panel.hidden = true
 
-    const task: AgentTask = { id, command, status: 'running', output: '', tab, panel }
+    // Echo the command at the top of the panel, the way a real terminal shows the
+    // line that was typed before its output. The prompt line stays fixed at the
+    // top; streamed output accumulates in `outputNode` below it.
+    const promptLine = el('span', { class: 'agent-task-command' }, `$ ${command}\n`)
+    const outputNode = document.createTextNode('')
+    panel.append(promptLine, outputNode)
+
+    const task: AgentTask = { id, command, status: 'running', output: '', tab, panel, outputNode }
     tab.addEventListener('click', () => {
       selectTask(id)
     })
@@ -165,9 +174,9 @@ export function mountAgentTasks(
     task.output += clean
     if (task.output.length > MAX_OUTPUT_CHARS) {
       task.output = task.output.slice(task.output.length - MAX_OUTPUT_CHARS)
-      task.panel.textContent = task.output
+      task.outputNode.data = task.output
     } else {
-      task.panel.append(document.createTextNode(clean))
+      task.outputNode.appendData(clean)
     }
     if (showing && atBottom) scrollPanelToBottom(task)
   }
@@ -180,7 +189,7 @@ export function mountAgentTasks(
     // live), fall back to the final tool result so the panel isn't empty.
     if (!task.output.trim() && result.trim()) {
       task.output = stripAnsi(result)
-      task.panel.textContent = task.output
+      task.outputNode.data = task.output
     }
     if (task.id === selectedId) scrollPanelToBottom(task)
   }
