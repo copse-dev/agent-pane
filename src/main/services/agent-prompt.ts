@@ -19,6 +19,7 @@ const SHARED_TOOL_TAIL = `- git_status: Show working tree status
 - run_shell: Run a shell command in the workspace (may prompt for approval)
 - staged_diffs: List pending proposed file edits waiting for approval, recent edit decisions, and existing git changes
 - read_staged_diff: Inspect proposed content for a pending file edit
+- ask_user: Ask the user one or more clarifying questions and block until they answer (use at ambiguous or branching points instead of guessing)
 - update_todos: Create or update a structured multi-step plan (use only for complex multi-step work)`
 
 interface BasePromptVars {
@@ -112,6 +113,13 @@ You have a persistent memory for this project, stored as Open Knowledge Format m
 - remember: Save a durable fact worth recalling in future sessions — a project convention, decision, gotcha, or environment detail. Re-use a title to update that memory.
 - recall: Look up what you previously stored, optionally filtered by a query.
 Use recall early when a task may depend on prior context, and remember when you learn something durable the user would not want to re-explain. Keep memories concise and project-specific; do not store secrets.`
+
+// Optional steering, toggled by the experimental `piiRedactionEnabled` setting.
+// Only appended when the reveal_pii tool is actually registered.
+export const PII_REDACTION_BLOCK = `
+
+This conversation has client-side PII redaction on. Personal data the user typed is replaced with stable placeholders before their message reaches you — typed tokens like [GIVEN_NAME_1], [EMAIL_2], [SSN_1], [PHONE_1]. The same real value always maps to the same placeholder, so you can reason about a placeholder as if it were the value. Keep placeholders intact in your replies and edits; do not invent or guess the underlying values.
+- reveal_pii: When you genuinely need a real value — e.g. to write it verbatim into a file or command — call reveal_pii with the placeholder. The user is prompted to approve each reveal and may decline, in which case keep using the placeholder.`
 
 // Optional steering, toggled by the `externalApiSafety` setting. Kept short and
 // appended near the top of the system prompt so it sits ahead of workspace- and

@@ -30,6 +30,7 @@ import {
   shouldShowOnboarding,
 } from './views/onboarding-dialog.ts'
 import { mountApprovalDialog } from './views/approval-dialog.ts'
+import { mountAskUserDialog } from './views/ask-user-dialog.ts'
 import {
   mountFileSearchDialog,
   openFileSearchDialog,
@@ -58,6 +59,7 @@ import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { registerPanelKeyboardShortcuts } from './keyboard-shortcuts.ts'
 import { showErrorToast } from './views/toast.ts'
 import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layout.ts'
+import { isRightPanelPosition } from '@shared/types/state.ts'
 
 const store = createStore()
 const api = window.api
@@ -102,17 +104,22 @@ async function boot(): Promise<void> {
   mountSettingsDialog(store, api)
   mountOnboardingDialog(store, api)
   mountApprovalDialog(api)
+  mountAskUserDialog(api)
   mountFileSearchDialog(store, api)
 
   // Load persisted user preferences before the main layout mounts.
   const savedModel = (await api.settings.get('model')) as string | null
   const savedLayout = await api.settings.get('layout')
   const savedAutoPortraitRightPanel = await api.settings.get('autoPortraitRightPanel')
+  const savedRightPanelPosition = await api.settings.get('rightPanelPosition')
   store.setState({
     settings: { model: savedModel ?? DEFAULT_APP_CHAT_MODEL },
     layout: parseSavedLayout(savedLayout),
     autoPortraitRightPanel:
       typeof savedAutoPortraitRightPanel === 'boolean' ? savedAutoPortraitRightPanel : true,
+    rightPanelPosition: isRightPanelPosition(savedRightPanelPosition)
+      ? savedRightPanelPosition
+      : 'auto',
   })
   // A pop-out window is a secondary view of the same workspace; let the main
   // window own the agent loop and config autosave so the two don't race.

@@ -1,5 +1,6 @@
 import { errorMessage } from '@shared/errors.ts'
 import type { AppStore } from '@shared/store/store.ts'
+import { isRightPanelPosition } from '@shared/types/state.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
   APP_ICON_VARIANTS,
@@ -69,6 +70,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'ciInvestigatorEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'okfMemoriesEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'roadmapPlansEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'piiRedactionEnabled', kind: 'checkbox', default: false, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
@@ -133,6 +135,18 @@ export function closeSettingsDialog(): void {
 
 export function isSettingsDialogOpen(): boolean {
   return !!overlayEl && overlayEl.open
+}
+
+/**
+ * Subscribe to the settings dialog closing (Save, Cancel, the ✕ button, or Esc —
+ * all funnel through the native dialog `close` event). Used by other top-layer
+ * UI (e.g. the approval dialog) that must stay behind settings: it defers itself
+ * while settings is open and flushes when this fires. Returns an unsubscribe fn.
+ */
+export function onSettingsDialogClose(listener: () => void): () => void {
+  if (!overlayEl) throw new Error('onSettingsDialogClose called before mountSettingsDialog')
+  overlayEl.addEventListener('close', listener)
+  return () => overlayEl?.removeEventListener('close', listener)
 }
 
 export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
@@ -485,13 +499,25 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Font size
                 <input type="number" name="fontSize" min="12" max="20" step="1" />
               </label>
+              <label>
+                Right panel position
+                <select name="rightPanelPosition">
+                  <option value="auto">Automatic</option>
+                  <option value="side">Beside chat</option>
+                  <option value="bottom">Below chat</option>
+                </select>
+              </label>
+              <p class="field-hint">
+                Choose where Explorer, Terminal, Changes, and Plan live. "Below chat" keeps the
+                terminal wide and readable on smaller screens.
+              </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="autoPortraitRightPanel" />
                 Move the right panel below chat on tall portrait windows
               </label>
               <p class="field-hint">
-                Automatically splits portrait windows horizontally so Projects + chat stay above
-                Explorer, Terminal, Changes, and Plan.
+                Only applies when the position above is "Automatic": splits portrait windows
+                horizontally so Projects + chat stay above Explorer, Terminal, Changes, and Plan.
               </p>
             </fieldset>
 
@@ -580,6 +606,24 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 so longer-horizon plans aren't started before the PRs they depend on merge. Items
                 are stored per project under <code>~/.copse/roadmap</code>. While off, the tool is
                 not registered.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>PII redaction (on-device)</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="piiRedactionEnabled" />
+                Redact personal data in my messages before they are sent
+              </label>
+              <p class="field-hint">
+                Uses <a href="https://github.com/nationaldesignstudio/rampart" target="_blank" rel="noreferrer">Rampart</a>
+                (National Design Studio, CC BY 4.0) to replace personal data you type — names, emails,
+                phone numbers, SSNs, card numbers, addresses — with stable placeholders like
+                <code>[EMAIL_1]</code> before your message leaves the device for any model provider. The
+                real values stay in memory on this machine and never cross the wire. When the agent
+                genuinely needs a value it calls <code>reveal_pii</code>, which prompts you to approve
+                each reveal. Best-effort and Latin-script only — not a guarantee. The first run downloads
+                a small (~15&nbsp;MB) model; while off, nothing is loaded.
               </p>
             </fieldset>
           </section>
@@ -978,6 +1022,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       )
       ;(form.elements.namedItem('autoPortraitRightPanel') as HTMLInputElement).checked =
         store.getState().autoPortraitRightPanel
+      ;(form.elements.namedItem('rightPanelPosition') as HTMLSelectElement).value =
+        store.getState().rightPanelPosition
 
       const savedIconVariant = await api.settings.get('appIconVariant')
       const appIconVariant = isAppIconVariant(savedIconVariant)
@@ -1013,6 +1059,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const theme = data.get('theme') as 'light' | 'dark'
       const fontSize = parseInt(data.get('fontSize') as string, 10)
       const autoPortraitRightPanel = data.get('autoPortraitRightPanel') === 'on'
+      const rightPanelPositionRaw = data.get('rightPanelPosition')
+      const rightPanelPosition = isRightPanelPosition(rightPanelPositionRaw)
+        ? rightPanelPositionRaw
+        : 'auto'
       const appIconVariant = data.get('appIconVariant') as AppIconVariant
       const confidence = parseFloat(data.get('safetyConfidenceThreshold') as string)
 
@@ -1025,6 +1075,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await api.settings.set('theme', theme)
       await api.settings.set('fontSize', fontSize)
       await api.settings.set('autoPortraitRightPanel', autoPortraitRightPanel)
+      await api.settings.set('rightPanelPosition', rightPanelPosition)
       if (isAppIconVariant(appIconVariant)) {
         await api.settings.set('appIconVariant', appIconVariant)
         await api.appIcon.apply()
@@ -1048,6 +1099,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         theme,
         fontSize,
         autoPortraitRightPanel,
+        rightPanelPosition,
         settings: { ...store.getState().settings, model },
       })
       store.emit('theme_changed', theme)
