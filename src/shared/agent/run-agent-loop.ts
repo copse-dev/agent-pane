@@ -36,6 +36,8 @@ import {
   isContextOverflowStopReason,
   isRefusalStopReason,
   isTruncationStopReason,
+  REASONING_RUNAWAY_FORCE_ANSWER_NUDGE,
+  REASONING_RUNAWAY_GIVEUP_MESSAGE,
   REFUSAL_USER_MESSAGE,
   TRUNCATION_CONTINUE_NUDGE,
 } from '../llm/provider-stop-reason.ts'
@@ -50,6 +52,8 @@ import {
 import { hasOpenTodos, OPEN_TODOS_FINALIZE_NUDGE } from '@shared/todos/todo-logic.ts'
 
 const RECENT_FINGERPRINT_WINDOW = 16
+/** Consecutive reasoning-only runaway streams tolerated before the run gives up. */
+const MAX_REASONING_RUNAWAY_STREAK = 2
 /** Do not compact on the first tool round unless the transcript is critically full. */
 const TRIM_CRITICAL_FILL = 0.95
 /** After this many tool rounds, always allow normal in-loop compaction. */
@@ -454,6 +458,10 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   let loopNudgeSent = false
   let forceTextAttempted = false
   let trimEvents = 0
+  // Consecutive streams cut off by the per-stream output cap while producing only
+  // reasoning (no answer, no tool call). The first gets a force-answer nudge; a
+  // second means the model is stuck looping, so the run ends instead of re-priming.
+  let reasoningRunawayStreak = 0
   const recentFingerprints: string[] = []
 
   while (steps < maxSteps) {
@@ -536,6 +544,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     }
 
     let streamOutputChars = 0
+    let streamCappedAsRunaway = false
 
     budget.deadline.pause()
     try {
@@ -575,6 +584,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         // treat the partial turn as truncated so the loop can recover (#489).
         if (!pendingToolCalls.length && isStreamOutputRunaway(streamOutputChars)) {
           stopReason = 'max_tokens'
+          streamCappedAsRunaway = true
           break
         }
       }
@@ -609,6 +619,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
 
     // Push assistant message to history
     if (pendingToolCalls.length > 0) {
+      reasoningRunawayStreak = 0
       messages.push({
         role: 'assistant',
         content: pendingToolCalls.map((tc) => ({ id: tc.id, name: tc.name, args: tc.args })),
@@ -638,6 +649,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       }
       continue
     } else if (assistantText.trim()) {
+      reasoningRunawayStreak = 0
       if (isTruncationStopReason(stopReason)) {
         messages.push({ role: 'assistant', content: assistantText })
         messages.push({ role: 'user', content: TRUNCATION_CONTINUE_NUDGE })
@@ -648,6 +660,23 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       break
     } else {
       if (isTruncationStopReason(stopReason)) {
+        // A pure-reasoning stream that our own output cap cut off (#489) has no
+        // assistant text or tool call, and reasoning never lands in history — so
+        // TRUNCATION_CONTINUE_NUDGE ("continue from where you left off") has nothing
+        // to continue and just re-primes the same loop. Push the model to commit to
+        // an answer instead; if it ignores that and runs the cap again, it is stuck
+        // looping, so end the run rather than re-prime until the wall-clock deadline.
+        if (streamCappedAsRunaway) {
+          reasoningRunawayStreak++
+          if (reasoningRunawayStreak >= MAX_REASONING_RUNAWAY_STREAK) {
+            onChunk({ type: 'text', text: REASONING_RUNAWAY_GIVEUP_MESSAGE })
+            messages.push({ role: 'assistant', content: REASONING_RUNAWAY_GIVEUP_MESSAGE })
+            finishedWithAnswer = true
+            break
+          }
+          messages.push({ role: 'user', content: REASONING_RUNAWAY_FORCE_ANSWER_NUDGE })
+          continue
+        }
         messages.push({ role: 'user', content: TRUNCATION_CONTINUE_NUDGE })
         continue
       }
