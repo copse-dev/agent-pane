@@ -48,9 +48,9 @@ describe('ask_user dialog', () => {
     await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
 
     // Tool finished — the mock turn completes and an assistant message appears.
-    await browser.waitUntil(
-      async () => (await $$('.message.assistant')).length >= 1,
-      { timeout: 30_000, timeoutMsg: 'expected assistant reply after ask_user answer' },
-    )
+    await browser.waitUntil(async () => (await $$('.msg.msg-assistant')).length >= 1, {
+      timeout: 30_000,
+      timeoutMsg: 'expected assistant reply after ask_user answer',
+    })
   })
 })
