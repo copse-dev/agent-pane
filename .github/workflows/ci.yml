@@ -36,9 +36,14 @@ jobs:
   # copse-e2e fleet + nightly-hosted model and is intentionally not routed here.)
   #
   # Listing self-hosted runners needs an admin scope the default GITHUB_TOKEN
-  # lacks, so detection uses a PAT in secrets.RUNNERS_PAT (classic `repo`, or
-  # fine-grained repository Administration: Read). Without the secret it simply
-  # defers to hosted — the pre-existing behaviour.
+  # lacks, so detection uses a PAT. It reuses the existing SCREENSHOTS_PAT when
+  # no dedicated RUNNERS_PAT is set: a classic `repo`-scoped PAT (which
+  # SCREENSHOTS_PAT is, since it pushes commits that re-trigger CI) already
+  # carries repository Administration: Read, so it can list runners too. Set a
+  # dedicated RUNNERS_PAT only if you'd rather scope a separate token (classic
+  # `repo`, or fine-grained repository Administration: Read). With neither — or
+  # a token lacking admin read — the query just fails open to hosted, the
+  # pre-existing behaviour.
   #
   # Same fork guard as the jobs below: never runs for fork PRs, so the PAT is
   # never exposed to untrusted code and self-hosted boxes never see fork commits.
@@ -50,7 +55,9 @@ jobs:
     steps:
       - id: pick
         env:
-          RUNNERS_PAT: ${{ secrets.RUNNERS_PAT }}
+          # Dedicated token if provided, else reuse SCREENSHOTS_PAT (a classic
+          # `repo` PAT already has the Administration: Read needed to list runners).
+          RUNNERS_PAT: ${{ secrets.RUNNERS_PAT || secrets.SCREENSHOTS_PAT }}
           GH_REPO: ${{ github.repository }}
         run: |
           # Never abort the router: on ANY uncertainty we want the hosted

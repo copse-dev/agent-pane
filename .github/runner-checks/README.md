@@ -72,17 +72,24 @@ So bringing this fleet up or down is transparent — start containers to offload
 the check tier onto your own hardware, stop them and CI silently falls back to
 hosted runners on the next run.
 
-### Required secret
+### PAT for detection (reuses the existing secret)
 
-The detection needs a PAT because the GitHub API won't list self-hosted runners
-with the default `GITHUB_TOKEN` (it has no `administration` scope). Add a repo
-secret named **`RUNNERS_PAT`**:
+Detection needs a PAT because the GitHub API won't list self-hosted runners
+with the default `GITHUB_TOKEN` (it has no `administration` scope). By default
+`pick-runner` **reuses the repo's existing `SCREENSHOTS_PAT`** — a classic
+`repo`-scoped PAT already carries repository **Administration: Read**, so the
+same token that pushes screenshot commits can also list runners. No new secret
+is required.
+
+Optionally set a dedicated **`RUNNERS_PAT`** if you'd rather scope a separate
+token (it takes precedence over `SCREENSHOTS_PAT`):
 
 - Classic PAT: `repo` scope, **or**
 - Fine-grained PAT: repository **Administration → Read**.
 
-Without it, `pick-runner` can't enumerate the fleet and CI runs the check tier
-on GitHub-hosted runners (the previous behaviour).
+With neither secret — or a token that lacks admin read — `pick-runner` simply
+can't enumerate the fleet and CI runs the check tier on GitHub-hosted runners
+(the previous behaviour).
 
 ## Sizing
 
