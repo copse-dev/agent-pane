@@ -70,6 +70,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'ciInvestigatorEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'okfMemoriesEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'piiRedactionEnabled', kind: 'checkbox', default: false, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
@@ -604,6 +605,24 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 models handle trivial work and frontier models are reserved for the hard problems.
                 Advisory only — it does not switch the model in use. While off, the tool is not
                 registered.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>PII redaction (on-device)</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="piiRedactionEnabled" />
+                Redact personal data in my messages before they are sent
+              </label>
+              <p class="field-hint">
+                Uses <a href="https://github.com/nationaldesignstudio/rampart" target="_blank" rel="noreferrer">Rampart</a>
+                (National Design Studio, CC BY 4.0) to replace personal data you type — names, emails,
+                phone numbers, SSNs, card numbers, addresses — with stable placeholders like
+                <code>[EMAIL_1]</code> before your message leaves the device for any model provider. The
+                real values stay in memory on this machine and never cross the wire. When the agent
+                genuinely needs a value it calls <code>reveal_pii</code>, which prompts you to approve
+                each reveal. Best-effort and Latin-script only — not a guarantee. The first run downloads
+                a small (~15&nbsp;MB) model; while off, nothing is loaded.
               </p>
             </fieldset>
           </section>

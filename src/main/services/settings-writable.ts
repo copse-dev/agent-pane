@@ -94,6 +94,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   ciInvestigatorEnabled: z.boolean(),
   okfMemoriesEnabled: z.boolean(),
   modelClassifierEnabled: z.boolean(),
+  piiRedactionEnabled: z.boolean(),
   customInstructions: z.string().max(8192),
   onboardingCompleted: z.boolean(),
   // Opt-in consent for scanning the shell environment / start-up files for
