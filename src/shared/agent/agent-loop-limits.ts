@@ -1,6 +1,32 @@
 /** Hard cap on provider.stream invocations per agent run (main or subagent). */
 export const DEFAULT_MAX_LLM_CALLS = 40
 
+/**
+ * Hard cap on output (text + reasoning) tokens produced by a single
+ * provider.stream call. Cloud providers cap output via the request `max_tokens`
+ * field, but OpenAI-compatible servers (e.g. LM Studio, Ollama) often ignore or
+ * lack it, so a local model can stream indefinitely until the run idle/hard
+ * deadline finally fires — minutes of generation with no answer (#489). This is
+ * a coarse per-stream backstop, intentionally generous so it only trips on
+ * genuine runaways, not normal long answers.
+ */
+export const MAX_STREAM_OUTPUT_TOKENS = 32_000
+
+/** Rough chars-per-token used by the in-loop token estimates (matches trim-history). */
+const CHARS_PER_TOKEN = 4
+
+/**
+ * True once a single stream's accumulated output characters exceed
+ * {@link MAX_STREAM_OUTPUT_TOKENS}. Counts text and reasoning together so a model
+ * that "thinks" forever is caught as readily as one that answers forever.
+ */
+export function isStreamOutputRunaway(
+  outputChars: number,
+  maxOutputTokens = MAX_STREAM_OUTPUT_TOKENS,
+): boolean {
+  return outputChars / CHARS_PER_TOKEN >= maxOutputTokens
+}
+
 /** Idle budget for a run; resets on {@link AgentRunDeadline.recordActivity}. */
 export const AGENT_RUN_IDLE_TIMEOUT_MS = 15 * 60 * 1000
 

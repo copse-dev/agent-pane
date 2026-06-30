@@ -859,6 +859,10 @@
   color: var(--text-secondary);
   background: var(--bg-elevated);
 }
+.agent-task-command {
+  color: var(--text-primary);
+  font-weight: 600;
+}
 .browser-tabs-host {
   flex: 1;
   display: flex;
