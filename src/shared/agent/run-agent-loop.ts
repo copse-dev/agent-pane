@@ -40,6 +40,11 @@ import {
   TRUNCATION_CONTINUE_NUDGE,
 } from '../llm/provider-stop-reason.ts'
 import {
+  INCOMPLETE_ANSWER_NOTE,
+  isLikelyIncompleteText,
+  MAX_INCOMPLETE_CONTINUE_RETRIES,
+} from './incomplete-answer.ts'
+import {
   AGENT_RUN_HARD_MAX_MS,
   AGENT_RUN_IDLE_TIMEOUT_MS,
   AgentRunDeadline,
@@ -442,6 +447,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   let loopNudgeSent = false
   let forceTextAttempted = false
   let trimEvents = 0
+  let incompleteContinueRetries = 0
   const recentFingerprints: string[] = []
 
   while (steps < maxSteps) {
@@ -617,6 +623,23 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         messages.push({ role: 'assistant', content: assistantText })
         messages.push({ role: 'user', content: TRUNCATION_CONTINUE_NUDGE })
         continue
+      }
+      // The provider gave no truncation signal, but the content may look cut off
+      // (common with local / OpenAI-compatible servers that end the stream
+      // without a finish reason).
+      if (isLikelyIncompleteText(assistantText)) {
+        // Ask the model to continue, bounded so a model that chronically trails
+        // off cannot loop forever.
+        if (incompleteContinueRetries < MAX_INCOMPLETE_CONTINUE_RETRIES) {
+          incompleteContinueRetries++
+          messages.push({ role: 'assistant', content: assistantText })
+          messages.push({ role: 'user', content: TRUNCATION_CONTINUE_NUDGE })
+          continue
+        }
+        // Out of retries but still truncated — flag it so the user isn't misled
+        // into thinking the half-finished answer is complete.
+        onChunk({ type: 'text', text: INCOMPLETE_ANSWER_NOTE })
+        assistantText += INCOMPLETE_ANSWER_NOTE
       }
       messages.push({ role: 'assistant', content: assistantText })
       finishedWithAnswer = true
