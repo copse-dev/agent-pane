@@ -1,3 +1,4 @@
+import { setPriority } from 'node:os'
 import { getWorkspaceRoot } from './workspace.ts'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { afterSandboxedCommand, spawnInProjectSandbox } from '../project-sandbox/index.ts'
@@ -25,6 +26,14 @@ export interface RunCommandOptions {
   env?: NodeJS.ProcessEnv
   /** Defaults to {@link COMMAND_RUNNER_DEFAULT_TIMEOUT_MS}; pass `0` to disable. */
   timeout_ms?: number
+  /**
+   * Run the child at the lowest CPU scheduling priority (nice 19) so a heavy
+   * background job (e.g. the codesearch indexer, #517) yields to the foreground
+   * UI instead of causing typing lag. Best-effort: it lowers the spawned
+   * process — descendants forked before we set it keep the default priority —
+   * and a failed `setPriority` (EPERM) is ignored.
+   */
+  lowPriority?: boolean
   /** Defaults to {@link COMMAND_OUTPUT_MAX_BYTES}. */
   stdoutMaxBytes?: number
   /** Overrides workspace seatbelt rules for this spawn (e.g. sandbox-fs worker). */
@@ -86,6 +95,14 @@ export function runCommand(
         if (opts.sandboxConfig) spawnOpts.sandboxConfig = opts.sandboxConfig
         if (opts.signal) spawnOpts.signal = opts.signal
         proc = await spawnInProjectSandbox(cmd, spawnArgs, spawnOpts)
+        if (opts.lowPriority && typeof proc.pid === 'number') {
+          // nice 19: keep a CPU-heavy background job from starving the UI (#517).
+          try {
+            setPriority(proc.pid, 19)
+          } catch {
+            // Non-fatal: priority is an optimisation, and setPriority can EPERM.
+          }
+        }
       } catch (err) {
         reject(err instanceof Error ? err : new Error(String(err)))
         return
