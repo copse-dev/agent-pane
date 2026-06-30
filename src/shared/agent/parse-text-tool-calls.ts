@@ -31,6 +31,69 @@ function stripMinimaxDelimiters(text: string): string {
   return text.replace(MINIMAX_DELIMITER_RE, '')
 }
 
+/**
+ * Ranges of `text` that sit inside markdown code — inline spans or fenced blocks.
+ * Any run of backticks opens a code region that the next equal-length run closes;
+ * an unclosed run masks to the end of the text.
+ *
+ * Tool-call XML inside these regions is the model *documenting* tool syntax — e.g.
+ * explaining this very parser with `<invoke name="tool">…</invoke>` — not invoking
+ * a tool. Recovery must ignore it, otherwise the agent strips its own prose and
+ * fires phantom tool calls parsed out of the documentation.
+ */
+function codeMaskRanges(text: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = []
+  const n = text.length
+  let i = 0
+  while (i < n) {
+    if (text[i] !== '`') {
+      i++
+      continue
+    }
+    let run = 0
+    while (i + run < n && text[i + run] === '`') run++
+    const fence = '`'.repeat(run)
+    const close = text.indexOf(fence, i + run)
+    if (close === -1) {
+      ranges.push([i, n])
+      break
+    }
+    ranges.push([i, close + run])
+    i = close + run
+  }
+  return ranges
+}
+
+function isIndexInCode(index: number, ranges: ReadonlyArray<[number, number]>): boolean {
+  return ranges.some(([start, end]) => index >= start && index < end)
+}
+
+/** Replace regex matches that start outside any code region; leave in-code matches intact. */
+function replaceOutsideCode(
+  text: string,
+  re: RegExp,
+  ranges: ReadonlyArray<[number, number]>,
+): string {
+  return text.replace(re, (...args) => {
+    const offset = args[args.length - 2] as number
+    return isIndexInCode(offset, ranges) ? (args[0] as string) : ''
+  })
+}
+
+/** First index where `re` matches outside any code region, or -1. */
+function firstMatchOutsideCode(
+  text: string,
+  re: RegExp,
+  ranges: ReadonlyArray<[number, number]>,
+): number {
+  const global = re.flags.includes('g') ? re : new RegExp(re.source, `${re.flags}g`)
+  for (const match of text.matchAll(global)) {
+    const idx = match.index ?? -1
+    if (idx !== -1 && !isIndexInCode(idx, ranges)) return idx
+  }
+  return -1
+}
+
 const TOOL_NAME_ALIASES: Record<string, string> = {
   runshell: 'run_shell',
   run_shell: 'run_shell',
@@ -145,10 +208,13 @@ function parseInvokeParameters(body: string): Record<string, unknown> {
 function parseInvokeBlocks(
   text: string,
   coerceToolArgs?: CoerceToolArgsFn,
+  codeRanges?: ReadonlyArray<[number, number]>,
 ): { toolCalls: ToolCallChunk[]; sawInvoke: boolean } {
   const toolCalls: ToolCallChunk[] = []
   let sawInvoke = false
   for (const match of text.matchAll(INVOKE_BLOCK_RE)) {
+    // A documented `<invoke>` inside markdown code is not a real call to recover.
+    if (codeRanges && isIndexInCode(match.index ?? 0, codeRanges)) continue
     sawInvoke = true
     const name = normalizeToolName(match[1] ?? '')
     if (!name) continue
@@ -195,17 +261,22 @@ function trailingPartialToolCallIndex(s: string): number {
  */
 export function stripTextToolCallBlocks(text: string): string {
   let out = stripMinimaxDelimiters(text)
-  out = out.replace(TOOL_CALL_BLOCK_RE, '').replace(INVOKE_BLOCK_RE, '')
-  const open = out.search(OPEN_TOOL_CALL_RE)
+  // Strip complete blocks that are real (outside code); leave documented XML in
+  // backticks/fences untouched. Recompute ranges between passes since the first
+  // strip shifts indices.
+  out = replaceOutsideCode(out, TOOL_CALL_BLOCK_RE, codeMaskRanges(out))
+  out = replaceOutsideCode(out, INVOKE_BLOCK_RE, codeMaskRanges(out))
+  const ranges = codeMaskRanges(out)
+  const open = firstMatchOutsideCode(out, OPEN_TOOL_CALL_RE, ranges)
   if (open !== -1) {
     out = out.slice(0, open)
   } else {
-    const invokeOpen = out.search(OPEN_INVOKE_RE)
+    const invokeOpen = firstMatchOutsideCode(out, OPEN_INVOKE_RE, ranges)
     if (invokeOpen !== -1) {
       out = out.slice(0, invokeOpen)
     } else {
       const partial = trailingPartialToolCallIndex(out)
-      if (partial !== -1) out = out.slice(0, partial)
+      if (partial !== -1 && !isIndexInCode(partial, ranges)) out = out.slice(0, partial)
     }
   }
   return out.replace(/\n{3,}/g, '\n\n').trimEnd()
@@ -223,11 +294,14 @@ export function recoverTextToolCalls(
 ): TextToolCallRecovery {
   // MiniMax wraps each token in a delimiter; strip it so the XML beneath is parseable. (#519)
   const normalized = stripMinimaxDelimiters(text)
+  // Tool-call syntax inside markdown code is documentation, not an invocation.
+  const codeRanges = codeMaskRanges(normalized)
   const toolCalls: ToolCallChunk[] = []
   let sawBlock = false
   let anyBlockUnparsed = false
 
   for (const match of normalized.matchAll(TOOL_CALL_BLOCK_RE)) {
+    if (isIndexInCode(match.index ?? 0, codeRanges)) continue
     sawBlock = true
     const inner = match[1]
     if (!inner?.trim()) {
@@ -243,7 +317,11 @@ export function recoverTextToolCalls(
 
   // MiniMax may emit `<invoke>` blocks without a surrounding `<tool_call>` wrapper.
   if (!sawBlock) {
-    const { toolCalls: invokeCalls, sawInvoke } = parseInvokeBlocks(normalized, coerceToolArgs)
+    const { toolCalls: invokeCalls, sawInvoke } = parseInvokeBlocks(
+      normalized,
+      coerceToolArgs,
+      codeRanges,
+    )
     if (sawInvoke) {
       sawBlock = true
       if (invokeCalls.length === 0) anyBlockUnparsed = true
