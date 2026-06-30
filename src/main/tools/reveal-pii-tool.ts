@@ -19,9 +19,7 @@ export const revealPiiTool = defineTool({
     'Only call this when you truly need the underlying value to complete the task (for example, to write it verbatim into a local file or command) — placeholders are usually enough to reason with. ' +
     'IMPORTANT: every call prompts the user to approve revealing that specific placeholder, and they may decline. If they decline, keep using the placeholder. Never guess, reconstruct, or hardcode the underlying value yourself.',
   parameters: z.object({
-    placeholder: z
-      .string()
-      .describe('The placeholder token to reveal, e.g. "[EMAIL_1]".'),
+    placeholder: z.string().describe('The placeholder token to reveal, e.g. "[EMAIL_1]".'),
   }),
   async execute({ placeholder }) {
     const threadId = getActiveRunThread()
