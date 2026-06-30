@@ -660,6 +660,66 @@ export function seedPortraitRightPanelFixture(
   writeSettings({ autoPortraitRightPanel, windowBounds })
 }
 
+/**
+ * Thread with a completed post-turn review for the inline-review-card e2e (#480).
+ * The review must render INSIDE the scrolling `.messages-list` as its last child
+ * (not pinned in a sibling `.conversation-review-host`), with the follow-up user
+ * message staying above it.
+ */
+export function seedReviewInlineFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-review-inline-project'
+  const threadId = 'e2e-review-inline-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      activeThreadId: threadId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Inline review test',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-user-review',
+              role: 'user',
+              content: 'Add a null check to the JSON parser.',
+              toolCalls: [],
+              createdAt: now,
+            },
+            {
+              id: 'msg-assistant-review',
+              role: 'assistant',
+              content: 'Added the null guard and a regression test for empty input.',
+              toolCalls: [],
+              createdAt: now + 1,
+            },
+            {
+              id: 'msg-user-followup',
+              role: 'user',
+              content: 'Thanks — that looks right.',
+              toolCalls: [],
+              createdAt: now + 2,
+            },
+          ],
+          review: {
+            status: 'done',
+            summary:
+              'Reviewed the change to `src/parser.ts`. The null guard is correct and the new test covers the empty-input case. No issues found.',
+          },
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: now,
+          updatedAt: now + 2,
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
 export function seedSubagentFixture(workspaceRoot: string): void {
   const projectId = 'e2e-subagent-project'
   const threadId = 'e2e-subagent-thread'
