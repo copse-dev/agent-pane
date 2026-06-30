@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { at } from '@shared/array-utils.ts'
 import type { Thread } from '@shared/types'
 import { threadHasExportableContent, threadToJsonl } from './export-thread.ts'
 
@@ -71,16 +72,19 @@ describe('export thread', () => {
     t.queuePaused = true
     t.draftPrompt = 'unsent'
 
-    const header = JSON.parse(threadToJsonl(t).split('\n')[0]) as Record<string, unknown>
-    assert.equal(header.exportVersion, 2)
-    assert.equal(header.status, 'error')
-    assert.deepEqual(header.todos, t.todos)
-    assert.deepEqual(header.review, t.review)
-    assert.equal(header.workingBrief, 'fix the bug')
-    assert.equal(header.gitBranch, 'feature/x')
-    assert.deepEqual(header.contextSnapshot, t.contextSnapshot)
-    assert.equal(header.queuePaused, true)
-    assert.equal(header.draftPrompt, 'unsent')
+    const header = JSON.parse(at(threadToJsonl(t).trimEnd().split('\n'), 0)) as Record<
+      string,
+      unknown
+    >
+    assert.equal(header['exportVersion'], 2)
+    assert.equal(header['status'], 'error')
+    assert.deepEqual(header['todos'], t.todos)
+    assert.deepEqual(header['review'], t.review)
+    assert.equal(header['workingBrief'], 'fix the bug')
+    assert.equal(header['gitBranch'], 'feature/x')
+    assert.deepEqual(header['contextSnapshot'], t.contextSnapshot)
+    assert.equal(header['queuePaused'], true)
+    assert.equal(header['draftPrompt'], 'unsent')
   })
 
   it('infers distinct provider slugs from usage.byModel keys', () => {
@@ -95,7 +99,9 @@ describe('export thread', () => {
       },
     }
 
-    const header = JSON.parse(threadToJsonl(t).split('\n')[0]) as { providers: string[] }
+    const header = JSON.parse(at(threadToJsonl(t).trimEnd().split('\n'), 0)) as {
+      providers: string[]
+    }
     assert.deepEqual([...header.providers].sort(), ['anthropic', 'lmstudio', 'openai'])
   })
 
@@ -131,7 +137,7 @@ describe('export thread', () => {
       ]),
     )
 
-    const line = JSON.parse(jsonl.trimEnd().split('\n')[1]) as {
+    const line = JSON.parse(at(jsonl.trimEnd().split('\n'), 1)) as {
       commandSummary: string
       toolCalls: Array<{
         editStats: { additions: number; deletions: number }
@@ -139,8 +145,9 @@ describe('export thread', () => {
       }>
     }
     assert.equal(line.commandSummary, 'ran 3 shell commands')
-    assert.deepEqual(line.toolCalls[0].editStats, { additions: 5, deletions: 2 })
-    assert.deepEqual(line.toolCalls[0].subagent.usage, { inputTokens: 10, outputTokens: 4 })
+    const toolCall = at(line.toolCalls, 0)
+    assert.deepEqual(toolCall.editStats, { additions: 5, deletions: 2 })
+    assert.deepEqual(toolCall.subagent.usage, { inputTokens: 10, outputTokens: 4 })
   })
 
   it('exports assistant reasoning when present', () => {
@@ -157,7 +164,7 @@ describe('export thread', () => {
       ]),
     )
 
-    const line = JSON.parse(jsonl.trimEnd().split('\n')[1]) as { reasoning?: string }
+    const line = JSON.parse(at(jsonl.trimEnd().split('\n'), 1)) as { reasoning?: string }
     assert.equal(line.reasoning, 'thinking step by step')
   })
 })
