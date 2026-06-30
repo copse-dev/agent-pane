@@ -186,6 +186,26 @@
 .setup-detection-status.err {
   color: var(--error);
 }
+.setup-context-advisory {
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+  margin-top: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-md);
+  border: 1px solid var(--warning, #c9a227);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--warning, #c9a227) 10%, transparent);
+}
+.setup-context-advisory[hidden] {
+  display: none;
+}
+.setup-context-advisory strong {
+  display: block;
+  margin-bottom: var(--spacing-xs);
+}
+.setup-context-advisory p {
+  margin: var(--spacing-xs) 0 0;
+}
 .preferred-models-list {
   display: flex;
   flex-direction: column;
