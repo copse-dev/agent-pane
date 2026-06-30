@@ -9,6 +9,8 @@ import {
   parseVeraJson,
   resolveSemanticSearchRoot,
   setSemanticBackendForTest,
+  setSemanticIndexUpdateRunnerForTest,
+  updateSemanticIndex,
 } from './semantic-index.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 
@@ -116,6 +118,53 @@ describe('semantic-index parsing', () => {
     assert.equal(env['TOKIO_WORKER_THREADS'], threads)
     assert.equal(env['OMP_NUM_THREADS'], threads)
     assert.equal(env['CODESEARCH_THREADS'], threads)
+  })
+
+  it('coalesces overlapping index updates into one in-flight run plus one trailing run (#517)', async () => {
+    setSemanticBackendForTest('codesearch')
+    let active = 0
+    let maxConcurrent = 0
+    let runs = 0
+    let release: (() => void) | null = null
+    setSemanticIndexUpdateRunnerForTest(async () => {
+      runs += 1
+      active += 1
+      maxConcurrent = Math.max(maxConcurrent, active)
+      // Hold the first run open until every overlapping request has queued.
+      await new Promise<void>((res) => {
+        release = res
+      })
+      active -= 1
+    })
+    try {
+      const root = '/tmp/repo'
+      // Five concurrent requests for the same root while a run is held open.
+      const calls = [
+        updateSemanticIndex(root),
+        updateSemanticIndex(root),
+        updateSemanticIndex(root),
+        updateSemanticIndex(root),
+        updateSemanticIndex(root),
+      ]
+      // Let the first run start and the rest register as pending.
+      await new Promise((res) => setTimeout(res, 0))
+      // Drain: releasing each held run lets the loop pick up the trailing pass.
+      while (release) {
+        const fn = release
+        release = null
+        fn()
+        await new Promise((res) => setTimeout(res, 0))
+      }
+      await Promise.all(calls)
+
+      // Never more than one codesearch process at a time...
+      assert.equal(maxConcurrent, 1)
+      // ...and the burst collapses to one active + one trailing run, not five.
+      assert.equal(runs, 2)
+    } finally {
+      setSemanticIndexUpdateRunnerForTest(null)
+      setSemanticBackendForTest(null)
+    }
   })
 
   it('formats semantic hits with backend note', () => {
