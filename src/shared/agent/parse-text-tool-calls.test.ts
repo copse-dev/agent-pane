@@ -221,4 +221,60 @@ src/renderer/views/projects-pane.ts
     assert.equal(stripTextToolCallBlocks('compare a < b and c > d'), 'compare a < b and c > d')
     assert.equal(stripTextToolCallBlocks('use a <div> wrapper'), 'use a <div> wrapper')
   })
+
+  // Regression: when the model *explains* the tool-call dialects (e.g. reviewing
+  // this parser), it quotes `<tool_call>` / `<invoke>` inside backticks. Those are
+  // prose, not openers — they must not freeze the rest of the message, nor be
+  // extracted as phantom calls.
+  it('stripTextToolCallBlocks keeps a quoted `<tool_call>` example and the prose after it', () => {
+    const stripped = stripTextToolCallBlocks(
+      'Cursor/Qwen-style: `<tool_call>` blocks. More analysis follows here.',
+    )
+    assert.ok(stripped.includes('More analysis follows here.'))
+    assert.ok(stripped.includes('`<tool_call>`'))
+  })
+
+  it('stripTextToolCallBlocks keeps a quoted `<invoke>` example and the prose after it', () => {
+    const stripped = stripTextToolCallBlocks(
+      'MiniMax: `<invoke name="tool">…</invoke>` blocks (often wrapped in `<tool_call>`). Done.',
+    )
+    assert.ok(stripped.includes('Done.'))
+    assert.ok(stripped.includes('<invoke name="tool">'))
+  })
+
+  it('stripTextToolCallBlocks keeps a fenced code-block example intact', () => {
+    const stripped = stripTextToolCallBlocks(
+      'Example:\n```\n<tool_call>\n<function=run_shell>\n</tool_call>\n```\nThat is the format.',
+    )
+    assert.ok(stripped.includes('That is the format.'))
+    assert.ok(stripped.includes('<tool_call>'))
+  })
+
+  it('stripTextToolCallBlocks keeps prose ending in a lone backtick (mid-stream)', () => {
+    // The model paused right after opening an inline code span — the dangling
+    // backtick is literal text, not a code span, and must not be discarded.
+    const stripped = stripTextToolCallBlocks('Cursor/Qwen-style: `')
+    assert.ok(stripped.includes('Cursor/Qwen-style:'))
+  })
+
+  it('recoverTextToolCalls ignores a `<invoke>` quoted inside a code span', () => {
+    const { toolCalls } = recoverTextToolCalls(
+      'The parser handles `<invoke name="tool">…</invoke>` blocks.',
+    )
+    assert.equal(toolCalls.length, 0)
+  })
+
+  it('recoverTextToolCalls still recovers a real call after a quoted example', () => {
+    const text = `Format is \`<tool_call>\`.
+
+<tool_call>
+<function=run_shell>
+<parameter=command>ls</parameter>
+</function>
+</tool_call>`
+    const { toolCalls, cleanedText } = recoverTextToolCalls(text)
+    assert.equal(toolCalls.length, 1)
+    assert.equal(at(toolCalls, 0).name, 'run_shell')
+    assert.ok(cleanedText.includes('`<tool_call>`'))
+  })
 })

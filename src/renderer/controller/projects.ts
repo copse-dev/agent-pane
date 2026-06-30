@@ -4,6 +4,13 @@ import type { Thread } from '@shared/types'
 import { createThread, normalizeBlankThreads, switchThread } from '@shared/store/thread-helpers.ts'
 import { loadThreads, saveThreads, saveProjects } from './persistence.ts'
 import { resumePendingQueues } from './message-queue.ts'
+import {
+  captureProjectViewState,
+  forgetProjectViewState,
+  recordProjectViewState,
+  resolveProjectViewState,
+  type ProjectViewStateRegistry,
+} from './project-view-state.ts'
 
 const uuid = (): string => globalThis.crypto.randomUUID()
 const basename = (p: string): string => p.split('/').pop() ?? p
@@ -44,6 +51,8 @@ export function paginateSidebarThreads(
 
 /** In-memory thread lists for sidebar display before a workspace switch finishes. */
 const threadCache = new Map<string, Thread[]>()
+/** Per-project right-panel view state, so switching projects restores panel visibility. */
+const projectViewState: ProjectViewStateRegistry = new Map()
 let switchGeneration = 0
 let pendingThreadAfterSwitch: string | null = null
 
@@ -80,6 +89,7 @@ async function trySetWorkspace(api: ApiClient, path: string): Promise<boolean> {
 }
 
 async function dropMissingProject(store: AppStore, api: ApiClient, id: string): Promise<void> {
+  forgetProjectViewState(projectViewState, id)
   const projects = store.getState().projects.filter((p) => p.id !== id)
   const nextActiveId = projects[0]?.id ?? null
   await saveProjects(api, projects, nextActiveId)
@@ -147,6 +157,7 @@ async function finishActivate(
       ? pendingThreadId
       : (loaded[0]?.id ?? null)
 
+  const view = resolveProjectViewState(projectViewState, id)
   store.setState({
     activeProjectId: id,
     expandedProjectId: id,
@@ -154,8 +165,9 @@ async function finishActivate(
     threads: loaded,
     activeThreadId,
     openFile: null,
-    panelTab: 'file',
-    filesPaneOpen: false,
+    panelTab: view.panelTab,
+    filesPaneOpen: view.filesPaneOpen,
+    rightPanelMode: view.rightPanelMode,
   })
   if (loaded.length === 0) createThread(store)
   else normalizeBlankThreads(store)
@@ -181,7 +193,11 @@ function activate(store: AppStore, api: ApiClient, id: string, path: string): vo
   const gen = ++switchGeneration
   const outgoingId = activeProjectId
   const outgoingThreads = threads
-  if (outgoingId) cacheThreads(outgoingId, outgoingThreads)
+  if (outgoingId) {
+    cacheThreads(outgoingId, outgoingThreads)
+    // Snapshot the outgoing project's panel visibility so switching back restores it.
+    recordProjectViewState(projectViewState, outgoingId, captureProjectViewState(store.getState()))
+  }
 
   void finishActivate(store, api, id, path, gen, outgoingId, outgoingThreads)
 }
@@ -282,6 +298,7 @@ export function resetProjectSwitchStateForTest(): void {
   switchGeneration = 0
   pendingThreadAfterSwitch = null
   threadCache.clear()
+  projectViewState.clear()
 }
 
 /** Test hook — seed sidebar thread cache for a project. */

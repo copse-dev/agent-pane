@@ -56,6 +56,16 @@ describe('agent tasks in terminal tab', () => {
       timeoutMsg: 'expected the selected agent task panel to capture the command output',
     })
 
+    // The panel echoes the initial command at the top, the way a real terminal
+    // shows the typed line before its output (issue #503).
+    await browser.waitUntil(
+      async () => (await panel.getText()).startsWith('$ echo agent-task-hello'),
+      {
+        timeout: 10_000,
+        timeoutMsg: 'expected the agent task panel to echo the initial command at the top',
+      },
+    )
+
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'agent-tasks-terminal.png'))
   })
 })

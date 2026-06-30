@@ -2,6 +2,8 @@ import { el } from '../dom/helpers.ts'
 import type { ThreadReview } from '@shared/types'
 import { renderMarkdown } from '../markdown/renderer.ts'
 import { sanitizeRenderedMarkdown } from '../markdown/sanitize.ts'
+import { annotateFileReferences } from '../markdown/file-links.ts'
+import type { ApiClient } from '../../preload/api.d.ts'
 
 function statusLabel(status: ThreadReview['status']): string {
   switch (status) {
@@ -25,7 +27,7 @@ function statusLabel(status: ThreadReview['status']): string {
 // exists, render this card as a collapsed <details> when there are no issues.
 
 /** Compact card summarising the post-turn review verdict for a thread. */
-export function createReviewCardEl(review: ThreadReview): HTMLElement {
+export function createReviewCardEl(review: ThreadReview, api: ApiClient): HTMLElement {
   const panel = el('div', {
     class: `review-panel review-panel-${review.status}`,
     'data-status': review.status,
@@ -42,6 +44,11 @@ export function createReviewCardEl(review: ThreadReview): HTMLElement {
 
   const body = el('div', { class: 'review-panel-body message-text' })
   body.innerHTML = sanitizeRenderedMarkdown(renderMarkdown(review.summary || '(no review output)'))
+  // Linkify printed file paths in the review subagent's output so they open in
+  // the explorer, matching main-chat assistant text. Click handling is already
+  // delegated from the conversation root (bindFileReferenceClicks) that this
+  // card is mounted under.
+  void annotateFileReferences(body, api)
   panel.append(body)
   return panel
 }

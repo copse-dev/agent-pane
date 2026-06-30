@@ -145,6 +145,42 @@ describe('runAgentLoop', () => {
     assert.equal(chunks.at(-1)?.type, 'done')
   })
 
+  it('cuts off a runaway single generation and recovers with a short answer (#489)', async () => {
+    // A local model that ignores output caps streams an unbounded answer. The
+    // first turn floods text well past the per-stream output cap (>32k tokens ≈
+    // >128k chars) and never emits `done`; the loop must abort that turn instead
+    // of consuming forever, then accept the next turn's concise answer.
+    const flood: StreamChunk[] = []
+    for (let i = 0; i < 200; i++) flood.push({ type: 'text', text: 'x'.repeat(1000) })
+    let streamCalls = 0
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<StreamChunk> {
+        streamCalls++
+        if (streamCalls === 1) {
+          for (const c of flood) yield c
+          return // no `done`: the guard, not the provider, ends this turn
+        }
+        yield { type: 'text', text: 'Short final answer.' }
+        yield { type: 'done' }
+      },
+    }
+    const chunks: StreamChunk[] = []
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [],
+      maxSteps: 5,
+      onChunk: (c) => chunks.push(c),
+      executeTool: async (_name, _args, _signal, _toolCallId) => 'ok',
+    })
+    assert.ok(streamCalls >= 2, 'loop must continue past the runaway turn')
+    assert.ok(
+      chunks.some((c) => c.type === 'text' && c.text.includes('Short final answer.')),
+      'recovers with the next turn answer',
+    )
+    assert.equal(chunks.at(-1)?.type, 'done')
+  })
+
   it('skips duplicate explore tool execution', async () => {
     let executeCount = 0
     await runAgentLoop({
