@@ -9,12 +9,28 @@ import {
   defaultMaxLlmCallsForSteps,
   DEFAULT_MAX_LLM_CALLS,
   isAgentRunTimeoutAbort,
+  isStreamOutputRunaway,
+  MAX_STREAM_OUTPUT_TOKENS,
 } from './agent-loop-limits.ts'
 
 describe('agent-loop-limits', () => {
   it('caps max LLM calls relative to maxSteps', () => {
     assert.equal(defaultMaxLlmCallsForSteps(10), 13)
     assert.equal(defaultMaxLlmCallsForSteps(100), DEFAULT_MAX_LLM_CALLS)
+  })
+
+  it('flags a single stream as runaway only past the output-token cap', () => {
+    // 4 chars/token: the cap in characters.
+    const capChars = MAX_STREAM_OUTPUT_TOKENS * 4
+    assert.equal(isStreamOutputRunaway(0), false)
+    assert.equal(isStreamOutputRunaway(capChars - 4), false)
+    assert.equal(isStreamOutputRunaway(capChars), true)
+    assert.equal(isStreamOutputRunaway(capChars * 5), true)
+  })
+
+  it('honours a custom output-token cap', () => {
+    assert.equal(isStreamOutputRunaway(39, 10), false)
+    assert.equal(isStreamOutputRunaway(40, 10), true)
   })
 
   it('detects elapsed run deadline', () => {
