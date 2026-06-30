@@ -257,4 +257,38 @@ src/renderer/views/projects-pane.ts
     assert.equal(toolCalls.length, 1)
     assert.equal(at(toolCalls, 0).name, 'read_file')
   })
+
+  it('recovers a real call while ignoring a documented one in the same message', () => {
+    // Prose documents `<invoke read_file>` in backticks, then actually calls run_shell.
+    const text =
+      'First, the read syntax is `<invoke name="read_file"><path>x</path></invoke>`.\n' +
+      'Now running it:\n<invoke name="run_shell"><command>ls</command></invoke>'
+    const { toolCalls } = recoverTextToolCalls(text)
+    assert.equal(toolCalls.length, 1)
+    assert.equal(at(toolCalls, 0).name, 'run_shell')
+    assert.equal((at(toolCalls, 0).args as { command: string } | undefined)?.command, 'ls')
+  })
+
+  it('ignores tool-call syntax inside a double-backtick inline span', () => {
+    const text = 'Escape a literal backtick like ``<invoke name="x"><a>1</a></invoke>`` in docs.'
+    assert.equal(recoverTextToolCalls(text).toolCalls.length, 0)
+    assert.equal(stripTextToolCallBlocks(text), text)
+  })
+
+  it('does not fire a phantom call when an inline-code example is never closed (truncated)', () => {
+    // The exact failure shape: an answer cut off mid-documentation, leaving an
+    // unclosed inline-code backtick. Nothing after it should be executed.
+    const text = 'The MiniMax dialect looks like `<invoke name="run_shell"><command>rm -rf /'
+    const { toolCalls, cleanedText } = recoverTextToolCalls(text)
+    assert.equal(toolCalls.length, 0)
+    assert.equal(cleanedText, text)
+  })
+
+  it('keeps a real tool call working when unrelated inline code precedes it', () => {
+    const text =
+      'Run `eslint` first.\n<tool_call><function=run_shell><parameter=command>npx eslint .</parameter></function></tool_call>'
+    const { toolCalls } = recoverTextToolCalls(text)
+    assert.equal(toolCalls.length, 1)
+    assert.equal(at(toolCalls, 0).name, 'run_shell')
+  })
 })
