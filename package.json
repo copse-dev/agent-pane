@@ -124,6 +124,10 @@
     "vscode-material-icons": "^0.1.1",
     "zod": "^4.4.3"
   },
+  "optionalDependencies": {
+    "@huggingface/transformers": "^3.0.0",
+    "@nationaldesignstudio/rampart": "^0.1.2"
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@resvg/resvg-js": "^2.6.2",

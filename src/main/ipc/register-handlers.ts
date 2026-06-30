@@ -59,7 +59,8 @@ import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills-registry.ts'
 import { listCursorPlugins } from '../services/cursor-plugins.ts'
 import { listCursorHooks } from '../services/cursor-hooks.ts'
-import { registerSkillTools, syncOkfMemoryTools } from '../services/registry-bootstrap.ts'
+import { registerSkillTools, syncOkfMemoryTools, syncPiiTools } from '../services/registry-bootstrap.ts'
+import { PII_REDACTION_ENABLED_SETTING } from '../services/pii-redactor.ts'
 import { OKF_MEMORIES_ENABLED_SETTING } from '../services/okf-memory-store.ts'
 import {
   checkoutGitBranch,
@@ -234,6 +235,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // live registry so it takes effect without an app restart.
     if (k === OKF_MEMORIES_ENABLED_SETTING) {
       syncOkfMemoryTools(registry)
+    }
+    // Same for the experimental PII redaction reveal tool.
+    if (k === PII_REDACTION_ENABLED_SETTING) {
+      syncPiiTools(registry)
     }
   })
   ipcMain.handle('settings:setSecurity', async (event, raw: unknown) => {

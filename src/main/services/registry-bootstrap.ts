@@ -27,6 +27,8 @@ import { updateTodosTool } from '../tools/todo-tool.ts'
 import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
 import { browserTools } from '../tools/browser-tools.ts'
 import { rememberTool, recallTool } from '../tools/memory-tools.ts'
+import { revealPiiTool } from '../tools/reveal-pii-tool.ts'
+import { PII_REDACTION_ENABLED_SETTING } from './pii-redactor.ts'
 import { listSkills } from './skills-registry.ts'
 import { getSetting } from './settings.ts'
 import {
@@ -74,6 +76,11 @@ export function createRegistry(): ToolRegistry {
   // Experimental OKF memories (off by default). Adds remember/recall tools that
   // persist project knowledge as Open Knowledge Format notes under ~/.copse.
   syncOkfMemoryTools(registry)
+  // Experimental PII redaction (off by default). Adds the reveal_pii tool that
+  // turns a redacted placeholder back into its real value, gated by user
+  // approval. Only registered when redaction is on — otherwise no placeholders
+  // exist to reveal.
+  syncPiiTools(registry)
   registry.register(webSearchTool)
   registry.register(fetchUrlTool)
   registry.register(updateTodosTool)
@@ -99,6 +106,21 @@ export function syncOkfMemoryTools(registry: ToolRegistry): void {
   } else {
     registry.unregister('remember')
     registry.unregister('recall')
+  }
+}
+
+/**
+ * Register or unregister the experimental PII reveal tool to match the current
+ * `piiRedactionEnabled` setting. Called at startup (via createRegistry) and again
+ * whenever the setting is toggled, so the tool appears or disappears live — and
+ * stays in sync with the redaction system-prompt block, which is rebuilt every
+ * turn from the same setting.
+ */
+export function syncPiiTools(registry: ToolRegistry): void {
+  if (getSetting<boolean>(PII_REDACTION_ENABLED_SETTING, false)) {
+    if (!registry.has('reveal_pii')) registry.register(revealPiiTool)
+  } else {
+    registry.unregister('reveal_pii')
   }
 }
 
