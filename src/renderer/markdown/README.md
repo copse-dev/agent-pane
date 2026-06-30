@@ -1,8 +1,10 @@
 # Markdown rendering
 
 Hand-rolled renderer in `renderer.ts` used by conversation messages, subagent timelines, file
-preview, and streaming (`streaming.ts`). Not a markdown library — keep it that way unless
-requirements clearly outgrow it.
+preview, and streaming (`streaming.ts`). Block/inlined tokenizers in `block-tokenizer.ts`,
+`inline-emphasis.ts`, and `streaming-split.ts` drive streaming hold decisions (#475); the
+at-rest renderer still uses regex passes for now. Not a markdown library — keep it that way
+unless requirements clearly outgrow it.
 
 ## Design invariants
 
@@ -23,8 +25,8 @@ When extending the renderer or its CSS, preserve these rules:
 - **Inline formatting order.** Fenced code → inline code → bold → italic. Italic (`_` and `*`) runs
   only outside `<code>` spans and must not match across newlines (or `* list` lines get eaten).
   Consequence: emphasis whose opener and closer are split across a soft line break is **not**
-  rendered (it stays literal), unlike spec CommonMark which resolves emphasis per block. This is a
-  known limitation — see the "Emphasis across soft line breaks" follow-up in
+  rendered at rest if the segment has no internal newline (regex path), but **is** resolved
+  while streaming via the delimiter-stack AST in `inline-emphasis.ts`. See #475 and
   [`docs/plans/markdown-renderer-hardening.md`](../../../docs/plans/markdown-renderer-hardening.md).
 - **Agent-output shapes.** Support `-`, `*`, and `+` list markers. Map `#`/`##` to `<h4>`, `###` to
   `<h3>` — h1/h2 are intentionally too large for the narrow pane.
