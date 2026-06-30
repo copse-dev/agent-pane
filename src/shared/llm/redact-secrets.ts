@@ -37,6 +37,21 @@ interface SecretPattern {
 
 const placeholder = (label: string): string => `[REDACTED_${label}]`
 
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function redactLiteralSecrets(text: string, literalSecrets: readonly string[]): string {
+  const literals = [...new Set(literalSecrets.filter((s) => s.trim().length >= 8))].sort(
+    (a, b) => b.length - a.length,
+  )
+  let out = text
+  for (const secret of literals) {
+    out = out.replaceAll(new RegExp(escapeRegExp(secret), 'g'), placeholder('SECRET'))
+  }
+  return out
+}
+
 // Order matters only for readability; the patterns are mutually distinctive so
 // they do not overlap on the same span in practice.
 const SECRET_PATTERNS: readonly SecretPattern[] = [
@@ -106,7 +121,7 @@ const SECRET_PATTERNS: readonly SecretPattern[] = [
  * Returns the input unchanged when it contains no secrets (and short-circuits on
  * empty input). Pure and idempotent.
  */
-export function redactSecrets(text: string): string {
+export function redactSecrets(text: string, literalSecrets: readonly string[] = []): string {
   if (!text) return text
   let out = text
   for (const { label, regex, replace } of SECRET_PATTERNS) {
@@ -120,7 +135,7 @@ export function redactSecrets(text: string): string {
       return placeholder(label)
     })
   }
-  return out
+  return redactLiteralSecrets(out, literalSecrets)
 }
 
 /**
@@ -130,30 +145,42 @@ export function redactSecrets(text: string): string {
  * new array; inputs are not mutated. System prompts are app-authored, so they
  * are passed through untouched.
  */
-export function redactMessages(messages: LLMMessage[]): LLMMessage[] {
+export function redactMessages(
+  messages: LLMMessage[],
+  literalSecrets: readonly string[] = [],
+): LLMMessage[] {
   return messages.map((m): LLMMessage => {
     if (m.role === 'system') return m
     if (m.role === 'user') {
-      if (typeof m.content === 'string') return { role: 'user', content: redactSecrets(m.content) }
+      if (typeof m.content === 'string')
+        return { role: 'user', content: redactSecrets(m.content, literalSecrets) }
       return {
         role: 'user',
         content: m.content.map((part) =>
-          part.type === 'text' ? { type: 'text', text: redactSecrets(part.text) } : part,
+          part.type === 'text'
+            ? { type: 'text', text: redactSecrets(part.text, literalSecrets) }
+            : part,
         ),
       }
     }
     if (m.role === 'assistant') {
       if (typeof m.content === 'string')
-        return { role: 'assistant', content: redactSecrets(m.content) }
+        return { role: 'assistant', content: redactSecrets(m.content, literalSecrets) }
       return {
         role: 'assistant',
-        content: m.content.map((tc) => ({ ...tc, args: redactToolArgs(tc.args) })),
+        content: m.content.map((tc) => ({
+          ...tc,
+          args: redactToolArgs(tc.args, literalSecrets),
+        })),
       }
     }
     // role === 'tool'
     return {
       role: 'tool',
-      toolResults: m.toolResults.map((tr) => ({ ...tr, result: redactSecrets(tr.result) })),
+      toolResults: m.toolResults.map((tr) => ({
+        ...tr,
+        result: redactSecrets(tr.result, literalSecrets),
+      })),
     }
   })
 }
@@ -164,12 +191,12 @@ export function redactMessages(messages: LLMMessage[]): LLMMessage[] {
  * Serialising to JSON would also catch secrets, but rebuilding the structure
  * keeps the shape the provider expects.
  */
-function redactToolArgs(args: unknown): unknown {
-  if (typeof args === 'string') return redactSecrets(args)
-  if (Array.isArray(args)) return args.map(redactToolArgs)
+function redactToolArgs(args: unknown, literalSecrets: readonly string[]): unknown {
+  if (typeof args === 'string') return redactSecrets(args, literalSecrets)
+  if (Array.isArray(args)) return args.map((value) => redactToolArgs(value, literalSecrets))
   if (args && typeof args === 'object') {
     const out: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(args)) out[k] = redactToolArgs(v)
+    for (const [k, v] of Object.entries(args)) out[k] = redactToolArgs(v, literalSecrets)
     return out
   }
   return args

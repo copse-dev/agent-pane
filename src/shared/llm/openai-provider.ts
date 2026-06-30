@@ -2,7 +2,6 @@ import OpenAI from 'openai'
 import type { LLMProvider, LLMMessage, LLMTool, StreamChunk } from '@shared/types'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
-import { redactMessages } from './redact-secrets.ts'
 
 type ToolCallBuilder = { id: string; name: string; argsJson: string }
 
@@ -40,19 +39,11 @@ export class OpenAIProvider implements LLMProvider {
       apiKey?: string
       includeUsage?: boolean
       extraBody?: Record<string, unknown>
-      redact?: boolean
     } = {},
   ) {
     this.model = model
     this.includeUsage = opts.includeUsage ?? !opts.baseURL
     this.extraBody = opts.extraBody
-    // Redact secrets from outbound content for REMOTE providers only (#518). A
-    // local/on-device server keeps the data on the machine, so redaction would
-    // only degrade its context for no privacy gain. Default: redact unless this
-    // is a custom-baseURL server — the only baseURL-less case is real OpenAI.
-    // Callers (create-provider factories) pass `redact` explicitly so the
-    // remote/local intent is decided where it is actually known.
-    this.redact = opts.redact ?? !opts.baseURL
     this.client = new OpenAI({
       apiKey: opts.apiKey ?? process.env['OPENAI_API_KEY'] ?? 'not-needed',
       ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
@@ -61,7 +52,6 @@ export class OpenAIProvider implements LLMProvider {
 
   private readonly includeUsage: boolean
   private readonly extraBody: Record<string, unknown> | undefined
-  private readonly redact: boolean
 
   stream(
     messages: LLMMessage[],
@@ -86,7 +76,7 @@ export class OpenAIProvider implements LLMProvider {
           {
             model,
             stream: true,
-            messages: toOpenAIMessages(self.redact ? redactMessages(messages) : messages),
+            messages: toOpenAIMessages(messages),
             ...(self.includeUsage ? { stream_options: { include_usage: true } } : {}),
             ...(mappedTools ? { tools: mappedTools } : {}),
             ...(self.extraBody ?? {}),

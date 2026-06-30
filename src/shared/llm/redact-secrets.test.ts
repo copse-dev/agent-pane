@@ -102,6 +102,11 @@ describe('redactSecrets — secret patterns (#518)', () => {
     const once = redactSecrets(`ghp_${'a'.repeat(36)}`)
     assert.equal(redactSecrets(once), once)
   })
+
+  it('redacts configured literal secrets that may not match regex patterns', () => {
+    const literal = 'my-configured-key-123456'
+    assert.equal(redactSecrets(`key=${literal}`, [literal]), 'key=[REDACTED_SECRET]')
+  })
 })
 
 describe('redactSecrets — false-positive safety', () => {

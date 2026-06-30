@@ -64,15 +64,7 @@ export function createLocalOpenAIProvider(
   // LM Studio and other OpenAI-compatible local servers need stream_options.include_usage
   // or they never report prompt/completion tokens — without that, usage chunks (and the
   // Settings usage ledger) stay empty for local models such as qwen.
-  // A local/on-device server keeps data on the machine, so secret redaction is
-  // intentionally OFF here (#518) — it would only strip context with no privacy
-  // benefit.
-  return new OpenAIProvider(model, {
-    baseURL,
-    apiKey: apiKey || 'lm-studio',
-    includeUsage: true,
-    redact: false,
-  })
+  return new OpenAIProvider(model, { baseURL, apiKey: apiKey || 'lm-studio', includeUsage: true })
 }
 
 export const createLMStudioProvider = createLocalOpenAIProvider
@@ -92,8 +84,6 @@ export function createOpenRouterProvider(model: string, apiKey: string): LLMProv
     apiKey,
     includeUsage: true,
     extraBody: { provider: { require_parameters: true } },
-    // OpenRouter is a remote third party — scrub secrets from outbound content (#518).
-    redact: true,
   })
 }
 
@@ -114,8 +104,6 @@ export function createExtraCloudProvider(
     // (many reject a blank Authorization header), mirroring createLocalOpenAIProvider.
     apiKey: provider.local ? apiKey || 'lm-studio' : apiKey,
     includeUsage: provider.includeUsage ?? !provider.local,
-    // Built-in local presets and loopback customs stay on-device; cloud extras scrub (#518).
-    redact: !provider.local,
     ...(provider.extraBody ? { extraBody: provider.extraBody } : {}),
   })
 }
