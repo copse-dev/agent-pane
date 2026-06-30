@@ -39,6 +39,8 @@ import {
 } from './browser/browser-origin-policy.ts'
 import { CI_INVESTIGATOR_ENABLED_SETTING } from './ci-investigator-service.ts'
 import { OKF_MEMORIES_ENABLED_SETTING } from './okf-memory-store.ts'
+import { MODEL_CLASSIFIER_ENABLED_SETTING } from './model-classifier.ts'
+import { suggestModelTool } from '../tools/model-classifier-tool.ts'
 import { ROADMAP_PLANS_ENABLED_SETTING } from './roadmap-plans-store.ts'
 import { roadmapPlanTool } from '../tools/roadmap-tools.ts'
 
@@ -90,6 +92,12 @@ export function createRegistry(): ToolRegistry {
   // Experimental OKF memories (off by default). Adds remember/recall tools that
   // persist project knowledge as Open Knowledge Format notes under ~/.copse.
   syncOkfMemoryTools(registry)
+  // Experimental model classifier (off by default, issue #557). Adds a
+  // suggest_model tool that recommends a capability tier for a task so work can
+  // be routed to the cheapest model that can handle it. Advisory only.
+  if (getSetting<boolean>(MODEL_CLASSIFIER_ENABLED_SETTING, false)) {
+    registry.register(suggestModelTool)
+  }
   // Experimental roadmap plans (off by default, issue #556). Adds a roadmap_plan
   // tool that records future-work prompts and tracks their status across
   // sessions so longer-horizon work is captured without being started early.
