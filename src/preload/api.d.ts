@@ -94,6 +94,9 @@ export interface ApiClient {
         rememberLabel?: string
       }) => void,
     ) => () => void
+    onAskUserRequest: (
+      handler: (req: { id: string; questions: { question: string; options?: string[] }[] }) => void,
+    ) => () => void
     onShellOutput: (handler: (data: string, toolCallId: string | null) => void) => () => void
     onUsage: (handler: (threadId: string, usage: UsageDelta) => void) => () => void
     onRefreshContextEstimate: (handler: () => void) => () => void
@@ -111,6 +114,9 @@ export interface ApiClient {
   }
   approval: {
     respond: (id: string, approved: boolean, remember?: boolean) => Promise<void>
+  }
+  ask: {
+    respond: (id: string, answers: string[]) => Promise<void>
   }
   mcp: {
     list: () => Promise<McpServerStatus[]>
