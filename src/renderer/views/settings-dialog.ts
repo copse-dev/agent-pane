@@ -68,6 +68,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'mcpUiArtefactsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'ciInvestigatorEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'okfMemoriesEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
@@ -563,6 +564,21 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <a href="https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing" target="_blank" rel="noreferrer">Open Knowledge Format</a>
                 markdown files (YAML frontmatter plus a markdown body) under
                 <code>~/.copse/memories</code>. While off, neither tool is registered.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Model classifier</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="modelClassifierEnabled" />
+                Let the agent get a best-fit model recommendation for a task
+              </label>
+              <p class="field-hint">
+                Adds a <code>suggest_model</code> tool that recommends a capability tier
+                (fast / balanced / frontier) and a representative model for a task, so cheap/fast
+                models handle trivial work and frontier models are reserved for the hard problems.
+                Advisory only — it does not switch the model in use. While off, the tool is not
+                registered.
               </p>
             </fieldset>
           </section>
