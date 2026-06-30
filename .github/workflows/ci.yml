@@ -22,6 +22,65 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Runner router: pick a self-hosted check runner when one is available, else
+  # defer to GitHub-hosted. The static + unit tier below (precheck/check/build)
+  # can run on the optional self-hosted `copse-checks` fleet (see
+  # .github/runner-checks) to save minutes and reuse a warm dep cache — but only
+  # when such a runner is actually online. This job inspects the repo's
+  # registered runners and emits a `runs_on` value those jobs consume:
+  #   ["self-hosted","copse-checks"]  when ≥1 is online
+  #   ["ubuntu-latest"]               otherwise
+  # It NEVER pins onto a fleet that isn't there — any uncertainty (no PAT, API
+  # error, none online) falls back to hosted, so nothing queues forever waiting
+  # on a runner that doesn't exist. (The e2e job keeps its own dedicated
+  # copse-e2e fleet + nightly-hosted model and is intentionally not routed here.)
+  #
+  # Listing self-hosted runners needs an admin scope the default GITHUB_TOKEN
+  # lacks, so detection uses a PAT in secrets.RUNNERS_PAT (classic `repo`, or
+  # fine-grained repository Administration: Read). Without the secret it simply
+  # defers to hosted — the pre-existing behaviour.
+  #
+  # Same fork guard as the jobs below: never runs for fork PRs, so the PAT is
+  # never exposed to untrusted code and self-hosted boxes never see fork commits.
+  pick-runner:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      runs_on: ${{ steps.pick.outputs.runs_on }}
+    steps:
+      - id: pick
+        env:
+          RUNNERS_PAT: ${{ secrets.RUNNERS_PAT }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # Never abort the router: on ANY uncertainty we want the hosted
+          # fallback, not a failed job — so deliberately no `set -e`.
+          set -uo pipefail
+          hosted='["ubuntu-latest"]'
+          selfhosted='["self-hosted","copse-checks"]'
+          choice="$hosted"
+          if [ -z "${RUNNERS_PAT:-}" ]; then
+            echo "No RUNNERS_PAT secret set — deferring to GitHub-hosted runners."
+          else
+            runners="$(curl -fsSL \
+              -H "Authorization: Bearer ${RUNNERS_PAT}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GH_REPO}/actions/runners?per_page=100" 2>/dev/null)"
+            if [ $? -ne 0 ] || [ -z "$runners" ]; then
+              echo "Runner query failed — deferring to GitHub-hosted runners."
+            elif printf '%s' "$runners" | jq -e \
+                '[.runners[]? | select(.status=="online") | select(any((.labels // [])[]; .name=="copse-checks"))] | length > 0' \
+                >/dev/null 2>&1; then
+              echo "An online copse-checks runner is available — using the self-hosted check fleet."
+              choice="$selfhosted"
+            else
+              echo "No online copse-checks runner — deferring to GitHub-hosted runners."
+            fi
+          fi
+          echo "runs_on=$choice" >> "$GITHUB_OUTPUT"
+          echo "Selected check-tier runner: $choice"
+
   # Cheap static gate + e2e planning. Runs the fast static checks (typecheck,
   # lint, format, dead-code, oracle liveness) AND computes the e2e oracle plan in
   # a single job. Everything expensive — coverage, build, e2e — hangs off this
@@ -30,8 +89,11 @@ jobs:
   # Folding the former standalone `plan-e2e` job in here drops a duplicate
   # checkout + node setup (and its rounded-up billed minute) from every run.
   precheck:
+    needs: pick-runner
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    # Self-hosted copse-checks fleet when one is online, else GitHub-hosted —
+    # decided by the pick-runner router above.
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runs_on) }}
     # Consumed by the e2e job: how much of the e2e tier this run needs (mode/
     # specs), and the runner-dependent shard fan-out (e2e_shards / shard_total).
     outputs:
@@ -154,9 +216,9 @@ jobs:
           fi
 
   check:
-    needs: precheck
+    needs: [pick-runner, precheck]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runs_on) }}
     steps:
       - uses: actions/checkout@v6.0.3
       - uses: ./.github/actions/setup
@@ -178,9 +240,9 @@ jobs:
       # dist artifact the e2e shards reuse), so it no longer runs here.
 
   build:
-    needs: precheck
+    needs: [pick-runner, precheck]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runs_on) }}
     # Build dist once and hand it to every e2e shard. Previously each shard ran
     # its own `npm run build`; an earlier attempt to share dist via upload/
     # download dropped some Monaco worker files, breaking specs that open the
@@ -622,7 +684,7 @@ jobs:
   ci-passed:
     name: CI Passed
     if: always()
-    needs: [precheck, check, build, e2e]
+    needs: [pick-runner, precheck, check, build, e2e]
     runs-on: ubuntu-latest
     steps:
       - name: Check upstream job results
