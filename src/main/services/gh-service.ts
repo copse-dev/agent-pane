@@ -71,33 +71,116 @@ function ghPathPrefix(): string {
 }
 
 /**
- * gh authenticates from these environment variables when present, which keeps
- * working even when its config dir (`~/.config/gh`) is unreadable — e.g. under a
- * sandbox that denies the home directory, where `gh auth status` otherwise fails
- * with "operation not permitted" and demands `gh auth login`. (#521)
+ * Non-token GitHub env vars worth forwarding to gh regardless of which credential
+ * it ends up using (host selection, config-dir location). These never shadow a
+ * working `gh auth login` credential, so they are always passed through.
  */
-const GH_AUTH_ENV_KEYS = [
+const GH_CONFIG_ENV_KEYS = ['GH_HOST', 'GH_CONFIG_DIR'] as const
+
+/**
+ * Bearer-token env vars. gh authenticates from these *in preference to* its config
+ * dir (`~/.config/gh`), so forwarding them unconditionally lets a stale/wrong-scope
+ * local token shadow a working `gh auth login` credential — that is the #516
+ * regression introduced by #521's unconditional forwarding. They are forwarded only
+ * as a *fallback*, when gh has no usable config-dir credential of its own.
+ */
+const GH_TOKEN_ENV_KEYS = [
   'GH_TOKEN',
   'GITHUB_TOKEN',
-  'GH_HOST',
   'GH_ENTERPRISE_TOKEN',
   'GITHUB_ENTERPRISE_TOKEN',
-  'GH_CONFIG_DIR',
 ] as const
 
 /**
- * Environment for the gh subprocess: a minimal PATH plus any GitHub auth tokens
- * present in the parent environment. runGh runs gh with an explicit env (not the
- * inherited one), so without forwarding these gh would never see a token and
- * would fall back to the config file alone. (#521)
+ * Environment for the gh subprocess: a minimal PATH plus GitHub config vars, and —
+ * only when `includeTokens` is set — the bearer-token vars from the parent env.
+ *
+ * Token forwarding is a deliberate *fallback*, not a default: gh prefers an env
+ * token over its config dir, so an always-forwarded local `GITHUB_TOKEN` (often
+ * present for unrelated tooling, expired, or wrong-scope) overrides a working
+ * `gh auth login` and breaks `gh` (#516). When `includeTokens` is false we also
+ * blank the token keys: runGh spawns via runCommand, which merges this env *on top
+ * of* `process.env`, so an unset key would otherwise leak the parent's token
+ * through. Setting them empty makes gh treat them as absent and fall back to its
+ * config-dir credential. (#521 added the forwarding; #516 makes it conditional.)
  */
-export function ghEnv(base: NodeJS.ProcessEnv = process.env): Record<string, string> {
+export function ghEnv(
+  base: NodeJS.ProcessEnv = process.env,
+  opts: { includeTokens?: boolean } = {},
+): Record<string, string> {
   const env: Record<string, string> = { PATH: `${ghPathPrefix()}${base['PATH'] ?? ''}` }
-  for (const key of GH_AUTH_ENV_KEYS) {
+  for (const key of GH_CONFIG_ENV_KEYS) {
     const value = base[key]
     if (value) env[key] = value
   }
+  for (const key of GH_TOKEN_ENV_KEYS) {
+    const value = base[key]
+    if (opts.includeTokens && value) env[key] = value
+    // Blank (not omit) so the runCommand merge over process.env can't leak the
+    // parent's token and shadow gh's own config-dir auth.
+    else if (value) env[key] = ''
+  }
   return env
+}
+
+/** True when any GitHub bearer token is present in the environment. */
+function hasEnvToken(base: NodeJS.ProcessEnv = process.env): boolean {
+  return GH_TOKEN_ENV_KEYS.some((key) => !!base[key])
+}
+
+/**
+ * Pure decision for whether runGh should forward the environment's GitHub token.
+ *
+ * Forward only as a fallback: never when a token is absent, and never when gh's own
+ * config-dir auth already works (forwarding then would let a stale/wrong local token
+ * shadow the working `gh auth login` credential — the #516 regression). Forward when
+ * a token is present and gh has no working config-dir auth of its own (#521).
+ */
+export function decideForwardEnvToken(opts: {
+  hasToken: boolean
+  configAuthWorks: boolean
+}): boolean {
+  if (!opts.hasToken) return false
+  return !opts.configAuthWorks
+}
+
+/**
+ * Cached decision: should runGh forward the environment's GitHub token to gh?
+ *
+ * Forwarding is only needed as a fallback when gh has no working config-dir
+ * credential of its own. We probe `gh auth status` once with tokens *suppressed*
+ * (so the probe reflects only `gh auth login` state). If that succeeds, gh is
+ * already authenticated and we must NOT forward the env token — doing so would let
+ * a stale/wrong local token shadow the working credential (#516). If it fails and a
+ * token is present, we forward it so gh can still reach the API (#521).
+ */
+let forwardEnvTokenProbe: Promise<boolean> | null = null
+
+export function resetGhEnvTokenProbeForTest(): void {
+  forwardEnvTokenProbe = null
+}
+
+async function shouldForwardEnvToken(cwd: string, signal?: AbortSignal): Promise<boolean> {
+  if (!hasEnvToken()) return false
+  forwardEnvTokenProbe ??= (async (): Promise<boolean> => {
+    const probeOpts: Parameters<typeof runCommand>[2] = {
+      cwd,
+      unsandboxed: true,
+      env: ghEnv(process.env, { includeTokens: false }),
+      timeout_ms: 10_000,
+    }
+    if (signal !== undefined) probeOpts.signal = signal
+    try {
+      const { code } = await runCommand('gh', ['auth', 'status'], probeOpts)
+      // code 0 → gh has a working config-dir credential; keep using it (don't forward).
+      // non-zero → no usable config-dir auth; fall back to the env token.
+      return decideForwardEnvToken({ hasToken: true, configAuthWorks: code === 0 })
+    } catch {
+      // Probe failed to even run — fall back to forwarding so a token still gets a chance.
+      return true
+    }
+  })()
+  return forwardEnvTokenProbe
 }
 
 /** Run GitHub CLI outside the project sandbox so read-only API calls can reach GitHub. */
@@ -107,10 +190,11 @@ export async function runGh(
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   const cwd = getWorkspaceRoot()
   if (!cwd) return { stdout: '', stderr: 'No workspace open.', code: 1 }
+  const includeTokens = await shouldForwardEnvToken(cwd, opts.signal)
   const commandOpts: Parameters<typeof runCommand>[2] = {
     cwd,
     unsandboxed: true,
-    env: ghEnv(),
+    env: ghEnv(process.env, { includeTokens }),
   }
   if (opts.timeout_ms !== undefined) commandOpts.timeout_ms = opts.timeout_ms
   if (opts.signal !== undefined) commandOpts.signal = opts.signal
