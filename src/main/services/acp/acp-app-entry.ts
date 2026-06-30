@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { serveAcpAgentOverStdio, type AcpTurnRunner } from './acp-agent-server.ts'
+import { checkToolAvailability } from '../tool-availability.ts'
 import { createRegistry, registerSkillTools } from '../registry-bootstrap.ts'
 import { initSkillsRegistry } from '../skills-registry.ts'
 import { loadMcpServers } from '../mcp-registry.ts'
@@ -26,6 +27,9 @@ import type { LLMMessage } from '@shared/types'
  * this process may write to it once connected — keep diagnostics on stderr.
  */
 export async function runAcpAgentMode(): Promise<void> {
+  // Mirror the GUI bootstrap: gh/git probes must run before createRegistry()
+  // gates read-only GitHub tools on isGhAvailable() (#523).
+  await checkToolAvailability()
   const registry = createRegistry()
   await initSkillsRegistry()
   registerSkillTools(registry)
