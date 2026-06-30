@@ -19,6 +19,7 @@ const SHARED_TOOL_TAIL = `- git_status: Show working tree status
 - run_shell: Run a shell command in the workspace (may prompt for approval)
 - staged_diffs: List pending proposed file edits waiting for approval, recent edit decisions, and existing git changes
 - read_staged_diff: Inspect proposed content for a pending file edit
+- ask_user: Ask the user one or more clarifying questions and block until they answer (use at ambiguous or branching points instead of guessing)
 - update_todos: Create or update a structured multi-step plan (use only for complex multi-step work)`
 
 interface BasePromptVars {
