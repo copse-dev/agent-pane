@@ -16,6 +16,16 @@ function statusLabel(status: ThreadReview['status']): string {
   }
 }
 
+// TODO(#480): Collapse the card by default when the review found no issues
+// (positive verdict). This needs an explicit structured signal — e.g. an
+// `issuesFound: boolean` (or a `verdict: 'clean' | 'concerns'`) field on
+// `ThreadReview`, plumbed from the review subagent through the
+// `post_turn_review` stream chunk (src/shared/types/stream.ts) and
+// agent-service.ts. The subagent prompt (review-subagent.ts) currently only
+// asks for a free-text one-line summary, so the verdict can only be inferred by
+// string-sniffing the summary, which we deliberately avoid. Once that signal
+// exists, render this card as a collapsed <details> when there are no issues.
+
 /** Compact card summarising the post-turn review verdict for a thread. */
 export function createReviewCardEl(review: ThreadReview, api: ApiClient): HTMLElement {
   const panel = el('div', {

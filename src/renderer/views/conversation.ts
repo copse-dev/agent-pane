@@ -377,7 +377,6 @@ const USER_SCROLL_UP_DEBOUNCE_MS = 150
 export function mountConversation(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const scrollArea = el('div', { class: 'conversation-scroll' })
   const todoHost = el('div', { class: 'conversation-todos-host' })
-  const reviewHost = el('div', { class: 'conversation-review-host' })
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
   const scrollToBottomBtn = el(
     'button',
@@ -389,7 +388,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     },
     '↓',
   )
-  scrollArea.append(todoHost, list, reviewHost, scrollToBottomBtn)
+  scrollArea.append(todoHost, list, scrollToBottomBtn)
 
   const activityBar = el('div', { class: 'agent-activity', role: 'status', 'aria-live': 'polite' })
   const activityLabel = el('span', { class: 'agent-activity-label' })
@@ -742,7 +741,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       attachCopyButton(body, msgId, store)
     }
 
-    list.append(msgEl)
+    // Keep the inline review card (if any) last in the transcript: new messages
+    // belong above a review produced for an earlier turn.
+    const reviewCard = list.querySelector('[data-review-card]')
+    if (reviewCard) list.insertBefore(msgEl, reviewCard)
+    else list.append(msgEl)
     hydrateRemoteArtifactImages(list, api)
     // Re-render any tool cards this message already carries (restored threads).
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
@@ -759,10 +762,15 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   function syncReviewPanel(): void {
-    reviewHost.replaceChildren()
+    // Render the review card inline as the last child of the scrolling message
+    // list so it joins the transcript flow instead of staying pinned to the
+    // bottom of the conversation. Replace any prior card on each sync.
+    list.querySelector('[data-review-card]')?.remove()
     const thread = getActiveThread(store)
     if (thread?.review) {
-      reviewHost.append(createReviewCardEl(thread.review, api))
+      const card = createReviewCardEl(thread.review, api)
+      card.setAttribute('data-review-card', '')
+      list.append(card)
     }
   }
 
