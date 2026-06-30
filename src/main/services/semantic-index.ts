@@ -32,9 +32,11 @@ export function codesearchThreadCap(): number {
 }
 
 /**
- * Env vars that cap thread fan-out for the codesearch process. The binary is
- * Rust/tokio based, so we constrain the common thread-pool knobs (Rayon, tokio,
- * OpenMP) rather than relying on a CLI flag that may change between releases.
+ * Cap thread fan-out for the codesearch process. flupkede/codesearch does its
+ * CPU-heavy work through three pools, each with a standard env knob we set here:
+ * rayon (BM25 + tree-sitter chunking), tokio's multi-thread runtime, and the
+ * ONNX Runtime / fastembed embedding inference (OpenMP). Env knobs are
+ * release-robust — the binary exposes no thread CLI flag.
  */
 export function codesearchCpuLimitEnv(): NodeJS.ProcessEnv {
   const threads = String(codesearchThreadCap())
@@ -42,7 +44,6 @@ export function codesearchCpuLimitEnv(): NodeJS.ProcessEnv {
     RAYON_NUM_THREADS: threads,
     TOKIO_WORKER_THREADS: threads,
     OMP_NUM_THREADS: threads,
-    CODESEARCH_THREADS: threads,
   }
 }
 
@@ -68,6 +69,10 @@ let activeBackend: SemanticBackend | null = null
 let codesearchCommand: string | null = null
 let veraCommand = 'vera'
 const indexPromises = new Map<string, Promise<void>>()
+/** Roots with an in-flight {@link updateSemanticIndex} run, for overlap-free coalescing. */
+const updateInFlight = new Map<string, Promise<void>>()
+/** Roots that received an update request while a run was already in flight. */
+const updatePending = new Set<string>()
 
 const SEMANTIC_CMD_OPTS = {
   unsandboxed: true,
@@ -78,6 +83,15 @@ let searchExecutorForTest:
       opts: SemanticSearchOptions,
     ) => Promise<{ hits: SemanticSearchHit[]; backend: SemanticBackend } | null>)
   | null = null
+let indexUpdateRunnerForTest: ((backend: SemanticBackend, root: string) => Promise<void>) | null =
+  null
+
+/** Test hook — replace the per-run index worker to assert coalescing without spawning. */
+export function setSemanticIndexUpdateRunnerForTest(
+  runner: ((backend: SemanticBackend, root: string) => Promise<void>) | null,
+): void {
+  indexUpdateRunnerForTest = runner
+}
 
 export function getSemanticBackend(): SemanticBackend | null {
   return activeBackend
@@ -159,7 +173,9 @@ function codesearchRunOpts(
     ...SEMANTIC_CMD_OPTS,
     // Default to the search budget; index calls override timeout_ms via `extra`.
     timeout_ms: CODESEARCH_SEARCH_TIMEOUT_MS,
-    // Cap thread fan-out so the indexer can't pin every core (#517).
+    // Cap thread fan-out so the indexer can't pin every core, and drop its
+    // scheduling priority so it yields to the UI even mid-index (#517).
+    lowPriority: true,
     env: { HOME: codesearchHomeDir(), ...codesearchCpuLimitEnv() },
     ...extra,
   }
@@ -218,23 +234,57 @@ export async function ensureSemanticIndex(workspaceRoot: string): Promise<void> 
   }
 }
 
-/** Incrementally update the semantic index after workspace file changes. */
+/**
+ * Incrementally update the semantic index after workspace file changes.
+ *
+ * Coalesced per root: at most one update runs at a time, and any requests that
+ * arrive while one is in flight collapse into a single trailing run. Without
+ * this, the recursive workspace watcher (which only debounces *scheduling*)
+ * spawns a fresh codesearch process on every burst of file changes — and since
+ * an index can run for minutes, those processes stack and pin every core (#517),
+ * defeating the per-process thread cap and lagging the UI.
+ */
 export async function updateSemanticIndex(workspaceRoot: string): Promise<void> {
   const backend = activeBackend
   if (!backend) return
 
+  const root = resolve(workspaceRoot)
+  const existing = updateInFlight.get(root)
+  if (existing) {
+    // A run owns this root; ask it to do one more pass and ride its promise.
+    updatePending.add(root)
+    await existing
+    return
+  }
+
+  const run = (async (): Promise<void> => {
+    try {
+      do {
+        updatePending.delete(root)
+        await (indexUpdateRunnerForTest ?? runSemanticIndexUpdate)(backend, root)
+      } while (updatePending.has(root))
+    } finally {
+      updateInFlight.delete(root)
+      updatePending.delete(root)
+    }
+  })()
+  updateInFlight.set(root, run)
+  await run
+}
+
+async function runSemanticIndexUpdate(backend: SemanticBackend, root: string): Promise<void> {
   try {
     switch (backend) {
       case 'codesearch':
         await runCommand(
           codesearchCmd(),
-          ['index', workspaceRoot],
-          codesearchRunOpts(workspaceRoot, { timeout_ms: CODESEARCH_INDEX_TIMEOUT_MS }),
+          ['index', root],
+          codesearchRunOpts(root, { timeout_ms: CODESEARCH_INDEX_TIMEOUT_MS }),
         )
         break
       case 'vera':
-        await runCommand(veraCommand, ['update', workspaceRoot], {
-          cwd: workspaceRoot,
+        await runCommand(veraCommand, ['update', root], {
+          cwd: root,
           ...SEMANTIC_CMD_OPTS,
         })
         break
