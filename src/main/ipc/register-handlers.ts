@@ -59,7 +59,11 @@ import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills-registry.ts'
 import { listCursorPlugins } from '../services/cursor-plugins.ts'
 import { listCursorHooks } from '../services/cursor-hooks.ts'
-import { registerSkillTools, syncOkfMemoryTools, syncPiiTools } from '../services/registry-bootstrap.ts'
+import {
+  registerSkillTools,
+  syncOkfMemoryTools,
+  syncPiiTools,
+} from '../services/registry-bootstrap.ts'
 import { PII_REDACTION_ENABLED_SETTING } from '../services/pii-redactor.ts'
 import { OKF_MEMORIES_ENABLED_SETTING } from '../services/okf-memory-store.ts'
 import {
