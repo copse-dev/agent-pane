@@ -103,6 +103,8 @@ export function mountPrPane(
     ),
   )
   const refreshBtn = qsRequired<HTMLButtonElement>(listHeader, '.pr-pane-refresh-btn')
+  const popoutBtn = qsRequired<HTMLButtonElement>(listHeader, '.pr-pane-popout-btn')
+  popoutBtn.addEventListener('click', () => void api.panes.popout('prs'))
   const listBody = el('div', { class: 'git-changes-list pr-list-body' })
   listRoot.append(listHeader, listBody)
 
@@ -626,6 +628,10 @@ export function mountPrPane(
 
   renderList()
   clearDiff()
+  // If PRs are already the active pane when we mount (a pop-out window, or a
+  // restored layout), load immediately — the `*_changed` events that normally
+  // trigger the first refresh may have fired before this pane existed.
+  if (prsModeActive(store)) void refresh()
 
   // This pane is mounted asynchronously, once the Monaco bundle resolves. If the
   // right panel is already in "prs" mode by the time we mount, no

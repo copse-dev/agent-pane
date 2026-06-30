@@ -2,6 +2,7 @@ import { dialog, ipcMain, shell } from 'electron'
 import type { BrowserWindow } from 'electron'
 import { z } from 'zod'
 import micromatch from 'micromatch'
+import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
 import {
   assertAllowedWorkspaceRoot,
   getWorkspaceRoot,
@@ -431,6 +432,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       throw new IpcValidationError('URL must be http or https')
     }
     return shell.openExternal(href)
+  })
+
+  ipcMain.handle('panes:popout', (event, mode: unknown) => {
+    assertMainFrameSender(event, win)
+    const parsed = parseIpcArgs(z.enum(['explorer', 'terminal', 'changes', 'prs', 'browser']), [
+      mode,
+    ])
+    createPanePopoutWindow(parsed)
   })
 
   ipcMain.handle('mcp:list', (event) => {

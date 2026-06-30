@@ -1,5 +1,6 @@
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
+import { isTrustedAppFrame } from '../windows/app-frames.ts'
 
 export class IpcValidationError extends Error {
   constructor(message: string) {
@@ -9,9 +10,12 @@ export class IpcValidationError extends Error {
 }
 
 export function assertMainFrameSender(event: IpcMainInvokeEvent, win: BrowserWindow): void {
-  if (event.senderFrame !== win.webContents.mainFrame) {
-    throw new IpcValidationError('IPC rejected: sender is not the main frame')
-  }
+  const frame = event.senderFrame
+  // The main window's own main frame, or a pane pop-out window we created. Both
+  // load our renderer; sub-frames and <webview> guests are still rejected.
+  if (frame === win.webContents.mainFrame) return
+  if (isTrustedAppFrame(frame)) return
+  throw new IpcValidationError('IPC rejected: sender is not the main frame')
 }
 
 export function parseIpcArgs<T extends z.ZodType>(schema: T, args: unknown[]): z.infer<T> {
