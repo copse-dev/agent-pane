@@ -70,6 +70,8 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'ciInvestigatorEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'okfMemoriesEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'longHorizonTasksEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'roadmapPlansEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'piiRedactionEnabled', kind: 'checkbox', default: false, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
@@ -606,6 +608,37 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 resume from the last checkpoint and know when every step is complete. Tasks are
                 stored per project under <code>~/.copse/long-tasks</code>. While off, the tool is not
                 registered.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Model classifier</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="modelClassifierEnabled" />
+                Let the agent get a best-fit model recommendation for a task
+              </label>
+              <p class="field-hint">
+                Adds a <code>suggest_model</code> tool that recommends a capability tier
+                (fast / balanced / frontier) and a representative model for a task, so cheap/fast
+                models handle trivial work and frontier models are reserved for the hard problems.
+                Advisory only — it does not switch the model in use. While off, the tool is not
+                registered.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Roadmap plans</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="roadmapPlansEnabled" />
+                Let the agent keep a roadmap of future-work prompts
+              </label>
+              <p class="field-hint">
+                Adds a <code>roadmap_plan</code> tool so the agent can record prompts to run over a
+                longer time horizon than the current change and track each item's status
+                (ready / blocked / conflicts / done) across sessions — a notes app for future work,
+                so longer-horizon plans aren't started before the PRs they depend on merge. Items
+                are stored per project under <code>~/.copse/roadmap</code>. While off, the tool is
+                not registered.
               </p>
             </fieldset>
 
