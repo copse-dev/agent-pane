@@ -7,6 +7,8 @@ import { registerTerminalSelectionToChatShortcut } from '../terminal/selection-t
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { installTerminalFileLinks, type TerminalFileLinks } from './terminal-file-links.ts'
+import { planProjectScope, tabsForProject } from './project-scoped-tabs.ts'
+import { at } from '@shared/array-utils.ts'
 
 const XTERM_THEME = {
   dark: {
@@ -25,6 +27,8 @@ const XTERM_THEME = {
 
 interface TerminalTab {
   id: string
+  /** Project this shell belongs to; only the active project's tabs are shown. */
+  projectId: string | null
   label: string
   labelSpan: HTMLElement
   panel: HTMLElement
@@ -303,6 +307,19 @@ export function mountTerminalsPane(
     })
   }
 
+  function currentProjectId(): string | null {
+    return store.getState().activeProjectId
+  }
+
+  function visibleTabs(): TerminalTab[] {
+    return tabsForProject(tabs.values(), currentProjectId())
+  }
+
+  function setTabVisible(tab: TerminalTab, visible: boolean): void {
+    tab.tabBtn.hidden = !visible
+    if (!visible) tab.panel.classList.remove('is-active')
+  }
+
   function addTab(options?: { activate?: boolean }): string {
     tabCounter += 1
     const id = crypto.randomUUID()
@@ -333,6 +350,7 @@ export function mountTerminalsPane(
     const fileLinks = installTerminalFileLinks(term, store, api)
     const tab: TerminalTab = {
       id,
+      projectId: currentProjectId(),
       label,
       labelSpan,
       panel,
@@ -398,23 +416,42 @@ export function mountTerminalsPane(
     tabs.delete(tabId)
 
     if (activeTabId !== tabId) return
-    const remaining = [...tabs.keys()]
+    const remaining = visibleTabs()
     const lastRemaining = remaining[remaining.length - 1]
     if (lastRemaining !== undefined) {
-      setActiveTab(lastRemaining)
+      setActiveTab(lastRemaining.id)
     } else {
       activeTabId = null
       if (terminalModeActive(store)) addTab()
     }
   }
 
-  async function restartAllSessions(): Promise<void> {
-    for (const tab of tabs.values()) {
-      await destroySession(tab)
-      tab.term.clear()
-      if (terminalModeActive(store) && activeTabId === tab.id) {
-        await ensureSession(tab)
-      }
+  // Project switch: keep each project's shells alive but only show the active
+  // project's. Sessions are spawned with the workspace cwd they were created in,
+  // so a background project's shells stay rooted in that project; switching back
+  // restores them rather than showing the other workspace's shells (issue #502).
+  function onProjectSwitch(): void {
+    const { visible, hidden, needsNew } = planProjectScope(tabs.values(), currentProjectId())
+    for (const tab of hidden) setTabVisible(tab, false)
+    for (const tab of visible) setTabVisible(tab, true)
+
+    // Drop the active highlight from any now-hidden tab.
+    if (activeTabId && !visible.some((t) => t.id === activeTabId)) activeTabId = null
+
+    if (needsNew) {
+      if (terminalModeActive(store)) addTab()
+      return
+    }
+    if (!activeTabId && visible.length > 0) setActiveTab(at(visible, 0).id)
+    const tab = activeTabId ? tabs.get(activeTabId) : null
+    if (tab && terminalModeActive(store)) {
+      resizeObserver.observe(tab.container)
+      openTerminalSurface(tab)
+      void ensureSession(tab)
+      requestAnimationFrame(() => {
+        fitTab(tab)
+        focusTab(tab)
+      })
     }
   }
 
@@ -426,7 +463,7 @@ export function mountTerminalsPane(
   function onTerminalModeChange(): void {
     const active = terminalModeActive(store)
     if (active) {
-      if (tabs.size === 0) addTab()
+      if (visibleTabs().length === 0) addTab()
       const tab = activeTabId ? tabs.get(activeTabId) : null
       if (tab) {
         resizeObserver.observe(tab.container)
@@ -475,9 +512,7 @@ export function mountTerminalsPane(
     store.on('agent_task_selected', onAgentTaskSelected),
     store.on('theme_changed', onThemeChange),
     store.on('settings_changed', onFontSizeChange),
-    store.on('workspace_changed', () => {
-      if (terminalModeActive(store)) void restartAllSessions()
-    }),
+    store.on('workspace_changed', onProjectSwitch),
   ]
 
   return () => {

@@ -244,6 +244,53 @@ test('restoreProject does not emit projects_changed before threads are loaded', 
   assert.deepEqual(events, ['projects_changed', 'workspace_changed', 'threads_changed'])
 })
 
+test('panel visibility persists per project across switches', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [thread('t-a')],
+    activeThreadId: 't-a',
+    filesPaneOpen: true,
+    rightPanelMode: 'terminal',
+  })
+
+  const api = makeApi({
+    storageGet: async (key) => {
+      if (key === 'threads:b') return [thread('t-b')]
+      if (key === 'threads:a') return [thread('t-a')]
+      return null
+    },
+  })
+
+  // Project A has its panel open in terminal mode. Switch to B: B is seen for the
+  // first time, so its panel starts closed (default), not inheriting A's panel.
+  switchProject(store, api, 'b')
+  await waitUntil(() => store.getState().activeProjectId === 'b')
+  assert.equal(store.getState().filesPaneOpen, false)
+  assert.equal(store.getState().rightPanelMode, 'explorer')
+
+  // Open B's panel in changes mode.
+  store.setState({ filesPaneOpen: true, rightPanelMode: 'changes' })
+
+  // Switch back to A: A's terminal panel is restored.
+  switchProject(store, api, 'a')
+  await waitUntil(() => store.getState().activeProjectId === 'a')
+  assert.equal(store.getState().filesPaneOpen, true)
+  assert.equal(store.getState().rightPanelMode, 'terminal')
+
+  // Switch back to B: B's changes panel is restored.
+  switchProject(store, api, 'b')
+  await waitUntil(() => store.getState().activeProjectId === 'b')
+  assert.equal(store.getState().filesPaneOpen, true)
+  assert.equal(store.getState().rightPanelMode, 'changes')
+})
+
 test('paginateSidebarThreads shows the first page by default', () => {
   const threads = Array.from({ length: 15 }, (_, i) => thread(`t-${String(i)}`))
   const result = paginateSidebarThreads(threads, SIDEBAR_THREADS_PAGE_SIZE, null)
