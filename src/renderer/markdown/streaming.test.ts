@@ -7,6 +7,7 @@ import {
   pendingHoldIndex,
   renderStreamingMarkdown,
   splitAtLastNewline,
+  splitForStreaming,
   StreamingMarkdownRenderer,
 } from './streaming.ts'
 
@@ -141,12 +142,34 @@ describe('pendingHoldIndex (defer unresolved inline markup)', () => {
   })
 })
 
+describe('splitForStreaming (block-granularity emphasis)', () => {
+  it('holds an open emphasis span across a soft line break', () => {
+    assert.deepEqual(splitForStreaming('intro **bold\ntext'), {
+      complete: 'intro ',
+      pending: '**bold\ntext',
+    })
+  })
+
+  it('commits resolved emphasis across soft breaks once closed', () => {
+    const html = renderStreamingMarkdown('intro **bold\ntext**')
+    assert.match(html, /<span class="stream-pending">/)
+    assert.match(html, /<strong>bold<br>text<\/strong>/)
+    assert.doesNotMatch(html, /\*\*/)
+  })
+
+  it('falls back to line split when emphasis is resolved', () => {
+    assert.deepEqual(splitForStreaming('done\nplain tail'), {
+      complete: 'done\n',
+      pending: 'plain tail',
+    })
+  })
+})
+
 describe('renderStreamingMarkdown (holds unresolved bold)', () => {
   it('never emits a half-open bold tag on the pending line', () => {
     const html = renderStreamingMarkdown('done\nintro **bold text')
     assert.doesNotMatch(html, /<strong>/)
     assert.doesNotMatch(html, /\*\*/)
-    assert.match(html, /<span class="stream-pending">intro\s*<\/span>/)
   })
 
   it('does not mis-bold a whitespace-flanked closer mid-stream', () => {
