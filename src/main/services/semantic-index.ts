@@ -1,3 +1,4 @@
+import { cpus } from 'node:os'
 import * as fsp from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 import { app } from 'electron'
@@ -7,6 +8,43 @@ import { COMMAND_RUNNER_LONG_TIMEOUT_MS } from './subprocess-output-cap.ts'
 import { toRelativePath } from './workspace.ts'
 
 const LEGACY_CODESEARCH_DB_DIR = '.codesearch.db'
+
+/**
+ * Hard ceiling on codesearch worker threads. Without a cap the native indexer
+ * fans out across every core (we observed >600% CPU, #517), starving the rest
+ * of the app. Cap to at most {@link CODESEARCH_MAX_THREADS} *and* at most half
+ * the machine's cores so a background index never monopolises the CPU.
+ */
+const CODESEARCH_MAX_THREADS = 4
+
+/**
+ * Bound how long an index/search may run. The CPU cap stops codesearch pinning
+ * every core, and this stops it pinning *some* cores for minutes on end (#517).
+ * Indexing a fresh repo is the slow path, so it gets the larger budget.
+ */
+const CODESEARCH_INDEX_TIMEOUT_MS = 5 * 60_000
+const CODESEARCH_SEARCH_TIMEOUT_MS = 60_000
+
+/** Number of worker threads codesearch may use, capped for CPU fairness (#517). */
+export function codesearchThreadCap(): number {
+  const cores = Math.max(1, cpus().length)
+  return Math.max(1, Math.min(CODESEARCH_MAX_THREADS, Math.floor(cores / 2)))
+}
+
+/**
+ * Env vars that cap thread fan-out for the codesearch process. The binary is
+ * Rust/tokio based, so we constrain the common thread-pool knobs (Rayon, tokio,
+ * OpenMP) rather than relying on a CLI flag that may change between releases.
+ */
+export function codesearchCpuLimitEnv(): NodeJS.ProcessEnv {
+  const threads = String(codesearchThreadCap())
+  return {
+    RAYON_NUM_THREADS: threads,
+    TOKIO_WORKER_THREADS: threads,
+    OMP_NUM_THREADS: threads,
+    CODESEARCH_THREADS: threads,
+  }
+}
 
 export type SemanticBackend = 'codesearch' | 'vera'
 
@@ -119,7 +157,10 @@ function codesearchRunOpts(
   return {
     cwd: workspaceRoot,
     ...SEMANTIC_CMD_OPTS,
-    env: { HOME: codesearchHomeDir() },
+    // Default to the search budget; index calls override timeout_ms via `extra`.
+    timeout_ms: CODESEARCH_SEARCH_TIMEOUT_MS,
+    // Cap thread fan-out so the indexer can't pin every core (#517).
+    env: { HOME: codesearchHomeDir(), ...codesearchCpuLimitEnv() },
     ...extra,
   }
 }
@@ -188,7 +229,7 @@ export async function updateSemanticIndex(workspaceRoot: string): Promise<void> 
         await runCommand(
           codesearchCmd(),
           ['index', workspaceRoot],
-          codesearchRunOpts(workspaceRoot),
+          codesearchRunOpts(workspaceRoot, { timeout_ms: CODESEARCH_INDEX_TIMEOUT_MS }),
         )
         break
       case 'vera':
@@ -223,7 +264,7 @@ export async function searchSemanticContent(
 
 async function ensureCodesearchIndex(workspaceRoot: string): Promise<void> {
   const cmd = codesearchCmd()
-  const opts = codesearchRunOpts(workspaceRoot)
+  const opts = codesearchRunOpts(workspaceRoot, { timeout_ms: CODESEARCH_INDEX_TIMEOUT_MS })
   try {
     await runCommand(cmd, ['index', 'add', '-g', workspaceRoot], opts)
   } catch {
