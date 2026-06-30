@@ -1,6 +1,12 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { formatGhPrFiles, formatGhPrList, formatGhPrView, ghEnv } from './gh-service.ts'
+import {
+  decideForwardEnvToken,
+  formatGhPrFiles,
+  formatGhPrList,
+  formatGhPrView,
+  ghEnv,
+} from './gh-service.ts'
 
 describe('formatGhPrList', () => {
   it('formats PR rows with branch and author', () => {
@@ -29,25 +35,56 @@ describe('ghEnv', () => {
     assert.match(env['PATH'] ?? '', /\/custom\/bin/)
   })
 
-  it('forwards GitHub auth tokens so gh works without a readable config dir (#521)', () => {
+  it('always forwards non-token GitHub config vars (host/config dir)', () => {
     const env = ghEnv({
       PATH: '/bin',
-      GH_TOKEN: 'gh-tok',
-      GITHUB_TOKEN: 'github-tok',
       GH_HOST: 'github.example.com',
       GH_CONFIG_DIR: '/tmp/gh',
     })
-    assert.equal(env['GH_TOKEN'], 'gh-tok')
-    assert.equal(env['GITHUB_TOKEN'], 'github-tok')
     assert.equal(env['GH_HOST'], 'github.example.com')
     assert.equal(env['GH_CONFIG_DIR'], '/tmp/gh')
   })
 
-  it('omits auth vars that are absent and never forwards unrelated secrets', () => {
-    const env = ghEnv({ PATH: '/bin', ANTHROPIC_API_KEY: 'secret' })
+  it('forwards GitHub bearer tokens only when includeTokens is set (#521 fallback)', () => {
+    const env = ghEnv(
+      { PATH: '/bin', GH_TOKEN: 'gh-tok', GITHUB_TOKEN: 'github-tok' },
+      { includeTokens: true },
+    )
+    assert.equal(env['GH_TOKEN'], 'gh-tok')
+    assert.equal(env['GITHUB_TOKEN'], 'github-tok')
+  })
+
+  it('blanks (not omits) bearer tokens by default so they cannot shadow gh auth login (#516)', () => {
+    // Blanking matters because runGh spawns via runCommand, which merges this env
+    // on top of process.env: an omitted key would leak the parent token through and
+    // override gh's own config-dir credential. An empty value makes gh ignore it.
+    const env = ghEnv({ PATH: '/bin', GH_TOKEN: 'gh-tok', GITHUB_TOKEN: 'github-tok' })
+    assert.equal(env['GH_TOKEN'], '')
+    assert.equal(env['GITHUB_TOKEN'], '')
+  })
+
+  it('leaves token keys absent when none are present and never forwards unrelated secrets', () => {
+    const env = ghEnv({ PATH: '/bin', ANTHROPIC_API_KEY: 'secret' }, { includeTokens: true })
     assert.ok(!('GH_TOKEN' in env))
     assert.ok(!('GITHUB_TOKEN' in env))
     assert.ok(!('ANTHROPIC_API_KEY' in env))
+  })
+})
+
+describe('decideForwardEnvToken', () => {
+  it('never forwards when no token is present', () => {
+    assert.equal(decideForwardEnvToken({ hasToken: false, configAuthWorks: false }), false)
+    assert.equal(decideForwardEnvToken({ hasToken: false, configAuthWorks: true }), false)
+  })
+
+  it('does NOT forward the env token when gh config-dir auth already works (#516)', () => {
+    // A working `gh auth login` credential must win; forwarding a local token here
+    // is exactly the regression — a stale/wrong-scope token would shadow it.
+    assert.equal(decideForwardEnvToken({ hasToken: true, configAuthWorks: true }), false)
+  })
+
+  it('forwards the env token as a fallback when gh has no config-dir auth (#521)', () => {
+    assert.equal(decideForwardEnvToken({ hasToken: true, configAuthWorks: false }), true)
   })
 })
 

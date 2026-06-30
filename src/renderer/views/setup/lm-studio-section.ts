@@ -6,6 +6,12 @@ import {
   WEB_ALLOWED_ORIGINS_SETTING,
   WEB_ALLOW_USER_APPROVAL_SETTING,
 } from '@shared/web-origins.ts'
+import {
+  RECOMMENDED_MIN_CONTEXT_WINDOW,
+  VRAM_CALCULATOR_URL,
+  isContextWindowLow,
+  lowContextAdvice,
+} from '@shared/context-window-advice.ts'
 import { el } from '../../dom/helpers.ts'
 
 export interface LmStudioSection {
@@ -50,6 +56,7 @@ export function createLmStudioSection(
   const keyStatus = el('span', { class: 'key-status', 'data-key': 'lmstudio' })
   const testStatus = el('span', { class: 'lmstudio-test-status', id: 'lmstudio-test-status' })
   const detectionStatus = el('div', { class: 'setup-detection-status' })
+  const contextAdvisory = el('div', { class: 'setup-context-advisory', hidden: 'true' })
   const preferredList = el('div', { class: 'preferred-models-list' })
 
   const testBtn = el('button', { type: 'button', class: 'setup-test-btn' }, 'Test connection')
@@ -64,6 +71,7 @@ export function createLmStudioSection(
     el('label', {}, 'Server URL', urlInput),
     el('label', {}, 'API key (only if your server requires one)', keyInput, keyStatus),
     el('div', { class: 'lmstudio-test-row' }, testBtn, testStatus),
+    contextAdvisory,
   )
 
   const installGuide = showInstallGuide
@@ -252,8 +260,44 @@ export function createLmStudioSection(
     downloadPollers.set(jobId, timer)
   }
 
+  function renderContextAdvisory(modelContexts: Record<string, number>): void {
+    // Surface advice for the lowest-context loaded model, if any are too small to
+    // serve as a main chat default (LM Studio often loads models at a tiny default).
+    let worstId: string | null = null
+    let worstCtx = Infinity
+    for (const [id, ctx] of Object.entries(modelContexts)) {
+      if (isContextWindowLow(ctx) && ctx < worstCtx) {
+        worstCtx = ctx
+        worstId = id
+      }
+    }
+    if (worstId === null) {
+      contextAdvisory.replaceChildren()
+      contextAdvisory.hidden = true
+      return
+    }
+    const advice = lowContextAdvice(worstCtx, { modelId: worstId })
+    contextAdvisory.replaceChildren(
+      el('strong', {}, 'Low context window'),
+      el('p', {}, advice ?? ''),
+      el(
+        'p',
+        {},
+        'Need to size context against your hardware? Try the ',
+        el(
+          'a',
+          { href: VRAM_CALCULATOR_URL, target: '_blank', rel: 'noopener' },
+          'VRAM calculator',
+        ),
+        `. Aim for at least ${String(RECOMMENDED_MIN_CONTEXT_WINDOW / 1024)}K tokens.`,
+      ),
+    )
+    contextAdvisory.hidden = false
+  }
+
   async function refreshDetection(): Promise<void> {
     const detection = await api.lmStudio.detect(urlInput.value.trim(), keyInput.value.trim())
+    renderContextAdvisory(detection.modelContexts)
     if (detection.serverRunning) {
       detectionStatus.textContent = `✓ LM Studio server reachable at ${detection.serverUrl}`
       detectionStatus.className = 'setup-detection-status ok'

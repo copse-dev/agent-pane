@@ -99,16 +99,25 @@ describe('agent-tasks', () => {
     assert.equal(tab.querySelector('.agent-task-label')?.textContent, 'npm run build')
   })
 
-  it('routes streamed output to the matching task panel by id', () => {
+  it('echoes the command at the top of the panel, like a real terminal', () => {
+    startShell(h, 'a', 'cd /repo && npm run build')
+    const panel = at(panels(h), 0)
+    // The (cd-stripped) command appears first, prefixed like a typed shell line.
+    assert.match(panel.textContent, /^\$ npm run build\n/)
+    assert.equal(panel.querySelector('.agent-task-command')?.textContent, '$ npm run build\n')
+  })
+
+  it('routes streamed output to the matching task panel by id, after the echoed command', () => {
     startShell(h, 'a', 'echo hi')
     h.emitOutput('hello\nworld\n', 'a')
-    assert.match(at(panels(h), 0).textContent, /hello\nworld/)
+    // Command line stays at the top; output follows beneath it.
+    assert.match(at(panels(h), 0).textContent, /^\$ echo hi\nhello\nworld/)
   })
 
   it('strips ANSI escape sequences from output', () => {
     startShell(h, 'a', 'ls')
     h.emitOutput('\x1b[31mred\x1b[0m text', 'a')
-    assert.equal(at(panels(h), 0).textContent, 'red text')
+    assert.equal(at(panels(h), 0).textContent, '$ ls\nred text')
   })
 
   it('falls back to the latest running task when output has no id', () => {
@@ -116,8 +125,8 @@ describe('agent-tasks', () => {
     h.emitChunk('t1', { type: 'tool_result', toolCallId: 'a', result: '', isError: false })
     startShell(h, 'b', 'second')
     h.emitOutput('streamed', null)
-    assert.equal(at(panels(h), 0).textContent, '')
-    assert.equal(at(panels(h), 1).textContent, 'streamed')
+    assert.equal(at(panels(h), 0).textContent, '$ first\n')
+    assert.equal(at(panels(h), 1).textContent, '$ second\nstreamed')
   })
 
   it('marks a task done/error on tool_result', () => {
@@ -138,7 +147,7 @@ describe('agent-tasks', () => {
       result: 'final output',
       isError: false,
     })
-    assert.equal(at(panels(h), 0).textContent, 'final output')
+    assert.equal(at(panels(h), 0).textContent, '$ quiet\nfinal output')
   })
 
   it('shows the task panel and takes over the viewer when a tab is clicked', () => {

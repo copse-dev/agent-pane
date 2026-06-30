@@ -50,6 +50,7 @@ import {
   AgentRunDeadline,
   defaultMaxLlmCallsForSteps,
   isAgentRunTimeoutAbort,
+  isStreamOutputRunaway,
 } from './agent-loop-limits.ts'
 import { hasOpenTodos, OPEN_TODOS_FINALIZE_NUDGE } from '@shared/todos/todo-logic.ts'
 
@@ -237,13 +238,18 @@ async function streamTextOnlyTurn(
   let assistantText = ''
   let stopReason: string | undefined
   let streamUsage: StepUsage | null = null
+  let streamOutputChars = 0
 
   budget.deadline.pause()
   try {
     for await (const chunk of provider.stream(turnMessages, [], signal)) {
       if (signal?.aborted) break
-      if (chunk.type === 'reasoning') onChunk(chunk)
+      if (chunk.type === 'reasoning') {
+        streamOutputChars += chunk.text.length
+        onChunk(chunk)
+      }
       if (chunk.type === 'text') {
+        streamOutputChars += chunk.text.length
         assistantText += chunk.text
         onChunk(chunk)
       }
@@ -261,6 +267,12 @@ async function streamTextOnlyTurn(
       }
       if (chunk.type === 'done') {
         stopReason = chunk.stopReason
+        break
+      }
+      // Backstop a runaway finalize/forced-text generation the same way the main
+      // loop does, so a local model can't stream indefinitely here either (#489).
+      if (isStreamOutputRunaway(streamOutputChars)) {
+        stopReason = 'max_tokens'
         break
       }
     }
@@ -529,12 +541,18 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       break
     }
 
+    let streamOutputChars = 0
+
     budget.deadline.pause()
     try {
       for await (const chunk of provider.stream(messages, tools, signal)) {
         if (signal?.aborted) break
-        if (chunk.type === 'reasoning') onChunk(chunk)
+        if (chunk.type === 'reasoning') {
+          streamOutputChars += chunk.text.length
+          onChunk(chunk)
+        }
         if (chunk.type === 'text') {
+          streamOutputChars += chunk.text.length
           assistantText += chunk.text
           onChunk(chunk)
         }
@@ -556,6 +574,13 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         }
         if (chunk.type === 'done') {
           stopReason = chunk.stopReason
+          break
+        }
+        // Backstop against a single runaway generation (common with local
+        // OpenAI-compatible servers that ignore output caps): stop consuming and
+        // treat the partial turn as truncated so the loop can recover (#489).
+        if (!pendingToolCalls.length && isStreamOutputRunaway(streamOutputChars)) {
+          stopReason = 'max_tokens'
           break
         }
       }
