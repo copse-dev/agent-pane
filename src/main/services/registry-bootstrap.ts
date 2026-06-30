@@ -29,6 +29,7 @@ import { browserTools } from '../tools/browser-tools.ts'
 import { rememberTool, recallTool } from '../tools/memory-tools.ts'
 import { listSkills } from './skills-registry.ts'
 import { getSetting } from './settings.ts'
+import { isGhAvailable } from './tool-availability.ts'
 import {
   BROWSER_TOOLS_ENABLED_SETTING,
   BROWSER_TOOLS_DEFAULT_ENABLED,
@@ -57,18 +58,28 @@ export function createRegistry(): ToolRegistry {
   registry.register(gitDiffTool)
   registry.register(gitLogTool)
   registry.register(gitCommitTool)
-  registry.register(ghPrListTool)
-  registry.register(ghPrViewTool)
-  registry.register(ghPrFilesTool)
-  registry.register(getCiStatusTool)
-  registry.register(waitForCiChecksTool)
-  registry.register(getCiFailureLogsTool)
+  // GitHub-backed tools shell out to `gh`. Only expose them to the model when
+  // we've deterministically probed `gh` as available (checkToolAvailability runs
+  // before createRegistry); otherwise every call would just return "gh is not
+  // available", so advertising them is misleading. checkToolAvailability also
+  // treats a `gh` that can't authenticate as unavailable, keeping read-only GH
+  // tools hidden when access is unauthorized.
+  const ghAvailable = isGhAvailable()
+  if (ghAvailable) {
+    registry.register(ghPrListTool)
+    registry.register(ghPrViewTool)
+    registry.register(ghPrFilesTool)
+    registry.register(getCiStatusTool)
+    registry.register(waitForCiChecksTool)
+    registry.register(getCiFailureLogsTool)
+  }
   registry.register(runShellTool)
   registry.register(exploreTool)
   // Experimental CI investigator subagent (off by default). Gates its entry tool
   // and the deep-log gh_run_* helpers it relies on so the feature is fully inert
-  // unless explicitly opted into via the experimental setting.
-  if (getSetting<boolean>(CI_INVESTIGATOR_ENABLED_SETTING, false)) {
+  // unless explicitly opted into via the experimental setting. Also requires `gh`
+  // since the run-log helpers shell out to it.
+  if (ghAvailable && getSetting<boolean>(CI_INVESTIGATOR_ENABLED_SETTING, false)) {
     registry.register(ghRunListTool)
     registry.register(ghRunViewTool)
     registry.register(investigateCiTool)
