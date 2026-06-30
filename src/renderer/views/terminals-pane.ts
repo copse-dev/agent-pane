@@ -2,6 +2,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { el } from '../dom/helpers.ts'
+import { panePopoutButton } from './pane-popout-button.ts'
 import { registerTerminalSelectionToChatShortcut } from '../terminal/selection-to-chat.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -69,7 +70,7 @@ export function mountTerminalsPane(
     },
     '+',
   )
-  listHeader.append(newBtn)
+  listHeader.append(panePopoutButton(api, 'terminal', 'terminal'), newBtn)
 
   const tabsWrap = el('div', { class: 'terminals-list' })
   listRoot.append(listHeader, tabsWrap)

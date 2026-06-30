@@ -1,4 +1,5 @@
 import { el, clear } from '../dom/helpers.ts'
+import { panePopoutButton } from './pane-popout-button.ts'
 import {
   materialFileIconUrl,
   materialFolderIconUrl,
@@ -15,7 +16,12 @@ function join(parent: string, child: string): string {
 
 export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const refreshBtn = el('button', { class: 'sidebar-refresh', 'aria-label': 'Refresh' }, '⟳')
-  const header = el('div', { class: 'sidebar-header sidebar-header-compact' }, refreshBtn)
+  const header = el(
+    'div',
+    { class: 'sidebar-header sidebar-header-compact' },
+    panePopoutButton(api, 'explorer', 'explorer'),
+    refreshBtn,
+  )
   const treeEl = el('div', { class: 'file-tree', role: 'tree' })
   root.append(header, treeEl)
 
