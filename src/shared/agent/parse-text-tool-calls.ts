@@ -180,11 +180,13 @@ function removeBlocksOutsideCode(text: string, re: RegExp): string {
   const blanked = blankCodeSpans(text)
   const ranges: Array<[number, number]> = []
   for (const match of blanked.matchAll(re)) {
-    if (match.index !== undefined) ranges.push([match.index, match.index + match[0].length])
+    ranges.push([match.index, match.index + match[0].length])
   }
   let out = text
   for (let k = ranges.length - 1; k >= 0; k -= 1) {
-    out = out.slice(0, ranges[k][0]) + out.slice(ranges[k][1])
+    const range = ranges[k]
+    if (!range) continue
+    out = out.slice(0, range[0]) + out.slice(range[1])
   }
   return out
 }
