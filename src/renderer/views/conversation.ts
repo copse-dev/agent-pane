@@ -795,7 +795,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     list.querySelector('[data-review-card]')?.remove()
     const thread = getActiveThread(store)
     if (thread?.review) {
-      const card = createReviewCardEl(thread.review)
+      const card = createReviewCardEl(thread.review, api)
       card.setAttribute('data-review-card', '')
       list.append(card)
     }
