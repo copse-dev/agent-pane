@@ -114,6 +114,13 @@ You have a persistent memory for this project, stored as Open Knowledge Format m
 - recall: Look up what you previously stored, optionally filtered by a query.
 Use recall early when a task may depend on prior context, and remember when you learn something durable the user would not want to re-explain. Keep memories concise and project-specific; do not store secrets.`
 
+// Optional steering, toggled by the experimental `piiRedactionEnabled` setting.
+// Only appended when the reveal_pii tool is actually registered.
+export const PII_REDACTION_BLOCK = `
+
+This conversation has client-side PII redaction on. Personal data the user typed is replaced with stable placeholders before their message reaches you — typed tokens like [GIVEN_NAME_1], [EMAIL_2], [SSN_1], [PHONE_1]. The same real value always maps to the same placeholder, so you can reason about a placeholder as if it were the value. Keep placeholders intact in your replies and edits; do not invent or guess the underlying values.
+- reveal_pii: When you genuinely need a real value — e.g. to write it verbatim into a file or command — call reveal_pii with the placeholder. The user is prompted to approve each reveal and may decline, in which case keep using the placeholder.`
+
 // Optional steering, toggled by the `externalApiSafety` setting. Kept short and
 // appended near the top of the system prompt so it sits ahead of workspace- and
 // user-supplied instructions.

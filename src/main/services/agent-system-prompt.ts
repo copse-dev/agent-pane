@@ -16,9 +16,11 @@ import {
   BROWSER_TOOLS_BLOCK,
   EXTERNAL_API_SAFETY_BLOCK,
   MEMORY_TOOLS_BLOCK,
+  PII_REDACTION_BLOCK,
 } from './agent-prompt.ts'
 import { buildSemanticSearchPromptBlock } from './semantic-search.ts'
 import { OKF_MEMORIES_ENABLED_SETTING } from './okf-memory-store.ts'
+import { PII_REDACTION_ENABLED_SETTING } from './pii-redactor.ts'
 import { isProjectSandboxActive } from '../project-sandbox/state.ts'
 
 /** Assemble the system prompt for a run from base prompt + skills + instructions. */
@@ -37,6 +39,7 @@ export async function buildSystemPrompt(opts: {
     BROWSER_TOOLS_DEFAULT_ENABLED,
   )
   const okfMemoriesEnabled = getSetting<boolean>(OKF_MEMORIES_ENABLED_SETTING, false)
+  const piiRedactionEnabled = getSetting<boolean>(PII_REDACTION_ENABLED_SETTING, false)
   const customInstructions = getSettingTrimmed('customInstructions')
   return (
     basePrompt
@@ -45,6 +48,7 @@ export async function buildSystemPrompt(opts: {
     (externalApiSafety ? EXTERNAL_API_SAFETY_BLOCK : '') +
     (browserToolsEnabled ? BROWSER_TOOLS_BLOCK : '') +
     (okfMemoriesEnabled ? MEMORY_TOOLS_BLOCK : '') +
+    (piiRedactionEnabled ? PII_REDACTION_BLOCK : '') +
     buildSkillsCatalogBlock() +
     (await buildInvokedSkillsBlock(invokedSkills, { sandboxActive: isProjectSandboxActive() })) +
     buildSemanticSearchPromptBlock() +
