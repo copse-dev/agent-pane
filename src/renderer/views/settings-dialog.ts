@@ -374,7 +374,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               Connect to an LM Studio (or other OpenAI-compatible) server.
             </p>
 
-            <div id="settings-lm-studio-host"></div>
+            <div id="settings-local-providers-host"></div>
 
             <fieldset>
               <legend>Routing behavior</legend>
@@ -636,8 +636,25 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   }
   showRemoteTab('cursor')
 
+  // Unified Local providers panel: LM Studio leads as a native chip (its bespoke
+  // server-connection + recommended-models UI), followed by the OpenAI-compatible
+  // local presets (Ollama, llama.cpp, Jan, vLLM) and an add-your-own form. The
+  // cloud Providers panel above filters local providers out via the `local` flag
+  // so each provider appears in exactly one place. The dialog keeps the LM Studio
+  // handle for getUrl()/saveConnection() in the security-bundle save below.
   const lmStudioSection = createLmStudioSection(api, { showInstallGuide: false })
-  qsRequired(overlay, '#settings-lm-studio-host').append(lmStudioSection.root)
+  const localProvidersSection = createCustomProvidersSection(api, {
+    variant: 'local',
+    nativeProviders: [
+      {
+        id: 'lmstudio',
+        label: 'LM Studio',
+        element: lmStudioSection.root,
+        refresh: (): Promise<void> => lmStudioSection.refreshDetection(),
+      },
+    ],
+  })
+  qsRequired(overlay, '#settings-local-providers-host').append(localProvidersSection.root)
 
   const ghCliSection = createGhCliSection(api)
   qsRequired(overlay, '#settings-gh-cli-host').append(ghCliSection.root)
@@ -906,6 +923,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await claudeAgentKeySection.refreshKeyStatus()
       await customProvidersSection.refresh()
       await envKeyDetectSection.refresh()
+      await localProvidersSection.refresh()
 
       const form = qsRequired<HTMLFormElement>(overlay, 'form')
       const model = (await api.settings.get('model')) as string | undefined
@@ -945,7 +963,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       if (iconRadio) iconRadio.checked = true
 
       await refreshLocalModelSelects()
-      await lmStudioSection.refreshDetection()
       await ghCliSection.refreshStatus()
       await refreshMcpServers()
       await refreshCuratedServers()
@@ -962,6 +979,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await cursorKeySection.saveKeys()
       await claudeAgentKeySection.saveKeys()
       await customProvidersSection.saveKeys()
+      await localProvidersSection.saveKeys()
       await lmStudioSection.saveConnection()
       const routingValues = modelRoutingSection.readValues()
 
