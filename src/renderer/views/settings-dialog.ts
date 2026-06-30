@@ -1,5 +1,6 @@
 import { errorMessage } from '@shared/errors.ts'
 import type { AppStore } from '@shared/store/store.ts'
+import { isRightPanelPosition } from '@shared/types/state.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
   APP_ICON_VARIANTS,
@@ -496,13 +497,25 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Font size
                 <input type="number" name="fontSize" min="12" max="20" step="1" />
               </label>
+              <label>
+                Right panel position
+                <select name="rightPanelPosition">
+                  <option value="auto">Automatic</option>
+                  <option value="side">Beside chat</option>
+                  <option value="bottom">Below chat</option>
+                </select>
+              </label>
+              <p class="field-hint">
+                Choose where Explorer, Terminal, Changes, and Plan live. "Below chat" keeps the
+                terminal wide and readable on smaller screens.
+              </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="autoPortraitRightPanel" />
                 Move the right panel below chat on tall portrait windows
               </label>
               <p class="field-hint">
-                Automatically splits portrait windows horizontally so Projects + chat stay above
-                Explorer, Terminal, Changes, and Plan.
+                Only applies when the position above is "Automatic": splits portrait windows
+                horizontally so Projects + chat stay above Explorer, Terminal, Changes, and Plan.
               </p>
             </fieldset>
 
@@ -973,6 +986,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       )
       ;(form.elements.namedItem('autoPortraitRightPanel') as HTMLInputElement).checked =
         store.getState().autoPortraitRightPanel
+      ;(form.elements.namedItem('rightPanelPosition') as HTMLSelectElement).value =
+        store.getState().rightPanelPosition
 
       const savedIconVariant = await api.settings.get('appIconVariant')
       const appIconVariant = isAppIconVariant(savedIconVariant)
@@ -1008,6 +1023,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const theme = data.get('theme') as 'light' | 'dark'
       const fontSize = parseInt(data.get('fontSize') as string, 10)
       const autoPortraitRightPanel = data.get('autoPortraitRightPanel') === 'on'
+      const rightPanelPositionRaw = data.get('rightPanelPosition')
+      const rightPanelPosition = isRightPanelPosition(rightPanelPositionRaw)
+        ? rightPanelPositionRaw
+        : 'auto'
       const appIconVariant = data.get('appIconVariant') as AppIconVariant
       const confidence = parseFloat(data.get('safetyConfidenceThreshold') as string)
 
@@ -1020,6 +1039,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await api.settings.set('theme', theme)
       await api.settings.set('fontSize', fontSize)
       await api.settings.set('autoPortraitRightPanel', autoPortraitRightPanel)
+      await api.settings.set('rightPanelPosition', rightPanelPosition)
       if (isAppIconVariant(appIconVariant)) {
         await api.settings.set('appIconVariant', appIconVariant)
         await api.appIcon.apply()
@@ -1043,6 +1063,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         theme,
         fontSize,
         autoPortraitRightPanel,
+        rightPanelPosition,
         settings: { ...store.getState().settings, model },
       })
       store.emit('theme_changed', theme)

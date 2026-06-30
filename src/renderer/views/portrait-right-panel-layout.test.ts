@@ -50,6 +50,41 @@ describe('portrait right panel layout', () => {
     )
   })
 
+  it('lets an explicit position pin override the auto heuristic', () => {
+    // `bottom` forces the horizontal layout even on a wide landscape window.
+    assert.equal(
+      shouldUsePortraitRightPanelLayout(
+        { width: 1600, height: 900 },
+        { autoEnabled: false, filesPaneOpen: true, position: 'bottom' },
+      ),
+      true,
+    )
+    // `side` keeps the panel vertical even on a tall portrait window.
+    assert.equal(
+      shouldUsePortraitRightPanelLayout(
+        { width: 640, height: 1000 },
+        { autoEnabled: true, filesPaneOpen: true, position: 'side' },
+      ),
+      false,
+    )
+    // A pin still respects the pane being closed.
+    assert.equal(
+      shouldUsePortraitRightPanelLayout(
+        { width: 1600, height: 900 },
+        { autoEnabled: false, filesPaneOpen: false, position: 'bottom' },
+      ),
+      false,
+    )
+    // `auto` falls back to the viewport heuristic.
+    assert.equal(
+      shouldUsePortraitRightPanelLayout(
+        { width: 640, height: 1000 },
+        { autoEnabled: true, filesPaneOpen: true, position: 'auto' },
+      ),
+      true,
+    )
+  })
+
   it('syncs the portrait layout class from viewport, pane visibility, and settings', () => {
     const body = document.createElement('div')
     const store = createStore({ autoPortraitRightPanel: true, filesPaneOpen: true })
