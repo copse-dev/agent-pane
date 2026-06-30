@@ -134,6 +134,18 @@ export function isSettingsDialogOpen(): boolean {
   return !!overlayEl && overlayEl.open
 }
 
+/**
+ * Subscribe to the settings dialog closing (Save, Cancel, the ✕ button, or Esc —
+ * all funnel through the native dialog `close` event). Used by other top-layer
+ * UI (e.g. the approval dialog) that must stay behind settings: it defers itself
+ * while settings is open and flushes when this fires. Returns an unsubscribe fn.
+ */
+export function onSettingsDialogClose(listener: () => void): () => void {
+  if (!overlayEl) throw new Error('onSettingsDialogClose called before mountSettingsDialog')
+  overlayEl.addEventListener('close', listener)
+  return () => overlayEl?.removeEventListener('close', listener)
+}
+
 export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // A native <dialog> (opened via showModal in openSettingsDialog) rather than a
   // div: the platform handles focus-trapping, inert background, top-layer
