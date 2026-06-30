@@ -4,6 +4,11 @@ import { at } from '@shared/array-utils.ts'
 import { runAgentLoop } from './run-agent-loop.ts'
 import { AGENT_RUN_ABORT_REASON_TIMEOUT, AgentRunDeadline } from './agent-loop-limits.ts'
 import { getLastMeasuredInputTokens, setLastMeasuredInputTokens } from './trim-history.ts'
+import {
+  REASONING_RUNAWAY_FORCE_ANSWER_NUDGE,
+  REASONING_RUNAWAY_GIVEUP_MESSAGE,
+  TRUNCATION_CONTINUE_NUDGE,
+} from '../llm/provider-stop-reason.ts'
 import type { LLMMessage, LLMProvider, StreamChunk } from '@shared/types'
 
 function mockProvider(chunks: StreamChunk[][]): LLMProvider {
@@ -177,6 +182,83 @@ describe('runAgentLoop', () => {
     assert.ok(
       chunks.some((c) => c.type === 'text' && c.text.includes('Short final answer.')),
       'recovers with the next turn answer',
+    )
+    assert.equal(chunks.at(-1)?.type, 'done')
+  })
+
+  it('forces an answer instead of re-priming after a reasoning-only runaway (#489)', async () => {
+    // A model loops in its "thinking": the first stream floods reasoning past the
+    // per-stream cap with no answer and no tool call. Reasoning never lands in
+    // history, so "continue from where you left off" would just restart the loop.
+    // The loop must instead push a force-answer nudge and accept the next answer.
+    const flood: StreamChunk[] = []
+    for (let i = 0; i < 200; i++) flood.push({ type: 'reasoning', text: 'x'.repeat(1000) })
+    let streamCalls = 0
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<StreamChunk> {
+        streamCalls++
+        if (streamCalls === 1) {
+          for (const c of flood) yield c
+          return // no `done`: the cap, not the provider, ends this turn
+        }
+        yield { type: 'text', text: 'Final answer.' }
+        yield { type: 'done' }
+      },
+    }
+    const messages: LLMMessage[] = [{ role: 'user', content: 'go' }]
+    const chunks: StreamChunk[] = []
+    await runAgentLoop({
+      provider,
+      messages,
+      tools: [],
+      maxSteps: 5,
+      onChunk: (c) => chunks.push(c),
+      executeTool: async () => 'ok',
+    })
+    assert.ok(streamCalls >= 2, 'loop must continue past the reasoning runaway')
+    assert.ok(
+      chunks.some((c) => c.type === 'text' && c.text.includes('Final answer.')),
+      'recovers with the next turn answer',
+    )
+    const userTexts = messages.flatMap((m) =>
+      m.role === 'user' && typeof m.content === 'string' ? [m.content] : [],
+    )
+    assert.ok(
+      userTexts.includes(REASONING_RUNAWAY_FORCE_ANSWER_NUDGE),
+      'pushes the force-answer nudge',
+    )
+    assert.ok(
+      !userTexts.includes(TRUNCATION_CONTINUE_NUDGE),
+      'does not push the continue nudge that re-primes the loop',
+    )
+  })
+
+  it('gives up cleanly when reasoning keeps tripping the cap (#489)', async () => {
+    // The model ignores the force-answer nudge and loops in reasoning again. Rather
+    // than re-prime until the wall-clock deadline, the run ends after the second
+    // reasoning runaway with a surfaced explanation.
+    const flood: StreamChunk[] = []
+    for (let i = 0; i < 200; i++) flood.push({ type: 'reasoning', text: 'x'.repeat(1000) })
+    let streamCalls = 0
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<StreamChunk> {
+        streamCalls++
+        for (const c of flood) yield c // every stream loops, never emits `done`
+      },
+    }
+    const chunks: StreamChunk[] = []
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [],
+      maxSteps: 20,
+      onChunk: (c) => chunks.push(c),
+      executeTool: async () => 'ok',
+    })
+    assert.equal(streamCalls, 2, 'ends after one force-answer retry, not the call budget')
+    assert.ok(
+      chunks.some((c) => c.type === 'text' && c.text === REASONING_RUNAWAY_GIVEUP_MESSAGE),
+      'surfaces the give-up message',
     )
     assert.equal(chunks.at(-1)?.type, 'done')
   })
