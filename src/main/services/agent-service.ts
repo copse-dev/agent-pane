@@ -67,6 +67,8 @@ import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
 import { parseRemoteAgentModel } from '@shared/remote-agent.ts'
 import { runRemoteAgentFromSettings } from './remote-agent-client.ts'
+import { parseAcpModel } from '@shared/acp.ts'
+import { runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
 
 // Re-export the public surface so existing IPC/test imports stay stable while the
 // implementation lives in focused modules.
@@ -144,8 +146,48 @@ export async function runAgent(
   const model = getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
   recordThreadModel(threadId, model)
   const remoteProvider = parseRemoteAgentModel(model)
+  const acpAgentId = parseAcpModel(model)
 
   const sendChunk = createAgentChunkSink(threadId, host)
+
+  if (acpAgentId) {
+    const controller = new AbortController()
+    abortMap.set(threadId, controller)
+    setActiveRunThread(threadId)
+    const runAbort = createAgentRunAbortScheduler(controller)
+    runAbort.schedule()
+    try {
+      const result = await runAcpAgentFromSettings({
+        threadId,
+        agentId: acpAgentId,
+        userPrompt,
+        priorMessages,
+        signal: controller.signal,
+        onChunk: sendChunk,
+      })
+      sendChunk({ type: 'done', stopReason: result.stopReason })
+      return {
+        usage: { inputTokens: 0, outputTokens: 0 },
+        messages: [
+          ...priorMessages,
+          { role: 'user' as const, content: userPrompt },
+          ...result.messages,
+        ],
+      }
+    } catch (err) {
+      const msg = classifyAgentError(err)
+      sendChunk({ type: 'text', text: msg })
+      sendChunk({ type: 'done' })
+      return {
+        usage: { inputTokens: 0, outputTokens: 0 },
+        messages: [...priorMessages, { role: 'user' as const, content: userPrompt }],
+      }
+    } finally {
+      runAbort.clear()
+      clearActiveRunThread(threadId)
+      abortMap.delete(threadId)
+    }
+  }
 
   if (remoteProvider) {
     const controller = new AbortController()
