@@ -16,6 +16,21 @@ export interface ProvidersSection {
   saveKeys: () => Promise<void>
 }
 
+/**
+ * A provider with its own bespoke form (not the generic OpenAI-compatible editor),
+ * shown as a leading chip in the local panel. LM Studio uses this so its dedicated
+ * server-connection + model-download UI lives inside the unified Local providers
+ * panel as the first chip, while keeping its separate backend wiring.
+ */
+export interface NativeProvider {
+  id: string
+  label: string
+  /** Pre-built form element rendered when this chip is selected. */
+  element: HTMLElement
+  /** Re-run any detection/refresh when the panel refreshes (e.g. dialog open). */
+  refresh?: () => void | Promise<void>
+}
+
 // Fixed cloud providers with bespoke key validation (not OpenAI-compatible customs).
 interface FixedProvider {
   id: string
@@ -43,9 +58,8 @@ const FIXED_PROVIDERS: readonly FixedProvider[] = [
     hint: 'Claude, GPT, Gemini, Llama and more via one key. Add a custom model id in the Chat model section.',
   },
 ]
-const FIXED_BY_ID = new Map(FIXED_PROVIDERS.map((p) => [p.id, p]))
-
-// Order of the leading chips, per design. Remaining customs follow, then "Other".
+// Order of the leading cloud chips, per design. Remaining customs follow, then
+// "Other". Local-server presets are ordered separately (LOCAL_CHIP_ORDER).
 const CHIP_ORDER: readonly string[] = [
   'openai',
   'gemini',
@@ -56,14 +70,32 @@ const CHIP_ORDER: readonly string[] = [
   'huggingface',
 ]
 
+// Built-in local-server preset slugs, in chip order (see BUILTIN_EXTRA_PROVIDERS).
+const LOCAL_CHIP_ORDER: readonly string[] = ['ollama', 'llamacpp', 'jan', 'vllm']
+
+interface KnownEndpoint {
+  label: string
+  baseUrl: string
+  /** Explicit slug; loopback hosts all derive "localhost", so locals supply one. */
+  slug?: string
+}
+
 // Well-known OpenAI-compatible cloud endpoints offered as add-form prefills.
-const KNOWN_ENDPOINTS: ReadonlyArray<{ label: string; baseUrl: string }> = [
+const CLOUD_KNOWN_ENDPOINTS: readonly KnownEndpoint[] = [
   { label: 'Together AI', baseUrl: 'https://api.together.xyz/v1' },
   { label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1' },
   { label: 'Fireworks AI', baseUrl: 'https://api.fireworks.ai/inference/v1' },
   { label: 'Perplexity', baseUrl: 'https://api.perplexity.ai' },
   { label: 'xAI (Grok)', baseUrl: 'https://api.x.ai/v1' },
-  { label: 'LM Studio (local)', baseUrl: 'http://localhost:1234/v1' },
+]
+
+// Local servers that don't have a built-in preset chip, offered as prefills in
+// the local "Other" form. Each carries an explicit slug because every loopback
+// host would otherwise collapse to the slug "localhost".
+const LOCAL_KNOWN_ENDPOINTS: readonly KnownEndpoint[] = [
+  { label: 'LM Studio', baseUrl: 'http://localhost:1234/v1', slug: 'lmstudio-local' },
+  { label: 'KoboldCpp', baseUrl: 'http://localhost:5001/v1', slug: 'koboldcpp' },
+  { label: 'text-generation-webui', baseUrl: 'http://localhost:5000/v1', slug: 'textgen' },
 ]
 
 // A small structured editor for a provider's model shortlist: one row of
@@ -188,18 +220,41 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
   return { element, read, set }
 }
 
-export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
+export function createCustomProvidersSection(
+  api: ApiClient,
+  opts: { variant?: 'cloud' | 'local'; nativeProviders?: readonly NativeProvider[] } = {},
+): ProvidersSection {
+  // The same panel renders two ways: the cloud variant (General settings) shows
+  // hosted providers; the local variant (Local models settings) shows loopback
+  // OpenAI-compatible servers. Providers are partitioned by their `local` flag so
+  // a given provider appears in exactly one panel.
+  const isLocal = opts.variant === 'local'
+  // Native providers (e.g. LM Studio) lead the local chip row with their own form.
+  const nativeProviders = isLocal ? (opts.nativeProviders ?? []) : []
+  const nativeById = new Map(nativeProviders.map((p) => [p.id, p]))
+  const fixedProviders: readonly FixedProvider[] = isLocal ? [] : FIXED_PROVIDERS
+  const fixedById = new Map(fixedProviders.map((p) => [p.id, p]))
+  const chipOrder = isLocal
+    ? [...nativeProviders.map((p) => p.id), ...LOCAL_CHIP_ORDER]
+    : CHIP_ORDER
+  const knownEndpoints = isLocal ? LOCAL_KNOWN_ENDPOINTS : CLOUD_KNOWN_ENDPOINTS
+  const defaultSelected = isLocal
+    ? (nativeProviders[0]?.id ?? LOCAL_CHIP_ORDER[0] ?? 'other')
+    : 'openai'
+
   const chipRow = el('div', { class: 'provider-chips', role: 'tablist' })
   const formHost = el('div', { class: 'provider-form-host' })
 
   const fieldset = el(
     'fieldset',
     {},
-    el('legend', {}, 'Providers'),
+    el('legend', {}, isLocal ? 'Local providers' : 'Providers'),
     el(
       'p',
       { class: 'settings-fieldset-desc' },
-      'Pick a provider to add or edit its API key. OpenAI-compatible endpoints (Mistral, Gemini, DeepSeek ship built in) also let you set models and options; choose “Other” to add your own.',
+      isLocal
+        ? 'Connect OpenAI-compatible local servers — LM Studio, Ollama, llama.cpp, Jan, and vLLM ship built in. They run on your machine and need no API key; pick one, set its URL or Fetch models, and Save — or choose “Other” to add another local endpoint.'
+        : 'Pick a provider to add or edit its API key. OpenAI-compatible endpoints (Mistral, Gemini, DeepSeek ship built in) also let you set models and options; choose “Other” to add your own.',
     ),
     chipRow,
     formHost,
@@ -211,13 +266,13 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
   const configured = new Set<string>()
 
   let providers: ExtraProvider[] = []
-  let selected = 'openai'
+  let selected = defaultSelected
 
   function chipKeys(): string[] {
     const extraById = new Map(providers.map((p) => [p.id, p]))
     const ordered: string[] = []
-    for (const id of CHIP_ORDER) {
-      if (FIXED_BY_ID.has(id) || extraById.has(id)) ordered.push(id)
+    for (const id of chipOrder) {
+      if (nativeById.has(id) || fixedById.has(id) || extraById.has(id)) ordered.push(id)
     }
     for (const p of providers) if (!ordered.includes(p.id)) ordered.push(p.id)
     ordered.push('other')
@@ -226,7 +281,12 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
 
   function chipLabel(key: string): string {
     if (key === 'other') return 'Other'
-    return FIXED_BY_ID.get(key)?.label ?? providers.find((p) => p.id === key)?.label ?? key
+    return (
+      nativeById.get(key)?.label ??
+      fixedById.get(key)?.label ??
+      providers.find((p) => p.id === key)?.label ??
+      key
+    )
   }
 
   function renderChips(): void {
@@ -479,7 +539,7 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
         void (async (): Promise<void> => {
           await api.settings.deleteExtraProvider(provider.id)
           pendingKeys.delete(provider.id)
-          selected = 'openai'
+          selected = defaultSelected
           await refresh()
         })().catch(() => {})
       })
@@ -493,7 +553,7 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
   function otherForm(): HTMLElement {
     const presetSelect = el('select', {})
     presetSelect.append(new Option('Custom (enter URL)', ''))
-    for (const ep of KNOWN_ENDPOINTS) presetSelect.append(new Option(ep.label, ep.baseUrl))
+    for (const ep of knownEndpoints) presetSelect.append(new Option(ep.label, ep.baseUrl))
 
     const labelInput = el('input', {
       type: 'text',
@@ -502,7 +562,7 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
     })
     const urlInput = el('input', {
       type: 'url',
-      placeholder: 'https://api.example.com/v1',
+      placeholder: isLocal ? 'http://localhost:11434/v1' : 'https://api.example.com/v1',
       autocomplete: 'off',
     })
     const slugInput = el('input', {
@@ -533,11 +593,14 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
     }
     urlInput.addEventListener('input', repredict)
     presetSelect.addEventListener('change', () => {
-      const ep = KNOWN_ENDPOINTS.find((e) => e.baseUrl === presetSelect.value)
+      const ep = knownEndpoints.find((e) => e.baseUrl === presetSelect.value)
       if (ep) {
         urlInput.value = ep.baseUrl
         if (!labelEdited) labelInput.value = ep.label
-        repredict()
+        // Loopback hosts all derive the slug "localhost", so prefer the preset's
+        // explicit slug when it supplies one; otherwise fall back to prediction.
+        if (!slugEdited && ep.slug) slugInput.value = ep.slug
+        else repredict()
       }
     })
 
@@ -601,7 +664,12 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
       formHost.append(otherForm())
       return
     }
-    const fixed = FIXED_BY_ID.get(selected)
+    const native = nativeById.get(selected)
+    if (native) {
+      formHost.append(native.element)
+      return
+    }
+    const fixed = fixedById.get(selected)
     if (fixed) {
       formHost.append(fixedForm(fixed))
       return
@@ -612,20 +680,26 @@ export function createCustomProvidersSection(api: ApiClient): ProvidersSection {
 
   async function refresh(): Promise<void> {
     try {
-      providers = await api.settings.extraProviders()
+      const all = await api.settings.extraProviders()
+      // Each provider belongs to exactly one panel: local servers here, hosted
+      // providers in the cloud panel.
+      providers = all.filter((p) => (isLocal ? p.local : !p.local))
     } catch {
       providers = []
     }
     if (
       selected !== 'other' &&
-      !FIXED_BY_ID.has(selected) &&
+      !nativeById.has(selected) &&
+      !fixedById.has(selected) &&
       !providers.some((p) => p.id === selected)
     ) {
-      selected = 'openai'
+      selected = defaultSelected
     }
+    // Let native providers (LM Studio) re-run their own detection.
+    await Promise.all(nativeProviders.map(async (p) => p.refresh?.()))
     // Refresh the configured-key indicators for the chips.
     configured.clear()
-    const slugs = [...FIXED_PROVIDERS.map((p) => p.id), ...providers.map((p) => p.id)]
+    const slugs = [...fixedProviders.map((p) => p.id), ...providers.map((p) => p.id)]
     await Promise.all(
       slugs.map(async (slug) => {
         try {

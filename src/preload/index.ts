@@ -296,6 +296,9 @@ contextBridge.exposeInMainWorld('api', {
     artifactImageDataUrl: (agentId: string, path: string) =>
       ipcRenderer.invoke('remoteAgent:artifactImageDataUrl', agentId, path),
   },
+  acp: {
+    detectAgents: () => ipcRenderer.invoke('acp:detectAgents'),
+  },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),
@@ -398,6 +401,9 @@ contextBridge.exposeInMainWorld('api', {
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
+  },
+  panes: {
+    popout: (mode: string) => ipcRenderer.invoke('panes:popout', mode),
   },
 })
 
