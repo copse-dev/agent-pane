@@ -1,5 +1,6 @@
 import { el, qsRequired } from '../dom/helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { isSettingsDialogOpen, onSettingsDialogClose } from './settings-dialog.ts'
 
 export function mountApprovalDialog(api: ApiClient): void {
   const rememberLabel = el(
@@ -49,6 +50,12 @@ export function mountApprovalDialog(api: ApiClient): void {
   let active: PendingApproval | null = null
 
   function showNext(): void {
+    // The settings dialog is itself a top-layer modal <dialog>. A second
+    // showModal() while it is open stacks the approval prompt *above* settings
+    // (issue #501), even though the request came from a background chat. Keep
+    // such requests queued; onSettingsDialogClose() below flushes them once the
+    // user leaves settings, so the prompt appears in front of the chat instead.
+    if (isSettingsDialogOpen()) return
     active = queue.shift() ?? null
     if (!active) return
     approvalTitle.textContent = active.title
@@ -70,6 +77,12 @@ export function mountApprovalDialog(api: ApiClient): void {
 
   api.agent.onApprovalRequest(({ id, title, body, allowRemember, rememberLabel }) => {
     queue.push({ id, title, body, allowRemember, rememberLabel })
+    if (!active) showNext()
+  })
+
+  // Requests that arrived while the user was in Settings were held back by
+  // showNext()'s guard; surface them now that settings is closed.
+  onSettingsDialogClose(() => {
     if (!active) showNext()
   })
 
