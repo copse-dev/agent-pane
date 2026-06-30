@@ -83,9 +83,8 @@ let searchExecutorForTest:
       opts: SemanticSearchOptions,
     ) => Promise<{ hits: SemanticSearchHit[]; backend: SemanticBackend } | null>)
   | null = null
-let indexUpdateRunnerForTest:
-  | ((backend: SemanticBackend, root: string) => Promise<void>)
-  | null = null
+let indexUpdateRunnerForTest: ((backend: SemanticBackend, root: string) => Promise<void>) | null =
+  null
 
 /** Test hook — replace the per-run index worker to assert coalescing without spawning. */
 export function setSemanticIndexUpdateRunnerForTest(
