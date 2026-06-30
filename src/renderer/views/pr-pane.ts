@@ -103,8 +103,6 @@ export function mountPrPane(
     ),
   )
   const refreshBtn = qsRequired<HTMLButtonElement>(listHeader, '.pr-pane-refresh-btn')
-  const popoutBtn = qsRequired<HTMLButtonElement>(listHeader, '.pr-pane-popout-btn')
-  popoutBtn.addEventListener('click', () => void api.panes.popout('prs'))
   const listBody = el('div', { class: 'git-changes-list pr-list-body' })
   listRoot.append(listHeader, listBody)
 
