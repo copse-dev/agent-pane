@@ -117,6 +117,32 @@ export function seedEmptyProject(
   }
 }
 
+/** Two projects on the same workspace root for project-switch e2e (#502). */
+export function seedProjectSwitchFixture(
+  workspaceRoot: string,
+  options?: { activeProjectId?: 'project-a' | 'project-b' },
+): { projectAId: string; projectBId: string } {
+  const projectAId = 'e2e-project-switch-a'
+  const projectBId = 'e2e-project-switch-b'
+  const activeProjectId = options?.activeProjectId === 'project-b' ? projectBId : projectAId
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [
+        { id: projectAId, path: workspaceRoot, name: 'Project A' },
+        { id: projectBId, path: workspaceRoot, name: 'Project B' },
+      ],
+      activeProjectId,
+      [`threads:${projectAId}`]: [],
+      [`threads:${projectBId}`]: [],
+    }),
+    'utf8',
+  )
+  writeSettings({})
+  return { projectAId, projectBId }
+}
+
 /**
  * Project with a stored OpenRouter API key, a custom model, and a (test-only)
  * `openRouterApiBase` pointing at a local fixture so the picker fetches a known
