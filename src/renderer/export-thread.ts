@@ -24,6 +24,9 @@ function providersFromUsage(usage: Thread['usage']): string[] {
   return [...new Set(models.map(providerFromModelId))]
 }
 
+/** JSONL export schema revision — bump when thread/message header fields change. */
+export const THREAD_JSONL_EXPORT_VERSION = 2
+
 // JSONL: one JSON object per line — easy to stream, grep, and re-import; each
 // assistant line carries full toolCalls (args + results, plus editStats and any
 // nested subagent usage) inline.
@@ -32,6 +35,7 @@ export function threadToJsonl(thread: Thread): string {
   lines.push(
     JSON.stringify({
       type: 'thread',
+      exportVersion: THREAD_JSONL_EXPORT_VERSION,
       id: thread.id,
       title: thread.title,
       status: thread.status,
@@ -58,6 +62,7 @@ export function threadToJsonl(thread: Thread): string {
         id: msg.id,
         role: msg.role,
         content: msg.content,
+        ...(msg.reasoning !== undefined ? { reasoning: msg.reasoning } : {}),
         images: msg.images,
         toolCalls: msg.toolCalls,
         commandSummary: msg.commandSummary,

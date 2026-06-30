@@ -72,6 +72,7 @@ describe('export thread', () => {
     t.draftPrompt = 'unsent'
 
     const header = JSON.parse(threadToJsonl(t).split('\n')[0]) as Record<string, unknown>
+    assert.equal(header.exportVersion, 2)
     assert.equal(header.status, 'error')
     assert.deepEqual(header.todos, t.todos)
     assert.deepEqual(header.review, t.review)
@@ -140,5 +141,23 @@ describe('export thread', () => {
     assert.equal(line.commandSummary, 'ran 3 shell commands')
     assert.deepEqual(line.toolCalls[0].editStats, { additions: 5, deletions: 2 })
     assert.deepEqual(line.toolCalls[0].subagent.usage, { inputTokens: 10, outputTokens: 4 })
+  })
+
+  it('exports assistant reasoning when present', () => {
+    const jsonl = threadToJsonl(
+      thread([
+        {
+          id: 'message-1',
+          role: 'assistant',
+          content: 'answer',
+          reasoning: 'thinking step by step',
+          toolCalls: [],
+          createdAt: 2,
+        },
+      ]),
+    )
+
+    const line = JSON.parse(jsonl.trimEnd().split('\n')[1]) as { reasoning?: string }
+    assert.equal(line.reasoning, 'thinking step by step')
   })
 })
