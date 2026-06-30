@@ -7,12 +7,12 @@ checks and unit tests, not the Electron e2e suite.
 This is the lighter sibling of [`../runner`](../runner) (the e2e fleet). Same
 registration mechanics, different payload:
 
-| | `../runner` (e2e) | `runner-checks` (this) |
-|---|---|---|
-| Label | `copse-e2e` | `copse-checks` |
-| Runs | seeded e2e suite (launches Electron) | typecheck, lint, format:check, check:dead-code, check:oracle, unit tests / coverage, normalizer-parity |
-| Image | Ubuntu 24.04 + Chromium/Electron/Xvfb + emoji font | Ubuntu 24.04 + Node + build toolchain + ripgrep + python3 |
-| Memory | ~4–6 GB/runner | ~2–4 GB/runner |
+|        | `../runner` (e2e)                                  | `runner-checks` (this)                                                                                 |
+| ------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Label  | `copse-e2e`                                        | `copse-checks`                                                                                         |
+| Runs   | seeded e2e suite (launches Electron)               | typecheck, lint, format:check, check:dead-code, check:oracle, unit tests / coverage, normalizer-parity |
+| Image  | Ubuntu 24.04 + Chromium/Electron/Xvfb + emoji font | Ubuntu 24.04 + Node + build toolchain + ripgrep + python3                                              |
+| Memory | ~4–6 GB/runner                                     | ~2–4 GB/runner                                                                                         |
 
 The check tier never starts Electron, so this image omits the entire
 Chromium/Xvfb/font stack — it builds and boots much faster while still matching
@@ -89,7 +89,7 @@ runner list and is treated as "no fleet available."
 
 With no admin-read token, `pick-runner` can't enumerate the fleet and **fails
 open** to GitHub-hosted `ubuntu-latest` — the previous behaviour. So the routing
-only ever *adds* the self-hosted option; it never blocks CI. Set `RUNNERS_PAT`
+only ever _adds_ the self-hosted option; it never blocks CI. Set `RUNNERS_PAT`
 when you want the check tier to actually land on this fleet.
 
 ## Sizing
