@@ -56,6 +56,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   theme: z.enum(['light', 'dark']),
   fontSize: z.number().int().min(8).max(32),
   autoPortraitRightPanel: z.boolean(),
+  rightPanelPosition: z.enum(['auto', 'side', 'bottom']),
   appIconVariant: z.enum(APP_ICON_VARIANTS),
   layout: z.object({
     projectsPaneWidth: z.number().int().min(180).max(400),
