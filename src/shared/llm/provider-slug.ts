@@ -17,6 +17,12 @@ export const RESERVED_PROVIDER_SLUGS: readonly string[] = [
   'mistral',
   'gemini',
   'deepseek',
+  'huggingface',
+  // Built-in local-server presets (see BUILTIN_EXTRA_PROVIDERS).
+  'ollama',
+  'llamacpp',
+  'jan',
+  'vllm',
 ]
 
 /** Lowercase, collapse non-alphanumerics to single dashes, trim leading/trailing dashes. */

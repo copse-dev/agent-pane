@@ -528,6 +528,13 @@ export function mountGitChangesPane(
   renderList()
   clearSelection()
 
+  // This pane is mounted asynchronously, once the Monaco bundle resolves. If the
+  // right panel is already in "changes" mode by the time we mount (the common
+  // case, since the mode is restored before Monaco loads), no
+  // right_panel_mode_changed event will arrive to trigger the first refresh — so
+  // catch up to the current state here, or the diff never renders. See #459.
+  if (changesModeActive(store)) void refresh()
+
   return () => {
     if (refreshTimer) clearTimeout(refreshTimer)
     stopObservingLayout()
