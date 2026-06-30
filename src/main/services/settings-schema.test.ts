@@ -33,6 +33,15 @@ describe('settings-schema', () => {
     assert.equal(autoPortraitRightPanel.safeParse('true').success, false)
   })
 
+  it('validates the right panel position setting', () => {
+    const rightPanelPosition = getSettingSchema('rightPanelPosition')
+    assert.ok(rightPanelPosition)
+    assert.equal(rightPanelPosition.safeParse('auto').success, true)
+    assert.equal(rightPanelPosition.safeParse('side').success, true)
+    assert.equal(rightPanelPosition.safeParse('bottom').success, true)
+    assert.equal(rightPanelPosition.safeParse('top').success, false)
+  })
+
   it('returns undefined for keys without a registered schema', () => {
     assert.equal(getSettingSchema('someUnknownKey'), undefined)
   })
