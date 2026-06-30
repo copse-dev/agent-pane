@@ -93,6 +93,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   mcpUiArtefactsEnabled: z.boolean(),
   ciInvestigatorEnabled: z.boolean(),
   okfMemoriesEnabled: z.boolean(),
+  roadmapPlansEnabled: z.boolean(),
   piiRedactionEnabled: z.boolean(),
   customInstructions: z.string().max(8192),
   onboardingCompleted: z.boolean(),
