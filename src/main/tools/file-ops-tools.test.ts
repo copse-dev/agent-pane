@@ -68,6 +68,14 @@ describe('file-ops tools (#122)', () => {
     assert.equal(await exists(join(tempRoot, 'gone.txt')), false)
   })
 
+  it('delete_file reports every removed line as edit stats for the tool card', async () => {
+    await writeFile(join(tempRoot, 'gone.txt'), 'a\nb\nc\n', 'utf8')
+    const { editStats } = normalizeToolExecuteResult(
+      await registry.execute('delete_file', { path: 'gone.txt' }, new AbortController().signal),
+    )
+    assert.deepEqual(editStats, { additions: 0, deletions: 3 })
+  })
+
   it('delete_file reports a missing file without staging', async () => {
     const msg = await run(registry, 'delete_file', { path: 'nope.txt' })
     assert.match(msg, /File not found: nope\.txt/)
