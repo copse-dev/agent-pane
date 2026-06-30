@@ -150,6 +150,7 @@ export interface ApiClient {
       serverUrl: string
       installDetected: boolean
       models: string[]
+      modelContexts: Record<string, number>
       preferredPresent: string[]
       preferredMissing: string[]
       error?: string
