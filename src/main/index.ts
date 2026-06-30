@@ -19,6 +19,7 @@ import {
 } from './services/mcp-registry.ts'
 import { loadCustomTools } from './services/custom-tools-registry.ts'
 import { initApproval } from './services/approval.ts'
+import { initAskUser } from './services/ask-user.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
 import { stopWorkspaceIndexWatcher } from './services/workspace-index-watcher.ts'
@@ -124,6 +125,7 @@ app
     }
 
     initApproval(win)
+    initAskUser(win)
     initDiffQueue(win)
     initFsWatcher(win)
     const disposeTerminalHandlers = initTerminal(win)

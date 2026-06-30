@@ -95,6 +95,20 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('agent:approval_request', listener)
       }
     },
+    onAskUserRequest: (
+      handler: (req: { id: string; questions: { question: string; options?: string[] }[] }) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        req: { id: string; questions: { question: string; options?: string[] }[] },
+      ): void => {
+        handler(req)
+      }
+      ipcRenderer.on('agent:ask_user_request', listener)
+      return (): void => {
+        ipcRenderer.off('agent:ask_user_request', listener)
+      }
+    },
     onShellOutput: (handler: (data: string, toolCallId: string | null) => void) => {
       const listener = (
         _e: Electron.IpcRendererEvent,
@@ -176,6 +190,9 @@ contextBridge.exposeInMainWorld('api', {
   approval: {
     respond: (id: string, approved: boolean, remember?: boolean) =>
       ipcRenderer.invoke('approval:respond', id, approved, remember),
+  },
+  ask: {
+    respond: (id: string, answers: string[]) => ipcRenderer.invoke('ask:respond', id, answers),
   },
   mcp: {
     list: () => ipcRenderer.invoke('mcp:list'),
