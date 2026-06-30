@@ -41,6 +41,8 @@ import { CI_INVESTIGATOR_ENABLED_SETTING } from './ci-investigator-service.ts'
 import { OKF_MEMORIES_ENABLED_SETTING } from './okf-memory-store.ts'
 import { MODEL_CLASSIFIER_ENABLED_SETTING } from './model-classifier.ts'
 import { suggestModelTool } from '../tools/model-classifier-tool.ts'
+import { ROADMAP_PLANS_ENABLED_SETTING } from './roadmap-plans-store.ts'
+import { roadmapPlanTool } from '../tools/roadmap-tools.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
@@ -95,6 +97,12 @@ export function createRegistry(): ToolRegistry {
   // be routed to the cheapest model that can handle it. Advisory only.
   if (getSetting<boolean>(MODEL_CLASSIFIER_ENABLED_SETTING, false)) {
     registry.register(suggestModelTool)
+  }
+  // Experimental roadmap plans (off by default, issue #556). Adds a roadmap_plan
+  // tool that records future-work prompts and tracks their status across
+  // sessions so longer-horizon work is captured without being started early.
+  if (getSetting<boolean>(ROADMAP_PLANS_ENABLED_SETTING, false)) {
+    registry.register(roadmapPlanTool)
   }
   // Experimental PII redaction (off by default). Adds the reveal_pii tool that
   // turns a redacted placeholder back into its real value, gated by user
