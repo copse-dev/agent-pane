@@ -32,9 +32,11 @@ export function codesearchThreadCap(): number {
 }
 
 /**
- * Env vars that cap thread fan-out for the codesearch process. The binary is
- * Rust/tokio based, so we constrain the common thread-pool knobs (Rayon, tokio,
- * OpenMP) rather than relying on a CLI flag that may change between releases.
+ * Cap thread fan-out for the codesearch process. flupkede/codesearch does its
+ * CPU-heavy work through three pools, each with a standard env knob we set here:
+ * rayon (BM25 + tree-sitter chunking), tokio's multi-thread runtime, and the
+ * ONNX Runtime / fastembed embedding inference (OpenMP). Env knobs are
+ * release-robust — the binary exposes no thread CLI flag.
  */
 export function codesearchCpuLimitEnv(): NodeJS.ProcessEnv {
   const threads = String(codesearchThreadCap())
@@ -42,7 +44,6 @@ export function codesearchCpuLimitEnv(): NodeJS.ProcessEnv {
     RAYON_NUM_THREADS: threads,
     TOKIO_WORKER_THREADS: threads,
     OMP_NUM_THREADS: threads,
-    CODESEARCH_THREADS: threads,
   }
 }
 
@@ -173,10 +174,8 @@ function codesearchRunOpts(
     ...SEMANTIC_CMD_OPTS,
     // Default to the search budget; index calls override timeout_ms via `extra`.
     timeout_ms: CODESEARCH_SEARCH_TIMEOUT_MS,
-    // Cap thread fan-out so the indexer can't pin every core (#517). The env
-    // knobs only bind if the binary uses default rayon/tokio pools, so also drop
-    // the process priority — that keeps codesearch from starving the UI (typing
-    // lag) regardless of whether it honours the thread caps.
+    // Cap thread fan-out so the indexer can't pin every core, and drop its
+    // scheduling priority so it yields to the UI even mid-index (#517).
     lowPriority: true,
     env: { HOME: codesearchHomeDir(), ...codesearchCpuLimitEnv() },
     ...extra,
