@@ -571,7 +571,11 @@
 .context-wheel.is-interactive {
   cursor: pointer;
 }
-.context-wheel.is-interactive:hover .context-wheel-label {
+.context-wheel.has-breakdown {
+  cursor: pointer;
+}
+.context-wheel.is-interactive:hover .context-wheel-label,
+.context-wheel.has-breakdown:hover .context-wheel-label {
   color: var(--text-secondary);
 }
 .footer-usage {
