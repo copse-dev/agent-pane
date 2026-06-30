@@ -68,6 +68,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'mcpUiArtefactsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'ciInvestigatorEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'okfMemoriesEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'roadmapPlansEnabled', kind: 'checkbox', default: false, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
@@ -563,6 +564,22 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <a href="https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing" target="_blank" rel="noreferrer">Open Knowledge Format</a>
                 markdown files (YAML frontmatter plus a markdown body) under
                 <code>~/.copse/memories</code>. While off, neither tool is registered.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Roadmap plans</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="roadmapPlansEnabled" />
+                Let the agent keep a roadmap of future-work prompts
+              </label>
+              <p class="field-hint">
+                Adds a <code>roadmap_plan</code> tool so the agent can record prompts to run over a
+                longer time horizon than the current change and track each item's status
+                (ready / blocked / conflicts / done) across sessions — a notes app for future work,
+                so longer-horizon plans aren't started before the PRs they depend on merge. Items
+                are stored per project under <code>~/.copse/roadmap</code>. While off, the tool is
+                not registered.
               </p>
             </fieldset>
           </section>
