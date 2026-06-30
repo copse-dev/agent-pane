@@ -23,6 +23,7 @@ describe('readonly-tools', () => {
       'read_staged_diff',
       'read_skill',
       'explore',
+      'ask_user',
     ]) {
       assert.equal(getReadonlyToolBlockReason(name), null, name)
       assert.equal(isToolAllowedInReadonlyMode(name), true, name)

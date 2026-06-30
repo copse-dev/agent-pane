@@ -1,11 +1,16 @@
+import { cpus } from 'node:os'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  codesearchCpuLimitEnv,
+  codesearchThreadCap,
   formatSemanticSearchResults,
   parseCodesearchJson,
   parseVeraJson,
   resolveSemanticSearchRoot,
   setSemanticBackendForTest,
+  setSemanticIndexUpdateRunnerForTest,
+  updateSemanticIndex,
 } from './semantic-index.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 
@@ -95,6 +100,67 @@ describe('semantic-index parsing', () => {
     assert.equal(resolveSemanticSearchRoot(root, 'src/main'), `${root}/src/main`)
     assert.equal(resolveSemanticSearchRoot(root, root), root)
     assert.equal(resolveSemanticSearchRoot(root, `${root}/src`), `${root}/src`)
+  })
+
+  it('caps codesearch threads to keep CPU bounded (#517)', () => {
+    const cap = codesearchThreadCap()
+    const cores = Math.max(1, cpus().length)
+    // Never zero/negative, never more than half the cores, never above the ceiling.
+    assert.ok(cap >= 1)
+    assert.ok(cap <= 4)
+    assert.ok(cap <= Math.max(1, Math.floor(cores / 2)))
+  })
+
+  it('exposes thread-cap env vars for the codesearch process (#517)', () => {
+    const env = codesearchCpuLimitEnv()
+    const threads = String(codesearchThreadCap())
+    assert.equal(env['RAYON_NUM_THREADS'], threads)
+    assert.equal(env['TOKIO_WORKER_THREADS'], threads)
+    assert.equal(env['OMP_NUM_THREADS'], threads)
+  })
+
+  it('coalesces overlapping index updates into one in-flight run plus one trailing run (#517)', async () => {
+    setSemanticBackendForTest('codesearch')
+    let active = 0
+    let maxConcurrent = 0
+    let runs = 0
+    // Each run parks its resolver here so the test can release them one at a time.
+    const releases: Array<() => void> = []
+    setSemanticIndexUpdateRunnerForTest(async () => {
+      runs += 1
+      active += 1
+      maxConcurrent = Math.max(maxConcurrent, active)
+      // Hold the run open until the test releases it, so overlaps are observable.
+      await new Promise<void>((res) => releases.push(res))
+      active -= 1
+    })
+    try {
+      const root = '/tmp/repo'
+      // Five concurrent requests for the same root while a run is held open.
+      const calls = [
+        updateSemanticIndex(root),
+        updateSemanticIndex(root),
+        updateSemanticIndex(root),
+        updateSemanticIndex(root),
+        updateSemanticIndex(root),
+      ]
+      // Let the first run start and the rest register as pending.
+      await new Promise((res) => setTimeout(res, 0))
+      // Drain: releasing each held run lets the loop pick up the trailing pass.
+      while (releases.length > 0) {
+        releases.shift()?.()
+        await new Promise((res) => setTimeout(res, 0))
+      }
+      await Promise.all(calls)
+
+      // Never more than one codesearch process at a time...
+      assert.equal(maxConcurrent, 1)
+      // ...and the burst collapses to one active + one trailing run, not five.
+      assert.equal(runs, 2)
+    } finally {
+      setSemanticIndexUpdateRunnerForTest(null)
+      setSemanticBackendForTest(null)
+    }
   })
 
   it('formats semantic hits with backend note', () => {

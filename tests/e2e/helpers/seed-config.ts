@@ -69,6 +69,7 @@ export function seedEmptyProject(
     subagentModel?: string
     localSubagentsEnabled?: boolean
     autoPortraitRightPanel?: boolean
+    rightPanelPosition?: 'auto' | 'side' | 'bottom'
   },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
@@ -106,11 +107,40 @@ export function seedEmptyProject(
   if (options?.autoPortraitRightPanel !== undefined) {
     settings.autoPortraitRightPanel = options.autoPortraitRightPanel
   }
+  if (options?.rightPanelPosition !== undefined) {
+    settings.rightPanelPosition = options.rightPanelPosition
+  }
   if (Object.keys(settings).length > 0) {
     writeSettings(settings)
   } else {
     writeSettings({})
   }
+}
+
+/** Two projects on the same workspace root for project-switch e2e (#502). */
+export function seedProjectSwitchFixture(
+  workspaceRoot: string,
+  options?: { activeProjectId?: 'project-a' | 'project-b' },
+): { projectAId: string; projectBId: string } {
+  const projectAId = 'e2e-project-switch-a'
+  const projectBId = 'e2e-project-switch-b'
+  const activeProjectId = options?.activeProjectId === 'project-b' ? projectBId : projectAId
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [
+        { id: projectAId, path: workspaceRoot, name: 'Project A' },
+        { id: projectBId, path: workspaceRoot, name: 'Project B' },
+      ],
+      activeProjectId,
+      [`threads:${projectAId}`]: [],
+      [`threads:${projectBId}`]: [],
+    }),
+    'utf8',
+  )
+  writeSettings({})
+  return { projectAId, projectBId }
 }
 
 /**

@@ -112,8 +112,16 @@ function rollupItemBucket(status: string | undefined, conclusion: string): CiChe
   return 'unknown'
 }
 
-export function deriveOverallState(checks: CiCheck[]): CiOverallState {
-  if (checks.length === 0) return 'no_checks'
+export function deriveOverallState(
+  checks: CiCheck[],
+  opts: { checksPending?: boolean } = {},
+): CiOverallState {
+  if (checks.length === 0) {
+    // `gh pr checks` exits 8 while checks are queued / not yet reported by
+    // GitHub. Surfacing `no_checks` there is misleading — it reads as "this PR
+    // genuinely has no CI" when checks are merely pending. (#521)
+    return opts.checksPending ? 'pending' : 'no_checks'
+  }
   if (checks.some((check) => check.bucket === 'pending')) return 'pending'
   if (checks.some((check) => check.bucket === 'fail')) return 'failure'
   return 'success'
@@ -180,7 +188,17 @@ async function loadOpenPr(prNumber?: number): Promise<GhPrView | null> {
   return pr
 }
 
-async function loadPrChecks(prNumber?: number): Promise<CiCheck[]> {
+interface PrChecksResult {
+  checks: CiCheck[]
+  /**
+   * `gh pr checks` exits 8 while checks are queued / not yet reported by
+   * GitHub. We swallow that exit code (it is not an error), but keep the signal
+   * so an empty check list can surface `pending` rather than `no_checks`. (#521)
+   */
+  pending: boolean
+}
+
+async function loadPrChecks(prNumber?: number): Promise<PrChecksResult> {
   const args = [
     'pr',
     'checks',
@@ -192,8 +210,7 @@ async function loadPrChecks(prNumber?: number): Promise<CiCheck[]> {
   if (result.code !== 0 && result.code !== 8) {
     throw new Error(result.stderr.trim() || result.stdout.trim() || 'gh pr checks failed')
   }
-  const parsed = parseGhPrChecks(result.stdout)
-  return parsed.length > 0 ? parsed : []
+  return { checks: parseGhPrChecks(result.stdout), pending: result.code === 8 }
 }
 
 async function loadLatestRun(
@@ -219,18 +236,18 @@ async function loadLatestRun(
 
 function buildCiStatus(
   pr: GhPrView | null,
-  checks: CiCheck[],
+  prChecks: PrChecksResult,
   latestRun: GhWorkflowRun | null,
 ): CiStatus {
   const rollupChecks = pr ? rollupToCiChecks(pr.statusCheckRollup) : []
-  const mergedChecks = checks.length > 0 ? checks : rollupChecks
+  const mergedChecks = prChecks.checks.length > 0 ? prChecks.checks : rollupChecks
   return {
     prNumber: typeof pr?.number === 'number' ? pr.number : null,
     prTitle: pr?.title?.trim() || null,
     prUrl: pr?.url ?? null,
     branch: pr?.headRefName ?? null,
     headSha: pr?.headRefOid ?? null,
-    overall: deriveOverallState(mergedChecks),
+    overall: deriveOverallState(mergedChecks, { checksPending: prChecks.pending }),
     checks: mergedChecks,
     latestRunId: typeof latestRun?.databaseId === 'number' ? latestRun.databaseId : null,
     latestRunUrl: latestRun?.url ?? null,
@@ -252,9 +269,9 @@ export async function getCiStatus(prNumber?: number): Promise<CiStatus> {
       latestRunUrl: null,
     }
   }
-  const checks = await loadPrChecks(prNumber)
+  const prChecks = await loadPrChecks(prNumber)
   const latestRun = await loadLatestRun(pr.headRefName ?? null, pr.headRefOid ?? null)
-  return buildCiStatus(pr, checks, latestRun)
+  return buildCiStatus(pr, prChecks, latestRun)
 }
 
 export async function waitForCiChecks(

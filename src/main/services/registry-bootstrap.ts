@@ -24,11 +24,15 @@ import { deleteFileTool, renameFileTool, makeDirectoryTool } from '../tools/file
 import { exploreTool } from '../tools/explore-tool.ts'
 import { readSkillTool } from '../tools/read-skill-tool.ts'
 import { updateTodosTool } from '../tools/todo-tool.ts'
+import { askUserTool } from '../tools/ask-user-tool.ts'
 import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
 import { browserTools } from '../tools/browser-tools.ts'
 import { rememberTool, recallTool } from '../tools/memory-tools.ts'
+import { revealPiiTool } from '../tools/reveal-pii-tool.ts'
+import { PII_REDACTION_ENABLED_SETTING } from './pii-redactor.ts'
 import { listSkills } from './skills-registry.ts'
 import { getSetting } from './settings.ts'
+import { isGhAvailable } from './tool-availability.ts'
 import {
   BROWSER_TOOLS_ENABLED_SETTING,
   BROWSER_TOOLS_DEFAULT_ENABLED,
@@ -57,18 +61,28 @@ export function createRegistry(): ToolRegistry {
   registry.register(gitDiffTool)
   registry.register(gitLogTool)
   registry.register(gitCommitTool)
-  registry.register(ghPrListTool)
-  registry.register(ghPrViewTool)
-  registry.register(ghPrFilesTool)
-  registry.register(getCiStatusTool)
-  registry.register(waitForCiChecksTool)
-  registry.register(getCiFailureLogsTool)
+  // GitHub-backed tools shell out to `gh`. Only expose them to the model when
+  // we've deterministically probed `gh` as available (checkToolAvailability runs
+  // before createRegistry); otherwise every call would just return "gh is not
+  // available", so advertising them is misleading. checkToolAvailability also
+  // treats a `gh` that can't authenticate as unavailable, keeping read-only GH
+  // tools hidden when access is unauthorized.
+  const ghAvailable = isGhAvailable()
+  if (ghAvailable) {
+    registry.register(ghPrListTool)
+    registry.register(ghPrViewTool)
+    registry.register(ghPrFilesTool)
+    registry.register(getCiStatusTool)
+    registry.register(waitForCiChecksTool)
+    registry.register(getCiFailureLogsTool)
+  }
   registry.register(runShellTool)
   registry.register(exploreTool)
   // Experimental CI investigator subagent (off by default). Gates its entry tool
   // and the deep-log gh_run_* helpers it relies on so the feature is fully inert
-  // unless explicitly opted into via the experimental setting.
-  if (getSetting<boolean>(CI_INVESTIGATOR_ENABLED_SETTING, false)) {
+  // unless explicitly opted into via the experimental setting. Also requires `gh`
+  // since the run-log helpers shell out to it.
+  if (ghAvailable && getSetting<boolean>(CI_INVESTIGATOR_ENABLED_SETTING, false)) {
     registry.register(ghRunListTool)
     registry.register(ghRunViewTool)
     registry.register(investigateCiTool)
@@ -82,9 +96,15 @@ export function createRegistry(): ToolRegistry {
   if (getSetting<boolean>(LONG_HORIZON_TASKS_ENABLED_SETTING, false)) {
     registry.register(trackLongTaskTool)
   }
+  // Experimental PII redaction (off by default). Adds the reveal_pii tool that
+  // turns a redacted placeholder back into its real value, gated by user
+  // approval. Only registered when redaction is on — otherwise no placeholders
+  // exist to reveal.
+  syncPiiTools(registry)
   registry.register(webSearchTool)
   registry.register(fetchUrlTool)
   registry.register(updateTodosTool)
+  registry.register(askUserTool)
   if (getSetting<boolean>(BROWSER_TOOLS_ENABLED_SETTING, BROWSER_TOOLS_DEFAULT_ENABLED)) {
     for (const tool of browserTools) registry.register(tool)
   }
@@ -107,6 +127,21 @@ export function syncOkfMemoryTools(registry: ToolRegistry): void {
   } else {
     registry.unregister('remember')
     registry.unregister('recall')
+  }
+}
+
+/**
+ * Register or unregister the experimental PII reveal tool to match the current
+ * `piiRedactionEnabled` setting. Called at startup (via createRegistry) and again
+ * whenever the setting is toggled, so the tool appears or disappears live — and
+ * stays in sync with the redaction system-prompt block, which is rebuilt every
+ * turn from the same setting.
+ */
+export function syncPiiTools(registry: ToolRegistry): void {
+  if (getSetting<boolean>(PII_REDACTION_ENABLED_SETTING, false)) {
+    if (!registry.has('reveal_pii')) registry.register(revealPiiTool)
+  } else {
+    registry.unregister('reveal_pii')
   }
 }
 
