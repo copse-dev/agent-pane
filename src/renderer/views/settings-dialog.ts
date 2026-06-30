@@ -13,6 +13,7 @@ import { qsRequired } from '../dom/helpers.ts'
 import { populateModelSelect, populateSmallTasksModelSelect } from './model-options.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createCustomProvidersSection } from './setup/custom-providers-section.ts'
+import { createAcpAgentsSection } from './setup/acp-agents-section.ts'
 import { createEnvKeyDetectSection } from './setup/env-key-detect-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createGhCliSection } from './setup/gh-cli-section.ts'
@@ -520,6 +521,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               and are off by default.
             </p>
 
+            <div id="settings-acp-agents-host"></div>
+
             <fieldset>
               <legend>MCP UI artefacts (canvas)</legend>
               <label class="checkbox-label">
@@ -580,6 +583,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // silent non-null assertion.
   const customProvidersSection = createCustomProvidersSection(api)
   qsRequired(overlay, '#settings-custom-providers-host').append(customProvidersSection.root)
+
+  const acpAgentsSection = createAcpAgentsSection(api)
+  qsRequired(overlay, '#settings-acp-agents-host').append(acpAgentsSection.root)
 
   const envKeyDetectSection = createEnvKeyDetectSection(api, {
     onImported: () => {
@@ -679,6 +685,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       if (id) {
         showSection(id)
         if (id === 'usage') void usageSection.refresh()
+        // Defer the ACP device scan until its tab is opened, so users who never
+        // visit Experimental don't trigger a which/ps scan on every settings open.
+        if (id === 'experimental') void acpAgentsSection.refresh()
       }
     })
   })

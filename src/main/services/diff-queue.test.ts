@@ -9,6 +9,7 @@ import {
   adoptWorktreeChangesSince,
   applyDiffEntry,
   applyOrStageDiff,
+  awaitStagedDiffDecision,
   approveAllStagedDiffs,
   captureWorktreeBaseline,
   clearDiffQueueForTest,
@@ -456,5 +457,44 @@ describe('staged-diff resolver (headless host, e.g. ACP)', () => {
     assert.match(message, /NOT changed until/)
     assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'old\n')
     assert.equal(getDiffQueueForTest().length, 1, 'the entry waits for renderer approval')
+  })
+})
+
+describe('awaitStagedDiffDecision (ACP client write blocking)', () => {
+  let tempRoot = ''
+  let restoreWorkspace: (() => void) | undefined
+
+  beforeEach(async () => {
+    tempRoot = await mkdtemp(join(tmpdir(), 'agent-pane-diff-await-'))
+    restoreWorkspace = setWorkspaceRootForTest(tempRoot)
+  })
+
+  afterEach(async () => {
+    setStagedDiffResolver(null)
+    clearDiffQueueForTest()
+    restoreWorkspace?.()
+    if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+  })
+
+  // The resolver settles the decision the same way a renderer approve/reject
+  // does (both funnel through recordDecision), so it stands in for the GUI here.
+  it('resolves "approved" once the staged write is accepted', async () => {
+    await writeFile(join(tempRoot, 'a.txt'), 'old\n', 'utf-8')
+    setStagedDiffResolver(async () => true)
+
+    const decision = awaitStagedDiffDecision('a.txt')
+    await stageDiff('a.txt', 'old\n', 'new\n', 'plaintext')
+
+    assert.equal(await decision, 'approved')
+  })
+
+  it('resolves "rejected" when the staged write is declined', async () => {
+    await writeFile(join(tempRoot, 'a.txt'), 'old\n', 'utf-8')
+    setStagedDiffResolver(async () => false)
+
+    const decision = awaitStagedDiffDecision('a.txt')
+    await stageDiff('a.txt', 'old\n', 'new\n', 'plaintext')
+
+    assert.equal(await decision, 'rejected')
   })
 })

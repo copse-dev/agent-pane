@@ -22,6 +22,9 @@ import type {
   ExtraProviderModel,
   StoredExtraProvider,
 } from '@shared/llm/extra-providers.ts'
+import type { DetectedAcpAgent } from '@shared/acp-known-agents.ts'
+
+export type { DetectedAcpAgent }
 
 /** Fixed cloud providers with a user-supplied API key (presets/customs use slugs). */
 export type ApiKeyProvider =
@@ -172,6 +175,10 @@ export interface ApiClient {
   remoteAgent: {
     downloadArtifact: (agentId: string, path: string) => Promise<string>
     artifactImageDataUrl: (agentId: string, path: string) => Promise<string>
+  }
+  acp: {
+    /** Detect known ACP agents installed/running on this device (for the Settings panel). */
+    detectAgents: () => Promise<DetectedAcpAgent[]>
   }
   menu: {
     onSettings: (handler: () => void) => () => void

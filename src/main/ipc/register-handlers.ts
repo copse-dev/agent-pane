@@ -54,6 +54,7 @@ import {
 } from '../services/extra-providers-store.ts'
 import { fetchOpenAiCompatibleModels } from '../services/provider-models.ts'
 import { storageGet, storageSet } from '../services/storage.ts'
+import { detectAcpAgents } from '../services/acp/acp-detect.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills-registry.ts'
 import { listCursorPlugins } from '../services/cursor-plugins.ts'
@@ -427,6 +428,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       return fetchRemoteArtifactImageDataUrl({ agentId: parsedAgentId, path: parsedPath })
     },
   )
+  ipcMain.handle('acp:detectAgents', (event) => {
+    assertMainFrameSender(event, win)
+    return detectAcpAgents()
+  })
   ipcMain.handle('shell:openExternal', (event, url: unknown) => {
     assertMainFrameSender(event, win)
     const href = parseIpcArgs(z.url().max(2048), [url])
