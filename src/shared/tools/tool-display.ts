@@ -33,6 +33,7 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   rename_file: 'Rename file',
   make_directory: 'Create directory',
   run_shell: 'Run command',
+  ask_user: 'Ask user',
   update_todos: 'Update plan',
 }
 
