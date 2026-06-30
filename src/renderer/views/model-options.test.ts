@@ -10,6 +10,7 @@ interface MockOpts {
   openRouterModels?: Array<{ id: string; name: string }>
   lmStudioModels?: string[]
   openRouterModelSetting?: string
+  acpAgents?: Array<{ id: string; title: string; command: string; enabled: boolean }>
 }
 
 // availableProviders() returns explicit booleans for every provider; mirror that
@@ -31,8 +32,11 @@ function mockApi(opts: MockOpts = {}): ApiClient {
     settings: {
       availableProviders: async () => ({ ...ALL_UNCONFIGURED, ...(opts.available ?? {}) }),
       extraProviders: async () => opts.extraProviders ?? resolveExtraProviders([]),
-      get: async (key: string) =>
-        key === 'openRouterModel' ? (opts.openRouterModelSetting ?? '') : null,
+      get: async (key: string) => {
+        if (key === 'openRouterModel') return opts.openRouterModelSetting ?? ''
+        if (key === 'registeredAcpAgents') return opts.acpAgents ?? null
+        return null
+      },
     },
     openRouter: { models: async () => opts.openRouterModels ?? [] },
     lmStudio: { models: async () => opts.lmStudioModels ?? [] },
@@ -83,6 +87,34 @@ describe('fetchModelOptions visibility', () => {
     )
     assert.ok(cursorKey.some((o) => o.value === 'remote-agent:cursor'))
     assert.ok(cursorKey.some((o) => o.group === 'Remote agents'))
+  })
+
+  it('lists enabled ACP agents under their own heading and hides disabled ones', async () => {
+    const options = await fetchModelOptions(
+      mockApi({
+        acpAgents: [
+          { id: 'gemini-cli', title: 'Gemini CLI', command: 'gemini', enabled: true },
+          { id: 'off', title: 'Disabled Agent', command: 'x', enabled: false },
+        ],
+      }),
+      '',
+    )
+    const acp = options.filter((o) => o.group === 'ACP agents')
+    assert.deepEqual(
+      acp.map((o) => o.value),
+      ['acp:gemini-cli'],
+    )
+    const [acpAgent] = acp
+    assert.ok(acpAgent)
+    assert.equal(acpAgent.label, 'Gemini CLI')
+  })
+
+  it('keeps a selected-but-unconfigured ACP agent selectable', async () => {
+    const options = await fetchModelOptions(mockApi(), 'acp:gemini-cli')
+    const current = options.find((o) => o.value === 'acp:gemini-cli')
+    assert.ok(current)
+    assert.equal(current.group, 'ACP agents')
+    assert.match(current.label, /not configured/)
   })
 
   it('groups hosted cloud models under a heading', async () => {

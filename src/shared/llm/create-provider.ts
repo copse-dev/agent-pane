@@ -100,17 +100,10 @@ export function createExtraCloudProvider(
 ): LLMProvider {
   return new OpenAIProvider(model, {
     baseURL: provider.baseUrl,
-    apiKey,
-    includeUsage: provider.includeUsage ?? !isLocalhostUrl(provider.baseUrl),
+    // Local servers usually run without auth but still want a non-empty key
+    // (many reject a blank Authorization header), mirroring createLocalOpenAIProvider.
+    apiKey: provider.local ? apiKey || 'lm-studio' : apiKey,
+    includeUsage: provider.includeUsage ?? !provider.local,
     ...(provider.extraBody ? { extraBody: provider.extraBody } : {}),
   })
-}
-
-function isLocalhostUrl(url: string): boolean {
-  try {
-    const host = new URL(url).hostname.toLowerCase()
-    return host === 'localhost' || host === '127.0.0.1' || host === '::1'
-  } catch {
-    return false
-  }
 }
