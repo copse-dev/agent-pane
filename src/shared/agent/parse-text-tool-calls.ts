@@ -119,6 +119,76 @@ function parseFunctionsInBlock(inner: string, coerceToolArgs?: CoerceToolArgsFn)
   return toolCalls
 }
 
+/**
+ * Marks every character inside an inline code span (`` `…` ``) or fenced code
+ * block (```` ```…``` ````) — both are a run of N backticks closed by another run
+ * of N. A `<tool_call>` / `<invoke>` quoted inside code is the model *describing*
+ * the delimiter syntax (e.g. when reviewing this very parser), not a real call.
+ * Detection must skip these: otherwise stripping freezes the transcript at the
+ * quoted opener — waiting for a closing tag that, being prose, never arrives —
+ * and recovery turns the example into a phantom tool call.
+ */
+function codeSpanMask(text: string): Uint8Array {
+  const mask = new Uint8Array(text.length)
+  const n = text.length
+  let i = 0
+  while (i < n) {
+    if (text[i] !== '`') {
+      i += 1
+      continue
+    }
+    const runStart = i
+    while (i < n && text[i] === '`') i += 1
+    const runLen = i - runStart
+    let j = i
+    let closed = false
+    while (j < n) {
+      if (text[j] !== '`') {
+        j += 1
+        continue
+      }
+      const closeStart = j
+      while (j < n && text[j] === '`') j += 1
+      if (j - closeStart === runLen) {
+        for (let p = runStart; p < j; p += 1) mask[p] = 1
+        closed = true
+        break
+      }
+    }
+    // An unterminated backtick run is literal text, not code — leave it unmasked.
+    i = closed ? j : runStart + runLen
+  }
+  return mask
+}
+
+/**
+ * A copy of `text` with every code-span character replaced by a space, so quoted
+ * tool-call syntax is invisible to the delimiter regexes while indices and length
+ * stay aligned with the original (for slicing / inner extraction). Blanking rather
+ * than per-match filtering matters because a lazy `<tool_call>…</tool_call>` regex
+ * would otherwise pair a quoted opener with a *later* real block's closer.
+ */
+function blankCodeSpans(text: string): string {
+  const mask = codeSpanMask(text)
+  const chars = text.split('')
+  for (let i = 0; i < chars.length; i += 1) if (mask[i] === 1) chars[i] = ' '
+  return chars.join('')
+}
+
+/** Drop complete `re` blocks that sit outside code spans; quoted examples stay. */
+function removeBlocksOutsideCode(text: string, re: RegExp): string {
+  const blanked = blankCodeSpans(text)
+  const ranges: Array<[number, number]> = []
+  for (const match of blanked.matchAll(re)) {
+    if (match.index !== undefined) ranges.push([match.index, match.index + match[0].length])
+  }
+  let out = text
+  for (let k = ranges.length - 1; k >= 0; k -= 1) {
+    out = out.slice(0, ranges[k][0]) + out.slice(ranges[k][1])
+  }
+  return out
+}
+
 /** Parameters of an `<invoke>` block: named `<parameter name="x">` first, else bare `<x>` child tags. */
 function parseInvokeParameters(body: string): Record<string, unknown> {
   const named: Record<string, unknown> = {}
@@ -195,16 +265,20 @@ function trailingPartialToolCallIndex(s: string): number {
  */
 export function stripTextToolCallBlocks(text: string): string {
   let out = stripMinimaxDelimiters(text)
-  out = out.replace(TOOL_CALL_BLOCK_RE, '').replace(INVOKE_BLOCK_RE, '')
-  const open = out.search(OPEN_TOOL_CALL_RE)
+  out = removeBlocksOutsideCode(out, TOOL_CALL_BLOCK_RE)
+  out = removeBlocksOutsideCode(out, INVOKE_BLOCK_RE)
+  // Search on a code-blanked copy so a quoted `<tool_call>` / `<invoke>` example
+  // is not mistaken for a streaming opener that freezes the rest of the message.
+  const blanked = blankCodeSpans(out)
+  const open = blanked.search(OPEN_TOOL_CALL_RE)
   if (open !== -1) {
     out = out.slice(0, open)
   } else {
-    const invokeOpen = out.search(OPEN_INVOKE_RE)
+    const invokeOpen = blanked.search(OPEN_INVOKE_RE)
     if (invokeOpen !== -1) {
       out = out.slice(0, invokeOpen)
     } else {
-      const partial = trailingPartialToolCallIndex(out)
+      const partial = trailingPartialToolCallIndex(blanked)
       if (partial !== -1) out = out.slice(0, partial)
     }
   }
@@ -223,11 +297,15 @@ export function recoverTextToolCalls(
 ): TextToolCallRecovery {
   // MiniMax wraps each token in a delimiter; strip it so the XML beneath is parseable. (#519)
   const normalized = stripMinimaxDelimiters(text)
+  // Match on a code-blanked copy so quoted `<tool_call>` / `<invoke>` examples are
+  // not extracted as phantom calls. Real blocks contain no code spans, so their
+  // captured inner text is identical in the blanked copy.
+  const blanked = blankCodeSpans(normalized)
   const toolCalls: ToolCallChunk[] = []
   let sawBlock = false
   let anyBlockUnparsed = false
 
-  for (const match of normalized.matchAll(TOOL_CALL_BLOCK_RE)) {
+  for (const match of blanked.matchAll(TOOL_CALL_BLOCK_RE)) {
     sawBlock = true
     const inner = match[1]
     if (!inner?.trim()) {
@@ -243,7 +321,7 @@ export function recoverTextToolCalls(
 
   // MiniMax may emit `<invoke>` blocks without a surrounding `<tool_call>` wrapper.
   if (!sawBlock) {
-    const { toolCalls: invokeCalls, sawInvoke } = parseInvokeBlocks(normalized, coerceToolArgs)
+    const { toolCalls: invokeCalls, sawInvoke } = parseInvokeBlocks(blanked, coerceToolArgs)
     if (sawInvoke) {
       sawBlock = true
       if (invokeCalls.length === 0) anyBlockUnparsed = true
