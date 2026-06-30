@@ -12,11 +12,7 @@ import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import {
-  mountSettingsDialog,
-  openSettingsDialog,
-  closeSettingsDialog,
-} from './settings-dialog.ts'
+import { mountSettingsDialog, openSettingsDialog, closeSettingsDialog } from './settings-dialog.ts'
 import { mountApprovalDialog } from './approval-dialog.ts'
 
 type ApprovalHandler = (req: {
@@ -42,17 +38,19 @@ function makeApi(): { api: ApiClient; emit: (req: { id: string }) => void } {
   const make = (path: string): unknown =>
     new Proxy(() => new Promise(() => {}), {
       get: (_t, prop) => make(path ? `${path}.${String(prop)}` : String(prop)),
-      apply: (_t, _this, args) => {
+      apply: (_t, _this, args): unknown => {
         const override = overrides[path]
-        if (typeof override === 'function') return (override as (...a: unknown[]) => unknown)(...args)
+        if (typeof override === 'function')
+          return (override as (...a: unknown[]) => unknown)(...(args as unknown[]))
         return new Promise(() => {})
       },
     })
   const api = make('') as ApiClient
   return {
     api,
-    emit: (req) =>
-      handler({ id: req.id, title: 't', body: 'b', type: 'shell' }),
+    emit: (req): void => {
+      handler({ id: req.id, title: 't', body: 'b', type: 'shell' })
+    },
   }
 }
 
