@@ -1,5 +1,6 @@
 import type * as Monaco from 'monaco-editor'
 import { el, clear } from '../dom/helpers.ts'
+import { panePopoutButton } from './pane-popout-button.ts'
 import { at } from '@shared/array-utils.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -122,7 +123,12 @@ export function mountGitChangesPane(
     },
     '↻',
   )
-  listHeader.append(headerTitle, bulkActions, refreshBtn)
+  listHeader.append(
+    headerTitle,
+    bulkActions,
+    panePopoutButton(api, 'changes', 'changes'),
+    refreshBtn,
+  )
 
   const listBody = el('div', { class: 'git-changes-list' })
   listRoot.append(listHeader, listBody)
@@ -527,6 +533,13 @@ export function mountGitChangesPane(
 
   renderList()
   clearSelection()
+
+  // This pane is mounted asynchronously, once the Monaco bundle resolves. If the
+  // right panel is already in "changes" mode by the time we mount (the common
+  // case, since the mode is restored before Monaco loads), no
+  // right_panel_mode_changed event will arrive to trigger the first refresh — so
+  // catch up to the current state here, or the diff never renders. See #459.
+  if (changesModeActive(store)) void refresh()
 
   return () => {
     if (refreshTimer) clearTimeout(refreshTimer)

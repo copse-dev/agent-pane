@@ -443,6 +443,21 @@
   color: var(--text-primary);
   background: var(--bg-hover);
 }
+/* In-panel "pop out into its own window" control, shared across pane headers.
+   margin-left:auto pushes it (and any trailing refresh/new button) to the
+   right regardless of how many items the header has. */
+.pane-popout-btn {
+  margin-left: auto;
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+}
+.pane-popout-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
 .git-changes-list {
   flex: 1;
   overflow-y: auto;

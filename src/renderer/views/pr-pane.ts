@@ -1,5 +1,6 @@
 import type * as Monaco from 'monaco-editor'
 import { el, clear, qsRequired } from '../dom/helpers.ts'
+import { panePopoutButton } from './pane-popout-button.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GhCliStatus, GhPrChecksState, GhPrDetails, GhPrSummary } from '@shared/types/git.ts'
@@ -91,6 +92,7 @@ export function mountPrPane(
   const listHeader = el('div', { class: 'git-changes-header' })
   listHeader.append(
     el('span', { class: 'git-changes-title' }, 'Pull requests'),
+    panePopoutButton(api, 'prs', 'pull requests'),
     el(
       'button',
       {
@@ -626,6 +628,16 @@ export function mountPrPane(
 
   renderList()
   clearDiff()
+  // If PRs are already the active pane when we mount (a pop-out window, or a
+  // restored layout), load immediately — the `*_changed` events that normally
+  // trigger the first refresh may have fired before this pane existed.
+  if (prsModeActive(store)) void refresh()
+
+  // This pane is mounted asynchronously, once the Monaco bundle resolves. If the
+  // right panel is already in "prs" mode by the time we mount, no
+  // right_panel_mode_changed event will arrive to trigger the first refresh — so
+  // catch up to the current state here. See #459.
+  if (prsModeActive(store)) void refresh()
 
   return () => {
     stopObservingLayout()

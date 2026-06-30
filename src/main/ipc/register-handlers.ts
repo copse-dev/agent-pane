@@ -2,6 +2,7 @@ import { dialog, ipcMain, shell } from 'electron'
 import type { BrowserWindow } from 'electron'
 import { z } from 'zod'
 import micromatch from 'micromatch'
+import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
 import {
   assertAllowedWorkspaceRoot,
   getWorkspaceRoot,
@@ -53,6 +54,7 @@ import {
 } from '../services/extra-providers-store.ts'
 import { fetchOpenAiCompatibleModels } from '../services/provider-models.ts'
 import { storageGet, storageSet } from '../services/storage.ts'
+import { detectAcpAgents } from '../services/acp/acp-detect.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills-registry.ts'
 import { listCursorPlugins } from '../services/cursor-plugins.ts'
@@ -262,7 +264,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       openrouter: isProviderAvailable('openrouter'),
     }
     for (const provider of getResolvedExtraProviders()) {
-      available[provider.id] = isProviderAvailable(provider.id)
+      // Local servers need no API key, so treat them as available; their models
+      // only surface in the picker once the user fetches/saves them anyway.
+      available[provider.id] = provider.local ? true : isProviderAvailable(provider.id)
     }
     return available
   })
@@ -424,6 +428,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       return fetchRemoteArtifactImageDataUrl({ agentId: parsedAgentId, path: parsedPath })
     },
   )
+  ipcMain.handle('acp:detectAgents', (event) => {
+    assertMainFrameSender(event, win)
+    return detectAcpAgents()
+  })
   ipcMain.handle('shell:openExternal', (event, url: unknown) => {
     assertMainFrameSender(event, win)
     const href = parseIpcArgs(z.url().max(2048), [url])
@@ -431,6 +439,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       throw new IpcValidationError('URL must be http or https')
     }
     return shell.openExternal(href)
+  })
+
+  ipcMain.handle('panes:popout', (event, mode: unknown) => {
+    assertMainFrameSender(event, win)
+    const parsed = parseIpcArgs(z.enum(['explorer', 'terminal', 'changes', 'prs', 'browser']), [
+      mode,
+    ])
+    createPanePopoutWindow(parsed)
   })
 
   ipcMain.handle('mcp:list', (event) => {

@@ -269,9 +269,46 @@ export async function adoptWorktreeChangesSince(baseline: Map<string, string>): 
   return adopted
 }
 
+/**
+ * Callers waiting on a final approve/reject for a specific path. The ACP client
+ * role stages an external agent's `fs/write_text_file` and must block its
+ * JSON-RPC response until the user decides in the diff panel — unlike the GUI
+ * agent loop, whose tools return the "staged" message immediately. Keyed by path;
+ * resolved from {@link recordDecision}, the single choke point every terminal
+ * decision flows through.
+ */
+const decisionWaiters = new Map<string, Set<(status: DiffDecision['status']) => void>>()
+
+/**
+ * Resolve once a staged diff for `path` reaches a terminal decision
+ * (applied/approved/rejected/error). A `conflict` is not terminal — the entry is
+ * re-staged for the user to decide again — so it keeps waiting until the next
+ * decision settles it.
+ */
+export function awaitStagedDiffDecision(path: string): Promise<DiffDecision['status']> {
+  return new Promise((resolve) => {
+    let waiters = decisionWaiters.get(path)
+    if (!waiters) {
+      waiters = new Set()
+      decisionWaiters.set(path, waiters)
+    }
+    waiters.add(resolve)
+  })
+}
+
+function settleDecisionWaiters(path: string, status: DiffDecision['status']): void {
+  const waiters = decisionWaiters.get(path)
+  if (!waiters) return
+  decisionWaiters.delete(path)
+  for (const resolve of waiters) resolve(status)
+}
+
 function recordDecision(decision: Omit<DiffDecision, 'at'>): void {
   recentDecisions.unshift({ ...decision, at: Date.now() })
   recentDecisions.splice(20)
+  // Unblock awaitStagedDiffDecision on terminal outcomes only; a conflict
+  // re-stages the entry and the user decides again.
+  if (decision.status !== 'conflict') settleDecisionWaiters(decision.path, decision.status)
 }
 
 export function listRecentStagedDiffDecisions(): DiffDecision[] {
@@ -288,6 +325,7 @@ export function clearStagedDiffsForTest(): void {
   queue.length = 0
   recentDecisions.length = 0
   directAppliedSnapshots.clear()
+  decisionWaiters.clear()
 }
 
 /**

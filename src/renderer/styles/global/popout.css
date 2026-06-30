@@ -1,0 +1,35 @@
+/* Pane pop-out window (loaded with ?popout=<mode> on <html class="is-popout">).
+   The detached window reuses the full renderer but shows only one right-panel
+   pane, so collapse the app chrome and let the files pane fill the window. */
+html.is-popout,
+html.is-popout body,
+html.is-popout #app {
+  height: 100%;
+}
+
+html.is-popout #titlebar,
+html.is-popout #pane-projects,
+html.is-popout #resizer-projects,
+html.is-popout #pane-chat,
+html.is-popout #resizer-files,
+html.is-popout #welcome {
+  display: none !important;
+}
+
+html.is-popout #body {
+  height: 100%;
+}
+
+/* `.pane-files` is flex-shrink:0 with a fixed --files-width in the docked
+   layout; in a pop-out it is the only pane, so let it fill the window. */
+html.is-popout #pane-files {
+  display: flex !important;
+  flex: 1 1 auto;
+  width: 100% !important;
+  height: 100%;
+}
+
+/* No "pop out" affordance inside an already-detached window. */
+html.is-popout .pane-popout-btn {
+  display: none;
+}

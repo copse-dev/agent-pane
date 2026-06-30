@@ -11,6 +11,8 @@ import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createEnvKeyDetectSection } from './setup/env-key-detect-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
+import { detectLocalServers, importDetectedPreset } from './setup/local-detection.ts'
+import { el, clear } from '../dom/helpers.ts'
 
 type OnboardingStep = 'welcome' | 'cloud' | 'local' | 'routing'
 
@@ -118,19 +120,99 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
     envKeyDetect.root,
   )
 
+  // Created before the local panel so auto-detection can refresh the routing
+  // model lists after importing newly-discovered local models.
+  const routing = createModelRoutingSection(api)
+
   const localPanel = qsRequired(overlay, '.onboarding-panel[data-step="local"]')
   const lmStudio = createLmStudioSection(api, { showInstallGuide: true })
+
+  // Auto-detection: probe every known local server (LM Studio, Ollama, llama.cpp,
+  // Jan, vLLM) so first-run users see what's already running without hunting for
+  // URLs. Reachable presets have their models imported so they're usable at once.
+  const detectStatus = el('span', { class: 'setup-detection-status' })
+  const detectList = el('div', { class: 'preferred-models-list' })
+  const detectBtn = el(
+    'button',
+    { type: 'button', class: 'setup-test-btn' },
+    'Scan for local servers',
+  )
+
+  let detecting = false
+  async function runLocalDetection(): Promise<void> {
+    if (detecting) return
+    detecting = true
+    detectBtn.disabled = true
+    detectStatus.textContent = 'Scanning…'
+    detectStatus.className = 'setup-detection-status'
+    try {
+      const results = await detectLocalServers(api)
+      clear(detectList)
+      for (const r of results) {
+        const meta = el(
+          'div',
+          { class: 'preferred-model-meta' },
+          el('strong', {}, r.label),
+          el('span', { class: 'field-hint' }, r.baseUrl),
+        )
+        const status = el(
+          'span',
+          { class: r.reachable ? 'preferred-model-status ok' : 'preferred-model-status' },
+          r.reachable ? `✓ running — ${String(r.models.length)} model(s)` : '○ not found',
+        )
+        detectList.append(el('div', { class: 'preferred-model-row' }, meta, status))
+      }
+      const reachable = results.filter((r) => r.reachable)
+      // Persist discovered models for reachable presets so they're immediately
+      // selectable; LM Studio is handled by its own section below. Import
+      // SEQUENTIALLY: each importDetectedPreset does a read-modify-write of the
+      // single `extraProviders` setting, so running them concurrently would have
+      // them clobber each other and drop all but one discovered preset.
+      for (const r of reachable) {
+        await importDetectedPreset(api, r)
+      }
+      detectStatus.textContent = reachable.length
+        ? `Found ${String(reachable.length)} local server(s)`
+        : 'No local servers detected'
+      detectStatus.className = `setup-detection-status ${reachable.length ? 'ok' : 'warn'}`
+      await lmStudio.refreshDetection()
+      void routing.refresh()
+    } catch {
+      detectStatus.textContent = 'Detection failed'
+      detectStatus.className = 'setup-detection-status err'
+    } finally {
+      detecting = false
+      detectBtn.disabled = false
+    }
+  }
+
+  detectBtn.addEventListener('click', () => {
+    void runLocalDetection()
+  })
+  const detectFieldset = el(
+    'fieldset',
+    {},
+    el('legend', {}, 'Detected local servers'),
+    el(
+      'p',
+      { class: 'settings-fieldset-desc' },
+      'We scan the usual local ports for OpenAI-compatible servers. Start LM Studio, Ollama, llama.cpp, Jan, or vLLM, then scan — anything found is set up automatically.',
+    ),
+    el('div', { class: 'lmstudio-test-row' }, detectBtn, detectStatus),
+    detectList,
+  )
+
   localPanel.append(
     Object.assign(document.createElement('p'), {
       className: 'settings-section-desc',
       textContent:
-        'Local models power most of Copse’s background work. We auto-detect LM Studio when its server is running.',
+        'Local models power most of Copse’s background work. Copse auto-detects local servers — LM Studio, Ollama, llama.cpp, Jan, and vLLM — when they’re running.',
     }),
+    detectFieldset,
     lmStudio.root,
   )
 
   const routingPanel = qsRequired(overlay, '.onboarding-panel[data-step="routing"]')
-  const routing = createModelRoutingSection(api)
   routingPanel.append(
     Object.assign(document.createElement('p'), {
       className: 'settings-section-desc',
@@ -221,6 +303,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
     void apiKeys.refreshKeyStatus()
     void envKeyDetect.refresh()
     void lmStudio.refreshDetection()
+    void runLocalDetection()
     void routing.refresh()
   })
 }

@@ -10,6 +10,7 @@ import {
   extraProviderModelPricing,
   extraProviderPricingMap,
   isExtraProviderModel,
+  isLocalBaseUrl,
   resolveExtraProviders,
   toExtraProviderModel,
 } from './extra-providers.ts'
@@ -123,7 +124,13 @@ describe('resolveExtraProviders', () => {
     for (const provider of providers) {
       assert.ok(provider.builtin)
       assert.equal(provider.prefix, `${provider.id}:`)
-      assert.ok(provider.baseUrl.startsWith('https://'))
+      // Hosted presets use https; local presets are loopback http servers.
+      assert.ok(
+        provider.local
+          ? provider.baseUrl.startsWith('http://localhost')
+          : provider.baseUrl.startsWith('https://'),
+      )
+      assert.equal(provider.local, isLocalBaseUrl(provider.baseUrl))
       assert.ok(provider.fallbackContextWindow > 0)
     }
     assert.deepEqual(
@@ -171,5 +178,56 @@ describe('resolveExtraProviders', () => {
     ])
     assert.equal(providers.length, BUILTIN_EXTRA_PROVIDERS.length)
     assert.equal(providers.filter((p) => p.id === 'mistral').length, 1)
+  })
+})
+
+describe('local providers', () => {
+  it('classifies loopback base URLs as local', () => {
+    assert.equal(isLocalBaseUrl('http://localhost:11434/v1'), true)
+    assert.equal(isLocalBaseUrl('http://127.0.0.1:8080/v1'), true)
+    assert.equal(isLocalBaseUrl('http://[::1]:1234/v1'), true)
+    assert.equal(isLocalBaseUrl('http://api.localhost/v1'), true)
+    assert.equal(isLocalBaseUrl('https://api.mistral.ai/v1'), false)
+    assert.equal(isLocalBaseUrl('not a url'), false)
+  })
+
+  it('treats the full 127.0.0.0/8 range and unspecified bind addresses as local', () => {
+    // Rest of the loopback /8 range (not just 127.0.0.1).
+    assert.equal(isLocalBaseUrl('http://127.0.1.1:8000/v1'), true)
+    assert.equal(isLocalBaseUrl('http://127.255.255.254:8080/v1'), true)
+    // Common vLLM/llama.cpp bind-all addresses.
+    assert.equal(isLocalBaseUrl('http://0.0.0.0:8000/v1'), true)
+    assert.equal(isLocalBaseUrl('http://[::]:8000/v1'), true)
+    // Non-loopback addresses stay cloud.
+    assert.equal(isLocalBaseUrl('http://128.0.0.1:8000/v1'), false)
+    assert.equal(isLocalBaseUrl('http://192.168.1.5:8000/v1'), false)
+  })
+
+  it('only unwraps a properly-bracketed IPv6 literal', () => {
+    // A matched-bracket form is unwrapped and recognised…
+    assert.equal(isLocalBaseUrl('http://[::1]/v1'), true)
+    // …while a host the URL parser can still resolve but that does not match a
+    // loopback literal is cloud. (Mismatched brackets are rejected by the URL
+    // parser itself, so they degrade to `false` via the catch.)
+    assert.equal(isLocalBaseUrl('http://[::1/v1'), false)
+  })
+
+  it('ships the local server presets flagged local with empty model lists', () => {
+    const providers = resolveExtraProviders(undefined)
+    for (const slug of ['ollama', 'llamacpp', 'jan', 'vllm']) {
+      const provider = providers.find((p) => p.id === slug)
+      assert.ok(provider, `missing local preset ${slug}`)
+      assert.equal(provider.local, true)
+      assert.equal(provider.builtin, true)
+      assert.equal(provider.models.length, 0)
+    }
+  })
+
+  it('marks a user-added loopback custom as local', () => {
+    const [custom] = resolveExtraProviders([
+      { slug: 'myllm', label: 'My LLM', baseUrl: 'http://127.0.0.1:9999/v1' },
+    ]).filter((p) => p.id === 'myllm')
+    assert.ok(custom)
+    assert.equal(custom.local, true)
   })
 })
