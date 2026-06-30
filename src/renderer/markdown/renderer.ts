@@ -1,5 +1,6 @@
 import { fenceCodeClass, highlightFenceCode } from './highlight.ts'
 import { escapeHtml, escapeMermaidHtml } from './escape.ts'
+import { renderEmphasisOutsideInlineHtml } from './inline-emphasis.ts'
 
 export { escapeHtml } from './escape.ts'
 
@@ -174,24 +175,13 @@ function renderInlineSpans(t: string): string {
   t = renderInlineCode(t)
   t = renderMarkdownLinks(t)
   t = renderBareHttpLinks(t)
-  // Bold around inline HTML first (`**` + text + <code>/<a>/<img> + text + `**`);
-  // then prose bold outside code spans. A single [^*]+ pass breaks on globs like
-  // src/**/*.test.ts inside <code> and can pair ** across spans, leaving stray
-  // markers (e.g. MCP host**:).
+  // Bold around a single inline HTML element (`**` + <code>/<a>/<img> + `**`).
   t = t.replace(/\*\*(<code>[\s\S]*?<\/code>)\*\*/g, '<strong>$1</strong>')
   t = renderBoldAroundInlineHtml(t)
   t = renderItalicAroundInlineHtml(t)
-  t = applyOutsideInlineHtml(t, /\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
-  t = applyOutsideInlineHtml(t, /_([^_\n]+)_/g, '<em>$1</em>')
-  t = applyOutsideInlineHtml(t, /(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
+  // Delimiter-stack emphasis (CommonMark flanking rules, including soft breaks).
+  t = renderEmphasisOutsideInlineHtml(t)
   return t
-}
-
-function applyOutsideInlineHtml(text: string, pattern: RegExp, replacement: string): string {
-  return text
-    .split(/(<code>[\s\S]*?<\/code>|<a\b[\s\S]*?<\/a>|<img\b[^>]*>)/g)
-    .map((segment, index) => (index % 2 === 1 ? segment : segment.replace(pattern, replacement)))
-    .join('')
 }
 
 function renderBoldAroundInlineHtml(text: string): string {
