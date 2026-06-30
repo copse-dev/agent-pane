@@ -44,6 +44,35 @@ describe('tool-display', () => {
     assert.equal(getToolEditPath(tc('3', 'read_file')), null)
   })
 
+  it('labels and deep-links file deletions', () => {
+    const del = { ...tc('1', 'delete_file'), args: { path: 'src/old.ts' } }
+    assert.equal(getToolCallLabel(del), 'Deleted src/old.ts')
+    assert.equal(getToolDisplayName('delete_file'), 'Delete file')
+    assert.equal(getToolEditPath(del), 'src/old.ts')
+  })
+
+  it('labels file renames with source and destination', () => {
+    const ren = { ...tc('1', 'rename_file'), args: { from: 'a.ts', to: 'b.ts' } }
+    assert.equal(getToolCallLabel(ren), 'Renamed a.ts → b.ts')
+    // The `from` path is the deep-link target for a rename.
+    assert.equal(getToolEditPath(ren), 'a.ts')
+  })
+
+  it('labels directory creation', () => {
+    const mkdir = { ...tc('1', 'make_directory'), args: { path: 'src/new' } }
+    assert.equal(getToolCallLabel(mkdir), 'Created directory src/new')
+  })
+
+  it('groups file-op tools under Writing files', () => {
+    assert.equal(getToolGroupKey('delete_file'), 'writing')
+    assert.equal(getToolGroupKey('rename_file'), 'writing')
+    assert.equal(getToolGroupKey('make_directory'), 'writing')
+    const items = buildToolCallDisplayItems([tc('1', 'write_file'), tc('2', 'delete_file')])
+    assert.equal(items.length, 1)
+    assert.equal(items[0]?.type, 'group')
+    assert.equal(items[0].label, 'Writing files')
+  })
+
   it('strips a leading `cd <path> &&` workspace prefix from commands', () => {
     assert.equal(stripShellCdPrefix('cd /Users/me/proj && npm test'), 'npm test')
     assert.equal(stripShellCdPrefix("cd '/path with spaces' && ls"), 'ls')
