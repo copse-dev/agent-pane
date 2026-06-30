@@ -8,6 +8,7 @@ import { ToolRegistry } from './tool-registry.ts'
 import { refreshSkillsRegistry, setSkillsForTest } from './skills-registry.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 import { setSetting } from './settings.test-shim.ts'
+import { setGhAvailableForTest } from './tool-availability.ts'
 import {
   setBundledCursorSkillsRootForTest,
   resetBundledCursorSkillsRootForTest,
@@ -50,6 +51,39 @@ description: Demo skill for tests
     registerSkillTools(registry)
 
     assert.equal(registry.has('read_skill'), true)
+  })
+})
+
+describe('createRegistry GitHub tool gating', () => {
+  const GH_READONLY_TOOLS = [
+    'gh_pr_list',
+    'gh_pr_view',
+    'gh_pr_files',
+    'get_ci_status',
+    'wait_for_ci_checks',
+    'get_ci_failure_logs',
+  ]
+
+  afterEach(() => {
+    setGhAvailableForTest(null)
+  })
+
+  it('registers the read-only GitHub tools when gh is accessible', () => {
+    setGhAvailableForTest(true)
+    const registry = createRegistry()
+    for (const name of GH_READONLY_TOOLS) {
+      assert.equal(registry.has(name), true, `expected ${name} to be registered`)
+    }
+  })
+
+  it('omits the read-only GitHub tools when gh is not accessible', () => {
+    setGhAvailableForTest(false)
+    const registry = createRegistry()
+    for (const name of GH_READONLY_TOOLS) {
+      assert.equal(registry.has(name), false, `expected ${name} to be omitted`)
+    }
+    // Non-GitHub tools are still exposed regardless of gh availability.
+    assert.equal(registry.has('run_shell'), true)
   })
 })
 
