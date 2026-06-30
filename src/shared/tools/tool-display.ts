@@ -30,6 +30,7 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   write_file: 'Write file',
   str_replace: 'Replace in file',
   run_shell: 'Run command',
+  ask_user: 'Ask user',
   update_todos: 'Update plan',
 }
 
