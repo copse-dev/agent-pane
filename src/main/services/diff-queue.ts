@@ -380,7 +380,11 @@ async function applyDelete(entry: QueueEntry): Promise<ApplyResult> {
   try {
     current = await fsp.readFile(absPath, 'utf-8')
   } catch {
-    return { status: 'error', error: `File not found: ${entry.path}` }
+    // Deletion is idempotent: if the file is already gone the desired end state
+    // is met, so report success instead of failing the (whole) approval. This is
+    // common when a deletion is staged from `git status` for a file that no
+    // longer exists on disk, or when the same path was already removed (#504).
+    return { status: 'written' }
   }
   // Same stale-overwrite guard as writes: refuse if the file changed since staging.
   if (current !== entry.before) {

@@ -1,7 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ActiveDiff, StagedDiffEntry } from '@shared/types/state.ts'
-import { pruneStagedDiffCache, resolveStagedDiffView } from './staged-diff-ui.ts'
+import {
+  pruneStagedDiffCache,
+  resolveStagedDiffView,
+  shouldJumpToProposed,
+} from './staged-diff-ui.ts'
 
 const diff = (path: string): ActiveDiff => ({
   path,
@@ -43,5 +47,25 @@ describe('resolveStagedDiffView', () => {
 
   it('uses the first queued file when activeDiff is stale', () => {
     assert.equal(resolveStagedDiffView(entries, cache, null, diff('gone.ts'))?.path, 'a.ts')
+  })
+})
+
+describe('shouldJumpToProposed', () => {
+  const entries: StagedDiffEntry[] = [
+    { path: 'a.ts', language: 'typescript' },
+    { path: 'b.ts', language: 'typescript' },
+  ]
+
+  it('jumps to a freshly proposed path that is queued', () => {
+    assert.equal(shouldJumpToProposed('b.ts', entries), true)
+  })
+
+  it('does not jump when there is no pending proposal', () => {
+    assert.equal(shouldJumpToProposed(null, entries), false)
+  })
+
+  it('waits (no jump) until the proposed path is in the queue', () => {
+    // agent:show_diff arrives before diff:queued, so the path may not be queued yet.
+    assert.equal(shouldJumpToProposed('c.ts', entries), false)
   })
 })

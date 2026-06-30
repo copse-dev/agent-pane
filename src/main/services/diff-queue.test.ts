@@ -133,6 +133,33 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
     // `assert.equal` (strict mode) narrows `result` to the error variant.
     assert.match(result.error, /EISDIR|illegal|directory/i)
   })
+
+  it('deletes a file whose on-disk content still matches the staged before', async () => {
+    await writeFile(join(tempRoot, 'gone.txt'), 'bye\n', 'utf-8')
+    const result = await applyDiffEntry({
+      path: 'gone.txt',
+      before: 'bye\n',
+      after: '',
+      language: 'plaintext',
+      op: 'delete',
+    })
+    assert.deepEqual(result, { status: 'written' })
+    await assert.rejects(readFile(join(tempRoot, 'gone.txt'), 'utf-8'))
+  })
+
+  it('treats a delete of an already-absent file as success, not an error (#504)', async () => {
+    // The file was staged for deletion but is no longer on disk at approval
+    // time. The desired end state (gone) already holds, so accept-all must not
+    // fail on it.
+    const result = await applyDiffEntry({
+      path: 'already-gone.txt',
+      before: 'whatever\n',
+      after: '',
+      language: 'plaintext',
+      op: 'delete',
+    })
+    assert.deepEqual(result, { status: 'written' })
+  })
 })
 
 describe('applyOrStageDiff direct-apply policy', () => {

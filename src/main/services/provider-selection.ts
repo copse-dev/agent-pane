@@ -20,8 +20,25 @@ import {
   invalidateLmStudioModelsCache as invalidateLmStudioModelsCacheImpl,
 } from './lm-studio-models.ts'
 import { isLocalModel } from '@shared/llm/estimate-cost.ts'
+import { withSecretRedaction } from '@shared/llm/redacting-provider.ts'
+import { PROVIDER_ENV_VARS } from './env-key-detection.ts'
 
 export { DEFAULT_LM_STUDIO_URL }
+
+function knownLiteralSecrets(): string[] {
+  const slugs = new Set<string>([...Object.keys(PROVIDER_ENV_VARS), 'openrouter'])
+  for (const extra of getResolvedExtraProviders()) slugs.add(extra.id)
+  const secrets: string[] = []
+  for (const slug of slugs) {
+    const key = storedOrEnvApiKey(slug)
+    if (key) secrets.push(key)
+  }
+  return secrets
+}
+
+function redactedRemoteProvider(provider: LLMProvider): LLMProvider {
+  return withSecretRedaction(provider, knownLiteralSecrets())
+}
 
 function localServerUrl(): string {
   return resolveLocalServerUrl(getSetting<string>('localServerUrl', ''), process.env)
@@ -137,7 +154,7 @@ export async function buildProvider(model: string): Promise<LLMProvider> {
         'OpenRouter is not configured. Add an OpenRouter API key in Settings or choose another model.',
       )
     }
-    return createOpenRouterProvider(openRouterModelId(model), apiKey)
+    return redactedRemoteProvider(createOpenRouterProvider(openRouterModelId(model), apiKey))
   }
   const extra = extraProviderForModel(getResolvedExtraProviders(), model)
   if (extra) {
@@ -149,22 +166,29 @@ export async function buildProvider(model: string): Promise<LLMProvider> {
         `${extra.label} is not configured. Add a ${extra.label} API key in Settings or choose another model.`,
       )
     }
-    return createExtraCloudProvider(extra, extraProviderModelId(model), apiKey ?? '')
+    const provider = createExtraCloudProvider(extra, extraProviderModelId(model), apiKey ?? '')
+    return extra.local ? provider : redactedRemoteProvider(provider)
   }
   if (model.startsWith('claude')) {
-    return createProvider(model, {
-      anthropicApiKey: storedOrEnvApiKey('anthropic'),
-    })
+    return redactedRemoteProvider(
+      createProvider(model, {
+        anthropicApiKey: storedOrEnvApiKey('anthropic'),
+      }),
+    )
   }
   if (model.startsWith('gpt')) {
-    return createProvider(model, {
-      openAiApiKey: storedOrEnvApiKey('openai'),
-    })
+    return redactedRemoteProvider(
+      createProvider(model, {
+        openAiApiKey: storedOrEnvApiKey('openai'),
+      }),
+    )
   }
-  return createProvider(model, {
-    anthropicApiKey: storedOrEnvApiKey('anthropic'),
-    openAiApiKey: storedOrEnvApiKey('openai'),
-  })
+  return redactedRemoteProvider(
+    createProvider(model, {
+      anthropicApiKey: storedOrEnvApiKey('anthropic'),
+      openAiApiKey: storedOrEnvApiKey('openai'),
+    }),
+  )
 }
 
 // List the model ids an LM Studio server currently exposes (using saved URL/key).

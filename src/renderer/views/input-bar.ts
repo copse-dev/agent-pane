@@ -322,9 +322,16 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       lastBreakdown.totalTokens > 0 &&
       (!snapshotUsable || draftNonEmpty)
     const tuckUsageIntoWheel = compact && !showBreakdown && snapshotVisible
+    // Always forward the estimated breakdown so already-run primary chats keep
+    // the context-window breakdown on hover; `breakdownRing` controls whether it
+    // also replaces the live snapshot fill (pre-send / fresh threads). While the
+    // agent is running we suppress it — the live snapshot is the authoritative
+    // source then, and subagent/remote windows never produce a breakdown here.
+    const hoverBreakdown = !running ? lastBreakdown : null
     contextWheel.update(snapshot, running, {
       usageLine: tuckUsageIntoWheel ? usageText : null,
-      breakdown: showBreakdown ? lastBreakdown : null,
+      breakdown: hoverBreakdown,
+      breakdownRing: showBreakdown,
     })
     contextWheel.root.classList.toggle('is-interactive', tuckUsageIntoWheel)
     if (!usageText) {
