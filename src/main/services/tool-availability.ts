@@ -22,7 +22,7 @@ export async function checkToolAvailability(): Promise<void> {
   }
   rgAvail = await probe('rg', ['--version'])
   gitAvail = await probe('git', ['--version'])
-  ghAvail = await probe('gh', ['--version'])
+  ghAvail = await probeGhAccessible()
   const grepBackend = await probeIndexedGrepBackends()
   const semanticBackend = await probeSemanticBackends()
   if (!rgAvail)
@@ -39,7 +39,10 @@ export async function checkToolAvailability(): Promise<void> {
       '[copse-panel] codesearch/vera not found — semantic search disabled (run npm install or add CLI to PATH)',
     )
   if (!gitAvail) console.warn('[copse-panel] git not found — git tools will be unavailable')
-  if (!ghAvail) console.warn('[copse-panel] gh not found — GitHub PR tools will be unavailable')
+  if (!ghAvail)
+    console.warn(
+      '[copse-panel] gh not found or not authenticated — GitHub read-only tools will be unavailable',
+    )
 }
 
 export const isRgAvailable = (): boolean => rgAvail === true
@@ -71,6 +74,29 @@ async function probe(cmd: string, args: string[]): Promise<boolean> {
       env: { PATH: `${probePathPrefix()}${process.env['PATH'] ?? ''}` },
     })
     return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Deterministically decide whether the GitHub read-only tools should be exposed.
+ *
+ * `gh --version` only proves the binary is installed; a `gh` that can't reach an
+ * authenticated GitHub host would still pass that probe, then every read-only GH
+ * tool call would fail at runtime. So we instead run `gh auth status`, which exits
+ * non-zero when no host is logged in or the token is invalid. runCommand resolves
+ * (rather than throwing) on a non-zero exit, so we inspect the exit code directly:
+ * a missing binary rejects, anything but a clean `code === 0` means GitHub is not
+ * accessible. This keeps the gh_pr_* / read-only CI tools hidden from the model
+ * unless GitHub is genuinely accessible — see issue #523.
+ */
+async function probeGhAccessible(): Promise<boolean> {
+  try {
+    const { code } = await runCommand('gh', ['auth', 'status'], {
+      env: { PATH: `${probePathPrefix()}${process.env['PATH'] ?? ''}` },
+    })
+    return code === 0
   } catch {
     return false
   }
