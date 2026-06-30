@@ -35,15 +35,16 @@ jobs:
   # on a runner that doesn't exist. (The e2e job keeps its own dedicated
   # copse-e2e fleet + nightly-hosted model and is intentionally not routed here.)
   #
-  # Listing self-hosted runners needs an admin scope the default GITHUB_TOKEN
-  # lacks, so detection uses a PAT. It reuses the existing SCREENSHOTS_PAT when
-  # no dedicated RUNNERS_PAT is set: a classic `repo`-scoped PAT (which
-  # SCREENSHOTS_PAT is, since it pushes commits that re-trigger CI) already
-  # carries repository Administration: Read, so it can list runners too. Set a
-  # dedicated RUNNERS_PAT only if you'd rather scope a separate token (classic
-  # `repo`, or fine-grained repository Administration: Read). With neither — or
-  # a token lacking admin read — the query just fails open to hosted, the
-  # pre-existing behaviour.
+  # Listing self-hosted runners needs repository Administration: Read, which the
+  # default GITHUB_TOKEN can't be granted — so detection uses a PAT in
+  # secrets.RUNNERS_PAT (classic `repo`, or fine-grained Administration: Read).
+  # As a convenience it falls back to SCREENSHOTS_PAT, but only a token that
+  # actually carries admin read will work — a fine-grained SCREENSHOTS_PAT
+  # scoped to Contents alone returns 4xx and is treated as "no runners". When no
+  # token can list the fleet (none set, or insufficient scope) the query fails
+  # OPEN to GitHub-hosted runners — the pre-existing behaviour — so the routing
+  # only ever *adds* the self-hosted option, never breaks CI. To actually enable
+  # self-hosted routing, set RUNNERS_PAT with Administration: Read.
   #
   # Same fork guard as the jobs below: never runs for fork PRs, so the PAT is
   # never exposed to untrusted code and self-hosted boxes never see fork commits.
@@ -55,27 +56,32 @@ jobs:
     steps:
       - id: pick
         env:
-          # Dedicated token if provided, else reuse SCREENSHOTS_PAT (a classic
-          # `repo` PAT already has the Administration: Read needed to list runners).
+          # Dedicated token if provided, else try SCREENSHOTS_PAT. The query
+          # needs repository Administration: Read; if the token lacks it the
+          # request 4xxs and we fall open to hosted (see below).
           RUNNERS_PAT: ${{ secrets.RUNNERS_PAT || secrets.SCREENSHOTS_PAT }}
           GH_REPO: ${{ github.repository }}
         run: |
-          # Never abort the router: on ANY uncertainty we want the hosted
-          # fallback, not a failed job — so deliberately no `set -e`.
+          # GitHub's default step shell is `bash -e {0}`, so errexit is ON and a
+          # failing curl (e.g. `-f` on an HTTP 4xx) would abort the step. The
+          # router must do the OPPOSITE — fail OPEN to hosted on ANY problem — so
+          # explicitly disable errexit and guard each fallible command.
+          set +e
           set -uo pipefail
           hosted='["ubuntu-latest"]'
           selfhosted='["self-hosted","copse-checks"]'
           choice="$hosted"
           if [ -z "${RUNNERS_PAT:-}" ]; then
-            echo "No RUNNERS_PAT secret set — deferring to GitHub-hosted runners."
+            echo "No runner-list PAT available — deferring to GitHub-hosted runners."
           else
             runners="$(curl -fsSL \
               -H "Authorization: Bearer ${RUNNERS_PAT}" \
               -H "Accept: application/vnd.github+json" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
               "https://api.github.com/repos/${GH_REPO}/actions/runners?per_page=100" 2>/dev/null)"
-            if [ $? -ne 0 ] || [ -z "$runners" ]; then
-              echo "Runner query failed — deferring to GitHub-hosted runners."
+            rc=$?
+            if [ $rc -ne 0 ] || [ -z "$runners" ]; then
+              echo "Runner query failed (curl exit $rc — token may lack Administration: Read) — deferring to GitHub-hosted runners."
             elif printf '%s' "$runners" | jq -e \
                 '[.runners[]? | select(.status=="online") | select(any((.labels // [])[]; .name=="copse-checks"))] | length > 0' \
                 >/dev/null 2>&1; then

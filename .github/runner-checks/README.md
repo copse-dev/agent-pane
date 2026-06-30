@@ -72,24 +72,25 @@ So bringing this fleet up or down is transparent — start containers to offload
 the check tier onto your own hardware, stop them and CI silently falls back to
 hosted runners on the next run.
 
-### PAT for detection (reuses the existing secret)
+### PAT for detection
 
 Detection needs a PAT because the GitHub API won't list self-hosted runners
-with the default `GITHUB_TOKEN` (it has no `administration` scope). By default
-`pick-runner` **reuses the repo's existing `SCREENSHOTS_PAT`** — a classic
-`repo`-scoped PAT already carries repository **Administration: Read**, so the
-same token that pushes screenshot commits can also list runners. No new secret
-is required.
-
-Optionally set a dedicated **`RUNNERS_PAT`** if you'd rather scope a separate
-token (it takes precedence over `SCREENSHOTS_PAT`):
+with the default `GITHUB_TOKEN` (it can't be granted `administration` scope).
+To **enable self-hosted routing**, add a repo secret **`RUNNERS_PAT`** that
+carries repository **Administration: Read**:
 
 - Classic PAT: `repo` scope, **or**
 - Fine-grained PAT: repository **Administration → Read**.
 
-With neither secret — or a token that lacks admin read — `pick-runner` simply
-can't enumerate the fleet and CI runs the check tier on GitHub-hosted runners
-(the previous behaviour).
+`pick-runner` falls back to `SCREENSHOTS_PAT` if `RUNNERS_PAT` is unset, but
+that only helps when `SCREENSHOTS_PAT` itself has admin read — a fine-grained
+token scoped to Contents alone (enough to push screenshots) returns 4xx on the
+runner list and is treated as "no fleet available."
+
+With no admin-read token, `pick-runner` can't enumerate the fleet and **fails
+open** to GitHub-hosted `ubuntu-latest` — the previous behaviour. So the routing
+only ever *adds* the self-hosted option; it never blocks CI. Set `RUNNERS_PAT`
+when you want the check tier to actually land on this fleet.
 
 ## Sizing
 
