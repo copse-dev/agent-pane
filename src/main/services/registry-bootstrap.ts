@@ -24,6 +24,7 @@ import { deleteFileTool, renameFileTool, makeDirectoryTool } from '../tools/file
 import { exploreTool } from '../tools/explore-tool.ts'
 import { readSkillTool } from '../tools/read-skill-tool.ts'
 import { updateTodosTool } from '../tools/todo-tool.ts'
+import { askUserTool } from '../tools/ask-user-tool.ts'
 import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
 import { browserTools } from '../tools/browser-tools.ts'
 import { rememberTool, recallTool } from '../tools/memory-tools.ts'
@@ -88,6 +89,7 @@ export function createRegistry(): ToolRegistry {
   registry.register(webSearchTool)
   registry.register(fetchUrlTool)
   registry.register(updateTodosTool)
+  registry.register(askUserTool)
   if (getSetting<boolean>(BROWSER_TOOLS_ENABLED_SETTING, BROWSER_TOOLS_DEFAULT_ENABLED)) {
     for (const tool of browserTools) registry.register(tool)
   }
