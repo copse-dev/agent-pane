@@ -1,4 +1,5 @@
 import { el } from '../dom/helpers.ts'
+import { panePopoutButton } from './pane-popout-button.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -104,6 +105,7 @@ export function mountBrowserPane(
     },
     '+',
   )
+  if (api) listHeader.append(panePopoutButton(api, 'browser', 'browser'))
   listHeader.append(newBtn)
 
   const tabsWrap = el('div', { class: 'browser-tabs-list' })
