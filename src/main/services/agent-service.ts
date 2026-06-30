@@ -16,6 +16,7 @@ import { buildSystemPrompt } from './agent-system-prompt.ts'
 import { hasLastUsage } from './provider-usage.ts'
 import { clearActiveRunThread, recordThreadModel, setActiveRunThread } from './thread-models.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
+import { redactUserContent } from './pii-redactor.ts'
 import { buildCommitSteeringPrompt, shouldSteerCommit } from '@shared/git/commit-attribution.ts'
 import {
   buildProvider,
@@ -150,6 +151,13 @@ export async function runAgent(
 
   const sendChunk = createAgentChunkSink(threadId, host)
 
+  // Experimental PII redaction: when enabled, swap personal data the user typed
+  // for stable placeholders before the prompt leaves the device — for every
+  // provider path (local, remote, ACP). The redacted form is also what we persist
+  // to thread history, so placeholders stay consistent across turns. No-op when
+  // the feature is off or Rampart is unavailable.
+  const outboundPrompt = await redactUserContent(threadId, userPrompt)
+
   if (acpAgentId) {
     const controller = new AbortController()
     abortMap.set(threadId, controller)
@@ -160,7 +168,7 @@ export async function runAgent(
       const result = await runAcpAgentFromSettings({
         threadId,
         agentId: acpAgentId,
-        userPrompt,
+        userPrompt: outboundPrompt,
         priorMessages,
         signal: controller.signal,
         onChunk: sendChunk,
@@ -170,7 +178,7 @@ export async function runAgent(
         usage: { inputTokens: 0, outputTokens: 0 },
         messages: [
           ...priorMessages,
-          { role: 'user' as const, content: userPrompt },
+          { role: 'user' as const, content: outboundPrompt },
           ...result.messages,
         ],
       }
@@ -180,7 +188,7 @@ export async function runAgent(
       sendChunk({ type: 'done' })
       return {
         usage: { inputTokens: 0, outputTokens: 0 },
-        messages: [...priorMessages, { role: 'user' as const, content: userPrompt }],
+        messages: [...priorMessages, { role: 'user' as const, content: outboundPrompt }],
       }
     } finally {
       runAbort.clear()
@@ -199,7 +207,7 @@ export async function runAgent(
       const result = await runRemoteAgentFromSettings({
         threadId,
         provider: remoteProvider,
-        userPrompt,
+        userPrompt: outboundPrompt,
         priorMessages,
         signal: controller.signal,
         onChunk: sendChunk,
@@ -208,7 +216,7 @@ export async function runAgent(
         usage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens },
         messages: [
           ...priorMessages,
-          { role: 'user' as const, content: userPrompt },
+          { role: 'user' as const, content: outboundPrompt },
           ...result.messages,
         ],
       }
@@ -218,7 +226,7 @@ export async function runAgent(
       sendChunk({ type: 'done' })
       return {
         usage: { inputTokens: 0, outputTokens: 0 },
-        messages: [...priorMessages, { role: 'user' as const, content: userPrompt }],
+        messages: [...priorMessages, { role: 'user' as const, content: outboundPrompt }],
       }
     } finally {
       runAbort.clear()
@@ -227,7 +235,7 @@ export async function runAgent(
     }
   }
 
-  let trimmed: LLMMessage[] = [...priorMessages, { role: 'user', content: userPrompt }]
+  let trimmed: LLMMessage[] = [...priorMessages, { role: 'user', content: outboundPrompt }]
   let inputTokens = 0
   let outputTokens = 0
 
@@ -258,11 +266,15 @@ export async function runAgent(
     const messages: LLMMessage[] = [
       { role: 'system', content: systemPrompt },
       ...priorMessages,
-      { role: 'user', content: userPrompt },
+      { role: 'user', content: outboundPrompt },
     ]
 
-    const parentGoal = resolveParentGoal(options?.workingBrief, messages, userPrompt)
+    // Use the redacted prompt: parentGoal is embedded in subagent prompts and the
+    // working brief, both of which reach providers.
+    const parentGoal = resolveParentGoal(options?.workingBrief, messages, outboundPrompt)
 
+    // Steering checks are local-only (they decide which prompt blocks to add), so
+    // they run on the raw text — redaction must not change which steering fires.
     const userTextForSteering =
       typeof userPrompt === 'string'
         ? userPrompt

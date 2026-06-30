@@ -11,7 +11,7 @@ import {
 export interface ApprovalRequest {
   title: string
   body: string
-  type: 'shell' | 'mcp' | 'web'
+  type: 'shell' | 'mcp' | 'web' | 'pii'
   allowRemember?: boolean
   rememberLabel?: string
 }
