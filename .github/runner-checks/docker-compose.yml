@@ -1,0 +1,26 @@
+# Spin up N identical Linux CHECK runners on whatever host this is:
+#
+#   cd .github/runner-checks
+#   cp .env.example .env          # fill in GITHUB_URL + ACCESS_TOKEN
+#   docker compose up -d --build --scale runner=2
+#
+# Works unchanged on Linux, macOS (Docker Desktop/OrbStack/Colima), and Windows
+# (Docker Desktop in Linux-containers mode). These run the NON-e2e tier
+# (typecheck/lint/format/dead-code/oracle/unit tests) — far lighter than the
+# e2e fleet in ../runner, so they need much less memory and no big /dev/shm.
+services:
+  runner:
+    build:
+      context: .
+    image: copse-ci-checks-runner:latest
+    # Ephemeral runners exit after each job; `always` restarts a fresh, clean
+    # container that re-registers. Gives you per-job isolation for free.
+    restart: always
+    env_file: .env
+    environment:
+      EPHEMERAL: 'true'
+    init: true # PID 1 reaps any stray child processes
+    # The static + unit tier is CPU-light and modest on memory (tsc + eslint +
+    # the node unit suite). No Chromium-under-Xvfb here, so the e2e image's 6 GB
+    # budget is unnecessary — ~2-4 GB per runner is plenty. Tune to taste.
+    mem_limit: 4g
