@@ -221,4 +221,40 @@ src/renderer/views/projects-pane.ts
     assert.equal(stripTextToolCallBlocks('compare a < b and c > d'), 'compare a < b and c > d')
     assert.equal(stripTextToolCallBlocks('use a <div> wrapper'), 'use a <div> wrapper')
   })
+
+  it('does not recover or strip tool-call syntax inside inline code (documentation)', () => {
+    // The model documenting this very parser must not have its prose gutted or
+    // trigger phantom tool calls. Regression for the truncated review session.
+    const text = [
+      'The current `parse-text-tool-calls.ts` handles multiple dialects:',
+      '- **Cursor/Qwen-style:** `<tool_call><function=run_shell><parameter=command>ls</parameter></function></tool_call>` blocks',
+      '- **MiniMax:** `<invoke name="run_shell">…</invoke>` blocks (often wrapped in `<tool_call>`)',
+    ].join('\n')
+    const { toolCalls, cleanedText } = recoverTextToolCalls(text)
+    assert.equal(toolCalls.length, 0)
+    assert.equal(cleanedText, text)
+    assert.equal(stripTextToolCallBlocks(text), text)
+  })
+
+  it('does not recover tool-call syntax inside a fenced code block', () => {
+    const text =
+      'Example:\n```\n<invoke name="run_shell"><command>ls</command></invoke>\n```\nThat is the syntax.'
+    const { toolCalls } = recoverTextToolCalls(text)
+    assert.equal(toolCalls.length, 0)
+    assert.ok(stripTextToolCallBlocks(text).includes('<invoke name="run_shell">'))
+  })
+
+  it('does not truncate prose at an <invoke> opener that lives inside inline code', () => {
+    const stripped = stripTextToolCallBlocks(
+      'Wrap the call as `<invoke name="x">` and keep reading.',
+    )
+    assert.equal(stripped, 'Wrap the call as `<invoke name="x">` and keep reading.')
+  })
+
+  it('still recovers a real tool call that is not wrapped in code', () => {
+    const text = 'Let me look.\n<invoke name="read_file"><path>src/a.ts</path></invoke>'
+    const { toolCalls } = recoverTextToolCalls(text)
+    assert.equal(toolCalls.length, 1)
+    assert.equal(at(toolCalls, 0).name, 'read_file')
+  })
 })
