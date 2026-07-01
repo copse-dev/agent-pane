@@ -18,6 +18,7 @@ import { splitForStreaming, type StreamingSplit } from './streaming-split.ts'
 import { escapeHtml } from './escape.ts'
 import { sanitizeRenderedMarkdown } from './sanitize.ts'
 import {
+  appendPendingTableRowHtml,
   buildFormingTableHtml,
   clearFormingTableDom,
   removePendingTableRow,
@@ -366,7 +367,7 @@ export function renderStreamingMarkdown(content: string): string {
   const { complete, pending, openListItemFirstLine } = split
   const rendered = complete ? sanitizeRenderedMarkdown(renderMarkdown(complete)) : ''
   const fenceSource = formingFenceSource(content)
-  const tableSource = fenceSource ? null : formingTableSource(content, pending)
+  const tableSource = fenceSource ? null : formingTableSource(complete, content, pending)
   const formingHtml = fenceSource
     ? buildFormingFenceHtml(fenceSource)
     : tableSource
@@ -377,7 +378,9 @@ export function renderStreamingMarkdown(content: string): string {
     return `${rendered}${formingHtml}`
   }
   if (!pending) return rendered
-  if (pendingLineBelongsInTable(complete, pending)) return rendered
+  if (pendingLineBelongsInTable(complete, pending)) {
+    return appendPendingTableRowHtml(rendered, pending)
+  }
   const pendingInner = sanitizeRenderedMarkdown(
     renderPendingInlineMarkdown(pending, openListItemFirstLine),
   )
@@ -432,7 +435,7 @@ export class StreamingMarkdownRenderer {
     }
 
     const fenceSource = formingFenceSource(content)
-    const tableSource = formingTableSource(content, pending)
+    const tableSource = formingTableSource(complete, content, pending)
     if (fenceSource) {
       syncFormingFenceDom(formingEl, fenceSource)
       formingEl.hidden = false
@@ -517,8 +520,9 @@ export class StreamingMarkdownRenderer {
   }
 }
 
-function formingTableSource(content: string, pending: string): string | null {
+function formingTableSource(complete: string, content: string, pending: string): string | null {
   if (getIncompleteFenceSource(content)) return null
+  if (pendingLineBelongsInTable(complete, pending)) return null
   const fromTokens = getIncompleteTableSource(content)
   if (fromTokens) return fromTokens
   const trimmed = pending.trimStart()

@@ -1,7 +1,7 @@
 /**
  * Streaming split driven by block + inline tokenizer state (#475).
  */
-import { streamingHoldStart, tokenizeBlocks, type BlockToken } from './block-tokenizer.ts'
+import { streamingHoldStart, TABLE_SEP_RE, tokenizeBlocks, type BlockToken } from './block-tokenizer.ts'
 import { emphasisSpansNewline, pendingHoldIndex } from './inline-emphasis.ts'
 
 export interface StreamingSplit {
@@ -60,6 +60,34 @@ function splitOpenListItem(block: BlockToken, content: string): StreamingSplit {
   }
 }
 
+function splitOpenTable(block: BlockToken, content: string): StreamingSplit {
+  const openText = content.slice(block.start)
+  const lines = openText.split('\n')
+  const sepLine = lines[1]
+  if (!sepLine || !TABLE_SEP_RE.test(sepLine)) {
+    return {
+      complete: content.slice(0, block.start),
+      pending: openText,
+    }
+  }
+
+  const headerSepEnd = (lines[0]?.length ?? 0) + 1 + sepLine.length
+  const afterSep = openText.slice(headerSepEnd)
+  // Hold header + separator until the separator line is newline-terminated.
+  if (!afterSep.startsWith('\n') && lines.length <= 2) {
+    return {
+      complete: content.slice(0, block.start),
+      pending: openText,
+    }
+  }
+
+  const { complete: lineComplete, pending } = splitAtLastNewline(openText)
+  return {
+    complete: content.slice(0, block.start) + lineComplete,
+    pending,
+  }
+}
+
 /**
  * Split streaming content at a tokenizer-safe commit boundary. Completed blocks
  * are committed; open, ambiguous, or partially-resolved inline regions stay pending.
@@ -78,6 +106,10 @@ export function splitForStreaming(content: string): StreamingSplit {
 
   if (firstOpen.kind === 'list_item') {
     return splitOpenListItem(firstOpen, content)
+  }
+
+  if (firstOpen.kind === 'table') {
+    return splitOpenTable(firstOpen, content)
   }
 
   const holdStart = streamingHoldStart(blocks)

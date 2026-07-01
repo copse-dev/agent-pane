@@ -94,6 +94,19 @@ describe('streaming pending row matrix', () => {
     assert.match(html, /<td>y<\/td>/)
   })
 
+  it('committed table body row: pending row appended to tbody, not raw pipe span', () => {
+    const html = renderStreamingMarkdown(
+      '| Path | Role |\n| - | - |\n| src/ | Application source |\n| tests/e2e/ | WebdriverIO specs |',
+    )
+    assert.match(html, /<table>/)
+    assert.match(html, />src\//)
+    assert.match(html, /<tr class="stream-pending-row">/)
+    assert.match(html, />tests\/e2e\//)
+    assert.match(html, />WebdriverIO specs</)
+    assert.doesNotMatch(html, /stream-pending[^>]*>\|/)
+    assert.doesNotMatch(html, /stream-table-forming/)
+  })
+
   it('nbsp in pending prose: decoded, never literal &nbsp;', () => {
     const html = renderStreamingMarkdown('done\n**Status:** ok &nbsp;&nbsp;|&nbsp;&nbsp; **Team:** x')
     const div = document.createElement('div')

@@ -109,7 +109,7 @@ export function syncPendingTableRowDom(table: HTMLTableElement, pendingRow: stri
   }
 
   let row: HTMLTableRowElement | null = tbody.querySelector(`tr.${PENDING_ROW_CLASS}`)
-  if (!(row instanceof HTMLTableRowElement)) {
+  if (!(row instanceof Element) || row.tagName !== 'TR') {
     tbody.querySelectorAll(`tr.${PENDING_ROW_CLASS}`).forEach((r) => {
       r.remove()
     })
@@ -138,7 +138,29 @@ export function removePendingTableRow(table: HTMLTableElement): void {
   table.querySelector(`tr.${PENDING_ROW_CLASS}`)?.remove()
 }
 
-/** Build forming-table HTML for the string streaming API (mirrors DOM structure). */
+/** Append an in-progress body row to the last committed table in rendered HTML. */
+export function appendPendingTableRowHtml(rendered: string, pendingRow: string): string {
+  const cells = splitTableRow(pendingRow)
+  const headerMatch = rendered.match(/<thead>[\s\S]*?<\/thead>/g)
+  const lastHeader = headerMatch?.at(-1) ?? ''
+  const headerCols = (lastHeader.match(/<th[\s>]/g) ?? []).length
+  const colCount = headerCols > 0 ? headerCols : Math.max(cells.length, 1)
+
+  const rowHtml = Array.from({ length: colCount }, (_, i) => {
+    const raw = cells[i] ?? ''
+    const inner = raw
+      ? sanitizeRenderedMarkdown(renderStreamingInline(visibleCellSource(raw)))
+      : ''
+    return `<td>${inner}</td>`
+  }).join('')
+  const pendingRowHtml = `<tr class="${PENDING_ROW_CLASS}">${rowHtml}</tr>`
+
+  const closeTbody = '</tbody>'
+  const closeIndex = rendered.lastIndexOf(closeTbody)
+  if (closeIndex === -1) return `${rendered}${pendingRowHtml}`
+  return `${rendered.slice(0, closeIndex)}${pendingRowHtml}${rendered.slice(closeIndex)}`
+}
+
 export function buildFormingTableHtml(source: string): string {
   const lines = tableLines(source)
   if (lines.length === 0) return ''
