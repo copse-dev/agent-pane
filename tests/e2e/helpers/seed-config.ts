@@ -272,6 +272,58 @@ export function seedMarkdownListFixture(workspaceRoot: string): void {
   )
 }
 
+/** Assistant message with sprint retrospective metadata using &nbsp; pipe separators. */
+export function seedSprintRetroNbspFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-sprint-retro-project'
+  const threadId = 'e2e-sprint-retro-thread'
+  const sprintMetadataLine =
+    '**Sprint Dates:** 2025-01-13 → 2025-01-27 &nbsp;&nbsp;|&nbsp;&nbsp; **Team:** Platform Squad &nbsp;&nbsp;|&nbsp;&nbsp; **Velocity:** 42/55 points'
+  const content = [
+    "Here's another markdown example — this time a **Sprint Retrospective** with different formatting patterns:",
+    '',
+    '---',
+    '',
+    '# 📊 Sprint 24 Retrospective',
+    '',
+    sprintMetadataLine,
+    '',
+    '---',
+    '',
+    '## Sprint Summary',
+    '',
+    '| Metric | Planned | Completed | % Done |',
+    '|--------|---------|-----------|:------:|',
+    '| Story Points | 55 | 42 | 76% |',
+  ].join('\n')
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Sprint retrospective nbsp',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-sprint-retro',
+              role: 'assistant',
+              content,
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
 /** Assistant message with a root-relative markdown link to a real workspace file. */
 export function seedMarkdownWorkspaceLinkFixture(workspaceRoot: string): void {
   const projectId = 'e2e-markdown-workspace-link-project'

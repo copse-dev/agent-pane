@@ -10,6 +10,33 @@ import { decodeSafeMarkdownEntities } from './escape.ts'
 const metadataLine =
   '**Status:** Proposed &nbsp;&nbsp;|&nbsp;&nbsp; **Authors:** Engineering Guild &nbsp;&nbsp;|&nbsp;&nbsp; **Created:** 2025-01-25 &nbsp;&nbsp;|&nbsp;&nbsp; **Expires:** 2025-07-25'
 
+const sprintMetadataLine =
+  '**Sprint Dates:** 2025-01-13 → 2025-01-27 &nbsp;&nbsp;|&nbsp;&nbsp; **Team:** Platform Squad &nbsp;&nbsp;|&nbsp;&nbsp; **Velocity:** 42/55 points'
+
+const sprintRetroDoc = `Here's another markdown example — this time a **Sprint Retrospective** with different formatting patterns:
+
+---
+
+# 📊 Sprint 24 Retrospective
+
+${sprintMetadataLine}
+
+---
+
+## Sprint Summary
+
+| Metric | Planned | Completed | % Done |
+|--------|---------|-----------|:------:|
+| Story Points | 55 | 42 | 76% |
+`
+
+function assertNoVisibleNbsp(html: string, label: string): void {
+  const div = document.createElement('div')
+  div.innerHTML = html
+  assert.doesNotMatch(div.textContent, /&nbsp;/, `${label}: textContent`)
+  assert.doesNotMatch(html, /&amp;nbsp;/, `${label}: html`)
+}
+
 describe('HTML entity decoding in prose', () => {
   it('decodes nbsp entities in at-rest markdown metadata lines', () => {
     const html = sanitizeRenderedMarkdown(
@@ -57,5 +84,31 @@ describe('HTML entity decoding in prose', () => {
     assert.equal(decodeSafeMarkdownEntities('Proposed &nbsp'), 'Proposed ')
     assert.equal(decodeSafeMarkdownEntities('Proposed &nbs'), 'Proposed ')
     assert.equal(decodeSafeMarkdownEntities('Proposed &amp;nb'), 'Proposed ')
+  })
+
+  it('decodes nbsp on ambiguous block lines held as escaped plain text', () => {
+    const partial = `# 📊 Sprint 24 Retrospective &nbsp;&nbsp;|&nbsp;&nbsp; **Team:**`
+    const html = sanitizeRenderedMarkdown(renderStreamingMarkdown(partial))
+    assertNoVisibleNbsp(html, 'ambiguous-atx')
+    assert.match(html, /stream-pending/)
+  })
+
+  it('decodes nbsp in sprint retrospective metadata at rest and while streaming', () => {
+    assertNoVisibleNbsp(sanitizeRenderedMarkdown(renderMarkdown(sprintRetroDoc)), 'sprint-at-rest')
+    const partial = sprintRetroDoc.replace(/\n---\n\n## Sprint Summary[\s\S]*/, '')
+    assertNoVisibleNbsp(renderStreamingMarkdown(partial), 'sprint-streaming')
+  })
+
+  it('never flashes nbsp while streaming sprint metadata token-by-token', () => {
+    const [beforeMetadata = ''] = sprintRetroDoc.split(sprintMetadataLine)
+    const prefix = `${beforeMetadata}${sprintMetadataLine.slice(0, 40)}`
+    const suffix = sprintMetadataLine.slice(40)
+    const host = document.createElement('div')
+    const renderer = new StreamingMarkdownRenderer(host)
+    for (let i = 1; i <= suffix.length; i++) {
+      renderer.update(prefix + suffix.slice(0, i))
+      assert.doesNotMatch(host.textContent, /&nbsp/i, `flash at ${suffix.slice(0, i)}`)
+      assert.doesNotMatch(host.innerHTML, /&amp;nbsp/i, `html at ${suffix.slice(0, i)}`)
+    }
   })
 })
