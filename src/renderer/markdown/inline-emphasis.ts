@@ -224,7 +224,7 @@ function wrapEmphasis(inner: string, openLen: number, closeLen: number): string 
   if (used === 0) return inner
   let out = inner
   let remaining = used
-  if (remaining >= 2) {
+  while (remaining >= 2) {
     out = `<strong>${out}</strong>`
     remaining -= 2
   }

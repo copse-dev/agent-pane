@@ -38,6 +38,23 @@ describe('renderEmphasisDelimiters (delimiter-stack AST)', () => {
     assert.equal(renderEmphasisDelimiters('*foo**bar***'), '<em>foo<strong>bar</strong></em>')
   })
 
+  it('nests multiple strong delimiters per CommonMark (#417, #464–#466, #468)', () => {
+    assert.equal(
+      renderEmphasisDelimiters('foo******bar*********baz'),
+      'foo<strong><strong><strong>bar</strong></strong></strong>***baz',
+    )
+    assert.equal(renderEmphasisDelimiters('****foo****'), '<strong><strong>foo</strong></strong>')
+    assert.equal(renderEmphasisDelimiters('____foo____'), '<strong><strong>foo</strong></strong>')
+    assert.equal(
+      renderEmphasisDelimiters('******foo******'),
+      '<strong><strong><strong>foo</strong></strong></strong>',
+    )
+    assert.equal(
+      renderEmphasisDelimiters('_____foo_____'),
+      '<em><strong><strong>foo</strong></strong></em>',
+    )
+  })
+
   it('ignores delimiters inside inline code spans', () => {
     assert.equal(renderEmphasisDelimiters('use `a**b` here'), 'use `a**b` here')
   })
