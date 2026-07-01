@@ -42,9 +42,9 @@ export interface ScannedLine {
 }
 
 const THEMATIC_BREAK_RE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/
-const UNORDERED_LIST_ITEM_RE = /^ {0,3}[-*+]\s/
-const ORDERED_LIST_MARKER_RE = /^ {0,3}(\d{1,9})\.\s/
-const LIST_ITEM_RE = /^ {0,3}((?:[-*+])|(?:\d{1,9}\.))\s/
+const UNORDERED_LIST_ITEM_RE = /^ {0,3}[-*+](?:\s|$)/
+const ORDERED_LIST_MARKER_RE = /^ {0,3}(\d{1,9})([.)])\s/
+const LIST_ITEM_RE = /^ {0,3}(?:(?:[-*+])(?:\s|$)|(?:\d{1,9}[.)]\s))/
 const BLOCKQUOTE_RE = /^ {0,3}> ?/
 const SETEXT_UNDERLINE_RE = /^ {0,3}(=+|-+)\s*$/
 export const TABLE_SEP_RE = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/
@@ -54,6 +54,13 @@ export function parseOrderedListMarker(line: string): number | null {
   const m = line.match(ORDERED_LIST_MARKER_RE)
   if (!m?.[1]) return null
   return parseInt(m[1], 10)
+}
+
+export function orderedListMarkerDelimiter(line: string): '.' | ')' | null {
+  const m = line.match(ORDERED_LIST_MARKER_RE)
+  const d = m?.[2]
+  if (d === '.' || d === ')') return d
+  return null
 }
 
 export function isUnorderedListItemLine(line: string): boolean {
@@ -73,7 +80,7 @@ export function unorderedListMarkerChar(line: string): '-' | '*' | '+' | null {
 
 /** Column of the first content character in a list item line (#255 vs #256, #276). */
 export function listItemContentColumn(line: string): number {
-  const ordered = line.match(/^ {0,3}\d{1,9}\.\s*/)
+  const ordered = line.match(/^ {0,3}\d{1,9}[.)]\s*/)
   if (ordered) {
     const rest = line.slice(ordered[0].length)
     const leadingSpaces = rest.match(/^ */)?.[0].length ?? 0
@@ -88,6 +95,14 @@ export function listItemContentColumn(line: string): number {
 
 function lazyContinuationIndent(line: string): number {
   return line.match(/^ */)?.[0].length ?? 0
+}
+
+/** Ordered marker mid-paragraph (#304): only `1` may interrupt; other markers continue. */
+function orderedMarkerContinuesParagraph(prevLine: string, line: string): boolean {
+  const num = parseOrderedListMarker(line)
+  if (num === null) return false
+  if (num === 1) return false
+  return prevLine.trimEnd().length > 0
 }
 
 function isLazyUnorderedContinuation(itemStartLine: string, line: string): boolean {
@@ -414,7 +429,8 @@ export function tokenizeBlocks(source: string): BlockToken[] {
       if (
         ATX_HEADING_RE.test(next.text) ||
         THEMATIC_BREAK_RE.test(next.text) ||
-        LIST_ITEM_RE.test(next.text) ||
+        (LIST_ITEM_RE.test(next.text) &&
+          !orderedMarkerContinuesParagraph(lines[j - 1]?.text ?? '', next.text)) ||
         BLOCKQUOTE_RE.test(next.text) ||
         fenceMarker(next.text) ||
         tryLinkRefDefBlock(lines, j) !== null ||

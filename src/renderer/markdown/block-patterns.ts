@@ -14,6 +14,11 @@ export function dropTrailingNewline(slice: string): string {
   return slice.endsWith('\n') ? slice.slice(0, -1) : slice
 }
 
+/** Strip optional ATX closing hash run (` ##` at end of heading text). */
+export function stripAtxClosingHashes(title: string): string {
+  return title.replace(/(?<!\\)\s+#+\s*$/, '').trimEnd()
+}
+
 export function fenceMarker(line: string): { marker: string; len: number; info: string } | null {
   const m = line.match(FENCE_OPEN_RE)
   if (!m?.[1]) return null

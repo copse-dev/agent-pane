@@ -3,7 +3,7 @@ import { escapeHtml } from './escape.ts'
 import { pendingHoldIndex } from './inline-emphasis.ts'
 import { renderProseInline } from './render-prose-inline.ts'
 
-const LIST_ITEM_PREFIX_RE = /^ {0,3}(?:[-*+]|\d{1,9}\.)\s/
+const LIST_ITEM_PREFIX_RE = /^ {0,3}(?:(?:[-*+])(?:\s|$)|(?:\d{1,9}[.)]\s))/
 
 /** Inline markdown safe to show while streaming (hold index applied by caller). */
 export function renderStreamingInline(text: string): string {

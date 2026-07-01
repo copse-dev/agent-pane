@@ -36,13 +36,43 @@ function renderLinkLabel(
   return renderLabel(decodeEscapes(label), refs)
 }
 
+/** Nested `[` link (not image) inside link label text — forbidden by CommonMark. */
+function labelContainsNestedLink(label: string, refs: LinkReferenceMap): boolean {
+  let i = 0
+  while (i < label.length) {
+    if (label[i] === '!' && label[i + 1] === '[') {
+      const image = tryParseLinkOrImage(label, i, refs, (inner) => inner)
+      if (image) {
+        i = image.end
+        continue
+      }
+    }
+    if (label[i] === '[') {
+      const parsed = tryParseLinkOrImage(label, i, refs, (inner) => inner, { linksOnly: true })
+      if (parsed) return true
+    }
+    i++
+  }
+  return false
+}
+
+/** True when `!`+`[` or `[` begins a link/image that beats emphasis grouping (#521). */
+export function linkOrImageStartsAt(
+  text: string,
+  start: number,
+  refs: LinkReferenceMap = new Map(),
+): boolean {
+  return tryParseLinkOrImage(text, start, refs, (label) => label) !== null
+}
+
 function tryParseLinkOrImage(
   text: string,
   start: number,
   refs: LinkReferenceMap,
   renderLabel: LinkLabelRenderer,
+  options: { linksOnly?: boolean } = {},
 ): { html: string; end: number } | null {
-  const image = text[start] === '!' && text[start + 1] === '['
+  const image = !options.linksOnly && text[start] === '!' && text[start + 1] === '['
   const bracketStart = image ? start + 1 : start
   if (text[bracketStart] !== '[') return null
 
@@ -55,8 +85,8 @@ function tryParseLinkOrImage(
     if (!dest) return null
     const href = safeLinkHref(dest.href)
     if (href === null) return null
+    if (!image && labelContainsNestedLink(labelPart.label, refs)) return null
     const label = renderLinkLabel(labelPart.label, refs, renderLabel)
-    if (!image && label.includes('<a ')) return null
     const html = image
       ? renderedImage(label, href, dest.title)
       : renderedLink(label, href, dest.title)
@@ -70,6 +100,7 @@ function tryParseLinkOrImage(
     if (!ref) return null
     const href = safeLinkHref(ref.href)
     if (href === null) return null
+    if (!image && labelContainsNestedLink(labelPart.label, refs)) return null
     const label = renderLinkLabel(labelPart.label, refs, renderLabel)
     const html = image
       ? renderedImage(label, href, ref.title)
@@ -82,6 +113,7 @@ function tryParseLinkOrImage(
   if (!ref) return null
   const href = safeLinkHref(ref.href)
   if (href === null) return null
+  if (!image && labelContainsNestedLink(labelPart.label, refs)) return null
   const label = renderLinkLabel(labelPart.label, refs, renderLabel)
   const html = image ? renderedImage(label, href, ref.title) : renderedLink(label, href, ref.title)
   return { html, end: labelPart.end }
