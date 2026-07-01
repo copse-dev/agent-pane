@@ -19,9 +19,13 @@ function visibleCellSource(raw: string): string {
   return raw.slice(0, pendingHoldIndex(raw))
 }
 
-function setStreamingCellContent(cell: HTMLTableCellElement, raw: string): void {
+function renderStreamingTableCell(raw: string): string {
   const visible = visibleCellSource(raw)
-  cell.innerHTML = visible ? sanitizeRenderedMarkdown(renderStreamingInline(visible)) : ''
+  return visible ? sanitizeRenderedMarkdown(renderStreamingInline(visible)) : ''
+}
+
+function setStreamingCellContent(cell: HTMLTableCellElement, raw: string): void {
+  cell.innerHTML = renderStreamingTableCell(raw)
 }
 
 function ensureRow(parent: HTMLTableSectionElement, index: number): HTMLTableRowElement {
@@ -117,17 +121,11 @@ export function syncPendingTableRowDom(table: HTMLTableElement, pendingRow: stri
     row.className = PENDING_ROW_CLASS
   }
 
-  while (row.cells.length < colCount) {
-    row.appendChild(document.createElement('td'))
-  }
-  while (row.cells.length > colCount) {
-    row.lastElementChild?.remove()
-  }
-
-  for (let i = 0; i < colCount; i++) {
-    const cell = row.cells[i]
-    if (cell) setStreamingCellContent(cell, cells[i] ?? '')
-  }
+  syncRowCells(
+    row,
+    Array.from({ length: colCount }, (_, i) => cells[i] ?? ''),
+    'td',
+  )
 }
 
 export function clearFormingTableDom(container: HTMLElement): void {
@@ -147,10 +145,7 @@ export function appendPendingTableRowHtml(rendered: string, pendingRow: string):
   const colCount = headerCols > 0 ? headerCols : Math.max(cells.length, 1)
 
   const rowHtml = Array.from({ length: colCount }, (_, i) => {
-    const raw = cells[i] ?? ''
-    const inner = raw
-      ? sanitizeRenderedMarkdown(renderStreamingInline(visibleCellSource(raw)))
-      : ''
+    const inner = renderStreamingTableCell(cells[i] ?? '')
     return `<td>${inner}</td>`
   }).join('')
   const pendingRowHtml = `<tr class="${PENDING_ROW_CLASS}">${rowHtml}</tr>`
@@ -168,7 +163,7 @@ export function buildFormingTableHtml(source: string): string {
   const headerLine = lines[0]
   if (!headerLine) return ''
   const headerCells = splitTableRow(headerLine)
-    .map((c) => `<th>${sanitizeRenderedMarkdown(renderStreamingInline(visibleCellSource(c)))}</th>`)
+    .map((c) => `<th>${renderStreamingTableCell(c)}</th>`)
     .join('')
 
   const parts = [
@@ -183,10 +178,7 @@ export function buildFormingTableHtml(source: string): string {
       const line = lines[i]
       if (!line?.includes('|')) continue
       const cells = splitTableRow(line)
-        .map(
-          (c) =>
-            `<td>${sanitizeRenderedMarkdown(renderStreamingInline(visibleCellSource(c)))}</td>`,
-        )
+        .map((c) => `<td>${renderStreamingTableCell(c)}</td>`)
         .join('')
       const rowClass =
         i === lines.length - 1 && !source.endsWith('\n') ? ` class="${PENDING_ROW_CLASS}"` : ''

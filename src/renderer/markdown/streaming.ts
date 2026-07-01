@@ -47,6 +47,26 @@ export {
 
 const BLOCK_PENDING_CLASS = 'stream-pending-block'
 const LIST_CONTINUATION_CLASS = 'stream-pending-list-continuation'
+const TRAILING_OPEN_LI_CLOSE_RE = /(<li(?:\s[^>]*)?>)([\s\S]*?)(<\/li>\s*<\/(?:ul|ol)>)\s*$/
+
+function insertBeforeTrailingListClose(rendered: string, insertHtml: string): string | null {
+  const liClose = rendered.match(TRAILING_OPEN_LI_CLOSE_RE)?.[3]
+  if (!liClose) return null
+  return `${rendered.slice(0, -liClose.length)}${insertHtml}${liClose}`
+}
+
+type BlockPendingCleanup = 'continuation' | 'list-items' | 'direct-blocks' | 'non-list-direct'
+
+function clearBlockPendingDom(completedEl: HTMLElement, parts: BlockPendingCleanup[]): void {
+  if (parts.includes('continuation')) clearListContinuationDom(completedEl)
+  if (parts.includes('list-items')) completedEl.querySelector(`li.${BLOCK_PENDING_CLASS}`)?.remove()
+  if (parts.includes('direct-blocks')) {
+    completedEl.querySelector(`:scope > .${BLOCK_PENDING_CLASS}`)?.remove()
+  }
+  if (parts.includes('non-list-direct')) {
+    completedEl.querySelector(`:scope > .${BLOCK_PENDING_CLASS}:not(li)`)?.remove()
+  }
+}
 
 function renderPendingInlineMarkdown(pending: string, openListItemFirstLine?: string): string {
   if (openListItemFirstLine === undefined) return renderPendingLine(pending)
@@ -98,12 +118,8 @@ function appendListPendingHtml(
   const indent = listPendingIndent(pending)
 
   if (indent > 0) {
-    const liMatch = rendered.match(/(<li(?:\s[^>]*)?>)([\s\S]*?)(<\/li>\s*<\/(?:ul|ol)>)\s*$/)
-    const liClose = liMatch?.[3]
-    if (liClose) {
-      const nested = `<${listTag}>${liHtml}</${listTag}>`
-      return `${rendered.slice(0, -liClose.length)}${nested}${liClose}`
-    }
+    const nested = insertBeforeTrailingListClose(rendered, `<${listTag}>${liHtml}</${listTag}>`)
+    if (nested) return nested
   }
 
   const close = `</${listTag}>`
@@ -137,8 +153,7 @@ function syncListPendingDom(
   active: boolean,
   openListItemFirstLine?: string,
 ): void {
-  clearListContinuationDom(completedEl)
-  completedEl.querySelector(`:scope > .${BLOCK_PENDING_CLASS}:not(li)`)?.remove()
+  clearBlockPendingDom(completedEl, ['continuation', 'non-list-direct'])
 
   const listTag = pendingListTag(pending)
   const indent = listPendingIndent(pending)
@@ -295,9 +310,7 @@ function syncBlockPendingDom(
   openListItemFirstLine?: string,
 ): void {
   if (isListContinuationPending(pending, openListItemFirstLine)) {
-    clearListContinuationDom(completedEl)
-    completedEl.querySelector(`li.${BLOCK_PENDING_CLASS}`)?.remove()
-    completedEl.querySelector(`:scope > .${BLOCK_PENDING_CLASS}:not(li)`)?.remove()
+    clearBlockPendingDom(completedEl, ['continuation', 'list-items', 'non-list-direct'])
     syncListContinuationDom(completedEl, pendingInner, active)
     return
   }
@@ -307,8 +320,7 @@ function syncBlockPendingDom(
     return
   }
 
-  clearListContinuationDom(completedEl)
-  completedEl.querySelector(`li.${BLOCK_PENDING_CLASS}`)?.remove()
+  clearBlockPendingDom(completedEl, ['continuation', 'list-items'])
   const existing = completedEl.querySelector(`:scope > .${BLOCK_PENDING_CLASS}`)
   if (!active || !pendingInner) {
     existing?.remove()
@@ -387,12 +399,9 @@ export function renderStreamingMarkdown(content: string): string {
   if (!pendingInner) return rendered
 
   if (isListContinuationPending(pending, openListItemFirstLine)) {
-    const liMatch = rendered.match(/(<li(?:\s[^>]*)?>)([\s\S]*?)(<\/li>\s*<\/(?:ul|ol)>)\s*$/)
-    const liClose = liMatch?.[3]
-    if (liClose) {
-      const contHtml = blockPendingHtml(pending, pendingInner, openListItemFirstLine)
-      return `${rendered.slice(0, -liClose.length)}${contHtml}${liClose}`
-    }
+    const contHtml = blockPendingHtml(pending, pendingInner, openListItemFirstLine)
+    const inserted = insertBeforeTrailingListClose(rendered, contHtml)
+    if (inserted) return inserted
   }
 
   if (pendingListMarkerLength(pending) !== null) {
@@ -459,8 +468,7 @@ export class StreamingMarkdownRenderer {
       syncBlockPendingDom(completedEl, pending, pendingInner, true, openListItemFirstLine)
       syncInlinePendingDom(pendingEl, '', false)
     } else {
-      clearListContinuationDom(completedEl)
-      completedEl.querySelector(`:scope > .${BLOCK_PENDING_CLASS}`)?.remove()
+      clearBlockPendingDom(completedEl, ['continuation', 'direct-blocks'])
       syncInlinePendingDom(pendingEl, pendingInner, pendingVisible)
     }
   }

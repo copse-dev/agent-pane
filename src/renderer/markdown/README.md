@@ -63,6 +63,33 @@ When extending the renderer or its CSS, preserve these rules:
   | Forming `\| H \|` table | `.stream-forming` + `<th>` | pipes = cell boundaries | per cell |
   | Pending table body row | `tr.stream-pending-row` + `<td>` | pipes = cell boundaries | per cell |
   | Open fenced code | `.stream-forming pre.stream-fence-forming` | yes | highlighted |
+
+### Streaming architecture (intentional duplication)
+
+The streaming layer maintains **two parallel emitters** for the same decisions:
+
+| Path | Used by | Updates |
+|---|---|---|
+| String HTML | `renderStreamingMarkdown` | full re-render each token |
+| Incremental DOM | `StreamingMarkdownRenderer` | forward-pass patches |
+
+Shared helpers (`renderStreamingTableCell`, `insertBeforeTrailingListClose`,
+`splitOpenBlockAtLastNewline`, `clearBlockPendingDom`, `blockPendingClassName`, …) hold
+**decision logic** in one place. Emitters stay separate on purpose — merging HTML builders
+with DOM sync (e.g. always setting `innerHTML` from a string) breaks incremental updates and
+is brittle under `streaming-convergence.test.ts`.
+
+**Not yet unified** (higher risk; defer unless adding a new pending shape):
+
+- Forming-table line parser shared by `buildFormingTableHtml` / `syncFormingTableDom` (separator
+  row HTML vs DOM intentionally differ).
+- List pending: `appendListPendingHtml` vs `syncListPendingDom`.
+- Block pending metadata: `blockPendingAttrs` (HTML) vs `setAttribute` in DOM sync.
+- `classifyPendingBlock()` — single classifier for `isBlockLevelPending` / `blockPendingTag` /
+  `blockPendingClassName`.
+- Orchestration object shared by `renderStreamingMarkdown` and `StreamingMarkdownRenderer.update`.
+- `render-pending-line.ts` hold→visible→render branches (readability only).
+
 - **Inline emphasis.** A single delimiter-stack path (`inline-emphasis.ts`) handles all emphasis;
   there is no separate regex fast path.
 - **List indent.** Global `* { padding: 0 }` strips UA list padding. Restore readable indent on
