@@ -1,13 +1,4 @@
-import { escapeHtml } from './escape.ts'
-
-function decodeEscapedHref(raw: string): string {
-  return raw
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-}
+import { decodeEscapedHref, escapeHtml } from './escape.ts'
 
 function parseHtmlAttributes(tag: string): Record<string, string> {
   const attrs: Record<string, string> = {}

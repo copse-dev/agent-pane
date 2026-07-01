@@ -1,4 +1,4 @@
-import { escapeHtml } from './escape.ts'
+import { decodeEscapedHref, escapeHtml } from './escape.ts'
 import {
   decodeEscapes,
   encodeHrefForOutput,
@@ -10,15 +10,6 @@ import {
 } from './link-references.ts'
 
 export type LinkLabelRenderer = (label: string, refs: LinkReferenceMap) => string
-
-function decodeEscapedHref(raw: string): string {
-  return raw
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-}
 
 /** Allowed link destinations: http(s), mailto, and relative/path forms. Rejects dangerous schemes. */
 export function safeLinkHref(raw: string): string | null {

@@ -1,4 +1,8 @@
-import { renderArtifactImageTags } from './artifact-images.ts'
+import {
+  ATX_HEADING_CAPTURE_RE as ATX_HEADING_RE,
+  dropTrailingNewline,
+  parseFenceSlice,
+} from './block-patterns.ts'
 import {
   type BlockToken,
   listItemContentColumn,
@@ -11,32 +15,13 @@ import {
 import { escapeMermaidHtml } from './escape.ts'
 import { fenceCodeClass, highlightFenceCode } from './highlight.ts'
 import { type LinkReferenceMap } from './link-references.ts'
-import { renderInlineSpans } from './inline-spans.ts'
+import { renderProseBlock } from './render-prose-inline.ts'
 
 export interface RenderBlocksOptions {
   linkRefs?: LinkReferenceMap
 }
 
-const FENCE_OPEN_RE = /^ {0,3}(`{3,}|~{3,})([^\n`]*)\s*$/
-const FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})\s*$/
-const ATX_HEADING_RE = /^ {0,3}(#{1,6})(?: (.*)|$)/
 const BLOCKQUOTE_LINE_RE = /^> ?/
-
-function stripHtmlComments(text: string): string {
-  return text.replace(/<!--[\s\S]*?-->/g, '')
-}
-
-/** Drop the block-terminating newline token slices include. */
-function normalizeBlockSlice(slice: string): string {
-  return slice.endsWith('\n') ? slice.slice(0, -1) : slice
-}
-
-function renderProseBlock(text: string, linkRefs: LinkReferenceMap): string {
-  const body = stripHtmlComments(text)
-  if (body.trim() === '') return ''
-  const rendered = renderInlineSpans(renderArtifactImageTags(body), linkRefs)
-  return rendered.replace(/\n/g, '<br>')
-}
 
 function renderFencedBlock(lang: string, code: string): string {
   if (lang === 'mermaid') {
@@ -45,29 +30,6 @@ function renderFencedBlock(lang: string, code: string): string {
   }
   const body = highlightFenceCode(code, lang)
   return `<pre><code class="${fenceCodeClass(lang)}">${body}</code></pre>`
-}
-
-function parseFence(slice: string): { lang: string; code: string } {
-  const lines = slice.split('\n')
-  const open = lines[0] ?? ''
-  const openMatch = open.match(FENCE_OPEN_RE)
-  const marker = openMatch?.[1] ?? '```'
-  const lang = (openMatch?.[2] ?? '').trim()
-  let closeIndex = lines.length - 1
-  while (closeIndex > 0) {
-    const line = lines[closeIndex] ?? ''
-    const closeMatch = line.match(FENCE_CLOSE_RE)
-    if (
-      closeMatch?.[1] &&
-      closeMatch[1][0] === marker[0] &&
-      closeMatch[1].length >= marker.length
-    ) {
-      break
-    }
-    closeIndex--
-  }
-  const code = lines.slice(1, closeIndex).join('\n')
-  return { lang, code }
 }
 
 function dedentLazyContinuation(text: string, itemFirstLine: string): string {
@@ -113,7 +75,7 @@ function renderListItemContent(
   listLoose: boolean,
   linkRefs: LinkReferenceMap,
 ): string {
-  const normalized = normalizeBlockSlice(slice)
+  const normalized = dropTrailingNewline(slice)
   const firstLine = normalized.split('\n').find((l) => l.trim() !== '') ?? ''
   const paragraphs = splitListItemParagraphs(normalized)
   const rendered = paragraphs
@@ -139,14 +101,14 @@ function renderListItemContent(
 }
 
 function renderParagraph(slice: string, linkRefs: LinkReferenceMap): string {
-  const body = stripParagraphIndent(normalizeBlockSlice(slice))
+  const body = stripParagraphIndent(dropTrailingNewline(slice))
   const rendered = renderProseBlock(body, linkRefs)
   if (rendered === '') return ''
   return `<p>${rendered}</p>`
 }
 
 function renderAtxHeading(slice: string, linkRefs: LinkReferenceMap): string {
-  const line = normalizeBlockSlice(slice).split('\n')[0] ?? ''
+  const line = dropTrailingNewline(slice).split('\n')[0] ?? ''
   const m = line.match(ATX_HEADING_RE)
   if (!m?.[1]) return renderParagraph(slice, linkRefs)
   const level = m[1].length
@@ -155,7 +117,7 @@ function renderAtxHeading(slice: string, linkRefs: LinkReferenceMap): string {
 }
 
 function renderSetextHeading(slice: string, linkRefs: LinkReferenceMap): string {
-  const lines = normalizeBlockSlice(slice).split('\n')
+  const lines = dropTrailingNewline(slice).split('\n')
   const text = lines[0] ?? ''
   const underline = lines[1] ?? ''
   const level = underline.trim().startsWith('=') ? 3 : 4
@@ -163,7 +125,7 @@ function renderSetextHeading(slice: string, linkRefs: LinkReferenceMap): string 
 }
 
 function renderTable(slice: string, linkRefs: LinkReferenceMap): string {
-  const lines = normalizeBlockSlice(slice)
+  const lines = dropTrailingNewline(slice)
     .split('\n')
     .filter((l) => l.trim() !== '')
   const header = lines[0]
@@ -242,7 +204,7 @@ function collectListGroup(
       const itemMarker = sliceUnorderedMarkerChar(slice)
       if (itemMarker !== markerChar) break
     }
-    if (splitListItemParagraphs(normalizeBlockSlice(slice)).length > 1) {
+    if (splitListItemParagraphs(dropTrailingNewline(slice)).length > 1) {
       loose = true
     }
     itemSlices.push(slice)
@@ -296,7 +258,7 @@ function renderSingleBlock(source: string, token: BlockToken, linkRefs: LinkRefe
   const slice = source.slice(token.start, token.end)
   switch (token.kind) {
     case 'fence': {
-      const { lang, code } = parseFence(slice)
+      const { lang, code } = parseFenceSlice(slice)
       return renderFencedBlock(lang, code)
     }
     case 'atx_heading':

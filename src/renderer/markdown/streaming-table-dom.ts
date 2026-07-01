@@ -1,4 +1,6 @@
 import { splitTableRow, TABLE_SEP_RE } from './block-tokenizer.ts'
+import { dropTrailingNewline } from './block-patterns.ts'
+import { escapeHtml } from './escape.ts'
 import { pendingHoldIndex } from './inline-emphasis.ts'
 import { renderStreamingInline } from './render-pending-line.ts'
 import { sanitizeRenderedMarkdown } from './sanitize.ts'
@@ -8,7 +10,7 @@ const PENDING_ROW_CLASS = 'stream-pending-row'
 const SEPARATOR_ROW_CLASS = 'stream-table-separator-pending'
 
 function tableLines(source: string): string[] {
-  const trimmed = source.endsWith('\n') ? source.slice(0, -1) : source
+  const trimmed = dropTrailingNewline(source)
   if (trimmed === '') return []
   return trimmed.split('\n')
 }
@@ -153,7 +155,7 @@ export function buildFormingTableHtml(source: string): string {
 
   const sepLine = lines[1]
   if (sepLine && !TABLE_SEP_RE.test(sepLine)) {
-    parts.push(`<tr class="${SEPARATOR_ROW_CLASS}"><td>${escapeHtmlCell(sepLine.trim())}</td></tr>`)
+    parts.push(`<tr class="${SEPARATOR_ROW_CLASS}"><td>${escapeHtml(sepLine.trim())}</td></tr>`)
   } else if (sepLine && TABLE_SEP_RE.test(sepLine)) {
     for (let i = 2; i < lines.length; i++) {
       const line = lines[i]
@@ -172,8 +174,4 @@ export function buildFormingTableHtml(source: string): string {
 
   parts.push('</tbody></table>')
   return parts.join('')
-}
-
-function escapeHtmlCell(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }

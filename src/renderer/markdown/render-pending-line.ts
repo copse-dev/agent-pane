@@ -1,19 +1,13 @@
-import { renderArtifactImageTags } from './artifact-images.ts'
 import { isAmbiguousBlockLine } from './block-tokenizer.ts'
 import { escapeHtml } from './escape.ts'
 import { pendingHoldIndex } from './inline-emphasis.ts'
-import { renderInlineSpans } from './inline-spans.ts'
+import { renderProseInline } from './render-prose-inline.ts'
 
-const LIST_ITEM_PREFIX_RE = /^ {0,3}(?:[-*+]|\d+\.)\s/
-
-function renderPendingProseInline(text: string): string {
-  const body = text.replace(/<!--[\s\S]*?-->/g, '')
-  return renderInlineSpans(renderArtifactImageTags(body)).replace(/\n/g, '<br>')
-}
+const LIST_ITEM_PREFIX_RE = /^ {0,3}(?:[-*+]|\d{1,9}\.)\s/
 
 /** Inline markdown safe to show while streaming (hold index applied by caller). */
 export function renderStreamingInline(text: string): string {
-  return renderPendingProseInline(text)
+  return renderProseInline(text)
 }
 
 /**
@@ -31,9 +25,7 @@ export function renderPendingLine(pending: string): string {
     if (!visible) return ''
     const markerLen = listMatch[0].length
     if (visible.length <= markerLen) return escapeHtml(visible)
-    return (
-      escapeHtml(pending.slice(0, markerLen)) + renderPendingProseInline(visible.slice(markerLen))
-    )
+    return escapeHtml(pending.slice(0, markerLen)) + renderProseInline(visible.slice(markerLen))
   }
 
   if (isAmbiguousBlockLine(pending)) return ''
@@ -41,5 +33,5 @@ export function renderPendingLine(pending: string): string {
   const hold = pendingHoldIndex(pending)
   const visible = pending.slice(0, hold)
   if (!visible) return ''
-  return renderPendingProseInline(visible)
+  return renderProseInline(visible)
 }

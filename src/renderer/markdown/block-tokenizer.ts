@@ -3,6 +3,12 @@
  * each block is complete, open (unfinished), or ambiguous (needs more input).
  */
 import { parseLinkReferenceDefinitions } from './link-references.ts'
+import {
+  ATX_HEADING_DETECT_RE as ATX_HEADING_RE,
+  FENCE_OPEN_RE,
+  fenceCloses,
+  fenceMarker,
+} from './block-patterns.ts'
 
 export type BlockKind =
   | 'blank'
@@ -35,10 +41,7 @@ export interface ScannedLine {
   terminated: boolean
 }
 
-const ATX_HEADING_RE = /^ {0,3}(#{1,6})(?: |$)/
 const THEMATIC_BREAK_RE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/
-const FENCE_OPEN_RE = /^ {0,3}(`{3,}|~{3,})([^\n`]*)\s*$/
-const FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})\s*$/
 const UNORDERED_LIST_ITEM_RE = /^ {0,3}[-*+]\s/
 const ORDERED_LIST_MARKER_RE = /^ {0,3}(\d{1,9})\.\s/
 const LIST_ITEM_RE = /^ {0,3}((?:[-*+])|(?:\d{1,9}\.))\s/
@@ -116,19 +119,6 @@ export function isPotentialTableStart(lines: ScannedLine[], i: number): boolean 
   if (next && isPartialTableSeparatorLine(next.text)) return true
   if (next && isTableRow(next.text)) return true
   return line.text.trimStart().startsWith('|')
-}
-
-function fenceMarker(line: string): { marker: string; len: number; info: string } | null {
-  const m = line.match(FENCE_OPEN_RE)
-  if (!m?.[1]) return null
-  const marker = m[1]
-  return { marker, len: marker.length, info: (m[2] ?? '').trim() }
-}
-
-function fenceCloses(marker: string, len: number, line: string): boolean {
-  const m = line.match(FENCE_CLOSE_RE)
-  if (!m?.[1] || m[1][0] !== marker[0]) return false
-  return m[1].length >= len
 }
 
 /** Scan source into lines while preserving byte offsets. */

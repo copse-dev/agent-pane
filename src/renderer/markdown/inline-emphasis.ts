@@ -398,7 +398,7 @@ export function pendingHoldIndex(s: string): number {
   return cut
 }
 
-const INLINE_HTML_SHIELD_RE = /(<code>[\s\S]*?<\/code>|<a\b[\s\S]*?<\/a>|<img\b[^>]*>)/g
+export const INLINE_HTML_SHIELD_RE = /(<code>[\s\S]*?<\/code>|<a\b[\s\S]*?<\/a>|<img\b[^>]*>)/g
 
 /**
  * Apply delimiter-stack emphasis outside existing inline HTML (`<code>`, `<a>`,
