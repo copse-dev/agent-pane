@@ -38,7 +38,7 @@ describe('renderStreamingMarkdown', () => {
   it('renders completed lines as markdown while the tail streams list body text', () => {
     const html = renderStreamingMarkdown('## Title\n- item')
     assert.match(html, /<h2>Title<\/h2>/)
-    assert.match(html, /<span class="stream-pending stream-pending-list-item">item<\/span>/)
+    assert.match(html, /<div class="stream-pending stream-pending-list-item[^"]*">item<\/div>/)
     assert.doesNotMatch(html, /stream-pending[^>]*>- item/)
     assert.doesNotMatch(html, /<li>item<\/li>/)
   })
@@ -47,7 +47,7 @@ describe('renderStreamingMarkdown', () => {
     const html = renderStreamingMarkdown(
       'Review intro\n**Recent commits to main (all auto-bump PRs):**',
     )
-    assert.match(html, /<span class="stream-pending(?: stream-pending-paragraph)?">/)
+    assert.match(html, /<p class="stream-pending stream-pending-paragraph[^"]*">/)
     assert.match(html, /<strong>Recent commits to main \(all auto-bump PRs\):<\/strong>/)
     assert.doesNotMatch(html, /\*\*Recent commits/)
   })
@@ -69,7 +69,7 @@ describe('renderStreamingMarkdown', () => {
 
   it('fully escapes the in-progress tail, including & and quotes (#115)', () => {
     const html = renderStreamingMarkdown('done\n<img src=x onerror=alert(1)> "a" & b')
-    assert.match(html, /<span class="stream-pending(?: stream-pending-paragraph)?">/)
+    assert.match(html, /<p class="stream-pending stream-pending-paragraph[^"]*">/)
     assert.doesNotMatch(html, /<img/)
     assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt; &quot;a&quot; &amp; b/)
   })
@@ -85,7 +85,7 @@ describe('renderStreamingMarkdown', () => {
     // keeps the locked-down `remote-artifact-image` form (hydrated post-sanitize)
     // but the dangerous src/onerror payload must never reach innerHTML.
     const html = renderStreamingMarkdown('done\n<img src="artifacts/x.png" onerror="alert(1)">')
-    assert.match(html, /<span class="stream-pending(?: stream-pending-paragraph)?">/)
+    assert.match(html, /<p class="stream-pending stream-pending-paragraph[^"]*">/)
     assert.match(html, /<img class="remote-artifact-image"/)
     assert.doesNotMatch(html, /onerror/)
     assert.doesNotMatch(html, /src=/)
@@ -182,7 +182,7 @@ describe('renderStreamingMarkdown (holds unresolved bold)', () => {
 
   it('renders resolved bold on a pending list line without waiting for newline', () => {
     const html = renderStreamingMarkdown('done\n- **MCP support** — notes')
-    assert.match(html, /<span class="stream-pending stream-pending-list-item">/)
+    assert.match(html, /<div class="stream-pending stream-pending-list-item[^"]*">/)
     assert.match(html, /<strong>MCP support<\/strong>/)
     assert.doesNotMatch(html, /\*\*/)
     assert.doesNotMatch(html, /stream-pending[^>]*>-/)
@@ -192,14 +192,17 @@ describe('renderStreamingMarkdown (holds unresolved bold)', () => {
   it('keeps earlier list items committed while the next item streams', () => {
     const html = renderStreamingMarkdown('- item one\n- item two')
     assert.match(html, /<li>item one<\/li>/)
-    assert.match(html, /<span class="stream-pending stream-pending-list-item">item two<\/span>/)
+    assert.match(html, /<div class="stream-pending stream-pending-list-item[^"]*">item two<\/div>/)
     assert.doesNotMatch(html, /stream-pending[^>]*>-/)
   })
 
   it('hides indented sublist markers while the parent item is still open', () => {
     const html = renderStreamingMarkdown('- parent\n    - child item')
     assert.match(html, /<li>parent<\/li>/)
-    assert.match(html, /<span class="stream-pending stream-pending-list-item">child item<\/span>/)
+    assert.match(
+      html,
+      /<div class="stream-pending stream-pending-list-item[^"]*">child item<\/div>/,
+    )
     assert.doesNotMatch(html, /stream-pending[^>]*>-/)
     assert.doesNotMatch(html, /stream-pending-paragraph/)
   })
@@ -207,7 +210,7 @@ describe('renderStreamingMarkdown (holds unresolved bold)', () => {
   it('hides indented sublist markers under a label line', () => {
     const html = renderStreamingMarkdown('**Attendees:**\n- Alice\n    - Bob')
     assert.match(html, /<li>Alice<\/li>/)
-    assert.match(html, /<span class="stream-pending stream-pending-list-item">Bob<\/span>/)
+    assert.match(html, /<div class="stream-pending stream-pending-list-item[^"]*">Bob<\/div>/)
     assert.doesNotMatch(html, /stream-pending[^>]*>-/)
   })
 
@@ -259,50 +262,51 @@ describe('renderStreamingMarkdown (holds unresolved bold)', () => {
 })
 
 describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
-  it('renders completed markdown and keeps the live tail in a separate span', () => {
+  it('renders block pending inside stream-complete for open list lines', () => {
     const host = document.createElement('div')
     const r = new StreamingMarkdownRenderer(host)
     r.update('## Title\n- item')
     const completed = host.querySelector('.stream-complete')
-    const pending = host.querySelector<HTMLElement>('.stream-pending')
+    const blockPending = completed?.querySelector('.stream-pending-block') as HTMLElement
+    const inlinePending = host.querySelector(':scope > span.stream-pending') as HTMLElement
     assert.ok(completed)
-    assert.ok(pending)
+    assert.ok(blockPending)
     assert.match(completed.innerHTML, /<h2>Title<\/h2>/)
-    assert.equal(pending.textContent, 'item')
-    assert.ok(pending.classList.contains('stream-pending-list-item'))
-    assert.equal(pending.hidden, false)
+    assert.equal(blockPending.textContent, 'item')
+    assert.ok(blockPending.classList.contains('stream-pending-list-item'))
+    assert.equal(inlinePending.hidden, true)
   })
 
-  it('renders inline markdown in the live tail without rebuilding completed content', () => {
+  it('renders inline markdown in the block pending tail without rebuilding completed content', () => {
     const host = document.createElement('div')
     const r = new StreamingMarkdownRenderer(host)
     r.update('done\n**Recent commits:**')
-    const pending = host.querySelector('.stream-pending') as HTMLElement
-    assert.equal(pending.textContent, 'Recent commits:')
-    assert.match(pending.innerHTML, /<strong>Recent commits:<\/strong>/)
+    const blockPending = host.querySelector('.stream-pending-block') as HTMLElement
+    assert.equal(blockPending.textContent, 'Recent commits:')
+    assert.match(blockPending.innerHTML, /<strong>Recent commits:<\/strong>/)
   })
 
-  it('reuses the same completed node across tokens (no full rebuild)', () => {
+  it('reuses the same block pending node across tokens (no full rebuild)', () => {
     const host = document.createElement('div')
     const r = new StreamingMarkdownRenderer(host)
     r.update('Hello')
-    const firstPending = host.querySelector('.stream-pending')
+    const firstPending = host.querySelector('.stream-pending-block')
     r.update('Hello wor')
     r.update('Hello world')
-    // Same nodes are mutated in place; no newline yet so completed stays empty.
-    assert.strictEqual(host.querySelector('.stream-pending'), firstPending)
+    assert.strictEqual(host.querySelector('.stream-pending-block'), firstPending)
     assert.equal((firstPending as HTMLElement).textContent, 'Hello world')
     assert.equal(host.querySelectorAll('.stream-complete').length, 1)
   })
 
-  it('only re-renders the completed region when a newline arrives', () => {
+  it('only re-renders the committed region when a newline arrives', () => {
     const host = document.createElement('div')
     const r = new StreamingMarkdownRenderer(host)
     r.update('line one')
     const completed = host.querySelector('.stream-complete') as HTMLElement
-    assert.equal(completed.innerHTML, '')
+    assert.match(completed.innerHTML, /stream-pending-block/)
     r.update('line one\n')
     assert.match(completed.innerHTML, /line one/)
+    assert.doesNotMatch(completed.innerHTML, /stream-pending-block/)
     assert.strictEqual(host.querySelector('.stream-complete'), completed)
   })
 
@@ -311,7 +315,7 @@ describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
     const r = new StreamingMarkdownRenderer(host)
     r.update('safe\n<img src=x onerror=alert(1)>')
     assert.equal(host.querySelectorAll('img').length, 0)
-    const pending = host.querySelector('.stream-pending') as HTMLElement
+    const pending = host.querySelector('.stream-pending-block') as HTMLElement
     assert.equal(pending.textContent, '<img src=x onerror=alert(1)>')
   })
 
@@ -325,7 +329,7 @@ describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
     assert.ok(img)
     assert.equal(img.getAttribute('class'), 'remote-artifact-image')
     assert.equal(img.getAttribute('src'), null)
-    const pending = host.querySelector('.stream-pending') as HTMLElement
+    const pending = host.querySelector('.stream-pending-block') as HTMLElement
     assert.doesNotMatch(pending.innerHTML, /onerror/)
   })
 
@@ -340,7 +344,7 @@ describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
     assert.equal(headers.length, 2)
     assert.equal(headers[0]?.textContent, 'Path')
     assert.equal(headers[1]?.textContent, 'Role')
-    const pending = host.querySelector('.stream-pending') as HTMLElement
+    const pending = host.querySelector(':scope > span.stream-pending') as HTMLElement
     assert.equal(pending.hidden, true)
   })
 
@@ -352,7 +356,7 @@ describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
     assert.ok(pre instanceof Element && pre.tagName === 'PRE')
     assert.match(pre.querySelector('code')?.innerHTML ?? '', /hljs-keyword/)
     assert.match(host.querySelector('.stream-complete')?.innerHTML ?? '', /<p>intro<\/p>/)
-    const pending = host.querySelector('.stream-pending') as HTMLElement
+    const pending = host.querySelector(':scope > span.stream-pending') as HTMLElement
     assert.equal(pending.hidden, true)
   })
 
@@ -369,11 +373,11 @@ describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
     assert.match(htmlRow.cells[1]?.innerHTML ?? '', /<code>code<\/code>/)
   })
 
-  it('hides the pending span when the tail is empty', () => {
+  it('hides the inline pending span when the tail is empty', () => {
     const host = document.createElement('div')
     const r = new StreamingMarkdownRenderer(host)
     r.update('done\n')
-    const pending = host.querySelector('.stream-pending') as HTMLElement
+    const pending = host.querySelector(':scope > span.stream-pending') as HTMLElement
     assert.equal(pending.hidden, true)
     assert.equal(pending.textContent, '')
   })

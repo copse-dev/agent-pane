@@ -38,14 +38,17 @@ describe('meeting minutes streaming regressions', () => {
     const html = renderStreamingMarkdown(partial)
     assert.match(html, /<strong>Date:<\/strong>/)
     assert.doesNotMatch(html, /&amp;nbsp;/)
-    assert.match(html, /2025-01-22\s+(?:\u00A0|&nbsp;)/)
+    const div = document.createElement('div')
+    div.innerHTML = html
+    assert.doesNotMatch(div.textContent, /&nbsp;/)
+    assert.match(div.textContent, /2025-01-22[\u00A0\s]+\|/)
   })
 
-  it('hides the pending span when block lines are held with no visible output', () => {
+  it('hides inline pending when block lines are held with no visible output', () => {
     const host = document.createElement('div')
     const renderer = new StreamingMarkdownRenderer(host)
     renderer.update(intro + '\n---\n\n')
-    const pending = host.querySelector('.stream-pending') as HTMLElement
+    const pending = host.querySelector(':scope > span.stream-pending') as HTMLElement
     assert.equal(pending.hidden, true)
     assert.equal(pending.innerHTML, '')
   })
@@ -53,7 +56,7 @@ describe('meeting minutes streaming regressions', () => {
   it('streams attendee list items with bullets instead of raw markers', () => {
     const partial = intro + '\n---\n\n**Attendees:**\n- Alice Chen (Engineering Lead)'
     const html = renderStreamingMarkdown(partial)
-    assert.match(html, /<span class="stream-pending stream-pending-list-item">Alice Chen/)
+    assert.match(html, /<div class="stream-pending stream-pending-list-item[^"]*">Alice Chen/)
     assert.doesNotMatch(html, /stream-pending[^>]*>- Alice/)
   })
 })

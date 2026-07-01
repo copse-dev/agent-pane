@@ -39,61 +39,81 @@ export {
   tokenizeBlocks,
 } from './block-tokenizer.ts'
 
+const BLOCK_PENDING_CLASS = 'stream-pending-block'
+
 function renderPendingInlineMarkdown(pending: string): string {
   return renderPendingLine(pending)
 }
 
-function pendingSpanHtml(pending: string, pendingHtml: string): string {
-  if (pendingListMarkerLength(pending) === null) {
-    const paragraphLike =
-      pending.trim() !== '' && !isAmbiguousBlockLine(pending) && !pending.includes('\n')
-    const classes = paragraphLike ? 'stream-pending stream-pending-paragraph' : 'stream-pending'
-    return `<span class="${classes}">${pendingHtml}</span>`
-  }
-  const ordered = pendingListOrderedMarker(pending)
-  const classes = ordered
-    ? 'stream-pending stream-pending-list-item stream-pending-ordered-item'
-    : 'stream-pending stream-pending-list-item'
-  const markerAttr = ordered ? ` data-ordered-marker="${escapeHtml(ordered)}"` : ''
-  return `<span class="${classes}"${markerAttr}>${pendingHtml}</span>`
+/** Block-level pending tail (open paragraph or list line) — rendered inside stream-complete. */
+export function isBlockLevelPending(pending: string): boolean {
+  if (!pending.trim() || pending.includes('\n')) return false
+  if (pendingListMarkerLength(pending) !== null) return true
+  return !isAmbiguousBlockLine(pending)
 }
 
-function syncPendingListPresentation(
-  pendingEl: HTMLSpanElement,
+function blockPendingTag(pending: string): 'p' | 'div' {
+  return pendingListMarkerLength(pending) !== null ? 'div' : 'p'
+}
+
+function blockPendingClassName(pending: string): string {
+  if (pendingListMarkerLength(pending) !== null) {
+    const ordered = pendingListOrderedMarker(pending)
+    return ordered
+      ? `stream-pending stream-pending-list-item stream-pending-ordered-item ${BLOCK_PENDING_CLASS}`
+      : `stream-pending stream-pending-list-item ${BLOCK_PENDING_CLASS}`
+  }
+  return `stream-pending stream-pending-paragraph ${BLOCK_PENDING_CLASS}`
+}
+
+function blockPendingAttrs(pending: string): string {
+  const ordered = pendingListOrderedMarker(pending)
+  return ordered ? ` data-ordered-marker="${escapeHtml(ordered)}"` : ''
+}
+
+function blockPendingHtml(pending: string, pendingInner: string): string {
+  const tag = blockPendingTag(pending)
+  return `<${tag} class="${blockPendingClassName(pending)}"${blockPendingAttrs(pending)}>${pendingInner}</${tag}>`
+}
+
+function inlinePendingSpanHtml(pendingInner: string): string {
+  return `<span class="stream-pending">${pendingInner}</span>`
+}
+
+function syncBlockPendingDom(
+  completedEl: HTMLElement,
   pending: string,
+  pendingInner: string,
   active: boolean,
 ): void {
-  const isList = active && pendingListMarkerLength(pending) !== null
-  pendingEl.classList.toggle('stream-pending-list-item', isList)
-  const ordered = isList ? pendingListOrderedMarker(pending) : null
-  pendingEl.classList.toggle('stream-pending-ordered-item', ordered !== null)
-  const paragraphLike =
-    active &&
-    !isList &&
-    pending.trim() !== '' &&
-    !isAmbiguousBlockLine(pending) &&
-    !pending.includes('\n')
-  pendingEl.classList.toggle('stream-pending-paragraph', paragraphLike)
-  if (ordered !== null) pendingEl.dataset['orderedMarker'] = ordered
-  else delete pendingEl.dataset['orderedMarker']
+  const existing = completedEl.querySelector(`:scope > .${BLOCK_PENDING_CLASS}`)
+  if (!active || !pendingInner) {
+    existing?.remove()
+    return
+  }
+  const tag = blockPendingTag(pending)
+  let el: Element | null = existing
+  if (!el || el.tagName.toLowerCase() !== tag) {
+    existing?.remove()
+    el = document.createElement(tag)
+    completedEl.append(el)
+  }
+  el.className = blockPendingClassName(pending)
+  const ordered = pendingListOrderedMarker(pending)
+  if (ordered !== null) el.setAttribute('data-ordered-marker', ordered)
+  else el.removeAttribute('data-ordered-marker')
+  el.innerHTML = pendingInner
 }
 
-function formingTableSource(content: string, pending: string): string | null {
-  if (getIncompleteFenceSource(content)) return null
-  const fromTokens = getIncompleteTableSource(content)
-  if (fromTokens) return fromTokens
-  const trimmed = pending.trimStart()
-  if (trimmed.startsWith('|') && trimmed.includes('|', 1)) return pending
-  return null
-}
-
-function formingFenceSource(content: string): string | null {
-  return getIncompleteFenceSource(content)
-}
-
-function clearFormingDom(container: HTMLElement): void {
-  clearFormingTableDom(container)
-  clearFormingFenceDom(container)
+function syncInlinePendingDom(
+  pendingEl: HTMLSpanElement,
+  pendingInner: string,
+  active: boolean,
+): void {
+  pendingEl.innerHTML = pendingInner
+  pendingEl.hidden = !active
+  pendingEl.className = 'stream-pending'
+  delete pendingEl.dataset['orderedMarker']
 }
 
 /**
@@ -117,9 +137,12 @@ export function renderStreamingMarkdown(content: string): string {
   }
   if (!pending) return rendered
   if (pendingLineBelongsInTable(complete, pending)) return rendered
-  const pendingHtml = sanitizeRenderedMarkdown(renderPendingInlineMarkdown(pending))
-  if (!pendingHtml) return rendered
-  return `${rendered}${pendingSpanHtml(pending, pendingHtml)}`
+  const pendingInner = sanitizeRenderedMarkdown(renderPendingInlineMarkdown(pending))
+  if (!pendingInner) return rendered
+  const pendingHtml = isBlockLevelPending(pending)
+    ? blockPendingHtml(pending, pendingInner)
+    : inlinePendingSpanHtml(pendingInner)
+  return `${rendered}${pendingHtml}`
 }
 
 /**
@@ -170,14 +193,20 @@ export class StreamingMarkdownRenderer {
 
     const formingActive = fenceSource !== null || tableSource !== null
     const pendingInTable = pendingLineBelongsInTable(complete, pending)
-    const pendingHtml =
+    const pendingInner =
       pending && !pendingInTable && !formingActive
         ? sanitizeRenderedMarkdown(renderPendingInlineMarkdown(pending))
         : ''
-    pendingEl.innerHTML = pendingHtml
-    const pendingVisible = pending !== '' && !pendingInTable && !formingActive && pendingHtml !== ''
-    pendingEl.hidden = !pendingVisible
-    syncPendingListPresentation(pendingEl, pending, pendingVisible)
+    const pendingVisible =
+      pending !== '' && !pendingInTable && !formingActive && pendingInner !== ''
+
+    if (pendingVisible && isBlockLevelPending(pending)) {
+      syncBlockPendingDom(completedEl, pending, pendingInner, true)
+      syncInlinePendingDom(pendingEl, '', false)
+    } else {
+      completedEl.querySelector(`:scope > .${BLOCK_PENDING_CLASS}`)?.remove()
+      syncInlinePendingDom(pendingEl, pendingInner, pendingVisible)
+    }
   }
 
   private syncCommittedTableRow(complete: string, pending: string): void {
@@ -225,6 +254,7 @@ export class StreamingMarkdownRenderer {
     formingEl.hidden = true
     const pendingEl = document.createElement('span')
     pendingEl.className = 'stream-pending'
+    pendingEl.hidden = true
     this.host.append(completedEl, formingEl, pendingEl)
     this.completedEl = completedEl
     this.formingEl = formingEl
@@ -232,4 +262,22 @@ export class StreamingMarkdownRenderer {
     this.lastComplete = ''
     return { completedEl, formingEl, pendingEl }
   }
+}
+
+function formingTableSource(content: string, pending: string): string | null {
+  if (getIncompleteFenceSource(content)) return null
+  const fromTokens = getIncompleteTableSource(content)
+  if (fromTokens) return fromTokens
+  const trimmed = pending.trimStart()
+  if (trimmed.startsWith('|') && trimmed.includes('|', 1)) return pending
+  return null
+}
+
+function formingFenceSource(content: string): string | null {
+  return getIncompleteFenceSource(content)
+}
+
+function clearFormingDom(container: HTMLElement): void {
+  clearFormingFenceDom(container)
+  clearFormingTableDom(container)
 }

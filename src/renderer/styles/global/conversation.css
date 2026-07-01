@@ -279,55 +279,42 @@
   white-space: pre-wrap;
 }
 
-.message-text .stream-pending.stream-pending-paragraph {
+.message-text .stream-pending.stream-pending-paragraph,
+.message-text p.stream-pending-paragraph {
   display: block;
   white-space: normal;
 }
 
-.message-text .stream-pending.stream-pending-list-item {
+.message-text .stream-pending.stream-pending-list-item,
+.message-text div.stream-pending-list-item {
   display: block;
   padding-inline-start: 1.5em;
   position: relative;
   white-space: normal;
 }
 
-.message-text .stream-pending.stream-pending-list-item:not(.stream-pending-ordered-item)::before {
+.message-text .stream-pending.stream-pending-list-item:not(.stream-pending-ordered-item)::before,
+.message-text div.stream-pending-list-item:not(.stream-pending-ordered-item)::before {
   content: '•';
   position: absolute;
   inset-inline-start: 0.4em;
 }
 
-.message-text .stream-pending.stream-pending-ordered-item::before {
+.message-text .stream-pending.stream-pending-ordered-item::before,
+.message-text div.stream-pending-ordered-item::before {
   content: attr(data-ordered-marker) '. ';
   position: absolute;
   inset-inline-start: 0;
 }
 
-/* Streaming enter easing: @starting-style transitions on newly inserted nodes.
-   The completed region is re-rendered via innerHTML on each newline, so we target
-   :last-child (newest block) and tbody tr:last-child (newest table row) rather
-   than animating the whole message on every update. */
-@media (prefers-reduced-motion: no-preference) {
-  .message-text.is-streaming .stream-complete > :last-child:not(table) {
-    transition: transform 0.18s ease-out;
-    @starting-style {
-      transform: translateY(2px);
-    }
-  }
+.message-text .stream-complete > .stream-pending-block:last-child {
+  margin-top: var(--spacing-sm);
+}
 
-  .message-text.is-streaming .stream-complete > table:not(:has(tbody tr)) {
-    transition: transform 0.18s ease-out;
-    @starting-style {
-      transform: translateY(2px);
-    }
-  }
-
-  .message-text.is-streaming .stream-complete table tbody tr:last-child {
-    transition: transform 0.16s ease-out;
-    @starting-style {
-      transform: translateY(2px);
-    }
-  }
+.message-text .stream-complete > h2 + .stream-pending-block,
+.message-text .stream-complete > h3 + .stream-pending-block,
+.message-text .stream-complete > h4 + .stream-pending-block {
+  margin-top: var(--spacing-sm);
 }
 
 .message-text code {

@@ -121,6 +121,7 @@ function looksLikeAmbiguousTableRow(line: string): boolean {
   // RFC / meeting metadata: **Label:** value | **Label:** value
   if (/\*\*[^*\n]+:\*\*/.test(trimmed)) return false
   // Models pad prose separators with nbsp entities around pipes.
+  if (/&nbsp;/.test(trimmed) && trimmed.includes('|')) return false
   if (/&nbsp;(?:\s|&)*\|(?:\s|&)*&nbsp;/.test(trimmed)) return false
   if (trimmed.startsWith('|')) return true
   return splitTableRow(trimmed).length >= 2
