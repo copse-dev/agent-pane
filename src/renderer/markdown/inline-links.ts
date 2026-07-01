@@ -1,4 +1,5 @@
 import { decodeEscapedHref, escapeHtml } from './escape.ts'
+import { isWorkspaceMarkdownLinkHref } from '@shared/fs/workspace-link-href.ts'
 import {
   decodeEscapes,
   encodeHrefForOutput,
@@ -20,6 +21,9 @@ export function safeLinkHref(raw: string): string | null {
 
 function renderedLink(label: string, href: string, title?: string): string {
   const titleAttr = title ? ` title="${escapeHtml(title)}"` : ''
+  if (isWorkspaceMarkdownLinkHref(href)) {
+    return `<a href="${escapeHtml(href)}" class="workspace-markdown-link" data-workspace-link="true"${titleAttr}>${label}</a>`
+  }
   return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" data-browser-link="true"${titleAttr}>${label}</a>`
 }
 
@@ -162,6 +166,8 @@ export function stripAppLinkAttributes(html: string): string {
       .replace(/\s+target\s*=\s*"[^"]*"/gi, '')
       .replace(/\s+rel\s*=\s*"[^"]*"/gi, '')
       .replace(/\s+data-browser-link\s*=\s*"[^"]*"/gi, '')
+      .replace(/\s+data-workspace-link\s*=\s*"[^"]*"/gi, '')
+      .replace(/\s+class\s*=\s*"workspace-markdown-link"/gi, '')
       .replace(/\s{2,}/g, ' ')
       .trim()
     return cleaned ? `<a ${cleaned}>` : '<a>'
