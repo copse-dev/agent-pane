@@ -39,11 +39,58 @@ const ATX_HEADING_RE = /^ {0,3}(#{1,6})(?: |$)/
 const THEMATIC_BREAK_RE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/
 const FENCE_OPEN_RE = /^ {0,3}(`{3,}|~{3,})([^\n`]*)\s*$/
 const FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})\s*$/
-const LIST_ITEM_RE = /^ {0,3}((?:[-*+])|(?:\d+\.))\s/
-const ORDERED_LIST_ITEM_RE = /^ {0,3}\d+\.\s/
+const UNORDERED_LIST_ITEM_RE = /^ {0,3}[-*+]\s/
+const ORDERED_LIST_MARKER_RE = /^ {0,3}(\d{1,9})\.\s/
+const LIST_ITEM_RE = /^ {0,3}((?:[-*+])|(?:\d{1,9}\.))\s/
 const BLOCKQUOTE_RE = /^ {0,3}> ?/
 const SETEXT_UNDERLINE_RE = /^ {0,3}(=+|-+)\s*$/
 export const TABLE_SEP_RE = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/
+
+/** Parse a valid ordered-list marker (1–9 digits); returns null for invalid markers like 10-digit #266. */
+export function parseOrderedListMarker(line: string): number | null {
+  const m = line.match(ORDERED_LIST_MARKER_RE)
+  if (!m?.[1]) return null
+  return parseInt(m[1], 10)
+}
+
+export function isUnorderedListItemLine(line: string): boolean {
+  return UNORDERED_LIST_ITEM_RE.test(line)
+}
+
+export function isListItemLine(line: string): boolean {
+  return isUnorderedListItemLine(line) || parseOrderedListMarker(line) !== null
+}
+
+export function unorderedListMarkerChar(line: string): '-' | '*' | '+' | null {
+  const m = line.match(/^ {0,3}([-*+])\s/)
+  const ch = m?.[1]
+  if (ch === '-' || ch === '*' || ch === '+') return ch
+  return null
+}
+
+/** Column of the first content character in a list item line (#255 vs #256, #276). */
+export function listItemContentColumn(line: string): number {
+  const ordered = line.match(/^ {0,3}\d{1,9}\.\s*/)
+  if (ordered) {
+    const rest = line.slice(ordered[0].length)
+    const leadingSpaces = rest.match(/^ */)?.[0].length ?? 0
+    return ordered[0].length + leadingSpaces
+  }
+  const marker = line.match(/^ {0,3}[-*+]\s*/)
+  if (!marker) return Infinity
+  const rest = line.slice(marker[0].length)
+  const leadingSpaces = rest.match(/^ */)?.[0].length ?? 0
+  return marker[0].length + leadingSpaces
+}
+
+function lazyContinuationIndent(line: string): number {
+  return line.match(/^ */)?.[0].length ?? 0
+}
+
+function isLazyUnorderedContinuation(itemStartLine: string, line: string): boolean {
+  if (isListItemLine(line)) return false
+  return lazyContinuationIndent(line) >= listItemContentColumn(itemStartLine)
+}
 
 function isTableRow(line: string): boolean {
   return line.includes('|') && line.trim() !== ''
@@ -144,6 +191,32 @@ function tryLinkRefDefBlock(lines: ScannedLine[], i: number): number | null {
   return null
 }
 
+function breaksUnorderedListItem(lines: ScannedLine[], itemStart: number, j: number): boolean {
+  const itemStartLine = lines[itemStart]?.text ?? ''
+  const next = lines[j]
+  if (!next) return true
+  if (next.text.trim() === '') {
+    let k = j + 1
+    while (k < lines.length && lines[k]?.text.trim() === '') k++
+    const after = lines[k]
+    if (!after) return true
+    if (isListItemLine(after.text)) return true
+    return !isLazyUnorderedContinuation(itemStartLine, after.text)
+  }
+  if (isListItemLine(next.text)) return true
+  if (
+    ATX_HEADING_RE.test(next.text) ||
+    THEMATIC_BREAK_RE.test(next.text) ||
+    fenceMarker(next.text) ||
+    BLOCKQUOTE_RE.test(next.text) ||
+    tryLinkRefDefBlock(lines, j) !== null ||
+    (isTableRow(next.text) && lines[j + 1] && TABLE_SEP_RE.test(lines[j + 1]?.text ?? ''))
+  ) {
+    return true
+  }
+  return false
+}
+
 /**
  * Tokenize block-level markdown. When the final line is not newline-terminated the
  * last block is marked `open` or `ambiguous` instead of `complete`.
@@ -209,15 +282,15 @@ export function tokenizeBlocks(source: string): BlockToken[] {
       continue
     }
 
-    if (LIST_ITEM_RE.test(line.text)) {
-      const isOrdered = ORDERED_LIST_ITEM_RE.test(line.text)
+    if (isListItemLine(line.text)) {
+      const isOrdered = parseOrderedListMarker(line.text) !== null
       const itemStart = line.start
       let j = i + 1
       while (j < lines.length) {
-        const next = lines[j]
-        if (!next) break
-        if (LIST_ITEM_RE.test(next.text)) break
         if (isOrdered) {
+          const next = lines[j]
+          if (!next) break
+          if (isListItemLine(next.text)) break
           if (next.text.trim() === '') {
             j++
             continue
@@ -235,17 +308,7 @@ export function tokenizeBlocks(source: string): BlockToken[] {
           j++
           continue
         }
-        if (next.text.trim() === '') break
-        if (
-          ATX_HEADING_RE.test(next.text) ||
-          THEMATIC_BREAK_RE.test(next.text) ||
-          fenceMarker(next.text) ||
-          BLOCKQUOTE_RE.test(next.text) ||
-          tryLinkRefDefBlock(lines, j) !== null ||
-          (isTableRow(next.text) && lines[j + 1] && TABLE_SEP_RE.test(lines[j + 1]?.text ?? ''))
-        ) {
-          break
-        }
+        if (breaksUnorderedListItem(lines, i, j)) break
         j++
       }
       const last = lines[j - 1] ?? line

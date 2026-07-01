@@ -1,5 +1,13 @@
 import { renderArtifactImageTags } from './artifact-images.ts'
-import { type BlockToken, splitTableRow, TABLE_SEP_RE, tokenizeBlocks } from './block-tokenizer.ts'
+import {
+  type BlockToken,
+  listItemContentColumn,
+  parseOrderedListMarker,
+  splitTableRow,
+  TABLE_SEP_RE,
+  tokenizeBlocks,
+  unorderedListMarkerChar,
+} from './block-tokenizer.ts'
 import { escapeHtml, escapeMermaidHtml } from './escape.ts'
 import { fenceCodeClass, highlightFenceCode } from './highlight.ts'
 import { type LinkReferenceMap } from './link-references.ts'
@@ -12,7 +20,6 @@ export interface RenderBlocksOptions {
 const FENCE_OPEN_RE = /^ {0,3}(`{3,}|~{3,})([^\n`]*)\s*$/
 const FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})\s*$/
 const ATX_HEADING_RE = /^ {0,3}(#{1,6})(?: (.*)|$)/
-const ORDERED_LIST_ITEM_RE = /^ {0,3}\d+\.\s/
 const BLOCKQUOTE_LINE_RE = /^> ?/
 
 function stripHtmlComments(text: string): string {
@@ -63,8 +70,23 @@ function parseFence(slice: string): { lang: string; code: string } {
   return { lang, code }
 }
 
-function stripListMarker(line: string): string {
-  return line.replace(/^ {0,3}(?:[-*+]|\d+\.)\s/, '')
+function dedentLazyContinuation(text: string, itemFirstLine: string): string {
+  const col = listItemContentColumn(itemFirstLine)
+  return text
+    .split('\n')
+    .map((line) => {
+      const indent = line.match(/^ */)?.[0].length ?? 0
+      return line.slice(Math.min(indent, col))
+    })
+    .join('\n')
+}
+
+/** Strip up to three leading spaces per line (CommonMark paragraph normalization). */
+function stripParagraphIndent(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => line.replace(/^ {0,3}(?=\S)/, ''))
+    .join('\n')
 }
 
 function stripBlockquoteLine(line: string): string {
@@ -91,10 +113,22 @@ function renderListItemContent(
   listLoose: boolean,
   linkRefs: LinkReferenceMap,
 ): string {
-  const paragraphs = splitListItemParagraphs(normalizeBlockSlice(slice))
+  const normalized = normalizeBlockSlice(slice)
+  const firstLine = normalized.split('\n').find((l) => l.trim() !== '') ?? ''
+  const paragraphs = splitListItemParagraphs(normalized)
   const rendered = paragraphs
     .map((p, index) => {
-      const text = index === 0 ? stripListMarker(p) : p
+      const lines = p.split('\n')
+      const text =
+        index === 0
+          ? lines
+              .map((line, lineIndex) =>
+                lineIndex === 0
+                  ? line.slice(listItemContentColumn(line))
+                  : dedentLazyContinuation(line, firstLine),
+              )
+              .join('\n')
+          : dedentLazyContinuation(p, firstLine)
       return renderProseBlock(text, linkRefs)
     })
     .filter((p) => p !== '')
@@ -105,7 +139,7 @@ function renderListItemContent(
 }
 
 function renderParagraph(slice: string, linkRefs: LinkReferenceMap): string {
-  const body = normalizeBlockSlice(slice)
+  const body = stripParagraphIndent(normalizeBlockSlice(slice))
   const rendered = renderProseBlock(body, linkRefs)
   if (rendered === '') return ''
   return `<p>${rendered}</p>`
@@ -162,7 +196,17 @@ function renderBlockquote(slice: string, linkRefs: LinkReferenceMap): string {
 
 function isOrderedListSlice(slice: string): boolean {
   const first = slice.split('\n').find((l) => l.trim() !== '') ?? ''
-  return ORDERED_LIST_ITEM_RE.test(first)
+  return parseOrderedListMarker(first) !== null
+}
+
+function sliceUnorderedMarkerChar(slice: string): '-' | '*' | '+' | null {
+  const first = slice.split('\n').find((l) => l.trim() !== '') ?? ''
+  return unorderedListMarkerChar(first)
+}
+
+function orderedListStart(slice: string): number {
+  const first = slice.split('\n').find((l) => l.trim() !== '') ?? ''
+  return parseOrderedListMarker(first) ?? 1
 }
 
 function collectListGroup(
@@ -174,6 +218,8 @@ function collectListGroup(
   const firstToken = tokens[start]
   const firstSlice = firstToken ? source.slice(firstToken.start, firstToken.end) : ''
   const ordered = isOrderedListSlice(firstSlice)
+  const markerChar = ordered ? null : sliceUnorderedMarkerChar(firstSlice)
+  const listStart = ordered ? orderedListStart(firstSlice) : 1
   const itemSlices: string[] = []
   let loose = false
   let i = start
@@ -192,6 +238,10 @@ function collectListGroup(
     if (token.kind !== 'list_item') break
     const slice = source.slice(token.start, token.end)
     if (isOrderedListSlice(slice) !== ordered) break
+    if (!ordered) {
+      const itemMarker = sliceUnorderedMarkerChar(slice)
+      if (itemMarker !== markerChar) break
+    }
     if (splitListItemParagraphs(normalizeBlockSlice(slice)).length > 1) {
       loose = true
     }
@@ -201,8 +251,11 @@ function collectListGroup(
   const items = itemSlices.map(
     (slice) => `<li>${renderListItemContent(slice, loose, linkRefs)}</li>`,
   )
-  const tag = ordered ? 'ol' : 'ul'
-  return { html: `<${tag}>${items.join('')}</${tag}>`, next: i }
+  if (ordered) {
+    const startAttr = listStart === 1 ? '' : ` start="${String(listStart)}"`
+    return { html: `<ol${startAttr}>${items.join('')}</ol>`, next: i }
+  }
+  return { html: `<ul>${items.join('')}</ul>`, next: i }
 }
 
 function collectBlockquoteGroup(

@@ -47,6 +47,36 @@ describe('renderMarkdown', () => {
     assert.doesNotMatch(html, /<\/ul>\s*<ul>/)
   })
 
+  it('ends a list when blank is followed by under-indented text (#255, #276)', () => {
+    const html255 = renderMarkdown('- one\n\n two\n')
+    assert.match(html255, /<ul><li>one<\/li><\/ul>\s*<p>two<\/p>/)
+    const html276 = renderMarkdown('-    foo\n\n  bar\n')
+    assert.match(html276, /<ul><li>foo<\/li><\/ul>\s*<p>bar<\/p>/)
+  })
+
+  it('continues a list item across a blank with lazy indentation (#256)', () => {
+    const html = renderMarkdown('- one\n\n  two\n')
+    assert.match(html, /<ul><li><p>one<\/p><p>two<\/p><\/li><\/ul>/)
+  })
+
+  it('splits unordered lists when the marker character changes (#301)', () => {
+    const html = renderMarkdown('- foo\n- bar\n+ baz\n')
+    assert.match(html, /<ul><li>foo<\/li><li>bar<\/li><\/ul>\s*<ul><li>baz<\/li><\/ul>/)
+  })
+
+  it('emits ordered list start attributes (#265, #268)', () => {
+    const html265 = renderMarkdown('123456789. ok\n')
+    assert.match(html265, /<ol start="123456789"><li>ok<\/li><\/ol>/)
+    const html268 = renderMarkdown('003. ok\n')
+    assert.match(html268, /<ol start="3"><li>ok<\/li><\/ol>/)
+  })
+
+  it('treats a 10-digit ordered marker as a paragraph (#266)', () => {
+    const html = renderMarkdown('1234567890. not ok\n')
+    assert.match(html, /<p>1234567890\. not ok<\/p>/)
+    assert.doesNotMatch(html, /<ol/)
+  })
+
   it('renders asterisk unordered lists', () => {
     const html = renderMarkdown('* alpha\n* beta')
     assert.match(html, /<ul>/)

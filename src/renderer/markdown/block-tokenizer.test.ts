@@ -71,6 +71,30 @@ describe('tokenizeBlocks', () => {
     assert.equal(block.kind, 'paragraph')
     assert.equal(block.status, 'open')
   })
+
+  it('ends an unordered list item when blank is followed by under-indented text (#255)', () => {
+    const blocks = tokenizeBlocks('- one\n\n two\n')
+    assert.deepEqual(
+      blocks.map((b) => b.kind),
+      ['list_item', 'blank', 'paragraph'],
+    )
+  })
+
+  it('continues an unordered list item when blank is followed by indented text (#256)', () => {
+    const blocks = tokenizeBlocks('- one\n\n  two\n')
+    assert.deepEqual(
+      blocks.map((b) => b.kind),
+      ['list_item'],
+    )
+  })
+
+  it('treats a 10-digit ordered marker as a paragraph (#266)', () => {
+    const blocks = tokenizeBlocks('1234567890. not ok\n')
+    assert.deepEqual(
+      blocks.map((b) => b.kind),
+      ['paragraph'],
+    )
+  })
 })
 
 describe('streamingHoldStart', () => {
