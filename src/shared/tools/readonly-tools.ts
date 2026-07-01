@@ -19,6 +19,7 @@ export const READONLY_AGENT_TOOLS = new Set<string>([
   'git_status',
   'git_diff',
   'git_log',
+  'git_show',
   'staged_diffs',
   'read_staged_diff',
   'read_skill',
