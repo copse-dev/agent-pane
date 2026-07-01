@@ -301,6 +301,27 @@ describe('renderStreamingMarkdown (holds unresolved bold)', () => {
     assert.match(html, /<th>A<\/th>/)
   })
 
+  it('appends a pending body row to a committed table instead of raw pipe text', () => {
+    const html = renderStreamingMarkdown(
+      '| Path | Role |\n| - | - |\n| src/ | Application source |\n| tests/e2e/ | WebdriverIO specs |',
+    )
+    assert.match(html, /<table>/)
+    assert.match(html, /<tr class="stream-pending-row">/)
+    assert.match(html, /<td>tests\/e2e\/<\/td>/)
+    assert.match(html, /<td>WebdriverIO specs<\/td>/)
+    assert.doesNotMatch(html, /stream-pending[^>]*>\|/)
+    assert.doesNotMatch(html, /stream-forming/)
+    assert.doesNotMatch(html, /stream-table-forming/)
+  })
+
+  it('appends the first body row to a committed header table while streaming', () => {
+    const html = renderStreamingMarkdown('| H1 | H2 |\n| - | - |\n| **x** | y')
+    assert.match(html, /<table>/)
+    assert.match(html, /<tr class="stream-pending-row">/)
+    assert.match(html, /<td><strong>x<\/strong><\/td>/)
+    assert.doesNotMatch(html, /stream-table-forming/)
+  })
+
   it('does not mis-bold a whitespace-flanked closer mid-stream', () => {
     const html = renderStreamingMarkdown('done\n**Recent commits **(all')
     assert.doesNotMatch(html, /<strong>Recent commits/)
@@ -416,13 +437,29 @@ describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
     const host = document.createElement('div')
     const r = new StreamingMarkdownRenderer(host)
     r.update('| A | B |\n| - | - |\n| **bold** | `code`')
-    const forming = host.querySelector('.stream-forming table.stream-table-forming')
-    assert.ok(forming instanceof Element && forming.tagName === 'TABLE')
-    const row = forming.querySelector('tr.stream-pending-row')
+    const table = host.querySelector('.stream-complete table')
+    assert.ok(table instanceof Element && table.tagName === 'TABLE')
+    const row = table.querySelector('tr.stream-pending-row')
     assert.ok(row instanceof Element && row.tagName === 'TR')
-    const htmlRow = row as HTMLTableRowElement
-    assert.match(htmlRow.cells[0]?.innerHTML ?? '', /<strong>bold<\/strong>/)
-    assert.match(htmlRow.cells[1]?.innerHTML ?? '', /<code>code<\/code>/)
+    assert.match(row.innerHTML, /<strong>bold<\/strong>/)
+    assert.match(row.innerHTML, /<code>code<\/code>/)
+    const forming = host.querySelector('.stream-forming table')
+    assert.equal(forming, null)
+  })
+
+  it('appends a pending body row to a committed table in the incremental renderer', () => {
+    const host = document.createElement('div')
+    const r = new StreamingMarkdownRenderer(host)
+    r.update('| Path | Role |\n| - | - |\n| src/ | Application source |\n| tests/e2e/ | WebdriverIO specs |')
+    const table = host.querySelector('.stream-complete table')
+    assert.ok(table instanceof Element && table.tagName === 'TABLE')
+    const pendingRow = table.querySelector('tr.stream-pending-row')
+    assert.ok(pendingRow instanceof Element && pendingRow.tagName === 'TR')
+    assert.match(pendingRow.textContent ?? '', /tests\/e2e\//)
+    assert.match(pendingRow.textContent ?? '', /WebdriverIO specs/)
+    const inlinePending = host.querySelector(':scope > span.stream-pending') as HTMLElement
+    assert.equal(inlinePending.hidden, true)
+    assert.equal(host.querySelector('.stream-forming')?.hidden, true)
   })
 
   it('hides the inline pending span when the tail is empty', () => {
