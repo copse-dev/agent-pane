@@ -43,6 +43,8 @@ import { LONG_HORIZON_TASKS_ENABLED_SETTING } from './long-task-tracker.ts'
 import { trackLongTaskTool } from '../tools/long-task-tool.ts'
 import { MODEL_CLASSIFIER_ENABLED_SETTING } from './model-classifier.ts'
 import { suggestModelTool } from '../tools/model-classifier-tool.ts'
+import { ADVISOR_STRATEGY_ENABLED_SETTING } from './advisor-strategy.ts'
+import { advisorTool } from '../tools/advisor-tool.ts'
 import { ROADMAP_PLANS_ENABLED_SETTING } from './roadmap-plans-store.ts'
 import { roadmapPlanTool } from '../tools/roadmap-tools.ts'
 
@@ -105,6 +107,13 @@ export function createRegistry(): ToolRegistry {
   // be routed to the cheapest model that can handle it. Advisory only.
   if (getSetting<boolean>(MODEL_CLASSIFIER_ENABLED_SETTING, false)) {
     registry.register(suggestModelTool)
+  }
+  // Experimental client-side advisor strategy (off by default, issue #566). Adds
+  // a no-parameter `advisor` tool that forwards the full transcript to a larger
+  // advisor model for strategic guidance, so the executor can run on a cheaper /
+  // on-device model. Shaped to match Claude's native advisor tool contract.
+  if (getSetting<boolean>(ADVISOR_STRATEGY_ENABLED_SETTING, false)) {
+    registry.register(advisorTool)
   }
   // Experimental roadmap plans (off by default, issue #556). Adds a roadmap_plan
   // tool that records future-work prompts and tracks their status across
