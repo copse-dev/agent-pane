@@ -115,20 +115,30 @@ export function isLazyListContinuation(itemStartLine: string, line: string): boo
   return isLazyUnorderedContinuation(itemStartLine, line)
 }
 
-function isTableRow(line: string): boolean {
+function lineContainsPipeCellDelimiter(line: string): boolean {
   return line.includes('|') && line.trim() !== ''
 }
 
-/** True when a pipe row might be a GFM table row rather than prose metadata. */
-function looksLikeAmbiguousTableRow(line: string): boolean {
-  if (!isTableRow(line)) return false
+/** Prose metadata lines use inline pipes as separators, not GFM table cells. */
+function isProseMetadataPipeLine(line: string): boolean {
+  if (!lineContainsPipeCellDelimiter(line)) return false
   const trimmed = line.trimStart()
-  // RFC / meeting metadata: **Label:** value | **Label:** value
-  if (/\*\*[^*\n]+:\*\*/.test(trimmed)) return false
-  // Models pad prose separators with nbsp entities; never treat those rows as tables.
-  if (/&nbsp;/i.test(trimmed)) return false
+  if (/\*\*[^*\n]+:\*\*/.test(trimmed)) return true
+  if (/&nbsp;/i.test(trimmed)) return true
+  return false
+}
+
+/** True when a line participates in GFM table syntax (not prose metadata with inline pipes). */
+export function isGfmTableRowLine(line: string): boolean {
+  if (!lineContainsPipeCellDelimiter(line)) return false
+  if (isProseMetadataPipeLine(line)) return false
+  const trimmed = line.trimStart()
   if (trimmed.startsWith('|')) return true
   return splitTableRow(trimmed).length >= 2
+}
+
+function isTableRow(line: string): boolean {
+  return isGfmTableRowLine(line)
 }
 
 /** Separator line still streaming (e.g. `| -` before the full `| - | - |`). */
@@ -537,6 +547,6 @@ export function isAmbiguousBlockLine(line: string): boolean {
   if (FENCE_OPEN_RE.test(line)) return true
   if (LIST_ITEM_RE.test(line)) return true
   if (BLOCKQUOTE_RE.test(line)) return true
-  if (looksLikeAmbiguousTableRow(line)) return true
+  if (isGfmTableRowLine(line)) return true
   return false
 }

@@ -11,3 +11,4 @@ tests/fixtures/git-changes-repo/
 # Generated CommonMark conformance baseline (written by the conformance test).
 tests/fixtures/commonmark/
 tests/fixtures/terms-of-service-streaming.md
+tests/fixtures/job-description-metadata.md
