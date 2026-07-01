@@ -7,6 +7,7 @@ import {
   formatUsd,
 } from '@shared/usage/format-usage-summary.ts'
 import { qsRequired } from '../../dom/helpers.ts'
+import { escapeHtml } from '../../markdown/escape.ts'
 
 export type UsagePeriodKey = 'day' | 'month' | 'period90d' | 'allTime'
 
@@ -57,10 +58,19 @@ function renderModelTable(
   if (!tbody) throw new Error('usage table is missing its tbody')
   for (const row of rows) {
     const tr = document.createElement('tr')
+    // "~" prefix flags counts we estimated locally because the agent (e.g. an ACP
+    // client like Cursor) didn't report token usage.
+    const approx = row.estimatedTokens ? '~' : ''
+    // Escape the model id: for ACP it embeds a value the external agent supplied
+    // (`acp:<id>#<model>`), so it's untrusted data going into innerHTML.
+    const model = escapeHtml(row.model)
+    const modelLabel = row.estimatedTokens
+      ? `${model} <span class="usage-estimated" title="Estimated locally — agent did not report usage">(est.)</span>`
+      : model
     tr.innerHTML = `
-      <td><code>${row.model}</code></td>
-      <td>${formatTokenCount(row.inputTokens)}</td>
-      <td>${formatTokenCount(row.outputTokens)}</td>
+      <td><code>${modelLabel}</code></td>
+      <td>${approx}${formatTokenCount(row.inputTokens)}</td>
+      <td>${approx}${formatTokenCount(row.outputTokens)}</td>
       <td>${row.cacheReadTokens ? formatTokenCount(row.cacheReadTokens) : '—'}</td>
       <td>${row.cacheCreationTokens ? formatTokenCount(row.cacheCreationTokens) : '—'}</td>
       <td>${row.isLocal ? 'free (local)' : formatUsd(row.estimatedCostUsd)}</td>

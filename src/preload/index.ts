@@ -315,6 +315,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   acp: {
     detectAgents: () => ipcRenderer.invoke('acp:detectAgents'),
+    listModels: (agentId: string) => ipcRenderer.invoke('acp:listModels', agentId),
+    autoSetup: () => ipcRenderer.invoke('acp:autoSetup'),
   },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),

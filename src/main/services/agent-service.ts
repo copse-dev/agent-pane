@@ -69,7 +69,7 @@ import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
 import { parseRemoteAgentModel } from '@shared/remote-agent.ts'
 import { runRemoteAgentFromSettings } from './remote-agent-client.ts'
-import { parseAcpModel } from '@shared/acp.ts'
+import { parseAcpModelSelection } from '@shared/acp.ts'
 import { runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
 
 // Re-export the public surface so existing IPC/test imports stay stable while the
@@ -148,7 +148,8 @@ export async function runAgent(
   const model = getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
   recordThreadModel(threadId, model)
   const remoteProvider = parseRemoteAgentModel(model)
-  const acpAgentId = parseAcpModel(model)
+  const acpSelection = parseAcpModelSelection(model)
+  const acpAgentId = acpSelection?.id ?? null
 
   const sendChunk = createAgentChunkSink(threadId, host)
 
@@ -173,10 +174,11 @@ export async function runAgent(
         priorMessages,
         signal: controller.signal,
         onChunk: sendChunk,
+        ...(acpSelection?.model ? { model: acpSelection.model } : {}),
       })
       sendChunk({ type: 'done', stopReason: result.stopReason })
       return {
-        usage: { inputTokens: 0, outputTokens: 0 },
+        usage: result.usage,
         messages: [
           ...priorMessages,
           { role: 'user' as const, content: outboundPrompt },

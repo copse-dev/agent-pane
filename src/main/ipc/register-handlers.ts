@@ -55,6 +55,8 @@ import {
 import { fetchOpenAiCompatibleModels } from '../services/provider-models.ts'
 import { storageGet, storageSet } from '../services/storage.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
+import { listAcpModelsForAgent } from '../services/acp/acp-agent-service.ts'
+import { runAcpAutoSetup } from '../services/acp/acp-auto-setup.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills-registry.ts'
 import { listCursorPlugins } from '../services/cursor-plugins.ts'
@@ -440,6 +442,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('acp:detectAgents', (event) => {
     assertMainFrameSender(event, win)
     return detectAcpAgents()
+  })
+  ipcMain.handle('acp:listModels', (event, agentId: unknown) => {
+    assertMainFrameSender(event, win)
+    if (typeof agentId !== 'string') throw new Error('acp:listModels requires an agent id')
+    return listAcpModelsForAgent(agentId)
+  })
+  ipcMain.handle('acp:autoSetup', (event) => {
+    assertMainFrameSender(event, win)
+    return runAcpAutoSetup(new AbortController().signal)
   })
   ipcMain.handle('shell:openExternal', (event, url: unknown) => {
     assertMainFrameSender(event, win)
