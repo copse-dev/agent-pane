@@ -186,11 +186,13 @@ describe('renderStreamingMarkdown (holds unresolved bold)', () => {
     assert.doesNotMatch(html, /<li>/)
   })
 
-  it('holds back a table header row instead of showing raw pipes', () => {
-    const html = renderStreamingMarkdown('intro\n| A | B |')
+  it('shows a forming table with header cells while the separator streams', () => {
+    const html = renderStreamingMarkdown('intro\n| Path | Role |')
     assert.match(html, /<p>intro<\/p>/)
-    assert.doesNotMatch(html, /\| A \| B \|/)
-    assert.doesNotMatch(html, /<table>/)
+    assert.match(html, /<table class="stream-table-forming">/)
+    assert.match(html, /<th>Path<\/th>/)
+    assert.match(html, /<th>Role<\/th>/)
+    assert.doesNotMatch(html, /stream-pending/)
   })
 
   it('renders a table once header and separator are complete', () => {
@@ -279,6 +281,34 @@ describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
     assert.equal(img.getAttribute('src'), null)
     const pending = host.querySelector('.stream-pending') as HTMLElement
     assert.doesNotMatch(pending.innerHTML, /onerror/)
+  })
+
+  it('forward-passes a forming table in the DOM while header streams', () => {
+    const host = document.createElement('div')
+    const r = new StreamingMarkdownRenderer(host)
+    r.update('intro\n| Path | Role |')
+    const forming = host.querySelector('.stream-forming table.stream-table-forming')
+    assert.ok(forming instanceof Element && forming.tagName === 'TABLE')
+    assert.match(host.querySelector('.stream-complete')?.innerHTML ?? '', /<p>intro<\/p>/)
+    const headers = forming.querySelectorAll('thead th')
+    assert.equal(headers.length, 2)
+    assert.equal(headers[0]?.textContent, 'Path')
+    assert.equal(headers[1]?.textContent, 'Role')
+    const pending = host.querySelector('.stream-pending') as HTMLElement
+    assert.equal(pending.hidden, true)
+  })
+
+  it('renders inline markdown in a streaming table body cell', () => {
+    const host = document.createElement('div')
+    const r = new StreamingMarkdownRenderer(host)
+    r.update('| A | B |\n| - | - |\n| **bold** | `code`')
+    const forming = host.querySelector('.stream-forming table.stream-table-forming')
+    assert.ok(forming instanceof Element && forming.tagName === 'TABLE')
+    const row = forming.querySelector('tr.stream-pending-row')
+    assert.ok(row instanceof Element && row.tagName === 'TR')
+    const htmlRow = row as HTMLTableRowElement
+    assert.match(htmlRow.cells[0]?.innerHTML ?? '', /<strong>bold<\/strong>/)
+    assert.match(htmlRow.cells[1]?.innerHTML ?? '', /<code>code<\/code>/)
   })
 
   it('hides the pending span when the tail is empty', () => {

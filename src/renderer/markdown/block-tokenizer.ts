@@ -358,6 +358,18 @@ export function pendingLineBelongsInTable(complete: string, pending: string): bo
   return pending.includes('|') && completeEndsInOpenTable(complete)
 }
 
+/** Source slice for a table block that is not yet `complete` (forming or open body). */
+export function getIncompleteTableSource(content: string): string | null {
+  const blocks = tokenizeBlocks(content)
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const block = blocks[i]
+    if (block?.kind === 'table' && block.status !== 'complete') {
+      return content.slice(block.start, block.end)
+    }
+  }
+  return null
+}
+
 /** Split a GFM table row into cell strings (leading/trailing pipes optional). */
 export function splitTableRow(line: string): string[] {
   let s = line.trim()

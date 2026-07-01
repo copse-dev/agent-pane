@@ -1,13 +1,21 @@
 import { renderMarkdown } from './renderer.ts'
-import { pendingLineBelongsInTable, splitTableRow } from './block-tokenizer.ts'
+import { getIncompleteTableSource, pendingLineBelongsInTable } from './block-tokenizer.ts'
 import { renderPendingLine } from './render-pending-line.ts'
 import { splitForStreaming } from './streaming-split.ts'
 import { sanitizeRenderedMarkdown } from './sanitize.ts'
+import {
+  buildFormingTableHtml,
+  clearFormingTableDom,
+  removePendingTableRow,
+  syncFormingTableDom,
+  syncPendingTableRowDom,
+} from './streaming-table-dom.ts'
 
 export { pendingHoldIndex } from './inline-emphasis.ts'
 export { splitAtLastNewline, splitForStreaming } from './streaming-split.ts'
 export {
   completeEndsInOpenTable,
+  getIncompleteTableSource,
   isAmbiguousBlockLine,
   isPotentialTableStart,
   pendingLineBelongsInTable,
@@ -19,6 +27,14 @@ function renderPendingInlineMarkdown(pending: string): string {
   return renderPendingLine(pending)
 }
 
+function formingTableSource(content: string, pending: string): string | null {
+  const fromTokens = getIncompleteTableSource(content)
+  if (fromTokens) return fromTokens
+  const trimmed = pending.trimStart()
+  if (trimmed.startsWith('|') && trimmed.includes('|', 1)) return pending
+  return null
+}
+
 /**
  * Render assistant text while it is still streaming.
  * Completed blocks (per the block tokenizer) are markdown-rendered; the pending
@@ -27,6 +43,12 @@ function renderPendingInlineMarkdown(pending: string): string {
 export function renderStreamingMarkdown(content: string): string {
   const { complete, pending } = splitForStreaming(content)
   const rendered = complete ? sanitizeRenderedMarkdown(renderMarkdown(complete)) : ''
+  const formingSource = formingTableSource(content, pending)
+  const formingHtml = formingSource ? buildFormingTableHtml(formingSource) : ''
+
+  if (formingSource) {
+    return `${rendered}${formingHtml}`
+  }
   if (!pending) return rendered
   if (pendingLineBelongsInTable(complete, pending)) return rendered
   return `${rendered}<span class="stream-pending">${sanitizeRenderedMarkdown(renderPendingInlineMarkdown(pending))}</span>`
@@ -35,14 +57,13 @@ export function renderStreamingMarkdown(content: string): string {
 /**
  * Incremental streaming renderer.
  *
- * Re-running `renderStreamingMarkdown` + assigning `innerHTML` on every token is
- * O(n²) (the whole message is reparsed per token) and wipes text selection and
- * scroll/`<details>` state. Instead we keep two stable regions inside the host:
- * a completed-markdown `<div>` that is only re-rendered when the committed prefix
- * grows, and a live `<span>` for the pending tail.
+ * Committed markdown is re-rendered when the safe prefix grows. Forming tables
+ * and in-progress table rows are updated via forward-pass DOM appends (no full
+ * re-parse of the table skeleton on each token).
  */
 export class StreamingMarkdownRenderer {
   private completedEl: HTMLElement | null = null
+  private formingEl: HTMLElement | null = null
   private pendingEl: HTMLSpanElement | null = null
   private lastComplete = ''
   private readonly host: HTMLElement
@@ -54,70 +75,84 @@ export class StreamingMarkdownRenderer {
   /** Render `content` (the full message text so far) into the host incrementally. */
   update(content: string): void {
     const { complete, pending } = splitForStreaming(content)
-    const { completedEl, pendingEl } = this.ensureNodes()
+    const { completedEl, formingEl, pendingEl } = this.ensureNodes()
 
     if (complete !== this.lastComplete) {
       completedEl.innerHTML = complete ? sanitizeRenderedMarkdown(renderMarkdown(complete)) : ''
       this.lastComplete = complete
     }
 
-    this.syncPendingTableRow(complete, pending)
+    const formingSource = formingTableSource(content, pending)
+    if (formingSource) {
+      syncFormingTableDom(formingEl, formingSource)
+      formingEl.hidden = false
+      const committed = this.findLastCommittedTable()
+      if (committed) removePendingTableRow(committed)
+    } else {
+      clearFormingTableDom(formingEl)
+      formingEl.hidden = true
+      this.syncCommittedTableRow(complete, pending)
+    }
 
     const pendingInTable = pendingLineBelongsInTable(complete, pending)
+    const pendingHidden = pending === '' || pendingInTable || formingSource !== null
     pendingEl.innerHTML =
-      pending && !pendingInTable
+      pending && !pendingHidden
         ? sanitizeRenderedMarkdown(renderPendingInlineMarkdown(pending))
         : ''
-    pendingEl.hidden = pending === '' || pendingInTable
+    pendingEl.hidden = pendingHidden
   }
 
-  private syncPendingTableRow(complete: string, pending: string): void {
-    if (!pendingLineBelongsInTable(complete, pending)) {
-      this.completedEl?.querySelector('tr.stream-pending-row')?.remove()
-      return
-    }
-
-    const table = this.findLastTable()
+  private syncCommittedTableRow(complete: string, pending: string): void {
+    const table = this.findLastCommittedTable()
     if (!table) return
 
-    const cells = splitTableRow(pending)
-    const colCount = table.querySelectorAll('thead th').length || cells.length || 1
-    let row = table.querySelector('tr.stream-pending-row')
-    if (!row) {
-      row = document.createElement('tr')
-      row.className = 'stream-pending-row'
-      for (let i = 0; i < colCount; i++) {
-        row.appendChild(document.createElement('td'))
-      }
-      const tbody =
-        table.querySelector('tbody') ?? table.appendChild(document.createElement('tbody'))
-      tbody.appendChild(row)
+    if (pendingLineBelongsInTable(complete, pending)) {
+      syncPendingTableRowDom(table, pending)
+      return
     }
-
-    row.querySelectorAll('td').forEach((td, i) => {
-      td.textContent = cells[i] ?? ''
-    })
+    removePendingTableRow(table)
   }
 
-  private findLastTable(): HTMLTableElement | null {
+  private findLastCommittedTable(): HTMLTableElement | null {
     const tables = this.completedEl?.querySelectorAll('table')
     const last = tables?.[tables.length - 1]
-    return last instanceof HTMLTableElement ? last : null
+    if (last instanceof Element && last.tagName === 'TABLE') {
+      return last
+    }
+    return null
   }
 
-  private ensureNodes(): { completedEl: HTMLElement; pendingEl: HTMLSpanElement } {
-    if (this.completedEl && this.pendingEl && this.host.contains(this.completedEl)) {
-      return { completedEl: this.completedEl, pendingEl: this.pendingEl }
+  private ensureNodes(): {
+    completedEl: HTMLElement
+    formingEl: HTMLElement
+    pendingEl: HTMLSpanElement
+  } {
+    if (
+      this.completedEl &&
+      this.formingEl &&
+      this.pendingEl &&
+      this.host.contains(this.completedEl)
+    ) {
+      return {
+        completedEl: this.completedEl,
+        formingEl: this.formingEl,
+        pendingEl: this.pendingEl,
+      }
     }
     this.host.replaceChildren()
     const completedEl = document.createElement('div')
     completedEl.className = 'stream-complete'
+    const formingEl = document.createElement('div')
+    formingEl.className = 'stream-forming'
+    formingEl.hidden = true
     const pendingEl = document.createElement('span')
     pendingEl.className = 'stream-pending'
-    this.host.append(completedEl, pendingEl)
+    this.host.append(completedEl, formingEl, pendingEl)
     this.completedEl = completedEl
+    this.formingEl = formingEl
     this.pendingEl = pendingEl
     this.lastComplete = ''
-    return { completedEl, pendingEl }
+    return { completedEl, formingEl, pendingEl }
   }
 }

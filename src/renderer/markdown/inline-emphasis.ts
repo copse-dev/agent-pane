@@ -65,6 +65,7 @@ interface OpenDelimiter {
   index: number
   char: '*' | '_'
   len: number
+  canClose: boolean
 }
 
 interface DelimiterMatch {
@@ -72,6 +73,7 @@ interface DelimiterMatch {
   closeIndex: number
   openLen: number
   closeLen: number
+  openRunLen: number
   char: '*' | '_'
 }
 
@@ -80,6 +82,17 @@ export function emphasisSpansNewline(s: string): boolean {
   const { mask } = scanCodeSpans(s)
   const matches = scanDelimiterMatches(s, mask)
   return matches.some((m) => s.slice(m.openIndex, m.closeIndex + m.closeLen).includes('\n'))
+}
+
+function emphasisMatchAllowed(
+  open: OpenDelimiter,
+  closeLen: number,
+  canOpen: boolean,
+  canClose: boolean,
+): boolean {
+  if (!(canOpen || canClose)) return true
+  if (closeLen % 3 === 0) return true
+  return (open.len + closeLen) % 3 !== 0
 }
 
 function scanDelimiterMatches(s: string, mask: boolean[]): DelimiterMatch[] {
@@ -115,29 +128,91 @@ function scanDelimiterMatches(s: string, mask: boolean[]): DelimiterMatch[] {
     }
     const open = matched >= 0 ? stack[matched] : undefined
     if (open) {
+      const openRunLen = open.len
       const used = Math.min(open.len, len)
+      const remainingPrefixLen = openRunLen - used
+      if (!emphasisMatchAllowed(open, len, canOpen, open.canClose)) {
+        if (canOpen) stack.push({ index: i, char: ch, len, canClose })
+        i = j
+        continue
+      }
       matches.push({
-        openIndex: open.index,
+        openIndex: open.index + remainingPrefixLen,
         closeIndex: i,
         openLen: used,
         closeLen: used,
+        openRunLen,
         char: ch,
       })
       stack.length = matched
-      open.len -= used
-      if (open.len > 0) stack.push(open)
+      if (remainingPrefixLen > 0) {
+        stack.push({
+          index: open.index,
+          char: ch,
+          len: remainingPrefixLen,
+          canClose: open.canClose,
+        })
+      }
       const remainder = len - used
       if (remainder > 0) {
-        i += used
-        const remPrev = i > 0 ? (s[i - 1] ?? '') : ''
-        const remNext = i + remainder < s.length ? (s[i + remainder] ?? '') : ''
+        const remIndex = i + used
+        const remPrev = remIndex > 0 ? (s[remIndex - 1] ?? '') : ''
+        const remNext = remIndex + remainder < s.length ? (s[remIndex + remainder] ?? '') : ''
         const remLf = isLeftFlanking(remPrev, remNext)
         const remRf = isRightFlanking(remPrev, remNext)
         const remCanOpen = ch === '*' ? remLf : remLf && (!remRf || isFlankingPunctuation(remPrev))
-        if (remCanOpen) stack.push({ index: i, char: ch, len: remainder })
+        const remCanClose = ch === '*' ? remRf : remRf && (!remLf || isFlankingPunctuation(remNext))
+
+        let remMatched = -1
+        if (remCanClose) {
+          for (let t = stack.length - 1; t >= 0; t--) {
+            if (stack[t]?.char === ch) {
+              remMatched = t
+              break
+            }
+          }
+        }
+        const remOpen = remMatched >= 0 ? stack[remMatched] : undefined
+        if (remOpen) {
+          const remOpenRunLen = remOpen.len
+          const remUsed = Math.min(remOpen.len, remainder)
+          const remPrefix = remOpenRunLen - remUsed
+          if (emphasisMatchAllowed(remOpen, remainder, remCanOpen, remOpen.canClose)) {
+            matches.push({
+              openIndex: remOpen.index + remPrefix,
+              closeIndex: remIndex,
+              openLen: remUsed,
+              closeLen: remUsed,
+              openRunLen: remOpenRunLen,
+              char: ch,
+            })
+            stack.length = remMatched
+            if (remPrefix > 0) {
+              stack.push({
+                index: remOpen.index,
+                char: ch,
+                len: remPrefix,
+                canClose: remOpen.canClose,
+              })
+            }
+            const remRemainder = remainder - remUsed
+            if (remRemainder > 0 && remCanOpen) {
+              stack.push({
+                index: remIndex + remUsed,
+                char: ch,
+                len: remRemainder,
+                canClose: remRf,
+              })
+            }
+          } else if (remCanOpen) {
+            stack.push({ index: remIndex, char: ch, len: remainder, canClose: remRf })
+          }
+        } else if (remCanOpen) {
+          stack.push({ index: remIndex, char: ch, len: remainder, canClose: remRf })
+        }
       }
     } else if (canOpen) {
-      stack.push({ index: i, char: ch, len })
+      stack.push({ index: i, char: ch, len, canClose })
     }
     i = j
   }
@@ -159,50 +234,88 @@ function wrapEmphasis(inner: string, openLen: number, closeLen: number): string 
   return out
 }
 
+function matchEnd(m: DelimiterMatch): number {
+  return m.closeIndex + m.closeLen
+}
+
+function isNestedIn(child: DelimiterMatch, parent: DelimiterMatch): boolean {
+  const childEnd = matchEnd(child)
+  const parentEnd = matchEnd(parent)
+  if (childEnd > parentEnd) return false
+  if (child.openIndex >= parent.openIndex && childEnd <= parentEnd) return true
+  return child.openIndex < parent.openIndex && childEnd > parent.openIndex
+}
+
+function findRootMatches(matches: DelimiterMatch[]): DelimiterMatch[] {
+  const sorted = [...matches].sort((a, b) => matchEnd(b) - matchEnd(a) || a.openIndex - b.openIndex)
+  const roots: DelimiterMatch[] = []
+  for (const m of sorted) {
+    if (!roots.some((root) => isNestedIn(m, root))) roots.push(m)
+  }
+  return roots.sort((a, b) => a.openIndex - b.openIndex)
+}
+
+function assembleMatch(s: string, m: DelimiterMatch, allMatches: DelimiterMatch[]): string {
+  const contentStart = m.openIndex + m.openLen
+  const contentEnd = m.closeIndex
+  const children = allMatches
+    .filter((c) => c !== m && isNestedIn(c, m))
+    .sort((a, b) => a.openIndex - b.openIndex)
+
+  let out = ''
+  let cursor = contentStart
+  for (const child of children) {
+    out += s.slice(cursor, child.openIndex)
+    out += assembleMatch(s, child, allMatches)
+    cursor = matchEnd(child)
+  }
+  out += s.slice(cursor, contentEnd)
+  return wrapEmphasis(out, m.openLen, m.closeLen)
+}
+
+function delimitersToSkip(s: string, matches: DelimiterMatch[]): boolean[] {
+  const skip = new Array<boolean>(s.length).fill(false)
+  for (const m of matches) {
+    for (let i = m.openIndex; i < m.openIndex + m.openLen; i++) skip[i] = true
+    for (let i = m.closeIndex; i < matchEnd(m); i++) skip[i] = true
+  }
+  return skip
+}
+
 function renderEmphasisSegment(s: string, mask: boolean[]): string {
   const matches = scanDelimiterMatches(s, mask)
   if (matches.length === 0) return s
 
-  const outer = matches.filter(
-    (m) =>
-      !matches.some(
-        (parent) =>
-          parent !== m &&
-          parent.openIndex < m.openIndex &&
-          parent.closeIndex + parent.closeLen > m.closeIndex + m.closeLen,
-      ),
-  )
-  outer.sort((a, b) => a.openIndex - b.openIndex)
+  const roots = findRootMatches(matches)
+  const skip = delimitersToSkip(s, matches)
 
   let out = ''
-  let cursor = 0
-  for (const m of outer) {
-    out += s.slice(cursor, m.openIndex)
-    const innerStart = m.openIndex + m.openLen
-    const innerEnd = m.closeIndex
-    const inner = renderEmphasisSegment(
-      s.slice(innerStart, innerEnd),
-      mask.slice(innerStart, innerEnd),
-    )
-    out += wrapEmphasis(inner, m.openLen, m.closeLen)
-    cursor = m.closeIndex + m.closeLen
+  let i = 0
+  let rootIdx = 0
+  while (i < s.length) {
+    const root = roots[rootIdx]
+    if (root && i === root.openIndex) {
+      out += assembleMatch(s, root, matches)
+      i = matchEnd(root)
+      rootIdx++
+      continue
+    }
+    if (skip[i]) {
+      i++
+      continue
+    }
+    let next = s.length
+    if (root) next = Math.min(next, root.openIndex)
+    for (let j = i + 1; j < next; j++) {
+      if (skip[j]) {
+        next = j
+        break
+      }
+    }
+    out += s.slice(i, next)
+    i = next
   }
-  out += s.slice(cursor)
   return out
-}
-
-function hasSoftLineBreak(s: string): boolean {
-  const trimmed = s.endsWith('\n') ? s.slice(0, -1) : s
-  return trimmed.includes('\n')
-}
-
-function renderEmphasisSingleLine(s: string): string {
-  let t = s
-  t = t.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
-  // Require a non-whitespace character so spaced underscores (`_ _ _ _ a`) stay literal (#55).
-  t = t.replace(/_([^_\n]*\S[^_\n]*)_/g, '<em>$1</em>')
-  t = t.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
-  return t
 }
 
 /**
@@ -210,7 +323,6 @@ function renderEmphasisSingleLine(s: string): string {
  * breaks). Code spans in the source should already be rendered as `<code>`.
  */
 export function renderEmphasisDelimiters(s: string): string {
-  if (!hasSoftLineBreak(s)) return renderEmphasisSingleLine(s)
   const { mask } = scanCodeSpans(s)
   return renderEmphasisSegment(s, mask)
 }
@@ -254,11 +366,18 @@ export function pendingHoldIndex(s: string): number {
     if (open) {
       const used = Math.min(open.len, len)
       stack.length = matched
-      open.len -= used
-      if (open.len > 0) stack.push(open)
+      const remainingPrefixLen = open.len - used
+      if (remainingPrefixLen > 0) {
+        stack.push({
+          index: open.index,
+          char: ch,
+          len: remainingPrefixLen,
+          canClose: open.canClose,
+        })
+      }
       if (j === s.length) trailingConsumed = true
     } else if (canOpen) {
-      stack.push({ index: i, char: ch, len })
+      stack.push({ index: i, char: ch, len, canClose })
     }
     i = j
   }
