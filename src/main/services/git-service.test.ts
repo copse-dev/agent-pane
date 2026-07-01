@@ -9,6 +9,7 @@ import {
   getDefaultBranch,
   getGitDiffText,
   getGitFileDiff,
+  getGitShowText,
   parsePorcelainV1,
   resolveWorkspaceRelativeGitPath,
   toGitShowPath,
@@ -360,6 +361,102 @@ describe('getGitFileDiff subdirectory workspace', { skip: !gitOk && 'git not ins
     assert.match(diff.before, /Intro paragraph\.\n\n## Section/)
     assert.match(diff.after, /Intro paragraph\.\n\n\n\n\n\n## Section/)
     assert.notEqual(diff.before, diff.after)
+  })
+})
+
+describe('getGitShowText', { skip: !gitOk && 'git not installed' }, () => {
+  let repo = ''
+  let restore: (() => void) | undefined
+
+  const git = (...args: string[]): SpawnSyncReturns<string> =>
+    spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
+
+  before(async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-show-'))
+    git('init', '-q')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    await writeFile(join(repo, 'file.txt'), 'first version\n')
+    git('add', '.')
+    git('commit', '-qm', 'add file')
+    await writeFile(join(repo, 'file.txt'), 'second version\n')
+    git('commit', '-aqm', 'change file')
+    restore = setWorkspaceRootForTest(repo)
+    setGitAvailableForTest(true)
+  })
+
+  after(async () => {
+    setGitAvailableForTest(null)
+    restore?.()
+    if (repo) await rm(repo, { recursive: true, force: true })
+  })
+
+  it('shows a file at a specific ref via ref:path', async () => {
+    const atParent = await getGitShowText('HEAD~1', 'file.txt')
+    assert.equal(atParent, 'first version')
+    const atHead = await getGitShowText('HEAD', 'file.txt')
+    assert.equal(atHead, 'second version')
+  })
+
+  it('shows a commit (message + diff) when no path is given', async () => {
+    const out = await getGitShowText('HEAD')
+    assert.match(out, /change file/)
+    assert.match(out, /-first version/)
+    assert.match(out, /\+second version/)
+  })
+
+  it('rejects a ref that embeds an inline :path', async () => {
+    const out = await getGitShowText('HEAD:file.txt')
+    assert.match(out, /pass a file path via the `path` argument/)
+  })
+
+  it('rejects a path that escapes the workspace root', async () => {
+    const out = await getGitShowText('HEAD', '../escape.txt')
+    assert.match(out, /outside workspace/)
+  })
+
+  it('reports a blank ref', async () => {
+    const out = await getGitShowText('  ')
+    assert.match(out, /ref .* is required/)
+  })
+})
+
+describe('getGitShowText subdirectory workspace', { skip: !gitOk && 'git not installed' }, () => {
+  let repo = ''
+  let restore: (() => void) | undefined
+
+  const git = (...args: string[]): SpawnSyncReturns<string> =>
+    spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
+
+  before(async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-show-subdir-'))
+    git('init', '-q')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    await mkdir(join(repo, 'widget'), { recursive: true })
+    await writeFile(join(repo, 'widget', 'file.txt'), 'inside workspace\n')
+    await writeFile(join(repo, 'outside.txt'), 'outside workspace\n')
+    git('add', '.')
+    git('commit', '-qm', 'init')
+    restore = setWorkspaceRootForTest(join(repo, 'widget'))
+    setGitAvailableForTest(true)
+  })
+
+  after(async () => {
+    setGitAvailableForTest(null)
+    restore?.()
+    if (repo) await rm(repo, { recursive: true, force: true })
+  })
+
+  it('resolves ref:path relative to the workspace subdirectory', async () => {
+    const out = await getGitShowText('HEAD', 'file.txt')
+    assert.equal(out, 'inside workspace')
+  })
+
+  it('limits the commit view to the workspace subtree', async () => {
+    const out = await getGitShowText('HEAD')
+    assert.match(out, /widget\/file\.txt/)
+    assert.doesNotMatch(out, /outside\.txt/)
   })
 })
 
