@@ -1,5 +1,6 @@
 import * as fsp from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
+import { errorMessage } from '@shared/errors.ts'
 import { getWorkspaceRoot, resolveWorkspacePath, toRelativePath } from './workspace.ts'
 import { runCommand } from './command-runner.ts'
 import { isGitAvailable } from './tool-availability.ts'
@@ -541,6 +542,43 @@ export async function commitWithAttribution(
     return stderr.trim() || stdout.trim() || `git commit exited with code ${String(code)}`
   }
   return stdout.trim() || '(committed)'
+}
+
+/**
+ * `git show` for read-only inspection, scoped to the workspace. With a `path`,
+ * returns that file's contents at `ref` (`git show <ref>:<path>`); the path is
+ * resolved through the workspace boundary (via {@link gitObjectSpec}) so it
+ * cannot escape the root and is scoped correctly when the workspace is a repo
+ * subdirectory. Without a `path`, returns the commit (message + diff) limited to
+ * the workspace subtree (`git show <ref> -- .`). A `ref` may not embed an inline
+ * `:<path>` — paths must go through the validated `path` argument so the boundary
+ * check can't be bypassed.
+ */
+export async function getGitShowText(ref: string, path?: string): Promise<string> {
+  if (!isGitAvailable()) return 'git is not available on this system.'
+  if (!getWorkspaceRoot()) return 'No workspace open.'
+  const trimmedRef = ref.trim()
+  if (!trimmedRef) return 'A git ref (commit, tag, or branch) is required.'
+  if (trimmedRef.includes(':')) {
+    return "Invalid ref: pass a file path via the `path` argument instead of embedding ':<path>' in the ref."
+  }
+
+  let args: string[]
+  if (path === undefined) {
+    args = ['show', trimmedRef, '--', '.']
+  } else {
+    try {
+      // Resolves + validates the path against the workspace boundary; throws when
+      // it escapes the root. Caught here so the service is self-contained even if
+      // a caller skips its own validation.
+      args = ['show', gitObjectSpec(trimmedRef, path)]
+    } catch (err) {
+      return errorMessage(err)
+    }
+  }
+  const { stdout, stderr, code } = await runGit(args)
+  if (code !== 0) return stderr.trim() || `git exited with code ${String(code)}`
+  return stdout.trim() || '(no output)'
 }
 
 export async function getGitLogText(maxCount: number, path?: string): Promise<string> {

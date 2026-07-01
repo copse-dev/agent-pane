@@ -2,7 +2,13 @@ import { ToolRegistry } from './tool-registry.ts'
 import { readFileTool, listDirTool } from '../tools/file-tools.ts'
 import { searchCodeTool, findFilesTool } from '../tools/search-tools.ts'
 import { searchCodebaseTool, semanticSearchTool } from '../tools/search-codebase-tool.ts'
-import { gitStatusTool, gitDiffTool, gitLogTool, gitCommitTool } from '../tools/git-tools.ts'
+import {
+  gitStatusTool,
+  gitDiffTool,
+  gitLogTool,
+  gitShowTool,
+  gitCommitTool,
+} from '../tools/git-tools.ts'
 import {
   ghPrFilesTool,
   ghPrListTool,
@@ -64,6 +70,7 @@ export function createRegistry(): ToolRegistry {
   registry.register(gitStatusTool)
   registry.register(gitDiffTool)
   registry.register(gitLogTool)
+  registry.register(gitShowTool)
   registry.register(gitCommitTool)
   // GitHub-backed tools shell out to `gh`. Only expose them to the model when
   // we've deterministically probed `gh` as available (checkToolAvailability runs
