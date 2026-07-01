@@ -1,7 +1,7 @@
-import { escapeHtml, renderMarkdown } from './renderer.ts'
+import { renderMarkdown } from './renderer.ts'
 import { pendingLineBelongsInTable, splitTableRow } from './block-tokenizer.ts'
-import { pendingHoldIndex } from './inline-emphasis.ts'
-import { pendingShouldStayPlain, splitForStreaming } from './streaming-split.ts'
+import { renderPendingLine } from './render-pending-line.ts'
+import { splitForStreaming } from './streaming-split.ts'
 import { sanitizeRenderedMarkdown } from './sanitize.ts'
 
 export { pendingHoldIndex } from './inline-emphasis.ts'
@@ -9,22 +9,14 @@ export { splitAtLastNewline, splitForStreaming } from './streaming-split.ts'
 export {
   completeEndsInOpenTable,
   isAmbiguousBlockLine,
+  isPotentialTableStart,
   pendingLineBelongsInTable,
   splitTableRow,
   tokenizeBlocks,
 } from './block-tokenizer.ts'
 
-function stripParagraphWrapper(html: string): string {
-  const trimmed = html.trim()
-  const match = trimmed.match(/^<p>([\s\S]*)<\/p>$/)
-  return match?.[1] ?? html
-}
-
 function renderPendingInlineMarkdown(pending: string): string {
-  if (!pending || pendingShouldStayPlain(pending)) return escapeHtml(pending)
-  const visible = pending.slice(0, pendingHoldIndex(pending))
-  if (!visible) return ''
-  return stripParagraphWrapper(renderMarkdown(visible))
+  return renderPendingLine(pending)
 }
 
 /**

@@ -30,6 +30,10 @@ When extending the renderer or its CSS, preserve these rules:
   [`docs/plans/markdown-renderer-hardening.md`](../../../docs/plans/markdown-renderer-hardening.md).
 - **Agent-output shapes.** Support `-`, `*`, and `+` list markers. Map `#`/`##` to `<h4>`, `###` to
   `<h3>` — h1/h2 are intentionally too large for the narrow pane.
+- **Streaming hold.** Incomplete block starts (tables before the separator, headings, fences) stay
+  hidden in the pending tail — no raw `| … |` or `##` flash. Pending list lines apply inline hold
+  so `- **label` shows only `- ` until the bold closes; the full `<ul>/<li>` appears once the line
+  ends. Completed tables use `<table>`; additional body rows stream into `tr.stream-pending-row`.
 - **List indent.** Global `* { padding: 0 }` strips UA list padding. Restore readable indent on
   `.message-text ul/ol` in `global.css` (currently `padding-inline-start: 1.5em;
 list-style-position: outside`). Bullets should sit clearly inset from headings, not flush with

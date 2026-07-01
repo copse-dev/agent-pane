@@ -172,6 +172,33 @@ describe('renderStreamingMarkdown (holds unresolved bold)', () => {
     assert.doesNotMatch(html, /\*\*/)
   })
 
+  it('holds unresolved bold on a pending list line without showing **', () => {
+    const html = renderStreamingMarkdown('done\n- **MCP support')
+    assert.doesNotMatch(html, /\*\*/)
+    assert.match(html, /<span class="stream-pending">- <\/span>/)
+  })
+
+  it('renders resolved bold on a pending list line without waiting for newline', () => {
+    const html = renderStreamingMarkdown('done\n- **MCP support** — notes')
+    assert.match(html, /<span class="stream-pending">/)
+    assert.match(html, /<strong>MCP support<\/strong>/)
+    assert.doesNotMatch(html, /\*\*/)
+    assert.doesNotMatch(html, /<li>/)
+  })
+
+  it('holds back a table header row instead of showing raw pipes', () => {
+    const html = renderStreamingMarkdown('intro\n| A | B |')
+    assert.match(html, /<p>intro<\/p>/)
+    assert.doesNotMatch(html, /\| A \| B \|/)
+    assert.doesNotMatch(html, /<table>/)
+  })
+
+  it('renders a table once header and separator are complete', () => {
+    const html = renderStreamingMarkdown('intro\n| A | B |\n| - | - |\n')
+    assert.match(html, /<table>/)
+    assert.match(html, /<th>A<\/th>/)
+  })
+
   it('does not mis-bold a whitespace-flanked closer mid-stream', () => {
     const html = renderStreamingMarkdown('done\n**Recent commits **(all')
     assert.doesNotMatch(html, /<strong>Recent commits/)

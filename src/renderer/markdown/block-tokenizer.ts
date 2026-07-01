@@ -47,6 +47,28 @@ function isTableRow(line: string): boolean {
   return line.includes('|') && line.trim() !== ''
 }
 
+/** Separator line still streaming (e.g. `| -` before the full `| - | - |`). */
+function isPartialTableSeparatorLine(line: string): boolean {
+  const trimmed = line.trim()
+  if (!trimmed.includes('-')) return false
+  return /^\|?\s*:?-{1,}/.test(trimmed)
+}
+
+/**
+ * True when a pipe row may be the start of a GFM table that is not yet safe to
+ * render (no confirmed separator). Avoids treating `| A | B |` as prose while
+ * streaming.
+ */
+export function isPotentialTableStart(lines: ScannedLine[], i: number): boolean {
+  const line = lines[i]
+  if (!line || !isTableRow(line.text)) return false
+  const next = lines[i + 1]
+  if (next && TABLE_SEP_RE.test(next.text)) return true
+  if (next && isPartialTableSeparatorLine(next.text)) return true
+  if (next && isTableRow(next.text)) return true
+  return line.text.trimStart().startsWith('|')
+}
+
 function fenceMarker(line: string): { marker: string; len: number; info: string } | null {
   const m = line.match(FENCE_OPEN_RE)
   if (!m?.[1]) return null
@@ -223,21 +245,48 @@ export function tokenizeBlocks(source: string): BlockToken[] {
       continue
     }
 
-    if (isTableRow(line.text) && lines[i + 1] && TABLE_SEP_RE.test(lines[i + 1]?.text ?? '')) {
-      const tableStart = line.start
-      let j = i + 2
-      while (j < lines.length) {
-        const row = lines[j]
-        if (!row || !isTableRow(row.text)) break
-        j++
+    if (isTableRow(line.text)) {
+      const nextLine = lines[i + 1]
+      if (nextLine && TABLE_SEP_RE.test(nextLine.text)) {
+        const tableStart = line.start
+        let j = i + 2
+        while (j < lines.length) {
+          const row = lines[j]
+          if (!row || !isTableRow(row.text)) break
+          j++
+        }
+        const last = lines[j - 1] ?? lines[i + 1] ?? line
+        const lastRow = lines[j - 1]
+        const status: BlockStatus =
+          lastRow && !lastRow.terminated && j === lines.length ? 'open' : 'complete'
+        pushBlock(blocks, 'table', status, tableStart, last.end)
+        i = j
+        continue
       }
-      const last = lines[j - 1] ?? lines[i + 1] ?? line
-      const lastRow = lines[j - 1]
-      const status: BlockStatus =
-        lastRow && !lastRow.terminated && j === lines.length ? 'open' : 'complete'
-      pushBlock(blocks, 'table', status, tableStart, last.end)
-      i = j
-      continue
+
+      if (isPotentialTableStart(lines, i)) {
+        const tableStart = line.start
+        let j = i + 1
+        while (j < lines.length) {
+          const nl = lines[j]
+          if (!nl) break
+          if (TABLE_SEP_RE.test(nl.text)) break
+          if (
+            !isTableRow(nl.text) &&
+            !isPartialTableSeparatorLine(nl.text) &&
+            nl.text.trim() !== ''
+          ) {
+            break
+          }
+          j++
+        }
+        const last = lines[j - 1] ?? line
+        const status: BlockStatus =
+          last.terminated && j > i + 1 ? 'open' : last.terminated ? 'ambiguous' : 'open'
+        pushBlock(blocks, 'table', status, tableStart, last.end)
+        i = j
+        continue
+      }
     }
 
     // Setext heading: text line followed by === or --- on the next line.
@@ -252,7 +301,11 @@ export function tokenizeBlocks(source: string): BlockToken[] {
     // Final line without newline: open paragraph (setext text line is still open
     // until a following ===/--- line arrives, handled above).
     if (!line.terminated && i === lines.length - 1) {
-      pushBlock(blocks, 'paragraph', 'open', line.start, line.end)
+      if (isPotentialTableStart(lines, i)) {
+        pushBlock(blocks, 'table', 'ambiguous', line.start, line.end)
+      } else {
+        pushBlock(blocks, 'paragraph', 'open', line.start, line.end)
+      }
       break
     }
 
