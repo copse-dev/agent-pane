@@ -2,6 +2,7 @@
  * Block-level markdown tokenizer (#475). Identifies block boundaries and whether
  * each block is complete, open (unfinished), or ambiguous (needs more input).
  */
+import { parseLinkReferenceDefinitions } from './link-references.ts'
 
 export type BlockKind =
   | 'blank'
@@ -13,6 +14,7 @@ export type BlockKind =
   | 'blockquote'
   | 'list_item'
   | 'table'
+  | 'link_ref_def'
 
 export type BlockStatus = 'complete' | 'open' | 'ambiguous'
 
@@ -112,6 +114,36 @@ function pushBlock(
   blocks.push({ kind, status, start, end })
 }
 
+function tryLinkRefDefBlock(lines: ScannedLine[], i: number): number | null {
+  const startLine = lines[i]
+  if (!startLine || !/^ {0,3}\[/.test(startLine.text)) return null
+  let j = i
+  let buf = ''
+  while (j < lines.length) {
+    const line = lines[j]
+    if (!line) break
+    if (j > i && line.text.trim() === '') return null
+    if (
+      j > i &&
+      (ATX_HEADING_RE.test(line.text) ||
+        LIST_ITEM_RE.test(line.text) ||
+        BLOCKQUOTE_RE.test(line.text) ||
+        fenceMarker(line.text) ||
+        THEMATIC_BREAK_RE.test(line.text))
+    ) {
+      return null
+    }
+    buf += line.text
+    if (line.terminated) buf += '\n'
+    if (/\]:[ \t]/.test(buf) || /\]:\n/.test(buf)) {
+      const probe = buf.endsWith('\n') ? buf : `${buf}\n`
+      if (parseLinkReferenceDefinitions(probe).size > 0) return j + 1
+    }
+    j++
+  }
+  return null
+}
+
 /**
  * Tokenize block-level markdown. When the final line is not newline-terminated the
  * last block is marked `open` or `ambiguous` instead of `complete`.
@@ -168,6 +200,15 @@ export function tokenizeBlocks(source: string): BlockToken[] {
       continue
     }
 
+    const linkRefEnd = tryLinkRefDefBlock(lines, i)
+    if (linkRefEnd !== null) {
+      const last = lines[linkRefEnd - 1] ?? line
+      const status: BlockStatus = last.terminated ? 'complete' : 'open'
+      pushBlock(blocks, 'link_ref_def', status, line.start, last.end)
+      i = linkRefEnd
+      continue
+    }
+
     if (LIST_ITEM_RE.test(line.text)) {
       const isOrdered = ORDERED_LIST_ITEM_RE.test(line.text)
       const itemStart = line.start
@@ -186,6 +227,7 @@ export function tokenizeBlocks(source: string): BlockToken[] {
             THEMATIC_BREAK_RE.test(next.text) ||
             fenceMarker(next.text) ||
             BLOCKQUOTE_RE.test(next.text) ||
+            tryLinkRefDefBlock(lines, j) !== null ||
             (isTableRow(next.text) && lines[j + 1] && TABLE_SEP_RE.test(lines[j + 1]?.text ?? ''))
           ) {
             break
@@ -199,6 +241,7 @@ export function tokenizeBlocks(source: string): BlockToken[] {
           THEMATIC_BREAK_RE.test(next.text) ||
           fenceMarker(next.text) ||
           BLOCKQUOTE_RE.test(next.text) ||
+          tryLinkRefDefBlock(lines, j) !== null ||
           (isTableRow(next.text) && lines[j + 1] && TABLE_SEP_RE.test(lines[j + 1]?.text ?? ''))
         ) {
           break
@@ -321,6 +364,7 @@ export function tokenizeBlocks(source: string): BlockToken[] {
         LIST_ITEM_RE.test(next.text) ||
         BLOCKQUOTE_RE.test(next.text) ||
         fenceMarker(next.text) ||
+        tryLinkRefDefBlock(lines, j) !== null ||
         (isTableRow(next.text) && lines[j + 1] && TABLE_SEP_RE.test(lines[j + 1]?.text ?? '')) ||
         (lines[j + 1] && SETEXT_UNDERLINE_RE.test(lines[j + 1]?.text ?? ''))
       ) {

@@ -1,4 +1,5 @@
 import { tokenizeBlocks } from './block-tokenizer.ts'
+import { parseLinkReferenceDefinitions } from './link-references.ts'
 import { renderBlocks } from './render-blocks.ts'
 
 export { escapeHtml } from './escape.ts'
@@ -9,5 +10,6 @@ export { escapeHtml } from './escape.ts'
  * HTML comments are stripped from prose blocks only (see render-blocks.ts).
  */
 export function renderMarkdown(raw: string): string {
-  return renderBlocks(raw, tokenizeBlocks(raw))
+  const linkRefs = parseLinkReferenceDefinitions(raw)
+  return renderBlocks(raw, tokenizeBlocks(raw), { linkRefs })
 }
