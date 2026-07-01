@@ -1,5 +1,5 @@
 import { isAmbiguousBlockLine } from './block-tokenizer.ts'
-import { escapeHtml } from './escape.ts'
+import { decodeSafeMarkdownEntities, escapeHtml } from './escape.ts'
 import { pendingHoldIndex } from './inline-emphasis.ts'
 import { renderProseInline } from './render-prose-inline.ts'
 
@@ -49,7 +49,7 @@ export function renderPendingLine(pending: string): string {
     const hold = pendingHoldIndex(pending)
     const visible = pending.slice(0, hold)
     if (!visible) return ''
-    return escapeHtml(visible)
+    return escapeHtml(decodeSafeMarkdownEntities(visible))
   }
 
   const hold = pendingHoldIndex(pending)

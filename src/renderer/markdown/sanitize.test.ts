@@ -87,6 +87,14 @@ describe('sanitizeRenderedMarkdown', () => {
     assert.match(html, /class="hljs-keyword"/)
   })
 
+  it('normalizes double-encoded nbsp entities leaked before innerHTML', () => {
+    const html = sanitizeRenderedMarkdown('<p>Proposed &amp;nbsp;&amp;nbsp;|&amp;nbsp;</p>')
+    const div = document.createElement('div')
+    div.innerHTML = html
+    assert.doesNotMatch(div.textContent, /&nbsp;/)
+    assert.match(div.textContent, /\u00A0/)
+  })
+
   it('is a no-op for the structures renderMarkdown already produces', () => {
     const source = [
       '## Heading',
