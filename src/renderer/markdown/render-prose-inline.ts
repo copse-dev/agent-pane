@@ -1,3 +1,4 @@
+import { decodeSafeMarkdownEntities } from './escape.ts'
 import { renderArtifactImageTags } from './artifact-images.ts'
 import { renderInlineSpans } from './inline-spans.ts'
 import { type LinkReferenceMap } from './link-references.ts'
@@ -28,7 +29,7 @@ export interface RenderProseInlineOptions {
 /** Inline markdown for prose blocks and streaming pending tails. */
 export function renderProseInline(text: string, options: RenderProseInlineOptions = {}): string {
   const { softBreak = 'newline', linkRefs = new Map() } = options
-  const body = stripHtmlComments(text)
+  const body = decodeSafeMarkdownEntities(stripHtmlComments(text))
   const rendered = renderInlineSpans(renderArtifactImageTags(body), linkRefs)
   return applyLineBreaks(rendered, softBreak)
 }

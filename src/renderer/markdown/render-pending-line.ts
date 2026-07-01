@@ -28,7 +28,12 @@ export function renderPendingLine(pending: string): string {
     return escapeHtml(pending.slice(0, markerLen)) + renderProseInline(visible.slice(markerLen))
   }
 
-  if (isAmbiguousBlockLine(pending)) return ''
+  if (isAmbiguousBlockLine(pending)) {
+    const hold = pendingHoldIndex(pending)
+    const visible = pending.slice(0, hold)
+    if (!visible) return ''
+    return escapeHtml(visible)
+  }
 
   const hold = pendingHoldIndex(pending)
   const visible = pending.slice(0, hold)
