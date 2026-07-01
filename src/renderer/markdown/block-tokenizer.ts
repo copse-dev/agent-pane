@@ -35,9 +35,10 @@ export interface ScannedLine {
 
 const ATX_HEADING_RE = /^ {0,3}(#{1,6})(?: |$)/
 const THEMATIC_BREAK_RE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/
-const FENCE_OPEN_RE = /^ {0,3}(`{3,}|~{3,})(.*)$/
+const FENCE_OPEN_RE = /^ {0,3}(`{3,}|~{3,})([^\n`]*)\s*$/
 const FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})\s*$/
 const LIST_ITEM_RE = /^ {0,3}((?:[-*+])|(?:\d+\.))\s/
+const ORDERED_LIST_ITEM_RE = /^ {0,3}\d+\.\s/
 const BLOCKQUOTE_RE = /^ {0,3}> ?/
 const SETEXT_UNDERLINE_RE = /^ {0,3}(=+|-+)\s*$/
 export const TABLE_SEP_RE = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/
@@ -146,11 +147,31 @@ export function tokenizeBlocks(source: string): BlockToken[] {
     }
 
     if (LIST_ITEM_RE.test(line.text)) {
+      const isOrdered = ORDERED_LIST_ITEM_RE.test(line.text)
       const itemStart = line.start
       let j = i + 1
       while (j < lines.length) {
         const next = lines[j]
-        if (!next || next.text.trim() === '' || LIST_ITEM_RE.test(next.text)) break
+        if (!next) break
+        if (LIST_ITEM_RE.test(next.text)) break
+        if (isOrdered) {
+          if (next.text.trim() === '') {
+            j++
+            continue
+          }
+          if (
+            ATX_HEADING_RE.test(next.text) ||
+            THEMATIC_BREAK_RE.test(next.text) ||
+            fenceMarker(next.text) ||
+            BLOCKQUOTE_RE.test(next.text) ||
+            (isTableRow(next.text) && lines[j + 1] && TABLE_SEP_RE.test(lines[j + 1]?.text ?? ''))
+          ) {
+            break
+          }
+          j++
+          continue
+        }
+        if (next.text.trim() === '') break
         if (
           ATX_HEADING_RE.test(next.text) ||
           THEMATIC_BREAK_RE.test(next.text) ||
@@ -174,8 +195,16 @@ export function tokenizeBlocks(source: string): BlockToken[] {
       let j = i + 1
       while (j < lines.length) {
         const next = lines[j]
-        if (!next || next.text.trim() === '') break
-        if (!BLOCKQUOTE_RE.test(next.text) && !line.terminated) break
+        if (!next) break
+        if (next.text.trim() === '') {
+          let k = j + 1
+          while (k < lines.length && lines[k]?.text.trim() === '') k++
+          if (k < lines.length && lines[k] && BLOCKQUOTE_RE.test(lines[k]?.text ?? '')) {
+            j++
+            continue
+          }
+          break
+        }
         if (
           !BLOCKQUOTE_RE.test(next.text) &&
           (ATX_HEADING_RE.test(next.text) ||
