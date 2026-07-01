@@ -33,12 +33,14 @@ When extending the renderer or its CSS, preserve these rules:
   preserved newlines render as visible line breaks without `<br>` tags.
 - **Agent-output shapes.** Support `-`, `*`, and `+` list markers. ATX `#` levels map to
   matching `<h1>`–`<h6>` tags (see `render-blocks.ts`).
-- **Streaming hold.** Incomplete block starts (headings, fences) stay hidden in the pending
-  tail. Forming GFM tables forward-pass into `.stream-forming` (`<table class="stream-table-forming">`)
-  as header/separator/body cells arrive; committed tables append body rows via
-  `tr.stream-pending-row` with inline cell updates. Pending list lines apply inline hold so
-  `- **label` shows only `- ` until the bold closes; the full `<ul>/<li>` appears once the line
-  ends.
+- **Streaming hold.** Incomplete block starts (headings, fences) stream as plain
+  text in the pending tail until their line ends. Forming GFM tables forward-pass
+  into `.stream-forming` (`<table class="stream-table-forming">`) as header/separator/body
+  cells arrive; committed tables append body rows via `tr.stream-pending-row` with
+  inline cell updates. Pending list lines hide the `-`/`*`/`1.` marker and show
+  body text with a bullet/number via `.stream-pending-list-item` until the line
+  ends and the full `<ul>/<li>` (or `<ol>/<li>`) is committed; inline hold still
+  suppresses half-open `**` on the current item.
 - **Inline emphasis.** A single delimiter-stack path (`inline-emphasis.ts`) handles all emphasis;
   there is no separate regex fast path.
 - **List indent.** Global `* { padding: 0 }` strips UA list padding. Restore readable indent on

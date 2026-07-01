@@ -166,4 +166,11 @@ describe('splitForStreaming (tokenizer #475)', () => {
       pending: 'plain tail',
     })
   })
+
+  it('commits finished list items while the next item is still streaming', () => {
+    assert.deepEqual(splitForStreaming('- item one\n- item two'), {
+      complete: '- item one\n',
+      pending: '- item two',
+    })
+  })
 })

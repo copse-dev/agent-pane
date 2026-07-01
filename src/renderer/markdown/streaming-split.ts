@@ -42,6 +42,15 @@ function splitOpenParagraph(block: BlockToken, content: string): StreamingSplit 
   }
 }
 
+function splitOpenListItem(block: BlockToken, content: string): StreamingSplit {
+  const openText = content.slice(block.start)
+  const { complete: lineComplete, pending } = splitAtLastNewline(openText)
+  return {
+    complete: content.slice(0, block.start) + lineComplete,
+    pending,
+  }
+}
+
 /**
  * Split streaming content at a tokenizer-safe commit boundary. Completed blocks
  * are committed; open, ambiguous, or partially-resolved inline regions stay pending.
@@ -56,6 +65,10 @@ export function splitForStreaming(content: string): StreamingSplit {
 
   if (firstOpen.kind === 'paragraph') {
     return splitOpenParagraph(firstOpen, content)
+  }
+
+  if (firstOpen.kind === 'list_item') {
+    return splitOpenListItem(firstOpen, content)
   }
 
   const holdStart = streamingHoldStart(blocks)

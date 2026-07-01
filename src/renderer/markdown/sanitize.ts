@@ -60,6 +60,7 @@ const ALLOWED_ATTR = [
   'class',
   'data-browser-link',
   'data-workspace-link',
+  'data-ordered-marker',
   'data-remote-artifact-path',
   'data-remote-artifact-agent-id',
   'alt',
