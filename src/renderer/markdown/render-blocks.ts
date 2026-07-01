@@ -22,7 +22,8 @@ function normalizeBlockSlice(slice: string): string {
 function renderProseBlock(text: string): string {
   const body = stripHtmlComments(text)
   if (body.trim() === '') return ''
-  return renderInlineSpans(renderArtifactImageTags(escapeHtml(body))).replace(/\n/g, '<br>')
+  const rendered = renderInlineSpans(renderArtifactImageTags(escapeHtml(body)))
+  return rendered.replace(/\n/g, '<br>')
 }
 
 function renderFencedBlock(lang: string, code: string): string {
@@ -80,15 +81,18 @@ function splitListItemParagraphs(text: string): string[] {
   return parts
 }
 
-function renderListItemContent(slice: string): string {
+function renderListItemContent(slice: string, listLoose: boolean): string {
   const paragraphs = splitListItemParagraphs(normalizeBlockSlice(slice))
-  return paragraphs
+  const rendered = paragraphs
     .map((p, index) => {
       const text = index === 0 ? stripListMarker(p) : p
       return renderProseBlock(text)
     })
     .filter((p) => p !== '')
-    .join('<br><br>')
+  if (listLoose) {
+    return rendered.map((p) => `<p>${p}</p>`).join('')
+  }
+  return rendered.join('<br><br>')
 }
 
 function renderParagraph(slice: string): string {
@@ -160,7 +164,8 @@ function collectListGroup(
   const firstToken = tokens[start]
   const firstSlice = firstToken ? source.slice(firstToken.start, firstToken.end) : ''
   const ordered = isOrderedListSlice(firstSlice)
-  const items: string[] = []
+  const itemSlices: string[] = []
+  let loose = false
   let i = start
   while (i < tokens.length) {
     const token = tokens[i]
@@ -168,6 +173,7 @@ function collectListGroup(
     if (token.kind === 'blank') {
       const next = tokens[i + 1]
       if (next?.kind === 'list_item') {
+        loose = true
         i++
         continue
       }
@@ -176,9 +182,13 @@ function collectListGroup(
     if (token.kind !== 'list_item') break
     const slice = source.slice(token.start, token.end)
     if (isOrderedListSlice(slice) !== ordered) break
-    items.push(`<li>${renderListItemContent(slice)}</li>`)
+    if (splitListItemParagraphs(normalizeBlockSlice(slice)).length > 1) {
+      loose = true
+    }
+    itemSlices.push(slice)
     i++
   }
+  const items = itemSlices.map((slice) => `<li>${renderListItemContent(slice, loose)}</li>`)
   const tag = ordered ? 'ol' : 'ul'
   return { html: `<${tag}>${items.join('')}</${tag}>`, next: i }
 }
@@ -234,7 +244,7 @@ function renderSingleBlock(source: string, token: BlockToken): string {
     case 'blockquote':
       return renderBlockquote(slice)
     case 'list_item':
-      return `<li>${renderListItemContent(slice)}</li>`
+      return `<li>${renderListItemContent(slice, false)}</li>`
     case 'paragraph':
       return renderParagraph(slice)
     case 'blank':

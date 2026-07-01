@@ -270,7 +270,7 @@ function assembleMatch(s: string, m: DelimiterMatch, allMatches: DelimiterMatch[
     cursor = matchEnd(child)
   }
   out += s.slice(cursor, contentEnd)
-  return wrapEmphasis(out, m.openLen, m.closeLen)
+  return wrapEmphasis(out.replace(/\n/g, ' '), m.openLen, m.closeLen)
 }
 
 function delimitersToSkip(s: string, matches: DelimiterMatch[]): boolean[] {

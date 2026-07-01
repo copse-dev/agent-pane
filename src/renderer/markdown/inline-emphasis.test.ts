@@ -13,9 +13,9 @@ describe('renderEmphasisDelimiters (delimiter-stack AST)', () => {
     assert.equal(renderEmphasisDelimiters('_italic_'), '<em>italic</em>')
   })
 
-  it('resolves emphasis across soft line breaks within a block', () => {
-    assert.equal(renderEmphasisDelimiters('**bold\ntext**'), '<strong>bold\ntext</strong>')
-    assert.equal(renderEmphasisDelimiters('start *em\nmore* end'), 'start <em>em\nmore</em> end')
+  it('collapses soft line breaks inside emphasis spans (#405, #423)', () => {
+    assert.equal(renderEmphasisDelimiters('**bold\ntext**'), '<strong>bold text</strong>')
+    assert.equal(renderEmphasisDelimiters('start *em\nmore* end'), 'start <em>em more</em> end')
   })
 
   it('does not treat list-marker asterisks as emphasis openers', () => {
@@ -28,7 +28,7 @@ describe('renderEmphasisDelimiters (delimiter-stack AST)', () => {
   })
 
   it('uses nearest-opener pairing across soft breaks', () => {
-    assert.equal(renderEmphasisDelimiters('**foo **bar\nbaz**'), '**foo <strong>bar\nbaz</strong>')
+    assert.equal(renderEmphasisDelimiters('**foo **bar\nbaz**'), '**foo <strong>bar baz</strong>')
   })
 
   it('renders nested emphasis per CommonMark (#411)', () => {
