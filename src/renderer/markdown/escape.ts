@@ -17,7 +17,7 @@ export function escapeHtml(text: string): string {
 }
 
 const SAFE_OUTER_TAG_RE =
-  /^(?:<a(?:\s+href="[^"]*")(?:\s+(?:title|target|rel|data-browser-link)="[^"]*")*\s*>|<\/(?:a|code|em|strong)>|<(?:code|em|strong)\b[^>]*>|<img\b[^>]*(?:\bdata-md-rendered="1"|\bclass="remote-artifact-image")[^>]*\/?>)$/i
+  /^(?:<a(?:\s+href="[^"]*")(?:\s+(?:title|target|rel|data-browser-link|data-workspace-link|class)="[^"]*")*\s*>|<\/(?:a|code|em|strong)>|<(?:code|em|strong)\b[^>]*>|<img\b[^>]*(?:\bdata-md-rendered="1"|\bclass="remote-artifact-image")[^>]*\/?>)$/i
 
 function escapeHtmlOutsideSafeTags(html: string): string {
   return html

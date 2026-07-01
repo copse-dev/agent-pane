@@ -86,8 +86,14 @@ describe('renderMarkdown', () => {
   })
 
   it('renders relative markdown links and reference definitions', () => {
-    const html = renderMarkdown('[intro][ref]\n\n[ref]: /docs "guide"\n')
-    assert.match(html, /<a href="\/docs"[^>]*title="guide"[^>]*>intro<\/a>/)
+    const html = renderMarkdown(
+      '[Experiment Framework v2](/docs/experiments/v2.md)\n\n[intro][ref]\n\n[ref]: /docs "guide"\n',
+    )
+    assert.match(html, /href="\/docs\/experiments\/v2\.md"[^>]*data-workspace-link="true"/)
+    assert.match(
+      html,
+      /<a href="\/docs"[^>]*data-workspace-link="true"[^>]*title="guide"[^>]*>intro<\/a>/,
+    )
     assert.doesNotMatch(html, /\[ref\]:/)
   })
 

@@ -272,6 +272,41 @@ export function seedMarkdownListFixture(workspaceRoot: string): void {
   )
 }
 
+/** Assistant message with a root-relative markdown link to a real workspace file. */
+export function seedMarkdownWorkspaceLinkFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-markdown-workspace-link-project'
+  const threadId = 'e2e-markdown-workspace-link-thread'
+  const content =
+    'See [Type safety guide](/docs/type-safety.md) for renderer and main-process conventions.'
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Workspace markdown link',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-workspace-link',
+              role: 'assistant',
+              content,
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
 /** Thematic breaks (spaced marker runs) + multi-backtick / multi-line code spans. */
 export function seedMarkdownConformanceFixture(workspaceRoot: string): void {
   const projectId = 'e2e-markdown-conformance-project'

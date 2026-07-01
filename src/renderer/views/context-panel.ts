@@ -8,6 +8,7 @@ import { sanitizeRenderedMarkdown } from '../markdown/sanitize.ts'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
+import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
 import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { registerMonacoSelectionToChatShortcut } from '../monaco/selection-to-chat.ts'
@@ -201,6 +202,7 @@ export function mountContextPanel(
     () => store.getState().workspaceRoot,
   )
   const unbindFileLinks = bindFileReferenceClicks(previewContainer, store, api)
+  const unbindWorkspaceLinks = bindWorkspaceLinkClicks(previewContainer, store, api)
   const unbindBrowserLinks = bindBrowserLinkClicks(previewContainer, store, api)
 
   return () => {
@@ -210,6 +212,7 @@ export function mountContextPanel(
     unsubFsChanged()
     unbindDrop()
     unbindFileLinks()
+    unbindWorkspaceLinks()
     unbindBrowserLinks()
     fileEditor.dispose()
   }

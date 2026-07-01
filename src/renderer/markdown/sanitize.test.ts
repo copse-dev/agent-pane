@@ -69,6 +69,14 @@ describe('sanitizeRenderedMarkdown', () => {
     assert.match(html, /data-browser-link="true"/)
   })
 
+  it('preserves workspace markdown link attributes', () => {
+    const html = sanitizeRenderedMarkdown(
+      '<a href="/docs/foo.md" class="workspace-markdown-link" data-workspace-link="true">x</a>',
+    )
+    assert.match(html, /data-workspace-link="true"/)
+    assert.match(html, /href="\/docs\/foo\.md"/)
+  })
+
   it('preserves mermaid scaffolding and highlight.js spans', () => {
     const html = sanitizeRenderedMarkdown(
       '<div class="mermaid-diagram mermaid-diagram--pending"><pre class="mermaid">A--&gt;B</pre></div>' +
