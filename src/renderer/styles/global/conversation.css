@@ -279,6 +279,11 @@
   white-space: pre-wrap;
 }
 
+.message-text .stream-pending.stream-pending-paragraph {
+  display: block;
+  white-space: normal;
+}
+
 .message-text .stream-pending.stream-pending-list-item {
   display: block;
   padding-inline-start: 1.5em;

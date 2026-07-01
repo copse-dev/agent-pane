@@ -111,6 +111,13 @@ describe('isAmbiguousBlockLine', () => {
     assert.equal(isAmbiguousBlockLine('- item'), true)
     assert.equal(isAmbiguousBlockLine('plain text'), false)
   })
+
+  it('does not treat RFC-style metadata lines as ambiguous table rows', () => {
+    const metadata =
+      '**Status:** Proposed &nbsp;&nbsp;|&nbsp;&nbsp; **Authors:** Engineering Guild &nbsp;&nbsp;|&nbsp;&nbsp; **Created:** 2025-01-25'
+    assert.equal(isAmbiguousBlockLine(metadata), false)
+    assert.equal(isAmbiguousBlockLine('| A | B |'), true)
+  })
 })
 
 describe('table streaming helpers', () => {

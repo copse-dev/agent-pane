@@ -2,6 +2,7 @@ import { renderMarkdown } from './renderer.ts'
 import {
   getIncompleteFenceSource,
   getIncompleteTableSource,
+  isAmbiguousBlockLine,
   pendingLineBelongsInTable,
 } from './block-tokenizer.ts'
 import {
@@ -44,7 +45,10 @@ function renderPendingInlineMarkdown(pending: string): string {
 
 function pendingSpanHtml(pending: string, pendingHtml: string): string {
   if (pendingListMarkerLength(pending) === null) {
-    return `<span class="stream-pending">${pendingHtml}</span>`
+    const paragraphLike =
+      pending.trim() !== '' && !isAmbiguousBlockLine(pending) && !pending.includes('\n')
+    const classes = paragraphLike ? 'stream-pending stream-pending-paragraph' : 'stream-pending'
+    return `<span class="${classes}">${pendingHtml}</span>`
   }
   const ordered = pendingListOrderedMarker(pending)
   const classes = ordered
@@ -63,6 +67,13 @@ function syncPendingListPresentation(
   pendingEl.classList.toggle('stream-pending-list-item', isList)
   const ordered = isList ? pendingListOrderedMarker(pending) : null
   pendingEl.classList.toggle('stream-pending-ordered-item', ordered !== null)
+  const paragraphLike =
+    active &&
+    !isList &&
+    pending.trim() !== '' &&
+    !isAmbiguousBlockLine(pending) &&
+    !pending.includes('\n')
+  pendingEl.classList.toggle('stream-pending-paragraph', paragraphLike)
   if (ordered !== null) pendingEl.dataset['orderedMarker'] = ordered
   else delete pendingEl.dataset['orderedMarker']
 }
