@@ -1,4 +1,4 @@
-import { escapeHtml } from './escape.ts'
+import { escapeHtml, escapeHtmlTextNodes } from './escape.ts'
 import { renderEmphasisOutsideInlineHtml } from './inline-emphasis.ts'
 import { renderInlineLinks, safeLinkHref } from './inline-links.ts'
 import { type LinkReferenceMap } from './link-references.ts'
@@ -19,7 +19,7 @@ function renderNestedInlineSpans(t: string, linkRefs: LinkReferenceMap): string 
  * so emphasis cannot pair across cell boundaries (#469).
  */
 export function renderInlineSpans(t: string, linkRefs: LinkReferenceMap = new Map()): string {
-  return renderNestedInlineSpans(t, linkRefs)
+  return escapeHtmlTextNodes(renderNestedInlineSpans(t, linkRefs))
 }
 
 /**

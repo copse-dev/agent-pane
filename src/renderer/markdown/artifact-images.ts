@@ -38,9 +38,9 @@ function artifactImageSource(rawSrc: string): { path: string; agentId?: string }
   return { agentId: decodeURIComponent(match[1]), path }
 }
 
-/** Turn allowed remote-artifact `<img>` tags into lazy placeholders. */
+/** Turn allowed remote-artifact `<img>` tags into lazy placeholders; escape all others. */
 export function renderArtifactImageTags(text: string): string {
-  return text.replace(/&lt;img\b[\s\S]*?\/?&gt;/gi, (tag) => {
+  return text.replace(/(?:<img\b[\s\S]*?\/?>|&lt;img\b[\s\S]*?\/?&gt;)/gi, (tag) => {
     const attrs = parseHtmlAttributes(tag)
     const artifact = attrs['src'] ? artifactImageSource(attrs['src']) : null
     if (!artifact) return tag

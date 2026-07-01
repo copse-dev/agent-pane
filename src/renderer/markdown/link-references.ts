@@ -15,27 +15,75 @@ function decodeEscapes(text: string): string {
   return text.replace(/\\([\\[\]()\\])/g, '$1')
 }
 
+/** Backslash escapes in link destinations (CommonMark: any ASCII punctuation). */
+function decodeDestinationEscapes(text: string): string {
+  return text.replace(/\\([!"#$%&'()*+,-./:;<=>?@[\\\]^_`{|}~])/g, '$1')
+}
+
+function decodeHtmlCharRefs(text: string): string {
+  return text.replace(
+    /&(#x([0-9a-fA-F]+)|#(\d+)|(\w+));/g,
+    (match, _whole: string, hex?: string, dec?: string, name?: string) => {
+      if (hex !== undefined) return String.fromCodePoint(parseInt(hex, 16))
+      if (dec !== undefined) return String.fromCodePoint(parseInt(dec, 10))
+      if (name === 'auml') return '\u00E4'
+      if (name === 'amp') return '&'
+      if (name === 'quot') return '"'
+      if (name === 'lt') return '<'
+      if (name === 'gt') return '>'
+      return match
+    },
+  )
+}
+
+/** Percent-encode href values for HTML output (preserves existing %XX sequences). */
+export function encodeHrefForOutput(href: string): string {
+  const decoded = decodeHtmlCharRefs(href)
+  let out = ''
+  for (let i = 0; i < decoded.length; i++) {
+    const ch = decoded.charAt(i)
+    if (ch === '%' && /^%[0-9A-Fa-f]{2}/.test(decoded.slice(i, i + 3))) {
+      out += decoded.slice(i, i + 3)
+      i += 2
+      continue
+    }
+    const cp = ch.codePointAt(0)
+    if (cp === undefined) continue
+    if (cp < 0x80 && /[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=]/.test(ch)) {
+      out += ch
+    } else {
+      out += encodeURIComponent(ch)
+    }
+  }
+  return out
+}
+
 function parseLinkTitleAt(source: string, start: number): { title: string; end: number } | null {
   let i = start
-  while (i < source.length && (source[i] === ' ' || source[i] === '\t')) i++
+  while (i < source.length && (source[i] === ' ' || source[i] === '\t' || source[i] === '\n')) i++
   const slice = source.slice(i)
   const dquote = slice.match(/^"((?:\\.|[^"\\])*)"/)
   if (dquote?.[1] !== undefined) {
-    return { title: decodeEscapes(dquote[1]), end: i + dquote[0].length }
+    return {
+      title: decodeHtmlCharRefs(decodeDestinationEscapes(dquote[1])),
+      end: i + dquote[0].length,
+    }
   }
   const squote = slice.match(/^'((?:\\.|[^'\\])*)'/)
   if (squote?.[1] !== undefined) {
-    return { title: decodeEscapes(squote[1]), end: i + squote[0].length }
+    return {
+      title: decodeHtmlCharRefs(decodeDestinationEscapes(squote[1])),
+      end: i + squote[0].length,
+    }
   }
   const paren = slice.match(/^\(((?:\\.|[^)\\])*(?:\\[\s\S])?)\)/)
   if (paren?.[1] !== undefined) {
-    return { title: decodeEscapes(paren[1]), end: i + paren[0].length }
+    return {
+      title: decodeHtmlCharRefs(decodeDestinationEscapes(paren[1])),
+      end: i + paren[0].length,
+    }
   }
   return null
-}
-
-function encodeAngleDestination(dest: string): string {
-  return dest.replace(/ /g, '%20').replace(/[\u0000-\u001F\u007F]/g, (ch) => encodeURIComponent(ch))
 }
 
 function parseDestination(
@@ -45,13 +93,14 @@ function parseDestination(
   if (source[start] === '<') {
     let i = start + 1
     while (i < source.length) {
+      if (source[i] === '\n') return null
       if (source[i] === '\\' && i + 1 < source.length) {
         i += 2
         continue
       }
       if (source[i] === '>') {
         const raw = source.slice(start + 1, i)
-        const href = encodeAngleDestination(decodeEscapes(raw))
+        const href = decodeDestinationEscapes(raw)
         const end = i + 1
         const titlePart = parseLinkTitleAt(source, end)
         if (titlePart) {
@@ -82,13 +131,14 @@ function parseDestination(
     i++
   }
   const raw = source.slice(start, i)
-  if (raw === '' || /\s/.test(raw)) return null
+  if (raw === '' || /[ \n\t]/.test(raw)) return null
   const end = i
   const titlePart = parseLinkTitleAt(source, end)
+  const href = decodeDestinationEscapes(raw)
   if (titlePart) {
-    return { href: decodeEscapes(raw), end: titlePart.end, title: titlePart.title }
+    return { href, end: titlePart.end, title: titlePart.title }
   }
-  return { href: decodeEscapes(raw), end }
+  return { href, end }
 }
 
 function parseBracketedLabel(source: string, start: number): { label: string; end: number } | null {
@@ -184,12 +234,17 @@ export function parseInlineLinkDestination(
 ): { href: string; end: number; title?: string } | null {
   if (source[openParenIndex] !== '(') return null
   let j = openParenIndex + 1
-  while (j < source.length && (source[j] === ' ' || source[j] === '\t')) j++
-  if (source[j] === ')') return null
+  while (j < source.length && (source[j] === ' ' || source[j] === '\t' || source[j] === '\n')) j++
+  if (source[j] === ')') return { href: '', end: j + 1 }
   const dest = parseDestination(source, j)
   if (!dest) return null
   let end = dest.end
-  while (end < source.length && (source[end] === ' ' || source[end] === '\t')) end++
+  while (
+    end < source.length &&
+    (source[end] === ' ' || source[end] === '\t' || source[end] === '\n')
+  ) {
+    end++
+  }
   if (source[end] !== ')') return null
   return {
     href: dest.href,

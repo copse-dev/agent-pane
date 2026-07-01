@@ -1,6 +1,7 @@
 import { escapeHtml } from './escape.ts'
 import {
   decodeEscapes,
+  encodeHrefForOutput,
   lookupLinkReference,
   type LinkReferenceMap,
   parseBracketedLabel,
@@ -23,11 +24,7 @@ function decodeEscapedHref(raw: string): string {
 export function safeLinkHref(raw: string): string | null {
   const href = decodeEscapedHref(raw).trim()
   if (/^(javascript|data|vbscript):/i.test(href)) return null
-  if (/^https?:\/\//i.test(href)) return href
-  if (/^mailto:/i.test(href)) return href
-  if (href === '' || href === '<>') return null
-  if (/^[/#.]|^[a-zA-Z0-9]/.test(href)) return href
-  return null
+  return encodeHrefForOutput(href)
 }
 
 function renderedLink(label: string, href: string, title?: string): string {
@@ -37,7 +34,7 @@ function renderedLink(label: string, href: string, title?: string): string {
 
 function renderedImage(alt: string, src: string, title?: string): string {
   const titleAttr = title ? ` title="${escapeHtml(title)}"` : ''
-  return `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}"${titleAttr} />`
+  return `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}"${titleAttr} data-md-rendered="1" />`
 }
 
 function renderLinkLabel(
@@ -66,8 +63,9 @@ function tryParseLinkOrImage(
     const dest = parseInlineLinkDestination(text, j)
     if (!dest) return null
     const href = safeLinkHref(dest.href)
-    if (!href) return null
+    if (href === null) return null
     const label = renderLinkLabel(labelPart.label, refs, renderLabel)
+    if (!image && label.includes('<a ')) return null
     const html = image
       ? renderedImage(label, href, dest.title)
       : renderedLink(label, href, dest.title)
@@ -80,7 +78,7 @@ function tryParseLinkOrImage(
     const ref = lookupLinkReference(refs, refLabel.label)
     if (!ref) return null
     const href = safeLinkHref(ref.href)
-    if (!href) return null
+    if (href === null) return null
     const label = renderLinkLabel(labelPart.label, refs, renderLabel)
     const html = image
       ? renderedImage(label, href, ref.title)
@@ -92,7 +90,7 @@ function tryParseLinkOrImage(
   const ref = lookupLinkReference(refs, labelPart.label)
   if (!ref) return null
   const href = safeLinkHref(ref.href)
-  if (!href) return null
+  if (href === null) return null
   const label = renderLinkLabel(labelPart.label, refs, renderLabel)
   const html = image ? renderedImage(label, href, ref.title) : renderedLink(label, href, ref.title)
   return { html, end: labelPart.end }
@@ -127,6 +125,11 @@ export function renderInlineLinks(
       return out
     })
     .join('')
+}
+
+/** Strip app-specific image attributes for CommonMark conformance comparison. */
+export function stripAppImageAttributes(html: string): string {
+  return html.replace(/ data-md-rendered="1"/g, '')
 }
 
 /** Strip app-specific anchor attributes for CommonMark conformance comparison. */
