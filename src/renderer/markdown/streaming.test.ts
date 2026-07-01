@@ -241,6 +241,19 @@ describe('renderStreamingMarkdown (holds unresolved bold)', () => {
     )
   })
 
+  it('streams ATX headings without raw hash markers on the pending line', () => {
+    const html = renderStreamingMarkdown('## Title\n### Section name')
+    assert.match(html, /<h2>Title<\/h2>/)
+    assert.match(html, /stream-pending-heading stream-pending-h3/)
+    assert.match(html, />Section name</)
+    assert.doesNotMatch(html, />###\s/)
+  })
+
+  it('hides incomplete ATX heading markers until title text follows', () => {
+    assert.doesNotMatch(renderStreamingMarkdown('## Title\n###'), />###\s/)
+    assert.match(renderStreamingMarkdown('## Title\n### Name'), />Name</)
+  })
+
   it('shows a forming table with header cells while the separator streams', () => {
     const html = renderStreamingMarkdown('intro\n| Path | Role |')
     assert.match(html, /<p>intro<\/p>/)

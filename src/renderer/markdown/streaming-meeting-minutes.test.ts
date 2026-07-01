@@ -22,14 +22,23 @@ describe('meeting minutes streaming regressions', () => {
     assert.doesNotMatch(html, /<h2>/)
   })
 
-  it('shows ATX heading text in the pending tail before the line ends', () => {
+  it('shows ATX heading title in the pending tail without raw hash markers', () => {
     const partial = intro + '\n---\n\n# 📝 Meeting Minutes: Architecture Review #12'
     const html = renderStreamingMarkdown(partial)
     assert.doesNotMatch(html, /<h1>/)
-    assert.match(
-      html,
-      /<span class="stream-pending"># 📝 Meeting Minutes: Architecture Review #12<\/span>/,
-    )
+    assert.match(html, /stream-pending-heading stream-pending-h1/)
+    assert.match(html, />📝 Meeting Minutes: Architecture Review #12</)
+    assert.doesNotMatch(html, />#\s*📝/)
+  })
+
+  it('streams ### subheadings without showing hash markers', () => {
+    const partial = '## Summary\n\n### Architecture Highlights'
+    const html = renderStreamingMarkdown(partial)
+    assert.match(html, /<h2>Summary<\/h2>/)
+    assert.doesNotMatch(html, /<h3>/)
+    assert.match(html, /stream-pending-heading stream-pending-h3/)
+    assert.match(html, />Architecture Highlights</)
+    assert.doesNotMatch(html, />###\s/)
   })
 
   it('renders nbsp entities in metadata lines while streaming', () => {

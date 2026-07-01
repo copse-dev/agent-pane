@@ -86,11 +86,12 @@ describe('HTML entity decoding in prose', () => {
     assert.equal(decodeSafeMarkdownEntities('Proposed &amp;nb'), 'Proposed ')
   })
 
-  it('decodes nbsp on ambiguous block lines held as escaped plain text', () => {
+  it('decodes nbsp on pending ATX heading titles', () => {
     const partial = `# 📊 Sprint 24 Retrospective &nbsp;&nbsp;|&nbsp;&nbsp; **Team:**`
     const html = sanitizeRenderedMarkdown(renderStreamingMarkdown(partial))
     assertNoVisibleNbsp(html, 'ambiguous-atx')
-    assert.match(html, /stream-pending/)
+    assert.match(html, /stream-pending-heading/)
+    assert.doesNotMatch(html, /# 📊/)
   })
 
   it('decodes nbsp in sprint retrospective metadata at rest and while streaming', () => {

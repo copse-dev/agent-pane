@@ -7,6 +7,7 @@ import {
 } from './block-tokenizer.ts'
 import {
   isListContinuationPending,
+  pendingAtxHeadingLevel,
   pendingListMarkerLength,
   pendingListOrderedMarker,
   renderPendingLine,
@@ -53,6 +54,7 @@ function renderPendingInlineMarkdown(pending: string, openListItemFirstLine?: st
 export function isBlockLevelPending(pending: string, openListItemFirstLine?: string): boolean {
   if (!pending.trim() || pending.includes('\n')) return false
   if (pendingListMarkerLength(pending) !== null) return true
+  if (pendingAtxHeadingLevel(pending) !== null) return true
   if (isListContinuationPending(pending, openListItemFirstLine)) return true
   return !isAmbiguousBlockLine(pending)
 }
@@ -72,12 +74,20 @@ function blockPendingClassName(pending: string, openListItemFirstLine?: string):
       ? `stream-pending stream-pending-list-item stream-pending-ordered-item ${BLOCK_PENDING_CLASS}`
       : `stream-pending stream-pending-list-item ${BLOCK_PENDING_CLASS}`
   }
+  const headingLevel = pendingAtxHeadingLevel(pending)
+  if (headingLevel !== null) {
+    return `stream-pending stream-pending-heading stream-pending-h${String(headingLevel)} ${BLOCK_PENDING_CLASS}`
+  }
   return `stream-pending stream-pending-paragraph ${BLOCK_PENDING_CLASS}`
 }
 
 function blockPendingAttrs(pending: string): string {
   const ordered = pendingListOrderedMarker(pending)
-  return ordered ? ` data-ordered-marker="${escapeHtml(ordered)}"` : ''
+  const headingLevel = pendingAtxHeadingLevel(pending)
+  let attrs = ''
+  if (ordered) attrs += ` data-ordered-marker="${escapeHtml(ordered)}"`
+  if (headingLevel !== null) attrs += ` data-heading-level="${String(headingLevel)}"`
+  return attrs
 }
 
 function blockPendingHtml(
