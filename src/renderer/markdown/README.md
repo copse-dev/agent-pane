@@ -29,8 +29,8 @@ When extending the renderer or its CSS, preserve these rules:
   See #475 and [`docs/plans/markdown-renderer-hardening.md`](../../../docs/plans/markdown-renderer-hardening.md).
 - **Soft line breaks.** Prose paragraphs preserve single newlines in HTML (CommonMark soft breaks);
   hard breaks (two+ trailing spaces) emit `<br>`. Tight list items still collapse internal
-  newlines to spaces. `.message-text` uses `white-space: pre-wrap` so preserved newlines render
-  as visible line breaks without `<br>` tags.
+  newlines to spaces. `.message-text p` uses `white-space: pre-wrap` (the container is `normal`) so
+  preserved newlines render as visible line breaks without `<br>` tags.
 - **Agent-output shapes.** Support `-`, `*`, and `+` list markers. ATX `#` levels map to
   matching `<h1>`–`<h6>` tags (see `render-blocks.ts`).
 - **Streaming hold.** Incomplete block starts (headings, fences) stay hidden in the pending
