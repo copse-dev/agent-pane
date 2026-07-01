@@ -1,4 +1,5 @@
 import { escapeHtml, escapeHtmlTextNodes } from './escape.ts'
+import { renderInlineCode } from './inline-code-spans.ts'
 import { INLINE_HTML_SHIELD_RE, renderEmphasisOutsideInlineHtml } from './inline-emphasis.ts'
 import { renderInlineLinks, safeLinkHref } from './inline-links.ts'
 import { type LinkReferenceMap } from './link-references.ts'
@@ -20,58 +21,6 @@ function renderNestedInlineSpans(t: string, linkRefs: LinkReferenceMap): string 
  */
 export function renderInlineSpans(t: string, linkRefs: LinkReferenceMap = new Map()): string {
   return escapeHtmlTextNodes(renderNestedInlineSpans(t, linkRefs))
-}
-
-/**
- * CommonMark code spans: a run of N backticks opens a span that closes at the
- * next run of exactly N backticks. Interior line endings collapse to spaces.
- */
-function renderInlineCode(text: string): string {
-  let out = ''
-  let i = 0
-  while (i < text.length) {
-    const ch = text[i]
-    if (ch !== '`') {
-      out += ch ?? ''
-      i++
-      continue
-    }
-    let runEnd = i
-    while (text[runEnd] === '`') runEnd++
-    const fence = runEnd - i
-    let close = -1
-    let k = runEnd
-    while (k < text.length) {
-      if (text[k] !== '`') {
-        k++
-        continue
-      }
-      let l = k
-      while (text[l] === '`') l++
-      if (l - k === fence) {
-        close = k
-        break
-      }
-      k = l
-    }
-    if (close === -1) {
-      out += text.slice(i, runEnd)
-      i = runEnd
-      continue
-    }
-    let content = text.slice(runEnd, close).replace(/\n/g, ' ')
-    if (
-      content.length >= 2 &&
-      content.startsWith(' ') &&
-      content.endsWith(' ') &&
-      /[^ ]/.test(content)
-    ) {
-      content = content.slice(1, -1)
-    }
-    out += `<code>${content}</code>`
-    i = close + fence
-  }
-  return out
 }
 
 /** Delimiter stack cannot pair `**` across a `<code>` shield. */
