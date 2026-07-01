@@ -54,8 +54,8 @@ When extending the renderer or its CSS, preserve these rules:
   | While streaming | DOM / class | Raw marker hidden? | Inline MD in tail? |
   |---|---|---|---|
   | Prose paragraph | `<p class="stream-pending-paragraph">` | n/a | yes |
-  | `- item` / `1. item` | `<div class="stream-pending-list-item">` | yes | yes |
-  | Nested `  - item` | `<div class="stream-pending-list-item">` (indented marker) | yes | yes |
+  | `- item` / `1. item` | `<ul>/<ol>` with native `<li class="stream-pending-list-item">` | yes | yes |
+  | Nested `  - item` | nested `<ul>/<ol>` inside open `<li>` | yes | yes |
   | Lazy list continuation | `<span class="stream-pending-list-continuation">` in open `<li>` | n/a (plain text) | yes |
   | `### Heading` | `<div class="stream-pending-heading stream-pending-hN">` | yes | yes |
   | `> quote` | `<blockquote class="stream-pending-blockquote"><p>…</p>` | yes | yes |
