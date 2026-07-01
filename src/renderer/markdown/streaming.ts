@@ -51,7 +51,9 @@ export function renderStreamingMarkdown(content: string): string {
   }
   if (!pending) return rendered
   if (pendingLineBelongsInTable(complete, pending)) return rendered
-  return `${rendered}<span class="stream-pending">${sanitizeRenderedMarkdown(renderPendingInlineMarkdown(pending))}</span>`
+  const pendingHtml = sanitizeRenderedMarkdown(renderPendingInlineMarkdown(pending))
+  if (!pendingHtml) return rendered
+  return `${rendered}<span class="stream-pending">${pendingHtml}</span>`
 }
 
 /**
@@ -95,12 +97,13 @@ export class StreamingMarkdownRenderer {
     }
 
     const pendingInTable = pendingLineBelongsInTable(complete, pending)
-    const pendingHidden = pending === '' || pendingInTable || formingSource !== null
-    pendingEl.innerHTML =
-      pending && !pendingHidden
+    const pendingHtml =
+      pending && !pendingInTable && formingSource === null
         ? sanitizeRenderedMarkdown(renderPendingInlineMarkdown(pending))
         : ''
-    pendingEl.hidden = pendingHidden
+    pendingEl.innerHTML = pendingHtml
+    pendingEl.hidden =
+      pending === '' || pendingInTable || formingSource !== null || pendingHtml === ''
   }
 
   private syncCommittedTableRow(complete: string, pending: string): void {

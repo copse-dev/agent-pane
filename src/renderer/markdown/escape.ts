@@ -59,3 +59,14 @@ export function decodeEscapedHref(raw: string): string {
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
 }
+
+const SAFE_MARKDOWN_ENTITY_RE = /&(?:nbsp|#160|#x0*a);/gi
+
+/** Decode a small allowlist of HTML entities models emit in prose (e.g. &nbsp;). */
+export function decodeSafeMarkdownEntities(text: string): string {
+  return text.replace(SAFE_MARKDOWN_ENTITY_RE, (entity) => {
+    const lower = entity.toLowerCase()
+    if (lower === '&nbsp;' || lower === '&#160;' || lower === '&#xa0;') return '\u00A0'
+    return entity
+  })
+}

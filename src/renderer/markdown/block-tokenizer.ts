@@ -403,8 +403,16 @@ export function tokenizeBlocks(source: string): BlockToken[] {
     // Setext heading: text line followed by === or --- on the next line.
     const nextLine = lines[i + 1]
     if (nextLine && SETEXT_UNDERLINE_RE.test(nextLine.text)) {
-      const status: BlockStatus = nextLine.terminated ? 'complete' : 'ambiguous'
-      pushBlock(blocks, 'setext_heading', status, line.start, nextLine.end)
+      if (!nextLine.terminated) {
+        // While `---` / `===` is still streaming, keep the text line visible as
+        // prose and hold the underline as a pending thematic candidate. Treating
+        // the pair as an ambiguous setext block would hide committed paragraphs.
+        pushBlock(blocks, 'paragraph', line.terminated ? 'complete' : 'open', line.start, line.end)
+        pushBlock(blocks, 'thematic_break', 'ambiguous', nextLine.start, nextLine.end)
+        i += 2
+        continue
+      }
+      pushBlock(blocks, 'setext_heading', 'complete', line.start, nextLine.end)
       i += 2
       continue
     }
