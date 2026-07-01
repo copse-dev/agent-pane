@@ -13,6 +13,8 @@ export interface UsageEvent extends ModelUsage {
   source: UsageSource
   projectId?: string
   threadId?: string
+  /** Token counts are a local estimate (agent didn't report usage), not exact. */
+  estimated?: boolean
 }
 
 export interface UsageRecordInput extends ModelUsage {
@@ -21,4 +23,6 @@ export interface UsageRecordInput extends ModelUsage {
   projectId?: string
   threadId?: string
   at?: number
+  /** Token counts are a local estimate (agent didn't report usage), not exact. */
+  estimated?: boolean
 }

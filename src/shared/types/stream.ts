@@ -33,6 +33,8 @@ export type StreamChunk =
       outputTokens: number
       cacheReadTokens?: number
       cacheCreationTokens?: number
+      /** Token counts are a local ~4 chars/token estimate, not agent-reported. */
+      estimated?: boolean
     }
   | {
       type: 'context_pressure'

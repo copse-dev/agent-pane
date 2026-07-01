@@ -40,7 +40,7 @@ export async function detectAcpAgents(
 }
 
 /** Resolve a command to its absolute path via `which`/`where`, or null if absent. */
-async function resolveOnPath(command: string): Promise<string | null> {
+export async function resolveOnPath(command: string): Promise<string | null> {
   const finder = process.platform === 'win32' ? 'where' : 'which'
   try {
     const { stdout } = await run(finder, [command], { timeout: 4000 })

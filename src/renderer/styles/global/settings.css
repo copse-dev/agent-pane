@@ -485,6 +485,10 @@ dialog.settings-overlay::backdrop {
   color: var(--text-muted);
   font-weight: 500;
 }
+.usage-estimated {
+  color: var(--text-muted);
+  font-style: italic;
+}
 .usage-table td code {
   font-size: 12px;
 }
@@ -527,6 +531,15 @@ dialog.settings-overlay::backdrop {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
+}
+.acp-model-row {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+.acp-model-row select {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .acp-agent-add {
   margin-top: var(--spacing-lg);
