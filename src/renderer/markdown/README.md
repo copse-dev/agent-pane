@@ -168,6 +168,14 @@ complete render. When the tokenizer commits the entire input (no pending tail),
 that display must also match the at-rest `renderMarkdown()` output. Set
 `STREAMING_FUZZ_ALL=1` to exercise every character index on long examples.
 
+### Terms of Service fixture (`streaming-terms-of-service.test.ts`)
+
+Real-world agent output in `tests/fixtures/terms-of-service-streaming.md` — nbsp metadata,
+numbered clauses, subscription fee table, blockquotes, and a fenced address block. Tests
+scan incremental streaming cuts for partial-table artifacts (raw `| cell |` text in inline
+`.stream-pending` or prose blocks while a table is already committed). Use this fixture when
+changing table/list/metadata streaming behaviour.
+
 The JS normalizer (`tests/commonmark/normalize.ts`) is differentially validated
 against the reference `normalize.py` by `npm run check:normalizer-parity` (a CI
 step in the `check` job; needs python3). The reference normalizer is **not**
