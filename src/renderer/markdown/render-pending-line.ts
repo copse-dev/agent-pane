@@ -52,6 +52,11 @@ export function pendingListOrderedMarker(pending: string): string | null {
   return match?.[1] ?? null
 }
 
+/** Leading spaces before a list marker on the pending line (0 = document-level item). */
+export function listPendingIndent(pending: string): number {
+  return pending.match(/^ */)?.[0].length ?? 0
+}
+
 export function pendingAtxHeadingLevel(pending: string): number | null {
   const match = pending.match(ATX_HEADING_CAPTURE_RE)
   return match?.[1] ? match[1].length : null

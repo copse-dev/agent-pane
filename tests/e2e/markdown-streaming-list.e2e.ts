@@ -55,4 +55,50 @@ describe('markdown streaming list pending', () => {
 
     await saveAppScreenshot('markdown-streaming-list-continuation.png')
   })
+
+  it('renders pending list items with native ul/li bullets matching committed items', async () => {
+    await $('.messages-list').waitForExist({ timeout: 30_000 })
+
+    const result = await browser.execute(() => {
+      const list = document.querySelector('.messages-list')
+      if (!list) return { error: 'no messages list' }
+
+      const msg = document.createElement('div')
+      msg.className = 'msg msg-assistant'
+      const text = document.createElement('div')
+      text.className = 'message-text is-streaming'
+      text.innerHTML = [
+        '<div class="stream-complete">',
+        '<ul><li>First item</li><li class="stream-pending stream-pending-list-item stream-pending-block">Second item</li></ul>',
+        '</div>',
+      ].join('')
+      msg.append(text)
+      list.append(msg)
+
+      const items = [...text.querySelectorAll('li')]
+      const pending = text.querySelector('li.stream-pending-list-item')
+      const ul = text.querySelector('ul')
+      return {
+        itemCount: items.length,
+        pendingTag: pending?.tagName ?? '',
+        pendingParentTag: pending?.parentElement?.tagName ?? '',
+        ulChildTags: [...(ul?.children ?? [])].map((el) => el.tagName),
+        hasCustomBulletBefore: pending
+          ? getComputedStyle(pending, '::before').content !== 'none' &&
+            getComputedStyle(pending, '::before').content !== 'normal'
+          : false,
+        listStyleType: ul ? getComputedStyle(ul).listStyleType : '',
+      }
+    })
+
+    expect(result).not.toHaveProperty('error')
+    expect(result.itemCount).toBe(2)
+    expect(result.pendingTag).toBe('LI')
+    expect(result.pendingParentTag).toBe('UL')
+    expect(result.ulChildTags).toEqual(['LI', 'LI'])
+    expect(result.hasCustomBulletBefore).toBe(false)
+    expect(result.listStyleType).toBe('disc')
+
+    await saveAppScreenshot('markdown-streaming-list-pending-bullet.png')
+  })
 })

@@ -18,7 +18,7 @@ describe('streaming pending row matrix', () => {
 
   it('unordered list item: hides - marker, uses list-item chrome', () => {
     const html = renderStreamingMarkdown('done\n- item text')
-    assert.match(html, /<div class="stream-pending stream-pending-list-item[^"]*">item text<\/div>/)
+    assert.match(html, /<ul><li class="stream-pending stream-pending-list-item[^"]*">item text<\/li><\/ul>/)
     assert.doesNotMatch(html, />-\s*item/)
   })
 
@@ -48,8 +48,8 @@ describe('streaming pending row matrix', () => {
 
   it('nested sublist item: indented - marker hidden, top-level list-item chrome', () => {
     const html = renderStreamingMarkdown('- parent\n  - child item')
-    assert.match(html, /<li>parent<\/li>/)
-    assert.match(html, /<div class="stream-pending stream-pending-list-item[^"]*">child item<\/div>/)
+    assert.match(html, /<li>parent<ul>/)
+    assert.match(html, /<ul><li>parent<ul><li class="stream-pending stream-pending-list-item[^"]*">child item<\/li><\/ul><\/li><\/ul>/)
     assert.doesNotMatch(html, /stream-pending-list-continuation/)
   })
 
@@ -117,13 +117,14 @@ describe('streaming pending row matrix', () => {
     assert.equal(inline.hidden, true)
   })
 
-  it('incremental renderer: list pending is a div, not inline span', () => {
+  it('incremental renderer: list pending is a native li inside ul', () => {
     const host = document.createElement('div')
     const r = new StreamingMarkdownRenderer(host)
     r.update('done\n- item')
     const block = host.querySelector('.stream-pending-block') as HTMLElement
-    assert.equal(block?.tagName, 'DIV')
+    assert.equal(block?.tagName, 'LI')
     assert.ok(block?.classList.contains('stream-pending-list-item'))
+    assert.equal(block?.parentElement?.tagName, 'UL')
   })
 
   it('incremental renderer: blockquote pending uses blockquote element with p wrapper', () => {

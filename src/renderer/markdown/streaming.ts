@@ -8,6 +8,7 @@ import {
 import {
   isListContinuationPending,
   isPendingBlockquoteLine,
+  listPendingIndent,
   pendingAtxHeadingLevel,
   pendingListMarkerLength,
   pendingListOrderedMarker,
@@ -64,12 +65,136 @@ export function isBlockLevelPending(pending: string, openListItemFirstLine?: str
 function blockPendingTag(
   pending: string,
   openListItemFirstLine?: string,
-): 'p' | 'div' | 'span' | 'blockquote' {
+): 'p' | 'div' | 'span' | 'blockquote' | 'li' {
   if (isListContinuationPending(pending, openListItemFirstLine)) return 'span'
-  if (pendingListMarkerLength(pending) !== null) return 'div'
+  if (pendingListMarkerLength(pending) !== null) return 'li'
   if (pendingAtxHeadingLevel(pending) !== null) return 'div'
   if (isPendingBlockquoteLine(pending)) return 'blockquote'
   return 'p'
+}
+
+function pendingListTag(pending: string): 'ul' | 'ol' {
+  return pendingListOrderedMarker(pending) !== null ? 'ol' : 'ul'
+}
+
+function blockPendingLiHtml(
+  pending: string,
+  pendingInner: string,
+  openListItemFirstLine?: string,
+): string {
+  const inner = wrapBlockPendingInner(pending, pendingInner)
+  return `<li class="${blockPendingClassName(pending, openListItemFirstLine)}"${blockPendingAttrs(pending)}>${inner}</li>`
+}
+
+function appendListPendingHtml(
+  rendered: string,
+  pending: string,
+  pendingInner: string,
+  openListItemFirstLine?: string,
+): string {
+  const listTag = pendingListTag(pending)
+  const liHtml = blockPendingLiHtml(pending, pendingInner, openListItemFirstLine)
+  const indent = listPendingIndent(pending)
+
+  if (indent > 0) {
+    const liMatch = rendered.match(/(<li(?:\s[^>]*)?>)([\s\S]*?)(<\/li>\s*<\/(?:ul|ol)>)\s*$/)
+    const liClose = liMatch?.[3]
+    if (liClose) {
+      const nested = `<${listTag}>${liHtml}</${listTag}>`
+      return `${rendered.slice(0, -liClose.length)}${nested}${liClose}`
+    }
+  }
+
+  const close = `</${listTag}>`
+  const closeIndex = rendered.lastIndexOf(close)
+  if (closeIndex !== -1) {
+    const openNeedle = `<${listTag}`
+    const beforeClose = rendered.slice(0, closeIndex)
+    if (beforeClose.lastIndexOf(openNeedle) !== -1) {
+      return `${beforeClose}${liHtml}${rendered.slice(closeIndex)}`
+    }
+  }
+
+  const ordered = pendingListOrderedMarker(pending)
+  const startAttr =
+    ordered !== null && listTag === 'ol' ? ` start="${escapeHtml(ordered)}"` : ''
+  return `${rendered}<${listTag}${startAttr}>${liHtml}</${listTag}>`
+}
+
+function findTrailingListHost(completedEl: HTMLElement, listTag: 'ul' | 'ol'): HTMLElement | null {
+  const last = completedEl.lastElementChild
+  if (last instanceof Element && last.tagName === listTag.toUpperCase()) {
+    return last as HTMLElement
+  }
+  return null
+}
+
+function syncListPendingDom(
+  completedEl: HTMLElement,
+  pending: string,
+  pendingInner: string,
+  active: boolean,
+  openListItemFirstLine?: string,
+): void {
+  clearListContinuationDom(completedEl)
+  completedEl.querySelector(`:scope > .${BLOCK_PENDING_CLASS}:not(li)`)?.remove()
+
+  const listTag = pendingListTag(pending)
+  const indent = listPendingIndent(pending)
+  const existingPendingLi = completedEl.querySelector(`li.${BLOCK_PENDING_CLASS}`)
+
+  if (!active || !pendingInner) {
+    existingPendingLi?.remove()
+    const emptyList = completedEl.querySelector(`:scope > ${listTag}:empty`)
+    emptyList?.remove()
+    return
+  }
+
+  let list: HTMLElement
+  if (indent > 0) {
+    const hostLi = findOpenListItemHost(completedEl)
+    if (!hostLi) {
+      list = document.createElement(listTag)
+      completedEl.append(list)
+    } else {
+      const existingNested = hostLi.querySelector(`:scope > ${listTag}:last-of-type`)
+      if (existingNested instanceof Element && existingNested.tagName === listTag.toUpperCase()) {
+        list = existingNested as HTMLElement
+      } else {
+        list = document.createElement(listTag)
+        hostLi.append(list)
+      }
+    }
+  } else {
+    const trailing = findTrailingListHost(completedEl, listTag)
+    list =
+      trailing ??
+      (() => {
+        const created = document.createElement(listTag)
+        const ordered = pendingListOrderedMarker(pending)
+        if (ordered !== null && listTag === 'ol') created.setAttribute('start', ordered)
+        completedEl.append(created)
+        return created
+      })()
+  }
+
+  let li: HTMLElement
+  if (existingPendingLi instanceof HTMLElement && existingPendingLi.parentElement === list) {
+    li = existingPendingLi
+  } else {
+    existingPendingLi?.remove()
+    li = document.createElement('li')
+    list.append(li)
+  }
+
+  li.className = blockPendingClassName(pending, openListItemFirstLine)
+  const ordered = pendingListOrderedMarker(pending)
+  const headingLevel = pendingAtxHeadingLevel(pending)
+  if (ordered !== null) li.setAttribute('data-ordered-marker', ordered)
+  else li.removeAttribute('data-ordered-marker')
+  if (headingLevel !== null) li.setAttribute('data-heading-level', String(headingLevel))
+  else li.removeAttribute('data-heading-level')
+  li.innerHTML = wrapBlockPendingInner(pending, pendingInner)
 }
 
 function blockPendingClassName(pending: string, openListItemFirstLine?: string): string {
@@ -170,12 +295,19 @@ function syncBlockPendingDom(
 ): void {
   if (isListContinuationPending(pending, openListItemFirstLine)) {
     clearListContinuationDom(completedEl)
-    completedEl.querySelector(`:scope > .${BLOCK_PENDING_CLASS}`)?.remove()
+    completedEl.querySelector(`li.${BLOCK_PENDING_CLASS}`)?.remove()
+    completedEl.querySelector(`:scope > .${BLOCK_PENDING_CLASS}:not(li)`)?.remove()
     syncListContinuationDom(completedEl, pendingInner, active)
     return
   }
 
+  if (pendingListMarkerLength(pending) !== null) {
+    syncListPendingDom(completedEl, pending, pendingInner, active, openListItemFirstLine)
+    return
+  }
+
   clearListContinuationDom(completedEl)
+  completedEl.querySelector(`li.${BLOCK_PENDING_CLASS}`)?.remove()
   const existing = completedEl.querySelector(`:scope > .${BLOCK_PENDING_CLASS}`)
   if (!active || !pendingInner) {
     existing?.remove()
@@ -254,10 +386,14 @@ export function renderStreamingMarkdown(content: string): string {
   if (isListContinuationPending(pending, openListItemFirstLine)) {
     const liMatch = rendered.match(/(<li(?:\s[^>]*)?>)([\s\S]*?)(<\/li>\s*<\/(?:ul|ol)>)\s*$/)
     const liClose = liMatch?.[3]
-    if (liMatch?.[1] !== undefined && liMatch[2] !== undefined && liClose) {
+    if (liClose) {
       const contHtml = blockPendingHtml(pending, pendingInner, openListItemFirstLine)
-      return `${rendered.slice(0, -liClose.length)}${liMatch[1]}${liMatch[2]}${contHtml}${liClose}`
+      return `${rendered.slice(0, -liClose.length)}${contHtml}${liClose}`
     }
+  }
+
+  if (pendingListMarkerLength(pending) !== null) {
+    return appendListPendingHtml(rendered, pending, pendingInner, openListItemFirstLine)
   }
 
   const pendingHtml = isBlockLevelPending(pending, openListItemFirstLine)

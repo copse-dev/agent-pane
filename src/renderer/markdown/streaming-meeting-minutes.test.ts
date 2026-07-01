@@ -65,7 +65,7 @@ describe('meeting minutes streaming regressions', () => {
   it('streams attendee list items with bullets instead of raw markers', () => {
     const partial = intro + '\n---\n\n**Attendees:**\n- Alice Chen (Engineering Lead)'
     const html = renderStreamingMarkdown(partial)
-    assert.match(html, /<div class="stream-pending stream-pending-list-item[^"]*">Alice Chen/)
+    assert.match(html, /<ul><li class="stream-pending stream-pending-list-item[^"]*">Alice Chen/)
     assert.doesNotMatch(html, /stream-pending[^>]*>- Alice/)
   })
 })

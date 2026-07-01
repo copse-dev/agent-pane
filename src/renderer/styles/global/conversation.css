@@ -290,20 +290,8 @@
   white-space: pre-wrap;
 }
 
-.message-text .stream-pending.stream-pending-list-item,
-.message-text div.stream-pending-list-item {
-  display: block;
-  margin: var(--spacing-sm) 0;
-  padding-inline-start: 1.5em;
-  position: relative;
+.message-text li.stream-pending-list-item {
   white-space: normal;
-}
-
-.message-text .stream-pending.stream-pending-list-item:not(.stream-pending-ordered-item)::before,
-.message-text div.stream-pending-list-item:not(.stream-pending-ordered-item)::before {
-  content: '•';
-  position: absolute;
-  inset-inline-start: 0.4em;
 }
 
 .message-text .stream-pending.stream-pending-list-continuation,
@@ -346,13 +334,6 @@
 .message-text blockquote.stream-pending-blockquote p {
   margin: 0;
   white-space: pre-wrap;
-}
-
-.message-text .stream-pending.stream-pending-ordered-item::before,
-.message-text div.stream-pending-ordered-item::before {
-  content: attr(data-ordered-marker) '. ';
-  position: absolute;
-  inset-inline-start: 0;
 }
 
 .message-text .stream-complete > .stream-pending-block:last-child {

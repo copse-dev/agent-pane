@@ -38,7 +38,7 @@ describe('renderStreamingMarkdown', () => {
   it('renders completed lines as markdown while the tail streams list body text', () => {
     const html = renderStreamingMarkdown('## Title\n- item')
     assert.match(html, /<h2>Title<\/h2>/)
-    assert.match(html, /<div class="stream-pending stream-pending-list-item[^"]*">item<\/div>/)
+    assert.match(html, /<ul><li class="stream-pending stream-pending-list-item[^"]*">item<\/li><\/ul>/)
     assert.doesNotMatch(html, /stream-pending[^>]*>- item/)
     assert.doesNotMatch(html, /<li>item<\/li>/)
   })
@@ -182,7 +182,7 @@ describe('renderStreamingMarkdown (holds unresolved bold)', () => {
 
   it('renders resolved bold on a pending list line without waiting for newline', () => {
     const html = renderStreamingMarkdown('done\n- **MCP support** — notes')
-    assert.match(html, /<div class="stream-pending stream-pending-list-item[^"]*">/)
+    assert.match(html, /<li class="stream-pending stream-pending-list-item[^"]*">/)
     assert.match(html, /<strong>MCP support<\/strong>/)
     assert.doesNotMatch(html, /\*\*/)
     assert.doesNotMatch(html, /stream-pending[^>]*>-/)
@@ -192,7 +192,7 @@ describe('renderStreamingMarkdown (holds unresolved bold)', () => {
   it('keeps earlier list items committed while the next item streams', () => {
     const html = renderStreamingMarkdown('- item one\n- item two')
     assert.match(html, /<li>item one<\/li>/)
-    assert.match(html, /<div class="stream-pending stream-pending-list-item[^"]*">item two<\/div>/)
+    assert.match(html, /<ul><li>item one<\/li><li class="stream-pending stream-pending-list-item[^"]*">item two<\/li><\/ul>/)
     assert.doesNotMatch(html, /stream-pending[^>]*>-/)
   })
 
@@ -234,10 +234,10 @@ describe('renderStreamingMarkdown (holds unresolved bold)', () => {
 
   it('still renders valid nested sublists at 0-3 spaces as list items', () => {
     const html = renderStreamingMarkdown('- parent\n  - child item')
-    assert.match(html, /<li>parent<\/li>/)
+    assert.match(html, /<li>parent<ul>/)
     assert.match(
       html,
-      /<div class="stream-pending stream-pending-list-item[^"]*">child item<\/div>/,
+      /<ul><li>parent<ul><li class="stream-pending stream-pending-list-item[^"]*">child item<\/li><\/ul><\/li><\/ul>/,
     )
   })
 
