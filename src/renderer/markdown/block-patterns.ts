@@ -49,3 +49,18 @@ export function parseFenceSlice(slice: string): { lang: string; code: string } {
   const code = lines.slice(1, closeIndex).join('\n')
   return { lang, code }
 }
+
+/** Parse an open (still streaming) fenced block — body includes all lines after the opener. */
+export function parseOpenFenceContent(source: string): { lang: string; code: string } | null {
+  const lines = source.split('\n')
+  const open = lines[0] ?? ''
+  const openMatch = open.match(FENCE_OPEN_RE)
+  if (!openMatch?.[1]) return null
+  const lang = (openMatch[2] ?? '').trim()
+  let bodyLines = lines.slice(1)
+  const last = bodyLines.at(-1) ?? ''
+  if (bodyLines.length > 0 && fenceCloses(openMatch[1], openMatch[1].length, last)) {
+    bodyLines = bodyLines.slice(0, -1)
+  }
+  return { lang, code: bodyLines.join('\n') }
+}

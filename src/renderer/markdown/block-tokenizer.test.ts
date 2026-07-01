@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   completeEndsInOpenTable,
+  getIncompleteFenceSource,
   isAmbiguousBlockLine,
   pendingLineBelongsInTable,
   scanLines,
@@ -151,6 +152,11 @@ describe('splitForStreaming (tokenizer #475)', () => {
       complete: 'intro\n',
       pending: '```ts\ncode',
     })
+  })
+
+  it('returns incomplete fence source while the closing fence is missing', () => {
+    const source = 'intro\n```yaml\nstatic_resources:\n'
+    assert.equal(getIncompleteFenceSource(source), '```yaml\nstatic_resources:\n')
   })
 
   it('holds unresolved inline emphasis inside an open paragraph', () => {
