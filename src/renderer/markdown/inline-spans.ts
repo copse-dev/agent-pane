@@ -2,18 +2,17 @@ import { escapeHtml } from './escape.ts'
 import { renderEmphasisOutsideInlineHtml } from './inline-emphasis.ts'
 
 /**
- * Inline span markup (code, links, bold, italic) for a single line/segment of
+ * Inline span markup (code, emphasis, links) for a single line/segment of
  * already-escaped text. Shared by block rendering and per-cell table rendering
  * so emphasis cannot pair across cell boundaries (#469).
  */
 export function renderInlineSpans(t: string): string {
   t = renderInlineCode(t)
+  t = renderStrongAroundCode(t)
+  t = renderStrongWithInlineHtml(t)
+  t = renderEmphasisOutsideInlineHtml(t)
   t = renderMarkdownLinks(t)
   t = renderBareHttpLinks(t)
-  t = t.replace(/\*\*(<code>[\s\S]*?<\/code>)\*\*/g, '<strong>$1</strong>')
-  t = renderBoldAroundInlineHtml(t)
-  t = renderItalicAroundInlineHtml(t)
-  t = renderEmphasisOutsideInlineHtml(t)
   return t
 }
 
@@ -69,17 +68,21 @@ function renderInlineCode(text: string): string {
   return out
 }
 
-function renderBoldAroundInlineHtml(text: string): string {
-  return text.replace(
-    /\*\*(?=\S)([^*\n]*<(?:code|a|img)\b[\s\S]*?(?:<\/(?:code|a)>|>)[^*\n]*)\*\*/g,
-    '<strong>$1</strong>',
-  )
+/** Delimiter stack cannot pair `**` across a `<code>` shield. */
+function renderStrongAroundCode(text: string): string {
+  return text.replace(/\*\*(<code>[\s\S]*?<\/code>)\*\*/g, '<strong>$1</strong>')
 }
 
-function renderItalicAroundInlineHtml(text: string): string {
-  return text
-    .replace(/_([^_\n]*<(?:a|img)\b[\s\S]*?(?:<\/a>|>)[^_\n]*)_/g, '<em>$1</em>')
-    .replace(/(?<!\*)\*([^*\n]*<(?:a|img)\b[\s\S]*?(?:<\/a>|>)[^*\n]*)\*(?!\*)/g, '<em>$1</em>')
+/**
+ * Strong spans that contain rendered inline HTML with trailing prose. The delimiter
+ * stack cannot pair `**` across shields; used for agent captions like
+ * `**`file.png` — description**`.
+ */
+function renderStrongWithInlineHtml(text: string): string {
+  return text.replace(
+    /\*\*(?=\S)([^*\n]*<(?:code|a|img)\b[\s\S]*?(?:<\/(?:code|a)>|<img\b[^>]*>)[^*\n]*)\*\*/g,
+    '<strong>$1</strong>',
+  )
 }
 
 function safeLinkHref(raw: string): string | null {

@@ -1,12 +1,7 @@
 /**
  * Streaming split driven by block + inline tokenizer state (#475).
  */
-import {
-  isAmbiguousBlockLine,
-  streamingHoldStart,
-  tokenizeBlocks,
-  type BlockToken,
-} from './block-tokenizer.ts'
+import { streamingHoldStart, tokenizeBlocks, type BlockToken } from './block-tokenizer.ts'
 import { emphasisSpansNewline, pendingHoldIndex } from './inline-emphasis.ts'
 
 export interface StreamingSplit {
@@ -68,10 +63,4 @@ export function splitForStreaming(content: string): StreamingSplit {
     complete: content.slice(0, holdStart),
     pending: content.slice(holdStart),
   }
-}
-
-/** Whether the pending tail should stay escaped plain text (block not yet safe). */
-export function pendingShouldStayPlain(pending: string): boolean {
-  if (!pending) return false
-  return isAmbiguousBlockLine(pending)
 }

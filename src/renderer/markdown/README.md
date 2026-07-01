@@ -22,13 +22,12 @@ When extending the renderer or its CSS, preserve these rules:
 - **Valid block HTML.** Block elements (`<ul>`, `<ol>`, `<h3>`, `<h4>`, `<pre>`, `<table>`,
   `<hr>`) must never end up inside `<p>`. Mixed single-newline blocks (heading → subheading → list)
   are common in LLM output; split at block boundaries before wrapping paragraphs.
-- **Inline formatting order.** Fenced code → inline code → bold → italic. Italic (`_` and `*`) runs
-  only outside `<code>` spans and must not match across newlines (or `* list` lines get eaten).
-  Consequence: emphasis whose opener and closer are split across a soft line break is resolved
-  via the delimiter-stack in `inline-emphasis.ts` when the segment includes an internal newline.
+- **Inline formatting order.** Fenced code → inline code → emphasis (delimiter stack) →
+  markdown links → bare HTTP autolinks. Emphasis runs before links so `*foo [bar](/url)*`
+  resolves correctly; link labels may already contain `<em>` / `<strong>` from that pass.
   See #475 and [`docs/plans/markdown-renderer-hardening.md`](../../../docs/plans/markdown-renderer-hardening.md).
-- **Agent-output shapes.** Support `-`, `*`, and `+` list markers. Map `#`/`##` to `<h4>`, `###` to
-  `<h3>` — h1/h2 are intentionally too large for the narrow pane.
+- **Agent-output shapes.** Support `-`, `*`, and `+` list markers. ATX `#` levels map to
+  matching `<h1>`–`<h6>` tags (see `render-blocks.ts`).
 - **Streaming hold.** Incomplete block starts (headings, fences) stay hidden in the pending
   tail. Forming GFM tables forward-pass into `.stream-forming` (`<table class="stream-table-forming">`)
   as header/separator/body cells arrive; committed tables append body rows via
@@ -90,7 +89,7 @@ this repo — comparing output to the expected HTML after the spec's own normali
 rest only** — streaming output intentionally differs (the live tail is escaped
 plain text) and is not conformance-tested.
 
-The renderer is deliberately app-specific (`#`→`<h4>`, decorated links,
+The renderer is deliberately app-specific (decorated links,
 highlighted code), so it is **not** expected to fully conform. The set of examples
 we currently satisfy is pinned in `tests/fixtures/commonmark/conformance-baseline.json`
 and the test fails if it changes:
