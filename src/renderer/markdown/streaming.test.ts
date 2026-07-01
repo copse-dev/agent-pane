@@ -153,7 +153,7 @@ describe('splitForStreaming (block-granularity emphasis)', () => {
   it('commits resolved emphasis across soft breaks once closed', () => {
     const html = renderStreamingMarkdown('intro **bold\ntext**')
     assert.match(html, /<span class="stream-pending">/)
-    assert.match(html, /<strong>bold<br>text<\/strong>/)
+    assert.match(html, /<strong>bold text<\/strong>/)
     assert.doesNotMatch(html, /\*\*/)
   })
 

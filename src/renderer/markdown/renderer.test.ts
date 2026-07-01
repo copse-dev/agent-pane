@@ -38,9 +38,12 @@ describe('renderMarkdown', () => {
     assert.match(html, /<ul><li>alpha<\/li><li>beta<\/li><\/ul>/)
   })
 
-  it('groups unordered list items separated by blank lines into one list', () => {
+  it('groups unordered list items separated by blank lines into one loose list (#314)', () => {
     const html = renderMarkdown('- alpha\n\n- beta\n\n- gamma')
-    assert.match(html, /<ul><li>alpha<\/li><li>beta<\/li><li>gamma<\/li><\/ul>/)
+    assert.match(
+      html,
+      /<ul><li><p>alpha<\/p><\/li><li><p>beta<\/p><\/li><li><p>gamma<\/p><\/li><\/ul>/,
+    )
     assert.doesNotMatch(html, /<\/ul>\s*<ul>/)
   })
 
@@ -111,9 +114,12 @@ describe('renderMarkdown', () => {
     assert.match(html, /<ol>/)
     assert.match(
       html,
-      /<li><code>src\/main\/foo\.ts<\/code><br><br>Introduces <strong>foo<\/strong> handling\.<\/li>/,
+      /<li><p><code>src\/main\/foo\.ts<\/code><\/p><p>Introduces <strong>foo<\/strong> handling\.<\/p><\/li>/,
     )
-    assert.match(html, /<li><code>src\/main\/bar\.ts<\/code><br><br>Worker thread for bar\.<\/li>/)
+    assert.match(
+      html,
+      /<li><p><code>src\/main\/bar\.ts<\/code><\/p><p>Worker thread for bar\.<\/p><\/li>/,
+    )
     assert.doesNotMatch(html, /<p>1\./)
     assert.doesNotMatch(html, /<p>2\./)
   })
