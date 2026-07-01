@@ -21,6 +21,20 @@ export function splitAtLastNewline(content: string): StreamingSplit {
   }
 }
 
+function splitOpenBlockAtLastNewline(
+  block: BlockToken,
+  content: string,
+  extras: Partial<Omit<StreamingSplit, 'complete' | 'pending'>> = {},
+): StreamingSplit {
+  const openText = content.slice(block.start)
+  const { complete: lineComplete, pending } = splitAtLastNewline(openText)
+  return {
+    complete: content.slice(0, block.start) + lineComplete,
+    pending,
+    ...extras,
+  }
+}
+
 function splitOpenParagraph(block: BlockToken, content: string): StreamingSplit {
   const openText = content.slice(block.start)
   const inlineHold = pendingHoldIndex(openText)
@@ -37,11 +51,7 @@ function splitOpenParagraph(block: BlockToken, content: string): StreamingSplit 
     return { complete: content.slice(0, cut), pending: content.slice(cut) }
   }
 
-  const { complete: lineComplete, pending } = splitAtLastNewline(openText)
-  return {
-    complete: content.slice(0, block.start) + lineComplete,
-    pending,
-  }
+  return splitOpenBlockAtLastNewline(block, content)
 }
 
 function openListItemFirstLine(block: BlockToken, content: string): string {
@@ -51,13 +61,9 @@ function openListItemFirstLine(block: BlockToken, content: string): string {
 }
 
 function splitOpenListItem(block: BlockToken, content: string): StreamingSplit {
-  const openText = content.slice(block.start)
-  const { complete: lineComplete, pending } = splitAtLastNewline(openText)
-  return {
-    complete: content.slice(0, block.start) + lineComplete,
-    pending,
+  return splitOpenBlockAtLastNewline(block, content, {
     openListItemFirstLine: openListItemFirstLine(block, content),
-  }
+  })
 }
 
 function splitOpenTable(block: BlockToken, content: string): StreamingSplit {
@@ -81,11 +87,7 @@ function splitOpenTable(block: BlockToken, content: string): StreamingSplit {
     }
   }
 
-  const { complete: lineComplete, pending } = splitAtLastNewline(openText)
-  return {
-    complete: content.slice(0, block.start) + lineComplete,
-    pending,
-  }
+  return splitOpenBlockAtLastNewline(block, content)
 }
 
 /**
