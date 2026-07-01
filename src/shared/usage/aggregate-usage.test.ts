@@ -25,6 +25,28 @@ function event(
 }
 
 describe('aggregate usage', () => {
+  it('flags a model row as estimated when any contributing event was estimated', () => {
+    const summary = buildUsageSummary(
+      [
+        event({ model: 'acp:cursor#auto', inputTokens: 200, outputTokens: 40, estimated: true }),
+        event({ model: 'claude-sonnet-4-6', inputTokens: 100, outputTokens: 10 }),
+      ],
+      [],
+      NOW,
+    )
+    const acp = summary.day.cloudModels.find((row) => row.model === 'acp:cursor#auto')
+    const claude = summary.day.cloudModels.find((row) => row.model === 'claude-sonnet-4-6')
+    assert.equal(acp?.estimatedTokens, true)
+    assert.equal(claude?.estimatedTokens, undefined)
+  })
+
+  it('round-trips the estimated flag through parseUsageEvents', () => {
+    const [parsed] = parseUsageEvents([
+      { at: NOW, model: 'acp:cursor', source: 'agent', inputTokens: 5, outputTokens: 1, estimated: true },
+    ])
+    assert.equal(parsed?.estimated, true)
+  })
+
   it('mergeUsageByModel accumulates cache fields', () => {
     const byModel = mergeUsageByModel({}, 'claude-sonnet-4-6', {
       inputTokens: 100,

@@ -11,6 +11,7 @@ export const usageRecordSchema = z.object({
   projectId: z.string().min(1).max(128).optional(),
   threadId: z.string().min(1).max(128).optional(),
   at: z.number().optional(),
+  estimated: z.boolean().optional(),
 })
 
 export function parseUsageRecordInput(raw: unknown): UsageRecordInput {
@@ -27,5 +28,6 @@ export function parseUsageRecordInput(raw: unknown): UsageRecordInput {
     ...(parsed.projectId !== undefined ? { projectId: parsed.projectId } : {}),
     ...(parsed.threadId !== undefined ? { threadId: parsed.threadId } : {}),
     ...(parsed.at !== undefined ? { at: parsed.at } : {}),
+    ...(parsed.estimated !== undefined ? { estimated: parsed.estimated } : {}),
   }
 }

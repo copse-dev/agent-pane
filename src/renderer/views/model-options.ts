@@ -21,7 +21,7 @@ import {
   REMOTE_AGENT_MODEL_PREFIX,
   parseRemoteAgentModel,
 } from '@shared/remote-agent.ts'
-import { ACP_MODEL_PREFIX, acpModelValue, parseAcpModel } from '@shared/acp.ts'
+import { ACP_MODEL_PREFIX, acpGroupLabel, acpModelValue, parseAcpModel } from '@shared/acp.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { clear } from '../dom/helpers.ts'
 
@@ -60,9 +60,25 @@ async function acpAgentOptions(api: ApiClient): Promise<ModelOption[]> {
   } catch {
     /* none configured */
   }
-  return agents
-    .filter((agent) => agent.enabled)
-    .map((agent) => ({ value: acpModelValue(agent.id), label: agent.title, group: ACP_GROUP }))
+  const options: ModelOption[] = []
+  for (const agent of agents.filter((agent) => agent.enabled)) {
+    // Each agent gets its own heading ("<Title> Client (ACP)"), so models list
+    // bare underneath without a redundant "<Title> —" prefix.
+    const group = acpGroupLabel(agent.title)
+    const models = agent.availableModels ?? []
+    if (models.length > 0) {
+      // The agent exposes a model selector: list only its models (the bare
+      // "agent default" entry is dropped — it's redundant and confusing).
+      for (const model of models) {
+        options.push({ value: acpModelValue(agent.id, model.value), label: model.label, group })
+      }
+    } else {
+      // No discovered models (never detected, or the agent has a fixed model):
+      // fall back to a single entry that routes to the agent's own default.
+      options.push({ value: acpModelValue(agent.id), label: agent.title, group })
+    }
+  }
+  return options
 }
 
 // OpenRouter's free, tool-capable models fetched live from its catalog, plus any

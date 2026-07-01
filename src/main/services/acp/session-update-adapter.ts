@@ -53,7 +53,11 @@ export function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk |
     case 'tool_call':
       return {
         type: 'tool_call',
-        toolCall: { id: update.toolCallId, name: update.title, args: update.rawInput ?? {} },
+        toolCall: {
+          id: update.toolCallId,
+          name: unwrapInlineCode(update.title),
+          args: update.rawInput ?? {},
+        },
       }
     case 'tool_call_update': {
       // Only surface terminal states; intermediate progress has no chunk.
@@ -68,6 +72,23 @@ export function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk |
     default:
       return null
   }
+}
+
+/**
+ * Strip surrounding Markdown code punctuation from a string. External ACP agents
+ * (Cursor, Claude Code) send tool-call titles as inline code — e.g.
+ * `` `git diff --stat` `` or a fenced block — which renders as literal backticks
+ * in Copse's plain-text tool cards and approval prompts. We unwrap a balanced
+ * leading/trailing backtick run (or a ```` ``` ```` fence) but leave titles with
+ * only mid-string code (`run `x` now`) untouched.
+ */
+export function unwrapInlineCode(text: string): string {
+  const trimmed = text.trim()
+  const fenced = /^`{3,}[^\n]*\n([\s\S]*?)\n?`{3,}$/.exec(trimmed)
+  if (fenced?.[1] !== undefined) return fenced[1].trim()
+  const inline = /^(`+)([\s\S]+?)\1$/.exec(trimmed)
+  if (inline?.[2] !== undefined && inline[2].trim().length > 0) return inline[2].trim()
+  return trimmed
 }
 
 /** Collect the plain text from a tool call's content blocks. */

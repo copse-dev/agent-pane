@@ -27,6 +27,11 @@ export const acpAgentConfigSchema = z.object({
   command: z.string().min(1).max(4096),
   args: z.array(z.string().max(4096)).max(64).optional(),
   env: z.record(z.string().max(256), z.string().max(8192)).optional(),
+  model: z.string().min(1).max(512).optional(),
+  availableModels: z
+    .array(z.object({ value: z.string().min(1).max(512), label: z.string().min(1).max(256) }))
+    .max(256)
+    .optional(),
   enabled: z.boolean(),
 })
 

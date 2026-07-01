@@ -23,6 +23,7 @@ import type {
   StoredExtraProvider,
 } from '@shared/llm/extra-providers.ts'
 import type { DetectedAcpAgent } from '@shared/acp-known-agents.ts'
+import type { AcpModelSelector, AcpAutoSetupResult } from '@shared/types/acp.ts'
 
 export type { DetectedAcpAgent }
 
@@ -186,6 +187,17 @@ export interface ApiClient {
   acp: {
     /** Detect known ACP agents installed/running on this device (for the Settings panel). */
     detectAgents: () => Promise<DetectedAcpAgent[]>
+    /**
+     * Probe a configured agent for the models it offers (spawns it, opens a
+     * throwaway session). `null` when the agent exposes no model selector.
+     */
+    listModels: (agentId: string) => Promise<AcpModelSelector | null>
+    /**
+     * "Just works" setup for the curated presets (Claude, Cursor): detect
+     * clients, Socket-Firewall-install missing npm adapters, register + detect
+     * models. Safe to call on every ACP settings-tab open (idempotent).
+     */
+    autoSetup: () => Promise<AcpAutoSetupResult>
   }
   menu: {
     onSettings: (handler: () => void) => () => void

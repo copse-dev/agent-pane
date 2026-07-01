@@ -12,12 +12,16 @@ import type {
 } from '@agentclientprotocol/sdk'
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
 import { promptPayloadFromUserContent } from '@shared/remote-agent-stream.ts'
+import { acpModelValue } from '@shared/acp.ts'
 import {
+  listAcpAgentModels,
   runAcpAgentPrompt,
   type AcpAgentSpawnConfig,
   type AcpClientHandlers,
+  type AcpModelSelector,
 } from './acp-client.ts'
 import { getAcpAgent } from './acp-agent-registry.ts'
+import { unwrapInlineCode } from './session-update-adapter.ts'
 import { requestApproval } from '../approval.ts'
 import { awaitStagedDiffDecision, stageDiff } from '../diff-queue.ts'
 import { detectLanguage } from '../language.ts'
@@ -52,11 +56,49 @@ export interface RunAcpAgentOptions {
   priorMessages: LLMMessage[]
   signal: AbortSignal
   onChunk: (chunk: StreamChunk) => void
+  /**
+   * Model chosen in the picker (the `#<model>` half of `acp:<id>#<model>`).
+   * Overrides the agent config's default `model` for this turn.
+   */
+  model?: string
 }
 
 export interface RunAcpAgentResult {
   stopReason: StopReason
   messages: LLMMessage[]
+  /** Turn token usage the agent reported (ACP `PromptResponse.usage`), if any. */
+  usage: { inputTokens: number; outputTokens: number }
+}
+
+/** Matches the ~4 chars/token heuristic used across the app (trim-history.ts). */
+const CHARS_PER_TOKEN = 4
+
+export interface AcpTurnUsage {
+  inputTokens: number
+  outputTokens: number
+  /** True when counts were estimated locally because the agent didn't report usage. */
+  estimated: boolean
+}
+
+/**
+ * Resolve a turn's token usage: use the agent's reported `PromptResponse.usage`
+ * when it has any tokens, else fall back to a ~4 chars/token estimate of the
+ * prompt we sent and the text we received (flagged `estimated`). Pure, so the
+ * fallback arithmetic is unit-tested without spawning an agent.
+ */
+export function acpTurnUsage(
+  reported: { inputTokens?: number | null; outputTokens?: number | null } | null | undefined,
+  promptText: string,
+  responseText: string,
+): AcpTurnUsage {
+  const inputTokens = reported?.inputTokens ?? 0
+  const outputTokens = reported?.outputTokens ?? 0
+  if (inputTokens || outputTokens) return { inputTokens, outputTokens, estimated: false }
+  return {
+    inputTokens: Math.ceil(promptText.length / CHARS_PER_TOKEN),
+    outputTokens: Math.ceil(responseText.length / CHARS_PER_TOKEN),
+    estimated: true,
+  }
 }
 
 export async function runAcpAgentFromSettings(
@@ -79,11 +121,13 @@ export async function runAcpAgentFromSettings(
     throw new Error('ACP agent prompt cannot be empty.')
   }
 
+  const model = options.model ?? agent.model
   const spawnConfig: AcpAgentSpawnConfig = {
     command: agent.command,
     cwd,
     ...(agent.args ? { args: agent.args } : {}),
     ...(agent.env ? { env: agent.env } : {}),
+    ...(model ? { model } : {}),
   }
 
   // Accumulate streamed assistant text so the turn contributes to thread history
@@ -102,12 +146,56 @@ export async function runAcpAgentFromSettings(
     writeTextFile: (req) => writeViaDiffQueue(req, options.signal),
   }
 
-  const { stopReason } = await runAcpAgentPrompt(spawnConfig, prompt, handlers, options.signal)
+  const { stopReason, usage } = await runAcpAgentPrompt(
+    spawnConfig,
+    prompt,
+    handlers,
+    options.signal,
+  )
+
+  // Attribute the external agent's token usage to this thread + model so it shows
+  // in the usage panel, just like the built-in loop. ACP's `PromptResponse.usage`
+  // is optional/experimental (e.g. Cursor's adapter omits it), so when it's absent
+  // we fall back to a local ~4 chars/token estimate of what we sent and received —
+  // flagged `estimated` so the panel can mark it as approximate.
+  const turn = acpTurnUsage(usage, prompt, assistantText)
+  if (turn.inputTokens || turn.outputTokens) {
+    options.onChunk({
+      type: 'usage',
+      model: acpModelValue(options.agentId, options.model),
+      inputTokens: turn.inputTokens,
+      outputTokens: turn.outputTokens,
+      ...(turn.estimated ? { estimated: true } : {}),
+      ...(usage?.cachedReadTokens != null ? { cacheReadTokens: usage.cachedReadTokens } : {}),
+      ...(usage?.cachedWriteTokens != null ? { cacheCreationTokens: usage.cachedWriteTokens } : {}),
+    })
+  }
 
   return {
     stopReason,
     messages: assistantText ? [{ role: 'assistant', content: assistantText }] : [],
+    usage: { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens },
   }
+}
+
+/**
+ * Discover the models a configured ACP agent offers (for the settings picker).
+ * Resolves the agent + workspace, then probes it via {@link listAcpAgentModels}.
+ * Returns `null` when the agent is unknown/disabled or exposes no model selector.
+ */
+export async function listAcpModelsForAgent(agentId: string): Promise<AcpModelSelector | null> {
+  const agent = getAcpAgent(agentId)
+  if (!agent) return null
+  const cwd = getActiveProjectRoot() ?? getWorkspaceRoot()
+  if (!cwd) {
+    throw new Error('Open a folder before detecting an ACP agent’s models.')
+  }
+  return listAcpAgentModels({
+    command: agent.command,
+    cwd,
+    ...(agent.args ? { args: agent.args } : {}),
+    ...(agent.env ? { env: agent.env } : {}),
+  })
 }
 
 /**
@@ -120,7 +208,7 @@ async function respondToPermission(
   agentTitle: string,
   req: RequestPermissionRequest,
 ): Promise<RequestPermissionResponse> {
-  const title = req.toolCall.title ?? 'tool call'
+  const title = req.toolCall.title ? unwrapInlineCode(req.toolCall.title) : 'tool call'
   const { approved } = await requestApproval({
     title: `${agentTitle}: ${title}`,
     body: formatPermissionBody(req),
@@ -160,15 +248,16 @@ function pickPermissionOption(
 }
 
 function formatPermissionBody(req: RequestPermissionRequest): string {
+  const fallbackTitle = req.toolCall.title ? unwrapInlineCode(req.toolCall.title) : 'Run this tool call?'
   const input = req.toolCall.rawInput
-  if (input === undefined || input === null) return req.toolCall.title ?? 'Run this tool call?'
+  if (input === undefined || input === null) return fallbackTitle
   if (typeof input === 'string') return input
   try {
     return JSON.stringify(input, null, 2)
   } catch {
     // Non-serializable input (e.g. a circular structure); the title is enough
     // for the user to make an approval decision.
-    return req.toolCall.title ?? 'Run this tool call?'
+    return fallbackTitle
   }
 }
 
