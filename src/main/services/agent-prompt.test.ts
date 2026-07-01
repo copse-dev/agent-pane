@@ -14,6 +14,7 @@ describe('agent-prompt', () => {
       assert.match(prompt, /\{SKILLS_TOOLS_LINE\}/)
       assert.match(prompt, /\{WORKSPACE_ROOT\}/)
       assert.match(prompt, /git_status: Show working tree status/)
+      assert.match(prompt, /git_show: Show a file's contents at a commit\/ref/)
       assert.match(prompt, /gh_pr_list: List pull requests/)
       assert.match(prompt, /update_todos: Create or update a structured multi-step plan/)
     }

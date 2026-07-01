@@ -100,6 +100,8 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   okfMemoriesEnabled: z.boolean(),
   longHorizonTasksEnabled: z.boolean(),
   modelClassifierEnabled: z.boolean(),
+  advisorStrategyEnabled: z.boolean(),
+  advisorModel: z.string().max(256),
   roadmapPlansEnabled: z.boolean(),
   piiRedactionEnabled: z.boolean(),
   customInstructions: z.string().max(8192),
