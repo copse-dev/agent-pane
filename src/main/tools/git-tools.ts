@@ -5,6 +5,7 @@ import {
   commitWithAttribution,
   getGitDiffText,
   getGitLogText,
+  getGitShowText,
   getGitStatusText,
 } from '../services/git-service.ts'
 import { resolveWorkspacePath } from '../services/workspace.ts'
@@ -72,6 +73,29 @@ export const gitCommitTool = defineTool({
     const threadId = getActiveRunThread()
     const models = threadId ? getThreadModels(threadId) : []
     return commitWithAttribution(message, models, stage_all)
+  },
+})
+
+export const gitShowTool = defineTool({
+  name: 'git_show',
+  description:
+    "Show a file's contents at a specific commit/ref, or view a commit (message + diff). Read-only and scoped to the workspace.",
+  parameters: z.object({
+    ref: z
+      .string()
+      .min(1)
+      .describe('Commit, tag, or branch to show (e.g. HEAD, HEAD~2, a branch name, or a SHA).'),
+    path: z
+      .string()
+      .optional()
+      .describe(
+        "File path relative to workspace root. When set, shows that file's contents at `ref`. Omit to show the whole commit (message + diff), limited to the workspace.",
+      ),
+  }),
+  execute: async ({ ref, path }) => {
+    const valid = validateGitPath(path)
+    if (!valid.ok) return valid.error
+    return getGitShowText(ref, path)
   },
 })
 

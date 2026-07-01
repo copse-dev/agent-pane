@@ -46,6 +46,7 @@ import { formatReadFileLimitHint } from '@shared/agent/read-file-limits.ts'
 import { setExploreSubagentContext } from './explore-subagent-runner.ts'
 import { setCurrentShellTaskId } from './shell-output-context.ts'
 import { setCiInvestigatorContext } from './ci-investigator-runner.ts'
+import { setAdvisorContext, resolveAdvisorModelId } from './advisor-runner.ts'
 import { resetSubagentUsage, getAccumulatedSubagentUsage } from './subagent-usage.ts'
 import { setAgentRunTodoContext, clearAgentRunTodos, getAgentRunTodos } from './agent-run-todos.ts'
 import {
@@ -458,6 +459,21 @@ export async function runAgent(
                 return await registry.execute(name, args, signal)
               } finally {
                 setCiInvestigatorContext(null)
+              }
+            }
+            if (name === 'advisor') {
+              // Client-side advisor: hand the tool the live transcript so it can
+              // forward it to a larger advisor model (issue #566). Mirrors the
+              // native tool's automatic transcript forwarding.
+              setAdvisorContext({
+                advisorModel: resolveAdvisorModelId(),
+                executorModel: model,
+                getTranscript: () => trimmed,
+              })
+              try {
+                return await registry.executeNormalized(name, args, signal)
+              } finally {
+                setAdvisorContext(null)
               }
             }
             if (name === 'run_shell') {
