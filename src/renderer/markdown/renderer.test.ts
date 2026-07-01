@@ -9,9 +9,10 @@ describe('renderMarkdown', () => {
     assert.match(html, /<p>Body text<\/p>/)
   })
 
-  it('converts single newlines inside paragraphs to line breaks', () => {
+  it('preserves single newlines inside paragraphs (CommonMark soft breaks)', () => {
     const html = renderMarkdown('line one\nline two')
-    assert.match(html, /line one<br>line two/)
+    assert.match(html, /line one[\n]line two/)
+    assert.doesNotMatch(html, /line one<br>line two/)
   })
 
   it('preserves blank-line paragraph breaks', () => {
@@ -420,10 +421,10 @@ describe('renderMarkdown', () => {
     assert.doesNotMatch(html, /&gt;/)
   })
 
-  it('renders multi-line blockquotes with a line break', () => {
+  it('renders multi-line blockquotes with a soft line break', () => {
     const html = renderMarkdown('> First line\n> Second line')
     assert.match(html, /<blockquote>/)
-    assert.match(html, /First line<br>Second line/)
+    assert.match(html, /First line[\n]Second line/)
     assert.doesNotMatch(html, /&gt;/)
   })
 
@@ -463,7 +464,7 @@ describe('renderMarkdown', () => {
   it('keeps a lazy continuation line inside the blockquote (no leaked &gt;)', () => {
     const html = renderMarkdown('> line one\nlazy continuation')
     assert.match(html, /<blockquote>/)
-    assert.match(html, /line one<br>lazy continuation/)
+    assert.match(html, /line one[\n]lazy continuation/)
     assert.doesNotMatch(html, /&gt;/)
   })
 

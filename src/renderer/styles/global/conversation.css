@@ -218,6 +218,7 @@
 }
 .message-text p {
   margin: 0;
+  white-space: pre-wrap;
 }
 .message-text p + p,
 .message-text p + ul,
