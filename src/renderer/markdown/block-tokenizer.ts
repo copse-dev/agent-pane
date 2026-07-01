@@ -114,6 +114,18 @@ function isTableRow(line: string): boolean {
   return line.includes('|') && line.trim() !== ''
 }
 
+/** True when a pipe row might be a GFM table row rather than prose metadata. */
+function looksLikeAmbiguousTableRow(line: string): boolean {
+  if (!isTableRow(line)) return false
+  const trimmed = line.trimStart()
+  // RFC / meeting metadata: **Label:** value | **Label:** value
+  if (/\*\*[^*\n]+:\*\*/.test(trimmed)) return false
+  // Models pad prose separators with nbsp entities around pipes.
+  if (/&nbsp;(?:\s|&)*\|(?:\s|&)*&nbsp;/.test(trimmed)) return false
+  if (trimmed.startsWith('|')) return true
+  return splitTableRow(trimmed).length >= 2
+}
+
 /** Separator line still streaming (e.g. `| -` before the full `| - | - |`). */
 function isPartialTableSeparatorLine(line: string): boolean {
   const trimmed = line.trim()
@@ -520,6 +532,6 @@ export function isAmbiguousBlockLine(line: string): boolean {
   if (FENCE_OPEN_RE.test(line)) return true
   if (LIST_ITEM_RE.test(line)) return true
   if (BLOCKQUOTE_RE.test(line)) return true
-  if (isTableRow(line)) return true
+  if (looksLikeAmbiguousTableRow(line)) return true
   return false
 }

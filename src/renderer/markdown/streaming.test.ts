@@ -47,7 +47,7 @@ describe('renderStreamingMarkdown', () => {
     const html = renderStreamingMarkdown(
       'Review intro\n**Recent commits to main (all auto-bump PRs):**',
     )
-    assert.match(html, /<span class="stream-pending">/)
+    assert.match(html, /<span class="stream-pending(?: stream-pending-paragraph)?">/)
     assert.match(html, /<strong>Recent commits to main \(all auto-bump PRs\):<\/strong>/)
     assert.doesNotMatch(html, /\*\*Recent commits/)
   })
@@ -69,7 +69,7 @@ describe('renderStreamingMarkdown', () => {
 
   it('fully escapes the in-progress tail, including & and quotes (#115)', () => {
     const html = renderStreamingMarkdown('done\n<img src=x onerror=alert(1)> "a" & b')
-    assert.match(html, /<span class="stream-pending">/)
+    assert.match(html, /<span class="stream-pending(?: stream-pending-paragraph)?">/)
     assert.doesNotMatch(html, /<img/)
     assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt; &quot;a&quot; &amp; b/)
   })
@@ -85,7 +85,7 @@ describe('renderStreamingMarkdown', () => {
     // keeps the locked-down `remote-artifact-image` form (hydrated post-sanitize)
     // but the dangerous src/onerror payload must never reach innerHTML.
     const html = renderStreamingMarkdown('done\n<img src="artifacts/x.png" onerror="alert(1)">')
-    assert.match(html, /<span class="stream-pending">/)
+    assert.match(html, /<span class="stream-pending(?: stream-pending-paragraph)?">/)
     assert.match(html, /<img class="remote-artifact-image"/)
     assert.doesNotMatch(html, /onerror/)
     assert.doesNotMatch(html, /src=/)
@@ -153,7 +153,7 @@ describe('splitForStreaming (block-granularity emphasis)', () => {
 
   it('commits resolved emphasis across soft breaks once closed', () => {
     const html = renderStreamingMarkdown('intro **bold\ntext**')
-    assert.match(html, /<span class="stream-pending">/)
+    assert.match(html, /<span class="stream-pending(?: stream-pending-paragraph)?">/)
     assert.match(html, /<strong>bold text<\/strong>/)
     assert.doesNotMatch(html, /\*\*/)
   })
