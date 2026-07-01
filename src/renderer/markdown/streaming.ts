@@ -133,8 +133,7 @@ function appendListPendingHtml(
   }
 
   const ordered = pendingListOrderedMarker(pending)
-  const startAttr =
-    ordered !== null && listTag === 'ol' ? ` start="${escapeHtml(ordered)}"` : ''
+  const startAttr = ordered !== null && listTag === 'ol' ? ` start="${escapeHtml(ordered)}"` : ''
   return `${rendered}<${listTag}${startAttr}>${liHtml}</${listTag}>`
 }
 
@@ -185,7 +184,7 @@ function syncListPendingDom(
     const trailing = findTrailingListHost(completedEl, listTag)
     list =
       trailing ??
-      (() => {
+      ((): HTMLElement => {
         const created = document.createElement(listTag)
         const ordered = pendingListOrderedMarker(pending)
         if (ordered !== null && listTag === 'ol') created.setAttribute('start', ordered)
@@ -257,9 +256,7 @@ function blockPendingHtml(
   const tag = blockPendingTag(pending, openListItemFirstLine)
   const innerRaw = wrapBlockPendingInner(pending, pendingInner)
   const inner =
-    tag === 'span' && innerRaw !== '' && !innerRaw.startsWith(' ')
-      ? ` ${innerRaw}`
-      : innerRaw
+    tag === 'span' && innerRaw !== '' && !innerRaw.startsWith(' ') ? ` ${innerRaw}` : innerRaw
   return `<${tag} class="${blockPendingClassName(pending, openListItemFirstLine)}"${blockPendingAttrs(pending)}>${inner}</${tag}>`
 }
 

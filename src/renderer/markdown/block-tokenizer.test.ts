@@ -190,7 +190,9 @@ describe('splitForStreaming (tokenizer #475)', () => {
 
   it('commits finished table body rows while the next row is still streaming', () => {
     assert.deepEqual(
-      splitForStreaming('| Path | Role |\n| - | - |\n| src/ | Application source |\n| tests/e2e/ | WebdriverIO specs |'),
+      splitForStreaming(
+        '| Path | Role |\n| - | - |\n| src/ | Application source |\n| tests/e2e/ | WebdriverIO specs |',
+      ),
       {
         complete: '| Path | Role |\n| - | - |\n| src/ | Application source |\n',
         pending: '| tests/e2e/ | WebdriverIO specs |',

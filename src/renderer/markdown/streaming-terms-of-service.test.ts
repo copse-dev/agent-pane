@@ -13,29 +13,26 @@ import { renderStreamingMarkdown, StreamingMarkdownRenderer } from './streaming.
 const TERMS_PATH = resolve(process.cwd(), 'tests/fixtures/terms-of-service-streaming.md')
 const TERMS = readFileSync(TERMS_PATH, 'utf8')
 
-const SUBSCRIPTION_TABLE_MARKER = '| Feature | Free Plan | Pro Plan | Enterprise Plan |'
+const SUBSCRIPTION_TABLE_MARKER =
+  TERMS.split('\n').find((line) => line.trimStart().startsWith('| Feature')) ?? ''
 const TABLE_SECTION_START = TERMS.indexOf('### 4.1 Subscription Tiers')
 assert.ok(TABLE_SECTION_START >= 0, 'fixture must contain subscription table section')
+assert.ok(
+  SUBSCRIPTION_TABLE_MARKER.length > 0,
+  'fixture must contain subscription table header row',
+)
 
-/** Visible streaming HTML: committed + forming + live tail (matches convergence helper). */
-function extractStreamingDisplay(host: HTMLElement): string {
-  const parts: string[] = []
-  const complete = host.querySelector('.stream-complete')
-  if (complete) parts.push(complete.innerHTML)
-  const forming = host.querySelector('.stream-forming')
-  if (forming instanceof HTMLElement && !forming.hidden) parts.push(forming.innerHTML)
-  const pending = host.querySelector('.stream-pending')
-  if (pending instanceof HTMLElement && !pending.hidden && pending.innerHTML !== '') {
-    parts.push(pending.innerHTML)
-  }
-  return parts.join('')
-}
-
-function streamingDisplayAt(prefix: string): string {
+function streamingHostAt(prefix: string): HTMLElement {
   const host = document.createElement('div')
   const renderer = new StreamingMarkdownRenderer(host)
   renderer.update(prefix)
-  return extractStreamingDisplay(host)
+  return host
+}
+
+function htmlRootAt(prefix: string): HTMLElement {
+  const host = document.createElement('div')
+  host.innerHTML = renderStreamingMarkdown(prefix)
+  return host
 }
 
 /** Table-row-like: starts with | and has at least one more pipe. */
@@ -44,53 +41,66 @@ function looksLikeRawTableRow(text: string): boolean {
   return trimmed.startsWith('|') && trimmed.indexOf('|', 1) !== -1
 }
 
-/**
- * Partial-table anti-patterns seen in the wild: committed table + raw pipe row in
- * inline pending, or pipe rows rendered as prose outside any table cell.
- */
-export function findPartialTableIssues(html: string): string[] {
-  const issues: string[] = []
-  const host = document.createElement('div')
-  host.innerHTML = html
+/** Pipe-delimited row text visible outside any table cell (th/td). */
+function findPipesOutsideTableCells(root: HTMLElement): string | null {
+  if (root.querySelector('table') === null) return null
+  const clone = root.cloneNode(true) as HTMLElement
+  clone.querySelectorAll('td, th').forEach((cell) => {
+    cell.remove()
+  })
+  for (const line of clone.textContent.split('\n')) {
+    if (looksLikeRawTableRow(line)) return line.trim().slice(0, 72)
+  }
+  return null
+}
 
-  for (const el of host.querySelectorAll('span.stream-pending')) {
-    if (el.classList.contains('stream-pending-block')) continue
-    const text = el.textContent ?? ''
+/**
+ * Partial-table anti-patterns: committed table + raw pipe row in visible pending,
+ * pipe rows in prose, or pipe text outside table cells anywhere in the live DOM.
+ */
+export function findPartialTableIssues(root: HTMLElement): string[] {
+  const issues: string[] = []
+
+  const inlinePending = root.querySelector(':scope > span.stream-pending')
+  if (inlinePending instanceof HTMLElement && !inlinePending.hidden) {
+    const text = inlinePending.textContent
     if (looksLikeRawTableRow(text)) {
-      issues.push(`inline .stream-pending with raw table row: ${text.slice(0, 72)}`)
+      issues.push(`visible inline .stream-pending with raw table row: ${text.slice(0, 72)}`)
     }
   }
 
-  const complete = host.querySelector('.stream-complete')
+  const complete = root.querySelector('.stream-complete')
   if (complete) {
     const hasCommittedTable = complete.querySelector('table') !== null
-    for (const p of complete.querySelectorAll('p, div.stream-pending-paragraph')) {
-      const text = p.textContent ?? ''
-      if (hasCommittedTable && looksLikeRawTableRow(text) && (p.textContent?.match(/\|/g)?.length ?? 0) >= 2) {
-        issues.push(`pipe row in prose block while table committed: ${text.slice(0, 72)}`)
+    for (const el of complete.querySelectorAll(
+      'p, div.stream-pending-paragraph, .stream-pending-block',
+    )) {
+      const text = el.textContent
+      if (hasCommittedTable && looksLikeRawTableRow(text)) {
+        issues.push(`pipe row in committed prose while table present: ${text.slice(0, 72)}`)
       }
     }
-  }
 
-  // When a table exists, extra body rows must be tr.stream-pending-row — not duplicated forming-only tables with raw text siblings
-  const tables = host.querySelectorAll('table')
-  if (tables.length > 0) {
-    const orphanPipeText = [...host.querySelectorAll('.stream-complete > *')].filter((el) => {
-      if (!(el instanceof Element)) return false
+    const orphanPipeText = [...complete.children].filter((el) => {
       if (el.tagName === 'TABLE') return false
-      const t = el.textContent ?? ''
-      return looksLikeRawTableRow(t) && t.includes('Plan')
+      const t = el.textContent
+      return looksLikeRawTableRow(t)
     })
     if (orphanPipeText.length > 0) {
       issues.push(`orphan pipe row element sibling to committed table`)
     }
   }
 
+  const outsideCells = findPipesOutsideTableCells(root)
+  if (outsideCells) {
+    issues.push(`pipe row text outside table cells: ${outsideCells}`)
+  }
+
   return issues
 }
 
-function assertNoPartialTables(html: string, label: string): void {
-  const issues = findPartialTableIssues(html)
+function assertNoPartialTables(root: HTMLElement, label: string): void {
+  const issues = findPartialTableIssues(root)
   assert.equal(issues.length, 0, `${label}: ${issues.join('; ')}`)
 }
 
@@ -134,8 +144,8 @@ describe('Terms of Service streaming fixture', () => {
     for (const line of rowLines) {
       const cut = TERMS.indexOf(line) + line.length
       const prefix = TERMS.slice(0, cut)
-      const html = streamingDisplayAt(prefix)
-      assertNoPartialTables(html, `after row "${line.slice(0, 40)}…"`)
+      assertNoPartialTables(streamingHostAt(prefix), `renderer after row "${line.slice(0, 40)}…"`)
+      assertNoPartialTables(htmlRootAt(prefix), `string after row "${line.slice(0, 40)}…"`)
     }
   })
 
@@ -145,18 +155,21 @@ describe('Terms of Service streaming fixture', () => {
     const cuts = streamingCutIndices(TERMS, tableStart - 80, tableEnd + 40)
 
     for (const cut of cuts) {
-      const html = streamingDisplayAt(TERMS.slice(0, cut))
-      assertNoPartialTables(html, `cut=${String(cut)}`)
+      const prefix = TERMS.slice(0, cut)
+      assertNoPartialTables(streamingHostAt(prefix), `renderer cut=${String(cut)}`)
+      assertNoPartialTables(htmlRootAt(prefix), `string cut=${String(cut)}`)
     }
   })
 
   it('never shows partial table artifacts across strided cuts of the full document', () => {
     const stride = 48
     for (let cut = stride; cut <= TERMS.length; cut += stride) {
-      const html = streamingDisplayAt(TERMS.slice(0, cut))
-      assertNoPartialTables(html, `full-doc cut=${String(cut)}`)
+      const prefix = TERMS.slice(0, cut)
+      assertNoPartialTables(streamingHostAt(prefix), `renderer full-doc cut=${String(cut)}`)
+      assertNoPartialTables(htmlRootAt(prefix), `string full-doc cut=${String(cut)}`)
     }
-    assertNoPartialTables(streamingDisplayAt(TERMS), 'full document')
+    assertNoPartialTables(streamingHostAt(TERMS), 'renderer full document')
+    assertNoPartialTables(htmlRootAt(TERMS), 'string full document')
   })
 
   it('renders the committed fee table with all tier columns when complete', () => {
@@ -165,6 +178,21 @@ describe('Terms of Service streaming fixture', () => {
     assert.match(html, /<th>Feature<\/th>/)
     assert.match(html, /<th>Enterprise Plan<\/th>/)
     assert.match(html, /<td>\$19 \/ month<\/td>/)
-    assertNoPartialTables(html, 'complete document')
+    assertNoPartialTables(htmlRootAt(TERMS), 'complete document')
+  })
+
+  it('findPartialTableIssues fails when raw pipe rows leak outside table cells', () => {
+    const host = streamingHostAt(
+      '| Feature | Free Plan | Pro Plan | Enterprise Plan |\n| --- | --- | --- | --- |\n| **Projects** | 1 | 10 | Unlimited |\n| **API Requests** | 1,000',
+    )
+    assertNoPartialTables(host, 'in-progress fee row')
+
+    const pending = host.querySelector(':scope > span.stream-pending')
+    assert.ok(pending instanceof HTMLElement)
+    pending.hidden = false
+    pending.textContent = '| **Support** | Community | Email | Dedicated |'
+    const issues = findPartialTableIssues(host)
+    assert.ok(issues.length > 0, 'must flag visible raw pipe row in inline pending')
+    assert.match(issues.join(' '), /raw table row|outside table cells/)
   })
 })

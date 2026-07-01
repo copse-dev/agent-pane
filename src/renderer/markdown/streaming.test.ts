@@ -38,7 +38,10 @@ describe('renderStreamingMarkdown', () => {
   it('renders completed lines as markdown while the tail streams list body text', () => {
     const html = renderStreamingMarkdown('## Title\n- item')
     assert.match(html, /<h2>Title<\/h2>/)
-    assert.match(html, /<ul><li class="stream-pending stream-pending-list-item[^"]*">item<\/li><\/ul>/)
+    assert.match(
+      html,
+      /<ul><li class="stream-pending stream-pending-list-item[^"]*">item<\/li><\/ul>/,
+    )
     assert.doesNotMatch(html, /stream-pending[^>]*>- item/)
     assert.doesNotMatch(html, /<li>item<\/li>/)
   })
@@ -192,7 +195,10 @@ describe('renderStreamingMarkdown (holds unresolved bold)', () => {
   it('keeps earlier list items committed while the next item streams', () => {
     const html = renderStreamingMarkdown('- item one\n- item two')
     assert.match(html, /<li>item one<\/li>/)
-    assert.match(html, /<ul><li>item one<\/li><li class="stream-pending stream-pending-list-item[^"]*">item two<\/li><\/ul>/)
+    assert.match(
+      html,
+      /<ul><li>item one<\/li><li class="stream-pending stream-pending-list-item[^"]*">item two<\/li><\/ul>/,
+    )
     assert.doesNotMatch(html, /stream-pending[^>]*>-/)
   })
 
@@ -450,16 +456,20 @@ describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
   it('appends a pending body row to a committed table in the incremental renderer', () => {
     const host = document.createElement('div')
     const r = new StreamingMarkdownRenderer(host)
-    r.update('| Path | Role |\n| - | - |\n| src/ | Application source |\n| tests/e2e/ | WebdriverIO specs |')
+    r.update(
+      '| Path | Role |\n| - | - |\n| src/ | Application source |\n| tests/e2e/ | WebdriverIO specs |',
+    )
     const table = host.querySelector('.stream-complete table')
     assert.ok(table instanceof Element && table.tagName === 'TABLE')
     const pendingRow = table.querySelector('tr.stream-pending-row')
     assert.ok(pendingRow instanceof Element && pendingRow.tagName === 'TR')
-    assert.match(pendingRow.textContent ?? '', /tests\/e2e\//)
-    assert.match(pendingRow.textContent ?? '', /WebdriverIO specs/)
+    assert.match(pendingRow.textContent, /tests\/e2e\//)
+    assert.match(pendingRow.textContent, /WebdriverIO specs/)
     const inlinePending = host.querySelector(':scope > span.stream-pending') as HTMLElement
     assert.equal(inlinePending.hidden, true)
-    assert.equal(host.querySelector('.stream-forming')?.hidden, true)
+    const forming = host.querySelector('.stream-forming')
+    assert.ok(forming instanceof HTMLElement)
+    assert.equal(forming.hidden, true)
   })
 
   it('hides the inline pending span when the tail is empty', () => {

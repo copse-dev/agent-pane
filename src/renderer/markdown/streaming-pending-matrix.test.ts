@@ -18,7 +18,10 @@ describe('streaming pending row matrix', () => {
 
   it('unordered list item: hides - marker, uses list-item chrome', () => {
     const html = renderStreamingMarkdown('done\n- item text')
-    assert.match(html, /<ul><li class="stream-pending stream-pending-list-item[^"]*">item text<\/li><\/ul>/)
+    assert.match(
+      html,
+      /<ul><li class="stream-pending stream-pending-list-item[^"]*">item text<\/li><\/ul>/,
+    )
     assert.doesNotMatch(html, />-\s*item/)
   })
 
@@ -49,7 +52,10 @@ describe('streaming pending row matrix', () => {
   it('nested sublist item: indented - marker hidden, top-level list-item chrome', () => {
     const html = renderStreamingMarkdown('- parent\n  - child item')
     assert.match(html, /<li>parent<ul>/)
-    assert.match(html, /<ul><li>parent<ul><li class="stream-pending stream-pending-list-item[^"]*">child item<\/li><\/ul><\/li><\/ul>/)
+    assert.match(
+      html,
+      /<ul><li>parent<ul><li class="stream-pending stream-pending-list-item[^"]*">child item<\/li><\/ul><\/li><\/ul>/,
+    )
     assert.doesNotMatch(html, /stream-pending-list-continuation/)
   })
 
@@ -108,7 +114,9 @@ describe('streaming pending row matrix', () => {
   })
 
   it('nbsp in pending prose: decoded, never literal &nbsp;', () => {
-    const html = renderStreamingMarkdown('done\n**Status:** ok &nbsp;&nbsp;|&nbsp;&nbsp; **Team:** x')
+    const html = renderStreamingMarkdown(
+      'done\n**Status:** ok &nbsp;&nbsp;|&nbsp;&nbsp; **Team:** x',
+    )
     const div = document.createElement('div')
     div.innerHTML = html
     assert.doesNotMatch(html, /&amp;nbsp;/)
@@ -135,9 +143,9 @@ describe('streaming pending row matrix', () => {
     const r = new StreamingMarkdownRenderer(host)
     r.update('done\n- item')
     const block = host.querySelector('.stream-pending-block') as HTMLElement
-    assert.equal(block?.tagName, 'LI')
-    assert.ok(block?.classList.contains('stream-pending-list-item'))
-    assert.equal(block?.parentElement?.tagName, 'UL')
+    assert.equal(block.tagName, 'LI')
+    assert.ok(block.classList.contains('stream-pending-list-item'))
+    assert.equal(block.parentElement?.tagName, 'UL')
   })
 
   it('incremental renderer: blockquote pending uses blockquote element with p wrapper', () => {
