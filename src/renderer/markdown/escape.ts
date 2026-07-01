@@ -62,9 +62,34 @@ export function decodeEscapedHref(raw: string): string {
 
 const SAFE_MARKDOWN_ENTITY_RE = /&(?:amp;)?(?:nbsp|#160|#x0*a);/gi
 
+const KNOWN_SAFE_ENTITIES = [
+  '&nbsp;',
+  '&#160;',
+  '&#xa0;',
+  '&amp;nbsp;',
+  '&amp;#160;',
+  '&amp;#xa0;',
+] as const
+
+/** Drop a trailing incomplete safe-entity prefix so streaming never flashes literal `&nbsp`. */
+export function stripIncompleteSafeEntities(text: string): string {
+  const amp = text.lastIndexOf('&')
+  if (amp === -1) return text
+  const suffix = text.slice(amp)
+  if (/^&(?:amp;)?(?:nbsp|#160|#x0*a);$/i.test(suffix)) return text
+  const lower = suffix.toLowerCase()
+  if (
+    KNOWN_SAFE_ENTITIES.some((entity) => entity.startsWith(lower) && lower.length < entity.length)
+  ) {
+    return text.slice(0, amp)
+  }
+  return text
+}
+
 /** Decode a small allowlist of HTML entities models emit in prose (e.g. &nbsp;). */
 export function decodeSafeMarkdownEntities(text: string): string {
-  return text.replace(SAFE_MARKDOWN_ENTITY_RE, (entity) => {
+  const stripped = stripIncompleteSafeEntities(text)
+  return stripped.replace(SAFE_MARKDOWN_ENTITY_RE, (entity) => {
     const lower = entity.toLowerCase()
     if (
       lower === '&nbsp;' ||
