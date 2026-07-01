@@ -42,7 +42,14 @@ describe('aggregate usage', () => {
 
   it('round-trips the estimated flag through parseUsageEvents', () => {
     const [parsed] = parseUsageEvents([
-      { at: NOW, model: 'acp:cursor', source: 'agent', inputTokens: 5, outputTokens: 1, estimated: true },
+      {
+        at: NOW,
+        model: 'acp:cursor',
+        source: 'agent',
+        inputTokens: 5,
+        outputTokens: 1,
+        estimated: true,
+      },
     ])
     assert.equal(parsed?.estimated, true)
   })
