@@ -51,27 +51,27 @@ When extending the renderer or its CSS, preserve these rules:
 
   Pending shapes (`streaming-pending-matrix.test.ts`):
 
-  | While streaming | DOM / class | Raw marker hidden? | Inline MD in tail? |
-  |---|---|---|---|
-  | Prose paragraph | `<p class="stream-pending-paragraph">` | n/a | yes |
-  | `- item` / `1. item` | `<ul>/<ol>` with native `<li class="stream-pending-list-item">` | yes | yes |
-  | Nested `  - item` | nested `<ul>/<ol>` inside open `<li>` | yes | yes |
-  | Lazy list continuation | `<span class="stream-pending-list-continuation">` in open `<li>` | n/a (plain text) | yes |
-  | `### Heading` | `<div class="stream-pending-heading stream-pending-hN">` | yes | yes |
-  | `> quote` | `<blockquote class="stream-pending-blockquote"><p>…</p>` | yes | yes |
-  | `---` | `<span class="stream-pending">` escaped plain text | no | no |
-  | Forming `\| H \|` table | `.stream-forming` + `<th>` | pipes = cell boundaries | per cell |
-  | Pending table body row | `tr.stream-pending-row` + `<td>` | pipes = cell boundaries | per cell |
-  | Open fenced code | `.stream-forming pre.stream-fence-forming` | yes | highlighted |
+  | While streaming         | DOM / class                                                      | Raw marker hidden?      | Inline MD in tail? |
+  | ----------------------- | ---------------------------------------------------------------- | ----------------------- | ------------------ |
+  | Prose paragraph         | `<p class="stream-pending-paragraph">`                           | n/a                     | yes                |
+  | `- item` / `1. item`    | `<ul>/<ol>` with native `<li class="stream-pending-list-item">`  | yes                     | yes                |
+  | Nested `  - item`       | nested `<ul>/<ol>` inside open `<li>`                            | yes                     | yes                |
+  | Lazy list continuation  | `<span class="stream-pending-list-continuation">` in open `<li>` | n/a (plain text)        | yes                |
+  | `### Heading`           | `<div class="stream-pending-heading stream-pending-hN">`         | yes                     | yes                |
+  | `> quote`               | `<blockquote class="stream-pending-blockquote"><p>…</p>`         | yes                     | yes                |
+  | `---`                   | `<span class="stream-pending">` escaped plain text               | no                      | no                 |
+  | Forming `\| H \|` table | `.stream-forming` + `<th>`                                       | pipes = cell boundaries | per cell           |
+  | Pending table body row  | `tr.stream-pending-row` + `<td>`                                 | pipes = cell boundaries | per cell           |
+  | Open fenced code        | `.stream-forming pre.stream-fence-forming`                       | yes                     | highlighted        |
 
 ### Streaming architecture (intentional duplication)
 
 The streaming layer maintains **two parallel emitters** for the same decisions:
 
-| Path | Used by | Updates |
-|---|---|---|
-| String HTML | `renderStreamingMarkdown` | full re-render each token |
-| Incremental DOM | `StreamingMarkdownRenderer` | forward-pass patches |
+| Path            | Used by                     | Updates                   |
+| --------------- | --------------------------- | ------------------------- |
+| String HTML     | `renderStreamingMarkdown`   | full re-render each token |
+| Incremental DOM | `StreamingMarkdownRenderer` | forward-pass patches      |
 
 Shared helpers (`renderStreamingTableCell`, `insertBeforeTrailingListClose`,
 `splitOpenBlockAtLastNewline`, `clearBlockPendingDom`, `blockPendingClassName`, …) hold

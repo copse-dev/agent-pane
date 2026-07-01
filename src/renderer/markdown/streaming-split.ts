@@ -1,7 +1,12 @@
 /**
  * Streaming split driven by block + inline tokenizer state (#475).
  */
-import { streamingHoldStart, TABLE_SEP_RE, tokenizeBlocks, type BlockToken } from './block-tokenizer.ts'
+import {
+  streamingHoldStart,
+  TABLE_SEP_RE,
+  tokenizeBlocks,
+  type BlockToken,
+} from './block-tokenizer.ts'
 import { emphasisSpansNewline, pendingHoldIndex } from './inline-emphasis.ts'
 
 export interface StreamingSplit {

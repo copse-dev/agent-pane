@@ -1,4 +1,9 @@
-import { ATX_HEADING_CAPTURE_RE, BLOCKQUOTE_DETECT_RE, stripAtxClosingHashes, stripBlockquoteMarker } from './block-patterns.ts'
+import {
+  ATX_HEADING_CAPTURE_RE,
+  BLOCKQUOTE_DETECT_RE,
+  stripAtxClosingHashes,
+  stripBlockquoteMarker,
+} from './block-patterns.ts'
 import {
   isAmbiguousBlockLine,
   isLazyListContinuation,

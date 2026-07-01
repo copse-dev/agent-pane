@@ -10,3 +10,4 @@ tests/e2e/electron-shell/.e2e-env.json
 tests/fixtures/git-changes-repo/
 # Generated CommonMark conformance baseline (written by the conformance test).
 tests/fixtures/commonmark/
+tests/fixtures/terms-of-service-streaming.md
