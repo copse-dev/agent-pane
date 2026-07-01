@@ -61,7 +61,9 @@ export function isBlockLevelPending(pending: string, openListItemFirstLine?: str
 
 function blockPendingTag(pending: string, openListItemFirstLine?: string): 'p' | 'div' | 'span' {
   if (isListContinuationPending(pending, openListItemFirstLine)) return 'span'
-  return pendingListMarkerLength(pending) !== null ? 'div' : 'p'
+  if (pendingListMarkerLength(pending) !== null) return 'div'
+  if (pendingAtxHeadingLevel(pending) !== null) return 'div'
+  return 'p'
 }
 
 function blockPendingClassName(pending: string, openListItemFirstLine?: string): string {
@@ -171,8 +173,11 @@ function syncBlockPendingDom(
   }
   el.className = blockPendingClassName(pending, openListItemFirstLine)
   const ordered = pendingListOrderedMarker(pending)
+  const headingLevel = pendingAtxHeadingLevel(pending)
   if (ordered !== null) el.setAttribute('data-ordered-marker', ordered)
   else el.removeAttribute('data-ordered-marker')
+  if (headingLevel !== null) el.setAttribute('data-heading-level', String(headingLevel))
+  else el.removeAttribute('data-heading-level')
   el.innerHTML = pendingInner
 }
 

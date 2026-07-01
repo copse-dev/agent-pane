@@ -306,7 +306,8 @@
 }
 
 .message-text .stream-pending.stream-pending-heading,
-.message-text div.stream-pending-heading {
+.message-text div.stream-pending-heading,
+.message-text p.stream-pending-heading {
   display: block;
   font-weight: 600;
   line-height: 1.35;

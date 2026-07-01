@@ -1,0 +1,121 @@
+import '../../../tests/setup-dom-jsdom.ts'
+import { describe, it } from 'node:test'
+import assert from 'node:assert/strict'
+import { renderStreamingMarkdown } from './streaming.ts'
+import { StreamingMarkdownRenderer } from './streaming.ts'
+
+/**
+ * Reference matrix for every streaming "row" / pending-line shape the renderer
+ * handles. When adding a new pending construct, extend this table and the
+ * README streaming-hold section.
+ */
+describe('streaming pending row matrix', () => {
+  it('paragraph: block pending with inline markdown, no raw markup', () => {
+    const html = renderStreamingMarkdown('done\n**bold** tail')
+    assert.match(html, /<p class="stream-pending stream-pending-paragraph[^"]*">/)
+    assert.match(html, /<strong>bold<\/strong> tail/)
+  })
+
+  it('unordered list item: hides - marker, uses list-item chrome', () => {
+    const html = renderStreamingMarkdown('done\n- item text')
+    assert.match(html, /<div class="stream-pending stream-pending-list-item[^"]*">item text<\/div>/)
+    assert.doesNotMatch(html, />-\s*item/)
+  })
+
+  it('ordered list item: hides 1. marker, exposes data-ordered-marker', () => {
+    const html = renderStreamingMarkdown('done\n1. first step')
+    assert.match(html, /stream-pending-ordered-item/)
+    assert.match(html, /data-ordered-marker="1"/)
+    assert.match(html, />first step</)
+    assert.doesNotMatch(html, />1\.\s/)
+  })
+
+  it('ATX heading: hides # run, uses heading chrome per level', () => {
+    const html = renderStreamingMarkdown('## Done\n\n### Section title')
+    assert.match(html, /<h2>Done<\/h2>/)
+    assert.match(
+      html,
+      /<div class="stream-pending stream-pending-heading stream-pending-h3[^"]*" data-heading-level="3">Section title<\/div>/,
+    )
+    assert.doesNotMatch(html, />###\s/)
+  })
+
+  it('incomplete ATX heading marker: hidden until title text follows', () => {
+    const html = renderStreamingMarkdown('## Done\n\n###')
+    assert.doesNotMatch(html, /stream-pending-heading/)
+    assert.doesNotMatch(html, />###/)
+  })
+
+  it('nested sublist item: indented - marker hidden, top-level list-item chrome', () => {
+    const html = renderStreamingMarkdown('- parent\n  - child item')
+    assert.match(html, /<li>parent<\/li>/)
+    assert.match(html, /<div class="stream-pending stream-pending-list-item[^"]*">child item<\/div>/)
+    assert.doesNotMatch(html, /stream-pending-list-continuation/)
+  })
+
+  it('lazy list continuation: plain text inside open li without fake bullet row', () => {
+    const html = renderStreamingMarkdown('- parent\n  continued text')
+    assert.match(html, /stream-pending-list-continuation/)
+    assert.match(html, /continued text/)
+    assert.doesNotMatch(html, /stream-pending-list-item[^"]*">continued/)
+  })
+
+  it('thematic break: escaped plain text until line completes', () => {
+    const html = renderStreamingMarkdown('done\n---')
+    assert.match(html, /<span class="stream-pending">---<\/span>/)
+    assert.doesNotMatch(html, /<hr>/)
+  })
+
+  it('blockquote: escaped plain text with > marker until line completes', () => {
+    const html = renderStreamingMarkdown('done\n> quoted text')
+    assert.match(html, /<span class="stream-pending">&gt; quoted text<\/span>/)
+    assert.doesNotMatch(html, /<blockquote>/)
+  })
+
+  it('forming table header row: th cells with inline markdown, no raw pipes in cells', () => {
+    const html = renderStreamingMarkdown('intro\n| **A** | `code` |')
+    assert.match(html, /<table class="stream-table-forming">/)
+    assert.match(html, /<th><strong>A<\/strong><\/th>/)
+    assert.match(html, /<th><code>code<\/code><\/th>/)
+    assert.doesNotMatch(html, /stream-pending-list-item/)
+  })
+
+  it('forming table body row: tr.stream-pending-row with parsed cells', () => {
+    const html = renderStreamingMarkdown('| H1 | H2 |\n| - | - |\n| **x** | y')
+    assert.match(html, /<tr class="stream-pending-row">/)
+    assert.match(html, /<td><strong>x<\/strong><\/td>/)
+    assert.match(html, /<td>y<\/td>/)
+  })
+
+  it('nbsp in pending prose: decoded, never literal &nbsp;', () => {
+    const html = renderStreamingMarkdown('done\n**Status:** ok &nbsp;&nbsp;|&nbsp;&nbsp; **Team:** x')
+    const div = document.createElement('div')
+    div.innerHTML = html
+    assert.doesNotMatch(html, /&amp;nbsp;/)
+    assert.doesNotMatch(div.textContent, /&nbsp;/)
+  })
+
+  it('incremental renderer: heading pending is a div with data-heading-level', () => {
+    const host = document.createElement('div')
+    const r = new StreamingMarkdownRenderer(host)
+    r.update('## Done\n\n### Section title')
+    const block = host.querySelector('.stream-pending-block') as HTMLElement
+    assert.ok(block)
+    assert.equal(block.tagName, 'DIV')
+    assert.ok(block.classList.contains('stream-pending-heading'))
+    assert.ok(block.classList.contains('stream-pending-h3'))
+    assert.equal(block.getAttribute('data-heading-level'), '3')
+    assert.equal(block.textContent, 'Section title')
+    const inline = host.querySelector(':scope > span.stream-pending') as HTMLElement
+    assert.equal(inline.hidden, true)
+  })
+
+  it('incremental renderer: list pending is a div, not inline span', () => {
+    const host = document.createElement('div')
+    const r = new StreamingMarkdownRenderer(host)
+    r.update('done\n- item')
+    const block = host.querySelector('.stream-pending-block') as HTMLElement
+    assert.equal(block?.tagName, 'DIV')
+    assert.ok(block?.classList.contains('stream-pending-list-item'))
+  })
+})
