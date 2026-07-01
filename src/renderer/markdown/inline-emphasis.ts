@@ -2,6 +2,7 @@
  * CommonMark-style inline emphasis via a delimiter stack (cmark architecture).
  * Shared by the at-rest renderer and the streaming hold logic.
  */
+import { scanCodeSpans } from './inline-code-spans.ts'
 
 const ASCII_PUNCTUATION_RE = /[!-/:-@[-`{-~]/
 
@@ -27,38 +28,40 @@ export function isRightFlanking(prev: string, next: string): boolean {
   )
 }
 
-/** Mark interior of closed inline code spans; unclosed span → unresolvedAt. */
-export function scanCodeSpans(s: string): { mask: boolean[]; unresolvedAt: number | null } {
-  const mask = new Array<boolean>(s.length).fill(false)
-  let i = 0
-  while (i < s.length) {
-    if (s[i] !== '`') {
-      i++
-      continue
-    }
-    let j = i
-    while (j < s.length && s[j] === '`') j++
-    const runLen = j - i
-    let k = j
-    let closeEnd = -1
-    while (k < s.length) {
-      if (s[k] === '`') {
-        let m = k
-        while (m < s.length && s[m] === '`') m++
-        if (m - k === runLen) {
-          closeEnd = m
-          break
-        }
-        k = m
-      } else {
-        k++
-      }
-    }
-    if (closeEnd === -1) return { mask, unresolvedAt: i }
-    for (let p = i; p < closeEnd; p++) mask[p] = true
-    i = closeEnd
+interface DelimiterRun {
+  char: '*' | '_'
+  start: number
+  end: number
+  len: number
+  canOpen: boolean
+  canClose: boolean
+}
+
+function readDelimiterRun(
+  s: string,
+  i: number,
+  limit: number,
+  mask: boolean[],
+): DelimiterRun | null {
+  const ch = s[i]
+  if (ch === undefined || (ch !== '*' && ch !== '_') || mask[i]) return null
+  let j = i
+  while (j < limit && s[j] === ch && !mask[j]) j++
+  const len = j - i
+  const prev = i > 0 ? (s[i - 1] ?? '') : ''
+  const next = j < s.length ? (s[j] ?? '') : ''
+  const lf = isLeftFlanking(prev, next)
+  const rf = isRightFlanking(prev, next)
+  const canOpen = ch === '*' ? lf : lf && (!rf || isFlankingPunctuation(prev))
+  const canClose = ch === '*' ? rf : rf && (!lf || isFlankingPunctuation(next))
+  return { char: ch, start: i, end: j, len, canOpen, canClose }
+}
+
+function findMatchingOpener(stack: OpenDelimiter[], ch: '*' | '_'): number {
+  for (let t = stack.length - 1; t >= 0; t--) {
+    if (stack[t]?.char === ch) return t
   }
-  return { mask, unresolvedAt: null }
+  return -1
 }
 
 interface OpenDelimiter {
@@ -95,55 +98,112 @@ function emphasisMatchAllowed(
   return (open.len + closeLen) % 3 !== 0
 }
 
-function scanDelimiterMatches(s: string, mask: boolean[]): DelimiterMatch[] {
+function handleCloseRemainder(
+  s: string,
+  stack: OpenDelimiter[],
+  matches: DelimiterMatch[],
+  ch: '*' | '_',
+  closeStart: number,
+  used: number,
+  closeLen: number,
+): void {
+  const remainder = closeLen - used
+  if (remainder <= 0) return
+  const remIndex = closeStart + used
+  const remPrev = remIndex > 0 ? (s[remIndex - 1] ?? '') : ''
+  const remNext = remIndex + remainder < s.length ? (s[remIndex + remainder] ?? '') : ''
+  const remLf = isLeftFlanking(remPrev, remNext)
+  const remRf = isRightFlanking(remPrev, remNext)
+  const remCanOpen = ch === '*' ? remLf : remLf && (!remRf || isFlankingPunctuation(remPrev))
+  const remCanClose = ch === '*' ? remRf : remRf && (!remLf || isFlankingPunctuation(remNext))
+
+  const remMatched = remCanClose ? findMatchingOpener(stack, ch) : -1
+  const remOpen = remMatched >= 0 ? stack[remMatched] : undefined
+  if (remOpen) {
+    const remOpenRunLen = remOpen.len
+    const remUsed = Math.min(remOpen.len, remainder)
+    const remPrefix = remOpenRunLen - remUsed
+    if (emphasisMatchAllowed(remOpen, remainder, remCanOpen, remOpen.canClose)) {
+      matches.push({
+        openIndex: remOpen.index + remPrefix,
+        closeIndex: remIndex,
+        openLen: remUsed,
+        closeLen: remUsed,
+        openRunLen: remOpenRunLen,
+        char: ch,
+      })
+      stack.length = remMatched
+      if (remPrefix > 0) {
+        stack.push({
+          index: remOpen.index,
+          char: ch,
+          len: remPrefix,
+          canClose: remOpen.canClose,
+        })
+      }
+      const remRemainder = remainder - remUsed
+      if (remRemainder > 0 && remCanOpen) {
+        stack.push({
+          index: remIndex + remUsed,
+          char: ch,
+          len: remRemainder,
+          canClose: remRf,
+        })
+      }
+    } else if (remCanOpen) {
+      stack.push({ index: remIndex, char: ch, len: remainder, canClose: remRf })
+    }
+  } else if (remCanOpen) {
+    stack.push({ index: remIndex, char: ch, len: remainder, canClose: remRf })
+  }
+}
+
+type DelimiterWalkMode = 'render' | 'hold'
+
+function walkEmphasisDelimiters(
+  s: string,
+  limit: number,
+  mask: boolean[],
+  mode: DelimiterWalkMode,
+): { matches: DelimiterMatch[]; stack: OpenDelimiter[]; trailingConsumed: boolean } {
   const matches: DelimiterMatch[] = []
   const stack: OpenDelimiter[] = []
-  const limit = s.length
+  let trailingConsumed = false
   let i = 0
 
   while (i < limit) {
-    const ch = s[i]
-    if (ch === undefined || (ch !== '*' && ch !== '_') || mask[i]) {
+    const run = readDelimiterRun(s, i, limit, mask)
+    if (!run) {
       i++
       continue
     }
-    let j = i
-    while (j < limit && s[j] === ch && !mask[j]) j++
-    const len = j - i
-    const prev = i > 0 ? (s[i - 1] ?? '') : ''
-    const next = j < s.length ? (s[j] ?? '') : ''
-    const lf = isLeftFlanking(prev, next)
-    const rf = isRightFlanking(prev, next)
-    const canOpen = ch === '*' ? lf : lf && (!rf || isFlankingPunctuation(prev))
-    const canClose = ch === '*' ? rf : rf && (!lf || isFlankingPunctuation(next))
+    const { char: ch, start, end: j, len, canOpen, canClose } = run
 
-    let matched = -1
-    if (canClose) {
-      for (let t = stack.length - 1; t >= 0; t--) {
-        if (stack[t]?.char === ch) {
-          matched = t
-          break
-        }
-      }
-    }
+    const matched = canClose ? findMatchingOpener(stack, ch) : -1
     const open = matched >= 0 ? stack[matched] : undefined
+
     if (open) {
       const openRunLen = open.len
       const used = Math.min(open.len, len)
       const remainingPrefixLen = openRunLen - used
-      if (!emphasisMatchAllowed(open, len, canOpen, open.canClose)) {
-        if (canOpen) stack.push({ index: i, char: ch, len, canClose })
+
+      if (mode === 'render' && !emphasisMatchAllowed(open, len, canOpen, open.canClose)) {
+        if (canOpen) stack.push({ index: start, char: ch, len, canClose })
         i = j
         continue
       }
-      matches.push({
-        openIndex: open.index + remainingPrefixLen,
-        closeIndex: i,
-        openLen: used,
-        closeLen: used,
-        openRunLen,
-        char: ch,
-      })
+
+      if (mode === 'render') {
+        matches.push({
+          openIndex: open.index + remainingPrefixLen,
+          closeIndex: start,
+          openLen: used,
+          closeLen: used,
+          openRunLen,
+          char: ch,
+        })
+      }
+
       stack.length = matched
       if (remainingPrefixLen > 0) {
         stack.push({
@@ -153,70 +213,31 @@ function scanDelimiterMatches(s: string, mask: boolean[]): DelimiterMatch[] {
           canClose: open.canClose,
         })
       }
-      const remainder = len - used
-      if (remainder > 0) {
-        const remIndex = i + used
-        const remPrev = remIndex > 0 ? (s[remIndex - 1] ?? '') : ''
-        const remNext = remIndex + remainder < s.length ? (s[remIndex + remainder] ?? '') : ''
-        const remLf = isLeftFlanking(remPrev, remNext)
-        const remRf = isRightFlanking(remPrev, remNext)
-        const remCanOpen = ch === '*' ? remLf : remLf && (!remRf || isFlankingPunctuation(remPrev))
-        const remCanClose = ch === '*' ? remRf : remRf && (!remLf || isFlankingPunctuation(remNext))
 
-        let remMatched = -1
-        if (remCanClose) {
-          for (let t = stack.length - 1; t >= 0; t--) {
-            if (stack[t]?.char === ch) {
-              remMatched = t
-              break
-            }
-          }
-        }
-        const remOpen = remMatched >= 0 ? stack[remMatched] : undefined
-        if (remOpen) {
-          const remOpenRunLen = remOpen.len
-          const remUsed = Math.min(remOpen.len, remainder)
-          const remPrefix = remOpenRunLen - remUsed
-          if (emphasisMatchAllowed(remOpen, remainder, remCanOpen, remOpen.canClose)) {
-            matches.push({
-              openIndex: remOpen.index + remPrefix,
-              closeIndex: remIndex,
-              openLen: remUsed,
-              closeLen: remUsed,
-              openRunLen: remOpenRunLen,
-              char: ch,
-            })
-            stack.length = remMatched
-            if (remPrefix > 0) {
-              stack.push({
-                index: remOpen.index,
-                char: ch,
-                len: remPrefix,
-                canClose: remOpen.canClose,
-              })
-            }
-            const remRemainder = remainder - remUsed
-            if (remRemainder > 0 && remCanOpen) {
-              stack.push({
-                index: remIndex + remUsed,
-                char: ch,
-                len: remRemainder,
-                canClose: remRf,
-              })
-            }
-          } else if (remCanOpen) {
-            stack.push({ index: remIndex, char: ch, len: remainder, canClose: remRf })
-          }
-        } else if (remCanOpen) {
-          stack.push({ index: remIndex, char: ch, len: remainder, canClose: remRf })
-        }
+      if (mode === 'render') {
+        handleCloseRemainder(s, stack, matches, ch, start, used, len)
+      } else if (j === s.length) {
+        trailingConsumed = true
       }
     } else if (canOpen) {
-      stack.push({ index: i, char: ch, len, canClose })
+      stack.push({ index: start, char: ch, len, canClose })
     }
     i = j
   }
-  return matches
+
+  return { matches, stack, trailingConsumed }
+}
+
+function scanDelimiterMatches(s: string, mask: boolean[]): DelimiterMatch[] {
+  return walkEmphasisDelimiters(s, s.length, mask, 'render').matches
+}
+
+function trailingDelimiterStart(s: string, mask: boolean[]): number {
+  let tStart = s.length
+  while (tStart > 0 && (s[tStart - 1] === '*' || s[tStart - 1] === '_') && !mask[tStart - 1]) {
+    tStart--
+  }
+  return tStart
 }
 
 function wrapEmphasis(inner: string, openLen: number, closeLen: number): string {
@@ -333,54 +354,7 @@ export function renderEmphasisDelimiters(s: string): string {
 export function pendingHoldIndex(s: string): number {
   const { mask, unresolvedAt } = scanCodeSpans(s)
   const limit = unresolvedAt ?? s.length
-  const stack: OpenDelimiter[] = []
-  let trailingConsumed = false
-
-  let i = 0
-  while (i < limit) {
-    const ch = s[i]
-    if (ch === undefined || (ch !== '*' && ch !== '_') || mask[i]) {
-      i++
-      continue
-    }
-    let j = i
-    while (j < limit && s[j] === ch && !mask[j]) j++
-    const len = j - i
-    const prev = i > 0 ? (s[i - 1] ?? '') : ''
-    const next = j < s.length ? (s[j] ?? '') : ''
-    const lf = isLeftFlanking(prev, next)
-    const rf = isRightFlanking(prev, next)
-    const canOpen = ch === '*' ? lf : lf && (!rf || isFlankingPunctuation(prev))
-    const canClose = ch === '*' ? rf : rf && (!lf || isFlankingPunctuation(next))
-
-    let matched = -1
-    if (canClose) {
-      for (let t = stack.length - 1; t >= 0; t--) {
-        if (stack[t]?.char === ch) {
-          matched = t
-          break
-        }
-      }
-    }
-    const open = matched >= 0 ? stack[matched] : undefined
-    if (open) {
-      const used = Math.min(open.len, len)
-      stack.length = matched
-      const remainingPrefixLen = open.len - used
-      if (remainingPrefixLen > 0) {
-        stack.push({
-          index: open.index,
-          char: ch,
-          len: remainingPrefixLen,
-          canClose: open.canClose,
-        })
-      }
-      if (j === s.length) trailingConsumed = true
-    } else if (canOpen) {
-      stack.push({ index: i, char: ch, len, canClose })
-    }
-    i = j
-  }
+  const { stack, trailingConsumed } = walkEmphasisDelimiters(s, limit, mask, 'hold')
 
   let cut = s.length
   if (unresolvedAt !== null) cut = Math.min(cut, unresolvedAt)
@@ -388,11 +362,7 @@ export function pendingHoldIndex(s: string): number {
   if (firstOpen) cut = Math.min(cut, firstOpen.index)
 
   if (!trailingConsumed) {
-    let tStart = s.length
-    while (tStart > 0 && (s[tStart - 1] === '*' || s[tStart - 1] === '_') && !mask[tStart - 1]) {
-      tStart--
-    }
-    if (tStart < s.length) cut = Math.min(cut, tStart)
+    cut = Math.min(cut, trailingDelimiterStart(s, mask))
   }
 
   return cut
