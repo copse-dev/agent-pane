@@ -300,6 +300,11 @@
   inset-inline-start: 0.4em;
 }
 
+.message-text .stream-pending.stream-pending-list-continuation,
+.message-text span.stream-pending-list-continuation {
+  white-space: normal;
+}
+
 .message-text .stream-pending.stream-pending-ordered-item::before,
 .message-text div.stream-pending-ordered-item::before {
   content: attr(data-ordered-marker) '. ';

@@ -6,11 +6,12 @@ import {
   pendingLineBelongsInTable,
 } from './block-tokenizer.ts'
 import {
+  isListContinuationPending,
   pendingListMarkerLength,
   pendingListOrderedMarker,
   renderPendingLine,
 } from './render-pending-line.ts'
-import { splitForStreaming } from './streaming-split.ts'
+import { splitForStreaming, type StreamingSplit } from './streaming-split.ts'
 import { escapeHtml } from './escape.ts'
 import { sanitizeRenderedMarkdown } from './sanitize.ts'
 import {
@@ -28,6 +29,7 @@ import {
 
 export { pendingHoldIndex } from './inline-emphasis.ts'
 export { splitAtLastNewline, splitForStreaming } from './streaming-split.ts'
+export type { StreamingSplit } from './streaming-split.ts'
 export {
   completeEndsInOpenTable,
   getIncompleteFenceSource,
@@ -40,23 +42,30 @@ export {
 } from './block-tokenizer.ts'
 
 const BLOCK_PENDING_CLASS = 'stream-pending-block'
+const LIST_CONTINUATION_CLASS = 'stream-pending-list-continuation'
 
-function renderPendingInlineMarkdown(pending: string): string {
-  return renderPendingLine(pending)
+function renderPendingInlineMarkdown(pending: string, openListItemFirstLine?: string): string {
+  if (openListItemFirstLine === undefined) return renderPendingLine(pending)
+  return renderPendingLine(pending, { openListItemFirstLine })
 }
 
 /** Block-level pending tail (open paragraph or list line) — rendered inside stream-complete. */
-export function isBlockLevelPending(pending: string): boolean {
+export function isBlockLevelPending(pending: string, openListItemFirstLine?: string): boolean {
   if (!pending.trim() || pending.includes('\n')) return false
   if (pendingListMarkerLength(pending) !== null) return true
+  if (isListContinuationPending(pending, openListItemFirstLine)) return true
   return !isAmbiguousBlockLine(pending)
 }
 
-function blockPendingTag(pending: string): 'p' | 'div' {
+function blockPendingTag(pending: string, openListItemFirstLine?: string): 'p' | 'div' | 'span' {
+  if (isListContinuationPending(pending, openListItemFirstLine)) return 'span'
   return pendingListMarkerLength(pending) !== null ? 'div' : 'p'
 }
 
-function blockPendingClassName(pending: string): string {
+function blockPendingClassName(pending: string, openListItemFirstLine?: string): string {
+  if (isListContinuationPending(pending, openListItemFirstLine)) {
+    return `stream-pending ${LIST_CONTINUATION_CLASS} ${BLOCK_PENDING_CLASS}`
+  }
   if (pendingListMarkerLength(pending) !== null) {
     const ordered = pendingListOrderedMarker(pending)
     return ordered
@@ -71,13 +80,56 @@ function blockPendingAttrs(pending: string): string {
   return ordered ? ` data-ordered-marker="${escapeHtml(ordered)}"` : ''
 }
 
-function blockPendingHtml(pending: string, pendingInner: string): string {
-  const tag = blockPendingTag(pending)
-  return `<${tag} class="${blockPendingClassName(pending)}"${blockPendingAttrs(pending)}>${pendingInner}</${tag}>`
+function blockPendingHtml(
+  pending: string,
+  pendingInner: string,
+  openListItemFirstLine?: string,
+): string {
+  const tag = blockPendingTag(pending, openListItemFirstLine)
+  const inner =
+    tag === 'span' && pendingInner !== '' && !pendingInner.startsWith(' ')
+      ? ` ${pendingInner}`
+      : pendingInner
+  return `<${tag} class="${blockPendingClassName(pending, openListItemFirstLine)}"${blockPendingAttrs(pending)}>${inner}</${tag}>`
 }
 
 function inlinePendingSpanHtml(pendingInner: string): string {
   return `<span class="stream-pending">${pendingInner}</span>`
+}
+
+function findOpenListItemHost(completedEl: HTMLElement): HTMLElement | null {
+  const li = completedEl.querySelector(
+    'ul:last-of-type > li:last-child, ol:last-of-type > li:last-child',
+  )
+  return li instanceof Element && li.tagName === 'LI' ? (li as HTMLElement) : null
+}
+
+function clearListContinuationDom(completedEl: HTMLElement): void {
+  completedEl.querySelector(`li .${LIST_CONTINUATION_CLASS}`)?.remove()
+}
+
+function syncListContinuationDom(
+  completedEl: HTMLElement,
+  pendingInner: string,
+  active: boolean,
+): boolean {
+  const li = findOpenListItemHost(completedEl)
+  if (!li) return false
+
+  const existing = li.querySelector(`:scope > .${LIST_CONTINUATION_CLASS}`)
+  if (!active || !pendingInner) {
+    existing?.remove()
+    return true
+  }
+
+  let el: Element | null = existing
+  if (!el) {
+    el = document.createElement('span')
+    li.append(el)
+  }
+  el.className = `stream-pending ${LIST_CONTINUATION_CLASS} ${BLOCK_PENDING_CLASS}`
+  el.innerHTML = pendingInner.startsWith(' ') ? pendingInner : ` ${pendingInner}`
+  return true
 }
 
 function syncBlockPendingDom(
@@ -85,20 +137,29 @@ function syncBlockPendingDom(
   pending: string,
   pendingInner: string,
   active: boolean,
+  openListItemFirstLine?: string,
 ): void {
+  if (isListContinuationPending(pending, openListItemFirstLine)) {
+    clearListContinuationDom(completedEl)
+    completedEl.querySelector(`:scope > .${BLOCK_PENDING_CLASS}`)?.remove()
+    syncListContinuationDom(completedEl, pendingInner, active)
+    return
+  }
+
+  clearListContinuationDom(completedEl)
   const existing = completedEl.querySelector(`:scope > .${BLOCK_PENDING_CLASS}`)
   if (!active || !pendingInner) {
     existing?.remove()
     return
   }
-  const tag = blockPendingTag(pending)
+  const tag = blockPendingTag(pending, openListItemFirstLine)
   let el: Element | null = existing
   if (!el || el.tagName.toLowerCase() !== tag) {
     existing?.remove()
     el = document.createElement(tag)
     completedEl.append(el)
   }
-  el.className = blockPendingClassName(pending)
+  el.className = blockPendingClassName(pending, openListItemFirstLine)
   const ordered = pendingListOrderedMarker(pending)
   if (ordered !== null) el.setAttribute('data-ordered-marker', ordered)
   else el.removeAttribute('data-ordered-marker')
@@ -116,13 +177,29 @@ function syncInlinePendingDom(
   delete pendingEl.dataset['orderedMarker']
 }
 
+function renderPendingTail(
+  split: StreamingSplit,
+  complete: string,
+  formingActive: boolean,
+): { pendingInner: string; pendingVisible: boolean } {
+  const { pending, openListItemFirstLine } = split
+  const pendingInTable = pendingLineBelongsInTable(complete, pending)
+  const pendingInner =
+    pending && !pendingInTable && !formingActive
+      ? sanitizeRenderedMarkdown(renderPendingInlineMarkdown(pending, openListItemFirstLine))
+      : ''
+  const pendingVisible = pending !== '' && !pendingInTable && !formingActive && pendingInner !== ''
+  return { pendingInner, pendingVisible }
+}
+
 /**
  * Render assistant text while it is still streaming.
  * Completed blocks (per the block tokenizer) are markdown-rendered; the pending
  * tail only renders safe inline markdown once its block context is unambiguous.
  */
 export function renderStreamingMarkdown(content: string): string {
-  const { complete, pending } = splitForStreaming(content)
+  const split = splitForStreaming(content)
+  const { complete, pending, openListItemFirstLine } = split
   const rendered = complete ? sanitizeRenderedMarkdown(renderMarkdown(complete)) : ''
   const fenceSource = formingFenceSource(content)
   const tableSource = fenceSource ? null : formingTableSource(content, pending)
@@ -137,10 +214,22 @@ export function renderStreamingMarkdown(content: string): string {
   }
   if (!pending) return rendered
   if (pendingLineBelongsInTable(complete, pending)) return rendered
-  const pendingInner = sanitizeRenderedMarkdown(renderPendingInlineMarkdown(pending))
+  const pendingInner = sanitizeRenderedMarkdown(
+    renderPendingInlineMarkdown(pending, openListItemFirstLine),
+  )
   if (!pendingInner) return rendered
-  const pendingHtml = isBlockLevelPending(pending)
-    ? blockPendingHtml(pending, pendingInner)
+
+  if (isListContinuationPending(pending, openListItemFirstLine)) {
+    const liMatch = rendered.match(/(<li(?:\s[^>]*)?>)([\s\S]*?)(<\/li>\s*<\/(?:ul|ol)>)\s*$/)
+    const liClose = liMatch?.[3]
+    if (liMatch?.[1] !== undefined && liMatch[2] !== undefined && liClose) {
+      const contHtml = blockPendingHtml(pending, pendingInner, openListItemFirstLine)
+      return `${rendered.slice(0, -liClose.length)}${liMatch[1]}${liMatch[2]}${contHtml}${liClose}`
+    }
+  }
+
+  const pendingHtml = isBlockLevelPending(pending, openListItemFirstLine)
+    ? blockPendingHtml(pending, pendingInner, openListItemFirstLine)
     : inlinePendingSpanHtml(pendingInner)
   return `${rendered}${pendingHtml}`
 }
@@ -165,7 +254,8 @@ export class StreamingMarkdownRenderer {
 
   /** Render `content` (the full message text so far) into the host incrementally. */
   update(content: string): void {
-    const { complete, pending } = splitForStreaming(content)
+    const split = splitForStreaming(content)
+    const { complete, pending, openListItemFirstLine } = split
     const { completedEl, formingEl, pendingEl } = this.ensureNodes()
 
     if (complete !== this.lastComplete) {
@@ -192,18 +282,13 @@ export class StreamingMarkdownRenderer {
     }
 
     const formingActive = fenceSource !== null || tableSource !== null
-    const pendingInTable = pendingLineBelongsInTable(complete, pending)
-    const pendingInner =
-      pending && !pendingInTable && !formingActive
-        ? sanitizeRenderedMarkdown(renderPendingInlineMarkdown(pending))
-        : ''
-    const pendingVisible =
-      pending !== '' && !pendingInTable && !formingActive && pendingInner !== ''
+    const { pendingInner, pendingVisible } = renderPendingTail(split, complete, formingActive)
 
-    if (pendingVisible && isBlockLevelPending(pending)) {
-      syncBlockPendingDom(completedEl, pending, pendingInner, true)
+    if (pendingVisible && isBlockLevelPending(pending, openListItemFirstLine)) {
+      syncBlockPendingDom(completedEl, pending, pendingInner, true, openListItemFirstLine)
       syncInlinePendingDom(pendingEl, '', false)
     } else {
+      clearListContinuationDom(completedEl)
       completedEl.querySelector(`:scope > .${BLOCK_PENDING_CLASS}`)?.remove()
       syncInlinePendingDom(pendingEl, pendingInner, pendingVisible)
     }

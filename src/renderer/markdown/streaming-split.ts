@@ -7,6 +7,8 @@ import { emphasisSpansNewline, pendingHoldIndex } from './inline-emphasis.ts'
 export interface StreamingSplit {
   complete: string
   pending: string
+  /** First line of the open list item when `pending` continues it. */
+  openListItemFirstLine?: string
 }
 
 /** Split streamed content at the last newline (legacy helper). */
@@ -42,12 +44,19 @@ function splitOpenParagraph(block: BlockToken, content: string): StreamingSplit 
   }
 }
 
+function openListItemFirstLine(block: BlockToken, content: string): string {
+  const slice = content.slice(block.start)
+  const nl = slice.indexOf('\n')
+  return nl === -1 ? slice : slice.slice(0, nl)
+}
+
 function splitOpenListItem(block: BlockToken, content: string): StreamingSplit {
   const openText = content.slice(block.start)
   const { complete: lineComplete, pending } = splitAtLastNewline(openText)
   return {
     complete: content.slice(0, block.start) + lineComplete,
     pending,
+    openListItemFirstLine: openListItemFirstLine(block, content),
   }
 }
 

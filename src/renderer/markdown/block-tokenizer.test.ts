@@ -184,6 +184,7 @@ describe('splitForStreaming (tokenizer #475)', () => {
     assert.deepEqual(splitForStreaming('- item one\n- item two'), {
       complete: '- item one\n',
       pending: '- item two',
+      openListItemFirstLine: '- item two',
     })
   })
 })
