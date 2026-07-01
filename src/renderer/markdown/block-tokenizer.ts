@@ -110,6 +110,11 @@ function isLazyUnorderedContinuation(itemStartLine: string, line: string): boole
   return lazyContinuationIndent(line) >= listItemContentColumn(itemStartLine)
 }
 
+/** True when `line` continues the open list item started on `itemStartLine`. */
+export function isLazyListContinuation(itemStartLine: string, line: string): boolean {
+  return isLazyUnorderedContinuation(itemStartLine, line)
+}
+
 function isTableRow(line: string): boolean {
   return line.includes('|') && line.trim() !== ''
 }

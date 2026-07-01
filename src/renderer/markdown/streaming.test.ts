@@ -196,22 +196,49 @@ describe('renderStreamingMarkdown (holds unresolved bold)', () => {
     assert.doesNotMatch(html, /stream-pending[^>]*>-/)
   })
 
-  it('hides indented sublist markers while the parent item is still open', () => {
+  it('renders lazy list continuations inside the open item without a fake bullet', () => {
     const html = renderStreamingMarkdown('- parent\n    - child item')
+    assert.match(
+      html,
+      /<li>parent<span class="stream-pending stream-pending-list-continuation[^"]*"> {2}- child item<\/span><\/li>/,
+    )
+    assert.doesNotMatch(html, /stream-pending-list-item[^"]*">child item/)
+    assert.doesNotMatch(html, /stream-pending[^>]*>- child/)
+  })
+
+  it('renders lazy continuations under a prior list item without a fake bullet', () => {
+    const html = renderStreamingMarkdown('**Attendees:**\n- Alice\n    - Bob')
+    assert.match(
+      html,
+      /<li>Alice<span class="stream-pending stream-pending-list-continuation[^"]*"> {2}- Bob<\/span><\/li>/,
+    )
+    assert.doesNotMatch(html, /stream-pending-list-item[^"]*">Bob/)
+  })
+
+  it('renders tight lazy continuation text inside the open list item', () => {
+    const html = renderStreamingMarkdown('- alpha\n  beta')
+    assert.match(
+      html,
+      /<li>alpha<span class="stream-pending stream-pending-list-continuation[^"]*"> beta<\/span><\/li>/,
+    )
+    assert.doesNotMatch(html, /stream-pending-paragraph/)
+  })
+
+  it('hides incomplete list markers until whitespace follows the dash', () => {
+    const html = renderStreamingMarkdown('done\n-item')
+    assert.doesNotMatch(html, /-item/)
+    assert.doesNotMatch(html, />-/)
+    const withSpace = renderStreamingMarkdown('done\n- item')
+    assert.match(withSpace, /stream-pending-list-item[^"]*">item/)
+  })
+
+  it('still renders valid nested sublists at 0-3 spaces as list items', () => {
+    const html = renderStreamingMarkdown('- parent\n  - child item')
     assert.match(html, /<li>parent<\/li>/)
     assert.match(
       html,
       /<div class="stream-pending stream-pending-list-item[^"]*">child item<\/div>/,
     )
-    assert.doesNotMatch(html, /stream-pending[^>]*>-/)
-    assert.doesNotMatch(html, /stream-pending-paragraph/)
-  })
-
-  it('hides indented sublist markers under a label line', () => {
-    const html = renderStreamingMarkdown('**Attendees:**\n- Alice\n    - Bob')
-    assert.match(html, /<li>Alice<\/li>/)
-    assert.match(html, /<div class="stream-pending stream-pending-list-item[^"]*">Bob<\/div>/)
-    assert.doesNotMatch(html, /stream-pending[^>]*>-/)
   })
 
   it('shows a forming table with header cells while the separator streams', () => {
