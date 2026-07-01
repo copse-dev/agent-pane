@@ -71,6 +71,8 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'okfMemoriesEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'longHorizonTasksEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'advisorStrategyEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'advisorModel', kind: 'text', default: 'claude-opus-4-8', save: true },
   { name: 'roadmapPlansEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'piiRedactionEnabled', kind: 'checkbox', default: false, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
@@ -105,7 +107,10 @@ async function saveSimpleFields(data: FormData, api: ApiClient): Promise<void> {
       await api.settings.set(field.name, data.get(field.name) === 'on')
     } else {
       const value = (data.get(field.name) as string | null) ?? ''
-      const trimmed = field.name === 'customInstructions' || field.name === 'openRouterModel'
+      const trimmed =
+        field.name === 'customInstructions' ||
+        field.name === 'openRouterModel' ||
+        field.name === 'advisorModel'
       await api.settings.set(field.name, trimmed ? value.trim() : value)
     }
   }
@@ -623,6 +628,32 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 models handle trivial work and frontier models are reserved for the hard problems.
                 Advisory only — it does not switch the model in use. While off, the tool is not
                 registered.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Advisor strategy</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="advisorStrategyEnabled" />
+                Let the agent consult a larger advisor model mid-task
+              </label>
+              <p class="field-hint">
+                Adds a no-parameter <code>advisor</code> tool that forwards your full conversation
+                transcript to a larger advisor model for strategic guidance, so the everyday loop can
+                run on a cheaper or on-device model while frontier intelligence is pulled in at the
+                moments that matter (planning, getting unstuck, final review). Shaped to match
+                Claude’s native advisor tool. While off, the tool is not registered.
+              </p>
+              <label class="field-label" for="advisorModel">Advisor model</label>
+              <input
+                type="text"
+                id="advisorModel"
+                name="advisorModel"
+                placeholder="claude-opus-4-8"
+              />
+              <p class="field-hint">
+                Model id used for advisor consultations (any configured cloud provider). Defaults to
+                <code>claude-opus-4-8</code>.
               </p>
             </fieldset>
 
