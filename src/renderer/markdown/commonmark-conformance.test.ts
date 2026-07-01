@@ -1,19 +1,17 @@
 // CommonMark conformance harness for the *at-rest* renderer.
 //
-// `renderMarkdown()` is a deliberately small, app-specific renderer — not a
-// CommonMark implementation (see README.md: "Not a markdown library — keep it
-// that way."). ATX headings map to `<h1>`–`<h6>`, decorate links with in-app
-// attributes, highlights fenced code, etc. So we do not expect full spec
-// conformance and we do not chase 100%.
-//
-// What this test *does* give us: every example from the official CommonMark
-// spec is run through `renderMarkdown` and compared (after the spec's own HTML
-// normalization) against the expected output. The set of examples we currently
-// satisfy is pinned in `conformance-baseline.json`. The test fails if that set
-// changes in either direction:
+// `renderMarkdown()` is app-specific in places (decorated links, highlighted code,
+// mermaid, etc.), but CommonMark is the structural reference we grow toward.
+// Every spec example is run through `renderMarkdown` and compared (after the
+// spec's own HTML normalizer) against the expected output. The set of examples
+// we currently satisfy is pinned in `conformance-baseline.json`. The test fails
+// if that set changes in either direction:
 //   - fewer passing examples  → a regression in a construct we used to handle.
 //   - more passing examples    → an improvement; re-run with
 //     `UPDATE_COMMONMARK_BASELINE=1` to record it.
+//
+// Full spec conformance is not required today, but new renderer work should not
+// regress the baseline and should land improvements when the change is focused.
 //
 // Streaming is intentionally NOT conformance-tested: partial-line output is
 // expected to differ from the final at-rest render (the live tail is escaped

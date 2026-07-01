@@ -3,8 +3,9 @@
 Hand-rolled renderer in `renderer.ts` used by conversation messages, subagent timelines, file
 preview, and streaming (`streaming.ts`). At-rest rendering routes through `tokenizeBlocks()` →
 `renderBlocks()` (`render-blocks.ts`); block/inlined tokenizers in `block-tokenizer.ts`,
-`inline-emphasis.ts`, and `streaming-split.ts` also drive streaming hold decisions (#475). Not a
-markdown library — keep it that way unless requirements clearly outgrow it.
+`inline-emphasis.ts`, and `streaming-split.ts` also drive streaming hold decisions (#475). It is
+not a standalone markdown library, but we **do** treat the CommonMark spec as the reference for
+block/inline structure and grow toward it incrementally (see conformance baseline below).
 
 ## Design invariants
 
@@ -26,6 +27,10 @@ When extending the renderer or its CSS, preserve these rules:
   markdown links → bare HTTP autolinks. Emphasis runs before links so `*foo [bar](/url)*`
   resolves correctly; link labels may already contain `<em>` / `<strong>` from that pass.
   See #475 and [`docs/plans/markdown-renderer-hardening.md`](../../../docs/plans/markdown-renderer-hardening.md).
+- **Soft line breaks.** Prose paragraphs preserve single newlines in HTML (CommonMark soft breaks);
+  hard breaks (two+ trailing spaces) emit `<br>`. Tight list items still collapse internal
+  newlines to spaces. `.message-text` uses `white-space: pre-wrap` so preserved newlines render
+  as visible line breaks without `<br>` tags.
 - **Agent-output shapes.** Support `-`, `*`, and `+` list markers. ATX `#` levels map to
   matching `<h1>`–`<h6>` tags (see `render-blocks.ts`).
 - **Streaming hold.** Incomplete block starts (headings, fences) stay hidden in the pending
@@ -89,9 +94,9 @@ this repo — comparing output to the expected HTML after the spec's own normali
 rest only** — streaming output intentionally differs (the live tail is escaped
 plain text) and is not conformance-tested.
 
-The renderer is deliberately app-specific (decorated links,
-highlighted code), so it is **not** expected to fully conform. The set of examples
-we currently satisfy is pinned in `tests/fixtures/commonmark/conformance-baseline.json`
+The renderer is app-specific in places (decorated links, highlighted code), but
+CommonMark is the structural reference. The set of examples we currently satisfy
+is pinned in `tests/fixtures/commonmark/conformance-baseline.json`
 and the test fails if it changes:
 
 - fewer passing → a regression in a construct we used to handle.

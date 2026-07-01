@@ -92,7 +92,7 @@ function renderListItemContent(
             )
             .join('\n')
         : dedentLazyContinuation(p, firstLine)
-    return renderProseBlock(text, linkRefs, listLoose ? 'br' : 'space')
+    return renderProseBlock(text, linkRefs, listLoose ? 'newline' : 'space')
   })
   if (rendered.length === 0) return ''
   if (listLoose) {

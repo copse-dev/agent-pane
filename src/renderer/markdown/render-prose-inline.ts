@@ -8,22 +8,26 @@ function stripHtmlComments(text: string): string {
 
 const HARD_BREAK = '\uFFFE'
 
+/** How single newlines inside prose are emitted after inline parsing. */
+export type SoftBreak = 'newline' | 'space' | 'br'
+
 /** Apply CommonMark hard breaks (two+ trailing spaces) then soft breaks. */
-function applyLineBreaks(text: string, softBreak: 'br' | 'space'): string {
+function applyLineBreaks(text: string, softBreak: SoftBreak): string {
   let body = text.replace(/ {2,}\n/g, HARD_BREAK)
-  body = softBreak === 'space' ? body.replace(/\n/g, ' ') : body.replace(/\n/g, '<br>')
+  if (softBreak === 'space') body = body.replace(/\n/g, ' ')
+  else if (softBreak === 'br') body = body.replace(/\n/g, '<br>')
   return body.replaceAll(HARD_BREAK, '<br>')
 }
 
 export interface RenderProseInlineOptions {
-  /** Tight list items collapse single newlines to spaces; default `<br>` (Copse prose). */
-  softBreak?: 'br' | 'space'
+  /** Tight list items use `space`; prose/blockquote/loose lists use CommonMark `newline`. */
+  softBreak?: SoftBreak
   linkRefs?: LinkReferenceMap
 }
 
 /** Inline markdown for prose blocks and streaming pending tails. */
 export function renderProseInline(text: string, options: RenderProseInlineOptions = {}): string {
-  const { softBreak = 'br', linkRefs = new Map() } = options
+  const { softBreak = 'newline', linkRefs = new Map() } = options
   const body = stripHtmlComments(text)
   const rendered = renderInlineSpans(renderArtifactImageTags(body), linkRefs)
   return applyLineBreaks(rendered, softBreak)
@@ -33,7 +37,7 @@ export function renderProseInline(text: string, options: RenderProseInlineOption
 export function renderProseBlock(
   text: string,
   linkRefs: LinkReferenceMap,
-  softBreak: 'br' | 'space' = 'br',
+  softBreak: SoftBreak = 'newline',
 ): string {
   if (stripHtmlComments(text).trim() === '') return ''
   return renderProseInline(text, { softBreak, linkRefs })
