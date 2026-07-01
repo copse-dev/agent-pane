@@ -1,0 +1,46 @@
+/** Shared block-level line patterns and fence helpers (tokenizer + renderer). */
+
+export const FENCE_OPEN_RE = /^ {0,3}(`{3,}|~{3,})([^\n`]*)\s*$/
+export const FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})\s*$/
+
+/** ATX heading detection (tokenizer): `#` through `######` followed by space or EOL. */
+export const ATX_HEADING_DETECT_RE = /^ {0,3}(#{1,6})(?: |$)/
+
+/** ATX heading capture (renderer): optional title after `#` markers. */
+export const ATX_HEADING_CAPTURE_RE = /^ {0,3}(#{1,6})(?: (.*)|$)/
+
+/** Drop the block-terminating newline token slices include. */
+export function dropTrailingNewline(slice: string): string {
+  return slice.endsWith('\n') ? slice.slice(0, -1) : slice
+}
+
+export function fenceMarker(line: string): { marker: string; len: number; info: string } | null {
+  const m = line.match(FENCE_OPEN_RE)
+  if (!m?.[1]) return null
+  const marker = m[1]
+  return { marker, len: marker.length, info: (m[2] ?? '').trim() }
+}
+
+export function fenceCloses(marker: string, len: number, line: string): boolean {
+  const m = line.match(FENCE_CLOSE_RE)
+  if (!m?.[1] || m[1][0] !== marker[0]) return false
+  return m[1].length >= len
+}
+
+export function parseFenceSlice(slice: string): { lang: string; code: string } {
+  const lines = dropTrailingNewline(slice).split('\n')
+  const open = lines[0] ?? ''
+  const openMatch = open.match(FENCE_OPEN_RE)
+  const marker = openMatch?.[1] ?? '```'
+  const lang = (openMatch?.[2] ?? '').trim()
+  let closeIndex = lines.length - 1
+  while (closeIndex > 0) {
+    const line = lines[closeIndex] ?? ''
+    if (fenceCloses(marker, marker.length, line)) {
+      break
+    }
+    closeIndex--
+  }
+  const code = lines.slice(1, closeIndex).join('\n')
+  return { lang, code }
+}

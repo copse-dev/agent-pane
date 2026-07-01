@@ -1,5 +1,5 @@
 import { escapeHtml, escapeHtmlTextNodes } from './escape.ts'
-import { renderEmphasisOutsideInlineHtml } from './inline-emphasis.ts'
+import { INLINE_HTML_SHIELD_RE, renderEmphasisOutsideInlineHtml } from './inline-emphasis.ts'
 import { renderInlineLinks, safeLinkHref } from './inline-links.ts'
 import { type LinkReferenceMap } from './link-references.ts'
 
@@ -100,7 +100,7 @@ const TRAILING_URL_PUNCTUATION_RE = /[),.;:!?_]+$/
 
 function renderBareHttpLinks(text: string): string {
   return text
-    .split(/(<code>[\s\S]*?<\/code>|<a\b[\s\S]*?<\/a>|<img\b[^>]*>)/g)
+    .split(INLINE_HTML_SHIELD_RE)
     .map((segment, index) => {
       if (index % 2 === 1) return segment
       return segment.replace(BARE_HTTP_URL_RE, (_match, prefix: string, rawUrl: string) => {

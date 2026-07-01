@@ -49,3 +49,13 @@ export function escapeHtmlTextNodes(html: string): string {
 export function escapeMermaidHtml(text: string): string {
   return text.replace(/[&<"']/g, (ch) => HTML_ESCAPES[ch] ?? ch)
 }
+
+/** Reverse {@link escapeHtml} for parsing href/src attributes embedded in markdown. */
+export function decodeEscapedHref(raw: string): string {
+  return raw
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+}
