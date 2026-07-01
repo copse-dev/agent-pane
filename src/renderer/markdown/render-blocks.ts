@@ -2,7 +2,12 @@ import { renderArtifactImageTags } from './artifact-images.ts'
 import { type BlockToken, splitTableRow, TABLE_SEP_RE, tokenizeBlocks } from './block-tokenizer.ts'
 import { escapeHtml, escapeMermaidHtml } from './escape.ts'
 import { fenceCodeClass, highlightFenceCode } from './highlight.ts'
+import { type LinkReferenceMap } from './link-references.ts'
 import { renderInlineSpans } from './inline-spans.ts'
+
+export interface RenderBlocksOptions {
+  linkRefs?: LinkReferenceMap
+}
 
 const FENCE_OPEN_RE = /^ {0,3}(`{3,}|~{3,})([^\n`]*)\s*$/
 const FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})\s*$/
@@ -19,10 +24,10 @@ function normalizeBlockSlice(slice: string): string {
   return slice.endsWith('\n') ? slice.slice(0, -1) : slice
 }
 
-function renderProseBlock(text: string): string {
+function renderProseBlock(text: string, linkRefs: LinkReferenceMap): string {
   const body = stripHtmlComments(text)
   if (body.trim() === '') return ''
-  const rendered = renderInlineSpans(renderArtifactImageTags(escapeHtml(body)))
+  const rendered = renderInlineSpans(renderArtifactImageTags(escapeHtml(body)), linkRefs)
   return rendered.replace(/\n/g, '<br>')
 }
 
@@ -81,12 +86,16 @@ function splitListItemParagraphs(text: string): string[] {
   return parts
 }
 
-function renderListItemContent(slice: string, listLoose: boolean): string {
+function renderListItemContent(
+  slice: string,
+  listLoose: boolean,
+  linkRefs: LinkReferenceMap,
+): string {
   const paragraphs = splitListItemParagraphs(normalizeBlockSlice(slice))
   const rendered = paragraphs
     .map((p, index) => {
       const text = index === 0 ? stripListMarker(p) : p
-      return renderProseBlock(text)
+      return renderProseBlock(text, linkRefs)
     })
     .filter((p) => p !== '')
   if (listLoose) {
@@ -95,31 +104,31 @@ function renderListItemContent(slice: string, listLoose: boolean): string {
   return rendered.join('<br><br>')
 }
 
-function renderParagraph(slice: string): string {
+function renderParagraph(slice: string, linkRefs: LinkReferenceMap): string {
   const body = normalizeBlockSlice(slice)
-  const rendered = renderProseBlock(body)
+  const rendered = renderProseBlock(body, linkRefs)
   if (rendered === '') return ''
   return `<p>${rendered}</p>`
 }
 
-function renderAtxHeading(slice: string): string {
+function renderAtxHeading(slice: string, linkRefs: LinkReferenceMap): string {
   const line = normalizeBlockSlice(slice).split('\n')[0] ?? ''
   const m = line.match(ATX_HEADING_RE)
-  if (!m?.[1]) return renderParagraph(slice)
+  if (!m?.[1]) return renderParagraph(slice, linkRefs)
   const level = m[1].length
   const text = (m[2] ?? '').trimEnd()
-  return `<h${String(level)}>${renderProseBlock(text)}</h${String(level)}>`
+  return `<h${String(level)}>${renderProseBlock(text, linkRefs)}</h${String(level)}>`
 }
 
-function renderSetextHeading(slice: string): string {
+function renderSetextHeading(slice: string, linkRefs: LinkReferenceMap): string {
   const lines = normalizeBlockSlice(slice).split('\n')
   const text = lines[0] ?? ''
   const underline = lines[1] ?? ''
   const level = underline.trim().startsWith('=') ? 3 : 4
-  return `<h${String(level)}>${renderProseBlock(text)}</h${String(level)}>`
+  return `<h${String(level)}>${renderProseBlock(text, linkRefs)}</h${String(level)}>`
 }
 
-function renderTable(slice: string): string {
+function renderTable(slice: string, linkRefs: LinkReferenceMap): string {
   const lines = normalizeBlockSlice(slice)
     .split('\n')
     .filter((l) => l.trim() !== '')
@@ -128,10 +137,10 @@ function renderTable(slice: string): string {
   const headerCells = splitTableRow(header)
   const body = lines.slice(2).map((row) => splitTableRow(row))
   const thead = `<thead><tr>${headerCells
-    .map((c) => `<th>${renderProseBlock(c)}</th>`)
+    .map((c) => `<th>${renderProseBlock(c, linkRefs)}</th>`)
     .join('')}</tr></thead>`
   const tbody = `<tbody>${body
-    .map((r) => `<tr>${r.map((c) => `<td>${renderProseBlock(c)}</td>`).join('')}</tr>`)
+    .map((r) => `<tr>${r.map((c) => `<td>${renderProseBlock(c, linkRefs)}</td>`).join('')}</tr>`)
     .join('')}</tbody>`
   return `<table>${thead}${tbody}</table>`
 }
@@ -145,10 +154,10 @@ function stripBlockquoteSource(slice: string): string {
     .replace(/^\n+|\n+$/g, '')
 }
 
-function renderBlockquote(slice: string): string {
+function renderBlockquote(slice: string, linkRefs: LinkReferenceMap): string {
   const innerSource = stripBlockquoteSource(slice)
   if (innerSource.trim() === '') return ''
-  return `<blockquote>${renderBlocksFromSource(innerSource)}</blockquote>`
+  return `<blockquote>${renderBlocksFromSource(innerSource, linkRefs)}</blockquote>`
 }
 
 function isOrderedListSlice(slice: string): boolean {
@@ -160,6 +169,7 @@ function collectListGroup(
   source: string,
   tokens: BlockToken[],
   start: number,
+  linkRefs: LinkReferenceMap,
 ): { html: string; next: number } {
   const firstToken = tokens[start]
   const firstSlice = firstToken ? source.slice(firstToken.start, firstToken.end) : ''
@@ -188,7 +198,9 @@ function collectListGroup(
     itemSlices.push(slice)
     i++
   }
-  const items = itemSlices.map((slice) => `<li>${renderListItemContent(slice, loose)}</li>`)
+  const items = itemSlices.map(
+    (slice) => `<li>${renderListItemContent(slice, loose, linkRefs)}</li>`,
+  )
   const tag = ordered ? 'ol' : 'ul'
   return { html: `<${tag}>${items.join('')}</${tag}>`, next: i }
 }
@@ -197,6 +209,7 @@ function collectBlockquoteGroup(
   source: string,
   tokens: BlockToken[],
   start: number,
+  linkRefs: LinkReferenceMap,
 ): { html: string; next: number } {
   const parts: string[] = []
   let i = start
@@ -221,12 +234,12 @@ function collectBlockquoteGroup(
     .replace(/^\n+|\n+$/g, '')
   if (innerSource.trim() === '') return { html: '', next: i }
   return {
-    html: `<blockquote>${renderBlocksFromSource(innerSource)}</blockquote>`,
+    html: `<blockquote>${renderBlocksFromSource(innerSource, linkRefs)}</blockquote>`,
     next: i,
   }
 }
 
-function renderSingleBlock(source: string, token: BlockToken): string {
+function renderSingleBlock(source: string, token: BlockToken, linkRefs: LinkReferenceMap): string {
   const slice = source.slice(token.start, token.end)
   switch (token.kind) {
     case 'fence': {
@@ -234,50 +247,56 @@ function renderSingleBlock(source: string, token: BlockToken): string {
       return renderFencedBlock(lang, code)
     }
     case 'atx_heading':
-      return renderAtxHeading(slice)
+      return renderAtxHeading(slice, linkRefs)
     case 'setext_heading':
-      return renderSetextHeading(slice)
+      return renderSetextHeading(slice, linkRefs)
     case 'thematic_break':
       return '<hr>'
     case 'table':
-      return renderTable(slice)
+      return renderTable(slice, linkRefs)
     case 'blockquote':
-      return renderBlockquote(slice)
+      return renderBlockquote(slice, linkRefs)
     case 'list_item':
-      return `<li>${renderListItemContent(slice, false)}</li>`
-    case 'paragraph':
-      return renderParagraph(slice)
+      return `<li>${renderListItemContent(slice, false, linkRefs)}</li>`
+    case 'link_ref_def':
     case 'blank':
       return ''
+    case 'paragraph':
+      return renderParagraph(slice, linkRefs)
     default:
-      return renderParagraph(slice)
+      return renderParagraph(slice, linkRefs)
   }
 }
 
 /** Render tokenized block-level markdown to HTML (#475 phase 2). */
-export function renderBlocks(source: string, tokens: BlockToken[]): string {
+export function renderBlocks(
+  source: string,
+  tokens: BlockToken[],
+  options: RenderBlocksOptions = {},
+): string {
+  const linkRefs = options.linkRefs ?? new Map()
   const parts: string[] = []
   let i = 0
   while (i < tokens.length) {
     const token = tokens[i]
     if (!token) break
-    if (token.kind === 'blank') {
+    if (token.kind === 'blank' || token.kind === 'link_ref_def') {
       i++
       continue
     }
     if (token.kind === 'list_item') {
-      const group = collectListGroup(source, tokens, i)
+      const group = collectListGroup(source, tokens, i, linkRefs)
       if (group.html) parts.push(group.html)
       i = group.next
       continue
     }
     if (token.kind === 'blockquote') {
-      const group = collectBlockquoteGroup(source, tokens, i)
+      const group = collectBlockquoteGroup(source, tokens, i, linkRefs)
       if (group.html) parts.push(group.html)
       i = group.next
       continue
     }
-    const html = renderSingleBlock(source, token)
+    const html = renderSingleBlock(source, token, linkRefs)
     if (html) parts.push(html)
     i++
   }
@@ -285,8 +304,11 @@ export function renderBlocks(source: string, tokens: BlockToken[]): string {
 }
 
 /** Tokenize and render a markdown fragment (used for blockquote recursion). */
-export function renderBlocksFromSource(source: string): string {
-  return renderBlocks(source, tokenizeBlocks(source))
+export function renderBlocksFromSource(
+  source: string,
+  linkRefs: LinkReferenceMap = new Map(),
+): string {
+  return renderBlocks(source, tokenizeBlocks(source), { linkRefs })
 }
 
 /** Whether a line is a GFM table separator (exported for tests that need it). */

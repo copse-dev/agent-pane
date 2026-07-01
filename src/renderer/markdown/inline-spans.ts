@@ -1,19 +1,25 @@
 import { escapeHtml } from './escape.ts'
 import { renderEmphasisOutsideInlineHtml } from './inline-emphasis.ts'
+import { renderInlineLinks, safeLinkHref } from './inline-links.ts'
+import { type LinkReferenceMap } from './link-references.ts'
+
+function renderNestedInlineSpans(t: string, linkRefs: LinkReferenceMap): string {
+  t = renderInlineCode(t)
+  t = renderStrongAroundCode(t)
+  t = renderStrongWithInlineHtml(t)
+  t = renderEmphasisOutsideInlineHtml(t)
+  t = renderInlineLinks(t, linkRefs, renderNestedInlineSpans)
+  t = renderBareHttpLinks(t)
+  return t
+}
 
 /**
  * Inline span markup (code, emphasis, links) for a single line/segment of
  * already-escaped text. Shared by block rendering and per-cell table rendering
  * so emphasis cannot pair across cell boundaries (#469).
  */
-export function renderInlineSpans(t: string): string {
-  t = renderInlineCode(t)
-  t = renderStrongAroundCode(t)
-  t = renderStrongWithInlineHtml(t)
-  t = renderEmphasisOutsideInlineHtml(t)
-  t = renderMarkdownLinks(t)
-  t = renderBareHttpLinks(t)
-  return t
+export function renderInlineSpans(t: string, linkRefs: LinkReferenceMap = new Map()): string {
+  return renderNestedInlineSpans(t, linkRefs)
 }
 
 /**
@@ -85,37 +91,8 @@ function renderStrongWithInlineHtml(text: string): string {
   )
 }
 
-function safeLinkHref(raw: string): string | null {
-  const href = decodeEscapedHref(raw).trim()
-  if (/^https?:\/\//i.test(href)) return href
-  return null
-}
-
-function decodeEscapedHref(raw: string): string {
-  return raw
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-}
-
-function renderedLink(label: string, href: string): string {
+function renderedBareLink(label: string, href: string): string {
   return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" data-browser-link="true">${label}</a>`
-}
-
-function renderMarkdownLinks(text: string): string {
-  return text
-    .split(/(<code>[\s\S]*?<\/code>)/g)
-    .map((segment, index) => {
-      if (index % 2 === 1) return segment
-      return segment.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label: string, url: string) => {
-        const href = safeLinkHref(url)
-        if (!href) return `[${label}](${url})`
-        return renderedLink(label, href)
-      })
-    })
-    .join('')
 }
 
 const BARE_HTTP_URL_RE = /(^|[\s(])((?:https?:\/\/)[^\s<]+)/gi
@@ -131,7 +108,7 @@ function renderBareHttpLinks(text: string): string {
         const url = trailing ? rawUrl.slice(0, -trailing.length) : rawUrl
         const href = safeLinkHref(url)
         if (!href) return `${prefix}${rawUrl}`
-        return `${prefix}${renderedLink(url, href)}${trailing}`
+        return `${prefix}${renderedBareLink(url, href)}${trailing}`
       })
     })
     .join('')

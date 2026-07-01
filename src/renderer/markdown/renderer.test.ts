@@ -54,6 +54,12 @@ describe('renderMarkdown', () => {
     assert.match(html, /<li>beta<\/li>/)
   })
 
+  it('renders relative markdown links and reference definitions', () => {
+    const html = renderMarkdown('[intro][ref]\n\n[ref]: /docs "guide"\n')
+    assert.match(html, /<a href="\/docs"[^>]*title="guide"[^>]*>intro<\/a>/)
+    assert.doesNotMatch(html, /\[ref\]:/)
+  })
+
   it('renders markdown links in prose and ordered lists', () => {
     const html = renderMarkdown(
       'See [PR #204](https://github.com/org/repo/pull/204) for details.\n\n' +
