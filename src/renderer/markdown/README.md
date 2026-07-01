@@ -102,6 +102,16 @@ Bumping the spec is just `npm i -D commonmark-spec@<version>` followed by a
 re-baseline; the version is read from the installed package and pinned in the
 baseline.
 
+### Streaming convergence fuzz (`streaming-convergence.test.ts`, via `npm test`)
+
+Reuses the same CommonMark baseline examples (`tests/commonmark/baseline-examples.ts`)
+as property-test inputs: for each passing spec example, every prefix cut (or a
+strided sample when the markdown is long) feeds `StreamingMarkdownRenderer`
+incrementally, then the full text, and the final display must match a fresh
+complete render. When the tokenizer commits the entire input (no pending tail),
+that display must also match the at-rest `renderMarkdown()` output. Set
+`STREAMING_FUZZ_ALL=1` to exercise every character index on long examples.
+
 The JS normalizer (`tests/commonmark/normalize.ts`) is differentially validated
 against the reference `normalize.py` by `npm run check:normalizer-parity` (a CI
 step in the `check` job; needs python3). The reference normalizer is **not**
