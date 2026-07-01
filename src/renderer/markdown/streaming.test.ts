@@ -35,11 +35,12 @@ describe('splitAtLastNewline', () => {
 })
 
 describe('renderStreamingMarkdown', () => {
-  it('renders completed lines as markdown while the tail stays plain', () => {
+  it('renders completed lines as markdown while the tail streams list body text', () => {
     const html = renderStreamingMarkdown('## Title\n- item')
     assert.match(html, /<h2>Title<\/h2>/)
-    assert.match(html, /<span class="stream-pending">- item<\/span>/)
-    assert.doesNotMatch(html, /<li>- item<\/li>/)
+    assert.match(html, /<span class="stream-pending stream-pending-list-item">item<\/span>/)
+    assert.doesNotMatch(html, /stream-pending[^>]*>- item/)
+    assert.doesNotMatch(html, /<li>item<\/li>/)
   })
 
   it('renders complete inline bold markup on the pending line', () => {
@@ -172,18 +173,27 @@ describe('renderStreamingMarkdown (holds unresolved bold)', () => {
     assert.doesNotMatch(html, /\*\*/)
   })
 
-  it('holds unresolved bold on a pending list line without showing **', () => {
+  it('holds unresolved bold on a pending list line without showing marker or **', () => {
     const html = renderStreamingMarkdown('done\n- **MCP support')
     assert.doesNotMatch(html, /\*\*/)
-    assert.match(html, /<span class="stream-pending">- <\/span>/)
+    assert.doesNotMatch(html, /stream-pending[^>]*>-/)
+    assert.doesNotMatch(html, /<span class="stream-pending stream-pending-list-item">/)
   })
 
   it('renders resolved bold on a pending list line without waiting for newline', () => {
     const html = renderStreamingMarkdown('done\n- **MCP support** — notes')
-    assert.match(html, /<span class="stream-pending">/)
+    assert.match(html, /<span class="stream-pending stream-pending-list-item">/)
     assert.match(html, /<strong>MCP support<\/strong>/)
     assert.doesNotMatch(html, /\*\*/)
+    assert.doesNotMatch(html, /stream-pending[^>]*>-/)
     assert.doesNotMatch(html, /<li>/)
+  })
+
+  it('keeps earlier list items committed while the next item streams', () => {
+    const html = renderStreamingMarkdown('- item one\n- item two')
+    assert.match(html, /<li>item one<\/li>/)
+    assert.match(html, /<span class="stream-pending stream-pending-list-item">item two<\/span>/)
+    assert.doesNotMatch(html, /stream-pending[^>]*>-/)
   })
 
   it('shows a forming table with header cells while the separator streams', () => {
@@ -223,7 +233,8 @@ describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
     assert.ok(completed)
     assert.ok(pending)
     assert.match(completed.innerHTML, /<h2>Title<\/h2>/)
-    assert.equal(pending.textContent, '- item')
+    assert.equal(pending.textContent, 'item')
+    assert.ok(pending.classList.contains('stream-pending-list-item'))
     assert.equal(pending.hidden, false)
   })
 

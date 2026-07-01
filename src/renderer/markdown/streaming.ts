@@ -1,7 +1,12 @@
 import { renderMarkdown } from './renderer.ts'
 import { getIncompleteTableSource, pendingLineBelongsInTable } from './block-tokenizer.ts'
-import { renderPendingLine } from './render-pending-line.ts'
+import {
+  pendingListMarkerLength,
+  pendingListOrderedMarker,
+  renderPendingLine,
+} from './render-pending-line.ts'
 import { splitForStreaming } from './streaming-split.ts'
+import { escapeHtml } from './escape.ts'
 import { sanitizeRenderedMarkdown } from './sanitize.ts'
 import {
   buildFormingTableHtml,
@@ -25,6 +30,31 @@ export {
 
 function renderPendingInlineMarkdown(pending: string): string {
   return renderPendingLine(pending)
+}
+
+function pendingSpanHtml(pending: string, pendingHtml: string): string {
+  if (pendingListMarkerLength(pending) === null) {
+    return `<span class="stream-pending">${pendingHtml}</span>`
+  }
+  const ordered = pendingListOrderedMarker(pending)
+  const classes = ordered
+    ? 'stream-pending stream-pending-list-item stream-pending-ordered-item'
+    : 'stream-pending stream-pending-list-item'
+  const markerAttr = ordered ? ` data-ordered-marker="${escapeHtml(ordered)}"` : ''
+  return `<span class="${classes}"${markerAttr}>${pendingHtml}</span>`
+}
+
+function syncPendingListPresentation(
+  pendingEl: HTMLSpanElement,
+  pending: string,
+  active: boolean,
+): void {
+  const isList = active && pendingListMarkerLength(pending) !== null
+  pendingEl.classList.toggle('stream-pending-list-item', isList)
+  const ordered = isList ? pendingListOrderedMarker(pending) : null
+  pendingEl.classList.toggle('stream-pending-ordered-item', ordered !== null)
+  if (ordered !== null) pendingEl.dataset['orderedMarker'] = ordered
+  else delete pendingEl.dataset['orderedMarker']
 }
 
 function formingTableSource(content: string, pending: string): string | null {
@@ -53,7 +83,7 @@ export function renderStreamingMarkdown(content: string): string {
   if (pendingLineBelongsInTable(complete, pending)) return rendered
   const pendingHtml = sanitizeRenderedMarkdown(renderPendingInlineMarkdown(pending))
   if (!pendingHtml) return rendered
-  return `${rendered}<span class="stream-pending">${pendingHtml}</span>`
+  return `${rendered}${pendingSpanHtml(pending, pendingHtml)}`
 }
 
 /**
@@ -102,8 +132,10 @@ export class StreamingMarkdownRenderer {
         ? sanitizeRenderedMarkdown(renderPendingInlineMarkdown(pending))
         : ''
     pendingEl.innerHTML = pendingHtml
-    pendingEl.hidden =
-      pending === '' || pendingInTable || formingSource !== null || pendingHtml === ''
+    const pendingVisible =
+      pending !== '' && !pendingInTable && formingSource === null && pendingHtml !== ''
+    pendingEl.hidden = !pendingVisible
+    syncPendingListPresentation(pendingEl, pending, pendingVisible)
   }
 
   private syncCommittedTableRow(complete: string, pending: string): void {

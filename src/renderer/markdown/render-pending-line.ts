@@ -5,6 +5,16 @@ import { renderProseInline } from './render-prose-inline.ts'
 
 const LIST_ITEM_PREFIX_RE = /^ {0,3}(?:(?:[-*+])(?:\s|$)|(?:\d{1,9}[.)]\s))/
 
+export function pendingListMarkerLength(pending: string): number | null {
+  const match = pending.match(LIST_ITEM_PREFIX_RE)
+  return match ? match[0].length : null
+}
+
+export function pendingListOrderedMarker(pending: string): string | null {
+  const match = pending.match(/^ {0,3}(\d{1,9})[.)]\s/)
+  return match?.[1] ?? null
+}
+
 /** Inline markdown safe to show while streaming (hold index applied by caller). */
 export function renderStreamingInline(text: string): string {
   return renderProseInline(text)
@@ -24,8 +34,8 @@ export function renderPendingLine(pending: string): string {
     const visible = pending.slice(0, hold)
     if (!visible) return ''
     const markerLen = listMatch[0].length
-    if (visible.length <= markerLen) return escapeHtml(visible)
-    return escapeHtml(pending.slice(0, markerLen)) + renderProseInline(visible.slice(markerLen))
+    if (visible.length <= markerLen) return ''
+    return renderProseInline(visible.slice(markerLen))
   }
 
   if (isAmbiguousBlockLine(pending)) {
