@@ -1,10 +1,10 @@
 # Markdown rendering
 
 Hand-rolled renderer in `renderer.ts` used by conversation messages, subagent timelines, file
-preview, and streaming (`streaming.ts`). Block/inlined tokenizers in `block-tokenizer.ts`,
-`inline-emphasis.ts`, and `streaming-split.ts` drive streaming hold decisions (#475); the
-at-rest renderer still uses regex passes for now. Not a markdown library — keep it that way
-unless requirements clearly outgrow it.
+preview, and streaming (`streaming.ts`). At-rest rendering routes through `tokenizeBlocks()` →
+`renderBlocks()` (`render-blocks.ts`); block/inlined tokenizers in `block-tokenizer.ts`,
+`inline-emphasis.ts`, and `streaming-split.ts` also drive streaming hold decisions (#475). Not a
+markdown library — keep it that way unless requirements clearly outgrow it.
 
 ## Design invariants
 

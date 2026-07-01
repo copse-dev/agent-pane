@@ -199,7 +199,8 @@ function hasSoftLineBreak(s: string): boolean {
 function renderEmphasisSingleLine(s: string): string {
   let t = s
   t = t.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
-  t = t.replace(/_([^_\n]+)_/g, '<em>$1</em>')
+  // Require a non-whitespace character so spaced underscores (`_ _ _ _ a`) stay literal (#55).
+  t = t.replace(/_([^_\n]*\S[^_\n]*)_/g, '<em>$1</em>')
   t = t.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
   return t
 }
