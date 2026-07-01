@@ -209,7 +209,7 @@
   border-left: 3px solid var(--error);
 }
 .message-text {
-  white-space: pre-wrap;
+  white-space: normal;
   word-break: break-word;
   line-height: 1.55;
 }
@@ -220,17 +220,7 @@
   margin: 0;
   white-space: pre-wrap;
 }
-.message-text p + p,
-.message-text p + ul,
-.message-text p + ol,
-.message-text ul + p,
-.message-text ol + p,
-.message-text h3 + p,
-.message-text h4 + p,
-.message-text p + h3,
-.message-text p + h4 {
-  margin-top: var(--spacing-sm);
-}
+.message-text h2,
 .message-text h3,
 .message-text h4 {
   margin: var(--spacing-md) 0 var(--spacing-xs);
@@ -238,9 +228,23 @@
   line-height: 1.35;
 }
 .message-text > :first-child,
+.message-text h2:first-child,
 .message-text h3:first-child,
 .message-text h4:first-child {
   margin-top: 0;
+}
+.message-text p + p,
+.message-text p + ul,
+.message-text p + ol,
+.message-text ul + p,
+.message-text ol + p,
+.message-text h2 + p,
+.message-text h3 + p,
+.message-text h4 + p,
+.message-text p + h2,
+.message-text p + h3,
+.message-text p + h4 {
+  margin-top: var(--spacing-sm);
 }
 .message-text ul,
 .message-text ol {
