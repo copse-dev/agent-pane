@@ -14,6 +14,8 @@ export interface ModelUsageBreakdown {
   cacheCreationTokens?: number
   estimatedCostUsd: number
   isLocal: boolean
+  /** Some contributing events used estimated (not agent-reported) token counts. */
+  estimatedTokens?: boolean
 }
 
 export interface UsagePeriodSummary {
@@ -72,6 +74,16 @@ export function aggregateEventsByModel(
   return byModel
 }
 
+/** Models with at least one estimated (not agent-reported) event in the window. */
+function estimatedModelsSince(events: UsageEvent[], sinceMs: number, now: number): Set<string> {
+  const cutoff = now - sinceMs
+  const models = new Set<string>()
+  for (const event of events) {
+    if (event.at >= cutoff && event.estimated) models.add(event.model)
+  }
+  return models
+}
+
 export function aggregateThreadUsage(threads: Thread[]): Record<string, ModelUsage> {
   let byModel: Record<string, ModelUsage> = {}
   for (const thread of threads) {
@@ -88,7 +100,12 @@ export function aggregateThreadUsage(threads: Thread[]): Record<string, ModelUsa
   return byModel
 }
 
-function toBreakdown(model: string, usage: ModelUsage, extra?: ExtraPricing): ModelUsageBreakdown {
+function toBreakdown(
+  model: string,
+  usage: ModelUsage,
+  extra?: ExtraPricing,
+  estimatedTokens = false,
+): ModelUsageBreakdown {
   const isLocal = isLocalModel(model)
   return {
     model,
@@ -100,12 +117,14 @@ function toBreakdown(model: string, usage: ModelUsage, extra?: ExtraPricing): Mo
       : {}),
     estimatedCostUsd: isLocal ? 0 : costForModelUsage(model, usage, extra),
     isLocal,
+    ...(estimatedTokens ? { estimatedTokens: true } : {}),
   }
 }
 
 function summarizeByModel(
   byModel: Record<string, ModelUsage>,
   extra?: ExtraPricing,
+  estimatedModels?: ReadonlySet<string>,
 ): UsagePeriodSummary {
   const cloudModels: ModelUsageBreakdown[] = []
   const localModels: ModelUsageBreakdown[] = []
@@ -115,7 +134,7 @@ function summarizeByModel(
 
   for (const [model, usage] of Object.entries(byModel)) {
     if (!usage.inputTokens && !usage.outputTokens) continue
-    const row = toBreakdown(model, usage, extra)
+    const row = toBreakdown(model, usage, extra, estimatedModels?.has(model) ?? false)
     totalInputTokens += usage.inputTokens
     totalOutputTokens += usage.outputTokens
     totalCostUsd += row.estimatedCostUsd
@@ -149,9 +168,22 @@ export function buildUsageSummary(
     events.length > 0 ? events.reduce((min, e) => Math.min(min, e.at), Infinity) : null
 
   return {
-    day: summarizeByModel(aggregateEventsByModel(events, DAY_MS, now), extra),
-    month: summarizeByModel(aggregateEventsByModel(events, MONTH_MS, now), extra),
-    period90d: summarizeByModel(aggregateEventsByModel(events, PERIOD_90D_MS, now), extra),
+    day: summarizeByModel(
+      aggregateEventsByModel(events, DAY_MS, now),
+      extra,
+      estimatedModelsSince(events, DAY_MS, now),
+    ),
+    month: summarizeByModel(
+      aggregateEventsByModel(events, MONTH_MS, now),
+      extra,
+      estimatedModelsSince(events, MONTH_MS, now),
+    ),
+    period90d: summarizeByModel(
+      aggregateEventsByModel(events, PERIOD_90D_MS, now),
+      extra,
+      estimatedModelsSince(events, PERIOD_90D_MS, now),
+    ),
+    // All-time is derived from saved thread usage, which carries no estimated flag.
     allTime: summarizeByModel(aggregateThreadUsage(threads), extra),
     trackingStartedAt,
     ledgerEventCount: events.length,
@@ -192,6 +224,7 @@ export function parseUsageEvents(raw: unknown): UsageEvent[] {
         : {}),
       ...(typeof rec.projectId === 'string' ? { projectId: rec.projectId } : {}),
       ...(typeof rec.threadId === 'string' ? { threadId: rec.threadId } : {}),
+      ...(rec.estimated === true ? { estimated: true } : {}),
     })
   }
   return out

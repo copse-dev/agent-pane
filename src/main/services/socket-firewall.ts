@@ -87,3 +87,51 @@ export function installSocketFirewall(signal: AbortSignal): Promise<boolean> {
     })
   })
 }
+
+/**
+ * Install an npm package **globally** behind Socket Firewall:
+ * `sfw npm install -g --ignore-scripts <pkg>`. `sfw` proxies the registry and
+ * blocks confirmed-malicious packages (and transitive deps); `--ignore-scripts`
+ * blocks install lifecycle scripts. Ensures `sfw` itself is present first, so a
+ * caller can install an ACP adapter safely without a prior manual step.
+ *
+ * Callers MUST pass a trusted, hard-coded package spec (e.g. from the
+ * `KNOWN_ACP_AGENTS` catalog), never user input, since the spec reaches a shell-
+ * free `spawn` of npm.
+ */
+export async function installGlobalNpmPackage(pkg: string, signal: AbortSignal): Promise<boolean> {
+  const win = getMainWindow()
+  const emit = (text: string): void =>
+    win?.webContents.send('agent:shell_output', text, getCurrentShellTaskId())
+
+  if (!isSocketFirewallAvailable()) {
+    const ok = await installSocketFirewall(signal)
+    if (!ok) {
+      emit('[safe-install] could not install Socket Firewall; aborting package install.\n')
+      return false
+    }
+  }
+
+  const args = ['npm', 'install', '-g', '--ignore-scripts', pkg]
+  emit(`[safe-install] installing ${pkg} via Socket Firewall (${SFW_BIN} ${args.join(' ')})…\n`)
+  return new Promise((resolve) => {
+    let proc
+    try {
+      proc = spawn(SFW_BIN, args, { stdio: 'pipe', signal, shell: process.platform === 'win32' })
+    } catch {
+      resolve(false)
+      return
+    }
+    const stream = (data: Buffer): void => {
+      emit(data.toString())
+    }
+    proc.stdout.on('data', stream)
+    proc.stderr.on('data', stream)
+    proc.on('error', () => {
+      resolve(false)
+    })
+    proc.on('close', (code) => {
+      resolve(code === 0)
+    })
+  })
+}

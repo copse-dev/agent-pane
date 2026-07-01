@@ -26,6 +26,30 @@ export interface KnownAcpAgent {
   envHints?: string[]
   /** Shell command that installs the agent binary (e.g. an `npm install -g …`). */
   install?: string
+  /**
+   * npm package spec to install for auto-setup (Socket-Firewall-wrapped). Present
+   * only for agents distributed on npm; absent for script-installed binaries such
+   * as `cursor-agent` (which auto-setup will never install — see {@link autoInstall}).
+   */
+  installPackage?: string
+  /**
+   * Parent client whose presence gates this agent in auto-setup. For the Claude
+   * adapter it's `claude` (installing the ACP SDK only makes sense when the user
+   * has Claude); for Cursor it's the `cursor-agent` binary itself. Absent = no gate.
+   */
+  requiresClient?: string
+  /**
+   * Whether auto-setup may install {@link installPackage} for the user (through
+   * Socket Firewall) when {@link requiresClient} is present but the agent isn't.
+   * Only true for npm-distributed agents; never for `curl | bash` installers.
+   */
+  autoInstall?: boolean
+  /**
+   * Whether auto-setup should register this agent as a ready-to-use preset once
+   * its binary is available. Curated to one adapter per client (Claude, Cursor)
+   * so auto-setup doesn't register several near-duplicate entries.
+   */
+  preset?: boolean
   /** Shell command that authenticates the agent / mints a token (e.g. `claude setup-token`). */
   setup?: string
   /** Where to read more about the agent. */
@@ -48,14 +72,18 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
   },
   {
     id: 'claude-agent-acp',
-    title: 'Claude Agent (ACP)',
+    title: 'Claude',
     command: 'claude-agent-acp',
     args: [],
     envHints: ['ANTHROPIC_API_KEY'],
     install: 'npm install -g @agentclientprotocol/claude-agent-acp',
+    installPackage: '@agentclientprotocol/claude-agent-acp',
+    requiresClient: 'claude',
+    autoInstall: true,
+    preset: true,
     setup: 'claude setup-token',
     docsUrl: 'https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp',
-    note: 'Claude Agent SDK over ACP. Auth with `claude setup-token` or ANTHROPIC_API_KEY.',
+    note: 'Claude Agent SDK over ACP. Uses your existing `claude` login (or ANTHROPIC_API_KEY).',
   },
   {
     id: 'claude-code-acp',
@@ -64,9 +92,24 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     args: [],
     envHints: ['ANTHROPIC_API_KEY'],
     install: 'npm install -g @zed-industries/claude-code-acp',
-    setup: 'claude setup-token',
+    installPackage: '@zed-industries/claude-code-acp',
+    requiresClient: 'claude',
     docsUrl: 'https://www.npmjs.com/package/@zed-industries/claude-code-acp',
-    note: "Zed's Claude Code ACP adapter. Auth with `claude setup-token` or ANTHROPIC_API_KEY.",
+    note: "Zed's Claude Code ACP adapter. Auth with `claude /login` or ANTHROPIC_API_KEY.",
+  },
+  {
+    id: 'cursor',
+    title: 'Cursor',
+    command: 'cursor-agent',
+    args: ['acp'],
+    // cursor-agent is its own ACP server; the binary is the gate. Not on npm, so
+    // auto-setup never installs it (Socket Firewall can't wrap `curl | bash`).
+    requiresClient: 'cursor-agent',
+    preset: true,
+    install: 'curl https://cursor.com/install | bash',
+    setup: 'cursor-agent login',
+    docsUrl: 'https://docs.cursor.com/en/cli/overview',
+    note: 'Cursor CLI as a native ACP server (`cursor-agent acp`). Sign in with `cursor-agent login`.',
   },
 ]
 
