@@ -33,21 +33,35 @@ When extending the renderer or its CSS, preserve these rules:
   preserved newlines render as visible line breaks without `<br>` tags.
 - **Agent-output shapes.** Support `-`, `*`, and `+` list markers. ATX `#` levels map to
   matching `<h1>`–`<h6>` tags (see `render-blocks.ts`).
-- **Streaming hold.** Incomplete block starts (fences, thematic breaks) stream as plain
-  text in the pending tail until their line ends. Open fenced code blocks forward-pass
-  into `.stream-forming` as `<pre class="stream-fence-forming">` with highlight.js on
+- **Streaming hold.** Incomplete block starts (fences, thematic breaks, blockquotes) stream as
+  plain text in the inline pending tail until their line ends. Open fenced code blocks
+  forward-pass into `.stream-forming` as `<pre class="stream-fence-forming">` with highlight.js on
   the body so far (mermaid fences show a pending source placeholder until complete).
   Forming GFM tables forward-pass into `.stream-forming` (`<table class="stream-table-forming">`) as header/separator/body
   cells arrive; committed tables append body rows via `tr.stream-pending-row` with
   inline cell updates. Pending **list** lines hide the `-`/`*`/`1.` marker and show
   body text with a bullet/number via `.stream-pending-list-item` until the line
   ends and the full `<ul>/<li>` (or `<ol>/<li>`) is committed. Pending **ATX
-  headings** (`#` … `######`) hide the hash run and render title text in
-  `.stream-pending-heading.stream-pending-hN` with matching heading weight/size
-  until the line completes. **HTML entities** in prose (`&nbsp;`, `&#160;`) decode
-  via `decodeSafeMarkdownEntities()` (with incomplete suffixes held so `&nbsp` never
-  flashes literally); other entities stay escaped for XSS safety. Inline hold still
-  suppresses half-open `**` on the current line.
+  headings** (`#` … `######`) hide the hash run and render title text in a
+  `<div class="stream-pending-heading stream-pending-hN">` (`data-heading-level`) with
+  matching heading weight/size until the line completes. **HTML entities** in prose
+  (`&nbsp;`, `&#160;`) decode via `decodeSafeMarkdownEntities()` (with incomplete suffixes
+  held so `&nbsp` never flashes literally); other entities stay escaped for XSS safety.
+  Inline hold still suppresses half-open `**` on the current line.
+
+  Pending shapes (`streaming-pending-matrix.test.ts`):
+
+  | While streaming | DOM / class | Raw marker hidden? | Inline MD in tail? |
+  |---|---|---|---|
+  | Prose paragraph | `<p class="stream-pending-paragraph">` | n/a | yes |
+  | `- item` / `1. item` | `<div class="stream-pending-list-item">` | yes | yes |
+  | Nested `  - item` | `<div class="stream-pending-list-item">` (indented marker) | yes | yes |
+  | Lazy list continuation | `<span class="stream-pending-list-continuation">` in open `<li>` | n/a (plain text) | yes |
+  | `### Heading` | `<div class="stream-pending-heading stream-pending-hN">` | yes | yes |
+  | `---` / `> quote` | `<span class="stream-pending">` escaped plain text | no | no |
+  | Forming `\| H \|` table | `.stream-forming` + `<th>` | pipes = cell boundaries | per cell |
+  | Pending table body row | `tr.stream-pending-row` + `<td>` | pipes = cell boundaries | per cell |
+  | Open fenced code | `.stream-forming pre.stream-fence-forming` | yes | highlighted |
 - **Inline emphasis.** A single delimiter-stack path (`inline-emphasis.ts`) handles all emphasis;
   there is no separate regex fast path.
 - **List indent.** Global `* { padding: 0 }` strips UA list padding. Restore readable indent on
