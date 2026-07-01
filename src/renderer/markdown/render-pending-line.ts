@@ -11,6 +11,11 @@ function renderPendingProseInline(text: string): string {
   return renderInlineSpans(renderArtifactImageTags(escapeHtml(body))).replace(/\n/g, '<br>')
 }
 
+/** Inline markdown safe to show while streaming (hold index applied by caller). */
+export function renderStreamingInline(text: string): string {
+  return renderPendingProseInline(text)
+}
+
 /**
  * Render the safe visible portion of a streaming pending tail. Block constructs
  * (lists, tables, headings) stay out of the DOM until their line/block completes;

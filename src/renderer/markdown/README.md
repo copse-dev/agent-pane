@@ -24,16 +24,19 @@ When extending the renderer or its CSS, preserve these rules:
   are common in LLM output; split at block boundaries before wrapping paragraphs.
 - **Inline formatting order.** Fenced code → inline code → bold → italic. Italic (`_` and `*`) runs
   only outside `<code>` spans and must not match across newlines (or `* list` lines get eaten).
-  Consequence: emphasis whose opener and closer are split across a soft line break is **not**
-  rendered at rest if the segment has no internal newline (regex path), but **is** resolved
-  while streaming via the delimiter-stack AST in `inline-emphasis.ts`. See #475 and
-  [`docs/plans/markdown-renderer-hardening.md`](../../../docs/plans/markdown-renderer-hardening.md).
+  Consequence: emphasis whose opener and closer are split across a soft line break is resolved
+  via the delimiter-stack in `inline-emphasis.ts` when the segment includes an internal newline.
+  See #475 and [`docs/plans/markdown-renderer-hardening.md`](../../../docs/plans/markdown-renderer-hardening.md).
 - **Agent-output shapes.** Support `-`, `*`, and `+` list markers. Map `#`/`##` to `<h4>`, `###` to
   `<h3>` — h1/h2 are intentionally too large for the narrow pane.
-- **Streaming hold.** Incomplete block starts (tables before the separator, headings, fences) stay
-  hidden in the pending tail — no raw `| … |` or `##` flash. Pending list lines apply inline hold
-  so `- **label` shows only `- ` until the bold closes; the full `<ul>/<li>` appears once the line
-  ends. Completed tables use `<table>`; additional body rows stream into `tr.stream-pending-row`.
+- **Streaming hold.** Incomplete block starts (headings, fences) stay hidden in the pending
+  tail. Forming GFM tables forward-pass into `.stream-forming` (`<table class="stream-table-forming">`)
+  as header/separator/body cells arrive; committed tables append body rows via
+  `tr.stream-pending-row` with inline cell updates. Pending list lines apply inline hold so
+  `- **label` shows only `- ` until the bold closes; the full `<ul>/<li>` appears once the line
+  ends.
+- **Inline emphasis.** A single delimiter-stack path (`inline-emphasis.ts`) handles all emphasis;
+  there is no separate regex fast path.
 - **List indent.** Global `* { padding: 0 }` strips UA list padding. Restore readable indent on
   `.message-text ul/ol` in `global.css` (currently `padding-inline-start: 1.5em;
 list-style-position: outside`). Bullets should sit clearly inset from headings, not flush with
