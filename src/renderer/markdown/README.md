@@ -33,16 +33,21 @@ When extending the renderer or its CSS, preserve these rules:
   preserved newlines render as visible line breaks without `<br>` tags.
 - **Agent-output shapes.** Support `-`, `*`, and `+` list markers. ATX `#` levels map to
   matching `<h1>`–`<h6>` tags (see `render-blocks.ts`).
-- **Streaming hold.** Incomplete block starts (headings, fences) stream as plain
+- **Streaming hold.** Incomplete block starts (fences, thematic breaks) stream as plain
   text in the pending tail until their line ends. Open fenced code blocks forward-pass
   into `.stream-forming` as `<pre class="stream-fence-forming">` with highlight.js on
   the body so far (mermaid fences show a pending source placeholder until complete).
   Forming GFM tables forward-pass into `.stream-forming` (`<table class="stream-table-forming">`) as header/separator/body
   cells arrive; committed tables append body rows via `tr.stream-pending-row` with
-  inline cell updates. Pending list lines hide the `-`/`*`/`1.` marker and show
+  inline cell updates. Pending **list** lines hide the `-`/`*`/`1.` marker and show
   body text with a bullet/number via `.stream-pending-list-item` until the line
-  ends and the full `<ul>/<li>` (or `<ol>/<li>`) is committed; inline hold still
-  suppresses half-open `**` on the current item.
+  ends and the full `<ul>/<li>` (or `<ol>/<li>`) is committed. Pending **ATX
+  headings** (`#` … `######`) hide the hash run and render title text in
+  `.stream-pending-heading.stream-pending-hN` with matching heading weight/size
+  until the line completes. **HTML entities** in prose (`&nbsp;`, `&#160;`) decode
+  via `decodeSafeMarkdownEntities()` (with incomplete suffixes held so `&nbsp` never
+  flashes literally); other entities stay escaped for XSS safety. Inline hold still
+  suppresses half-open `**` on the current line.
 - **Inline emphasis.** A single delimiter-stack path (`inline-emphasis.ts`) handles all emphasis;
   there is no separate regex fast path.
 - **List indent.** Global `* { padding: 0 }` strips UA list padding. Restore readable indent on
@@ -136,6 +141,12 @@ contributors without python can still run the default gates.
 
 - `tests/e2e/markdown-list-indent.e2e.ts` — Known Failures + Architecture Highlights; asserts list
   text is inset >4px from headings
+- `tests/e2e/markdown-streaming-list.e2e.ts` — lazy list continuations stream inside the open
+  `<li>` without a fake bullet row
+- `tests/e2e/markdown-streaming-heading.e2e.ts` — pending `###` titles render in
+  `.stream-pending-heading` without raw `#` markers
+- `tests/e2e/markdown-nbsp-metadata.e2e.ts` — sprint/RFC metadata lines decode `&nbsp;` while
+  streaming
 - `tests/e2e/semantic-search-markdown.e2e.ts` — explore subagent timeline; asserts no raw `##` in
   rendered text, summary preview hidden when expanded, code spans intact
 - `tests/e2e/mermaid-diagram.e2e.ts` — seeded flowchart; asserts `.mermaid-diagram svg` renders

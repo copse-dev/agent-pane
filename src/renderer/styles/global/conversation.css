@@ -305,6 +305,35 @@
   white-space: normal;
 }
 
+.message-text .stream-pending.stream-pending-heading,
+.message-text div.stream-pending-heading {
+  display: block;
+  font-weight: 600;
+  line-height: 1.35;
+  margin: var(--spacing-md) 0 var(--spacing-xs);
+  white-space: normal;
+}
+
+.message-text .stream-complete > .stream-pending-heading:first-child,
+.message-text .stream-pending-heading:first-child {
+  margin-top: 0;
+}
+
+.message-text .stream-pending-h1,
+.message-text .stream-pending-h2 {
+  font-size: 1.15em;
+}
+
+.message-text .stream-pending-h3 {
+  font-size: 1.05em;
+}
+
+.message-text .stream-pending-h4,
+.message-text .stream-pending-h5,
+.message-text .stream-pending-h6 {
+  font-size: 1em;
+}
+
 .message-text .stream-pending.stream-pending-ordered-item::before,
 .message-text div.stream-pending-ordered-item::before {
   content: attr(data-ordered-marker) '. ';

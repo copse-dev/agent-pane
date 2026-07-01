@@ -1,3 +1,4 @@
+import { ATX_HEADING_CAPTURE_RE, stripAtxClosingHashes } from './block-patterns.ts'
 import {
   isAmbiguousBlockLine,
   isLazyListContinuation,
@@ -51,6 +52,17 @@ export function pendingListOrderedMarker(pending: string): string | null {
   return match?.[1] ?? null
 }
 
+export function pendingAtxHeadingLevel(pending: string): number | null {
+  const match = pending.match(ATX_HEADING_CAPTURE_RE)
+  return match?.[1] ? match[1].length : null
+}
+
+function pendingAtxHeadingTitle(pending: string): string {
+  const match = pending.match(ATX_HEADING_CAPTURE_RE)
+  if (!match?.[1]) return ''
+  return stripAtxClosingHashes((match[2] ?? '').trimEnd())
+}
+
 export function isListContinuationPending(
   pending: string,
   openListItemFirstLine?: string,
@@ -101,6 +113,15 @@ export function renderPendingLine(pending: string, options: RenderPendingLineOpt
 
   if (isIncompleteListMarkerPrefix(pending)) {
     return ''
+  }
+
+  if (pendingAtxHeadingLevel(pending) !== null) {
+    const title = pendingAtxHeadingTitle(pending)
+    if (!title) return ''
+    const hold = pendingHoldIndex(title)
+    const visible = title.slice(0, hold)
+    if (!visible) return ''
+    return renderProseInline(visible)
   }
 
   if (isAmbiguousBlockLine(pending)) {

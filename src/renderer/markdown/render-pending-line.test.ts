@@ -28,4 +28,16 @@ describe('renderPendingLine list streaming edge cases', () => {
     )
     assert.match(html, / {2}- child item/)
   })
+
+  it('strips ATX hash markers and renders heading title inline', () => {
+    const html = sanitizeRenderedMarkdown(renderPendingLine('### Architecture Highlights'))
+    assert.match(html, /Architecture Highlights/)
+    assert.doesNotMatch(html, /###/)
+  })
+
+  it('hides incomplete ATX heading markers until title text follows', () => {
+    assert.equal(renderPendingLine('###'), '')
+    assert.equal(renderPendingLine('## '), '')
+    assert.match(sanitizeRenderedMarkdown(renderPendingLine('## Title')), /Title/)
+  })
 })
