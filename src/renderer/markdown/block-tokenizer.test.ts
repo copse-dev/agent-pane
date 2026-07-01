@@ -104,6 +104,24 @@ describe('splitForStreaming (tokenizer #475)', () => {
     })
   })
 
+  it('holds a table header row until the separator confirms structure', () => {
+    assert.deepEqual(splitForStreaming('| A | B |'), {
+      complete: '',
+      pending: '| A | B |',
+    })
+    assert.deepEqual(splitForStreaming('| A | B |\n| - |'), {
+      complete: '',
+      pending: '| A | B |\n| - |',
+    })
+  })
+
+  it('commits a table once header and separator lines are complete', () => {
+    assert.deepEqual(splitForStreaming('| A | B |\n| - | - |\n'), {
+      complete: '| A | B |\n| - | - |\n',
+      pending: '',
+    })
+  })
+
   it('holds an open fence from its opener', () => {
     assert.deepEqual(splitForStreaming('intro\n```ts\ncode'), {
       complete: 'intro\n',
