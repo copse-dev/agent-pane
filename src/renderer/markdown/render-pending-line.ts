@@ -3,15 +3,22 @@ import { escapeHtml } from './escape.ts'
 import { pendingHoldIndex } from './inline-emphasis.ts'
 import { renderProseInline } from './render-prose-inline.ts'
 
-const LIST_ITEM_PREFIX_RE = /^ {0,3}(?:(?:[-*+])(?:\s|$)|(?:\d{1,9}[.)]\s))/
+/** Document-level list marker (CommonMark: up to 3 spaces). */
+const TOP_LEVEL_LIST_MARKER_RE = /^ {0,3}(?:(?:[-*+])(?:\s|$)|(?:\d{1,9}[.)]\s))/
+/** Indented sublist marker while the parent item is still open (4+ spaces). */
+const INDENTED_LIST_MARKER_RE = /^ {4,}(?:(?:[-*+])(?:\s|$)|(?:\d{1,9}[.)]\s))/
+
+function matchPendingListMarker(pending: string): RegExpMatchArray | null {
+  return pending.match(TOP_LEVEL_LIST_MARKER_RE) ?? pending.match(INDENTED_LIST_MARKER_RE)
+}
 
 export function pendingListMarkerLength(pending: string): number | null {
-  const match = pending.match(LIST_ITEM_PREFIX_RE)
+  const match = matchPendingListMarker(pending)
   return match ? match[0].length : null
 }
 
 export function pendingListOrderedMarker(pending: string): string | null {
-  const match = pending.match(/^ {0,3}(\d{1,9})[.)]\s/)
+  const match = pending.match(/^ {0,3}(\d{1,9})[.)]\s/) ?? pending.match(/^ {4,}(\d{1,9})[.)]\s/)
   return match?.[1] ?? null
 }
 
@@ -28,7 +35,7 @@ export function renderStreamingInline(text: string): string {
 export function renderPendingLine(pending: string): string {
   if (!pending) return ''
 
-  const listMatch = pending.match(LIST_ITEM_PREFIX_RE)
+  const listMatch = matchPendingListMarker(pending)
   if (listMatch) {
     const hold = pendingHoldIndex(pending)
     const visible = pending.slice(0, hold)
