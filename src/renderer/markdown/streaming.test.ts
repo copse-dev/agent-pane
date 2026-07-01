@@ -254,6 +254,18 @@ describe('renderStreamingMarkdown (holds unresolved bold)', () => {
     assert.match(renderStreamingMarkdown('## Title\n### Name'), />Name</)
   })
 
+  it('streams blockquotes without raw > markers on the pending line', () => {
+    const html = renderStreamingMarkdown('intro\n> quoted text')
+    assert.match(html, /<blockquote class="stream-pending stream-pending-blockquote[^"]*">/)
+    assert.match(html, /<p>quoted text<\/p>/)
+    assert.doesNotMatch(html, /&gt; quoted/)
+  })
+
+  it('hides bare blockquote markers until body text follows', () => {
+    assert.doesNotMatch(renderStreamingMarkdown('intro\n>'), /stream-pending-blockquote/)
+    assert.match(renderStreamingMarkdown('intro\n> note'), /quoted text|note/)
+  })
+
   it('shows a forming table with header cells while the separator streams', () => {
     const html = renderStreamingMarkdown('intro\n| Path | Role |')
     assert.match(html, /<p>intro<\/p>/)

@@ -58,7 +58,8 @@ When extending the renderer or its CSS, preserve these rules:
   | Nested `  - item` | `<div class="stream-pending-list-item">` (indented marker) | yes | yes |
   | Lazy list continuation | `<span class="stream-pending-list-continuation">` in open `<li>` | n/a (plain text) | yes |
   | `### Heading` | `<div class="stream-pending-heading stream-pending-hN">` | yes | yes |
-  | `---` / `> quote` | `<span class="stream-pending">` escaped plain text | no | no |
+  | `> quote` | `<blockquote class="stream-pending-blockquote"><p>…</p>` | yes | yes |
+  | `---` | `<span class="stream-pending">` escaped plain text | no | no |
   | Forming `\| H \|` table | `.stream-forming` + `<th>` | pipes = cell boundaries | per cell |
   | Pending table body row | `tr.stream-pending-row` + `<td>` | pipes = cell boundaries | per cell |
   | Open fenced code | `.stream-forming pre.stream-fence-forming` | yes | highlighted |
@@ -159,6 +160,8 @@ contributors without python can still run the default gates.
   `<li>` without a fake bullet row
 - `tests/e2e/markdown-streaming-heading.e2e.ts` — pending `###` titles render in
   `.stream-pending-heading` without raw `#` markers
+- `tests/e2e/markdown-streaming-blockquote.e2e.ts` — pending `>` lines render in
+  `<blockquote class="stream-pending-blockquote">` without raw `>` markers
 - `tests/e2e/markdown-nbsp-metadata.e2e.ts` — sprint/RFC metadata lines decode `&nbsp;` while
   streaming
 - `tests/e2e/semantic-search-markdown.e2e.ts` — explore subagent timeline; asserts no raw `##` in

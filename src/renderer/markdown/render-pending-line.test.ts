@@ -35,6 +35,18 @@ describe('renderPendingLine list streaming edge cases', () => {
     assert.doesNotMatch(html, /###/)
   })
 
+  it('strips blockquote markers and renders body inline', () => {
+    const html = sanitizeRenderedMarkdown(renderPendingLine('> quoted text'))
+    assert.match(html, /quoted text/)
+    assert.doesNotMatch(html, /&gt;/)
+  })
+
+  it('hides bare blockquote markers until body text follows', () => {
+    assert.equal(renderPendingLine('>'), '')
+    assert.equal(renderPendingLine('> '), '')
+    assert.match(sanitizeRenderedMarkdown(renderPendingLine('> note')), /note/)
+  })
+
   it('hides incomplete ATX heading markers until title text follows', () => {
     assert.equal(renderPendingLine('###'), '')
     assert.equal(renderPendingLine('## '), '')

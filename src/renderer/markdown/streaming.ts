@@ -7,6 +7,7 @@ import {
 } from './block-tokenizer.ts'
 import {
   isListContinuationPending,
+  isPendingBlockquoteLine,
   pendingAtxHeadingLevel,
   pendingListMarkerLength,
   pendingListOrderedMarker,
@@ -55,14 +56,19 @@ export function isBlockLevelPending(pending: string, openListItemFirstLine?: str
   if (!pending.trim() || pending.includes('\n')) return false
   if (pendingListMarkerLength(pending) !== null) return true
   if (pendingAtxHeadingLevel(pending) !== null) return true
+  if (isPendingBlockquoteLine(pending)) return true
   if (isListContinuationPending(pending, openListItemFirstLine)) return true
   return !isAmbiguousBlockLine(pending)
 }
 
-function blockPendingTag(pending: string, openListItemFirstLine?: string): 'p' | 'div' | 'span' {
+function blockPendingTag(
+  pending: string,
+  openListItemFirstLine?: string,
+): 'p' | 'div' | 'span' | 'blockquote' {
   if (isListContinuationPending(pending, openListItemFirstLine)) return 'span'
   if (pendingListMarkerLength(pending) !== null) return 'div'
   if (pendingAtxHeadingLevel(pending) !== null) return 'div'
+  if (isPendingBlockquoteLine(pending)) return 'blockquote'
   return 'p'
 }
 
@@ -80,6 +86,9 @@ function blockPendingClassName(pending: string, openListItemFirstLine?: string):
   if (headingLevel !== null) {
     return `stream-pending stream-pending-heading stream-pending-h${String(headingLevel)} ${BLOCK_PENDING_CLASS}`
   }
+  if (isPendingBlockquoteLine(pending)) {
+    return `stream-pending stream-pending-blockquote ${BLOCK_PENDING_CLASS}`
+  }
   return `stream-pending stream-pending-paragraph ${BLOCK_PENDING_CLASS}`
 }
 
@@ -92,16 +101,24 @@ function blockPendingAttrs(pending: string): string {
   return attrs
 }
 
+function wrapBlockPendingInner(pending: string, pendingInner: string): string {
+  if (isPendingBlockquoteLine(pending)) {
+    return pendingInner ? `<p>${pendingInner}</p>` : ''
+  }
+  return pendingInner
+}
+
 function blockPendingHtml(
   pending: string,
   pendingInner: string,
   openListItemFirstLine?: string,
 ): string {
   const tag = blockPendingTag(pending, openListItemFirstLine)
+  const innerRaw = wrapBlockPendingInner(pending, pendingInner)
   const inner =
-    tag === 'span' && pendingInner !== '' && !pendingInner.startsWith(' ')
-      ? ` ${pendingInner}`
-      : pendingInner
+    tag === 'span' && innerRaw !== '' && !innerRaw.startsWith(' ')
+      ? ` ${innerRaw}`
+      : innerRaw
   return `<${tag} class="${blockPendingClassName(pending, openListItemFirstLine)}"${blockPendingAttrs(pending)}>${inner}</${tag}>`
 }
 
@@ -178,7 +195,7 @@ function syncBlockPendingDom(
   else el.removeAttribute('data-ordered-marker')
   if (headingLevel !== null) el.setAttribute('data-heading-level', String(headingLevel))
   else el.removeAttribute('data-heading-level')
-  el.innerHTML = pendingInner
+  el.innerHTML = wrapBlockPendingInner(pending, pendingInner)
 }
 
 function syncInlinePendingDom(

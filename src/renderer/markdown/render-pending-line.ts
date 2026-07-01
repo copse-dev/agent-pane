@@ -1,4 +1,4 @@
-import { ATX_HEADING_CAPTURE_RE, stripAtxClosingHashes } from './block-patterns.ts'
+import { ATX_HEADING_CAPTURE_RE, BLOCKQUOTE_DETECT_RE, stripAtxClosingHashes, stripBlockquoteMarker } from './block-patterns.ts'
 import {
   isAmbiguousBlockLine,
   isLazyListContinuation,
@@ -63,6 +63,14 @@ function pendingAtxHeadingTitle(pending: string): string {
   return stripAtxClosingHashes((match[2] ?? '').trimEnd())
 }
 
+export function isPendingBlockquoteLine(pending: string): boolean {
+  return BLOCKQUOTE_DETECT_RE.test(pending)
+}
+
+function pendingBlockquoteBody(pending: string): string {
+  return stripBlockquoteMarker(pending)
+}
+
 export function isListContinuationPending(
   pending: string,
   openListItemFirstLine?: string,
@@ -120,6 +128,15 @@ export function renderPendingLine(pending: string, options: RenderPendingLineOpt
     if (!title) return ''
     const hold = pendingHoldIndex(title)
     const visible = title.slice(0, hold)
+    if (!visible) return ''
+    return renderProseInline(visible)
+  }
+
+  if (isPendingBlockquoteLine(pending)) {
+    const body = pendingBlockquoteBody(pending)
+    if (!body.trim()) return ''
+    const hold = pendingHoldIndex(body)
+    const visible = body.slice(0, hold)
     if (!visible) return ''
     return renderProseInline(visible)
   }
