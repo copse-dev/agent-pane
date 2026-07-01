@@ -20,39 +20,21 @@
 // plain text), so only `renderMarkdown` is measured here.
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { renderMarkdown } from './renderer.ts'
 import { normalizeHtml } from '../../../tests/commonmark/normalize.ts'
+import {
+  loadConformanceBaseline,
+  type ConformanceBaseline,
+} from '../../../tests/commonmark/baseline-examples.ts'
 import {
   commonMarkSpecVersion,
   loadCommonMarkSpec,
   type SpecExample,
 } from '../../../tests/commonmark/load-spec.ts'
 
-interface Baseline {
-  specVersion: string
-  source: string
-  note: string
-  total: number
-  passing: number[]
-  summaryBySection: Record<string, { pass: number; total: number }>
-}
-
 const SPEC_VERSION = commonMarkSpecVersion()
-const ROOT = process.cwd()
-const BASELINE_PATH = resolve(ROOT, 'tests/fixtures/commonmark/conformance-baseline.json')
-
-function readJson(path: string, hint: string): unknown {
-  let raw: string
-  try {
-    raw = readFileSync(path, 'utf8')
-  } catch {
-    throw new Error(`Missing ${path}. ${hint}`)
-  }
-  return JSON.parse(raw)
-}
-
 const spec = loadCommonMarkSpec()
 
 function conforms(example: SpecExample): boolean {
@@ -78,7 +60,7 @@ describe('CommonMark conformance (at rest)', () => {
   const passingSet = new Set(passing)
 
   if (process.env['UPDATE_COMMONMARK_BASELINE'] === '1') {
-    const baseline: Baseline = {
+    const baseline: ConformanceBaseline = {
       specVersion: SPEC_VERSION,
       source: `commonmark-spec@${SPEC_VERSION} (devDependency)`,
       note: 'Examples from the official CommonMark spec that renderMarkdown() satisfies at rest, after the spec normalizer. This is a regression baseline, not a conformance goal — the renderer is intentionally app-specific.',
@@ -86,17 +68,17 @@ describe('CommonMark conformance (at rest)', () => {
       passing,
       summaryBySection: summarize(passingSet),
     }
-    writeFileSync(BASELINE_PATH, JSON.stringify(baseline, null, 2) + '\n')
+    writeFileSync(
+      resolve(process.cwd(), 'tests/fixtures/commonmark/conformance-baseline.json'),
+      JSON.stringify(baseline, null, 2) + '\n',
+    )
     it('regenerated the conformance baseline', () => {
       assert.ok(passing.length > 0, 'expected at least one conforming example')
     })
     return
   }
 
-  const baseline = readJson(
-    BASELINE_PATH,
-    'Run `UPDATE_COMMONMARK_BASELINE=1 npm test` to generate it.',
-  ) as Baseline
+  const baseline = loadConformanceBaseline()
 
   it('pins the spec fixture version', () => {
     assert.equal(baseline.specVersion, SPEC_VERSION)
