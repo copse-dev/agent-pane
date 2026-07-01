@@ -3,6 +3,8 @@
  * Shared by the at-rest renderer and the streaming hold logic.
  */
 import { scanCodeSpans } from './inline-code-spans.ts'
+import { linkOrImageStartsAt } from './inline-links.ts'
+import { type LinkReferenceMap } from './link-references.ts'
 
 const ASCII_PUNCTUATION_RE = /[!-/:-@[-`{-~]/
 
@@ -42,6 +44,7 @@ function readDelimiterRun(
   i: number,
   limit: number,
   mask: boolean[],
+  linkRefs: LinkReferenceMap,
 ): DelimiterRun | null {
   const ch = s[i]
   if (ch === undefined || (ch !== '*' && ch !== '_') || mask[i]) return null
@@ -52,7 +55,8 @@ function readDelimiterRun(
   const next = j < s.length ? (s[j] ?? '') : ''
   const lf = isLeftFlanking(prev, next)
   const rf = isRightFlanking(prev, next)
-  const canOpen = ch === '*' ? lf : lf && (!rf || isFlankingPunctuation(prev))
+  const linkBeatsEmphasis = ch === '*' && lf && next === '[' && linkOrImageStartsAt(s, j, linkRefs)
+  const canOpen = ch === '*' ? lf && !linkBeatsEmphasis : lf && (!rf || isFlankingPunctuation(prev))
   const canClose = ch === '*' ? rf : rf && (!lf || isFlankingPunctuation(next))
   return { char: ch, start: i, end: j, len, canOpen, canClose }
 }
@@ -83,7 +87,7 @@ interface DelimiterMatch {
 /** True when a matched emphasis span includes an internal newline. */
 export function emphasisSpansNewline(s: string): boolean {
   const { mask } = scanCodeSpans(s)
-  const matches = scanDelimiterMatches(s, mask)
+  const matches = scanDelimiterMatches(s, mask, new Map())
   return matches.some((m) => s.slice(m.openIndex, m.closeIndex + m.closeLen).includes('\n'))
 }
 
@@ -106,6 +110,7 @@ function handleCloseRemainder(
   closeStart: number,
   used: number,
   closeLen: number,
+  linkRefs: LinkReferenceMap,
 ): void {
   const remainder = closeLen - used
   if (remainder <= 0) return
@@ -114,7 +119,10 @@ function handleCloseRemainder(
   const remNext = remIndex + remainder < s.length ? (s[remIndex + remainder] ?? '') : ''
   const remLf = isLeftFlanking(remPrev, remNext)
   const remRf = isRightFlanking(remPrev, remNext)
-  const remCanOpen = ch === '*' ? remLf : remLf && (!remRf || isFlankingPunctuation(remPrev))
+  const remCanOpen =
+    ch === '*'
+      ? remLf && !(remNext === '[' && linkOrImageStartsAt(s, remIndex + remainder, linkRefs))
+      : remLf && (!remRf || isFlankingPunctuation(remPrev))
   const remCanClose = ch === '*' ? remRf : remRf && (!remLf || isFlankingPunctuation(remNext))
 
   const remMatched = remCanClose ? findMatchingOpener(stack, ch) : -1
@@ -165,6 +173,7 @@ function walkEmphasisDelimiters(
   limit: number,
   mask: boolean[],
   mode: DelimiterWalkMode,
+  linkRefs: LinkReferenceMap,
 ): { matches: DelimiterMatch[]; stack: OpenDelimiter[]; trailingConsumed: boolean } {
   const matches: DelimiterMatch[] = []
   const stack: OpenDelimiter[] = []
@@ -172,7 +181,7 @@ function walkEmphasisDelimiters(
   let i = 0
 
   while (i < limit) {
-    const run = readDelimiterRun(s, i, limit, mask)
+    const run = readDelimiterRun(s, i, limit, mask, linkRefs)
     if (!run) {
       i++
       continue
@@ -215,7 +224,7 @@ function walkEmphasisDelimiters(
       }
 
       if (mode === 'render') {
-        handleCloseRemainder(s, stack, matches, ch, start, used, len)
+        handleCloseRemainder(s, stack, matches, ch, start, used, len, linkRefs)
       } else if (j === s.length) {
         trailingConsumed = true
       }
@@ -228,8 +237,12 @@ function walkEmphasisDelimiters(
   return { matches, stack, trailingConsumed }
 }
 
-function scanDelimiterMatches(s: string, mask: boolean[]): DelimiterMatch[] {
-  return walkEmphasisDelimiters(s, s.length, mask, 'render').matches
+function scanDelimiterMatches(
+  s: string,
+  mask: boolean[],
+  linkRefs: LinkReferenceMap,
+): DelimiterMatch[] {
+  return walkEmphasisDelimiters(s, s.length, mask, 'render', linkRefs).matches
 }
 
 function trailingDelimiterStart(s: string, mask: boolean[]): number {
@@ -303,8 +316,8 @@ function delimitersToSkip(s: string, matches: DelimiterMatch[]): boolean[] {
   return skip
 }
 
-function renderEmphasisSegment(s: string, mask: boolean[]): string {
-  const matches = scanDelimiterMatches(s, mask)
+function renderEmphasisSegment(s: string, mask: boolean[], linkRefs: LinkReferenceMap): string {
+  const matches = scanDelimiterMatches(s, mask, linkRefs)
   if (matches.length === 0) return s
 
   const roots = findRootMatches(matches)
@@ -343,9 +356,12 @@ function renderEmphasisSegment(s: string, mask: boolean[]): string {
  * Resolve `*`/`_` emphasis in a plain-text segment (may include `\n` for soft
  * breaks). Code spans in the source should already be rendered as `<code>`.
  */
-export function renderEmphasisDelimiters(s: string): string {
+export function renderEmphasisDelimiters(
+  s: string,
+  linkRefs: LinkReferenceMap = new Map(),
+): string {
   const { mask } = scanCodeSpans(s)
-  return renderEmphasisSegment(s, mask)
+  return renderEmphasisSegment(s, mask, linkRefs)
 }
 
 /**
@@ -354,7 +370,7 @@ export function renderEmphasisDelimiters(s: string): string {
 export function pendingHoldIndex(s: string): number {
   const { mask, unresolvedAt } = scanCodeSpans(s)
   const limit = unresolvedAt ?? s.length
-  const { stack, trailingConsumed } = walkEmphasisDelimiters(s, limit, mask, 'hold')
+  const { stack, trailingConsumed } = walkEmphasisDelimiters(s, limit, mask, 'hold', new Map())
 
   let cut = s.length
   if (unresolvedAt !== null) cut = Math.min(cut, unresolvedAt)
@@ -374,9 +390,14 @@ export const INLINE_HTML_SHIELD_RE = /(<code>[\s\S]*?<\/code>|<a\b[\s\S]*?<\/a>|
  * Apply delimiter-stack emphasis outside existing inline HTML (`<code>`, `<a>`,
  * `<img>`). Matches CommonMark flanking rules across soft line breaks.
  */
-export function renderEmphasisOutsideInlineHtml(text: string): string {
+export function renderEmphasisOutsideInlineHtml(
+  text: string,
+  linkRefs: LinkReferenceMap = new Map(),
+): string {
   return text
     .split(INLINE_HTML_SHIELD_RE)
-    .map((segment, index) => (index % 2 === 1 ? segment : renderEmphasisDelimiters(segment)))
+    .map((segment, index) =>
+      index % 2 === 1 ? segment : renderEmphasisDelimiters(segment, linkRefs),
+    )
     .join('')
 }

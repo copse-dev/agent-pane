@@ -1,4 +1,5 @@
 import { escapeHtml, escapeHtmlTextNodes } from './escape.ts'
+import { renderAngleAutolinks } from './inline-autolinks.ts'
 import { renderInlineCode } from './inline-code-spans.ts'
 import { INLINE_HTML_SHIELD_RE, renderEmphasisOutsideInlineHtml } from './inline-emphasis.ts'
 import { renderInlineLinks, safeLinkHref } from './inline-links.ts'
@@ -6,9 +7,10 @@ import { type LinkReferenceMap } from './link-references.ts'
 
 function renderNestedInlineSpans(t: string, linkRefs: LinkReferenceMap): string {
   t = renderInlineCode(t)
+  t = renderAngleAutolinks(t)
   t = renderStrongAroundCode(t)
   t = renderStrongWithInlineHtml(t)
-  t = renderEmphasisOutsideInlineHtml(t)
+  t = renderEmphasisOutsideInlineHtml(t, linkRefs)
   t = renderInlineLinks(t, linkRefs, renderNestedInlineSpans)
   t = renderBareHttpLinks(t)
   return t

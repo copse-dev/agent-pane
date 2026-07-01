@@ -2,10 +2,12 @@ import {
   ATX_HEADING_CAPTURE_RE as ATX_HEADING_RE,
   dropTrailingNewline,
   parseFenceSlice,
+  stripAtxClosingHashes,
 } from './block-patterns.ts'
 import {
   type BlockToken,
   listItemContentColumn,
+  orderedListMarkerDelimiter,
   parseOrderedListMarker,
   splitTableRow,
   TABLE_SEP_RE,
@@ -78,26 +80,25 @@ function renderListItemContent(
   const normalized = dropTrailingNewline(slice)
   const firstLine = normalized.split('\n').find((l) => l.trim() !== '') ?? ''
   const paragraphs = splitListItemParagraphs(normalized)
-  const rendered = paragraphs
-    .map((p, index) => {
-      const lines = p.split('\n')
-      const text =
-        index === 0
-          ? lines
-              .map((line, lineIndex) =>
-                lineIndex === 0
-                  ? line.slice(listItemContentColumn(line))
-                  : dedentLazyContinuation(line, firstLine),
-              )
-              .join('\n')
-          : dedentLazyContinuation(p, firstLine)
-      return renderProseBlock(text, linkRefs)
-    })
-    .filter((p) => p !== '')
+  const rendered = paragraphs.map((p, index) => {
+    const lines = p.split('\n')
+    const text =
+      index === 0
+        ? lines
+            .map((line, lineIndex) =>
+              lineIndex === 0
+                ? line.slice(listItemContentColumn(line))
+                : dedentLazyContinuation(line, firstLine),
+            )
+            .join('\n')
+        : dedentLazyContinuation(p, firstLine)
+    return renderProseBlock(text, linkRefs, listLoose ? 'br' : 'space')
+  })
+  if (rendered.length === 0) return ''
   if (listLoose) {
     return rendered.map((p) => `<p>${p}</p>`).join('')
   }
-  return rendered.join('<br><br>')
+  return rendered.join(' ')
 }
 
 function renderParagraph(slice: string, linkRefs: LinkReferenceMap): string {
@@ -112,7 +113,7 @@ function renderAtxHeading(slice: string, linkRefs: LinkReferenceMap): string {
   const m = line.match(ATX_HEADING_RE)
   if (!m?.[1]) return renderParagraph(slice, linkRefs)
   const level = m[1].length
-  const text = (m[2] ?? '').trimEnd()
+  const text = stripAtxClosingHashes((m[2] ?? '').trimEnd())
   return `<h${String(level)}>${renderProseBlock(text, linkRefs)}</h${String(level)}>`
 }
 
@@ -171,6 +172,11 @@ function orderedListStart(slice: string): number {
   return parseOrderedListMarker(first) ?? 1
 }
 
+function orderedListDelimiter(slice: string): '.' | ')' | null {
+  const first = slice.split('\n').find((l) => l.trim() !== '') ?? ''
+  return orderedListMarkerDelimiter(first)
+}
+
 function collectListGroup(
   source: string,
   tokens: BlockToken[],
@@ -181,6 +187,7 @@ function collectListGroup(
   const firstSlice = firstToken ? source.slice(firstToken.start, firstToken.end) : ''
   const ordered = isOrderedListSlice(firstSlice)
   const markerChar = ordered ? null : sliceUnorderedMarkerChar(firstSlice)
+  const orderedDelimiter = ordered ? orderedListDelimiter(firstSlice) : null
   const listStart = ordered ? orderedListStart(firstSlice) : 1
   const itemSlices: string[] = []
   let loose = false
@@ -200,7 +207,9 @@ function collectListGroup(
     if (token.kind !== 'list_item') break
     const slice = source.slice(token.start, token.end)
     if (isOrderedListSlice(slice) !== ordered) break
-    if (!ordered) {
+    if (ordered) {
+      if (orderedListDelimiter(slice) !== orderedDelimiter) break
+    } else {
       const itemMarker = sliceUnorderedMarkerChar(slice)
       if (itemMarker !== markerChar) break
     }
