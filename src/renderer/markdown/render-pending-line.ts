@@ -8,7 +8,7 @@ const LIST_ITEM_PREFIX_RE = /^ {0,3}(?:[-*+]|\d+\.)\s/
 
 function renderPendingProseInline(text: string): string {
   const body = text.replace(/<!--[\s\S]*?-->/g, '')
-  return renderInlineSpans(renderArtifactImageTags(escapeHtml(body))).replace(/\n/g, '<br>')
+  return renderInlineSpans(renderArtifactImageTags(body)).replace(/\n/g, '<br>')
 }
 
 /** Inline markdown safe to show while streaming (hold index applied by caller). */

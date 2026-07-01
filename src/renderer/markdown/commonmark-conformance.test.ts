@@ -23,7 +23,7 @@ import assert from 'node:assert/strict'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { renderMarkdown } from './renderer.ts'
-import { stripAppLinkAttributes } from './inline-links.ts'
+import { stripAppImageAttributes, stripAppLinkAttributes } from './inline-links.ts'
 import { normalizeHtml } from '../../../tests/commonmark/normalize.ts'
 import {
   loadConformanceBaseline,
@@ -39,10 +39,8 @@ const SPEC_VERSION = commonMarkSpecVersion()
 const spec = loadCommonMarkSpec()
 
 function conforms(example: SpecExample): boolean {
-  return (
-    normalizeHtml(stripAppLinkAttributes(renderMarkdown(example.markdown))) ===
-    normalizeHtml(example.html)
-  )
+  const html = stripAppImageAttributes(stripAppLinkAttributes(renderMarkdown(example.markdown)))
+  return normalizeHtml(html) === normalizeHtml(example.html)
 }
 
 function computePassing(): number[] {

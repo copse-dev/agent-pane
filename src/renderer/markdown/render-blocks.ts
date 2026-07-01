@@ -8,7 +8,7 @@ import {
   tokenizeBlocks,
   unorderedListMarkerChar,
 } from './block-tokenizer.ts'
-import { escapeHtml, escapeMermaidHtml } from './escape.ts'
+import { escapeMermaidHtml } from './escape.ts'
 import { fenceCodeClass, highlightFenceCode } from './highlight.ts'
 import { type LinkReferenceMap } from './link-references.ts'
 import { renderInlineSpans } from './inline-spans.ts'
@@ -34,7 +34,7 @@ function normalizeBlockSlice(slice: string): string {
 function renderProseBlock(text: string, linkRefs: LinkReferenceMap): string {
   const body = stripHtmlComments(text)
   if (body.trim() === '') return ''
-  const rendered = renderInlineSpans(renderArtifactImageTags(escapeHtml(body)), linkRefs)
+  const rendered = renderInlineSpans(renderArtifactImageTags(body), linkRefs)
   return rendered.replace(/\n/g, '<br>')
 }
 

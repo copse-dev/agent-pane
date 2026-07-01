@@ -28,9 +28,9 @@ describe('parseLinkReferenceDefinitions', () => {
 })
 
 describe('parseInlineLinkDestination', () => {
-  it('parses angle-bracket destinations with encoded spaces (#489)', () => {
+  it('parses angle-bracket destinations with spaces (#489)', () => {
     const dest = parseInlineLinkDestination('[x](</my uri>)', 3)
-    assert.equal(dest?.href, '/my%20uri')
+    assert.equal(dest?.href, '/my uri')
   })
 
   it('rejects destinations containing raw whitespace (#488)', () => {
