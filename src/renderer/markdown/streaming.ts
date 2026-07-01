@@ -1,5 +1,9 @@
 import { renderMarkdown } from './renderer.ts'
-import { getIncompleteTableSource, pendingLineBelongsInTable } from './block-tokenizer.ts'
+import {
+  getIncompleteFenceSource,
+  getIncompleteTableSource,
+  pendingLineBelongsInTable,
+} from './block-tokenizer.ts'
 import {
   pendingListMarkerLength,
   pendingListOrderedMarker,
@@ -15,11 +19,17 @@ import {
   syncFormingTableDom,
   syncPendingTableRowDom,
 } from './streaming-table-dom.ts'
+import {
+  buildFormingFenceHtml,
+  clearFormingFenceDom,
+  syncFormingFenceDom,
+} from './streaming-fence-dom.ts'
 
 export { pendingHoldIndex } from './inline-emphasis.ts'
 export { splitAtLastNewline, splitForStreaming } from './streaming-split.ts'
 export {
   completeEndsInOpenTable,
+  getIncompleteFenceSource,
   getIncompleteTableSource,
   isAmbiguousBlockLine,
   isPotentialTableStart,
@@ -58,11 +68,21 @@ function syncPendingListPresentation(
 }
 
 function formingTableSource(content: string, pending: string): string | null {
+  if (getIncompleteFenceSource(content)) return null
   const fromTokens = getIncompleteTableSource(content)
   if (fromTokens) return fromTokens
   const trimmed = pending.trimStart()
   if (trimmed.startsWith('|') && trimmed.includes('|', 1)) return pending
   return null
+}
+
+function formingFenceSource(content: string): string | null {
+  return getIncompleteFenceSource(content)
+}
+
+function clearFormingDom(container: HTMLElement): void {
+  clearFormingTableDom(container)
+  clearFormingFenceDom(container)
 }
 
 /**
@@ -73,10 +93,15 @@ function formingTableSource(content: string, pending: string): string | null {
 export function renderStreamingMarkdown(content: string): string {
   const { complete, pending } = splitForStreaming(content)
   const rendered = complete ? sanitizeRenderedMarkdown(renderMarkdown(complete)) : ''
-  const formingSource = formingTableSource(content, pending)
-  const formingHtml = formingSource ? buildFormingTableHtml(formingSource) : ''
+  const fenceSource = formingFenceSource(content)
+  const tableSource = fenceSource ? null : formingTableSource(content, pending)
+  const formingHtml = fenceSource
+    ? buildFormingFenceHtml(fenceSource)
+    : tableSource
+      ? buildFormingTableHtml(tableSource)
+      : ''
 
-  if (formingSource) {
+  if (formingHtml) {
     return `${rendered}${formingHtml}`
   }
   if (!pending) return rendered
@@ -114,26 +139,32 @@ export class StreamingMarkdownRenderer {
       this.lastComplete = complete
     }
 
-    const formingSource = formingTableSource(content, pending)
-    if (formingSource) {
-      syncFormingTableDom(formingEl, formingSource)
+    const fenceSource = formingFenceSource(content)
+    const tableSource = formingTableSource(content, pending)
+    if (fenceSource) {
+      syncFormingFenceDom(formingEl, fenceSource)
+      formingEl.hidden = false
+      const committed = this.findLastCommittedTable()
+      if (committed) removePendingTableRow(committed)
+    } else if (tableSource) {
+      syncFormingTableDom(formingEl, tableSource)
       formingEl.hidden = false
       const committed = this.findLastCommittedTable()
       if (committed) removePendingTableRow(committed)
     } else {
-      clearFormingTableDom(formingEl)
+      clearFormingDom(formingEl)
       formingEl.hidden = true
       this.syncCommittedTableRow(complete, pending)
     }
 
+    const formingActive = fenceSource !== null || tableSource !== null
     const pendingInTable = pendingLineBelongsInTable(complete, pending)
     const pendingHtml =
-      pending && !pendingInTable && formingSource === null
+      pending && !pendingInTable && !formingActive
         ? sanitizeRenderedMarkdown(renderPendingInlineMarkdown(pending))
         : ''
     pendingEl.innerHTML = pendingHtml
-    const pendingVisible =
-      pending !== '' && !pendingInTable && formingSource === null && pendingHtml !== ''
+    const pendingVisible = pending !== '' && !pendingInTable && !formingActive && pendingHtml !== ''
     pendingEl.hidden = !pendingVisible
     syncPendingListPresentation(pendingEl, pending, pendingVisible)
   }

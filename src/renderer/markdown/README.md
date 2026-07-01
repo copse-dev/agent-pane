@@ -34,8 +34,10 @@ When extending the renderer or its CSS, preserve these rules:
 - **Agent-output shapes.** Support `-`, `*`, and `+` list markers. ATX `#` levels map to
   matching `<h1>`–`<h6>` tags (see `render-blocks.ts`).
 - **Streaming hold.** Incomplete block starts (headings, fences) stream as plain
-  text in the pending tail until their line ends. Forming GFM tables forward-pass
-  into `.stream-forming` (`<table class="stream-table-forming">`) as header/separator/body
+  text in the pending tail until their line ends. Open fenced code blocks forward-pass
+  into `.stream-forming` as `<pre class="stream-fence-forming">` with highlight.js on
+  the body so far (mermaid fences show a pending source placeholder until complete).
+  Forming GFM tables forward-pass into `.stream-forming` (`<table class="stream-table-forming">`) as header/separator/body
   cells arrive; committed tables append body rows via `tr.stream-pending-row` with
   inline cell updates. Pending list lines hide the `-`/`*`/`1.` marker and show
   body text with a bullet/number via `.stream-pending-list-item` until the line

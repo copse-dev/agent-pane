@@ -205,6 +205,26 @@ describe('renderStreamingMarkdown (holds unresolved bold)', () => {
     assert.doesNotMatch(html, /stream-pending/)
   })
 
+  it('shows a forming fenced code block with highlighting while streaming', () => {
+    const html = renderStreamingMarkdown('intro\n```ts\nconst x = 1')
+    assert.match(html, /<p>intro<\/p>/)
+    assert.match(html, /<pre class="stream-fence-forming"><code class="hljs lang-typescript">/)
+    assert.match(html, /hljs-keyword/)
+    assert.match(html, /const/)
+    assert.doesNotMatch(html, /stream-pending/)
+    assert.doesNotMatch(html, /```/)
+  })
+
+  it('shows a pending mermaid source shell while the fence is open', () => {
+    const html = renderStreamingMarkdown('```mermaid\ngraph TD\n  A --> B')
+    assert.match(
+      html,
+      /<div class="mermaid-diagram mermaid-diagram--pending stream-fence-forming">/,
+    )
+    assert.match(html, /<pre class="mermaid">graph TD/)
+    assert.doesNotMatch(html, /stream-pending/)
+  })
+
   it('renders a table once header and separator are complete', () => {
     const html = renderStreamingMarkdown('intro\n| A | B |\n| - | - |\n')
     assert.match(html, /<table>/)
@@ -305,6 +325,18 @@ describe('StreamingMarkdownRenderer (#119 incremental render)', () => {
     assert.equal(headers.length, 2)
     assert.equal(headers[0]?.textContent, 'Path')
     assert.equal(headers[1]?.textContent, 'Role')
+    const pending = host.querySelector('.stream-pending') as HTMLElement
+    assert.equal(pending.hidden, true)
+  })
+
+  it('forward-passes a forming fenced code block in the DOM while body streams', () => {
+    const host = document.createElement('div')
+    const r = new StreamingMarkdownRenderer(host)
+    r.update('intro\n```ts\nconst x = 1')
+    const pre = host.querySelector('.stream-forming pre.stream-fence-forming')
+    assert.ok(pre instanceof Element && pre.tagName === 'PRE')
+    assert.match(pre.querySelector('code')?.innerHTML ?? '', /hljs-keyword/)
+    assert.match(host.querySelector('.stream-complete')?.innerHTML ?? '', /<p>intro<\/p>/)
     const pending = host.querySelector('.stream-pending') as HTMLElement
     assert.equal(pending.hidden, true)
   })

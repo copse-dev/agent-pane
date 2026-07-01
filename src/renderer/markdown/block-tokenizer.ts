@@ -491,6 +491,18 @@ export function getIncompleteTableSource(content: string): string | null {
   return null
 }
 
+/** Source slice for a fenced code block that is not yet `complete`. */
+export function getIncompleteFenceSource(content: string): string | null {
+  const blocks = tokenizeBlocks(content)
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const block = blocks[i]
+    if (block?.kind === 'fence' && block.status !== 'complete') {
+      return content.slice(block.start, block.end)
+    }
+  }
+  return null
+}
+
 /** Split a GFM table row into cell strings (leading/trailing pipes optional). */
 export function splitTableRow(line: string): string[] {
   let s = line.trim()
