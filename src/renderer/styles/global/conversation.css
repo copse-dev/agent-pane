@@ -222,7 +222,11 @@
 }
 .message-text h2,
 .message-text h3,
-.message-text h4 {
+.message-text h4,
+.message-text .stream-pending-h1,
+.message-text .stream-pending-h2,
+.message-text .stream-pending-h3,
+.message-text .stream-pending-h4 {
   margin: var(--spacing-md) 0 var(--spacing-xs);
   font-weight: 600;
   line-height: 1.35;
@@ -282,12 +286,14 @@
 .message-text .stream-pending.stream-pending-paragraph,
 .message-text p.stream-pending-paragraph {
   display: block;
-  white-space: normal;
+  margin: 0;
+  white-space: pre-wrap;
 }
 
 .message-text .stream-pending.stream-pending-list-item,
 .message-text div.stream-pending-list-item {
   display: block;
+  margin: var(--spacing-sm) 0;
   padding-inline-start: 1.5em;
   position: relative;
   white-space: normal;
@@ -309,9 +315,6 @@
 .message-text div.stream-pending-heading,
 .message-text p.stream-pending-heading {
   display: block;
-  font-weight: 600;
-  line-height: 1.35;
-  margin: var(--spacing-md) 0 var(--spacing-xs);
   white-space: normal;
 }
 
@@ -333,6 +336,16 @@
 .message-text .stream-pending-h5,
 .message-text .stream-pending-h6 {
   font-size: 1em;
+}
+
+.message-text blockquote.stream-pending-blockquote {
+  /* Inherits .message-text blockquote chrome; keep paragraph spacing inside. */
+  margin: var(--spacing-sm) 0;
+}
+
+.message-text blockquote.stream-pending-blockquote p {
+  margin: 0;
+  white-space: pre-wrap;
 }
 
 .message-text .stream-pending.stream-pending-ordered-item::before,

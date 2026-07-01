@@ -66,10 +66,17 @@ describe('streaming pending row matrix', () => {
     assert.doesNotMatch(html, /<hr>/)
   })
 
-  it('blockquote: escaped plain text with > marker until line completes', () => {
+  it('blockquote: hides > marker and uses blockquote chrome with inline markdown', () => {
     const html = renderStreamingMarkdown('done\n> quoted text')
-    assert.match(html, /<span class="stream-pending">&gt; quoted text<\/span>/)
-    assert.doesNotMatch(html, /<blockquote>/)
+    assert.match(html, /<blockquote class="stream-pending stream-pending-blockquote[^"]*">/)
+    assert.match(html, /<p>quoted text<\/p>/)
+    assert.doesNotMatch(html, /&gt;/)
+    assert.doesNotMatch(html, /> quoted/)
+  })
+
+  it('blockquote: hides bare > until body text follows', () => {
+    assert.doesNotMatch(renderStreamingMarkdown('done\n>'), /stream-pending-blockquote/)
+    assert.match(renderStreamingMarkdown('done\n> note'), /stream-pending-blockquote/)
   })
 
   it('forming table header row: th cells with inline markdown, no raw pipes in cells', () => {
@@ -117,5 +124,17 @@ describe('streaming pending row matrix', () => {
     const block = host.querySelector('.stream-pending-block') as HTMLElement
     assert.equal(block?.tagName, 'DIV')
     assert.ok(block?.classList.contains('stream-pending-list-item'))
+  })
+
+  it('incremental renderer: blockquote pending uses blockquote element with p wrapper', () => {
+    const host = document.createElement('div')
+    const r = new StreamingMarkdownRenderer(host)
+    r.update('done\n> quoted text')
+    const block = host.querySelector('.stream-pending-blockquote') as HTMLElement
+    assert.ok(block)
+    assert.equal(block.tagName, 'BLOCKQUOTE')
+    assert.equal(block.querySelector('p')?.textContent, 'quoted text')
+    const inline = host.querySelector(':scope > span.stream-pending') as HTMLElement
+    assert.equal(inline.hidden, true)
   })
 })

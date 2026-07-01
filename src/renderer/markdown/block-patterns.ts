@@ -9,6 +9,14 @@ export const ATX_HEADING_DETECT_RE = /^ {0,3}(#{1,6})(?: |$)/
 /** ATX heading capture (renderer): optional title after `#` markers. */
 export const ATX_HEADING_CAPTURE_RE = /^ {0,3}(#{1,6})(?: (.*)|$)/
 
+/** Blockquote line detection (CommonMark: up to 3 spaces, `>`, optional space). */
+export const BLOCKQUOTE_DETECT_RE = /^ {0,3}> ?/
+
+/** Strip one blockquote marker level from a line. */
+export function stripBlockquoteMarker(line: string): string {
+  return line.replace(BLOCKQUOTE_DETECT_RE, '')
+}
+
 /** Drop the block-terminating newline token slices include. */
 export function dropTrailingNewline(slice: string): string {
   return slice.endsWith('\n') ? slice.slice(0, -1) : slice
