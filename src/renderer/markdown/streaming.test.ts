@@ -196,6 +196,21 @@ describe('renderStreamingMarkdown (holds unresolved bold)', () => {
     assert.doesNotMatch(html, /stream-pending[^>]*>-/)
   })
 
+  it('hides indented sublist markers while the parent item is still open', () => {
+    const html = renderStreamingMarkdown('- parent\n    - child item')
+    assert.match(html, /<li>parent<\/li>/)
+    assert.match(html, /<span class="stream-pending stream-pending-list-item">child item<\/span>/)
+    assert.doesNotMatch(html, /stream-pending[^>]*>-/)
+    assert.doesNotMatch(html, /stream-pending-paragraph/)
+  })
+
+  it('hides indented sublist markers under a label line', () => {
+    const html = renderStreamingMarkdown('**Attendees:**\n- Alice\n    - Bob')
+    assert.match(html, /<li>Alice<\/li>/)
+    assert.match(html, /<span class="stream-pending stream-pending-list-item">Bob<\/span>/)
+    assert.doesNotMatch(html, /stream-pending[^>]*>-/)
+  })
+
   it('shows a forming table with header cells while the separator streams', () => {
     const html = renderStreamingMarkdown('intro\n| Path | Role |')
     assert.match(html, /<p>intro<\/p>/)
