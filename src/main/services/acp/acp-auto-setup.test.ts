@@ -39,18 +39,29 @@ const input = (known: KnownAcpAgent, over: Partial<AcpAutoSetupInput> = {}): Acp
 describe('planAcpAutoSetup', () => {
   it('installs + registers a preset whose client is present but adapter is missing', () => {
     const plan = planAcpAutoSetup([input(claude, { clientInstalled: true, agentInstalled: false })])
-    assert.deepEqual(plan.install.map((k) => k.id), ['claude-agent-acp'])
-    assert.deepEqual(plan.register.map((k) => k.id), ['claude-agent-acp'])
+    assert.deepEqual(
+      plan.install.map((k) => k.id),
+      ['claude-agent-acp'],
+    )
+    assert.deepEqual(
+      plan.register.map((k) => k.id),
+      ['claude-agent-acp'],
+    )
   })
 
   it('registers (no install) when the adapter is already installed', () => {
     const plan = planAcpAutoSetup([input(claude, { clientInstalled: true, agentInstalled: true })])
     assert.deepEqual(plan.install, [])
-    assert.deepEqual(plan.register.map((k) => k.id), ['claude-agent-acp'])
+    assert.deepEqual(
+      plan.register.map((k) => k.id),
+      ['claude-agent-acp'],
+    )
   })
 
   it('does nothing when the gating client is absent', () => {
-    const plan = planAcpAutoSetup([input(claude, { clientInstalled: false, agentInstalled: false })])
+    const plan = planAcpAutoSetup([
+      input(claude, { clientInstalled: false, agentInstalled: false }),
+    ])
     assert.deepEqual(plan.install, [])
     assert.deepEqual(plan.register, [])
   })
@@ -60,9 +71,14 @@ describe('planAcpAutoSetup', () => {
       input(cursor, { clientInstalled: true, agentInstalled: true }),
     ])
     assert.deepEqual(present.install, [])
-    assert.deepEqual(present.register.map((k) => k.id), ['cursor'])
+    assert.deepEqual(
+      present.register.map((k) => k.id),
+      ['cursor'],
+    )
 
-    const absent = planAcpAutoSetup([input(cursor, { clientInstalled: false, agentInstalled: false })])
+    const absent = planAcpAutoSetup([
+      input(cursor, { clientInstalled: false, agentInstalled: false }),
+    ])
     assert.deepEqual(absent.install, [])
     assert.deepEqual(absent.register, [])
   })

@@ -248,7 +248,9 @@ function pickPermissionOption(
 }
 
 function formatPermissionBody(req: RequestPermissionRequest): string {
-  const fallbackTitle = req.toolCall.title ? unwrapInlineCode(req.toolCall.title) : 'Run this tool call?'
+  const fallbackTitle = req.toolCall.title
+    ? unwrapInlineCode(req.toolCall.title)
+    : 'Run this tool call?'
   const input = req.toolCall.rawInput
   if (input === undefined || input === null) return fallbackTitle
   if (typeof input === 'string') return input

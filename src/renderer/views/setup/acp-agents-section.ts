@@ -247,16 +247,24 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
     // agent (spawns it, opens a throwaway session) and fills in its choices.
     const DEFAULT_MODEL_LABEL = 'Agent default'
     const modelSelect = el('select', {})
-    const setModelOptions = (choices: { value: string; label: string }[], selected: string): void => {
+    const setModelOptions = (
+      choices: { value: string; label: string }[],
+      selected: string,
+    ): void => {
       modelSelect.replaceChildren(el('option', { value: '' }, DEFAULT_MODEL_LABEL))
-      for (const choice of choices) modelSelect.append(el('option', { value: choice.value }, choice.label))
+      for (const choice of choices)
+        modelSelect.append(el('option', { value: choice.value }, choice.label))
       // Preserve a saved value even if it isn't in the (not-yet-detected) list.
       if (selected && !choices.some((c) => c.value === selected)) {
         modelSelect.append(el('option', { value: selected }, `${selected} (saved)`))
       }
       modelSelect.value = selected
     }
-    const detectModels = el('button', { type: 'button', class: 'provider-secondary' }, 'Detect models')
+    const detectModels = el(
+      'button',
+      { type: 'button', class: 'provider-secondary' },
+      'Detect models',
+    )
     const modelStatus = el('span', { class: 'field-hint' })
 
     if (options.initial) {
@@ -351,7 +359,13 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
       el('label', {}, 'Command', commandInput),
       el('label', {}, 'Arguments', argsArea),
       el('label', {}, 'Environment', envArea),
-      el('label', {}, 'Model', el('div', { class: 'acp-model-row' }, modelSelect, detectModels), modelStatus),
+      el(
+        'label',
+        {},
+        'Model',
+        el('div', { class: 'acp-model-row' }, modelSelect, detectModels),
+        modelStatus,
+      ),
       el('label', { class: 'checkbox-label' }, enabledBox, ' Enabled (shown in the model picker)'),
     )
     const actions = el('div', { class: 'provider-actions provider-form-footer' }, submit, status)

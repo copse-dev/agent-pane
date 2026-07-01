@@ -82,6 +82,6 @@ describe('modelSelectorFrom', () => {
     } as unknown as NewSessionResponse
 
     assert.equal(modelSelectorFrom(modeOnly), null)
-    assert.equal(modelSelectorFrom({ sessionId: 's1' } as NewSessionResponse), null)
+    assert.equal(modelSelectorFrom({ sessionId: 's1' }), null)
   })
 })
