@@ -254,19 +254,39 @@ export async function captureWorktreeBaseline(): Promise<Map<string, string>> {
  * stale-overwrite guard still protects them. Returns the adopted paths.
  */
 export async function adoptWorktreeChangesSince(baseline: Map<string, string>): Promise<string[]> {
+  const changes = await worktreeChangesSince(baseline)
+  for (const { path, after } of changes) recordDirectAppliedSnapshot(path, after)
+  return changes.map((c) => c.path)
+}
+
+/** Paths in `git status` whose content now differs from the baseline snapshot. */
+async function worktreeChangesSince(
+  baseline: Map<string, string>,
+): Promise<{ path: string; after: string }[]> {
   const status = await getGitStatus()
   if (!status) return []
   const paths = new Set([...status.staged, ...status.unstaged].map((c) => c.path))
-  const adopted: string[] = []
+  const changes: { path: string; after: string }[] = []
   for (const path of paths) {
     const after = await readCurrentContent(path)
     const before = baseline.get(ownedKey(path))
-    if (before === undefined || before !== after) {
-      recordDirectAppliedSnapshot(path, after)
-      adopted.push(path)
-    }
+    if (before === undefined || before !== after) changes.push({ path, after })
   }
-  return adopted
+  return changes
+}
+
+/**
+ * Report — without adopting — the paths changed since a
+ * {@link captureWorktreeBaseline} snapshot, in the canonical git-status shape
+ * (workspace-relative, forward slashes). Used to bracket an ACP turn: writes the
+ * external agent routed through `fs/write_text_file` were user-approved, so
+ * anything else that changed came from the agent's own tools (e.g. its shell)
+ * and bypassed the diff-approval queue (issue #591). Returns `[]` when the
+ * workspace is not a git repo — the audit degrades to silence rather than
+ * failing the turn.
+ */
+export async function listWorktreeChangesSince(baseline: Map<string, string>): Promise<string[]> {
+  return (await worktreeChangesSince(baseline)).map((c) => c.path)
 }
 
 /**

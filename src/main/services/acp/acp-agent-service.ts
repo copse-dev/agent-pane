@@ -1,4 +1,5 @@
 import * as fsp from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import type {
   ReadTextFileRequest,
   ReadTextFileResponse,
@@ -27,10 +28,16 @@ import {
   type AcpModelSelector,
 } from './acp-client.ts'
 import { getAcpAgent } from './acp-agent-registry.ts'
+import { listForwardableMcpServers } from '../mcp-registry.ts'
 import { isAcpPermissionRemembered, rememberAcpPermission } from './acp-permission-grants.ts'
 import { permissionKindLabel, presentPermissionRequest } from './acp-approval-presentation.ts'
 import { requestApproval } from '../approval.ts'
-import { awaitStagedDiffDecision, stageDiff } from '../diff-queue.ts'
+import {
+  awaitStagedDiffDecision,
+  captureWorktreeBaseline,
+  listWorktreeChangesSince,
+  stageDiff,
+} from '../diff-queue.ts'
 import { detectLanguage } from '../language.ts'
 import {
   getActiveProjectRoot,
@@ -206,12 +213,17 @@ export async function runAcpAgentFromSettings(
   }
 
   const model = options.model ?? agent.model
+  // Hand the agent the user's MCP servers so its session mounts them itself
+  // (issue #602, tier 1). Best-effort: a config-read failure downgrades the turn
+  // to "no forwarded servers" instead of failing it.
+  const mcpServers = await listForwardableMcpServers().catch(() => [])
   const spawnConfig: AcpAgentSpawnConfig = {
     command: agent.command,
     cwd,
     ...(agent.args ? { args: agent.args } : {}),
     ...(agent.env ? { env: agent.env } : {}),
     ...(model ? { model } : {}),
+    ...(mcpServers.length > 0 ? { mcpServers } : {}),
   }
 
   // Accumulate streamed assistant text so the turn contributes to thread history
@@ -227,12 +239,17 @@ export async function runAcpAgentFromSettings(
     options.onChunk(chunk)
   }
 
+  // Writes that went through the diff queue this turn (canonical git-status
+  // path shape). Anything else that changed on disk bypassed user approval and
+  // is surfaced by the post-turn audit (issue #591).
+  const queueWrites = new Set<string>()
   const handlers: AcpClientHandlers = {
     onChunk,
     requestPermission: (req) => respondToPermission(agent, req),
     readTextFile,
-    writeTextFile: (req) => writeViaDiffQueue(req, options.signal),
+    writeTextFile: (req) => writeViaDiffQueue(req, options.signal, queueWrites),
   }
+  const baseline = await captureWorktreeBaseline()
 
   let stopReason: StopReason
   let usage: Awaited<ReturnType<typeof runAcpAgentPrompt>>['usage']
@@ -256,6 +273,8 @@ export async function runAcpAgentFromSettings(
         estimated: true,
       })
     }
+    // A dead turn may still have written via its own shell before failing.
+    await emitBypassedWriteAudit(baseline, queueWrites, options.onChunk)
     throw new AcpTurnFailure(err, {
       assistantText,
       usage: turn
@@ -263,6 +282,8 @@ export async function runAcpAgentFromSettings(
         : { inputTokens: 0, outputTokens: 0 },
     })
   }
+
+  await emitBypassedWriteAudit(baseline, queueWrites, options.onChunk)
 
   // Attribute the external agent's token usage to this thread + model so it shows
   // in the usage panel, just like the built-in loop. ACP's `PromptResponse.usage`
@@ -394,13 +415,58 @@ export function sliceLines(content: string, line?: number | null, limit?: number
 }
 
 /**
+ * Surface files that changed on disk during an ACP turn without passing through
+ * the diff-approval queue (issue #591) — e.g. writes from the agent's own shell,
+ * which ACP gives Copse no way to intercept. Rendered as a synthetic tool card
+ * so the warning stays out of the assistant text (and out of the next turn's
+ * replayed transcript). Best-effort: an audit failure never fails the turn, and
+ * a non-git workspace audits to silence.
+ */
+async function emitBypassedWriteAudit(
+  baseline: Map<string, string>,
+  queueWrites: ReadonlySet<string>,
+  onChunk: (chunk: StreamChunk) => void,
+): Promise<void> {
+  let bypassed: string[]
+  try {
+    bypassed = (await listWorktreeChangesSince(baseline)).filter((p) => !queueWrites.has(p))
+  } catch {
+    return
+  }
+  if (bypassed.length === 0) return
+  const id = `acp-edit-audit-${randomUUID()}`
+  onChunk({
+    type: 'tool_call',
+    toolCall: { id, name: 'workspace_edit_audit', args: { files: bypassed } },
+  })
+  onChunk({
+    type: 'tool_result',
+    toolCallId: id,
+    result:
+      'These files changed during the ACP turn without going through the diff-approval ' +
+      "queue (e.g. via the agent's own shell):\n" +
+      bypassed.map((p) => `- ${p}`).join('\n') +
+      '\nReview them (e.g. git diff) before relying on the workspace state.',
+    isError: false,
+  })
+}
+
+/** Canonicalize to the git-status path shape used by the worktree baseline. */
+function auditKey(relPath: string): string {
+  return relPath.replace(/\\/g, '/').replace(/^(?:\.\/)+/, '')
+}
+
+/**
  * Back `fs/write_text_file` by routing the write through the diff-approval queue
  * and blocking until the user decides. The external agent expects the write to be
  * durable on success, so a rejected/aborted decision is surfaced as an error.
+ * Durable writes are recorded in `queueWrites` so the post-turn audit can tell
+ * approved changes apart from ones that bypassed the queue.
  */
 async function writeViaDiffQueue(
   req: WriteTextFileRequest,
   signal: AbortSignal,
+  queueWrites: Set<string>,
 ): Promise<WriteTextFileResponse> {
   const absPath = resolveWorkspacePath(req.path)
   const relPath = toRelativePath(absPath)
@@ -415,7 +481,10 @@ async function writeViaDiffQueue(
   await stageDiff(relPath, before, req.content, detectLanguage(relPath))
   const status = await raceDecisionAgainstAbort(relPath, signal)
 
-  if (status === 'approved' || status === 'applied_directly') return {}
+  if (status === 'approved' || status === 'applied_directly') {
+    queueWrites.add(auditKey(relPath))
+    return {}
+  }
   if (status === 'aborted') throw new Error(`Write to ${relPath} was cancelled before approval.`)
   if (status === 'error') throw new Error(`Write to ${relPath} failed while applying the change.`)
   throw new Error(`Write to ${relPath} was rejected by the user.`)

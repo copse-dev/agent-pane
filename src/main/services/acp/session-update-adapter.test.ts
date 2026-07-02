@@ -54,11 +54,36 @@ describe('streamChunkToSessionUpdate (agent role)', () => {
     assert.equal((update as { status: string }).status, 'failed')
   })
 
+  it('maps reasoning to an agent_thought_chunk', () => {
+    const update = streamChunkToSessionUpdate({ type: 'reasoning', text: 'hmm' })
+    assert.deepEqual(update, {
+      sessionUpdate: 'agent_thought_chunk',
+      content: { type: 'text', text: 'hmm' },
+    })
+  })
+
+  it('maps todo_update to a plan, omitting cancelled todos', () => {
+    const update = streamChunkToSessionUpdate({
+      type: 'todo_update',
+      todos: [
+        { id: '1', content: 'first', status: 'completed' },
+        { id: '2', content: 'skipped', status: 'cancelled' },
+        { id: '3', content: 'next', status: 'in_progress' },
+      ],
+    })
+    assert.deepEqual(update, {
+      sessionUpdate: 'plan',
+      entries: [
+        { content: 'first', priority: 'medium', status: 'completed' },
+        { content: 'next', priority: 'medium', status: 'in_progress' },
+      ],
+    })
+  })
+
   it('drops chunks without an ACP equivalent', () => {
     const dropped: StreamChunk[] = [
       { type: 'usage', model: 'm', inputTokens: 1, outputTokens: 2 },
       { type: 'done' },
-      { type: 'todo_update', todos: [] },
     ]
     for (const chunk of dropped) assert.equal(streamChunkToSessionUpdate(chunk), null)
   })
@@ -113,10 +138,38 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
     assert.equal(sessionUpdateToStreamChunk(update), null)
   })
 
-  it('drops update kinds the renderer does not consume', () => {
+  it('maps an agent_thought_chunk to reasoning, not text', () => {
+    const update: SessionUpdate = {
+      sessionUpdate: 'agent_thought_chunk',
+      content: { type: 'text', text: 'pondering' },
+    }
+    assert.deepEqual(sessionUpdateToStreamChunk(update), {
+      type: 'reasoning',
+      text: 'pondering',
+    })
+  })
+
+  it('maps a plan to a todo_update with stable index-based ids', () => {
     const update: SessionUpdate = {
       sessionUpdate: 'plan',
-      entries: [],
+      entries: [
+        { content: 'read the code', priority: 'high', status: 'completed' },
+        { content: 'fix the bug', priority: 'medium', status: 'in_progress' },
+      ],
+    }
+    assert.deepEqual(sessionUpdateToStreamChunk(update), {
+      type: 'todo_update',
+      todos: [
+        { id: 'acp-plan-1', content: 'read the code', status: 'completed' },
+        { id: 'acp-plan-2', content: 'fix the bug', status: 'in_progress' },
+      ],
+    })
+  })
+
+  it('drops update kinds the renderer does not consume', () => {
+    const update: SessionUpdate = {
+      sessionUpdate: 'available_commands_update',
+      availableCommands: [],
     }
     assert.equal(sessionUpdateToStreamChunk(update), null)
   })

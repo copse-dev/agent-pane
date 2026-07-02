@@ -16,6 +16,7 @@ import {
   getDiffQueueForTest,
   getRecentStagedDiffDecision,
   getStagedDiffEntry,
+  listWorktreeChangesSince,
   setStagedDiffResolver,
   stageDiff,
   upsertStagedDiffEntry,
@@ -320,6 +321,25 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
       result,
       /Reason approval is required: git already has unowned changes: manual\.txt/,
     )
+  })
+
+  it('listWorktreeChangesSince reports changed paths without adopting them (ACP audit)', async () => {
+    await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
+    git(tempRoot, ['add', 'packages/app/a.txt'])
+    git(tempRoot, ['commit', '-m', 'add workspace file'])
+
+    // An external ACP agent's shell rewrites a tracked file and drops a new one.
+    const baseline = await captureWorktreeBaseline()
+    await writeFile(join(workspaceRoot, 'a.txt'), 'shell edit\n', 'utf-8')
+    await writeFile(join(workspaceRoot, 'new.txt'), 'created\n', 'utf-8')
+
+    const changed = await listWorktreeChangesSince(baseline)
+    assert.deepEqual(changed.sort(), ['a.txt', 'new.txt'])
+
+    // Unlike adoption, listing leaves the paths unowned: a later Copse edit to
+    // the shell-touched file must propose, not silently overwrite it.
+    const result = await applyOrStageDiff('a.txt', 'shell edit\n', 'next\n', 'plaintext')
+    assert.match(result, /approval is required/)
   })
 })
 
