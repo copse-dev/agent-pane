@@ -538,10 +538,11 @@ describe('renderMarkdown sanitization (#115)', () => {
     assert.match(html, /&lt;script&gt;/)
   })
 
-  it('encodes ampersands so entity injection cannot reconstruct markup', () => {
-    // &lt;script&gt; in the source must stay literal, not decode to a tag.
+  it('decodes entities to inert text that can never reconstruct markup', () => {
+    // CommonMark decodes &lt;script&gt; to the literal text "<script>", which
+    // must be emitted HTML-escaped — never as a live tag.
     const html = renderMarkdown('AT&T &lt;script&gt; &amp; more')
-    assert.match(html, /AT&amp;T &amp;lt;script&amp;gt; &amp;amp; more/)
+    assert.match(html, /AT&amp;T &lt;script&gt; &amp; more/)
     assert.doesNotMatch(html, /<script>/)
   })
 

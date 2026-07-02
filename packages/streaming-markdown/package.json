@@ -12,6 +12,7 @@
     "check:normalizer-parity": "node scripts/fetch-reference-normalizer.mts && node scripts/check-normalizer-parity.mts"
   },
   "dependencies": {
+    "entities": "^4.5.0",
     "dompurify": "^3.4.11",
     "highlight.js": "^11.11.1"
   },

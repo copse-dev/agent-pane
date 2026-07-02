@@ -1,3 +1,4 @@
+import { decodeHTMLStrict } from 'entities'
 import { canonicalizeEscapedPunctuation } from './backslash-escapes.ts'
 
 /** Parsed link reference definition from block-level `[label]: destination`. */
@@ -24,19 +25,9 @@ function decodeDestinationEscapes(text: string): string {
 }
 
 function decodeHtmlCharRefs(text: string): string {
-  return text.replace(
-    /&(#x([0-9a-fA-F]+)|#(\d+)|(\w+));/g,
-    (match, _whole: string, hex?: string, dec?: string, name?: string) => {
-      if (hex !== undefined) return String.fromCodePoint(parseInt(hex, 16))
-      if (dec !== undefined) return String.fromCodePoint(parseInt(dec, 10))
-      if (name === 'auml') return '\u00E4'
-      if (name === 'amp') return '&'
-      if (name === 'quot') return '"'
-      if (name === 'lt') return '<'
-      if (name === 'gt') return '>'
-      return match
-    },
-  )
+  // Full HTML5 named + numeric character references, semicolon required
+  // (CommonMark). Escaped-at-source markup is re-encoded by the caller.
+  return decodeHTMLStrict(text)
 }
 
 /** Percent-encode href values for HTML output (preserves existing %XX sequences). */
