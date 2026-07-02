@@ -50,7 +50,11 @@ describe('resolveAcpSandbox (issue #590)', () => {
   it('falls back to the KNOWN_ACP_AGENTS catalog preset for the id', () => {
     const resolved = resolveAcpSandbox({ ...base, id: 'claude-agent-acp' })
     assert.ok(resolved)
-    assert.ok(resolved.allowedDomains.includes('api.anthropic.com'))
+    // ASRT wildcards match subdomains only, so the apex is listed alongside;
+    // auth endpoints move between subdomains (console/claude.ai), hence the
+    // vendor-wide allowlist rather than pinned hosts (#604 validation).
+    assert.ok(resolved.allowedDomains.includes('*.anthropic.com'))
+    assert.ok(resolved.allowedDomains.includes('anthropic.com'))
     assert.ok(resolved.homeDirs?.includes('.claude'))
   })
 

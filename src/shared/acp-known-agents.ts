@@ -74,12 +74,9 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     envHints: ['GEMINI_API_KEY'],
     install: 'npm install -g @google/gemini-cli',
     sandbox: {
-      allowedDomains: [
-        'generativelanguage.googleapis.com',
-        'cloudcode-pa.googleapis.com',
-        'oauth2.googleapis.com',
-        'accounts.google.com',
-      ],
+      // Google API infra wholesale (model + OAuth endpoints move between
+      // *.googleapis.com subdomains) plus the account login host.
+      allowedDomains: ['*.googleapis.com', 'accounts.google.com'],
       homeDirs: ['.gemini', '.config/gemini'],
     },
     setup: 'gemini', // first run walks through Google sign-in; or set GEMINI_API_KEY
@@ -98,7 +95,11 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     autoInstall: true,
     preset: true,
     sandbox: {
-      allowedDomains: ['api.anthropic.com', 'statsig.anthropic.com'],
+      // Anthropic-owned infra wholesale: the API lives on api.anthropic.com,
+      // but OAuth token refresh (console.anthropic.com / claude.ai) and
+      // telemetry move between subdomains — pinning individual hosts breaks
+      // auth ("403 Connection blocked by network allowlist") when they do.
+      allowedDomains: ['anthropic.com', '*.anthropic.com', 'claude.ai', '*.claude.ai'],
       homeDirs: ['.claude', '.claude.json', '.claude.json.backup', '.config/claude'],
     },
     setup: 'claude setup-token',
@@ -115,7 +116,11 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     installPackage: '@zed-industries/claude-code-acp',
     requiresClient: 'claude',
     sandbox: {
-      allowedDomains: ['api.anthropic.com', 'statsig.anthropic.com'],
+      // Anthropic-owned infra wholesale: the API lives on api.anthropic.com,
+      // but OAuth token refresh (console.anthropic.com / claude.ai) and
+      // telemetry move between subdomains — pinning individual hosts breaks
+      // auth ("403 Connection blocked by network allowlist") when they do.
+      allowedDomains: ['anthropic.com', '*.anthropic.com', 'claude.ai', '*.claude.ai'],
       homeDirs: ['.claude', '.claude.json', '.claude.json.backup', '.config/claude'],
     },
     docsUrl: 'https://www.npmjs.com/package/@zed-industries/claude-code-acp',
