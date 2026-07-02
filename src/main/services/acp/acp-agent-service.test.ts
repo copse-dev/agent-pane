@@ -38,6 +38,16 @@ describe('permissionResponseFor', () => {
     assert.deepEqual(permissionResponseFor([REJECT_ONCE], true).outcome, { outcome: 'cancelled' })
     assert.deepEqual(permissionResponseFor([ALLOW_ONCE], false).outcome, { outcome: 'cancelled' })
   })
+
+  it('prefers allow_always for remembered grants so the agent stops asking too', () => {
+    const res = permissionResponseFor([ALLOW_ONCE, ALLOW_ALWAYS], true, { preferAlways: true })
+    assert.deepEqual(res.outcome, { outcome: 'selected', optionId: 'a2' })
+  })
+
+  it('falls back to allow_once when a remembered grant has no allow_always option', () => {
+    const res = permissionResponseFor([ALLOW_ONCE, REJECT_ONCE], true, { preferAlways: true })
+    assert.deepEqual(res.outcome, { outcome: 'selected', optionId: 'a1' })
+  })
 })
 
 describe('sliceLines', () => {

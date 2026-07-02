@@ -7,5 +7,5 @@ export function threadGitBranchMismatch(
 }
 
 export function threadGitBranchMismatchMessage(threadBranch: string): string {
-  return `This thread is for branch "${threadBranch}". Check out that branch to continue.`
+  return `This thread is for branch "${threadBranch}". Check it out, or continue on the current branch.`
 }

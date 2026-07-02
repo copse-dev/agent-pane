@@ -288,6 +288,13 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         state.delete(threadId)
         setThreadStatus(store, threadId, 'idle')
         store.emit('agent_activity', threadId, null)
+        // The turn may have ended on a different branch than it started.
+        // External ACP agents run their own tools, so the mid-turn `run_shell`
+        // sync above never sees their checkouts; one HEAD read per turn keeps
+        // the foreground thread's bound branch tracking reality.
+        if (threadId === store.getState().activeThreadId) {
+          void syncThreadGitBranchAfterShell(store, api, threadId)
+        }
         void maybeNameThread(store, api, threadId)
         drainMessageQueue(store, api, threadId)
         break
