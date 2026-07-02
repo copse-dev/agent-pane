@@ -64,6 +64,7 @@ function presetToConfig(known: KnownAcpAgent): AcpAgentConfig {
     title: known.title,
     command: known.command,
     ...(known.args.length ? { args: known.args } : {}),
+    ...(known.sandbox ? { sandbox: known.sandbox } : {}),
     enabled: true,
   }
 }
@@ -126,6 +127,7 @@ async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupRes
           command: known.command,
           cwd,
           ...(known.args.length ? { args: known.args } : {}),
+          ...(known.sandbox ? { sandbox: known.sandbox } : {}),
         })
         if (selector?.choices.length) {
           config = { ...config, availableModels: selector.choices }

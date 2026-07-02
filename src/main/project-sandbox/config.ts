@@ -257,6 +257,54 @@ export function fsWorkerSandboxOverlay(
   }
 }
 
+/**
+ * Seatbelt overlay for an external ACP agent process (issue #590): the same
+ * workspace-scoped filesystem rules native auto-run commands get, with two
+ * agent-specific relaxations the contained profile can't afford to make:
+ *
+ * - **Network** is an allowlist of the agent's own endpoints instead of a full
+ *   deny — the agent runs its model loop in-process and must reach its LLM/auth
+ *   APIs. No local binding: the agent talks to Copse over stdio, not sockets.
+ * - **Home dirs** the agent needs for its own config/credentials/state
+ *   (e.g. `~/.claude`) are re-allowed for read *and* write; everything else
+ *   under home stays denied, and the mandatory write-deny list (git hooks,
+ *   shell rc files, …) still applies inside the workspace.
+ */
+export function acpAgentSandboxOverlay(
+  workspaceRoot: string,
+  sandbox: { allowedDomains: string[]; homeDirs?: string[] },
+  opts?: {
+    /**
+     * Also allow loopback traffic — required when the turn runs the native-tool
+     * MCP bridge (#602), which the agent reaches at `http://127.0.0.1:<port>`.
+     */
+    allowLocalhost?: boolean
+  },
+): Partial<SandboxRuntimeConfig> {
+  const base = workspaceSandboxOverlay(workspaceRoot)
+  const fs = base.filesystem
+  if (!fs) throw new Error('workspaceSandboxOverlay must define a filesystem config')
+  const home = homedir()
+  const homePaths = (sandbox.homeDirs ?? []).flatMap((rel) => {
+    const abs = join(home, rel)
+    return [abs, `${abs}/**`]
+  })
+  const localDomains = opts?.allowLocalhost ? ['localhost', '127.0.0.1', '::1'] : []
+  return {
+    ...base,
+    network: {
+      allowedDomains: [...sandbox.allowedDomains, ...localDomains],
+      deniedDomains: [],
+      allowLocalBinding: opts?.allowLocalhost === true,
+    },
+    filesystem: {
+      ...fs,
+      allowRead: [...new Set([...(fs.allowRead ?? []), ...homePaths])],
+      allowWrite: [...new Set([...fs.allowWrite, ...homePaths])],
+    },
+  }
+}
+
 export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxRuntimeConfig> {
   const root = canonicalizeWorkspaceRoot(workspaceRoot)
   const toolchainRead = resolveNodeToolchainAllowRead()

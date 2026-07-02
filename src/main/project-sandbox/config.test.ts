@@ -4,6 +4,7 @@ import { accessSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync }
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import {
+  acpAgentSandboxOverlay,
   baseSandboxConfig,
   containedSandboxNetworkConfig,
   electronRuntimeAllowReadPaths,
@@ -15,6 +16,46 @@ import {
   workspaceSandboxOverlay,
   workspaceTmpDir,
 } from './config.ts'
+
+describe('acpAgentSandboxOverlay', () => {
+  const workspace = '/tmp/acp-sandbox-test-workspace'
+  const sandbox = {
+    allowedDomains: ['api.anthropic.com'],
+    homeDirs: ['.claude', '.claude.json'],
+  }
+
+  it('allows only the agent-declared domains, no local binding', () => {
+    const overlay = acpAgentSandboxOverlay(workspace, sandbox)
+    assert.deepEqual(overlay.network, {
+      allowedDomains: ['api.anthropic.com'],
+      deniedDomains: [],
+      allowLocalBinding: false,
+    })
+  })
+
+  it('re-allows the agent home dirs for read and write on top of the workspace rules', () => {
+    const overlay = acpAgentSandboxOverlay(workspace, sandbox)
+    const base = workspaceSandboxOverlay(workspace)
+    const claudeDir = join(homedir(), '.claude')
+    for (const list of [overlay.filesystem?.allowRead, overlay.filesystem?.allowWrite]) {
+      assert.ok(list, 'overlay must define allowRead/allowWrite')
+      assert.ok(list.includes(claudeDir))
+      assert.ok(list.includes(`${claudeDir}/**`))
+      assert.ok(list.includes(join(homedir(), '.claude.json')))
+    }
+    // Base workspace rules survive: home still deny-read, workspace still writable.
+    assert.deepEqual(overlay.filesystem?.denyRead, base.filesystem?.denyRead)
+    for (const path of base.filesystem?.allowWrite ?? []) {
+      assert.ok(overlay.filesystem?.allowWrite.includes(path))
+    }
+  })
+
+  it('keeps the mandatory write-deny list (git hooks, rc files)', () => {
+    const overlay = acpAgentSandboxOverlay(workspace, sandbox)
+    const base = workspaceSandboxOverlay(workspace)
+    assert.deepEqual(overlay.filesystem?.denyWrite, base.filesystem?.denyWrite)
+  })
+})
 
 describe('resolveNodeToolchainAllowRead', () => {
   it('includes the active node binary and its install tree', () => {

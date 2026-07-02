@@ -175,6 +175,7 @@ export async function runAgent(
         priorMessages,
         signal: controller.signal,
         onChunk: sendChunk,
+        registry,
         ...(acpSelection?.model ? { model: acpSelection.model } : {}),
       })
       sendChunk({ type: 'done', stopReason: result.stopReason })

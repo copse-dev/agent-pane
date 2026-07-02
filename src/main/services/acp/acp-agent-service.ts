@@ -28,7 +28,9 @@ import {
   type AcpModelSelector,
 } from './acp-client.ts'
 import { getAcpAgent } from './acp-agent-registry.ts'
+import { startAcpNativeBridge } from './acp-native-bridge.ts'
 import { listForwardableMcpServers } from '../mcp-registry.ts'
+import type { ToolRegistry } from '../tool-registry.ts'
 import { isAcpPermissionRemembered, rememberAcpPermission } from './acp-permission-grants.ts'
 import { permissionKindLabel, presentPermissionRequest } from './acp-approval-presentation.ts'
 import { requestApproval } from '../approval.ts'
@@ -70,6 +72,11 @@ export interface RunAcpAgentOptions {
   priorMessages: LLMMessage[]
   signal: AbortSignal
   onChunk: (chunk: StreamChunk) => void
+  /**
+   * Tool registry backing the native-tool MCP bridge (#602 tier 2). When
+   * absent the bridge is not offered.
+   */
+  registry?: ToolRegistry
   /**
    * Model chosen in the picker (the `#<model>` half of `acp:<id>#<model>`).
    * Overrides the agent config's default `model` for this turn.
@@ -217,6 +224,13 @@ export async function runAcpAgentFromSettings(
   // (issue #602, tier 1). Best-effort: a config-read failure downgrades the turn
   // to "no forwarded servers" instead of failing it.
   const mcpServers = await listForwardableMcpServers().catch(() => [])
+  // Copse's own curated tools over a per-turn localhost MCP server (#602,
+  // tier 2). Started before the spawn so a sandboxed agent's seatbelt profile
+  // can include loopback; closed when the turn settles. Best-effort like the
+  // forwarded servers above.
+  const bridge = options.registry
+    ? await startAcpNativeBridge(options.registry, options.signal).catch(() => null)
+    : null
   const spawnConfig: AcpAgentSpawnConfig = {
     command: agent.command,
     cwd,
@@ -224,6 +238,8 @@ export async function runAcpAgentFromSettings(
     ...(agent.env ? { env: agent.env } : {}),
     ...(model ? { model } : {}),
     ...(mcpServers.length > 0 ? { mcpServers } : {}),
+    ...(agent.sandbox ? { sandbox: agent.sandbox } : {}),
+    ...(bridge ? { nativeBridge: { url: bridge.url, token: bridge.token } } : {}),
   }
 
   // Accumulate streamed assistant text so the turn contributes to thread history
@@ -281,6 +297,8 @@ export async function runAcpAgentFromSettings(
         ? { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens }
         : { inputTokens: 0, outputTokens: 0 },
     })
+  } finally {
+    if (bridge) await bridge.close()
   }
 
   await emitBypassedWriteAudit(baseline, queueWrites, options.onChunk)
@@ -327,6 +345,7 @@ export async function listAcpModelsForAgent(agentId: string): Promise<AcpModelSe
     cwd,
     ...(agent.args ? { args: agent.args } : {}),
     ...(agent.env ? { env: agent.env } : {}),
+    ...(agent.sandbox ? { sandbox: agent.sandbox } : {}),
   })
 }
 
@@ -439,12 +458,16 @@ async function emitBypassedWriteAudit(
     type: 'tool_call',
     toolCall: { id, name: 'workspace_edit_audit', args: { files: bypassed } },
   })
+  // Warn, don't revert: the change may be legitimate (the agent's own shell, a
+  // formatter it ran) or external (another editor mid-turn) — the audit can't
+  // tell, so it surfaces the fact and leaves the decision to the user.
   onChunk({
     type: 'tool_result',
     toolCallId: id,
     result:
-      'These files changed during the ACP turn without going through the diff-approval ' +
-      "queue (e.g. via the agent's own shell):\n" +
+      'Warning: these files changed on disk during the ACP turn outside the approved ' +
+      "sphere — no diff was reviewed for them. The write came from the agent's own " +
+      'tools (e.g. its shell) or from something else entirely:\n' +
       bypassed.map((p) => `- ${p}`).join('\n') +
       '\nReview them (e.g. git diff) before relying on the workspace state.',
     isError: false,

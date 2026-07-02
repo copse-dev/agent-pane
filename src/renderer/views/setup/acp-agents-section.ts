@@ -86,6 +86,7 @@ export function knownToConfig(known: KnownAcpAgent): AcpAgentConfig {
     command: known.command,
     ...(known.args.length ? { args: known.args } : {}),
     ...(env ? { env } : {}),
+    ...(known.sandbox ? { sandbox: known.sandbox } : {}),
     enabled: true,
   }
 }
