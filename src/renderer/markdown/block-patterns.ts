@@ -24,6 +24,8 @@ export function dropTrailingNewline(slice: string): string {
 
 /** Strip optional ATX closing hash run (` ##` at end of heading text). */
 export function stripAtxClosingHashes(title: string): string {
+  // A title that is nothing but hashes ("### ###") is a bare closing sequence.
+  if (/^#+\s*$/.test(title)) return ''
   return title.replace(/(?<!\\)\s+#+\s*$/, '').trimEnd()
 }
 
