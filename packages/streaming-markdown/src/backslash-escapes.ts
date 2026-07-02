@@ -15,6 +15,7 @@
  * walks left to right: the backslash consumes the backtick before the code
  * span scanner (which runs on encoded text) ever sees it.
  */
+import { decodeHTMLStrict } from 'entities'
 import { nextCodeSpan } from './inline-code-spans.ts'
 
 const ESCAPED_BASE = 0xe000
@@ -30,6 +31,29 @@ const ANGLE_AUTOLINK_RE =
 
 /** Raw inline `<tag ...>` spans are verbatim too (matches markHardBreaks). */
 const RAW_TAG_LIKE_RE = /^<\/?[a-zA-Z][\s\S]*?>/
+
+/** A complete entity/numeric character reference candidate (semicolon required). */
+const ENTITY_CANDIDATE_RE = /^&(?:#[0-9]{1,7};|#[xX][0-9a-fA-F]{1,6};|[a-zA-Z][a-zA-Z0-9]{0,31};)/
+
+/** Trailing text that could still grow into a valid reference (streaming hold). */
+const INCOMPLETE_ENTITY_RE = /&(?:#[0-9]{0,7}|#[xX][0-9a-fA-F]{0,6}|[a-zA-Z][a-zA-Z0-9]{0,31})?$/
+
+/** Encode a decoded-literal character: ASCII punctuation becomes inert PUA. */
+function encodeLiteralChar(ch: string): string {
+  return isEscapablePunctuation(ch) ? String.fromCharCode(ESCAPED_BASE + ch.charCodeAt(0)) : ch
+}
+
+/**
+ * Start index of a trailing incomplete entity/char reference, or `s.length`
+ * when none. Streaming pending tails hold from here so `&amp` never flashes
+ * literally before its semicolon arrives.
+ */
+export function trailingEntityHoldStart(s: string): number {
+  const window = Math.min(34, s.length)
+  const m = INCOMPLETE_ENTITY_RE.exec(s.slice(s.length - window))
+  if (!m) return s.length
+  return s.length - window + m.index
+}
 
 /** Encode `\X` (X = ASCII punctuation) to inert PUA characters. Idempotent. */
 export function encodeBackslashEscapes(text: string): string {
@@ -56,6 +80,17 @@ export function encodeBackslashEscapes(text: string): string {
         out += verbatim
         i += verbatim.length
         continue
+      }
+    }
+    if (ch === '&') {
+      const candidate = ENTITY_CANDIDATE_RE.exec(text.slice(i))?.[0]
+      if (candidate) {
+        const decoded = decodeHTMLStrict(candidate)
+        if (decoded !== candidate) {
+          for (const c of decoded) out += encodeLiteralChar(c)
+          i += candidate.length
+          continue
+        }
       }
     }
     const next = text[i + 1] ?? ''
