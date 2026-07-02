@@ -5,7 +5,10 @@ import assert from 'node:assert/strict'
 import { isGfmTableRowLine, tokenizeBlocks } from './block-tokenizer.ts'
 import { renderMarkdown } from './renderer.ts'
 
-const FIXTURE_PATH = resolve(process.cwd(), 'tests/fixtures/job-description-metadata.md')
+const FIXTURE_PATH = resolve(
+  process.cwd(),
+  'packages/streaming-markdown/tests/fixtures/job-description-metadata.md',
+)
 const JD = readFileSync(FIXTURE_PATH, 'utf8')
 
 const DEPT_LINE =

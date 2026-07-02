@@ -7,8 +7,8 @@ import type { GhCliStatus, GhPrChecksState, GhPrDetails, GhPrSummary } from '@sh
 import { getActiveThread } from '@shared/store/thread-helpers.ts'
 import { at } from '@shared/array-utils.ts'
 import { extractGithubPrUrls, githubPrKey } from '@shared/git/github-pr-url.ts'
-import { renderMarkdown } from '../markdown/renderer.ts'
-import { sanitizeRenderedMarkdown } from '../markdown/sanitize.ts'
+import { renderMarkdown } from '@copse/streaming-markdown'
+import { sanitizeRenderedMarkdown } from '@copse/streaming-markdown'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
 import {

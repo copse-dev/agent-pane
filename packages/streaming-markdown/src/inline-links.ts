@@ -1,5 +1,5 @@
 import { decodeEscapedHref, escapeHtml } from './escape.ts'
-import { isWorkspaceMarkdownLinkHref } from '@shared/fs/workspace-link-href.ts'
+import { isWorkspaceMarkdownLinkHref } from './workspace-link-href.ts'
 import {
   decodeEscapes,
   encodeHrefForOutput,
