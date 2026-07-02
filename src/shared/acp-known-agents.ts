@@ -101,9 +101,11 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
       // auth ("403 Connection blocked by network allowlist") when they do.
       allowedDomains: ['anthropic.com', '*.anthropic.com', 'claude.ai', '*.claude.ai'],
       homeDirs: ['.claude', '.claude.json', '.claude.json.backup', '.config/claude'],
-      // Claude Code hardcodes shell/task bookkeeping under /tmp/claude-<uid>,
-      // ignoring $TMPDIR — without this every Bash call fails at mkdir.
-      scratchPaths: ['/tmp/claude-${uid}'],
+      // Claude Code hardcodes shell/task bookkeeping in system /tmp, ignoring
+      // $TMPDIR: a /tmp/claude-<uid>/ tree (every Bash call fails at mkdir
+      // without it) and per-command /tmp/claude-<hex>-cwd tracking files. The
+      // glob covers both; macOS profiles compile globs to regex rules.
+      scratchPaths: ['/tmp/claude-*'],
     },
     setup: 'claude setup-token',
     docsUrl: 'https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp',
@@ -125,9 +127,11 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
       // auth ("403 Connection blocked by network allowlist") when they do.
       allowedDomains: ['anthropic.com', '*.anthropic.com', 'claude.ai', '*.claude.ai'],
       homeDirs: ['.claude', '.claude.json', '.claude.json.backup', '.config/claude'],
-      // Claude Code hardcodes shell/task bookkeeping under /tmp/claude-<uid>,
-      // ignoring $TMPDIR — without this every Bash call fails at mkdir.
-      scratchPaths: ['/tmp/claude-${uid}'],
+      // Claude Code hardcodes shell/task bookkeeping in system /tmp, ignoring
+      // $TMPDIR: a /tmp/claude-<uid>/ tree (every Bash call fails at mkdir
+      // without it) and per-command /tmp/claude-<hex>-cwd tracking files. The
+      // glob covers both; macOS profiles compile globs to regex rules.
+      scratchPaths: ['/tmp/claude-*'],
     },
     docsUrl: 'https://www.npmjs.com/package/@zed-industries/claude-code-acp',
     note: "Zed's Claude Code ACP adapter. Auth with `claude /login` or ANTHROPIC_API_KEY.",
