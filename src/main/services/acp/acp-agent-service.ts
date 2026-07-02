@@ -580,6 +580,24 @@ function raceDecisionAgainstAbort(
 }
 
 /**
+ * Steering prepended to every ACP prompt. Two failure modes it exists to
+ * prevent, both observed dogfooding:
+ *
+ * - **Background subagents are doomed** (issue #605): the agent process is
+ *   killed when the turn settles, so async/background helpers never deliver —
+ *   ACP gives Copse no way to disable the agent's subagent tool, so steer.
+ * - **Broad find/ls dumps burn the agent's own context/budget**: each turn is
+ *   a fresh session, so undirected sweeps get re-paid every turn.
+ */
+export const ACP_TURN_PROMPT_NOTE =
+  'Session notes: this session is turn-scoped — background or async subagents ' +
+  'will NOT survive the turn and their results will be lost, so do work inline ' +
+  '(foreground subagents that finish within the turn are fine). Keep exploration ' +
+  'lean: prefer targeted searches (specific paths, rg with globs) over broad ' +
+  'find/ls directory dumps, and prefer the "copse" MCP tools (e.g. ' +
+  'semantic_search) when available.'
+
+/**
  * Steering prepended to the prompt when the agent process runs under the
  * workspace seatbelt (issue #590). A silent $TMPDIR redirect is not enough:
  * models habitually hardcode `/tmp`, which the seatbelt denies — and unlike
@@ -605,12 +623,12 @@ export function buildAcpPrompt(
   priorMessages: LLMMessage[],
   opts?: { sandboxed?: boolean },
 ): string {
-  const note = opts?.sandboxed ? `${ACP_SANDBOX_PROMPT_NOTE}\n\n` : ''
+  const note = ACP_TURN_PROMPT_NOTE + (opts?.sandboxed ? `\n\n${ACP_SANDBOX_PROMPT_NOTE}` : '')
   const current = promptPayloadFromUserContent(userPrompt).text
   const transcript = priorMessages.map(messageLine).filter(Boolean).join('\n')
-  if (!transcript) return note + current
+  if (!transcript) return `${note}\n\n${current}`
   return (
-    note +
+    `${note}\n\n` +
     'You are continuing an existing Copse chat. Use the prior conversation below ' +
     'for context, then respond to the new message.\n\n' +
     `${transcript}\n\n--- New message ---\n${current}`

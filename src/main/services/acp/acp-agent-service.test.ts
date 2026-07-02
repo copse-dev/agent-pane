@@ -175,26 +175,33 @@ describe('AcpTurnFailure', () => {
 })
 
 describe('buildAcpPrompt', () => {
-  it('returns the bare prompt when there is no prior conversation', () => {
-    assert.equal(buildAcpPrompt('hello', []), 'hello')
+  it('always leads with the turn-scoped session notes', () => {
+    const prompt = buildAcpPrompt('hello', [])
+    assert.match(prompt, /^Session notes: this session is turn-scoped/)
+    assert.match(prompt, /hello$/)
+    // Both dogfooding pain points must be steered: doomed background subagents
+    // (#605) and context-burning find/ls sweeps.
+    assert.match(prompt, /background or async subagents\s+will NOT survive/i)
+    assert.match(prompt, /targeted searches/)
   })
 
-  it('prepends the sandbox note only for sandboxed turns', () => {
+  it('adds the sandbox note only for sandboxed turns', () => {
     const sandboxed = buildAcpPrompt('hello', [], { sandboxed: true })
-    assert.match(sandboxed, /^Environment note: this session runs inside a filesystem sandbox/)
+    assert.match(sandboxed, /Environment note: this session runs inside a filesystem sandbox/)
     assert.match(sandboxed, /hello$/)
     // The note must steer away from hardcoded /tmp and warn that approval
     // cannot override the sandbox.
     assert.match(sandboxed, /\$TMPDIR/)
     assert.match(sandboxed, /approval\s+prompts cannot override/i)
-    assert.equal(buildAcpPrompt('hello', [], { sandboxed: false }), 'hello')
+    assert.doesNotMatch(buildAcpPrompt('hello', [], { sandboxed: false }), /Environment note:/)
   })
 
-  it('places the sandbox note ahead of the replayed transcript', () => {
+  it('places the notes ahead of the replayed transcript', () => {
     const prompt = buildAcpPrompt('next', [{ role: 'user', content: 'earlier' }], {
       sandboxed: true,
     })
-    assert.match(prompt, /^Environment note:/)
+    assert.match(prompt, /^Session notes:/)
+    assert.match(prompt, /Environment note:/)
     assert.match(prompt, /User: earlier/)
     assert.match(prompt, /--- New message ---\nnext$/)
   })

@@ -27,6 +27,8 @@ export interface RunExploreSubagentOptions {
   signal: AbortSignal
   onChunk: (chunk: StreamChunk) => void
   usageModel: string
+  /** Local subagent routing was requested but unavailable; run uses the cloud model. */
+  localFallback?: boolean
 }
 
 export interface ExploreSubagentResult {
@@ -66,6 +68,7 @@ export async function runExploreSubagent(
     signal,
     onChunk,
     usageModel,
+    localFallback,
   } = opts
 
   const workspace = getWorkspaceRoot() ?? '(none)'
@@ -94,6 +97,7 @@ export async function runExploreSubagent(
       onSubagentChunk: onChunk,
       systemPromptSuffix: buildExploreSearchRoutingAddon(isSemanticSearchAvailable()),
       usageModel,
+      ...(localFallback !== undefined ? { localFallback } : {}),
     })
 
     const usage = session.usage ?? { inputTokens: 0, outputTokens: 0 }

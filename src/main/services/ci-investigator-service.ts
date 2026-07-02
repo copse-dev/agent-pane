@@ -34,6 +34,8 @@ export interface RunCiInvestigatorSubagentOptions {
   signal: AbortSignal
   onChunk: (chunk: StreamChunk) => void
   usageModel: string
+  /** Local subagent routing was requested but unavailable; run uses the cloud model. */
+  localFallback?: boolean
 }
 
 export interface CiInvestigatorSubagentResult {
@@ -87,6 +89,7 @@ export async function runCiInvestigatorSubagent(
     signal,
     onChunk,
     usageModel,
+    localFallback,
   } = opts
 
   const workspace = getWorkspaceRoot() ?? '(none)'
@@ -121,6 +124,7 @@ export async function runCiInvestigatorSubagent(
       kind: 'investigate_ci',
       userTask,
       usageModel,
+      ...(localFallback !== undefined ? { localFallback } : {}),
     })
 
     const usage = session.usage ?? { inputTokens: 0, outputTokens: 0 }

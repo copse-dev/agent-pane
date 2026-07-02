@@ -197,6 +197,22 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
   const preview = session.summary ?? tc.result ?? ''
   card.append(createToolHeader(label, status, 'tool-card-header'))
 
+  // Which model ran this subagent — the whole point of local routing is
+  // invisible without it, and so is the silent cloud fallback when LM Studio
+  // is unreachable.
+  if (session.model) {
+    const isLocal = session.model.startsWith('lmstudio:')
+    const badge = el('div', { class: 'subagent-model' })
+    badge.textContent = isLocal
+      ? `${session.model.slice('lmstudio:'.length)} · local`
+      : session.model
+    if (session.localFallback) {
+      badge.textContent += ' — local model unavailable, ran on cloud'
+      badge.classList.add('subagent-model-fallback')
+    }
+    card.append(badge)
+  }
+
   if (preview && status !== 'running') {
     const previewEl = el('div', { class: 'subagent-summary-preview message-text' })
     setAssistantMarkdown(previewEl, summaryPreview(preview), false, api)
