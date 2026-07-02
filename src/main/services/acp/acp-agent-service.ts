@@ -23,12 +23,15 @@ import {
 import {
   listAcpAgentModels,
   runAcpAgentPrompt,
+  willSandboxAcpAgent,
   type AcpAgentSpawnConfig,
   type AcpClientHandlers,
   type AcpModelSelector,
 } from './acp-client.ts'
-import { getAcpAgent } from './acp-agent-registry.ts'
+import { getAcpAgent, resolveAcpSandbox } from './acp-agent-registry.ts'
+import { startAcpNativeBridge } from './acp-native-bridge.ts'
 import { listForwardableMcpServers } from '../mcp-registry.ts'
+import type { ToolRegistry } from '../tool-registry.ts'
 import { isAcpPermissionRemembered, rememberAcpPermission } from './acp-permission-grants.ts'
 import { permissionKindLabel, presentPermissionRequest } from './acp-approval-presentation.ts'
 import { requestApproval } from '../approval.ts'
@@ -38,6 +41,7 @@ import {
   listWorktreeChangesSince,
   stageDiff,
 } from '../diff-queue.ts'
+import { networkDenialMarker, networkDenialsSince } from '../../project-sandbox/network-scope.ts'
 import { detectLanguage } from '../language.ts'
 import {
   getActiveProjectRoot,
@@ -70,6 +74,11 @@ export interface RunAcpAgentOptions {
   priorMessages: LLMMessage[]
   signal: AbortSignal
   onChunk: (chunk: StreamChunk) => void
+  /**
+   * Tool registry backing the native-tool MCP bridge (#602 tier 2). When
+   * absent the bridge is not offered.
+   */
+  registry?: ToolRegistry
   /**
    * Model chosen in the picker (the `#<model>` half of `acp:<id>#<model>`).
    * Overrides the agent config's default `model` for this turn.
@@ -207,7 +216,10 @@ export async function runAcpAgentFromSettings(
     throw new Error('Open a folder before running an ACP agent so it has a workspace to act in.')
   }
 
-  const prompt = buildAcpPrompt(options.userPrompt, options.priorMessages)
+  const sandbox = resolveAcpSandbox(agent)
+  const prompt = buildAcpPrompt(options.userPrompt, options.priorMessages, {
+    sandboxed: willSandboxAcpAgent(sandbox),
+  })
   if (!prompt.trim()) {
     throw new Error('ACP agent prompt cannot be empty.')
   }
@@ -217,6 +229,13 @@ export async function runAcpAgentFromSettings(
   // (issue #602, tier 1). Best-effort: a config-read failure downgrades the turn
   // to "no forwarded servers" instead of failing it.
   const mcpServers = await listForwardableMcpServers().catch(() => [])
+  // Copse's own curated tools over a per-turn localhost MCP server (#602,
+  // tier 2). Started before the spawn so a sandboxed agent's seatbelt profile
+  // can include loopback; closed when the turn settles. Best-effort like the
+  // forwarded servers above.
+  const bridge = options.registry
+    ? await startAcpNativeBridge(options.registry, options.signal).catch(() => null)
+    : null
   const spawnConfig: AcpAgentSpawnConfig = {
     command: agent.command,
     cwd,
@@ -224,6 +243,8 @@ export async function runAcpAgentFromSettings(
     ...(agent.env ? { env: agent.env } : {}),
     ...(model ? { model } : {}),
     ...(mcpServers.length > 0 ? { mcpServers } : {}),
+    ...(sandbox ? { sandbox } : {}),
+    ...(bridge ? { nativeBridge: { url: bridge.url, token: bridge.token } } : {}),
   }
 
   // Accumulate streamed assistant text so the turn contributes to thread history
@@ -250,6 +271,7 @@ export async function runAcpAgentFromSettings(
     writeTextFile: (req) => writeViaDiffQueue(req, options.signal, queueWrites),
   }
   const baseline = await captureWorktreeBaseline()
+  const denialMark = networkDenialMarker()
 
   let stopReason: StopReason
   let usage: Awaited<ReturnType<typeof runAcpAgentPrompt>>['usage']
@@ -273,7 +295,9 @@ export async function runAcpAgentFromSettings(
         estimated: true,
       })
     }
-    // A dead turn may still have written via its own shell before failing.
+    // A dead turn may still have written via its own shell before failing —
+    // and a network denial is often WHY it died, so name the blocked hosts.
+    emitNetworkDenialAudit(denialMark, options.onChunk)
     await emitBypassedWriteAudit(baseline, queueWrites, options.onChunk)
     throw new AcpTurnFailure(err, {
       assistantText,
@@ -281,8 +305,11 @@ export async function runAcpAgentFromSettings(
         ? { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens }
         : { inputTokens: 0, outputTokens: 0 },
     })
+  } finally {
+    if (bridge) await bridge.close()
   }
 
+  emitNetworkDenialAudit(denialMark, options.onChunk)
   await emitBypassedWriteAudit(baseline, queueWrites, options.onChunk)
 
   // Attribute the external agent's token usage to this thread + model so it shows
@@ -322,11 +349,13 @@ export async function listAcpModelsForAgent(agentId: string): Promise<AcpModelSe
   if (!cwd) {
     throw new Error('Open a folder before detecting an ACP agent’s models.')
   }
+  const sandbox = resolveAcpSandbox(agent)
   return listAcpAgentModels({
     command: agent.command,
     cwd,
     ...(agent.args ? { args: agent.args } : {}),
     ...(agent.env ? { env: agent.env } : {}),
+    ...(sandbox ? { sandbox } : {}),
   })
 }
 
@@ -439,12 +468,16 @@ async function emitBypassedWriteAudit(
     type: 'tool_call',
     toolCall: { id, name: 'workspace_edit_audit', args: { files: bypassed } },
   })
+  // Warn, don't revert: the change may be legitimate (the agent's own shell, a
+  // formatter it ran) or external (another editor mid-turn) — the audit can't
+  // tell, so it surfaces the fact and leaves the decision to the user.
   onChunk({
     type: 'tool_result',
     toolCallId: id,
     result:
-      'These files changed during the ACP turn without going through the diff-approval ' +
-      "queue (e.g. via the agent's own shell):\n" +
+      'Warning: these files changed on disk during the ACP turn outside the approved ' +
+      "sphere — no diff was reviewed for them. The write came from the agent's own " +
+      'tools (e.g. its shell) or from something else entirely:\n' +
       bypassed.map((p) => `- ${p}`).join('\n') +
       '\nReview them (e.g. git diff) before relying on the workspace state.',
     isError: false,
@@ -454,6 +487,40 @@ async function emitBypassedWriteAudit(
 /** Canonicalize to the git-status path shape used by the worktree baseline. */
 function auditKey(relPath: string): string {
   return relPath.replace(/\\/g, '/').replace(/^(?:\.\/)+/, '')
+}
+
+/**
+ * Name the network destinations the sandbox blocked during this turn — ASRT's
+ * own 403 body doesn't say which host, which made allowlist gaps guesswork
+ * (e.g. an agent's OAuth endpoint missing from `sandbox.allowedDomains`).
+ * Denials are recorded globally, so the bracket can occasionally include a
+ * concurrent contained command's denial; the copy stays honest about that.
+ */
+function emitNetworkDenialAudit(marker: number, onChunk: (chunk: StreamChunk) => void): void {
+  const denied = networkDenialsSince(marker)
+  if (denied.length === 0) return
+  const hosts = [
+    ...new Set(
+      denied.map((denial) =>
+        denial.port !== undefined ? `${denial.host}:${String(denial.port)}` : denial.host,
+      ),
+    ),
+  ]
+  const id = `acp-network-audit-${randomUUID()}`
+  onChunk({
+    type: 'tool_call',
+    toolCall: { id, name: 'sandbox_network_audit', args: { blocked: hosts } },
+  })
+  onChunk({
+    type: 'tool_result',
+    toolCallId: id,
+    result:
+      'The sandbox blocked these network destinations while the turn ran:\n' +
+      hosts.map((host) => `- ${host}`).join('\n') +
+      "\nIf the agent needs one legitimately, add its domain to the agent's " +
+      'sandbox.allowedDomains override in Settings → ACP agents.',
+    isError: false,
+  })
 }
 
 /**
@@ -513,15 +580,55 @@ function raceDecisionAgainstAbort(
 }
 
 /**
+ * Steering prepended to every ACP prompt. Two failure modes it exists to
+ * prevent, both observed dogfooding:
+ *
+ * - **Background subagents are doomed** (issue #605): the agent process is
+ *   killed when the turn settles, so async/background helpers never deliver —
+ *   ACP gives Copse no way to disable the agent's subagent tool, so steer.
+ * - **Broad find/ls dumps burn the agent's own context/budget**: each turn is
+ *   a fresh session, so undirected sweeps get re-paid every turn.
+ */
+export const ACP_TURN_PROMPT_NOTE =
+  'Session notes: this session is turn-scoped — background or async subagents ' +
+  'will NOT survive the turn and their results will be lost, so do work inline ' +
+  '(foreground subagents that finish within the turn are fine). Keep exploration ' +
+  'lean: prefer targeted searches (specific paths, rg with globs) over broad ' +
+  'find/ls directory dumps, and prefer the "copse" MCP tools (e.g. ' +
+  'semantic_search) when available.'
+
+/**
+ * Steering prepended to the prompt when the agent process runs under the
+ * workspace seatbelt (issue #590). A silent $TMPDIR redirect is not enough:
+ * models habitually hardcode `/tmp`, which the seatbelt denies — and unlike
+ * native run_shell there is no approve-to-run-unsandboxed path, so without
+ * this note the agent walks into EPERMs that user approval cannot fix.
+ */
+export const ACP_SANDBOX_PROMPT_NOTE =
+  'Environment note: this session runs inside a filesystem sandbox. Writes are ' +
+  'allowed only inside the workspace and $TMPDIR; the system /tmp, the rest of ' +
+  'the home directory, and most network destinations are blocked — approval ' +
+  'prompts cannot override the sandbox, so do not retry blocked paths. Put ' +
+  'scratch files in $TMPDIR or the workspace.'
+
+/**
  * Flatten the user prompt to text, replaying prior conversation as a compact
  * preamble. A fresh ACP session has no memory of earlier turns, so without this
- * a follow-up message would reach the agent with no context.
+ * a follow-up message would reach the agent with no context. `sandboxed` turns
+ * additionally get {@link ACP_SANDBOX_PROMPT_NOTE} so the agent knows the
+ * confines it is operating under.
  */
-export function buildAcpPrompt(userPrompt: UserContent, priorMessages: LLMMessage[]): string {
+export function buildAcpPrompt(
+  userPrompt: UserContent,
+  priorMessages: LLMMessage[],
+  opts?: { sandboxed?: boolean },
+): string {
+  const note = ACP_TURN_PROMPT_NOTE + (opts?.sandboxed ? `\n\n${ACP_SANDBOX_PROMPT_NOTE}` : '')
   const current = promptPayloadFromUserContent(userPrompt).text
   const transcript = priorMessages.map(messageLine).filter(Boolean).join('\n')
-  if (!transcript) return current
+  if (!transcript) return `${note}\n\n${current}`
   return (
+    `${note}\n\n` +
     'You are continuing an existing Copse chat. Use the prior conversation below ' +
     'for context, then respond to the new message.\n\n' +
     `${transcript}\n\n--- New message ---\n${current}`

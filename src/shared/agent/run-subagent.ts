@@ -89,6 +89,8 @@ export interface RunSubagentOptions {
   /** Replace the default "exploration query" user-task framing with a ready-made task. */
   userTask?: string
   usageModel?: string
+  /** Local subagent routing was requested but unavailable; this run uses the cloud model. */
+  localFallback?: boolean
   /** Session kind reported to the renderer (drives the tool card label). */
   kind?: SubagentSession['kind']
 }
@@ -124,6 +126,7 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
     systemPrompt,
     userTask,
     usageModel,
+    localFallback,
     kind = 'explore',
   } = opts
 
@@ -135,6 +138,8 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
     prompt,
     summary: null,
     messages: [],
+    ...(usageModel !== undefined ? { model: usageModel } : {}),
+    ...(localFallback ? { localFallback: true } : {}),
   }
 
   onSubagentChunk({ type: 'subagent_start', parentToolCallId, session: { ...session } })

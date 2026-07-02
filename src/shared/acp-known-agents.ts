@@ -50,6 +50,13 @@ export interface KnownAcpAgent {
    * so auto-setup doesn't register several near-duplicate entries.
    */
   preset?: boolean
+  /**
+   * Seatbelt confinement preset (issue #590): domains the agent's process may
+   * reach and the home-relative dirs it needs for its own config/state. Copied
+   * onto the registered `AcpAgentConfig`; agents without a preset spawn
+   * unsandboxed. Keep domains minimal — the user can widen them per agent.
+   */
+  sandbox?: { allowedDomains: string[]; homeDirs?: string[]; scratchPaths?: string[] }
   /** Shell command that authenticates the agent / mints a token (e.g. `claude setup-token`). */
   setup?: string
   /** Where to read more about the agent. */
@@ -66,6 +73,12 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     args: ['--experimental-acp'],
     envHints: ['GEMINI_API_KEY'],
     install: 'npm install -g @google/gemini-cli',
+    sandbox: {
+      // Google API infra wholesale (model + OAuth endpoints move between
+      // *.googleapis.com subdomains) plus the account login host.
+      allowedDomains: ['*.googleapis.com', 'accounts.google.com'],
+      homeDirs: ['.gemini', '.config/gemini'],
+    },
     setup: 'gemini', // first run walks through Google sign-in; or set GEMINI_API_KEY
     docsUrl: 'https://github.com/google-gemini/gemini-cli',
     note: 'Sign in by running `gemini` once, or set GEMINI_API_KEY.',
@@ -81,6 +94,22 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     requiresClient: 'claude',
     autoInstall: true,
     preset: true,
+    sandbox: {
+      // Anthropic-owned infra wholesale: the API lives on api.anthropic.com,
+      // but OAuth token refresh (console.anthropic.com / claude.ai) and
+      // telemetry move between subdomains — pinning individual hosts breaks
+      // auth ("403 Connection blocked by network allowlist") when they do.
+      allowedDomains: ['anthropic.com', '*.anthropic.com', 'claude.ai', '*.claude.ai'],
+      homeDirs: ['.claude', '.claude.json', '.claude.json.backup', '.config/claude'],
+      // Claude Code hardcodes shell/task bookkeeping in system /tmp, ignoring
+      // $TMPDIR: a /tmp/claude-<uid>/ tree (every Bash call fails at mkdir
+      // without it) and per-command /tmp/claude-<hex>-cwd tracking files.
+      // BOTH forms are required: the literal dir gets recursive subpath
+      // coverage (ASRT strips trailing /** from write globs, so a glob can
+      // never grant a subtree), while the single-segment glob covers the
+      // sibling -cwd files.
+      scratchPaths: ['/tmp/claude-${uid}', '/tmp/claude-*'],
+    },
     setup: 'claude setup-token',
     docsUrl: 'https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp',
     note: 'Claude Agent SDK over ACP. Uses your existing `claude` login (or ANTHROPIC_API_KEY).',
@@ -94,6 +123,22 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     install: 'npm install -g @zed-industries/claude-code-acp',
     installPackage: '@zed-industries/claude-code-acp',
     requiresClient: 'claude',
+    sandbox: {
+      // Anthropic-owned infra wholesale: the API lives on api.anthropic.com,
+      // but OAuth token refresh (console.anthropic.com / claude.ai) and
+      // telemetry move between subdomains — pinning individual hosts breaks
+      // auth ("403 Connection blocked by network allowlist") when they do.
+      allowedDomains: ['anthropic.com', '*.anthropic.com', 'claude.ai', '*.claude.ai'],
+      homeDirs: ['.claude', '.claude.json', '.claude.json.backup', '.config/claude'],
+      // Claude Code hardcodes shell/task bookkeeping in system /tmp, ignoring
+      // $TMPDIR: a /tmp/claude-<uid>/ tree (every Bash call fails at mkdir
+      // without it) and per-command /tmp/claude-<hex>-cwd tracking files.
+      // BOTH forms are required: the literal dir gets recursive subpath
+      // coverage (ASRT strips trailing /** from write globs, so a glob can
+      // never grant a subtree), while the single-segment glob covers the
+      // sibling -cwd files.
+      scratchPaths: ['/tmp/claude-${uid}', '/tmp/claude-*'],
+    },
     docsUrl: 'https://www.npmjs.com/package/@zed-industries/claude-code-acp',
     note: "Zed's Claude Code ACP adapter. Auth with `claude /login` or ANTHROPIC_API_KEY.",
   },
