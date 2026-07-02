@@ -17,7 +17,7 @@ const SHARED_TOOL_TAIL = `- git_status: Show working tree status
 - get_ci_status: Read GitHub pull request CI check status (requires gh CLI and an open PR)
 - wait_for_ci_checks: Wait until PR CI checks finish after a push
 - get_ci_failure_logs: Fetch failed GitHub Actions log output for a PR
-- run_shell: Run a shell command in the workspace (may prompt for approval)
+- run_shell: Run a shell command for tests, builds, installs, and other tasks not covered by a dedicated tool (may prompt for approval; do not use for reading files or searching code)
 - staged_diffs: List pending proposed file edits waiting for approval, recent edit decisions, and existing git changes
 - read_staged_diff: Inspect proposed content for a pending file edit
 - ask_user: Ask the user one or more clarifying questions and block until they answer (use at ambiguous or branching points instead of guessing)
@@ -34,6 +34,8 @@ interface BasePromptVars {
   understand: string
   /** Verb used in "always <verb> before writing" (explore vs read). */
   inspectVerb: string
+  /** Tool-choice rules steering away from run_shell for reads/searches. */
+  toolChoice: string
 }
 
 function buildBasePrompt(v: BasePromptVars): string {
@@ -58,7 +60,10 @@ When modifying files:
 5. When you make an edit, use str_replace or write_file rather than pasting the file's new contents into the chat
 6. Read the tool result carefully: if it says applied directly, run_shell, git, and read_file can validate immediately. If it says staged/pending, those tools still see only on-disk content; use staged_diffs/read_staged_diff to inspect proposed content and ask the user to approve before shell validation.
 7. If staged_diffs reports existing git changes, avoid direct overwrites and preserve the user's dirty tree.
-8. If the same error persists after two attempts to fix it, stop and ask the user instead of trying again`
+8. If the same error persists after two attempts to fix it, stop and ask the user instead of trying again
+
+Tool choice:
+${v.toolChoice}`
 }
 
 export const BASE_SYSTEM_PROMPT = buildBasePrompt({
@@ -73,6 +78,9 @@ ${SHARED_WEB_TOOLS}`,
     'Do not re-explore the same areas repeatedly. Run tests or commands with run_shell when asked to validate code.',
   understand: 'Use explore to understand the file before changing it',
   inspectVerb: 'explore',
+  toolChoice: `- For reading files, searching the codebase, or listing directories: use explore — not run_shell (no cat, grep, rg, find, head, or tail for those jobs)
+- For GitHub pull requests and CI status: use gh_* / get_ci_* tools — not run_shell + gh
+- Reserve run_shell for running tests, builds, package installs, and other commands with no dedicated tool`,
 })
 
 export const BASE_SYSTEM_PROMPT_DIRECT_READS = buildBasePrompt({
@@ -90,6 +98,9 @@ ${SHARED_WEB_TOOLS}`,
     'List the workspace root at most once; do not re-read the same paths. Then run tests or commands with run_shell when asked to validate code.',
   understand: 'Read the file first',
   inspectVerb: 'read',
+  toolChoice: `- For reading files, searching the codebase, or listing directories: use read_file, list_dir, search_codebase, search_code, semantic_search, or find_files — not run_shell (no cat, grep, rg, find, head, or tail for those jobs)
+- For GitHub pull requests and CI status: use gh_* / get_ci_* tools — not run_shell + gh
+- Reserve run_shell for running tests, builds, package installs, and other commands with no dedicated tool`,
 })
 
 // Appended when the `browserToolsEnabled` setting is on. Describes the built-in
