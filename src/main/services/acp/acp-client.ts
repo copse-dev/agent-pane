@@ -25,6 +25,7 @@ import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunk } from './session-update-adapter.ts'
 import { envForRendererChildProcess } from '../child-process-env.ts'
 import { acpAgentSandboxOverlay, ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
+import { acquireSandboxNetworkScope } from '../../project-sandbox/network-scope.ts'
 import {
   formatArgvForShell,
   isProjectSandboxEnabled,
@@ -156,20 +157,36 @@ async function spawnAcpAgentProcess(config: AcpAgentSpawnConfig): Promise<ChildP
     const overlay = acpAgentSandboxOverlay(config.cwd, config.sandbox, {
       allowLocalhost: Boolean(config.nativeBridge),
     })
-    const command = formatArgvForShell(config.command, config.args ?? [])
-    const { argv } = await SandboxManager.wrapWithSandboxArgv(
-      command,
-      shellForSandboxWrap(),
-      overlay,
-    )
-    const file = argv[0]
-    if (!file) throw new Error('sandbox wrap produced empty argv')
-    const tmpDir = ensureWorkspaceTmpDir()
-    return spawn(file, argv.slice(1), {
-      cwd: config.cwd,
-      env: { ...env, TMPDIR: tmpDir, TMP: tmpDir, TEMP: tmpDir },
-      stdio,
+    // ASRT's proxies consult the GLOBAL config per connection — the overlay's
+    // network block only wires restriction up. Widen the global allowlist for
+    // exactly this process's lifetime (see network-scope.ts for the trade-off),
+    // acquiring before spawn so the agent's first connection never races it.
+    const release = acquireSandboxNetworkScope({
+      domains: overlay.network?.allowedDomains ?? [],
+      allowLocalBinding: overlay.network?.allowLocalBinding ?? false,
     })
+    try {
+      const command = formatArgvForShell(config.command, config.args ?? [])
+      const { argv } = await SandboxManager.wrapWithSandboxArgv(
+        command,
+        shellForSandboxWrap(),
+        overlay,
+      )
+      const file = argv[0]
+      if (!file) throw new Error('sandbox wrap produced empty argv')
+      const tmpDir = ensureWorkspaceTmpDir()
+      const child = spawn(file, argv.slice(1), {
+        cwd: config.cwd,
+        env: { ...env, TMPDIR: tmpDir, TMP: tmpDir, TEMP: tmpDir },
+        stdio,
+      })
+      child.once('close', release)
+      child.once('error', release)
+      return child
+    } catch (err) {
+      release()
+      throw err
+    }
   }
   return spawn(config.command, config.args ?? [], { cwd: config.cwd, env, stdio })
 }
