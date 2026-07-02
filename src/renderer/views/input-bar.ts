@@ -40,6 +40,7 @@ import {
   threadGitBranchMismatch,
   threadGitBranchMismatchMessage,
 } from '@shared/git/thread-branch.ts'
+import { syncThreadGitBranchIfChanged } from '@shared/git/sync-thread-branch.ts'
 import { showErrorToast, showToast } from './toast.ts'
 import { createComposerDraftAutosave } from './composer-draft-autosave.ts'
 
@@ -95,12 +96,20 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     { type: 'button', class: 'composer-branch-checkout-btn' },
     'Check out',
   )
+  // The guard is advisory: alongside checking the bound branch back out, the
+  // user can rebind the thread to whatever is checked out now and keep going.
+  const continueBranchBtn = el(
+    'button',
+    { type: 'button', class: 'composer-branch-continue-btn' },
+    'Continue here',
+  )
   const branchWarning = el(
     'div',
     { class: 'composer-branch-warning', role: 'status', 'aria-live': 'polite', hidden: '' },
     el('span', { class: 'composer-branch-warning-icon', 'aria-hidden': 'true' }, '!'),
     branchWarningText,
     checkoutBranchBtn,
+    continueBranchBtn,
   )
   const footer = el('div', { class: 'input-footer' })
   const modelHost = el('div', { class: 'footer-model-host' })
@@ -256,6 +265,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     branchWarningText.title = threadGitBranchMismatchMessage(branch)
     checkoutBranchBtn.disabled = checkoutInProgress
     checkoutBranchBtn.textContent = checkoutInProgress ? 'Checking out...' : 'Check out'
+    continueBranchBtn.disabled = checkoutInProgress
   }
 
   function hideBranchMismatch(): void {
@@ -265,6 +275,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     branchWarningText.title = ''
     checkoutBranchBtn.disabled = false
     checkoutBranchBtn.textContent = 'Check out'
+    continueBranchBtn.disabled = false
   }
 
   function updateQueueIndicator(): void {
@@ -430,6 +441,27 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
         checkoutInProgress = false
         showBranchMismatch(branch)
         showErrorToast(`Failed to check out ${branch}`, error)
+      })
+  })
+
+  // Rebind the thread to the checked-out branch and send the message that was
+  // held back by the mismatch guard. Re-reads HEAD rather than trusting the
+  // branch we warned about — the user may have switched again since.
+  continueBranchBtn.addEventListener('click', () => {
+    if (!mismatchBranch || checkoutInProgress) return
+    const id = getActiveThreadId()
+    if (!id) return
+    void api.git
+      .branchStatus()
+      .then(({ currentBranch }) => {
+        if (syncThreadGitBranchIfChanged(store, id, currentBranch)) {
+          store.emit('git_branch_changed')
+        }
+        hideBranchMismatch()
+        void submit()
+      })
+      .catch((error: unknown) => {
+        showErrorToast('Failed to read the current branch', error)
       })
   })
 
