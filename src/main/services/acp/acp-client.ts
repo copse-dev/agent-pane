@@ -3,6 +3,8 @@ import {
   methods,
   ndJsonStream,
   PROTOCOL_VERSION,
+  type McpCapabilities,
+  type McpServer,
   type NewSessionResponse,
   type ReadTextFileRequest,
   type ReadTextFileResponse,
@@ -18,6 +20,7 @@ import { spawn } from 'node:child_process'
 import { Readable, Writable } from 'node:stream'
 import type { StreamChunk } from '@shared/types'
 import type { AcpModelChoice, AcpModelSelector } from '@shared/types/acp.ts'
+import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunk } from './session-update-adapter.ts'
 import { envForRendererChildProcess } from '../child-process-env.ts'
 
@@ -57,6 +60,13 @@ export interface AcpAgentSpawnConfig {
    * is already current.
    */
   model?: string
+  /**
+   * Copse-configured MCP servers to hand the agent via `session/new`
+   * (`mcpServers`), so the external agent can mount the user's servers itself.
+   * Filtered against the agent's advertised `mcpCapabilities` before sending
+   * (stdio is baseline; http needs the capability flag).
+   */
+  mcpServers?: McpServerConfig[]
 }
 
 const UNSUPPORTED = (method: string) => (): Promise<never> =>
@@ -94,6 +104,38 @@ export function modelSelectorFrom(response: NewSessionResponse): AcpModelSelecto
  */
 export function buildAcpAgentEnv(config: AcpAgentSpawnConfig): Record<string, string> {
   return { ...envForRendererChildProcess(), ...(config.env ?? {}) }
+}
+
+/**
+ * Convert Copse MCP server configs to the ACP `session/new` `mcpServers` shape,
+ * keeping only what the agent said it supports in `initialize`: stdio is the
+ * protocol baseline, http needs `mcpCapabilities.http`. Unsupported transports
+ * are dropped rather than failing the session — the agent just doesn't get that
+ * server this turn.
+ */
+export function toAcpMcpServers(
+  configs: readonly McpServerConfig[],
+  capabilities: McpCapabilities | undefined,
+): McpServer[] {
+  const servers: McpServer[] = []
+  for (const cfg of configs) {
+    if (cfg.transport === 'stdio' && cfg.command !== undefined) {
+      servers.push({
+        name: cfg.name,
+        command: cfg.command,
+        args: cfg.args ?? [],
+        env: Object.entries(cfg.env ?? {}).map(([name, value]) => ({ name, value })),
+      })
+    } else if (cfg.transport === 'http' && cfg.url !== undefined && capabilities?.http === true) {
+      servers.push({
+        type: 'http',
+        name: cfg.name,
+        url: cfg.url,
+        headers: Object.entries(cfg.headers ?? {}).map(([name, value]) => ({ name, value })),
+      })
+    }
+  }
+  return servers
 }
 
 /**
@@ -139,7 +181,7 @@ export async function runAcpAgentPrompt(
 
   try {
     return await app.connectWith(stream, async (ctx) => {
-      await ctx.request(methods.agent.initialize, {
+      const initResponse = await ctx.request(methods.agent.initialize, {
         protocolVersion: PROTOCOL_VERSION,
         clientCapabilities: {
           fs: {
@@ -149,7 +191,11 @@ export async function runAcpAgentPrompt(
         },
       })
 
-      return ctx.buildSession(config.cwd).withSession(async (session) => {
+      const mcpServers = toAcpMcpServers(
+        config.mcpServers ?? [],
+        initResponse.agentCapabilities?.mcpCapabilities,
+      )
+      return ctx.buildSession({ cwd: config.cwd, mcpServers }).withSession(async (session) => {
         const cancel = (): void =>
           void ctx.notify('session/cancel', { sessionId: session.sessionId })
         if (signal) {

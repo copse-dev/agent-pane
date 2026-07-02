@@ -30,10 +30,21 @@ approval UX.
   - **`fs/read_text_file`** → a workspace-scoped read (paths are sandboxed to the
     open folder).
   - **`fs/write_text_file`** → the **diff-approval queue**. The agent's write is
-    shown to you as a diff and is **blocked until you approve or reject it** —
-    nothing hits disk without your say-so.
+    shown to you as a diff and is **blocked until you approve or reject it**.
   - **`session/request_permission`** → the normal approval dialog.
+- Your configured **MCP servers** (stdio, plus http when the agent supports it)
+  are handed to the agent via `session/new`, so it can mount them itself. The
+  same trust and enable gating applies as for Copse's own connections.
 - Aborting the turn sends `session/cancel` and tears the agent process down.
+
+> **Scope of the write guarantee:** the diff queue only sees writes the agent
+> routes through `fs/write_text_file`. Well-behaved adapters (the Claude
+> adapters, Gemini CLI) use it for file _edits_ when Copse advertises the
+> capability, but every agent keeps its own shell tool — a `sed -i` or
+> `echo >` from the agent's shell lands on disk directly, gated only by
+> `session/request_permission` (and not even that once you grant an
+> "Always allow … execute" remember). Containment and detection of such
+> writes are tracked in #590 and #591.
 
 ## Configure an agent
 
@@ -111,13 +122,14 @@ tokens such as `GITHUB_TOKEN` are passed through.
 ACP client mode and the **built-in Copse agent loop** (cloud/local models such as
 Fable or Sonnet) do **not** expose the same tool surface today:
 
-| Capability           | Built-in Copse (native model)                                                               | ACP client (`acp:<id>`)                                  |
-| -------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| Read/search files    | `read_file`, `search_codebase`, `search_code`, … (default) or `explore` subagent (optional) | External agent's own tools (e.g. Read/Grep/Bash) via ACP |
-| Edit files           | `write_file` / `str_replace` → diff approval when needed                                    | `fs/write_text_file` → Copse diff-approval queue         |
-| Shell / CLI          | `run_shell` (structured; prefer dedicated tools for reads)                                  | External agent's shell tool                              |
-| Git / GitHub         | `git_*`, `gh_*`, CI tools                                                                   | External agent (may shell out)                           |
-| Browser, MCP, skills | Copse `ToolRegistry`                                                                        | **Not forwarded** (see limitations)                      |
+| Capability        | Built-in Copse (native model)                                                               | ACP client (`acp:<id>`)                                  |
+| ----------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Read/search files | `read_file`, `search_codebase`, `search_code`, … (default) or `explore` subagent (optional) | External agent's own tools (e.g. Read/Grep/Bash) via ACP |
+| Edit files        | `write_file` / `str_replace` → diff approval when needed                                    | `fs/write_text_file` → Copse diff-approval queue         |
+| Shell / CLI       | `run_shell` (structured; prefer dedicated tools for reads)                                  | External agent's shell tool                              |
+| Git / GitHub      | `git_*`, `gh_*`, CI tools                                                                   | External agent (may shell out)                           |
+| MCP servers       | Copse `ToolRegistry` (`mcp__*` tools)                                                       | Forwarded via `session/new` (agent mounts them itself)   |
+| Browser, skills   | Copse `ToolRegistry`                                                                        | **Not forwarded** (see #602 for the MCP-bridge plan)     |
 
 **Default native behavior** (Settings → Local models → _Route reads and searches
 through exploration subagents_ **off**) exposes direct read/search tools so native
@@ -137,8 +149,9 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   so follow-ups keep context, but the agent has no durable session memory yet.
 - **Text only on input.** Image attachments are dropped before the prompt is
   sent (the agent receives the text blocks).
-- **No MCP forwarding.** Your configured MCP servers are not yet forwarded to the
-  external agent.
+- **No native-tool bridge.** Configured MCP servers are forwarded, but Copse's
+  own tools (browser, `gh_*`/CI, skills, semantic search) are not yet exposed to
+  the agent as an MCP server — tracked in #602.
 
 ## See also
 

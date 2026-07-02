@@ -1,5 +1,6 @@
-import type { SessionUpdate, ToolCallContent } from '@agentclientprotocol/sdk'
+import type { PlanEntry, SessionUpdate, ToolCallContent } from '@agentclientprotocol/sdk'
 import type { StreamChunk } from '@shared/types'
+import type { TodoItem } from '@shared/types/todo.ts'
 
 /**
  * Translate between Copse's internal `StreamChunk` stream and ACP
@@ -14,7 +15,7 @@ import type { StreamChunk } from '@shared/types'
  *   back into chunks the renderer already knows how to display.
  *
  * Chunks/updates without a clean counterpart (usage accounting, context
- * pressure, internal subagent events, plans) map to `null` and are dropped.
+ * pressure, internal subagent events) map to `null` and are dropped.
  */
 export function streamChunkToSessionUpdate(chunk: StreamChunk): SessionUpdate | null {
   switch (chunk.type) {
@@ -23,6 +24,29 @@ export function streamChunkToSessionUpdate(chunk: StreamChunk): SessionUpdate | 
       return {
         sessionUpdate: 'agent_message_chunk',
         content: { type: 'text', text: chunk.text },
+      }
+    case 'reasoning':
+      return {
+        sessionUpdate: 'agent_thought_chunk',
+        content: { type: 'text', text: chunk.text },
+      }
+    case 'todo_update':
+      return {
+        sessionUpdate: 'plan',
+        entries: chunk.todos
+          // ACP plans have no cancelled state; a cancelled todo is simply no
+          // longer part of the plan (each update replaces the whole list).
+          .filter(
+            (todo): todo is TodoItem & { status: PlanEntry['status'] } =>
+              todo.status !== 'cancelled',
+          )
+          .map(
+            (todo): PlanEntry => ({
+              content: todo.content,
+              priority: 'medium',
+              status: todo.status,
+            }),
+          ),
       }
     case 'tool_call':
       return {
@@ -48,8 +72,27 @@ export function streamChunkToSessionUpdate(chunk: StreamChunk): SessionUpdate | 
 export function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk | null {
   switch (update.sessionUpdate) {
     case 'agent_message_chunk':
-    case 'agent_thought_chunk':
       return update.content.type === 'text' ? { type: 'text', text: update.content.text } : null
+    // Reasoning renders in the "Thinking" disclosure and — unlike `text` — never
+    // joins the assistant's answer, thread history, or the next turn's replayed
+    // transcript (buildAcpPrompt).
+    case 'agent_thought_chunk':
+      return update.content.type === 'text'
+        ? { type: 'reasoning', text: update.content.text }
+        : null
+    // ACP plan entries carry no ids and each update replaces the whole plan, so
+    // index-based ids keep items stable across updates for the todo UI.
+    case 'plan':
+      return {
+        type: 'todo_update',
+        todos: update.entries.map(
+          (entry, index): TodoItem => ({
+            id: `acp-plan-${String(index + 1)}`,
+            content: entry.content,
+            status: entry.status,
+          }),
+        ),
+      }
     case 'tool_call':
       return {
         type: 'tool_call',
