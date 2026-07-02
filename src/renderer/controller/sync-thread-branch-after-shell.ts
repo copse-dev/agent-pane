@@ -3,9 +3,11 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { syncThreadGitBranchIfChanged } from '@shared/git/sync-thread-branch.ts'
 
 /**
- * Rebind the thread if HEAD moved. Callers gate this on the foreground thread
- * running a branch-changing command (see `shellCommandMayChangeBranch`); here we
- * read the resulting branch from HEAD so `-b`/`switch -c`/detached all resolve.
+ * Rebind the thread if HEAD moved. Callers gate this on the foreground thread:
+ * mid-turn after a branch-changing `run_shell` command (see
+ * `shellCommandMayChangeBranch`) and once at turn end, which also catches
+ * checkouts by external ACP agents whose tool calls we can't inspect. Reading
+ * the resulting branch from HEAD means `-b`/`switch -c`/detached all resolve.
  */
 export async function syncThreadGitBranchAfterShell(
   store: AppStore,

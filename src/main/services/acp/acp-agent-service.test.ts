@@ -1,10 +1,12 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { PermissionOption } from '@agentclientprotocol/sdk'
+import type { PermissionOption, RequestPermissionRequest } from '@agentclientprotocol/sdk'
 import {
   AcpTurnFailure,
   buildAcpPrompt,
+  formatPermissionBody,
   isRetryableAcpError,
+  permissionKindLabel,
   permissionResponseFor,
   runWithAcpRetry,
   sliceLines,
@@ -37,6 +39,93 @@ describe('permissionResponseFor', () => {
   it('cancels when the agent offered no option of the needed polarity', () => {
     assert.deepEqual(permissionResponseFor([REJECT_ONCE], true).outcome, { outcome: 'cancelled' })
     assert.deepEqual(permissionResponseFor([ALLOW_ONCE], false).outcome, { outcome: 'cancelled' })
+  })
+
+  it('prefers allow_always for remembered grants so the agent stops asking too', () => {
+    const res = permissionResponseFor([ALLOW_ONCE, ALLOW_ALWAYS], true, { preferAlways: true })
+    assert.deepEqual(res.outcome, { outcome: 'selected', optionId: 'a2' })
+  })
+
+  it('falls back to allow_once when a remembered grant has no allow_always option', () => {
+    const res = permissionResponseFor([ALLOW_ONCE, REJECT_ONCE], true, { preferAlways: true })
+    assert.deepEqual(res.outcome, { outcome: 'selected', optionId: 'a1' })
+  })
+})
+
+function permissionRequest(
+  toolCall: Partial<RequestPermissionRequest['toolCall']>,
+): RequestPermissionRequest {
+  return {
+    sessionId: 's1',
+    toolCall: { toolCallId: 't1', ...toolCall },
+    options: [],
+  }
+}
+
+describe('formatPermissionBody', () => {
+  it('falls back to the unwrapped title when there is no input', () => {
+    assert.equal(formatPermissionBody(permissionRequest({ title: '`git status`' })), 'git status')
+    assert.equal(formatPermissionBody(permissionRequest({})), 'Run this tool call?')
+  })
+
+  it('renders scalar rawInput fields as labelled lines, with the command bare', () => {
+    const body = formatPermissionBody(
+      permissionRequest({
+        title: 'Run command',
+        rawInput: { command: 'rm -rf dist', description: 'Clean build output', timeout: 5000 },
+      }),
+    )
+    assert.equal(body, 'rm -rf dist\ndescription: Clean build output\ntimeout: 5000')
+  })
+
+  it('drops lines that would only repeat the dialog title', () => {
+    const body = formatPermissionBody(
+      permissionRequest({ title: '`npm test`', rawInput: { command: 'npm test' } }),
+    )
+    assert.equal(body, 'npm test')
+    const empty = formatPermissionBody(
+      permissionRequest({ title: '`npm test`', rawInput: { description: 'npm test' } }),
+    )
+    assert.equal(empty, 'npm test') // nothing left → fallback title
+  })
+
+  it('keeps nested values as pretty JSON after the scalar lines', () => {
+    const body = formatPermissionBody(
+      permissionRequest({
+        title: 'Edit file',
+        rawInput: { path: 'src/a.ts', edits: [{ old: 'a', new: 'b' }] },
+      }),
+    )
+    assert.equal(
+      body,
+      'path: src/a.ts\n' + JSON.stringify({ edits: [{ old: 'a', new: 'b' }] }, null, 2),
+    )
+  })
+
+  it('unwraps inline code from string input and skips null-ish fields', () => {
+    assert.equal(
+      formatPermissionBody(permissionRequest({ title: 't', rawInput: '`ls -la`' })),
+      'ls -la',
+    )
+    assert.equal(
+      formatPermissionBody(
+        permissionRequest({ title: '`fetch`', rawInput: { url: null, method: undefined } }),
+      ),
+      'fetch',
+    )
+  })
+})
+
+describe('permissionKindLabel', () => {
+  it('names known ACP tool kinds in plain language', () => {
+    assert.equal(permissionKindLabel('execute'), 'terminal commands')
+    assert.equal(permissionKindLabel('read'), 'file reads')
+    assert.equal(permissionKindLabel('edit'), 'file edits')
+    assert.equal(permissionKindLabel('fetch'), 'web fetches')
+  })
+
+  it('quotes unknown kinds instead of guessing', () => {
+    assert.equal(permissionKindLabel('think'), '"think" tool calls')
   })
 })
 

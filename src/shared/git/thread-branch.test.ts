@@ -23,7 +23,7 @@ describe('threadGitBranchMismatchMessage', () => {
   it('names the thread branch', () => {
     assert.equal(
       threadGitBranchMismatchMessage('feature'),
-      'This thread is for branch "feature". Check out that branch to continue.',
+      'This thread is for branch "feature". Check it out, or continue on the current branch.',
     )
   })
 })
