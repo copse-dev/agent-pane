@@ -337,7 +337,7 @@ export function seedJobDescriptionMetadataFixture(workspaceRoot: string): void {
   const projectId = 'e2e-jd-metadata-project'
   const threadId = 'e2e-jd-metadata-thread'
   const content = readFileSync(
-    join(workspaceRoot, 'tests/fixtures/job-description-metadata.md'),
+    join(workspaceRoot, 'packages/streaming-markdown/tests/fixtures/job-description-metadata.md'),
     'utf8',
   )
   mkdirSync(USER_DATA, { recursive: true })
