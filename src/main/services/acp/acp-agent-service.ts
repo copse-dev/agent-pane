@@ -28,7 +28,7 @@ import {
   type AcpClientHandlers,
   type AcpModelSelector,
 } from './acp-client.ts'
-import { getAcpAgent } from './acp-agent-registry.ts'
+import { getAcpAgent, resolveAcpSandbox } from './acp-agent-registry.ts'
 import { startAcpNativeBridge } from './acp-native-bridge.ts'
 import { listForwardableMcpServers } from '../mcp-registry.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
@@ -215,8 +215,9 @@ export async function runAcpAgentFromSettings(
     throw new Error('Open a folder before running an ACP agent so it has a workspace to act in.')
   }
 
+  const sandbox = resolveAcpSandbox(agent)
   const prompt = buildAcpPrompt(options.userPrompt, options.priorMessages, {
-    sandboxed: willSandboxAcpAgent(agent.sandbox),
+    sandboxed: willSandboxAcpAgent(sandbox),
   })
   if (!prompt.trim()) {
     throw new Error('ACP agent prompt cannot be empty.')
@@ -241,7 +242,7 @@ export async function runAcpAgentFromSettings(
     ...(agent.env ? { env: agent.env } : {}),
     ...(model ? { model } : {}),
     ...(mcpServers.length > 0 ? { mcpServers } : {}),
-    ...(agent.sandbox ? { sandbox: agent.sandbox } : {}),
+    ...(sandbox ? { sandbox } : {}),
     ...(bridge ? { nativeBridge: { url: bridge.url, token: bridge.token } } : {}),
   }
 
@@ -343,12 +344,13 @@ export async function listAcpModelsForAgent(agentId: string): Promise<AcpModelSe
   if (!cwd) {
     throw new Error('Open a folder before detecting an ACP agent’s models.')
   }
+  const sandbox = resolveAcpSandbox(agent)
   return listAcpAgentModels({
     command: agent.command,
     cwd,
     ...(agent.args ? { args: agent.args } : {}),
     ...(agent.env ? { env: agent.env } : {}),
-    ...(agent.sandbox ? { sandbox: agent.sandbox } : {}),
+    ...(sandbox ? { sandbox } : {}),
   })
 }
 

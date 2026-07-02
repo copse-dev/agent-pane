@@ -58,35 +58,18 @@ export function planAcpAutoSetup(inputs: readonly AcpAutoSetupInput[]): AcpAutoS
 export type { AcpAutoSetupResult }
 
 /**
- * Retrofit the sandbox preset (issue #590) onto already-registered agent
- * configs that predate it. Only configs matching a preset id that ships a
- * `sandbox` block and don't have one themselves are patched — the field never
- * existed before, so this cannot override a user's explicit choice. Returns
- * the configs to upsert. Pure for unit testing.
+ * Map a catalog preset to a fresh, enabled agent config. The sandbox preset is
+ * deliberately NOT copied here: the catalog is its source of truth, resolved at
+ * spawn time (`resolveAcpSandbox`), so catalog improvements reach every agent
+ * without config migrations. The config's `sandbox` field exists only as a
+ * per-agent override (custom confines, or `false` to opt out).
  */
-export function sandboxRetrofits(
-  existing: readonly AcpAgentConfig[],
-  known: readonly KnownAcpAgent[] = KNOWN_ACP_AGENTS,
-): AcpAgentConfig[] {
-  const presetSandboxes = new Map(
-    known.filter((agent) => agent.sandbox).map((agent) => [agent.id, agent.sandbox]),
-  )
-  const retrofits: AcpAgentConfig[] = []
-  for (const config of existing) {
-    const sandbox = presetSandboxes.get(config.id)
-    if (sandbox && !config.sandbox) retrofits.push({ ...config, sandbox })
-  }
-  return retrofits
-}
-
-/** Map a catalog preset to a fresh, enabled agent config. */
 function presetToConfig(known: KnownAcpAgent): AcpAgentConfig {
   return {
     id: known.id,
     title: known.title,
     command: known.command,
     ...(known.args.length ? { args: known.args } : {}),
-    ...(known.sandbox ? { sandbox: known.sandbox } : {}),
     enabled: true,
   }
 }
@@ -108,13 +91,6 @@ async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupRes
     modelsDetected: [],
     failed: [],
   }
-  // Patch the sandbox preset onto configs registered before it existed
-  // (issue #590) so pre-existing agents don't silently keep spawning
-  // unsandboxed while newly-added ones are confined.
-  for (const retrofit of sandboxRetrofits(listAcpAgents())) {
-    await upsertAcpAgent(retrofit)
-  }
-
   const configured = new Set(listAcpAgents().map((agent) => agent.id))
   const presets = KNOWN_ACP_AGENTS.filter((known) => known.preset)
 

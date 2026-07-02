@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { KnownAcpAgent } from '@shared/acp-known-agents.ts'
-import { planAcpAutoSetup, sandboxRetrofits, type AcpAutoSetupInput } from './acp-auto-setup.ts'
+import { planAcpAutoSetup, type AcpAutoSetupInput } from './acp-auto-setup.ts'
 
 const claude: KnownAcpAgent = {
   id: 'claude-agent-acp',
@@ -90,40 +90,5 @@ describe('planAcpAutoSetup', () => {
     ])
     assert.deepEqual(plan.install, [])
     assert.deepEqual(plan.register, [])
-  })
-})
-
-describe('sandboxRetrofits (issue #590 adoption)', () => {
-  const sandbox = { allowedDomains: ['api.anthropic.com'], homeDirs: ['.claude'] }
-  const knownWithSandbox: KnownAcpAgent = { ...claude, sandbox }
-
-  it('patches a pre-#590 config missing the preset sandbox block', () => {
-    const existing = [
-      { id: 'claude-agent-acp', title: 'Claude', command: 'claude-agent-acp', enabled: true },
-    ]
-    const retrofits = sandboxRetrofits(existing, [knownWithSandbox, cursor])
-    assert.equal(retrofits.length, 1)
-    const patched = retrofits[0]
-    assert.ok(patched)
-    assert.deepEqual(patched.sandbox, sandbox)
-    assert.equal(patched.enabled, true)
-  })
-
-  it('leaves configs that already carry a sandbox, or match no sandboxed preset, alone', () => {
-    const own = { allowedDomains: ['example.com'] }
-    const existing = [
-      // User already tuned their sandbox — never overridden.
-      {
-        id: 'claude-agent-acp',
-        title: 'Claude',
-        command: 'claude-agent-acp',
-        sandbox: own,
-        enabled: true,
-      },
-      // Preset without a sandbox block (cursor) and a custom agent: untouched.
-      { id: 'cursor', title: 'Cursor', command: 'cursor-agent', enabled: true },
-      { id: 'my-agent', title: 'Mine', command: 'mine', enabled: true },
-    ]
-    assert.deepEqual(sandboxRetrofits(existing, [knownWithSandbox, cursor]), [])
   })
 })

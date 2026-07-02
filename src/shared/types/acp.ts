@@ -45,10 +45,11 @@ export interface AcpAgentConfig {
    */
   availableModels?: AcpModelChoice[]
   /**
-   * Run the agent process under the workspace seatbelt with these relaxations
-   * (issue #590). Absent = spawn unsandboxed.
+   * Per-agent override of the seatbelt confines (issue #590). Absent = use the
+   * `KNOWN_ACP_AGENTS` catalog preset for this id (custom agents spawn
+   * unsandboxed); an object = custom confines; `false` = explicitly opt out.
    */
-  sandbox?: AcpAgentSandboxConfig
+  sandbox?: AcpAgentSandboxConfig | false
   enabled: boolean
 }
 

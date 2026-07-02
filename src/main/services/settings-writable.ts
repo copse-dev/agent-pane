@@ -32,24 +32,28 @@ export const acpAgentConfigSchema = z.object({
     .array(z.object({ value: z.string().min(1).max(512), label: z.string().min(1).max(256) }))
     .max(256)
     .optional(),
-  // Seatbelt confinement for the spawned agent process (issue #590). homeDirs
-  // are home-relative and may not escape upward.
+  // Seatbelt override (issue #590): object = custom confines, false = opt out,
+  // absent = the KNOWN_ACP_AGENTS catalog preset for this id. homeDirs are
+  // home-relative and may not escape upward.
   sandbox: z
-    .object({
-      allowedDomains: z.array(z.string().min(1).max(256)).max(64),
-      homeDirs: z
-        .array(
-          z
-            .string()
-            .min(1)
-            .max(1024)
-            .refine((p) => !p.startsWith('/') && !p.split('/').includes('..'), {
-              message: 'homeDirs entries must be home-relative without ..',
-            }),
-        )
-        .max(32)
-        .optional(),
-    })
+    .union([
+      z.object({
+        allowedDomains: z.array(z.string().min(1).max(256)).max(64),
+        homeDirs: z
+          .array(
+            z
+              .string()
+              .min(1)
+              .max(1024)
+              .refine((p) => !p.startsWith('/') && !p.split('/').includes('..'), {
+                message: 'homeDirs entries must be home-relative without ..',
+              }),
+          )
+          .max(32)
+          .optional(),
+      }),
+      z.literal(false),
+    ])
     .optional(),
   enabled: z.boolean(),
 })

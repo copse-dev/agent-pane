@@ -40,13 +40,17 @@ approval UX.
   server (the **native-tool bridge**, issue #602) when the agent supports http
   MCP servers. Calls execute inside Copse, so the normal permission gate and
   approval dialogs apply. Disable with the `acpNativeBridgeEnabled` setting.
-- Agents with a `sandbox` config (the Claude and Gemini presets ship one) are
-  **spawned under the workspace seatbelt** on macOS when the project sandbox is
-  active (issue #590): writes confined to the workspace, home denied except the
-  agent's own config dirs, network limited to its declared endpoints (plus
-  loopback for the bridge). The agent's shell children inherit the same
-  confines. Note this means agent-run `git push`/`npm install` fail inside the
-  sandbox — use Copse's own tools (or the bridge) for those.
+- Known agents (the Claude and Gemini catalog entries) are **spawned under the
+  workspace seatbelt** on macOS when the project sandbox is active (issue
+  #590): writes confined to the workspace, home denied except the agent's own
+  config dirs, network limited to its declared endpoints (plus loopback for the
+  bridge). The confines come from the `KNOWN_ACP_AGENTS` catalog at spawn time —
+  no per-config copy — and the config's optional `sandbox` field overrides them
+  (an object for custom confines, `false` to opt out). The agent's shell
+  children inherit the same confines, and approval prompts cannot override the
+  sandbox — sandboxed turns get a prompt note telling the agent so. Agent-run
+  `git push`/`npm install` fail inside the sandbox — use Copse's own tools (or
+  the bridge) for those.
 - Aborting the turn sends `session/cancel` and tears the agent process down.
 
 > **Scope of the write guarantee:** the diff queue only sees writes the agent
@@ -165,10 +169,11 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
 - **Native-tool bridge is http-only.** Agents that support only stdio MCP
   servers don't get Copse's bridged tools this turn — a stdio shim is a
   possible follow-up (#602). Skills and todo/plan tools are not bridged.
-- **Sandboxing is macOS-only and preset-scoped.** Agents without a `sandbox`
-  config (e.g. Cursor, custom agents) spawn unsandboxed; add `sandbox`
-  (`allowedDomains`, `homeDirs`) to their `registeredAcpAgents` entry to opt
-  them in (#590).
+- **Sandboxing is macOS-only and catalog-scoped.** Agents with no
+  `KNOWN_ACP_AGENTS` sandbox entry (e.g. Cursor, custom agents) spawn
+  unsandboxed; add `sandbox` (`allowedDomains`, `homeDirs`) to their
+  `registeredAcpAgents` entry to opt them in, or `sandbox: false` to opt a
+  catalog agent out (#590).
 
 ## See also
 
