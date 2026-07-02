@@ -40,5 +40,27 @@ await esbuild.build({
     },
   ],
 })
-const result = spawnSync('node', ['--test', 'dist-test/**/*.test.js'], { stdio: 'inherit' })
-process.exit(result.status ?? 1)
+const result = spawnSync('node', ['--test', 'dist-test/**/*.test.js'], {
+  encoding: 'utf8',
+  maxBuffer: 256 * 1024 * 1024,
+})
+// Stream the full TAP output through unchanged.
+if (result.stdout) process.stdout.write(result.stdout)
+if (result.stderr) process.stderr.write(result.stderr)
+// DIAGNOSTIC (temporary): the default TAP reporter scatters failures through
+// the middle of a 1600-test run, which CI log truncation drops. Re-print the
+// failing top-level entries (whole files that errored, plus failing subtests)
+// at the very end so they survive tail-only log fetches.
+const lines = result.stdout.split('\n')
+const failingFiles = lines.filter((l) => /^not ok \d+ - dist-test\//.test(l))
+const failingSubtests = lines.filter((l) => /^\s+not ok \d+ - /.test(l))
+if (failingFiles.length || failingSubtests.length) {
+  process.stdout.write('\n===DIAGNOSTIC: FAILING TEST FILES===\n')
+  for (const l of failingFiles) process.stdout.write(l.trim() + '\n')
+  process.stdout.write(`===DIAGNOSTIC: FAILING SUBTESTS (${String(failingSubtests.length)})===\n`)
+  for (const l of failingSubtests.slice(0, 60)) process.stdout.write(l.trim() + '\n')
+  process.stdout.write('===DIAGNOSTIC: END===\n')
+}
+// Set exitCode (not process.exit) so the large buffered stdout — including the
+// diagnostic block above — fully drains before the process terminates.
+process.exitCode = result.status ?? 1
