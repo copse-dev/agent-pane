@@ -118,6 +118,18 @@ describe('isAmbiguousBlockLine', () => {
     assert.equal(isAmbiguousBlockLine(metadata), false)
     assert.equal(isAmbiguousBlockLine('| A | B |'), true)
   })
+
+  it('does not tokenize consecutive JD metadata lines as a table', () => {
+    const md = [
+      '# Job',
+      '',
+      '**Department:** Engineering &nbsp;&nbsp;|&nbsp;&nbsp; **Reports To:** VP',
+      '**Employment Type:** Full-Time &nbsp;&nbsp;|&nbsp;&nbsp; **Salary Range:** $160k',
+      '',
+    ].join('\n')
+    const kinds = tokenizeBlocks(md).map((b) => b.kind)
+    assert.ok(!kinds.includes('table'))
+  })
 })
 
 describe('table streaming helpers', () => {
