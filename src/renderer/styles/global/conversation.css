@@ -209,7 +209,7 @@
   border-left: 3px solid var(--error);
 }
 .message-text {
-  white-space: pre-wrap;
+  white-space: normal;
   word-break: break-word;
   line-height: 1.55;
 }
@@ -218,28 +218,37 @@
 }
 .message-text p {
   margin: 0;
+  white-space: pre-wrap;
+}
+.message-text h2,
+.message-text h3,
+.message-text h4,
+.message-text .stream-pending-h1,
+.message-text .stream-pending-h2,
+.message-text .stream-pending-h3,
+.message-text .stream-pending-h4 {
+  margin: var(--spacing-md) 0 var(--spacing-xs);
+  font-weight: 600;
+  line-height: 1.35;
+}
+.message-text > :first-child,
+.message-text h2:first-child,
+.message-text h3:first-child,
+.message-text h4:first-child {
+  margin-top: 0;
 }
 .message-text p + p,
 .message-text p + ul,
 .message-text p + ol,
 .message-text ul + p,
 .message-text ol + p,
+.message-text h2 + p,
 .message-text h3 + p,
 .message-text h4 + p,
+.message-text p + h2,
 .message-text p + h3,
 .message-text p + h4 {
   margin-top: var(--spacing-sm);
-}
-.message-text h3,
-.message-text h4 {
-  margin: var(--spacing-md) 0 var(--spacing-xs);
-  font-weight: 600;
-  line-height: 1.35;
-}
-.message-text > :first-child,
-.message-text h3:first-child,
-.message-text h4:first-child {
-  margin-top: 0;
 }
 .message-text ul,
 .message-text ol {
@@ -274,31 +283,67 @@
   white-space: pre-wrap;
 }
 
-/* Streaming enter easing: @starting-style transitions on newly inserted nodes.
-   The completed region is re-rendered via innerHTML on each newline, so we target
-   :last-child (newest block) and tbody tr:last-child (newest table row) rather
-   than animating the whole message on every update. */
-@media (prefers-reduced-motion: no-preference) {
-  .message-text.is-streaming .stream-complete > :last-child:not(table) {
-    transition: transform 0.18s ease-out;
-    @starting-style {
-      transform: translateY(2px);
-    }
-  }
+.message-text .stream-pending.stream-pending-paragraph,
+.message-text p.stream-pending-paragraph {
+  display: block;
+  margin: 0;
+  white-space: pre-wrap;
+}
 
-  .message-text.is-streaming .stream-complete > table:not(:has(tbody tr)) {
-    transition: transform 0.18s ease-out;
-    @starting-style {
-      transform: translateY(2px);
-    }
-  }
+.message-text li.stream-pending-list-item {
+  white-space: normal;
+}
 
-  .message-text.is-streaming .stream-complete table tbody tr:last-child {
-    transition: transform 0.16s ease-out;
-    @starting-style {
-      transform: translateY(2px);
-    }
-  }
+.message-text .stream-pending.stream-pending-list-continuation,
+.message-text span.stream-pending-list-continuation {
+  white-space: normal;
+}
+
+.message-text .stream-pending.stream-pending-heading,
+.message-text div.stream-pending-heading,
+.message-text p.stream-pending-heading {
+  display: block;
+  white-space: normal;
+}
+
+.message-text .stream-complete > .stream-pending-heading:first-child,
+.message-text .stream-pending-heading:first-child {
+  margin-top: 0;
+}
+
+.message-text .stream-pending-h1,
+.message-text .stream-pending-h2 {
+  font-size: 1.15em;
+}
+
+.message-text .stream-pending-h3 {
+  font-size: 1.05em;
+}
+
+.message-text .stream-pending-h4,
+.message-text .stream-pending-h5,
+.message-text .stream-pending-h6 {
+  font-size: 1em;
+}
+
+.message-text blockquote.stream-pending-blockquote {
+  /* Inherits .message-text blockquote chrome; keep paragraph spacing inside. */
+  margin: var(--spacing-sm) 0;
+}
+
+.message-text blockquote.stream-pending-blockquote p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.message-text .stream-complete > .stream-pending-block:last-child {
+  margin-top: var(--spacing-sm);
+}
+
+.message-text .stream-complete > h2 + .stream-pending-block,
+.message-text .stream-complete > h3 + .stream-pending-block,
+.message-text .stream-complete > h4 + .stream-pending-block {
+  margin-top: var(--spacing-sm);
 }
 
 .message-text code {

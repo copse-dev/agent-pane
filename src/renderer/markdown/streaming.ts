@@ -1,211 +1,426 @@
-import { escapeHtml, renderMarkdown } from './renderer.ts'
+import { renderMarkdown } from './renderer.ts'
+import {
+  getIncompleteFenceSource,
+  getIncompleteTableSource,
+  isAmbiguousBlockLine,
+  pendingLineBelongsInTable,
+} from './block-tokenizer.ts'
+import {
+  isListContinuationPending,
+  isPendingBlockquoteLine,
+  listPendingIndent,
+  pendingAtxHeadingLevel,
+  pendingListMarkerLength,
+  pendingListOrderedMarker,
+  renderPendingLine,
+} from './render-pending-line.ts'
+import { splitForStreaming, type StreamingSplit } from './streaming-split.ts'
+import { escapeHtml } from './escape.ts'
 import { sanitizeRenderedMarkdown } from './sanitize.ts'
+import {
+  appendPendingTableRowHtml,
+  buildFormingTableHtml,
+  clearFormingTableDom,
+  removePendingTableRow,
+  syncFormingTableDom,
+  syncPendingTableRowDom,
+} from './streaming-table-dom.ts'
+import {
+  buildFormingFenceHtml,
+  clearFormingFenceDom,
+  syncFormingFenceDom,
+} from './streaming-fence-dom.ts'
 
-/** Split streamed content at the last newline so completed lines can be rendered. */
-export function splitAtLastNewline(content: string): { complete: string; pending: string } {
-  const lastNl = content.lastIndexOf('\n')
-  if (lastNl === -1) return { complete: '', pending: content }
-  return {
-    complete: content.slice(0, lastNl + 1),
-    pending: content.slice(lastNl + 1),
+export { pendingHoldIndex } from './inline-emphasis.ts'
+export { splitAtLastNewline, splitForStreaming } from './streaming-split.ts'
+export type { StreamingSplit } from './streaming-split.ts'
+export {
+  completeEndsInOpenTable,
+  getIncompleteFenceSource,
+  getIncompleteTableSource,
+  isAmbiguousBlockLine,
+  isPotentialTableStart,
+  pendingLineBelongsInTable,
+  splitTableRow,
+  tokenizeBlocks,
+} from './block-tokenizer.ts'
+
+const BLOCK_PENDING_CLASS = 'stream-pending-block'
+const LIST_CONTINUATION_CLASS = 'stream-pending-list-continuation'
+const TRAILING_OPEN_LI_CLOSE_RE = /(<li(?:\s[^>]*)?>)([\s\S]*?)(<\/li>\s*<\/(?:ul|ol)>)\s*$/
+
+function insertBeforeTrailingListClose(rendered: string, insertHtml: string): string | null {
+  const liClose = rendered.match(TRAILING_OPEN_LI_CLOSE_RE)?.[3]
+  if (!liClose) return null
+  return `${rendered.slice(0, -liClose.length)}${insertHtml}${liClose}`
+}
+
+type BlockPendingCleanup = 'continuation' | 'list-items' | 'direct-blocks' | 'non-list-direct'
+
+function clearBlockPendingDom(completedEl: HTMLElement, parts: BlockPendingCleanup[]): void {
+  if (parts.includes('continuation')) clearListContinuationDom(completedEl)
+  if (parts.includes('list-items')) completedEl.querySelector(`li.${BLOCK_PENDING_CLASS}`)?.remove()
+  if (parts.includes('direct-blocks')) {
+    completedEl.querySelector(`:scope > .${BLOCK_PENDING_CLASS}`)?.remove()
+  }
+  if (parts.includes('non-list-direct')) {
+    completedEl.querySelector(`:scope > .${BLOCK_PENDING_CLASS}:not(li)`)?.remove()
   }
 }
 
-const PENDING_BLOCK_START_RE =
-  /^\s{0,3}(?:#{1,6}\s|[-*+]\s|\d+\.\s|>|```|~~~|\|)|^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/
-
-function stripParagraphWrapper(html: string): string {
-  const trimmed = html.trim()
-  const match = trimmed.match(/^<p>([\s\S]*)<\/p>$/)
-  return match?.[1] ?? html
+function renderPendingInlineMarkdown(pending: string, openListItemFirstLine?: string): string {
+  if (openListItemFirstLine === undefined) return renderPendingLine(pending)
+  return renderPendingLine(pending, { openListItemFirstLine })
 }
 
-// --- Holding unresolved inline markup while streaming -----------------------
-//
-// CommonMark resolves emphasis at the end of a *block*, not at the delimiter
-// that opens it: a `**` only becomes <strong> once a matching closer turns up,
-// and which opener a closer pairs with can still change as more text arrives.
-// A renderer that commits <strong> the instant it sees `**` therefore shows
-// wrong or flickering bold mid-stream (e.g. `**foo **bar` momentarily bolding
-// `foo `, or a whitespace-flanked `**` closing emphasis it shouldn't).
-//
-// Rather than reimplement the full inline parser, we locate the first
-// *unresolved* delimiter on the in-progress line and hold everything from there
-// onward until a later token resolves it. Resolved markup before that point is
-// still rendered. This is intentionally narrow: it only decides where to cut —
-// the visible prefix is still rendered through `renderMarkdown`.
-
-const ASCII_PUNCTUATION_RE = /[!-/:-@[-`{-~]/
-
-function isFlankingWhitespace(ch: string): boolean {
-  // Start/end of the fragment counts as whitespace, matching the spec's
-  // treatment of line boundaries for delimiter-run classification.
-  return ch === '' || /\s/.test(ch)
+/** Block-level pending tail (open paragraph or list line) — rendered inside stream-complete. */
+export function isBlockLevelPending(pending: string, openListItemFirstLine?: string): boolean {
+  if (!pending.trim() || pending.includes('\n')) return false
+  if (pendingListMarkerLength(pending) !== null) return true
+  if (pendingAtxHeadingLevel(pending) !== null) return true
+  if (isPendingBlockquoteLine(pending)) return true
+  if (isListContinuationPending(pending, openListItemFirstLine)) return true
+  return !isAmbiguousBlockLine(pending)
 }
 
-function isFlankingPunctuation(ch: string): boolean {
-  return ch !== '' && ASCII_PUNCTUATION_RE.test(ch)
+function blockPendingTag(
+  pending: string,
+  openListItemFirstLine?: string,
+): 'p' | 'div' | 'span' | 'blockquote' | 'li' {
+  if (isListContinuationPending(pending, openListItemFirstLine)) return 'span'
+  if (pendingListMarkerLength(pending) !== null) return 'li'
+  if (pendingAtxHeadingLevel(pending) !== null) return 'div'
+  if (isPendingBlockquoteLine(pending)) return 'blockquote'
+  return 'p'
 }
 
-function isLeftFlanking(prev: string, next: string): boolean {
-  return (
-    !isFlankingWhitespace(next) &&
-    (!isFlankingPunctuation(next) || isFlankingWhitespace(prev) || isFlankingPunctuation(prev))
-  )
+function pendingListTag(pending: string): 'ul' | 'ol' {
+  return pendingListOrderedMarker(pending) !== null ? 'ol' : 'ul'
 }
 
-function isRightFlanking(prev: string, next: string): boolean {
-  return (
-    !isFlankingWhitespace(prev) &&
-    (!isFlankingPunctuation(prev) || isFlankingWhitespace(next) || isFlankingPunctuation(next))
-  )
+function blockPendingLiHtml(
+  pending: string,
+  pendingInner: string,
+  openListItemFirstLine?: string,
+): string {
+  const inner = wrapBlockPendingInner(pending, pendingInner)
+  return `<li class="${blockPendingClassName(pending, openListItemFirstLine)}"${blockPendingAttrs(pending)}>${inner}</li>`
 }
 
-/**
- * Mark the interior (and delimiters) of every closed inline code span, since a
- * `**` inside backticks is not an emphasis delimiter. If a code span is opened
- * but not yet closed, everything from its opening backtick is itself unresolved.
- */
-function scanCodeSpans(s: string): { mask: boolean[]; unresolvedAt: number | null } {
-  const mask = new Array<boolean>(s.length).fill(false)
-  let i = 0
-  while (i < s.length) {
-    if (s[i] !== '`') {
-      i++
-      continue
+function appendListPendingHtml(
+  rendered: string,
+  pending: string,
+  pendingInner: string,
+  openListItemFirstLine?: string,
+): string {
+  const listTag = pendingListTag(pending)
+  const liHtml = blockPendingLiHtml(pending, pendingInner, openListItemFirstLine)
+  const indent = listPendingIndent(pending)
+
+  if (indent > 0) {
+    const nested = insertBeforeTrailingListClose(rendered, `<${listTag}>${liHtml}</${listTag}>`)
+    if (nested) return nested
+  }
+
+  const close = `</${listTag}>`
+  const closeIndex = rendered.lastIndexOf(close)
+  if (closeIndex !== -1) {
+    const openNeedle = `<${listTag}`
+    const beforeClose = rendered.slice(0, closeIndex)
+    if (beforeClose.lastIndexOf(openNeedle) !== -1) {
+      return `${beforeClose}${liHtml}${rendered.slice(closeIndex)}`
     }
-    let j = i
-    while (j < s.length && s[j] === '`') j++
-    const runLen = j - i
-    let k = j
-    let closeEnd = -1
-    while (k < s.length) {
-      if (s[k] === '`') {
-        let m = k
-        while (m < s.length && s[m] === '`') m++
-        if (m - k === runLen) {
-          closeEnd = m
-          break
-        }
-        k = m
+  }
+
+  const ordered = pendingListOrderedMarker(pending)
+  const startAttr = ordered !== null && listTag === 'ol' ? ` start="${escapeHtml(ordered)}"` : ''
+  return `${rendered}<${listTag}${startAttr}>${liHtml}</${listTag}>`
+}
+
+function findTrailingListHost(completedEl: HTMLElement, listTag: 'ul' | 'ol'): HTMLElement | null {
+  const last = completedEl.lastElementChild
+  if (last instanceof Element && last.tagName === listTag.toUpperCase()) {
+    return last as HTMLElement
+  }
+  return null
+}
+
+function syncListPendingDom(
+  completedEl: HTMLElement,
+  pending: string,
+  pendingInner: string,
+  active: boolean,
+  openListItemFirstLine?: string,
+): void {
+  clearBlockPendingDom(completedEl, ['continuation', 'non-list-direct'])
+
+  const listTag = pendingListTag(pending)
+  const indent = listPendingIndent(pending)
+  const existingPendingLi = completedEl.querySelector(`li.${BLOCK_PENDING_CLASS}`)
+
+  if (!active || !pendingInner) {
+    existingPendingLi?.remove()
+    const emptyList = completedEl.querySelector(`:scope > ${listTag}:empty`)
+    emptyList?.remove()
+    return
+  }
+
+  let list: HTMLElement
+  if (indent > 0) {
+    const hostLi = findOpenListItemHost(completedEl)
+    if (!hostLi) {
+      list = document.createElement(listTag)
+      completedEl.append(list)
+    } else {
+      const existingNested = hostLi.querySelector(`:scope > ${listTag}:last-of-type`)
+      if (existingNested instanceof Element && existingNested.tagName === listTag.toUpperCase()) {
+        list = existingNested as HTMLElement
       } else {
-        k++
+        list = document.createElement(listTag)
+        hostLi.append(list)
       }
     }
-    if (closeEnd === -1) return { mask, unresolvedAt: i }
-    for (let p = i; p < closeEnd; p++) mask[p] = true
-    i = closeEnd
-  }
-  return { mask, unresolvedAt: null }
-}
-
-interface OpenDelimiter {
-  index: number
-  char: '*' | '_'
-  len: number
-}
-
-/**
- * Index at which to truncate the visible part of the in-progress line. Anything
- * from this index onward contains an unresolved delimiter and is held until it
- * resolves. Returns `s.length` when nothing needs holding.
- */
-export function pendingHoldIndex(s: string): number {
-  const { mask, unresolvedAt } = scanCodeSpans(s)
-  const limit = unresolvedAt ?? s.length
-  const stack: OpenDelimiter[] = []
-  let trailingConsumed = false
-
-  let i = 0
-  while (i < limit) {
-    const ch = s[i]
-    if (ch === undefined || (ch !== '*' && ch !== '_') || mask[i]) {
-      i++
-      continue
-    }
-    let j = i
-    while (j < limit && s[j] === ch && !mask[j]) j++
-    const len = j - i
-    const prev = i > 0 ? (s[i - 1] ?? '') : ''
-    const next = j < s.length ? (s[j] ?? '') : ''
-    const lf = isLeftFlanking(prev, next)
-    const rf = isRightFlanking(prev, next)
-    // `_` cannot open/close inside a word (so identifiers like some_var_name are
-    // not emphasis); `*` has no such restriction.
-    const canOpen = ch === '*' ? lf : lf && (!rf || isFlankingPunctuation(prev))
-    const canClose = ch === '*' ? rf : rf && (!lf || isFlankingPunctuation(next))
-
-    let matched = -1
-    if (canClose) {
-      for (let t = stack.length - 1; t >= 0; t--) {
-        if (stack[t]?.char === ch) {
-          matched = t
-          break
-        }
-      }
-    }
-    const open = matched >= 0 ? stack[matched] : undefined
-    if (open) {
-      const used = Math.min(open.len, len)
-      // Openers between the match and the top become literal text.
-      stack.length = matched
-      open.len -= used
-      if (open.len > 0) stack.push(open)
-      if (j === s.length) trailingConsumed = true
-    } else if (canOpen) {
-      stack.push({ index: i, char: ch, len })
-    }
-    i = j
+  } else {
+    const trailing = findTrailingListHost(completedEl, listTag)
+    list =
+      trailing ??
+      ((): HTMLElement => {
+        const created = document.createElement(listTag)
+        const ordered = pendingListOrderedMarker(pending)
+        if (ordered !== null && listTag === 'ol') created.setAttribute('start', ordered)
+        completedEl.append(created)
+        return created
+      })()
   }
 
-  let cut = s.length
-  if (unresolvedAt !== null) cut = Math.min(cut, unresolvedAt)
-  const firstOpen = stack[0]
-  if (firstOpen) cut = Math.min(cut, firstOpen.index)
-
-  // A trailing `*`/`**` run can't be classified yet (the lookahead char hasn't
-  // streamed in), so hold it unless it already closed earlier emphasis.
-  if (!trailingConsumed) {
-    let tStart = s.length
-    while (tStart > 0 && s[tStart - 1] === '*' && !mask[tStart - 1]) tStart--
-    if (tStart < s.length) cut = Math.min(cut, tStart)
+  let li: HTMLElement
+  if (existingPendingLi instanceof HTMLElement && existingPendingLi.parentElement === list) {
+    li = existingPendingLi
+  } else {
+    existingPendingLi?.remove()
+    li = document.createElement('li')
+    list.append(li)
   }
 
-  return cut
+  li.className = blockPendingClassName(pending, openListItemFirstLine)
+  const ordered = pendingListOrderedMarker(pending)
+  const headingLevel = pendingAtxHeadingLevel(pending)
+  if (ordered !== null) li.setAttribute('data-ordered-marker', ordered)
+  else li.removeAttribute('data-ordered-marker')
+  if (headingLevel !== null) li.setAttribute('data-heading-level', String(headingLevel))
+  else li.removeAttribute('data-heading-level')
+  li.innerHTML = wrapBlockPendingInner(pending, pendingInner)
 }
 
-function renderPendingInlineMarkdown(pending: string): string {
-  if (!pending || PENDING_BLOCK_START_RE.test(pending)) return escapeHtml(pending)
-  const visible = pending.slice(0, pendingHoldIndex(pending))
-  if (!visible) return ''
-  return stripParagraphWrapper(renderMarkdown(visible))
+function blockPendingClassName(pending: string, openListItemFirstLine?: string): string {
+  if (isListContinuationPending(pending, openListItemFirstLine)) {
+    return `stream-pending ${LIST_CONTINUATION_CLASS} ${BLOCK_PENDING_CLASS}`
+  }
+  if (pendingListMarkerLength(pending) !== null) {
+    const ordered = pendingListOrderedMarker(pending)
+    return ordered
+      ? `stream-pending stream-pending-list-item stream-pending-ordered-item ${BLOCK_PENDING_CLASS}`
+      : `stream-pending stream-pending-list-item ${BLOCK_PENDING_CLASS}`
+  }
+  const headingLevel = pendingAtxHeadingLevel(pending)
+  if (headingLevel !== null) {
+    return `stream-pending stream-pending-heading stream-pending-h${String(headingLevel)} ${BLOCK_PENDING_CLASS}`
+  }
+  if (isPendingBlockquoteLine(pending)) {
+    return `stream-pending stream-pending-blockquote ${BLOCK_PENDING_CLASS}`
+  }
+  return `stream-pending stream-pending-paragraph ${BLOCK_PENDING_CLASS}`
+}
+
+function blockPendingAttrs(pending: string): string {
+  const ordered = pendingListOrderedMarker(pending)
+  const headingLevel = pendingAtxHeadingLevel(pending)
+  let attrs = ''
+  if (ordered) attrs += ` data-ordered-marker="${escapeHtml(ordered)}"`
+  if (headingLevel !== null) attrs += ` data-heading-level="${String(headingLevel)}"`
+  return attrs
+}
+
+function wrapBlockPendingInner(pending: string, pendingInner: string): string {
+  if (isPendingBlockquoteLine(pending)) {
+    return pendingInner ? `<p>${pendingInner}</p>` : ''
+  }
+  return pendingInner
+}
+
+function blockPendingHtml(
+  pending: string,
+  pendingInner: string,
+  openListItemFirstLine?: string,
+): string {
+  const tag = blockPendingTag(pending, openListItemFirstLine)
+  const innerRaw = wrapBlockPendingInner(pending, pendingInner)
+  const inner =
+    tag === 'span' && innerRaw !== '' && !innerRaw.startsWith(' ') ? ` ${innerRaw}` : innerRaw
+  return `<${tag} class="${blockPendingClassName(pending, openListItemFirstLine)}"${blockPendingAttrs(pending)}>${inner}</${tag}>`
+}
+
+function inlinePendingSpanHtml(pendingInner: string): string {
+  return `<span class="stream-pending">${pendingInner}</span>`
+}
+
+function findOpenListItemHost(completedEl: HTMLElement): HTMLElement | null {
+  const li = completedEl.querySelector(
+    'ul:last-of-type > li:last-child, ol:last-of-type > li:last-child',
+  )
+  return li instanceof Element && li.tagName === 'LI' ? (li as HTMLElement) : null
+}
+
+function clearListContinuationDom(completedEl: HTMLElement): void {
+  completedEl.querySelector(`li .${LIST_CONTINUATION_CLASS}`)?.remove()
+}
+
+function syncListContinuationDom(
+  completedEl: HTMLElement,
+  pendingInner: string,
+  active: boolean,
+): boolean {
+  const li = findOpenListItemHost(completedEl)
+  if (!li) return false
+
+  const existing = li.querySelector(`:scope > .${LIST_CONTINUATION_CLASS}`)
+  if (!active || !pendingInner) {
+    existing?.remove()
+    return true
+  }
+
+  let el: Element | null = existing
+  if (!el) {
+    el = document.createElement('span')
+    li.append(el)
+  }
+  el.className = `stream-pending ${LIST_CONTINUATION_CLASS} ${BLOCK_PENDING_CLASS}`
+  el.innerHTML = pendingInner.startsWith(' ') ? pendingInner : ` ${pendingInner}`
+  return true
+}
+
+function syncBlockPendingDom(
+  completedEl: HTMLElement,
+  pending: string,
+  pendingInner: string,
+  active: boolean,
+  openListItemFirstLine?: string,
+): void {
+  if (isListContinuationPending(pending, openListItemFirstLine)) {
+    clearBlockPendingDom(completedEl, ['continuation', 'list-items', 'non-list-direct'])
+    syncListContinuationDom(completedEl, pendingInner, active)
+    return
+  }
+
+  if (pendingListMarkerLength(pending) !== null) {
+    syncListPendingDom(completedEl, pending, pendingInner, active, openListItemFirstLine)
+    return
+  }
+
+  clearBlockPendingDom(completedEl, ['continuation', 'list-items'])
+  const existing = completedEl.querySelector(`:scope > .${BLOCK_PENDING_CLASS}`)
+  if (!active || !pendingInner) {
+    existing?.remove()
+    return
+  }
+  const tag = blockPendingTag(pending, openListItemFirstLine)
+  let el: Element | null = existing
+  if (!el || el.tagName.toLowerCase() !== tag) {
+    existing?.remove()
+    el = document.createElement(tag)
+    completedEl.append(el)
+  }
+  el.className = blockPendingClassName(pending, openListItemFirstLine)
+  const ordered = pendingListOrderedMarker(pending)
+  const headingLevel = pendingAtxHeadingLevel(pending)
+  if (ordered !== null) el.setAttribute('data-ordered-marker', ordered)
+  else el.removeAttribute('data-ordered-marker')
+  if (headingLevel !== null) el.setAttribute('data-heading-level', String(headingLevel))
+  else el.removeAttribute('data-heading-level')
+  el.innerHTML = wrapBlockPendingInner(pending, pendingInner)
+}
+
+function syncInlinePendingDom(
+  pendingEl: HTMLSpanElement,
+  pendingInner: string,
+  active: boolean,
+): void {
+  pendingEl.innerHTML = pendingInner
+  pendingEl.hidden = !active
+  pendingEl.className = 'stream-pending'
+  delete pendingEl.dataset['orderedMarker']
+}
+
+function renderPendingTail(
+  split: StreamingSplit,
+  complete: string,
+  formingActive: boolean,
+): { pendingInner: string; pendingVisible: boolean } {
+  const { pending, openListItemFirstLine } = split
+  const pendingInTable = pendingLineBelongsInTable(complete, pending)
+  const pendingInner =
+    pending && !pendingInTable && !formingActive
+      ? sanitizeRenderedMarkdown(renderPendingInlineMarkdown(pending, openListItemFirstLine))
+      : ''
+  const pendingVisible = pending !== '' && !pendingInTable && !formingActive && pendingInner !== ''
+  return { pendingInner, pendingVisible }
 }
 
 /**
  * Render assistant text while it is still streaming.
- * Completed lines (up to the last newline) are markdown-rendered; the
- * in-progress tail only renders safe inline markdown. Block constructs like
- * lists and tables are finalized on message_done via renderMarkdown().
+ * Completed blocks (per the block tokenizer) are markdown-rendered; the pending
+ * tail only renders safe inline markdown once its block context is unambiguous.
  */
 export function renderStreamingMarkdown(content: string): string {
-  const { complete, pending } = splitAtLastNewline(content)
+  const split = splitForStreaming(content)
+  const { complete, pending, openListItemFirstLine } = split
   const rendered = complete ? sanitizeRenderedMarkdown(renderMarkdown(complete)) : ''
+  const fenceSource = formingFenceSource(content)
+  const tableSource = fenceSource ? null : formingTableSource(complete, content, pending)
+  const formingHtml = fenceSource
+    ? buildFormingFenceHtml(fenceSource)
+    : tableSource
+      ? buildFormingTableHtml(tableSource)
+      : ''
+
+  if (formingHtml) {
+    return `${rendered}${formingHtml}`
+  }
   if (!pending) return rendered
-  return `${rendered}<span class="stream-pending">${sanitizeRenderedMarkdown(renderPendingInlineMarkdown(pending))}</span>`
+  if (pendingLineBelongsInTable(complete, pending)) {
+    return appendPendingTableRowHtml(rendered, pending)
+  }
+  const pendingInner = sanitizeRenderedMarkdown(
+    renderPendingInlineMarkdown(pending, openListItemFirstLine),
+  )
+  if (!pendingInner) return rendered
+
+  if (isListContinuationPending(pending, openListItemFirstLine)) {
+    const contHtml = blockPendingHtml(pending, pendingInner, openListItemFirstLine)
+    const inserted = insertBeforeTrailingListClose(rendered, contHtml)
+    if (inserted) return inserted
+  }
+
+  if (pendingListMarkerLength(pending) !== null) {
+    return appendListPendingHtml(rendered, pending, pendingInner, openListItemFirstLine)
+  }
+
+  const pendingHtml = isBlockLevelPending(pending, openListItemFirstLine)
+    ? blockPendingHtml(pending, pendingInner, openListItemFirstLine)
+    : inlinePendingSpanHtml(pendingInner)
+  return `${rendered}${pendingHtml}`
 }
 
 /**
  * Incremental streaming renderer.
  *
- * Re-running `renderStreamingMarkdown` + assigning `innerHTML` on every token is
- * O(n²) (the whole message is reparsed per token) and wipes text selection and
- * scroll/`<details>` state. Instead we keep two stable regions inside the host:
- * a completed-markdown `<div>` that is only re-rendered when a newline arrives
- * (i.e. the completed prefix actually grew), and a live `<span>` whose
- * `textContent` is updated for the in-progress line — cheap and DOM-preserving.
+ * Committed markdown is re-rendered when the safe prefix grows. Forming tables
+ * and in-progress table rows are updated via forward-pass DOM appends (no full
+ * re-parse of the table skeleton on each token).
  */
 export class StreamingMarkdownRenderer {
   private completedEl: HTMLElement | null = null
+  private formingEl: HTMLElement | null = null
   private pendingEl: HTMLSpanElement | null = null
   private lastComplete = ''
   private readonly host: HTMLElement
@@ -216,35 +431,115 @@ export class StreamingMarkdownRenderer {
 
   /** Render `content` (the full message text so far) into the host incrementally. */
   update(content: string): void {
-    const { complete, pending } = splitAtLastNewline(content)
-    const { completedEl, pendingEl } = this.ensureNodes()
+    const split = splitForStreaming(content)
+    const { complete, pending, openListItemFirstLine } = split
+    const { completedEl, formingEl, pendingEl } = this.ensureNodes()
 
     if (complete !== this.lastComplete) {
       completedEl.innerHTML = complete ? sanitizeRenderedMarkdown(renderMarkdown(complete)) : ''
       this.lastComplete = complete
     }
 
-    // The completed region (and any selection within it) is untouched. Pending
-    // content is still rendered through the markdown sanitizer before insertion.
-    pendingEl.innerHTML = pending
-      ? sanitizeRenderedMarkdown(renderPendingInlineMarkdown(pending))
-      : ''
-    pendingEl.hidden = pending === ''
+    const fenceSource = formingFenceSource(content)
+    const tableSource = formingTableSource(complete, content, pending)
+    if (fenceSource) {
+      syncFormingFenceDom(formingEl, fenceSource)
+      formingEl.hidden = false
+      const committed = this.findLastCommittedTable()
+      if (committed) removePendingTableRow(committed)
+    } else if (tableSource) {
+      syncFormingTableDom(formingEl, tableSource)
+      formingEl.hidden = false
+      const committed = this.findLastCommittedTable()
+      if (committed) removePendingTableRow(committed)
+    } else {
+      clearFormingDom(formingEl)
+      formingEl.hidden = true
+      this.syncCommittedTableRow(complete, pending)
+    }
+
+    const formingActive = fenceSource !== null || tableSource !== null
+    const { pendingInner, pendingVisible } = renderPendingTail(split, complete, formingActive)
+
+    if (pendingVisible && isBlockLevelPending(pending, openListItemFirstLine)) {
+      syncBlockPendingDom(completedEl, pending, pendingInner, true, openListItemFirstLine)
+      syncInlinePendingDom(pendingEl, '', false)
+    } else {
+      clearBlockPendingDom(completedEl, ['continuation', 'direct-blocks'])
+      syncInlinePendingDom(pendingEl, pendingInner, pendingVisible)
+    }
   }
 
-  private ensureNodes(): { completedEl: HTMLElement; pendingEl: HTMLSpanElement } {
-    if (this.completedEl && this.pendingEl && this.host.contains(this.completedEl)) {
-      return { completedEl: this.completedEl, pendingEl: this.pendingEl }
+  private syncCommittedTableRow(complete: string, pending: string): void {
+    const table = this.findLastCommittedTable()
+    if (!table) return
+
+    if (pendingLineBelongsInTable(complete, pending)) {
+      syncPendingTableRowDom(table, pending)
+      return
+    }
+    removePendingTableRow(table)
+  }
+
+  private findLastCommittedTable(): HTMLTableElement | null {
+    const tables = this.completedEl?.querySelectorAll('table')
+    const last = tables?.[tables.length - 1]
+    if (last instanceof Element && last.tagName === 'TABLE') {
+      return last
+    }
+    return null
+  }
+
+  private ensureNodes(): {
+    completedEl: HTMLElement
+    formingEl: HTMLElement
+    pendingEl: HTMLSpanElement
+  } {
+    if (
+      this.completedEl &&
+      this.formingEl &&
+      this.pendingEl &&
+      this.host.contains(this.completedEl)
+    ) {
+      return {
+        completedEl: this.completedEl,
+        formingEl: this.formingEl,
+        pendingEl: this.pendingEl,
+      }
     }
     this.host.replaceChildren()
     const completedEl = document.createElement('div')
     completedEl.className = 'stream-complete'
+    const formingEl = document.createElement('div')
+    formingEl.className = 'stream-forming'
+    formingEl.hidden = true
     const pendingEl = document.createElement('span')
     pendingEl.className = 'stream-pending'
-    this.host.append(completedEl, pendingEl)
+    pendingEl.hidden = true
+    this.host.append(completedEl, formingEl, pendingEl)
     this.completedEl = completedEl
+    this.formingEl = formingEl
     this.pendingEl = pendingEl
     this.lastComplete = ''
-    return { completedEl, pendingEl }
+    return { completedEl, formingEl, pendingEl }
   }
+}
+
+function formingTableSource(complete: string, content: string, pending: string): string | null {
+  if (getIncompleteFenceSource(content)) return null
+  if (pendingLineBelongsInTable(complete, pending)) return null
+  const fromTokens = getIncompleteTableSource(content)
+  if (fromTokens) return fromTokens
+  const trimmed = pending.trimStart()
+  if (trimmed.startsWith('|') && trimmed.includes('|', 1)) return pending
+  return null
+}
+
+function formingFenceSource(content: string): string | null {
+  return getIncompleteFenceSource(content)
+}
+
+function clearFormingDom(container: HTMLElement): void {
+  clearFormingFenceDom(container)
+  clearFormingTableDom(container)
 }

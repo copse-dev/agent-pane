@@ -41,9 +41,10 @@ fixtures: [`tests/e2e/markdown-table-wrap.e2e.ts`](../tests/e2e/markdown-table-w
 - **Fit the pane first.** `width: 100%`, `max-width: 100%`, `table-layout: auto`. Prefer wrapping
   and column shrink over horizontal scroll. Reserve `overflow-x: auto` for genuinely unbreakable cell
   content (e.g. a long hash with no break points).
-- **Reset inherited message styles on cells.** `.message-text` uses `white-space: pre-wrap`; table
-  cells must set `white-space: normal` (and usually `min-width: 0`) or short values like `296` and
-  `DRAFT` break mid-token.
+- **Reset inherited message styles on cells.** Only `.message-text p` uses `pre-wrap` (CommonMark
+  soft breaks); the message container itself is `white-space: normal` so HTML newlines between block
+  elements do not stack on margins. Table cells must still set `white-space: normal` (and usually
+  `min-width: 0`) or short values like `296` and `DRAFT` break mid-token.
 - **Shrink edge columns with content, not magic widths.** For tables where short values sit on the
   edges, use the standard pattern:
 
@@ -123,6 +124,24 @@ Fix (in [`src/renderer/styles/global/settings.css`](../src/renderer/styles/globa
 - Move that breathing room into the footer and lift it off the window edge:
   `padding-bottom: calc(var(--spacing-xl) + var(--spacing-lg))`.
 - Roomier buttons: `padding: var(--spacing-md) var(--spacing-xl)`, `gap: var(--spacing-md)`.
+
+## Markdown prose spacing in chat
+
+Symptom: assistant messages look “double spaced” — extra blank lines between headings, paragraphs,
+and lists even when the markdown source only has one blank line.
+
+Root cause: `white-space: pre-wrap` on `.message-text` makes **HTML source newlines between block
+tags** (`</p>\n<h3>`, `</ol>\n<ul>`) render as visible blank lines _on top of_ block margins.
+
+Fix (in [`conversation.css`](../src/renderer/styles/global/conversation.css)):
+
+- `.message-text { white-space: normal }` — block boundaries use margins only.
+- `.message-text p { white-space: pre-wrap }` — CommonMark soft breaks inside a paragraph still
+  show as line breaks.
+- Lists/tables already reset to `white-space: normal` on `ul`/`ol`/cells.
+
+Do not put `pre-wrap` back on the message container “for convenience”; it regresses every multi-block
+agent summary.
 
 ## Prove visual changes with a focused e2e eval
 

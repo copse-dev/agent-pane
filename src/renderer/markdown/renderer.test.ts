@@ -9,9 +9,16 @@ describe('renderMarkdown', () => {
     assert.match(html, /<p>Body text<\/p>/)
   })
 
-  it('converts single newlines inside paragraphs to line breaks', () => {
+  it('preserves single newlines inside paragraphs (CommonMark soft breaks)', () => {
     const html = renderMarkdown('line one\nline two')
-    assert.match(html, /line one<br>line two/)
+    assert.match(html, /line one[\n]line two/)
+    assert.doesNotMatch(html, /line one<br>line two/)
+  })
+
+  it('does not apply hard line breaks inside raw HTML tags (CommonMark #642)', () => {
+    const html = renderMarkdown('<a href="foo  \nbar">\n')
+    assert.equal(html, '<p><a href="foo  \nbar"></p>')
+    assert.doesNotMatch(html, /<br>/)
   })
 
   it('preserves blank-line paragraph breaks', () => {
@@ -38,10 +45,43 @@ describe('renderMarkdown', () => {
     assert.match(html, /<ul><li>alpha<\/li><li>beta<\/li><\/ul>/)
   })
 
-  it('groups unordered list items separated by blank lines into one list', () => {
+  it('groups unordered list items separated by blank lines into one loose list (#314)', () => {
     const html = renderMarkdown('- alpha\n\n- beta\n\n- gamma')
-    assert.match(html, /<ul><li>alpha<\/li><li>beta<\/li><li>gamma<\/li><\/ul>/)
+    assert.match(
+      html,
+      /<ul><li><p>alpha<\/p><\/li><li><p>beta<\/p><\/li><li><p>gamma<\/p><\/li><\/ul>/,
+    )
     assert.doesNotMatch(html, /<\/ul>\s*<ul>/)
+  })
+
+  it('ends a list when blank is followed by under-indented text (#255, #276)', () => {
+    const html255 = renderMarkdown('- one\n\n two\n')
+    assert.match(html255, /<ul><li>one<\/li><\/ul>\s*<p>two<\/p>/)
+    const html276 = renderMarkdown('-    foo\n\n  bar\n')
+    assert.match(html276, /<ul><li>foo<\/li><\/ul>\s*<p>bar<\/p>/)
+  })
+
+  it('continues a list item across a blank with lazy indentation (#256)', () => {
+    const html = renderMarkdown('- one\n\n  two\n')
+    assert.match(html, /<ul><li><p>one<\/p><p>two<\/p><\/li><\/ul>/)
+  })
+
+  it('splits unordered lists when the marker character changes (#301)', () => {
+    const html = renderMarkdown('- foo\n- bar\n+ baz\n')
+    assert.match(html, /<ul><li>foo<\/li><li>bar<\/li><\/ul>\s*<ul><li>baz<\/li><\/ul>/)
+  })
+
+  it('emits ordered list start attributes (#265, #268)', () => {
+    const html265 = renderMarkdown('123456789. ok\n')
+    assert.match(html265, /<ol start="123456789"><li>ok<\/li><\/ol>/)
+    const html268 = renderMarkdown('003. ok\n')
+    assert.match(html268, /<ol start="3"><li>ok<\/li><\/ol>/)
+  })
+
+  it('treats a 10-digit ordered marker as a paragraph (#266)', () => {
+    const html = renderMarkdown('1234567890. not ok\n')
+    assert.match(html, /<p>1234567890\. not ok<\/p>/)
+    assert.doesNotMatch(html, /<ol/)
   })
 
   it('renders asterisk unordered lists', () => {
@@ -49,6 +89,18 @@ describe('renderMarkdown', () => {
     assert.match(html, /<ul>/)
     assert.match(html, /<li>alpha<\/li>/)
     assert.match(html, /<li>beta<\/li>/)
+  })
+
+  it('renders relative markdown links and reference definitions', () => {
+    const html = renderMarkdown(
+      '[Experiment Framework v2](/docs/experiments/v2.md)\n\n[intro][ref]\n\n[ref]: /docs "guide"\n',
+    )
+    assert.match(html, /href="\/docs\/experiments\/v2\.md"[^>]*data-workspace-link="true"/)
+    assert.match(
+      html,
+      /<a href="\/docs"[^>]*data-workspace-link="true"[^>]*title="guide"[^>]*>intro<\/a>/,
+    )
+    assert.doesNotMatch(html, /\[ref\]:/)
   })
 
   it('renders markdown links in prose and ordered lists', () => {
@@ -111,9 +163,12 @@ describe('renderMarkdown', () => {
     assert.match(html, /<ol>/)
     assert.match(
       html,
-      /<li><code>src\/main\/foo\.ts<\/code><br><br>Introduces <strong>foo<\/strong> handling\.<\/li>/,
+      /<li><p><code>src\/main\/foo\.ts<\/code><\/p><p>Introduces <strong>foo<\/strong> handling\.<\/p><\/li>/,
     )
-    assert.match(html, /<li><code>src\/main\/bar\.ts<\/code><br><br>Worker thread for bar\.<\/li>/)
+    assert.match(
+      html,
+      /<li><p><code>src\/main\/bar\.ts<\/code><\/p><p>Worker thread for bar\.<\/p><\/li>/,
+    )
     assert.doesNotMatch(html, /<p>1\./)
     assert.doesNotMatch(html, /<p>2\./)
   })
@@ -378,10 +433,10 @@ describe('renderMarkdown', () => {
     assert.doesNotMatch(html, /&gt;/)
   })
 
-  it('renders multi-line blockquotes with a line break', () => {
+  it('renders multi-line blockquotes with a soft line break', () => {
     const html = renderMarkdown('> First line\n> Second line')
     assert.match(html, /<blockquote>/)
-    assert.match(html, /First line<br>Second line/)
+    assert.match(html, /First line[\n]Second line/)
     assert.doesNotMatch(html, /&gt;/)
   })
 
@@ -421,7 +476,7 @@ describe('renderMarkdown', () => {
   it('keeps a lazy continuation line inside the blockquote (no leaked &gt;)', () => {
     const html = renderMarkdown('> line one\nlazy continuation')
     assert.match(html, /<blockquote>/)
-    assert.match(html, /line one<br>lazy continuation/)
+    assert.match(html, /line one[\n]lazy continuation/)
     assert.doesNotMatch(html, /&gt;/)
   })
 

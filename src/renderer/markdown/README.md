@@ -1,8 +1,11 @@
 # Markdown rendering
 
 Hand-rolled renderer in `renderer.ts` used by conversation messages, subagent timelines, file
-preview, and streaming (`streaming.ts`). Not a markdown library — keep it that way unless
-requirements clearly outgrow it.
+preview, and streaming (`streaming.ts`). At-rest rendering routes through `tokenizeBlocks()` →
+`renderBlocks()` (`render-blocks.ts`); block/inlined tokenizers in `block-tokenizer.ts`,
+`inline-emphasis.ts`, and `streaming-split.ts` also drive streaming hold decisions (#475). It is
+not a standalone markdown library, but we **do** treat the CommonMark spec as the reference for
+block/inline structure and grow toward it incrementally (see conformance baseline below).
 
 ## Design invariants
 
@@ -20,14 +23,75 @@ When extending the renderer or its CSS, preserve these rules:
 - **Valid block HTML.** Block elements (`<ul>`, `<ol>`, `<h3>`, `<h4>`, `<pre>`, `<table>`,
   `<hr>`) must never end up inside `<p>`. Mixed single-newline blocks (heading → subheading → list)
   are common in LLM output; split at block boundaries before wrapping paragraphs.
-- **Inline formatting order.** Fenced code → inline code → bold → italic. Italic (`_` and `*`) runs
-  only outside `<code>` spans and must not match across newlines (or `* list` lines get eaten).
-  Consequence: emphasis whose opener and closer are split across a soft line break is **not**
-  rendered (it stays literal), unlike spec CommonMark which resolves emphasis per block. This is a
-  known limitation — see the "Emphasis across soft line breaks" follow-up in
-  [`docs/plans/markdown-renderer-hardening.md`](../../../docs/plans/markdown-renderer-hardening.md).
-- **Agent-output shapes.** Support `-`, `*`, and `+` list markers. Map `#`/`##` to `<h4>`, `###` to
-  `<h3>` — h1/h2 are intentionally too large for the narrow pane.
+- **Inline formatting order.** Fenced code → inline code → emphasis (delimiter stack) →
+  markdown links → bare HTTP autolinks. Emphasis runs before links so `*foo [bar](/url)*`
+  resolves correctly; link labels may already contain `<em>` / `<strong>` from that pass.
+  See #475 and [`docs/plans/markdown-renderer-hardening.md`](../../../docs/plans/markdown-renderer-hardening.md).
+- **Soft line breaks.** Prose paragraphs preserve single newlines in HTML (CommonMark soft breaks);
+  hard breaks (two+ trailing spaces) emit `<br>`. Tight list items still collapse internal
+  newlines to spaces. `.message-text p` uses `white-space: pre-wrap` (the container is `normal`) so
+  preserved newlines render as visible line breaks without `<br>` tags.
+- **Agent-output shapes.** Support `-`, `*`, and `+` list markers. ATX `#` levels map to
+  matching `<h1>`–`<h6>` tags (see `render-blocks.ts`).
+- **Streaming hold.** Incomplete block starts (fences, thematic breaks, blockquotes) stream as
+  plain text in the inline pending tail until their line ends. Open fenced code blocks
+  forward-pass into `.stream-forming` as `<pre class="stream-fence-forming">` with highlight.js on
+  the body so far (mermaid fences show a pending source placeholder until complete).
+  Forming GFM tables forward-pass into `.stream-forming` (`<table class="stream-table-forming">`) as header/separator/body
+  cells arrive; committed tables append body rows via `tr.stream-pending-row` with
+  inline cell updates. Pending **list** lines hide the `-`/`*`/`1.` marker and show
+  body text with a bullet/number via `.stream-pending-list-item` until the line
+  ends and the full `<ul>/<li>` (or `<ol>/<li>`) is committed. Pending **ATX
+  headings** (`#` … `######`) hide the hash run and render title text in a
+  `<div class="stream-pending-heading stream-pending-hN">` (`data-heading-level`) with
+  matching heading weight/size until the line completes. **HTML entities** in prose
+  (`&nbsp;`, `&#160;`) decode via `decodeSafeMarkdownEntities()` (with incomplete suffixes
+  held so `&nbsp` never flashes literally); other entities stay escaped for XSS safety.
+  Inline hold still suppresses half-open `**` on the current line.
+
+  Pending shapes (`streaming-pending-matrix.test.ts`):
+
+  | While streaming         | DOM / class                                                      | Raw marker hidden?      | Inline MD in tail? |
+  | ----------------------- | ---------------------------------------------------------------- | ----------------------- | ------------------ |
+  | Prose paragraph         | `<p class="stream-pending-paragraph">`                           | n/a                     | yes                |
+  | `- item` / `1. item`    | `<ul>/<ol>` with native `<li class="stream-pending-list-item">`  | yes                     | yes                |
+  | Nested `  - item`       | nested `<ul>/<ol>` inside open `<li>`                            | yes                     | yes                |
+  | Lazy list continuation  | `<span class="stream-pending-list-continuation">` in open `<li>` | n/a (plain text)        | yes                |
+  | `### Heading`           | `<div class="stream-pending-heading stream-pending-hN">`         | yes                     | yes                |
+  | `> quote`               | `<blockquote class="stream-pending-blockquote"><p>…</p>`         | yes                     | yes                |
+  | `---`                   | `<span class="stream-pending">` escaped plain text               | no                      | no                 |
+  | Forming `\| H \|` table | `.stream-forming` + `<th>`                                       | pipes = cell boundaries | per cell           |
+  | Pending table body row  | `tr.stream-pending-row` + `<td>`                                 | pipes = cell boundaries | per cell           |
+  | Open fenced code        | `.stream-forming pre.stream-fence-forming`                       | yes                     | highlighted        |
+
+### Streaming architecture (intentional duplication)
+
+The streaming layer maintains **two parallel emitters** for the same decisions:
+
+| Path            | Used by                     | Updates                   |
+| --------------- | --------------------------- | ------------------------- |
+| String HTML     | `renderStreamingMarkdown`   | full re-render each token |
+| Incremental DOM | `StreamingMarkdownRenderer` | forward-pass patches      |
+
+Shared helpers (`renderStreamingTableCell`, `insertBeforeTrailingListClose`,
+`splitOpenBlockAtLastNewline`, `clearBlockPendingDom`, `blockPendingClassName`, …) hold
+**decision logic** in one place. Emitters stay separate on purpose — merging HTML builders
+with DOM sync (e.g. always setting `innerHTML` from a string) breaks incremental updates and
+is brittle under `streaming-convergence.test.ts`.
+
+**Not yet unified** (higher risk; defer unless adding a new pending shape):
+
+- Forming-table line parser shared by `buildFormingTableHtml` / `syncFormingTableDom` (separator
+  row HTML vs DOM intentionally differ).
+- List pending: `appendListPendingHtml` vs `syncListPendingDom`.
+- Block pending metadata: `blockPendingAttrs` (HTML) vs `setAttribute` in DOM sync.
+- `classifyPendingBlock()` — single classifier for `isBlockLevelPending` / `blockPendingTag` /
+  `blockPendingClassName`.
+- Orchestration object shared by `renderStreamingMarkdown` and `StreamingMarkdownRenderer.update`.
+- `render-pending-line.ts` hold→visible→render branches (readability only).
+
+- **Inline emphasis.** A single delimiter-stack path (`inline-emphasis.ts`) handles all emphasis;
+  there is no separate regex fast path.
 - **List indent.** Global `* { padding: 0 }` strips UA list padding. Restore readable indent on
   `.message-text ul/ol` in `global.css` (currently `padding-inline-start: 1.5em;
 list-style-position: outside`). Bullets should sit clearly inset from headings, not flush with
@@ -81,9 +145,9 @@ this repo — comparing output to the expected HTML after the spec's own normali
 rest only** — streaming output intentionally differs (the live tail is escaped
 plain text) and is not conformance-tested.
 
-The renderer is deliberately app-specific (`#`→`<h4>`, decorated links,
-highlighted code), so it is **not** expected to fully conform. The set of examples
-we currently satisfy is pinned in `tests/fixtures/commonmark/conformance-baseline.json`
+The renderer is app-specific in places (decorated links, highlighted code), but
+CommonMark is the structural reference. The set of examples we currently satisfy
+is pinned in `tests/fixtures/commonmark/conformance-baseline.json`
 and the test fails if it changes:
 
 - fewer passing → a regression in a construct we used to handle.
@@ -93,6 +157,24 @@ and the test fails if it changes:
 Bumping the spec is just `npm i -D commonmark-spec@<version>` followed by a
 re-baseline; the version is read from the installed package and pinned in the
 baseline.
+
+### Streaming convergence fuzz (`streaming-convergence.test.ts`, via `npm test`)
+
+Reuses the same CommonMark baseline examples (`tests/commonmark/baseline-examples.ts`)
+as property-test inputs: for each passing spec example, every prefix cut (or a
+strided sample when the markdown is long) feeds `StreamingMarkdownRenderer`
+incrementally, then the full text, and the final display must match a fresh
+complete render. When the tokenizer commits the entire input (no pending tail),
+that display must also match the at-rest `renderMarkdown()` output. Set
+`STREAMING_FUZZ_ALL=1` to exercise every character index on long examples.
+
+### Terms of Service fixture (`streaming-terms-of-service.test.ts`)
+
+Real-world agent output in `tests/fixtures/terms-of-service-streaming.md` — nbsp metadata,
+numbered clauses, subscription fee table, blockquotes, and a fenced address block. Tests
+scan incremental streaming cuts for partial-table artifacts (raw `| cell |` text in inline
+`.stream-pending` or prose blocks while a table is already committed). Use this fixture when
+changing table/list/metadata streaming behaviour.
 
 The JS normalizer (`tests/commonmark/normalize.ts`) is differentially validated
 against the reference `normalize.py` by `npm run check:normalizer-parity` (a CI
@@ -109,6 +191,14 @@ contributors without python can still run the default gates.
 
 - `tests/e2e/markdown-list-indent.e2e.ts` — Known Failures + Architecture Highlights; asserts list
   text is inset >4px from headings
+- `tests/e2e/markdown-streaming-list.e2e.ts` — lazy list continuations stream inside the open
+  `<li>` without a fake bullet row
+- `tests/e2e/markdown-streaming-heading.e2e.ts` — pending `###` titles render in
+  `.stream-pending-heading` without raw `#` markers
+- `tests/e2e/markdown-streaming-blockquote.e2e.ts` — pending `>` lines render in
+  `<blockquote class="stream-pending-blockquote">` without raw `>` markers
+- `tests/e2e/markdown-nbsp-metadata.e2e.ts` — sprint/RFC metadata lines decode `&nbsp;` while
+  streaming
 - `tests/e2e/semantic-search-markdown.e2e.ts` — explore subagent timeline; asserts no raw `##` in
   rendered text, summary preview hidden when expanded, code spans intact
 - `tests/e2e/mermaid-diagram.e2e.ts` — seeded flowchart; asserts `.mermaid-diagram svg` renders

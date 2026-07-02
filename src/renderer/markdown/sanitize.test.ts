@@ -69,6 +69,14 @@ describe('sanitizeRenderedMarkdown', () => {
     assert.match(html, /data-browser-link="true"/)
   })
 
+  it('preserves workspace markdown link attributes', () => {
+    const html = sanitizeRenderedMarkdown(
+      '<a href="/docs/foo.md" class="workspace-markdown-link" data-workspace-link="true">x</a>',
+    )
+    assert.match(html, /data-workspace-link="true"/)
+    assert.match(html, /href="\/docs\/foo\.md"/)
+  })
+
   it('preserves mermaid scaffolding and highlight.js spans', () => {
     const html = sanitizeRenderedMarkdown(
       '<div class="mermaid-diagram mermaid-diagram--pending"><pre class="mermaid">A--&gt;B</pre></div>' +
@@ -77,6 +85,14 @@ describe('sanitizeRenderedMarkdown', () => {
     assert.match(html, /class="mermaid-diagram mermaid-diagram--pending"/)
     assert.match(html, /<pre class="mermaid">/)
     assert.match(html, /class="hljs-keyword"/)
+  })
+
+  it('normalizes double-encoded nbsp entities leaked before innerHTML', () => {
+    const html = sanitizeRenderedMarkdown('<p>Proposed &amp;nbsp;&amp;nbsp;|&amp;nbsp;</p>')
+    const div = document.createElement('div')
+    div.innerHTML = html
+    assert.doesNotMatch(div.textContent, /&nbsp;/)
+    assert.match(div.textContent, /\u00A0/)
   })
 
   it('is a no-op for the structures renderMarkdown already produces', () => {

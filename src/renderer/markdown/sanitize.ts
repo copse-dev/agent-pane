@@ -59,6 +59,8 @@ const ALLOWED_ATTR = [
   'rel',
   'class',
   'data-browser-link',
+  'data-workspace-link',
+  'data-ordered-marker',
   'data-remote-artifact-path',
   'data-remote-artifact-agent-id',
   'alt',
@@ -89,8 +91,13 @@ function installImgHook(): void {
   })
 }
 
+const DOUBLE_ENCODED_NBSP_RE = /&amp;(?:nbsp|#160|#x0*a);/gi
+
 /** Sanitize rendered-markdown HTML before it is assigned to `innerHTML`. */
 export function sanitizeRenderedMarkdown(html: string): string {
   installImgHook()
-  return DOMPurify.sanitize(html, { ALLOWED_TAGS, ALLOWED_ATTR })
+  const sanitized = DOMPurify.sanitize(html, { ALLOWED_TAGS, ALLOWED_ATTR })
+  // Any path that escaped a model-emitted &nbsp; before decode would surface literal
+  // "&nbsp;" text; normalize those back to real NBSP before innerHTML assignment.
+  return sanitized.replace(DOUBLE_ENCODED_NBSP_RE, '\u00A0')
 }

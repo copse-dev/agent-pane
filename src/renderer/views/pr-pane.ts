@@ -10,6 +10,7 @@ import { extractGithubPrUrls, githubPrKey } from '@shared/git/github-pr-url.ts'
 import { renderMarkdown } from '../markdown/renderer.ts'
 import { sanitizeRenderedMarkdown } from '../markdown/sanitize.ts'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
+import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
 import {
   createGitChangesDiffEditor,
   disposeDiffModels,
@@ -590,6 +591,7 @@ export function mountPrPane(
 
   refreshBtn.addEventListener('click', () => void refresh())
 
+  const unbindWorkspaceLinks = bindWorkspaceLinkClicks(descriptionHost, store, api)
   const unbindBrowserLinks = bindBrowserLinkClicks(descriptionHost, store, api)
   const stopObservingLayout = observeDiffHostLayout(viewerRoot, () => diffEditor)
 
@@ -641,6 +643,7 @@ export function mountPrPane(
 
   return () => {
     stopObservingLayout()
+    unbindWorkspaceLinks()
     unbindBrowserLinks()
     unsubs.forEach((u) => {
       u()

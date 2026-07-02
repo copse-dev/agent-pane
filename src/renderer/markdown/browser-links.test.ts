@@ -46,6 +46,23 @@ describe('markdown browser links', () => {
     assert.deepEqual(requested, [href])
   })
 
+  it('leaves workspace markdown links to the workspace link handler', () => {
+    const root = document.createElement('div')
+    root.innerHTML =
+      '<a href="/docs/foo.md" class="workspace-markdown-link" data-workspace-link="true">guide</a>'
+    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    let requested = false
+    store.on('browser_url_requested', () => (requested = true))
+    const unbind = bindBrowserLinkClicks(root, store)
+
+    const event = new window.MouseEvent('click', { bubbles: true, cancelable: true })
+    qsRequired(root, 'a').dispatchEvent(event)
+
+    unbind()
+    assert.equal(event.defaultPrevented, false)
+    assert.equal(requested, false)
+  })
+
   it('leaves generated file reference links to the file link handler', () => {
     const root = document.createElement('div')
     root.innerHTML =
