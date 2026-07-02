@@ -23,6 +23,7 @@ import {
 import {
   listAcpAgentModels,
   runAcpAgentPrompt,
+  willSandboxAcpAgent,
   type AcpAgentSpawnConfig,
   type AcpClientHandlers,
   type AcpModelSelector,
@@ -214,7 +215,9 @@ export async function runAcpAgentFromSettings(
     throw new Error('Open a folder before running an ACP agent so it has a workspace to act in.')
   }
 
-  const prompt = buildAcpPrompt(options.userPrompt, options.priorMessages)
+  const prompt = buildAcpPrompt(options.userPrompt, options.priorMessages, {
+    sandboxed: willSandboxAcpAgent(agent.sandbox),
+  })
   if (!prompt.trim()) {
     throw new Error('ACP agent prompt cannot be empty.')
   }
@@ -536,15 +539,37 @@ function raceDecisionAgainstAbort(
 }
 
 /**
+ * Steering prepended to the prompt when the agent process runs under the
+ * workspace seatbelt (issue #590). A silent $TMPDIR redirect is not enough:
+ * models habitually hardcode `/tmp`, which the seatbelt denies — and unlike
+ * native run_shell there is no approve-to-run-unsandboxed path, so without
+ * this note the agent walks into EPERMs that user approval cannot fix.
+ */
+export const ACP_SANDBOX_PROMPT_NOTE =
+  'Environment note: this session runs inside a filesystem sandbox. Writes are ' +
+  'allowed only inside the workspace and $TMPDIR; the system /tmp, the rest of ' +
+  'the home directory, and most network destinations are blocked — approval ' +
+  'prompts cannot override the sandbox, so do not retry blocked paths. Put ' +
+  'scratch files in $TMPDIR or the workspace.'
+
+/**
  * Flatten the user prompt to text, replaying prior conversation as a compact
  * preamble. A fresh ACP session has no memory of earlier turns, so without this
- * a follow-up message would reach the agent with no context.
+ * a follow-up message would reach the agent with no context. `sandboxed` turns
+ * additionally get {@link ACP_SANDBOX_PROMPT_NOTE} so the agent knows the
+ * confines it is operating under.
  */
-export function buildAcpPrompt(userPrompt: UserContent, priorMessages: LLMMessage[]): string {
+export function buildAcpPrompt(
+  userPrompt: UserContent,
+  priorMessages: LLMMessage[],
+  opts?: { sandboxed?: boolean },
+): string {
+  const note = opts?.sandboxed ? `${ACP_SANDBOX_PROMPT_NOTE}\n\n` : ''
   const current = promptPayloadFromUserContent(userPrompt).text
   const transcript = priorMessages.map(messageLine).filter(Boolean).join('\n')
-  if (!transcript) return current
+  if (!transcript) return note + current
   return (
+    note +
     'You are continuing an existing Copse chat. Use the prior conversation below ' +
     'for context, then respond to the new message.\n\n' +
     `${transcript}\n\n--- New message ---\n${current}`

@@ -139,10 +139,20 @@ export function buildAcpAgentEnv(config: AcpAgentSpawnConfig): Record<string, st
  * inside the agent process. $TMPDIR is redirected to the workspace-owned
  * scratch dir the seatbelt allows (issue #481).
  */
+/**
+ * Whether an agent with this sandbox config will actually spawn confined:
+ * needs the config, a POSIX platform, and the project sandbox to be active.
+ * Exposed so callers (e.g. the prompt builder's sandbox note) stay in sync
+ * with the spawn decision.
+ */
+export function willSandboxAcpAgent(sandbox: AcpAgentSandboxConfig | undefined): boolean {
+  return Boolean(sandbox) && process.platform !== 'win32' && isProjectSandboxEnabled()
+}
+
 async function spawnAcpAgentProcess(config: AcpAgentSpawnConfig): Promise<ChildProcess> {
   const env = buildAcpAgentEnv(config)
   const stdio: ('pipe' | 'inherit')[] = ['pipe', 'pipe', 'inherit']
-  if (config.sandbox && process.platform !== 'win32' && isProjectSandboxEnabled()) {
+  if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {
     const overlay = acpAgentSandboxOverlay(config.cwd, config.sandbox, {
       allowLocalhost: Boolean(config.nativeBridge),
     })

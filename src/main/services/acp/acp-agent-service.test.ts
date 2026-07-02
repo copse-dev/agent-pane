@@ -179,6 +179,26 @@ describe('buildAcpPrompt', () => {
     assert.equal(buildAcpPrompt('hello', []), 'hello')
   })
 
+  it('prepends the sandbox note only for sandboxed turns', () => {
+    const sandboxed = buildAcpPrompt('hello', [], { sandboxed: true })
+    assert.match(sandboxed, /^Environment note: this session runs inside a filesystem sandbox/)
+    assert.match(sandboxed, /hello$/)
+    // The note must steer away from hardcoded /tmp and warn that approval
+    // cannot override the sandbox.
+    assert.match(sandboxed, /\$TMPDIR/)
+    assert.match(sandboxed, /approval\s+prompts cannot override/i)
+    assert.equal(buildAcpPrompt('hello', [], { sandboxed: false }), 'hello')
+  })
+
+  it('places the sandbox note ahead of the replayed transcript', () => {
+    const prompt = buildAcpPrompt('next', [{ role: 'user', content: 'earlier' }], {
+      sandboxed: true,
+    })
+    assert.match(prompt, /^Environment note:/)
+    assert.match(prompt, /User: earlier/)
+    assert.match(prompt, /--- New message ---\nnext$/)
+  })
+
   it('replays prior user/assistant turns as a preamble for a fresh session', () => {
     const prompt = buildAcpPrompt('and now?', [
       { role: 'system', content: 'ignored' },
