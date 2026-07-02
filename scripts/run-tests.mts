@@ -8,6 +8,7 @@ const storageShim = resolve('src/main/services/storage.test-shim.ts')
 
 const testFiles: string[] = []
 for await (const f of glob('src/**/*.test.ts')) testFiles.push(f)
+for await (const f of glob('packages/*/src/**/*.test.ts')) testFiles.push(f)
 await rm('dist-test', { recursive: true, force: true })
 await esbuild.build({
   entryPoints: testFiles,
@@ -17,7 +18,10 @@ await esbuild.build({
   format: 'cjs',
   sourcemap: true,
   external: ['electron', 'node-pty', 'jsdom', '@mozilla/readability', 'turndown'],
-  alias: { '@shared': resolve('./src/shared') },
+  alias: {
+    '@shared': resolve('./src/shared'),
+    '@copse/streaming-markdown': resolve('./packages/streaming-markdown/src/index.ts'),
+  },
   // Unit tests cover the directive parser, so they always build with it enabled.
   define: { __COPSE_TEST_DIRECTIVES__: 'true' },
   plugins: [

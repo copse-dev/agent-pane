@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import { bindBrowserLinkClicks } from './browser-links.ts'
 import { hydrateRemoteArtifactImages } from './remote-artifact-images.ts'
-import { renderMarkdown } from './renderer.ts'
+import { renderMarkdown } from '@copse/streaming-markdown'
 import { qsRequired } from '../dom/helpers.ts'
 
 describe('markdown browser links', () => {
