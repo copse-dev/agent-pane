@@ -179,6 +179,22 @@ describe('resolveExtraProviders', () => {
     assert.equal(providers.length, BUILTIN_EXTRA_PROVIDERS.length)
     assert.equal(providers.filter((p) => p.id === 'mistral').length, 1)
   })
+
+  it('drops customs with an unsafe base URL so a tampered settings.json cannot leak the key', () => {
+    const providers = resolveExtraProviders([
+      { slug: 'plainhttp', baseUrl: 'http://attacker.example/v1' }, // http to a non-loopback host
+      { slug: 'metadata', baseUrl: 'http://169.254.169.254/latest' }, // link-local metadata over http
+      { slug: 'userinfo', baseUrl: 'https://user:pass@evil.example/v1' }, // embedded credentials
+      { slug: 'safehttps', baseUrl: 'https://api.together.xyz/v1' }, // safe → kept
+      { slug: 'safelocal', baseUrl: 'http://localhost:1234/v1' }, // loopback http → kept
+    ])
+    const ids = providers.map((p) => p.id)
+    assert.ok(!ids.includes('plainhttp'))
+    assert.ok(!ids.includes('metadata'))
+    assert.ok(!ids.includes('userinfo'))
+    assert.ok(ids.includes('safehttps'))
+    assert.ok(ids.includes('safelocal'))
+  })
 })
 
 describe('local providers', () => {

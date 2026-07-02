@@ -1,5 +1,24 @@
 import { z } from 'zod'
+import { validateCredentialBaseUrl } from '@shared/llm/credential-url.ts'
 import { RENDERER_WRITABLE_SETTING_SCHEMAS, webAllowedOriginsSchema } from './settings-writable.ts'
+
+// A provider base URL carries the provider's API key as an Authorization header,
+// so it must be a safe credential URL (https:, or http: only for loopback) and
+// carry no embedded userinfo. Empty/absent means "use the preset default".
+const providerBaseUrlSchema = z
+  .string()
+  .max(2048)
+  .superRefine((value, ctx) => {
+    if (value.trim() === '') return
+    try {
+      validateCredentialBaseUrl(value, 'Provider base URL')
+    } catch (error) {
+      ctx.addIssue({
+        code: 'custom',
+        message: error instanceof Error ? error.message : 'Invalid provider base URL',
+      })
+    }
+  })
 
 // Schema registry for keys persisted in the `settings` electron-store. Reads
 // validate against the matching schema (corrupt values fall back to the default)
@@ -28,7 +47,7 @@ const extraProviderModelSchema = z.object({
 export const storedExtraProviderSchema = z.object({
   slug: z.string().regex(/^[a-z0-9-]{1,64}$/),
   label: z.string().max(256).optional(),
-  baseUrl: z.string().max(2048).optional(),
+  baseUrl: providerBaseUrlSchema.optional(),
   keyPrefix: z.string().max(64).optional(),
   models: z.array(extraProviderModelSchema).max(256).optional(),
   fallbackContextWindow: z.number().int().positive().optional(),
