@@ -70,14 +70,10 @@ function bridgedTools(
   registry: ToolRegistry,
 ): { name: string; description: string; inputSchema: Record<string, unknown> }[] {
   const offered = new Set(BRIDGE_TOOL_NAMES)
-  return registry
-    .toLLMTools()
-    .filter((tool) => offered.has(tool.name))
-    .map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      inputSchema: tool.parameters,
-    }))
+  // toMcpTools, not toLLMTools: the agent forwards these schemas to the
+  // Anthropic API, which validates them as JSON Schema draft 2020-12 and
+  // 400s the whole request on the openapi-3.0 flavor.
+  return registry.toMcpTools().filter((tool) => offered.has(tool.name))
 }
 
 // eslint-disable-next-line @typescript-eslint/no-deprecated -- low-level Server is the right fit: bridge tools carry pre-built JSON schemas from ToolRegistry.toLLMTools(), while the high-level McpServer wants zod shapes it converts itself

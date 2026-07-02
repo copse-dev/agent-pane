@@ -17,7 +17,13 @@ function testRegistry(executed: string[]): ToolRegistry {
   registry.register({
     name: 'staged_diffs',
     description: 'List pending proposed file edits',
-    parameters: z.object({}),
+    // Shapes that diverge between JSON Schema flavors: openapi-3.0 renders
+    // these as `nullable: true` / boolean `exclusiveMinimum`, which the
+    // Anthropic API rejects when the agent forwards bridge tool schemas.
+    parameters: z.object({
+      limit: z.number().int().gt(0).optional(),
+      note: z.string().nullable().optional(),
+    }),
     execute: () => {
       executed.push('staged_diffs')
       return Promise.resolve('no pending diffs')
@@ -90,11 +96,18 @@ describe('startAcpNativeBridge', () => {
 
     for (const init of initialized()) await rpc(bridge, init)
     const list = await rpc(bridge, LIST_TOOLS)
-    const tools = (list.json as { result: { tools: { name: string }[] } }).result.tools
+    const tools = (list.json as { result: { tools: { name: string; inputSchema: unknown }[] } })
+      .result.tools
     assert.deepEqual(
       tools.map((tool) => tool.name),
       ['staged_diffs'],
     )
+    // Schemas must be draft 2020-12, not the openapi-3.0 flavor: the agent
+    // forwards them to the Anthropic API, which 400s on `nullable` / boolean
+    // `exclusiveMinimum` (regression: "tools.N.custom.input_schema is invalid").
+    const schemaJson = JSON.stringify(tools[0]?.inputSchema)
+    assert.doesNotMatch(schemaJson, /"nullable"/)
+    assert.doesNotMatch(schemaJson, /"exclusiveMinimum":\s*true/)
 
     const call = await rpc(bridge, {
       jsonrpc: '2.0',

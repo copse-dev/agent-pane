@@ -103,9 +103,12 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
       homeDirs: ['.claude', '.claude.json', '.claude.json.backup', '.config/claude'],
       // Claude Code hardcodes shell/task bookkeeping in system /tmp, ignoring
       // $TMPDIR: a /tmp/claude-<uid>/ tree (every Bash call fails at mkdir
-      // without it) and per-command /tmp/claude-<hex>-cwd tracking files. The
-      // glob covers both; macOS profiles compile globs to regex rules.
-      scratchPaths: ['/tmp/claude-*'],
+      // without it) and per-command /tmp/claude-<hex>-cwd tracking files.
+      // BOTH forms are required: the literal dir gets recursive subpath
+      // coverage (ASRT strips trailing /** from write globs, so a glob can
+      // never grant a subtree), while the single-segment glob covers the
+      // sibling -cwd files.
+      scratchPaths: ['/tmp/claude-${uid}', '/tmp/claude-*'],
     },
     setup: 'claude setup-token',
     docsUrl: 'https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp',
@@ -129,9 +132,12 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
       homeDirs: ['.claude', '.claude.json', '.claude.json.backup', '.config/claude'],
       // Claude Code hardcodes shell/task bookkeeping in system /tmp, ignoring
       // $TMPDIR: a /tmp/claude-<uid>/ tree (every Bash call fails at mkdir
-      // without it) and per-command /tmp/claude-<hex>-cwd tracking files. The
-      // glob covers both; macOS profiles compile globs to regex rules.
-      scratchPaths: ['/tmp/claude-*'],
+      // without it) and per-command /tmp/claude-<hex>-cwd tracking files.
+      // BOTH forms are required: the literal dir gets recursive subpath
+      // coverage (ASRT strips trailing /** from write globs, so a glob can
+      // never grant a subtree), while the single-segment glob covers the
+      // sibling -cwd files.
+      scratchPaths: ['/tmp/claude-${uid}', '/tmp/claude-*'],
     },
     docsUrl: 'https://www.npmjs.com/package/@zed-industries/claude-code-acp',
     note: "Zed's Claude Code ACP adapter. Auth with `claude /login` or ANTHROPIC_API_KEY.",
