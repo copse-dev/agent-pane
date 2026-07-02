@@ -27,6 +27,7 @@ import {
   type AcpModelSelector,
 } from './acp-client.ts'
 import { getAcpAgent } from './acp-agent-registry.ts'
+import { isAcpPermissionRemembered, rememberAcpPermission } from './acp-permission-grants.ts'
 import { unwrapInlineCode } from './session-update-adapter.ts'
 import { requestApproval } from '../approval.ts'
 import { awaitStagedDiffDecision, stageDiff } from '../diff-queue.ts'
@@ -228,7 +229,7 @@ export async function runAcpAgentFromSettings(
 
   const handlers: AcpClientHandlers = {
     onChunk,
-    requestPermission: (req) => respondToPermission(agent.title, req),
+    requestPermission: (req) => respondToPermission(agent, req),
     readTextFile,
     writeTextFile: (req) => writeViaDiffQueue(req, options.signal),
   }
@@ -311,34 +312,85 @@ export async function listAcpModelsForAgent(agentId: string): Promise<AcpModelSe
 /**
  * Map the external agent's `session/request_permission` to Copse's approval
  * dialog, then translate the user's yes/no back to one of the agent-provided
- * option ids (preferring a one-shot option), or `cancelled` when the agent
- * offered no matching option.
+ * option ids, or `cancelled` when the agent offered no matching option.
+ *
+ * Requests whose (agent, tool kind) pair was granted "always allow" earlier are
+ * approved without prompting; checking the dialog's remember box persists such
+ * a grant and also answers with the agent's own `allow_always` option so the
+ * agent-side session stops asking within the turn.
  */
 async function respondToPermission(
-  agentTitle: string,
+  agent: { id: string; title: string },
   req: RequestPermissionRequest,
 ): Promise<RequestPermissionResponse> {
+  const kind = req.toolCall.kind ?? 'other'
+  if (isAcpPermissionRemembered(agent.id, kind)) {
+    return permissionResponseFor(req.options, true, { preferAlways: true })
+  }
   const title = req.toolCall.title ? unwrapInlineCode(req.toolCall.title) : 'tool call'
-  const { approved } = await requestApproval({
-    title: `${agentTitle}: ${title}`,
+  const { approved, remember } = await requestApproval({
+    title: `${agent.title}: ${title}`,
     body: formatPermissionBody(req),
-    type: 'mcp',
+    type: approvalTypeForToolKind(kind),
+    allowRemember: true,
+    rememberLabel: `Always allow ${agent.title} ${permissionKindLabel(kind)}`,
   })
-  return permissionResponseFor(req.options, approved)
+  if (approved && remember) void rememberAcpPermission(agent.id, kind)
+  return permissionResponseFor(req.options, approved, { preferAlways: approved && remember })
 }
 
 /**
- * Translate the user's approve/deny into one of the agent-provided option ids,
- * preferring a one-shot option (`*_once`) over a remembered one (`*_always`)
- * since Copse asks per call. Falls back to `cancelled` when the agent offered no
- * option of the needed polarity.
+ * The approval dialog groups requests by a coarse type; map ACP's tool kind
+ * onto the closest one so ACP prompts read like their native counterparts.
+ */
+function approvalTypeForToolKind(kind: string): 'shell' | 'web' | 'mcp' {
+  if (kind === 'execute') return 'shell'
+  if (kind === 'fetch') return 'web'
+  return 'mcp'
+}
+
+/**
+ * Human wording for what an "always allow" grant of this ACP tool kind covers.
+ * ACP has no stable per-tool names (titles embed the concrete command), so the
+ * grant is kind-wide and the label must say so.
+ */
+export function permissionKindLabel(kind: string): string {
+  switch (kind) {
+    case 'read':
+      return 'file reads'
+    case 'edit':
+      return 'file edits'
+    case 'delete':
+      return 'deletions'
+    case 'move':
+      return 'file moves'
+    case 'search':
+      return 'searches'
+    case 'execute':
+      return 'terminal commands'
+    case 'fetch':
+      return 'web fetches'
+    default:
+      return `"${kind}" tool calls`
+  }
+}
+
+/**
+ * Translate the user's approve/deny into one of the agent-provided option ids.
+ * By default a one-shot option (`*_once`) wins over a remembered one
+ * (`*_always`) since Copse asks per call; `preferAlways` flips that for grants
+ * the user chose to remember. Falls back to `cancelled` when the agent offered
+ * no option of the needed polarity.
  */
 export function permissionResponseFor(
   options: PermissionOption[],
   approved: boolean,
+  opts?: { preferAlways?: boolean },
 ): RequestPermissionResponse {
   const wanted: PermissionOptionKind[] = approved
-    ? ['allow_once', 'allow_always']
+    ? opts?.preferAlways
+      ? ['allow_always', 'allow_once']
+      : ['allow_once', 'allow_always']
     : ['reject_once', 'reject_always']
   const option = pickPermissionOption(options, wanted)
   return option
@@ -357,20 +409,51 @@ function pickPermissionOption(
   return undefined
 }
 
-function formatPermissionBody(req: RequestPermissionRequest): string {
+/**
+ * Build a readable approval body from the agent's tool-call payload. External
+ * agents put the interesting fields (command, description, path, …) inside
+ * `rawInput`; a raw `JSON.stringify` of that object reads far worse than the
+ * labelled lines native approvals get, so scalar fields become `key: value`
+ * lines (the command shown bare, like shell prompts), lines that would only
+ * repeat the dialog title are dropped, and JSON remains as the fallback for
+ * nested or unrecognized shapes.
+ */
+export function formatPermissionBody(req: RequestPermissionRequest): string {
   const fallbackTitle = req.toolCall.title
     ? unwrapInlineCode(req.toolCall.title)
     : 'Run this tool call?'
   const input = req.toolCall.rawInput
   if (input === undefined || input === null) return fallbackTitle
-  if (typeof input === 'string') return input
-  try {
-    return JSON.stringify(input, null, 2)
-  } catch {
-    // Non-serializable input (e.g. a circular structure); the title is enough
-    // for the user to make an approval decision.
-    return fallbackTitle
+  if (typeof input === 'string') {
+    const text = unwrapInlineCode(input)
+    return text && text !== fallbackTitle ? text : fallbackTitle
   }
+  if (typeof input === 'number' || typeof input === 'boolean' || typeof input === 'bigint') {
+    return String(input)
+  }
+  if (typeof input !== 'object') return fallbackTitle
+
+  const lines: string[] = []
+  const nested: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+    if (value === undefined || value === null) continue
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      const text = typeof value === 'string' ? unwrapInlineCode(value) : String(value)
+      if (!text || text === fallbackTitle) continue
+      lines.push(key === 'command' ? text : `${key}: ${text}`)
+    } else {
+      nested[key] = value
+    }
+  }
+  if (Object.keys(nested).length > 0) {
+    try {
+      lines.push(JSON.stringify(nested, null, 2))
+    } catch {
+      // Non-serializable input (e.g. a circular structure); the scalar lines
+      // (or the title) are enough for the user to make an approval decision.
+    }
+  }
+  return lines.length > 0 ? lines.join('\n') : fallbackTitle
 }
 
 /** Back `fs/read_text_file` with a workspace-scoped read (path sandbox enforced). */

@@ -96,6 +96,24 @@
   opacity: 0.65;
   cursor: progress;
 }
+.composer-branch-continue-btn {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 12px;
+  text-align: center;
+  white-space: nowrap;
+}
+.composer-branch-continue-btn:hover:not(:disabled) {
+  border-color: var(--warning);
+}
+.composer-branch-continue-btn:disabled {
+  opacity: 0.65;
+  cursor: progress;
+}
 .prompt-input {
   /* leave room for the absolutely-positioned Send button (right) and the
      paperclip attach button (left) */
