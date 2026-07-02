@@ -1,62 +1,44 @@
 // CommonMark conformance harness for the *at-rest* renderer.
 //
-// `renderMarkdown()` is a deliberately small, app-specific renderer — not a
-// CommonMark implementation (see README.md: "Not a markdown library — keep it
-// that way."). It maps ATX `#` levels to `<h1>`–`<h6>`, decorates links with in-app
-// attributes, highlights fenced code, etc. So we do not expect full spec
-// conformance and we do not chase 100%.
-//
-// What this test *does* give us: every example from the official CommonMark
-// spec is run through `renderMarkdown` and compared (after the spec's own HTML
-// normalization) against the expected output. The set of examples we currently
-// satisfy is pinned in `conformance-baseline.json`. The test fails if that set
-// changes in either direction:
+// `renderMarkdown()` is app-specific in places (decorated links, highlighted code,
+// mermaid, etc.), but CommonMark is the structural reference we grow toward.
+// Every spec example is run through `renderMarkdown` and compared (after the
+// spec's own HTML normalizer) against the expected output. The set of examples
+// we currently satisfy is pinned in `conformance-baseline.json`. The test fails
+// if that set changes in either direction:
 //   - fewer passing examples  → a regression in a construct we used to handle.
 //   - more passing examples    → an improvement; re-run with
 //     `UPDATE_COMMONMARK_BASELINE=1` to record it.
+//
+// Full spec conformance is not required today, but new renderer work should not
+// regress the baseline and should land improvements when the change is focused.
 //
 // Streaming is intentionally NOT conformance-tested: partial-line output is
 // expected to differ from the final at-rest render (the live tail is escaped
 // plain text), so only `renderMarkdown` is measured here.
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { renderMarkdown } from './renderer.ts'
+import { stripAppImageAttributes, stripAppLinkAttributes } from './inline-links.ts'
 import { normalizeHtml } from '../../../tests/commonmark/normalize.ts'
+import {
+  loadConformanceBaseline,
+  type ConformanceBaseline,
+} from '../../../tests/commonmark/baseline-examples.ts'
 import {
   commonMarkSpecVersion,
   loadCommonMarkSpec,
   type SpecExample,
 } from '../../../tests/commonmark/load-spec.ts'
 
-interface Baseline {
-  specVersion: string
-  source: string
-  note: string
-  total: number
-  passing: number[]
-  summaryBySection: Record<string, { pass: number; total: number }>
-}
-
 const SPEC_VERSION = commonMarkSpecVersion()
-const ROOT = process.cwd()
-const BASELINE_PATH = resolve(ROOT, 'tests/fixtures/commonmark/conformance-baseline.json')
-
-function readJson(path: string, hint: string): unknown {
-  let raw: string
-  try {
-    raw = readFileSync(path, 'utf8')
-  } catch {
-    throw new Error(`Missing ${path}. ${hint}`)
-  }
-  return JSON.parse(raw)
-}
-
 const spec = loadCommonMarkSpec()
 
 function conforms(example: SpecExample): boolean {
-  return normalizeHtml(renderMarkdown(example.markdown)) === normalizeHtml(example.html)
+  const html = stripAppImageAttributes(stripAppLinkAttributes(renderMarkdown(example.markdown)))
+  return normalizeHtml(html) === normalizeHtml(example.html)
 }
 
 function computePassing(): number[] {
@@ -78,7 +60,7 @@ describe('CommonMark conformance (at rest)', () => {
   const passingSet = new Set(passing)
 
   if (process.env['UPDATE_COMMONMARK_BASELINE'] === '1') {
-    const baseline: Baseline = {
+    const baseline: ConformanceBaseline = {
       specVersion: SPEC_VERSION,
       source: `commonmark-spec@${SPEC_VERSION} (devDependency)`,
       note: 'Examples from the official CommonMark spec that renderMarkdown() satisfies at rest, after the spec normalizer. This is a regression baseline, not a conformance goal — the renderer is intentionally app-specific.',
@@ -86,17 +68,17 @@ describe('CommonMark conformance (at rest)', () => {
       passing,
       summaryBySection: summarize(passingSet),
     }
-    writeFileSync(BASELINE_PATH, JSON.stringify(baseline, null, 2) + '\n')
+    writeFileSync(
+      resolve(process.cwd(), 'tests/fixtures/commonmark/conformance-baseline.json'),
+      JSON.stringify(baseline, null, 2) + '\n',
+    )
     it('regenerated the conformance baseline', () => {
       assert.ok(passing.length > 0, 'expected at least one conforming example')
     })
     return
   }
 
-  const baseline = readJson(
-    BASELINE_PATH,
-    'Run `UPDATE_COMMONMARK_BASELINE=1 npm test` to generate it.',
-  ) as Baseline
+  const baseline = loadConformanceBaseline()
 
   it('pins the spec fixture version', () => {
     assert.equal(baseline.specVersion, SPEC_VERSION)

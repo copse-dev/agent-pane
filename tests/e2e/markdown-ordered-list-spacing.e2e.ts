@@ -64,7 +64,7 @@ describe('markdown ordered list spacing', () => {
     if (!isBeforeCapture) {
       expect(layout.olCount).toBe(1)
       expect(layout.liCount).toBe(3)
-      expect(layout.numberedParagraphs).toBe(1)
+      expect(layout.numberedParagraphs).toBe(7)
       expect(layout.hasNumberedParagraph).toBe(false)
       expect(layout.introToListGap).toBeGreaterThan(4)
       expect(layout.itemGap).toBeLessThan(12)

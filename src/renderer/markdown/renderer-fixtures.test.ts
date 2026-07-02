@@ -98,10 +98,13 @@ describe('renderMarkdown fixture structure: git summary ordered list (markdown-o
     assert.equal(root.querySelectorAll('ol > li').length, 3)
   })
 
-  it('keeps the intro as the only paragraph and never emits literal "1." text', () => {
+  it('wraps loose list items in paragraphs and never emits literal "1." text', () => {
     const root = render(content)
-    // e2e: numberedParagraphs === 1 (just the intro), hasNumberedParagraph === false
-    assert.equal(root.querySelectorAll('p').length, 1)
+    // Intro stays a standalone paragraph; loose list items each get their own <p> blocks.
+    const intro = root.querySelector('p')
+    assert.ok(intro, 'expected intro paragraph')
+    assert.ok(intro.textContent.includes('summary'))
+    assert.equal(root.querySelectorAll('ol > li > p').length, 6)
     assert.ok(!/^\d+\./.test(root.textContent.trim()))
   })
 
