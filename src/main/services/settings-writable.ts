@@ -51,6 +51,18 @@ export const acpAgentConfigSchema = z.object({
           )
           .max(32)
           .optional(),
+        scratchPaths: z
+          .array(
+            z
+              .string()
+              .min(2)
+              .max(1024)
+              .refine((p) => p.startsWith('/') && !p.split('/').includes('..'), {
+                message: 'scratchPaths entries must be absolute without ..',
+              }),
+          )
+          .max(16)
+          .optional(),
       }),
       z.literal(false),
     ])

@@ -41,6 +41,7 @@ import {
   listWorktreeChangesSince,
   stageDiff,
 } from '../diff-queue.ts'
+import { networkDenialMarker, networkDenialsSince } from '../../project-sandbox/network-scope.ts'
 import { detectLanguage } from '../language.ts'
 import {
   getActiveProjectRoot,
@@ -270,6 +271,7 @@ export async function runAcpAgentFromSettings(
     writeTextFile: (req) => writeViaDiffQueue(req, options.signal, queueWrites),
   }
   const baseline = await captureWorktreeBaseline()
+  const denialMark = networkDenialMarker()
 
   let stopReason: StopReason
   let usage: Awaited<ReturnType<typeof runAcpAgentPrompt>>['usage']
@@ -293,7 +295,9 @@ export async function runAcpAgentFromSettings(
         estimated: true,
       })
     }
-    // A dead turn may still have written via its own shell before failing.
+    // A dead turn may still have written via its own shell before failing —
+    // and a network denial is often WHY it died, so name the blocked hosts.
+    emitNetworkDenialAudit(denialMark, options.onChunk)
     await emitBypassedWriteAudit(baseline, queueWrites, options.onChunk)
     throw new AcpTurnFailure(err, {
       assistantText,
@@ -305,6 +309,7 @@ export async function runAcpAgentFromSettings(
     if (bridge) await bridge.close()
   }
 
+  emitNetworkDenialAudit(denialMark, options.onChunk)
   await emitBypassedWriteAudit(baseline, queueWrites, options.onChunk)
 
   // Attribute the external agent's token usage to this thread + model so it shows
@@ -482,6 +487,40 @@ async function emitBypassedWriteAudit(
 /** Canonicalize to the git-status path shape used by the worktree baseline. */
 function auditKey(relPath: string): string {
   return relPath.replace(/\\/g, '/').replace(/^(?:\.\/)+/, '')
+}
+
+/**
+ * Name the network destinations the sandbox blocked during this turn — ASRT's
+ * own 403 body doesn't say which host, which made allowlist gaps guesswork
+ * (e.g. an agent's OAuth endpoint missing from `sandbox.allowedDomains`).
+ * Denials are recorded globally, so the bracket can occasionally include a
+ * concurrent contained command's denial; the copy stays honest about that.
+ */
+function emitNetworkDenialAudit(marker: number, onChunk: (chunk: StreamChunk) => void): void {
+  const denied = networkDenialsSince(marker)
+  if (denied.length === 0) return
+  const hosts = [
+    ...new Set(
+      denied.map((denial) =>
+        denial.port !== undefined ? `${denial.host}:${String(denial.port)}` : denial.host,
+      ),
+    ),
+  ]
+  const id = `acp-network-audit-${randomUUID()}`
+  onChunk({
+    type: 'tool_call',
+    toolCall: { id, name: 'sandbox_network_audit', args: { blocked: hosts } },
+  })
+  onChunk({
+    type: 'tool_result',
+    toolCallId: id,
+    result:
+      'The sandbox blocked these network destinations while the turn ran:\n' +
+      hosts.map((host) => `- ${host}`).join('\n') +
+      "\nIf the agent needs one legitimately, add its domain to the agent's " +
+      'sandbox.allowedDomains override in Settings → ACP agents.',
+    isError: false,
+  })
 }
 
 /**

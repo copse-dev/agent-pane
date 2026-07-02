@@ -56,7 +56,7 @@ export interface KnownAcpAgent {
    * onto the registered `AcpAgentConfig`; agents without a preset spawn
    * unsandboxed. Keep domains minimal — the user can widen them per agent.
    */
-  sandbox?: { allowedDomains: string[]; homeDirs?: string[] }
+  sandbox?: { allowedDomains: string[]; homeDirs?: string[]; scratchPaths?: string[] }
   /** Shell command that authenticates the agent / mints a token (e.g. `claude setup-token`). */
   setup?: string
   /** Where to read more about the agent. */
@@ -101,6 +101,9 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
       // auth ("403 Connection blocked by network allowlist") when they do.
       allowedDomains: ['anthropic.com', '*.anthropic.com', 'claude.ai', '*.claude.ai'],
       homeDirs: ['.claude', '.claude.json', '.claude.json.backup', '.config/claude'],
+      // Claude Code hardcodes shell/task bookkeeping under /tmp/claude-<uid>,
+      // ignoring $TMPDIR — without this every Bash call fails at mkdir.
+      scratchPaths: ['/tmp/claude-${uid}'],
     },
     setup: 'claude setup-token',
     docsUrl: 'https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp',
@@ -122,6 +125,9 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
       // auth ("403 Connection blocked by network allowlist") when they do.
       allowedDomains: ['anthropic.com', '*.anthropic.com', 'claude.ai', '*.claude.ai'],
       homeDirs: ['.claude', '.claude.json', '.claude.json.backup', '.config/claude'],
+      // Claude Code hardcodes shell/task bookkeeping under /tmp/claude-<uid>,
+      // ignoring $TMPDIR — without this every Bash call fails at mkdir.
+      scratchPaths: ['/tmp/claude-${uid}'],
     },
     docsUrl: 'https://www.npmjs.com/package/@zed-industries/claude-code-acp',
     note: "Zed's Claude Code ACP adapter. Auth with `claude /login` or ANTHROPIC_API_KEY.",

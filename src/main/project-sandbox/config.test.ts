@@ -55,6 +55,22 @@ describe('acpAgentSandboxOverlay', () => {
     const base = workspaceSandboxOverlay(workspace)
     assert.deepEqual(overlay.filesystem?.denyWrite, base.filesystem?.denyWrite)
   })
+
+  it('allows hardcoded agent scratch paths with ${uid} expanded, in both /tmp spellings', () => {
+    const uid = typeof process.getuid === 'function' ? process.getuid() : 0
+    const overlay = acpAgentSandboxOverlay(workspace, {
+      ...sandbox,
+      scratchPaths: ['/tmp/claude-${uid}'],
+    })
+    for (const list of [overlay.filesystem?.allowRead, overlay.filesystem?.allowWrite]) {
+      assert.ok(list, 'overlay must define allowRead/allowWrite')
+      assert.ok(list.includes(`/tmp/claude-${String(uid)}`))
+      assert.ok(list.includes(`/tmp/claude-${String(uid)}/**`))
+      // macOS: the kernel canonicalizes /tmp to /private/tmp — both must match.
+      assert.ok(list.includes(`/private/tmp/claude-${String(uid)}`))
+      assert.ok(list.includes(`/private/tmp/claude-${String(uid)}/**`))
+    }
+  })
 })
 
 describe('resolveNodeToolchainAllowRead', () => {

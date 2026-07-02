@@ -15,6 +15,13 @@ export interface AcpAgentSandboxConfig {
    * own configuration, credentials, and state.
    */
   homeDirs?: string[]
+  /**
+   * Absolute scratch paths the agent hardcodes and may read/write; `${uid}`
+   * expands to the numeric user id. Needed because some agents ignore the
+   * $TMPDIR redirect — Claude Code keeps shell bookkeeping under
+   * `/tmp/claude-<uid>` and every Bash call EPERMs without it.
+   */
+  scratchPaths?: string[]
 }
 
 /**

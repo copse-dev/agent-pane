@@ -67,3 +67,36 @@ export function acquireSandboxNetworkScope(scope: SandboxNetworkScope): () => vo
     applyScopes()
   }
 }
+
+/**
+ * Recent network denials recorded by the ASRT ask-callback (see
+ * `initProjectSandbox`). ASRT's own 403 body ("Connection blocked by network
+ * allowlist") names no host, which makes allowlist gaps un-debuggable from the
+ * chat — the ring buffer lets callers bracket a turn and report exactly which
+ * destinations were blocked in it.
+ */
+export interface NetworkDenial {
+  seq: number
+  host: string
+  /** Absent when the proxy didn't report one (e.g. some SOCKS denials). */
+  port?: number
+}
+
+const MAX_RECORDED_DENIALS = 200
+const recordedDenials: NetworkDenial[] = []
+let denialSeq = 0
+
+export function recordNetworkDenial(host: string, port?: number): void {
+  denialSeq++
+  recordedDenials.push({ seq: denialSeq, host, ...(port !== undefined ? { port } : {}) })
+  if (recordedDenials.length > MAX_RECORDED_DENIALS) recordedDenials.shift()
+}
+
+/** Opaque marker for "now"; pass to {@link networkDenialsSince} to bracket a window. */
+export function networkDenialMarker(): number {
+  return denialSeq
+}
+
+export function networkDenialsSince(marker: number): NetworkDenial[] {
+  return recordedDenials.filter((denial) => denial.seq > marker)
+}
