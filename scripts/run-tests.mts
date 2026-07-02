@@ -41,6 +41,20 @@ await esbuild.build({
     },
   ],
 })
+// Warm up Electron's binary once, serially, before the parallel test run.
+// Many src/main test files `require('electron')`, and electron@42 lazily
+// extracts its `dist/` on first require when the install did not fully populate
+// it. `node --test` runs test files in parallel, so concurrent extraction
+// races — "failed to create directory .../electron/dist/…: File exists (os
+// error 17)" / "Electron failed to install correctly". A single serial require
+// here does the one-time extraction so the parallel workers all find `dist/`
+// present. Harmless (returns immediately) when Electron is already installed.
+const electronWarmup = spawnSync('node', ['-e', 'require("electron")'], { stdio: 'inherit' })
+if (electronWarmup.status !== 0) {
+  console.warn(
+    `[run-tests] electron warmup exited ${String(electronWarmup.status)}; continuing to tests`,
+  )
+}
 // DIAGNOSTIC (temporary): live TAP still streams to stdout (stdio inherit, so
 // the job never looks hung), while a second TAP reporter captures the same
 // output to a file we post-process. The default reporter scatters failures
