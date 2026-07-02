@@ -63,7 +63,7 @@ describe('renderMarkdown', () => {
 
   it('continues a list item across a blank with lazy indentation (#256)', () => {
     const html = renderMarkdown('- one\n\n  two\n')
-    assert.match(html, /<ul><li><p>one<\/p><p>two<\/p><\/li><\/ul>/)
+    assert.match(html, /<ul><li><p>one<\/p>\s*<p>two<\/p><\/li><\/ul>/)
   })
 
   it('splits unordered lists when the marker character changes (#301)', () => {
@@ -163,11 +163,11 @@ describe('renderMarkdown', () => {
     assert.match(html, /<ol>/)
     assert.match(
       html,
-      /<li><p><code>src\/main\/foo\.ts<\/code><\/p><p>Introduces <strong>foo<\/strong> handling\.<\/p><\/li>/,
+      /<li><p><code>src\/main\/foo\.ts<\/code><\/p>\s*<p>Introduces <strong>foo<\/strong> handling\.<\/p><\/li>/,
     )
     assert.match(
       html,
-      /<li><p><code>src\/main\/bar\.ts<\/code><\/p><p>Worker thread for bar\.<\/p><\/li>/,
+      /<li><p><code>src\/main\/bar\.ts<\/code><\/p>\s*<p>Worker thread for bar\.<\/p><\/li>/,
     )
     assert.doesNotMatch(html, /<p>1\./)
     assert.doesNotMatch(html, /<p>2\./)
@@ -538,10 +538,11 @@ describe('renderMarkdown sanitization (#115)', () => {
     assert.match(html, /&lt;script&gt;/)
   })
 
-  it('encodes ampersands so entity injection cannot reconstruct markup', () => {
-    // &lt;script&gt; in the source must stay literal, not decode to a tag.
+  it('decodes entities to inert text that can never reconstruct markup', () => {
+    // CommonMark decodes &lt;script&gt; to the literal text "<script>", which
+    // must be emitted HTML-escaped — never as a live tag.
     const html = renderMarkdown('AT&T &lt;script&gt; &amp; more')
-    assert.match(html, /AT&amp;T &amp;lt;script&amp;gt; &amp;amp; more/)
+    assert.match(html, /AT&amp;T &lt;script&gt; &amp; more/)
     assert.doesNotMatch(html, /<script>/)
   })
 
@@ -591,8 +592,8 @@ describe('renderMarkdown CommonMark structure fixes', () => {
     assert.match(renderMarkdown('foo\\\nbar'), /<p>foo<br>bar<\/p>/)
   })
 
-  it('keeps an even backslash run literal (escaped backslash, soft break)', () => {
-    assert.match(renderMarkdown('foo\\\\\nbar'), /<p>foo\\\\\nbar<\/p>/)
+  it('collapses an escaped backslash to one literal backslash with a soft break', () => {
+    assert.match(renderMarkdown('foo\\\\\nbar'), /<p>foo\\\nbar<\/p>/)
   })
 
   it('strips continuation-line indentation after a hard break', () => {
@@ -617,5 +618,42 @@ describe('renderMarkdown CommonMark structure fixes', () => {
     assert.match(renderMarkdown('`foo  \nbar`'), /<code>foo {3}bar<\/code>/)
     assert.doesNotMatch(renderMarkdown('foo\\'), /<br>/)
     assert.doesNotMatch(renderMarkdown('foo  \n'), /<br>/)
+  })
+})
+
+describe('renderMarkdown list-item block content (#595)', () => {
+  it('nests indented sublists inside their parent item', () => {
+    const html = renderMarkdown('- a\n  - b\n- c\n')
+    assert.match(html, /<li>a\s*<ul><li>b<\/li><\/ul><\/li>/)
+  })
+
+  it('renders fenced code and blockquotes inside list items', () => {
+    const html = renderMarkdown('1. foo\n\n   ```\n   bar\n   ```\n\n   > bam\n')
+    assert.match(html, /<li><p>foo<\/p>\s*<pre><code[^>]*>bar/)
+    assert.match(html, /<blockquote><p>bam<\/p><\/blockquote><\/li>/)
+  })
+
+  it('renders document-level indented code blocks', () => {
+    assert.match(
+      renderMarkdown('    code line\n\npara\n'),
+      /<pre><code>code line\n<\/code><\/pre>\s*<p>para<\/p>/,
+    )
+  })
+
+  it('renders indented code inside a list item (spec #270)', () => {
+    assert.match(
+      renderMarkdown('- foo\n\n      bar\n'),
+      /<li><p>foo<\/p>\s*<pre><code>bar\n<\/code><\/pre><\/li>/,
+    )
+  })
+
+  it('keeps lazy under-indented markers as paragraph text (spec #312)', () => {
+    const html = renderMarkdown('- a\n - b\n  - c\n   - d\n    - e\n')
+    assert.match(html, /<li>d - e<\/li>/)
+    assert.doesNotMatch(html, /<li>d<ul>/)
+  })
+
+  it('indented code cannot interrupt a paragraph (spec #225)', () => {
+    assert.match(renderMarkdown('aaa\n    bbb\n'), /<p>aaa\n\s*bbb<\/p>/)
   })
 })

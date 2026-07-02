@@ -1,4 +1,4 @@
-import '../../../tests/setup-dom-jsdom.ts'
+import '../tests/setup-dom-jsdom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { renderPendingLine } from './render-pending-line.ts'

@@ -1,7 +1,7 @@
+import { decodeEscapedPunctuationRaw } from './backslash-escapes.ts'
 import { decodeEscapedHref, escapeHtml } from './escape.ts'
-import { isWorkspaceMarkdownLinkHref } from '@shared/fs/workspace-link-href.ts'
+import { isWorkspaceMarkdownLinkHref } from './workspace-link-href.ts'
 import {
-  decodeEscapes,
   encodeHrefForOutput,
   lookupLinkReference,
   type LinkReferenceMap,
@@ -14,7 +14,7 @@ export type LinkLabelRenderer = (label: string, refs: LinkReferenceMap) => strin
 
 /** Allowed link destinations: http(s), mailto, and relative/path forms. Rejects dangerous schemes. */
 export function safeLinkHref(raw: string): string | null {
-  const href = decodeEscapedHref(raw).trim()
+  const href = decodeEscapedPunctuationRaw(decodeEscapedHref(raw)).trim()
   if (/^(javascript|data|vbscript):/i.test(href)) return null
   return encodeHrefForOutput(href)
 }
@@ -37,7 +37,9 @@ function renderLinkLabel(
   refs: LinkReferenceMap,
   renderLabel: LinkLabelRenderer,
 ): string {
-  return renderLabel(decodeEscapes(label), refs)
+  // Label text stays PUA-encoded through nested rendering (inert to all
+  // passes); the outer decode pass restores the literal punctuation.
+  return renderLabel(label, refs)
 }
 
 /** Nested `[` link (not image) inside link label text — forbidden by CommonMark. */

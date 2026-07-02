@@ -3,6 +3,9 @@
   "references": [{ "path": "./tsconfig.node.json" }, { "path": "./tsconfig.web.json" }],
   "compilerOptions": {
     "baseUrl": ".",
-    "paths": { "@shared/*": ["./src/shared/*"] }
+    "paths": {
+      "@shared/*": ["./src/shared/*"],
+      "@copse/streaming-markdown": ["./packages/streaming-markdown/src/index.ts"]
+    }
   }
 }

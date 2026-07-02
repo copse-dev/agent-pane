@@ -1,3 +1,4 @@
+import { decodeEscapedPunctuation, encodeBackslashEscapes } from './backslash-escapes.ts'
 import { escapeHtml, escapeHtmlTextNodes } from './escape.ts'
 import { renderAngleAutolinks } from './inline-autolinks.ts'
 import { renderInlineCode } from './inline-code-spans.ts'
@@ -6,6 +7,9 @@ import { renderInlineLinks, safeLinkHref } from './inline-links.ts'
 import { type LinkReferenceMap } from './link-references.ts'
 
 function renderNestedInlineSpans(t: string, linkRefs: LinkReferenceMap): string {
+  // Backslash-escaped punctuation is encoded to inert PUA characters first so
+  // no later pass can interpret it (encoding is idempotent for nested calls).
+  t = encodeBackslashEscapes(t)
   t = renderInlineCode(t)
   t = renderAngleAutolinks(t)
   t = renderStrongAroundCode(t)
@@ -22,7 +26,7 @@ function renderNestedInlineSpans(t: string, linkRefs: LinkReferenceMap): string 
  * so emphasis cannot pair across cell boundaries (#469).
  */
 export function renderInlineSpans(t: string, linkRefs: LinkReferenceMap = new Map()): string {
-  return escapeHtmlTextNodes(renderNestedInlineSpans(t, linkRefs))
+  return decodeEscapedPunctuation(escapeHtmlTextNodes(renderNestedInlineSpans(t, linkRefs)))
 }
 
 /** Delimiter stack cannot pair `**` across a `<code>` shield. */

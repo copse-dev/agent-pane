@@ -6,6 +6,7 @@ import {
 } from './block-patterns.ts'
 import {
   type BlockToken,
+  isAmbiguousBlockLine,
   listItemContentColumn,
   orderedListMarkerDelimiter,
   parseOrderedListMarker,
@@ -14,13 +15,15 @@ import {
   tokenizeBlocks,
   unorderedListMarkerChar,
 } from './block-tokenizer.ts'
-import { escapeMermaidHtml } from './escape.ts'
+import { escapeHtml, escapeMermaidHtml } from './escape.ts'
 import { fenceCodeClass, highlightFenceCode } from './highlight.ts'
 import { type LinkReferenceMap } from './link-references.ts'
 import { renderProseBlock } from './render-prose-inline.ts'
 
 export interface RenderBlocksOptions {
   linkRefs?: LinkReferenceMap
+  /** Tight list items render top-level paragraphs bare (no <p>, space soft breaks). */
+  tightParagraphs?: boolean
 }
 
 const BLOCKQUOTE_LINE_RE = /^> ?/
@@ -34,15 +37,12 @@ function renderFencedBlock(lang: string, code: string): string {
   return `<pre><code class="${fenceCodeClass(lang)}">${body}</code></pre>`
 }
 
-function dedentLazyContinuation(text: string, itemFirstLine: string): string {
-  const col = listItemContentColumn(itemFirstLine)
-  return text
-    .split('\n')
-    .map((line) => {
-      const indent = line.match(/^ */)?.[0].length ?? 0
-      return line.slice(Math.min(indent, col))
-    })
-    .join('\n')
+function renderIndentedCode(slice: string): string {
+  const lines = dropTrailingNewline(slice).split('\n')
+  while (lines.length && (lines.at(-1) ?? '').trim() === '') lines.pop()
+  const code = lines.map((l) => l.replace(/^ {1,4}/, '')).join('\n')
+  if (code.trim() === '') return ''
+  return `<pre><code>${escapeHtml(code)}\n</code></pre>`
 }
 
 /** Strip up to three leading spaces per line (CommonMark paragraph normalization). */
@@ -78,34 +78,50 @@ function renderListItemContent(
   linkRefs: LinkReferenceMap,
 ): string {
   const normalized = dropTrailingNewline(slice)
-  const firstLine = normalized.split('\n').find((l) => l.trim() !== '') ?? ''
-  const paragraphs = splitListItemParagraphs(normalized)
-  const rendered = paragraphs.map((p, index) => {
-    const lines = p.split('\n')
-    const text =
-      index === 0
-        ? lines
-            .map((line, lineIndex) =>
-              lineIndex === 0
-                ? line.slice(listItemContentColumn(line))
-                : dedentLazyContinuation(line, firstLine),
-            )
-            .join('\n')
-        : dedentLazyContinuation(p, firstLine)
-    return renderProseBlock(text, linkRefs, listLoose ? 'newline' : 'space')
+  const lines = normalized.split('\n')
+  const first = lines.find((l) => l.trim() !== '') ?? ''
+  const col = listItemContentColumn(first)
+  const dedented: string[] = []
+  lines.forEach((line, index) => {
+    if (index === 0) {
+      dedented.push(line.slice(Math.min(col, line.length)))
+      return
+    }
+    const indent = line.match(/^ */)?.[0].length ?? 0
+    if (indent >= col) {
+      dedented.push(line.slice(col))
+      return
+    }
+    const stripped = line.slice(indent)
+    const prev = dedented.at(-1)
+    // A lazy (under-indented) continuation can only extend the open paragraph;
+    // it can never open a new block inside the item (CommonMark #312).
+    if (
+      stripped.trim() !== '' &&
+      prev !== undefined &&
+      prev.trim() !== '' &&
+      isAmbiguousBlockLine(stripped)
+    ) {
+      dedented[dedented.length - 1] = `${prev} ${stripped}`
+      return
+    }
+    dedented.push(stripped)
   })
-  if (rendered.length === 0) return ''
-  if (listLoose) {
-    return rendered.map((p) => `<p>${p}</p>`).join('')
-  }
-  return rendered.join(' ')
+  const inner = dedented.join('\n')
+  if (inner.trim() === '') return ''
+  // Item content is a block fragment in its own right: recursive tokenization
+  // handles nested lists, fences, blockquotes, and indented code (#595).
+  return renderBlocks(inner, tokenizeBlocks(inner), {
+    linkRefs,
+    tightParagraphs: !listLoose,
+  })
 }
 
-function renderParagraph(slice: string, linkRefs: LinkReferenceMap): string {
+function renderParagraph(slice: string, linkRefs: LinkReferenceMap, tight = false): string {
   const body = stripParagraphIndent(dropTrailingNewline(slice))
-  const rendered = renderProseBlock(body, linkRefs)
+  const rendered = renderProseBlock(body, linkRefs, tight ? 'space' : 'newline')
   if (rendered === '') return ''
-  return `<p>${rendered}</p>`
+  return tight ? rendered : `<p>${rendered}</p>`
 }
 
 function renderAtxHeading(slice: string, linkRefs: LinkReferenceMap): string {
@@ -263,9 +279,16 @@ function collectBlockquoteGroup(
   }
 }
 
-function renderSingleBlock(source: string, token: BlockToken, linkRefs: LinkReferenceMap): string {
+function renderSingleBlock(
+  source: string,
+  token: BlockToken,
+  linkRefs: LinkReferenceMap,
+  tightParagraphs: boolean,
+): string {
   const slice = source.slice(token.start, token.end)
   switch (token.kind) {
+    case 'indented_code':
+      return renderIndentedCode(slice)
     case 'fence': {
       const { lang, code } = parseFenceSlice(slice)
       return renderFencedBlock(lang, code)
@@ -286,9 +309,9 @@ function renderSingleBlock(source: string, token: BlockToken, linkRefs: LinkRefe
     case 'blank':
       return ''
     case 'paragraph':
-      return renderParagraph(slice, linkRefs)
+      return renderParagraph(slice, linkRefs, tightParagraphs)
     default:
-      return renderParagraph(slice, linkRefs)
+      return renderParagraph(slice, linkRefs, tightParagraphs)
   }
 }
 
@@ -299,6 +322,7 @@ export function renderBlocks(
   options: RenderBlocksOptions = {},
 ): string {
   const linkRefs = options.linkRefs ?? new Map()
+  const tightParagraphs = options.tightParagraphs ?? false
   const parts: string[] = []
   let i = 0
   while (i < tokens.length) {
@@ -320,7 +344,7 @@ export function renderBlocks(
       i = group.next
       continue
     }
-    const html = renderSingleBlock(source, token, linkRefs)
+    const html = renderSingleBlock(source, token, linkRefs, tightParagraphs)
     if (html) parts.push(html)
     i++
   }

@@ -23,16 +23,16 @@ import { resolve } from 'node:path'
 import { renderMarkdown } from './renderer.ts'
 import { stripAppCodeDecorations } from './highlight.ts'
 import { stripAppImageAttributes, stripAppLinkAttributes } from './inline-links.ts'
-import { normalizeHtml } from '../../../tests/commonmark/normalize.ts'
+import { normalizeHtml } from '../tests/commonmark/normalize.ts'
 import {
   loadConformanceBaseline,
   type ConformanceBaseline,
-} from '../../../tests/commonmark/baseline-examples.ts'
+} from '../tests/commonmark/baseline-examples.ts'
 import {
   commonMarkSpecVersion,
   loadCommonMarkSpec,
   type SpecExample,
-} from '../../../tests/commonmark/load-spec.ts'
+} from '../tests/commonmark/load-spec.ts'
 
 const SPEC_VERSION = commonMarkSpecVersion()
 const spec = loadCommonMarkSpec()
@@ -72,7 +72,10 @@ describe('CommonMark conformance (at rest)', () => {
       summaryBySection: summarize(passingSet),
     }
     writeFileSync(
-      resolve(process.cwd(), 'tests/fixtures/commonmark/conformance-baseline.json'),
+      resolve(
+        process.cwd(),
+        'packages/streaming-markdown/tests/fixtures/commonmark/conformance-baseline.json',
+      ),
       JSON.stringify(baseline, null, 2) + '\n',
     )
     it('regenerated the conformance baseline', () => {
