@@ -27,7 +27,8 @@ import {
   type AcpModelSelector,
 } from './acp-client.ts'
 import { getAcpAgent } from './acp-agent-registry.ts'
-import { unwrapInlineCode } from './session-update-adapter.ts'
+import { isAcpPermissionRemembered, rememberAcpPermission } from './acp-permission-grants.ts'
+import { permissionKindLabel, presentPermissionRequest } from './acp-approval-presentation.ts'
 import { requestApproval } from '../approval.ts'
 import { awaitStagedDiffDecision, stageDiff } from '../diff-queue.ts'
 import { detectLanguage } from '../language.ts'
@@ -228,7 +229,7 @@ export async function runAcpAgentFromSettings(
 
   const handlers: AcpClientHandlers = {
     onChunk,
-    requestPermission: (req) => respondToPermission(agent.title, req),
+    requestPermission: (req) => respondToPermission(agent, req),
     readTextFile,
     writeTextFile: (req) => writeViaDiffQueue(req, options.signal),
   }
@@ -311,34 +312,47 @@ export async function listAcpModelsForAgent(agentId: string): Promise<AcpModelSe
 /**
  * Map the external agent's `session/request_permission` to Copse's approval
  * dialog, then translate the user's yes/no back to one of the agent-provided
- * option ids (preferring a one-shot option), or `cancelled` when the agent
- * offered no matching option.
+ * option ids, or `cancelled` when the agent offered no matching option.
+ *
+ * Requests whose (agent, tool kind) pair was granted "always allow" earlier are
+ * approved without prompting; checking the dialog's remember box persists such
+ * a grant and also answers with the agent's own `allow_always` option so the
+ * agent-side session stops asking within the turn.
  */
 async function respondToPermission(
-  agentTitle: string,
+  agent: { id: string; title: string },
   req: RequestPermissionRequest,
 ): Promise<RequestPermissionResponse> {
-  const title = req.toolCall.title ? unwrapInlineCode(req.toolCall.title) : 'tool call'
-  const { approved } = await requestApproval({
-    title: `${agentTitle}: ${title}`,
-    body: formatPermissionBody(req),
-    type: 'mcp',
+  const kind = req.toolCall.kind ?? 'other'
+  if (isAcpPermissionRemembered(agent.id, kind)) {
+    return permissionResponseFor(req.options, true, { preferAlways: true })
+  }
+  const presentation = presentPermissionRequest(agent.title, req)
+  const { approved, remember } = await requestApproval({
+    ...presentation,
+    allowRemember: true,
+    rememberLabel: `Always allow ${agent.title} ${permissionKindLabel(kind)}`,
   })
-  return permissionResponseFor(req.options, approved)
+  if (approved && remember) void rememberAcpPermission(agent.id, kind)
+  return permissionResponseFor(req.options, approved, { preferAlways: approved && remember })
 }
 
 /**
- * Translate the user's approve/deny into one of the agent-provided option ids,
- * preferring a one-shot option (`*_once`) over a remembered one (`*_always`)
- * since Copse asks per call. Falls back to `cancelled` when the agent offered no
- * option of the needed polarity.
+ * Translate the user's approve/deny into one of the agent-provided option ids.
+ * By default a one-shot option (`*_once`) wins over a remembered one
+ * (`*_always`) since Copse asks per call; `preferAlways` flips that for grants
+ * the user chose to remember. Falls back to `cancelled` when the agent offered
+ * no option of the needed polarity.
  */
 export function permissionResponseFor(
   options: PermissionOption[],
   approved: boolean,
+  opts?: { preferAlways?: boolean },
 ): RequestPermissionResponse {
   const wanted: PermissionOptionKind[] = approved
-    ? ['allow_once', 'allow_always']
+    ? opts?.preferAlways
+      ? ['allow_always', 'allow_once']
+      : ['allow_once', 'allow_always']
     : ['reject_once', 'reject_always']
   const option = pickPermissionOption(options, wanted)
   return option
@@ -355,22 +369,6 @@ function pickPermissionOption(
     if (match) return match
   }
   return undefined
-}
-
-function formatPermissionBody(req: RequestPermissionRequest): string {
-  const fallbackTitle = req.toolCall.title
-    ? unwrapInlineCode(req.toolCall.title)
-    : 'Run this tool call?'
-  const input = req.toolCall.rawInput
-  if (input === undefined || input === null) return fallbackTitle
-  if (typeof input === 'string') return input
-  try {
-    return JSON.stringify(input, null, 2)
-  } catch {
-    // Non-serializable input (e.g. a circular structure); the title is enough
-    // for the user to make an approval decision.
-    return fallbackTitle
-  }
 }
 
 /** Back `fs/read_text_file` with a workspace-scoped read (path sandbox enforced). */
