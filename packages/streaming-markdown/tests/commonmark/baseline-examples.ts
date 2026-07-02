@@ -11,7 +11,10 @@ export interface ConformanceBaseline {
   summaryBySection: Record<string, { pass: number; total: number }>
 }
 
-const BASELINE_PATH = resolve(process.cwd(), 'tests/fixtures/commonmark/conformance-baseline.json')
+const BASELINE_PATH = resolve(
+  process.cwd(),
+  'packages/streaming-markdown/tests/fixtures/commonmark/conformance-baseline.json',
+)
 
 /** Pinned CommonMark conformance baseline (see `conformance-baseline.json`). */
 export function loadConformanceBaseline(): ConformanceBaseline {

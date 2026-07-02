@@ -8,6 +8,7 @@ const storageShim = resolve('src/main/services/storage.test-shim.ts')
 
 const testFiles: string[] = []
 for await (const f of glob('src/**/*.test.ts')) testFiles.push(f)
+for await (const f of glob('packages/*/src/**/*.test.ts')) testFiles.push(f)
 await rm('dist-test', { recursive: true, force: true })
 await esbuild.build({
   entryPoints: testFiles,
@@ -17,7 +18,10 @@ await esbuild.build({
   format: 'cjs',
   sourcemap: true,
   external: ['electron', 'node-pty', 'jsdom', '@mozilla/readability', 'turndown'],
-  alias: { '@shared': resolve('./src/shared') },
+  alias: {
+    '@shared': resolve('./src/shared'),
+    '@copse/streaming-markdown': resolve('./packages/streaming-markdown/src/index.ts'),
+  },
   // Unit tests cover the directive parser, so they always build with it enabled.
   define: { __COPSE_TEST_DIRECTIVES__: 'true' },
   plugins: [
@@ -36,5 +40,19 @@ await esbuild.build({
     },
   ],
 })
+// Warm up Electron's binary once, serially, before the parallel test run.
+// Many src/main test files `require('electron')`, and electron@42 lazily
+// extracts its `dist/` on first require when the install did not fully populate
+// it. `node --test` runs test files in parallel, so concurrent extraction
+// races — "failed to create directory .../electron/dist/…: File exists (os
+// error 17)" / "Electron failed to install correctly". A single serial require
+// here does the one-time extraction so the parallel workers all find `dist/`
+// present. Harmless (returns immediately) when Electron is already installed.
+const electronWarmup = spawnSync('node', ['-e', 'require("electron")'], { stdio: 'inherit' })
+if (electronWarmup.status !== 0) {
+  console.warn(
+    `[run-tests] electron warmup exited ${String(electronWarmup.status)}; continuing to tests`,
+  )
+}
 const result = spawnSync('node', ['--test', 'dist-test/**/*.test.js'], { stdio: 'inherit' })
 process.exit(result.status ?? 1)

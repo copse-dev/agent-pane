@@ -1,9 +1,9 @@
 // Property test: incremental streaming must converge to the same display as a
 // fresh complete render, using CommonMark baseline examples as fuzz inputs.
-import '../../../tests/setup-dom-jsdom.ts'
+import '../tests/setup-dom-jsdom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { loadBaselinePassingExamples } from '../../../tests/commonmark/baseline-examples.ts'
+import { loadBaselinePassingExamples } from '../tests/commonmark/baseline-examples.ts'
 import { renderMarkdown } from './renderer.ts'
 import { sanitizeRenderedMarkdown } from './sanitize.ts'
 import {

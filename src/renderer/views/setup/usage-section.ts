@@ -7,7 +7,7 @@ import {
   formatUsd,
 } from '@shared/usage/format-usage-summary.ts'
 import { qsRequired } from '../../dom/helpers.ts'
-import { escapeHtml } from '../../markdown/escape.ts'
+import { escapeHtml } from '@copse/streaming-markdown'
 
 export type UsagePeriodKey = 'day' | 'month' | 'period90d' | 'allTime'
 

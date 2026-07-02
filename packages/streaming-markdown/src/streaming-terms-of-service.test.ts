@@ -3,14 +3,17 @@
  * fee table, blockquotes, and fenced address block. Catches partial table renders
  * (raw | cell | text in inline pending) while streaming.
  */
-import '../../../tests/setup-dom-jsdom.ts'
+import '../tests/setup-dom-jsdom.ts'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { renderStreamingMarkdown, StreamingMarkdownRenderer } from './streaming.ts'
 
-const TERMS_PATH = resolve(process.cwd(), 'tests/fixtures/terms-of-service-streaming.md')
+const TERMS_PATH = resolve(
+  process.cwd(),
+  'packages/streaming-markdown/tests/fixtures/terms-of-service-streaming.md',
+)
 const TERMS = readFileSync(TERMS_PATH, 'utf8')
 
 const SUBSCRIPTION_TABLE_MARKER =

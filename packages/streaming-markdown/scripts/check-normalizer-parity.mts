@@ -90,7 +90,7 @@ interface Harness {
 // Bundle the renderer + JS normalizer + spec loader into one importable module
 // (the same way scripts/run-tests.mts bundles tests), then load it via data URL.
 const entry = [
-  `export { renderMarkdown } from ${JSON.stringify(resolve(ROOT, 'src/renderer/markdown/renderer.ts'))}`,
+  `export { renderMarkdown } from ${JSON.stringify(resolve(ROOT, 'src/renderer.ts'))}`,
   `export { normalizeHtml } from ${JSON.stringify(resolve(ROOT, 'tests/commonmark/normalize.ts'))}`,
   `export { loadCommonMarkSpec } from ${JSON.stringify(resolve(ROOT, 'tests/commonmark/load-spec.ts'))}`,
 ].join('\n')
