@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync, existsSync, copyFileSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  writeFileSync,
+  rmSync,
+  existsSync,
+  copyFileSync,
+  readFileSync,
+} from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { e2eGitBranch } from './e2e-env.ts'
 import { homedir, tmpdir } from 'node:os'
@@ -309,6 +317,43 @@ export function seedSprintRetroNbspFixture(workspaceRoot: string): void {
           messages: [
             {
               id: 'msg-assistant-sprint-retro',
+              role: 'assistant',
+              content,
+              createdAt: Date.now(),
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    }),
+    'utf8',
+  )
+}
+
+/** Job description with two consecutive nbsp metadata lines (must not become a table). */
+export function seedJobDescriptionMetadataFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-jd-metadata-project'
+  const threadId = 'e2e-jd-metadata-thread'
+  const content = readFileSync(
+    join(workspaceRoot, 'tests/fixtures/job-description-metadata.md'),
+    'utf8',
+  )
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify({
+      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Job description metadata',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-assistant-jd-metadata',
               role: 'assistant',
               content,
               createdAt: Date.now(),
