@@ -71,6 +71,7 @@ import { parseRemoteAgentModel } from '@shared/remote-agent.ts'
 import { runRemoteAgentFromSettings } from './remote-agent-client.ts'
 import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
+import { SUBAGENTS_ENABLED_DEFAULT, SUBAGENTS_ENABLED_SETTING } from './subagents-setting.ts'
 
 // Re-export the public surface so existing IPC/test imports stay stable while the
 // implementation lives in focused modules.
@@ -266,7 +267,10 @@ export async function runAgent(
 
   try {
     const invokedSkills = options?.invokedSkills ?? []
-    const subagentsEnabled = getSetting<boolean>('subagentsEnabled', true)
+    const subagentsEnabled = getSetting<boolean>(
+      SUBAGENTS_ENABLED_SETTING,
+      SUBAGENTS_ENABLED_DEFAULT,
+    )
     const contextWindow = await resolveContextWindow(model)
     const toolSchemaReserve = model === 'lm-studio' || model.startsWith('lmstudio:') ? 2_500 : 1_000
     const provider = await buildProvider(model)
