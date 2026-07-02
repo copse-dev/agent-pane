@@ -14,5 +14,6 @@ Object.assign(globalThis, {
   Event: win.Event,
   CustomEvent: win.CustomEvent,
   Element: win.Element,
+  HTMLElement: win.HTMLElement,
   Node: win.Node,
 })
