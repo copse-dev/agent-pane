@@ -121,7 +121,7 @@ function renderSetextHeading(slice: string, linkRefs: LinkReferenceMap): string 
   const lines = dropTrailingNewline(slice).split('\n')
   const text = lines[0] ?? ''
   const underline = lines[1] ?? ''
-  const level = underline.trim().startsWith('=') ? 3 : 4
+  const level = underline.trim().startsWith('=') ? 1 : 2
   return `<h${String(level)}>${renderProseBlock(text, linkRefs)}</h${String(level)}>`
 }
 

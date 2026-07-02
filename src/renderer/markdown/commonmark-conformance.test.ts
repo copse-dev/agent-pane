@@ -21,6 +21,7 @@ import assert from 'node:assert/strict'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { renderMarkdown } from './renderer.ts'
+import { stripAppCodeDecorations } from './highlight.ts'
 import { stripAppImageAttributes, stripAppLinkAttributes } from './inline-links.ts'
 import { normalizeHtml } from '../../../tests/commonmark/normalize.ts'
 import {
@@ -37,7 +38,9 @@ const SPEC_VERSION = commonMarkSpecVersion()
 const spec = loadCommonMarkSpec()
 
 function conforms(example: SpecExample): boolean {
-  const html = stripAppImageAttributes(stripAppLinkAttributes(renderMarkdown(example.markdown)))
+  const html = stripAppCodeDecorations(
+    stripAppImageAttributes(stripAppLinkAttributes(renderMarkdown(example.markdown))),
+  )
   return normalizeHtml(html) === normalizeHtml(example.html)
 }
 
