@@ -591,8 +591,8 @@ describe('renderMarkdown CommonMark structure fixes', () => {
     assert.match(renderMarkdown('foo\\\nbar'), /<p>foo<br>bar<\/p>/)
   })
 
-  it('keeps an even backslash run literal (escaped backslash, soft break)', () => {
-    assert.match(renderMarkdown('foo\\\\\nbar'), /<p>foo\\\\\nbar<\/p>/)
+  it('collapses an escaped backslash to one literal backslash with a soft break', () => {
+    assert.match(renderMarkdown('foo\\\\\nbar'), /<p>foo\\\nbar<\/p>/)
   })
 
   it('strips continuation-line indentation after a hard break', () => {

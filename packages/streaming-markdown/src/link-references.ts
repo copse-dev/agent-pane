@@ -1,3 +1,5 @@
+import { canonicalizeEscapedPunctuation } from './backslash-escapes.ts'
+
 /** Parsed link reference definition from block-level `[label]: destination`. */
 export interface LinkReference {
   href: string
@@ -11,8 +13,9 @@ export function normalizeReferenceLabel(label: string): string {
   return label.replace(/\s+/g, ' ').trim().toLocaleLowerCase('und')
 }
 
+/** Escape-aware label canonicalization (raw `\!` and PUA forms both → `!`). */
 function decodeEscapes(text: string): string {
-  return text.replace(/\\([\\[\]()\\])/g, '$1')
+  return canonicalizeEscapedPunctuation(text)
 }
 
 /** Backslash escapes in link destinations (CommonMark: any ASCII punctuation). */
