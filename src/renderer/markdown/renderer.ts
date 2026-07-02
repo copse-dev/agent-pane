@@ -3,7 +3,13 @@ import { escapeHtml, escapeMermaidHtml } from './escape.ts'
 
 export { escapeHtml } from './escape.ts'
 
-const FENCE_RE = /```(\w*)\n([\s\S]*?)```/g
+// Opening fence: 3+ backticks, then an info string (the language is its first
+// word; anything after — `js title="a.js"`, `python {highlight}` — is ignored,
+// per CommonMark). The closing fence must repeat at least as many backticks as
+// the opener (captured group \1 plus any extras), so a 3-backtick block nested
+// inside a ````-fenced example doesn't close early. Callers normalize CRLF to
+// \n before this runs, so only \n is matched here.
+const FENCE_RE = /(`{3,})[ \t]*([^\n`]*?)[ \t]*\n([\s\S]*?)\n?[ \t]*\1`*(?=[ \t]*(?:\n|$))/g
 const FENCED_BLOCK_SPLIT_RE =
   /(<pre>[\s\S]*?<\/pre>|<div class="mermaid-diagram[^>]*>[\s\S]*?<\/div>)/
 
@@ -44,7 +50,10 @@ function mapOutsideFencedOrTableHtml(html: string, transform: (segment: string) 
 /** Extract fenced blocks before prose escaping so code and diagram syntax stay intact. */
 function extractFencedBlocks(raw: string): { text: string; blocks: string[] } {
   const blocks: string[] = []
-  const text = raw.replace(FENCE_RE, (_, lang: string, code: string) => {
+  const text = raw.replace(FENCE_RE, (_, _fence: string, info: string, code: string) => {
+    // The info string's first word is the language; the rest (attrs/metadata) is
+    // ignored so fences like ```js title="a.js" still highlight as JavaScript.
+    const lang = info.trim().split(/\s+/)[0] ?? ''
     const idx = blocks.length
     blocks.push(renderFencedBlock(lang, code))
     return `\x00FENCE${String(idx)}\x00`
@@ -62,7 +71,11 @@ function stripHtmlComments(text: string): string {
 }
 
 export function renderMarkdown(raw: string): string {
-  const { text: withPlaceholders, blocks } = extractFencedBlocks(raw)
+  // Normalize CRLF / lone CR to \n up front so fence detection, tables, and
+  // list/heading line matching all see consistent line endings regardless of
+  // the source platform or how a model emitted the text.
+  const normalized = raw.replace(/\r\n?/g, '\n')
+  const { text: withPlaceholders, blocks } = extractFencedBlocks(normalized)
   let s = escapeHtml(stripHtmlComments(withPlaceholders))
   s = restoreFencedBlocks(s, blocks)
   s = mapOutsideFencedHtml(s, (seg) => renderArtifactImageTags(seg))
