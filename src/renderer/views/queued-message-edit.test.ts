@@ -55,6 +55,7 @@ describe('queued message edit (component)', () => {
     assert.equal(queued.querySelector('.message-queued-badge')?.textContent, 'Queued')
     assert.ok(queued.querySelector('.queued-edit'), 'expected an Edit button')
     assert.ok(queued.querySelector('.queued-send-now'), 'expected a Send now button')
+    assert.ok(queued.querySelector('.queued-delete'), 'expected a Delete button')
     // Exactly one action row — guards against duplicate decoration on re-render.
     assert.equal(queued.querySelectorAll('.message-queued-actions').length, 1)
   })
@@ -72,8 +73,24 @@ describe('queued message edit (component)', () => {
     assert.equal(input.value, ORIGINAL)
     assert.ok(editing.querySelector('.queued-send'), 'expected a Send button')
     assert.ok(editing.querySelector('.queued-cancel'), 'expected a Cancel button')
+    assert.ok(editing.querySelector('.queued-delete'), 'expected a Delete button')
     // Editing pauses the queue so the agent can't drain it mid-edit.
     assert.equal(store.getState().threads.find((t) => t.id === threadId)?.queuePaused, true)
+  })
+
+  it('Delete removes the queued message from the pinned panel', () => {
+    const { store, threadId, messageId } = mountWithQueued()
+
+    document.querySelector<HTMLButtonElement>('.msg-queued .queued-delete')?.click()
+
+    assert.equal(document.querySelector(`.msg-queued[data-message-id="${messageId}"]`), null)
+    assert.equal(document.querySelector<HTMLElement>('.conversation-queued')?.hidden, true)
+    const thread = store.getState().threads.find((t) => t.id === threadId)
+    assert.equal(thread?.pendingMessages, undefined)
+    assert.equal(
+      thread?.messages.some((message) => message.id === messageId),
+      false,
+    )
   })
 
   it('Send re-queues the message with the edited text', () => {
