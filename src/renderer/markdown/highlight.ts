@@ -79,3 +79,23 @@ export function fenceCodeClass(lang: string): string {
   const label = language ?? (lang.trim() ? lang.trim().toLowerCase() : 'text')
   return `hljs lang-${label}`
 }
+
+/**
+ * Undo app-specific fenced-code decoration for CommonMark conformance
+ * comparison (the code analogue of `stripAppLinkAttributes`): drop
+ * highlight.js token spans, map `hljs lang-x` to the spec's `language-x`
+ * (dropping the class entirely for the empty-info `lang-text` fallback), and
+ * restore the block-final newline the app trims for display. Structural
+ * differences in the code text itself still register as failures.
+ */
+export function stripAppCodeDecorations(html: string): string {
+  return html.replace(
+    /<code class="hljs lang-([^"]*)">([\s\S]*?)<\/code>/g,
+    (_m, lang: string, body: string) => {
+      const text = body.replace(/<span[^>]*>|<\/span>/g, '')
+      const classAttr = lang === 'text' ? '' : ` class="language-${lang}"`
+      const content = text === '' || text.endsWith('\n') ? text : `${text}\n`
+      return `<code${classAttr}>${content}</code>`
+    },
+  )
+}

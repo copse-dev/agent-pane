@@ -6,13 +6,16 @@
   "passing": [
     11,
     13,
+    16,
     17,
+    19,
     20,
     22,
     23,
     28,
     29,
     30,
+    34,
     35,
     42,
     43,
@@ -30,6 +33,7 @@
     56,
     57,
     58,
+    59,
     60,
     62,
     63,
@@ -44,21 +48,47 @@
     75,
     77,
     78,
+    79,
+    80,
+    83,
+    84,
+    86,
     87,
     88,
+    89,
+    90,
+    91,
     92,
     94,
+    96,
     97,
     98,
     99,
     101,
+    103,
     104,
     105,
     108,
     113,
+    119,
+    120,
     121,
+    122,
+    123,
+    124,
+    125,
+    126,
+    130,
+    131,
+    135,
+    136,
     138,
+    140,
+    141,
+    142,
+    144,
     145,
+    147,
     187,
     192,
     199,
@@ -72,6 +102,7 @@
     208,
     210,
     214,
+    215,
     216,
     219,
     220,
@@ -366,7 +397,12 @@
     630,
     631,
     633,
+    634,
     635,
+    636,
+    637,
+    638,
+    639,
     640,
     641,
     643,
@@ -386,11 +422,11 @@
       "total": 11
     },
     "Backslash escapes": {
-      "pass": 5,
+      "pass": 7,
       "total": 13
     },
     "Entity and numeric character references": {
-      "pass": 4,
+      "pass": 5,
       "total": 17
     },
     "Precedence": {
@@ -398,15 +434,15 @@
       "total": 1
     },
     "Thematic breaks": {
-      "pass": 16,
+      "pass": 17,
       "total": 19
     },
     "ATX headings": {
-      "pass": 13,
+      "pass": 14,
       "total": 18
     },
     "Setext headings": {
-      "pass": 10,
+      "pass": 19,
       "total": 27
     },
     "Indented code blocks": {
@@ -414,7 +450,7 @@
       "total": 12
     },
     "Fenced code blocks": {
-      "pass": 3,
+      "pass": 19,
       "total": 29
     },
     "HTML blocks": {
@@ -422,7 +458,7 @@
       "total": 44
     },
     "Link reference definitions": {
-      "pass": 13,
+      "pass": 14,
       "total": 27
     },
     "Paragraphs": {
@@ -474,7 +510,7 @@
       "total": 20
     },
     "Hard line breaks": {
-      "pass": 9,
+      "pass": 14,
       "total": 15
     },
     "Soft line breaks": {

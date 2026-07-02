@@ -570,3 +570,38 @@ describe('renderMarkdown sanitization (#115)', () => {
     assert.match(html, /5 &lt; 6 &amp;&amp; 7 &gt; 3/)
   })
 })
+
+describe('renderMarkdown CommonMark structure fixes', () => {
+  it('maps setext headings to h1/h2 like their ATX equivalents', () => {
+    assert.match(renderMarkdown('Title\n=====\n'), /<h1>Title<\/h1>/)
+    assert.match(renderMarkdown('Section\n---\n'), /<h2>Section<\/h2>/)
+  })
+
+  it('treats an all-hash ATX title as a bare closing sequence', () => {
+    assert.match(renderMarkdown('### ###'), /<h3><\/h3>/)
+    assert.match(renderMarkdown('## foo ##'), /<h2>foo<\/h2>/)
+  })
+
+  it('renders backslash-before-newline as a hard break', () => {
+    assert.match(renderMarkdown('foo\\\nbar'), /<p>foo<br>bar<\/p>/)
+  })
+
+  it('keeps an even backslash run literal (escaped backslash, soft break)', () => {
+    assert.match(renderMarkdown('foo\\\\\nbar'), /<p>foo\\\\\nbar<\/p>/)
+  })
+
+  it('strips continuation-line indentation after a hard break', () => {
+    assert.match(renderMarkdown('foo  \n     bar'), /<p>foo<br>bar<\/p>/)
+  })
+
+  it('applies hard breaks inside emphasis spans', () => {
+    assert.match(renderMarkdown('*foo  \nbar*'), /<em>foo<br>bar<\/em>/)
+    assert.match(renderMarkdown('*foo\\\nbar*'), /<em>foo<br>bar<\/em>/)
+  })
+
+  it('does not hard-break inside code spans or at the end of a block', () => {
+    assert.match(renderMarkdown('`foo  \nbar`'), /<code>foo {3}bar<\/code>/)
+    assert.doesNotMatch(renderMarkdown('foo\\'), /<br>/)
+    assert.doesNotMatch(renderMarkdown('foo  \n'), /<br>/)
+  })
+})
