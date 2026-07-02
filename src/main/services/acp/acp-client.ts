@@ -3,6 +3,8 @@ import {
   methods,
   ndJsonStream,
   PROTOCOL_VERSION,
+  type ActiveSession,
+  type ClientConnection,
   type McpCapabilities,
   type McpServer,
   type NewSessionResponse,
@@ -12,6 +14,7 @@ import {
   type RequestPermissionResponse,
   type SessionConfigOption,
   type StopReason,
+  type Stream,
   type Usage,
   type WriteTextFileRequest,
   type WriteTextFileResponse,
@@ -224,106 +227,180 @@ export function toAcpMcpServers(
 }
 
 /**
- * Run a single prompt turn against an external ACP agent. Spawns the agent,
- * initializes the connection, creates a session, sends the prompt, and pumps
- * `session/update` notifications to `handlers.onChunk` until the turn stops.
- * The subprocess is always terminated when the turn settles.
+ * Mutable per-turn handler slot for a persistent session (issue #605). The
+ * connection-time JSON-RPC handlers are registered once for the session's
+ * lifetime and delegate to whatever handlers the CURRENT (or, between turns,
+ * the most recent) turn installed — so a background helper inside the agent
+ * that writes via `fs/write_text_file` after its turn ended still lands in
+ * the diff queue, and its updates still reach the last chunk sink.
  */
-export async function runAcpAgentPrompt(
+export interface MutableAcpHandlers {
+  current: AcpClientHandlers | null
+}
+
+/**
+ * A live, reusable connection + session to an external ACP agent. Created by
+ * {@link openAcpSession}; drive turns with {@link runAcpSessionPrompt}; the
+ * owner (the session pool) calls `dispose` on eviction.
+ */
+export interface OpenAcpSession {
+  session: ActiveSession
+  connection: ClientConnection
+  handlers: MutableAcpHandlers
+  mcpCapabilities: McpCapabilities | undefined
+  /** Last model applied via `session/set_config_option` (avoid re-sending). */
+  appliedModel: string | undefined
+  /** True once the connection closed or the agent process died. */
+  isClosed: () => boolean
+  dispose: () => void
+}
+
+/** Transport injection point so tests can wire an in-process agent. */
+export type AcpTransportFactory = (
   config: AcpAgentSpawnConfig,
-  prompt: string,
-  handlers: AcpClientHandlers,
-  signal?: AbortSignal,
-): Promise<{ stopReason: StopReason; usage?: Usage | null }> {
+) => Promise<{ stream: Stream; dispose: () => void }>
+
+async function spawnTransport(
+  config: AcpAgentSpawnConfig,
+): Promise<{ stream: Stream; dispose: () => void }> {
   const child = await spawnAcpAgentProcess(config)
   if (!child.stdin || !child.stdout) throw new Error('ACP agent spawned without stdio pipes')
-
   const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
   const readable = Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>
-  const stream = ndJsonStream(writable, readable)
+  return {
+    stream: ndJsonStream(writable, readable),
+    dispose: (): void => {
+      child.kill()
+    },
+  }
+}
 
-  const readTextFile = handlers.readTextFile
-  const writeTextFile = handlers.writeTextFile
+/**
+ * Open a persistent ACP session (issue #605): spawn the agent (or connect the
+ * injected test transport), initialize, and start a long-lived session. Unlike
+ * the old one-turn flow, nothing is torn down when a prompt settles — the
+ * process and session survive between turns, so the agent keeps its own
+ * context (no transcript replay) and background helpers it spawned can finish.
+ */
+export async function openAcpSession(
+  config: AcpAgentSpawnConfig,
+  handlers: MutableAcpHandlers,
+  createTransport: AcpTransportFactory = spawnTransport,
+): Promise<OpenAcpSession> {
+  const transport = await createTransport(config)
+
   const app = client({ name: 'copse' })
-    .onRequest(methods.client.session.requestPermission, (ctx) =>
-      handlers.requestPermission(ctx.params),
-    )
-    .onRequest(
-      methods.client.fs.readTextFile,
-      readTextFile
-        ? (ctx): Promise<ReadTextFileResponse> => readTextFile(ctx.params)
-        : UNSUPPORTED('fs/read_text_file'),
-    )
-    .onRequest(
-      methods.client.fs.writeTextFile,
-      writeTextFile
-        ? (ctx): Promise<WriteTextFileResponse> => writeTextFile(ctx.params)
-        : UNSUPPORTED('fs/write_text_file'),
-    )
+    .onRequest(methods.client.session.requestPermission, (ctx) => {
+      const current = handlers.current
+      if (!current) return { outcome: { outcome: 'cancelled' as const } }
+      return current.requestPermission(ctx.params)
+    })
+    .onRequest(methods.client.fs.readTextFile, (ctx): Promise<ReadTextFileResponse> => {
+      const readTextFile = handlers.current?.readTextFile
+      return readTextFile ? readTextFile(ctx.params) : UNSUPPORTED('fs/read_text_file')()
+    })
+    .onRequest(methods.client.fs.writeTextFile, (ctx): Promise<WriteTextFileResponse> => {
+      const writeTextFile = handlers.current?.writeTextFile
+      return writeTextFile ? writeTextFile(ctx.params) : UNSUPPORTED('fs/write_text_file')()
+    })
+
+  const connection = app.connect(transport.stream)
+  let disposed = false
+  const dispose = (): void => {
+    if (disposed) return
+    disposed = true
+    connection.close()
+    transport.dispose()
+  }
 
   try {
-    return await app.connectWith(stream, async (ctx) => {
-      const initResponse = await ctx.request(methods.agent.initialize, {
-        protocolVersion: PROTOCOL_VERSION,
-        clientCapabilities: {
-          fs: {
-            readTextFile: Boolean(handlers.readTextFile),
-            writeTextFile: Boolean(handlers.writeTextFile),
-          },
-        },
-      })
-
-      const mcpCapabilities = initResponse.agentCapabilities?.mcpCapabilities
-      const mcpServers = toAcpMcpServers(config.mcpServers ?? [], mcpCapabilities)
-      // Copse's own tools ride the same channel as forwarded servers: an http
-      // MCP endpoint the agent mounts itself (#602 tier 2). http-capable only —
-      // agents without the capability simply don't get the bridge this turn.
-      if (config.nativeBridge && mcpCapabilities?.http === true) {
-        mcpServers.push({
-          type: 'http',
-          name: 'copse',
-          url: config.nativeBridge.url,
-          headers: [{ name: 'Authorization', value: `Bearer ${config.nativeBridge.token}` }],
-        })
-      }
-      return ctx.buildSession({ cwd: config.cwd, mcpServers }).withSession(async (session) => {
-        const cancel = (): void =>
-          void ctx.notify('session/cancel', { sessionId: session.sessionId })
-        if (signal) {
-          if (signal.aborted) cancel()
-          else signal.addEventListener('abort', cancel, { once: true })
-        }
-        if (config.model) {
-          const selector = modelSelectorFrom(session.newSessionResponse)
-          // Only switch when the value is a model the agent still offers and it
-          // isn't already current. A stale/removed value (e.g. after an agent
-          // version bump) is skipped, and a rejected set is swallowed, so a bad
-          // model selection degrades to the agent's default instead of failing
-          // the whole turn.
-          const isKnown = selector?.choices.some((choice) => choice.value === config.model) ?? false
-          if (selector && isKnown && config.model !== selector.currentValue) {
-            try {
-              await ctx.request(methods.agent.session.setConfigOption, {
-                sessionId: session.sessionId,
-                configId: selector.configId,
-                value: config.model,
-              })
-            } catch {
-              // Fall back to the agent's default model for this turn.
-            }
-          }
-        }
-        void session.prompt(prompt)
-        for (;;) {
-          const message = await session.nextUpdate()
-          if (message.kind === 'stop') return message.response
-          const chunk = sessionUpdateToStreamChunk(message.update)
-          if (chunk) handlers.onChunk(chunk)
-        }
-      })
+    const initResponse = await connection.agent.request(methods.agent.initialize, {
+      protocolVersion: PROTOCOL_VERSION,
+      clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
     })
+    const mcpCapabilities = initResponse.agentCapabilities?.mcpCapabilities
+    const mcpServers = toAcpMcpServers(config.mcpServers ?? [], mcpCapabilities)
+    // Copse's own tools ride the same channel as forwarded servers: an http
+    // MCP endpoint the agent mounts itself (#602 tier 2). http-capable only —
+    // agents without the capability simply don't get the bridge this session.
+    if (config.nativeBridge && mcpCapabilities?.http === true) {
+      mcpServers.push({
+        type: 'http',
+        name: 'copse',
+        url: config.nativeBridge.url,
+        headers: [{ name: 'Authorization', value: `Bearer ${config.nativeBridge.token}` }],
+      })
+    }
+    const session = await connection.agent.buildSession({ cwd: config.cwd, mcpServers }).start()
+
+    return {
+      session,
+      connection,
+      handlers,
+      mcpCapabilities,
+      appliedModel: undefined,
+      isClosed: () => disposed || connection.signal.aborted,
+      dispose,
+    }
+  } catch (err) {
+    dispose()
+    throw err
+  }
+}
+
+/**
+ * Run one prompt turn on a persistent session: apply a model change if the
+ * picker's selection moved, send the prompt, and pump updates to the CURRENT
+ * turn handlers until this turn's stop. Updates the agent queued between turns
+ * (e.g. a background helper finishing) drain here first, so nothing is lost —
+ * it just surfaces at the start of the next turn.
+ */
+export async function runAcpSessionPrompt(
+  open: OpenAcpSession,
+  prompt: string,
+  model: string | undefined,
+  signal?: AbortSignal,
+): Promise<{ stopReason: StopReason; usage?: Usage | null }> {
+  const { session, connection } = open
+  const cancel = (): void =>
+    void connection.agent.notify('session/cancel', { sessionId: session.sessionId })
+  if (signal?.aborted) cancel()
+  else signal?.addEventListener('abort', cancel, { once: true })
+
+  try {
+    if (model && model !== open.appliedModel) {
+      const selector = modelSelectorFrom(session.newSessionResponse)
+      // Only switch when the value is a model the agent still offers and it
+      // isn't already current. A stale/removed value (e.g. after an agent
+      // version bump) is skipped, and a rejected set is swallowed, so a bad
+      // model selection degrades to the agent's default instead of failing
+      // the whole turn.
+      const isKnown = selector?.choices.some((choice) => choice.value === model) ?? false
+      if (selector && isKnown && model !== selector.currentValue) {
+        try {
+          await connection.agent.request(methods.agent.session.setConfigOption, {
+            sessionId: session.sessionId,
+            configId: selector.configId,
+            value: model,
+          })
+          open.appliedModel = model
+        } catch {
+          // Fall back to the agent's current model for this turn.
+        }
+      } else {
+        open.appliedModel = model
+      }
+    }
+
+    void session.prompt(prompt)
+    for (;;) {
+      const message = await session.nextUpdate()
+      if (message.kind === 'stop') return message.response
+      const chunk = sessionUpdateToStreamChunk(message.update)
+      if (chunk) open.handlers.current?.onChunk(chunk)
+    }
   } finally {
-    child.kill()
+    signal?.removeEventListener('abort', cancel)
   }
 }
 
