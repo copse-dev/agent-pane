@@ -29,6 +29,7 @@ import {
   drainMessageQueue,
   queuedMessageIds,
   queuedPayloadText,
+  removeQueuedMessage,
   sendQueuedMessageNow,
   updateQueuedMessageText,
 } from '../controller/message-queue.ts'
@@ -468,6 +469,18 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     else drainMessageQueue(store, api, threadId)
   }
 
+  function deleteQueued(messageId: string): void {
+    const threadId = store.getState().activeThreadId
+    if (!threadId) return
+    const wasEditing = editingMessageId === messageId
+    if (wasEditing) stopEditing()
+    removeQueuedMessage(store, threadId, messageId)
+    if (wasEditing) {
+      setQueuePaused(store, threadId, false)
+      drainMessageQueue(store, api, threadId)
+    }
+  }
+
   function buildQueuedActions(messageId: string): HTMLElement {
     const editBtn = el('button', { class: 'queued-action queued-edit', type: 'button' }, 'Edit')
     editBtn.addEventListener('click', () => {
@@ -482,10 +495,18 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       const threadId = store.getState().activeThreadId
       if (threadId) sendQueuedMessageNow(store, api, threadId, messageId)
     })
+    const deleteBtn = el(
+      'button',
+      { class: 'queued-action queued-delete', type: 'button' },
+      'Delete',
+    )
+    deleteBtn.addEventListener('click', () => {
+      deleteQueued(messageId)
+    })
     return el(
       'div',
       { class: 'message-queued-ui' },
-      el('div', { class: 'message-queued-actions' }, editBtn, sendNowBtn),
+      el('div', { class: 'message-queued-actions' }, editBtn, sendNowBtn, deleteBtn),
     )
   }
 
@@ -529,11 +550,19 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     cancelBtn.addEventListener('click', () => {
       cancelEditing()
     })
+    const deleteBtn = el(
+      'button',
+      { class: 'queued-action queued-delete', type: 'button' },
+      'Delete',
+    )
+    deleteBtn.addEventListener('click', () => {
+      deleteQueued(messageId)
+    })
     const wrap = el(
       'div',
       { class: 'message-queued-ui' },
       input,
-      el('div', { class: 'message-queued-actions' }, sendBtn, sendNowBtn, cancelBtn),
+      el('div', { class: 'message-queued-actions' }, sendBtn, sendNowBtn, cancelBtn, deleteBtn),
     )
     requestAnimationFrame(() => {
       input.focus()

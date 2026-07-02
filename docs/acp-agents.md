@@ -106,6 +106,27 @@ The agent must bring its own credentials: pass them explicitly through `env`
 (as in the example above), or rely on the agent's own login/config. Non-LLM tool
 tokens such as `GITHUB_TOKEN` are passed through.
 
+## Tool parity with native Copse
+
+ACP client mode and the **built-in Copse agent loop** (cloud/local models such as
+Fable or Sonnet) do **not** expose the same tool surface today:
+
+| Capability           | Built-in Copse (native model)                                                               | ACP client (`acp:<id>`)                                  |
+| -------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Read/search files    | `read_file`, `search_codebase`, `search_code`, … (default) or `explore` subagent (optional) | External agent's own tools (e.g. Read/Grep/Bash) via ACP |
+| Edit files           | `write_file` / `str_replace` → diff approval when needed                                    | `fs/write_text_file` → Copse diff-approval queue         |
+| Shell / CLI          | `run_shell` (structured; prefer dedicated tools for reads)                                  | External agent's shell tool                              |
+| Git / GitHub         | `git_*`, `gh_*`, CI tools                                                                   | External agent (may shell out)                           |
+| Browser, MCP, skills | Copse `ToolRegistry`                                                                        | **Not forwarded** (see limitations)                      |
+
+**Default native behavior** (Settings → Local models → _Route reads and searches
+through exploration subagents_ **off**) exposes direct read/search tools so native
+models behave similarly to typical ACP coding agents instead of hiding those tools
+behind `explore` or falling back to `run_shell` (`grep`, `cat`, …).
+
+**`copse --acp`** (server mode) is the opposite direction: Copse exposes its full
+native loop to an external ACP _client_.
+
 ## Limitations
 
 This first slice intentionally leaves the following for follow-ups (issue #264):

@@ -18,6 +18,7 @@ import {
   movePendingUserMessagesToEnd,
   queuedMessageIds,
   queuedPayloadText,
+  removeQueuedMessage,
   resumePendingQueues,
   sendQueuedMessageNow,
   updateQueuedMessageText,
@@ -256,6 +257,72 @@ test('updateQueuedMessageText edits the payload text and the displayed bubble', 
   const thread = getThread(store, threadId)
   assert.equal(thread.pendingMessages?.[0]?.payload.content, 'edited prompt')
   assert.equal(thread.messages.find((m) => m.id === messageId)?.content, 'edited prompt')
+})
+
+test('removeQueuedMessage drops the pending entry and user bubble', () => {
+  const store = createStore()
+  const threadId = createThread(store)
+  const firstMessageId = addMessage(store, threadId, 'user', 'first prompt')
+  const queuedMessageId = addMessage(store, threadId, 'user', 'queued follow up')
+  enqueueUserMessage(store, threadId, {
+    messageId: queuedMessageId,
+    payload: { content: 'queued follow up' },
+    createdAt: 1,
+  })
+
+  removeQueuedMessage(store, threadId, queuedMessageId)
+
+  const thread = getThread(store, threadId)
+  assert.equal(thread.pendingMessages, undefined)
+  assert.deepEqual(
+    thread.messages.map((message) => message.id),
+    [firstMessageId],
+  )
+})
+
+test('removeQueuedMessage is a no-op for a message that is not queued', () => {
+  const store = createStore()
+  const threadId = createThread(store)
+  const messageId = addMessage(store, threadId, 'user', 'sent prompt')
+
+  removeQueuedMessage(store, threadId, messageId)
+
+  const thread = getThread(store, threadId)
+  assert.equal(thread.messages.length, 1)
+  assert.equal(thread.pendingMessages, undefined)
+})
+
+test('removeQueuedMessage keeps remaining queued messages in order', () => {
+  const store = createStore()
+  const threadId = createThread(store)
+  const firstQueuedId = addMessage(store, threadId, 'user', 'first queued')
+  const secondQueuedId = addMessage(store, threadId, 'user', 'second queued')
+  enqueueUserMessage(store, threadId, {
+    messageId: firstQueuedId,
+    payload: { content: 'first queued' },
+    createdAt: 1,
+  })
+  enqueueUserMessage(store, threadId, {
+    messageId: secondQueuedId,
+    payload: { content: 'second queued' },
+    createdAt: 2,
+  })
+
+  removeQueuedMessage(store, threadId, firstQueuedId)
+
+  const thread = getThread(store, threadId)
+  assert.deepEqual(
+    thread.pendingMessages?.map((item) => item.messageId),
+    [secondQueuedId],
+  )
+  assert.equal(
+    thread.messages.some((message) => message.id === firstQueuedId),
+    false,
+  )
+  assert.equal(
+    thread.messages.some((message) => message.id === secondQueuedId),
+    true,
+  )
 })
 
 test('updateQueuedMessageText preserves images when editing an array payload', () => {

@@ -10,6 +10,7 @@ import {
   type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
 import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
+import { DEFAULT_ADVISOR_MODEL } from '../../main/services/advisor-strategy.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { populateModelSelect, populateSmallTasksModelSelect } from './model-options.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
@@ -57,6 +58,12 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'remoteAgentAutoCreatePR', kind: 'checkbox', default: true, save: true },
   { name: 'remoteAgentWorkOnCurrentBranch', kind: 'checkbox', default: false, save: true },
   { name: 'localSubagentsEnabled', kind: 'checkbox', default: true, save: true },
+  {
+    name: 'subagentsEnabled',
+    kind: 'checkbox',
+    default: false,
+    save: true,
+  },
   { name: 'localTodoItemsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'postTurnReviewEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'bundledCursorSkillsEnabled', kind: 'checkbox', default: true, save: true },
@@ -72,7 +79,6 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'longHorizonTasksEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'advisorStrategyEnabled', kind: 'checkbox', default: false, save: true },
-  { name: 'advisorModel', kind: 'text', default: 'claude-opus-4-8', save: true },
   { name: 'roadmapPlansEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'piiRedactionEnabled', kind: 'checkbox', default: false, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
@@ -107,10 +113,7 @@ async function saveSimpleFields(data: FormData, api: ApiClient): Promise<void> {
       await api.settings.set(field.name, data.get(field.name) === 'on')
     } else {
       const value = (data.get(field.name) as string | null) ?? ''
-      const trimmed =
-        field.name === 'customInstructions' ||
-        field.name === 'openRouterModel' ||
-        field.name === 'advisorModel'
+      const trimmed = field.name === 'customInstructions' || field.name === 'openRouterModel'
       await api.settings.set(field.name, trimmed ? value.trim() : value)
     }
   }
@@ -402,6 +405,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <fieldset>
               <legend>Routing behavior</legend>
               <label class="checkbox-label">
+                <input type="checkbox" name="subagentsEnabled" />
+                Route reads and searches through exploration subagents
+              </label>
+              <p class="field-hint">
+                When on, the parent model uses <code>explore</code> instead of direct
+                <code>read_file</code> / search tools (summarized exploration). When off — the
+                default — the parent gets direct read/search tools, similar to ACP coding agents
+                (Read/Grep-style) and is less likely to fall back to <code>run_shell</code>.
+              </p>
+              <label class="checkbox-label">
                 <input type="checkbox" name="localSubagentsEnabled" />
                 Use local models for exploration subagents when chat uses a cloud model
               </label>
@@ -645,14 +658,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Claude’s native advisor tool. While off, the tool is not registered.
               </p>
               <label class="field-label" for="advisorModel">Advisor model</label>
-              <input
-                type="text"
-                id="advisorModel"
-                name="advisorModel"
-                placeholder="claude-opus-4-8"
-              />
+              <select id="advisorModel" name="advisorModel">
+                <option value="">(loading…)</option>
+              </select>
               <p class="field-hint">
-                Model id used for advisor consultations (any configured cloud provider). Defaults to
+                Model used for advisor consultations. Pick a configured cloud provider; defaults to
                 <code>claude-opus-4-8</code>.
               </p>
             </fieldset>
@@ -1071,6 +1081,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         form.elements.namedItem('smallTasksModel') as HTMLSelectElement,
         api,
         smallTasksModel ?? '',
+      )
+      const advisorModel = (await api.settings.get('advisorModel')) as string | undefined
+      await populateModelSelect(
+        form.elements.namedItem('advisorModel') as HTMLSelectElement,
+        api,
+        advisorModel ?? DEFAULT_ADVISOR_MODEL,
       )
       await loadSimpleFields(form, api)
       const savedWebOrigins = (await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING)) as

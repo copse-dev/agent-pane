@@ -9,6 +9,7 @@ import { buildSkillsCatalogBlock, buildInvokedSkillsBlock } from './skill-prompt
 import { estimateMessageTokens, ESTIMATED_IMAGE_TOKENS } from '@shared/agent/trim-history.ts'
 import { composeContextBreakdown } from '@shared/agent/context-breakdown.ts'
 import { PARENT_DELEGATED_TOOLS } from './agent-service.ts'
+import { SUBAGENTS_ENABLED_DEFAULT, SUBAGENTS_ENABLED_SETTING } from './subagents-setting.ts'
 
 /** Matches the ~4 chars/token heuristic used for history trimming (trim-history.ts). */
 const CHARS_PER_TOKEN = 4
@@ -49,7 +50,7 @@ export async function estimateContextBreakdown(
   input: ContextEstimateInput,
 ): Promise<ContextBreakdown> {
   const model = getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
-  const subagentsEnabled = getSetting<boolean>('subagentsEnabled', true)
+  const subagentsEnabled = getSetting<boolean>(SUBAGENTS_ENABLED_SETTING, SUBAGENTS_ENABLED_DEFAULT)
   const contextWindow = await resolveContextWindow(model)
 
   const systemPrompt = await buildSystemPrompt({
