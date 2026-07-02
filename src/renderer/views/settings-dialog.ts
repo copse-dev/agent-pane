@@ -58,6 +58,12 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'remoteAgentAutoCreatePR', kind: 'checkbox', default: true, save: true },
   { name: 'remoteAgentWorkOnCurrentBranch', kind: 'checkbox', default: false, save: true },
   { name: 'localSubagentsEnabled', kind: 'checkbox', default: true, save: true },
+  {
+    name: 'subagentsEnabled',
+    kind: 'checkbox',
+    default: false,
+    save: true,
+  },
   { name: 'localTodoItemsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'postTurnReviewEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'bundledCursorSkillsEnabled', kind: 'checkbox', default: true, save: true },
@@ -398,6 +404,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
             <fieldset>
               <legend>Routing behavior</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="subagentsEnabled" />
+                Route reads and searches through exploration subagents
+              </label>
+              <p class="field-hint">
+                When on, the parent model uses <code>explore</code> instead of direct
+                <code>read_file</code> / search tools (summarized exploration). When off — the
+                default — the parent gets direct read/search tools, similar to ACP coding agents
+                (Read/Grep-style) and is less likely to fall back to <code>run_shell</code>.
+              </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="localSubagentsEnabled" />
                 Use local models for exploration subagents when chat uses a cloud model

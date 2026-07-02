@@ -30,6 +30,13 @@ describe('agent-prompt', () => {
     assert.doesNotMatch(BASE_SYSTEM_PROMPT_DIRECT_READS, /- explore: Explore the codebase/)
   })
 
+  it('steers away from run_shell for reads in both modes', () => {
+    assert.match(BASE_SYSTEM_PROMPT, /Tool choice:/)
+    assert.match(BASE_SYSTEM_PROMPT, /use explore — not run_shell/)
+    assert.match(BASE_SYSTEM_PROMPT_DIRECT_READS, /use read_file, list_dir, search_codebase/)
+    assert.match(BASE_SYSTEM_PROMPT_DIRECT_READS, /not run_shell/)
+  })
+
   it('external API safety block warns about secrets', () => {
     assert.match(EXTERNAL_API_SAFETY_BLOCK, /Never hardcode, commit, or log secrets or API keys/)
     assert.match(EXTERNAL_API_SAFETY_BLOCK, /manifest\/lockfile/)
