@@ -102,7 +102,7 @@ import {
   type MockScriptStep,
 } from '@shared/llm/mock-script.ts'
 import { applyAppIcon } from '../app-icon.ts'
-import { getMainWindow, unregisterDevtoolsShortcut } from '../windows/create-main-window.ts'
+import { getMainWindow, registerDevtoolsShortcut, unregisterDevtoolsShortcut } from '../windows/create-main-window.ts'
 import { validateApiKey } from '../services/validate-api-key.ts'
 import { getUsageSummary, recordUsageEvent } from '../services/usage-ledger.ts'
 import { parseUsageRecordInput } from '../services/usage-record-schema.ts'
@@ -251,9 +251,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       const win = getMainWindow()
       const enabled = typeof value === 'boolean' && value
       if (enabled) {
-        globalShortcut.register('Control+Shift+I', () => {
-          win?.webContents.toggleDevTools()
-        })
+        if (win) registerDevtoolsShortcut(win)
       } else {
         unregisterDevtoolsShortcut()
       }
