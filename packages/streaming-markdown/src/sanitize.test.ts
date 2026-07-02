@@ -1,5 +1,5 @@
 // Uses jsdom because DOMPurify needs a spec-complete DOM (see setup file).
-import '../../../tests/setup-dom-jsdom.ts'
+import '../tests/setup-dom-jsdom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { sanitizeRenderedMarkdown } from './sanitize.ts'

@@ -6,7 +6,10 @@ import { copyMonacoWorkers } from './copy-monaco-workers.mts'
 
 const bundledCodesearchName = process.platform === 'win32' ? 'codesearch.exe' : 'codesearch'
 
-const sharedAlias = { '@shared': resolve('./src/shared') }
+const sharedAlias = {
+  '@shared': resolve('./src/shared'),
+  '@copse/streaming-markdown': resolve('./packages/streaming-markdown/src/index.ts'),
+}
 
 function fetchBundledCursorSkillsForBuild(): void {
   if (process.env['SKIP_BUNDLED_CURSOR_SKILLS_FETCH'] === '1') return

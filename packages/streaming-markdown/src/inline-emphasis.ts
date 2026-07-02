@@ -2,6 +2,7 @@
  * CommonMark-style inline emphasis via a delimiter stack (cmark architecture).
  * Shared by the at-rest renderer and the streaming hold logic.
  */
+import { trailingEntityHoldStart } from './backslash-escapes.ts'
 import { scanCodeSpans } from './inline-code-spans.ts'
 import { linkOrImageStartsAt } from './inline-links.ts'
 import { type LinkReferenceMap } from './link-references.ts'
@@ -380,6 +381,9 @@ export function pendingHoldIndex(s: string): number {
   if (!trailingConsumed) {
     cut = Math.min(cut, trailingDelimiterStart(s, mask))
   }
+
+  const entityStart = trailingEntityHoldStart(s)
+  if (entityStart < cut && !mask[entityStart]) cut = entityStart
 
   return cut
 }
