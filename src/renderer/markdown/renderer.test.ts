@@ -15,6 +15,12 @@ describe('renderMarkdown', () => {
     assert.doesNotMatch(html, /line one<br>line two/)
   })
 
+  it('does not apply hard line breaks inside raw HTML tags (CommonMark #642)', () => {
+    const html = renderMarkdown('<a href="foo  \nbar">\n')
+    assert.equal(html, '<p><a href="foo  \nbar"></p>')
+    assert.doesNotMatch(html, /<br>/)
+  })
+
   it('preserves blank-line paragraph breaks', () => {
     const html = renderMarkdown('first paragraph\n\nsecond paragraph')
     assert.match(html, /<p>first paragraph<\/p>/)
