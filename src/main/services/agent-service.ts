@@ -70,7 +70,7 @@ import type { TodoItem } from '@shared/types/todo.ts'
 import { parseRemoteAgentModel } from '@shared/remote-agent.ts'
 import { runRemoteAgentFromSettings } from './remote-agent-client.ts'
 import { parseAcpModelSelection } from '@shared/acp.ts'
-import { runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
+import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
 
 // Re-export the public surface so existing IPC/test imports stay stable while the
 // implementation lives in focused modules.
@@ -186,12 +186,28 @@ export async function runAgent(
         ],
       }
     } catch (err) {
+      // Keep what the failed turn streamed: the partial assistant text stays in
+      // history (so the next turn's preamble knows what already happened) and
+      // its estimated usage is reported instead of a silent zero. The error
+      // text is separated from any streamed text so the bubble stays readable.
+      const partial = err instanceof AcpTurnFailure ? err.partial : null
       const msg = classifyAgentError(err)
-      sendChunk({ type: 'text', text: msg })
+      sendChunk({ type: 'text', text: partial?.assistantText ? `\n\n${msg}` : msg })
       sendChunk({ type: 'done' })
       return {
-        usage: { inputTokens: 0, outputTokens: 0 },
-        messages: [...priorMessages, { role: 'user' as const, content: outboundPrompt }],
+        usage: partial?.usage ?? { inputTokens: 0, outputTokens: 0 },
+        messages: [
+          ...priorMessages,
+          { role: 'user' as const, content: outboundPrompt },
+          ...(partial?.assistantText
+            ? [
+                {
+                  role: 'assistant' as const,
+                  content: `${partial.assistantText}\n\n[This turn was interrupted by a transient provider error before it completed.]`,
+                },
+              ]
+            : []),
+        ],
       }
     } finally {
       runAbort.clear()

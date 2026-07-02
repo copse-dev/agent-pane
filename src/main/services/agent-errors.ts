@@ -60,6 +60,11 @@ export function classifyAgentError(err: unknown): string {
   if (status === 429 || type === 'rate_limit_error' || detail.includes('rate_limit'))
     return 'Rate limit reached. Please wait a moment and try again.'
 
+  // Anthropic 529 / `overloaded_error`. ACP agents surface this as opaque text
+  // (e.g. `Internal error: API Error: Overloaded`), so also match the word.
+  if (status === 529 || type === 'overloaded_error' || /\boverloaded\b/i.test(detail))
+    return 'The model provider is temporarily overloaded. This is transient — wait a moment and try again.'
+
   if (
     detail.includes('context_length') ||
     detail.includes('context window') ||
