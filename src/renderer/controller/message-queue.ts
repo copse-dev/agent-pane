@@ -177,6 +177,32 @@ export function updateQueuedMessageText(
  * editing pause, then abort the active run. The trailing `done` chunk triggers
  * the normal FIFO drain, which now dispatches this message first.
  */
+/** Drop a queued follow-up from the FIFO list and remove its user bubble. */
+export function removeQueuedMessage(
+  store: AppStore,
+  threadId: string,
+  messageId: string,
+): void {
+  const thread = store.getState().threads.find((t) => t.id === threadId)
+  if (!thread) return
+  const pending = thread.pendingMessages ?? []
+  if (!pending.some((p) => p.messageId === messageId)) return
+
+  const remainingPending = pending.filter((p) => p.messageId !== messageId)
+  const threads = store.getState().threads.map((t) => {
+    if (t.id !== threadId) return t
+    const { pendingMessages: _removed, ...rest } = t
+    return {
+      ...rest,
+      messages: t.messages.filter((m) => m.id !== messageId),
+      ...(remainingPending.length > 0 ? { pendingMessages: remainingPending } : {}),
+      updatedAt: Date.now(),
+    }
+  })
+  store.setState({ threads })
+  store.emit('threads_changed')
+}
+
 export function sendQueuedMessageNow(
   store: AppStore,
   api: ApiClient,
