@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ApiClient, ExtraProvider } from '../../preload/api.d.ts'
+import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { resolveExtraProviders } from '@shared/llm/extra-providers.ts'
 import { fetchModelOptions } from './model-options.ts'
 
@@ -10,7 +11,7 @@ interface MockOpts {
   openRouterModels?: Array<{ id: string; name: string }>
   lmStudioModels?: string[]
   openRouterModelSetting?: string
-  acpAgents?: Array<{ id: string; title: string; command: string; enabled: boolean }>
+  acpAgents?: AcpAgentConfig[]
 }
 
 // availableProviders() returns explicit booleans for every provider; mirror that
@@ -89,7 +90,7 @@ describe('fetchModelOptions visibility', () => {
     assert.ok(cursorKey.some((o) => o.group === 'Remote agents'))
   })
 
-  it('lists enabled ACP agents under their own heading and hides disabled ones', async () => {
+  it('lists an ACP agent without models as a single bare entry under its own heading', async () => {
     const options = await fetchModelOptions(
       mockApi({
         acpAgents: [
@@ -99,7 +100,7 @@ describe('fetchModelOptions visibility', () => {
       }),
       '',
     )
-    const acp = options.filter((o) => o.group === 'ACP agents')
+    const acp = options.filter((o) => o.group === 'Gemini CLI Client (ACP)')
     assert.deepEqual(
       acp.map((o) => o.value),
       ['acp:gemini-cli'],
@@ -107,6 +108,37 @@ describe('fetchModelOptions visibility', () => {
     const [acpAgent] = acp
     assert.ok(acpAgent)
     assert.equal(acpAgent.label, 'Gemini CLI')
+  })
+
+  it('lists an ACP agent’s detected models under its heading, dropping the bare default', async () => {
+    const options = await fetchModelOptions(
+      mockApi({
+        acpAgents: [
+          {
+            id: 'cursor',
+            title: 'Cursor',
+            command: 'cursor-agent',
+            args: ['acp'],
+            enabled: true,
+            availableModels: [
+              { value: 'auto', label: 'Auto' },
+              { value: 'opus[]', label: 'Opus 4.8' },
+            ],
+          },
+        ],
+      }),
+      '',
+    )
+    const acp = options.filter((o) => o.group === 'Cursor Client (ACP)')
+    assert.deepEqual(
+      acp.map((o) => ({ value: o.value, label: o.label })),
+      [
+        { value: 'acp:cursor#auto', label: 'Auto' },
+        { value: 'acp:cursor#opus[]', label: 'Opus 4.8' },
+      ],
+    )
+    // The bare "acp:cursor" (agent default) entry is intentionally omitted.
+    assert.ok(!acp.some((o) => o.value === 'acp:cursor'))
   })
 
   it('keeps a selected-but-unconfigured ACP agent selectable', async () => {

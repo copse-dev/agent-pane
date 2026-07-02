@@ -15,7 +15,7 @@ import {
 } from '@shared/usage/usage-event.ts'
 
 function toUsageEvent(input: UsageRecordInput): UsageEvent {
-  const { model, source, projectId, threadId, at, ...usage } = input
+  const { model, source, projectId, threadId, at, estimated, ...usage } = input
   if (!usage.inputTokens && !usage.outputTokens) {
     throw new Error('Usage record must include at least one non-zero token count')
   }
@@ -31,6 +31,7 @@ function toUsageEvent(input: UsageRecordInput): UsageEvent {
       : {}),
     ...(projectId ? { projectId } : {}),
     ...(threadId ? { threadId } : {}),
+    ...(estimated ? { estimated: true } : {}),
   }
 }
 
@@ -76,6 +77,7 @@ export function recordAgentUsageChunk(
     ...(chunk.cacheCreationTokens !== undefined
       ? { cacheCreationTokens: chunk.cacheCreationTokens }
       : {}),
+    ...(chunk.estimated ? { estimated: true } : {}),
   })
 }
 

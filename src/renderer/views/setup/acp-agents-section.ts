@@ -1,5 +1,5 @@
 import type { ApiClient } from '../../../preload/api.d.ts'
-import type { AcpAgentConfig } from '@shared/types/acp.ts'
+import type { AcpAgentConfig, AcpModelChoice } from '@shared/types/acp.ts'
 import {
   KNOWN_ACP_AGENTS,
   type DetectedAcpAgent,
@@ -243,6 +243,30 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
     const enabledBox = el('input', { type: 'checkbox', checked: true })
     const status = el('span', { class: 'key-status' })
 
+    // Model picker: starts with just "Agent default"; "Detect models" probes the
+    // agent (spawns it, opens a throwaway session) and fills in its choices.
+    const DEFAULT_MODEL_LABEL = 'Agent default'
+    const modelSelect = el('select', {})
+    const setModelOptions = (
+      choices: { value: string; label: string }[],
+      selected: string,
+    ): void => {
+      modelSelect.replaceChildren(el('option', { value: '' }, DEFAULT_MODEL_LABEL))
+      for (const choice of choices)
+        modelSelect.append(el('option', { value: choice.value }, choice.label))
+      // Preserve a saved value even if it isn't in the (not-yet-detected) list.
+      if (selected && !choices.some((c) => c.value === selected)) {
+        modelSelect.append(el('option', { value: selected }, `${selected} (saved)`))
+      }
+      modelSelect.value = selected
+    }
+    const detectModels = el(
+      'button',
+      { type: 'button', class: 'provider-secondary' },
+      'Detect models',
+    )
+    const modelStatus = el('span', { class: 'field-hint' })
+
     if (options.initial) {
       idInput.value = options.initial.id
       titleInput.value = options.initial.title
@@ -251,6 +275,47 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
       envArea.value = formatEnvText(options.initial.env)
       enabledBox.checked = options.initial.enabled
     }
+    // Cached list persisted with the agent so the model picker can list models
+    // without re-spawning; seeded from the saved config, refreshed by "Detect".
+    let detectedModels: AcpModelChoice[] = options.initial?.availableModels ?? []
+    setModelOptions(detectedModels, options.initial?.model ?? '')
+
+    // Detection resolves the agent by its saved id, so it only works once the
+    // agent has been saved (a fresh, unsaved agent has nothing to spawn yet).
+    detectModels.disabled = !isEdit
+    if (!isEdit) modelStatus.textContent = 'Save the agent first, then detect its models.'
+    detectModels.addEventListener('click', () => {
+      const id = idInput.value.trim()
+      detectModels.disabled = true
+      modelStatus.textContent = 'Detecting… (starting the agent)'
+      void api.acp
+        .listModels(id)
+        .then((selector) => {
+          if (!selector) {
+            detectedModels = []
+            modelStatus.textContent = 'This agent exposes no selectable models.'
+            return
+          }
+          detectedModels = selector.choices
+          setModelOptions(selector.choices, modelSelect.value || selector.currentValue)
+          // Persist immediately so the models appear in the main picker without a
+          // separate Save. Merge onto the *saved* config (not the in-progress form
+          // draft) so any unsaved field edits aren't clobbered, and skip the full
+          // re-render so this form stays as the user left it.
+          const saved = agents.find((candidate) => candidate.id === id)
+          if (saved) {
+            agents = upsertAgent(agents, { ...saved, availableModels: selector.choices })
+            void api.settings.set('registeredAcpAgents', agents)
+          }
+          modelStatus.textContent = `${String(selector.choices.length)} models added to the picker (default: ${selector.currentValue}).`
+        })
+        .catch((err: unknown) => {
+          modelStatus.textContent = `✗ ${err instanceof Error ? err.message : String(err)}`
+        })
+        .finally(() => {
+          detectModels.disabled = false
+        })
+    })
     // For a new agent, predict the id from the title until the user edits id.
     let idEdited = isEdit
     idInput.addEventListener('input', () => {
@@ -273,12 +338,15 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
       }
       const env = parseEnvText(envArea.value)
       const args = parseArgsText(argsArea.value)
+      const model = modelSelect.value.trim()
       options.onSubmit({
         id,
         title: draft.title,
         command: draft.command,
         ...(args.length ? { args } : {}),
         ...(Object.keys(env).length ? { env } : {}),
+        ...(model ? { model } : {}),
+        ...(detectedModels.length ? { availableModels: detectedModels } : {}),
         enabled: enabledBox.checked,
       })
     })
@@ -291,6 +359,13 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
       el('label', {}, 'Command', commandInput),
       el('label', {}, 'Arguments', argsArea),
       el('label', {}, 'Environment', envArea),
+      el(
+        'label',
+        {},
+        'Model',
+        el('div', { class: 'acp-model-row' }, modelSelect, detectModels),
+        modelStatus,
+      ),
       el('label', { class: 'checkbox-label' }, enabledBox, ' Enabled (shown in the model picker)'),
     )
     const actions = el('div', { class: 'provider-actions provider-form-footer' }, submit, status)
@@ -337,14 +412,43 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
     )
   }
 
-  async function refresh(): Promise<void> {
+  async function reloadAgents(): Promise<void> {
     try {
       agents = ((await api.settings.get('registeredAcpAgents')) as AcpAgentConfig[] | null) ?? []
     } catch {
       agents = []
     }
+  }
+
+  // "Just works" setup: detect clients, install missing npm adapters (Socket
+  // Firewall), register the Claude/Cursor presets, and cache their models. Runs
+  // once per tab open; idempotent, best-effort, and never throws to the UI.
+  async function autoSetup(): Promise<void> {
+    try {
+      const result = await api.acp.autoSetup()
+      if (result.installed.length || result.registered.length) {
+        await reloadAgents()
+        render()
+        await scan()
+        const bits = [
+          result.installed.length ? `installed ${String(result.installed.length)}` : '',
+          result.registered.length ? `added ${String(result.registered.length)}` : '',
+        ].filter(Boolean)
+        if (bits.length) {
+          scanStatus.textContent = `✓ Presets ready (${bits.join(', ')})`
+          scanStatus.className = 'key-status ok'
+        }
+      }
+    } catch {
+      /* best-effort — the manual known-agents list still works */
+    }
+  }
+
+  async function refresh(): Promise<void> {
+    await reloadAgents()
     render()
     await scan()
+    await autoSetup()
   }
 
   return { root: fieldset, refresh }
