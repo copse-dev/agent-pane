@@ -1,7 +1,14 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { PermissionOption } from '@agentclientprotocol/sdk'
-import { buildAcpPrompt, permissionResponseFor, sliceLines } from './acp-agent-service.ts'
+import {
+  AcpTurnFailure,
+  buildAcpPrompt,
+  isRetryableAcpError,
+  permissionResponseFor,
+  runWithAcpRetry,
+  sliceLines,
+} from './acp-agent-service.ts'
 
 const ALLOW_ONCE: PermissionOption = { optionId: 'a1', name: 'Allow once', kind: 'allow_once' }
 const ALLOW_ALWAYS: PermissionOption = {
@@ -47,6 +54,113 @@ describe('sliceLines', () => {
   it('applies a max line count from the start', () => {
     assert.equal(sliceLines(file, 2, 2), 'two\nthree')
     assert.equal(sliceLines(file, 1, 1), 'one')
+  })
+})
+
+describe('isRetryableAcpError', () => {
+  it('matches transient provider failures surfaced as opaque agent text', () => {
+    assert.ok(isRetryableAcpError(new Error('Internal error: API Error: Overloaded')))
+    assert.ok(isRetryableAcpError(new Error('429 rate_limit_error')))
+    assert.ok(isRetryableAcpError(new Error('upstream returned 503')))
+    assert.ok(isRetryableAcpError(new Error('Internal Server Error')))
+  })
+
+  it('rejects non-transient failures', () => {
+    assert.ok(!isRetryableAcpError(new Error('401 Unauthorized')))
+    assert.ok(!isRetryableAcpError(new Error('ACP agent "x" is not configured or is disabled.')))
+    assert.ok(!isRetryableAcpError(new Error('Write to src/a.ts was rejected by the user.')))
+  })
+})
+
+describe('runWithAcpRetry', () => {
+  const noAbort = new AbortController().signal
+  const overloaded = (): Error => new Error('Internal error: API Error: Overloaded')
+
+  it('retries a no-progress transient failure and succeeds', async () => {
+    let attempts = 0
+    const result = await runWithAcpRetry(
+      () => {
+        attempts++
+        return attempts < 3 ? Promise.reject(overloaded()) : Promise.resolve('ok')
+      },
+      { signal: noAbort, hasProgress: () => false, delayMs: () => 0 },
+    )
+    assert.equal(result, 'ok')
+    assert.equal(attempts, 3)
+  })
+
+  it('does not retry once the turn has made visible progress', async () => {
+    let attempts = 0
+    await assert.rejects(
+      runWithAcpRetry(
+        () => {
+          attempts++
+          return Promise.reject(overloaded())
+        },
+        { signal: noAbort, hasProgress: () => true, delayMs: () => 0 },
+      ),
+      /Overloaded/,
+    )
+    assert.equal(attempts, 1)
+  })
+
+  it('does not retry non-transient failures', async () => {
+    let attempts = 0
+    await assert.rejects(
+      runWithAcpRetry(
+        () => {
+          attempts++
+          return Promise.reject(new Error('401 Unauthorized'))
+        },
+        { signal: noAbort, hasProgress: () => false, delayMs: () => 0 },
+      ),
+      /401/,
+    )
+    assert.equal(attempts, 1)
+  })
+
+  it('gives up after maxAttempts', async () => {
+    let attempts = 0
+    await assert.rejects(
+      runWithAcpRetry(
+        () => {
+          attempts++
+          return Promise.reject(overloaded())
+        },
+        { signal: noAbort, hasProgress: () => false, maxAttempts: 2, delayMs: () => 0 },
+      ),
+      /Overloaded/,
+    )
+    assert.equal(attempts, 2)
+  })
+
+  it('does not retry after the turn is aborted', async () => {
+    const controller = new AbortController()
+    let attempts = 0
+    await assert.rejects(
+      runWithAcpRetry(
+        () => {
+          attempts++
+          controller.abort()
+          return Promise.reject(overloaded())
+        },
+        { signal: controller.signal, hasProgress: () => false, delayMs: () => 0 },
+      ),
+      /Overloaded/,
+    )
+    assert.equal(attempts, 1)
+  })
+})
+
+describe('AcpTurnFailure', () => {
+  it('keeps the underlying message so classifyAgentError still matches it', () => {
+    const failure = new AcpTurnFailure(new Error('Internal error: API Error: Overloaded'), {
+      assistantText: 'partial answer',
+      usage: { inputTokens: 10, outputTokens: 5 },
+    })
+    assert.equal(failure.message, 'Internal error: API Error: Overloaded')
+    assert.equal(failure.partial.assistantText, 'partial answer')
+    assert.deepEqual(failure.partial.usage, { inputTokens: 10, outputTokens: 5 })
   })
 })
 

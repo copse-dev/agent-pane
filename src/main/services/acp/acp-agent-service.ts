@@ -11,8 +11,14 @@ import type {
   WriteTextFileResponse,
 } from '@agentclientprotocol/sdk'
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
+import { errorMessage } from '@shared/errors.ts'
 import { promptPayloadFromUserContent } from '@shared/remote-agent-stream.ts'
 import { acpModelValue } from '@shared/acp.ts'
+import {
+  DEFAULT_STREAM_MAX_ATTEMPTS,
+  sleepMs,
+  streamRetryDelayMs,
+} from '@shared/llm/stream-retry.ts'
 import {
   listAcpAgentModels,
   runAcpAgentPrompt,
@@ -101,6 +107,83 @@ export function acpTurnUsage(
   }
 }
 
+/**
+ * A failed ACP turn, carrying whatever the turn streamed before it died so the
+ * caller can keep the partial assistant text in thread history and attribute
+ * the (estimated) token spend instead of silently zeroing both. `message` is
+ * the underlying failure's message so `classifyAgentError` still sees it.
+ */
+export class AcpTurnFailure extends Error {
+  readonly partial: {
+    assistantText: string
+    usage: { inputTokens: number; outputTokens: number }
+  }
+
+  constructor(
+    cause: unknown,
+    partial: { assistantText: string; usage: { inputTokens: number; outputTokens: number } },
+  ) {
+    super(errorMessage(cause), { cause })
+    this.name = 'AcpTurnFailure'
+    this.partial = partial
+  }
+}
+
+/**
+ * Retryability check for ACP turn failures. External agents surface provider
+ * failures as opaque JSON-RPC error text (no status code or SDK error class to
+ * inspect, unlike `isRetryableStreamError`), so match the transient signatures
+ * in the message: Anthropic 529/overloaded, rate limits, and 5xx server errors.
+ */
+export function isRetryableAcpError(err: unknown): boolean {
+  const msg = errorMessage(err)
+  if (/\boverloaded\b/i.test(msg)) return true
+  if (/\brate[ _-]?limit/i.test(msg)) return true
+  if (/\b(?:429|500|502|503|504|529)\b/.test(msg)) return true
+  if (/server error/i.test(msg)) return true
+  return false
+}
+
+/**
+ * Retry a whole-turn ACP prompt on transient provider errors, mirroring
+ * `yieldStreamWithRetry`'s guard: only attempts that made no visible progress
+ * (`hasProgress()` false — no chunk reached the UI yet) are retried, so a
+ * mid-turn failure never re-runs tool calls or duplicates streamed text.
+ */
+export async function runWithAcpRetry<T>(
+  run: () => Promise<T>,
+  opts: {
+    signal: AbortSignal
+    hasProgress: () => boolean
+    maxAttempts?: number
+    delayMs?: (err: unknown, attempt: number) => number
+  },
+): Promise<T> {
+  const maxAttempts = opts.maxAttempts ?? DEFAULT_STREAM_MAX_ATTEMPTS
+  const delayMs = opts.delayMs ?? streamRetryDelayMs
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await run()
+    } catch (err) {
+      if (
+        opts.signal.aborted ||
+        opts.hasProgress() ||
+        attempt >= maxAttempts - 1 ||
+        !isRetryableAcpError(err)
+      ) {
+        throw err
+      }
+      try {
+        await sleepMs(delayMs(err, attempt), opts.signal)
+      } catch {
+        // Aborted while backing off — surface the turn's own failure, not the
+        // sleep's AbortError.
+        throw err
+      }
+    }
+  }
+}
+
 export async function runAcpAgentFromSettings(
   options: RunAcpAgentOptions,
 ): Promise<RunAcpAgentResult> {
@@ -132,9 +215,13 @@ export async function runAcpAgentFromSettings(
 
   // Accumulate streamed assistant text so the turn contributes to thread history
   // (the external agent owns the model loop, so this is the only transcript we
-  // see) and so the next turn's preamble can replay it.
+  // see) and so the next turn's preamble can replay it. `sawChunk` gates the
+  // retry below: once anything reached the UI, re-running the turn would
+  // duplicate streamed text and re-execute tool calls.
   let assistantText = ''
+  let sawChunk = false
   const onChunk = (chunk: StreamChunk): void => {
+    sawChunk = true
     if (chunk.type === 'text') assistantText += chunk.text
     options.onChunk(chunk)
   }
@@ -146,12 +233,35 @@ export async function runAcpAgentFromSettings(
     writeTextFile: (req) => writeViaDiffQueue(req, options.signal),
   }
 
-  const { stopReason, usage } = await runAcpAgentPrompt(
-    spawnConfig,
-    prompt,
-    handlers,
-    options.signal,
-  )
+  let stopReason: StopReason
+  let usage: Awaited<ReturnType<typeof runAcpAgentPrompt>>['usage']
+  try {
+    ;({ stopReason, usage } = await runWithAcpRetry(
+      () => runAcpAgentPrompt(spawnConfig, prompt, handlers, options.signal),
+      { signal: options.signal, hasProgress: () => sawChunk },
+    ))
+  } catch (err) {
+    // The turn died mid-flight. Attribute what it visibly consumed (estimated —
+    // the agent never got to report usage) and hand the partial transcript to
+    // the caller so history and the usage panel don't pretend it never ran.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated inside the onChunk callback above; TS narrows to the `false` initializer
+    const turn = sawChunk ? acpTurnUsage(null, prompt, assistantText) : null
+    if (turn) {
+      options.onChunk({
+        type: 'usage',
+        model: acpModelValue(options.agentId, options.model),
+        inputTokens: turn.inputTokens,
+        outputTokens: turn.outputTokens,
+        estimated: true,
+      })
+    }
+    throw new AcpTurnFailure(err, {
+      assistantText,
+      usage: turn
+        ? { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens }
+        : { inputTokens: 0, outputTokens: 0 },
+    })
+  }
 
   // Attribute the external agent's token usage to this thread + model so it shows
   // in the usage panel, just like the built-in loop. ACP's `PromptResponse.usage`
