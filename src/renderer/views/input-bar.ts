@@ -790,6 +790,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       hideBranchMismatch()
       updateState()
       updateFooter()
+      updateQueueIndicator()
     }),
     store.on('usage_updated', (tid) => {
       if (tid === getActiveThreadId()) updateFooter()
