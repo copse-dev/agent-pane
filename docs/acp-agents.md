@@ -35,6 +35,22 @@ approval UX.
 - Your configured **MCP servers** (stdio, plus http when the agent supports it)
   are handed to the agent via `session/new`, so it can mount them itself. The
   same trust and enable gating applies as for Copse's own connections.
+- A curated slice of **Copse's own tools** (GitHub/CI, semantic search,
+  staged-diff visibility, web/browser) is offered as a per-turn localhost MCP
+  server (the **native-tool bridge**, issue #602) when the agent supports http
+  MCP servers. Calls execute inside Copse, so the normal permission gate and
+  approval dialogs apply. Disable with the `acpNativeBridgeEnabled` setting.
+- Known agents (the Claude and Gemini catalog entries) are **spawned under the
+  workspace seatbelt** on macOS when the project sandbox is active (issue
+  #590): writes confined to the workspace, home denied except the agent's own
+  config dirs, network limited to its declared endpoints (plus loopback for the
+  bridge). The confines come from the `KNOWN_ACP_AGENTS` catalog at spawn time —
+  no per-config copy — and the config's optional `sandbox` field overrides them
+  (an object for custom confines, `false` to opt out). The agent's shell
+  children inherit the same confines, and approval prompts cannot override the
+  sandbox — sandboxed turns get a prompt note telling the agent so. Agent-run
+  `git push`/`npm install` fail inside the sandbox — use Copse's own tools (or
+  the bridge) for those.
 - Aborting the turn sends `session/cancel` and tears the agent process down.
 
 > **Scope of the write guarantee:** the diff queue only sees writes the agent
@@ -122,14 +138,15 @@ tokens such as `GITHUB_TOKEN` are passed through.
 ACP client mode and the **built-in Copse agent loop** (cloud/local models such as
 Fable or Sonnet) do **not** expose the same tool surface today:
 
-| Capability        | Built-in Copse (native model)                                                               | ACP client (`acp:<id>`)                                  |
-| ----------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| Read/search files | `read_file`, `search_codebase`, `search_code`, … (default) or `explore` subagent (optional) | External agent's own tools (e.g. Read/Grep/Bash) via ACP |
-| Edit files        | `write_file` / `str_replace` → diff approval when needed                                    | `fs/write_text_file` → Copse diff-approval queue         |
-| Shell / CLI       | `run_shell` (structured; prefer dedicated tools for reads)                                  | External agent's shell tool                              |
-| Git / GitHub      | `git_*`, `gh_*`, CI tools                                                                   | External agent (may shell out)                           |
-| MCP servers       | Copse `ToolRegistry` (`mcp__*` tools)                                                       | Forwarded via `session/new` (agent mounts them itself)   |
-| Browser, skills   | Copse `ToolRegistry`                                                                        | **Not forwarded** (see #602 for the MCP-bridge plan)     |
+| Capability                              | Built-in Copse (native model)                                                               | ACP client (`acp:<id>`)                                  |
+| --------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Read/search files                       | `read_file`, `search_codebase`, `search_code`, … (default) or `explore` subagent (optional) | External agent's own tools (e.g. Read/Grep/Bash) via ACP |
+| Edit files                              | `write_file` / `str_replace` → diff approval when needed                                    | `fs/write_text_file` → Copse diff-approval queue         |
+| Shell / CLI                             | `run_shell` (structured; prefer dedicated tools for reads)                                  | External agent's shell tool                              |
+| Git / GitHub                            | `git_*`, `gh_*`, CI tools                                                                   | External agent (may shell out)                           |
+| MCP servers                             | Copse `ToolRegistry` (`mcp__*` tools)                                                       | Forwarded via `session/new` (agent mounts them itself)   |
+| GitHub/CI, semantic search, web/browser | Copse `ToolRegistry`                                                                        | Native-tool bridge (localhost MCP, approval-gated)       |
+| Skills, todo/plan tools                 | Copse `ToolRegistry`                                                                        | **Not forwarded**                                        |
 
 **Default native behavior** (Settings → Local models → _Route reads and searches
 through exploration subagents_ **off**) exposes direct read/search tools so native
@@ -149,9 +166,14 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   so follow-ups keep context, but the agent has no durable session memory yet.
 - **Text only on input.** Image attachments are dropped before the prompt is
   sent (the agent receives the text blocks).
-- **No native-tool bridge.** Configured MCP servers are forwarded, but Copse's
-  own tools (browser, `gh_*`/CI, skills, semantic search) are not yet exposed to
-  the agent as an MCP server — tracked in #602.
+- **Native-tool bridge is http-only.** Agents that support only stdio MCP
+  servers don't get Copse's bridged tools this turn — a stdio shim is a
+  possible follow-up (#602). Skills and todo/plan tools are not bridged.
+- **Sandboxing is macOS-only and catalog-scoped.** Agents with no
+  `KNOWN_ACP_AGENTS` sandbox entry (e.g. Cursor, custom agents) spawn
+  unsandboxed; add `sandbox` (`allowedDomains`, `homeDirs`) to their
+  `registeredAcpAgents` entry to opt them in, or `sandbox: false` to opt a
+  catalog agent out (#590).
 
 ## See also
 
