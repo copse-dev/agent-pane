@@ -49,6 +49,33 @@ export class ToolRegistry {
     }))
   }
 
+  /**
+   * Tools in MCP shape with **draft 2020-12** input schemas. The Anthropic API
+   * validates MCP tool schemas against 2020-12 and rejects the openapi-3.0
+   * flavor {@link toLLMTools} emits (`nullable`, boolean `exclusiveMinimum`) —
+   * an external agent that mounts such a tool dies with a 400 on its next
+   * model call. Tools whose zod schema can't convert are omitted (with a
+   * warning) rather than poisoning the whole toolset.
+   */
+  toMcpTools(): { name: string; description: string; inputSchema: Record<string, unknown> }[] {
+    const tools: { name: string; description: string; inputSchema: Record<string, unknown> }[] = []
+    for (const t of this.tools.values()) {
+      try {
+        tools.push({
+          name: t.name,
+          description: t.description,
+          inputSchema: t.rawParameters ?? z.toJSONSchema(t.parameters),
+        })
+      } catch (err) {
+        console.warn(
+          `[tools] Skipping "${t.name}" from MCP export — schema conversion failed:`,
+          err,
+        )
+      }
+    }
+    return tools
+  }
+
   /** Validate/coerce recovered text-tool-call args; returns null when unknown or invalid. */
   tryCoerceArgs(name: string, rawArgs: unknown): Record<string, unknown> | null {
     const tool = this.tools.get(name)

@@ -57,7 +57,13 @@ export function planAcpAutoSetup(inputs: readonly AcpAutoSetupInput[]): AcpAutoS
 
 export type { AcpAutoSetupResult }
 
-/** Map a catalog preset to a fresh, enabled agent config. */
+/**
+ * Map a catalog preset to a fresh, enabled agent config. The sandbox preset is
+ * deliberately NOT copied here: the catalog is its source of truth, resolved at
+ * spawn time (`resolveAcpSandbox`), so catalog improvements reach every agent
+ * without config migrations. The config's `sandbox` field exists only as a
+ * per-agent override (custom confines, or `false` to opt out).
+ */
 function presetToConfig(known: KnownAcpAgent): AcpAgentConfig {
   return {
     id: known.id,
@@ -126,6 +132,7 @@ async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupRes
           command: known.command,
           cwd,
           ...(known.args.length ? { args: known.args } : {}),
+          ...(known.sandbox ? { sandbox: known.sandbox } : {}),
         })
         if (selector?.choices.length) {
           config = { ...config, availableModels: selector.choices }
