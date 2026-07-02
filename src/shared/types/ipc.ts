@@ -146,6 +146,20 @@ export interface IpcInvokeMap {
   'storage:get': { args: [key: string]; result: unknown }
   'storage:set': { args: [key: string, value: unknown]; result: undefined }
 
+  // Per-thread persistence (one JSON file per thread under userData/threads/)
+  'threads:loadProject': {
+    args: [projectId: string]
+    result: import('./thread.ts').Thread[]
+  }
+  'threads:saveOne': {
+    args: [projectId: string, thread: import('./thread.ts').Thread]
+    result: undefined
+  }
+  'threads:saveProject': {
+    args: [projectId: string, threads: import('./thread.ts').Thread[]]
+    result: undefined
+  }
+
   // Index
   'index:query': { args: [pattern: string]; result: string[] }
 

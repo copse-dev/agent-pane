@@ -22,6 +22,7 @@ import {
   zMcpServerName,
   zNonEmptyString,
   zPathString,
+  zProjectId,
 } from './ipc-guards.ts'
 import { buildIndex, getIndex } from '../services/file-index.ts'
 import { resolveFileReferences } from '../services/file-reference-resolver.ts'
@@ -54,6 +55,11 @@ import {
 } from '../services/extra-providers-store.ts'
 import { fetchOpenAiCompatibleModels } from '../services/provider-models.ts'
 import { storageGet, storageSet } from '../services/storage.ts'
+import {
+  loadProjectThreads,
+  saveProjectThread,
+  saveProjectThreads,
+} from '../services/thread-persistence.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
 import { listAcpModelsForAgent } from '../services/acp/acp-agent-service.ts'
 import { runAcpAutoSetup } from '../services/acp/acp-auto-setup.ts'
@@ -362,6 +368,28 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const k = parseIpcArgs(zNonEmptyString.max(256), [key])
     assertStorageKey(k)
     storageSet(k, value)
+  })
+
+  ipcMain.handle('threads:loadProject', (event, projectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zProjectId, [projectId])
+    return loadProjectThreads(id)
+  })
+  ipcMain.handle('threads:saveOne', (event, projectId: unknown, thread: unknown) => {
+    assertMainFrameSender(event, win)
+    const [id, payload] = parseIpcArgs(z.tuple([zProjectId, z.record(z.string(), z.unknown())]), [
+      projectId,
+      thread,
+    ])
+    return saveProjectThread(id, payload as unknown as import('@shared/types').Thread)
+  })
+  ipcMain.handle('threads:saveProject', (event, projectId: unknown, threads: unknown) => {
+    assertMainFrameSender(event, win)
+    const [id, payload] = parseIpcArgs(
+      z.tuple([zProjectId, z.array(z.record(z.string(), z.unknown()))]),
+      [projectId, threads],
+    )
+    return saveProjectThreads(id, payload as unknown as import('@shared/types').Thread[])
   })
 
   ipcMain.handle('skills:list', () => listSkills())
