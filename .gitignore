@@ -15,7 +15,7 @@ vendor/bundled-cursor-skills/
 
 # Reference CommonMark normalizer fetched at check time (see
 # scripts/fetch-reference-normalizer.mts) + its python bytecode cache.
-tests/commonmark/normalize.py
+packages/streaming-markdown/tests/commonmark/normalize.py
 __pycache__/
 
 # Test artifacts

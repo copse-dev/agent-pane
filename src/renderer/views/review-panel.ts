@@ -1,7 +1,7 @@
 import { el } from '../dom/helpers.ts'
 import type { ThreadReview } from '@shared/types'
-import { renderMarkdown } from '../markdown/renderer.ts'
-import { sanitizeRenderedMarkdown } from '../markdown/sanitize.ts'
+import { renderMarkdown } from '@copse/streaming-markdown'
+import { sanitizeRenderedMarkdown } from '@copse/streaming-markdown'
 import { annotateFileReferences } from '../markdown/file-links.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 

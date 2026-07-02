@@ -13,6 +13,7 @@ import {
 export type BlockKind =
   | 'blank'
   | 'paragraph'
+  | 'indented_code'
   | 'atx_heading'
   | 'setext_heading'
   | 'thematic_break'
@@ -225,6 +226,7 @@ function tryLinkRefDefBlock(lines: ScannedLine[], i: number): number | null {
 
 function breaksUnorderedListItem(lines: ScannedLine[], itemStart: number, j: number): boolean {
   const itemStartLine = lines[itemStart]?.text ?? ''
+  const col = listItemContentColumn(itemStartLine)
   const next = lines[j]
   if (!next) return true
   if (next.text.trim() === '') {
@@ -232,9 +234,13 @@ function breaksUnorderedListItem(lines: ScannedLine[], itemStart: number, j: num
     while (k < lines.length && lines[k]?.text.trim() === '') k++
     const after = lines[k]
     if (!after) return true
+    // Indented at least to the content column → still inside this item
+    // (nested list, indented code, fence, blockquote, ...).
+    if (lazyContinuationIndent(after.text) >= col) return false
     if (isListItemLine(after.text)) return true
     return !isLazyUnorderedContinuation(itemStartLine, after.text)
   }
+  if (lazyContinuationIndent(next.text) >= col && next.text.trim() !== '') return false
   if (isListItemLine(next.text)) return true
   if (
     ATX_HEADING_RE.test(next.text) ||
@@ -265,6 +271,33 @@ export function tokenizeBlocks(source: string): BlockToken[] {
     if (line.text.trim() === '') {
       pushBlock(blocks, 'blank', line.terminated ? 'complete' : 'open', line.start, line.end)
       i++
+      continue
+    }
+
+    // Indented code block (4+ spaces at a block start; cannot interrupt a
+    // paragraph — the paragraph collector consumes indented continuations).
+    if (/^ {4}/.test(line.text) && line.text.trim() !== '') {
+      let j = i + 1
+      let lastContent = i
+      while (j < lines.length) {
+        const next = lines[j]
+        if (!next) break
+        if (next.text.trim() === '') {
+          j++
+          continue
+        }
+        if (/^ {4}/.test(next.text)) {
+          lastContent = j
+          j++
+          continue
+        }
+        break
+      }
+      const last = lines[lastContent] ?? line
+      const terminatorSeen = j < lines.length && lines[j] !== undefined
+      const status: BlockStatus = !last.terminated ? 'open' : terminatorSeen ? 'complete' : 'open'
+      pushBlock(blocks, 'indented_code', status, line.start, last.end)
+      i = lastContent + 1
       continue
     }
 
@@ -322,6 +355,13 @@ export function tokenizeBlocks(source: string): BlockToken[] {
         if (isOrdered) {
           const next = lines[j]
           if (!next) break
+          if (
+            next.text.trim() !== '' &&
+            lazyContinuationIndent(next.text) >= listItemContentColumn(line.text)
+          ) {
+            j++
+            continue
+          }
           if (isListItemLine(next.text)) break
           if (next.text.trim() === '') {
             j++
@@ -542,6 +582,7 @@ export function splitTableRow(line: string): string[] {
 export function isAmbiguousBlockLine(line: string): boolean {
   const trimmed = line.trimStart()
   if (trimmed === '') return false
+  if (/^ {4}/.test(line)) return true
   if (ATX_HEADING_RE.test(line)) return true
   if (THEMATIC_BREAK_RE.test(line)) return true
   if (FENCE_OPEN_RE.test(line)) return true

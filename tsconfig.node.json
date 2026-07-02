@@ -15,7 +15,8 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "paths": {
-      "@shared/*": ["./src/shared/*"]
+      "@shared/*": ["./src/shared/*"],
+      "@copse/streaming-markdown": ["./packages/streaming-markdown/src/index.ts"]
     },
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
@@ -28,5 +29,11 @@
     "noUncheckedSideEffectImports": true,
     "erasableSyntaxOnly": true
   },
-  "include": ["src/main/**/*", "src/preload/**/*", "src/shared/**/*", "scripts/**/*"]
+  "include": [
+    "src/main/**/*",
+    "src/preload/**/*",
+    "src/shared/**/*",
+    "scripts/**/*",
+    "packages/*/scripts/**/*"
+  ]
 }
