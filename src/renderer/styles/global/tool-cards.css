@@ -138,6 +138,14 @@
 .tool-card-subagent[open] .subagent-summary-preview {
   display: none;
 }
+.tool-card-subagent .subagent-model {
+  font-size: var(--font-size-xs, 11px);
+  color: var(--text-tertiary, var(--text-secondary));
+  margin-top: var(--spacing-xs);
+}
+.tool-card-subagent .subagent-model-fallback {
+  color: var(--warning, #b58900);
+}
 .tool-card-subagent .subagent-timeline {
   margin-top: var(--spacing-sm);
   padding-left: var(--spacing-sm);

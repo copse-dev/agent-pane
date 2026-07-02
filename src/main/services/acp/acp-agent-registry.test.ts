@@ -1,7 +1,12 @@
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { setSetting } from '../settings.ts'
-import { getAcpAgent, listAcpAgents, listEnabledAcpAgents } from './acp-agent-registry.ts'
+import {
+  getAcpAgent,
+  listAcpAgents,
+  listEnabledAcpAgents,
+  resolveAcpSandbox,
+} from './acp-agent-registry.ts'
 
 describe('acp agent registry', () => {
   beforeEach(async () => {
@@ -36,5 +41,37 @@ describe('acp agent registry', () => {
     assert.deepEqual(listAcpAgents(), [])
     assert.deepEqual(listEnabledAcpAgents(), [])
     assert.equal(getAcpAgent('anything'), null)
+  })
+})
+
+describe('resolveAcpSandbox (issue #590)', () => {
+  const base = { title: 'X', command: 'x', enabled: true }
+
+  it('falls back to the KNOWN_ACP_AGENTS catalog preset for the id', () => {
+    const resolved = resolveAcpSandbox({ ...base, id: 'claude-agent-acp' })
+    assert.ok(resolved)
+    // ASRT wildcards match subdomains only, so the apex is listed alongside;
+    // auth endpoints move between subdomains (console/claude.ai), hence the
+    // vendor-wide allowlist rather than pinned hosts (#604 validation).
+    assert.ok(resolved.allowedDomains.includes('*.anthropic.com'))
+    assert.ok(resolved.allowedDomains.includes('anthropic.com'))
+    assert.ok(resolved.homeDirs?.includes('.claude'))
+  })
+
+  it('prefers an explicit per-config override to the catalog preset', () => {
+    const custom = { allowedDomains: ['example.com'] }
+    assert.deepEqual(
+      resolveAcpSandbox({ ...base, id: 'claude-agent-acp', sandbox: custom }),
+      custom,
+    )
+  })
+
+  it('honors sandbox: false as an explicit opt-out', () => {
+    assert.equal(resolveAcpSandbox({ ...base, id: 'claude-agent-acp', sandbox: false }), undefined)
+  })
+
+  it('leaves agents with no catalog preset unsandboxed', () => {
+    assert.equal(resolveAcpSandbox({ ...base, id: 'my-custom-agent' }), undefined)
+    assert.equal(resolveAcpSandbox({ ...base, id: 'cursor' }), undefined) // preset ships no sandbox
   })
 })

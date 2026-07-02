@@ -16,13 +16,21 @@ import {
   type WriteTextFileRequest,
   type WriteTextFileResponse,
 } from '@agentclientprotocol/sdk'
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { Readable, Writable } from 'node:stream'
+import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import type { StreamChunk } from '@shared/types'
-import type { AcpModelChoice, AcpModelSelector } from '@shared/types/acp.ts'
+import type { AcpAgentSandboxConfig, AcpModelChoice, AcpModelSelector } from '@shared/types/acp.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunk } from './session-update-adapter.ts'
 import { envForRendererChildProcess } from '../child-process-env.ts'
+import { acpAgentSandboxOverlay, ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
+import { acquireSandboxNetworkScope } from '../../project-sandbox/network-scope.ts'
+import {
+  formatArgvForShell,
+  isProjectSandboxEnabled,
+  shellForSandboxWrap,
+} from '../../project-sandbox/spawn.ts'
 
 export type { AcpModelChoice, AcpModelSelector }
 
@@ -67,6 +75,18 @@ export interface AcpAgentSpawnConfig {
    * (stdio is baseline; http needs the capability flag).
    */
   mcpServers?: McpServerConfig[]
+  /**
+   * Run the agent process under the workspace seatbelt with these relaxations
+   * (issue #590). Only effective when the project sandbox is active on this
+   * platform; otherwise the agent spawns unsandboxed as before.
+   */
+  sandbox?: AcpAgentSandboxConfig
+  /**
+   * Copse's native-tool MCP bridge for this turn (issue #602, tier 2). Added to
+   * `session/new` `mcpServers` as an http server when the agent advertises
+   * `mcpCapabilities.http`; ignored otherwise.
+   */
+  nativeBridge?: { url: string; token: string }
 }
 
 const UNSUPPORTED = (method: string) => (): Promise<never> =>
@@ -104,6 +124,71 @@ export function modelSelectorFrom(response: NewSessionResponse): AcpModelSelecto
  */
 export function buildAcpAgentEnv(config: AcpAgentSpawnConfig): Record<string, string> {
   return { ...envForRendererChildProcess(), ...(config.env ?? {}) }
+}
+
+/**
+ * Spawn the external ACP agent, under the workspace seatbelt when the agent's
+ * config opts in and the project sandbox is active (issue #590). The sandboxed
+ * agent gets the same confines as native auto-run shell commands — workspace-
+ * only writes, home denied except the agent's own {@link AcpAgentSandboxConfig}
+ * dirs, network limited to its declared endpoints — and those confines apply to
+ * its whole process tree, including its shell children.
+ *
+ * The env is always {@link buildAcpAgentEnv} (scrubbed of Copse's provider
+ * keys). ASRT's `wrapWithSandboxArgv` returns `process.env` verbatim on POSIX,
+ * so it must NOT be spawned with — that would resurrect the scrubbed secrets
+ * inside the agent process. $TMPDIR is redirected to the workspace-owned
+ * scratch dir the seatbelt allows (issue #481).
+ */
+/**
+ * Whether an agent with this sandbox config will actually spawn confined:
+ * needs the config, a POSIX platform, and the project sandbox to be active.
+ * Exposed so callers (e.g. the prompt builder's sandbox note) stay in sync
+ * with the spawn decision.
+ */
+export function willSandboxAcpAgent(sandbox: AcpAgentSandboxConfig | undefined): boolean {
+  return Boolean(sandbox) && process.platform !== 'win32' && isProjectSandboxEnabled()
+}
+
+async function spawnAcpAgentProcess(config: AcpAgentSpawnConfig): Promise<ChildProcess> {
+  const env = buildAcpAgentEnv(config)
+  const stdio: ('pipe' | 'inherit')[] = ['pipe', 'pipe', 'inherit']
+  if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {
+    const overlay = acpAgentSandboxOverlay(config.cwd, config.sandbox, {
+      allowLocalhost: Boolean(config.nativeBridge),
+    })
+    // ASRT's proxies consult the GLOBAL config per connection — the overlay's
+    // network block only wires restriction up. Widen the global allowlist for
+    // exactly this process's lifetime (see network-scope.ts for the trade-off),
+    // acquiring before spawn so the agent's first connection never races it.
+    const release = acquireSandboxNetworkScope({
+      domains: overlay.network?.allowedDomains ?? [],
+      allowLocalBinding: overlay.network?.allowLocalBinding ?? false,
+    })
+    try {
+      const command = formatArgvForShell(config.command, config.args ?? [])
+      const { argv } = await SandboxManager.wrapWithSandboxArgv(
+        command,
+        shellForSandboxWrap(),
+        overlay,
+      )
+      const file = argv[0]
+      if (!file) throw new Error('sandbox wrap produced empty argv')
+      const tmpDir = ensureWorkspaceTmpDir()
+      const child = spawn(file, argv.slice(1), {
+        cwd: config.cwd,
+        env: { ...env, TMPDIR: tmpDir, TMP: tmpDir, TEMP: tmpDir },
+        stdio,
+      })
+      child.once('close', release)
+      child.once('error', release)
+      return child
+    } catch (err) {
+      release()
+      throw err
+    }
+  }
+  return spawn(config.command, config.args ?? [], { cwd: config.cwd, env, stdio })
 }
 
 /**
@@ -150,11 +235,8 @@ export async function runAcpAgentPrompt(
   handlers: AcpClientHandlers,
   signal?: AbortSignal,
 ): Promise<{ stopReason: StopReason; usage?: Usage | null }> {
-  const child = spawn(config.command, config.args ?? [], {
-    cwd: config.cwd,
-    env: buildAcpAgentEnv(config),
-    stdio: ['pipe', 'pipe', 'inherit'],
-  })
+  const child = await spawnAcpAgentProcess(config)
+  if (!child.stdin || !child.stdout) throw new Error('ACP agent spawned without stdio pipes')
 
   const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
   const readable = Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>
@@ -191,10 +273,19 @@ export async function runAcpAgentPrompt(
         },
       })
 
-      const mcpServers = toAcpMcpServers(
-        config.mcpServers ?? [],
-        initResponse.agentCapabilities?.mcpCapabilities,
-      )
+      const mcpCapabilities = initResponse.agentCapabilities?.mcpCapabilities
+      const mcpServers = toAcpMcpServers(config.mcpServers ?? [], mcpCapabilities)
+      // Copse's own tools ride the same channel as forwarded servers: an http
+      // MCP endpoint the agent mounts itself (#602 tier 2). http-capable only —
+      // agents without the capability simply don't get the bridge this turn.
+      if (config.nativeBridge && mcpCapabilities?.http === true) {
+        mcpServers.push({
+          type: 'http',
+          name: 'copse',
+          url: config.nativeBridge.url,
+          headers: [{ name: 'Authorization', value: `Bearer ${config.nativeBridge.token}` }],
+        })
+      }
       return ctx.buildSession({ cwd: config.cwd, mcpServers }).withSession(async (session) => {
         const cancel = (): void =>
           void ctx.notify('session/cancel', { sessionId: session.sessionId })
@@ -250,11 +341,8 @@ export async function listAcpAgentModels(
   config: AcpAgentSpawnConfig,
   timeoutMs = 15000,
 ): Promise<AcpModelSelector | null> {
-  const child = spawn(config.command, config.args ?? [], {
-    cwd: config.cwd,
-    env: buildAcpAgentEnv(config),
-    stdio: ['pipe', 'pipe', 'inherit'],
-  })
+  const child = await spawnAcpAgentProcess(config)
+  if (!child.stdin || !child.stdout) throw new Error('ACP agent spawned without stdio pipes')
   const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
   const readable = Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>
   const stream = ndJsonStream(writable, readable)
