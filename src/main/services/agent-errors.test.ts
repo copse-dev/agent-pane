@@ -32,6 +32,17 @@ describe('classifyAgentError', () => {
     assert.match(out, /quota|billing/i)
   })
 
+  it('maps overloaded errors from REST (529 / overloaded_error) and ACP text', () => {
+    const rest = new Error(
+      '529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}',
+    )
+    assert.match(classifyAgentError(rest), /temporarily overloaded/)
+    // ACP JSON-RPC failures arrive as opaque text with no status or JSON body.
+    const acp = new Error('Internal error: API Error: Overloaded')
+    assert.match(classifyAgentError(acp), /temporarily overloaded/)
+    assert.doesNotMatch(classifyAgentError(acp), /Internal error/)
+  })
+
   it('extracts the provider message from JSON error blobs', () => {
     const err = new Error(
       '400 {"type":"error","error":{"type":"invalid_request_error","message":"max_tokens: 200000 > 64000, which is the maximum allowed."},"request_id":"req_abc"}',
