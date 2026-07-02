@@ -37,6 +37,11 @@ When extending the renderer or its CSS, preserve these rules:
 - **Agent-output shapes.** Support `-`, `*`, and `+` list markers. ATX `#` levels map to
   matching `<h1>`–`<h6>` tags; setext underlines (`===`/`---`) map to `<h1>`/`<h2>`
   (see `render-blocks.ts`).
+- **Benign raw inline HTML.** Attribute-less phrasing tags models emit in prose
+  (`<b> <i> <u> <s> <del> <ins> <sub> <sup> <kbd> <mark> <br>`) pass through unescaped
+  (`BENIGN_RAW_INLINE_TAG_RE` in `escape.ts`); the DOMPurify sink allowlist mirrors the set.
+  Anything with attributes, and all block/structural raw HTML, stays escaped — see the
+  raw-HTML policy discussion in #600 before widening this.
 - **Streaming hold.** Incomplete block starts (fences, thematic breaks, blockquotes) stream as
   plain text in the inline pending tail until their line ends. Open fenced code blocks
   forward-pass into `.stream-forming` as `<pre class="stream-fence-forming">` with highlight.js on

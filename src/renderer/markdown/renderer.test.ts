@@ -551,10 +551,15 @@ describe('renderMarkdown sanitization (#115)', () => {
     assert.match(html, /&#39;bye&#39;/)
   })
 
-  it('keeps injected markup escaped inside table cells', () => {
-    const html = renderMarkdown(['| H |', '| - |', '| <b>x</b> |'].join('\n'))
-    assert.match(html, /<td>&lt;b&gt;x&lt;\/b&gt;<\/td>/)
-    assert.doesNotMatch(html, /<td><b>/)
+  it('renders benign raw inline tags but keeps attributed/structural markup escaped', () => {
+    const html = renderMarkdown(
+      ['| H |', '| - |', '| <b>x</b> <b onclick="p()">y</b> <div>z</div> |'].join('\n'),
+    )
+    assert.match(html, /<td><b>x<\/b>/)
+    // The attributed opener stays escaped; its bare closer passes through and
+    // the DOMPurify sink drops the orphan tag.
+    assert.match(html, /&lt;b onclick=&quot;p\(\)&quot;&gt;y/)
+    assert.match(html, /&lt;div&gt;z&lt;\/div&gt;/)
   })
 
   it('keeps injected markup escaped inside inline code spans', () => {
@@ -597,6 +602,15 @@ describe('renderMarkdown CommonMark structure fixes', () => {
   it('applies hard breaks inside emphasis spans', () => {
     assert.match(renderMarkdown('*foo  \nbar*'), /<em>foo<br>bar<\/em>/)
     assert.match(renderMarkdown('*foo\\\nbar*'), /<em>foo<br>bar<\/em>/)
+  })
+
+  it('passes benign raw inline HTML through and keeps it escaped in code spans', () => {
+    const html = renderMarkdown('a <del>gone</del> x<sub>1</sub> <kbd>Ctrl</kbd> line<br>next')
+    assert.match(html, /<del>gone<\/del>/)
+    assert.match(html, /<sub>1<\/sub>/)
+    assert.match(html, /<kbd>Ctrl<\/kbd>/)
+    assert.match(html, /line<br>next/)
+    assert.match(renderMarkdown('`<del>x</del>`'), /<code>&lt;del&gt;x&lt;\/del&gt;<\/code>/)
   })
 
   it('does not hard-break inside code spans or at the end of a block', () => {

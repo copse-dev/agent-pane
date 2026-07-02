@@ -39,6 +39,18 @@ const ALLOWED_TAGS = [
   'th',
   'td',
   'blockquote',
+  // Benign raw inline HTML the renderer passes through unescaped (see
+  // BENIGN_RAW_INLINE_TAG_RE in escape.ts) — attribute-less phrasing tags only.
+  'b',
+  'i',
+  'u',
+  's',
+  'del',
+  'ins',
+  'sub',
+  'sup',
+  'kbd',
+  'mark',
   // Remote-agent artifact images. The renderer only ever emits the locked-down
   // form `<img class="remote-artifact-image" data-remote-artifact-path="…" …>`
   // (no `src`); `hydrateRemoteArtifactImages()` resolves the `src` to a
