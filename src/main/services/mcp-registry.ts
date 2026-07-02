@@ -460,6 +460,33 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
   }
 }
 
+/**
+ * The MCP servers an external ACP agent should be handed via `session/new`
+ * (`mcpServers`), so it can mount the user's servers itself (issue #602,
+ * tier 1). Applies the same gating as Copse's own connections — workspace
+ * trust (collectConfigs), config `disabled`, the Settings toggle, and env
+ * interpolation with the per-source allowlist — then keeps only transports an
+ * external process can reach (stdio/http). Bundled in-process servers live
+ * inside Copse and cannot be forwarded.
+ *
+ * The agent spawns stdio servers itself: interpolated `env` entries travel in
+ * the session request, but inherited environment comes from the agent process
+ * (which is scrubbed of Copse's provider keys), not from Copse.
+ */
+export async function listForwardableMcpServers(): Promise<McpServerConfig[]> {
+  // Mirror loadMcpServers: under agent-eval/e2e nothing may spawn or reach the
+  // network, so the external agent gets no servers either.
+  if (process.env['COPSE_AGENT_EVAL'] === '1' || process.env['COPSE_E2E'] === '1') {
+    return []
+  }
+  const { active } = await collectConfigs()
+  const userDisabled = getUserDisabledServerNames()
+  return active
+    .filter((cfg) => !isMcpServerEffectivelyDisabled(cfg, userDisabled))
+    .filter((cfg) => cfg.transport === 'stdio' || cfg.transport === 'http')
+    .map((cfg) => interpolateServerConfig(cfg, process.env, envAllowlistFor(cfg)))
+}
+
 function untrustedStatus(cfg: McpServerConfig, userDisabled: ReadonlySet<string>): McpServerStatus {
   return {
     name: cfg.name,
