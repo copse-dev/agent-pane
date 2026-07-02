@@ -107,9 +107,7 @@ async function saveSimpleFields(data: FormData, api: ApiClient): Promise<void> {
       await api.settings.set(field.name, data.get(field.name) === 'on')
     } else {
       const value = (data.get(field.name) as string | null) ?? ''
-      const trimmed =
-        field.name === 'customInstructions' ||
-        field.name === 'openRouterModel'
+      const trimmed = field.name === 'customInstructions' || field.name === 'openRouterModel'
       await api.settings.set(field.name, trimmed ? value.trim() : value)
     }
   }
