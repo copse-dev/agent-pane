@@ -19,10 +19,22 @@ export function escapeHtml(text: string): string {
 const SAFE_OUTER_TAG_RE =
   /^(?:<a(?:\s+href="[^"]*")(?:\s+(?:title|target|rel|data-browser-link|data-workspace-link|class)="[^"]*")*\s*>|<\/(?:a|code|em|strong)>|<(?:code|em|strong)\b[^>]*>|<img\b[^>]*(?:\bdata-md-rendered="1"|\bclass="remote-artifact-image")[^>]*\/?>)$/i
 
+/**
+ * Benign raw inline HTML models emit in prose (strikethrough, sub/superscript,
+ * keyboard keys, explicit breaks). Attribute-less phrasing tags only — anything
+ * with attributes, and all block/structural tags, stays escaped. The DOMPurify
+ * sink allowlist (`sanitize.ts`) mirrors this set.
+ */
+const BENIGN_RAW_INLINE_TAG_RE = /^<\/?(?:b|i|u|s|del|ins|sub|sup|kbd|mark|br)\s*\/?>$/i
+
 function escapeHtmlOutsideSafeTags(html: string): string {
   return html
     .split(/(<[^>]+>)/g)
-    .map((part) => (part.startsWith('<') && SAFE_OUTER_TAG_RE.test(part) ? part : escapeHtml(part)))
+    .map((part) =>
+      part.startsWith('<') && (SAFE_OUTER_TAG_RE.test(part) || BENIGN_RAW_INLINE_TAG_RE.test(part))
+        ? part
+        : escapeHtml(part),
+    )
     .join('')
 }
 

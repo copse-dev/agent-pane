@@ -28,11 +28,20 @@ When extending the renderer or its CSS, preserve these rules:
   resolves correctly; link labels may already contain `<em>` / `<strong>` from that pass.
   See #475 and [`docs/plans/markdown-renderer-hardening.md`](../../../docs/plans/markdown-renderer-hardening.md).
 - **Soft line breaks.** Prose paragraphs preserve single newlines in HTML (CommonMark soft breaks);
-  hard breaks (two+ trailing spaces) emit `<br>`. Tight list items still collapse internal
-  newlines to spaces. `.message-text p` uses `white-space: pre-wrap` (the container is `normal`) so
-  preserved newlines render as visible line breaks without `<br>` tags.
+  hard breaks (two+ trailing spaces, or a backslash before the newline) emit `<br>` and swallow the
+  next line's leading indentation. Breaks are marked before inline rendering (`markHardBreaks` in
+  `render-prose-inline.ts`) so emphasis spans keep them; code-span interiors and raw `<tag>` spans
+  are exempt. Tight list items still collapse internal newlines to spaces. `.message-text p` uses
+  `white-space: pre-wrap` (the container is `normal`) so preserved newlines render as visible line
+  breaks without `<br>` tags.
 - **Agent-output shapes.** Support `-`, `*`, and `+` list markers. ATX `#` levels map to
-  matching `<h1>`–`<h6>` tags (see `render-blocks.ts`).
+  matching `<h1>`–`<h6>` tags; setext underlines (`===`/`---`) map to `<h1>`/`<h2>`
+  (see `render-blocks.ts`).
+- **Benign raw inline HTML.** Attribute-less phrasing tags models emit in prose
+  (`<b> <i> <u> <s> <del> <ins> <sub> <sup> <kbd> <mark> <br>`) pass through unescaped
+  (`BENIGN_RAW_INLINE_TAG_RE` in `escape.ts`); the DOMPurify sink allowlist mirrors the set.
+  Anything with attributes, and all block/structural raw HTML, stays escaped — see the
+  raw-HTML policy discussion in #600 before widening this.
 - **Streaming hold.** Incomplete block starts (fences, thematic breaks, blockquotes) stream as
   plain text in the inline pending tail until their line ends. Open fenced code blocks
   forward-pass into `.stream-forming` as `<pre class="stream-fence-forming">` with highlight.js on
