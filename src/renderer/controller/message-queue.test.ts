@@ -315,8 +315,14 @@ test('removeQueuedMessage keeps remaining queued messages in order', () => {
     thread.pendingMessages?.map((item) => item.messageId),
     [secondQueuedId],
   )
-  assert.equal(thread.messages.some((message) => message.id === firstQueuedId), false)
-  assert.equal(thread.messages.some((message) => message.id === secondQueuedId), true)
+  assert.equal(
+    thread.messages.some((message) => message.id === firstQueuedId),
+    false,
+  )
+  assert.equal(
+    thread.messages.some((message) => message.id === secondQueuedId),
+    true,
+  )
 })
 
 test('updateQueuedMessageText preserves images when editing an array payload', () => {

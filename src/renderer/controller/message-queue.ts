@@ -178,11 +178,7 @@ export function updateQueuedMessageText(
  * the normal FIFO drain, which now dispatches this message first.
  */
 /** Drop a queued follow-up from the FIFO list and remove its user bubble. */
-export function removeQueuedMessage(
-  store: AppStore,
-  threadId: string,
-  messageId: string,
-): void {
+export function removeQueuedMessage(store: AppStore, threadId: string, messageId: string): void {
   const thread = store.getState().threads.find((t) => t.id === threadId)
   if (!thread) return
   const pending = thread.pendingMessages ?? []

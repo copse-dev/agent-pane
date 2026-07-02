@@ -87,7 +87,10 @@ describe('queued message edit (component)', () => {
     assert.equal(document.querySelector<HTMLElement>('.conversation-queued')?.hidden, true)
     const thread = store.getState().threads.find((t) => t.id === threadId)
     assert.equal(thread?.pendingMessages, undefined)
-    assert.equal(thread?.messages.some((message) => message.id === messageId), false)
+    assert.equal(
+      thread?.messages.some((message) => message.id === messageId),
+      false,
+    )
   })
 
   it('Send re-queues the message with the edited text', () => {
