@@ -103,8 +103,8 @@ let layoutMounted = false
 async function boot(): Promise<void> {
   mountSettingsDialog(store, api)
   mountOnboardingDialog(store, api)
-  mountApprovalDialog(api)
-  mountAskUserDialog(api)
+  mountApprovalDialog(api, store)
+  mountAskUserDialog(api, store)
   mountFileSearchDialog(store, api)
 
   // Load persisted user preferences before the main layout mounts.

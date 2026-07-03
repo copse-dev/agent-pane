@@ -89,6 +89,7 @@ export interface ApiClient {
     onApprovalRequest: (
       handler: (req: {
         id: string
+        threadId?: string
         title: string
         body: string
         type: string
@@ -97,7 +98,11 @@ export interface ApiClient {
       }) => void,
     ) => () => void
     onAskUserRequest: (
-      handler: (req: { id: string; questions: { question: string; options?: string[] }[] }) => void,
+      handler: (req: {
+        id: string
+        threadId?: string
+        questions: { question: string; options?: string[] }[]
+      }) => void,
     ) => () => void
     onShellOutput: (handler: (data: string, toolCallId: string | null) => void) => () => void
     onUsage: (handler: (threadId: string, usage: UsageDelta) => void) => () => void
