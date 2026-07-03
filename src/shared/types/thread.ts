@@ -77,6 +77,8 @@ export interface Thread {
   queuePaused?: boolean
   /** Unsubmitted composer text; keeps blank threads visible across switches. */
   draftPrompt?: string
+  /** Per-thread model override; absent means "use the global default". */
+  model?: string
   createdAt: number
   updatedAt: number
 }
