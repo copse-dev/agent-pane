@@ -55,6 +55,8 @@
   white-space: nowrap;
 }
 .attachment-chip button {
+  display: inline-flex;
+  align-items: center;
   background: none;
   border: none;
   cursor: pointer;

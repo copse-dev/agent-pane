@@ -2,6 +2,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { at } from '@shared/array-utils.ts'
 import { qsRequired } from '../dom/helpers.ts'
+import { closeIcon } from '../dom/icons.ts'
 import {
   DEFAULT_APP_CHAT_MODEL,
   LM_STUDIO_MODEL_IDS,
@@ -47,7 +48,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
     <div class="onboarding-shell settings-shell">
       <header class="settings-header onboarding-header">
         <h2>Welcome to Copse</h2>
-        <button type="button" class="settings-close-btn" id="onboarding-close" aria-label="Close setup">✕</button>
+        <button type="button" class="settings-close-btn" id="onboarding-close" aria-label="Close setup"></button>
       </header>
 
       <p class="onboarding-tagline">
@@ -294,7 +295,9 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
   overlay.querySelector('#onboarding-skip')?.addEventListener('click', () => {
     void skipSetup()
   })
-  overlay.querySelector('#onboarding-close')?.addEventListener('click', () => {
+  const onboardingCloseBtn = qsRequired(overlay, '#onboarding-close')
+  onboardingCloseBtn.append(closeIcon('ui-icon'))
+  onboardingCloseBtn.addEventListener('click', () => {
     void skipSetup()
   })
 

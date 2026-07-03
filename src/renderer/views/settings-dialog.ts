@@ -12,6 +12,7 @@ import {
 import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
 import { DEFAULT_ADVISOR_MODEL } from '../../main/services/advisor-strategy.ts'
 import { qsRequired } from '../dom/helpers.ts'
+import { closeIcon } from '../dom/icons.ts'
 import { populateModelSelect, populateSmallTasksModelSelect } from './model-options.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createCustomProvidersSection } from './setup/custom-providers-section.ts'
@@ -169,7 +170,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     <div class="settings-shell">
       <header class="settings-header">
         <h2>Settings</h2>
-        <button type="button" class="settings-close-btn" id="settings-close" aria-label="Close settings">✕</button>
+        <button type="button" class="settings-close-btn" id="settings-close" aria-label="Close settings"></button>
       </header>
 
       <div class="settings-body">
@@ -1183,5 +1184,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   })
 
   qsRequired(overlay, '#settings-cancel').addEventListener('click', closeSettingsDialog)
-  qsRequired(overlay, '#settings-close').addEventListener('click', closeSettingsDialog)
+  const settingsCloseBtn = qsRequired(overlay, '#settings-close')
+  settingsCloseBtn.append(closeIcon('ui-icon'))
+  settingsCloseBtn.addEventListener('click', closeSettingsDialog)
 }

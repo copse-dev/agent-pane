@@ -1,4 +1,5 @@
 import { el } from '../dom/helpers.ts'
+import { arrowLeftIcon, arrowRightIcon, refreshIcon } from '../dom/icons.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { CanvasArtefact } from '@shared/types/canvas.ts'
@@ -355,7 +356,7 @@ export function mountBrowserPane(
         title: 'Back',
         disabled: true,
       },
-      '←',
+      arrowLeftIcon('ui-icon ui-icon-sm'),
     )
     const forwardBtn = el(
       'button',
@@ -366,12 +367,12 @@ export function mountBrowserPane(
         title: 'Forward',
         disabled: true,
       },
-      '→',
+      arrowRightIcon('ui-icon ui-icon-sm'),
     )
     const reloadBtn = el(
       'button',
       { type: 'button', class: 'browser-nav-btn', 'aria-label': 'Reload', title: 'Reload' },
-      '↻',
+      refreshIcon('ui-icon ui-icon-sm'),
     )
     const urlInput = el('input', {
       type: 'text',
