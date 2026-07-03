@@ -414,9 +414,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return listCursorHooks({ workspaceRoot: root, projectTrusted: isWorkspaceTrusted(root) })
   })
   ipcMain.handle('instructions:list', async () =>
-    (await loadProjectInstructionSources()).map(({ path, name, content }) => ({
+    (await loadProjectInstructionSources()).map(({ path, name, scope, content }) => ({
       path,
       name,
+      scope,
       bytes: Buffer.byteLength(content, 'utf-8'),
     })),
   )
