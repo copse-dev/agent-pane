@@ -15,6 +15,26 @@ npm install
 npm run dev
 ```
 
+### Hardened npm profiles (`ignore-scripts`)
+
+If your npm is configured with `ignore-scripts=true` (a common supply-chain hardening setting in `~/.npmrc`), `npm install` **skips this project's `postinstall`** — including the step that makes node-pty's `spawn-helper` executable. The published `node-pty` prebuild ships `spawn-helper` as mode `0644`, and nothing in node-pty's own install flow adds the execute bit, so without our `postinstall` the integrated terminal fails to launch with:
+
+```
+Failed to start terminal: ... 'terminal:create': Error: posix_spawnp failed.
+```
+
+Keep `ignore-scripts` on if you want it — just run the native postinstall once after each install (the chmod runs before the electron rebuild, so you can skip that):
+
+```bash
+SKIP_ELECTRON_REBUILD=1 npx tsx scripts/postinstall-native.mts
+```
+
+Or let scripts run for a single install without changing your global config:
+
+```bash
+npm install --ignore-scripts=false
+```
+
 Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for cloud models, add an `OPENROUTER_API_KEY` (Settings → API Keys) to reach Claude, GPT, Gemini, Llama and more through [OpenRouter](https://openrouter.ai), or configure a local provider in Settings. For cheap/free tiers you can also add a `MISTRAL_API_KEY` (Mistral's free Experiment tier), `GEMINI_API_KEY` (Google's free-tier Gemini Flash models), or `DEEPSEEK_API_KEY` (low-cost DeepSeek) — each appears as its own group in the model picker. Without keys, the app falls back to a built-in mock LLM for development.
 
 ### How API keys are stored
