@@ -257,7 +257,11 @@ export function createLmStudioSection(
           }
           if (status.totalSizeBytes && status.downloadedBytes) {
             const pct = Math.round((status.downloadedBytes / status.totalSizeBytes) * 100)
-            setInlineStatus(progressEl, 'pending', `Downloading… ${String(pct)}% (${formatBytes(status.downloadedBytes)} / ${formatBytes(status.totalSizeBytes)})`)
+            setInlineStatus(
+              progressEl,
+              'pending',
+              `Downloading… ${String(pct)}% (${formatBytes(status.downloadedBytes)} / ${formatBytes(status.totalSizeBytes)})`,
+            )
           }
         })
     }, 2000)
@@ -329,16 +333,21 @@ export function createLmStudioSection(
     const lmUrl = urlInput.value.trim()
     const currentSafety = (await api.settings.get('safetyModel')) as string | undefined
     const currentThreshold = (await api.settings.get('safetyConfidenceThreshold')) as
-      number | undefined
+      | number
+      | undefined
     const currentSafetyEnabled = (await api.settings.get('safetyClassifierEnabled')) as
-      boolean | undefined
+      | boolean
+      | undefined
     const currentAutoRun = (await api.settings.get('autoRunSandboxCommands')) as boolean | undefined
     const currentMcpAuto = (await api.settings.get('mcpAutoAllowReadOnly')) as boolean | undefined
     const currentReadonly = (await api.settings.get('defaultReadonlyMode')) as boolean | undefined
     const currentWebOrigins = (await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING)) as
-      string[] | undefined | null
+      | string[]
+      | undefined
+      | null
     const currentWebApproval = (await api.settings.get(WEB_ALLOW_USER_APPROVAL_SETTING)) as
-      boolean | undefined
+      | boolean
+      | undefined
     await api.settings.setSecurity({
       localServerUrl: lmUrl,
       safetyClassifierEnabled: currentSafetyEnabled ?? true,

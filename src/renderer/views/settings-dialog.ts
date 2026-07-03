@@ -1106,7 +1106,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       )
       await loadSimpleFields(form, api)
       const savedWebOrigins = (await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING)) as
-        string[] | undefined | null
+        | string[]
+        | undefined
+        | null
       ;(form.elements.namedItem('webAllowedOrigins') as HTMLTextAreaElement).value = (
         savedWebOrigins?.length ? savedWebOrigins : DEFAULT_WEB_ALLOWED_ORIGINS
       ).join('\n')
