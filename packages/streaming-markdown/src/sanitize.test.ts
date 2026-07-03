@@ -119,13 +119,15 @@ describe('sanitizeRenderedMarkdown', () => {
   })
 })
 
-// Regression coverage for the DOMPurify Dependabot advisories (dompurify has no
-// patched release beyond the pinned version). Each of those bypasses targets a
-// *risky* DOMPurify configuration this sink deliberately does not use: a strict
-// tag/attr allowlist (never a FORBID_TAGS denylist), string output (never
-// RETURN_DOM), and no custom-element handling. These assertions pin that posture
-// so a refactor of `sanitize.ts` toward any of those modes fails loudly here
-// instead of silently re-opening the advisory class.
+// Defense-in-depth coverage for the DOMPurify Dependabot advisories. Those
+// advisories are fixed upstream in dompurify 3.4.11 (they affect <=3.4.10), and
+// the app pulls that patched release; these tests are not a substitute for the
+// bump. What they add is that each of those bypasses targets a *risky* DOMPurify
+// configuration this sink deliberately does not use: a strict tag/attr allowlist
+// (never a FORBID_TAGS denylist), string output (never RETURN_DOM), and no
+// custom-element handling. These assertions pin that posture so a refactor of
+// `sanitize.ts` toward any of those modes fails loudly here instead of silently
+// re-opening the advisory class.
 describe('sanitizeRenderedMarkdown — DOMPurify advisory posture', () => {
   it('drops custom elements (CUSTOM_ELEMENT_HANDLING prototype-pollution class)', () => {
     // The allowlist admits only standard tags, so a custom element and any
