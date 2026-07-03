@@ -36,6 +36,7 @@
     "coverage:check": "node scripts/coverage-gate.mts",
     "coverage:update": "node scripts/coverage-gate.mts --update",
     "coverage:ci": "npm run coverage && npm run coverage:check",
+    "bench:thread-store": "node scripts/bench-thread-store.mts",
     "validate:local-agent": "node scripts/run-validate-local-agent.mts",
     "validate:browser-tools": "node scripts/validate-browser-tools.mts",
     "test:e2e": "wdio run wdio.conf.ts",

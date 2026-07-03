@@ -2,7 +2,8 @@
 
 Tracking: [#644](https://github.com/jonathanKingston/agent-pane/issues/644)
 
-Status: **planned** — design pinned in the issue; no open questions.
+Status: **in progress** — Phases 0–1 + migration + benchmark landed on
+`claude/thread-referencing-workspace-a31o1b` ([PR #647](https://github.com/jonathanKingston/agent-pane/pull/647), do-not-merge WIP). See Progress below.
 
 ## Goal
 
@@ -21,12 +22,12 @@ plan is the build sequence.
 
 ## Current state (what changes)
 
-| Area | Today | After |
-| --- | --- | --- |
-| Persistence | one JSON blob per thread, `<userData>/threads/<projectId>/<threadId>.json` (`src/main/services/thread-persistence.ts`); whole-`Thread` snapshot saves | thread directory under `~/.copse/workspace`; event-level appends + tiny mutable `meta.json` |
-| Save driver | renderer autosave (`src/renderer/controller/persistence.ts`) debounces store events into whole-thread `threads:saveOne`/`saveProject` IPC | renderer maps store events onto event-level IPC (`appendMessage`, `updateMeta`, …); main-side chunk sink streams partials for crash durability |
-| Agent access to history | none | `~/.copse/workspace` read-only-resolvable by read tools; writes blocked by construction (`assertWorkspaceWriteTarget` is workspace-only) |
-| `@` picker | files only (`mention-picker.ts` → `api.index.query`), inlines content, 16 KB cap | second "threads" source from `catalog.jsonl`; inserts a **path reference + steering preamble**, nothing inlined |
+| Area                    | Today                                                                                                                                                 | After                                                                                                                                          |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Persistence             | one JSON blob per thread, `<userData>/threads/<projectId>/<threadId>.json` (`src/main/services/thread-persistence.ts`); whole-`Thread` snapshot saves | thread directory under `~/.copse/workspace`; event-level appends + tiny mutable `meta.json`                                                    |
+| Save driver             | renderer autosave (`src/renderer/controller/persistence.ts`) debounces store events into whole-thread `threads:saveOne`/`saveProject` IPC             | renderer maps store events onto event-level IPC (`appendMessage`, `updateMeta`, …); main-side chunk sink streams partials for crash durability |
+| Agent access to history | none                                                                                                                                                  | `~/.copse/workspace` read-only-resolvable by read tools; writes blocked by construction (`assertWorkspaceWriteTarget` is workspace-only)       |
+| `@` picker              | files only (`mention-picker.ts` → `api.index.query`), inlines content, 16 KB cap                                                                      | second "threads" source from `catalog.jsonl`; inserts a **path reference + steering preamble**, nothing inlined                                |
 
 Pre-v1: the old format is dropped, not migrated (locked decision). The
 `migrateLegacyProjectThreads` electron-store path is deleted too.
@@ -88,7 +89,7 @@ as a load error on that message, not silent corruption).
 
 OKF frontmatter for message files: `type: Message`, `role`, `id`, `createdAt`
 (+ `threadId` for greppability). Body is the **verbatim** content string.
-Parsing must treat only a *leading* `---` fence as frontmatter so bodies that
+Parsing must treat only a _leading_ `---` fence as frontmatter so bodies that
 contain `---` lines or YAML-shaped code round-trip byte-for-byte.
 
 ## Phases
@@ -142,8 +143,8 @@ Rewrite `src/main/services/thread-persistence.ts` → `thread-store.ts`:
   - `createThread(projectId, meta)` / `deleteThread(projectId, threadId)`
     (one `rm -rf` of the dir + catalog line removal)
   - `appendFinalizedMessage(projectId, threadId, message)` — write OKF file(s)
-    + blobs (write-and-close immediately, decisions in #644), fsync, then
-    append the spine line; unlink any `.partial.md` for that message
+    - blobs (write-and-close immediately, decisions in #644), fsync, then
+      append the spine line; unlink any `.partial.md` for that message
   - `updateMeta(projectId, threadId, metaPatch)` — tiny in-place rewrite;
     also refreshes the thread's `catalog.jsonl` line (title/digest/updatedAt)
   - `loadProjectThreads(projectId)` — fold every thread dir (hash-verify);
@@ -221,13 +222,14 @@ Exit: app end-to-end on the new store; old format code fully gone.
     arrive whole, so this is atomic write-and-close).
 - `appendFinalizedMessage` already unlinks the partial: the canonical OKF file
   is rewritten from the authoritative renderer payload, so main-side partials
-  are *only* crash-recovery artifacts — no dual-source-of-truth.
+  are _only_ crash-recovery artifacts — no dual-source-of-truth.
 - Recovery UX: interrupted message shows with a "response interrupted (app
   closed mid-stream)" marker. Small renderer rendering tweak + component test.
 
 Tests: kill-between-steps unit tests in `thread-store.test.ts` (partial exists
-+ no spine line → recovered truncated message; partial + spine line → partial
-ignored/unlinked).
+
+- no spine line → recovered truncated message; partial + spine line → partial
+  ignored/unlinked).
 
 Exit: pulling the plug mid-stream loses at most the un-flushed tail of the
 in-flight message, never a finalized one.
@@ -247,12 +249,12 @@ The security-sensitive phase; changes are confined to
      return it;
   3. else throw the existing "outside workspace" error, extended to mention
      the chat store.
-  Symlink policy identical to the workspace root: a symlink inside the chat
-  store resolving outside it is rejected. Write path untouched:
-  `resolveWorkspacePath` + `assertWorkspaceWriteTarget` remain workspace-only,
-  so every write tool (all funnel through `diff-queue.ts`'s
-  `assertWorkspaceWriteTarget`) rejects the chat store by construction — add
-  an explicit regression test rather than relying on inspection.
+     Symlink policy identical to the workspace root: a symlink inside the chat
+     store resolving outside it is rejected. Write path untouched:
+     `resolveWorkspacePath` + `assertWorkspaceWriteTarget` remain workspace-only,
+     so every write tool (all funnel through `diff-queue.ts`'s
+     `assertWorkspaceWriteTarget`) rejects the chat store by construction — add
+     an explicit regression test rather than relying on inspection.
 - Read-tool call-sites switch to `resolveReadablePath`: `read_file`,
   `list_dir` (non-recursive path), `search_code`/`search_codebase` search-root
   resolution. **Not** switched in v1: `find_files`, semantic index, workspace
@@ -328,10 +330,9 @@ agent reading the spine and a blob.
   userData; `COPSE_WORKSPACE_DIR` for tests), `README.md` layout note, and a
   short `docs/thread-store-format.md` documenting the on-disk format as a
   stable-ish contract (the steering preamble depends on it).
-- Perf sanity: script seeding a 500-message thread + 200-thread project;
-  measure `loadProjectThreads` and project-switch time vs. main. The deferred
-  consolidation/snapshot cache (#644) triggers only if this regresses
-  noticeably.
+- Perf sanity: `npm run bench:thread-store` (committed; see baseline below).
+  The deferred consolidation/snapshot cache (#644) triggers only if load
+  regresses noticeably at scale.
 
 ## Sequencing & PR shape
 
@@ -363,3 +364,39 @@ Each phase leaves `npm run check` + `npm run test:e2e` green.
   `runSerialized` queue in `thread-store.ts` to keep ordering.
 - **PII/secrets in readable files** — accepted in #644 (parity with today's
   unencrypted store); revisit alongside any at-rest-encryption work.
+
+## Progress
+
+- **Phase 0** — `src/shared/threads/` format module (spine + OKF + fold/explode), 21 tests. ✅
+- **Phase 1** — `thread-store.ts` on `~/.copse/workspace`, 11 tests; legacy store deleted. ✅
+- **Migration** — `thread-migration.ts` (self-contained one-time import of the pre-#644 file store + one call site in `main/index.ts`), 4 tests. Delete both to drop it, or swap its body for a cleanup. ✅
+- **Benchmark** — `scripts/bench-thread-store*.ts` + `npm run bench:thread-store`. ✅
+- Remaining: Phases 2 (event-level append + renderer), 3 (streaming partials), 4 (read-only mount), 5 (`@` composer), 6 (export/docs).
+
+## Benchmark baseline
+
+`npm run bench:thread-store` (Electron-free; bundles the store with the storage
+test shim). Measured in the CI-like sandbox — **noisy for writes, stable for
+loads** — so treat these as order-of-magnitude, with authoritative numbers to be
+taken on real hardware / CI.
+
+| Scale (threads × msgs) | total msgs | cold load p50 | cold load p95 | bulk save\* |
+| ---------------------- | ---------- | ------------- | ------------- | ----------- |
+| 50 × 40                | 2 000      | 39 ms         | 53 ms         | ~0.5 s      |
+| 200 × 100              | 20 000     | ~350 ms       | ~410 ms       | 0.8–3.8 s   |
+| 500 × 300              | 150 000    | 2 744 ms      | 2 851 ms      | ~12 s       |
+
+\* Bulk save is the Phase-1 whole-thread-rewrite (a throwaway path Phase 2
+replaces with append-on-finalize) and is heavily I/O-contention-noisy here — an
+upper bound, not a target. The real write comparison (append vs whole-rewrite)
+belongs after Phase 2, on real hardware / CI.
+
+**Finding (actionable):** cold `loadProjectThreads` scales ~linearly with total
+messages (~18 µs/message — one file open + hash per message). At everyday scale
+(a few thousand messages) it is <50 ms; at an extreme 150 k messages it is
+~2.7 s. Because that call **folds every thread in the project**, the mitigation
+is not just the snapshot cache — the renderer only needs the `catalog.jsonl`
+(cheap) plus the _active_ thread's messages on open, and should **fold other
+threads lazily**. Fold this into Phase 2's renderer rewiring (load catalog +
+lazy per-thread fold) and keep the snapshot cache as the Phase-6 backstop for
+very large single threads.
