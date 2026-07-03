@@ -26,9 +26,23 @@ function renderedLink(label: string, href: string, title?: string): string {
   return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" data-browser-link="true"${titleAttr}>${label}</a>`
 }
 
+/**
+ * Image `alt` is the plain-text content of the label, not markup. The label is
+ * already rendered inline HTML here, so pull nested `<img>` alts through and
+ * drop every other tag (`![foo *bar*]` → `foo bar`, spec 574/575/577). The
+ * decode/re-escape keeps a single level of entity encoding on nested alts.
+ */
+function imageAltText(renderedLabel: string): string {
+  return renderedLabel
+    .replace(/<img\b[^>]*?\salt="([^"]*)"[^>]*>/gi, (_match, nested: string) =>
+      decodeEscapedHref(nested),
+    )
+    .replace(/<[^>]*>/g, '')
+}
+
 function renderedImage(alt: string, src: string, title?: string): string {
   const titleAttr = title ? ` title="${escapeHtml(title)}"` : ''
-  return `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}"${titleAttr} data-md-rendered="1" />`
+  return `<img src="${escapeHtml(src)}" alt="${escapeHtml(imageAltText(alt))}"${titleAttr} data-md-rendered="1" />`
 }
 
 function renderLinkLabel(
