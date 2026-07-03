@@ -66,6 +66,7 @@ export const estimateContextPayloadSchema = z.object({
   draftText: z.string().optional(),
   invokedSkills: z.array(z.string()).optional(),
   imageCount: z.number().optional(),
+  model: z.string().optional(),
 })
 
 export const followUpContextSchema = z.object({

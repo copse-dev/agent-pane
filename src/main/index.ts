@@ -188,7 +188,7 @@ app
     ipcMain.handle('agent:run', async (event, threadIdArg: unknown, rawPrompt: string) => {
       assertMainFrameSender(event, win)
       const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-      const { userContent, invokedSkills, priorTodos, workingBrief } =
+      const { userContent, invokedSkills, priorTodos, workingBrief, model } =
         parseAgentRunPayload(rawPrompt)
 
       // Hydrate from persisted storage on first use after a restart
@@ -204,6 +204,7 @@ app
         invokedSkills,
         priorTodos,
         ...(workingBrief !== undefined ? { workingBrief } : {}),
+        ...(model !== undefined ? { model } : {}),
       })
       messageHistory.set(threadId, result.messages)
       storageSet(`llm-history:${threadId}`, result.messages)
@@ -224,7 +225,7 @@ app
         if (!parsed.success) {
           throw new Error('agent:estimateContext: payload failed validation')
         }
-        const { draftText = '', invokedSkills = [], imageCount = 0 } = parsed.data
+        const { draftText = '', invokedSkills = [], imageCount = 0, model } = parsed.data
         if (!messageHistory.has(threadId)) {
           const stored = storageGet(`llm-history:${threadId}`)
           if (Array.isArray(stored)) messageHistory.set(threadId, stored as LLMMessage[])
@@ -235,6 +236,7 @@ app
           invokedSkills,
           imageCount,
           priorMessages,
+          ...(model !== undefined ? { model } : {}),
         })
       },
     )

@@ -21,6 +21,10 @@ function refreshPayload(
     ...payload,
     priorTodos: thread?.todos ?? payload.priorTodos ?? [],
     ...(thread?.workingBrief !== undefined ? { workingBrief: thread.workingBrief } : {}),
+    // Send the per-thread model so the run uses the picker's selection rather
+    // than the global default. Read at dispatch time so a change made while the
+    // message was queued still takes effect. Absent → main uses the global default.
+    ...(thread?.model !== undefined ? { model: thread.model } : {}),
   }
 }
 
@@ -224,7 +228,7 @@ export function sendQueuedMessageNow(
     // run ("Agent already has an active run" on the next turn). Leave the reordered
     // message queued — it drains onto the same remote agent once this run finishes,
     // so a follow-up never kills the agent. Local runs interrupt as before.
-    const model = store.getState().settings?.model ?? ''
+    const model = thread.model ?? store.getState().settings?.model ?? ''
     if (isRemoteAgentModel(model)) return
     // Abort the live run; its `done` chunk drains the reordered queue head.
     void api.agent.abort(threadId)

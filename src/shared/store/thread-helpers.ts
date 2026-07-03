@@ -81,7 +81,9 @@ export function createThread(store: AppStore): string {
       status: 'idle' as const,
       messages: [],
       usage: { inputTokens: 0, outputTokens: 0 },
-      model: defaultModel,
+      // Only set model when a default exists; omit under exactOptionalPropertyTypes
+      // rather than assigning undefined. Absent means "use the global default".
+      ...(defaultModel !== undefined ? { model: defaultModel } : {}),
       createdAt: Date.now(),
       updatedAt: Date.now(),
     },
@@ -112,11 +114,16 @@ export function openNewThread(store: AppStore): string {
       // Reset the model to the current global default when reusing an existing
       // blank thread, so the picker reflects the settings page default rather
       // than whatever model was last chosen on a prior conversation.
+      const defaultModel = store.getState().settings?.model
       store.setState({
         activeThreadId: existing.id,
-        threads: threads.map((t) =>
-          t.id !== existing.id ? t : { ...t, model: store.getState().settings?.model },
-        ),
+        threads: threads.map((t) => {
+          if (t.id !== existing.id) return t
+          // Drop any prior per-thread model and re-seed from the global default
+          // (omit entirely when there is no default, per exactOptionalPropertyTypes).
+          const { model: _prevModel, ...rest } = t
+          return defaultModel !== undefined ? { ...rest, model: defaultModel } : rest
+        }),
       })
       store.emit('threads_changed')
     }
