@@ -48,11 +48,7 @@ describe('renderInlineLinks', () => {
 
   it('parses links whose labels contain rendered <code> spans', () => {
     assert.equal(
-      renderInlineLinks(
-        '[<code>docs/foo.md</code>](docs/foo.md)',
-        new Map(),
-        (label) => label,
-      ),
+      renderInlineLinks('[<code>docs/foo.md</code>](docs/foo.md)', new Map(), (label) => label),
       '<a href="docs/foo.md" class="workspace-markdown-link" data-workspace-link="true"><code>docs/foo.md</code></a>',
     )
   })
