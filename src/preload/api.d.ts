@@ -151,7 +151,7 @@ export interface ApiClient {
     catalog: (
       projectId: string,
       query?: string,
-    ) => Promise<import('@shared/types').ThreadCatalogEntry[]>
+    ) => Promise<import('@shared/types').ThreadCatalogHit[]>
   }
   openRouter: {
     models: () => Promise<Array<{ id: string; name: string }>>

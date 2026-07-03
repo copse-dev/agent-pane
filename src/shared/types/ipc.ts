@@ -175,7 +175,7 @@ export interface IpcInvokeMap {
   }
   'threads:catalog': {
     args: [projectId: string, query?: string]
-    result: import('./thread.ts').ThreadCatalogEntry[]
+    result: import('./thread.ts').ThreadCatalogHit[]
   }
 
   // Index

@@ -97,6 +97,15 @@ export interface ThreadCatalogEntry {
   path: string
 }
 
+/**
+ * A catalog entry with its absolute `events.jsonl` path resolved at read time
+ * (never persisted — the on-disk catalog stays portable). Returned by the
+ * `threads:catalog` IPC and consumed by the `@`-thread picker + steering preamble.
+ */
+export interface ThreadCatalogHit extends ThreadCatalogEntry {
+  spinePath: string
+}
+
 export interface Message {
   id: string
   role: 'user' | 'assistant' | 'error'
