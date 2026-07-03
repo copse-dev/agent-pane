@@ -3,6 +3,7 @@ import {
   dropTrailingNewline,
   parseFenceSlice,
   stripAtxClosingHashes,
+  stripFourColumnIndent,
 } from './block-patterns.ts'
 import {
   type BlockToken,
@@ -40,7 +41,7 @@ function renderFencedBlock(lang: string, code: string): string {
 function renderIndentedCode(slice: string): string {
   const lines = dropTrailingNewline(slice).split('\n')
   while (lines.length && (lines.at(-1) ?? '').trim() === '') lines.pop()
-  const code = lines.map((l) => l.replace(/^ {1,4}/, '')).join('\n')
+  const code = lines.map((l) => stripFourColumnIndent(l)).join('\n')
   if (code.trim() === '') return ''
   return `<pre><code>${escapeHtml(code)}\n</code></pre>`
 }
