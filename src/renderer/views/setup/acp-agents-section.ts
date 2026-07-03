@@ -311,7 +311,11 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
             agents = upsertAgent(agents, { ...saved, availableModels: selector.choices })
             void api.settings.set('registeredAcpAgents', agents)
           }
-          setInlineStatus(modelStatus, 'ok', `${String(selector.choices.length)} models added to the picker (default: ${selector.currentValue}).`)
+          setInlineStatus(
+            modelStatus,
+            'ok',
+            `${String(selector.choices.length)} models added to the picker (default: ${selector.currentValue}).`,
+          )
         })
         .catch((err: unknown) => {
           setInlineStatus(modelStatus, 'error', err instanceof Error ? err.message : String(err))
