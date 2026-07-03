@@ -293,9 +293,11 @@ function findRootMatches(matches: DelimiterMatch[]): DelimiterMatch[] {
 function assembleMatch(s: string, m: DelimiterMatch, allMatches: DelimiterMatch[]): string {
   const contentStart = m.openIndex + m.openLen
   const contentEnd = m.closeIndex
-  const children = allMatches
-    .filter((c) => c !== m && isNestedIn(c, m))
-    .sort((a, b) => a.openIndex - b.openIndex)
+  // Only the DIRECT children — the roots within m's descendants. Filtering to
+  // every descendant would also emit each grandchild here, so it renders once
+  // inside its real parent and again directly under m (spec 418/432).
+  const descendants = allMatches.filter((c) => c !== m && isNestedIn(c, m))
+  const children = findRootMatches(descendants)
 
   let out = ''
   let cursor = contentStart
