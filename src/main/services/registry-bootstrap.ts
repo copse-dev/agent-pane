@@ -51,8 +51,7 @@ import { MODEL_CLASSIFIER_ENABLED_SETTING } from './model-classifier.ts'
 import { suggestModelTool } from '../tools/model-classifier-tool.ts'
 import { ADVISOR_STRATEGY_ENABLED_SETTING } from './advisor-strategy.ts'
 import { advisorTool } from '../tools/advisor-tool.ts'
-import { ROADMAP_PLANS_ENABLED_SETTING } from './roadmap-plans-store.ts'
-import { roadmapPlanTool } from '../tools/roadmap-tools.ts'
+import { ROADMAP_PLANS_ENABLED_SETTING, roadmapPlanTool } from '../tools/roadmap-tools.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
