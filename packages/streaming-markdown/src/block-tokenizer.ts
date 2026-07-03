@@ -8,6 +8,7 @@ import {
   FENCE_OPEN_RE,
   fenceCloses,
   fenceMarker,
+  leadingIndentWidth,
 } from './block-patterns.ts'
 
 export type BlockKind =
@@ -276,7 +277,7 @@ export function tokenizeBlocks(source: string): BlockToken[] {
 
     // Indented code block (4+ spaces at a block start; cannot interrupt a
     // paragraph — the paragraph collector consumes indented continuations).
-    if (/^ {4}/.test(line.text) && line.text.trim() !== '') {
+    if (leadingIndentWidth(line.text) >= 4 && line.text.trim() !== '') {
       let j = i + 1
       let lastContent = i
       while (j < lines.length) {
@@ -286,7 +287,7 @@ export function tokenizeBlocks(source: string): BlockToken[] {
           j++
           continue
         }
-        if (/^ {4}/.test(next.text)) {
+        if (leadingIndentWidth(next.text) >= 4) {
           lastContent = j
           j++
           continue
