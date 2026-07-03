@@ -6,7 +6,9 @@ import { safeLinkHref } from './inline-links.ts'
 const AUTOLINK_SCHEME_RE = /^[A-Za-z][A-Za-z0-9+.-]{1,31}$/
 
 function renderedAutolink(label: string, href: string): string {
-  return `<a href="${escapeHtml(href)}">${escapeHtml(label)}</a>`
+  // Label stays raw so the outer `escapeHtmlTextNodes` pass escapes it exactly
+  // once; pre-escaping here would double-encode `&` in URLs (`&amp;amp;`, #595).
+  return `<a href="${escapeHtml(href)}">${label}</a>`
 }
 
 /** CommonMark autolink: `<scheme:...>` or `<email@domain>`. No interior whitespace. */

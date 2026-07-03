@@ -209,7 +209,10 @@ async function createRemoteAgent(input: {
   prompt: PromptPayload
 }): Promise<{ agentId: string; runId: string; url?: string }> {
   const repository = await resolveRemoteAgentRepository()
-  const startingRef = getSetting<string>('remoteAgentStartingRef', '').trim()
+  // Branch the remote run from whatever branch this project is on locally. The
+  // remote clones from GitHub, so a branch that hasn't been pushed falls back to
+  // the repo's default ref (startingRef omitted).
+  const startingRef = (await getCurrentBranchName())?.trim() || ''
   const body = {
     prompt: input.prompt,
     repos: [

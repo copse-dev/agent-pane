@@ -118,3 +118,57 @@ describe('sanitizeRenderedMarkdown', () => {
     assert.match(html, /<p>ok<\/p>/)
   })
 })
+
+// Defense-in-depth coverage for the DOMPurify Dependabot advisories. Those
+// advisories are fixed upstream in dompurify 3.4.11 (they affect <=3.4.10), and
+// the app pulls that patched release; these tests are not a substitute for the
+// bump. What they add is that each of those bypasses targets a *risky* DOMPurify
+// configuration this sink deliberately does not use: a strict tag/attr allowlist
+// (never a FORBID_TAGS denylist), string output (never RETURN_DOM), and no
+// custom-element handling. These assertions pin that posture so a refactor of
+// `sanitize.ts` toward any of those modes fails loudly here instead of silently
+// re-opening the advisory class.
+describe('sanitizeRenderedMarkdown — DOMPurify advisory posture', () => {
+  it('drops custom elements (CUSTOM_ELEMENT_HANDLING prototype-pollution class)', () => {
+    // The allowlist admits only standard tags, so a custom element and any
+    // handler it carries are removed regardless of DOMPurify's custom-element
+    // fallback behaviour.
+    const html = sanitizeRenderedMarkdown('<x-widget onclick="alert(1)">hi</x-widget>')
+    assert.doesNotMatch(html, /<x-widget/i)
+    assert.doesNotMatch(html, /onclick/i)
+    assert.match(html, /hi/)
+  })
+
+  it('strips SVG/foreignObject re-contextualization vectors (mutation-XSS class)', () => {
+    const html = sanitizeRenderedMarkdown(
+      '<svg><foreignObject><a href="javascript:alert(1)">x</a></foreignObject></svg>' +
+        '<svg><style><img src=x onerror=alert(1)></style></svg>',
+    )
+    assert.doesNotMatch(html, /<svg/i)
+    assert.doesNotMatch(html, /foreignObject/i)
+    assert.doesNotMatch(html, /javascript:/i)
+    assert.doesNotMatch(html, /onerror/i)
+  })
+
+  it('strips MathML mglyph/mtext smuggling (mutation-XSS class)', () => {
+    const html = sanitizeRenderedMarkdown(
+      '<math><mtext><mglyph><style><img src=x onerror=alert(1)></style></mglyph></mtext></math>',
+    )
+    assert.doesNotMatch(html, /<math/i)
+    assert.doesNotMatch(html, /mglyph/i)
+    assert.doesNotMatch(html, /onerror/i)
+  })
+
+  it('an unlisted tag is dropped by the allowlist, not merely denylisted (FORBID_TAGS-bypass class)', () => {
+    // A denylist can be dodged; an allowlist admits only what it names. `form`,
+    // `object`, and `template` are not in ALLOWED_TAGS, so they cannot survive
+    // even when nested to confuse a denylist walker.
+    const html = sanitizeRenderedMarkdown(
+      '<form><template><object data="javascript:alert(1)"></object></template></form>',
+    )
+    assert.doesNotMatch(html, /<form/i)
+    assert.doesNotMatch(html, /<template/i)
+    assert.doesNotMatch(html, /<object/i)
+    assert.doesNotMatch(html, /javascript:/i)
+  })
+})
