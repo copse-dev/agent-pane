@@ -102,7 +102,11 @@ import {
   type MockScriptStep,
 } from '@shared/llm/mock-script.ts'
 import { applyAppIcon } from '../app-icon.ts'
-import { getMainWindow, registerDevtoolsShortcut, unregisterDevtoolsShortcut } from '../windows/create-main-window.ts'
+import {
+  getMainWindow,
+  registerDevtoolsShortcut,
+  unregisterDevtoolsShortcut,
+} from '../windows/create-main-window.ts'
 import { validateApiKey } from '../services/validate-api-key.ts'
 import { getUsageSummary, recordUsageEvent } from '../services/usage-ledger.ts'
 import { parseUsageRecordInput } from '../services/usage-record-schema.ts'
