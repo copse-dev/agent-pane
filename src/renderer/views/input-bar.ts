@@ -687,6 +687,11 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     attachFile: addChip,
     attachTextBlock: addTextChip,
     attachImage: addImageChip,
+    focusComposer: (): void => {
+      requestAnimationFrame(() => {
+        textarea.focus()
+      })
+    },
   }
   const unregisterAttachments = registerPromptAttachments(attachmentHandlers)
 

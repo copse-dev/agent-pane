@@ -94,6 +94,12 @@ describe('Monaco selection to chat attachment', () => {
     await chip.waitForDisplayed({ timeout: 5_000 })
     await expect(await chip.getText()).toContain(`${SAMPLE_FILE}:`)
 
+    await browser.waitUntil(
+      async () =>
+        await browser.execute(() => document.activeElement?.matches('.prompt-input') ?? false),
+      { timeout: 5_000, timeoutMsg: 'expected chat composer to receive focus after Cmd/Ctrl+L' },
+    )
+
     await saveAppScreenshot(SCREENSHOT)
   })
 })
