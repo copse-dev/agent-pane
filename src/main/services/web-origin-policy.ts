@@ -2,6 +2,7 @@ import { isIP } from 'node:net'
 import { DEFAULT_WEB_ALLOWED_ORIGINS } from '@shared/web-origins.ts'
 import {
   isLoopbackHostname,
+  isPrivateOrLinkLocalHost,
   normalizeHostname,
   validateCredentialBaseUrl,
 } from '@shared/llm/credential-url.ts'
@@ -121,34 +122,12 @@ function assertLowRiskHost(hostname: string): void {
   const host = normalizeHostname(hostname)
   if (isLoopbackHostname(host)) return
 
-  const ipVersion = isIP(host)
-  if (ipVersion === 4) {
-    const [a = 0, b = 0] = host.split('.').map((part) => Number.parseInt(part, 10))
-    const privateOrSpecial =
-      a === 0 ||
-      a === 10 ||
-      a === 127 ||
-      a === 169 ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      (a === 100 && b >= 64 && b <= 127)
-    if (privateOrSpecial) throw new Error(`fetch_url blocks private or link-local IPs: ${host}`)
-    return
+  // Private/link-local IP literals share their classifier with the credential
+  // URL rule (credential-url.ts), so both paths block the same address ranges.
+  if (isPrivateOrLinkLocalHost(host)) {
+    throw new Error(`fetch_url blocks private or link-local IPs: ${host}`)
   }
-
-  if (ipVersion === 6) {
-    const compact = host.toLowerCase()
-    if (
-      compact === '::' ||
-      compact === '::1' ||
-      compact.startsWith('fc') ||
-      compact.startsWith('fd') ||
-      compact.startsWith('fe80:')
-    ) {
-      throw new Error(`fetch_url blocks private or link-local IPs: ${host}`)
-    }
-    return
-  }
+  if (isIP(host) !== 0) return
 
   // Single-label and mDNS names commonly resolve on local networks.
   if (!host.includes('.') || host.endsWith('.local')) {

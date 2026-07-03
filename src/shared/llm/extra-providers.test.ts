@@ -184,6 +184,8 @@ describe('resolveExtraProviders', () => {
     const providers = resolveExtraProviders([
       { slug: 'plainhttp', baseUrl: 'http://attacker.example/v1' }, // http to a non-loopback host
       { slug: 'metadata', baseUrl: 'http://169.254.169.254/latest' }, // link-local metadata over http
+      { slug: 'httpsmeta', baseUrl: 'https://169.254.169.254/latest' }, // link-local metadata over https
+      { slug: 'httpslan', baseUrl: 'https://192.168.1.5/v1' }, // private LAN address over https
       { slug: 'userinfo', baseUrl: 'https://user:pass@evil.example/v1' }, // embedded credentials
       { slug: 'safehttps', baseUrl: 'https://api.together.xyz/v1' }, // safe → kept
       { slug: 'safelocal', baseUrl: 'http://localhost:1234/v1' }, // loopback http → kept
@@ -191,6 +193,8 @@ describe('resolveExtraProviders', () => {
     const ids = providers.map((p) => p.id)
     assert.ok(!ids.includes('plainhttp'))
     assert.ok(!ids.includes('metadata'))
+    assert.ok(!ids.includes('httpsmeta'))
+    assert.ok(!ids.includes('httpslan'))
     assert.ok(!ids.includes('userinfo'))
     assert.ok(ids.includes('safehttps'))
     assert.ok(ids.includes('safelocal'))

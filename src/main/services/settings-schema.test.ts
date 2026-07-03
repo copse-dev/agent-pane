@@ -50,13 +50,16 @@ describe('settings-schema', () => {
     const schema = getSettingSchema('extraProviders')
     assert.ok(schema)
     const custom = (baseUrl: string): unknown => [{ slug: 'custom', baseUrl }]
-    // Safe: https anywhere, http only for loopback, or absent (use preset default).
+    // Safe: https to a public host, http only for loopback, or absent (use preset default).
     assert.equal(schema.safeParse(custom('https://api.together.xyz/v1')).success, true)
     assert.equal(schema.safeParse(custom('http://localhost:1234/v1')).success, true)
     assert.equal(schema.safeParse([{ slug: 'custom' }]).success, true)
-    // Unsafe: cleartext http to a non-loopback host, and embedded credentials.
+    // Unsafe: cleartext http to a non-loopback host, https to a private/link-local
+    // address, and embedded credentials.
     assert.equal(schema.safeParse(custom('http://attacker.example/v1')).success, false)
     assert.equal(schema.safeParse(custom('http://169.254.169.254/latest')).success, false)
+    assert.equal(schema.safeParse(custom('https://169.254.169.254/latest')).success, false)
+    assert.equal(schema.safeParse(custom('https://192.168.1.5/v1')).success, false)
     assert.equal(schema.safeParse(custom('https://user:pass@evil.example/v1')).success, false)
     assert.equal(schema.safeParse(custom('not a url')).success, false)
   })
