@@ -1,4 +1,4 @@
-import { BrowserWindow, screen } from 'electron'
+import { BrowserWindow, globalShortcut, screen } from 'electron'
 import { join } from 'node:path'
 import { getAppIcon } from '../app-icon.ts'
 import { getSetting, setSetting } from '../services/settings.ts'
@@ -79,4 +79,18 @@ export function createMainWindow(): BrowserWindow {
   win.on('close', () => void setSetting('windowBounds', win.getBounds()))
   void win.loadFile(join(__dirname, '../renderer/index.html'))
   return win
+}
+
+const DEVTOOLS_SHORTCUT = 'Control+Shift+I'
+
+/** Register the Ctrl+Shift+I DevTools shortcut (no-op if already registered). */
+export function registerDevtoolsShortcut(win: BrowserWindow): void {
+  globalShortcut.register(DEVTOOLS_SHORTCUT, () => {
+    win.webContents.toggleDevTools()
+  })
+}
+
+/** Unregister the Ctrl+Shift+I DevTools shortcut. */
+export function unregisterDevtoolsShortcut(): void {
+  globalShortcut.unregister(DEVTOOLS_SHORTCUT)
 }

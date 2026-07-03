@@ -1,4 +1,5 @@
-import type { StreamChunk, Thread } from '@shared/types'
+import { loadAllProjectThreads } from './thread-persistence.ts'
+import type { StreamChunk } from '@shared/types'
 import { storageGet, storageSet } from './storage.ts'
 import {
   buildUsageSummary,
@@ -81,27 +82,9 @@ export function recordAgentUsageChunk(
   })
 }
 
-function loadAllThreads(): Thread[] {
-  const projects =
-    (storageGet('projects') as Array<{ id: string }> | null)?.filter(
-      (p) => typeof p.id === 'string' && p.id.length > 0,
-    ) ?? []
-  const threads: Thread[] = []
-  for (const project of projects) {
-    const raw = storageGet(`threads:${project.id}`)
-    if (!Array.isArray(raw)) continue
-    for (const item of raw) {
-      if (typeof item === 'object' && item !== null && typeof (item as Thread).id === 'string') {
-        threads.push(item as Thread)
-      }
-    }
-  }
-  return threads
-}
-
 export function getUsageSummary(): UsageSummary {
   const events = parseUsageEvents(storageGet(USAGE_EVENTS_STORAGE_KEY))
-  const threads = loadAllThreads()
+  const threads = loadAllProjectThreads()
   return buildUsageSummary(
     events,
     threads,
