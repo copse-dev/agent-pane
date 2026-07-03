@@ -1,6 +1,8 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import {
+  attachTerminalSelectionToChat,
   buildTerminalSelectionAttachment,
   isSelectionToChatKey,
   type TerminalSelectionSource,
@@ -42,5 +44,30 @@ describe('terminal selection-to-chat', () => {
     assert.equal(isSelectionToChatKey(fakeKey({ ctrlKey: true, altKey: true })), false)
     assert.equal(isSelectionToChatKey(fakeKey({ metaKey: true, code: 'KeyK' })), false)
     assert.equal(isSelectionToChatKey(fakeKey({ code: 'KeyL' })), false)
+  })
+
+  it('focuses the chat composer after attaching a selection', () => {
+    let attachedContent: string | null = null
+    let attachedLabel: string | undefined
+    let focused = false
+    const unregister = registerPromptAttachments({
+      attachFile: () => {},
+      attachTextBlock: (content, label) => {
+        attachedContent = content
+        attachedLabel = label
+      },
+      attachImage: () => {},
+      focusComposer: () => {
+        focused = true
+      },
+    })
+
+    const ok = attachTerminalSelectionToChat(fakeTerm(true, 'output line'), 'Terminal 1')
+
+    unregister()
+    assert.equal(ok, true)
+    assert.equal(attachedContent, 'output line')
+    assert.equal(attachedLabel, 'Terminal 1')
+    assert.equal(focused, true)
   })
 })
