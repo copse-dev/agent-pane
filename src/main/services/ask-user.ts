@@ -8,6 +8,7 @@ import {
   IpcValidationError,
   parseIpcArgs,
 } from '../ipc/ipc-guards.ts'
+import { getActiveRunThread } from './thread-models.ts'
 
 export interface AskUserRequest {
   questions: AskUserQuestion[]
@@ -77,7 +78,11 @@ export function initAskUser(win: BrowserWindow): void {
     (req) =>
       new Promise<AskUserResult>((resolve) => {
         const id = randomUUID()
-        win.webContents.send('agent:ask_user_request', { id, questions: req.questions })
+        // Attribute to the running thread so a background thread's question
+        // surfaces as a sidebar attention indicator instead of interrupting
+        // whichever thread the user is currently focused on.
+        const threadId = getActiveRunThread() ?? undefined
+        win.webContents.send('agent:ask_user_request', { id, threadId, questions: req.questions })
         const timer = setTimeout(() => {
           settle(id, { answers: req.questions.map(() => '') })
         }, ASK_USER_TIMEOUT_MS)
