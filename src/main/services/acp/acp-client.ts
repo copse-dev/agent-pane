@@ -349,26 +349,59 @@ export async function openAcpSession(
 }
 
 /**
+ * How long to wait, after sending `session/cancel`, for the agent to settle its
+ * prompt with a stop response before giving up on it. A well-behaved agent
+ * answers the cancel promptly, so the turn ends within a few milliseconds and
+ * the warm session is kept for reuse. But some adapters (e.g. Cursor's
+ * `cursor-agent acp`) keep streaming or never respond to the cancel — without a
+ * bound the turn would spin forever and the Stop button would appear to do
+ * nothing. Once this grace elapses we tear the session down and report the turn
+ * cancelled, so Stop always takes effect.
+ */
+export const ACP_CANCEL_GRACE_MS = 2000
+
+/**
  * Run one prompt turn on a persistent session: apply a model change if the
  * picker's selection moved, send the prompt, and pump updates to the CURRENT
  * turn handlers until this turn's stop. Updates the agent queued between turns
  * (e.g. a background helper finishing) drain here first, so nothing is lost —
  * it just surfaces at the start of the next turn.
+ *
+ * Cancellation (`signal` abort, i.e. the Stop button): we send `session/cancel`
+ * and stop forwarding the agent's chunks to the UI immediately, then keep
+ * draining updates so a compliant agent's cancelled-stop is still consumed and
+ * the session stays reusable. If the agent doesn't acknowledge within
+ * {@link ACP_CANCEL_GRACE_MS}, we dispose the session (killing the stuck
+ * process, which the pool respawns next turn) and report the turn cancelled.
  */
 export async function runAcpSessionPrompt(
   open: OpenAcpSession,
   prompt: string,
   model: string | undefined,
   signal?: AbortSignal,
+  cancelGraceMs: number = ACP_CANCEL_GRACE_MS,
 ): Promise<{ stopReason: StopReason; usage?: Usage | null }> {
   const { session, connection } = open
-  const cancel = (): void =>
+
+  // Resolves only once the user has aborted AND the agent has failed to settle
+  // its prompt within the grace window — our cue to stop waiting on a stuck
+  // agent rather than hang the turn forever.
+  let onGraceExpired: (value: 'grace-expired') => void = () => {}
+  const graceExpired = new Promise<'grace-expired'>((resolve) => {
+    onGraceExpired = resolve
+  })
+  let graceTimer: ReturnType<typeof setTimeout> | undefined
+  const cancel = (): void => {
     void connection.agent.notify('session/cancel', { sessionId: session.sessionId })
+    graceTimer ??= setTimeout(() => {
+      onGraceExpired('grace-expired')
+    }, cancelGraceMs)
+  }
   if (signal?.aborted) cancel()
   else signal?.addEventListener('abort', cancel, { once: true })
 
   try {
-    if (model && model !== open.appliedModel) {
+    if (!signal?.aborted && model && model !== open.appliedModel) {
       const selector = modelSelectorFrom(session.newSessionResponse)
       // Only switch when the value is a model the agent still offers and it
       // isn't already current. A stale/removed value (e.g. after an agent
@@ -392,15 +425,30 @@ export async function runAcpSessionPrompt(
       }
     }
 
-    void session.prompt(prompt)
+    // The turn's completion also arrives as a `stop` via nextUpdate(); we
+    // swallow this promise's rejection because disposing the session on a
+    // stuck cancel rejects the in-flight request, and the loop already settles
+    // via the grace timer below.
+    void session.prompt(prompt).catch(() => {})
     for (;;) {
-      const message = await session.nextUpdate()
+      const message = await Promise.race([session.nextUpdate(), graceExpired])
+      if (message === 'grace-expired') {
+        // The agent never acknowledged the cancel. Tear the session down so the
+        // stuck process can't keep the turn alive; the pool respawns next turn.
+        open.dispose()
+        return { stopReason: 'cancelled' }
+      }
       if (message.kind === 'stop') return message.response
-      const chunk = sessionUpdateToStreamChunk(message.update)
-      if (chunk) open.handlers.current?.onChunk(chunk)
+      // Once the user has aborted, stop surfacing further activity — the turn is
+      // ending. We keep draining so a compliant agent's stop is still consumed.
+      if (!signal?.aborted) {
+        const chunk = sessionUpdateToStreamChunk(message.update)
+        if (chunk) open.handlers.current?.onChunk(chunk)
+      }
     }
   } finally {
     signal?.removeEventListener('abort', cancel)
+    if (graceTimer) clearTimeout(graceTimer)
   }
 }
 
