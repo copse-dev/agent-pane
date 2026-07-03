@@ -293,9 +293,11 @@ function findRootMatches(matches: DelimiterMatch[]): DelimiterMatch[] {
 function assembleMatch(s: string, m: DelimiterMatch, allMatches: DelimiterMatch[]): string {
   const contentStart = m.openIndex + m.openLen
   const contentEnd = m.closeIndex
-  const children = allMatches
-    .filter((c) => c !== m && isNestedIn(c, m))
-    .sort((a, b) => a.openIndex - b.openIndex)
+  // Only the DIRECT children — the roots within m's descendants. Filtering to
+  // every descendant would also emit each grandchild here, so it renders once
+  // inside its real parent and again directly under m (spec 418/432).
+  const descendants = allMatches.filter((c) => c !== m && isNestedIn(c, m))
+  const children = findRootMatches(descendants)
 
   let out = ''
   let cursor = contentStart
@@ -390,18 +392,25 @@ export function pendingHoldIndex(s: string): number {
 
 export const INLINE_HTML_SHIELD_RE = /(<code>[\s\S]*?<\/code>|<a\b[\s\S]*?<\/a>|<img\b[^>]*>)/g
 
+/** Mask every character inside rendered inline HTML (`<code>`, `<a>`, `<img>`). */
+function inlineHtmlMask(text: string): boolean[] {
+  const mask = new Array<boolean>(text.length).fill(false)
+  for (const match of text.matchAll(INLINE_HTML_SHIELD_RE)) {
+    for (let i = match.index; i < match.index + match[0].length; i++) mask[i] = true
+  }
+  return mask
+}
+
 /**
- * Apply delimiter-stack emphasis outside existing inline HTML (`<code>`, `<a>`,
- * `<img>`). Matches CommonMark flanking rules across soft line breaks.
+ * Apply delimiter-stack emphasis around existing inline HTML (`<code>`, `<a>`,
+ * `<img>`). The HTML is masked so its interior delimiters never pair, but an
+ * emphasis run still spans across it — so `*a `x` b*` and `[*foo `#`*](/uri)`
+ * resolve like CommonMark instead of leaving literal `*` on either side of the
+ * shield (spec examples 478/479/516). Matches flanking rules across soft breaks.
  */
 export function renderEmphasisOutsideInlineHtml(
   text: string,
   linkRefs: LinkReferenceMap = new Map(),
 ): string {
-  return text
-    .split(INLINE_HTML_SHIELD_RE)
-    .map((segment, index) =>
-      index % 2 === 1 ? segment : renderEmphasisDelimiters(segment, linkRefs),
-    )
-    .join('')
+  return renderEmphasisSegment(text, inlineHtmlMask(text), linkRefs)
 }
