@@ -228,6 +228,57 @@ jobs:
             { echo "total=3"; echo "list=[1,2,3]"; } >> "$GITHUB_OUTPUT"
           fi
 
+  # Auto-fix the PR branch: run every autofix we have — ESLint `--fix` then
+  # Prettier `--write` — and commit the result back onto the head branch. This
+  # is the "fixer" half of the format gate; `precheck` still runs `lint` +
+  # `format:check` as the "gate" half, which stays honest when this job is off
+  # (no PAT) or can't run (fork PR).
+  #
+  # A SEPARATE job rather than folded into `precheck`: precheck checks out the
+  # merge ref (fetch-depth: 0) so the e2e oracle can diff against base, whereas
+  # committing needs the branch (head_ref) checkout — the same split that keeps
+  # `commit-screenshots` its own job. Prettier runs last so it tidies whatever
+  # ESLint rewrote; `eslint-config-prettier` means the two never fight.
+  #
+  # Pushed with SCREENSHOTS_PAT (reused) rather than the default GITHUB_TOKEN:
+  # GitHub won't start a run for a GITHUB_TOKEN push (recursion guard), so a
+  # token-pushed format commit would land as the PR head with no CI and leave
+  # the PR blocked. The PAT push fires `pull_request: synchronize`, and the
+  # top-level `concurrency: cancel-in-progress` supersedes THIS run with one on
+  # the formatted commit — so build/e2e aren't paid for twice. It terminates in
+  # one extra run: the re-triggered run reformats nothing (idempotent), so this
+  # job finds no diff and pushes nothing. Falls back to github.token when the
+  # secret is unset (commit lands, just no CI re-trigger — pre-PAT behaviour).
+  autoformat:
+    needs: pick-runner
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runs_on) }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6.0.3
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.SCREENSHOTS_PAT || github.token }}
+      - uses: ./.github/actions/setup
+      # `|| true`: a non-autofixable lint error must not abort the run — we still
+      # want the fixes ESLint did apply to land. Real lint failures stay the job
+      # of precheck's `lint` gate, not this fixer.
+      - name: ESLint --fix
+        run: npx eslint . --fix || true
+      - name: Prettier --write
+        run: npm run format
+      - name: Commit and push fixes
+        run: |
+          if git diff --quiet; then
+            echo "No formatting changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "style: apply eslint --fix and prettier"
+          git push
+
   check:
     needs: [pick-runner, precheck]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
