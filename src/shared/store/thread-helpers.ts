@@ -73,6 +73,7 @@ export function normalizeBlankThreads(store: AppStore): void {
 
 export function createThread(store: AppStore): string {
   const id = randomUUID()
+  const defaultModel = store.getState().settings?.model
   const threads = [
     {
       id,
@@ -80,6 +81,7 @@ export function createThread(store: AppStore): string {
       status: 'idle' as const,
       messages: [],
       usage: { inputTokens: 0, outputTokens: 0 },
+      model: defaultModel,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     },
@@ -107,7 +109,15 @@ export function openNewThread(store: AppStore): string {
   if (existing) {
     if (activeThreadId !== existing.id) {
       store.emit('composer_draft_flush')
-      store.setState({ activeThreadId: existing.id })
+      // Reset the model to the current global default when reusing an existing
+      // blank thread, so the picker reflects the settings page default rather
+      // than whatever model was last chosen on a prior conversation.
+      store.setState({
+        activeThreadId: existing.id,
+        threads: threads.map((t) =>
+          t.id !== existing.id ? t : { ...t, model: store.getState().settings?.model },
+        ),
+      })
       store.emit('threads_changed')
     }
     pruneBlankThreads(store, new Set([existing.id]))

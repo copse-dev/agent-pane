@@ -150,13 +150,26 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const modelPicker = mountFooterModelPicker(
     modelHost,
     api,
-    () => store.getState().settings?.model ?? DEFAULT_CLOUD_MODEL,
+    () => {
+      const thread = getActiveThread(store)
+      return thread?.model ?? store.getState().settings?.model ?? DEFAULT_CLOUD_MODEL
+    },
     (model) => {
-      void api.settings.set('model', model)
-      store.setState({ settings: { ...store.getState().settings, model } })
+      const thread = getActiveThread(store)
+      if (!thread) return
+      const threads = store.getState().threads.map((t) =>
+        t.id !== thread.id ? t : { ...t, model, updatedAt: Date.now() },
+      )
+      store.setState({ threads })
+      modelPicker.refresh()
       updateFooter()
     },
   )
+  // Re-sync the picker whenever the active thread changes (new thread,
+  // thread switch, or thread deletion that shifts the active pointer).
+  store.on('threads_changed', () => {
+    modelPicker.refresh()
+  })
   const branchControl = mountFooterBranchStatus(branchHost, store, api)
 
   exportBtn.addEventListener('click', () => {
