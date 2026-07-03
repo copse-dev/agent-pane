@@ -111,6 +111,20 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
     })
   })
 
+  it('carries the ACP kind so the UI can spot the agent’s shell commands', () => {
+    const update: SessionUpdate = {
+      sessionUpdate: 'tool_call',
+      toolCallId: 'e1',
+      title: 'git status',
+      kind: 'execute',
+      rawInput: {},
+    }
+    assert.deepEqual(sessionUpdateToStreamChunk(update), {
+      type: 'tool_call',
+      toolCall: { id: 'e1', name: 'git status', args: {}, kind: 'execute' },
+    })
+  })
+
   it('maps a completed tool_call_update to a tool_result and joins text content', () => {
     const update: SessionUpdate = {
       sessionUpdate: 'tool_call_update',

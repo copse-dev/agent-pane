@@ -100,6 +100,9 @@ export function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk |
           id: update.toolCallId,
           name: unwrapInlineCode(update.title),
           args: update.rawInput ?? {},
+          // Carry the ACP kind so the terminal's "Agent tasks" list can surface
+          // the agent's own shell commands (`kind: 'execute'`).
+          ...(update.kind ? { kind: update.kind } : {}),
         },
       }
     case 'tool_call_update': {
