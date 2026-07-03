@@ -102,7 +102,11 @@ import {
   type MockScriptStep,
 } from '@shared/llm/mock-script.ts'
 import { applyAppIcon } from '../app-icon.ts'
-import { getMainWindow } from '../windows/create-main-window.ts'
+import {
+  getMainWindow,
+  registerDevtoolsShortcut,
+  unregisterDevtoolsShortcut,
+} from '../windows/create-main-window.ts'
 import { validateApiKey } from '../services/validate-api-key.ts'
 import { getUsageSummary, recordUsageEvent } from '../services/usage-ledger.ts'
 import { parseUsageRecordInput } from '../services/usage-record-schema.ts'
@@ -245,6 +249,16 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // Same for the experimental PII redaction reveal tool.
     if (k === PII_REDACTION_ENABLED_SETTING) {
       syncPiiTools(registry)
+    }
+    // Toggle the DevTools shortcut registration when the setting changes.
+    if (k === 'devtoolsShortcutEnabled') {
+      const win = getMainWindow()
+      const enabled = typeof value === 'boolean' && value
+      if (enabled) {
+        if (win) registerDevtoolsShortcut(win)
+      } else {
+        unregisterDevtoolsShortcut()
+      }
     }
   })
   ipcMain.handle('settings:setSecurity', async (event, raw: unknown) => {
