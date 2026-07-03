@@ -21,11 +21,22 @@
 }
 .mention-item-thread {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
 }
-.mention-thread-icon {
+.mention-thread-icon,
+.thread-chip-icon {
   flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.mention-thread-icon {
+  color: var(--text-muted);
 }
 .mention-thread-title {
   flex: 1 1 auto;

@@ -30,7 +30,8 @@ describe('@-reference past threads (#644)', () => {
     // Both seeded past threads are offered (the active thread is excluded).
     const threadItems = await $$('.mention-picker .mention-item-thread')
     await expect(threadItems).toBeElementsArrayOfSize({ gte: 1 })
-    await expect($('.mention-picker')).toHaveText(expect.stringContaining('🧵'))
+    // Rendered with the SVG thread icon (not a 🧵 emoji), matching the app chrome.
+    await expect($('.mention-item-thread svg.mention-thread-icon')).toBeExisting()
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'thread-reference-picker-open.png'))
 
@@ -38,7 +39,8 @@ describe('@-reference past threads (#644)', () => {
     await threadItem.click()
     const chip = await $('.attachment-chip.thread-chip')
     await chip.waitForDisplayed({ timeout: 10_000 })
-    await expect(chip).toHaveText(expect.stringContaining('🧵'))
+    await expect(chip).toHaveText(expect.stringContaining('Auth refactor plan'))
+    await expect(chip.$('svg.thread-chip-icon')).toBeExisting()
     await expect($('.mention-picker')).not.toBeDisplayed()
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'thread-reference-chip.png'))

@@ -20,7 +20,12 @@ import {
 } from '@shared/agent/build-text-with-attachments.ts'
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import { bindFileDropTarget, attachFiles } from '../attachments/handle-file-drop.ts'
-import { initMentionPicker, relativeDate, type AttachedThreadRef } from './mention-picker.ts'
+import {
+  initMentionPicker,
+  relativeDate,
+  threadIcon,
+  type AttachedThreadRef,
+} from './mention-picker.ts'
 import { initSkillPicker } from './skill-picker.ts'
 import { resolveSkillInvocation } from '@shared/skills/parse-skill-invocation.ts'
 import { buildSkillUserText } from '@shared/skills/build-skill-user-content.ts'
@@ -683,7 +688,10 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     attachedThreads.push(ref)
     const chip = document.createElement('span')
     chip.className = 'attachment-chip thread-chip'
-    chip.textContent = `🧵 ${ref.title || 'Untitled thread'}`
+    chip.append(
+      threadIcon('thread-chip-icon'),
+      document.createTextNode(ref.title || 'Untitled thread'),
+    )
     const remove = document.createElement('button')
     remove.textContent = '✕'
     remove.addEventListener('click', () => {
