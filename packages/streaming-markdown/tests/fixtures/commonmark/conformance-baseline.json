@@ -4,7 +4,11 @@
   "note": "Examples from the official CommonMark spec that renderMarkdown() satisfies at rest, after the spec normalizer. This is a regression baseline, not a conformance goal — the renderer is intentionally app-specific.",
   "total": 652,
   "passing": [
+    1,
+    2,
     3,
+    8,
+    10,
     11,
     12,
     13,
@@ -505,7 +509,7 @@
   ],
   "summaryBySection": {
     "Tabs": {
-      "pass": 2,
+      "pass": 6,
       "total": 11
     },
     "Backslash escapes": {
