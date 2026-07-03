@@ -48,4 +48,7 @@ export interface StoreEvents {
   // Terminal tab: a shell tab was activated, so any agent-task panel showing in
   // the viewer should yield back to the live terminal.
   shell_tab_activated: []
+  // The set of non-focused threads awaiting user input (a pending approval or
+  // ask_user question) changed. Drives the sidebar attention indicator.
+  attention_changed: []
 }

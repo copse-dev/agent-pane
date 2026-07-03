@@ -257,6 +257,8 @@ export interface IpcEventMap {
   'agent:approval_request': [
     {
       id: string
+      /** Thread whose run triggered this request; scopes the prompt in the UI. */
+      threadId?: string
       title: string
       body: string
       type: 'shell' | 'mcp' | 'web'
@@ -267,6 +269,8 @@ export interface IpcEventMap {
   'agent:ask_user_request': [
     {
       id: string
+      /** Thread whose run asked the question; scopes the prompt in the UI. */
+      threadId?: string
       questions: { question: string; options?: string[] }[]
     },
   ]
