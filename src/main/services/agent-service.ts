@@ -144,9 +144,17 @@ export async function runAgent(
   priorMessages: LLMMessage[],
   host: AgentHost,
   registry: ToolRegistry,
-  options?: { invokedSkills?: string[]; priorTodos?: TodoItem[]; workingBrief?: string },
+  options?: {
+    invokedSkills?: string[]
+    priorTodos?: TodoItem[]
+    workingBrief?: string
+    model?: string
+  },
 ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> {
-  const model = getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
+  // Prefer the per-thread model selection when the renderer sends one; otherwise
+  // fall back to the global default. Everything downstream (provider, context
+  // window, subagent/ACP routing) keys off this single resolved value.
+  const model = options?.model ?? getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
   recordThreadModel(threadId, model)
   const remoteProvider = parseRemoteAgentModel(model)
   const acpSelection = parseAcpModelSelection(model)

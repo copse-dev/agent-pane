@@ -84,6 +84,9 @@ describe('ipc-guards agent payload schemas', () => {
     )
     assert.equal(estimateContextPayloadSchema.safeParse({ imageCount: 'two' }).success, false)
     assert.equal(estimateContextPayloadSchema.safeParse(null).success, false)
+    // Per-thread model override is accepted so the estimate uses the thread's model.
+    assert.equal(estimateContextPayloadSchema.safeParse({ model: 'claude-opus-4-8' }).success, true)
+    assert.equal(estimateContextPayloadSchema.safeParse({ model: 42 }).success, false)
   })
 
   it('validates follow-up context shape', () => {

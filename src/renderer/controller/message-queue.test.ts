@@ -158,6 +158,28 @@ test('drainMessageQueue refreshes priorTodos from the live thread state', () => 
   assert.deepEqual(payload.priorTodos, [{ id: 'live', content: 'live', status: 'pending' }])
 })
 
+test('dispatchAgentRun sends the per-thread model so the run honours the picker', () => {
+  const store = createStore({ settings: { model: 'claude-opus-4-8' } })
+  const api = fakeApi()
+  const threadId = createThread(store) // seeds thread.model from the global default
+
+  dispatchAgentRun(store, api, threadId, { content: 'go' })
+
+  const payload = JSON.parse(firstRun(api)[1]) as { model?: string }
+  assert.equal(payload.model, 'claude-opus-4-8')
+})
+
+test('dispatchAgentRun omits model when the thread has none, so main uses the global default', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store) // no global default → thread.model absent
+
+  dispatchAgentRun(store, api, threadId, { content: 'go' })
+
+  const payload = JSON.parse(firstRun(api)[1]) as Record<string, unknown>
+  assert.equal('model' in payload, false)
+})
+
 test('drainMessageQueue does nothing while the thread is running', () => {
   const store = createStore()
   const api = fakeApi()
