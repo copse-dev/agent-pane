@@ -14,9 +14,11 @@ import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountSettingsDialog, openSettingsDialog, closeSettingsDialog } from './settings-dialog.ts'
 import { mountApprovalDialog } from './approval-dialog.ts'
+import { resetAttention } from '../controller/attention.ts'
 
 type ApprovalHandler = (req: {
   id: string
+  threadId?: string | undefined
   title: string
   body: string
   type: string
@@ -26,7 +28,10 @@ type ApprovalHandler = (req: {
 
 // Recursive never-settling stub for the settings dialog's background loads, with
 // the two approval surfaces the approval dialog actually touches captured.
-function makeApi(): { api: ApiClient; emit: (req: { id: string }) => void } {
+function makeApi(): {
+  api: ApiClient
+  emit: (req: { id: string; threadId?: string }) => void
+} {
   let handler: ApprovalHandler = () => {}
   const overrides: Record<string, unknown> = {
     'agent.onApprovalRequest': (h: ApprovalHandler) => {
@@ -49,7 +54,7 @@ function makeApi(): { api: ApiClient; emit: (req: { id: string }) => void } {
   return {
     api,
     emit: (req): void => {
-      handler({ id: req.id, title: 't', body: 'b', type: 'shell' })
+      handler({ id: req.id, threadId: req.threadId, title: 't', body: 'b', type: 'shell' })
     },
   }
 }
@@ -87,10 +92,12 @@ describe('approval dialog vs settings (issue #501)', () => {
 
   beforeEach(() => {
     document.body.innerHTML = ''
+    resetAttention()
     const made = makeApi()
     emit = made.emit
+    const store = createStore()
     // Settings must mount first: the approval dialog subscribes to its close event.
-    mountSettingsDialog(createStore(), made.api)
+    mountSettingsDialog(store, made.api)
     const settings = document.getElementById('settings-dialog') as HTMLDialogElement
     shimModal(settings)
     // openSettingsDialog also dispatches `settings-open`, kicking off async loads
@@ -98,7 +105,7 @@ describe('approval dialog vs settings (issue #501)', () => {
     // rejects after the test. We leave dispatchEvent intact because the close-event
     // path is exactly what the queue flush under test relies on.
 
-    mountApprovalDialog(made.api)
+    mountApprovalDialog(made.api, store)
     approvalDialog = document.getElementById('approval-dialog') as HTMLDialogElement
     approvalSpy = shimModal(approvalDialog)
   })
