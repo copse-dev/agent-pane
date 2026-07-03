@@ -12,10 +12,13 @@ function renderNestedInlineSpans(t: string, linkRefs: LinkReferenceMap): string 
   t = encodeBackslashEscapes(t)
   t = renderInlineCode(t)
   t = renderAngleAutolinks(t)
-  t = renderStrongAroundCode(t)
-  t = renderStrongWithInlineHtml(t)
   t = renderEmphasisOutsideInlineHtml(t, linkRefs)
   t = renderInlineLinks(t, linkRefs, renderNestedInlineSpans)
+  // Strong spans around rendered <code>/<a>/<img> run after links so patterns
+  // like `**[#264](url)**` and `**[`path`](path) tail**` resolve to real
+  // anchors instead of literal `[label](dest)` inside <strong>.
+  t = renderStrongAroundCode(t)
+  t = renderStrongWithInlineHtml(t)
   t = renderBareHttpLinks(t)
   return t
 }
@@ -35,9 +38,10 @@ function renderStrongAroundCode(text: string): string {
 }
 
 /**
- * Strong spans that contain rendered inline HTML with trailing prose. The delimiter
- * stack cannot pair `**` across shields; used for agent captions like
- * `**`file.png` — description**`.
+ * Strong spans that contain rendered inline HTML, optionally with trailing prose.
+ * Runs after link rendering so `<a>` is already in the DOM-shaped string. Covers
+ * agent captions like `**`file.png` — description**` and bold-wrapped links
+ * like `**[#264](url) — Track 1**` where linkBeatsEmphasis blocks the stack.
  */
 function renderStrongWithInlineHtml(text: string): string {
   return text.replace(
