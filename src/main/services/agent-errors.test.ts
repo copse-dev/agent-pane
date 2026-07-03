@@ -1,11 +1,54 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { RequestError } from '@agentclientprotocol/sdk'
 import { classifyAgentError } from './agent-errors.ts'
+import { AcpTurnFailure } from './acp/acp-agent-service.ts'
 
 describe('classifyAgentError', () => {
   it('maps 401 to API key guidance', () => {
     assert.match(classifyAgentError(new Error('HTTP 401 Unauthorized')), /401/)
     assert.match(classifyAgentError('Unauthorized'), /API key/)
+  })
+
+  it('maps ACP authentication failures with error code and agent-specific setup', () => {
+    const auth = RequestError.authRequired({ reason: 'token missing' })
+    const out = classifyAgentError(auth, { acpAgentId: 'claude-agent-acp' })
+    assert.match(out, /ACP error -32000 \(Authentication required\)/)
+    assert.match(out, /Claude requires authentication/)
+    assert.match(out, /claude setup-token/)
+    assert.match(out, /ANTHROPIC_API_KEY/)
+    assert.match(out, /Details:.*token missing/)
+    assert.match(out, /not passed to external agents/)
+    assert.doesNotMatch(out, /^An error occurred:/)
+  })
+
+  it('reads RequestError from an AcpTurnFailure cause chain', () => {
+    const wrapped = new AcpTurnFailure(RequestError.authRequired(), {
+      assistantText: '',
+      usage: { inputTokens: 0, outputTokens: 0 },
+    })
+    const out = classifyAgentError(wrapped, { acpAgentId: 'cursor' })
+    assert.match(out, /ACP error -32000/)
+    assert.match(out, /cursor-agent login/)
+  })
+
+  it('maps plain Authentication required text for ACP turns without a RequestError class', () => {
+    const out = classifyAgentError(new Error('Authentication required'), { acpAgentId: 'cursor' })
+    assert.match(out, /ACP error -32000/)
+    assert.match(out, /cursor-agent login/)
+  })
+
+  it('maps ACP 401 to agent auth guidance instead of Copse provider keys', () => {
+    const out = classifyAgentError(new Error('HTTP 401 Unauthorized'), { acpAgentId: 'cursor' })
+    assert.match(out, /cursor-agent login/)
+    assert.doesNotMatch(out, /Settings, and that no stale/)
+  })
+
+  it('surfaces other ACP JSON-RPC errors with code and optional data', () => {
+    const err = new RequestError(-32002, 'Resource not found', { uri: 'file:///missing' })
+    const out = classifyAgentError(err, { acpAgentId: 'cursor' })
+    assert.match(out, /ACP error -32002 \(Resource not found\)/)
+    assert.match(out, /file:\/\/\/missing/)
   })
 
   it('maps rate limits', () => {

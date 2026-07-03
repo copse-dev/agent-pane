@@ -70,6 +70,7 @@ contextBridge.exposeInMainWorld('api', {
     onApprovalRequest: (
       handler: (req: {
         id: string
+        threadId?: string
         title: string
         body: string
         type: string
@@ -81,6 +82,7 @@ contextBridge.exposeInMainWorld('api', {
         _e: Electron.IpcRendererEvent,
         req: {
           id: string
+          threadId?: string
           title: string
           body: string
           type: string
@@ -96,11 +98,19 @@ contextBridge.exposeInMainWorld('api', {
       }
     },
     onAskUserRequest: (
-      handler: (req: { id: string; questions: { question: string; options?: string[] }[] }) => void,
+      handler: (req: {
+        id: string
+        threadId?: string
+        questions: { question: string; options?: string[] }[]
+      }) => void,
     ) => {
       const listener = (
         _e: Electron.IpcRendererEvent,
-        req: { id: string; questions: { question: string; options?: string[] }[] },
+        req: {
+          id: string
+          threadId?: string
+          questions: { question: string; options?: string[] }[]
+        },
       ): void => {
         handler(req)
       }
