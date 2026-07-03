@@ -139,6 +139,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   advisorModel: z.string().max(256),
   roadmapPlansEnabled: z.boolean(),
   piiRedactionEnabled: z.boolean(),
+  devtoolsShortcutEnabled: z.boolean(),
   customInstructions: z.string().max(8192),
   onboardingCompleted: z.boolean(),
   // Opt-in consent for scanning the shell environment / start-up files for

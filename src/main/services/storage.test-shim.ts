@@ -10,6 +10,10 @@ export function storageSet(key: string, value: unknown): void {
   mem.set(key, value)
 }
 
+export function storageDelete(key: string): void {
+  mem.delete(key)
+}
+
 export function storageUpdate(key: string, update: (current: unknown) => unknown): Promise<void> {
   return runSerialized(key, () => {
     mem.set(key, update(mem.get(key)))
