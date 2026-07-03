@@ -1,13 +1,52 @@
 /** Shared block-level line patterns and fence helpers (tokenizer + renderer). */
 
+/** Width of a line's leading whitespace in columns, expanding tabs to 4-col stops. */
+export function leadingIndentWidth(line: string): number {
+  let col = 0
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]
+    if (ch === ' ') col++
+    else if (ch === '\t') col += 4 - (col % 4)
+    else break
+  }
+  return col
+}
+
+/**
+ * Remove up to four columns of leading indentation, expanding tabs to 4-col
+ * stops. A tab that straddles the fourth column leaves its remainder as spaces
+ * (CommonMark tab handling for indented code).
+ */
+export function stripFourColumnIndent(line: string): string {
+  let col = 0
+  let i = 0
+  while (i < line.length && col < 4) {
+    const ch = line[i]
+    if (ch === ' ') {
+      col++
+      i++
+      continue
+    }
+    if (ch === '\t') {
+      const advance = 4 - (col % 4)
+      if (col + advance > 4) return ' '.repeat(col + advance - 4) + line.slice(i + 1)
+      col += advance
+      i++
+      continue
+    }
+    break
+  }
+  return line.slice(i)
+}
+
 export const FENCE_OPEN_RE = /^ {0,3}(`{3,}|~{3,})([^\n`]*)\s*$/
 export const FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})\s*$/
 
-/** ATX heading detection (tokenizer): `#` through `######` followed by space or EOL. */
-export const ATX_HEADING_DETECT_RE = /^ {0,3}(#{1,6})(?: |$)/
+/** ATX heading detection (tokenizer): `#` through `######` followed by space, tab, or EOL. */
+export const ATX_HEADING_DETECT_RE = /^ {0,3}(#{1,6})(?:[ \t]|$)/
 
-/** ATX heading capture (renderer): optional title after `#` markers. */
-export const ATX_HEADING_CAPTURE_RE = /^ {0,3}(#{1,6})(?: (.*)|$)/
+/** ATX heading capture (renderer): optional title after `#` markers (space or tab separator). */
+export const ATX_HEADING_CAPTURE_RE = /^ {0,3}(#{1,6})(?:[ \t]+(.*)|$)/
 
 /** Blockquote line detection (CommonMark: up to 3 spaces, `>`, optional space). */
 export const BLOCKQUOTE_DETECT_RE = /^ {0,3}> ?/
