@@ -2,6 +2,8 @@ export interface PromptAttachmentHandlers {
   attachFile(file: { path: string; content: string }): void
   attachTextBlock(content: string, label?: string): void
   attachImage(dataUrl: string, mimeType: string): void
+  /** Move keyboard focus to the chat composer after a selection attachment. */
+  focusComposer?: () => void
 }
 
 let handlers: PromptAttachmentHandlers | null = null
