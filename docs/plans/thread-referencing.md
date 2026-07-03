@@ -378,7 +378,22 @@ Each phase leaves `npm run check` + `npm run test:e2e` green.
   `appendMessage` on `message_added`/`message_done`. e2e seeds routed to the new store via
   `writeSeedConfig` + `COPSE_WORKSPACE_DIR`. Eager `loadProject` kept — the benchmark-motivated
   **lazy-load (catalog + active thread on open) is deferred** to a focused follow-up. ✅
-- Remaining: Phases 3 (streaming partials), 4 (read-only mount), 5 (`@` composer), 6 (export/docs + lazy-load follow-up).
+- **Phase 3** — streaming partials: **deferred**. Phase 2b already persists at every
+  `message_done` boundary; full crash-durability of the in-flight message tail needs
+  renderer→main message-id plumbing (main lacks the messageId; multiple assistant messages per
+  turn) for marginal gain. Revisit as a focused follow-up. ⏸️
+- **Phase 4** — read-only chat-store mount: `getChatStoreRoot`/`resolveReadablePath`/`isInsideChatStore`
+  in `workspace.ts`; read tools (`read_file`/`list_dir`/`search_code`/`search_codebase`) resolve
+  chat-store paths; writes rejected by construction; seatbelt `allowRead` extended (read-only).
+  Traversal + tool-level tests. ✅
+- **Phase 5** — `@`-reference past threads: two-source mention picker (catalog above files, active
+  excluded), `🧵` composer chip, steering preamble in `build-text-with-attachments` (path refs,
+  nothing inlined); `loadProjectCatalog` returns `ThreadCatalogHit` with absolute `spinePath`.
+  Unit + component tests + visual eval. ✅
+- **Phase 6** — export `exportVersion: 3` (spine-aligned message-line field names, self-contained
+  inline); docs (`docs/thread-store-format.md`, AGENTS.md, README); `bench:thread-store` perf
+  sanity. ✅
+- Remaining follow-ups: lazy-load renderer (Phase 2 note), streaming partials (Phase 3).
 
 ## Benchmark baseline
 
