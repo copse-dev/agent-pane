@@ -13,6 +13,7 @@ import {
   lowContextAdvice,
 } from '@shared/context-window-advice.ts'
 import { el } from '../../dom/helpers.ts'
+import { inlineStatus, setInlineStatus } from '../../dom/inline-status.ts'
 
 export interface LmStudioSection {
   root: HTMLElement
@@ -140,11 +141,15 @@ export function createLmStudioSection(
         result.models && result.models.length
           ? result.models.slice(0, 3).join(', ')
           : 'no models loaded'
-      testStatus.textContent = `✓ Connected — ${String(result.models?.length ?? 0)} model(s): ${list}`
+      setInlineStatus(
+        testStatus,
+        'ok',
+        `Connected — ${String(result.models?.length ?? 0)} model(s): ${list}`,
+      )
       testStatus.classList.add('ok')
       await refreshDetection()
     } else {
-      testStatus.textContent = `✗ ${result.error ?? 'Connection failed'}`
+      setInlineStatus(testStatus, 'error', result.error ?? 'Connection failed')
       testStatus.classList.add('err')
     }
   }
@@ -156,11 +161,10 @@ export function createLmStudioSection(
     for (const model of PREFERRED_MODELS) {
       const present = detection.models.includes(model.id)
       const row = el('div', { class: 'preferred-model-row' })
-      const status = el(
-        'span',
-        { class: present ? 'preferred-model-status ok' : 'preferred-model-status' },
-        present ? '✓ Available' : '○ Not loaded',
-      )
+      const status = el('span', {
+        class: present ? 'preferred-model-status ok' : 'preferred-model-status',
+      })
+      status.append(inlineStatus(present ? 'ok' : 'pending', present ? 'Available' : 'Not loaded'))
       const meta = el(
         'div',
         { class: 'preferred-model-meta' },
@@ -184,16 +188,16 @@ export function createLmStudioSection(
             .download(model.id, urlInput.value.trim(), keyInput.value.trim())
             .then((job) => {
               if (!job.ok) {
-                progress.textContent = `✗ ${job.error ?? 'Download failed'}`
+                setInlineStatus(progress, 'error', job.error ?? 'Download failed')
                 downloadBtn.disabled = false
                 return
               }
               if (job.status === 'already_downloaded') {
-                progress.textContent = '✓ Already downloaded — load it in LM Studio'
+                setInlineStatus(progress, 'ok', 'Already downloaded — load it in LM Studio')
                 return
               }
               if (!job.jobId) {
-                progress.textContent = `✓ ${job.status ?? 'started'}`
+                setInlineStatus(progress, 'ok', job.status ?? 'started')
                 return
               }
               const eta = formatDownloadEta(model.downloadGb)
@@ -231,21 +235,21 @@ export function createLmStudioSection(
         .downloadStatus(jobId, urlInput.value.trim(), keyInput.value.trim())
         .then((status) => {
           if (!status.ok) {
-            progressEl.textContent = `✗ ${status.error ?? 'Status check failed'}`
+            setInlineStatus(progressEl, 'error', status.error ?? 'Status check failed')
             clearInterval(timer)
             downloadPollers.delete(jobId)
             onDone()
             return
           }
           if (status.status === 'completed' || status.status === 'already_downloaded') {
-            progressEl.textContent = '✓ Download complete — load the model in LM Studio'
+            setInlineStatus(progressEl, 'ok', 'Download complete — load the model in LM Studio')
             clearInterval(timer)
             downloadPollers.delete(jobId)
             onDone()
             return
           }
           if (status.status === 'failed') {
-            progressEl.textContent = '✗ Download failed'
+            setInlineStatus(progressEl, 'error', 'Download failed')
             clearInterval(timer)
             downloadPollers.delete(jobId)
             onDone()
@@ -299,7 +303,7 @@ export function createLmStudioSection(
     const detection = await api.lmStudio.detect(urlInput.value.trim(), keyInput.value.trim())
     renderContextAdvisory(detection.modelContexts)
     if (detection.serverRunning) {
-      detectionStatus.textContent = `✓ LM Studio server reachable at ${detection.serverUrl}`
+      setInlineStatus(detectionStatus, 'ok', `LM Studio server reachable at ${detection.serverUrl}`)
       detectionStatus.className = 'setup-detection-status ok'
     } else if (detection.installDetected) {
       detectionStatus.textContent =
@@ -319,21 +323,16 @@ export function createLmStudioSection(
     const lmUrl = urlInput.value.trim()
     const currentSafety = (await api.settings.get('safetyModel')) as string | undefined
     const currentThreshold = (await api.settings.get('safetyConfidenceThreshold')) as
-      | number
-      | undefined
+      number | undefined
     const currentSafetyEnabled = (await api.settings.get('safetyClassifierEnabled')) as
-      | boolean
-      | undefined
+      boolean | undefined
     const currentAutoRun = (await api.settings.get('autoRunSandboxCommands')) as boolean | undefined
     const currentMcpAuto = (await api.settings.get('mcpAutoAllowReadOnly')) as boolean | undefined
     const currentReadonly = (await api.settings.get('defaultReadonlyMode')) as boolean | undefined
     const currentWebOrigins = (await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING)) as
-      | string[]
-      | undefined
-      | null
+      string[] | undefined | null
     const currentWebApproval = (await api.settings.get(WEB_ALLOW_USER_APPROVAL_SETTING)) as
-      | boolean
-      | undefined
+      boolean | undefined
     await api.settings.setSecurity({
       localServerUrl: lmUrl,
       safetyClassifierEnabled: currentSafetyEnabled ?? true,
@@ -349,7 +348,7 @@ export function createLmStudioSection(
     })
     keyInput.value = ''
     const lmSet = await api.settings.getKey('lmstudio')
-    keyStatus.textContent = lmSet ? '● saved' : '○ not set'
+    setInlineStatus(keyStatus, lmSet ? 'filled' : 'pending', lmSet ? 'saved' : 'not set')
     keyStatus.className = 'key-status'
   }
 
@@ -357,7 +356,7 @@ export function createLmStudioSection(
     const lmUrl = (await api.settings.get('localServerUrl')) as string | undefined
     urlInput.value = lmUrl ?? 'http://localhost:1234/v1'
     const lmSet = await api.settings.getKey('lmstudio')
-    keyStatus.textContent = lmSet ? '● saved' : '○ not set'
+    setInlineStatus(keyStatus, lmSet ? 'filled' : 'pending', lmSet ? 'saved' : 'not set')
     await refreshDetection()
   })()
 

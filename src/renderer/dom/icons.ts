@@ -67,9 +67,26 @@ export function checkIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('check', ['M20 6 9 17l-5-5'], className)
 }
 
+/** Filled dot for "saved / connected" inline statuses. */
+export function dotIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon('dot', ['M12 12h.01'], `${className} ui-icon-dot`)
+}
+
 /** Open (hollow) circle — a "pending / not started" status marker. */
 export function circleIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('circle', ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z'], className)
+}
+
+export function warningIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'triangle-alert',
+    [
+      'M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z',
+      'M12 9v4',
+      'M12 17h.01',
+    ],
+    className,
+  )
 }
 
 export function searchIcon(className = DEFAULT): SVGSVGElement {

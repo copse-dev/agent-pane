@@ -3,6 +3,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { at } from '@shared/array-utils.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { closeIcon } from '../dom/icons.ts'
+import { inlineStatus } from '../dom/inline-status.ts'
 import {
   DEFAULT_APP_CHAT_MODEL,
   LM_STUDIO_MODEL_IDS,
@@ -156,10 +157,14 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
           el('strong', {}, r.label),
           el('span', { class: 'field-hint' }, r.baseUrl),
         )
-        const status = el(
-          'span',
-          { class: r.reachable ? 'preferred-model-status ok' : 'preferred-model-status' },
-          r.reachable ? `✓ running — ${String(r.models.length)} model(s)` : '○ not found',
+        const status = el('span', {
+          class: r.reachable ? 'preferred-model-status ok' : 'preferred-model-status',
+        })
+        status.append(
+          inlineStatus(
+            r.reachable ? 'ok' : 'pending',
+            r.reachable ? `running — ${String(r.models.length)} model(s)` : 'not found',
+          ),
         )
         detectList.append(el('div', { class: 'preferred-model-row' }, meta, status))
       }
