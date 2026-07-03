@@ -344,7 +344,7 @@ export function createCustomProvidersSection(
           status.className = 'key-status err'
           return
         }
-        status.textContent = 'Testing…'
+        setInlineStatus(status, 'pending', 'Testing…')
         status.className = 'key-status'
         try {
           const res = await api.settings.validateKey(slug, key)
@@ -408,7 +408,7 @@ export function createCustomProvidersSection(
     const fetchStatus = el('span', { class: 'key-status' })
     fetchBtn.addEventListener('click', () => {
       void (async (): Promise<void> => {
-        fetchStatus.textContent = 'Fetching…'
+        setInlineStatus(fetchStatus, 'pending', 'Fetching…')
         fetchStatus.className = 'key-status'
         const key = (pendingKeys.get(provider.id) ?? '').trim()
         // HF's router exposes per-provider pricing/context the generic /models
@@ -632,7 +632,7 @@ export function createCustomProvidersSection(
         }
         const slug = (slugInput.value.trim() || providerSlugFromBaseUrl(baseUrl)).toLowerCase()
         const label = labelInput.value.trim()
-        status.textContent = 'Saving…'
+        setInlineStatus(status, 'pending', 'Saving…')
         status.className = 'key-status'
         try {
           const before = new Set(providers.map((p) => p.id))

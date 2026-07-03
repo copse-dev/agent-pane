@@ -159,14 +159,14 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
   }
 
   async function scan(): Promise<void> {
-    scanStatus.textContent = 'Scanning…'
+    setInlineStatus(scanStatus, 'pending', 'Scanning…')
     scanStatus.className = 'key-status'
     try {
       const found = await api.acp.detectAgents()
       detectedById = new Map(found.map((agent) => [agent.id, agent]))
       const installed = found.filter((agent) => agent.installed).length
       if (installed) setInlineStatus(scanStatus, 'ok', `${String(installed)} installed`)
-      else scanStatus.textContent = 'None installed yet'
+      else setInlineStatus(scanStatus, 'pending', 'None installed yet')
       scanStatus.className = `key-status ${installed ? 'ok' : ''}`
     } catch {
       detectedById = new Map()
@@ -287,17 +287,17 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
     // Detection resolves the agent by its saved id, so it only works once the
     // agent has been saved (a fresh, unsaved agent has nothing to spawn yet).
     detectModels.disabled = !isEdit
-    if (!isEdit) modelStatus.textContent = 'Save the agent first, then detect its models.'
+    if (!isEdit) setInlineStatus(modelStatus, 'pending', 'Save the agent first, then detect its models.')
     detectModels.addEventListener('click', () => {
       const id = idInput.value.trim()
       detectModels.disabled = true
-      modelStatus.textContent = 'Detecting… (starting the agent)'
+      setInlineStatus(modelStatus, 'pending', 'Detecting… (starting the agent)')
       void api.acp
         .listModels(id)
         .then((selector) => {
           if (!selector) {
             detectedModels = []
-            modelStatus.textContent = 'This agent exposes no selectable models.'
+            setInlineStatus(modelStatus, 'pending', 'This agent exposes no selectable models.')
             return
           }
           detectedModels = selector.choices
@@ -311,7 +311,7 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
             agents = upsertAgent(agents, { ...saved, availableModels: selector.choices })
             void api.settings.set('registeredAcpAgents', agents)
           }
-          modelStatus.textContent = `${String(selector.choices.length)} models added to the picker (default: ${selector.currentValue}).`
+          setInlineStatus(modelStatus, 'ok', `${String(selector.choices.length)} models added to the picker (default: ${selector.currentValue}).`)
         })
         .catch((err: unknown) => {
           setInlineStatus(modelStatus, 'error', err instanceof Error ? err.message : String(err))

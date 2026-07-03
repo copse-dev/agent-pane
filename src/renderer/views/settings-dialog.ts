@@ -1034,7 +1034,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         } else if (s.state === 'error') {
           setInlineStatus(status, 'error', s.error ?? 'error')
         } else {
-          status.textContent = '… connecting'
+          setInlineStatus(status, 'pending', '… connecting')
         }
         body.append(status)
       }
@@ -1054,7 +1054,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   qsRequired(overlay, '#mcp-reload-btn').addEventListener('click', () => {
     const statusEl = qsRequired(overlay, '#mcp-reload-status')
-    statusEl.textContent = 'Reloading…'
+    setInlineStatus(statusEl, 'pending', 'Reloading…')
     statusEl.className = 'lmstudio-test-status'
     void api.mcp
       .reload()

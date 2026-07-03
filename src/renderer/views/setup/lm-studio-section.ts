@@ -133,7 +133,7 @@ export function createLmStudioSection(
   }
 
   async function runTest(): Promise<void> {
-    testStatus.textContent = 'Testing…'
+    setInlineStatus(testStatus, 'pending', 'Testing…')
     testStatus.className = 'lmstudio-test-status'
     const result = await api.lmStudio.test(urlInput.value.trim(), keyInput.value.trim())
     if (result.ok) {
@@ -183,7 +183,7 @@ export function createLmStudioSection(
         const progress = el('span', { class: 'download-progress' })
         downloadBtn.addEventListener('click', () => {
           downloadBtn.disabled = true
-          progress.textContent = 'Starting download…'
+          setInlineStatus(progress, 'pending', 'Starting download…')
           void api.lmStudio
             .download(model.id, urlInput.value.trim(), keyInput.value.trim())
             .then((job) => {
@@ -204,7 +204,7 @@ export function createLmStudioSection(
               const sizeHint = job.totalSizeBytes
                 ? formatBytes(job.totalSizeBytes)
                 : `~${String(model.downloadGb)} GB`
-              progress.textContent = `Downloading ${sizeHint} — may take ${eta}…`
+              setInlineStatus(progress, 'pending', `Downloading ${sizeHint} — may take ${eta}…`)
               pollDownload(job.jobId, progress, () => {
                 downloadBtn.disabled = false
                 void refreshDetection()
@@ -257,7 +257,7 @@ export function createLmStudioSection(
           }
           if (status.totalSizeBytes && status.downloadedBytes) {
             const pct = Math.round((status.downloadedBytes / status.totalSizeBytes) * 100)
-            progressEl.textContent = `Downloading… ${String(pct)}% (${formatBytes(status.downloadedBytes)} / ${formatBytes(status.totalSizeBytes)})`
+            setInlineStatus(progressEl, 'pending', `Downloading… ${String(pct)}% (${formatBytes(status.downloadedBytes)} / ${formatBytes(status.totalSizeBytes)})`)
           }
         })
     }, 2000)
@@ -306,12 +306,18 @@ export function createLmStudioSection(
       setInlineStatus(detectionStatus, 'ok', `LM Studio server reachable at ${detection.serverUrl}`)
       detectionStatus.className = 'setup-detection-status ok'
     } else if (detection.installDetected) {
-      detectionStatus.textContent =
-        'LM Studio is installed but the server is not running. Open LM Studio and start the local server.'
+      setInlineStatus(
+        detectionStatus,
+        'warn',
+        'LM Studio is installed but the server is not running. Open LM Studio and start the local server.',
+      )
       detectionStatus.className = 'setup-detection-status warn'
     } else {
-      detectionStatus.textContent =
-        'LM Studio not detected. Install it and start the local server on port 1234.'
+      setInlineStatus(
+        detectionStatus,
+        'error',
+        'LM Studio not detected. Install it and start the local server on port 1234.',
+      )
       detectionStatus.className = 'setup-detection-status err'
     }
     renderPreferredModels(detection)
