@@ -33,6 +33,26 @@ down — system prompt, tools, MCP, skills, conversation, your message — so I 
 need for this task. You get a lean window without giving up the things that made
 Cursor pleasant to use.
 
+## It runs where I can see it
+
+Freedom isn't only about *which* provider — it's about what the tool is allowed to
+do behind your back. Copse is sandboxed by default: the agent reads and writes only
+inside the workspace, and every shell command is classified before it runs, so
+anything reaching for the network or outside the project stops and asks instead of
+just going. API keys are encrypted at rest by the OS keychain rather than left
+sitting in a dotfile. None of this is bolted on for a compliance checkbox — it's
+the baseline I wanted before handing an agent the keys to my machine.
+
+## My data stays in files I own
+
+The other quiet cost of these tools is lock-in by format: your history lives in
+someone's database, in a shape only their app can read. Copse persists to open,
+inspectable files — Markdown with YAML frontmatter for prose (the same Open
+Knowledge Format the memories feature uses), append-only JSONL for the event
+streams. Skills, hooks, MCP and ACP servers are all just config you can read and
+toggle. If I walked away from Copse tomorrow, everything it knows about my projects
+would still be there in plain text: greppable, diffable, portable to the next tool.
+
 ## What's still cooking
 
 There's an Experimental tab for the half-formed ideas, all opt-in and off by default:
@@ -45,6 +65,20 @@ There's an Experimental tab for the half-formed ideas, all opt-in and off by def
   gotchas across sessions as portable Open Knowledge Format files.
 
 They're rough, but they're moving.
+
+## Where it's heading
+
+A few things I'm building toward, because they're the actual point:
+
+- **Provability** — every decision the agent makes (what it ran, what I approved,
+  at what scope) recorded to an exportable, machine-readable log, so a run can be
+  *audited and evaluated* after the fact, not just watched live.
+- **Judges, not a judge** — configurable quorums of review agents that have to
+  agree with each other, instead of trusting a single pass.
+- **Steering without stopping** — nudge a running turn with a correction rather
+  than cancelling and starting over.
+- **Handoff** — because the history is just portable files, picking a session back
+  up from the web or a phone becomes a sync problem, not a rewrite.
 
 ## Where I'm honestly at
 
