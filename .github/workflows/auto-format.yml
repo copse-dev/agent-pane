@@ -1,0 +1,61 @@
+name: Auto-format
+
+# Applies every autofix we have — ESLint `--fix` then Prettier `--write` — to
+# the pushed branch and commits the result back. Prettier runs last so it tidies
+# whatever ESLint rewrote; `eslint-config-prettier` means the two never fight.
+#
+# The commit is pushed with the default GITHUB_TOKEN, which by design does NOT
+# re-trigger `push` workflows, so this can't loop on its own formatting commit.
+
+on:
+  push:
+    branches-ignore:
+      # Formatting fixes belong on a PR, not a direct push to the release line.
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# One in-flight run per branch; a newer push supersedes an older, half-finished
+# format so we never race two auto-format commits onto the same ref.
+concurrency:
+  group: auto-format-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.3
+
+      - uses: actions/setup-node@v6
+        with: { node-version: '22', cache: 'npm' }
+
+      # Skip the native postinstall steps (electron-rebuild, codesearch
+      # download) — ESLint and Prettier only need the pure-JS deps.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+        env:
+          SKIP_ELECTRON_REBUILD: '1'
+          SKIP_CODESEARCH_FETCH: '1'
+
+      # `|| true`: a non-autofixable lint error must not abort the run — we still
+      # want the fixes ESLint did apply to land. Real lint failures are caught by
+      # the separate CI lint gate, not here.
+      - name: ESLint --fix
+        run: npx eslint . --fix || true
+
+      - name: Prettier --write
+        run: npm run format
+
+      - name: Commit and push fixes
+        run: |
+          if git diff --quiet; then
+            echo "No formatting changes to commit."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -am 'style: apply eslint --fix and prettier'
+          git push
