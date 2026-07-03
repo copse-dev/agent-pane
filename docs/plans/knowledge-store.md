@@ -131,9 +131,15 @@ two hand-rolled copies drifting, the intent is to **factor these as shared subst
   `roadmap_plan` as the `Roadmap` type on the knowledge store. Tool surface and the
   `roadmapPlansEnabled` experimental flag are unchanged; only the backing store moves.
 
-**Phase 2 — fold memories in.** Re-express `remember`/`recall` as the `Memory` type on this
-store; retire `okf-memory-store.ts` and `~/.copse/memories` (with a one-time move). Optionally
-rename the umbrella concept **memory → knowledge**, with _memory_ one type of _knowledge_.
+**Phase 2 (done) — fold memories in.** `remember`/`recall` now write the `Memory` type on this
+store; `okf-memory-store.ts` is retired. Legacy `~/.copse/memories` notes are imported on first
+use by a **non-destructive one-time migration** (`migrateLegacyMemories` in `memory-tools.ts`):
+it copies each legacy OKF note into the knowledge store — skipping titles that already exist —
+and drops a `.migrated-to-knowledge` marker, leaving the legacy files in place. The tool names
+(`remember`/`recall`) and the `okfMemoriesEnabled` flag are unchanged; only the backing store
+moved, mirroring the roadmap migration. Renaming the umbrella concept **memory → knowledge**
+(with _memory_ one type of _knowledge_) is deferred — it is user-facing churn (setting key, tool
+verbs, prompt block) with its own migration, and is best done once the surfacing UI exists.
 
 **Phase 3 — surfacing.** A sidebar/editor over the store (mirroring `todo-panel.ts`), a
 new-prompt injector that surfaces relevant notes without a tool call, and a model-triage

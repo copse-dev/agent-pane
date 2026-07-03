@@ -73,7 +73,7 @@ import {
   syncPiiTools,
 } from '../services/registry-bootstrap.ts'
 import { PII_REDACTION_ENABLED_SETTING } from '../services/pii-redactor.ts'
-import { OKF_MEMORIES_ENABLED_SETTING } from '../services/okf-memory-store.ts'
+import { OKF_MEMORIES_ENABLED_SETTING } from '../tools/memory-tools.ts'
 import {
   checkoutGitBranch,
   getBranches,
