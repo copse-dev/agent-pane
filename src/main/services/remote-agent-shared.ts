@@ -1,6 +1,5 @@
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
 import type { RemoteAgentProvider } from '@shared/remote-agent.ts'
-import { getSetting } from './settings.ts'
 import { getGithubRepoSlug } from './git-service.ts'
 import { getActiveProjectRoot, getWorkspaceRoot } from './workspace.ts'
 
@@ -29,24 +28,14 @@ export interface RemoteAgentRunResult {
 
 export type GithubRepoSlugResolver = (root: string | null) => Promise<string | null>
 
-export function normalizeRepository(raw: string): string {
-  const value = raw.trim()
-  if (!value) return value
-  if (/^https?:\/\//i.test(value)) return value
-  if (/^[\w.-]+\/[\w.-]+$/.test(value)) return `https://github.com/${value}`
-  return value
-}
-
 export async function resolveRemoteAgentRepository(
   options: { getGithubRepoSlug?: GithubRepoSlugResolver } = {},
 ): Promise<string> {
-  const configured = normalizeRepository(getSetting<string>('remoteAgentRepository', ''))
-  if (configured) return configured
   const resolveSlug = options.getGithubRepoSlug ?? getGithubRepoSlug
   const slug = await resolveSlug(getActiveProjectRoot() ?? getWorkspaceRoot())
   if (slug) return `https://github.com/${slug}`
   throw new Error(
-    'Could not infer a GitHub repository from the active project. Configure Settings → Remote agents → Repository.',
+    'Could not infer a GitHub repository from the active project. Open a project backed by a GitHub remote to run a remote agent.',
   )
 }
 

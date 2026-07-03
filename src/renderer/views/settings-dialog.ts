@@ -53,8 +53,6 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'customInstructions', kind: 'text', default: '', save: true },
   { name: 'openRouterModel', kind: 'text', default: '', save: true },
   { name: 'externalApiSafety', kind: 'checkbox', default: false, save: true },
-  { name: 'remoteAgentRepository', kind: 'text', default: '', save: true },
-  { name: 'remoteAgentStartingRef', kind: 'text', default: '', save: true },
   { name: 'remoteAgentAutoCreatePR', kind: 'checkbox', default: true, save: true },
   { name: 'remoteAgentWorkOnCurrentBranch', kind: 'checkbox', default: false, save: true },
   { name: 'localSubagentsEnabled', kind: 'checkbox', default: true, save: true },
@@ -204,7 +202,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <span class="field-hint">
                 Pick a cloud, local, or remote-agent model here (or from the model picker beside the
                 chat box). Selecting <strong>Cursor Cloud Agent</strong> sends each turn to Cursor
-                Cloud instead of running it on this machine — configure it below.
+                Cloud instead of running it on this machine — configure it in the Remote agents
+                section.
               </span>
               <label>
                 Custom OpenRouter model
@@ -216,7 +215,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 />
                 <span class="field-hint">
                   Adds a model id beyond the built-in OpenRouter shortlist to the picker. Requires an
-                  OpenRouter API key below. Browse ids at <code>openrouter.ai/models</code>.
+                  OpenRouter API key in the Providers section. Browse ids at
+                  <code>openrouter.ai/models</code>.
                 </span>
               </label>
             </fieldset>
@@ -244,38 +244,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 </p>
               </div>
               <p class="settings-fieldset-desc remote-agent-common-note">
-                These apply to whichever remote agent you run:
+                These apply to whichever remote agent you run. The agent works on this project's
+                <code>origin</code> repository, branching from your current branch.
               </p>
-              <label>
-                Repository
-                <input
-                  type="text"
-                  name="remoteAgentRepository"
-                  placeholder="https://github.com/owner/repo (defaults to project origin)"
-                  autocomplete="off"
-                />
-                <span class="field-hint">
-                  Which GitHub repo the remote agent works on. Leave blank to use this project's
-                  <code>origin</code> remote.
-                </span>
-              </label>
-              <label>
-                Starting ref
-                <input
-                  type="text"
-                  name="remoteAgentStartingRef"
-                  placeholder="main (optional)"
-                  autocomplete="off"
-                />
-                <span class="field-hint">Branch or commit the remote agent branches from.</span>
-              </label>
               <label class="checkbox-label">
                 <input type="checkbox" name="remoteAgentAutoCreatePR" />
                 Open a pull request automatically when the remote agent finishes
               </label>
               <label class="checkbox-label">
                 <input type="checkbox" name="remoteAgentWorkOnCurrentBranch" />
-                Push directly to the starting ref instead of a new branch
+                Push directly to the current branch instead of a new branch
               </label>
             </fieldset>
 
