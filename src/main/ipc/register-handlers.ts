@@ -59,7 +59,7 @@ import {
   loadProjectThreads,
   saveProjectThread,
   saveProjectThreads,
-} from '../services/thread-persistence.ts'
+} from '../services/thread-store.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
 import { listAcpModelsForAgent } from '../services/acp/acp-agent-service.ts'
 import { runAcpAutoSetup } from '../services/acp/acp-auto-setup.ts'
