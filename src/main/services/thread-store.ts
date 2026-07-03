@@ -10,14 +10,16 @@ import {
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, relative, sep } from 'node:path'
-import type { Thread } from '@shared/types'
+import type { Message, Thread } from '@shared/types'
 import { sortThreadsNewestFirst } from '@shared/store/thread-helpers.ts'
 import {
+  explodeMessage,
   explodeThread,
   foldThread,
   type FileToWrite,
   type RefResolver,
 } from '@shared/threads/fold.ts'
+import { parseOkfMessage } from '@shared/threads/okf-message.ts'
 import { parseSpine, serializeSpine, type ThreadMeta } from '@shared/threads/spine-schema.ts'
 import { storageGet } from './storage.ts'
 import { runSerialized } from './write-queue.ts'
@@ -133,13 +135,12 @@ function pruneStaleFiles(dir: string, files: FileToWrite[]): void {
   }
 }
 
-function readThread(projectId: string, threadId: string): Thread | null {
-  const dir = threadDir(projectId, threadId)
-  const metaRaw = safeRead(join(dir, META_FILE))
-  if (metaRaw === null) return null
-  let meta: ThreadMeta
+/** Parse a thread's `meta.json`, or null if missing/malformed. */
+function readMeta(dir: string): ThreadMeta | null {
+  const raw = safeRead(join(dir, META_FILE))
+  if (raw === null) return null
   try {
-    const parsed: unknown = JSON.parse(metaRaw)
+    const parsed: unknown = JSON.parse(raw)
     if (
       typeof parsed !== 'object' ||
       parsed === null ||
@@ -147,10 +148,16 @@ function readThread(projectId: string, threadId: string): Thread | null {
     ) {
       return null
     }
-    meta = parsed as ThreadMeta
+    return parsed as ThreadMeta
   } catch {
     return null
   }
+}
+
+function readThread(projectId: string, threadId: string): Thread | null {
+  const dir = threadDir(projectId, threadId)
+  const meta = readMeta(dir)
+  if (meta === null) return null
 
   const spine = parseSpine(safeRead(join(dir, EVENTS_FILE)) ?? '')
   const resolve: RefResolver = (ref) => {
@@ -251,6 +258,49 @@ function upsertCatalogEntry(projectId: string, thread: Thread): void {
   writeCatalog(projectId, entries)
 }
 
+/** First user message body, read straight from disk (O(1) — no whole-thread fold). */
+function firstUserContent(dir: string): string {
+  const spine = parseSpine(safeRead(join(dir, EVENTS_FILE)) ?? '')
+  const line = spine.find((l) => l.role === 'user')
+  if (!line) return ''
+  const raw = safeRead(join(dir, line.content.ref))
+  if (raw === null) return ''
+  return parseOkfMessage(raw)?.body ?? ''
+}
+
+/**
+ * Build a catalog entry from a thread's on-disk `meta.json` + its first user
+ * message, without folding the whole thread. Used by the event-level API so an
+ * append/patch refreshes the catalog in O(1) rather than O(messages).
+ */
+function catalogEntryFromDisk(projectId: string, threadId: string): CatalogEntry | null {
+  const dir = threadDir(projectId, threadId)
+  const meta = readMeta(dir)
+  if (meta === null) return null
+  const digest = [meta.title, meta.workingBrief ?? '', firstUserContent(dir)]
+    .filter(Boolean)
+    .join(' — ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 280)
+  return {
+    id: meta.id,
+    title: meta.title,
+    createdAt: meta.createdAt,
+    updatedAt: meta.updatedAt,
+    digest,
+    path: meta.id,
+  }
+}
+
+function refreshCatalogLine(projectId: string, threadId: string): void {
+  const entry = catalogEntryFromDisk(projectId, threadId)
+  if (entry === null) return
+  const entries = readCatalog(projectId)
+  entries.set(threadId, entry)
+  writeCatalog(projectId, entries)
+}
+
 function rebuildCatalog(projectId: string): Map<string, CatalogEntry> {
   const entries = new Map<string, CatalogEntry>()
   for (const thread of readProjectThreads(projectId)) {
@@ -290,6 +340,63 @@ export function saveProjectThreads(projectId: string, threads: Thread[]): Promis
       }
     }
     writeCatalog(projectId, entries)
+  })
+}
+
+// --- Event-level API (Phase 2) ----------------------------------------------
+// The renderer maps store events onto these instead of rewriting whole threads:
+// `createThread` on a new thread, `appendMessage` on each finalized message, and
+// debounced `updateMeta` for draft/usage/status/todos/title changes. All run
+// through the same per-project queue as the whole-thread paths to keep ordering.
+
+/** Create a thread directory from its metadata (+ any initial messages). */
+export function createThread(projectId: string, thread: Thread): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    writeThread(projectId, thread)
+    upsertCatalogEntry(projectId, thread)
+  })
+}
+
+/**
+ * Persist one finalized message: its OKF/blob files, then its spine line. The
+ * spine line replaces any existing line with the same id (idempotent re-finalize
+ * / edit) and is otherwise appended; writing files before the spine keeps a
+ * crash from leaving the spine pointing at a missing file. `meta.json` is left to
+ * `updateMeta` — the renderer bumps `updatedAt` through it around the same time.
+ */
+export function appendMessage(
+  projectId: string,
+  threadId: string,
+  message: Message,
+): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    const dir = threadDir(projectId, threadId)
+    mkdirSync(dir, { recursive: true })
+    const { line, files } = explodeMessage(message, sha256)
+    for (const file of files) writeFileEnsuringDir(join(dir, file.ref), file.contents)
+    const spine = parseSpine(safeRead(join(dir, EVENTS_FILE)) ?? '').filter(
+      (l) => l.id !== message.id,
+    )
+    spine.push(line)
+    writeFileSync(join(dir, EVENTS_FILE), serializeSpine(spine))
+  })
+}
+
+/** Patch a thread's mutable metadata in place and refresh its catalog line. */
+export function updateMeta(
+  projectId: string,
+  threadId: string,
+  patch: Partial<ThreadMeta>,
+): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    const dir = threadDir(projectId, threadId)
+    const current = readMeta(dir)
+    // updateMeta only patches an existing thread; `createThread` writes the
+    // initial meta.json, so a missing base means there is nothing to patch.
+    if (current === null) return
+    const merged: ThreadMeta = { ...current, ...patch, id: threadId }
+    writeFileSync(join(dir, META_FILE), `${JSON.stringify(merged)}\n`)
+    refreshCatalogLine(projectId, threadId)
   })
 }
 

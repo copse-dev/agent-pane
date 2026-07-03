@@ -10,6 +10,9 @@ import {
   saveProjectThreads,
   deleteProjectThread,
   loadProjectCatalog,
+  createThread,
+  appendMessage,
+  updateMeta,
 } from './thread-store.ts'
 
 function thread(id: string, overrides: Partial<Thread> = {}): Thread {
@@ -207,5 +210,61 @@ describe('thread-store', () => {
 
   it('returns an empty list for an unknown project', async () => {
     assert.deepEqual(await loadProjectThreads('nope'), [])
+  })
+
+  describe('event-level API', () => {
+    it('createThread + appendMessage + updateMeta reconstruct a whole-thread save', async () => {
+      await createThread('proj-1', thread('t1', { title: 'New chat' }))
+      await appendMessage('proj-1', 't1', userMsg('u1', 'hello'))
+      await appendMessage('proj-1', 't1', assistantMsg('a1', 'on it', 'file contents'))
+      await updateMeta('proj-1', 't1', { title: 'Renamed', updatedAt: 42, draftPrompt: 'wip' })
+
+      const loaded = await loadProjectThreads('proj-1')
+      assert.equal(loaded.length, 1)
+      assert.deepEqual(loaded[0], {
+        ...thread('t1', { title: 'Renamed', updatedAt: 42, draftPrompt: 'wip' }),
+        messages: [userMsg('u1', 'hello'), assistantMsg('a1', 'on it', 'file contents')],
+      })
+    })
+
+    it('appendMessage replaces the spine line for a re-finalized message id', async () => {
+      await createThread('proj-1', thread('t1'))
+      await appendMessage('proj-1', 't1', userMsg('u1', 'first'))
+      await appendMessage('proj-1', 't1', userMsg('u1', 'edited'))
+      const [loaded] = await loadProjectThreads('proj-1')
+      assert.deepEqual(
+        loaded?.messages.map((m) => m.content),
+        ['edited'],
+      )
+    })
+
+    it('appendMessage preserves earlier messages (true append, not rewrite)', async () => {
+      await createThread('proj-1', thread('t1'))
+      await appendMessage('proj-1', 't1', userMsg('u1', 'one'))
+      await appendMessage('proj-1', 't1', userMsg('u2', 'two'))
+      const [loaded] = await loadProjectThreads('proj-1')
+      assert.deepEqual(
+        loaded?.messages.map((m) => m.id),
+        ['u1', 'u2'],
+      )
+    })
+
+    it('updateMeta refreshes the catalog line (title, updatedAt, first-user digest)', async () => {
+      await createThread('proj-1', thread('t1', { title: 'Draft' }))
+      await appendMessage('proj-1', 't1', userMsg('u1', 'how do I parse JSON'))
+      await updateMeta('proj-1', 't1', { title: 'JSON parsing', updatedAt: 500 })
+
+      const [entry] = await loadProjectCatalog('proj-1')
+      assert.ok(entry)
+      assert.equal(entry.title, 'JSON parsing')
+      assert.equal(entry.updatedAt, 500)
+      assert.match(entry.digest, /JSON parsing/)
+      assert.match(entry.digest, /how do I parse JSON/)
+    })
+
+    it('updateMeta on a never-created thread is a no-op', async () => {
+      await updateMeta('proj-1', 'ghost', { title: 'x' })
+      assert.deepEqual(await loadProjectThreads('proj-1'), [])
+    })
   })
 })
