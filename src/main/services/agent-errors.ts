@@ -1,4 +1,17 @@
+import { RequestError } from '@agentclientprotocol/sdk'
+import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import { errorMessage } from '@shared/errors.ts'
+
+/** Optional context so ACP failures can name the agent and its auth steps. */
+export interface ClassifyAgentErrorContext {
+  acpAgentId?: string
+}
+
+interface JsonRpcError {
+  code: number
+  message: string
+  data?: unknown
+}
 
 interface ProviderError {
   status?: number
@@ -40,14 +53,121 @@ function parseProviderError(err: unknown): ProviderError {
   return parsed
 }
 
+const ACP_ERROR_CODE_LABELS: Readonly<Record<number, string>> = {
+  [-32700]: 'Parse error',
+  [-32600]: 'Invalid request',
+  [-32601]: 'Method not found',
+  [-32602]: 'Invalid params',
+  [-32603]: 'Internal error',
+  [-32800]: 'Request cancelled',
+  [-32000]: 'Authentication required',
+  [-32002]: 'Resource not found',
+  [-32042]: 'URL elicitation required',
+}
+
+function isJsonRpcError(err: unknown): err is JsonRpcError {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    typeof (err as JsonRpcError).code === 'number' &&
+    Number.isInteger((err as JsonRpcError).code) &&
+    typeof (err as JsonRpcError).message === 'string'
+  )
+}
+
+/** Walk `Error.cause` chains to find an ACP `RequestError` (or equivalent). */
+function findJsonRpcError(err: unknown): JsonRpcError | null {
+  let current: unknown = err
+  for (let depth = 0; depth < 8 && current != null; depth++) {
+    if (current instanceof RequestError || isJsonRpcError(current)) {
+      const rpc = current as JsonRpcError
+      return { code: rpc.code, message: rpc.message, data: rpc.data }
+    }
+    current =
+      current instanceof Error && 'cause' in current && current.cause !== undefined
+        ? current.cause
+        : null
+  }
+  return null
+}
+
+function formatJsonRpcErrorCode(code: number, message: string): string {
+  const label = ACP_ERROR_CODE_LABELS[code]
+  return label ? `ACP error ${code} (${label}): ${message}` : `ACP error ${code}: ${message}`
+}
+
+function formatErrorData(data: unknown): string | null {
+  if (data == null) return null
+  if (typeof data === 'string') {
+    const trimmed = data.trim()
+    return trimmed || null
+  }
+  if (typeof data === 'object') {
+    const record = data as Record<string, unknown>
+    for (const key of ['message', 'detail', 'details', 'reason'] as const) {
+      const value = record[key]
+      if (typeof value === 'string' && value.trim()) return value.trim()
+    }
+    try {
+      const serialized = JSON.stringify(data)
+      return serialized.length <= 240 ? serialized : `${serialized.slice(0, 240)}…`
+    } catch {
+      return null
+    }
+  }
+  return String(data)
+}
+
+function formatAcpAuthError(rpc: JsonRpcError | null, agentId?: string): string {
+  const known = agentId ? KNOWN_ACP_AGENTS.find((agent) => agent.id === agentId) : undefined
+  const agentName = known?.title ?? agentId ?? 'The external agent'
+  const code = rpc?.code ?? -32000
+  const message = rpc?.message ?? 'Authentication required'
+  const lines = [
+    `${agentName} requires authentication before it can run (${formatJsonRpcErrorCode(code, message)}).`,
+  ]
+  const dataDetail = rpc ? formatErrorData(rpc.data) : null
+  if (dataDetail) lines.push(`Details: ${dataDetail}`)
+  if (known?.setup) {
+    const envHint =
+      known.envHints && known.envHints.length > 0
+        ? ` Alternatively, set ${known.envHints.join(' or ')} in Settings → ACP agents → ${known.title} → Environment.`
+        : ''
+    lines.push(`Sign in with \`${known.setup}\`.${envHint}`)
+  } else {
+    lines.push(
+      'Run the agent’s login command or add its required API keys in Settings → ACP agents → Environment for that agent.',
+    )
+  }
+  lines.push(
+    'Copse’s built-in provider keys (Settings → Providers) are not passed to external agents — configure auth on the agent itself.',
+  )
+  return lines.join('\n\n')
+}
+
+function isAcpAuthFailure(
+  rpc: JsonRpcError | null,
+  detail: string,
+  ctx?: ClassifyAgentErrorContext,
+): boolean {
+  if (rpc?.code === -32000) return true
+  if (!ctx?.acpAgentId) return false
+  return /^Authentication required\b/i.test(detail)
+}
+
 /** Map provider / local-model failures to user-facing chat text. */
-export function classifyAgentError(err: unknown): string {
+export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext): string {
+  const rpc = findJsonRpcError(err)
   const { status, type, code, message } = parseProviderError(err)
   const raw = errorMessage(err)
   const detail = message ?? raw
 
-  if (status === 401 || type === 'authentication_error' || detail.includes('Unauthorized'))
+  if (isAcpAuthFailure(rpc, detail, ctx)) return formatAcpAuthError(rpc, ctx?.acpAgentId)
+
+  if (status === 401 || type === 'authentication_error' || detail.includes('Unauthorized')) {
+    if (ctx?.acpAgentId) return formatAcpAuthError(rpc, ctx.acpAgentId)
     return 'The API key was rejected (401). The key reached the provider but was refused — check it is correct and current in Settings, and that no stale `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` is set in your shell.'
+  }
 
   // OpenAI returns HTTP 429 for both rate limits and exhausted credit, so key
   // out-of-credit off the structured quota signals *before* the 429 check.
@@ -74,6 +194,12 @@ export function classifyAgentError(err: unknown): string {
 
   if (detail.includes('No user query found in messages') || detail.includes('jinja template'))
     return 'The local model prompt template failed after history was trimmed. Reload the model in LM Studio with enough context for the chat template, or use a model with a fixed chat template (e.g. under lmstudio-community).'
+
+  if (rpc && ctx?.acpAgentId) {
+    const dataDetail = formatErrorData(rpc.data)
+    const suffix = dataDetail ? `\n\nDetails: ${dataDetail}` : ''
+    return `An error occurred: ${formatJsonRpcErrorCode(rpc.code, rpc.message)}${suffix}`
+  }
 
   return `An error occurred: ${message ?? raw}`
 }
