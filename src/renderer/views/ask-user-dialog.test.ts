@@ -10,10 +10,13 @@ import '../../../tests/setup-dom.ts'
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { createStore } from '@shared/store/store.ts'
 import { mountAskUserDialog } from './ask-user-dialog.ts'
+import { resetAttention } from '../controller/attention.ts'
 
 interface AskUserRequest {
   id: string
+  threadId?: string | undefined
   questions: { question: string; options?: string[] }[]
 }
 
@@ -67,8 +70,10 @@ function dialog(): HTMLDialogElement {
 }
 
 // Mount the dialog and shim its modal methods before any request opens it.
+// Requests here carry no threadId, so they show regardless of the (empty) store
+// focus — the thread-scoping path has its own dedicated spec.
 function mount(api: ApiClient): void {
-  mountAskUserDialog(api)
+  mountAskUserDialog(api, createStore())
   shimModal(dialog())
 }
 
@@ -91,6 +96,7 @@ function submitForm(): void {
 describe('ask_user dialog (component)', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
+    resetAttention()
     // modal methods are shimmed per-mount via mount()
   })
 
