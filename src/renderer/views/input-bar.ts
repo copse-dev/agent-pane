@@ -34,7 +34,7 @@ import { downloadThreadJsonl, threadHasExportableContent } from '../export-threa
 import { formatFooterUsageSummary, resolveFooterUsage } from '@shared/usage/footer-usage-summary.ts'
 import { type ExtraPricing } from '@shared/llm/estimate-cost.ts'
 import { extraProviderPricingMap } from '@shared/llm/extra-providers.ts'
-import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
+import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { mountFollowUpSuggestions } from './follow-up-suggestions.ts'
 import {
   threadGitBranchMismatch,
@@ -150,7 +150,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const modelPicker = mountFooterModelPicker(
     modelHost,
     api,
-    () => store.getState().settings?.model ?? DEFAULT_CLOUD_MODEL,
+    () => store.getState().settings?.model ?? DEFAULT_APP_CHAT_MODEL,
     (model) => {
       void api.settings.set('model', model)
       store.setState({ settings: { ...store.getState().settings, model } })
@@ -291,7 +291,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   }
 
   function usageSummaryText(): string | null {
-    const model = store.getState().settings?.model ?? DEFAULT_CLOUD_MODEL
+    const model = store.getState().settings?.model ?? DEFAULT_APP_CHAT_MODEL
     const thread = getActiveThread(store)
     if (!thread) return null
     const display = resolveFooterUsage({

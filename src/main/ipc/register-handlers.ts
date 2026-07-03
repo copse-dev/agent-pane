@@ -31,13 +31,7 @@ import {
   scheduleIndexRebuild,
   startWorkspaceIndexWatcher,
 } from '../services/workspace-index-watcher.ts'
-import {
-  getSetting,
-  setSetting,
-  hasApiKey,
-  setApiKey,
-  isProviderAvailable,
-} from '../services/settings.ts'
+import { getSetting, setSetting, hasApiKey, setApiKey } from '../services/settings.ts'
 import { scanEnvForKeys, maskSecret } from '../services/env-key-detection.ts'
 import {
   isRendererWritableSettingKey,
@@ -114,6 +108,11 @@ import {
   unregisterDevtoolsShortcut,
 } from '../windows/create-main-window.ts'
 import { validateApiKey } from '../services/validate-api-key.ts'
+import {
+  invalidateProviderKeyStatus,
+  isProviderKeyUsable,
+  recordProviderKeyValidation,
+} from '../services/provider-key-status.ts'
 import { getUsageSummary, recordUsageEvent } from '../services/usage-ledger.ts'
 import { parseUsageRecordInput } from '../services/usage-record-schema.ts'
 import {
@@ -281,23 +280,24 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const p = parseIpcArgs(keyProviderSchema, [provider])
     const apiKey = parseIpcArgs(z.string().max(8192), [key])
     setApiKey(p, apiKey)
+    invalidateProviderKeyStatus(p)
     // Saving an HF token auto-populates its priced, provider-pinned model list so
     // the picker and cost estimate work without a manual fetch (fire-and-forget).
     if (p === HUGGINGFACE_SLUG && apiKey.trim()) {
       void refreshHuggingFaceModels(apiKey).catch(() => {})
     }
   })
-  ipcMain.handle('settings:availableProviders', () => {
+  ipcMain.handle('settings:availableProviders', async () => {
     const available: Record<string, boolean> = {
-      anthropic: isProviderAvailable('anthropic'),
-      openai: isProviderAvailable('openai'),
-      cursor: isProviderAvailable('cursor'),
-      openrouter: isProviderAvailable('openrouter'),
+      anthropic: await isProviderKeyUsable('anthropic'),
+      openai: await isProviderKeyUsable('openai'),
+      cursor: await isProviderKeyUsable('cursor'),
+      openrouter: await isProviderKeyUsable('openrouter'),
     }
     for (const provider of getResolvedExtraProviders()) {
       // Local servers need no API key, so treat them as available; their models
       // only surface in the picker once the user fetches/saves them anyway.
-      available[provider.id] = provider.local ? true : isProviderAvailable(provider.id)
+      available[provider.id] = provider.local ? true : await isProviderKeyUsable(provider.id)
     }
     return available
   })
@@ -305,7 +305,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const p = parseIpcArgs(keyProviderSchema, [provider])
     const apiKey = parseIpcArgs(z.string().max(8192), [key])
-    return validateApiKey(p, apiKey)
+    const result = await validateApiKey(p, apiKey)
+    recordProviderKeyValidation(p, result.ok)
+    return result
   })
   // Opt-in environment scan: look for provider API keys the user already has
   // exported (process.env + well-known shell files) and offer to import them.

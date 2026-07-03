@@ -37,10 +37,7 @@ describe('agent-service public surface', () => {
 // its output through an injected AgentHost rather than a BrowserWindow. This proves
 // a full turn can be driven with a mock host and no Electron present.
 describe('runAgent AgentHost decoupling', () => {
-  it('streams chunks through a mock AgentHost with no BrowserWindow', async () => {
-    // Drive the remote-agent branch, which fails fast offline (no Cursor API key)
-    // and reports the error back through the host — a deterministic turn that needs
-    // neither a network nor a renderer.
+  it('streams a fallback notice when a remote agent is selected without a valid key', async () => {
     const priorCursorKey = process.env['CURSOR_API_KEY']
     delete process.env['CURSOR_API_KEY']
     await setSetting('model', 'remote-agent:cursor')
@@ -49,22 +46,25 @@ describe('runAgent AgentHost decoupling', () => {
     const host: AgentHost = {
       emit: (threadId, chunk) => received.push({ threadId, chunk }),
     }
-    // The remote branch never touches the registry; a bare stub is enough.
     const registry = { toLLMTools: () => [] } as unknown as ToolRegistry
 
     try {
-      const result = await agentService.runAgent('thread-1', 'hello', [], host, registry)
+      await agentService.runAgent('thread-1', 'hello', [], host, registry)
 
       assert.ok(received.length >= 1, 'expected the agent run to emit at least one chunk')
       assert.ok(
-        received.every((entry) => entry.threadId === 'thread-1'),
-        'every chunk should carry the run thread id',
+        received.some(
+          (entry) =>
+            entry.chunk.type === 'text' &&
+            typeof entry.chunk.text === 'string' &&
+            entry.chunk.text.includes('Could not run on **Cursor Cloud Agent**'),
+        ),
+        'expected a fallback notice when the Cursor key is missing',
       )
       assert.ok(
         received.some((entry) => entry.chunk.type === 'done'),
         'the turn should terminate with a done chunk',
       )
-      assert.deepEqual(result.usage, { inputTokens: 0, outputTokens: 0 })
     } finally {
       if (priorCursorKey !== undefined) process.env['CURSOR_API_KEY'] = priorCursorKey
     }

@@ -69,6 +69,7 @@ import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
 import { parseRemoteAgentModel } from '@shared/remote-agent.ts'
 import { runRemoteAgentFromSettings } from './remote-agent-client.ts'
+import { resolveAgentChatModel } from './resolve-agent-model.ts'
 import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
 import { SUBAGENTS_ENABLED_DEFAULT, SUBAGENTS_ENABLED_SETTING } from './subagents-setting.ts'
@@ -146,7 +147,9 @@ export async function runAgent(
   registry: ToolRegistry,
   options?: { invokedSkills?: string[]; priorTodos?: TodoItem[]; workingBrief?: string },
 ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> {
-  const model = getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
+  const requestedModel = getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
+  const resolved = await resolveAgentChatModel(requestedModel)
+  const model = resolved.model
   recordThreadModel(threadId, model)
   const remoteProvider = parseRemoteAgentModel(model)
   const acpSelection = parseAcpModelSelection(model)
@@ -160,6 +163,10 @@ export async function runAgent(
   // to thread history, so placeholders stay consistent across turns. No-op when
   // the feature is off or Rampart is unavailable.
   const outboundPrompt = await redactUserContent(threadId, userPrompt)
+
+  if (resolved.fallbackNotice) {
+    sendChunk({ type: 'text', text: resolved.fallbackNotice })
+  }
 
   if (acpAgentId) {
     const controller = new AbortController()

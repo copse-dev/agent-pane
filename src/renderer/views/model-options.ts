@@ -169,9 +169,9 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
   } catch {
     /* keep defaults */
   }
-  // When availability is unknown (e.g. the query failed), default to showing the
-  // option rather than hiding it behind an "add a key" hint.
-  const isAvailable = (provider: string): boolean => available[provider] ?? true
+  // When availability is unknown (e.g. the query failed), default to hiding the
+  // option rather than offering a provider that may reject the key at run time.
+  const isAvailable = (provider: string): boolean => available[provider] ?? false
   // Hosted Anthropic/OpenAI models. Grouped so they get a heading like every
   // other section (otherwise they'd be the only headingless block at the top).
   const cloudGroup = 'Cloud models'
@@ -223,7 +223,7 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
     } else if (current.startsWith(REMOTE_AGENT_MODEL_PREFIX)) {
       options.push({
         value: current,
-        label: `${modelDisplayLabel(current)} (not configured)`,
+        label: `${modelDisplayLabel(current)} (no valid key)`,
         group: remoteGroup,
       })
     } else if (current.startsWith(ACP_MODEL_PREFIX)) {
