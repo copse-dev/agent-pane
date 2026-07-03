@@ -15,14 +15,12 @@ import {
   formatRemoteArtifactsSummary,
   resolveRemoteAgentRepository,
 } from './remote-agent-client.ts'
-import { setSetting } from './settings.ts'
 import { storageSet } from './storage.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 
-afterEach(async () => {
+afterEach(() => {
   storageSet('projects', [])
   storageSet('activeProjectId', null)
-  await setSetting('remoteAgentRepository', '')
 })
 
 function state(): RemoteStreamState {
@@ -35,13 +33,12 @@ function state(): RemoteStreamState {
 }
 
 describe('resolveRemoteAgentRepository', () => {
-  it('uses the active project origin when the repository setting is blank', async () => {
+  it('uses the active project origin', async () => {
     const workspaceRoot = '/workspace-root'
     const projectRoot = '/project-root'
     const restoreWorkspace = setWorkspaceRootForTest(workspaceRoot)
     let resolvedRoot: string | null = null
 
-    await setSetting('remoteAgentRepository', '')
     storageSet('projects', [{ id: 'project-1', path: projectRoot, name: 'project' }])
     storageSet('activeProjectId', 'project-1')
 
