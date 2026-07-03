@@ -189,7 +189,6 @@ const INLINE_CODE_TAG_RE = /<code>[\s\S]*?<\/code>/g
 function inlineCodeTagRanges(text: string): { start: number; end: number }[] {
   const ranges: { start: number; end: number }[] = []
   for (const match of text.matchAll(INLINE_CODE_TAG_RE)) {
-    if (match.index === undefined) continue
     ranges.push({ start: match.index, end: match.index + match[0].length })
   }
   return ranges
