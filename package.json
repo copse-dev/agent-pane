@@ -102,6 +102,9 @@
       "entitlementsInherit": "build/entitlements.mac.plist"
     }
   },
+  "overrides": {
+    "dompurify": "^3.4.11"
+  },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.29.0",
     "@anthropic-ai/sandbox-runtime": "^0.0.56",
