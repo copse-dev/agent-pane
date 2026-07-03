@@ -1,8 +1,10 @@
 import { el, qsRequired } from '../dom/helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import type { AppStore } from '@shared/store/store.ts'
 import { isSettingsDialogOpen, onSettingsDialogClose } from './settings-dialog.ts'
+import { setAttentionThreads } from '../controller/attention.ts'
 
-export function mountApprovalDialog(api: ApiClient): void {
+export function mountApprovalDialog(api: ApiClient, store: AppStore): void {
   const rememberLabel = el(
     'label',
     { class: 'approval-remember' },
@@ -35,6 +37,8 @@ export function mountApprovalDialog(api: ApiClient): void {
 
   interface PendingApproval {
     id: string
+    /** Thread this request belongs to; undefined = not tied to a run (show anywhere). */
+    threadId: string | undefined
     title: string
     body: string
     allowRemember: boolean | undefined
@@ -49,6 +53,23 @@ export function mountApprovalDialog(api: ApiClient): void {
   const queue: PendingApproval[] = []
   let active: PendingApproval | null = null
 
+  // A request only interrupts if it belongs to the focused thread (or isn't
+  // tied to a run at all). Everything else stays queued and is surfaced as a
+  // sidebar attention indicator until the user switches to that thread.
+  function isShowable(req: PendingApproval): boolean {
+    return !req.threadId || req.threadId === store.getState().activeThreadId
+  }
+
+  // Reflect every queued request that belongs to a *non-focused* thread into the
+  // shared attention set, so the sidebar can flag those threads with a bell.
+  function syncAttention(): void {
+    const activeThreadId = store.getState().activeThreadId
+    const waiting = queue
+      .map((req) => req.threadId)
+      .filter((id): id is string => !!id && id !== activeThreadId)
+    setAttentionThreads(store, 'approval', waiting)
+  }
+
   function showNext(): void {
     // The settings dialog is itself a top-layer modal <dialog>. A second
     // showModal() while it is open stacks the approval prompt *above* settings
@@ -56,7 +77,14 @@ export function mountApprovalDialog(api: ApiClient): void {
     // such requests queued; onSettingsDialogClose() below flushes them once the
     // user leaves settings, so the prompt appears in front of the chat instead.
     if (isSettingsDialogOpen()) return
-    active = queue.shift() ?? null
+    if (active) return
+    const idx = queue.findIndex(isShowable)
+    if (idx === -1) {
+      // Nothing for the focused thread; anything left is background attention.
+      syncAttention()
+      return
+    }
+    active = queue.splice(idx, 1)[0] ?? null
     if (!active) return
     approvalTitle.textContent = active.title
     approvalBody.textContent = active.body
@@ -64,6 +92,7 @@ export function mountApprovalDialog(api: ApiClient): void {
     rememberInput.checked = false
     rememberLabel.hidden = !active.allowRemember
     dialog.showModal()
+    syncAttention()
   }
 
   function resolve(approved: boolean, remember: boolean): void {
@@ -75,15 +104,26 @@ export function mountApprovalDialog(api: ApiClient): void {
     showNext()
   }
 
-  api.agent.onApprovalRequest(({ id, title, body, allowRemember, rememberLabel }) => {
-    queue.push({ id, title, body, allowRemember, rememberLabel })
-    if (!active) showNext()
+  api.agent.onApprovalRequest(({ id, threadId, title, body, allowRemember, rememberLabel }) => {
+    queue.push({ id, threadId, title, body, allowRemember, rememberLabel })
+    showNext()
+    // showNext() skips its attention sync when a modal is already up or Settings
+    // is open; sync unconditionally so a background request still flags its
+    // thread in those cases.
+    syncAttention()
+  })
+
+  // When the user switches threads, a previously-backgrounded request for the
+  // now-focused thread should surface. `threads_changed` also fires on project
+  // switches, so this covers cross-project focus changes too.
+  store.on('threads_changed', () => {
+    showNext()
   })
 
   // Requests that arrived while the user was in Settings were held back by
   // showNext()'s guard; surface them now that settings is closed.
   onSettingsDialogClose(() => {
-    if (!active) showNext()
+    showNext()
   })
 
   qsRequired(dialog, '.approval-approve').addEventListener('click', () => {
