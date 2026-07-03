@@ -64,14 +64,16 @@ to the prompt.
 
 ## Follow-ups (not in this change)
 
-- **Cursor rules import** — read `.cursor/rules/*.mdc` (respecting `alwaysApply` / glob
-  scoping) and legacy `.cursorrules` as project instructions, since we advertise Cursor
-  compatibility but skip its rules today.
-- **Global / user instructions** — optional load of `~/AGENTS.md` / `~/.claude/CLAUDE.md`
-  (plain files, easy) as a lower-precedence layer beneath project files.
-- **Cursor "Rules for AI" import** — the user's personal Cursor steering. Bigger: it lives
-  in Cursor's SQLite app state, not a file. Needs its own design.
-- **Claude Code hooks** — support `.claude/settings.json` hooks. Distinct event schema from
-  Cursor's `hooks.json`; needs an adapter, best done as its own change.
-- **Claude Code settings import** — broader `.claude/settings.json` (permissions, env)
-  parity, once hooks land.
+- **Cursor rules import** (#636) — read `.cursor/rules/*.mdc` (respecting `alwaysApply` /
+  glob scoping) and legacy `.cursorrules` as project instructions, since we advertise
+  Cursor compatibility but skip its rules today.
+- **Global / user instructions** (#637) — optional load of `~/AGENTS.md` /
+  `~/.claude/CLAUDE.md` (plain files, easy) as a lower-precedence layer beneath project
+  files.
+- **Cursor "Rules for AI" import** (#638) — the user's personal Cursor steering. Bigger: it
+  lives in Cursor's SQLite app state, not a file. Needs its own design.
+- **Claude Code hooks & settings** (#639) — support `.claude/settings.json` hooks (distinct
+  event schema from Cursor's `hooks.json`; needs an adapter) and then broader settings
+  (permissions, env) parity.
+
+Landed as PR #635.
