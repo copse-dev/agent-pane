@@ -657,3 +657,22 @@ describe('renderMarkdown list-item block content (#595)', () => {
     assert.match(renderMarkdown('aaa\n    bbb\n'), /<p>aaa\n\s*bbb<\/p>/)
   })
 })
+
+describe('renderMarkdown tab handling', () => {
+  it('treats a leading tab as four columns of code indent, preserving interior tabs (spec 1/2)', () => {
+    assert.equal(renderMarkdown('\tfoo\tbaz\t\tbim\n'), '<pre><code>foo\tbaz\t\tbim\n</code></pre>')
+    assert.equal(
+      renderMarkdown('  \tfoo\tbaz\t\tbim\n'),
+      '<pre><code>foo\tbaz\t\tbim\n</code></pre>',
+    )
+  })
+
+  it('continues an indented code block across a tab-indented line (spec 8)', () => {
+    assert.equal(renderMarkdown('    foo\n\tbar\n'), '<pre><code>foo\nbar\n</code></pre>')
+  })
+
+  it('accepts a tab as the ATX heading separator (spec 10)', () => {
+    assert.equal(renderMarkdown('#\tFoo\n'), '<h1>Foo</h1>')
+    assert.equal(renderMarkdown('#Foo\n'), '<p>#Foo</p>')
+  })
+})
