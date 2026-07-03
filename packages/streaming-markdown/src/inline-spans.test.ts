@@ -52,7 +52,9 @@ describe('renderInlineSpans (unified inline pipeline)', () => {
 
   it('bolds workspace links with backtick paths in the label', () => {
     assert.equal(
-      renderInlineSpans('**[`docs/plans/acp-client-support.md`](docs/plans/acp-client-support.md) Phase 2**'),
+      renderInlineSpans(
+        '**[`docs/plans/acp-client-support.md`](docs/plans/acp-client-support.md) Phase 2**',
+      ),
       '<strong><a href="docs/plans/acp-client-support.md" class="workspace-markdown-link" data-workspace-link="true"><code>docs/plans/acp-client-support.md</code></a> Phase 2</strong>',
     )
   })
