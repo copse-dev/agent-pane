@@ -67,6 +67,7 @@ import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills-registry.ts'
 import { listCursorPlugins } from '../services/cursor-plugins.ts'
 import { listCursorHooks } from '../services/cursor-hooks.ts'
+import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
   registerSkillTools,
   syncOkfMemoryTools,
@@ -412,6 +413,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const root = getWorkspaceRoot()
     return listCursorHooks({ workspaceRoot: root, projectTrusted: isWorkspaceTrusted(root) })
   })
+  ipcMain.handle('instructions:list', async () =>
+    (await loadProjectInstructionSources()).map(({ path, name, content }) => ({
+      path,
+      name,
+      bytes: Buffer.byteLength(content, 'utf-8'),
+    })),
+  )
 
   ipcMain.handle('git:isAvailable', async () => isGitAvailable() && (await isInsideGitWorkTree()))
   ipcMain.handle('git:status', () => getGitStatus())
