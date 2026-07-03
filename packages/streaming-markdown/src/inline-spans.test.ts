@@ -38,4 +38,24 @@ describe('renderInlineSpans (unified inline pipeline)', () => {
       '<strong><code>css-new-tab.png</code> — NTP rendered end-to-end</strong>',
     )
   })
+
+  it('bolds markdown links when ** immediately precedes [ (linkBeatsEmphasis)', () => {
+    assert.equal(
+      renderInlineSpans('**[#264](https://example.com/issues/264) — Track 1, C2**'),
+      '<strong><a href="https://example.com/issues/264" target="_blank" rel="noopener noreferrer" data-browser-link="true">#264</a> — Track 1, C2</strong>',
+    )
+    assert.equal(
+      renderInlineSpans('**[foo](https://example.com)**'),
+      '<strong><a href="https://example.com" target="_blank" rel="noopener noreferrer" data-browser-link="true">foo</a></strong>',
+    )
+  })
+
+  it('bolds workspace links with backtick paths in the label', () => {
+    assert.equal(
+      renderInlineSpans(
+        '**[`docs/plans/acp-client-support.md`](docs/plans/acp-client-support.md) Phase 2**',
+      ),
+      '<strong><a href="docs/plans/acp-client-support.md" class="workspace-markdown-link" data-workspace-link="true"><code>docs/plans/acp-client-support.md</code></a> Phase 2</strong>',
+    )
+  })
 })

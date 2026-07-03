@@ -5,7 +5,6 @@ import {
   encodeHrefForOutput,
   lookupLinkReference,
   type LinkReferenceMap,
-  parseBracketedLabel,
   parseInlineLinkDestination,
   parseReferenceLabel,
 } from './link-references.ts'
@@ -71,6 +70,34 @@ export function linkOrImageStartsAt(
   return tryParseLinkOrImage(text, start, refs, (label) => label) !== null
 }
 
+/** Bracketed label parse for post-`renderInlineCode` text: `]` inside `<code>` must not close the label (#342, #525, #537). */
+function parseBracketedLabelOutsideInlineCode(
+  text: string,
+  start: number,
+): { label: string; end: number } | null {
+  if (text[start] !== '[') return null
+  const codeRanges = inlineCodeTagRanges(text)
+  let i = start + 1
+  let depth = 1
+  while (i < text.length && depth > 0) {
+    const codeRange = codeRangeAt(i, codeRanges)
+    if (codeRange) {
+      i = codeRange.end
+      continue
+    }
+    const ch = text[i]
+    if (ch === '\\' && i + 1 < text.length) {
+      i += 2
+      continue
+    }
+    if (ch === '[') depth++
+    else if (ch === ']') depth--
+    i++
+  }
+  if (depth !== 0) return null
+  return { label: text.slice(start + 1, i - 1), end: i }
+}
+
 function tryParseLinkOrImage(
   text: string,
   start: number,
@@ -82,7 +109,7 @@ function tryParseLinkOrImage(
   const bracketStart = image ? start + 1 : start
   if (text[bracketStart] !== '[') return null
 
-  const labelPart = parseBracketedLabel(text, bracketStart)
+  const labelPart = parseBracketedLabelOutsideInlineCode(text, bracketStart)
   if (!labelPart) return null
 
   const j = labelPart.end
@@ -131,29 +158,47 @@ export function renderInlineLinks(
   refs: LinkReferenceMap,
   renderLabel: LinkLabelRenderer,
 ): string {
-  return text
-    .split(/(<code>[\s\S]*?<\/code>)/g)
-    .map((segment, index) => {
-      if (index % 2 === 1) return segment
-      let out = ''
-      let i = 0
-      while (i < segment.length) {
-        const imageAt = segment[i] === '!' && segment[i + 1] === '['
-        const linkAt = segment[i] === '['
-        if (imageAt || linkAt) {
-          const parsed = tryParseLinkOrImage(segment, i, refs, renderLabel)
-          if (parsed) {
-            out += parsed.html
-            i = parsed.end
-            continue
-          }
-        }
-        out += segment[i] ?? ''
-        i++
+  const codeRanges = inlineCodeTagRanges(text)
+  let out = ''
+  let i = 0
+  while (i < text.length) {
+    const codeRange = codeRangeAt(i, codeRanges)
+    if (codeRange) {
+      out += text.slice(i, codeRange.end)
+      i = codeRange.end
+      continue
+    }
+    const imageAt = text[i] === '!' && text[i + 1] === '['
+    const linkAt = text[i] === '['
+    if (imageAt || linkAt) {
+      const parsed = tryParseLinkOrImage(text, i, refs, renderLabel)
+      if (parsed) {
+        out += parsed.html
+        i = parsed.end
+        continue
       }
-      return out
-    })
-    .join('')
+    }
+    out += text[i] ?? ''
+    i++
+  }
+  return out
+}
+
+const INLINE_CODE_TAG_RE = /<code>[\s\S]*?<\/code>/g
+
+function inlineCodeTagRanges(text: string): { start: number; end: number }[] {
+  const ranges: { start: number; end: number }[] = []
+  for (const match of text.matchAll(INLINE_CODE_TAG_RE)) {
+    ranges.push({ start: match.index, end: match.index + match[0].length })
+  }
+  return ranges
+}
+
+function codeRangeAt(
+  index: number,
+  ranges: { start: number; end: number }[],
+): { start: number; end: number } | undefined {
+  return ranges.find((range) => index >= range.start && index < range.end)
 }
 
 /** Strip app-specific image attributes for CommonMark conformance comparison. */

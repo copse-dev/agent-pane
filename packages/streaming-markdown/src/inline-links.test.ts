@@ -45,4 +45,11 @@ describe('renderInlineLinks', () => {
       '<a href="/uri" target="_blank" rel="noopener noreferrer" data-browser-link="true"><img src="moon.jpg" alt="moon" data-md-rendered="1" /></a>',
     )
   })
+
+  it('parses links whose labels contain rendered <code> spans', () => {
+    assert.equal(
+      renderInlineLinks('[<code>docs/foo.md</code>](docs/foo.md)', new Map(), (label) => label),
+      '<a href="docs/foo.md" class="workspace-markdown-link" data-workspace-link="true"><code>docs/foo.md</code></a>',
+    )
+  })
 })
