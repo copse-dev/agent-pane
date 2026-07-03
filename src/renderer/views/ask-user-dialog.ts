@@ -1,8 +1,12 @@
 import { clear, el } from '../dom/helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import type { AppStore } from '@shared/store/store.ts'
+import { setAttentionThreads } from '../controller/attention.ts'
 
 interface AskUserRequest {
   id: string
+  /** Thread this question belongs to; undefined = not tied to a run (show anywhere). */
+  threadId: string | undefined
   questions: { question: string; options?: string[] }[]
 }
 
@@ -13,9 +17,11 @@ interface AskUserRequest {
  *
  * Requests are queued and shown one at a time so a second ask that arrives while
  * the first is open can't overwrite the active request's id and mis-route the
- * answer (the same hazard the approval dialog guards against).
+ * answer (the same hazard the approval dialog guards against). A question from a
+ * thread the user isn't looking at stays queued and is surfaced as a sidebar
+ * attention indicator rather than interrupting the focused thread.
  */
-export function mountAskUserDialog(api: ApiClient): void {
+export function mountAskUserDialog(api: ApiClient, store: AppStore): void {
   const form = el('form', { id: 'ask-user-form', method: 'dialog' })
   const dialog = el('dialog', { id: 'ask-user-dialog' }, form)
   document.body.append(dialog)
@@ -25,6 +31,20 @@ export function mountAskUserDialog(api: ApiClient): void {
   // One input per question of the active request, kept in question order so
   // answers map back to questions by index.
   let inputs: HTMLTextAreaElement[] = []
+
+  function isShowable(req: AskUserRequest): boolean {
+    return !req.threadId || req.threadId === store.getState().activeThreadId
+  }
+
+  // Flag every queued question that belongs to a non-focused thread so the
+  // sidebar can show an attention indicator on it.
+  function syncAttention(): void {
+    const activeThreadId = store.getState().activeThreadId
+    const waiting = queue
+      .map((req) => req.threadId)
+      .filter((id): id is string => !!id && id !== activeThreadId)
+    setAttentionThreads(store, 'ask', waiting)
+  }
 
   function renderActive(): void {
     if (!active) return
@@ -79,9 +99,16 @@ export function mountAskUserDialog(api: ApiClient): void {
   }
 
   function showNext(): void {
-    active = queue.shift() ?? null
+    if (active) return
+    const idx = queue.findIndex(isShowable)
+    if (idx === -1) {
+      syncAttention()
+      return
+    }
+    active = queue.splice(idx, 1)[0] ?? null
     if (!active) return
     renderActive()
+    syncAttention()
   }
 
   function respond(answers: string[]): void {
@@ -108,7 +135,16 @@ export function mountAskUserDialog(api: ApiClient): void {
   })
 
   api.agent.onAskUserRequest((req) => {
-    queue.push(req)
-    if (!active) showNext()
+    queue.push({ id: req.id, threadId: req.threadId, questions: req.questions })
+    showNext()
+    // Cover the case where a modal is already up: the new background request
+    // still needs to flag its thread.
+    syncAttention()
+  })
+
+  // Surface a backgrounded question when the user switches to its thread
+  // (also fires on project switches).
+  store.on('threads_changed', () => {
+    showNext()
   })
 }
