@@ -49,6 +49,7 @@ export function attachMonacoSelectionToChat(
   if (!handlers) return false
 
   handlers.attachTextBlock(attachment.content, attachment.label)
+  handlers.focusComposer?.()
   return true
 }
 

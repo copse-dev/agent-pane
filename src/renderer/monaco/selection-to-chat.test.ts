@@ -1,7 +1,12 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type * as Monaco from 'monaco-editor'
-import { buildMonacoSelectionAttachment, selectionLineRangeLabel } from './selection-to-chat.ts'
+import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
+import {
+  attachMonacoSelectionToChat,
+  buildMonacoSelectionAttachment,
+  selectionLineRangeLabel,
+} from './selection-to-chat.ts'
 
 function fakeEditor(
   selection: {
@@ -54,5 +59,33 @@ describe('selection-to-chat', () => {
       ),
       null,
     )
+  })
+
+  it('focuses the chat composer after attaching a selection', () => {
+    let attachedContent: string | null = null
+    let attachedLabel: string | undefined
+    let focused = false
+    const unregister = registerPromptAttachments({
+      attachFile: () => {},
+      attachTextBlock: (content, label) => {
+        attachedContent = content
+        attachedLabel = label
+      },
+      attachImage: () => {},
+      focusComposer: () => {
+        focused = true
+      },
+    })
+
+    const ok = attachMonacoSelectionToChat(
+      fakeEditor({ startLineNumber: 1, endLineNumber: 1, isEmpty: () => false }, 'hello'),
+      'src/example.ts',
+    )
+
+    unregister()
+    assert.equal(ok, true)
+    assert.equal(attachedContent, 'hello')
+    assert.equal(attachedLabel, 'src/example.ts:1')
+    assert.equal(focused, true)
   })
 })

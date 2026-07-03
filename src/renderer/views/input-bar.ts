@@ -150,13 +150,29 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const modelPicker = mountFooterModelPicker(
     modelHost,
     api,
-    () => store.getState().settings?.model ?? DEFAULT_CLOUD_MODEL,
+    () => {
+      const thread = getActiveThread(store)
+      return thread?.model ?? store.getState().settings?.model ?? DEFAULT_CLOUD_MODEL
+    },
     (model) => {
-      void api.settings.set('model', model)
-      store.setState({ settings: { ...store.getState().settings, model } })
+      const thread = getActiveThread(store)
+      if (!thread) return
+      const threads = store
+        .getState()
+        .threads.map((t) => (t.id !== thread.id ? t : { ...t, model, updatedAt: Date.now() }))
+      store.setState({ threads })
+      modelPicker.refresh()
       updateFooter()
+      // The context window depends on the model, so re-estimate the footer wheel
+      // against the newly selected model rather than waiting for the next keystroke.
+      void runContextEstimate()
     },
   )
+  // Re-sync the picker whenever the active thread changes (new thread,
+  // thread switch, or thread deletion that shifts the active pointer).
+  store.on('threads_changed', () => {
+    modelPicker.refresh()
+  })
   const branchControl = mountFooterBranchStatus(branchHost, store, api)
 
   exportBtn.addEventListener('click', () => {
@@ -291,9 +307,11 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   }
 
   function usageSummaryText(): string | null {
-    const model = store.getState().settings?.model ?? DEFAULT_CLOUD_MODEL
     const thread = getActiveThread(store)
     if (!thread) return null
+    // Price against the thread's model so the footer cost matches what the run
+    // will actually use, not the global default.
+    const model = thread.model ?? store.getState().settings?.model ?? DEFAULT_CLOUD_MODEL
     const display = resolveFooterUsage({
       measured: thread.usage,
       running: thread.status === 'running',
@@ -379,7 +397,13 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
         ? [invocation.skillName]
         : []
     const draftText = buildTextWithAttachments(rawText, attachedFiles, attachedTextBlocks)
-    return JSON.stringify({ draftText, invokedSkills, imageCount: attachedImages.length })
+    const model = getActiveThread(store)?.model
+    return JSON.stringify({
+      draftText,
+      invokedSkills,
+      imageCount: attachedImages.length,
+      ...(model !== undefined ? { model } : {}),
+    })
   }
 
   async function runContextEstimate(): Promise<void> {
@@ -687,6 +711,11 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     attachFile: addChip,
     attachTextBlock: addTextChip,
     attachImage: addImageChip,
+    focusComposer: (): void => {
+      requestAnimationFrame(() => {
+        textarea.focus()
+      })
+    },
   }
   const unregisterAttachments = registerPromptAttachments(attachmentHandlers)
 
