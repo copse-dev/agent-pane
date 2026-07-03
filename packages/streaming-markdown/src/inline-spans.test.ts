@@ -58,4 +58,27 @@ describe('renderInlineSpans (unified inline pipeline)', () => {
       '<strong><a href="docs/plans/acp-client-support.md" class="workspace-markdown-link" data-workspace-link="true"><code>docs/plans/acp-client-support.md</code></a> Phase 2</strong>',
     )
   })
+
+  it('links a label that is only a code span', () => {
+    assert.equal(
+      renderInlineSpans('[`test`](/blah)'),
+      '<a href="/blah" class="workspace-markdown-link" data-workspace-link="true"><code>test</code></a>',
+    )
+  })
+
+  it('pairs emphasis across an inline code span (spec 478/479)', () => {
+    assert.equal(renderInlineSpans('*a `x` b*'), '<em>a <code>x</code> b</em>')
+    assert.equal(renderInlineSpans('_a `x` b_'), '<em>a <code>x</code> b</em>')
+  })
+
+  it('keeps strong and emphasis pairs distinct when code spans sit between them', () => {
+    assert.equal(
+      renderInlineSpans('capped at **240px**, then `overflow: hidden` clips **the tail**'),
+      'capped at <strong>240px</strong>, then <code>overflow: hidden</code> clips <strong>the tail</strong>',
+    )
+    assert.equal(
+      renderInlineSpans('the `.text-chip` rule caps *width* at `240px` before the *tail*'),
+      'the <code>.text-chip</code> rule caps <em>width</em> at <code>240px</code> before the <em>tail</em>',
+    )
+  })
 })
