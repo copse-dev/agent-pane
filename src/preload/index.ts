@@ -230,6 +230,13 @@ contextBridge.exposeInMainWorld('api', {
     get: (key: string) => ipcRenderer.invoke('storage:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('storage:set', key, value),
   },
+  threads: {
+    loadProject: (projectId: string) => ipcRenderer.invoke('threads:loadProject', projectId),
+    saveOne: (projectId: string, thread: import('@shared/types').Thread) =>
+      ipcRenderer.invoke('threads:saveOne', projectId, thread),
+    saveProject: (projectId: string, threads: import('@shared/types').Thread[]) =>
+      ipcRenderer.invoke('threads:saveProject', projectId, threads),
+  },
   lmStudio: {
     test: (url: string, apiKey?: string) => ipcRenderer.invoke('lmstudio:test', url, apiKey),
     models: () => ipcRenderer.invoke('lmstudio:models'),

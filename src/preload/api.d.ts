@@ -134,6 +134,11 @@ export interface ApiClient {
     get: (key: string) => Promise<unknown>
     set: (key: string, value: unknown) => Promise<void>
   }
+  threads: {
+    loadProject: (projectId: string) => Promise<import('@shared/types').Thread[]>
+    saveOne: (projectId: string, thread: import('@shared/types').Thread) => Promise<void>
+    saveProject: (projectId: string, threads: import('@shared/types').Thread[]) => Promise<void>
+  }
   openRouter: {
     models: () => Promise<Array<{ id: string; name: string }>>
   }
