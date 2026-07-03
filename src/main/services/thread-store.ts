@@ -352,10 +352,11 @@ export function createThread(projectId: string, thread: Thread): Promise<void> {
 
 /**
  * Persist one finalized message: its OKF/blob files, then its spine line. The
- * spine line replaces any existing line with the same id (idempotent re-finalize
- * / edit) and is otherwise appended; writing files before the spine keeps a
- * crash from leaving the spine pointing at a missing file. `meta.json` is left to
- * `updateMeta` — the renderer bumps `updatedAt` through it around the same time.
+ * spine line replaces any existing line with the same id in place (idempotent
+ * re-finalize / edit without reordering history) and is otherwise appended;
+ * writing files before the spine keeps a crash from leaving the spine pointing
+ * at a missing file. `meta.json` is left to `updateMeta` — the renderer bumps
+ * `updatedAt` through it around the same time.
  */
 export function appendMessage(
   projectId: string,
@@ -367,10 +368,10 @@ export function appendMessage(
     mkdirSync(dir, { recursive: true })
     const { line, files } = explodeMessage(message, sha256)
     for (const file of files) writeFileEnsuringDir(join(dir, file.ref), file.contents)
-    const spine = parseSpine(safeRead(join(dir, EVENTS_FILE)) ?? '').filter(
-      (l) => l.id !== message.id,
-    )
-    spine.push(line)
+    const spine = parseSpine(safeRead(join(dir, EVENTS_FILE)) ?? '')
+    const existingIndex = spine.findIndex((entry) => entry.id === message.id)
+    if (existingIndex >= 0) spine[existingIndex] = line
+    else spine.push(line)
     writeFileSync(join(dir, EVENTS_FILE), serializeSpine(spine))
   })
 }

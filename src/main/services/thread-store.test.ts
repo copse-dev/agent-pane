@@ -227,14 +227,18 @@ describe('thread-store', () => {
       })
     })
 
-    it('appendMessage replaces the spine line for a re-finalized message id', async () => {
+    it('appendMessage replaces the spine line for a re-finalized message id without reordering', async () => {
       await createThread('proj-1', thread('t1'))
       await appendMessage('proj-1', 't1', userMsg('u1', 'first'))
+      await appendMessage('proj-1', 't1', userMsg('u2', 'second'))
       await appendMessage('proj-1', 't1', userMsg('u1', 'edited'))
       const [loaded] = await loadProjectThreads('proj-1')
       assert.deepEqual(
-        loaded?.messages.map((m) => m.content),
-        ['edited'],
+        loaded?.messages.map((m) => [m.id, m.content]),
+        [
+          ['u1', 'edited'],
+          ['u2', 'second'],
+        ],
       )
     })
 
