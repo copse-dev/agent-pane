@@ -106,6 +106,24 @@ describe('project-instructions', () => {
     assert.equal(sources[0]?.name, 'CLAUDE.md')
   })
 
+  it('appends Cursor project rules after the top-level project files', async () => {
+    await writeFile(join(projectRoot, 'AGENT.md'), 'Top-level.')
+    await mkdir(join(projectRoot, '.cursor', 'rules'), { recursive: true })
+    await writeFile(
+      join(projectRoot, '.cursor', 'rules', 'style.mdc'),
+      '---\nalwaysApply: true\n---\nCursor rule text.',
+    )
+    const sources = await loadProjectInstructionSources()
+    assert.deepEqual(
+      sources.map((s) => ({ name: s.name, scope: s.scope })),
+      [
+        { name: 'AGENT.md', scope: 'project' },
+        { name: join('.cursor', 'rules', 'style.mdc'), scope: 'project' },
+      ],
+    )
+    assert.equal(await loadProjectInstructions(), 'Top-level.\n\nCursor rule text.')
+  })
+
   it('loads global files even with no workspace open', async () => {
     restoreWorkspace?.()
     restoreWorkspace = setWorkspaceRootForTest(null)

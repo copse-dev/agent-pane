@@ -528,8 +528,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <p class="settings-fieldset-desc">
                 Files appended to the system prompt, in precedence order. Global steering
                 (<code>~/AGENTS.md</code>, <code>~/.claude/CLAUDE.md</code>) loads first, then
-                project <code>AGENT.md</code>/<code>AGENTS.md</code> (cross-tool) and
-                <code>CLAUDE.md</code> (Claude Code) when present.
+                project <code>AGENT.md</code>/<code>AGENTS.md</code> (cross-tool),
+                <code>CLAUDE.md</code> (Claude Code), and Cursor rules
+                (<code>.cursor/rules/*.mdc</code> marked <code>alwaysApply</code>, plus
+                <code>.cursorrules</code>) when present.
               </p>
               <div id="sources-instructions-list" class="sources-group">
                 <span class="sources-empty">Loading…</span>
