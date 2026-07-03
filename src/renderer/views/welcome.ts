@@ -15,7 +15,7 @@ export function mountWelcome(root: HTMLElement, store: AppStore, api: ApiClient)
   const agentHint = el(
     'p',
     { class: 'welcome-hint' },
-    'Add AGENT.md to your workspace root to give the agent project-specific context.',
+    'Add AGENT.md, AGENTS.md, or CLAUDE.md to your workspace root to give the agent project-specific context.',
   )
 
   const card = el('div', { class: 'welcome-card' }, heading, sub, openBtn, keyHint, agentHint)
