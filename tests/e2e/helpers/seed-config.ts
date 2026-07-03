@@ -1684,6 +1684,73 @@ export function seedDraftPromptFixture(workspaceRoot: string): {
   return { usedThreadTitle, blankThreadTitle }
 }
 
+/**
+ * Active blank thread plus two past threads to `@`-reference (#644). The picker
+ * excludes the active thread and offers the other two.
+ */
+export function seedThreadReferenceFixture(workspaceRoot: string): {
+  projectId: string
+  activeThreadId: string
+  refTitles: [string, string]
+} {
+  const projectId = 'e2e-thread-ref-project'
+  const activeThreadId = 'e2e-thread-ref-active'
+  const refTitles: [string, string] = ['Auth refactor plan', 'Docs cleanup']
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId,
+    [`threads:${projectId}`]: [
+      {
+        id: activeThreadId,
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now + 2,
+        updatedAt: now + 2,
+      },
+      {
+        id: 'e2e-thread-ref-auth',
+        title: refTitles[0],
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-ref-auth',
+            role: 'user',
+            content: 'How should we refactor the auth layer?',
+            toolCalls: [],
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now + 1,
+        updatedAt: now + 1,
+      },
+      {
+        id: 'e2e-thread-ref-docs',
+        title: refTitles[1],
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-ref-docs',
+            role: 'user',
+            content: 'Clean up the README and docs index.',
+            toolCalls: [],
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+  })
+  return { projectId, activeThreadId, refTitles }
+}
+
 /** Two threads bound to different branches for footer branch / mismatch screenshots. */
 export function seedFooterBranchFixture(workspaceRoot: string): FooterBranchSeedIds {
   const projectId = 'e2e-footer-branch-project'

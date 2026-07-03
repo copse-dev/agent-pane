@@ -10,7 +10,7 @@ import {
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, relative, sep } from 'node:path'
-import type { Message, Thread, ThreadCatalogEntry } from '@shared/types'
+import type { Message, Thread, ThreadCatalogEntry, ThreadCatalogHit } from '@shared/types'
 import { sortThreadsNewestFirst } from '@shared/store/thread-helpers.ts'
 import {
   explodeMessage,
@@ -401,19 +401,29 @@ export function deleteProjectThread(projectId: string, threadId: string): Promis
   })
 }
 
-/** Catalog entries for a project, newest first, optionally filtered by a query. */
-export function loadProjectCatalog(projectId: string, query?: string): Promise<CatalogEntry[]> {
+/**
+ * Catalog entries for a project, newest first, optionally filtered by a query.
+ * Each hit carries its absolute `events.jsonl` path (resolved here, not stored)
+ * so the `@`-thread picker can hand the agent an absolute reference.
+ */
+export function loadProjectCatalog(projectId: string, query?: string): Promise<ThreadCatalogHit[]> {
   return runSerialized(queueKey(projectId), () => {
     const map = existsSync(catalogPath(projectId))
       ? readCatalog(projectId)
       : rebuildCatalog(projectId)
     const entries = [...map.values()].sort((a, b) => b.updatedAt - a.updatedAt)
     const terms = (query ?? '').trim().toLowerCase().split(/\s+/).filter(Boolean)
-    if (terms.length === 0) return entries
-    return entries.filter((e) => {
-      const haystack = `${e.title}\n${e.digest}`.toLowerCase()
-      return terms.every((term) => haystack.includes(term))
-    })
+    const matched =
+      terms.length === 0
+        ? entries
+        : entries.filter((e) => {
+            const haystack = `${e.title}\n${e.digest}`.toLowerCase()
+            return terms.every((term) => haystack.includes(term))
+          })
+    return matched.map((e) => ({
+      ...e,
+      spinePath: join(threadDir(projectId, e.path), EVENTS_FILE),
+    }))
   })
 }
 

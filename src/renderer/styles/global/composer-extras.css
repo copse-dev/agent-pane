@@ -19,6 +19,27 @@
 .mention-item:hover {
   background: var(--bg-hover);
 }
+.mention-item-thread {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.mention-thread-icon {
+  flex: none;
+}
+.mention-thread-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.mention-thread-date {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
 .skill-item-name {
   font-weight: 600;
 }
@@ -48,7 +69,8 @@
   border-radius: 2px;
   object-fit: cover;
 }
-.text-chip {
+.text-chip,
+.thread-chip {
   max-width: 240px;
   overflow: hidden;
   text-overflow: ellipsis;

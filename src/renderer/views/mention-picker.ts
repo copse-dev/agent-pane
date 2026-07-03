@@ -1,6 +1,14 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import type { ThreadCatalogHit } from '@shared/types'
 import { clear } from '../dom/helpers.ts'
+
+export interface AttachedThreadRef {
+  threadId: string
+  title: string
+  updatedAt: number
+  spinePath: string
+}
 
 export interface MentionPickerOptions {
   textarea: HTMLTextAreaElement
@@ -8,10 +16,27 @@ export interface MentionPickerOptions {
   store: AppStore
   api: ApiClient
   onAttach: (file: { path: string; content: string }) => void
+  onAttachThread: (thread: AttachedThreadRef) => void
+}
+
+type MentionItem = { kind: 'thread'; hit: ThreadCatalogHit } | { kind: 'file'; path: string }
+
+/** Past conversations shown above files; the rest of the list is workspace files. */
+const MAX_THREADS = 5
+
+export function relativeDate(ts: number): string {
+  const day = 86_400_000
+  const diff = Date.now() - ts
+  if (diff < day) return 'today'
+  if (diff < 2 * day) return 'yesterday'
+  if (diff < 7 * day) return `${String(Math.floor(diff / day))}d ago`
+  const d = new Date(ts)
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return `${String(d.getFullYear())}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
 export function initMentionPicker(opts: MentionPickerOptions): () => void {
-  const { textarea, inputBar, api, onAttach } = opts
+  const { textarea, inputBar, store, api, onAttach, onAttachThread } = opts
 
   const picker = document.createElement('div')
   picker.className = 'mention-picker'
@@ -21,45 +46,87 @@ export function initMentionPicker(opts: MentionPickerOptions): () => void {
 
   let mentionStart = -1
   let selectedIdx = 0
-  let currentFiles: string[] = []
+  let currentItems: MentionItem[] = []
 
   async function updatePicker(query: string): Promise<void> {
-    try {
-      currentFiles = await api.index.query(query)
-    } catch {
-      currentFiles = []
-    }
+    const { activeProjectId, activeThreadId } = store.getState()
+
+    // Two sources, queried in parallel on each keystroke: past threads (current
+    // project only, #644) rendered above workspace files.
+    const [threads, files] = await Promise.all([
+      activeProjectId
+        ? api.threads.catalog(activeProjectId, query).catch(() => [])
+        : Promise.resolve([]),
+      api.index.query(query).catch(() => []),
+    ])
+
+    const threadItems: MentionItem[] = threads
+      .filter((t) => t.id !== activeThreadId)
+      .slice(0, MAX_THREADS)
+      .map((hit) => ({ kind: 'thread', hit }))
+    const fileItems: MentionItem[] = files.map((path) => ({ kind: 'file', path }))
+    currentItems = [...threadItems, ...fileItems]
 
     clear(picker)
     selectedIdx = 0
-    currentFiles.forEach((path, i) => {
-      const item = document.createElement('div')
-      item.className = `mention-item${i === 0 ? ' selected' : ''}`
-      item.setAttribute('role', 'option')
-      item.textContent = path
-      item.addEventListener('mousedown', (e) => {
+    currentItems.forEach((item, i) => {
+      const el = document.createElement('div')
+      el.className = `mention-item${item.kind === 'thread' ? ' mention-item-thread' : ''}${
+        i === 0 ? ' selected' : ''
+      }`
+      el.setAttribute('role', 'option')
+      if (item.kind === 'thread') {
+        const icon = document.createElement('span')
+        icon.className = 'mention-thread-icon'
+        icon.textContent = '🧵'
+        const title = document.createElement('span')
+        title.className = 'mention-thread-title'
+        title.textContent = item.hit.title || 'Untitled thread'
+        const date = document.createElement('span')
+        date.className = 'mention-thread-date'
+        date.textContent = relativeDate(item.hit.updatedAt)
+        el.append(icon, title, date)
+      } else {
+        el.textContent = item.path
+      }
+      el.addEventListener('mousedown', (e) => {
         e.preventDefault()
         void selectItem(i)
       })
-      picker.append(item)
+      picker.append(el)
     })
-    picker.hidden = currentFiles.length === 0
+    picker.hidden = currentItems.length === 0
+  }
+
+  function removeMentionText(): void {
+    const val = textarea.value
+    textarea.value = val.slice(0, mentionStart) + val.slice(textarea.selectionStart)
   }
 
   async function selectItem(idx: number): Promise<void> {
-    const path = currentFiles[idx]
-    if (!path) {
+    const item = currentItems[idx]
+    if (!item) {
+      hidePicker()
+      return
+    }
+    if (item.kind === 'thread') {
+      onAttachThread({
+        threadId: item.hit.id,
+        title: item.hit.title,
+        updatedAt: item.hit.updatedAt,
+        spinePath: item.hit.spinePath,
+      })
+      removeMentionText()
       hidePicker()
       return
     }
     try {
-      const content = await api.fs.readFile(path)
-      onAttach({ path, content })
+      const content = await api.fs.readFile(item.path)
+      onAttach({ path: item.path, content })
     } catch {
       /* ignore read errors */
     }
-    const val = textarea.value
-    textarea.value = val.slice(0, mentionStart) + val.slice(textarea.selectionStart)
+    removeMentionText()
     hidePicker()
   }
 
@@ -90,7 +157,7 @@ export function initMentionPicker(opts: MentionPickerOptions): () => void {
     if (picker.hidden) return
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      selectedIdx = Math.min(selectedIdx + 1, currentFiles.length - 1)
+      selectedIdx = Math.min(selectedIdx + 1, currentItems.length - 1)
       updateSelection()
     }
     if (e.key === 'ArrowUp') {
