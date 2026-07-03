@@ -371,7 +371,14 @@ Each phase leaves `npm run check` + `npm run test:e2e` green.
 - **Phase 1** — `thread-store.ts` on `~/.copse/workspace`, 11 tests; legacy store deleted. ✅
 - **Migration** — `thread-migration.ts` (self-contained one-time import of the pre-#644 file store + one call site in `main/index.ts`), 4 tests. Delete both to drop it, or swap its body for a cleanup. ✅
 - **Benchmark** — `scripts/bench-thread-store*.ts` + `npm run bench:thread-store`. ✅
-- Remaining: Phases 2 (event-level append + renderer), 3 (streaming partials), 4 (read-only mount), 5 (`@` composer), 6 (export/docs).
+- **Phase 2** — event-level store API (`createThread`/`appendMessage`/`updateMeta`) + IPC
+  (`threads:create`/`appendMessage`/`updateMeta`/`delete`/`catalog`, `loadProject` kept;
+  `saveOne`/`saveProject` removed) + renderer autosave rewiring (`persistence.ts`): a
+  debounced per-project meta-signature reconcile (create/updateMeta/delete) plus immediate
+  `appendMessage` on `message_added`/`message_done`. e2e seeds routed to the new store via
+  `writeSeedConfig` + `COPSE_WORKSPACE_DIR`. Eager `loadProject` kept — the benchmark-motivated
+  **lazy-load (catalog + active thread on open) is deferred** to a focused follow-up. ✅
+- Remaining: Phases 3 (streaming partials), 4 (read-only mount), 5 (`@` composer), 6 (export/docs + lazy-load follow-up).
 
 ## Benchmark baseline
 
