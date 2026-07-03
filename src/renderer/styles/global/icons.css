@@ -21,3 +21,14 @@
   width: 12px;
   height: 12px;
 }
+
+.ui-icon-dot {
+  stroke-width: 8;
+}
+
+.ui-inline-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: middle;
+}

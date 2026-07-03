@@ -6,6 +6,7 @@ import {
   type KnownAcpAgent,
 } from '@shared/acp-known-agents.ts'
 import { el, clear } from '../../dom/helpers.ts'
+import { inlineStatus, setInlineStatus } from '../../dom/inline-status.ts'
 
 // Settings panel for external ACP agents Copse drives as a client (the `acp:<id>`
 // models). It scans the device (acp:detectAgents) and lists the known agents with
@@ -164,11 +165,12 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
       const found = await api.acp.detectAgents()
       detectedById = new Map(found.map((agent) => [agent.id, agent]))
       const installed = found.filter((agent) => agent.installed).length
-      scanStatus.textContent = installed ? `✓ ${String(installed)} installed` : 'None installed yet'
+      if (installed) setInlineStatus(scanStatus, 'ok', `${String(installed)} installed`)
+      else scanStatus.textContent = 'None installed yet'
       scanStatus.className = `key-status ${installed ? 'ok' : ''}`
     } catch {
       detectedById = new Map()
-      scanStatus.textContent = '✗ Could not scan'
+      setInlineStatus(scanStatus, 'error', 'Could not scan')
       scanStatus.className = 'key-status err'
     }
     renderKnown()
@@ -181,10 +183,12 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
       const installed = detected?.installed ?? false
       const configured = agents.some((a) => a.id === known.id)
 
-      const status = el(
-        'span',
-        { class: `acp-known-status ${installed ? 'ok' : 'missing'}` },
-        installed ? `✓ installed${detected?.running ? ' · running' : ''}` : '○ not installed',
+      const status = el('span', { class: `acp-known-status ${installed ? 'ok' : 'missing'}` })
+      status.append(
+        inlineStatus(
+          installed ? 'ok' : 'pending',
+          installed ? `installed${detected?.running ? ' · running' : ''}` : 'not installed',
+        ),
       )
       const add = el(
         'button',
@@ -310,7 +314,7 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
           modelStatus.textContent = `${String(selector.choices.length)} models added to the picker (default: ${selector.currentValue}).`
         })
         .catch((err: unknown) => {
-          modelStatus.textContent = `✗ ${err instanceof Error ? err.message : String(err)}`
+          setInlineStatus(modelStatus, 'error', err instanceof Error ? err.message : String(err))
         })
         .finally(() => {
           detectModels.disabled = false
@@ -332,7 +336,7 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
       const existingIds = isEdit ? [] : agents.map((a) => a.id)
       const error = validateDraft(draft, existingIds)
       if (error) {
-        status.textContent = `✗ ${error}`
+        setInlineStatus(status, 'error', error)
         status.className = 'key-status err'
         return
       }
@@ -435,7 +439,7 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
           result.registered.length ? `added ${String(result.registered.length)}` : '',
         ].filter(Boolean)
         if (bits.length) {
-          scanStatus.textContent = `✓ Presets ready (${bits.join(', ')})`
+          setInlineStatus(scanStatus, 'ok', `Presets ready (${bits.join(', ')})`)
           scanStatus.className = 'key-status ok'
         }
       }

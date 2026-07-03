@@ -2,6 +2,7 @@ import type { ApiClient, ExtraProvider, ExtraProviderModel } from '../../../prel
 import { providerSlugFromBaseUrl } from '@shared/llm/provider-slug.ts'
 import { el, clear } from '../../dom/helpers.ts'
 import { closeIcon } from '../../dom/icons.ts'
+import { setInlineStatus } from '../../dom/inline-status.ts'
 
 // Unified "Providers" panel: a chip row selects one provider and shows its form.
 // Fixed cloud providers (OpenAI / Anthropic / OpenRouter) expose just a key
@@ -324,7 +325,11 @@ export function createCustomProvidersSection(
     })
     input.value = pendingKeys.get(slug) ?? ''
     const status = el('span', { class: 'key-status' })
-    status.textContent = configured.has(slug) ? '● saved' : '○ not set'
+    setInlineStatus(
+      status,
+      configured.has(slug) ? 'filled' : 'pending',
+      configured.has(slug) ? 'saved' : 'not set',
+    )
     input.addEventListener('input', () => {
       if (input.value.trim()) pendingKeys.set(slug, input.value)
       else pendingKeys.delete(slug)
@@ -335,7 +340,7 @@ export function createCustomProvidersSection(
       void (async (): Promise<void> => {
         const key = input.value.trim()
         if (!key) {
-          status.textContent = '✗ Enter a key first'
+          setInlineStatus(status, 'error', 'Enter a key first')
           status.className = 'key-status err'
           return
         }
@@ -343,10 +348,14 @@ export function createCustomProvidersSection(
         status.className = 'key-status'
         try {
           const res = await api.settings.validateKey(slug, key)
-          status.textContent = res.ok ? '✓ Key looks valid' : `✗ ${res.error ?? 'Invalid key'}`
+          setInlineStatus(
+            status,
+            res.ok ? 'ok' : 'error',
+            res.ok ? 'Key looks valid' : (res.error ?? 'Invalid key'),
+          )
           status.className = `key-status ${res.ok ? 'ok' : 'err'}`
         } catch {
-          status.textContent = '✗ Could not validate'
+          setInlineStatus(status, 'error', 'Could not validate')
           status.className = 'key-status err'
         }
       })()
@@ -409,11 +418,11 @@ export function createCustomProvidersSection(
           const res = await api.settings.refreshHuggingFaceModels(key || undefined)
           if (!res.ok) {
             const hint = !key ? ' — enter your HF token and try again' : ''
-            fetchStatus.textContent = `✗ ${res.error ?? 'Could not list models'}${hint}`
+            setInlineStatus(fetchStatus, 'error', `${res.error ?? 'Could not list models'}${hint}`)
             fetchStatus.className = 'key-status err'
             return
           }
-          fetchStatus.textContent = `✓ ${String(res.count)} model(s) imported with pricing`
+          setInlineStatus(fetchStatus, 'ok', `${String(res.count)} model(s) imported with pricing`)
           fetchStatus.className = 'key-status ok'
           await refresh()
           return
@@ -423,7 +432,7 @@ export function createCustomProvidersSection(
           // Most cloud providers reject an unauthenticated /models request (Google
           // even 404s it), so nudge toward entering a key before blaming the URL.
           const hint = !key ? ' — enter an API key and try again' : ''
-          fetchStatus.textContent = `✗ ${res.error ?? 'Could not list models'}${hint}`
+          setInlineStatus(fetchStatus, 'error', `${res.error ?? 'Could not list models'}${hint}`)
           fetchStatus.className = 'key-status err'
           return
         }
@@ -433,7 +442,11 @@ export function createCustomProvidersSection(
             ...(m.contextLength ? { contextWindow: m.contextLength } : {}),
           })),
         )
-        fetchStatus.textContent = `✓ ${String(res.models.length)} model(s) — review and Save`
+        setInlineStatus(
+          fetchStatus,
+          'ok',
+          `${String(res.models.length)} model(s) — review and Save`,
+        )
         fetchStatus.className = 'key-status ok'
       })()
     })
@@ -504,7 +517,7 @@ export function createCustomProvidersSection(
           try {
             extraBody = JSON.parse(raw) as Record<string, unknown>
           } catch {
-            saveStatus.textContent = '✗ Extra body is not valid JSON'
+            setInlineStatus(saveStatus, 'error', 'Extra body is not valid JSON')
             saveStatus.className = 'key-status err'
             return
           }
@@ -519,11 +532,15 @@ export function createCustomProvidersSection(
             ...(Number.isFinite(ctx) && ctx > 0 ? { fallbackContextWindow: ctx } : {}),
             ...(extraBody ? { extraBody } : {}),
           })
-          saveStatus.textContent = '✓ Saved'
+          setInlineStatus(saveStatus, 'ok', 'Saved')
           saveStatus.className = 'key-status ok'
           await refresh()
         } catch (err) {
-          saveStatus.textContent = `✗ ${err instanceof Error ? err.message : 'Could not save'}`
+          setInlineStatus(
+            saveStatus,
+            'error',
+            err instanceof Error ? err.message : 'Could not save',
+          )
           saveStatus.className = 'key-status err'
         }
       })()
@@ -609,7 +626,7 @@ export function createCustomProvidersSection(
       void (async (): Promise<void> => {
         const baseUrl = urlInput.value.trim()
         if (!baseUrl) {
-          status.textContent = '✗ Enter a base URL'
+          setInlineStatus(status, 'error', 'Enter a base URL')
           status.className = 'key-status err'
           return
         }
@@ -630,7 +647,11 @@ export function createCustomProvidersSection(
           if (created) selected = created.id
           await refresh()
         } catch (err) {
-          status.textContent = `✗ ${err instanceof Error ? err.message : 'Could not add provider'}`
+          setInlineStatus(
+            status,
+            'error',
+            err instanceof Error ? err.message : 'Could not add provider',
+          )
           status.className = 'key-status err'
         }
       })()
