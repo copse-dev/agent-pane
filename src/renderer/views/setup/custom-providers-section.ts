@@ -1,6 +1,7 @@
 import type { ApiClient, ExtraProvider, ExtraProviderModel } from '../../../preload/api.d.ts'
 import { providerSlugFromBaseUrl } from '@shared/llm/provider-slug.ts'
 import { el, clear } from '../../dom/helpers.ts'
+import { closeIcon } from '../../dom/icons.ts'
 
 // Unified "Providers" panel: a chip row selects one provider and shows its form.
 // Fixed cloud providers (OpenAI / Anthropic / OpenRouter) expose just a key
@@ -151,7 +152,7 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
     const remove = el(
       'button',
       { type: 'button', class: 'provider-model-remove', title: 'Remove model' },
-      '✕',
+      closeIcon('ui-icon ui-icon-sm'),
     )
     const row = el(
       'div',

@@ -1,4 +1,5 @@
 import { el } from '../dom/helpers.ts'
+import { searchIcon } from '../dom/icons.ts'
 import type { ThreadReview } from '@shared/types'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { sanitizeRenderedMarkdown } from '@copse/streaming-markdown'
@@ -35,7 +36,11 @@ export function createReviewCardEl(review: ThreadReview, api: ApiClient): HTMLEl
 
   const header = el('div', { class: 'review-panel-header' })
   header.append(
-    el('span', { class: 'review-panel-icon', 'aria-hidden': 'true' }, '🔍'),
+    el(
+      'span',
+      { class: 'review-panel-icon', 'aria-hidden': 'true' },
+      searchIcon('ui-icon ui-icon-sm'),
+    ),
     el('span', { class: 'review-panel-title' }, statusLabel(review.status)),
   )
   panel.append(header)

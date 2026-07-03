@@ -1,5 +1,6 @@
 import { el, clear } from '../dom/helpers.ts'
 import { outlineIcon } from '../dom/outline-icon.ts'
+import { closeIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
@@ -610,8 +611,10 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     // messages, so without this the user's own prompt never appears.
     const displayParts: string[] = []
     if (rawText) displayParts.push(rawText)
-    attachedFiles.forEach((f) => displayParts.push(`📎 ${f.path.split('/').pop() ?? f.path}`))
-    attachedTextBlocks.forEach((b) => displayParts.push(`📝 ${b.label}`))
+    attachedFiles.forEach((f) =>
+      displayParts.push(`Attached: ${f.path.split('/').pop() ?? f.path}`),
+    )
+    attachedTextBlocks.forEach((b) => displayParts.push(`Attached text: ${b.label}`))
     const imageUrls = attachedImages.map((img) => img.dataUrl)
     const messageId = addMessage(
       store,
@@ -646,7 +649,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     chip.className = 'attachment-chip'
     chip.textContent = file.path.split('/').pop() ?? file.path
     const remove = document.createElement('button')
-    remove.textContent = '✕'
+    remove.setAttribute('aria-label', 'Remove attachment')
+    remove.append(closeIcon('ui-icon ui-icon-sm'))
     remove.addEventListener('click', () => {
       attachedFiles = attachedFiles.filter((f) => f.path !== file.path)
       chip.remove()
@@ -665,7 +669,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     chip.className = 'attachment-chip text-chip'
     chip.textContent = label
     const remove = document.createElement('button')
-    remove.textContent = '✕'
+    remove.setAttribute('aria-label', 'Remove attachment')
+    remove.append(closeIcon('ui-icon ui-icon-sm'))
     remove.addEventListener('click', () => {
       attachedTextBlocks = attachedTextBlocks.filter((b) => b.id !== id)
       chip.remove()
@@ -685,7 +690,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     thumb.width = 40
     thumb.height = 40
     const remove = document.createElement('button')
-    remove.textContent = '✕'
+    remove.setAttribute('aria-label', 'Remove attachment')
+    remove.append(closeIcon('ui-icon ui-icon-sm'))
     remove.addEventListener('click', () => {
       attachedImages = attachedImages.filter((i) => i.dataUrl !== dataUrl)
       chip.remove()
