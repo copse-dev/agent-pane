@@ -83,6 +83,20 @@ export interface Thread {
   updatedAt: number
 }
 
+/**
+ * One line of a project's `catalog.jsonl` — a cheap, rebuildable index of its
+ * threads used for cross-thread lookup (the `@`-thread picker) without folding
+ * every thread. `path` is the thread id (its directory name under the project).
+ */
+export interface ThreadCatalogEntry {
+  id: string
+  title: string
+  createdAt: number
+  updatedAt: number
+  digest: string
+  path: string
+}
+
 export interface Message {
   id: string
   role: 'user' | 'assistant' | 'error'

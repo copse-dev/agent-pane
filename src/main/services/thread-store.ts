@@ -10,7 +10,7 @@ import {
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, relative, sep } from 'node:path'
-import type { Message, Thread } from '@shared/types'
+import type { Message, Thread, ThreadCatalogEntry } from '@shared/types'
 import { sortThreadsNewestFirst } from '@shared/store/thread-helpers.ts'
 import {
   explodeMessage,
@@ -200,14 +200,7 @@ function readProjectThreads(projectId: string): Thread[] {
 
 // --- Catalog (fast cross-thread index; derived, rebuildable) ----------------
 
-export interface CatalogEntry {
-  id: string
-  title: string
-  createdAt: number
-  updatedAt: number
-  digest: string
-  path: string
-}
+export type CatalogEntry = ThreadCatalogEntry
 
 function digestOf(thread: Thread): string {
   const firstUser = thread.messages.find((m) => m.role === 'user')?.content ?? ''

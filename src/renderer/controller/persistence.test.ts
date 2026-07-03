@@ -1,8 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { serializedSet, attachAutosave, AUTOSAVE_DEBOUNCE_MS } from './persistence.ts'
+import {
+  serializedSet,
+  attachAutosave,
+  __resetPersistenceForTest,
+  AUTOSAVE_DEBOUNCE_MS,
+} from './persistence.ts'
 import { createStore } from '@shared/store/store.ts'
-import type { Thread } from '@shared/types'
+import type { Message, Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 
 // attachAutosave registers a pagehide listener; provide a minimal window stub
@@ -19,15 +24,25 @@ const pagehideHandlers = new Set<() => void>()
 
 interface FakeApiCalls {
   storageSets: Array<[string, unknown]>
-  threadSaves: Array<{ kind: 'one' | 'project'; projectId: string; payload: unknown }>
+  creates: Array<{ projectId: string; thread: Thread }>
+  appends: Array<{ projectId: string; threadId: string; message: Message }>
+  metas: Array<{ projectId: string; threadId: string; patch: unknown }>
+  deletes: Array<{ projectId: string; threadId: string }>
 }
 
-function fakeApi(handlers: {
-  set?: (key: string, value: unknown) => Promise<void>
-  saveOne?: (projectId: string, thread: Thread) => Promise<void>
-  saveProject?: (projectId: string, threads: Thread[]) => Promise<void>
-}): { api: ApiClient; calls: FakeApiCalls } {
-  const calls: FakeApiCalls = { storageSets: [], threadSaves: [] }
+function fakeApi(
+  handlers: {
+    set?: (key: string, value: unknown) => Promise<void>
+    create?: (projectId: string, thread: Thread) => Promise<void>
+  } = {},
+): { api: ApiClient; calls: FakeApiCalls } {
+  const calls: FakeApiCalls = {
+    storageSets: [],
+    creates: [],
+    appends: [],
+    metas: [],
+    deletes: [],
+  }
   const api = {
     storage: {
       get: async (): Promise<unknown> => null,
@@ -39,22 +54,31 @@ function fakeApi(handlers: {
     },
     threads: {
       loadProject: async (): Promise<Thread[]> => [],
-      saveOne:
-        handlers.saveOne ??
-        (async (projectId, thread): Promise<void> => {
-          calls.threadSaves.push({ kind: 'one', projectId, payload: thread })
+      create:
+        handlers.create ??
+        (async (projectId: string, thread: Thread): Promise<void> => {
+          calls.creates.push({ projectId, thread })
         }),
-      saveProject:
-        handlers.saveProject ??
-        (async (projectId, threads): Promise<void> => {
-          calls.threadSaves.push({ kind: 'project', projectId, payload: threads })
-        }),
+      appendMessage: async (
+        projectId: string,
+        threadId: string,
+        message: Message,
+      ): Promise<void> => {
+        calls.appends.push({ projectId, threadId, message })
+      },
+      updateMeta: async (projectId: string, threadId: string, patch: unknown): Promise<void> => {
+        calls.metas.push({ projectId, threadId, patch })
+      },
+      delete: async (projectId: string, threadId: string): Promise<void> => {
+        calls.deletes.push({ projectId, threadId })
+      },
+      catalog: async (): Promise<never[]> => [],
     },
   } as unknown as ApiClient
   return { api, calls }
 }
 
-function thread(id: string): Thread {
+function thread(id: string, overrides: Partial<Thread> = {}): Thread {
   return {
     id,
     title: id,
@@ -63,7 +87,12 @@ function thread(id: string): Thread {
     usage: { inputTokens: 0, outputTokens: 0 },
     createdAt: 1,
     updatedAt: 1,
+    ...overrides,
   }
+}
+
+function userMsg(id: string): Message {
+  return { id, role: 'user', content: 'hi', toolCalls: [], createdAt: 10 }
 }
 
 const tick = (): Promise<unknown> => new Promise((r) => setTimeout(r, 0))
@@ -114,72 +143,137 @@ test('serializedSet does not serialize across different keys', async () => {
   assert.deepEqual([...calls].sort(), ['a', 'b'])
 })
 
-test('attachAutosave debounces a burst of events into a single full project save', async () => {
-  const { api, calls } = fakeApi({})
+test('debounces a metadata burst into one create for a new thread + a projects save', async () => {
+  __resetPersistenceForTest()
+  const { api, calls } = fakeApi()
   const store = createStore({ activeProjectId: 'p1', threads: [thread('t1')], projects: [] })
   const autosave = attachAutosave(store, api)
 
   store.emit('threads_changed')
-  store.emit('message_done', 'm1')
   store.emit('usage_updated', 't1')
   store.emit('todos_changed', 't1')
+  store.emit('projects_changed')
 
-  assert.deepEqual(calls.storageSets, [])
-  assert.deepEqual(calls.threadSaves, [])
+  assert.equal(calls.creates.length, 0)
 
   await waitDebounce()
 
-  const storageKeys = calls.storageSets.map((c) => c[0]).sort()
-  assert.deepEqual(storageKeys, ['activeProjectId', 'projects'])
-  assert.deepEqual(calls.threadSaves, [
-    { kind: 'project', projectId: 'p1', payload: [thread('t1')] },
-  ])
+  assert.deepEqual(
+    calls.creates.map((c) => [c.projectId, c.thread.id]),
+    [['p1', 't1']],
+  )
+  assert.deepEqual(calls.metas, [])
+  assert.deepEqual(calls.storageSets.map((c) => c[0]).sort(), ['activeProjectId', 'projects'])
   autosave.detach()
 })
 
-test('attachAutosave persists drafts via a single-thread save', async () => {
-  const { api, calls } = fakeApi({})
+test('a metadata change on a known thread emits updateMeta, not create', async () => {
+  __resetPersistenceForTest()
+  const { api, calls } = fakeApi()
   const store = createStore({ activeProjectId: 'p1', threads: [thread('t1')], projects: [] })
   const autosave = attachAutosave(store, api)
 
-  store.emit('thread_draft_changed', 't1')
-  assert.equal(calls.threadSaves.length, 0)
-
+  // First reconcile establishes the baseline (create t1).
+  store.emit('threads_changed')
   await waitDebounce()
-  assert.equal(calls.threadSaves.length, 1)
-  const draftSave = calls.threadSaves[0]
-  assert.ok(draftSave)
-  assert.equal(draftSave.kind, 'one')
-  assert.equal(draftSave.projectId, 'p1')
-  assert.deepEqual(draftSave.payload, thread('t1'))
-  assert.deepEqual(calls.storageSets, [])
+  assert.equal(calls.creates.length, 1)
+
+  // Change the draft, then reconcile again — meta changed, id known → updateMeta.
+  store.setState({ threads: [thread('t1', { draftPrompt: 'typing' })] })
+  store.emit('thread_draft_changed', 't1')
+  await waitDebounce()
+
+  assert.equal(calls.creates.length, 1) // unchanged
+  assert.deepEqual(
+    calls.metas.map((m) => [m.threadId, (m.patch as { draftPrompt?: string }).draftPrompt]),
+    [['t1', 'typing']],
+  )
   autosave.detach()
 })
 
-test('attachAutosave skips stale single-thread saves after a project switch', async () => {
-  const { api, calls } = fakeApi({})
+test('a finalized message is appended immediately on message_done', async () => {
+  __resetPersistenceForTest()
+  const { api, calls } = fakeApi()
+  const store = createStore({
+    activeProjectId: 'p1',
+    activeThreadId: 't1',
+    threads: [thread('t1', { messages: [userMsg('m1')] })],
+    projects: [],
+  })
+  const autosave = attachAutosave(store, api)
+
+  store.emit('message_done', 'm1')
+  await tick()
+
+  assert.deepEqual(
+    calls.appends.map((a) => [a.projectId, a.threadId, a.message.id]),
+    [['p1', 't1', 'm1']],
+  )
+  autosave.detach()
+})
+
+test('a removed thread emits delete', async () => {
+  __resetPersistenceForTest()
+  const { api, calls } = fakeApi()
+  const store = createStore({
+    activeProjectId: 'p1',
+    threads: [thread('t1'), thread('t2')],
+    projects: [],
+  })
+  const autosave = attachAutosave(store, api)
+
+  store.emit('threads_changed')
+  await waitDebounce()
+  assert.equal(calls.creates.length, 2)
+
+  store.setState({ threads: [thread('t1')] })
+  store.emit('threads_changed')
+  await waitDebounce()
+
+  assert.deepEqual(
+    calls.deletes.map((d) => [d.projectId, d.threadId]),
+    [['p1', 't2']],
+  )
+  autosave.detach()
+})
+
+test('skips stale writes for a thread gone after a project switch', async () => {
+  __resetPersistenceForTest()
+  const { api, calls } = fakeApi()
   const store = createStore({
     activeProjectId: 'p1',
     activeThreadId: 'old',
-    threads: [thread('old')],
+    threads: [thread('old', { messages: [userMsg('m-old')] })],
     projects: [],
   })
   const autosave = attachAutosave(store, api)
 
   store.emit('usage_updated', 'old')
+  // Switch projects before the debounce fires.
   store.setState({ activeProjectId: 'p2', threads: [thread('new')], activeThreadId: 'new' })
-
   await waitDebounce()
 
-  // The outgoing thread is no longer in memory for p2, so nothing is written under p2.
-  assert.deepEqual(calls.threadSaves, [])
+  // Nothing is written for the outgoing 'old' thread under any project.
+  assert.equal(
+    calls.creates.some((c) => c.thread.id === 'old'),
+    false,
+  )
+  assert.equal(
+    calls.metas.some((m) => m.threadId === 'old'),
+    false,
+  )
+  assert.equal(
+    calls.appends.some((a) => a.threadId === 'old'),
+    false,
+  )
   autosave.detach()
 })
 
-test('attachAutosave flush() bypasses the debounce timer and awaits the writes', async () => {
+test('flush() bypasses the debounce timer and awaits the writes', async () => {
+  __resetPersistenceForTest()
   let resolved = false
   const { api } = fakeApi({
-    saveProject: () =>
+    create: () =>
       new Promise<void>((r) =>
         setTimeout(() => {
           resolved = true
@@ -196,8 +290,9 @@ test('attachAutosave flush() bypasses the debounce timer and awaits the writes',
   autosave.detach()
 })
 
-test('attachAutosave pagehide flush triggers a final save', async () => {
-  const { api, calls } = fakeApi({})
+test('pagehide flush triggers a final reconcile', async () => {
+  __resetPersistenceForTest()
+  const { api, calls } = fakeApi()
   const store = createStore({ activeProjectId: 'p1', threads: [thread('t1')], projects: [] })
   const autosave = attachAutosave(store, api)
 
@@ -205,7 +300,9 @@ test('attachAutosave pagehide flush triggers a final save', async () => {
     h()
   })
   await tick()
-  assert.equal(calls.threadSaves.length, 1)
-  assert.equal(calls.threadSaves[0]?.kind, 'project')
+  assert.deepEqual(
+    calls.creates.map((c) => c.thread.id),
+    ['t1'],
+  )
   autosave.detach()
 })

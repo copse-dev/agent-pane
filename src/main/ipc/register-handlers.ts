@@ -57,8 +57,11 @@ import { fetchOpenAiCompatibleModels } from '../services/provider-models.ts'
 import { storageGet, storageSet } from '../services/storage.ts'
 import {
   loadProjectThreads,
-  saveProjectThread,
-  saveProjectThreads,
+  createThread,
+  appendMessage,
+  updateMeta,
+  deleteProjectThread,
+  loadProjectCatalog,
 } from '../services/thread-store.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
 import { listAcpModelsForAgent } from '../services/acp/acp-agent-service.ts'
@@ -384,26 +387,54 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     storageSet(k, value)
   })
 
+  const zThreadId = zNonEmptyString.max(256)
   ipcMain.handle('threads:loadProject', (event, projectId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zProjectId, [projectId])
     return loadProjectThreads(id)
   })
-  ipcMain.handle('threads:saveOne', (event, projectId: unknown, thread: unknown) => {
+  ipcMain.handle('threads:create', (event, projectId: unknown, thread: unknown) => {
     assertMainFrameSender(event, win)
     const [id, payload] = parseIpcArgs(z.tuple([zProjectId, z.record(z.string(), z.unknown())]), [
       projectId,
       thread,
     ])
-    return saveProjectThread(id, payload as unknown as import('@shared/types').Thread)
+    return createThread(id, payload as unknown as import('@shared/types').Thread)
   })
-  ipcMain.handle('threads:saveProject', (event, projectId: unknown, threads: unknown) => {
+  ipcMain.handle(
+    'threads:appendMessage',
+    (event, projectId: unknown, threadId: unknown, message: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, payload] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, z.record(z.string(), z.unknown())]),
+        [projectId, threadId, message],
+      )
+      return appendMessage(pid, tid, payload as unknown as import('@shared/types').Message)
+    },
+  )
+  ipcMain.handle(
+    'threads:updateMeta',
+    (event, projectId: unknown, threadId: unknown, patch: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, payload] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, z.record(z.string(), z.unknown())]),
+        [projectId, threadId, patch],
+      )
+      return updateMeta(pid, tid, payload)
+    },
+  )
+  ipcMain.handle('threads:delete', (event, projectId: unknown, threadId: unknown) => {
     assertMainFrameSender(event, win)
-    const [id, payload] = parseIpcArgs(
-      z.tuple([zProjectId, z.array(z.record(z.string(), z.unknown()))]),
-      [projectId, threads],
-    )
-    return saveProjectThreads(id, payload as unknown as import('@shared/types').Thread[])
+    const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return deleteProjectThread(pid, tid)
+  })
+  ipcMain.handle('threads:catalog', (event, projectId: unknown, query: unknown) => {
+    assertMainFrameSender(event, win)
+    const [pid, q] = parseIpcArgs(z.tuple([zProjectId, z.string().max(512).optional()]), [
+      projectId,
+      query,
+    ])
+    return loadProjectCatalog(pid, q)
   })
 
   ipcMain.handle('skills:list', () => listSkills())
