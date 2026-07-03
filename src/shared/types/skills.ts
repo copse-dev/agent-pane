@@ -33,4 +33,6 @@ export interface AgentRunPayload {
   priorTodos?: TodoItem[]
   /** Thread working brief captured in renderer store before the run. */
   workingBrief?: string
+  /** Per-thread model override; absent means "use the global default setting". */
+  model?: string
 }

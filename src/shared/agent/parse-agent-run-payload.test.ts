@@ -41,4 +41,17 @@ describe('parseAgentRunPayload', () => {
     const r = parseAgentRunPayload(JSON.stringify(payload))
     assert.equal(r.workingBrief, 'refactor authentication')
   })
+
+  it('parses a per-thread model override from payload', () => {
+    const r = parseAgentRunPayload(JSON.stringify({ content: 'hi', model: 'claude-opus-4-8' }))
+    assert.equal(r.model, 'claude-opus-4-8')
+  })
+
+  it('omits model when absent or empty so main falls back to the global default', () => {
+    assert.equal('model' in parseAgentRunPayload(JSON.stringify({ content: 'hi' })), false)
+    assert.equal(
+      'model' in parseAgentRunPayload(JSON.stringify({ content: 'hi', model: '' })),
+      false,
+    )
+  })
 })

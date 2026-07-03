@@ -34,6 +34,8 @@ export interface ContextEstimateInput {
   invokedSkills: string[]
   imageCount: number
   priorMessages: LLMMessage[]
+  /** Per-thread model override; absent means "use the global default setting". */
+  model?: string
 }
 
 /**
@@ -49,7 +51,7 @@ export async function estimateContextBreakdown(
   registry: ToolRegistry,
   input: ContextEstimateInput,
 ): Promise<ContextBreakdown> {
-  const model = getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
+  const model = input.model ?? getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
   const subagentsEnabled = getSetting<boolean>(SUBAGENTS_ENABLED_SETTING, SUBAGENTS_ENABLED_DEFAULT)
   const contextWindow = await resolveContextWindow(model)
 
