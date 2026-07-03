@@ -146,18 +146,36 @@ export interface IpcInvokeMap {
   'storage:get': { args: [key: string]; result: unknown }
   'storage:set': { args: [key: string, value: unknown]; result: undefined }
 
-  // Per-thread persistence (one JSON file per thread under userData/threads/)
+  // Filesystem-native thread store (issue #644): one directory per thread under
+  // ~/.copse/workspace/<projectId>/<threadId>/. The renderer maps store events
+  // onto event-level writes instead of rewriting whole threads.
   'threads:loadProject': {
     args: [projectId: string]
     result: import('./thread.ts').Thread[]
   }
-  'threads:saveOne': {
+  'threads:create': {
     args: [projectId: string, thread: import('./thread.ts').Thread]
     result: undefined
   }
-  'threads:saveProject': {
-    args: [projectId: string, threads: import('./thread.ts').Thread[]]
+  'threads:appendMessage': {
+    args: [projectId: string, threadId: string, message: import('./thread.ts').Message]
     result: undefined
+  }
+  'threads:updateMeta': {
+    args: [
+      projectId: string,
+      threadId: string,
+      patch: Partial<Omit<import('./thread.ts').Thread, 'messages'>>,
+    ]
+    result: undefined
+  }
+  'threads:delete': {
+    args: [projectId: string, threadId: string]
+    result: undefined
+  }
+  'threads:catalog': {
+    args: [projectId: string, query?: string]
+    result: import('./thread.ts').ThreadCatalogEntry[]
   }
 
   // Index

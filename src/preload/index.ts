@@ -232,10 +232,22 @@ contextBridge.exposeInMainWorld('api', {
   },
   threads: {
     loadProject: (projectId: string) => ipcRenderer.invoke('threads:loadProject', projectId),
-    saveOne: (projectId: string, thread: import('@shared/types').Thread) =>
-      ipcRenderer.invoke('threads:saveOne', projectId, thread),
-    saveProject: (projectId: string, threads: import('@shared/types').Thread[]) =>
-      ipcRenderer.invoke('threads:saveProject', projectId, threads),
+    create: (projectId: string, thread: import('@shared/types').Thread) =>
+      ipcRenderer.invoke('threads:create', projectId, thread),
+    appendMessage: (
+      projectId: string,
+      threadId: string,
+      message: import('@shared/types').Message,
+    ) => ipcRenderer.invoke('threads:appendMessage', projectId, threadId, message),
+    updateMeta: (
+      projectId: string,
+      threadId: string,
+      patch: Partial<Omit<import('@shared/types').Thread, 'messages'>>,
+    ) => ipcRenderer.invoke('threads:updateMeta', projectId, threadId, patch),
+    delete: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('threads:delete', projectId, threadId),
+    catalog: (projectId: string, query?: string) =>
+      ipcRenderer.invoke('threads:catalog', projectId, query),
   },
   lmStudio: {
     test: (url: string, apiKey?: string) => ipcRenderer.invoke('lmstudio:test', url, apiKey),
