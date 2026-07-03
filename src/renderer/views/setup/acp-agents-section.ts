@@ -166,7 +166,7 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
       detectedById = new Map(found.map((agent) => [agent.id, agent]))
       const installed = found.filter((agent) => agent.installed).length
       if (installed) setInlineStatus(scanStatus, 'ok', `${String(installed)} installed`)
-      else setInlineStatus(scanStatus, 'pending', 'None installed yet')
+      else scanStatus.textContent = 'None installed yet'
       scanStatus.className = `key-status ${installed ? 'ok' : ''}`
     } catch {
       detectedById = new Map()
@@ -287,7 +287,7 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
     // Detection resolves the agent by its saved id, so it only works once the
     // agent has been saved (a fresh, unsaved agent has nothing to spawn yet).
     detectModels.disabled = !isEdit
-    if (!isEdit) setInlineStatus(modelStatus, 'pending', 'Save the agent first, then detect its models.')
+    if (!isEdit) modelStatus.textContent = 'Save the agent first, then detect its models.'
     detectModels.addEventListener('click', () => {
       const id = idInput.value.trim()
       detectModels.disabled = true
@@ -297,7 +297,7 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
         .then((selector) => {
           if (!selector) {
             detectedModels = []
-            setInlineStatus(modelStatus, 'pending', 'This agent exposes no selectable models.')
+            modelStatus.textContent = 'This agent exposes no selectable models.'
             return
           }
           detectedModels = selector.choices
