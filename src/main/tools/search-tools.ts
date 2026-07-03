@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import micromatch from 'micromatch'
 import { defineTool } from '@shared/types'
-import { resolveWorkspacePath, getWorkspaceRoot } from '../services/workspace.ts'
+import { resolveReadablePath, getWorkspaceRoot } from '../services/workspace.ts'
 import { isRgAvailable } from '../services/tool-availability.ts'
 import { getIndex } from '../services/file-index.ts'
 import { formatCodeSearchResults, searchCodeContent } from '../services/indexed-grep.ts'
@@ -33,7 +33,7 @@ export const searchCodeTool = defineTool({
   ) {
     const root = getWorkspaceRoot()
     if (!root) return 'No workspace open.'
-    const searchRoot = path ? resolveWorkspacePath(path) : root
+    const searchRoot = path ? resolveReadablePath(path) : root
 
     if (!isRgAvailable()) {
       return slowCodeSearch({
