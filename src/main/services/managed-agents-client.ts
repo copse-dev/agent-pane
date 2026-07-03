@@ -407,7 +407,9 @@ export async function runManagedAgentFromSettings(
     const system = buildManagedAgentSystemPrompt({
       mountPath: MANAGED_AGENT_REPO_MOUNT_PATH,
       branchPrefix: DEFAULT_MANAGED_AGENT_BRANCH_PREFIX,
-      startingRef: getSetting<string>('remoteAgentStartingRef', '').trim(),
+      // Branch from the project's current local branch (falls back to the repo
+      // default when it isn't pushed to the remote).
+      startingRef: (await getCurrentBranchName())?.trim() || '',
       autoCreatePR: getSetting<boolean>('remoteAgentAutoCreatePR', true),
       workOnCurrentBranch: getSetting<boolean>('remoteAgentWorkOnCurrentBranch', false),
     })

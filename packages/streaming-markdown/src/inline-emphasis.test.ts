@@ -65,6 +65,17 @@ describe('renderEmphasisDelimiters (delimiter-stack AST)', () => {
       '2 ** 3 with <code>a**b</code> tail',
     )
   })
+
+  it('does not duplicate a grandchild span in deep nesting (spec 418/432)', () => {
+    assert.equal(
+      renderEmphasisDelimiters('*foo **bar *baz* bim** bop*'),
+      '<em>foo <strong>bar <em>baz</em> bim</strong> bop</em>',
+    )
+    assert.equal(
+      renderEmphasisDelimiters('**foo *bar **baz**\nbim* bop**'),
+      '<strong>foo <em>bar <strong>baz</strong> bim</em> bop</strong>',
+    )
+  })
 })
 
 describe('pendingHoldIndex (shared with streaming)', () => {

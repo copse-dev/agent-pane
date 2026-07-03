@@ -120,8 +120,6 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   subagentsEnabled: z.boolean(),
   externalApiSafety: z.boolean(),
   remoteAgentBaseUrl: remoteAgentBaseUrlSchema,
-  remoteAgentRepository: z.string().max(2048),
-  remoteAgentStartingRef: z.string().max(256),
   remoteAgentAutoCreatePR: z.boolean(),
   remoteAgentWorkOnCurrentBranch: z.boolean(),
   // External ACP agents Copse drives as a client (model value `acp:<id>`).

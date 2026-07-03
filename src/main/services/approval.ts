@@ -7,6 +7,7 @@ import {
   IpcValidationError,
   parseIpcArgs,
 } from '../ipc/ipc-guards.ts'
+import { getActiveRunThread } from './thread-models.ts'
 
 export interface ApprovalRequest {
   title: string
@@ -100,7 +101,13 @@ export function initApproval(win: BrowserWindow): void {
     (req) =>
       new Promise<ApprovalResponse>((resolve) => {
         const id = randomUUID()
-        win.webContents.send('agent:approval_request', { id, ...req })
+        // Attribute the request to the thread whose run triggered it so the
+        // renderer can scope the prompt to that thread — a background thread's
+        // approval must not pop a modal over whichever project is focused, it
+        // shows a sidebar attention indicator instead (issue: cross-project
+        // prompt leakage). Null when no run owns it (e.g. headless paths).
+        const threadId = getActiveRunThread() ?? undefined
+        win.webContents.send('agent:approval_request', { id, threadId, ...req })
         // Bounce the dock until the user returns to answer (macOS only; app.dock
         // is undefined elsewhere). macOS auto-stops the bounce on focus, and we
         // also stop it when the approval settles for any reason.
