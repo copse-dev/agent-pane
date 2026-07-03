@@ -40,6 +40,7 @@ function makeApi(handlers: {
   workspaceSet?: (path: string) => Promise<string>
   storageGet?: (key: string) => Promise<unknown>
   storageSet?: (key: string, value: unknown) => Promise<void>
+  loadProjectThreads?: (projectId: string) => Promise<Thread[]>
 }): ApiClient {
   return {
     workspace: {
@@ -48,6 +49,11 @@ function makeApi(handlers: {
     storage: {
       get: handlers.storageGet ?? (async (): Promise<unknown> => null),
       set: handlers.storageSet ?? (async (): Promise<void> => undefined),
+    },
+    threads: {
+      loadProject: handlers.loadProjectThreads ?? (async (): Promise<Thread[]> => []),
+      saveOne: async (): Promise<void> => undefined,
+      saveProject: async (): Promise<void> => undefined,
     },
   } as unknown as ApiClient
 }
@@ -84,9 +90,9 @@ test('switchProject expands sidebar before workspace activation finishes', async
 
   const api = makeApi({
     workspaceSet: () => workspaceGate,
-    storageGet: async (key) => {
-      if (key === 'threads:b') return [thread('t-b1'), thread('t-b2')]
-      return null
+    loadProjectThreads: async (projectId) => {
+      if (projectId === 'b') return [thread('t-b1'), thread('t-b2')]
+      return []
     },
   })
 
@@ -155,9 +161,9 @@ test('switchProjectThread selects the clicked thread after activation', async ()
   })
 
   const api = makeApi({
-    storageGet: async (key) => {
-      if (key === 'threads:b') return [thread('t-b1'), thread('t-b2')]
-      return null
+    loadProjectThreads: async (projectId) => {
+      if (projectId === 'b') return [thread('t-b1'), thread('t-b2')]
+      return []
     },
   })
 
@@ -190,10 +196,10 @@ test('a superseded project switch does not apply stale workspace state', async (
       }
       return path
     },
-    storageGet: async (key) => {
-      if (key === 'threads:b') return [thread('t-b')]
-      if (key === 'threads:c') return [thread('t-c')]
-      return null
+    loadProjectThreads: async (projectId) => {
+      if (projectId === 'b') return [thread('t-b')]
+      if (projectId === 'c') return [thread('t-c')]
+      return []
     },
   })
 
@@ -228,9 +234,9 @@ test('restoreProject does not emit projects_changed before threads are loaded', 
 
   const api = makeApi({
     workspaceSet: () => workspaceGate,
-    storageGet: async (key) => {
-      if (key === 'threads:a') return [thread('t-a')]
-      return null
+    loadProjectThreads: async (projectId) => {
+      if (projectId === 'a') return [thread('t-a')]
+      return []
     },
   })
 
@@ -261,10 +267,10 @@ test('panel visibility persists per project across switches', async () => {
   })
 
   const api = makeApi({
-    storageGet: async (key) => {
-      if (key === 'threads:b') return [thread('t-b')]
-      if (key === 'threads:a') return [thread('t-a')]
-      return null
+    loadProjectThreads: async (projectId) => {
+      if (projectId === 'b') return [thread('t-b')]
+      if (projectId === 'a') return [thread('t-a')]
+      return []
     },
   })
 
