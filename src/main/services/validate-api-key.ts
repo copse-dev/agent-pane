@@ -1,6 +1,17 @@
 import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
 import type { ExtraProvider } from '@shared/llm/extra-providers.ts'
 import { getResolvedExtraProvider } from './extra-providers-store.ts'
+import { getSetting } from './settings.ts'
+import { OPENROUTER_BASE_URL } from '@shared/llm/openrouter.ts'
+
+// Same overridable base the model catalog fetch uses (openrouter-models.ts): the
+// hidden `openRouterApiBase` setting lets e2e point validation at a local
+// fixture, while production resolves to OpenRouter's public API. Keeping both
+// paths on one base means gating the picker on validation can't diverge from
+// where the catalog is actually fetched.
+function openRouterApiBase(): string {
+  return getSetting<string>('openRouterApiBase', OPENROUTER_BASE_URL).replace(/\/$/, '')
+}
 
 export interface ApiKeyValidationResult {
   ok: boolean
@@ -115,7 +126,7 @@ export async function validateOpenRouterApiKey(key: string): Promise<ApiKeyValid
   try {
     // `/key` echoes the key's own metadata and requires auth, so it doubles as a
     // free auth check without spending any credits.
-    const res = await fetch('https://openrouter.ai/api/v1/key', {
+    const res = await fetch(`${openRouterApiBase()}/key`, {
       headers: { Authorization: `Bearer ${trimmed}` },
       signal: AbortSignal.timeout(FETCH_TIMEOUTS.apiKeyValidation),
     })

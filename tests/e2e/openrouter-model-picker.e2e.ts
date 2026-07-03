@@ -44,9 +44,17 @@ async function startOpenRouterModelServer(): Promise<{
   close: () => Promise<void>
 }> {
   const server: Server = createServer((req, res) => {
-    if ((req.url ?? '').endsWith('/models')) {
+    const url = req.url ?? ''
+    if (url.endsWith('/models')) {
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify(MODELS_PAYLOAD))
+      return
+    }
+    // `/key` is the auth probe validateOpenRouterApiKey hits before the picker
+    // will list the provider; 200 marks the seeded fixture key as usable.
+    if (url.endsWith('/key')) {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ data: { label: 'e2e-key', usage: 0, limit: null } }))
       return
     }
     res.writeHead(404)
