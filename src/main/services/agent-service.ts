@@ -183,6 +183,7 @@ export async function runAgent(
         priorMessages,
         signal: controller.signal,
         onChunk: sendChunk,
+        registry,
         ...(acpSelection?.model ? { model: acpSelection.model } : {}),
       })
       sendChunk({ type: 'done', stopReason: result.stopReason })
@@ -284,6 +285,14 @@ export async function runAgent(
     const provider = await buildProvider(model)
     const subagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
     const subagentUsageModel = subagentRoute?.usageModel ?? model
+    // Local routing was asked for (cloud parent + setting on) but no local
+    // route resolved (LM Studio down / no model): the fallback to the cloud
+    // parent model is silent, so stamp it on subagent cards (issue feedback).
+    const subagentLocalFallback =
+      subagentsEnabled &&
+      !subagentRoute &&
+      !isLocalChatModel(model) &&
+      getSetting<boolean>('localSubagentsEnabled', true)
 
     // Set when the turn runs any file-mutating tool, gating the post-turn review.
     let turnChangedFiles = false
@@ -467,6 +476,7 @@ export async function runAgent(
                 toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
                 onChunk: sendChunk,
                 usageModel: subagentUsageModel,
+                localFallback: subagentLocalFallback,
               })
               try {
                 return await registry.execute(name, args, signal)
@@ -484,6 +494,7 @@ export async function runAgent(
                 toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
                 onChunk: sendChunk,
                 usageModel: subagentUsageModel,
+                localFallback: subagentLocalFallback,
               })
               try {
                 return await registry.execute(name, args, signal)

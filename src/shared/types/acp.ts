@@ -1,4 +1,30 @@
 /**
+ * Seatbelt confinement for a spawned ACP agent process (issue #590). When set
+ * (and the project sandbox is active), the agent runs under the same
+ * workspace-scoped filesystem rules as native auto-run shell commands — writes
+ * confined to the workspace, home reads denied — with two agent-specific
+ * relaxations: `allowedDomains` (the agent must reach its LLM/auth endpoints)
+ * and `homeDirs` (its own config/state directories). When absent the agent
+ * spawns unsandboxed, as before.
+ */
+export interface AcpAgentSandboxConfig {
+  /** Domains the agent process may reach (e.g. its model API endpoints). */
+  allowedDomains: string[]
+  /**
+   * Home-relative paths (e.g. `.claude`) the agent may read and write for its
+   * own configuration, credentials, and state.
+   */
+  homeDirs?: string[]
+  /**
+   * Absolute scratch paths the agent hardcodes and may read/write; `${uid}`
+   * expands to the numeric user id. Needed because some agents ignore the
+   * $TMPDIR redirect — Claude Code keeps shell bookkeeping under
+   * `/tmp/claude-<uid>` and every Bash call EPERMs without it.
+   */
+  scratchPaths?: string[]
+}
+
+/**
  * Configuration for an external ACP agent that Copse (in its **Client role**)
  * can spawn and drive. These are persisted in settings and surfaced in the
  * model picker as `acp:<id>` entries.
@@ -25,6 +51,12 @@ export interface AcpAgentConfig {
    * agent on every open. Empty/absent when never detected or none are offered.
    */
   availableModels?: AcpModelChoice[]
+  /**
+   * Per-agent override of the seatbelt confines (issue #590). Absent = use the
+   * `KNOWN_ACP_AGENTS` catalog preset for this id (custom agents spawn
+   * unsandboxed); an object = custom confines; `false` = explicitly opt out.
+   */
+  sandbox?: AcpAgentSandboxConfig | false
   enabled: boolean
 }
 

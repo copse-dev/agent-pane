@@ -11,6 +11,10 @@ export const storageSet = (key: string, value: unknown): void => {
   store.set(key, value)
 }
 
+export const storageDelete = (key: string): void => {
+  store.delete(key)
+}
+
 /**
  * Serialized read-modify-write against a single key. The `update` callback gets
  * the current value and returns the next value to persist. Calls for the same

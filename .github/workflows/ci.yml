@@ -702,7 +702,25 @@ jobs:
     steps:
       - name: Check upstream job results
         run: |
-          if ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}; then
+          MODE="${{ needs.precheck.outputs.mode }}"
+          ANY_FAILURE=${{ contains(needs.*.result, 'failure') }}
+          ANY_BAD=${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+          CORE_OK=${{ needs.pick-runner.result == 'success' && needs.precheck.result == 'success' }}
+          # Skip-mode runs (screenshots-only pushes, e.g. the e2e screenshot
+          # bot's own commits) intentionally do not execute check/build/e2e;
+          # those jobs surface as 'cancelled', which must not fail the gate —
+          # that painted every bot push red and blocked auto-merge (issue
+          # #609). Genuine failures still fail even in skip mode.
+          if [ "$MODE" = "skip" ]; then
+            if $ANY_FAILURE || ! $CORE_OK; then
+              echo "Skip-mode run has a genuine failure:"
+              echo '${{ toJSON(needs) }}'
+              exit 1
+            fi
+            echo "All CI jobs passed (heavy jobs intentionally skipped: mode=skip)."
+            exit 0
+          fi
+          if $ANY_BAD; then
             echo "One or more CI jobs failed or were cancelled:"
             echo '${{ toJSON(needs) }}'
             exit 1

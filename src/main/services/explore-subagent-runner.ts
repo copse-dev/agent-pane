@@ -13,6 +13,8 @@ export interface ExploreSubagentRunnerContext {
   toolSchemaReserve: number
   onChunk: (chunk: StreamChunk) => void
   usageModel: string
+  /** Local subagent routing was requested but unavailable; run uses the cloud model. */
+  localFallback?: boolean
 }
 
 export type ExploreSubagentRunner = (opts: {
@@ -43,6 +45,7 @@ export function getExploreSubagentRunner(): ExploreSubagentRunner | null {
       signal,
       onChunk: ctx.onChunk,
       usageModel: ctx.usageModel,
+      ...(ctx.localFallback !== undefined ? { localFallback: ctx.localFallback } : {}),
     })
     addSubagentUsage(result.usage)
     return result

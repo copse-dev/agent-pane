@@ -1,6 +1,6 @@
 import { attachMermaidExpand } from './mermaid-expand.ts'
 import { renderMermaidFallback } from './mermaid-fallback.ts'
-import { mermaidSourceCandidates, prepareMermaidSource } from './mermaid-source.ts'
+import { mermaidSourceCandidates, prepareMermaidSource } from '@copse/streaming-markdown'
 
 type MermaidModule = typeof import('mermaid').default
 

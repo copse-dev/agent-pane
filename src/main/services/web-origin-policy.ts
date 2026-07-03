@@ -1,5 +1,13 @@
 import { isIP } from 'node:net'
 import { DEFAULT_WEB_ALLOWED_ORIGINS } from '@shared/web-origins.ts'
+import {
+  isLoopbackHostname,
+  isPrivateOrLinkLocalHost,
+  normalizeHostname,
+  validateCredentialBaseUrl,
+} from '@shared/llm/credential-url.ts'
+
+export { isLoopbackHostname } from '@shared/llm/credential-url.ts'
 
 export {
   DEFAULT_WEB_ALLOWED_ORIGINS,
@@ -18,11 +26,6 @@ interface OriginPattern {
 }
 
 const temporaryAllowedOrigins = new Set<string>()
-
-function normalizeHostname(hostname: string): string {
-  const host = hostname.trim().toLowerCase().replace(/\.$/, '')
-  return host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host
-}
 
 function normalizePort(url: URL): string {
   if (url.port) return url.port
@@ -104,11 +107,6 @@ export function parseFetchUrl(input: string): URL {
   return url
 }
 
-export function isLoopbackHostname(hostname: string): boolean {
-  const host = normalizeHostname(hostname)
-  return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]'
-}
-
 /**
  * Validate a base URL that will carry a secret credential (e.g. the Cursor API
  * key Authorization header). Requires https:, except http: is allowed only for
@@ -117,62 +115,19 @@ export function isLoopbackHostname(hostname: string): boolean {
  * Returns the normalized URL string, or throws on invalid input.
  */
 export function validateRemoteAgentBaseUrl(value: string): string {
-  const raw = value.trim()
-  if (!raw) throw new Error('Remote agent base URL cannot be blank')
-
-  let url: URL
-  try {
-    url = new URL(raw)
-  } catch {
-    throw new Error(`Remote agent base URL is not a valid URL: ${value}`)
-  }
-
-  if (url.username || url.password) {
-    throw new Error('Remote agent base URL must not include embedded credentials')
-  }
-
-  if (url.protocol === 'https:') return url.toString()
-
-  if (url.protocol === 'http:') {
-    if (isLoopbackHostname(url.hostname)) return url.toString()
-    throw new Error('Remote agent base URL may only use http: for loopback hosts')
-  }
-
-  throw new Error(`Remote agent base URL must use https: ${value}`)
+  return validateCredentialBaseUrl(value, 'Remote agent base URL')
 }
 
 function assertLowRiskHost(hostname: string): void {
   const host = normalizeHostname(hostname)
   if (isLoopbackHostname(host)) return
 
-  const ipVersion = isIP(host)
-  if (ipVersion === 4) {
-    const [a = 0, b = 0] = host.split('.').map((part) => Number.parseInt(part, 10))
-    const privateOrSpecial =
-      a === 0 ||
-      a === 10 ||
-      a === 127 ||
-      a === 169 ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      (a === 100 && b >= 64 && b <= 127)
-    if (privateOrSpecial) throw new Error(`fetch_url blocks private or link-local IPs: ${host}`)
-    return
+  // Private/link-local IP literals share their classifier with the credential
+  // URL rule (credential-url.ts), so both paths block the same address ranges.
+  if (isPrivateOrLinkLocalHost(host)) {
+    throw new Error(`fetch_url blocks private or link-local IPs: ${host}`)
   }
-
-  if (ipVersion === 6) {
-    const compact = host.toLowerCase()
-    if (
-      compact === '::' ||
-      compact === '::1' ||
-      compact.startsWith('fc') ||
-      compact.startsWith('fd') ||
-      compact.startsWith('fe80:')
-    ) {
-      throw new Error(`fetch_url blocks private or link-local IPs: ${host}`)
-    }
-    return
-  }
+  if (isIP(host) !== 0) return
 
   // Single-label and mDNS names commonly resolve on local networks.
   if (!host.includes('.') || host.endsWith('.local')) {

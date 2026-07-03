@@ -2,6 +2,9 @@
   "name": "copse-panel",
   "version": "0.1.0-beta.1",
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "license": "Apache-2.0",
   "description": "Copse — AI coding assistant desktop app",
   "main": "dist/main/index.js",
@@ -25,7 +28,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint .",
     "check:dead-code": "node scripts/check-dead-code.mts",
-    "check:normalizer-parity": "node scripts/fetch-reference-normalizer.mts && node scripts/check-normalizer-parity.mts",
+    "check:normalizer-parity": "node packages/streaming-markdown/scripts/fetch-reference-normalizer.mts && node packages/streaming-markdown/scripts/check-normalizer-parity.mts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "node scripts/run-tests.mts",

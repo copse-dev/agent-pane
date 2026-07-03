@@ -1,5 +1,6 @@
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { baseSandboxConfig } from './config.ts'
+import { recordNetworkDenial } from './network-scope.ts'
 import { setProjectSandboxEnabled } from './spawn.ts'
 import { shutdownSandboxFsServer } from './sandbox-fs-server.ts'
 
@@ -34,7 +35,19 @@ export async function initProjectSandbox(): Promise<void> {
   }
 
   try {
-    await SandboxManager.initialize(baseSandboxConfig(), undefined, false)
+    // The ask-callback fires for each connection that misses the allowlist.
+    // We never grant from it (return false keeps the deny) — it exists to
+    // RECORD the blocked host:port, which ASRT's own 403 body doesn't name,
+    // so allowlist gaps are debuggable (e.g. the ACP turn's network audit).
+    await SandboxManager.initialize(
+      baseSandboxConfig(),
+      ({ host, port }) => {
+        recordNetworkDenial(host, port)
+        console.warn(`[project-sandbox] network denied: ${host}:${String(port ?? '?')}`)
+        return Promise.resolve(false)
+      },
+      false,
+    )
     setProjectSandboxEnabled(true)
     console.log('[project-sandbox] macOS seatbelt active (ASRT)')
   } catch (err) {

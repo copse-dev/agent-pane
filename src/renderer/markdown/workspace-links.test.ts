@@ -3,7 +3,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { renderMarkdown } from './renderer.ts'
+import { renderMarkdown } from '@copse/streaming-markdown'
 import { bindWorkspaceLinkClicks } from './workspace-links.ts'
 
 function apiWithFileReferences(

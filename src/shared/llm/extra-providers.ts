@@ -16,6 +16,7 @@
 // presets merged with the stored overrides/customs via `resolveExtraProviders`.
 
 import { OPENROUTER_MODEL_PREFIX } from './openrouter.ts'
+import { isSafeCredentialBaseUrl } from './credential-url.ts'
 import { REMOTE_AGENT_MODEL_PREFIX } from '../remote-agent.ts'
 
 /** Fallback context window for any provider/model whose size we don't know. */
@@ -475,6 +476,10 @@ function customToProvider(stored: StoredExtraProvider): ExtraProvider | null {
   const slug = typeof stored.slug === 'string' ? stored.slug.trim() : ''
   const baseUrl = typeof stored.baseUrl === 'string' ? stored.baseUrl.trim() : ''
   if (!SLUG_RE.test(slug) || !baseUrl) return null
+  // Fail closed: a base URL carries the provider's API key, so a tampered or
+  // synced settings.json that bypasses the write-time schema must not resurrect
+  // a custom provider pointing the key at an unsafe host. See credential-url.ts.
+  if (!isSafeCredentialBaseUrl(baseUrl)) return null
   const label = (typeof stored.label === 'string' && stored.label.trim()) || slug
   return {
     id: slug,

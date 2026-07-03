@@ -109,6 +109,18 @@ export interface SubagentSession {
   messages: SubagentMessage[]
   /** Token totals for this subagent's own loop (also folded into the parent thread total). */
   usage?: ModelUsage
+  /**
+   * Model this subagent ran on (`lmstudio:<id>` = local). Surfaced on the card
+   * so "did this explore actually use my local model?" is answerable per run.
+   */
+  model?: string
+  /**
+   * True when local subagent routing was enabled but unavailable (LM Studio
+   * down / no model resolvable), so the run silently used the cloud parent
+   * model. Rendered as a warning on the card — otherwise the fallback is
+   * indistinguishable from intentional cloud routing.
+   */
+  localFallback?: boolean
 }
 
 export interface SubagentMessage {

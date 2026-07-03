@@ -2,10 +2,10 @@ import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/thread-helpers.ts'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
-import { renderMarkdown } from '../markdown/renderer.ts'
-import { sanitizeRenderedMarkdown } from '../markdown/sanitize.ts'
+import { renderMarkdown } from '@copse/streaming-markdown'
+import { sanitizeRenderedMarkdown } from '@copse/streaming-markdown'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
-import { StreamingMarkdownRenderer } from '../markdown/streaming.ts'
+import { StreamingMarkdownRenderer } from '@copse/streaming-markdown'
 import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
@@ -196,6 +196,22 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
 
   const preview = session.summary ?? tc.result ?? ''
   card.append(createToolHeader(label, status, 'tool-card-header'))
+
+  // Which model ran this subagent — the whole point of local routing is
+  // invisible without it, and so is the silent cloud fallback when LM Studio
+  // is unreachable.
+  if (session.model) {
+    const isLocal = session.model.startsWith('lmstudio:')
+    const badge = el('div', { class: 'subagent-model' })
+    badge.textContent = isLocal
+      ? `${session.model.slice('lmstudio:'.length)} · local`
+      : session.model
+    if (session.localFallback) {
+      badge.textContent += ' — local model unavailable, ran on cloud'
+      badge.classList.add('subagent-model-fallback')
+    }
+    card.append(badge)
+  }
 
   if (preview && status !== 'running') {
     const previewEl = el('div', { class: 'subagent-summary-preview message-text' })

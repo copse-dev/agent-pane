@@ -89,11 +89,9 @@ export function assertFsWriteContent(content: string): void {
   }
 }
 
-const STORAGE_KEY = z.union([
-  z.literal('projects'),
-  z.literal('activeProjectId'),
-  z.string().regex(/^threads:[\w-]{1,128}$/),
-])
+const STORAGE_KEY = z.union([z.literal('projects'), z.literal('activeProjectId')])
+
+export const zProjectId = z.string().regex(/^[\w-]{1,128}$/)
 
 export function assertStorageKey(key: string): void {
   const parsed = STORAGE_KEY.safeParse(key)
