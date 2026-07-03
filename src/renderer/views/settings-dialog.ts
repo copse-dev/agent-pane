@@ -81,6 +81,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'advisorStrategyEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'roadmapPlansEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'piiRedactionEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'devtoolsShortcutEnabled', kind: 'checkbox', default: false, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
@@ -698,6 +699,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 genuinely needs a value it calls <code>reveal_pii</code>, which prompts you to approve
                 each reveal. Best-effort and Latin-script only — not a guarantee. The first run downloads
                 a small (~15&nbsp;MB) model; while off, nothing is loaded.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>DevTools shortcut</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="devtoolsShortcutEnabled" />
+                Enable <code>Ctrl+Shift+I</code> to toggle Developer Tools
+              </label>
+              <p class="field-hint">
+                Registers a keyboard shortcut to open the Electron DevTools window. Useful for
+                debugging the app itself (not the agent conversation). While off, no shortcut is
+                registered and the DevTools window cannot be opened.
               </p>
             </fieldset>
           </section>
