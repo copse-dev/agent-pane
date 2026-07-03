@@ -80,7 +80,7 @@ function findJsonRpcError(err: unknown): JsonRpcError | null {
   let current: unknown = err
   for (let depth = 0; depth < 8 && current != null; depth++) {
     if (current instanceof RequestError || isJsonRpcError(current)) {
-      const rpc = current as JsonRpcError
+      const rpc: JsonRpcError = current
       return { code: rpc.code, message: rpc.message, data: rpc.data }
     }
     current =
@@ -93,7 +93,9 @@ function findJsonRpcError(err: unknown): JsonRpcError | null {
 
 function formatJsonRpcErrorCode(code: number, message: string): string {
   const label = ACP_ERROR_CODE_LABELS[code]
-  return label ? `ACP error ${code} (${label}): ${message}` : `ACP error ${code}: ${message}`
+  return label
+    ? `ACP error ${String(code)} (${label}): ${message}`
+    : `ACP error ${String(code)}: ${message}`
 }
 
 function formatErrorData(data: unknown): string | null {
@@ -115,7 +117,10 @@ function formatErrorData(data: unknown): string | null {
       return null
     }
   }
-  return String(data)
+  if (typeof data === 'number' || typeof data === 'boolean' || typeof data === 'bigint') {
+    return String(data)
+  }
+  return null
 }
 
 function formatAcpAuthError(rpc: JsonRpcError | null, agentId?: string): string {
