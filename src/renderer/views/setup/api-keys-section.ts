@@ -109,11 +109,11 @@ export function createApiKeysSection(
   ): Promise<void> {
     const value = input.value.trim()
     if (!value) {
-      statusEl.textContent = ''
+      statusEl.replaceChildren()
       statusEl.className = 'key-status'
       return
     }
-    statusEl.textContent = 'Checking…'
+    setInlineStatus(statusEl, 'pending', 'Checking…')
     statusEl.className = 'key-status'
     const result = await api.settings.validateKey(provider, value)
     if (result.ok) {
