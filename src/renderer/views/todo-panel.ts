@@ -1,17 +1,18 @@
 import { el } from '../dom/helpers.ts'
+import { arrowRightIcon, checkIcon, circleIcon, closeIcon } from '../dom/icons.ts'
 import type { TodoItem, TodoStatus } from '@shared/types/todo.ts'
 import { todoProgress } from '@shared/todos/todo-logic.ts'
 
-function statusIcon(status: TodoStatus): string {
+function statusIcon(status: TodoStatus): SVGSVGElement {
   switch (status) {
     case 'completed':
-      return '✓'
+      return checkIcon('ui-icon ui-icon-sm')
     case 'cancelled':
-      return '—'
+      return closeIcon('ui-icon ui-icon-sm')
     case 'in_progress':
-      return '→'
+      return arrowRightIcon('ui-icon ui-icon-sm')
     default:
-      return '○'
+      return circleIcon('ui-icon ui-icon-sm')
   }
 }
 

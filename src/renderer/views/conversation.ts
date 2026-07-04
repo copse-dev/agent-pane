@@ -1,4 +1,5 @@
 import { el, clear } from '../dom/helpers.ts'
+import { arrowDownIcon, checkIcon, closeIcon, moreHorizontalIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/thread-helpers.ts'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
@@ -35,8 +36,10 @@ import {
   updateQueuedMessageText,
 } from '../controller/message-queue.ts'
 
-function statusIcon(status: ToolCall['status']): string {
-  return status === 'done' ? '✓' : status === 'error' ? '✕' : '⋯'
+function statusIcon(status: ToolCall['status']): SVGSVGElement {
+  if (status === 'done') return checkIcon('ui-icon ui-icon-sm')
+  if (status === 'error') return closeIcon('ui-icon ui-icon-sm')
+  return moreHorizontalIcon('ui-icon ui-icon-sm')
 }
 
 // The disclosure is omitted entirely when there are no arguments to show — e.g.
@@ -419,7 +422,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       'aria-label': 'Scroll to bottom',
       hidden: true,
     },
-    '↓',
+    arrowDownIcon('ui-icon'),
   )
   scrollArea.append(todoHost, list, scrollToBottomBtn)
 
