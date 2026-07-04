@@ -222,6 +222,34 @@ complete render. When the tokenizer commits the entire input (no pending tail),
 that display must also match the at-rest `renderMarkdown()` output. Set
 `STREAMING_FUZZ_ALL=1` to exercise every character index on long examples.
 
+### Performance benchmark (`scripts/bench-streaming.mts`, via `npm run bench:markdown`)
+
+Complements the correctness fuzz with a wall-clock benchmark (#618). It replays
+three fixtures token-by-token — a mix of medium CommonMark baseline examples, the
+`terms-of-service-streaming.md` agent output, and a synthetic wide-table + long-list
+worst case — through **both** streaming emitters and reports the median time to stream
+each to completion:
+
+```
+npm run bench:markdown              # defaults: iters=5 warmup=2 chunk=8
+npm run bench:markdown -- --iters 9 --chunk 4
+```
+
+| Column      | Meaning                                                           |
+| ----------- | ----------------------------------------------------------------- |
+| `string ms` | `renderStreamingMarkdown` — full re-render + sanitize each update |
+| `dom ms`    | `StreamingMarkdownRenderer.update` — incremental DOM patches      |
+| `dom/str`   | ratio of the two (lower = the incremental path is winning)        |
+
+Each fixture is capped at ~160 replay steps (the chunk size scales up with input) so
+the O(n²) string path can't blow up the run. Absolute numbers are machine-dependent —
+treat them as a **relative baseline**: the incremental DOM path pulls ahead on larger,
+structure-heavy inputs (`dom/str` well under 1), while on small docs the two are
+comparable (~1×) because the DOM-patch bookkeeping costs about as much as a cheap
+re-render. A regression is a large jump in either column — or the ratio climbing
+noticeably — for a modest input change: that is the super-linear behaviour the harness
+exists to catch. Run it before/after a streaming change and compare.
+
 ### Terms of Service fixture (`streaming-terms-of-service.test.ts`)
 
 Real-world agent output in `tests/fixtures/terms-of-service-streaming.md` — nbsp metadata,
