@@ -1,6 +1,7 @@
 /* Split into per-area files under ./global/. Imported in source order so the
    esbuild CSS bundle (and the cascade) is byte-identical to the old single file. */
 @import './global/base.css';
+@import './global/icons.css';
 @import './global/layout.css';
 @import './global/titlebar.css';
 @import './global/forms.css';

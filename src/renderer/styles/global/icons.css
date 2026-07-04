@@ -1,0 +1,34 @@
+/* Shared styling for the app's lucide-style outline icons (see
+   dom/outline-icon.ts and dom/icons.ts). Icons stroke in `currentColor` so they
+   inherit the surrounding text colour; size/weight come from these classes or a
+   component-specific override. Replaces the old Unicode glyphs (▶ ✕ ↻ …) that
+   some platforms promoted to colour-emoji presentation. */
+.ui-icon {
+  flex-shrink: 0;
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  color: currentColor;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: middle;
+}
+/* Smaller variant for dense chrome: twisties, inline chevrons. */
+.ui-icon-sm {
+  width: 12px;
+  height: 12px;
+}
+
+.ui-icon-dot {
+  stroke-width: 8;
+}
+
+.ui-inline-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: middle;
+}
