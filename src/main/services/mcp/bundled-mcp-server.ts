@@ -16,7 +16,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { readFile } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { z } from 'zod'
-import { resolveWorkspacePath } from './workspace.ts'
+import { resolveWorkspacePath } from '../workspace.ts'
 
 const MAX_ARTEFACT_BYTES = 512 * 1024
 

@@ -41,7 +41,7 @@ import {
 } from './agent-run-read-limits.ts'
 import { runWithAgentRunReadonly } from './agent-run-readonly.ts'
 import { isToolAllowedInReadonlyMode } from '@shared/tools/readonly-tools.ts'
-import { getMcpToolMeta } from './mcp-registry.ts'
+import { getMcpToolMeta } from './mcp/mcp-registry.ts'
 import { formatReadFileLimitHint } from '@shared/agent/read-file-limits.ts'
 import { setExploreSubagentContext } from './explore-subagent-runner.ts'
 import { setCurrentShellTaskId } from './shell-output-context.ts'

@@ -3,7 +3,7 @@ import { serveAcpAgentOverStdio, type AcpTurnRunner } from './acp-agent-server.t
 import { checkToolAvailability } from '../tool-availability.ts'
 import { createRegistry, registerSkillTools } from '../registry-bootstrap.ts'
 import { initSkillsRegistry } from '../skills-registry.ts'
-import { loadMcpServers } from '../mcp-registry.ts'
+import { loadMcpServers } from '../mcp/mcp-registry.ts'
 import { runAgent, abortAgent } from '../agent-service.ts'
 import { setApprovalHandler, type ApprovalRequest } from '../approval.ts'
 import { setStagedDiffResolver } from '../diff-queue.ts'

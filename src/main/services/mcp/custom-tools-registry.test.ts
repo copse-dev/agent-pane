@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import * as fs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ToolRegistry } from './tool-registry.ts'
+import { ToolRegistry } from '../tool-registry.ts'
 import { loadCustomToolsFromDir } from './custom-tools-registry.ts'
 
 // Exercises the real fs + dynamic-import loader against on-disk fixture modules.

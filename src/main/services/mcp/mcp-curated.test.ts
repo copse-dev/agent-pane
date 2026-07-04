@@ -8,7 +8,7 @@ import {
   getEnabledCuratedServerNames,
   setCuratedServerEnabled,
 } from './mcp-curated.ts'
-import { storageGet, storageSet } from './storage.ts'
+import { storageGet, storageSet } from '../storage.ts'
 import type { McpServerStatus } from '@shared/types/mcp.ts'
 
 const ENABLED_KEY = 'mcpEnabledCuratedServers'

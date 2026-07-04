@@ -21,7 +21,7 @@ import { setApprovalHandler } from './approval.ts'
 import {
   rememberCustomTool,
   setCustomToolRequiresApprovalForTests,
-} from './custom-tools-registry.ts'
+} from './mcp/custom-tools-registry.ts'
 
 describe('SANDBOX_TOOLS', () => {
   it('includes read_skill so skill reads auto-run without approval', () => {

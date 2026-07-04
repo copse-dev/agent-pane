@@ -31,7 +31,7 @@ import {
 } from './acp-client.ts'
 import { getAcpAgent, resolveAcpSandbox } from './acp-agent-registry.ts'
 import { acquireAcpSession, disposeAcpSession } from './acp-session-pool.ts'
-import { listForwardableMcpServers } from '../mcp-registry.ts'
+import { listForwardableMcpServers } from '../mcp/mcp-registry.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import { isAcpPermissionRemembered, rememberAcpPermission } from './acp-permission-grants.ts'
 import { permissionKindLabel, presentPermissionRequest } from './acp-approval-presentation.ts'

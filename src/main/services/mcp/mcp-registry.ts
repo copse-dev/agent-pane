@@ -9,12 +9,12 @@ import { join } from 'node:path'
 import { app } from 'electron'
 import { z } from 'zod'
 import type { McpServerConfig, McpServerStatus, McpToolAnnotations } from '@shared/types/mcp.ts'
-import type { ToolRegistry } from './tool-registry.ts'
-import { envForRendererChildProcess } from './child-process-env.ts'
-import { getWorkspaceRoot } from './workspace.ts'
-import { getSetting } from './settings.ts'
-import { storageGet, storageUpdate } from './storage.ts'
-import { parseStringList } from './storage-schema.ts'
+import type { ToolRegistry } from '../tool-registry.ts'
+import { envForRendererChildProcess } from '../child-process-env.ts'
+import { getWorkspaceRoot } from '../workspace.ts'
+import { getSetting } from '../settings.ts'
+import { storageGet, storageUpdate } from '../storage.ts'
+import { parseStringList } from '../storage-schema.ts'
 import {
   interpolateServerConfig,
   mcpToolName,
@@ -26,15 +26,15 @@ import {
 } from './mcp-config.ts'
 import { flattenMcpContent, sanitizeMcpInputSchema } from './mcp-schema.ts'
 import { createBundledMcpServers } from './bundled-mcp-server.ts'
-import { dispatchCanvasArtefacts } from './canvas-dispatch.ts'
+import { dispatchCanvasArtefacts } from '../canvas-dispatch.ts'
 import { CURATED_MCP_SOURCE, getEnabledCuratedConfigs } from './mcp-curated.ts'
-import { isWorkspaceTrusted, setWorkspaceTrusted } from './workspace-trust.ts'
-import { appendFlatCapped, COMMAND_OUTPUT_MAX_BYTES } from './subprocess-output-cap.ts'
+import { isWorkspaceTrusted, setWorkspaceTrusted } from '../workspace-trust.ts'
+import { appendFlatCapped, COMMAND_OUTPUT_MAX_BYTES } from '../subprocess-output-cap.ts'
 import {
   discoverCursorPluginRoots,
   isCursorPluginMcpSource,
   resolvePluginMcpConfigPath,
-} from './cursor-plugins.ts'
+} from '../cursor-plugins.ts'
 
 const CONNECT_TIMEOUT_MS = 30_000
 const GRANTS_STORAGE_KEY = 'mcp-remembered-grants'

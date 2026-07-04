@@ -41,13 +41,13 @@ import {
   webAllowedOriginsWithDefaults,
 } from './web-origin-policy.ts'
 import { formatUnsandboxedPromptBody } from './sandbox-failure.ts'
-import { getMcpToolMeta, isMcpToolRemembered, rememberMcpTool } from './mcp-registry.ts'
-import { CUSTOM_TOOL_PREFIX, customToolLabel } from './custom-tools-config.ts'
+import { getMcpToolMeta, isMcpToolRemembered, rememberMcpTool } from './mcp/mcp-registry.ts'
+import { CUSTOM_TOOL_PREFIX, customToolLabel } from './mcp/custom-tools-config.ts'
 import {
   customToolRequiresApproval,
   isCustomToolRemembered,
   rememberCustomTool,
-} from './custom-tools-registry.ts'
+} from './mcp/custom-tools-registry.ts'
 import { isAgentRunReadonly } from './agent-run-readonly.ts'
 import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
 

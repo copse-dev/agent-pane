@@ -16,8 +16,8 @@ import {
   loadMcpServers,
   shutdownMcpServers,
   getMcpServerStatuses,
-} from './services/mcp-registry.ts'
-import { loadCustomTools } from './services/custom-tools-registry.ts'
+} from './services/mcp/mcp-registry.ts'
+import { loadCustomTools } from './services/mcp/custom-tools-registry.ts'
 import { disposeAllAcpSessions } from './services/acp/acp-session-pool.ts'
 import { initApproval } from './services/approval.ts'
 import { initAskUser } from './services/ask-user.ts'

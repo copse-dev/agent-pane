@@ -4,7 +4,7 @@ import { normalizeToolExecuteResult } from '@shared/types'
 import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
 import type { PermissionCheck } from './permission-policy.ts'
 import { isAgentRunReadonly } from './agent-run-readonly.ts'
-import { getMcpToolMeta } from './mcp-registry.ts'
+import { getMcpToolMeta } from './mcp/mcp-registry.ts'
 
 type PermissionGateFn = (check: PermissionCheck) => Promise<boolean>
 

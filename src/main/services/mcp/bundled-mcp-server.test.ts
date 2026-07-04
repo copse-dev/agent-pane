@@ -9,7 +9,7 @@ import {
   type BundledMcpServer,
 } from './bundled-mcp-server.ts'
 import { extractUiResources } from './mcp-schema.ts'
-import { setWorkspaceRootForTest } from './workspace.ts'
+import { setWorkspaceRootForTest } from '../workspace.ts'
 
 describe('bundled MCP servers', () => {
   let servers: BundledMcpServer[] = []

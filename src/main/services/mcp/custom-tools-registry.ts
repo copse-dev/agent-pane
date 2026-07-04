@@ -4,9 +4,9 @@ import type { Dirent } from 'node:fs'
 import { extname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app } from 'electron'
-import type { ToolRegistry } from './tool-registry.ts'
-import { storageGet, storageUpdate } from './storage.ts'
-import { parseStringList } from './storage-schema.ts'
+import type { ToolRegistry } from '../tool-registry.ts'
+import { storageGet, storageUpdate } from '../storage.ts'
+import { parseStringList } from '../storage-schema.ts'
 import {
   CUSTOM_TOOL_PREFIX,
   customToolLabel,

@@ -102,8 +102,8 @@ import {
   reloadMcpServers,
   setMcpServerUserEnabled,
   setWorkspaceTrustAndReload,
-} from '../services/mcp-registry.ts'
-import { getCuratedServerStatuses, setCuratedServerEnabled } from '../services/mcp-curated.ts'
+} from '../services/mcp/mcp-registry.ts'
+import { getCuratedServerStatuses, setCuratedServerEnabled } from '../services/mcp/mcp-curated.ts'
 import { isWorkspaceTrusted } from '../services/workspace-trust.ts'
 import {
   setMockScript,
