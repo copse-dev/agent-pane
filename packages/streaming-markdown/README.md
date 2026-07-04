@@ -176,6 +176,37 @@ Bumping the spec is just `npm i -D commonmark-spec@<version>` followed by a
 re-baseline; the version is read from the installed package and pinned in the
 baseline.
 
+#### Raw-HTML policy and the in-scope conformance ceiling (#600)
+
+**100% CommonMark is deliberately not the goal.** The renderer escapes untrusted
+HTML rather than passing it through — the sanitize-at-the-sink invariant above.
+Two spec sections are therefore expected to fail by design:
+
+| Section     | Baseline | Why it caps out                                                                      |
+| ----------- | -------- | ------------------------------------------------------------------------------------ |
+| HTML blocks | 2/44     | Full conformance needs `<script>`/`<style>`/`<div>`/arbitrary custom tags verbatim.  |
+| Raw HTML    | 8/20     | Same — no inline allowlist ever reaches 20/20 without passing attacker HTML through. |
+
+The only raw HTML that passes through is the **benign attribute-less inline
+allowlist** (`b i u s del ins sub sup kbd mark br`, `BENIGN_RAW_INLINE_TAG_RE` in
+`escape.ts`), mirrored by the DOMPurify sink. Everything with attributes, and all
+block/structural raw HTML, stays escaped.
+
+So the realistic ceiling excludes those **64 HTML examples**: **588 in-scope
+examples**, of which the renderer currently satisfies **~492 (~84%)**. Counting all
+652 examples the baseline is **502 (~77%)**. Both numbers move as non-HTML
+conformance grows — `summaryBySection` in the baseline JSON carries the live
+per-section counts; treat the two headline figures here as approximate.
+
+**Passthrough is a future library option, not an app mode.** A `rawHtml:
+'escape' | 'passthrough'` switch (see #600) would let the conformance harness
+measure the true spec ceiling while the app keeps `escape` + sink sanitization;
+`escape` stays the default because passthrough drops from two defense layers to
+one. This belongs to the extracted package's public API (#601) and is not
+implemented yet. HTML **block recognition** in `block-tokenizer.ts` can still land
+with emission escaped, and `<details>`/`<summary>` stay excluded until it does
+(they pair across blocks and would emit unbalanced tags mid-stream).
+
 ### Streaming convergence fuzz (`streaming-convergence.test.ts`, via `npm test`)
 
 Reuses the same CommonMark baseline examples (`tests/commonmark/baseline-examples.ts`)
