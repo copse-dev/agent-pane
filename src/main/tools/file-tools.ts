@@ -8,7 +8,7 @@ import {
   getWorkspaceRoot,
   isInsideChatStore,
 } from '../services/workspace.ts'
-import { runCommand } from '../services/command-runner.ts'
+import { runCommand } from '../services/exec/command-runner.ts'
 import { getIndex } from '../services/search/file-index.ts'
 import micromatch from 'micromatch'
 import { getAgentRunReadFileLimits } from '../services/agent-run-read-limits.ts'

@@ -9,7 +9,7 @@ import {
   type CursorHookSummary,
   type CursorPermissionHookEvent,
 } from '@shared/types/cursor-hooks.ts'
-import { envForRendererChildProcess } from './child-process-env.ts'
+import { envForRendererChildProcess } from './exec/child-process-env.ts'
 
 /** Hooks that take longer than this are treated as failed-open (allow). */
 const HOOK_TIMEOUT_MS = 5_000

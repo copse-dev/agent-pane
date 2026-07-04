@@ -9,7 +9,7 @@ import {
   destroyTerminalSession,
   resizeTerminalSession,
   writeTerminalSession,
-} from '../services/terminal-service.ts'
+} from '../services/exec/terminal-service.ts'
 
 const terminalCreateSchema = z.tuple([
   z.number().int().min(1).max(500),

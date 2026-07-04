@@ -1,7 +1,7 @@
 import { setPriority } from 'node:os'
-import { getWorkspaceRoot } from './workspace.ts'
+import { getWorkspaceRoot } from '../workspace.ts'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
-import { afterSandboxedCommand, spawnInProjectSandbox } from '../project-sandbox/index.ts'
+import { afterSandboxedCommand, spawnInProjectSandbox } from '../../project-sandbox/index.ts'
 import { envForRendererChildProcess } from './child-process-env.ts'
 import {
   appendFlatCapped,

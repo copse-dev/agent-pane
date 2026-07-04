@@ -1,4 +1,4 @@
-import { runCommand } from '../command-runner.ts'
+import { runCommand } from '../exec/command-runner.ts'
 import { isRgAvailable } from '../tool-availability.ts'
 import { toRelativePath } from '../workspace.ts'
 import * as fs from 'node:fs/promises'

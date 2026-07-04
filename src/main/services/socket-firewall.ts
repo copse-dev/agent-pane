@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { getMainWindow } from '../windows/create-main-window.ts'
-import { getCurrentShellTaskId } from './shell-output-context.ts'
+import { getCurrentShellTaskId } from './exec/shell-output-context.ts'
 
 /**
  * Socket Firewall (`sfw`) integration. `sfw` wraps a package manager, proxies its

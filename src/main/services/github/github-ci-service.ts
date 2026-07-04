@@ -2,7 +2,7 @@ import {
   COMMAND_OUTPUT_MAX_BYTES,
   COMMAND_RUNNER_LONG_TIMEOUT_MS,
   truncateCommandOutput,
-} from '../subprocess-output-cap.ts'
+} from '../exec/subprocess-output-cap.ts'
 import { parseGhJson, runGh } from './gh-service.ts'
 
 export type CiOverallState = 'pending' | 'success' | 'failure' | 'no_checks'

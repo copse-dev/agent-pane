@@ -13,7 +13,7 @@
  */
 import type { ChildProcess } from 'node:child_process'
 import { getWorkspaceRoot } from '../services/workspace.ts'
-import { terminateProcessTree } from '../services/subprocess-kill.ts'
+import { terminateProcessTree } from '../services/exec/subprocess-kill.ts'
 import { fsWorkerSandboxOverlay } from './config.ts'
 import { afterSandboxedCommand, spawnInProjectSandbox } from './spawn.ts'
 import { sandboxFsWorkerPath, SANDBOX_FS_WORKER_STDOUT_MAX_BYTES } from './sandbox-fs-client.ts'

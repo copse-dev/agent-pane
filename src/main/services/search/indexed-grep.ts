@@ -1,4 +1,4 @@
-import { runCommand } from '../command-runner.ts'
+import { runCommand } from '../exec/command-runner.ts'
 import { toRelativePath } from '../workspace.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
 

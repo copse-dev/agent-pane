@@ -1,4 +1,4 @@
-import { runCommand } from '../command-runner.ts'
+import { runCommand } from '../exec/command-runner.ts'
 import { runGh, parseGhJson } from './gh-service.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import { isGitAvailable, isGhAvailable } from '../tool-availability.ts'

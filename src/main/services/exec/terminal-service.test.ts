@@ -7,7 +7,7 @@ import {
   resizeTerminalSession,
   writeTerminalSession,
 } from './terminal-service.ts'
-import { setWorkspaceRootForTest } from './workspace.ts'
+import { setWorkspaceRootForTest } from '../workspace.ts'
 
 const OWNER = 1
 const OTHER_OWNER = 2

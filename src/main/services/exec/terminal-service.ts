@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import type { BrowserWindow } from 'electron'
 import type { IDisposable, IPty } from 'node-pty'
-import { spawnPtyInProjectSandbox } from '../project-sandbox/index.ts'
+import { spawnPtyInProjectSandbox } from '../../project-sandbox/index.ts'
 import { envForRendererChildProcess } from './child-process-env.ts'
-import { getWorkspaceRoot } from './workspace.ts'
+import { getWorkspaceRoot } from '../workspace.ts'
 
 interface PtyListeners {
   onData: IDisposable

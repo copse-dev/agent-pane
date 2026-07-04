@@ -1,4 +1,4 @@
-import { runCommand } from './command-runner.ts'
+import { runCommand } from './exec/command-runner.ts'
 import { probeIndexedGrepBackends } from './search/indexed-grep.ts'
 import { isSemanticBackendBundled, probeSemanticBackends } from './search/semantic-index.ts'
 

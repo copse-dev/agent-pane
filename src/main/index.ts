@@ -67,7 +67,7 @@ import {
   parseIpcArgs,
   zThreadId,
 } from './ipc/ipc-guards.ts'
-import { destroyAllTerminalSessions } from './services/terminal-service.ts'
+import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 
 // Prevent multiple instances stacking invisible windows at the same position.
 // A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.

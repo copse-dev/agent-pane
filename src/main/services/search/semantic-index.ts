@@ -2,8 +2,8 @@ import { cpus } from 'node:os'
 import { join, resolve } from 'node:path'
 import { app } from 'electron'
 import { getBundledGortexPath } from './bundled-semantic.ts'
-import { runCommand, type RunCommandOptions } from '../command-runner.ts'
-import { COMMAND_RUNNER_LONG_TIMEOUT_MS } from '../subprocess-output-cap.ts'
+import { runCommand, type RunCommandOptions } from '../exec/command-runner.ts'
+import { COMMAND_RUNNER_LONG_TIMEOUT_MS } from '../exec/subprocess-output-cap.ts'
 import { toRelativePath } from '../workspace.ts'
 
 /**
