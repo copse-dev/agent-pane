@@ -1,5 +1,6 @@
 import type { ApiClient } from '../../../preload/api.d.ts'
 import { el } from '../../dom/helpers.ts'
+import { setInlineStatus } from '../../dom/inline-status.ts'
 
 // Fixed cloud providers with bespoke key validation. OpenAI-compatible presets
 // (Mistral/Gemini/DeepSeek) and user customs are managed in the separate
@@ -108,18 +109,18 @@ export function createApiKeysSection(
   ): Promise<void> {
     const value = input.value.trim()
     if (!value) {
-      statusEl.textContent = ''
+      statusEl.replaceChildren()
       statusEl.className = 'key-status'
       return
     }
-    statusEl.textContent = 'Checking…'
+    setInlineStatus(statusEl, 'pending', 'Checking…')
     statusEl.className = 'key-status'
     const result = await api.settings.validateKey(provider, value)
     if (result.ok) {
-      statusEl.textContent = '✓ Valid key'
+      setInlineStatus(statusEl, 'ok', 'Valid key')
       statusEl.className = keyStatusClass(true)
     } else {
-      statusEl.textContent = `✗ ${result.error ?? 'Invalid key'}`
+      setInlineStatus(statusEl, 'error', result.error ?? 'Invalid key')
       statusEl.className = keyStatusClass(false)
     }
   }
@@ -150,7 +151,7 @@ export function createApiKeysSection(
     for (const field of fields) {
       const saved = await api.settings.getKey(field.provider)
       if (!field.input.value.trim()) {
-        field.status.textContent = saved ? '● saved' : '○ not set'
+        setInlineStatus(field.status, saved ? 'filled' : 'pending', saved ? 'saved' : 'not set')
         field.status.className = 'key-status'
       }
     }

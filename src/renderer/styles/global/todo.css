@@ -71,7 +71,9 @@
 .todo-status-icon {
   flex-shrink: 0;
   width: 1rem;
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-muted);
 }
 .todo-item-in_progress .todo-status-icon {
@@ -112,6 +114,10 @@
 }
 .review-panel-error {
   border-left-color: var(--danger, #d9534f);
+}
+.review-panel-icon {
+  display: inline-flex;
+  align-items: center;
 }
 .review-panel-header {
   display: flex;
