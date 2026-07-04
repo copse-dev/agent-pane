@@ -123,7 +123,7 @@ import { parseUsageRecordInput } from '../services/usage-record-schema.ts'
 import {
   fetchRemoteArtifactImageDataUrl,
   resolveRemoteArtifactDownloadUrl,
-} from '../services/remote-agent-client.ts'
+} from '../services/remote/remote-agent-client.ts'
 import {
   gatewayListDir,
   gatewayReadFile,

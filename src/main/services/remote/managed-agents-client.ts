@@ -23,10 +23,10 @@ import {
   REMOTE_AGENT_MODEL_PREFIX,
   REMOTE_AGENT_PROVIDER_ANTHROPIC,
 } from '@shared/remote-agent.ts'
-import { getSetting, resolveApiKey } from './settings.ts'
-import { validateRemoteAgentBaseUrl } from './security/web-origin-policy.ts'
-import { getCurrentBranchName } from './github/git-service.ts'
-import { storageGet, storageSet } from './storage.ts'
+import { getSetting, resolveApiKey } from '../settings.ts'
+import { validateRemoteAgentBaseUrl } from '../security/web-origin-policy.ts'
+import { getCurrentBranchName } from '../github/git-service.ts'
+import { storageGet, storageSet } from '../storage.ts'
 import {
   parseGithubOwnerRepo,
   resolveRemoteAgentRepository,

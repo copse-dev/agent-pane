@@ -1,7 +1,7 @@
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
 import type { RemoteAgentProvider } from '@shared/remote-agent.ts'
-import { getGithubRepoSlug } from './github/git-service.ts'
-import { getActiveProjectRoot, getWorkspaceRoot } from './workspace.ts'
+import { getGithubRepoSlug } from '../github/git-service.ts'
+import { getActiveProjectRoot, getWorkspaceRoot } from '../workspace.ts'
 
 /**
  * Options for a single remote-agent turn. Shared by every provider adapter

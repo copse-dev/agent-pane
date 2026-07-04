@@ -15,8 +15,8 @@ import {
   formatRemoteArtifactsSummary,
   resolveRemoteAgentRepository,
 } from './remote-agent-client.ts'
-import { storageSet } from './storage.ts'
-import { setWorkspaceRootForTest } from './workspace.ts'
+import { storageSet } from '../storage.ts'
+import { setWorkspaceRootForTest } from '../workspace.ts'
 
 afterEach(() => {
   storageSet('projects', [])

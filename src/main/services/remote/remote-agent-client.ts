@@ -15,10 +15,10 @@ import {
   REMOTE_AGENT_PROVIDER_CURSOR,
   type RemoteAgentProvider,
 } from '@shared/remote-agent.ts'
-import { getApiKey, getSetting } from './settings.ts'
-import { validateRemoteAgentBaseUrl } from './security/web-origin-policy.ts'
-import { getCurrentBranchName } from './github/git-service.ts'
-import { storageGet, storageSet } from './storage.ts'
+import { getApiKey, getSetting } from '../settings.ts'
+import { validateRemoteAgentBaseUrl } from '../security/web-origin-policy.ts'
+import { getCurrentBranchName } from '../github/git-service.ts'
+import { storageGet, storageSet } from '../storage.ts'
 import { clearManagedAgentSession, runManagedAgentFromSettings } from './managed-agents-client.ts'
 import {
   resolveRemoteAgentRepository,
