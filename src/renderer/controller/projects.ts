@@ -2,7 +2,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { Thread } from '@shared/types'
 import { createThread, normalizeBlankThreads, switchThread } from '@shared/store/thread-helpers.ts'
-import { loadThreads, saveThreads, saveProjects } from './persistence.ts'
+import { loadThreads, flushProjectThreads, saveProjects } from './persistence.ts'
 import { resumePendingQueues } from './message-queue.ts'
 import {
   captureProjectViewState,
@@ -131,7 +131,7 @@ async function finishActivate(
   if (gen !== switchGeneration) return
 
   if (outgoingId && outgoingId !== id) {
-    await saveThreads(api, outgoingId, outgoingThreads)
+    await flushProjectThreads(api, outgoingId, outgoingThreads)
   }
   if (gen !== switchGeneration) return
 

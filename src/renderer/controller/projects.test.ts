@@ -52,8 +52,11 @@ function makeApi(handlers: {
     },
     threads: {
       loadProject: handlers.loadProjectThreads ?? (async (): Promise<Thread[]> => []),
-      saveOne: async (): Promise<void> => undefined,
-      saveProject: async (): Promise<void> => undefined,
+      create: async (): Promise<void> => undefined,
+      appendMessage: async (): Promise<void> => undefined,
+      updateMeta: async (): Promise<void> => undefined,
+      delete: async (): Promise<void> => undefined,
+      catalog: async (): Promise<never[]> => [],
     },
   } as unknown as ApiClient
 }
