@@ -2,6 +2,7 @@ import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/thread-helpers.ts'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
+import { attachTableCopyButtons } from '../markdown/table-copy.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { sanitizeRenderedMarkdown } from '@copse/streaming-markdown'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
@@ -167,6 +168,9 @@ function setAssistantMarkdown(
   streamingRenderers.delete(el)
   el.innerHTML = sanitizeRenderedMarkdown(renderMarkdown(display))
   attachCodeBlockCopyButtons(el)
+  // Tables only on the committed final render — during streaming they are
+  // patched with pending rows, so wrapping them then would fight the DOM sync.
+  attachTableCopyButtons(el)
   void annotateFileReferences(el, api)
   hydrateRemoteArtifactImages(el, api)
   void renderMermaidIn(el)
