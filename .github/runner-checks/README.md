@@ -16,8 +16,8 @@ registration mechanics, different payload:
 
 The check tier never starts Electron, so this image omits the entire
 Chromium/Xvfb/font stack — it builds and boots much faster while still matching
-GitHub-hosted `ubuntu-latest` (Ubuntu 24.04 / glibc 2.39) so the vendored
-`codesearch` prebuilt and the native `npm ci` builds behave identically to CI.
+GitHub-hosted `ubuntu-latest` (Ubuntu 24.04 / glibc 2.39) so the native `npm ci`
+builds behave identically to CI.
 
 ## Prerequisites
 
@@ -58,7 +58,7 @@ docker compose down
 ## Baked dependencies (warm start)
 
 The image runs the repo's `npm ci` **at build time** and stashes the resulting
-`node_modules` + `vendor/codesearch` under `/opt/deps/tree` (recording the
+`node_modules` + `vendor/gortex` under `/opt/deps/tree` (recording the
 `package-lock.json` hash alongside). These runners are ephemeral — one job per
 pristine container, no volumes — so a job would otherwise restore ~525 MB of
 `node_modules` from the GitHub Actions cache service on its first step; on freshly

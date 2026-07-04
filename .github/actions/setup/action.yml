@@ -2,8 +2,8 @@ name: Setup
 description: >-
   Install Node, ripgrep, and project dependencies with a cached node_modules.
   On a cache hit the slow postinstall steps (node-pty electron-rebuild + the
-  vendored codesearch download) are skipped entirely, since their outputs live
-  inside the cached node_modules / vendor/codesearch trees.
+  vendored gortex download) are skipped entirely, since their outputs live
+  inside the cached node_modules / vendor/gortex trees.
 
 runs:
   using: composite
@@ -43,7 +43,7 @@ runs:
         HOMEBREW_NO_ANALYTICS: '1'
     # Warm-start on self-hosted runners whose image baked the dependency tree
     # (see .github/runner*/Dockerfile). If the baked layer's lockfile hash still
-    # matches this checkout, seed node_modules + vendor/codesearch straight from
+    # matches this checkout, seed node_modules + vendor/gortex straight from
     # local disk (a few seconds) instead of restoring ~525 MB from the Actions
     # cache service — which crawled at ~1 MB/s (≈8 min) on freshly reprovisioned
     # runners. Runs AFTER checkout (checkout's `clean` would wipe a pre-placed
@@ -62,11 +62,11 @@ runs:
             # copy is caught (not fatal under set -e) — clean up and fall back.
             if rm -rf node_modules \
                && cp -a "${COPSE_BAKED_DEPS}/node_modules" node_modules \
-               && { [ ! -d "${COPSE_BAKED_DEPS}/vendor/codesearch" ] \
-                    || { mkdir -p vendor && rm -rf vendor/codesearch \
-                         && cp -a "${COPSE_BAKED_DEPS}/vendor/codesearch" vendor/codesearch; }; }; then
+               && { [ ! -d "${COPSE_BAKED_DEPS}/vendor/gortex" ] \
+                    || { mkdir -p vendor && rm -rf vendor/gortex \
+                         && cp -a "${COPSE_BAKED_DEPS}/vendor/gortex" vendor/gortex; }; }; then
               seeded=true
-              echo "Seeded node_modules + vendor/codesearch from ${COPSE_BAKED_DEPS} (lockfile match)"
+              echo "Seeded node_modules + vendor/gortex from ${COPSE_BAKED_DEPS} (lockfile match)"
             else
               echo "Baked-dep seed failed — cleaning up and falling back to cache / npm ci"
               rm -rf node_modules
@@ -79,12 +79,12 @@ runs:
     # Cache the fully-installed dependency tree, not just the npm download cache.
     # The key is the lockfile hash, so an electron/node-pty bump (which changes
     # the native ABI) busts it and forces a fresh electron-rebuild. vendor/
-    # codesearch is a pinned-version binary fetch that postinstall guards as
+    # gortex is a pinned-version binary fetch that postinstall guards as
     # idempotent, so it caches cleanly alongside node_modules.
     #
     # Key by runner.arch as well as runner.os: the tree holds arch-specific native
     # binaries (esbuild's @esbuild/<platform> optional dep, node-pty/electron
-    # rebuilds, the vendor/codesearch fetch), but `runner.os` is `macOS` for BOTH
+    # rebuilds, the vendor/gortex fetch), but `runner.os` is `macOS` for BOTH
     # Intel and Apple-Silicon runners. A mixed-arch self-hosted Mac fleet would
     # otherwise share one entry, and an arm64 box restoring an x64-populated cache
     # (or vice-versa) fails at load with "@esbuild/darwin-arm64 could not be found".
@@ -96,7 +96,7 @@ runs:
       with:
         path: |
           node_modules
-          vendor/codesearch
+          vendor/gortex
         # The -vN token is a manual cache-bust: earlier runs on a runner with
         # ignore-scripts saved a node_modules with no native builds (no esbuild
         # binary, no electron-rebuilt node-pty) under the lockfile-hash key. Since

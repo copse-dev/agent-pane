@@ -28,7 +28,7 @@ export interface RunCommandOptions {
   timeout_ms?: number
   /**
    * Run the child at the lowest CPU scheduling priority (nice 19) so a heavy
-   * background job (e.g. the codesearch indexer, #517) yields to the foreground
+   * background job (e.g. the gortex indexer, #517) yields to the foreground
    * UI instead of causing typing lag. Best-effort: it lowers the spawned
    * process — descendants forked before we set it keep the default priority —
    * and a failed `setPriority` (EPERM) is ignored.

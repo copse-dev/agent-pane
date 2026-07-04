@@ -6,7 +6,7 @@ import { setSemanticBackendForTest, setSemanticSearchExecutorForTest } from './s
 
 describe('semantic-search', () => {
   it('builds native routing guidance when semantic backend is available', () => {
-    setSemanticBackendForTest('codesearch')
+    setSemanticBackendForTest('gortex')
     try {
       assert.match(
         buildSemanticSearchPromptBlock(),
@@ -19,10 +19,10 @@ describe('semantic-search', () => {
 
   it('executes native semantic search when backend is available', async () => {
     const restoreWorkspace = setWorkspaceRootForTest('/tmp/repo')
-    setSemanticBackendForTest('codesearch')
+    setSemanticBackendForTest('gortex')
     setSemanticSearchExecutorForTest(async () => ({
       hits: [{ path: 'src/a.ts', startLine: 1, text: 'native hit' }],
-      backend: 'codesearch',
+      backend: 'gortex',
     }))
 
     try {
