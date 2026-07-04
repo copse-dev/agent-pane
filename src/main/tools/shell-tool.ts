@@ -10,7 +10,10 @@ import {
   spawnShellInProjectSandbox,
 } from '../project-sandbox/index.ts'
 import { detectSandboxFailure } from '../services/security/sandbox-failure.ts'
-import { promptInstallSocketFirewall, promptUnsandboxedShell } from '../services/security/permission-gate.ts'
+import {
+  promptInstallSocketFirewall,
+  promptUnsandboxedShell,
+} from '../services/security/permission-gate.ts'
 import {
   shellRequiresOutsideSandbox,
   shellSandboxFailureShouldOfferUnsandboxedRetry,
@@ -18,7 +21,10 @@ import {
 import { envForRendererChildProcess } from '../services/exec/child-process-env.ts'
 import { getSetting } from '../services/storage/settings.ts'
 import { detectPackageInstall, wrapWithSocketFirewall } from '../services/security/safe-install.ts'
-import { installSocketFirewall, isSocketFirewallAvailable } from '../services/security/socket-firewall.ts'
+import {
+  installSocketFirewall,
+  isSocketFirewallAvailable,
+} from '../services/security/socket-firewall.ts'
 import {
   CappedOutputAccumulator,
   stripTerminalControlSequences,
