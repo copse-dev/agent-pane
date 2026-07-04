@@ -13,11 +13,11 @@
 #
 # Run `make` (or `make help`) for the full target list.
 
-# One shell per recipe with strict flags, so multi-line blocks read naturally
-# and any failing command aborts the target.
+# Strict bash flags — any failing command aborts the recipe line. Multi-line
+# shell blocks use backslash continuations so they work on macOS /usr/bin/make
+# (GNU Make 3.81), which predates .ONESHELL (3.82+).
 SHELL := bash
 .SHELLFLAGS := -eu -o pipefail -c
-.ONESHELL:
 .DEFAULT_GOAL := help
 
 # ----------------------------------------------------------------------------
@@ -107,25 +107,25 @@ $(STAMP_DIR):
 # --- tooling preflight ------------------------------------------------------
 .PHONY: check-tools
 check-tools:
-	@fail=0
-	if ! command -v $(DOCKER) >/dev/null 2>&1; then
-	  echo "ERROR: docker is not installed. See https://docs.docker.com/get-docker/" >&2
-	  fail=1
-	elif ! $(DOCKER) info >/dev/null 2>&1; then
-	  echo "ERROR: the Docker daemon isn't running (or you lack permission)." >&2
-	  echo "       Start Docker Desktop / the docker service and retry." >&2
-	  fail=1
-	fi
-	if ! $(COMPOSE) version >/dev/null 2>&1; then
-	  echo "ERROR: '$(COMPOSE)' is unavailable. Install the Docker Compose v2 plugin" >&2
-	  echo "       (bundled with Docker Desktop) or the legacy docker-compose binary." >&2
-	  fail=1
-	fi
-	if ! command -v git >/dev/null 2>&1; then
-	  echo "ERROR: git is not installed." >&2
-	  fail=1
-	fi
-	if [ "$$fail" -ne 0 ]; then exit 1; fi
+	@fail=0; \
+	if ! command -v $(DOCKER) >/dev/null 2>&1; then \
+	  echo "ERROR: docker is not installed. See https://docs.docker.com/get-docker/" >&2; \
+	  fail=1; \
+	elif ! $(DOCKER) info >/dev/null 2>&1; then \
+	  echo "ERROR: the Docker daemon isn't running (or you lack permission)." >&2; \
+	  echo "       Start Docker Desktop / the docker service and retry." >&2; \
+	  fail=1; \
+	fi; \
+	if ! $(COMPOSE) version >/dev/null 2>&1; then \
+	  echo "ERROR: '$(COMPOSE)' is unavailable. Install the Docker Compose v2 plugin" >&2; \
+	  echo "       (bundled with Docker Desktop) or the legacy docker-compose binary." >&2; \
+	  fail=1; \
+	fi; \
+	if ! command -v git >/dev/null 2>&1; then \
+	  echo "ERROR: git is not installed." >&2; \
+	  fail=1; \
+	fi; \
+	if [ "$$fail" -ne 0 ]; then exit 1; fi; \
 	echo "==> Tooling OK: $$($(DOCKER) --version), $$($(COMPOSE) version | head -n1)"
 
 # --- .env preflight ---------------------------------------------------------
@@ -134,32 +134,31 @@ check-tools:
 # any gap it prints exactly what to set and stops — no half-provisioned fleet.
 .PHONY: runner-env
 runner-env:
-	@env_file="$(RUNNER_DIR)/.env"
-	example="$(RUNNER_DIR)/.env.example"
-	if [ ! -f "$$env_file" ]; then
-	  echo "==> $$env_file not found — creating it from $$example"
-	  cp "$$example" "$$env_file"
-	  echo
-	  echo "ACTION REQUIRED: edit $$env_file and set your credentials, then re-run make:"
-	  echo "  GITHUB_URL    the repo/org URL the runners attach to"
-	  echo "  ACCESS_TOKEN  a GitHub PAT that can register runners"
-	  echo "                (classic PAT: 'repo' scope; fine-grained: Administration R/W)"
-	  echo "                — or set RUNNER_TOKEN to a pre-fetched registration token."
-	  exit 1
-	fi
-	# Read the values without leaking secrets into the environment/log.
-	set -a; . "$$env_file"; set +a
-	missing=0
-	if [ -z "$${GITHUB_URL:-}" ]; then
-	  echo "ERROR: GITHUB_URL is not set in $$env_file (e.g. https://github.com/owner/repo)." >&2
-	  missing=1
-	fi
-	if [ -z "$${ACCESS_TOKEN:-}" ] && [ -z "$${RUNNER_TOKEN:-}" ]; then
-	  echo "ERROR: set ACCESS_TOKEN (a PAT) or RUNNER_TOKEN (a registration token) in $$env_file." >&2
-	  echo "       Classic PAT needs 'repo' scope; fine-grained needs Administration -> Read & write." >&2
-	  missing=1
-	fi
-	if [ "$$missing" -ne 0 ]; then exit 1; fi
+	@env_file="$(RUNNER_DIR)/.env"; \
+	example="$(RUNNER_DIR)/.env.example"; \
+	if [ ! -f "$$env_file" ]; then \
+	  echo "==> $$env_file not found — creating it from $$example"; \
+	  cp "$$example" "$$env_file"; \
+	  echo; \
+	  echo "ACTION REQUIRED: edit $$env_file and set your credentials, then re-run make:"; \
+	  echo "  GITHUB_URL    the repo/org URL the runners attach to"; \
+	  echo "  ACCESS_TOKEN  a GitHub PAT that can register runners"; \
+	  echo "                (classic PAT: 'repo' scope; fine-grained: Administration R/W)"; \
+	  echo "                — or set RUNNER_TOKEN to a pre-fetched registration token."; \
+	  exit 1; \
+	fi; \
+	set -a; . "$$env_file"; set +a; \
+	missing=0; \
+	if [ -z "$${GITHUB_URL:-}" ]; then \
+	  echo "ERROR: GITHUB_URL is not set in $$env_file (e.g. https://github.com/owner/repo)." >&2; \
+	  missing=1; \
+	fi; \
+	if [ -z "$${ACCESS_TOKEN:-}" ] && [ -z "$${RUNNER_TOKEN:-}" ]; then \
+	  echo "ERROR: set ACCESS_TOKEN (a PAT) or RUNNER_TOKEN (a registration token) in $$env_file." >&2; \
+	  echo "       Classic PAT needs 'repo' scope; fine-grained needs Administration -> Read & write." >&2; \
+	  missing=1; \
+	fi; \
+	if [ "$$missing" -ne 0 ]; then exit 1; fi; \
 	echo "==> $(TIER) .env OK ($$env_file): GITHUB_URL set, credentials present."
 
 # --- provision / build / restart -------------------------------------------
@@ -204,16 +203,16 @@ runners-ps:
 # --- node preflight ---------------------------------------------------------
 .PHONY: check-node
 check-node:
-	@if ! command -v node >/dev/null 2>&1; then
-	  echo "ERROR: node is not installed (need >=$(NODE_MIN_MAJOR).$(NODE_MIN_MINOR); see .nvmrc)." >&2
-	  exit 1
-	fi
-	ver="$$(node -p 'process.versions.node')"
-	major="$${ver%%.*}"; rest="$${ver#*.}"; minor="$${rest%%.*}"
-	if [ "$$major" -lt "$(NODE_MIN_MAJOR)" ] || { [ "$$major" -eq "$(NODE_MIN_MAJOR)" ] && [ "$$minor" -lt "$(NODE_MIN_MINOR)" ]; }; then
-	  echo "ERROR: Node $$ver is too old — need >=$(NODE_MIN_MAJOR).$(NODE_MIN_MINOR) (see .nvmrc). Try 'nvm use'." >&2
-	  exit 1
-	fi
+	@if ! command -v node >/dev/null 2>&1; then \
+	  echo "ERROR: node is not installed (need >=$(NODE_MIN_MAJOR).$(NODE_MIN_MINOR); see .nvmrc)." >&2; \
+	  exit 1; \
+	fi; \
+	ver="$$(node -p 'process.versions.node')"; \
+	major="$${ver%%.*}"; rest="$${ver#*.}"; minor="$${rest%%.*}"; \
+	if [ "$$major" -lt "$(NODE_MIN_MAJOR)" ] || { [ "$$major" -eq "$(NODE_MIN_MAJOR)" ] && [ "$$minor" -lt "$(NODE_MIN_MINOR)" ]; }; then \
+	  echo "ERROR: Node $$ver is too old — need >=$(NODE_MIN_MAJOR).$(NODE_MIN_MINOR) (see .nvmrc). Try 'nvm use'." >&2; \
+	  exit 1; \
+	fi; \
 	echo "==> Node $$ver OK."
 
 # --- dependencies -----------------------------------------------------------
