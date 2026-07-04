@@ -143,3 +143,65 @@ describe('file tools', () => {
     }
   })
 })
+
+describe('read tools on the read-only chat store (#644)', () => {
+  let workspace = ''
+  let chatRoot = ''
+  let restoreWorkspace: (() => void) | undefined
+  let prevChatDir: string | undefined
+  let registry: ToolRegistry
+  let threadDir = ''
+
+  beforeEach(async () => {
+    workspace = await mkdtemp(join(tmpdir(), 'copse-ws-'))
+    restoreWorkspace = setWorkspaceRootForTest(workspace)
+    prevChatDir = process.env['COPSE_WORKSPACE_DIR']
+    chatRoot = await mkdtemp(join(tmpdir(), 'copse-chat-'))
+    process.env['COPSE_WORKSPACE_DIR'] = chatRoot
+    threadDir = join(chatRoot, 'proj', 'thread')
+    await mkdir(join(threadDir, 'messages'), { recursive: true })
+    await writeFile(join(threadDir, 'messages', 'm.md'), 'past thread body\nsecond line\n', 'utf8')
+    await writeFile(join(threadDir, 'events.jsonl'), '{"v":1}\n', 'utf8')
+    registry = new ToolRegistry()
+    registry.register(readFileTool)
+    registry.register(listDirTool)
+    setPermissionGateForTests(async () => true)
+  })
+
+  afterEach(async () => {
+    setPermissionGateForTests(null)
+    restoreWorkspace?.()
+    if (prevChatDir === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+    else process.env['COPSE_WORKSPACE_DIR'] = prevChatDir
+    if (workspace) await rm(workspace, { recursive: true, force: true })
+    if (chatRoot) await rm(chatRoot, { recursive: true, force: true })
+  })
+
+  it('read_file reads a chat-store file by absolute path', async () => {
+    const result = await runTool(
+      registry,
+      'read_file',
+      { path: join(threadDir, 'messages', 'm.md') },
+      new AbortController().signal,
+    )
+    assert.match(result, /past thread body/)
+  })
+
+  it('list_dir (recursive) lists chat-store files by absolute path', async () => {
+    const result = await runTool(
+      registry,
+      'list_dir',
+      { path: threadDir, recursive: true },
+      new AbortController().signal,
+    )
+    assert.match(result, /messages\/m\.md/)
+    assert.match(result, /events\.jsonl/)
+  })
+
+  it('read_file still rejects paths outside both workspace and chat store', async () => {
+    await assert.rejects(
+      runTool(registry, 'read_file', { path: '/etc/hostname' }, new AbortController().signal),
+      /outside workspace or chat store/,
+    )
+  })
+})

@@ -96,18 +96,50 @@ RUN apt-get update \
     && /opt/runner/bin/installdependencies.sh \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --chown=runner:runner entrypoint.sh /opt/runner/entrypoint.sh
+COPY --chown=runner:runner .github/runner/entrypoint.sh /opt/runner/entrypoint.sh
 RUN chmod +x /opt/runner/entrypoint.sh && chown -R runner:runner /opt/runner
 
 # 5) Color-emoji font. Without it Chromium/Electron has no glyphs for emoji, so
-#    they render as blank "tofu" boxes in the e2e reference screenshots. Kept as
-#    the LAST root layer on purpose: rebuilding to pick this up re-runs only this
-#    small step while every layer above (Chromium deps, Node, the runner agent)
-#    stays cached. The package's postinstall refreshes the fontconfig cache, so no
-#    explicit `fc-cache` is needed. Still root here (USER runner is set below).
+#    they render as blank "tofu" boxes in the e2e reference screenshots. The
+#    package's postinstall refreshes the fontconfig cache, so no explicit
+#    `fc-cache` is needed. Still root here (USER runner is set below).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
+
+# 6) Bake the dependency tree so ephemeral runners start warm.
+#    These runners are ephemeral (one job per pristine container, no volumes),
+#    so every job would otherwise restore ~525 MB of node_modules from the
+#    Actions cache service over the network before doing any work — the slow
+#    step this image exists to remove. Run the repo's own install ONCE here and
+#    stash node_modules + vendor/codesearch under /opt/deps/tree. The setup
+#    action (.github/actions/setup) seeds a job's workspace from this layer when
+#    the checked-out package-lock.json still matches what was baked (recorded in
+#    .lockhash); on a lockfile bump it falls back to the cache / npm ci path, so
+#    the layer is never used stale.
+#
+#    The build context is the repo root (see docker-compose.yml), so these COPYs
+#    reach the manifests + scripts the install's pre/postinstall hooks need
+#    (electron-rebuild of node-pty, the vendored codesearch fetch, esbuild's
+#    platform binary). Kept as the LAST layers so a lockfile/scripts change only
+#    re-runs the install, not the toolchain above it. Non-fatal: if the install
+#    fails the image still builds (no .ready marker) and runners fall back.
+WORKDIR /opt/deps/tree
+COPY package.json package-lock.json ./
+COPY tsconfig*.json ./
+COPY scripts ./scripts
+RUN set -eux; \
+    if npm_config_ignore_scripts=false npm ci --include=optional --no-audit --no-fund; then \
+      sha256sum package-lock.json | awk '{ print $1 }' > .lockhash; \
+      npm cache clean --force >/dev/null 2>&1 || true; \
+      chmod -R a+rX /opt/deps/tree; \
+      touch .ready; \
+      echo "==> baked deps ready ($(du -sh node_modules 2>/dev/null | cut -f1) node_modules)"; \
+    else \
+      echo "==> WARNING: dependency baking failed — runners fall back to the CI cache / npm ci path"; \
+    fi
+ENV COPSE_BAKED_DEPS=/opt/deps/tree
+WORKDIR /opt/runner
 
 USER runner
 ENTRYPOINT ["/opt/runner/entrypoint.sh"]

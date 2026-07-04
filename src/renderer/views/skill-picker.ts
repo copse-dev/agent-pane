@@ -87,9 +87,11 @@ export function initSkillPicker(opts: SkillPickerOptions): () => void {
   }
 
   function updateSelection(): void {
-    picker
-      .querySelectorAll('.mention-item')
-      .forEach((el, i) => el.classList.toggle('selected', i === selectedIdx))
+    picker.querySelectorAll('.mention-item').forEach((el, i) => {
+      const isSelected = i === selectedIdx
+      el.classList.toggle('selected', isSelected)
+      if (isSelected) el.scrollIntoView({ block: 'nearest' })
+    })
   }
 
   textarea.addEventListener('input', () => {
