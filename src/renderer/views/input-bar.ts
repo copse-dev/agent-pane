@@ -40,7 +40,7 @@ import { downloadThreadJsonl, threadHasExportableContent } from '../export-threa
 import { formatFooterUsageSummary, resolveFooterUsage } from '@shared/usage/footer-usage-summary.ts'
 import { type ExtraPricing } from '@shared/llm/estimate-cost.ts'
 import { extraProviderPricingMap } from '@shared/llm/extra-providers.ts'
-import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
+import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { mountFollowUpSuggestions } from './follow-up-suggestions.ts'
 import {
   threadGitBranchMismatch,
@@ -158,7 +158,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     api,
     () => {
       const thread = getActiveThread(store)
-      return thread?.model ?? store.getState().settings?.model ?? DEFAULT_CLOUD_MODEL
+      return thread?.model ?? store.getState().settings?.model ?? DEFAULT_APP_CHAT_MODEL
     },
     (model) => {
       const thread = getActiveThread(store)
@@ -327,7 +327,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     if (!thread) return null
     // Price against the thread's model so the footer cost matches what the run
     // will actually use, not the global default.
-    const model = thread.model ?? store.getState().settings?.model ?? DEFAULT_CLOUD_MODEL
+    const model = thread.model ?? store.getState().settings?.model ?? DEFAULT_APP_CHAT_MODEL
     const display = resolveFooterUsage({
       measured: thread.usage,
       running: thread.status === 'running',

@@ -149,6 +149,14 @@ describe('fetchModelOptions visibility', () => {
     assert.match(current.label, /not configured/)
   })
 
+  it('keeps a selected-but-unconfigured remote agent selectable with a clear label', async () => {
+    const options = await fetchModelOptions(mockApi(), 'remote-agent:cursor')
+    const current = options.find((o) => o.value === 'remote-agent:cursor')
+    assert.ok(current)
+    assert.equal(current.group, 'Remote agents')
+    assert.match(current.label, /no valid key/)
+  })
+
   it('groups hosted cloud models under a heading', async () => {
     const options = await fetchModelOptions(mockApi({ available: { anthropic: true } }), '')
     const cloud = options.filter((o) => o.group === 'Cloud models')

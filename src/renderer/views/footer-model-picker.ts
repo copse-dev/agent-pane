@@ -64,22 +64,23 @@ export function mountFooterModelPicker(
         if (opt.disabled || !opt.value) return
         onSelect(opt.value)
         setOpen(false)
-        updateTrigger()
-        renderMenu(options)
+        void refresh()
       })
       menu.append(item)
     }
   }
 
-  function updateTrigger(): void {
-    labelEl.textContent = modelDisplayLabel(getCurrent())
-    labelEl.title = getCurrent()
+  function updateTrigger(options: Awaited<ReturnType<typeof fetchModelOptions>>): void {
+    const current = getCurrent()
+    const match = options.find((opt) => opt.value === current)
+    labelEl.textContent = match?.label ?? modelDisplayLabel(current)
+    labelEl.title = current
   }
 
   async function refresh(): Promise<void> {
     const options = await fetchModelOptions(api, getCurrent())
     renderMenu(options)
-    updateTrigger()
+    updateTrigger(options)
   }
 
   trigger.addEventListener('click', () => {
