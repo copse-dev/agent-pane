@@ -6,7 +6,7 @@ import {
   parseRipgrepJson,
   setIndexedGrepBackendForTest,
 } from './indexed-grep.ts'
-import { setWorkspaceRootForTest } from './workspace.ts'
+import { setWorkspaceRootForTest } from '../workspace.ts'
 
 describe('indexed-grep parsing', () => {
   it('parses ripgrep JSON match lines', () => {

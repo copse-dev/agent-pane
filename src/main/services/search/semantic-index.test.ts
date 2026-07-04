@@ -11,7 +11,7 @@ import {
   setSemanticIndexUpdateRunnerForTest,
   updateSemanticIndex,
 } from './semantic-index.ts'
-import { setWorkspaceRootForTest } from './workspace.ts'
+import { setWorkspaceRootForTest } from '../workspace.ts'
 
 describe('semantic-index parsing', () => {
   it('parses vera JSON results', () => {

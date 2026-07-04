@@ -24,13 +24,13 @@ import {
   zPathString,
   zProjectId,
 } from './ipc-guards.ts'
-import { buildIndex, getIndex } from '../services/file-index.ts'
-import { resolveFileReferences } from '../services/file-reference-resolver.ts'
-import { ensureSemanticIndex } from '../services/semantic-index.ts'
+import { buildIndex, getIndex } from '../services/search/file-index.ts'
+import { resolveFileReferences } from '../services/search/file-reference-resolver.ts'
+import { ensureSemanticIndex } from '../services/search/semantic-index.ts'
 import {
   scheduleIndexRebuild,
   startWorkspaceIndexWatcher,
-} from '../services/workspace-index-watcher.ts'
+} from '../services/search/workspace-index-watcher.ts'
 import {
   getSetting,
   setSetting,

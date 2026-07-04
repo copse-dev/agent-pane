@@ -1,5 +1,5 @@
 import { buildSearchRoutingPromptBlock } from '@shared/agent/search-routing.ts'
-import { getWorkspaceRoot } from './workspace.ts'
+import { getWorkspaceRoot } from '../workspace.ts'
 import {
   formatSemanticSearchResults,
   isSemanticSearchAvailable,

@@ -1,5 +1,5 @@
-import { runCommand } from './command-runner.ts'
-import { toRelativePath } from './workspace.ts'
+import { runCommand } from '../command-runner.ts'
+import { toRelativePath } from '../workspace.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
 
 export type IndexedGrepBackend = 'ig' | 'trigrep' | 'instant-grep' | 'rg'

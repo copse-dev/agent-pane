@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises'
 import { stat as fsStat, open as fsOpen } from 'node:fs/promises'
 import { join, relative, resolve } from 'node:path'
 import micromatch from 'micromatch'
-import { toRelativePath } from './workspace.ts'
+import { toRelativePath } from '../workspace.ts'
 
 export const SLOW_SEARCH_MAX_PATTERN_LEN = 256
 const MAX_FILE_BYTES = 512 * 1024

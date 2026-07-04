@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { resolveFileReferences } from './file-reference-resolver.ts'
 import { invalidateIndex, setIndexForTest } from './file-index.ts'
-import { setWorkspaceRootForTest } from './workspace.ts'
+import { setWorkspaceRootForTest } from '../workspace.ts'
 
 describe('file-reference-resolver', () => {
   let tempRoot = ''

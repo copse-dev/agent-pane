@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { buildIndex, getIndex, invalidateIndex } from './file-index.ts'
-import { setWorkspaceRootForTest } from './workspace.ts'
+import { setWorkspaceRootForTest } from '../workspace.ts'
 
 describe('file-index', () => {
   let tempRoot = ''

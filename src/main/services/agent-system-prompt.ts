@@ -18,7 +18,7 @@ import {
   MEMORY_TOOLS_BLOCK,
   PII_REDACTION_BLOCK,
 } from './agent-prompt.ts'
-import { buildSemanticSearchPromptBlock } from './semantic-search.ts'
+import { buildSemanticSearchPromptBlock } from './search/semantic-search.ts'
 import { OKF_MEMORIES_ENABLED_SETTING } from '../tools/memory-tools.ts'
 import { PII_REDACTION_ENABLED_SETTING } from './pii-redactor.ts'
 import { isProjectSandboxActive } from '../project-sandbox/state.ts'

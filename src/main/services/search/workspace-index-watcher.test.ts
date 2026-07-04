@@ -10,7 +10,7 @@ import {
   startWorkspaceIndexWatcher,
   stopWorkspaceIndexWatcher,
 } from './workspace-index-watcher.ts'
-import { setWorkspaceRootForTest } from './workspace.ts'
+import { setWorkspaceRootForTest } from '../workspace.ts'
 
 describe('workspace-index-watcher', () => {
   let tempRoot = ''

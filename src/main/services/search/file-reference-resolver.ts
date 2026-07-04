@@ -1,6 +1,6 @@
 import { existsSync, statSync } from 'node:fs'
 import { getIndex } from './file-index.ts'
-import { getWorkspaceRoot, resolveWorkspacePath, toRelativePath } from './workspace.ts'
+import { getWorkspaceRoot, resolveWorkspacePath, toRelativePath } from '../workspace.ts'
 
 export interface FileReferenceResolution {
   candidate: string

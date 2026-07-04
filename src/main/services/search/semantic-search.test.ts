@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { setWorkspaceRootForTest } from './workspace.ts'
+import { setWorkspaceRootForTest } from '../workspace.ts'
 import { buildSemanticSearchPromptBlock, executeSemanticSearch } from './semantic-search.ts'
 import { setSemanticBackendForTest, setSemanticSearchExecutorForTest } from './semantic-index.ts'
 

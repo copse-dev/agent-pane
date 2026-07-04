@@ -1,6 +1,6 @@
 import * as fs from 'node:fs'
 import { buildIndex } from './file-index.ts'
-import { getWorkspaceRoot } from './workspace.ts'
+import { getWorkspaceRoot } from '../workspace.ts'
 import { updateSemanticIndex } from './semantic-index.ts'
 
 const REBUILD_DEBOUNCE_MS = 500

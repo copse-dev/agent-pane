@@ -9,7 +9,7 @@ import {
   isInsideChatStore,
 } from '../services/workspace.ts'
 import { runCommand } from '../services/command-runner.ts'
-import { getIndex } from '../services/file-index.ts'
+import { getIndex } from '../services/search/file-index.ts'
 import micromatch from 'micromatch'
 import { getAgentRunReadFileLimits } from '../services/agent-run-read-limits.ts'
 import { readTextLineRange } from '../services/read-text-file.ts'
