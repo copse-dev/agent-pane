@@ -2,6 +2,7 @@ import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { InstructionScope } from '@shared/types/instructions.ts'
+import { loadCursorRuleSources } from './cursor-rules.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 
 /**
@@ -49,25 +50,36 @@ async function readTrimmed(path: string): Promise<string | null> {
  */
 export async function loadProjectInstructionSources(): Promise<ProjectInstructionSource[]> {
   const home = homedir()
-  const candidates: Array<{ path: string; name: string; scope: InstructionScope }> = []
+  const resolved: ProjectInstructionSource[] = []
 
   for (const rel of GLOBAL_INSTRUCTION_FILES) {
-    candidates.push({ path: join(home, rel), name: rel, scope: 'global' })
+    const path = join(home, rel)
+    const content = await readTrimmed(path)
+    if (content) resolved.push({ path, name: rel, scope: 'global', content })
   }
+
   const root = getWorkspaceRoot()
   if (root) {
     for (const name of PROJECT_INSTRUCTION_FILES) {
-      candidates.push({ path: join(root, name), name, scope: 'project' })
+      const path = join(root, name)
+      const content = await readTrimmed(path)
+      if (content) resolved.push({ path, name, scope: 'project', content })
+    }
+    // Cursor project rules (`.cursor/rules/*.mdc` + legacy `.cursorrules`) — project text,
+    // applied after the top-level instruction files.
+    for (const rule of await loadCursorRuleSources(root)) {
+      resolved.push({ path: rule.path, name: rule.name, scope: 'project', content: rule.content })
     }
   }
 
+  // De-duplicate identical content across files and scopes (e.g. a repo whose `AGENTS.md`
+  // matches the user's global file, or a rule copied into `AGENT.md`).
   const sources: ProjectInstructionSource[] = []
   const seenContent = new Set<string>()
-  for (const { path, name, scope } of candidates) {
-    const content = await readTrimmed(path)
-    if (!content || seenContent.has(content)) continue
-    seenContent.add(content)
-    sources.push({ path, name, scope, content })
+  for (const source of resolved) {
+    if (seenContent.has(source.content)) continue
+    seenContent.add(source.content)
+    sources.push(source)
   }
   return sources
 }
