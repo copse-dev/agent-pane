@@ -119,9 +119,16 @@
 }
 .project-twisty {
   width: 12px;
+  height: 12px;
   flex-shrink: 0;
-  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-muted);
+  transition: transform 0.1s ease;
+}
+.project-twisty.expanded {
+  transform: rotate(90deg);
 }
 .chats-list {
   display: flex;
@@ -157,8 +164,10 @@
 .chat-delete {
   flex-shrink: 0;
   opacity: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-muted);
-  font-size: 11px;
   padding: 0 4px;
 }
 .chat-row:hover .chat-delete {
@@ -461,7 +470,9 @@
   color: var(--text-secondary);
 }
 .git-changes-refresh-btn {
-  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   line-height: 1;
   padding: 2px 6px;
   border-radius: var(--radius);
@@ -610,8 +621,15 @@
 }
 .pr-other-chevron {
   flex-shrink: 0;
-  width: 10px;
-  font-size: 9px;
+  width: 12px;
+  height: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.1s ease;
+}
+.pr-other-chevron.expanded {
+  transform: rotate(90deg);
 }
 .pr-viewer-host {
   gap: 0;
@@ -642,6 +660,9 @@
   margin-top: var(--spacing-xs);
 }
 .pr-open-external-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   padding: 2px 0;
@@ -998,9 +1019,11 @@
 }
 .browser-nav-btn {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 28px;
   height: 28px;
-  font-size: 14px;
   color: var(--text-secondary);
   border-radius: var(--radius);
 }
@@ -1115,7 +1138,9 @@
   justify-content: flex-end;
 }
 .sidebar-refresh {
-  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-muted);
 }
 .file-tree {
@@ -1146,9 +1171,16 @@
 }
 .tree-twisty {
   width: 12px;
+  height: 12px;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-muted);
-  font-size: 10px;
+  transition: transform 0.1s ease;
+}
+.tree-twisty.expanded {
+  transform: rotate(90deg);
 }
 .tree-icon {
   flex-shrink: 0;

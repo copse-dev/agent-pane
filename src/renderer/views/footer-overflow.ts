@@ -1,4 +1,5 @@
 import { el, on } from '../dom/helpers.ts'
+import { moreHorizontalIcon } from '../dom/icons.ts'
 
 export interface FooterOverflowItem {
   label: string
@@ -20,7 +21,7 @@ export function mountFooterOverflow(
       'aria-expanded': 'false',
       'aria-label': 'More footer actions',
     },
-    '⋯',
+    moreHorizontalIcon('ui-icon ui-icon-sm'),
   )
   const menu = el('div', { class: 'footer-overflow-menu', role: 'menu', hidden: '' })
   wrap.append(trigger, menu)
