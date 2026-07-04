@@ -7,7 +7,7 @@ import { registerTerminalSelectionToChatShortcut } from '../terminal/selection-t
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { installTerminalFileLinks, type TerminalFileLinks } from './terminal-file-links.ts'
-import { planProjectScope, tabsForProject } from './project-scoped-tabs.ts'
+import { planScope, tabsForScope } from './scoped-tabs.ts'
 import { at } from '@shared/array-utils.ts'
 
 const XTERM_THEME = {
@@ -27,8 +27,8 @@ const XTERM_THEME = {
 
 interface TerminalTab {
   id: string
-  /** Project this shell belongs to; only the active project's tabs are shown. */
-  projectId: string | null
+  /** Thread this shell belongs to; only the active thread's tabs are shown. */
+  scopeId: string | null
   label: string
   labelSpan: HTMLElement
   panel: HTMLElement
@@ -85,6 +85,9 @@ export function mountTerminalsPane(
   const tabs = new Map<string, TerminalTab>()
   let activeTabId: string | null = null
   let tabCounter = 0
+  // Which thread's shells are currently shown. Tracked so we only re-scope when
+  // the active thread actually changes (threads_changed fires for many reasons).
+  let lastThreadId: string | null = store.getState().activeThreadId
 
   const unsubOutput = api.terminal.onOutput((id, data) => {
     for (const tab of tabs.values()) {
@@ -307,12 +310,12 @@ export function mountTerminalsPane(
     })
   }
 
-  function currentProjectId(): string | null {
-    return store.getState().activeProjectId
+  function currentThreadId(): string | null {
+    return store.getState().activeThreadId
   }
 
   function visibleTabs(): TerminalTab[] {
-    return tabsForProject(tabs.values(), currentProjectId())
+    return tabsForScope(tabs.values(), currentThreadId())
   }
 
   function setTabVisible(tab: TerminalTab, visible: boolean): void {
@@ -350,7 +353,7 @@ export function mountTerminalsPane(
     const fileLinks = installTerminalFileLinks(term, store, api)
     const tab: TerminalTab = {
       id,
-      projectId: currentProjectId(),
+      scopeId: currentThreadId(),
       label,
       labelSpan,
       panel,
@@ -426,12 +429,12 @@ export function mountTerminalsPane(
     }
   }
 
-  // Project switch: keep each project's shells alive but only show the active
-  // project's. Sessions are spawned with the workspace cwd they were created in,
-  // so a background project's shells stay rooted in that project; switching back
-  // restores them rather than showing the other workspace's shells (issue #502).
-  function onProjectSwitch(): void {
-    const { visible, hidden, needsNew } = planProjectScope(tabs.values(), currentProjectId())
+  // Thread switch: keep each thread's shells alive but only show the active
+  // thread's. Sessions are spawned with the workspace cwd they were created in,
+  // so a background thread's shells stay rooted in that project; switching back
+  // restores them rather than showing the other thread's shells (issue #502).
+  function onScopeSwitch(): void {
+    const { visible, hidden, needsNew } = planScope(tabs.values(), currentThreadId())
     for (const tab of hidden) setTabVisible(tab, false)
     for (const tab of visible) setTabVisible(tab, true)
 
@@ -506,13 +509,24 @@ export function mountTerminalsPane(
     }
   }
 
+  // Only re-scope when the active thread actually changed. `threads_changed`
+  // fires for many unrelated reasons (streaming, renames), and `workspace_changed`
+  // also swaps the active thread when the project switches — both funnel here.
+  function onThreadMaybeChanged(): void {
+    const threadId = currentThreadId()
+    if (threadId === lastThreadId) return
+    lastThreadId = threadId
+    onScopeSwitch()
+  }
+
   const unsubs = [
     store.on('right_panel_mode_changed', onTerminalModeChange),
     store.on('files_pane_changed', onTerminalModeChange),
     store.on('agent_task_selected', onAgentTaskSelected),
     store.on('theme_changed', onThemeChange),
     store.on('settings_changed', onFontSizeChange),
-    store.on('workspace_changed', onProjectSwitch),
+    store.on('threads_changed', onThreadMaybeChanged),
+    store.on('workspace_changed', onThreadMaybeChanged),
   ]
 
   return () => {
