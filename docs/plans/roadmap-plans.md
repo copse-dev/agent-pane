@@ -5,6 +5,12 @@ Tracking: [#556](https://github.com/jonathanKingston/agent-pane/issues/556)
 Status: **experimental scaffold** — off by default behind the `roadmapPlansEnabled`
 setting (Settings → Experimental).
 
+> **Storage migrated ([#645](https://github.com/jonathanKingston/agent-pane/issues/645)).**
+> Roadmap items are no longer a bespoke `items.json`; they are the `Roadmap` type in the
+> shared knowledge store (`knowledge-store.ts`, `docs/plans/knowledge-store.md`). The
+> `roadmap_plan` tool surface and this feature's flag are unchanged. Item ids are now
+> UUIDs rather than `r1`/`r2`.
+
 ## What this is
 
 A roadmap is a notes-app-style backlog of _future prompts_ — work we want done over a
