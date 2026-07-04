@@ -17,7 +17,7 @@ await esbuild.build({
   platform: 'node',
   format: 'cjs',
   sourcemap: true,
-  external: ['electron', 'node-pty', 'jsdom', '@mozilla/readability', 'turndown'],
+  external: ['electron', 'node-pty', 'jsdom', '@mozilla/readability', 'turndown', 'mermaid'],
   alias: {
     '@shared': resolve('./src/shared'),
     '@copse/streaming-markdown': resolve('./packages/streaming-markdown/src/index.ts'),

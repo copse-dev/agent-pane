@@ -15,7 +15,15 @@ export { sanitizeRenderedMarkdown } from './sanitize.ts'
 export { escapeHtml, escapeHtmlTextNodes, decodeSafeMarkdownEntities } from './escape.ts'
 export { fenceCodeClass, highlightFenceCode, stripAppCodeDecorations } from './highlight.ts'
 export { mermaidSourceCandidates, prepareMermaidSource } from './mermaid-source.ts'
-export { stripAppImageAttributes, stripAppLinkAttributes } from './inline-links.ts'
+export {
+  appLinkDecorator,
+  type LinkDecoration,
+  type LinkDecorator,
+  renderAnchor,
+  setLinkDecorator,
+  stripAppImageAttributes,
+  stripAppLinkAttributes,
+} from './inline-links.ts'
 export {
   isWorkspaceMarkdownLinkHref,
   workspaceLinkTargetFromHref,
