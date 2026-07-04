@@ -391,6 +391,14 @@ contextBridge.exposeInMainWorld('api', {
     resolveFileReferences: (candidates: string[]) =>
       ipcRenderer.invoke('index:resolveFileReferences', candidates),
   },
+  memories: {
+    list: () => ipcRenderer.invoke('memories:list'),
+    create: (title: string, body: string, tags?: string[]) =>
+      ipcRenderer.invoke('memories:create', title, body, tags),
+    update: (id: string, title: string, body: string, tags?: string[]) =>
+      ipcRenderer.invoke('memories:update', id, title, body, tags),
+    delete: (id: string) => ipcRenderer.invoke('memories:delete', id),
+  },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
   },

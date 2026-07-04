@@ -71,7 +71,17 @@ import {
   syncPiiTools,
 } from '../services/registry-bootstrap.ts'
 import { PII_REDACTION_ENABLED_SETTING } from '../services/security/pii-redactor.ts'
-import { OKF_MEMORIES_ENABLED_SETTING } from '../tools/memory-tools.ts'
+import {
+  OKF_MEMORIES_ENABLED_SETTING,
+  MEMORY_TYPE,
+  migrateLegacyMemories,
+} from '../tools/memory-tools.ts'
+import {
+  addKnowledgeNote,
+  deleteKnowledgeNote,
+  loadKnowledgeNotes,
+  updateKnowledgeNote,
+} from '../services/storage/knowledge-store.ts'
 import {
   checkoutGitBranch,
   getBranches,
@@ -226,6 +236,49 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const candidates = parseIpcArgs(z.array(z.string().min(1).max(4096)).max(200), [rawCandidates])
     return resolveFileReferences(candidates)
+  })
+
+  // OKF memories management. The renderer's Memories pane (issue #645, Phase 3)
+  // reads and edits the `Memory` notes the agent's remember/recall tools author.
+  // Only the Memory type is exposed; roadmap/other knowledge types stay internal.
+  const zMemoryTitle = z.string().max(512)
+  const zMemoryBody = z.string().max(1_000_000)
+  const zMemoryTags = z.array(z.string().max(128)).max(64)
+
+  ipcMain.handle('memories:list', (event) => {
+    assertMainFrameSender(event, win)
+    // Fold in any pre-#645 notes on first read so the pane matches `recall`.
+    migrateLegacyMemories()
+    return loadKnowledgeNotes(MEMORY_TYPE)
+  })
+
+  ipcMain.handle(
+    'memories:create',
+    (event, rawTitle: unknown, rawBody: unknown, rawTags: unknown) => {
+      assertMainFrameSender(event, win)
+      const title = parseIpcArgs(zMemoryTitle, [rawTitle])
+      const body = parseIpcArgs(zMemoryBody, [rawBody])
+      const tags = parseIpcArgs(zMemoryTags.optional(), [rawTags])
+      return addKnowledgeNote({ type: MEMORY_TYPE, title, body, tags })
+    },
+  )
+
+  ipcMain.handle(
+    'memories:update',
+    (event, rawId: unknown, rawTitle: unknown, rawBody: unknown, rawTags: unknown) => {
+      assertMainFrameSender(event, win)
+      const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
+      const title = parseIpcArgs(zMemoryTitle, [rawTitle])
+      const body = parseIpcArgs(zMemoryBody, [rawBody])
+      const tags = parseIpcArgs(zMemoryTags.optional(), [rawTags])
+      return updateKnowledgeNote(id, { title, body, tags })
+    },
+  )
+
+  ipcMain.handle('memories:delete', (event, rawId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
+    return deleteKnowledgeNote(id)
   })
 
   ipcMain.handle('settings:get', (event, key: unknown) => {

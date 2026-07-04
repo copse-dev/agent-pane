@@ -1,0 +1,136 @@
+/* Memories pane (issue #645, Phase 3). The list column reuses the git-changes
+   list primitives; these rules cover the row layout, tag chips, and the inline
+   editor in the viewer column. */
+.memories-host {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+.memories-new-btn {
+  font-size: 16px;
+}
+.memories-row {
+  align-items: flex-start;
+  padding: var(--spacing-xs) var(--spacing-sm);
+}
+.memories-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+.memories-row-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.memories-row-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.memories-tag {
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 0 6px;
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+
+/* Editor column */
+.memories-viewer-host {
+  padding: var(--spacing-md);
+  overflow-y: auto;
+}
+.memories-empty {
+  padding: var(--spacing-md);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.memories-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  height: 100%;
+  min-height: 0;
+}
+.memories-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.memories-field {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-input, var(--bg-secondary));
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+}
+.memories-field:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.memories-body-input {
+  flex: 1;
+  min-height: 160px;
+  resize: vertical;
+  line-height: 1.5;
+}
+.memories-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.memories-error {
+  font-size: var(--font-size-sm);
+  color: var(--danger, #f14c4c);
+}
+.memories-actions {
+  display: flex;
+  gap: var(--spacing-xs);
+  align-items: center;
+}
+.memories-btn {
+  padding: 4px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+.memories-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.memories-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.memories-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.memories-btn-primary:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.08);
+  color: #fff;
+}
+.memories-btn-danger {
+  margin-left: auto;
+  color: var(--danger, #f14c4c);
+}
+.memories-btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger, #f14c4c) 16%, transparent);
+  color: var(--danger, #f14c4c);
+}

@@ -23,7 +23,7 @@ import {
 export const OKF_MEMORIES_ENABLED_SETTING = 'okfMemoriesEnabled'
 
 /** Knowledge-note type used for memories. */
-const MEMORY_TYPE = 'Memory'
+export const MEMORY_TYPE = 'Memory'
 
 function formatMemory(note: KnowledgeNote): string {
   const tags = note.tags.length ? ` [${note.tags.join(', ')}]` : ''
