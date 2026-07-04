@@ -29,6 +29,8 @@ function mount(): Harness {
   viewerParent.append(viewerHost)
   document.body.append(listRoot, viewerParent)
   const store = createStore()
+  // Tasks are scoped to the active thread; the tests emit chunks on thread 't1'.
+  store.setState({ activeThreadId: 't1' })
   let chunkHandler: ChunkHandler = () => {}
   let outputHandler: OutputHandler = () => {}
   const api = {
@@ -189,5 +191,61 @@ describe('agent-tasks', () => {
     h.emitChunk('t1', { type: 'tool_call', toolCall: { id: 'x', name: 'read_file', args: {} } })
     assert.equal(tabs(h).length, 0)
     assert.equal(section(h).hidden, true)
+  })
+
+  it('surfaces an external ACP agent shell command (kind: execute)', () => {
+    // ACP agents run their own shells: a tool call with kind 'execute' and the
+    // command in the title (its name), not the built-in run_shell tool.
+    h.emitChunk('t1', {
+      type: 'tool_call',
+      toolCall: { id: 'e1', name: 'git status', args: {}, kind: 'execute' },
+    })
+    assert.equal(tabs(h).length, 1)
+    assert.equal(at(tabs(h), 0).querySelector('.agent-task-label')?.textContent, 'git status')
+
+    // Its output arrives in the tool result (ACP has no live shell-output stream).
+    h.emitChunk('t1', { type: 'tool_result', toolCallId: 'e1', result: 'clean', isError: false })
+    assert.equal(at(panels(h), 0).textContent, '$ git status\nclean')
+  })
+
+  it('prefers an explicit command arg over the ACP title', () => {
+    h.emitChunk('t1', {
+      type: 'tool_call',
+      toolCall: { id: 'e2', name: 'Run shell', args: { command: 'ls -la' }, kind: 'execute' },
+    })
+    assert.equal(at(tabs(h), 0).querySelector('.agent-task-label')?.textContent, 'ls -la')
+  })
+
+  it('ignores non-execute ACP tool calls', () => {
+    h.emitChunk('t1', {
+      type: 'tool_call',
+      toolCall: { id: 's1', name: 'Grep Search', args: {}, kind: 'search' },
+    })
+    assert.equal(tabs(h).length, 0)
+  })
+
+  it('shows only the active thread’s tasks and restores them on switch back', () => {
+    startShell(h, 'a', 'thread-one cmd')
+    assert.equal(tabs(h).filter((t) => !t.hidden).length, 1)
+
+    // Switch to another thread: the first thread's task is hidden.
+    h.store.setState({ activeThreadId: 't2' })
+    h.store.emit('threads_changed')
+    assert.equal(tabs(h).filter((t) => !t.hidden).length, 0)
+    assert.equal(section(h).hidden, true)
+
+    // A task run on the new thread shows; the old one stays hidden.
+    h.emitChunk('t2', {
+      type: 'tool_call',
+      toolCall: { id: 'b', name: 'run_shell', args: { command: 'thread-two cmd' } },
+    })
+    assert.equal(tabs(h).filter((t) => !t.hidden).length, 1)
+
+    // Switch back: the first thread's task returns, the second's hides.
+    h.store.setState({ activeThreadId: 't1' })
+    h.store.emit('threads_changed')
+    const visible = tabs(h).filter((t) => !t.hidden)
+    assert.equal(visible.length, 1)
+    assert.equal(visible[0]?.querySelector('.agent-task-label')?.textContent, 'thread-one cmd')
   })
 })

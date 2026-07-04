@@ -30,6 +30,11 @@ describe('onboarding panel', () => {
     await expect(overlay.$('.onboarding-panel[data-step="cloud"].active legend')).toHaveText(
       'Cloud API keys (optional)',
     )
+    await expect(
+      overlay.$(
+        '.onboarding-panel[data-step="cloud"].active .key-status .ui-icon[data-icon="circle"]',
+      ),
+    ).toExist()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'onboarding-step-cloud-keys.png'))
 
     await browser.execute(() => {
@@ -39,6 +44,11 @@ describe('onboarding panel', () => {
     await expect(
       overlay.$('.onboarding-panel[data-step="local"].active .setup-install-guide h4'),
     ).toHaveText('Don’t have LM Studio yet?')
+    await expect(
+      overlay.$(
+        '.onboarding-panel[data-step="local"].active .preferred-model-status .ui-icon[data-icon="circle"]',
+      ),
+    ).toExist()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'onboarding-step-local-models.png'))
 
     await browser.execute(() => {

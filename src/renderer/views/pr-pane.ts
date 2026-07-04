@@ -1,5 +1,6 @@
 import type * as Monaco from 'monaco-editor'
 import { el, clear, qsRequired } from '../dom/helpers.ts'
+import { chevronRightIcon, externalLinkIcon, refreshIcon } from '../dom/icons.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -102,7 +103,7 @@ export function mountPrPane(
         'aria-label': 'Refresh pull requests',
         title: 'Refresh',
       },
-      '↻',
+      refreshIcon('ui-icon ui-icon-sm'),
     ),
   )
   const refreshBtn = qsRequired<HTMLButtonElement>(listHeader, '.pr-pane-refresh-btn')
@@ -308,7 +309,11 @@ export function mountPrPane(
           class: 'git-changes-section-title pr-other-toggle',
           'aria-expanded': String(otherExpanded),
         },
-        el('span', { class: 'pr-other-chevron' }, otherExpanded ? '▾' : '▸'),
+        el(
+          'span',
+          { class: `pr-other-chevron${otherExpanded ? ' expanded' : ''}` },
+          chevronRightIcon('ui-icon ui-icon-sm'),
+        ),
         el('span', {}, title),
       )
       header.addEventListener('click', () => void toggleOther())
@@ -353,7 +358,8 @@ export function mountPrPane(
         class: 'pr-open-external-btn',
         title: 'Open on GitHub',
       },
-      'Open on GitHub ↗',
+      el('span', {}, 'Open on GitHub'),
+      externalLinkIcon('ui-icon ui-icon-sm'),
     )
     const prUrl = prDetails.url
     openBtn.addEventListener('click', () => {

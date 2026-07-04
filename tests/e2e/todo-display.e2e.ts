@@ -52,7 +52,7 @@ describe('todo plan display', () => {
 
     const inProgress = await inlinePanel.$('.todo-item[data-todo-id="todo-2"]')
     await expect(inProgress).toHaveAttribute('data-status', 'in_progress')
-    await expect(inProgress.$('.todo-status-icon')).toHaveText('→')
+    await expect(inProgress.$('.todo-status-icon svg[data-icon="arrow-right"]')).toExist()
 
     const completed = await inlinePanel.$('.todo-item[data-todo-id="todo-1"]')
     await expect(completed).toHaveAttribute('data-status', 'completed')

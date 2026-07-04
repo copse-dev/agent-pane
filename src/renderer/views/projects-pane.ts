@@ -1,4 +1,5 @@
 import { el, clear } from '../dom/helpers.ts'
+import { chevronRightIcon, closeIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { openNewThread, deleteThread } from '@shared/store/thread-helpers.ts'
@@ -101,7 +102,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       const projectRow = el(
         'button',
         { class: `project-row${isExpanded ? ' active' : ''}`, title: project.path },
-        el('span', { class: 'project-twisty' }, isExpanded ? '▼' : '▶'),
+        el(
+          'span',
+          { class: `project-twisty${isExpanded ? ' expanded' : ''}` },
+          chevronRightIcon('ui-icon ui-icon-sm'),
+        ),
         el('span', { class: 'project-name' }, project.name),
       )
       // A collapsed project hides its thread rows, so surface any thread of its
@@ -182,7 +187,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           chatRow.append(attentionBell('This thread needs your attention'))
         }
 
-        const del = el('button', { class: 'chat-delete', 'aria-label': 'Delete thread' }, '✕')
+        const del = el(
+          'button',
+          { class: 'chat-delete', 'aria-label': 'Delete thread' },
+          closeIcon('ui-icon ui-icon-sm'),
+        )
         del.addEventListener('click', (e) => {
           e.stopPropagation()
           if (project.id !== activeProjectId) return

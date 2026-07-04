@@ -93,6 +93,8 @@
   margin-top: var(--spacing-xs);
 }
 .tool-status-icon {
+  display: inline-flex;
+  align-items: center;
   color: var(--text-muted);
 }
 .tool-card[data-status='done'] .tool-status-icon {
