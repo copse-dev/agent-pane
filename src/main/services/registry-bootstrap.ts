@@ -33,7 +33,7 @@ import { updateTodosTool } from '../tools/todo-tool.ts'
 import { askUserTool } from '../tools/ask-user-tool.ts'
 import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
 import { browserTools } from '../tools/browser-tools.ts'
-import { rememberTool, recallTool } from '../tools/memory-tools.ts'
+import { rememberTool, recallTool, OKF_MEMORIES_ENABLED_SETTING } from '../tools/memory-tools.ts'
 import { revealPiiTool } from '../tools/reveal-pii-tool.ts'
 import { PII_REDACTION_ENABLED_SETTING } from './pii-redactor.ts'
 import { listSkills } from './skills-registry.ts'
@@ -44,15 +44,13 @@ import {
   BROWSER_TOOLS_DEFAULT_ENABLED,
 } from './browser/browser-origin-policy.ts'
 import { CI_INVESTIGATOR_ENABLED_SETTING } from './ci-investigator-service.ts'
-import { OKF_MEMORIES_ENABLED_SETTING } from './okf-memory-store.ts'
 import { LONG_HORIZON_TASKS_ENABLED_SETTING } from './long-task-tracker.ts'
 import { trackLongTaskTool } from '../tools/long-task-tool.ts'
 import { MODEL_CLASSIFIER_ENABLED_SETTING } from './model-classifier.ts'
 import { suggestModelTool } from '../tools/model-classifier-tool.ts'
 import { ADVISOR_STRATEGY_ENABLED_SETTING } from './advisor-strategy.ts'
 import { advisorTool } from '../tools/advisor-tool.ts'
-import { ROADMAP_PLANS_ENABLED_SETTING } from './roadmap-plans-store.ts'
-import { roadmapPlanTool } from '../tools/roadmap-tools.ts'
+import { ROADMAP_PLANS_ENABLED_SETTING, roadmapPlanTool } from '../tools/roadmap-tools.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
