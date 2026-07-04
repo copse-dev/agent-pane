@@ -11,7 +11,10 @@
 services:
   runner:
     build:
-      context: .
+      # Repo root so the image can bake the dependency tree (COPY package*.json
+      # + scripts, then `npm ci`); the Dockerfile lives under this tier's dir.
+      context: ../..
+      dockerfile: .github/runner-checks/Dockerfile
     image: copse-ci-checks-runner:latest
     # Ephemeral runners exit after each job; `always` restarts a fresh, clean
     # container that re-registers. Gives you per-job isolation for free.

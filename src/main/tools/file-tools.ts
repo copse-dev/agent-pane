@@ -1,8 +1,13 @@
 import * as fs from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { relative, resolve } from 'node:path'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
-import { resolveWorkspacePath, toRelativePath, getWorkspaceRoot } from '../services/workspace.ts'
+import {
+  resolveReadablePath,
+  toRelativePath,
+  getWorkspaceRoot,
+  isInsideChatStore,
+} from '../services/workspace.ts'
 import { runCommand } from '../services/command-runner.ts'
 import { getIndex } from '../services/file-index.ts'
 import micromatch from 'micromatch'
@@ -54,7 +59,7 @@ export const readFileTool = defineTool({
     }
     const { maxLines: READ_FILE_MAX_LINES, maxChars: READ_FILE_MAX_CHARS } =
       getAgentRunReadFileLimits()
-    const absPath = resolveWorkspacePath(path)
+    const absPath = resolveReadablePath(path)
 
     let result
     try {
@@ -98,11 +103,32 @@ export const listDirTool = defineTool({
     recursive: z.boolean().optional().default(false),
   }),
   async execute({ path, recursive }) {
-    const absPath = resolveWorkspacePath(path || '.')
+    const absPath = resolveReadablePath(path || '.')
     const workspaceRoot = getWorkspaceRoot()
     const absRoot = workspaceRoot ? resolve(workspaceRoot) : absPath
 
     if (recursive) {
+      // The chat store (#644) is neither in the workspace file-index nor
+      // workspace-relative, so list it directly with rg, rooted at and relative
+      // to the listed directory. `--no-follow` keeps a symlink from escaping.
+      if (isInsideChatStore(absPath)) {
+        const { stdout } = await runCommand('rg', [
+          '--files',
+          '--sort',
+          'path',
+          '--no-follow',
+          absPath,
+        ])
+        const paths = stdout
+          .split('\n')
+          .filter(Boolean)
+          .map((p) => relative(absPath, p))
+          .filter((p) => p !== '' && !p.startsWith('..'))
+        return (
+          paths.slice(0, LIST_DIR_MAX_ENTRIES).join('\n') +
+          (paths.length > LIST_DIR_MAX_ENTRIES ? '\n[Truncated at 1000 entries]' : '')
+        )
+      }
       const idx = getIndex()
       let paths: string[]
       if (idx) {

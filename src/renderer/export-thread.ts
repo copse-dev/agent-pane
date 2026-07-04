@@ -25,11 +25,16 @@ function providersFromUsage(usage: Thread['usage']): string[] {
 }
 
 /** JSONL export schema revision — bump when thread/message header fields change. */
-export const THREAD_JSONL_EXPORT_VERSION = 2
+export const THREAD_JSONL_EXPORT_VERSION = 3
 
-// JSONL: one JSON object per line — easy to stream, grep, and re-import; each
-// assistant line carries full toolCalls (args + results, plus editStats and any
-// nested subagent usage) inline.
+// JSONL: one JSON object per line — easy to stream, grep, and re-import. The
+// message line uses the same field names as the on-disk spine
+// (`@shared/threads/spine-schema.ts`, issue #644) — type/id/role/createdAt/
+// content/reasoning/images/commandSummary/toolCalls — with one deliberate
+// difference: an export stays single-file and self-contained, so it INLINES the
+// values the spine stores as refs (message/reasoning prose, tool results, and
+// full nested subagent sessions) instead of pointing at `messages/*.md`,
+// `blobs/*`, or `subagents/**`.
 export function threadToJsonl(thread: Thread): string {
   const lines: string[] = []
   lines.push(
@@ -56,17 +61,18 @@ export function threadToJsonl(thread: Thread): string {
     }),
   )
   for (const msg of thread.messages) {
+    // Field order mirrors the spine message line for greppability.
     lines.push(
       JSON.stringify({
         type: 'message',
         id: msg.id,
         role: msg.role,
+        createdAt: msg.createdAt,
         content: msg.content,
         ...(msg.reasoning !== undefined ? { reasoning: msg.reasoning } : {}),
         images: msg.images,
-        toolCalls: msg.toolCalls,
         commandSummary: msg.commandSummary,
-        createdAt: msg.createdAt,
+        toolCalls: msg.toolCalls,
       }),
     )
   }
