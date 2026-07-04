@@ -117,7 +117,12 @@ list-style-position: outside`). Bullets should sit clearly inset from headings, 
   headings + lists, explore subagent with `` `snake_case` `` tool names), not single-line `- foo`.
 - **Fenced code.** Non-mermaid fences are highlighted at render time via `highlight.js` (core +
   per-language imports in `highlight.ts`). Unknown tags fall back to escaped plain text; empty
-  lang uses auto-detection. Theme tokens live in `global.css` (VS Code Dark+ inspired).
+  lang uses auto-detection. Theme tokens live in `global.css` (VS Code Dark+ inspired). Content is
+  kept **verbatim** — interior/leading/trailing blank lines and the first line's indentation
+  survive (`highlightFenceCode` no longer trims; blank-only fences are preserved), and only the
+  opening fence's own indentation is stripped from content lines (`parseFenceSlice`). The language
+  is the first word of the info string with backslash escapes / entities decoded
+  (`fenceInfoLanguage`, spec #24: ` `foo\+bar ```→`language-foo+bar`) (#598).
 - **Mermaid diagrams.** Fenced ` ```mermaid ` blocks render as SVG via lazy-loaded `mermaid`
   (`mermaid.ts`). Diagram rendering runs after final markdown insertion (`message_done`, thread
   restore) — not on every streaming token. Fenced blocks are extracted before HTML escaping; prose
