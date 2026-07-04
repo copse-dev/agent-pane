@@ -18,6 +18,7 @@ import {
 } from './block-tokenizer.ts'
 import { escapeHtml, escapeMermaidHtml } from './escape.ts'
 import { fenceCodeClass, highlightFenceCode } from './highlight.ts'
+import { dedentBlock, isIndentedHtmlBlock } from './indented-html.ts'
 import { type LinkReferenceMap } from './link-references.ts'
 import { renderProseBlock } from './render-prose-inline.ts'
 
@@ -25,6 +26,12 @@ export interface RenderBlocksOptions {
   linkRefs?: LinkReferenceMap
   /** Tight list items render top-level paragraphs bare (no <p>, space soft breaks). */
   tightParagraphs?: boolean
+  /**
+   * Reclassify top-level `indented_code` blocks that are really raw HTML as prose
+   * (#616). Only the top-level `renderMarkdown` entry sets this; recursive
+   * list/blockquote rendering leaves nested indented code as CommonMark code.
+   */
+  htmlFromIndent?: boolean
 }
 
 const BLOCKQUOTE_LINE_RE = /^> ?/
@@ -330,10 +337,16 @@ function renderSingleBlock(
   token: BlockToken,
   linkRefs: LinkReferenceMap,
   tightParagraphs: boolean,
+  htmlFromIndent: boolean,
 ): string {
   const slice = source.slice(token.start, token.end)
   switch (token.kind) {
     case 'indented_code':
+      // A top-level indented block that is really raw HTML follows the raw-HTML
+      // policy (escaped/benign prose), not a <pre><code> dump (#616).
+      if (htmlFromIndent && isIndentedHtmlBlock(dropTrailingNewline(slice))) {
+        return renderParagraph(dedentBlock(dropTrailingNewline(slice)), linkRefs, false)
+      }
       return renderIndentedCode(slice)
     case 'fence': {
       const { lang, code } = parseFenceSlice(slice)
@@ -369,6 +382,7 @@ export function renderBlocks(
 ): string {
   const linkRefs = options.linkRefs ?? new Map()
   const tightParagraphs = options.tightParagraphs ?? false
+  const htmlFromIndent = options.htmlFromIndent ?? false
   const parts: string[] = []
   let i = 0
   while (i < tokens.length) {
@@ -390,7 +404,7 @@ export function renderBlocks(
       i = group.next
       continue
     }
-    const html = renderSingleBlock(source, token, linkRefs, tightParagraphs)
+    const html = renderSingleBlock(source, token, linkRefs, tightParagraphs, htmlFromIndent)
     if (html) parts.push(html)
     i++
   }
