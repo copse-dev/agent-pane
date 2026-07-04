@@ -32,7 +32,7 @@ import {
   startWorkspaceIndexWatcher,
 } from '../services/search/workspace-index-watcher.ts'
 import { getSetting, setSetting, hasApiKey, setApiKey } from '../services/storage/settings.ts'
-import { scanEnvForKeys, maskSecret } from '../services/env-key-detection.ts'
+import { scanEnvForKeys, maskSecret } from '../services/providers/env-key-detection.ts'
 import {
   isRendererWritableSettingKey,
   isSecretSettingKey,
@@ -46,8 +46,8 @@ import {
   deleteExtraProvider,
   refreshHuggingFaceModels,
   HUGGINGFACE_SLUG,
-} from '../services/extra-providers-store.ts'
-import { fetchOpenAiCompatibleModels } from '../services/provider-models.ts'
+} from '../services/providers/extra-providers-store.ts'
+import { fetchOpenAiCompatibleModels } from '../services/providers/provider-models.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
 import {
   loadProjectThreads,
@@ -111,12 +111,12 @@ import {
   registerDevtoolsShortcut,
   unregisterDevtoolsShortcut,
 } from '../windows/create-main-window.ts'
-import { validateApiKey } from '../services/validate-api-key.ts'
+import { validateApiKey } from '../services/providers/validate-api-key.ts'
 import {
   invalidateProviderKeyStatus,
   isProviderKeyUsable,
   recordProviderKeyValidation,
-} from '../services/provider-key-status.ts'
+} from '../services/providers/provider-key-status.ts'
 import { getUsageSummary, recordUsageEvent } from '../services/storage/usage-ledger.ts'
 import { parseUsageRecordInput } from '../services/storage/usage-record-schema.ts'
 import {

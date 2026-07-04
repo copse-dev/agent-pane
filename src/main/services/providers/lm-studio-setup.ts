@@ -3,9 +3,9 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { PREFERRED_MODEL_IDS } from '@shared/preferred-models.ts'
 import { fetchLmStudioModelsCached, lmStudioApiKey, lmStudioOrigin } from './lm-studio-models.ts'
-import { getSetting } from './storage/settings.ts'
+import { getSetting } from '../storage/settings.ts'
 import { DEFAULT_LM_STUDIO_URL } from '@shared/lm-studio-defaults.ts'
-import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
+import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 
 export interface LmStudioDetection {
   serverRunning: boolean

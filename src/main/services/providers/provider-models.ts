@@ -6,7 +6,7 @@
 // falls back to the provider's configured window — but we still parse it when a
 // server (e.g. LM Studio, vLLM) does include it.
 
-import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
+import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import { parseContextFromModelRecord, stripTrailingSlash } from './lm-studio-models.ts'
 
 export interface FetchedProviderModel {

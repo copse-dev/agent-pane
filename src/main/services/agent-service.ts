@@ -9,11 +9,11 @@ import type { LLMMessage, LLMTool, StreamChunk, UserContent } from '@shared/type
 import type { ToolRegistry } from './tool-registry.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { getSetting } from './storage/settings.ts'
-import { resolveContextWindow } from './resolve-context-window.ts'
+import { resolveContextWindow } from './providers/resolve-context-window.ts'
 import { classifyAgentError } from './agent-errors.ts'
 import { resolveParentGoal } from '@shared/agent/working-brief.ts'
 import { buildSystemPrompt } from './agent-system-prompt.ts'
-import { hasLastUsage } from './provider-usage.ts'
+import { hasLastUsage } from './providers/provider-usage.ts'
 import { clearActiveRunThread, recordThreadModel, setActiveRunThread } from './thread-models.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { redactUserContent } from './security/pii-redactor.ts'
@@ -23,7 +23,7 @@ import {
   buildSubagentRoute,
   buildReviewRoute,
   isLocalChatModel,
-} from './provider-selection.ts'
+} from './providers/provider-selection.ts'
 import { runPostTurnReview } from './review-subagent-runner.ts'
 import { isEditTool } from '@shared/agent/review-subagent.ts'
 import {
@@ -69,7 +69,7 @@ import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
 import { parseRemoteAgentModel } from '@shared/remote-agent.ts'
 import { runRemoteAgentFromSettings } from './remote/remote-agent-client.ts'
-import { resolveAgentChatModel } from './resolve-agent-model.ts'
+import { resolveAgentChatModel } from './providers/resolve-agent-model.ts'
 import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
 import { SUBAGENTS_ENABLED_DEFAULT, SUBAGENTS_ENABLED_SETTING } from './subagents-setting.ts'
@@ -82,7 +82,7 @@ export {
   listLmStudioModels,
   invalidateLmStudioModelsCache,
   testLmStudio,
-} from './provider-selection.ts'
+} from './providers/provider-selection.ts'
 export {
   suggestThreadTitle,
   suggestTerminalTitle,
