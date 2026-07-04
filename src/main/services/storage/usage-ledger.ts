@@ -8,7 +8,7 @@ import {
   type UsageSummary,
 } from '@shared/usage/aggregate-usage.ts'
 import { extraProviderPricingMap } from '@shared/llm/extra-providers.ts'
-import { getResolvedExtraProviders } from '../extra-providers-store.ts'
+import { getResolvedExtraProviders } from '../providers/extra-providers-store.ts'
 import {
   USAGE_EVENTS_STORAGE_KEY,
   type UsageRecordInput,

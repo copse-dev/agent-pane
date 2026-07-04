@@ -42,12 +42,12 @@ import {
 import {
   listFreeOpenRouterModels,
   invalidateOpenRouterModelsCache,
-} from './services/openrouter-models.ts'
+} from './services/providers/openrouter-models.ts'
 import {
   detectLmStudio,
   downloadLmStudioModel,
   getLmStudioDownloadStatus,
-} from './services/lm-studio-setup.ts'
+} from './services/providers/lm-studio-setup.ts'
 import { estimateContextBreakdown } from './services/context-estimate.ts'
 import { suggestFollowUps } from './services/follow-up-service.ts'
 import { storageGet, storageSet } from './services/storage/storage.ts'

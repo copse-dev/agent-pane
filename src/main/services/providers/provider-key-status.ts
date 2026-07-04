@@ -1,5 +1,5 @@
 import { validateApiKey } from './validate-api-key.ts'
-import { resolveApiKey } from './storage/settings.ts'
+import { resolveApiKey } from '../storage/settings.ts'
 
 interface CachedValidation {
   ok: boolean
