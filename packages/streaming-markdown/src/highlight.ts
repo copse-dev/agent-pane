@@ -56,22 +56,29 @@ function resolveLanguage(lang: string): string | null {
   return hljs.getLanguage(resolved) ? resolved : null
 }
 
-/** Highlight fenced code for HTML injection; falls back to escaped plain text. */
+/**
+ * Highlight fenced code for HTML injection; falls back to escaped plain text.
+ * The code is rendered verbatim — leading/trailing blank lines and the first
+ * line's indentation are preserved (#598); only the block-final newline is
+ * dropped for display (the fence parser already omits it).
+ */
 export function highlightFenceCode(code: string, lang: string): string {
-  const trimmed = code.trim()
-  if (!trimmed) return ''
+  if (code === '') return ''
+  // Blank-only fences (only newlines/spaces) are preserved exactly rather than
+  // fed to the highlighter, which would otherwise collapse or mis-detect them.
+  if (code.trim() === '') return escapeHtml(code)
 
   const language = resolveLanguage(lang)
   if (language) {
-    return hljs.highlight(trimmed, { language }).value
+    return hljs.highlight(code, { language }).value
   }
 
   if (!lang.trim()) {
-    const { value } = hljs.highlightAuto(trimmed)
+    const { value } = hljs.highlightAuto(code)
     return value
   }
 
-  return escapeHtml(trimmed)
+  return escapeHtml(code)
 }
 
 export function fenceCodeClass(lang: string): string {
