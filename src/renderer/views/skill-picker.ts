@@ -87,11 +87,25 @@ export function initSkillPicker(opts: SkillPickerOptions): () => void {
   }
 
   function updateSelection(): void {
-    picker.querySelectorAll('.mention-item').forEach((el, i) => {
-      const isSelected = i === selectedIdx
-      el.classList.toggle('selected', isSelected)
-      if (isSelected) el.scrollIntoView({ block: 'nearest' })
-    })
+    const items = picker.querySelectorAll<HTMLElement>('.mention-item')
+    items.forEach((el, i) => el.classList.toggle('selected', i === selectedIdx))
+    // Keep the highlighted row visible by scrolling the picker itself. Element
+    // `scrollIntoView` walks every scrollable ancestor to satisfy visibility,
+    // and for this absolutely-positioned, upward-opening popover
+    // (`position: absolute; bottom: 100%`) it fails to move the picker —
+    // leaving the selection off-screen once you arrow past the fold. The item's
+    // `offsetTop` is relative to the picker (its `offsetParent`, being
+    // positioned), so scrolling the container directly is self-contained and
+    // reliable regardless of the surrounding layout.
+    const selected = items[selectedIdx]
+    if (!selected) return
+    const top = selected.offsetTop
+    const bottom = top + selected.offsetHeight
+    if (top < picker.scrollTop) {
+      picker.scrollTop = top
+    } else if (bottom > picker.scrollTop + picker.clientHeight) {
+      picker.scrollTop = bottom - picker.clientHeight
+    }
   }
 
   textarea.addEventListener('input', () => {
