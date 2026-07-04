@@ -125,6 +125,20 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
     })
   })
 
+  it('drops the unspecified `other` kind so plain tool calls stay clean', () => {
+    const update: SessionUpdate = {
+      sessionUpdate: 'tool_call',
+      toolCallId: 't1',
+      title: 'read_file',
+      kind: 'other',
+      rawInput: { path: 'a.ts' },
+    }
+    assert.deepEqual(sessionUpdateToStreamChunk(update), {
+      type: 'tool_call',
+      toolCall: { id: 't1', name: 'read_file', args: { path: 'a.ts' } },
+    })
+  })
+
   it('maps a completed tool_call_update to a tool_result and joins text content', () => {
     const update: SessionUpdate = {
       sessionUpdate: 'tool_call_update',
