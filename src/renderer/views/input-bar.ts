@@ -1,6 +1,5 @@
 import { el, clear } from '../dom/helpers.ts'
 import { outlineIcon } from '../dom/outline-icon.ts'
-import { closeIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
@@ -17,10 +16,16 @@ import {
   buildTextWithAttachments,
   isTextBlockAttachment,
   textBlockLabel,
+  type ThreadRefAttachment,
 } from '@shared/agent/build-text-with-attachments.ts'
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import { bindFileDropTarget, attachFiles } from '../attachments/handle-file-drop.ts'
-import { initMentionPicker } from './mention-picker.ts'
+import {
+  initMentionPicker,
+  relativeDate,
+  threadIcon,
+  type AttachedThreadRef,
+} from './mention-picker.ts'
 import { initSkillPicker } from './skill-picker.ts'
 import { resolveSkillInvocation } from '@shared/skills/parse-skill-invocation.ts'
 import { buildSkillUserText } from '@shared/skills/build-skill-user-content.ts'
@@ -203,6 +208,16 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   let attachedFiles: { path: string; content: string }[] = []
   let attachedTextBlocks: { id: string; label: string; content: string }[] = []
   let attachedImages: { dataUrl: string; mimeType: string }[] = []
+  // `@`-referenced past threads (#644): the agent gets a path reference + steering
+  // preamble, nothing inlined. Composer-only state, like file/image chips.
+  let attachedThreads: AttachedThreadRef[] = []
+
+  const currentThreadRefs = (): ThreadRefAttachment[] =>
+    attachedThreads.map((t) => ({
+      title: t.title || 'Untitled thread',
+      date: relativeDate(t.updatedAt),
+      spinePath: t.spinePath,
+    }))
   let mismatchBranch: string | null = null
   let checkoutInProgress = false
   let lastBreakdown: ContextBreakdown | null = null
@@ -343,7 +358,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       textarea.value.trim().length > 0 ||
       attachedFiles.length > 0 ||
       attachedTextBlocks.length > 0 ||
-      attachedImages.length > 0
+      attachedImages.length > 0 ||
+      attachedThreads.length > 0
     // Show the pre-send breakdown while composing (or on fresh threads with no live
     // snapshot); keep the measured live snapshot once a run has produced one.
     const showBreakdown =
@@ -397,7 +413,9 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       invocation && (skillsCache ?? []).some((skill) => skill.name === invocation.skillName)
         ? [invocation.skillName]
         : []
-    const draftText = buildTextWithAttachments(rawText, attachedFiles, attachedTextBlocks)
+    const draftText = buildTextWithAttachments(rawText, attachedFiles, attachedTextBlocks, {
+      threadRefs: currentThreadRefs(),
+    })
     const model = getActiveThread(store)?.model
     return JSON.stringify({
       draftText,
@@ -527,7 +545,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       !rawText &&
       attachedFiles.length === 0 &&
       attachedTextBlocks.length === 0 &&
-      attachedImages.length === 0
+      attachedImages.length === 0 &&
+      attachedThreads.length === 0
     )
       return
     const id = getActiveThreadId()
@@ -587,11 +606,15 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
         ...attachedImages.map((img) => ({ type: 'image' as const, dataUrl: img.dataUrl })),
         {
           type: 'text' as const,
-          text: buildTextWithAttachments(text, attachedFiles, attachedTextBlocks),
+          text: buildTextWithAttachments(text, attachedFiles, attachedTextBlocks, {
+            threadRefs: currentThreadRefs(),
+          }),
         },
       ]
     } else {
-      fullContent = buildTextWithAttachments(text, attachedFiles, attachedTextBlocks)
+      fullContent = buildTextWithAttachments(text, attachedFiles, attachedTextBlocks, {
+        threadRefs: currentThreadRefs(),
+      })
     }
 
     const priorTodos = thread?.todos ?? []
@@ -611,10 +634,9 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     // messages, so without this the user's own prompt never appears.
     const displayParts: string[] = []
     if (rawText) displayParts.push(rawText)
-    attachedFiles.forEach((f) =>
-      displayParts.push(`Attached: ${f.path.split('/').pop() ?? f.path}`),
-    )
-    attachedTextBlocks.forEach((b) => displayParts.push(`Attached text: ${b.label}`))
+    attachedFiles.forEach((f) => displayParts.push(`📎 ${f.path.split('/').pop() ?? f.path}`))
+    attachedTextBlocks.forEach((b) => displayParts.push(`📝 ${b.label}`))
+    attachedThreads.forEach((t) => displayParts.push(`🧵 ${t.title || 'Untitled thread'}`))
     const imageUrls = attachedImages.map((img) => img.dataUrl)
     const messageId = addMessage(
       store,
@@ -639,6 +661,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     attachedFiles = []
     attachedTextBlocks = []
     attachedImages = []
+    attachedThreads = []
     clear(chips)
     scheduleContextEstimate(0)
   }
@@ -649,10 +672,30 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     chip.className = 'attachment-chip'
     chip.textContent = file.path.split('/').pop() ?? file.path
     const remove = document.createElement('button')
-    remove.setAttribute('aria-label', 'Remove attachment')
-    remove.append(closeIcon('ui-icon ui-icon-sm'))
+    remove.textContent = '✕'
     remove.addEventListener('click', () => {
       attachedFiles = attachedFiles.filter((f) => f.path !== file.path)
+      chip.remove()
+      scheduleContextEstimate()
+    })
+    chip.append(remove)
+    chips.append(chip)
+    scheduleContextEstimate()
+  }
+
+  function addThreadChip(ref: AttachedThreadRef): void {
+    if (attachedThreads.some((t) => t.threadId === ref.threadId)) return
+    attachedThreads.push(ref)
+    const chip = document.createElement('span')
+    chip.className = 'attachment-chip thread-chip'
+    chip.append(
+      threadIcon('thread-chip-icon'),
+      document.createTextNode(ref.title || 'Untitled thread'),
+    )
+    const remove = document.createElement('button')
+    remove.textContent = '✕'
+    remove.addEventListener('click', () => {
+      attachedThreads = attachedThreads.filter((t) => t.threadId !== ref.threadId)
       chip.remove()
       scheduleContextEstimate()
     })
@@ -669,8 +712,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     chip.className = 'attachment-chip text-chip'
     chip.textContent = label
     const remove = document.createElement('button')
-    remove.setAttribute('aria-label', 'Remove attachment')
-    remove.append(closeIcon('ui-icon ui-icon-sm'))
+    remove.textContent = '✕'
     remove.addEventListener('click', () => {
       attachedTextBlocks = attachedTextBlocks.filter((b) => b.id !== id)
       chip.remove()
@@ -690,8 +732,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     thumb.width = 40
     thumb.height = 40
     const remove = document.createElement('button')
-    remove.setAttribute('aria-label', 'Remove attachment')
-    remove.append(closeIcon('ui-icon ui-icon-sm'))
+    remove.textContent = '✕'
     remove.addEventListener('click', () => {
       attachedImages = attachedImages.filter((i) => i.dataUrl !== dataUrl)
       chip.remove()
@@ -765,7 +806,14 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     () => store.getState().workspaceRoot,
   )
 
-  initMentionPicker({ textarea, inputBar: root, store, api, onAttach: addChip })
+  initMentionPicker({
+    textarea,
+    inputBar: root,
+    store,
+    api,
+    onAttach: addChip,
+    onAttachThread: addThreadChip,
+  })
 
   let skillsCache: SkillSummary[] | null = null
   const refreshSkillsCache = (): void => {

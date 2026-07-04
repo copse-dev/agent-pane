@@ -1,4 +1,4 @@
-import { loadAllProjectThreads } from './thread-persistence.ts'
+import { loadAllProjectThreads } from './thread-store.ts'
 import type { StreamChunk } from '@shared/types'
 import { storageGet, storageSet } from './storage.ts'
 import {

@@ -1,9 +1,10 @@
 import { decodeEscapedPunctuation, encodeBackslashEscapes } from './backslash-escapes.ts'
-import { escapeHtml, escapeHtmlTextNodes } from './escape.ts'
+import { escapeHtmlTextNodes } from './escape.ts'
 import { renderAngleAutolinks } from './inline-autolinks.ts'
 import { renderInlineCode } from './inline-code-spans.ts'
 import { INLINE_HTML_SHIELD_RE, renderEmphasisOutsideInlineHtml } from './inline-emphasis.ts'
-import { renderInlineLinks, safeLinkHref } from './inline-links.ts'
+import { renderAnchor, renderInlineLinks, safeLinkHref } from './inline-links.ts'
+import { renderStrikethrough } from './inline-strikethrough.ts'
 import { type LinkReferenceMap } from './link-references.ts'
 
 function renderNestedInlineSpans(t: string, linkRefs: LinkReferenceMap): string {
@@ -13,6 +14,9 @@ function renderNestedInlineSpans(t: string, linkRefs: LinkReferenceMap): string 
   t = renderInlineCode(t)
   t = renderAngleAutolinks(t)
   t = renderEmphasisOutsideInlineHtml(t, linkRefs)
+  // GFM strikethrough after emphasis (so `~~*x*~~` nests) and before links (so a
+  // struck `~~[a](b)~~` still resolves the link inside the <del>).
+  t = renderStrikethrough(t)
   t = renderInlineLinks(t, linkRefs, renderNestedInlineSpans)
   // Strong spans around rendered <code>/<a>/<img> run after links so patterns
   // like `**[#264](url)**` and `**[`path`](path) tail**` resolve to real
@@ -51,7 +55,8 @@ function renderStrongWithInlineHtml(text: string): string {
 }
 
 function renderedBareLink(label: string, href: string): string {
-  return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" data-browser-link="true">${label}</a>`
+  // Bare autolinks route through the active LinkDecorator like markdown links (#601).
+  return renderAnchor(label, href)
 }
 
 const BARE_HTTP_URL_RE = /(^|[\s(])((?:https?:\/\/)[^\s<]+)/gi
