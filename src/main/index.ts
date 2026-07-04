@@ -50,12 +50,12 @@ import {
 } from './services/lm-studio-setup.ts'
 import { estimateContextBreakdown } from './services/context-estimate.ts'
 import { suggestFollowUps } from './services/follow-up-service.ts'
-import { storageGet, storageSet } from './services/storage.ts'
+import { storageGet, storageSet } from './services/storage/storage.ts'
 import { getMainWindow } from './windows/create-main-window.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
 import { clearRemoteAgentSession } from './services/remote/remote-agent-client.ts'
 import { shutdownBrowserSession } from './services/browser/session-manager.ts'
-import { drainWriteQueue } from './services/write-queue.ts'
+import { drainWriteQueue } from './services/storage/write-queue.ts'
 import {
   assertMainFrameSender,
   estimateContextPayloadSchema,

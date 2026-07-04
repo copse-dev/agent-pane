@@ -1,4 +1,4 @@
-import { getSetting, getSettingTrimmed } from './settings.ts'
+import { getSetting, getSettingTrimmed } from './storage/settings.ts'
 import { LM_STUDIO_MODEL_IDS, DEFAULT_LM_STUDIO_URL } from '@shared/lm-studio-defaults.ts'
 import { getModelInfo } from '@shared/llm/model-catalog.ts'
 import { isOpenRouterModel, openRouterModelId } from '@shared/llm/openrouter.ts'

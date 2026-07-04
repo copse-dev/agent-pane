@@ -1,4 +1,4 @@
-import { getSetting, getLmStudioApiKey } from '../settings.ts'
+import { getSetting, getLmStudioApiKey } from '../storage/settings.ts'
 import { LM_STUDIO_MODEL_IDS, DEFAULT_LM_STUDIO_URL } from '@shared/lm-studio-defaults.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
@@ -6,7 +6,7 @@ import { resolveLocalModelId } from '../provider-selection.ts'
 import { stripTrailingSlash } from '../lm-studio-models.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
-import { recordUsageEvent } from '../usage-ledger.ts'
+import { recordUsageEvent } from '../storage/usage-ledger.ts'
 import { lmStudioChatModelValue } from '@shared/lm-studio-defaults.ts'
 
 export interface ClassificationResult {

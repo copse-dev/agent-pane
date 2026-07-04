@@ -4,8 +4,8 @@ import type {
   McpServerConfig,
   McpServerStatus,
 } from '@shared/types/mcp.ts'
-import { storageGet, storageUpdate } from '../storage.ts'
-import { parseStringList } from '../storage-schema.ts'
+import { storageGet, storageUpdate } from '../storage/storage.ts'
+import { parseStringList } from '../storage/storage-schema.ts'
 
 /**
  * "Copse reviewed" MCP servers: a small, vetted catalog shipped with the app.

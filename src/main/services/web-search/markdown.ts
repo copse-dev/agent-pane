@@ -1,7 +1,7 @@
 import Turndown from 'turndown'
 import { JSDOM } from 'jsdom'
 import { Readability } from '@mozilla/readability'
-import { getSetting } from '../settings.ts'
+import { getSetting } from '../storage/settings.ts'
 import {
   WEB_ALLOWED_ORIGINS_SETTING,
   clearWebOriginGrant,

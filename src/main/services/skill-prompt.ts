@@ -1,6 +1,6 @@
 import { listSkills, readSkill, getSkill } from './skills-registry.ts'
 import { splitSkillMarkdown } from './parse-skill-frontmatter.ts'
-import { getSetting } from './settings.ts'
+import { getSetting } from './storage/settings.ts'
 import type { SkillSource } from '@shared/types/skills.ts'
 
 /** Setting: warn (in prompt + UI) when an invoked skill references external links. Default on. */

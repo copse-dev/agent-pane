@@ -5,7 +5,7 @@ import type { CursorPermissionHookEvent } from '@shared/types/cursor-hooks.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { classifyShellScope } from './safety-classifier.ts'
 import { requestApproval } from '../approval.ts'
-import { getSetting, setSetting } from '../settings.ts'
+import { getSetting, setSetting } from '../storage/settings.ts'
 import {
   SANDBOX_TOOLS,
   decideShellPermission,

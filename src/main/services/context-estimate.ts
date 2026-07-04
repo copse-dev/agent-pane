@@ -1,7 +1,7 @@
 import type { LLMMessage, LLMTool } from '@shared/types'
 import type { ContextBreakdown } from '@shared/types/thread.ts'
 import type { ToolRegistry } from './tool-registry.ts'
-import { getSetting } from './settings.ts'
+import { getSetting } from './storage/settings.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { resolveContextWindow } from './resolve-context-window.ts'
 import { buildSystemPrompt } from './agent-system-prompt.ts'

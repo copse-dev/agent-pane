@@ -1,5 +1,5 @@
 import { loadProjectInstructions } from './project-instructions.ts'
-import { getSetting, getSettingTrimmed } from './settings.ts'
+import { getSetting, getSettingTrimmed } from './storage/settings.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import {
   BROWSER_TOOLS_ENABLED_SETTING,

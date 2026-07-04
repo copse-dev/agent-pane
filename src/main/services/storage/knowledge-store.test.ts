@@ -15,7 +15,7 @@ import {
   setKnowledgeRootForTest,
   updateKnowledgeNote,
 } from './knowledge-store.ts'
-import { setWorkspaceRootForTest } from './workspace.ts'
+import { setWorkspaceRootForTest } from '../workspace.ts'
 
 describe('knowledge-store', () => {
   let root: string

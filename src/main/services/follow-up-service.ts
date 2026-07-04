@@ -6,12 +6,12 @@ import {
   buildFixMergeConflictsSuggestion,
 } from '@shared/follow-ups/presets.ts'
 import { resolveSmallTasksProvider, resolveSmallTasksModelId } from './small-tasks-provider.ts'
-import { getSetting } from './settings.ts'
+import { getSetting } from './storage/settings.ts'
 import { CI_INVESTIGATOR_ENABLED_SETTING } from './github/ci-investigator-service.ts'
 import { getPrWorkspaceContext } from './github/pr-context-service.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
 import { completeTextWithUsage } from './llm-complete-text.ts'
-import { recordUsageEvent } from './usage-ledger.ts'
+import { recordUsageEvent } from './storage/usage-ledger.ts'
 
 const MAX_SUGGESTIONS = 3
 

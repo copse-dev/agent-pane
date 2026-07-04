@@ -8,7 +8,7 @@ import {
 import type { LLMMessage, LLMTool, StreamChunk, UserContent } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
-import { getSetting } from './settings.ts'
+import { getSetting } from './storage/settings.ts'
 import { resolveContextWindow } from './resolve-context-window.ts'
 import { classifyAgentError } from './agent-errors.ts'
 import { resolveParentGoal } from '@shared/agent/working-brief.ts'

@@ -12,7 +12,7 @@ import {
   searchKnowledgeNotes,
   updateKnowledgeNote,
   type KnowledgeNote,
-} from '../services/knowledge-store.ts'
+} from '../services/storage/knowledge-store.ts'
 
 /**
  * Experimental OKF memories feature. `remember`/`recall` persist durable project

@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { setSetting } from '../settings.ts'
+import { setSetting } from '../storage/settings.ts'
 import {
   redactUserContent,
   revealPlaceholder,

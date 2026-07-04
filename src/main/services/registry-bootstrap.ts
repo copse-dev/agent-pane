@@ -37,14 +37,14 @@ import { rememberTool, recallTool, OKF_MEMORIES_ENABLED_SETTING } from '../tools
 import { revealPiiTool } from '../tools/reveal-pii-tool.ts'
 import { PII_REDACTION_ENABLED_SETTING } from './security/pii-redactor.ts'
 import { listSkills } from './skills-registry.ts'
-import { getSetting } from './settings.ts'
+import { getSetting } from './storage/settings.ts'
 import { isGhAvailable } from './tool-availability.ts'
 import {
   BROWSER_TOOLS_ENABLED_SETTING,
   BROWSER_TOOLS_DEFAULT_ENABLED,
 } from './browser/browser-origin-policy.ts'
 import { CI_INVESTIGATOR_ENABLED_SETTING } from './github/ci-investigator-service.ts'
-import { LONG_HORIZON_TASKS_ENABLED_SETTING } from './long-task-tracker.ts'
+import { LONG_HORIZON_TASKS_ENABLED_SETTING } from './storage/long-task-tracker.ts'
 import { trackLongTaskTool } from '../tools/long-task-tool.ts'
 import { MODEL_CLASSIFIER_ENABLED_SETTING } from './model-classifier.ts'
 import { suggestModelTool } from '../tools/model-classifier-tool.ts'

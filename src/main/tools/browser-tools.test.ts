@@ -1,7 +1,7 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { createRegistry } from '../services/registry-bootstrap.ts'
-import { setSetting } from '../services/settings.ts'
+import { setSetting } from '../services/storage/settings.ts'
 import { SANDBOX_TOOLS } from '../services/security/permission-policy.ts'
 import { BROWSER_TOOLS } from '../services/browser/browser-origin-policy.ts'
 

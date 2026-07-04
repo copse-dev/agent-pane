@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { estimateContextBreakdown } from './context-estimate.ts'
 import { createRegistry } from './registry-bootstrap.ts'
 import { refreshSkillsRegistry } from './skills-registry.ts'
-import { setSetting } from './settings.test-shim.ts'
+import { setSetting } from './storage/settings.test-shim.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 import {
   resetBundledCursorSkillsRootForTest,

@@ -3,8 +3,8 @@ import { glob, rm } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 
-const settingsShim = resolve('src/main/services/settings.test-shim.ts')
-const storageShim = resolve('src/main/services/storage.test-shim.ts')
+const settingsShim = resolve('src/main/services/storage/settings.test-shim.ts')
+const storageShim = resolve('src/main/services/storage/storage.test-shim.ts')
 
 const testFiles: string[] = []
 for await (const f of glob('src/**/*.test.ts')) testFiles.push(f)

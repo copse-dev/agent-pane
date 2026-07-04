@@ -12,9 +12,9 @@ import type { McpServerConfig, McpServerStatus, McpToolAnnotations } from '@shar
 import type { ToolRegistry } from '../tool-registry.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
-import { getSetting } from '../settings.ts'
-import { storageGet, storageUpdate } from '../storage.ts'
-import { parseStringList } from '../storage-schema.ts'
+import { getSetting } from '../storage/settings.ts'
+import { storageGet, storageUpdate } from '../storage/storage.ts'
+import { parseStringList } from '../storage/storage-schema.ts'
 import {
   interpolateServerConfig,
   mcpToolName,

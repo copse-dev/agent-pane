@@ -1,6 +1,6 @@
 import { realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { storageGet, storageSet } from '../storage.ts'
+import { storageGet, storageSet } from '../storage/storage.ts'
 
 /**
  * "Trust this workspace" gate (issue #100).

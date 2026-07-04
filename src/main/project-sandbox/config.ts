@@ -2,7 +2,7 @@ import { accessSync, mkdirSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
-import { getSetting } from '../services/settings.ts'
+import { getSetting } from '../services/storage/settings.ts'
 import { getChatStoreRoot } from '../services/workspace.ts'
 import {
   WEB_ALLOWED_ORIGINS_SETTING,

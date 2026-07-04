@@ -11,7 +11,7 @@ import {
   setLongTaskRootForTest,
   taskProgress,
 } from './long-task-tracker.ts'
-import { setWorkspaceRootForTest } from './workspace.ts'
+import { setWorkspaceRootForTest } from '../workspace.ts'
 
 describe('long-task-tracker', () => {
   let root: string

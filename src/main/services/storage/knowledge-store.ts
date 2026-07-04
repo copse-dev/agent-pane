@@ -9,8 +9,8 @@ import {
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
-import { splitSkillMarkdown } from './parse-skill-frontmatter.ts'
-import { getActiveProjectRoot } from './workspace.ts'
+import { splitSkillMarkdown } from '../parse-skill-frontmatter.ts'
+import { getActiveProjectRoot } from '../workspace.ts'
 
 /**
  * Per-project store for durable *application knowledge* — facts, decisions, and

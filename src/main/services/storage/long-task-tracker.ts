@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { z } from 'zod'
 import { at } from '@shared/array-utils.ts'
-import { getActiveProjectRoot } from './workspace.ts'
+import { getActiveProjectRoot } from '../workspace.ts'
 
 /**
  * Experimental, opt-in "long-horizon tasks" feature (tracked in

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { APP_ICON_VARIANTS } from '@shared/app-icon-variants.ts'
-import { validateRemoteAgentBaseUrl, validateWebOriginPattern } from './security/web-origin-policy.ts'
+import { validateRemoteAgentBaseUrl, validateWebOriginPattern } from '../security/web-origin-policy.ts'
 
 // Empty string means "use the provider default"; any non-empty value must be a
 // safe base URL since it carries the Cursor API key as an Authorization header.

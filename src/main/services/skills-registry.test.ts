@@ -11,7 +11,7 @@ import {
   setSkillsForTest,
   SKILL_READ_MAX_BYTES,
 } from './skills-registry.ts'
-import { setSetting } from './settings.test-shim.ts'
+import { setSetting } from './storage/settings.test-shim.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 import {
   resetBundledCursorSkillsRootForTest,

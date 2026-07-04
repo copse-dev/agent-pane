@@ -1,7 +1,7 @@
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { isMcpToolRemembered, rememberMcpTool, setMcpServerUserEnabled } from './mcp-registry.ts'
-import { storageGet, storageSet } from '../storage.ts'
+import { storageGet, storageSet } from '../storage/storage.ts'
 
 // These exercise the serialized read-modify-write path for the shared
 // electron-store keys. `storage.ts` is replaced by the in-memory test shim,

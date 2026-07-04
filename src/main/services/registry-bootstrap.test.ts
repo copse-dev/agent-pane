@@ -7,7 +7,7 @@ import { createRegistry, registerSkillTools, syncOkfMemoryTools } from './regist
 import { ToolRegistry } from './tool-registry.ts'
 import { refreshSkillsRegistry, setSkillsForTest } from './skills-registry.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
-import { setSetting } from './settings.test-shim.ts'
+import { setSetting } from './storage/settings.test-shim.ts'
 import { setGhAvailableForTest } from './tool-availability.ts'
 import {
   setBundledCursorSkillsRootForTest,

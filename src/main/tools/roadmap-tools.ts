@@ -6,7 +6,7 @@ import {
   loadKnowledgeNotes,
   setKnowledgeNoteStatus,
   type KnowledgeNote,
-} from '../services/knowledge-store.ts'
+} from '../services/storage/knowledge-store.ts'
 
 /**
  * Experimental roadmap-plans feature (issue #556). A roadmap is a backlog of

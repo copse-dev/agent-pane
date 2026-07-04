@@ -6,7 +6,7 @@ import {
   getResolvedExtraProvider,
   saveExtraProvider,
 } from '../../../main/services/extra-providers-store.ts'
-import { setSetting } from '../../../main/services/settings.ts'
+import { setSetting } from '../../../main/services/storage/settings.ts'
 
 // A minimal ApiClient stand-in whose extra-provider methods delegate to the real
 // main-process store. This exercises the actual read-modify-write of the single
