@@ -1,6 +1,27 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { classifySearchQuery, buildSearchRoutingPromptBlock } from './search-routing.ts'
+import {
+  classifySearchQuery,
+  buildSearchRoutingPromptBlock,
+  resolveSearchText,
+} from './search-routing.ts'
+
+describe('resolveSearchText', () => {
+  it('prefers the primary name when present', () => {
+    assert.equal(resolveSearchText('foo', 'bar'), 'foo')
+    assert.equal(resolveSearchText('foo', undefined), 'foo')
+  })
+
+  it('falls back to the alias when the primary is absent', () => {
+    assert.equal(resolveSearchText(undefined, 'bar'), 'bar')
+  })
+
+  it('returns undefined when neither is a non-empty string', () => {
+    assert.equal(resolveSearchText(undefined, undefined), undefined)
+    assert.equal(resolveSearchText('', undefined), undefined)
+    assert.equal(resolveSearchText('', ''), undefined)
+  })
+})
 
 describe('search-routing', () => {
   it('routes identifier-like queries to regex search', () => {
