@@ -24,7 +24,7 @@
     "prestart": "node scripts/patch-dev-name.mts",
     "start": "electron dist/main/index.js",
     "preinstall": "node scripts/check-node-version.cjs",
-    "postinstall": "node scripts/check-node-version.cjs && node scripts/patch-dev-name.mts && node scripts/postinstall-native.mts && node scripts/fetch-codesearch.mts && npx tsx scripts/fetch-bundled-cursor-skills.mts",
+    "postinstall": "node scripts/check-node-version.cjs && node scripts/patch-dev-name.mts && node scripts/postinstall-native.mts && node scripts/fetch-gortex.mts && node scripts/fetch-codesearch.mts && npx tsx scripts/fetch-bundled-cursor-skills.mts",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint .",
     "check:dead-code": "node scripts/check-dead-code.mts",
@@ -66,7 +66,8 @@
     "asarUnpack": [
       "**/node_modules/node-pty/**/*",
       "**/node_modules/@anthropic-ai/sandbox-runtime/**/*",
-      "dist/resources/codesearch/**"
+      "dist/resources/codesearch/**",
+      "dist/resources/gortex/**"
     ],
     "publish": [
       {

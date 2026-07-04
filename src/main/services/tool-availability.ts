@@ -1,7 +1,6 @@
 import { runCommand } from './command-runner.ts'
-import { getBundledCodesearchPath } from './bundled-semantic.ts'
 import { probeIndexedGrepBackends } from './indexed-grep.ts'
-import { getCodesearchCommand, probeSemanticBackends } from './semantic-index.ts'
+import { isSemanticBackendBundled, probeSemanticBackends } from './semantic-index.ts'
 
 let rgAvail: boolean | null = null
 let gitAvail: boolean | null = null
@@ -32,11 +31,11 @@ export async function checkToolAvailability(): Promise<void> {
   if (semanticBackend)
     console.info(
       `[copse-panel] semantic search will use native backend: ${semanticBackend}` +
-        (getCodesearchCommand() === getBundledCodesearchPath() ? ' (bundled)' : ''),
+        (isSemanticBackendBundled() ? ' (bundled)' : ''),
     )
   else
     console.warn(
-      '[copse-panel] codesearch/vera not found — semantic search disabled (run npm install or add CLI to PATH)',
+      '[copse-panel] gortex/codesearch/vera not found — semantic search disabled (run npm install or add CLI to PATH)',
     )
   if (!gitAvail) console.warn('[copse-panel] git not found — git tools will be unavailable')
   if (!ghAvail)

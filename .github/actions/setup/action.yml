@@ -59,6 +59,7 @@ runs:
         path: |
           node_modules
           vendor/codesearch
+          vendor/gortex
         # The -vN token is a manual cache-bust: earlier runs on a runner with
         # ignore-scripts saved a node_modules with no native builds (no esbuild
         # binary, no electron-rebuilt node-pty) under the lockfile-hash key. Since

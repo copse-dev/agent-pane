@@ -19,7 +19,7 @@ export const searchCodebaseTool = defineTool({
       .optional()
       .default('auto')
       .describe(
-        'auto: infer from query; regex: indexed grep/ripgrep; semantic: native codesearch/vera',
+        'auto: infer from query; regex: indexed grep/ripgrep; semantic: native gortex/codesearch/vera',
       ),
     path: z
       .string()
@@ -62,8 +62,8 @@ export const searchCodebaseTool = defineTool({
       }
       if (mode === 'semantic') {
         return (
-          'Semantic search unavailable. Bundled codesearch failed to install or vera/codesearch ' +
-          'is missing on PATH (see README.md), or retry with mode: regex.'
+          'Semantic search unavailable. Bundled gortex/codesearch failed to install or ' +
+          'gortex/codesearch/vera is missing on PATH (see README.md), or retry with mode: regex.'
         )
       }
     }
@@ -94,7 +94,7 @@ export const searchCodebaseTool = defineTool({
 export const semanticSearchTool = defineTool({
   name: 'semantic_search',
   description:
-    'Search the codebase by meaning using a local semantic index (codesearch or vera CLI). Use for conceptual questions.',
+    'Search the codebase by meaning using a local semantic index (gortex, codesearch, or vera CLI). Use for conceptual questions.',
   parameters: z.object({
     query: z.string().describe('Natural-language question about code behavior or architecture'),
     path: z.string().optional().describe('Optional subdirectory scope'),
@@ -115,8 +115,8 @@ export const semanticSearchTool = defineTool({
     )
     if (semantic === null) {
       return (
-        'Semantic search unavailable. Bundled codesearch failed to install or vera/codesearch ' +
-        'is missing on PATH (see README.md).'
+        'Semantic search unavailable. Bundled gortex/codesearch failed to install or ' +
+        'gortex/codesearch/vera is missing on PATH (see README.md).'
       )
     }
 

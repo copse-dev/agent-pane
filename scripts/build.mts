@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import { copyMonacoWorkers } from './copy-monaco-workers.mts'
 
 const bundledCodesearchName = process.platform === 'win32' ? 'codesearch.exe' : 'codesearch'
+const bundledGortexName = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
 
 const sharedAlias = {
   '@shared': resolve('./src/shared'),
@@ -106,6 +107,14 @@ const bundledCodesearch = resolve('vendor/codesearch', bundledCodesearchName)
 try {
   accessSync(bundledCodesearch)
   cpSync('vendor/codesearch', 'dist/resources/codesearch', { recursive: true })
+} catch {
+  // Optional — postinstall may be skipped on unsupported platforms.
+}
+
+const bundledGortex = resolve('vendor/gortex', bundledGortexName)
+try {
+  accessSync(bundledGortex)
+  cpSync('vendor/gortex', 'dist/resources/gortex', { recursive: true })
 } catch {
   // Optional — postinstall may be skipped on unsupported platforms.
 }

@@ -5,7 +5,9 @@ import {
   codesearchCpuLimitEnv,
   codesearchThreadCap,
   formatSemanticSearchResults,
+  gortexCpuLimitEnv,
   parseCodesearchJson,
+  parseGortexJson,
   parseVeraJson,
   resolveSemanticSearchRoot,
   setSemanticBackendForTest,
@@ -93,6 +95,84 @@ describe('semantic-index parsing', () => {
     }
   })
 
+  it('parses gortex search_symbols JSON results', () => {
+    // Shape captured from `gortex call search_symbols --format json` (v0.58.3).
+    const stdout = JSON.stringify({
+      next_cursor: 'eyJvZmZzZXQiOjV9',
+      query_class: 'concept',
+      results: [
+        {
+          absolute_file_path: '/tmp/repo/src/main/services/semantic-index.ts',
+          doc: 'Incrementally update the semantic index after workspace file changes.',
+          file_path: 'src/main/services/semantic-index.ts',
+          id: 'src/main/services/semantic-index.ts::updateSemanticIndex',
+          kind: 'function',
+          name: 'updateSemanticIndex',
+          project_id: 'repo',
+          start_line: 247,
+          visibility: 'public',
+          workspace_id: 'repo',
+        },
+        {
+          absolute_file_path: '/tmp/repo/src/main/services/settings-schema.ts',
+          file_path: 'src/main/services/settings-schema.ts',
+          id: 'src/main/services/settings-schema.ts::getSettingSchema',
+          kind: 'function',
+          name: 'getSettingSchema',
+          project_id: 'repo',
+          start_line: 86,
+          visibility: 'public',
+          workspace_id: 'repo',
+        },
+      ],
+      total: 31,
+      truncated: true,
+    })
+
+    const restore = setWorkspaceRootForTest('/tmp/repo')
+    try {
+      assert.deepEqual(parseGortexJson(stdout, 10), [
+        {
+          path: 'src/main/services/semantic-index.ts',
+          startLine: 247,
+          text: 'function updateSemanticIndex — Incrementally update the semantic index after workspace file changes.',
+        },
+        {
+          path: 'src/main/services/settings-schema.ts',
+          startLine: 86,
+          text: 'function getSettingSchema',
+        },
+      ])
+    } finally {
+      restore()
+    }
+  })
+
+  it('scopes gortex hits to a filter path client-side', () => {
+    const stdout = JSON.stringify({
+      results: [
+        { absolute_file_path: '/tmp/repo/src/main/a.ts', start_line: 1, name: 'a' },
+        { absolute_file_path: '/tmp/repo/src/renderer/b.ts', start_line: 2, name: 'b' },
+      ],
+    })
+
+    const restore = setWorkspaceRootForTest('/tmp/repo')
+    try {
+      const hits = parseGortexJson(stdout, 10, 'src/main')
+      assert.deepEqual(
+        hits.map((h) => h.path),
+        ['src/main/a.ts'],
+      )
+    } finally {
+      restore()
+    }
+  })
+
+  it('treats a gortex empty result set (results: null) as no hits', () => {
+    const stdout = JSON.stringify({ query_class: 'concept', results: null, total: 0 })
+    assert.deepEqual(parseGortexJson(stdout, 10), [])
+  })
+
   it('resolveSemanticSearchRoot handles workspace root scope', () => {
     const root = '/tmp/repo'
     assert.equal(resolveSemanticSearchRoot(root), root)
@@ -117,6 +197,11 @@ describe('semantic-index parsing', () => {
     assert.equal(env['RAYON_NUM_THREADS'], threads)
     assert.equal(env['TOKIO_WORKER_THREADS'], threads)
     assert.equal(env['OMP_NUM_THREADS'], threads)
+  })
+
+  it('caps the gortex Go scheduler via GOMAXPROCS (#517)', () => {
+    const env = gortexCpuLimitEnv()
+    assert.equal(env['GOMAXPROCS'], String(codesearchThreadCap()))
   })
 
   it('coalesces overlapping index updates into one in-flight run plus one trailing run (#517)', async () => {
