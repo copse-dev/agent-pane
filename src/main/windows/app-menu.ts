@@ -1,6 +1,6 @@
 import { app, Menu, dialog, type BrowserWindow } from 'electron'
 import { registerAllowedWorkspaceRoot, setWorkspaceRoot } from '../services/workspace.ts'
-import { buildIndex } from '../services/file-index.ts'
+import { buildIndex } from '../services/search/file-index.ts'
 import { checkForUpdatesManually } from '../services/auto-update.ts'
 
 // Builds the native application menu. The File ▸ Open Folder… item drives the

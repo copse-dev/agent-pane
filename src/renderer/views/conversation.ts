@@ -1,7 +1,9 @@
 import { el, clear } from '../dom/helpers.ts'
+import { arrowDownIcon, checkIcon, closeIcon, moreHorizontalIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/thread-helpers.ts'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
+import { attachTableCopyButtons } from '../markdown/table-copy.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { sanitizeRenderedMarkdown } from '@copse/streaming-markdown'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
@@ -34,16 +36,23 @@ import {
   updateQueuedMessageText,
 } from '../controller/message-queue.ts'
 
-function statusIcon(status: ToolCall['status']): string {
-  return status === 'done' ? '✓' : status === 'error' ? '✕' : '⋯'
+function statusIcon(status: ToolCall['status']): SVGSVGElement {
+  if (status === 'done') return checkIcon('ui-icon ui-icon-sm')
+  if (status === 'error') return closeIcon('ui-icon ui-icon-sm')
+  return moreHorizontalIcon('ui-icon ui-icon-sm')
 }
 
-function createToolArgsSection(args: unknown): HTMLDetailsElement {
+// The disclosure is omitted entirely when there are no arguments to show — e.g.
+// external ACP agents run no-argument commands (grep/search with the query in
+// the title, not `rawInput`), which otherwise render an empty "Arguments" box.
+function createToolArgsSection(args: unknown): HTMLDetailsElement | null {
+  const rendered = renderToolArgs(args)
+  if (!rendered.trim()) return null
   return el(
     'details',
     { class: 'tool-args' },
     el('summary', {}, 'Arguments'),
-    el('pre', {}, renderToolArgs(args)),
+    el('pre', {}, rendered),
   )
 }
 
@@ -102,9 +111,14 @@ function appendStandardToolSections(
 ): void {
   card.append(
     createToolHeader(label, tc.status, summaryClass, count, tc.editStats, getToolEditPath(tc)),
-    createToolArgsSection(tc.args),
+    ...appendIfPresent(createToolArgsSection(tc.args)),
     createToolResultSection(tc.result),
   )
+}
+
+/** Spread helper: include a section only when it was rendered (non-null). */
+function appendIfPresent(node: Node | null): Node[] {
+  return node ? [node] : []
 }
 
 function createIndividualToolCard(tc: ToolCall, label: string, api: ApiClient): HTMLElement {
@@ -167,6 +181,9 @@ function setAssistantMarkdown(
   streamingRenderers.delete(el)
   el.innerHTML = sanitizeRenderedMarkdown(renderMarkdown(display))
   attachCodeBlockCopyButtons(el)
+  // Tables only on the committed final render — during streaming they are
+  // patched with pending rows, so wrapping them then would fight the DOM sync.
+  attachTableCopyButtons(el)
   void annotateFileReferences(el, api)
   hydrateRemoteArtifactImages(el, api)
   void renderMermaidIn(el)
@@ -219,7 +236,8 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
     card.append(previewEl)
   }
 
-  card.append(createToolArgsSection(tc.args))
+  const argsSection = createToolArgsSection(tc.args)
+  if (argsSection) card.append(argsSection)
 
   const timeline = el('div', { class: 'subagent-timeline' })
   for (let i = 0; i < session.messages.length; i++) {
@@ -280,7 +298,7 @@ function createGroupToolCard(item: Extract<ToolCallDisplayItem, { type: 'group' 
         tc.editStats,
         getToolEditPath(tc),
       ),
-      createToolArgsSection(tc.args),
+      ...appendIfPresent(createToolArgsSection(tc.args)),
       createToolResultSection(tc.result),
     )
     groupItems.append(entry)
@@ -404,7 +422,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       'aria-label': 'Scroll to bottom',
       hidden: true,
     },
-    '↓',
+    arrowDownIcon('ui-icon'),
   )
   scrollArea.append(todoHost, list, scrollToBottomBtn)
 

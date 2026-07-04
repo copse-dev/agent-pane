@@ -27,7 +27,14 @@ import {
   WEB_ALLOW_USER_APPROVAL_SETTING,
 } from '@shared/web-origins.ts'
 
-type SettingsSection = 'general' | 'usage' | 'local-models' | 'mcp' | 'appearance' | 'experimental'
+type SettingsSection =
+  | 'general'
+  | 'usage'
+  | 'local-models'
+  | 'mcp'
+  | 'sources'
+  | 'appearance'
+  | 'experimental'
 
 /**
  * Single source of truth for the simple form fields, so each setting's default
@@ -178,6 +185,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <button type="button" class="settings-nav-btn" data-section="usage">Usage</button>
           <button type="button" class="settings-nav-btn" data-section="local-models">Local models</button>
           <button type="button" class="settings-nav-btn" data-section="mcp">MCP servers</button>
+          <button type="button" class="settings-nav-btn" data-section="sources">Sources</button>
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
           <button type="button" class="settings-nav-btn" data-section="experimental">Experimental</button>
         </nav>
@@ -283,7 +291,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   placeholder="Always-on guidance added to every conversation (e.g. preferred style, conventions)."
                 ></textarea>
                 <span class="field-hint">
-                  Appended to the system prompt for every thread. A project <code>AGENT.md</code> adds
+                  Appended to the system prompt for every thread. A project
+                  <code>AGENT.md</code>, <code>AGENTS.md</code>, or <code>CLAUDE.md</code> adds
                   per-project instructions on top of this.
                 </span>
               </label>
@@ -478,6 +487,67 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 commands, or make network calls. MCP tools are limited to those the server flags as
                 read-only and non-destructive (which still prompt as usual).
               </p>
+            </fieldset>
+          </section>
+
+          <section class="settings-section" data-section="sources">
+            <h3>Sources</h3>
+            <p class="settings-section-desc">
+              Everything Copse auto-loads for this workspace. Read-only — edit the underlying
+              files to change what's loaded.
+            </p>
+            <div class="lmstudio-test-row">
+              <button type="button" id="sources-reload-btn">Reload</button>
+              <span class="lmstudio-test-status" id="sources-reload-status"></span>
+            </div>
+
+            <fieldset>
+              <legend>Instruction files</legend>
+              <p class="settings-fieldset-desc">
+                Files appended to the system prompt, in precedence order. Global steering
+                (<code>~/AGENTS.md</code>, <code>~/.claude/CLAUDE.md</code>) loads first, then
+                project <code>AGENT.md</code>/<code>AGENTS.md</code> (cross-tool),
+                <code>CLAUDE.md</code> (Claude Code), and Cursor rules
+                (<code>.cursor/rules/*.mdc</code> marked <code>alwaysApply</code>, plus
+                <code>.cursorrules</code>) when present.
+              </p>
+              <div id="sources-instructions-list" class="sources-group">
+                <span class="sources-empty">Loading…</span>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Skills</legend>
+              <p class="settings-fieldset-desc">
+                Skills discovered on disk, tagged by where they came from. Manage inclusion of
+                bundled Cursor skills under General → Skills.
+              </p>
+              <div id="sources-skills-list" class="sources-group">
+                <span class="sources-empty">Loading…</span>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Hooks</legend>
+              <p class="settings-fieldset-desc">
+                Cursor hooks from <code>~/.cursor/hooks.json</code> (user) and, when the workspace
+                is trusted, <code>.cursor/hooks.json</code> (project). Permission hooks can block or
+                gate the agent's tool calls.
+              </p>
+              <div id="sources-hooks-list" class="sources-group">
+                <span class="sources-empty">Loading…</span>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Plugins</legend>
+              <p class="settings-fieldset-desc">
+                Cursor plugins installed under <code>~/.cursor/plugins/</code>. Each can contribute
+                skills and MCP servers.
+              </p>
+              <div id="sources-plugins-list" class="sources-group">
+                <span class="sources-empty">Loading…</span>
+              </div>
             </fieldset>
           </section>
 
@@ -812,15 +882,120 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       if (id) {
         showSection(id)
         if (id === 'usage') void usageSection.refresh()
-        // Defer the ACP device scan until its tab is opened, so users who never
-        // visit Experimental don't trigger a which/ps scan on every settings open.
+        // Defer disk scans until each tab is opened, so users who never visit them
+        // don't trigger a which/ps scan (Experimental) or fs walk (Sources) on open.
         if (id === 'experimental') void acpAgentsSection.refresh()
+        if (id === 'sources') void refreshSources()
       }
     })
   })
 
   async function refreshLocalModelSelects(): Promise<void> {
     await modelRoutingSection.refresh()
+  }
+
+  function makeSourceRow(
+    title: string,
+    badge: string | null,
+    detail: string | null,
+    opts: { badgeClass?: string | undefined } = {},
+  ): HTMLElement {
+    const row = document.createElement('div')
+    row.className = 'sources-row'
+    const header = document.createElement('div')
+    header.className = 'sources-row-header'
+    const titleEl = document.createElement('span')
+    titleEl.className = 'sources-row-title'
+    titleEl.textContent = title
+    header.append(titleEl)
+    if (badge) {
+      const badgeEl = document.createElement('span')
+      badgeEl.className = opts.badgeClass ? `sources-badge ${opts.badgeClass}` : 'sources-badge'
+      badgeEl.textContent = badge
+      header.append(badgeEl)
+    }
+    row.append(header)
+    if (detail) {
+      const detailEl = document.createElement('div')
+      detailEl.className = 'sources-row-detail'
+      detailEl.textContent = detail
+      row.append(detailEl)
+    }
+    return row
+  }
+
+  function fillSourceList(selector: string, rows: HTMLElement[], emptyText: string): void {
+    const el = qsRequired(overlay, selector)
+    el.innerHTML = ''
+    if (rows.length === 0) {
+      const empty = document.createElement('span')
+      empty.className = 'sources-empty'
+      empty.textContent = emptyText
+      el.append(empty)
+      return
+    }
+    for (const row of rows) el.append(row)
+  }
+
+  async function refreshSources(): Promise<void> {
+    const statusEl = qsRequired(overlay, '#sources-reload-status')
+    statusEl.textContent = 'Loading…'
+    try {
+      const [instructions, skills, hooks, plugins] = await Promise.all([
+        api.instructions.list(),
+        api.skills.list(),
+        api.hooks.list(),
+        api.plugins.list(),
+      ])
+
+      fillSourceList(
+        '#sources-instructions-list',
+        instructions.map((f) =>
+          makeSourceRow(f.name, f.scope, `${f.path} · ${String(f.bytes)} B`, {
+            badgeClass: f.scope === 'project' ? 'sources-badge-project' : undefined,
+          }),
+        ),
+        'No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root, or ~/AGENTS.md globally).',
+      )
+
+      fillSourceList(
+        '#sources-skills-list',
+        skills.map((s) =>
+          makeSourceRow(s.name, s.source, s.description || s.skillPath, {
+            badgeClass: s.source === 'project' ? 'sources-badge-project' : undefined,
+          }),
+        ),
+        'No skills discovered.',
+      )
+
+      fillSourceList(
+        '#sources-hooks-list',
+        hooks.map((h) =>
+          makeSourceRow(h.event, h.scope, h.command, {
+            badgeClass: h.scope === 'project' ? 'sources-badge-project' : undefined,
+          }),
+        ),
+        'No Cursor hooks configured.',
+      )
+
+      fillSourceList(
+        '#sources-plugins-list',
+        plugins.map((p) => {
+          const caps: string[] = []
+          if (p.skillsDir) caps.push('skills')
+          if (p.mcpConfigPath) caps.push('MCP')
+          const detail = [caps.length ? caps.join(' + ') : 'no capabilities', p.root]
+            .filter(Boolean)
+            .join(' · ')
+          return makeSourceRow(p.version ? `${p.name} (${p.version})` : p.name, null, detail)
+        }),
+        'No Cursor plugins installed.',
+      )
+
+      statusEl.textContent = ''
+    } catch {
+      statusEl.textContent = 'Failed to load sources.'
+    }
   }
 
   function renderMcpServers(allStatuses: import('@shared/types/mcp.ts').McpServerStatus[]): void {
@@ -1050,6 +1225,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         statusEl.textContent = `✗ ${errorMessage(err)}`
         statusEl.classList.add('err')
       })
+  })
+
+  qsRequired(overlay, '#sources-reload-btn').addEventListener('click', () => {
+    void refreshSources()
   })
 
   overlay.addEventListener('settings-open', () => {

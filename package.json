@@ -24,7 +24,7 @@
     "prestart": "node scripts/patch-dev-name.mts",
     "start": "electron dist/main/index.js",
     "preinstall": "node scripts/check-node-version.cjs",
-    "postinstall": "node scripts/check-node-version.cjs && node scripts/patch-dev-name.mts && node scripts/postinstall-native.mts && node scripts/fetch-codesearch.mts && npx tsx scripts/fetch-bundled-cursor-skills.mts",
+    "postinstall": "node scripts/check-node-version.cjs && node scripts/patch-dev-name.mts && node scripts/postinstall-native.mts && node scripts/fetch-gortex.mts && npx tsx scripts/fetch-bundled-cursor-skills.mts",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint .",
     "check:dead-code": "node scripts/check-dead-code.mts",
@@ -32,10 +32,12 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "node scripts/run-tests.mts",
+    "bench:markdown": "tsx packages/streaming-markdown/scripts/bench-streaming.mts",
     "coverage": "c8 npm test",
     "coverage:check": "node scripts/coverage-gate.mts",
     "coverage:update": "node scripts/coverage-gate.mts --update",
     "coverage:ci": "npm run coverage && npm run coverage:check",
+    "bench:thread-store": "node scripts/bench-thread-store.mts",
     "validate:local-agent": "node scripts/run-validate-local-agent.mts",
     "validate:browser-tools": "node scripts/validate-browser-tools.mts",
     "test:e2e": "wdio run wdio.conf.ts",
@@ -43,6 +45,7 @@
     "test:e2e:agent-eval": "wdio run wdio.eval.conf.ts",
     "test:e2e:markdown": "wdio run wdio.conf.ts --spec tests/e2e/markdown-list-indent.e2e.ts --spec tests/e2e/markdown-ordered-list-spacing.e2e.ts --spec tests/e2e/markdown-streaming-table.e2e.ts --spec tests/e2e/markdown-streaming-list.e2e.ts --spec tests/e2e/markdown-streaming-heading.e2e.ts --spec tests/e2e/markdown-streaming-blockquote.e2e.ts --spec tests/e2e/markdown-nbsp-metadata.e2e.ts --spec tests/e2e/semantic-search-markdown.e2e.ts",
     "analyze:thread": "node scripts/run-analyze-thread.mts",
+    "bench:semantic": "node scripts/semantic-search-bench.mts",
     "sync:models": "node scripts/sync-model-catalog.mts",
     "sync:cursor-skills": "npx tsx scripts/fetch-bundled-cursor-skills.mts",
     "pack:mac": "npm run build:release && npm run icons:mac && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
@@ -66,7 +69,7 @@
     "asarUnpack": [
       "**/node_modules/node-pty/**/*",
       "**/node_modules/@anthropic-ai/sandbox-runtime/**/*",
-      "dist/resources/codesearch/**"
+      "dist/resources/gortex/**"
     ],
     "publish": [
       {

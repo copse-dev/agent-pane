@@ -1,4 +1,5 @@
 import { el, clear } from '../dom/helpers.ts'
+import { chevronRightIcon, refreshIcon } from '../dom/icons.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import {
   materialFileIconUrl,
@@ -15,7 +16,11 @@ function join(parent: string, child: string): string {
 }
 
 export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
-  const refreshBtn = el('button', { class: 'sidebar-refresh', 'aria-label': 'Refresh' }, '⟳')
+  const refreshBtn = el(
+    'button',
+    { class: 'sidebar-refresh', 'aria-label': 'Refresh' },
+    refreshIcon('ui-icon ui-icon-sm'),
+  )
   const header = el(
     'div',
     { class: 'sidebar-header sidebar-header-compact' },
@@ -74,7 +79,11 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
     path: string,
     depth: number,
   ): HTMLElement {
-    const twisty = el('span', { class: 'tree-twisty' }, entry.isDir ? '▶' : '')
+    // Directories get a chevron that rotates to point down when expanded (see
+    // `.tree-twisty.expanded` in layout.css); files leave the slot empty so their
+    // names still align under the folders above.
+    const twisty = el('span', { class: 'tree-twisty' })
+    if (entry.isDir) twisty.append(chevronRightIcon('ui-icon ui-icon-sm'))
     const icon = el('span', { class: 'tree-icon' })
     if (entry.isDir) {
       mountMaterialIcon(icon, materialFolderIconUrl(path, false), `${entry.name} folder`)
@@ -103,7 +112,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
       const expand = async (): Promise<void> => {
         if (expanded) return
         expanded = true
-        twisty.textContent = '▼'
+        twisty.classList.add('expanded')
         mountMaterialIcon(icon, materialFolderIconUrl(path, expanded), `${entry.name} folder`)
         childrenEl.hidden = false
         if (!loaded) {
@@ -115,7 +124,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
       row.addEventListener('click', () => {
         if (expanded) {
           expanded = false
-          twisty.textContent = '▶'
+          twisty.classList.remove('expanded')
           mountMaterialIcon(icon, materialFolderIconUrl(path, false), `${entry.name} folder`)
           childrenEl.hidden = true
           return

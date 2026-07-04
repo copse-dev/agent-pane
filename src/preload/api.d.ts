@@ -3,6 +3,7 @@ import type { RightPanelMode } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import type { CursorHookSummary } from '@shared/types/cursor-hooks.ts'
+import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import type {
   GitFileDiff,
   GitStatusResult,
@@ -141,8 +142,22 @@ export interface ApiClient {
   }
   threads: {
     loadProject: (projectId: string) => Promise<import('@shared/types').Thread[]>
-    saveOne: (projectId: string, thread: import('@shared/types').Thread) => Promise<void>
-    saveProject: (projectId: string, threads: import('@shared/types').Thread[]) => Promise<void>
+    create: (projectId: string, thread: import('@shared/types').Thread) => Promise<void>
+    appendMessage: (
+      projectId: string,
+      threadId: string,
+      message: import('@shared/types').Message,
+    ) => Promise<void>
+    updateMeta: (
+      projectId: string,
+      threadId: string,
+      patch: Partial<Omit<import('@shared/types').Thread, 'messages'>>,
+    ) => Promise<void>
+    delete: (projectId: string, threadId: string) => Promise<void>
+    catalog: (
+      projectId: string,
+      query?: string,
+    ) => Promise<import('@shared/types').ThreadCatalogHit[]>
   }
   openRouter: {
     models: () => Promise<Array<{ id: string; name: string }>>
@@ -302,6 +317,9 @@ export interface ApiClient {
   }
   hooks: {
     list: () => Promise<CursorHookSummary[]>
+  }
+  instructions: {
+    list: () => Promise<ProjectInstructionSummary[]>
   }
   terminal: {
     create: (cols: number, rows: number) => Promise<string>

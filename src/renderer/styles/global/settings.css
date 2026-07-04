@@ -50,10 +50,12 @@ dialog.settings-overlay::backdrop {
 }
 .settings-close-btn {
   -webkit-app-region: no-drag;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 4px 8px;
   border-radius: var(--radius);
   color: var(--text-secondary);
-  font-size: var(--font-size-sm);
   line-height: 1;
 }
 .settings-close-btn:hover {
@@ -395,6 +397,9 @@ dialog.settings-overlay::backdrop {
   color: var(--text-muted);
 }
 .provider-model-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: var(--spacing-xs) var(--spacing-sm);
   color: var(--text-muted);
 }
@@ -598,4 +603,54 @@ dialog.settings-overlay::backdrop {
 }
 .acp-cmd-copy {
   flex: none;
+}
+
+/* Sources section — read-only view of everything auto-loaded for the workspace
+   (instruction files, skills, Cursor hooks, Cursor plugins). */
+.sources-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+}
+.sources-row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-sm);
+}
+.sources-row-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+}
+.sources-row-title {
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+.sources-badge {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1px 6px;
+}
+.sources-badge-project {
+  color: var(--warning, #d29922);
+  border-color: var(--warning, #d29922);
+}
+.sources-row-detail {
+  font-size: 11px;
+  color: var(--text-muted);
+  word-break: break-word;
+  margin-top: 2px;
+}
+.sources-empty {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
 }

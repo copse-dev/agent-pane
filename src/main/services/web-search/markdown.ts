@@ -1,7 +1,7 @@
 import Turndown from 'turndown'
 import { JSDOM } from 'jsdom'
 import { Readability } from '@mozilla/readability'
-import { getSetting } from '../settings.ts'
+import { getSetting } from '../storage/settings.ts'
 import {
   WEB_ALLOWED_ORIGINS_SETTING,
   clearWebOriginGrant,
@@ -10,7 +10,7 @@ import {
   readWebResponseText,
   webAllowedOriginsWithDefaults,
   webOriginKey,
-} from '../web-origin-policy.ts'
+} from '../security/web-origin-policy.ts'
 
 const turndown = new Turndown({
   headingStyle: 'atx',

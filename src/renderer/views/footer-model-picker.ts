@@ -1,4 +1,5 @@
 import { el, clear, on } from '../dom/helpers.ts'
+import { chevronDownIcon } from '../dom/icons.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { fetchModelOptions, modelDisplayLabel } from './model-options.ts'
 
@@ -18,7 +19,11 @@ export function mountFooterModelPicker(
     'aria-expanded': 'false',
   })
   const labelEl = el('span', { class: 'model-picker-label' })
-  const chevron = el('span', { class: 'model-picker-chevron', 'aria-hidden': 'true' }, '▾')
+  const chevron = el(
+    'span',
+    { class: 'model-picker-chevron', 'aria-hidden': 'true' },
+    chevronDownIcon('ui-icon ui-icon-sm'),
+  )
   trigger.append(labelEl, chevron)
   const menu = el('div', { class: 'model-picker-menu', role: 'listbox', hidden: '' })
   wrap.append(trigger, menu)

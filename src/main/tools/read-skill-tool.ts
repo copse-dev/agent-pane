@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
-import { readSkill } from '../services/skills-registry.ts'
+import { readSkill } from '../services/skills/skills-registry.ts'
 
 export const readSkillTool = defineTool({
   name: 'read_skill',

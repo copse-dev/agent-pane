@@ -3,7 +3,7 @@
  * be rendered in the canvas (Browser pane). Kept separate from the MCP registry
  * so the mapping is unit-testable without Electron.
  */
-import { extractUiResources } from './mcp-schema.ts'
+import { extractUiResources } from './mcp/mcp-schema.ts'
 import { toCanvasArtefact } from './canvas-artefact.ts'
 import { getMainWindow } from '../windows/create-main-window.ts'
 

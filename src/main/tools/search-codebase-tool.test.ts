@@ -7,12 +7,12 @@ import { normalizeToolExecuteResult } from '@shared/types'
 import { ToolRegistry, setPermissionGateForTests } from '../services/tool-registry.ts'
 import { searchCodebaseTool } from './search-codebase-tool.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
-import { setIndexedGrepBackendForTest } from '../services/indexed-grep.ts'
+import { setIndexedGrepBackendForTest } from '../services/search/indexed-grep.ts'
 import { setRgAvailableForTest } from '../services/tool-availability.ts'
 import {
   setSemanticBackendForTest,
   setSemanticSearchExecutorForTest,
-} from '../services/semantic-index.ts'
+} from '../services/search/semantic-index.ts'
 
 describe('search_codebase tool', () => {
   let tempRoot = ''
@@ -55,7 +55,7 @@ describe('search_codebase tool', () => {
   })
 
   it('uses native semantic search when available', async () => {
-    setSemanticBackendForTest('codesearch')
+    setSemanticBackendForTest('gortex')
     setSemanticSearchExecutorForTest(async ({ query }) => ({
       hits: [
         {
@@ -64,7 +64,7 @@ describe('search_codebase tool', () => {
           text: `semantic hit for ${query}`,
         },
       ],
-      backend: 'codesearch',
+      backend: 'gortex',
     }))
 
     const result = normalizeToolExecuteResult(
@@ -98,6 +98,6 @@ describe('search_codebase tool', () => {
       ),
     ).result
     assert.match(result, /Semantic search unavailable/)
-    assert.match(result, /codesearch/)
+    assert.match(result, /gortex/)
   })
 })

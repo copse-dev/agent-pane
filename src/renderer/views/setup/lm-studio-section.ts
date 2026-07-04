@@ -13,6 +13,7 @@ import {
   lowContextAdvice,
 } from '@shared/context-window-advice.ts'
 import { el } from '../../dom/helpers.ts'
+import { inlineStatus, setInlineStatus } from '../../dom/inline-status.ts'
 
 export interface LmStudioSection {
   root: HTMLElement
@@ -132,7 +133,7 @@ export function createLmStudioSection(
   }
 
   async function runTest(): Promise<void> {
-    testStatus.textContent = 'Testing…'
+    setInlineStatus(testStatus, 'pending', 'Testing…')
     testStatus.className = 'lmstudio-test-status'
     const result = await api.lmStudio.test(urlInput.value.trim(), keyInput.value.trim())
     if (result.ok) {
@@ -140,11 +141,15 @@ export function createLmStudioSection(
         result.models && result.models.length
           ? result.models.slice(0, 3).join(', ')
           : 'no models loaded'
-      testStatus.textContent = `✓ Connected — ${String(result.models?.length ?? 0)} model(s): ${list}`
+      setInlineStatus(
+        testStatus,
+        'ok',
+        `Connected — ${String(result.models?.length ?? 0)} model(s): ${list}`,
+      )
       testStatus.classList.add('ok')
       await refreshDetection()
     } else {
-      testStatus.textContent = `✗ ${result.error ?? 'Connection failed'}`
+      setInlineStatus(testStatus, 'error', result.error ?? 'Connection failed')
       testStatus.classList.add('err')
     }
   }
@@ -156,11 +161,10 @@ export function createLmStudioSection(
     for (const model of PREFERRED_MODELS) {
       const present = detection.models.includes(model.id)
       const row = el('div', { class: 'preferred-model-row' })
-      const status = el(
-        'span',
-        { class: present ? 'preferred-model-status ok' : 'preferred-model-status' },
-        present ? '✓ Available' : '○ Not loaded',
-      )
+      const status = el('span', {
+        class: present ? 'preferred-model-status ok' : 'preferred-model-status',
+      })
+      status.append(inlineStatus(present ? 'ok' : 'pending', present ? 'Available' : 'Not loaded'))
       const meta = el(
         'div',
         { class: 'preferred-model-meta' },
@@ -179,28 +183,28 @@ export function createLmStudioSection(
         const progress = el('span', { class: 'download-progress' })
         downloadBtn.addEventListener('click', () => {
           downloadBtn.disabled = true
-          progress.textContent = 'Starting download…'
+          setInlineStatus(progress, 'pending', 'Starting download…')
           void api.lmStudio
             .download(model.id, urlInput.value.trim(), keyInput.value.trim())
             .then((job) => {
               if (!job.ok) {
-                progress.textContent = `✗ ${job.error ?? 'Download failed'}`
+                setInlineStatus(progress, 'error', job.error ?? 'Download failed')
                 downloadBtn.disabled = false
                 return
               }
               if (job.status === 'already_downloaded') {
-                progress.textContent = '✓ Already downloaded — load it in LM Studio'
+                setInlineStatus(progress, 'ok', 'Already downloaded — load it in LM Studio')
                 return
               }
               if (!job.jobId) {
-                progress.textContent = `✓ ${job.status ?? 'started'}`
+                setInlineStatus(progress, 'ok', job.status ?? 'started')
                 return
               }
               const eta = formatDownloadEta(model.downloadGb)
               const sizeHint = job.totalSizeBytes
                 ? formatBytes(job.totalSizeBytes)
                 : `~${String(model.downloadGb)} GB`
-              progress.textContent = `Downloading ${sizeHint} — may take ${eta}…`
+              setInlineStatus(progress, 'pending', `Downloading ${sizeHint} — may take ${eta}…`)
               pollDownload(job.jobId, progress, () => {
                 downloadBtn.disabled = false
                 void refreshDetection()
@@ -231,21 +235,21 @@ export function createLmStudioSection(
         .downloadStatus(jobId, urlInput.value.trim(), keyInput.value.trim())
         .then((status) => {
           if (!status.ok) {
-            progressEl.textContent = `✗ ${status.error ?? 'Status check failed'}`
+            setInlineStatus(progressEl, 'error', status.error ?? 'Status check failed')
             clearInterval(timer)
             downloadPollers.delete(jobId)
             onDone()
             return
           }
           if (status.status === 'completed' || status.status === 'already_downloaded') {
-            progressEl.textContent = '✓ Download complete — load the model in LM Studio'
+            setInlineStatus(progressEl, 'ok', 'Download complete — load the model in LM Studio')
             clearInterval(timer)
             downloadPollers.delete(jobId)
             onDone()
             return
           }
           if (status.status === 'failed') {
-            progressEl.textContent = '✗ Download failed'
+            setInlineStatus(progressEl, 'error', 'Download failed')
             clearInterval(timer)
             downloadPollers.delete(jobId)
             onDone()
@@ -253,7 +257,11 @@ export function createLmStudioSection(
           }
           if (status.totalSizeBytes && status.downloadedBytes) {
             const pct = Math.round((status.downloadedBytes / status.totalSizeBytes) * 100)
-            progressEl.textContent = `Downloading… ${String(pct)}% (${formatBytes(status.downloadedBytes)} / ${formatBytes(status.totalSizeBytes)})`
+            setInlineStatus(
+              progressEl,
+              'pending',
+              `Downloading… ${String(pct)}% (${formatBytes(status.downloadedBytes)} / ${formatBytes(status.totalSizeBytes)})`,
+            )
           }
         })
     }, 2000)
@@ -299,15 +307,21 @@ export function createLmStudioSection(
     const detection = await api.lmStudio.detect(urlInput.value.trim(), keyInput.value.trim())
     renderContextAdvisory(detection.modelContexts)
     if (detection.serverRunning) {
-      detectionStatus.textContent = `✓ LM Studio server reachable at ${detection.serverUrl}`
+      setInlineStatus(detectionStatus, 'ok', `LM Studio server reachable at ${detection.serverUrl}`)
       detectionStatus.className = 'setup-detection-status ok'
     } else if (detection.installDetected) {
-      detectionStatus.textContent =
-        'LM Studio is installed but the server is not running. Open LM Studio and start the local server.'
+      setInlineStatus(
+        detectionStatus,
+        'warn',
+        'LM Studio is installed but the server is not running. Open LM Studio and start the local server.',
+      )
       detectionStatus.className = 'setup-detection-status warn'
     } else {
-      detectionStatus.textContent =
-        'LM Studio not detected. Install it and start the local server on port 1234.'
+      setInlineStatus(
+        detectionStatus,
+        'error',
+        'LM Studio not detected. Install it and start the local server on port 1234.',
+      )
       detectionStatus.className = 'setup-detection-status err'
     }
     renderPreferredModels(detection)
@@ -349,7 +363,7 @@ export function createLmStudioSection(
     })
     keyInput.value = ''
     const lmSet = await api.settings.getKey('lmstudio')
-    keyStatus.textContent = lmSet ? '● saved' : '○ not set'
+    setInlineStatus(keyStatus, lmSet ? 'filled' : 'pending', lmSet ? 'saved' : 'not set')
     keyStatus.className = 'key-status'
   }
 
@@ -357,7 +371,7 @@ export function createLmStudioSection(
     const lmUrl = (await api.settings.get('localServerUrl')) as string | undefined
     urlInput.value = lmUrl ?? 'http://localhost:1234/v1'
     const lmSet = await api.settings.getKey('lmstudio')
-    keyStatus.textContent = lmSet ? '● saved' : '○ not set'
+    setInlineStatus(keyStatus, lmSet ? 'filled' : 'pending', lmSet ? 'saved' : 'not set')
     await refreshDetection()
   })()
 

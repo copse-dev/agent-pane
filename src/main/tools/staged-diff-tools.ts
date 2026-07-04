@@ -6,7 +6,7 @@ import {
   listRecentStagedDiffDecisions,
   listStagedDiffEntries,
 } from '../services/diff-queue.ts'
-import { getGitStatus } from '../services/git-service.ts'
+import { getGitStatus } from '../services/github/git-service.ts'
 import type { GitStatusResult } from '@shared/types/git.ts'
 
 const DEFAULT_MAX_CHARS = 24_000

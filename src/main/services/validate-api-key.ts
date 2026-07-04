@@ -1,7 +1,7 @@
 import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
 import type { ExtraProvider } from '@shared/llm/extra-providers.ts'
 import { getResolvedExtraProvider } from './extra-providers-store.ts'
-import { getSetting } from './settings.ts'
+import { getSetting } from './storage/settings.ts'
 import { OPENROUTER_BASE_URL } from '@shared/llm/openrouter.ts'
 
 // Same overridable base the model catalog fetch uses (openrouter-models.ts): the

@@ -13,7 +13,7 @@
          otherwise refuse to load them. -->
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
-    <!-- Child processes (shells, agent tools, codesearch) rely on inherited
+    <!-- Child processes (shells, agent tools, gortex) rely on inherited
          DYLD_* / environment configuration. -->
     <key>com.apple.security.cs.allow-dyld-environment-variables</key>
     <true/>

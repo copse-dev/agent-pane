@@ -1,10 +1,15 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { classifySearchQuery } from '@shared/agent/search-routing.ts'
-import { getWorkspaceRoot, resolveWorkspacePath, toRelativePath } from '../services/workspace.ts'
+import {
+  getWorkspaceRoot,
+  resolveWorkspacePath,
+  resolveReadablePath,
+  toRelativePath,
+} from '../services/workspace.ts'
 import { isRgAvailable } from '../services/tool-availability.ts'
-import { formatCodeSearchResults, searchCodeContent } from '../services/indexed-grep.ts'
-import { executeSemanticSearch } from '../services/semantic-search.ts'
+import { formatCodeSearchResults, searchCodeContent } from '../services/search/indexed-grep.ts'
+import { executeSemanticSearch } from '../services/search/semantic-search.ts'
 
 export const searchCodebaseTool = defineTool({
   name: 'search_codebase',
@@ -19,7 +24,7 @@ export const searchCodebaseTool = defineTool({
       .optional()
       .default('auto')
       .describe(
-        'auto: infer from query; regex: indexed grep/ripgrep; semantic: native codesearch/vera',
+        'auto: infer from query; regex: indexed grep/ripgrep; semantic: native gortex/vera',
       ),
     path: z
       .string()
@@ -62,8 +67,8 @@ export const searchCodebaseTool = defineTool({
       }
       if (mode === 'semantic') {
         return (
-          'Semantic search unavailable. Bundled codesearch failed to install or vera/codesearch ' +
-          'is missing on PATH (see README.md), or retry with mode: regex.'
+          'Semantic search unavailable. Bundled gortex failed to install or ' +
+          'gortex/vera is missing on PATH (see README.md), or retry with mode: regex.'
         )
       }
     }
@@ -72,7 +77,9 @@ export const searchCodebaseTool = defineTool({
       return 'Regex search unavailable: ripgrep (rg) not found on PATH.'
     }
 
-    const searchRoot = path ? resolveWorkspacePath(path) : root
+    // Regex path resolves the read-only chat store too (#644); the semantic index
+    // below stays workspace-only (chat-store discovery goes through catalog.jsonl).
+    const searchRoot = path ? resolveReadablePath(path) : root
     const { lines, backend } = await searchCodeContent({
       pattern: query,
       searchRoot,
@@ -94,7 +101,7 @@ export const searchCodebaseTool = defineTool({
 export const semanticSearchTool = defineTool({
   name: 'semantic_search',
   description:
-    'Search the codebase by meaning using a local semantic index (codesearch or vera CLI). Use for conceptual questions.',
+    'Search the codebase by meaning using a local semantic index (gortex or vera CLI). Use for conceptual questions.',
   parameters: z.object({
     query: z.string().describe('Natural-language question about code behavior or architecture'),
     path: z.string().optional().describe('Optional subdirectory scope'),
@@ -115,8 +122,8 @@ export const semanticSearchTool = defineTool({
     )
     if (semantic === null) {
       return (
-        'Semantic search unavailable. Bundled codesearch failed to install or vera/codesearch ' +
-        'is missing on PATH (see README.md).'
+        'Semantic search unavailable. Bundled gortex failed to install or ' +
+        'gortex/vera is missing on PATH (see README.md).'
       )
     }
 

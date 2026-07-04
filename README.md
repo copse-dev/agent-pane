@@ -43,6 +43,10 @@ API keys entered in **Settings → API Keys** are persisted in the app's `settin
 
 If **no keyring is available** — common on a headless or minimal Linux install — `safeStorage` cannot encrypt, so keys are stored as **base64 plaintext** instead (the app logs a one-line warning and keeps working so it is still usable without a keyring). In that case anyone with read access to your profile directory can recover the keys. To get encryption at rest on Linux, install and unlock a keyring such as `gnome-keyring` (with `libsecret`) before launching the app. Prefer not to store a key on disk at all? Provide it via the matching environment variable (e.g. `ANTHROPIC_API_KEY`) instead — env-var keys are never written to `settings.json`.
 
+### Where chat threads are stored
+
+Conversations live in a filesystem-native store under `~/.copse/workspace/<projectId>/<threadId>/` — one directory per thread (a tiny `meta.json`, an append-only `events.jsonl` history, and Markdown message files), not in `config.json`. This makes each thread greppable and lets the agent `@`-reference a past conversation and explore it read-only with its file tools. Set `COPSE_WORKSPACE_DIR` to relocate the store. Format details: [docs/thread-store-format.md](docs/thread-store-format.md).
+
 ### Detecting keys from your environment
 
 If you already export provider keys in your shell (e.g. `ANTHROPIC_API_KEY` in `~/.zshrc`), Copse can pick them up for you. This is **opt-in**: click **Scan environment** in first-run setup or under **Settings → General**. Copse reads `process.env` plus a fixed allow-list of your own start-up files (`~/.zshrc`, `~/.bashrc`, `~/.profile`, `~/.config/fish/config.fish`, …), shows a masked preview of any keys it recognises (Anthropic, OpenAI, Cursor, OpenRouter, Mistral, Gemini, DeepSeek, Hugging Face, LM Studio), and lets you import the ones you don't already have configured. Nothing is read until you click Scan, raw secret values never leave the main process, and existing saved keys are never overwritten.
@@ -111,4 +115,4 @@ directory — never from the workspace, so a cloned repo can't inject one. See
 
 ## Semantic search
 
-On supported platforms, `npm install` downloads a bundled `codesearch` binary to `vendor/codesearch/` (postinstall; skip with `SKIP_CODESEARCH_FETCH=1`). Native tools (`semantic_search`, `search_codebase` semantic mode) use codesearch or vera on PATH, preferring a system install over the bundled copy, and keep the index in sync with the workspace. Index data is stored globally under Copse app data (`codesearch/` inside the `copse-panel` userData directory), not in the project tree.
+On supported platforms, `npm install` downloads a bundled [`gortex`](https://github.com/zzet/gortex) binary to `vendor/gortex/` (postinstall; skip with `SKIP_GORTEX_FETCH=1`) — a daemon-based code-intelligence engine that indexes the repo into a queryable graph. Native tools (`semantic_search`, `search_codebase` semantic mode) probe gortex, then fall back to `vera` on PATH — preferring a system install over the bundled copy — and keep the index in sync with the workspace. gortex runs a per-user daemon (`gortex daemon`) whose sqlite store and index live under Copse app data (`gortex/` inside the `copse-panel` userData directory) via a sandboxed `HOME`, not in the project tree.

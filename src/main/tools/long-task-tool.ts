@@ -6,7 +6,7 @@ import {
   setStepDone,
   taskProgress,
   type LongTask,
-} from '../services/long-task-tracker.ts'
+} from '../services/storage/long-task-tracker.ts'
 
 function formatTask(task: LongTask): string {
   const p = taskProgress(task)

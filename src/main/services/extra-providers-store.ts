@@ -12,7 +12,7 @@ import {
   type StoredExtraProvider,
 } from '@shared/llm/extra-providers.ts'
 import { providerSlugFromBaseUrl, uniqueProviderSlug } from '@shared/llm/provider-slug.ts'
-import { getSetting, setSetting, deleteApiKey, resolveApiKey } from './settings.ts'
+import { getSetting, setSetting, deleteApiKey, resolveApiKey } from './storage/settings.ts'
 import { fetchHuggingFaceModels } from './huggingface-models.ts'
 
 /** Built-in slug of the Hugging Face Inference Providers provider. */

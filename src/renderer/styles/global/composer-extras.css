@@ -19,6 +19,38 @@
 .mention-item:hover {
   background: var(--bg-hover);
 }
+.mention-item-thread {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mention-thread-icon,
+.thread-chip-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.mention-thread-icon {
+  color: var(--text-muted);
+}
+.mention-thread-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.mention-thread-date {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
 .skill-item-name {
   font-weight: 600;
 }
@@ -48,13 +80,14 @@
   border-radius: 2px;
   object-fit: cover;
 }
-.text-chip {
+.text-chip,
+.thread-chip {
   max-width: 240px;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .attachment-chip button {
+  display: inline-flex;
+  align-items: center;
   background: none;
   border: none;
   cursor: pointer;

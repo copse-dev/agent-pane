@@ -6,7 +6,7 @@ import {
   isProviderKeyUsable,
   recordProviderKeyValidation,
 } from './provider-key-status.ts'
-import { setApiKey, deleteApiKey } from './settings.ts'
+import { setApiKey, deleteApiKey } from './storage/settings.ts'
 
 describe('provider-key-status', () => {
   beforeEach(() => {

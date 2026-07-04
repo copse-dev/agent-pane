@@ -1,7 +1,8 @@
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { homedir, platform } from 'node:os'
 import { join } from 'node:path'
 import { $, browser } from '@wdio/globals'
+import { writeSeedConfig } from './helpers/seed-config.ts'
 
 /** Wait until the agent is not running and no prompts remain queued. */
 export async function waitForAgentIdle(timeoutMs = 15_000): Promise<void> {
@@ -50,27 +51,22 @@ export async function seedProjectConfig(
   const projectId = options?.projectId ?? 'e2e-project'
   const threadId = options?.threadId ?? 'e2e-thread'
 
-  await writeFile(
-    join(configDir, 'config.json'),
-    JSON.stringify(
+  // Routes the seeded thread into the filesystem-native store (issue #644) and
+  // writes the remaining fields to config.json.
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    workspaceRoot,
+    [`threads:${projectId}`]: [
       {
-        projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-        activeProjectId: projectId,
-        workspaceRoot,
-        [`threads:${projectId}`]: [
-          {
-            id: threadId,
-            title: 'E2E thread',
-            status: 'idle',
-            messages: [],
-            usage: { inputTokens: 0, outputTokens: 0 },
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          },
-        ],
+        id: threadId,
+        title: 'E2E thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
       },
-      null,
-      2,
-    ),
-  )
+    ],
+  })
 }

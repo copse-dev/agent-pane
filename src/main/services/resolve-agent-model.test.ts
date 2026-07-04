@@ -2,7 +2,7 @@ import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { resolveAgentChatModel } from './resolve-agent-model.ts'
 import { clearProviderKeyStatusCache, recordProviderKeyValidation } from './provider-key-status.ts'
-import { setSetting, deleteApiKey, setApiKey } from './settings.ts'
+import { setSetting, deleteApiKey, setApiKey } from './storage/settings.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 
 describe('resolveAgentChatModel', () => {

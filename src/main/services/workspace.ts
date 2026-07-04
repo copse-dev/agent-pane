@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, readlinkSync, realpathSync, statSync } from 'node:fs'
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
-import { storageGet, storageSet } from './storage.ts'
+import { homedir } from 'node:os'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { storageGet, storageSet } from './storage/storage.ts'
 
 const WORKSPACE_KEY = 'workspaceRoot'
 const PROJECTS_KEY = 'projects'
@@ -145,6 +146,71 @@ export function resolveWorkspacePath(path: string): string {
 }
 
 /**
+ * Root of the filesystem-native chat store (issue #644), honoring the
+ * `COPSE_WORKSPACE_DIR` override — mirrors `thread-store.ts` (a follow-up unifies
+ * both under one `COPSE_DIR`). Kept separate from the workspace root: the store
+ * is mounted **read-only** so the agent can explore past threads with the
+ * existing file tools, never write to them.
+ */
+function chatStoreDir(): string {
+  const override = process.env['COPSE_WORKSPACE_DIR']?.trim()
+  return override && override.length > 0 ? override : join(homedir(), '.copse', 'workspace')
+}
+
+/** Canonical (realpath'd) chat-store root, or null when it does not exist yet. */
+export function getChatStoreRoot(): string | null {
+  const dir = chatStoreDir()
+  if (!existsSync(dir)) return null
+  try {
+    return realpathSync.native(resolve(dir))
+  } catch {
+    return null
+  }
+}
+
+/**
+ * True when a resolved absolute path lives inside the chat store — used by the
+ * read tools to route chat-store targets down their non-workspace-indexed path
+ * (the workspace file-index/`toRelativePath` are workspace-only).
+ */
+export function isInsideChatStore(absPath: string): boolean {
+  const root = getChatStoreRoot()
+  if (!root) return false
+  return isPathInsideRoot(resolveThroughExistingPrefix(resolve(absPath)), root)
+}
+
+/**
+ * Resolve a path a **read** tool may open: the workspace (relative, or absolute
+ * inside it) or — read-only — the chat store. Chat-store access is absolute-only
+ * (the `@`-thread steering preamble hands out absolute canonical paths). Symlink
+ * discipline matches the workspace root: a symlink whose real target escapes the
+ * chat-store root is rejected (the existing prefix is realpath'd before the
+ * containment check). Writes never route through here — `resolveWorkspacePath` +
+ * `assertWorkspaceWriteTarget` stay workspace-only, so every write tool rejects
+ * the chat store by construction.
+ */
+export function resolveReadablePath(path: string): string {
+  try {
+    return resolveWorkspacePath(path)
+  } catch (workspaceErr) {
+    if (isAbsolute(path)) {
+      const chatRoot = getChatStoreRoot()
+      if (chatRoot) {
+        const absInput = resolveThroughExistingPrefix(resolve(path))
+        if (isPathInsideRoot(absInput, chatRoot)) return absInput
+      }
+    }
+    if (workspaceErr instanceof Error && workspaceErr.message.startsWith('No workspace open')) {
+      throw workspaceErr
+    }
+    throw new Error(
+      `Path outside workspace or chat store: ${path}. Read tools accept workspace-relative paths or absolute paths inside the chat store (~/.copse/workspace).`,
+      { cause: workspaceErr },
+    )
+  }
+}
+
+/**
  * Guard a write/create target against symlink escape before any `fs.writeFile`/
  * `mkdir` follows it. `resolveWorkspacePath` realpaths only the *existing* prefix of
  * a path, so a symlink whose target does not yet exist (a dangling symlink) is
@@ -218,8 +284,13 @@ export function toRelativePath(absPath: string): string {
   // the canonical forms; the common in-workspace case keeps the cheap result.
   if (rel.startsWith('..')) {
     try {
-      const realRel = relative(realpathSync.native(base), resolveThroughExistingPrefix(target))
+      const realTarget = resolveThroughExistingPrefix(target)
+      const realRel = relative(realpathSync.native(base), realTarget)
       if (!realRel.startsWith('..')) rel = realRel
+      // A chat-store file (#644): a `../…` workspace-relative path is unusable —
+      // the read tools only accept absolute paths for the chat store — so hand
+      // back the absolute canonical path (search_code / list_dir output).
+      else if (isInsideChatStore(realTarget)) return realTarget
     } catch {
       // Workspace root missing on disk (e.g. mock tests); keep the raw result.
     }

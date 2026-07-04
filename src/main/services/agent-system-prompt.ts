@@ -1,5 +1,5 @@
 import { loadProjectInstructions } from './project-instructions.ts'
-import { getSetting, getSettingTrimmed } from './settings.ts'
+import { getSetting, getSettingTrimmed } from './storage/settings.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import {
   BROWSER_TOOLS_ENABLED_SETTING,
@@ -9,7 +9,7 @@ import {
   buildInvokedSkillsBlock,
   buildSkillsCatalogBlock,
   buildSkillsToolsPromptLine,
-} from './skill-prompt.ts'
+} from './skills/skill-prompt.ts'
 import {
   BASE_SYSTEM_PROMPT,
   BASE_SYSTEM_PROMPT_DIRECT_READS,
@@ -18,9 +18,9 @@ import {
   MEMORY_TOOLS_BLOCK,
   PII_REDACTION_BLOCK,
 } from './agent-prompt.ts'
-import { buildSemanticSearchPromptBlock } from './semantic-search.ts'
-import { OKF_MEMORIES_ENABLED_SETTING } from './okf-memory-store.ts'
-import { PII_REDACTION_ENABLED_SETTING } from './pii-redactor.ts'
+import { buildSemanticSearchPromptBlock } from './search/semantic-search.ts'
+import { OKF_MEMORIES_ENABLED_SETTING } from '../tools/memory-tools.ts'
+import { PII_REDACTION_ENABLED_SETTING } from './security/pii-redactor.ts'
 import { isProjectSandboxActive } from '../project-sandbox/state.ts'
 
 /** Assemble the system prompt for a run from base prompt + skills + instructions. */

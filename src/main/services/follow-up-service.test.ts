@@ -7,7 +7,7 @@ import {
   ghPrHasMergeConflicts,
   parseGhOpenPr,
   parseGhOpenPrList,
-} from './pr-context-service.ts'
+} from './github/pr-context-service.ts'
 import { parseModelFollowUpIds } from './follow-up-service.ts'
 
 describe('parseDiffNumstat', () => {

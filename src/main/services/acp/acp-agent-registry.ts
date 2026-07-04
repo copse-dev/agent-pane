@@ -1,6 +1,6 @@
 import type { AcpAgentConfig, AcpAgentSandboxConfig } from '@shared/types/acp.ts'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
-import { getSetting, setSetting } from '../settings.ts'
+import { getSetting, setSetting } from '../storage/settings.ts'
 
 /**
  * Settings-backed registry of external ACP agents Copse can drive (client role).

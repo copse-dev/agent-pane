@@ -55,6 +55,21 @@ Tear down:
 docker compose down
 ```
 
+## Baked dependencies (warm start)
+
+The image runs the repo's `npm ci` **at build time** and stashes the resulting
+`node_modules` + `vendor/gortex` under `/opt/deps/tree` (recording the
+`package-lock.json` hash alongside). These runners are ephemeral — one job per
+pristine container, no volumes — so a job would otherwise restore ~525 MB of
+`node_modules` from the GitHub Actions cache service on its first step; on freshly
+reprovisioned runners that transfer has crawled at ~1 MB/s (~8 min). The repo's
+[`setup` action](../actions/setup) seeds the workspace straight from
+`/opt/deps/tree` when the checked-out `package-lock.json` still matches the baked
+hash, turning that download into a few-second local copy. On a lockfile bump the
+baked layer is stale and setup falls back to the cache / `npm ci` path — rebuild
+to re-bake with `make runners-reprovision` (or `docker compose build --no-cache`).
+This is why the build context is the repo root (see `docker-compose.yml`).
+
 ## Sizing
 
 Chromium-under-Xvfb is memory-hungry; the historical OOM quarantines in
@@ -87,8 +102,12 @@ long-running hosts since the entrypoint mints a fresh token on each restart.
 
 ## One-off `docker run` (no compose)
 
+The build context is the repo root, so build with `-f` from there (not from this
+directory):
+
 ```bash
-docker build -t copse-ci-runner .
+# from the repo root:
+docker build -t copse-ci-runner -f .github/runner/Dockerfile .
 docker run -d --restart always --init --shm-size 2g \
   -e GITHUB_URL=https://github.com/jonathankingston/agent-pane \
   -e ACCESS_TOKEN=ghp_xxx \

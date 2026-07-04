@@ -6,7 +6,7 @@ import {
   saveExtraProvider,
   deleteExtraProvider,
 } from './extra-providers-store.ts'
-import { setSetting, setApiKey, hasApiKey } from './settings.ts'
+import { setSetting, setApiKey, hasApiKey } from './storage/settings.ts'
 import { BUILTIN_EXTRA_PROVIDER_SLUGS } from '@shared/llm/extra-providers.ts'
 
 const slugs = (): string[] => getResolvedExtraProviders().map((p) => p.id)

@@ -1,6 +1,6 @@
 import { resolveSmallTasksProvider, resolveSmallTasksModelId } from './small-tasks-provider.ts'
 import { completeTextWithUsage } from './llm-complete-text.ts'
-import { recordUsageEvent } from './usage-ledger.ts'
+import { recordUsageEvent } from './storage/usage-ledger.ts'
 
 // Trim model output down to a single clean title line.
 function cleanTitle(out: string): string | null {

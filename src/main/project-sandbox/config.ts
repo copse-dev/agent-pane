@@ -2,12 +2,13 @@ import { accessSync, mkdirSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
-import { getSetting } from '../services/settings.ts'
+import { getSetting } from '../services/storage/settings.ts'
+import { getChatStoreRoot } from '../services/workspace.ts'
 import {
   WEB_ALLOWED_ORIGINS_SETTING,
   sandboxAllowedDomainsFromOrigins,
   webAllowedOriginsWithDefaults,
-} from '../services/web-origin-policy.ts'
+} from '../services/security/web-origin-policy.ts'
 
 /**
  * Resolve the workspace root to its canonical, symlink-free path.
@@ -334,6 +335,13 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   // points $TMPDIR at it. Falls under the home denyRead, so it must be
   // re-allowed for both read and write.
   const tmpDir = ensureWorkspaceTmpDir()
+  // Read-only mount of the chat store (#644) so seatbelt-confined read tools
+  // (rg for search_code / recursive list_dir) can open past-thread files. It
+  // lives under $HOME, so `denyRead: [homedir()]` would block it without this
+  // more-specific allow. NOT added to allowWrite — the sandbox denies chat-store
+  // writes too, matching the workspace-only path guards.
+  const chatStore = getChatStoreRoot()
+  const chatStoreRead = chatStore ? [chatStore, `${chatStore}/**`] : []
   return {
     // Auto-run, sandbox-contained commands get NO network (see
     // containedSandboxNetworkConfig); only user-approved commands run with
@@ -350,6 +358,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         `${tmpDir}/**`,
         ...toolchainRead,
         ...gitConfigReadPaths(),
+        ...chatStoreRead,
       ],
       allowWrite: [root, `${root}/**`, tmpDir, `${tmpDir}/**`],
       denyWrite: workspaceMandatoryWriteDenyPaths(root),

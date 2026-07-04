@@ -2,8 +2,8 @@ import { join } from 'node:path'
 import * as fsp from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { MAX_FS_WRITE_BYTES } from '../ipc/ipc-guards.ts'
-import { getWorkspaceRoot } from '../services/workspace.ts'
-import { runCommand } from '../services/command-runner.ts'
+import { assertWorkspaceWriteTarget, getWorkspaceRoot } from '../services/workspace.ts'
+import { runCommand } from '../services/exec/command-runner.ts'
 import { fsWorkerSandboxOverlay } from './config.ts'
 import { isProjectSandboxEnabled } from './spawn.ts'
 import { requestViaServer, SandboxFsServerUnavailable } from './sandbox-fs-server.ts'
@@ -98,6 +98,14 @@ export async function gatewayReadFile(absPath: string): Promise<string> {
 }
 
 export async function gatewayWriteFile(absPath: string, content: string): Promise<void> {
+  // Guard the write target against symlink escape before any mkdir/writeFile
+  // follows it (#578). `resolveWorkspacePath` only realpaths a path's existing
+  // prefix, so a repo shipping a *dangling* symlink (target not yet on disk) is
+  // treated as a plain new file and a write would follow it outside the root.
+  // The diff-queue write path already asserts this; the `fs:writeFile` IPC path
+  // reaches the filesystem through here, so guarding at this chokepoint covers
+  // both the direct-fs and sandbox-worker branches below.
+  assertWorkspaceWriteTarget(absPath)
   if (!useSandboxFsGateway()) {
     await fsp.mkdir(dirname(absPath), { recursive: true })
     await fsp.writeFile(absPath, content, 'utf-8')

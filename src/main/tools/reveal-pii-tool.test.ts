@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { setSetting } from '../services/settings.ts'
+import { setSetting } from '../services/storage/settings.ts'
 import { setActiveRunThread, clearActiveRunThread } from '../services/thread-models.ts'
 import { setApprovalHandler, type ApprovalRequest } from '../services/approval.ts'
 import {
@@ -9,7 +9,7 @@ import {
   PII_REDACTION_ENABLED_SETTING,
   type RampartModule,
   type PiiGuard,
-} from '../services/pii-redactor.ts'
+} from '../services/security/pii-redactor.ts'
 import { normalizeToolExecuteResult } from '@shared/types'
 import { revealPiiTool } from './reveal-pii-tool.ts'
 

@@ -4,7 +4,7 @@ import {
   LM_STUDIO_MODEL_IDS,
   lmStudioChatModelValue,
 } from '@shared/lm-studio-defaults.ts'
-import { getSetting, getSettingTrimmed } from './settings.ts'
+import { getSetting, getSettingTrimmed } from './storage/settings.ts'
 import { buildProvider } from './provider-selection.ts'
 
 const AUTO_LOCAL_DEFAULT = lmStudioChatModelValue(LM_STUDIO_MODEL_IDS.smallTasks)

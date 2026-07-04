@@ -22,11 +22,12 @@
 # OrbStack / Colima on macOS and Windows (Linux-containers mode). Multi-arch:
 # BuildKit builds the host's native arch (linux/amd64 or linux/arm64).
 #
-# Base is Ubuntu 24.04 to MATCH GitHub-hosted `ubuntu-latest` (glibc 2.39). The
-# vendored `codesearch` binary fetched during postinstall is built against
-# glibc >= 2.38/2.39; on older distros (e.g. Debian bookworm, glibc 2.36) the
-# postinstall `codesearch --version` check fails with "GLIBC_2.39 not found".
-# Mirroring CI's OS keeps every prebuilt behaving identically.
+# Base is Ubuntu 24.04 to MATCH GitHub-hosted `ubuntu-latest` (glibc 2.39).
+# Prebuilt native modules (Electron, node-pty) are built against the CI
+# toolchain; on older distros (e.g. Debian bookworm, glibc 2.36) they can fail
+# to load with "GLIBC_2.39 not found". Mirroring CI's OS keeps every prebuilt
+# behaving identically. (The vendored `gortex` binary is a static Go build with
+# no glibc dependency, so it is unaffected either way.)
 FROM ubuntu:24.04
 
 # Pin the runner agent; bump deliberately. https://github.com/actions/runner/releases
@@ -89,8 +90,42 @@ RUN apt-get update \
     && /opt/runner/bin/installdependencies.sh \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --chown=runner:runner entrypoint.sh /opt/runner/entrypoint.sh
+COPY --chown=runner:runner .github/runner-checks/entrypoint.sh /opt/runner/entrypoint.sh
 RUN chmod +x /opt/runner/entrypoint.sh && chown -R runner:runner /opt/runner
+
+# 5) Bake the dependency tree so ephemeral runners start warm.
+#    These runners are ephemeral (one job per pristine container, no volumes),
+#    so every job would otherwise restore ~525 MB of node_modules from the
+#    Actions cache service over the network before doing any work — the slow
+#    step this image exists to remove. Run the repo's own install ONCE here and
+#    stash node_modules + vendor/gortex under /opt/deps/tree. The setup
+#    action (.github/actions/setup) seeds a job's workspace from this layer when
+#    the checked-out package-lock.json still matches what was baked (recorded in
+#    .lockhash); on a lockfile bump it falls back to the cache / npm ci path, so
+#    the layer is never used stale.
+#
+#    The build context is the repo root (see docker-compose.yml), so these COPYs
+#    reach the manifests + scripts the install's pre/postinstall hooks need
+#    (electron-rebuild of node-pty, the vendored gortex fetch, esbuild's
+#    platform binary). Kept as the LAST layers so a lockfile/scripts change only
+#    re-runs the install, not the toolchain above it. Non-fatal: if the install
+#    fails the image still builds (no .ready marker) and runners fall back.
+WORKDIR /opt/deps/tree
+COPY package.json package-lock.json ./
+COPY tsconfig*.json ./
+COPY scripts ./scripts
+RUN set -eux; \
+    if npm_config_ignore_scripts=false npm ci --include=optional --no-audit --no-fund; then \
+      sha256sum package-lock.json | awk '{ print $1 }' > .lockhash; \
+      npm cache clean --force >/dev/null 2>&1 || true; \
+      chmod -R a+rX /opt/deps/tree; \
+      touch .ready; \
+      echo "==> baked deps ready ($(du -sh node_modules 2>/dev/null | cut -f1) node_modules)"; \
+    else \
+      echo "==> WARNING: dependency baking failed — runners fall back to the CI cache / npm ci path"; \
+    fi
+ENV COPSE_BAKED_DEPS=/opt/deps/tree
+WORKDIR /opt/runner
 
 USER runner
 ENTRYPOINT ["/opt/runner/entrypoint.sh"]

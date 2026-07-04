@@ -8,7 +8,7 @@ import {
 } from '@shared/remote-agent.ts'
 import { isProviderKeyUsable } from './provider-key-status.ts'
 import { buildProvider } from './provider-selection.ts'
-import { isProviderAvailable } from './settings.ts'
+import { isProviderAvailable } from './storage/settings.ts'
 
 export interface ResolvedAgentChatModel {
   /** Model id actually used for the turn. */

@@ -1,8 +1,0 @@
-{
-  "_comment": "SHA-256 integrity manifest for prebuilt codesearch release assets. Keyed by version tag, then by asset filename. To (re)populate on a trusted machine after bumping CODESEARCH_VERSION, run: UPDATE_CHECKSUMS=1 node scripts/fetch-codesearch.mts (downloads the pinned assets and records their hashes). Missing entries cause fetch-codesearch to fail closed.",
-  "v1.0.209": {
-    "codesearch-macos-arm64.tar.gz": "73bba624cf6eecd0dd3fbcc1de94645750dbae41abcfe7d25b9d42239fa173b6",
-    "codesearch-linux-x86_64.tar.gz": "5f53921b0637033356682c9c61e0ffd937fd6087a9e11f3916b4c72ef3c069a1",
-    "codesearch-windows-x86_64.zip": "dabef9d48681e17cf622752808045d1aada7c0bf19d12a4379ee62408f1b4031"
-  }
-}
