@@ -13,7 +13,7 @@ import {
 import { setSetting, setApiKey } from '../storage/settings.test-shim.ts'
 import { MockLLMProvider } from '@shared/llm/mock-provider.ts'
 
-const SOURCE_PATH = resolve(process.cwd(), 'src/main/services/lm-studio-models.ts')
+const SOURCE_PATH = resolve(process.cwd(), 'src/main/services/providers/lm-studio-models.ts')
 
 function stubFetch(impl: typeof fetch): () => void {
   const original = globalThis.fetch
