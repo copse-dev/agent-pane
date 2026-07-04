@@ -24,9 +24,13 @@ When extending the renderer or its CSS, preserve these rules:
   `<hr>`) must never end up inside `<p>`. Mixed single-newline blocks (heading → subheading → list)
   are common in LLM output; split at block boundaries before wrapping paragraphs.
 - **Inline formatting order.** Fenced code → inline code → emphasis (delimiter stack) →
-  markdown links → bare HTTP autolinks. Emphasis runs before links so `*foo [bar](/url)*`
-  resolves correctly; link labels may already contain `<em>` / `<strong>` from that pass.
-  See #475 and [`docs/plans/markdown-renderer-hardening.md`](../../docs/plans/markdown-renderer-hardening.md).
+  GFM strikethrough → markdown links → bare HTTP autolinks. Emphasis runs before links so
+  `*foo [bar](/url)*` resolves correctly; link labels may already contain `<em>` / `<strong>`
+  from that pass. Strikethrough (`~~text~~` → `<del>`, `inline-strikethrough.ts`) sits between
+  emphasis and links so `~~*x*~~` nests and a struck `~~[a](b)~~` still resolves its link inside
+  the `<del>`; only paired **double** tildes delimit, so lone `~` (e.g. `20~25`) stays literal,
+  and its streaming hold (`strikethroughHoldStart`) suppresses a half-open trailing `~~foo`.
+  See #475, #613, and [`docs/plans/markdown-renderer-hardening.md`](../../docs/plans/markdown-renderer-hardening.md).
 - **Soft line breaks.** Prose paragraphs preserve single newlines in HTML (CommonMark soft breaks);
   hard breaks (two+ trailing spaces, or a backslash before the newline) emit `<br>` and swallow the
   next line's leading indentation. Breaks are marked before inline rendering (`markHardBreaks` in
