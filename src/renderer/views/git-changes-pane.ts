@@ -1,5 +1,6 @@
 import type * as Monaco from 'monaco-editor'
 import { el, clear } from '../dom/helpers.ts'
+import { refreshIcon } from '../dom/icons.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { at } from '@shared/array-utils.ts'
 import type { AppStore } from '@shared/store/store.ts'
@@ -125,7 +126,7 @@ export function mountGitChangesPane(
       'aria-label': 'Refresh changes',
       title: 'Refresh',
     },
-    '↻',
+    refreshIcon('ui-icon ui-icon-sm'),
   )
   listHeader.append(
     headerTitle,

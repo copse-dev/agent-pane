@@ -1,4 +1,5 @@
 import { el, clear, on } from '../dom/helpers.ts'
+import { chevronDownIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitBranchInfo, GitBranchStatus } from '@shared/types/git.ts'
@@ -41,7 +42,11 @@ export function mountFooterBranchStatus(
     'aria-label': 'Current git branch',
   })
   const label = el('span', { class: 'branch-picker-label footer-branch-label' })
-  const chevron = el('span', { class: 'branch-picker-chevron', 'aria-hidden': 'true' }, '▾')
+  const chevron = el(
+    'span',
+    { class: 'branch-picker-chevron', 'aria-hidden': 'true' },
+    chevronDownIcon('ui-icon ui-icon-sm'),
+  )
   trigger.append(label, chevron)
   const menu = el('div', { class: 'branch-picker-menu', role: 'listbox', hidden: '' })
   wrap.append(trigger, menu)

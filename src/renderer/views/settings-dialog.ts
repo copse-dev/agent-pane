@@ -12,6 +12,8 @@ import {
 import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
 import { DEFAULT_ADVISOR_MODEL } from '../../main/services/advisor-strategy.ts'
 import { qsRequired } from '../dom/helpers.ts'
+import { closeIcon } from '../dom/icons.ts'
+import { inlineStatus, setInlineStatus } from '../dom/inline-status.ts'
 import { populateModelSelect, populateSmallTasksModelSelect } from './model-options.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createCustomProvidersSection } from './setup/custom-providers-section.ts'
@@ -176,7 +178,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     <div class="settings-shell">
       <header class="settings-header">
         <h2>Settings</h2>
-        <button type="button" class="settings-close-btn" id="settings-close" aria-label="Close settings">✕</button>
+        <button type="button" class="settings-close-btn" id="settings-close" aria-label="Close settings"></button>
       </header>
 
       <div class="settings-body">
@@ -1028,16 +1030,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     }
 
     for (const s of statuses) {
-      const badge =
-        s.state === 'connected'
-          ? '● connected'
-          : s.state === 'error'
-            ? '✗ error'
-            : s.state === 'disabled'
-              ? '○ disabled'
-              : s.state === 'untrusted'
-                ? '⚠ not trusted'
-                : '… connecting'
       const row = document.createElement('div')
       row.className = `mcp-server-row mcp-state-${s.state}`
 
@@ -1077,7 +1069,29 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       const title = document.createElement('div')
       title.className = 'mcp-server-summary'
-      title.textContent = `${s.name} (${s.transport}) — ${badge}`
+      if (s.state === 'connected') {
+        title.replaceChildren(
+          document.createTextNode(`${s.name} (${s.transport}) — `),
+          inlineStatus('filled', 'connected'),
+        )
+      } else if (s.state === 'error') {
+        title.replaceChildren(
+          document.createTextNode(`${s.name} (${s.transport}) — `),
+          inlineStatus('error', 'error'),
+        )
+      } else if (s.state === 'disabled') {
+        title.replaceChildren(
+          document.createTextNode(`${s.name} (${s.transport}) — `),
+          inlineStatus('pending', 'disabled'),
+        )
+      } else if (s.state === 'untrusted') {
+        title.replaceChildren(
+          document.createTextNode(`${s.name} (${s.transport}) — `),
+          inlineStatus('warn', 'not trusted'),
+        )
+      } else {
+        title.textContent = `${s.name} (${s.transport}) — … connecting`
+      }
 
       header.append(toggleLabel, title)
       row.append(header)
@@ -1178,12 +1192,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       if (s.enabled) {
         const status = document.createElement('div')
         status.className = 'mcp-curated-status'
-        status.textContent =
-          s.state === 'connected'
-            ? `● connected — ${String(s.toolCount)} tool(s)${s.tools.length ? `: ${s.tools.join(', ')}` : ''}`
-            : s.state === 'error'
-              ? `✗ ${s.error ?? 'error'}`
-              : '… connecting'
+        if (s.state === 'connected') {
+          status.replaceChildren(
+            inlineStatus(
+              'filled',
+              `connected — ${String(s.toolCount)} tool(s)${s.tools.length ? `: ${s.tools.join(', ')}` : ''}`,
+            ),
+          )
+        } else if (s.state === 'error') {
+          setInlineStatus(status, 'error', s.error ?? 'error')
+        } else {
+          setInlineStatus(status, 'pending', '… connecting')
+        }
         body.append(status)
       }
 
@@ -1202,7 +1222,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   qsRequired(overlay, '#mcp-reload-btn').addEventListener('click', () => {
     const statusEl = qsRequired(overlay, '#mcp-reload-status')
-    statusEl.textContent = 'Reloading…'
+    setInlineStatus(statusEl, 'pending', 'Reloading…')
     statusEl.className = 'lmstudio-test-status'
     void api.mcp
       .reload()
@@ -1211,11 +1231,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         void refreshCuratedServers()
         const visible = statuses.filter((s) => !s.curated)
         const ok = visible.filter((s) => s.state === 'connected').length
-        statusEl.textContent = `✓ ${String(ok)}/${String(visible.length)} server(s) connected`
+        setInlineStatus(
+          statusEl,
+          'ok',
+          `${String(ok)}/${String(visible.length)} server(s) connected`,
+        )
         statusEl.classList.add('ok')
       })
       .catch((err: unknown) => {
-        statusEl.textContent = `✗ ${errorMessage(err)}`
+        setInlineStatus(statusEl, 'error', errorMessage(err))
         statusEl.classList.add('err')
       })
   })
@@ -1355,5 +1379,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   })
 
   qsRequired(overlay, '#settings-cancel').addEventListener('click', closeSettingsDialog)
-  qsRequired(overlay, '#settings-close').addEventListener('click', closeSettingsDialog)
+  const settingsCloseBtn = qsRequired(overlay, '#settings-close')
+  settingsCloseBtn.append(closeIcon('ui-icon'))
+  settingsCloseBtn.addEventListener('click', closeSettingsDialog)
 }
