@@ -4,9 +4,11 @@ import type { Project, Thread } from '@shared/types'
 import { sortThreadsNewestFirst } from '@shared/store/thread-helpers.ts'
 
 // On-disk persistence for projects and their chat threads. Projects stay in the
-// shared electron-store (config.json); each thread is a separate JSON file under
-// userData/threads/<projectId>/ so draft keystrokes only rewrite one small file
-// instead of the whole project's thread history.
+// shared electron-store (config.json). Threads live in the filesystem-native
+// store (issue #644): the renderer maps store events onto event-level writes —
+// `create` on a new thread, `appendMessage` on each finalized message, and a
+// debounced `updateMeta` for metadata (draft/usage/status/todos/title/…) —
+// instead of rewriting whole threads on every keystroke.
 
 const KEY_PROJECTS = 'projects'
 const KEY_ACTIVE = 'activeProjectId'
@@ -27,7 +29,7 @@ export function serializedSet(api: ApiClient, key: string, value: unknown): Prom
   return next
 }
 
-function serializedThreadWrite(key: string, write: () => Promise<void>): Promise<void> {
+function serializedWrite(key: string, write: () => Promise<void>): Promise<void> {
   const prev = writeChains.get(key) ?? Promise.resolve()
   const next = prev.catch(() => undefined).then(write)
   writeChains.set(key, next)
@@ -37,9 +39,82 @@ function serializedThreadWrite(key: string, write: () => Promise<void>): Promise
   return next
 }
 
+// All writes for one thread (create / appendMessage / updateMeta / delete) share
+// this key so they run strictly in order — a create is guaranteed to land before
+// the first append even though they are separate IPC channels.
 const threadWriteKey = (projectId: string, threadId: string): string =>
   `thread:${projectId}:${threadId}`
-const projectWriteKey = (projectId: string): string => `threads-project:${projectId}`
+
+type ThreadMeta = Omit<Thread, 'messages'>
+
+function metaOf(thread: Thread): ThreadMeta {
+  const { messages: _messages, ...meta } = thread
+  return meta
+}
+
+function metaSig(thread: Thread): string {
+  return JSON.stringify(metaOf(thread))
+}
+
+// Signature of each thread's last-persisted metadata, keyed by project then
+// thread id. A change event only rewrites `meta.json` when the metadata actually
+// changed; created/deleted threads are detected by diffing the id set. Seeded
+// from disk on load so a freshly loaded project produces no spurious writes and
+// its deletions are still detected. Per-project so a project switch never
+// mistakes the other project's threads for deletions.
+const persistedMeta = new Map<string, Map<string, string>>()
+
+/**
+ * Diff a project's threads against the last-persisted metadata baseline and emit
+ * exactly `create` (new id), `updateMeta` (changed meta), or `delete` (removed
+ * id). Message content is persisted separately via `appendMessage`; a brand-new
+ * thread's `create` writes its current messages too. Updates the baseline.
+ */
+function reconcileThreads(api: ApiClient, projectId: string, threads: Thread[]): Promise<void> {
+  const prev = persistedMeta.get(projectId) ?? new Map<string, string>()
+  const next = new Map<string, string>()
+  const writes: Array<Promise<void>> = []
+
+  for (const t of threads) {
+    const sig = metaSig(t)
+    next.set(t.id, sig)
+    const key = threadWriteKey(projectId, t.id)
+    if (!prev.has(t.id)) {
+      writes.push(serializedWrite(key, () => api.threads.create(projectId, t)))
+    } else if (prev.get(t.id) !== sig) {
+      writes.push(serializedWrite(key, () => api.threads.updateMeta(projectId, t.id, metaOf(t))))
+    }
+  }
+  for (const id of prev.keys()) {
+    if (!next.has(id)) {
+      writes.push(
+        serializedWrite(threadWriteKey(projectId, id), () => api.threads.delete(projectId, id)),
+      )
+    }
+  }
+
+  persistedMeta.set(projectId, next)
+  return Promise.all(writes).then(() => undefined)
+}
+
+/**
+ * Flush a project's current thread metadata to disk. Used when switching away
+ * from a project so any debounced metadata changes are committed before its
+ * state leaves memory (message content is already appended as it finalizes).
+ */
+export function flushProjectThreads(
+  api: ApiClient,
+  projectId: string,
+  threads: Thread[],
+): Promise<void> {
+  return reconcileThreads(api, projectId, threads)
+}
+
+/** Test-only: clear the per-project metadata baseline and write chains. */
+export function __resetPersistenceForTest(): void {
+  persistedMeta.clear()
+  writeChains.clear()
+}
 
 export async function loadProjects(
   api: ApiClient,
@@ -61,24 +136,13 @@ export async function saveProjects(
 }
 
 export async function loadThreads(api: ApiClient, projectId: string): Promise<Thread[]> {
-  const threads = await api.threads.loadProject(projectId)
-  return sortThreadsNewestFirst(threads)
-}
-
-export async function saveThread(api: ApiClient, projectId: string, thread: Thread): Promise<void> {
-  await serializedThreadWrite(threadWriteKey(projectId, thread.id), () =>
-    api.threads.saveOne(projectId, thread),
-  )
-}
-
-export async function saveThreads(
-  api: ApiClient,
-  projectId: string,
-  threads: Thread[],
-): Promise<void> {
-  await serializedThreadWrite(projectWriteKey(projectId), () =>
-    api.threads.saveProject(projectId, threads),
-  )
+  const threads = sortThreadsNewestFirst(await api.threads.loadProject(projectId))
+  // Seed the persisted-metadata baseline so the autosave doesn't re-create these
+  // (they're already on disk) but still detects later deletions.
+  const sigs = new Map<string, string>()
+  for (const t of threads) sigs.set(t.id, metaSig(t))
+  persistedMeta.set(projectId, sigs)
+  return threads
 }
 
 export const AUTOSAVE_DEBOUNCE_MS = 250
@@ -90,53 +154,63 @@ export interface Autosave {
   detach(): void
 }
 
-interface PendingAutosave {
-  projects: boolean
-  fullThreads: boolean
-  threadIds: Set<string>
-}
-
-function emptyPending(): PendingAutosave {
-  return { projects: false, fullThreads: false, threadIds: new Set() }
-}
-
-// Autosave: persists the active project's threads (and the project list) on
-// meaningful changes. Draft keystrokes only rewrite the one changed thread file;
-// structural thread list changes still save the whole project.
+// Autosave: maps store mutations onto event-level thread-store writes.
 //
-// Stale-save protection: the save reads the *current* active project at flush
-// time and writes that project's threads under that project's key. A late
-// `message_done`/`usage_updated` from an outgoing thread that arrives after a
-// project switch only schedules another debounced save, which then re-reads the
-// now-current state — it can never write the outgoing thread's data under the
-// new project's key.
+// - Metadata changes (draft, usage, status, todos, title, branch, structural
+//   create/delete) schedule a debounced `reconcile`: it diffs each thread's
+//   current metadata signature against the last-persisted one and emits exactly
+//   `create` (new id), `updateMeta` (changed meta), or `delete` (removed id).
+// - Finalized messages persist immediately via `appendMessage` (the commit
+//   point), preceded by a `reconcile` on the same per-thread queue so a
+//   brand-new thread's `create` lands before its first append.
+//
+// Stale-save protection: every write resolves the active project / thread from
+// current state at fire time. A late `message_done` from a thread that is gone
+// after a project switch finds no thread and writes nothing; `reconcile` only
+// ever runs against the active project's own baseline.
 export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
   let timer: ReturnType<typeof setTimeout> | null = null
-  let pending = emptyPending()
+  let projectsDirty = false
 
-  const writeNow = (): Promise<void> => {
-    const snapshot = pending
-    pending = emptyPending()
+  const reconcile = (projectId: string): Promise<void> =>
+    reconcileThreads(api, projectId, store.getState().threads)
 
-    const { activeProjectId, threads, projects } = store.getState()
+  // Persist one message immediately. Reconcile first (same per-thread queue) so a
+  // not-yet-created thread is created before its message is appended.
+  const persistMessage = (projectId: string, threadId: string, messageId: string): void => {
+    const thread = store.getState().threads.find((t) => t.id === threadId)
+    const message = thread?.messages.find((m) => m.id === messageId)
+    if (!message) return
+    void reconcile(projectId)
+    void serializedWrite(threadWriteKey(projectId, threadId), () =>
+      api.threads.appendMessage(projectId, threadId, message),
+    )
+  }
+
+  const threadIdOfMessage = (messageId: string): string | undefined => {
+    const { threads, activeThreadId } = store.getState()
+    const active = threads.find((t) => t.id === activeThreadId)
+    if (active?.messages.some((m) => m.id === messageId)) return active.id
+    return threads.find((t) => t.messages.some((m) => m.id === messageId))?.id
+  }
+
+  const flushNow = (): Promise<void> => {
+    const { activeProjectId, projects } = store.getState()
     const writes: Array<Promise<void>> = []
-
-    if (snapshot.projects) {
+    if (projectsDirty) {
+      projectsDirty = false
       writes.push(saveProjects(api, projects, activeProjectId))
     }
-
-    if (activeProjectId) {
-      if (snapshot.fullThreads) {
-        writes.push(saveThreads(api, activeProjectId, threads))
-      } else {
-        for (const threadId of snapshot.threadIds) {
-          const thread = threads.find((t) => t.id === threadId)
-          if (thread) writes.push(saveThread(api, activeProjectId, thread))
-        }
-      }
-    }
-
+    if (activeProjectId) writes.push(reconcile(activeProjectId))
     return Promise.all(writes).then(() => undefined)
+  }
+
+  const schedule = (): void => {
+    if (timer !== null) return
+    timer = setTimeout(() => {
+      timer = null
+      void flushNow()
+    }, AUTOSAVE_DEBOUNCE_MS)
   }
 
   const flush = (): Promise<void> => {
@@ -144,49 +218,50 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
       clearTimeout(timer)
       timer = null
     }
-    pending.projects = true
-    pending.fullThreads = true
-    pending.threadIds.clear()
-    return writeNow()
-  }
-
-  const scheduleSave = (patch: Partial<PendingAutosave> & { threadId?: string }): void => {
-    if (patch.projects) pending.projects = true
-    if (patch.fullThreads) pending.fullThreads = true
-    if (patch.threadId) pending.threadIds.add(patch.threadId)
-    if (patch.threadIds) {
-      for (const id of patch.threadIds) pending.threadIds.add(id)
-    }
-
-    if (timer !== null) return
-    timer = setTimeout(() => {
-      timer = null
-      void writeNow()
-    }, AUTOSAVE_DEBOUNCE_MS)
+    projectsDirty = true
+    return flushNow()
   }
 
   const unsubscribes = [
     store.on('threads_changed', () => {
-      scheduleSave({ projects: true, fullThreads: true })
+      schedule()
     }),
-    store.on('thread_draft_changed', (threadId) => {
-      scheduleSave({ threadId })
+    store.on('thread_draft_changed', () => {
+      schedule()
     }),
-    store.on('message_done', () => {
-      const { activeThreadId } = store.getState()
-      if (activeThreadId) scheduleSave({ threadId: activeThreadId })
+    store.on('usage_updated', () => {
+      schedule()
     }),
-    store.on('usage_updated', (threadId) => {
-      scheduleSave({ threadId })
+    store.on('thread_status_changed', () => {
+      schedule()
     }),
-    store.on('thread_status_changed', (threadId) => {
-      scheduleSave({ threadId })
+    store.on('todos_changed', () => {
+      schedule()
+    }),
+    store.on('context_updated', () => {
+      schedule()
     }),
     store.on('projects_changed', () => {
-      scheduleSave({ projects: true })
+      projectsDirty = true
+      schedule()
     }),
-    store.on('todos_changed', (threadId) => {
-      scheduleSave({ threadId })
+    store.on('message_added', (threadId, messageId) => {
+      const { activeProjectId, threads } = store.getState()
+      if (!activeProjectId) return
+      const message = threads
+        .find((t) => t.id === threadId)
+        ?.messages.find((m) => m.id === messageId)
+      // User messages are complete when added — persist now. An assistant message
+      // is created empty and streamed, so it waits for `message_done`; still
+      // reconcile so the thread's create/meta lands.
+      if (message?.role === 'user') persistMessage(activeProjectId, threadId, messageId)
+      else schedule()
+    }),
+    store.on('message_done', (messageId) => {
+      const { activeProjectId } = store.getState()
+      if (!activeProjectId) return
+      const threadId = threadIdOfMessage(messageId)
+      if (threadId) persistMessage(activeProjectId, threadId, messageId)
     }),
   ]
 
@@ -200,7 +275,6 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
         clearTimeout(timer)
         timer = null
       }
-      pending = emptyPending()
       unsubscribes.forEach((u) => {
         u()
       })
