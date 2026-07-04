@@ -20,14 +20,19 @@ runs:
   steps:
     # npm records the @copse/streaming-markdown git dependency as git+ssh in the
     # lockfile (npm normalizes github: hosts to ssh regardless of the spec form),
-    # but Actions runners have no SSH key — so `npm ci` below would die with
-    # "Permission denied (publickey)". Rewrite the ssh:// form to HTTPS so npm
-    # fetches over https instead: anonymously when streaming-markdown is public,
-    # or token-authenticated when a PAT with read access to it is provided. npm
-    # clones git deps into their own temp dir, so only this GLOBAL git config
-    # reaches that clone — the checkout step's credential is local to the app
-    # checkout and never applies there. Scoped to github.com ssh URLs (the sole
-    # git dependency), keeping any PAT out of unrelated fetches.
+    # but Actions runners have no SSH key — so `npm ci` below dies with
+    # "Permission denied (publickey)". Redirect the ssh:// form to HTTPS.
+    #
+    # This MUST go through GIT_CONFIG_* env vars (exported to $GITHUB_ENV so the
+    # later `npm ci` step inherits them), NOT `git config --global`: npm spawns
+    # git in its own temp clone and that child git did not pick up the global
+    # config here, so the ssh URL reached the network unrewritten. Git reads
+    # GIT_CONFIG_* from its environment unconditionally, so the inherited env
+    # reaches npm's child git. Only ssh://github URLs are rewritten (the sole git
+    # dependency), so the app's own https git operations are untouched — no extra
+    # auth header, no double-credential. Anonymous HTTPS when streaming-markdown
+    # is public; the token is embedded in the rewritten URL when a PAT with read
+    # access is provided.
     - shell: bash
       env:
         GH_DEP_PAT: ${{ inputs.github-pat }}
@@ -37,8 +42,13 @@ runs:
         else
           base="https://github.com/"
         fi
-        git config --global url."${base}".insteadOf "ssh://git@github.com/"
-        git config --global url."${base}".insteadOf "git@github.com:"
+        {
+          echo "GIT_CONFIG_COUNT=2"
+          echo "GIT_CONFIG_KEY_0=url.${base}.insteadOf"
+          echo "GIT_CONFIG_VALUE_0=ssh://git@github.com/"
+          echo "GIT_CONFIG_KEY_1=url.${base}.insteadOf"
+          echo "GIT_CONFIG_VALUE_1=git@github.com:"
+        } >> "$GITHUB_ENV"
     # Deliberately NO `cache: 'npm'` here. That option caches ~/.npm (the npm
     # download cache — inputs to `npm ci`), which on this repo is ~2.5 GB. But the
     # actions/cache step below already caches node_modules (the *output* of the
