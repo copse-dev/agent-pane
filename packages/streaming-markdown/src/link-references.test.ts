@@ -19,6 +19,27 @@ describe('parseLinkReferenceDefinitions', () => {
     assert.equal(lookupLinkReference(refs, 'foo')?.href, '/url1')
   })
 
+  it('accepts a destination on the line after the colon (#597, spec #198)', () => {
+    const refs = parseLinkReferenceDefinitions('[foo]:\n/url\n\n[foo]\n')
+    assert.equal(lookupLinkReference(refs, 'foo')?.href, '/url')
+  })
+
+  it('accepts a multi-line title (#597, spec #196)', () => {
+    const refs = parseLinkReferenceDefinitions("[foo]: /url '\ntitle\nline1\n'\n\n[foo]\n")
+    assert.equal(lookupLinkReference(refs, 'foo')?.href, '/url')
+    assert.equal(lookupLinkReference(refs, 'foo')?.title, '\ntitle\nline1\n')
+  })
+
+  it('rejects trailing content after the title (#597, spec #209)', () => {
+    const refs = parseLinkReferenceDefinitions('[foo]: /url "title" ok\n')
+    assert.equal(lookupLinkReference(refs, 'foo'), undefined)
+  })
+
+  it('still accepts an empty angle-bracket destination (spec #200)', () => {
+    const refs = parseLinkReferenceDefinitions('[foo]: <>\n\n[foo]\n')
+    assert.equal(lookupLinkReference(refs, 'foo')?.href, '')
+  })
+
   it('allows multiline labels (#541)', () => {
     const refs = parseLinkReferenceDefinitions('[Foo\n  bar]: /url\n')
     assert.equal(normalizeReferenceLabel('Foo\n  bar'), normalizeReferenceLabel('Foo bar'))

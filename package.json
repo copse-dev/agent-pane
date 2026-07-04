@@ -32,6 +32,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "node scripts/run-tests.mts",
+    "bench:markdown": "tsx packages/streaming-markdown/scripts/bench-streaming.mts",
     "coverage": "c8 npm test",
     "coverage:check": "node scripts/coverage-gate.mts",
     "coverage:update": "node scripts/coverage-gate.mts --update",
