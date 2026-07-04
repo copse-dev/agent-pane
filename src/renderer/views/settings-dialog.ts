@@ -27,7 +27,7 @@ import {
   WEB_ALLOW_USER_APPROVAL_SETTING,
 } from '@shared/web-origins.ts'
 
-type SettingsSection =
+export type SettingsSection =
   | 'general'
   | 'usage'
   | 'local-models'
@@ -134,9 +134,13 @@ function parseWebAllowedOrigins(value: FormDataEntryValue | null): string[] {
 }
 
 let overlayEl: HTMLDialogElement | null = null
+// Section to reveal on the next open (e.g. a deep-link from the low-context
+// warning). Read and cleared by the `settings-open` handler; null → General.
+let pendingSection: SettingsSection | null = null
 
-export function openSettingsDialog(): void {
+export function openSettingsDialog(section?: SettingsSection): void {
   if (!overlayEl || overlayEl.open) return
+  pendingSection = section ?? null
   // showModal() puts the dialog in the top layer: focus is trapped inside, the
   // background is made inert, and Esc closes it — all for free, replacing the
   // hand-rolled overlay + manual `hidden` toggle.
@@ -1232,7 +1236,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   })
 
   overlay.addEventListener('settings-open', () => {
-    showSection('general')
+    showSection(pendingSection ?? 'general')
+    pendingSection = null
     void (async (): Promise<void> => {
       await cursorKeySection.refreshKeyStatus()
       await claudeAgentKeySection.refreshKeyStatus()

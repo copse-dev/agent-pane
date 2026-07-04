@@ -29,6 +29,7 @@ import {
   openOnboardingDialog,
   shouldShowOnboarding,
 } from './views/onboarding-dialog.ts'
+import { mountContextWarningBanner } from './views/context-warning-banner.ts'
 import { mountApprovalDialog } from './views/approval-dialog.ts'
 import { mountAskUserDialog } from './views/ask-user-dialog.ts'
 import {
@@ -106,6 +107,8 @@ async function boot(): Promise<void> {
   mountApprovalDialog(api, store)
   mountAskUserDialog(api, store)
   mountFileSearchDialog(store, api)
+  // Mounted after settings (it subscribes to the settings-close event to re-check).
+  const contextWarningBanner = mountContextWarningBanner(api)
 
   // Load persisted user preferences before the main layout mounts.
   const savedModel = (await api.settings.get('model')) as string | null
@@ -204,6 +207,11 @@ async function boot(): Promise<void> {
 
   if (await shouldShowOnboarding(api)) {
     openOnboardingDialog()
+  } else {
+    // Onboarding walks the user through model setup, so only nudge established
+    // users here: warn when no configured chat model has a usable context window
+    // (e.g. LM Studio reloaded everything at a tiny default after a reboot).
+    void contextWarningBanner.refresh()
   }
 }
 
