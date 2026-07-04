@@ -18,20 +18,27 @@ inputs:
 runs:
   using: composite
   steps:
-    # When a PAT with read access to copse-dev/streaming-markdown is provided,
-    # rewrite the SSH form of that private git dependency (how package-lock.json
-    # pins it) to token-authenticated HTTPS so the `npm ci` below can fetch it.
-    # npm clones git deps into its own temp dir, so only this GLOBAL git config
+    # npm records the @copse/streaming-markdown git dependency as git+ssh in the
+    # lockfile (npm normalizes github: hosts to ssh regardless of the spec form),
+    # but Actions runners have no SSH key — so `npm ci` below would die with
+    # "Permission denied (publickey)". Rewrite the ssh:// form to HTTPS so npm
+    # fetches over https instead: anonymously when streaming-markdown is public,
+    # or token-authenticated when a PAT with read access to it is provided. npm
+    # clones git deps into their own temp dir, so only this GLOBAL git config
     # reaches that clone — the checkout step's credential is local to the app
-    # checkout and never applies there. Scoped to the ssh:// forms to keep the PAT
-    # out of unrelated github fetches.
-    - if: inputs.github-pat != ''
-      shell: bash
+    # checkout and never applies there. Scoped to github.com ssh URLs (the sole
+    # git dependency), keeping any PAT out of unrelated fetches.
+    - shell: bash
       env:
         GH_DEP_PAT: ${{ inputs.github-pat }}
       run: |
-        git config --global url."https://x-access-token:${GH_DEP_PAT}@github.com/".insteadOf "ssh://git@github.com/"
-        git config --global url."https://x-access-token:${GH_DEP_PAT}@github.com/".insteadOf "git@github.com:"
+        if [ -n "${GH_DEP_PAT}" ]; then
+          base="https://x-access-token:${GH_DEP_PAT}@github.com/"
+        else
+          base="https://github.com/"
+        fi
+        git config --global url."${base}".insteadOf "ssh://git@github.com/"
+        git config --global url."${base}".insteadOf "git@github.com:"
     # Deliberately NO `cache: 'npm'` here. That option caches ~/.npm (the npm
     # download cache — inputs to `npm ci`), which on this repo is ~2.5 GB. But the
     # actions/cache step below already caches node_modules (the *output* of the
