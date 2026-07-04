@@ -79,8 +79,14 @@ function assetName(): string | null {
   if (process.platform === 'darwin' && process.arch === 'arm64') {
     return 'gortex_darwin_arm64.tar.gz'
   }
+  if (process.platform === 'darwin' && process.arch === 'x64') {
+    return 'gortex_darwin_amd64.tar.gz'
+  }
   if (process.platform === 'linux' && process.arch === 'x64') {
     return 'gortex_linux_amd64.tar.gz'
+  }
+  if (process.platform === 'linux' && process.arch === 'arm64') {
+    return 'gortex_linux_arm64.tar.gz'
   }
   if (process.platform === 'win32' && process.arch === 'x64') {
     return 'gortex_windows_amd64.zip'

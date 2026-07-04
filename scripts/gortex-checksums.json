@@ -1,7 +1,9 @@
 {
   "v0.58.3": {
     "gortex_darwin_arm64.tar.gz": "f687aa9cb76b4520507a7e829f1d9bad189bdce8144e727c22760ee7294c526f",
+    "gortex_darwin_amd64.tar.gz": "f41f753bdbf0c84863d9b375af31cb4cbc314f678f680f41322a79364d3c9254",
     "gortex_linux_amd64.tar.gz": "e34915295400f69a74fd1104cfb9a6d15ebaa482f3b178cdf4994053c1d5b4e8",
+    "gortex_linux_arm64.tar.gz": "033b24a49c0259a38b43b379cbae02c6e08f24e19352e213131349deec5f4a25",
     "gortex_windows_amd64.zip": "bc08035cf7ba0a759de9d19534d9cefe6ba55cf02ad8061a39f71da33ecd1322"
   }
 }
