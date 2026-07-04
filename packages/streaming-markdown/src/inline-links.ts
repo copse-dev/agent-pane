@@ -64,7 +64,11 @@ export function setLinkDecorator(decorator: LinkDecorator | null): void {
 
 /** Render an `<a>` for a resolved link, applying the active {@link LinkDecorator}. */
 export function renderAnchor(label: string, href: string, title?: string): string {
-  const attrs = activeLinkDecorator({ href, isWorkspace: isWorkspaceMarkdownLinkHref(href), title })
+  const isWorkspace = isWorkspaceMarkdownLinkHref(href)
+  // `exactOptionalPropertyTypes`: omit `title` rather than pass an explicit undefined.
+  const decoration: LinkDecoration =
+    title === undefined ? { href, isWorkspace } : { href, isWorkspace, title }
+  const attrs = activeLinkDecorator(decoration)
   return `<a href="${escapeHtml(href)}"${attrs}>${label}</a>`
 }
 
