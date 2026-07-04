@@ -13,7 +13,12 @@ import {
   LM_STUDIO_MODEL_IDS,
   resolveLocalServerUrl,
 } from '@shared/lm-studio-defaults.ts'
-import { getSetting, getSettingTrimmed, getLmStudioApiKey, resolveApiKey } from './settings.ts'
+import {
+  getSetting,
+  getSettingTrimmed,
+  getLmStudioApiKey,
+  resolveApiKey,
+} from './storage/settings.ts'
 import { resolveContextWindow } from './resolve-context-window.ts'
 import {
   fetchLmStudioModelsCached,

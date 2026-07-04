@@ -7,7 +7,7 @@ import {
   isAppIconVariant,
   type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
-import { getSetting } from './services/settings.ts'
+import { getSetting } from './services/storage/settings.ts'
 
 /** Bundled next to main (dist/assets after build/dev copy). */
 const assetsDir = join(__dirname, '../assets')

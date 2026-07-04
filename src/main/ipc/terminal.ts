@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import type { BrowserWindow } from 'electron'
-import { ensureTerminalPermitted } from '../services/permission-gate.ts'
+import { ensureTerminalPermitted } from '../services/security/permission-gate.ts'
 import { z } from 'zod'
 import { assertMainFrameSender, parseIpcArgs, zSessionId } from './ipc-guards.ts'
 import {
@@ -9,7 +9,7 @@ import {
   destroyTerminalSession,
   resizeTerminalSession,
   writeTerminalSession,
-} from '../services/terminal-service.ts'
+} from '../services/exec/terminal-service.ts'
 
 const terminalCreateSchema = z.tuple([
   z.number().int().min(1).max(500),

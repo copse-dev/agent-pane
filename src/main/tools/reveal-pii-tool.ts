@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { getActiveRunThread } from '../services/thread-models.ts'
-import { revealPlaceholder } from '../services/pii-redactor.ts'
+import { revealPlaceholder } from '../services/security/pii-redactor.ts'
 import { requestApproval } from '../services/approval.ts'
 
 /**

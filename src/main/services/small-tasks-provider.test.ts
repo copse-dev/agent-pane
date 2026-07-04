@@ -1,7 +1,7 @@
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { resolveSmallTasksModelId } from './small-tasks-provider.ts'
-import { setSetting } from './settings.ts'
+import { setSetting } from './storage/settings.ts'
 import { LM_STUDIO_MODEL_IDS, lmStudioChatModelValue } from '@shared/lm-studio-defaults.ts'
 
 describe('resolveSmallTasksModelId', () => {

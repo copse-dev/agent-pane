@@ -1,7 +1,7 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { findFilesTool } from './search-tools.ts'
-import { setIndexForTest } from '../services/file-index.ts'
+import { setIndexForTest } from '../services/search/file-index.ts'
 
 const noSignal = new AbortController().signal
 

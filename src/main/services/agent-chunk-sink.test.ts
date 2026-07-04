@@ -4,8 +4,8 @@ import type { AgentHost } from '@shared/agent/agent-host.ts'
 import type { StreamChunk } from '@shared/types'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { getThreadModels } from './thread-models.ts'
-import { getUsageEventCount } from './usage-ledger.ts'
-import { storageSet } from './storage.ts'
+import { getUsageEventCount } from './storage/usage-ledger.ts'
+import { storageSet } from './storage/storage.ts'
 import { USAGE_EVENTS_STORAGE_KEY } from '@shared/usage/usage-event.ts'
 
 describe('createAgentChunkSink', () => {

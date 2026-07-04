@@ -2,7 +2,7 @@ import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { resolveContextWindow, fetchLmStudioModelContextLength } from './resolve-context-window.ts'
 import { invalidateLmStudioModelsCache } from './lm-studio-models.ts'
-import { setApiKey } from './settings.test-shim.ts'
+import { setApiKey } from './storage/settings.test-shim.ts'
 
 function requestUrl(input: string | URL | Request): string {
   if (typeof input === 'string') return input

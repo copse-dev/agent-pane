@@ -1,5 +1,5 @@
 import type { ModelUsage, StreamChunk } from '@shared/types'
-import { runCiInvestigatorSubagent } from './ci-investigator-service.ts'
+import { runCiInvestigatorSubagent } from './github/ci-investigator-service.ts'
 import type { LLMProvider } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { addSubagentUsage } from './subagent-usage.ts'

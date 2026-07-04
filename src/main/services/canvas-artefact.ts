@@ -3,7 +3,7 @@
  * artefact. Kept free of Electron imports so it runs under the unit-test runner.
  */
 import type { CanvasArtefact } from '@shared/types/canvas.ts'
-import type { McpUiResource } from './mcp-schema.ts'
+import type { McpUiResource } from './mcp/mcp-schema.ts'
 
 /** Derive a friendly tab title from a `ui://server/<name>` resource URI. */
 export function artefactTitleFromUri(uri: string): string {

@@ -8,7 +8,7 @@ import {
 import type { LLMMessage, LLMTool, StreamChunk, UserContent } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
-import { getSetting } from './settings.ts'
+import { getSetting } from './storage/settings.ts'
 import { resolveContextWindow } from './resolve-context-window.ts'
 import { classifyAgentError } from './agent-errors.ts'
 import { resolveParentGoal } from '@shared/agent/working-brief.ts'
@@ -16,7 +16,7 @@ import { buildSystemPrompt } from './agent-system-prompt.ts'
 import { hasLastUsage } from './provider-usage.ts'
 import { clearActiveRunThread, recordThreadModel, setActiveRunThread } from './thread-models.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
-import { redactUserContent } from './pii-redactor.ts'
+import { redactUserContent } from './security/pii-redactor.ts'
 import { buildCommitSteeringPrompt, shouldSteerCommit } from '@shared/git/commit-attribution.ts'
 import {
   buildProvider,
@@ -41,10 +41,10 @@ import {
 } from './agent-run-read-limits.ts'
 import { runWithAgentRunReadonly } from './agent-run-readonly.ts'
 import { isToolAllowedInReadonlyMode } from '@shared/tools/readonly-tools.ts'
-import { getMcpToolMeta } from './mcp-registry.ts'
+import { getMcpToolMeta } from './mcp/mcp-registry.ts'
 import { formatReadFileLimitHint } from '@shared/agent/read-file-limits.ts'
 import { setExploreSubagentContext } from './explore-subagent-runner.ts'
-import { setCurrentShellTaskId } from './shell-output-context.ts'
+import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
 import { setCiInvestigatorContext } from './ci-investigator-runner.ts'
 import { setAdvisorContext, resolveAdvisorModelId } from './advisor-runner.ts'
 import { resetSubagentUsage, getAccumulatedSubagentUsage } from './subagent-usage.ts'
@@ -53,7 +53,7 @@ import {
   buildGithubLinkSteeringPrompt,
   shouldSteerGithubLinks,
 } from '@shared/git/github-link-steering.ts'
-import { getGithubRepoSlug } from './git-service.ts'
+import { getGithubRepoSlug } from './github/git-service.ts'
 import {
   shouldSteerTodos,
   formatTodosForPrompt,
@@ -68,7 +68,7 @@ import { runTodoWorker } from './todo-worker-runner.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
 import { parseRemoteAgentModel } from '@shared/remote-agent.ts'
-import { runRemoteAgentFromSettings } from './remote-agent-client.ts'
+import { runRemoteAgentFromSettings } from './remote/remote-agent-client.ts'
 import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
 import { SUBAGENTS_ENABLED_DEFAULT, SUBAGENTS_ENABLED_SETTING } from './subagents-setting.ts'

@@ -8,8 +8,8 @@ import {
   toRelativePath,
 } from '../services/workspace.ts'
 import { isRgAvailable } from '../services/tool-availability.ts'
-import { formatCodeSearchResults, searchCodeContent } from '../services/indexed-grep.ts'
-import { executeSemanticSearch } from '../services/semantic-search.ts'
+import { formatCodeSearchResults, searchCodeContent } from '../services/search/indexed-grep.ts'
+import { executeSemanticSearch } from '../services/search/semantic-search.ts'
 
 export const searchCodebaseTool = defineTool({
   name: 'search_codebase',

@@ -1,6 +1,6 @@
-import { runCommand } from './command-runner.ts'
-import { probeIndexedGrepBackends } from './indexed-grep.ts'
-import { isSemanticBackendBundled, probeSemanticBackends } from './semantic-index.ts'
+import { runCommand } from './exec/command-runner.ts'
+import { probeIndexedGrepBackends } from './search/indexed-grep.ts'
+import { isSemanticBackendBundled, probeSemanticBackends } from './search/semantic-index.ts'
 
 let rgAvail: boolean | null = null
 let gitAvail: boolean | null = null

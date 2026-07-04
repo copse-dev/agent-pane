@@ -4,32 +4,32 @@
     {
       "id": "coalesce-index-updates",
       "query": "coalesce overlapping semantic index updates into a single in-flight run plus one trailing run",
-      "expectedPaths": ["src/main/services/semantic-index.ts"]
+      "expectedPaths": ["src/main/services/search/semantic-index.ts"]
     },
     {
       "id": "cap-index-cpu",
       "query": "cap the number of worker threads so background indexing does not pin every CPU core",
-      "expectedPaths": ["src/main/services/semantic-index.ts"]
+      "expectedPaths": ["src/main/services/search/semantic-index.ts"]
     },
     {
       "id": "ensure-index-on-open",
       "query": "register and build the semantic index when a workspace is opened",
-      "expectedPaths": ["src/main/services/semantic-index.ts"]
+      "expectedPaths": ["src/main/services/search/semantic-index.ts"]
     },
     {
       "id": "format-semantic-hits",
       "query": "format semantic search hits for display including line ranges and scores",
-      "expectedPaths": ["src/main/services/semantic-index.ts"]
+      "expectedPaths": ["src/main/services/search/semantic-index.ts"]
     },
     {
       "id": "parse-ripgrep-json",
       "query": "parse ripgrep JSON output including match and surrounding context lines",
-      "expectedPaths": ["src/main/services/indexed-grep.ts"]
+      "expectedPaths": ["src/main/services/search/indexed-grep.ts"]
     },
     {
       "id": "probe-grep-backend",
       "query": "probe which indexed grep backend is installed and fall back to ripgrep",
-      "expectedPaths": ["src/main/services/indexed-grep.ts"]
+      "expectedPaths": ["src/main/services/search/indexed-grep.ts"]
     },
     {
       "id": "verify-checksum",
@@ -59,12 +59,12 @@
     {
       "id": "resolve-bundled-binary",
       "query": "resolve the path to the bundled semantic search binary shipped with the app",
-      "expectedPaths": ["src/main/services/bundled-semantic.ts"]
+      "expectedPaths": ["src/main/services/search/bundled-semantic.ts"]
     },
     {
       "id": "run-command-timeout",
       "query": "run an external command with a timeout and a lowered process priority",
-      "expectedPaths": ["src/main/services/command-runner.ts"]
+      "expectedPaths": ["src/main/services/exec/command-runner.ts"]
     },
     {
       "id": "search-codebase-tool",
@@ -74,7 +74,7 @@
     {
       "id": "settings-schema-validation",
       "query": "look up the validation schema for a settings key",
-      "expectedPaths": ["src/main/services/settings-schema.ts"]
+      "expectedPaths": ["src/main/services/storage/settings-schema.ts"]
     },
     {
       "id": "migrate-legacy-threads",

@@ -16,17 +16,17 @@ import {
   loadMcpServers,
   shutdownMcpServers,
   getMcpServerStatuses,
-} from './services/mcp-registry.ts'
-import { loadCustomTools } from './services/custom-tools-registry.ts'
+} from './services/mcp/mcp-registry.ts'
+import { loadCustomTools } from './services/mcp/custom-tools-registry.ts'
 import { disposeAllAcpSessions } from './services/acp/acp-session-pool.ts'
 import { initApproval } from './services/approval.ts'
 import { initAskUser } from './services/ask-user.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
-import { stopWorkspaceIndexWatcher } from './services/workspace-index-watcher.ts'
+import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-watcher.ts'
 import { initTerminal } from './ipc/terminal.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
-import { initSkillsRegistry } from './services/skills-registry.ts'
+import { initSkillsRegistry } from './services/skills/skills-registry.ts'
 import { parseAgentRunPayload } from '@shared/agent/parse-agent-run-payload.ts'
 import type { AgentHost } from '@shared/agent/agent-host.ts'
 import {
@@ -50,12 +50,12 @@ import {
 } from './services/lm-studio-setup.ts'
 import { estimateContextBreakdown } from './services/context-estimate.ts'
 import { suggestFollowUps } from './services/follow-up-service.ts'
-import { storageGet, storageSet } from './services/storage.ts'
+import { storageGet, storageSet } from './services/storage/storage.ts'
 import { getMainWindow } from './windows/create-main-window.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
-import { clearRemoteAgentSession } from './services/remote-agent-client.ts'
+import { clearRemoteAgentSession } from './services/remote/remote-agent-client.ts'
 import { shutdownBrowserSession } from './services/browser/session-manager.ts'
-import { drainWriteQueue } from './services/write-queue.ts'
+import { drainWriteQueue } from './services/storage/write-queue.ts'
 import {
   assertMainFrameSender,
   estimateContextPayloadSchema,
@@ -67,7 +67,7 @@ import {
   parseIpcArgs,
   zThreadId,
 } from './ipc/ipc-guards.ts'
-import { destroyAllTerminalSessions } from './services/terminal-service.ts'
+import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 
 // Prevent multiple instances stacking invisible windows at the same position.
 // A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.

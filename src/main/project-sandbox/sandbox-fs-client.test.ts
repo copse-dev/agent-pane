@@ -9,11 +9,11 @@ import {
   resolveWorkspacePath,
   setWorkspaceRootForTest,
 } from '../services/workspace.ts'
-import { runCommand } from '../services/command-runner.ts'
+import { runCommand } from '../services/exec/command-runner.ts'
 import {
   COMMAND_OUTPUT_MAX_BYTES,
   COMMAND_OUTPUT_TRUNCATED_MARKER,
-} from '../services/subprocess-output-cap.ts'
+} from '../services/exec/subprocess-output-cap.ts'
 import {
   gatewayReadFile,
   gatewayWriteFile,

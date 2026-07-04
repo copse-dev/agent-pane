@@ -7,7 +7,7 @@ import {
   getGitLogText,
   getGitShowText,
   getGitStatusText,
-} from '../services/git-service.ts'
+} from '../services/github/git-service.ts'
 import { resolveWorkspacePath } from '../services/workspace.ts'
 import { getActiveRunThread, getThreadModels } from '../services/thread-models.ts'
 
