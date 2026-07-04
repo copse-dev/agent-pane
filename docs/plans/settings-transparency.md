@@ -67,9 +67,9 @@ to the prompt.
 - **Cursor rules import** (#636) — read `.cursor/rules/*.mdc` (respecting `alwaysApply` /
   glob scoping) and legacy `.cursorrules` as project instructions, since we advertise
   Cursor compatibility but skip its rules today.
-- **Global / user instructions** (#637) — optional load of `~/AGENTS.md` /
-  `~/.claude/CLAUDE.md` (plain files, easy) as a lower-precedence layer beneath project
-  files.
+- **Global / user instructions** (#637, _implemented — stacked on #635_) — load
+  `~/AGENTS.md` / `~/.claude/CLAUDE.md` as a lower-precedence global layer beneath project
+  files, with an instruction `scope` surfaced in the Sources panel.
 - **Cursor "Rules for AI" import** (#638) — the user's personal Cursor steering. Bigger: it
   lives in Cursor's SQLite app state, not a file. Needs its own design.
 - **Claude Code hooks & settings** (#639) — support `.claude/settings.json` hooks (distinct

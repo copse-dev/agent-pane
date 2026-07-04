@@ -506,9 +506,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <fieldset>
               <legend>Instruction files</legend>
               <p class="settings-fieldset-desc">
-                Project files appended to the system prompt, in precedence order.
-                <code>AGENT.md</code>/<code>AGENTS.md</code> (cross-tool) and
-                <code>CLAUDE.md</code> (Claude Code) are all read when present.
+                Files appended to the system prompt, in precedence order. Global steering
+                (<code>~/AGENTS.md</code>, <code>~/.claude/CLAUDE.md</code>) loads first, then
+                project <code>AGENT.md</code>/<code>AGENTS.md</code> (cross-tool) and
+                <code>CLAUDE.md</code> (Claude Code) when present.
               </p>
               <div id="sources-instructions-list" class="sources-group">
                 <span class="sources-empty">Loading…</span>
@@ -949,8 +950,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       fillSourceList(
         '#sources-instructions-list',
-        instructions.map((f) => makeSourceRow(f.name, `${String(f.bytes)} B`, f.path)),
-        'No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root).',
+        instructions.map((f) =>
+          makeSourceRow(f.name, f.scope, `${f.path} · ${String(f.bytes)} B`, {
+            badgeClass: f.scope === 'project' ? 'sources-badge-project' : undefined,
+          }),
+        ),
+        'No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root, or ~/AGENTS.md globally).',
       )
 
       fillSourceList(
