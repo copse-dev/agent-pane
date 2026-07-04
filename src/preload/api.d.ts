@@ -141,8 +141,22 @@ export interface ApiClient {
   }
   threads: {
     loadProject: (projectId: string) => Promise<import('@shared/types').Thread[]>
-    saveOne: (projectId: string, thread: import('@shared/types').Thread) => Promise<void>
-    saveProject: (projectId: string, threads: import('@shared/types').Thread[]) => Promise<void>
+    create: (projectId: string, thread: import('@shared/types').Thread) => Promise<void>
+    appendMessage: (
+      projectId: string,
+      threadId: string,
+      message: import('@shared/types').Message,
+    ) => Promise<void>
+    updateMeta: (
+      projectId: string,
+      threadId: string,
+      patch: Partial<Omit<import('@shared/types').Thread, 'messages'>>,
+    ) => Promise<void>
+    delete: (projectId: string, threadId: string) => Promise<void>
+    catalog: (
+      projectId: string,
+      query?: string,
+    ) => Promise<import('@shared/types').ThreadCatalogHit[]>
   }
   openRouter: {
     models: () => Promise<Array<{ id: string; name: string }>>

@@ -10,8 +10,60 @@ import {
   listItemContentColumn,
 } from './block-tokenizer.ts'
 import { decodeSafeMarkdownEntities, escapeHtml } from './escape.ts'
+import { scanCodeSpans } from './inline-code-spans.ts'
 import { pendingHoldIndex } from './inline-emphasis.ts'
 import { renderProseInline } from './render-prose-inline.ts'
+
+// A complete inline link/image at the start of the slice (`[a](/x)` / `![a](/x)`).
+const COMPLETE_LINK_AT_START_RE = /^!?\[[^\]]*\]\([^)]*\)/
+
+/**
+ * Streaming: reveal a forming link's label before its URL arrives (#617).
+ *
+ * While `[label](https://partial` streams, the raw text otherwise shows literal
+ * `[`/`](` brackets and — worse — autolinks the partial URL into a broken,
+ * clickable `<a>`. This surfaces the label text as soon as it is unambiguous and
+ * drops the incomplete `](url` tail so no partial URL renders or navigates.
+ * Once `](url)` closes, the complete link is left untouched for normal rendering.
+ *
+ * Only the trailing, still-forming link/image is touched; earlier complete links
+ * and `[label]` shortcut/literal brackets are left as-is, and `[` inside code
+ * spans or after a backslash escape never counts.
+ */
+export function revealFormingLink(text: string): string {
+  if (!text.includes('[')) return text
+  const { mask } = scanCodeSpans(text)
+  let open = -1
+  for (let i = text.length - 1; i >= 0; i--) {
+    if (text[i] !== '[' || mask[i]) continue
+    let backslashes = 0
+    for (let k = i - 1; k >= 0 && text[k] === '\\'; k--) backslashes++
+    if (backslashes % 2 === 1) continue // escaped `\[` is literal
+    open = i
+    break
+  }
+  if (open === -1) return text
+
+  const isImage = open > 0 && text[open - 1] === '!'
+  const startIdx = isImage ? open - 1 : open
+  // A complete link/image starts here → nothing is forming at the tail.
+  if (COMPLETE_LINK_AT_START_RE.test(text.slice(startIdx))) return text
+
+  const afterBracket = text.slice(open + 1)
+  const closeRel = afterBracket.indexOf(']')
+  if (closeRel === -1) {
+    // `[label` — bracket opened, no close yet: show the label text.
+    return text.slice(0, startIdx) + afterBracket
+  }
+  const label = afterBracket.slice(0, closeRel)
+  const afterClose = afterBracket.slice(closeRel + 1)
+  if (afterClose.startsWith('(')) {
+    // `[label](partial` — destination opened but unclosed: label only.
+    return text.slice(0, startIdx) + label
+  }
+  // `[label]` (shortcut ref / literal) — leave for normal inline rendering.
+  return text
+}
 
 /** Document-level list marker (CommonMark: up to 3 spaces). */
 const TOP_LEVEL_LIST_MARKER_RE = /^ {0,3}(?:(?:[-*+])(?:\s|$)|(?:\d{1,9}[.)]\s))/
@@ -94,7 +146,7 @@ export function isListContinuationPending(
 
 /** Inline markdown safe to show while streaming (hold index applied by caller). */
 export function renderStreamingInline(text: string): string {
-  return renderProseInline(text)
+  return renderProseInline(revealFormingLink(text))
 }
 
 export interface RenderPendingLineOptions {
@@ -116,7 +168,7 @@ export function renderPendingLine(pending: string, options: RenderPendingLineOpt
     const visible = pending.slice(0, hold)
     if (!visible) return ''
     const dedented = dedentLazyContinuation(visible, openListItemFirstLine ?? '')
-    return renderProseInline(dedented)
+    return renderStreamingInline(dedented)
   }
 
   const listMatch = matchPendingListMarker(pending)
@@ -126,7 +178,7 @@ export function renderPendingLine(pending: string, options: RenderPendingLineOpt
     if (!visible) return ''
     const markerLen = listMatch[0].length
     if (visible.length <= markerLen) return ''
-    return renderProseInline(visible.slice(markerLen))
+    return renderStreamingInline(visible.slice(markerLen))
   }
 
   if (isIncompleteListMarkerPrefix(pending)) {
@@ -139,7 +191,7 @@ export function renderPendingLine(pending: string, options: RenderPendingLineOpt
     const hold = pendingHoldIndex(title)
     const visible = title.slice(0, hold)
     if (!visible) return ''
-    return renderProseInline(visible)
+    return renderStreamingInline(visible)
   }
 
   if (isPendingBlockquoteLine(pending)) {
@@ -148,7 +200,7 @@ export function renderPendingLine(pending: string, options: RenderPendingLineOpt
     const hold = pendingHoldIndex(body)
     const visible = body.slice(0, hold)
     if (!visible) return ''
-    return renderProseInline(visible)
+    return renderStreamingInline(visible)
   }
 
   if (isAmbiguousBlockLine(pending)) {
@@ -161,5 +213,5 @@ export function renderPendingLine(pending: string, options: RenderPendingLineOpt
   const hold = pendingHoldIndex(pending)
   const visible = pending.slice(0, hold)
   if (!visible) return ''
-  return renderProseInline(stripParagraphIndent(visible))
+  return renderStreamingInline(stripParagraphIndent(visible))
 }
