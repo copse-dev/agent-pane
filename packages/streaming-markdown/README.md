@@ -20,6 +20,15 @@ When extending the renderer or its CSS, preserve these rules:
   to match. Mermaid SVG is produced after sanitization and is not re-sanitized.
   Rationale and the survey of streaming-parser alternatives live in
   `docs/plans/markdown-renderer-hardening.md`.
+- **Package boundary.** The core stays app-independent so it can version and ship on its own
+  (#601). An ESLint `no-restricted-imports` rule (`eslint.config.mjs`, scoped to
+  `packages/streaming-markdown/src`) forbids importing app modules (`@shared`/`@main`/`@renderer`)
+  or climbing out of the package. Host-specific link decoration is injected, not hard-coded: the
+  `LinkDecorator` hook (`setLinkDecorator`, `inline-links.ts`) returns the attributes for a
+  rendered `<a>`, defaulting to the app's workspace/browser routing (`appLinkDecorator`). A host
+  emitting attributes outside the escape/sink allowlists must widen `SAFE_OUTER_TAG_RE`
+  (`escape.ts`) and the DOMPurify `ALLOWED_ATTR` (`sanitize.ts`) to match — those stay the
+  security gate.
 - **Valid block HTML.** Block elements (`<ul>`, `<ol>`, `<h3>`, `<h4>`, `<pre>`, `<table>`,
   `<hr>`) must never end up inside `<p>`. Mixed single-newline blocks (heading → subheading → list)
   are common in LLM output; split at block boundaries before wrapping paragraphs.
@@ -51,6 +60,23 @@ When extending the renderer or its CSS, preserve these rules:
   (`BENIGN_RAW_INLINE_TAG_RE` in `escape.ts`); the DOMPurify sink allowlist mirrors the set.
   Anything with attributes, and all block/structural raw HTML, stays escaped — see the
   raw-HTML policy discussion in #600 before widening this.
+- **Indented HTML blocks.** CommonMark makes any 4-space-indented line an indented code block,
+  so a model that indents a `<div>`/`<table>` snippet would otherwise get a literal `<pre><code>`
+  dump. At the **top level** (`renderMarkdown` sets `htmlFromIndent`), an `indented_code` block
+  whose first dedented line opens with a block-level HTML tag (`isIndentedHtmlBlock`,
+  `indented-html.ts`) is reclassified as prose so it follows the raw-HTML policy above — the same
+  output as its un-indented form. Gated to the top level on purpose: list/blockquote content is
+  tokenized recursively, so nested indented code keeps CommonMark semantics. Genuine indented code
+  that merely opens with an inline tag (spec #110, `    <a/>` then `*hi*`) is unaffected because
+  `a` is not in the block-tag list (#616). Example — this indented block renders as escaped
+  `&lt;div&gt;…` prose, not a code block:
+
+  ```text
+      <div>
+      <p>hi</p>
+      </div>
+  ```
+
 - **Streaming hold.** Incomplete block starts (fences, thematic breaks, blockquotes) stream as
   plain text in the inline pending tail until their line ends. Open fenced code blocks
   forward-pass into `.stream-forming` as `<pre class="stream-fence-forming">` with highlight.js on

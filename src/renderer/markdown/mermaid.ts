@@ -7,9 +7,24 @@ type MermaidModule = typeof import('mermaid').default
 let mermaidPromise: Promise<MermaidModule> | null = null
 let initialized = false
 
+const defaultMermaidLoader = (): Promise<MermaidModule> =>
+  import('mermaid').then((mod) => mod.default)
+let mermaidLoader = defaultMermaidLoader
+
+/**
+ * Test seam: override the lazy `mermaid` loader (it is otherwise a heavy,
+ * browser-only dynamic import) and reset the memoized instance so unit tests
+ * can inject a fake and stay isolated. Pass `null` to restore the real loader.
+ */
+export function setMermaidLoaderForTests(loader: (() => Promise<MermaidModule>) | null): void {
+  mermaidLoader = loader ?? defaultMermaidLoader
+  mermaidPromise = null
+  initialized = false
+}
+
 async function loadMermaid(): Promise<MermaidModule> {
   if (!mermaidPromise) {
-    mermaidPromise = import('mermaid').then((mod) => mod.default)
+    mermaidPromise = mermaidLoader()
   }
   return mermaidPromise
 }
