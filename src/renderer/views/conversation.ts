@@ -39,12 +39,17 @@ function statusIcon(status: ToolCall['status']): string {
   return status === 'done' ? '✓' : status === 'error' ? '✕' : '⋯'
 }
 
-function createToolArgsSection(args: unknown): HTMLDetailsElement {
+// The disclosure is omitted entirely when there are no arguments to show — e.g.
+// external ACP agents run no-argument commands (grep/search with the query in
+// the title, not `rawInput`), which otherwise render an empty "Arguments" box.
+function createToolArgsSection(args: unknown): HTMLDetailsElement | null {
+  const rendered = renderToolArgs(args)
+  if (!rendered.trim()) return null
   return el(
     'details',
     { class: 'tool-args' },
     el('summary', {}, 'Arguments'),
-    el('pre', {}, renderToolArgs(args)),
+    el('pre', {}, rendered),
   )
 }
 
@@ -103,9 +108,14 @@ function appendStandardToolSections(
 ): void {
   card.append(
     createToolHeader(label, tc.status, summaryClass, count, tc.editStats, getToolEditPath(tc)),
-    createToolArgsSection(tc.args),
+    ...appendIfPresent(createToolArgsSection(tc.args)),
     createToolResultSection(tc.result),
   )
+}
+
+/** Spread helper: include a section only when it was rendered (non-null). */
+function appendIfPresent(node: Node | null): Node[] {
+  return node ? [node] : []
 }
 
 function createIndividualToolCard(tc: ToolCall, label: string, api: ApiClient): HTMLElement {
@@ -223,7 +233,8 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
     card.append(previewEl)
   }
 
-  card.append(createToolArgsSection(tc.args))
+  const argsSection = createToolArgsSection(tc.args)
+  if (argsSection) card.append(argsSection)
 
   const timeline = el('div', { class: 'subagent-timeline' })
   for (let i = 0; i < session.messages.length; i++) {
@@ -284,7 +295,7 @@ function createGroupToolCard(item: Extract<ToolCallDisplayItem, { type: 'group' 
         tc.editStats,
         getToolEditPath(tc),
       ),
-      createToolArgsSection(tc.args),
+      ...appendIfPresent(createToolArgsSection(tc.args)),
       createToolResultSection(tc.result),
     )
     groupItems.append(entry)

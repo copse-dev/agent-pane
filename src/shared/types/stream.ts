@@ -82,4 +82,11 @@ export interface ToolCallChunk {
    * executing the tool with empty/partial args.
    */
   argsError?: string
+  /**
+   * ACP tool-call `kind` (e.g. `'execute'`, `'read'`, `'search'`), carried from
+   * an external ACP agent so the UI can recognise its shell/terminal commands
+   * (`'execute'`) even though they don't use the built-in `run_shell` tool.
+   * Absent for the built-in agent loop.
+   */
+  kind?: string
 }

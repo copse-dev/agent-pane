@@ -3,7 +3,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { shellCommandLabel } from '@shared/tools/tool-display.ts'
 import { at } from '@shared/array-utils.ts'
-import { isTabVisibleForProject } from './project-scoped-tabs.ts'
+import { isTabVisibleForScope } from './scoped-tabs.ts'
 
 // How many finished tasks to keep around before the oldest are dropped. The
 // running task (and recent history) stay viewable; ancient ones are pruned so
@@ -28,8 +28,8 @@ type TaskStatus = 'running' | 'done' | 'error'
 
 interface AgentTask {
   id: string
-  /** Project this run belongs to; only the active project's runs are shown. */
-  projectId: string | null
+  /** Thread this run belongs to; only the active thread's runs are shown. */
+  scopeId: string | null
   command: string
   status: TaskStatus
   output: string
@@ -74,15 +74,18 @@ export function mountAgentTasks(
   const tasks = new Map<string, AgentTask>()
   const order: string[] = []
   let selectedId: string | null = null
+  // Which thread's tasks are currently shown. Tracked so we only re-scope when
+  // the active thread actually changes (threads_changed fires for many reasons).
+  let lastThreadId: string | null = store.getState().activeThreadId
 
-  function currentProjectId(): string | null {
-    return store.getState().activeProjectId
+  function currentThreadId(): string | null {
+    return store.getState().activeThreadId
   }
 
   function visibleTaskCount(): number {
     let count = 0
     for (const task of tasks.values()) {
-      if (isTabVisibleForProject(task, currentProjectId())) count++
+      if (isTabVisibleForScope(task, currentThreadId())) count++
     }
     return count
   }
@@ -145,7 +148,7 @@ export function mountAgentTasks(
     }
   }
 
-  function addTask(id: string, rawCommand: string): void {
+  function addTask(id: string, rawCommand: string, threadId: string): void {
     if (tasks.has(id)) return
     const command = shellCommandLabel(rawCommand)
 
@@ -167,7 +170,7 @@ export function mountAgentTasks(
 
     const task: AgentTask = {
       id,
-      projectId: currentProjectId(),
+      scopeId: threadId,
       command,
       status: 'running',
       output: '',
@@ -184,7 +187,7 @@ export function mountAgentTasks(
     order.push(id)
     tabList.append(tab)
     viewerHost.append(panel)
-    if (!isTabVisibleForProject(task, currentProjectId())) tab.hidden = true
+    if (!isTabVisibleForScope(task, currentThreadId())) tab.hidden = true
     prune()
     syncSectionVisibility()
   }
@@ -227,27 +230,44 @@ export function mountAgentTasks(
     return null
   }
 
-  // Project switch: keep each project's agent runs but only show the active
-  // project's (issue #502 part c). Switching back restores the prior runs rather
+  // Thread switch: keep each thread's agent runs but only show the active
+  // thread's (issue #502 part c). Switching back restores the prior runs rather
   // than resetting them.
-  function onProjectSwitch(): void {
-    const active = currentProjectId()
+  function onScopeSwitch(): void {
+    const active = currentThreadId()
     for (const task of tasks.values()) {
-      const visible = isTabVisibleForProject(task, active)
+      const visible = isTabVisibleForScope(task, active)
       task.tab.hidden = !visible
       if (!visible) task.panel.hidden = true
     }
     const selected = selectedId ? tasks.get(selectedId) : null
-    if (selected && !isTabVisibleForProject(selected, active)) clearSelection()
+    if (selected && !isTabVisibleForScope(selected, active)) clearSelection()
     syncSectionVisibility()
+  }
+
+  // Only re-scope when the active thread actually changed. `threads_changed`
+  // fires for many unrelated reasons; `workspace_changed` also swaps the active
+  // thread when the project switches — both funnel here.
+  function onThreadMaybeChanged(): void {
+    const threadId = currentThreadId()
+    if (threadId === lastThreadId) return
+    lastThreadId = threadId
+    onScopeSwitch()
   }
 
   syncSectionVisibility()
 
-  const unsubChunk = api.agent.onChunk((_threadId, chunk) => {
-    if (chunk.type === 'tool_call' && chunk.toolCall.name === 'run_shell') {
-      const command = shellCommandFromArgs(chunk.toolCall.args)
-      if (command) addTask(chunk.toolCall.id, command)
+  const unsubChunk = api.agent.onChunk((threadId, chunk) => {
+    if (chunk.type === 'tool_call') {
+      // Built-in shells arrive as `run_shell`; external ACP agents run their own
+      // shell commands, surfaced as tool calls with ACP `kind: 'execute'` and the
+      // command carried in the title (its `name`) when there's no `command` arg.
+      const isAcpShell = chunk.toolCall.kind === 'execute'
+      if (chunk.toolCall.name === 'run_shell' || isAcpShell) {
+        const command =
+          shellCommandFromArgs(chunk.toolCall.args) ?? (isAcpShell ? chunk.toolCall.name : null)
+        if (command) addTask(chunk.toolCall.id, command, threadId)
+      }
     } else if (chunk.type === 'tool_result' && tasks.has(chunk.toolCallId)) {
       completeTask(chunk.toolCallId, chunk.result, chunk.isError)
     }
@@ -259,12 +279,14 @@ export function mountAgentTasks(
 
   // A shell tab took over the viewer — yield the task panel back to it.
   const unsubShell = store.on('shell_tab_activated', clearSelection)
-  const unsubWorkspace = store.on('workspace_changed', onProjectSwitch)
+  const unsubThreads = store.on('threads_changed', onThreadMaybeChanged)
+  const unsubWorkspace = store.on('workspace_changed', onThreadMaybeChanged)
 
   return () => {
     unsubChunk()
     unsubOutput()
     unsubShell()
+    unsubThreads()
     unsubWorkspace()
     showTaskView(false)
     section.remove()
