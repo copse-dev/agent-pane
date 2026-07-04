@@ -113,7 +113,7 @@ RUN apt-get update \
 #    so every job would otherwise restore ~525 MB of node_modules from the
 #    Actions cache service over the network before doing any work — the slow
 #    step this image exists to remove. Run the repo's own install ONCE here and
-#    stash node_modules + vendor/codesearch under /opt/deps/tree. The setup
+#    stash node_modules + vendor/gortex under /opt/deps/tree. The setup
 #    action (.github/actions/setup) seeds a job's workspace from this layer when
 #    the checked-out package-lock.json still matches what was baked (recorded in
 #    .lockhash); on a lockfile bump it falls back to the cache / npm ci path, so
@@ -121,7 +121,7 @@ RUN apt-get update \
 #
 #    The build context is the repo root (see docker-compose.yml), so these COPYs
 #    reach the manifests + scripts the install's pre/postinstall hooks need
-#    (electron-rebuild of node-pty, the vendored codesearch fetch, esbuild's
+#    (electron-rebuild of node-pty, the vendored gortex fetch, esbuild's
 #    platform binary). Kept as the LAST layers so a lockfile/scripts change only
 #    re-runs the install, not the toolchain above it. Non-fatal: if the install
 #    fails the image still builds (no .ready marker) and runners fall back.

@@ -43,7 +43,7 @@ runs:
         HOMEBREW_NO_ANALYTICS: '1'
     # Warm-start on self-hosted runners whose image baked the dependency tree
     # (see .github/runner*/Dockerfile). If the baked layer's lockfile hash still
-    # matches this checkout, seed node_modules + vendor/codesearch straight from
+    # matches this checkout, seed node_modules + vendor/gortex straight from
     # local disk (a few seconds) instead of restoring ~525 MB from the Actions
     # cache service — which crawled at ~1 MB/s (≈8 min) on freshly reprovisioned
     # runners. Runs AFTER checkout (checkout's `clean` would wipe a pre-placed
@@ -62,11 +62,11 @@ runs:
             # copy is caught (not fatal under set -e) — clean up and fall back.
             if rm -rf node_modules \
                && cp -a "${COPSE_BAKED_DEPS}/node_modules" node_modules \
-               && { [ ! -d "${COPSE_BAKED_DEPS}/vendor/codesearch" ] \
-                    || { mkdir -p vendor && rm -rf vendor/codesearch \
-                         && cp -a "${COPSE_BAKED_DEPS}/vendor/codesearch" vendor/codesearch; }; }; then
+               && { [ ! -d "${COPSE_BAKED_DEPS}/vendor/gortex" ] \
+                    || { mkdir -p vendor && rm -rf vendor/gortex \
+                         && cp -a "${COPSE_BAKED_DEPS}/vendor/gortex" vendor/gortex; }; }; then
               seeded=true
-              echo "Seeded node_modules + vendor/codesearch from ${COPSE_BAKED_DEPS} (lockfile match)"
+              echo "Seeded node_modules + vendor/gortex from ${COPSE_BAKED_DEPS} (lockfile match)"
             else
               echo "Baked-dep seed failed — cleaning up and falling back to cache / npm ci"
               rm -rf node_modules
