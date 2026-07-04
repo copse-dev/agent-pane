@@ -1,0 +1,22 @@
+# Build context for the self-hosted runner images (.github/runner[-checks]).
+# Their compose files use the repo root as the build context so the image can
+# bake the dependency tree (COPY package*.json + scripts, then `npm ci`). Keep
+# that context small and secret-free: exclude the heavy/irrelevant trees and any
+# local env files. The Dockerfiles COPY only the specific paths they need, so
+# anything not listed here is still only pulled in when explicitly COPYed.
+.git
+**/node_modules
+dist
+build
+out
+coverage
+.tmp
+.nyc_output
+# Large committed reference PNGs — never needed to build a runner image.
+tests/e2e/screenshots
+# Never ship local runner credentials into the build context.
+**/.env
+**/.env.*
+!**/.env.example
+*.log
+.DS_Store
