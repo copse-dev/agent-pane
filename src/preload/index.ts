@@ -400,6 +400,9 @@ contextBridge.exposeInMainWorld('api', {
   hooks: {
     list: () => ipcRenderer.invoke('hooks:list'),
   },
+  instructions: {
+    list: () => ipcRenderer.invoke('instructions:list'),
+  },
   terminal: {
     create: (cols: number, rows: number) => ipcRenderer.invoke('terminal:create', cols, rows),
     write: (sessionId: string, data: string) =>
