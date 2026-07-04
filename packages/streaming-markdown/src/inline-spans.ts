@@ -4,6 +4,7 @@ import { renderAngleAutolinks } from './inline-autolinks.ts'
 import { renderInlineCode } from './inline-code-spans.ts'
 import { INLINE_HTML_SHIELD_RE, renderEmphasisOutsideInlineHtml } from './inline-emphasis.ts'
 import { renderInlineLinks, safeLinkHref } from './inline-links.ts'
+import { renderStrikethrough } from './inline-strikethrough.ts'
 import { type LinkReferenceMap } from './link-references.ts'
 
 function renderNestedInlineSpans(t: string, linkRefs: LinkReferenceMap): string {
@@ -13,6 +14,9 @@ function renderNestedInlineSpans(t: string, linkRefs: LinkReferenceMap): string 
   t = renderInlineCode(t)
   t = renderAngleAutolinks(t)
   t = renderEmphasisOutsideInlineHtml(t, linkRefs)
+  // GFM strikethrough after emphasis (so `~~*x*~~` nests) and before links (so a
+  // struck `~~[a](b)~~` still resolves the link inside the <del>).
+  t = renderStrikethrough(t)
   t = renderInlineLinks(t, linkRefs, renderNestedInlineSpans)
   // Strong spans around rendered <code>/<a>/<img> run after links so patterns
   // like `**[#264](url)**` and `**[`path`](path) tail**` resolve to real

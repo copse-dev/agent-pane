@@ -5,6 +5,7 @@
 import { trailingEntityHoldStart } from './backslash-escapes.ts'
 import { scanCodeSpans } from './inline-code-spans.ts'
 import { linkOrImageStartsAt } from './inline-links.ts'
+import { strikethroughHoldStart } from './inline-strikethrough.ts'
 import { type LinkReferenceMap } from './link-references.ts'
 
 const ASCII_PUNCTUATION_RE = /[!-/:-@[-`{-~]/
@@ -386,6 +387,8 @@ export function pendingHoldIndex(s: string): number {
 
   const entityStart = trailingEntityHoldStart(s)
   if (entityStart < cut && !mask[entityStart]) cut = entityStart
+
+  cut = Math.min(cut, strikethroughHoldStart(s, mask))
 
   return cut
 }
