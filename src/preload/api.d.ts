@@ -3,6 +3,7 @@ import type { RightPanelMode } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import type { CursorHookSummary } from '@shared/types/cursor-hooks.ts'
+import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import type {
   GitFileDiff,
   GitStatusResult,
@@ -316,6 +317,9 @@ export interface ApiClient {
   }
   hooks: {
     list: () => Promise<CursorHookSummary[]>
+  }
+  instructions: {
+    list: () => Promise<ProjectInstructionSummary[]>
   }
   terminal: {
     create: (cols: number, rows: number) => Promise<string>
