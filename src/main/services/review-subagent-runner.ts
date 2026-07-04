@@ -17,7 +17,7 @@ import type {
 import type { ToolRegistry } from './tool-registry.ts'
 import { runWithAgentRunReadFileLimits } from './agent-run-read-limits.ts'
 import { getWorkspaceRoot } from './workspace.ts'
-import { getGitDiffText } from './git-service.ts'
+import { getGitDiffText } from './github/git-service.ts'
 
 export interface RunPostTurnReviewOptions {
   parentGoal: string

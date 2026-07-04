@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
-import { setKnowledgeRootForTest } from '../services/knowledge-store.ts'
+import { setKnowledgeRootForTest } from '../services/storage/knowledge-store.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
 import { recallTool, rememberTool, setLegacyMemoriesRootForTest } from './memory-tools.ts'
 

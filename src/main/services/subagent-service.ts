@@ -13,7 +13,7 @@ import type { ToolRegistry } from './tool-registry.ts'
 import { runWithAgentRunReadFileLimits } from './agent-run-read-limits.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import { buildExploreSearchRoutingAddon } from '@shared/agent/search-routing.ts'
-import { isSemanticSearchAvailable } from './semantic-index.ts'
+import { isSemanticSearchAvailable } from './search/semantic-index.ts'
 
 export interface RunExploreSubagentOptions {
   parentToolCallId: string

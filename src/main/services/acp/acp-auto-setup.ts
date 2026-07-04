@@ -3,7 +3,7 @@ import type { AcpAgentConfig, AcpAutoSetupResult } from '@shared/types/acp.ts'
 import { listAcpAgentModels } from './acp-client.ts'
 import { listAcpAgents, upsertAcpAgent } from './acp-agent-registry.ts'
 import { resolveOnPath } from './acp-detect.ts'
-import { installGlobalNpmPackage } from '../socket-firewall.ts'
+import { installGlobalNpmPackage } from '../security/socket-firewall.ts'
 import { getActiveProjectRoot, getWorkspaceRoot } from '../workspace.ts'
 
 /**

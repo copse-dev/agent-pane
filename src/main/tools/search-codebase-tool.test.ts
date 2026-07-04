@@ -7,12 +7,12 @@ import { normalizeToolExecuteResult } from '@shared/types'
 import { ToolRegistry, setPermissionGateForTests } from '../services/tool-registry.ts'
 import { searchCodebaseTool } from './search-codebase-tool.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
-import { setIndexedGrepBackendForTest } from '../services/indexed-grep.ts'
+import { setIndexedGrepBackendForTest } from '../services/search/indexed-grep.ts'
 import { setRgAvailableForTest } from '../services/tool-availability.ts'
 import {
   setSemanticBackendForTest,
   setSemanticSearchExecutorForTest,
-} from '../services/semantic-index.ts'
+} from '../services/search/semantic-index.ts'
 
 describe('search_codebase tool', () => {
   let tempRoot = ''

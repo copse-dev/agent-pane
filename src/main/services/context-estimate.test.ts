@@ -5,13 +5,13 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { estimateContextBreakdown } from './context-estimate.ts'
 import { createRegistry } from './registry-bootstrap.ts'
-import { refreshSkillsRegistry } from './skills-registry.ts'
-import { setSetting } from './settings.test-shim.ts'
+import { refreshSkillsRegistry } from './skills/skills-registry.ts'
+import { setSetting } from './storage/settings.test-shim.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 import {
   resetBundledCursorSkillsRootForTest,
   setBundledCursorSkillsRootForTest,
-} from './bundled-cursor-skills.ts'
+} from './skills/bundled-cursor-skills.ts'
 
 function skillsTokens(breakdown: Awaited<ReturnType<typeof estimateContextBreakdown>>): number {
   return breakdown.segments.find((segment) => segment.key === 'skills')?.tokens ?? 0

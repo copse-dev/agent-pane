@@ -24,28 +24,28 @@ import {
   zPathString,
   zProjectId,
 } from './ipc-guards.ts'
-import { buildIndex, getIndex } from '../services/file-index.ts'
-import { resolveFileReferences } from '../services/file-reference-resolver.ts'
-import { ensureSemanticIndex } from '../services/semantic-index.ts'
+import { buildIndex, getIndex } from '../services/search/file-index.ts'
+import { resolveFileReferences } from '../services/search/file-reference-resolver.ts'
+import { ensureSemanticIndex } from '../services/search/semantic-index.ts'
 import {
   scheduleIndexRebuild,
   startWorkspaceIndexWatcher,
-} from '../services/workspace-index-watcher.ts'
+} from '../services/search/workspace-index-watcher.ts'
 import {
   getSetting,
   setSetting,
   hasApiKey,
   setApiKey,
   isProviderAvailable,
-} from '../services/settings.ts'
+} from '../services/storage/settings.ts'
 import { scanEnvForKeys, maskSecret } from '../services/env-key-detection.ts'
 import {
   isRendererWritableSettingKey,
   isSecretSettingKey,
   parseRendererWritableSetting,
   securitySettingsSchema,
-} from '../services/settings-writable.ts'
-import { storedExtraProviderSchema } from '../services/settings-schema.ts'
+} from '../services/storage/settings-writable.ts'
+import { storedExtraProviderSchema } from '../services/storage/settings-schema.ts'
 import {
   getResolvedExtraProviders,
   saveExtraProvider,
@@ -54,7 +54,7 @@ import {
   HUGGINGFACE_SLUG,
 } from '../services/extra-providers-store.ts'
 import { fetchOpenAiCompatibleModels } from '../services/provider-models.ts'
-import { storageGet, storageSet } from '../services/storage.ts'
+import { storageGet, storageSet } from '../services/storage/storage.ts'
 import {
   loadProjectThreads,
   createThread,
@@ -67,16 +67,16 @@ import { detectAcpAgents } from '../services/acp/acp-detect.ts'
 import { listAcpModelsForAgent } from '../services/acp/acp-agent-service.ts'
 import { runAcpAutoSetup } from '../services/acp/acp-auto-setup.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
-import { listSkills, initSkillsRegistry } from '../services/skills-registry.ts'
-import { listCursorPlugins } from '../services/cursor-plugins.ts'
-import { listCursorHooks } from '../services/cursor-hooks.ts'
+import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
+import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
+import { listCursorHooks } from '../services/skills/cursor-hooks.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
   registerSkillTools,
   syncOkfMemoryTools,
   syncPiiTools,
 } from '../services/registry-bootstrap.ts'
-import { PII_REDACTION_ENABLED_SETTING } from '../services/pii-redactor.ts'
+import { PII_REDACTION_ENABLED_SETTING } from '../services/security/pii-redactor.ts'
 import { OKF_MEMORIES_ENABLED_SETTING } from '../tools/memory-tools.ts'
 import {
   checkoutGitBranch,
@@ -85,8 +85,8 @@ import {
   getGitFileDiff,
   getGitStatus,
   isInsideGitWorkTree,
-} from '../services/git-service.ts'
-import { getGitBranchStatus } from '../services/pr-context-service.ts'
+} from '../services/github/git-service.ts'
+import { getGitBranchStatus } from '../services/github/pr-context-service.ts'
 import { isGitAvailable } from '../services/tool-availability.ts'
 import {
   getGhCliStatus,
@@ -96,15 +96,15 @@ import {
   listMyOpenPrs,
   listWorkspaceOpenPrs,
   resolveGithubPrRef,
-} from '../services/gh-pr-service.ts'
+} from '../services/github/gh-pr-service.ts'
 import {
   getMcpServerStatuses,
   reloadMcpServers,
   setMcpServerUserEnabled,
   setWorkspaceTrustAndReload,
-} from '../services/mcp-registry.ts'
-import { getCuratedServerStatuses, setCuratedServerEnabled } from '../services/mcp-curated.ts'
-import { isWorkspaceTrusted } from '../services/workspace-trust.ts'
+} from '../services/mcp/mcp-registry.ts'
+import { getCuratedServerStatuses, setCuratedServerEnabled } from '../services/mcp/mcp-curated.ts'
+import { isWorkspaceTrusted } from '../services/security/workspace-trust.ts'
 import {
   setMockScript,
   clearMockScript,
@@ -118,12 +118,12 @@ import {
   unregisterDevtoolsShortcut,
 } from '../windows/create-main-window.ts'
 import { validateApiKey } from '../services/validate-api-key.ts'
-import { getUsageSummary, recordUsageEvent } from '../services/usage-ledger.ts'
-import { parseUsageRecordInput } from '../services/usage-record-schema.ts'
+import { getUsageSummary, recordUsageEvent } from '../services/storage/usage-ledger.ts'
+import { parseUsageRecordInput } from '../services/storage/usage-record-schema.ts'
 import {
   fetchRemoteArtifactImageDataUrl,
   resolveRemoteArtifactDownloadUrl,
-} from '../services/remote-agent-client.ts'
+} from '../services/remote/remote-agent-client.ts'
 import {
   gatewayListDir,
   gatewayReadFile,

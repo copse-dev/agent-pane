@@ -1,7 +1,7 @@
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { isAcpPermissionRemembered, rememberAcpPermission } from './acp-permission-grants.ts'
-import { storageGet, storageSet } from '../storage.ts'
+import { storageGet, storageSet } from '../storage/storage.ts'
 
 // Mirrors mcp-registry-persistence.test.ts: `storage.ts` is replaced by the
 // in-memory test shim, which routes writes through the same write-queue used

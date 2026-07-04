@@ -2,9 +2,9 @@ import { errorMessage } from '@shared/errors.ts'
 import { access } from 'node:fs/promises'
 import type { TodoCheck } from '@shared/types/todo.ts'
 import { isProjectSandboxEnabled } from '../project-sandbox/index.ts'
-import { runCommand } from './command-runner.ts'
-import { ensureShellCommandPermitted } from './permission-gate.ts'
-import { shellRequiresOutsideSandbox } from './permission-policy.ts'
+import { runCommand } from './exec/command-runner.ts'
+import { ensureShellCommandPermitted } from './security/permission-gate.ts'
+import { shellRequiresOutsideSandbox } from './security/permission-policy.ts'
 import { getWorkspaceRoot, resolveWorkspacePath } from './workspace.ts'
 
 export interface TodoCheckResult {

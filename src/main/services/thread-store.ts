@@ -21,8 +21,8 @@ import {
 } from '@shared/threads/fold.ts'
 import { parseOkfMessage } from '@shared/threads/okf-message.ts'
 import { parseSpine, serializeSpine, type ThreadMeta } from '@shared/threads/spine-schema.ts'
-import { storageGet } from './storage.ts'
-import { runSerialized } from './write-queue.ts'
+import { storageGet } from './storage/storage.ts'
+import { runSerialized } from './storage/write-queue.ts'
 
 /**
  * Filesystem-native thread store (issue #644). Each thread is a self-contained

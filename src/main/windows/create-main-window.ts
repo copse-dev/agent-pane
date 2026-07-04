@@ -1,7 +1,7 @@
 import { BrowserWindow, globalShortcut, screen } from 'electron'
 import { join } from 'node:path'
 import { getAppIcon } from '../app-icon.ts'
-import { getSetting, setSetting } from '../services/settings.ts'
+import { getSetting, setSetting } from '../services/storage/settings.ts'
 import { attachWebContentsLockdown } from './web-contents-lockdown.ts'
 
 let mainWin: BrowserWindow | null = null

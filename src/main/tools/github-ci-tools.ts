@@ -1,6 +1,10 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
-import { getCiFailureLogs, getCiStatus, waitForCiChecks } from '../services/github-ci-service.ts'
+import {
+  getCiFailureLogs,
+  getCiStatus,
+  waitForCiChecks,
+} from '../services/github/github-ci-service.ts'
 const prNumberSchema = z
   .number()
   .int()

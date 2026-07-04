@@ -9,23 +9,29 @@ import {
   sandboxViolationCountForCommand,
   spawnShellInProjectSandbox,
 } from '../project-sandbox/index.ts'
-import { detectSandboxFailure } from '../services/sandbox-failure.ts'
-import { promptInstallSocketFirewall, promptUnsandboxedShell } from '../services/permission-gate.ts'
+import { detectSandboxFailure } from '../services/security/sandbox-failure.ts'
+import {
+  promptInstallSocketFirewall,
+  promptUnsandboxedShell,
+} from '../services/security/permission-gate.ts'
 import {
   shellRequiresOutsideSandbox,
   shellSandboxFailureShouldOfferUnsandboxedRetry,
-} from '../services/permission-policy.ts'
-import { envForRendererChildProcess } from '../services/child-process-env.ts'
-import { getSetting } from '../services/settings.ts'
-import { detectPackageInstall, wrapWithSocketFirewall } from '../services/safe-install.ts'
-import { installSocketFirewall, isSocketFirewallAvailable } from '../services/socket-firewall.ts'
+} from '../services/security/permission-policy.ts'
+import { envForRendererChildProcess } from '../services/exec/child-process-env.ts'
+import { getSetting } from '../services/storage/settings.ts'
+import { detectPackageInstall, wrapWithSocketFirewall } from '../services/security/safe-install.ts'
+import {
+  installSocketFirewall,
+  isSocketFirewallAvailable,
+} from '../services/security/socket-firewall.ts'
 import {
   CappedOutputAccumulator,
   stripTerminalControlSequences,
-} from '../services/subprocess-output-cap.ts'
-import { terminateProcessTree } from '../services/subprocess-kill.ts'
+} from '../services/exec/subprocess-output-cap.ts'
+import { terminateProcessTree } from '../services/exec/subprocess-kill.ts'
 import { adoptWorktreeChangesSince, captureWorktreeBaseline } from '../services/diff-queue.ts'
-import { getCurrentShellTaskId } from '../services/shell-output-context.ts'
+import { getCurrentShellTaskId } from '../services/exec/shell-output-context.ts'
 
 interface ShellRunResult {
   output: string

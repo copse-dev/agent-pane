@@ -6,7 +6,7 @@ import {
   getGhPrViewText,
   getGhRunListText,
   getGhRunLogText,
-} from '../services/gh-service.ts'
+} from '../services/github/gh-service.ts'
 
 export const ghPrListTool = defineTool({
   name: 'gh_pr_list',

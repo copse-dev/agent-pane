@@ -2,7 +2,7 @@ import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { InstructionScope } from '@shared/types/instructions.ts'
-import { loadCursorRuleSources } from './cursor-rules.ts'
+import { loadCursorRuleSources } from './skills/cursor-rules.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 
 /**

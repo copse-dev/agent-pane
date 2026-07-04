@@ -1,4 +1,4 @@
-import { getLmStudioApiKey } from './settings.ts'
+import { getLmStudioApiKey } from './storage/settings.ts'
 import { DEFAULT_LM_STUDIO_URL } from '@shared/lm-studio-defaults.ts'
 import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
 

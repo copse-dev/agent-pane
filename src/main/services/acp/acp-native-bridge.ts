@@ -5,7 +5,7 @@ import { Server as McpBridgeServer } from '@modelcontextprotocol/sdk/server/inde
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { errorMessage } from '@shared/errors.ts'
-import { getSetting } from '../settings.ts'
+import { getSetting } from '../storage/settings.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 
 /**

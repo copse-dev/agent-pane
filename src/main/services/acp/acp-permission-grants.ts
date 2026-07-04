@@ -1,5 +1,5 @@
-import { storageGet, storageUpdate } from '../storage.ts'
-import { parseStringList } from '../storage-schema.ts'
+import { storageGet, storageUpdate } from '../storage/storage.ts'
+import { parseStringList } from '../storage/storage-schema.ts'
 
 /**
  * Remembered "always allow" grants for external ACP agents, mirroring the MCP
