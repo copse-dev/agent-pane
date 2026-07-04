@@ -85,8 +85,8 @@ import {
   getGitFileDiff,
   getGitStatus,
   isInsideGitWorkTree,
-} from '../services/git-service.ts'
-import { getGitBranchStatus } from '../services/pr-context-service.ts'
+} from '../services/github/git-service.ts'
+import { getGitBranchStatus } from '../services/github/pr-context-service.ts'
 import { isGitAvailable } from '../services/tool-availability.ts'
 import {
   getGhCliStatus,
@@ -96,7 +96,7 @@ import {
   listMyOpenPrs,
   listWorkspaceOpenPrs,
   resolveGithubPrRef,
-} from '../services/gh-pr-service.ts'
+} from '../services/github/gh-pr-service.ts'
 import {
   getMcpServerStatuses,
   reloadMcpServers,

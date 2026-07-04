@@ -14,8 +14,8 @@ import {
   resolveWorkspaceRelativeGitPath,
   toGitShowPath,
 } from './git-service.ts'
-import { setWorkspaceRootForTest } from './workspace.ts'
-import { setGitAvailableForTest } from './tool-availability.ts'
+import { setWorkspaceRootForTest } from '../workspace.ts'
+import { setGitAvailableForTest } from '../tool-availability.ts'
 import { DEFAULT_GIT_BRANCH } from '@shared/types/git.ts'
 
 describe('parsePorcelainV1', () => {

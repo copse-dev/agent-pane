@@ -43,7 +43,7 @@ import {
   BROWSER_TOOLS_ENABLED_SETTING,
   BROWSER_TOOLS_DEFAULT_ENABLED,
 } from './browser/browser-origin-policy.ts'
-import { CI_INVESTIGATOR_ENABLED_SETTING } from './ci-investigator-service.ts'
+import { CI_INVESTIGATOR_ENABLED_SETTING } from './github/ci-investigator-service.ts'
 import { LONG_HORIZON_TASKS_ENABLED_SETTING } from './long-task-tracker.ts'
 import { trackLongTaskTool } from '../tools/long-task-tool.ts'
 import { MODEL_CLASSIFIER_ENABLED_SETTING } from './model-classifier.ts'

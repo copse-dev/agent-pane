@@ -53,7 +53,7 @@ import {
   buildGithubLinkSteeringPrompt,
   shouldSteerGithubLinks,
 } from '@shared/git/github-link-steering.ts'
-import { getGithubRepoSlug } from './git-service.ts'
+import { getGithubRepoSlug } from './github/git-service.ts'
 import {
   shouldSteerTodos,
   formatTodosForPrompt,
