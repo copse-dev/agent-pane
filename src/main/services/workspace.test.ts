@@ -15,8 +15,10 @@ import {
   assertAllowedWorkspaceRoot,
   assertWorkspaceWriteTarget,
   clearAllowedWorkspaceRootsForTest,
+  getChatStoreRoot,
   isResolvedPathInsideWorkspace,
   registerAllowedWorkspaceRoot,
+  resolveReadablePath,
   resolveWorkspacePath,
   setWorkspaceRootForTest,
 } from './workspace.ts'
@@ -188,6 +190,93 @@ describe('isResolvedPathInsideWorkspace (TOCTOU re-validation)', () => {
     rmSync(watched)
     symlinkSync(join(outside, 'secret.txt'), watched, 'file')
     assert.equal(isResolvedPathInsideWorkspace(watched), false)
+  })
+})
+
+describe('resolveReadablePath (read-only chat-store mount, #644)', () => {
+  let cleanupRoot: (() => void) | undefined
+  let prevChatDir: string | undefined
+  let chatRoot: string
+  let chatFile: string
+
+  beforeEach(() => {
+    clearAllowedWorkspaceRootsForTest()
+    prevChatDir = process.env['COPSE_WORKSPACE_DIR']
+    // A realistic seeded chat store: <root>/proj/thread/messages/m.md
+    chatRoot = mkdtempSync(join(tmpdir(), 'copse-chat-'))
+    process.env['COPSE_WORKSPACE_DIR'] = chatRoot
+    const msgDir = join(chatRoot, 'proj', 'thread', 'messages')
+    mkdirSync(msgDir, { recursive: true })
+    chatFile = join(msgDir, 'm.md')
+    writeFileSync(chatFile, 'thread body')
+  })
+
+  afterEach(() => {
+    cleanupRoot?.()
+    cleanupRoot = undefined
+    if (prevChatDir === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+    else process.env['COPSE_WORKSPACE_DIR'] = prevChatDir
+    rmSync(chatRoot, { recursive: true, force: true })
+    clearAllowedWorkspaceRootsForTest()
+  })
+
+  it('resolves an absolute path inside the chat store (read-only)', () => {
+    const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+    registerAllowedWorkspaceRoot(ws)
+    cleanupRoot = setWorkspaceRootForTest(ws)
+    assert.equal(resolveReadablePath(chatFile), realpathSync.native(chatFile))
+    rmSync(ws, { recursive: true, force: true })
+  })
+
+  it('still resolves workspace-relative paths (workspace takes precedence)', () => {
+    const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+    mkdirSync(join(ws, 'src'))
+    writeFileSync(join(ws, 'src', 'a.ts'), 'ok')
+    registerAllowedWorkspaceRoot(ws)
+    cleanupRoot = setWorkspaceRootForTest(ws)
+    assert.equal(resolveReadablePath('src/a.ts'), realpathSync.native(join(ws, 'src', 'a.ts')))
+    rmSync(ws, { recursive: true, force: true })
+  })
+
+  it('rejects an absolute path outside both the workspace and the chat store', () => {
+    const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+    registerAllowedWorkspaceRoot(ws)
+    cleanupRoot = setWorkspaceRootForTest(ws)
+    assert.throws(() => resolveReadablePath('/etc/passwd'), /outside workspace or chat store/)
+    rmSync(ws, { recursive: true, force: true })
+  })
+
+  it('rejects a symlink inside the chat store whose target escapes it', () => {
+    const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+    const outside = mkdtempSync(join(tmpdir(), 'copse-out-'))
+    writeFileSync(join(outside, 'secret.txt'), 'nope')
+    symlinkSync(outside, join(chatRoot, 'proj', 'link'), 'dir')
+    registerAllowedWorkspaceRoot(ws)
+    cleanupRoot = setWorkspaceRootForTest(ws)
+    assert.throws(
+      () => resolveReadablePath(join(chatRoot, 'proj', 'link', 'secret.txt')),
+      /outside workspace or chat store/,
+    )
+    rmSync(ws, { recursive: true, force: true })
+    rmSync(outside, { recursive: true, force: true })
+  })
+
+  it('write guards reject a chat-store path by construction', () => {
+    const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+    registerAllowedWorkspaceRoot(ws)
+    cleanupRoot = setWorkspaceRootForTest(ws)
+    // The write path never uses resolveReadablePath — both workspace-only guards reject it.
+    assert.throws(() => resolveWorkspacePath(chatFile), /outside workspace/)
+    assert.throws(() => {
+      assertWorkspaceWriteTarget(realpathSync.native(chatFile))
+    }, /outside workspace/)
+    rmSync(ws, { recursive: true, force: true })
+  })
+
+  it('getChatStoreRoot returns null when the store does not exist yet', () => {
+    const missing = join(tmpdir(), 'copse-chat-missing-does-not-exist')
+    process.env['COPSE_WORKSPACE_DIR'] = missing
+    assert.equal(getChatStoreRoot(), null)
   })
 })
 

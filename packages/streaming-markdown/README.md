@@ -24,9 +24,13 @@ When extending the renderer or its CSS, preserve these rules:
   `<hr>`) must never end up inside `<p>`. Mixed single-newline blocks (heading → subheading → list)
   are common in LLM output; split at block boundaries before wrapping paragraphs.
 - **Inline formatting order.** Fenced code → inline code → emphasis (delimiter stack) →
-  markdown links → bare HTTP autolinks. Emphasis runs before links so `*foo [bar](/url)*`
-  resolves correctly; link labels may already contain `<em>` / `<strong>` from that pass.
-  See #475 and [`docs/plans/markdown-renderer-hardening.md`](../../docs/plans/markdown-renderer-hardening.md).
+  GFM strikethrough → markdown links → bare HTTP autolinks. Emphasis runs before links so
+  `*foo [bar](/url)*` resolves correctly; link labels may already contain `<em>` / `<strong>`
+  from that pass. Strikethrough (`~~text~~` → `<del>`, `inline-strikethrough.ts`) sits between
+  emphasis and links so `~~*x*~~` nests and a struck `~~[a](b)~~` still resolves its link inside
+  the `<del>`; only paired **double** tildes delimit, so lone `~` (e.g. `20~25`) stays literal,
+  and its streaming hold (`strikethroughHoldStart`) suppresses a half-open trailing `~~foo`.
+  See #475, #613, and [`docs/plans/markdown-renderer-hardening.md`](../../docs/plans/markdown-renderer-hardening.md).
 - **Soft line breaks.** Prose paragraphs preserve single newlines in HTML (CommonMark soft breaks);
   hard breaks (two+ trailing spaces, or a backslash before the newline) emit `<br>` and swallow the
   next line's leading indentation. Breaks are marked before inline rendering (`markHardBreaks` in
@@ -118,7 +122,12 @@ list-style-position: outside`). Bullets should sit clearly inset from headings, 
   headings + lists, explore subagent with `` `snake_case` `` tool names), not single-line `- foo`.
 - **Fenced code.** Non-mermaid fences are highlighted at render time via `highlight.js` (core +
   per-language imports in `highlight.ts`). Unknown tags fall back to escaped plain text; empty
-  lang uses auto-detection. Theme tokens live in `global.css` (VS Code Dark+ inspired).
+  lang uses auto-detection. Theme tokens live in `global.css` (VS Code Dark+ inspired). Content is
+  kept **verbatim** — interior/leading/trailing blank lines and the first line's indentation
+  survive (`highlightFenceCode` no longer trims; blank-only fences are preserved), and only the
+  opening fence's own indentation is stripped from content lines (`parseFenceSlice`). The language
+  is the first word of the info string with backslash escapes / entities decoded
+  (`fenceInfoLanguage`, spec #24: ` `foo\+bar ```→`language-foo+bar`) (#598).
 - **Mermaid diagrams.** Fenced ` ```mermaid ` blocks render as SVG via lazy-loaded `mermaid`
   (`mermaid.ts`). Diagram rendering runs after final markdown insertion (`message_done`, thread
   restore) — not on every streaming token. Fenced blocks are extracted before HTML escaping; prose
@@ -171,6 +180,37 @@ and the test fails if it changes:
 Bumping the spec is just `npm i -D commonmark-spec@<version>` followed by a
 re-baseline; the version is read from the installed package and pinned in the
 baseline.
+
+#### Raw-HTML policy and the in-scope conformance ceiling (#600)
+
+**100% CommonMark is deliberately not the goal.** The renderer escapes untrusted
+HTML rather than passing it through — the sanitize-at-the-sink invariant above.
+Two spec sections are therefore expected to fail by design:
+
+| Section     | Baseline | Why it caps out                                                                      |
+| ----------- | -------- | ------------------------------------------------------------------------------------ |
+| HTML blocks | 2/44     | Full conformance needs `<script>`/`<style>`/`<div>`/arbitrary custom tags verbatim.  |
+| Raw HTML    | 8/20     | Same — no inline allowlist ever reaches 20/20 without passing attacker HTML through. |
+
+The only raw HTML that passes through is the **benign attribute-less inline
+allowlist** (`b i u s del ins sub sup kbd mark br`, `BENIGN_RAW_INLINE_TAG_RE` in
+`escape.ts`), mirrored by the DOMPurify sink. Everything with attributes, and all
+block/structural raw HTML, stays escaped.
+
+So the realistic ceiling excludes those **64 HTML examples**: **588 in-scope
+examples**, of which the renderer currently satisfies **~492 (~84%)**. Counting all
+652 examples the baseline is **502 (~77%)**. Both numbers move as non-HTML
+conformance grows — `summaryBySection` in the baseline JSON carries the live
+per-section counts; treat the two headline figures here as approximate.
+
+**Passthrough is a future library option, not an app mode.** A `rawHtml:
+'escape' | 'passthrough'` switch (see #600) would let the conformance harness
+measure the true spec ceiling while the app keeps `escape` + sink sanitization;
+`escape` stays the default because passthrough drops from two defense layers to
+one. This belongs to the extracted package's public API (#601) and is not
+implemented yet. HTML **block recognition** in `block-tokenizer.ts` can still land
+with emission escaped, and `<details>`/`<summary>` stay excluded until it does
+(they pair across blocks and would emit unbalanced tags mid-stream).
 
 ### Streaming convergence fuzz (`streaming-convergence.test.ts`, via `npm test`)
 

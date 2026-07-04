@@ -1,7 +1,7 @@
 {
   "specVersion": "0.31.2",
   "source": "commonmark-spec@0.31.2 (devDependency)",
-  "note": "Examples from the official CommonMark spec that renderMarkdown() satisfies at rest, after the spec normalizer. This is a regression baseline, not a conformance goal — the renderer is intentionally app-specific.",
+  "note": "Examples from the official CommonMark spec that renderMarkdown() satisfies at rest, after the spec normalizer. This is a regression baseline, not a conformance goal — the renderer is intentionally app-specific and escapes untrusted HTML rather than passing it through (sanitize-at-the-sink; see sanitize.ts and #600). The HTML blocks (44 examples) and Raw HTML (20 examples) sections fail by design, so 652/652 is not the target; excluding those 64 HTML examples the in-scope conformance ceiling is 588. Per-section current pass counts are in summaryBySection.",
   "total": 652,
   "passing": [
     1,
@@ -21,6 +21,7 @@
     20,
     22,
     23,
+    24,
     25,
     26,
     27,
@@ -118,8 +119,11 @@
     124,
     125,
     126,
+    129,
     130,
     131,
+    132,
+    133,
     134,
     135,
     136,
@@ -127,6 +131,7 @@
     140,
     141,
     142,
+    143,
     144,
     145,
     147,
@@ -513,7 +518,7 @@
       "total": 11
     },
     "Backslash escapes": {
-      "pass": 11,
+      "pass": 12,
       "total": 13
     },
     "Entity and numeric character references": {
@@ -541,7 +546,7 @@
       "total": 12
     },
     "Fenced code blocks": {
-      "pass": 20,
+      "pass": 24,
       "total": 29
     },
     "HTML blocks": {
