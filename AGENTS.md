@@ -101,13 +101,22 @@ gotcha, and other hard-won UI conventions — read and extend [`docs/ui-taste.md
 
 ### App data / state
 
-Persistent state (projects, threads, selected model, workspace root) lives in an `electron-store`
+Persistent state (projects, selected model, workspace root, settings) lives in an `electron-store`
 JSON named `config.json` under the app userData directory (`copse-panel` in
 `src/main/app-init.ts`): on macOS
 `~/Library/Application Support/copse-panel/`, on Linux `~/.config/copse-panel/`, on Windows
 `%APPDATA%/copse-panel/`. The "Open Folder" button uses a native dialog; to open a workspace
 without driving that dialog, pre-seed `config.json` with a `projects` entry and `activeProjectId`
 before launching.
+
+**Chat threads are no longer in `config.json`.** They live in the filesystem-native thread store
+under `~/.copse/workspace/<projectId>/<threadId>/` (issue #644) — one directory per thread
+(`meta.json` + append-only `events.jsonl` spine + OKF `messages/*.md` + `blobs/*`), documented in
+[docs/thread-store-format.md](docs/thread-store-format.md). Override the root with
+`COPSE_WORKSPACE_DIR` (the e2e harness and unit tests point it at a throwaway dir). To seed threads
+for a test, don't write a `threads:<projectId>` key — use `writeSeedConfig`
+(`tests/e2e/helpers/seed-config.ts`), which routes any such array into new-format thread dirs. The
+store is mounted **read-only** into the agent's read tools so it can `@`-reference past threads.
 
 ### Shell / tool permissions across platforms
 

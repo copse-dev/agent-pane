@@ -191,14 +191,35 @@ export function parseLinkReferenceDefinitions(source: string): LinkReferenceMap 
     }
     let j = labelPart.end
     while (j < source.length && (source[j] === ' ' || source[j] === '\t')) j++
-    if (source[j] !== ':' || source[j + 1] !== ' ') {
+    if (source[j] !== ':') {
       i++
       continue
     }
-    j += 2
-    while (j < source.length && (source[j] === ' ' || source[j] === '\t')) j++
+    j++
+    // The destination may sit on the next line: spaces/tabs and at most one
+    // line ending separate the colon from it (CommonMark ref-def whitespace).
+    let sawNewline = false
+    while (j < source.length) {
+      const c = source[j]
+      if (c === ' ' || c === '\t') {
+        j++
+      } else if (c === '\n' && !sawNewline) {
+        sawNewline = true
+        j++
+      } else {
+        break
+      }
+    }
     const dest = parseDestination(source, j)
     if (!dest) {
+      i++
+      continue
+    }
+    // A definition owns the rest of its final line — only trailing whitespace
+    // may follow the destination/title, else it is not a definition (#209).
+    let tail = dest.end
+    while (tail < source.length && (source[tail] === ' ' || source[tail] === '\t')) tail++
+    if (tail < source.length && source[tail] !== '\n') {
       i++
       continue
     }
