@@ -73,11 +73,40 @@ function splitListItemParagraphs(text: string): string[] {
   return parts
 }
 
+/** A GFM task-list checkbox at the very start of an item's content (#614). */
+const TASK_LIST_MARKER_RE = /^\[([ xX])\](?=\s|$)/
+
+interface TaskListMarker {
+  checked: boolean
+  /** Item content with the `[ ]`/`[x]` marker (and one following space) removed. */
+  rest: string
+}
+
+/** Match a leading task-list checkbox on the first content line of an item. */
+function parseTaskListMarker(inner: string): TaskListMarker | null {
+  const m = TASK_LIST_MARKER_RE.exec(inner)
+  if (!m) return null
+  const checked = (m[1] ?? '') !== ' '
+  let rest = inner.slice(m[0].length)
+  // Drop a single separating space so `[ ] foo` → `foo`; keep further indent.
+  if (rest.startsWith(' ')) rest = rest.slice(1)
+  return { checked, rest }
+}
+
+function taskCheckboxHtml(checked: boolean): string {
+  return `<input type="checkbox" disabled${checked ? ' checked' : ''}>`
+}
+
+interface RenderedListItem {
+  html: string
+  task: TaskListMarker | null
+}
+
 function renderListItemContent(
   slice: string,
   listLoose: boolean,
   linkRefs: LinkReferenceMap,
-): string {
+): RenderedListItem {
   const normalized = dropTrailingNewline(slice)
   const lines = normalized.split('\n')
   const first = lines.find((l) => l.trim() !== '') ?? ''
@@ -108,14 +137,29 @@ function renderListItemContent(
     }
     dedented.push(stripped)
   })
-  const inner = dedented.join('\n')
-  if (inner.trim() === '') return ''
+  let inner = dedented.join('\n')
+  if (inner.trim() === '') return { html: '', task: null }
+  // A checkbox marker only counts on the item's first content line; strip it
+  // before recursive tokenization so the box never lands inside prose.
+  const task = parseTaskListMarker(inner)
+  if (task) inner = task.rest
   // Item content is a block fragment in its own right: recursive tokenization
   // handles nested lists, fences, blockquotes, and indented code (#595).
-  return renderBlocks(inner, tokenizeBlocks(inner), {
+  const html = renderBlocks(inner, tokenizeBlocks(inner), {
     linkRefs,
     tightParagraphs: !listLoose,
   })
+  return { html, task }
+}
+
+/** Wrap rendered item content in an `<li>`, prepending a checkbox for task items. */
+function renderListItem(item: RenderedListItem): string {
+  if (item.task) {
+    const box = taskCheckboxHtml(item.task.checked)
+    const gap = item.html === '' ? '' : ' '
+    return `<li class="task-list-item">${box}${gap}${item.html}</li>`
+  }
+  return `<li>${item.html}</li>`
 }
 
 function renderParagraph(slice: string, linkRefs: LinkReferenceMap, tight = false): string {
@@ -236,14 +280,15 @@ function collectListGroup(
     itemSlices.push(slice)
     i++
   }
-  const items = itemSlices.map(
-    (slice) => `<li>${renderListItemContent(slice, loose, linkRefs)}</li>`,
-  )
+  const items = itemSlices.map((slice) => renderListItemContent(slice, loose, linkRefs))
+  const itemsHtml = items.map(renderListItem).join('')
   if (ordered) {
     const startAttr = listStart === 1 ? '' : ` start="${String(listStart)}"`
-    return { html: `<ol${startAttr}>${items.join('')}</ol>`, next: i }
+    return { html: `<ol${startAttr}>${itemsHtml}</ol>`, next: i }
   }
-  return { html: `<ul>${items.join('')}</ul>`, next: i }
+  // GitHub flags lists that hold checkboxes so their bullets can be hidden.
+  const listClass = items.some((it) => it.task) ? ' class="contains-task-list"' : ''
+  return { html: `<ul${listClass}>${itemsHtml}</ul>`, next: i }
 }
 
 function collectBlockquoteGroup(
@@ -305,7 +350,7 @@ function renderSingleBlock(
     case 'blockquote':
       return renderBlockquote(slice, linkRefs)
     case 'list_item':
-      return `<li>${renderListItemContent(slice, false, linkRefs)}</li>`
+      return renderListItem(renderListItemContent(slice, false, linkRefs))
     case 'link_ref_def':
     case 'blank':
       return ''
