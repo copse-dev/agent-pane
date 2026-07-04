@@ -12,16 +12,16 @@ import {
 } from './permission-policy.ts'
 import { DEFAULT_WEB_ALLOWED_ORIGINS } from './web-origin-policy.ts'
 import { detectSandboxFailure } from './sandbox-failure.ts'
-import { setPermissionGateForTests } from './tool-registry.ts'
+import { setPermissionGateForTests } from '../tool-registry.ts'
 import { ensureToolPermitted, ensureTerminalPermitted } from './permission-gate.ts'
 import { decideMcpPermission, describeMcpAnnotations } from './permission-policy.ts'
-import { setWorkspaceRootForTest } from './workspace.ts'
-import { runWithAgentRunReadonly } from './agent-run-readonly.ts'
-import { setApprovalHandler } from './approval.ts'
+import { setWorkspaceRootForTest } from '../workspace.ts'
+import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
+import { setApprovalHandler } from '../approval.ts'
 import {
   rememberCustomTool,
   setCustomToolRequiresApprovalForTests,
-} from './mcp/custom-tools-registry.ts'
+} from '../mcp/custom-tools-registry.ts'
 
 describe('SANDBOX_TOOLS', () => {
   it('includes read_skill so skill reads auto-run without approval', () => {

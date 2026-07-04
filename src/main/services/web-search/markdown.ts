@@ -10,7 +10,7 @@ import {
   readWebResponseText,
   webAllowedOriginsWithDefaults,
   webOriginKey,
-} from '../web-origin-policy.ts'
+} from '../security/web-origin-policy.ts'
 
 const turndown = new Turndown({
   headingStyle: 'atx',

@@ -16,7 +16,7 @@ import {
   type RemoteAgentProvider,
 } from '@shared/remote-agent.ts'
 import { getApiKey, getSetting } from './settings.ts'
-import { validateRemoteAgentBaseUrl } from './web-origin-policy.ts'
+import { validateRemoteAgentBaseUrl } from './security/web-origin-policy.ts'
 import { getCurrentBranchName } from './github/git-service.ts'
 import { storageGet, storageSet } from './storage.ts'
 import { clearManagedAgentSession, runManagedAgentFromSettings } from './managed-agents-client.ts'

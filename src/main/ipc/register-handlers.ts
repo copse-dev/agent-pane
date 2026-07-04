@@ -76,7 +76,7 @@ import {
   syncOkfMemoryTools,
   syncPiiTools,
 } from '../services/registry-bootstrap.ts'
-import { PII_REDACTION_ENABLED_SETTING } from '../services/pii-redactor.ts'
+import { PII_REDACTION_ENABLED_SETTING } from '../services/security/pii-redactor.ts'
 import { OKF_MEMORIES_ENABLED_SETTING } from '../tools/memory-tools.ts'
 import {
   checkoutGitBranch,
@@ -104,7 +104,7 @@ import {
   setWorkspaceTrustAndReload,
 } from '../services/mcp/mcp-registry.ts'
 import { getCuratedServerStatuses, setCuratedServerEnabled } from '../services/mcp/mcp-curated.ts'
-import { isWorkspaceTrusted } from '../services/workspace-trust.ts'
+import { isWorkspaceTrusted } from '../services/security/workspace-trust.ts'
 import {
   setMockScript,
   clearMockScript,

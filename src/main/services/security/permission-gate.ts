@@ -1,11 +1,11 @@
-import { getWorkspaceRoot } from './workspace.ts'
+import { getWorkspaceRoot } from '../workspace.ts'
 import { isWorkspaceTrusted } from './workspace-trust.ts'
-import { runPermissionHooks } from './cursor-hooks.ts'
+import { runPermissionHooks } from '../cursor-hooks.ts'
 import type { CursorPermissionHookEvent } from '@shared/types/cursor-hooks.ts'
-import { isProjectSandboxEnabled } from '../project-sandbox/index.ts'
+import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { classifyShellScope } from './safety-classifier.ts'
-import { requestApproval } from './approval.ts'
-import { getSetting, setSetting } from './settings.ts'
+import { requestApproval } from '../approval.ts'
+import { getSetting, setSetting } from '../settings.ts'
 import {
   SANDBOX_TOOLS,
   decideShellPermission,
@@ -31,7 +31,7 @@ import {
   BROWSER_ALLOW_USER_APPROVAL_SETTING,
   decideBrowserNavigation,
   formatBrowserPromptBody,
-} from './browser/browser-origin-policy.ts'
+} from '../browser/browser-origin-policy.ts'
 import {
   DEFAULT_WEB_ALLOWED_ORIGINS,
   WEB_ALLOWED_ORIGINS_SETTING,
@@ -41,14 +41,14 @@ import {
   webAllowedOriginsWithDefaults,
 } from './web-origin-policy.ts'
 import { formatUnsandboxedPromptBody } from './sandbox-failure.ts'
-import { getMcpToolMeta, isMcpToolRemembered, rememberMcpTool } from './mcp/mcp-registry.ts'
-import { CUSTOM_TOOL_PREFIX, customToolLabel } from './mcp/custom-tools-config.ts'
+import { getMcpToolMeta, isMcpToolRemembered, rememberMcpTool } from '../mcp/mcp-registry.ts'
+import { CUSTOM_TOOL_PREFIX, customToolLabel } from '../mcp/custom-tools-config.ts'
 import {
   customToolRequiresApproval,
   isCustomToolRemembered,
   rememberCustomTool,
-} from './mcp/custom-tools-registry.ts'
-import { isAgentRunReadonly } from './agent-run-readonly.ts'
+} from '../mcp/custom-tools-registry.ts'
+import { isAgentRunReadonly } from '../agent-run-readonly.ts'
 import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
 
 export type { ShellPermissionDecision, PermissionCheck } from './permission-policy.ts'

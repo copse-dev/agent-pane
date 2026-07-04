@@ -8,7 +8,7 @@ import {
   WEB_ALLOWED_ORIGINS_SETTING,
   sandboxAllowedDomainsFromOrigins,
   webAllowedOriginsWithDefaults,
-} from '../services/web-origin-policy.ts'
+} from '../services/security/web-origin-policy.ts'
 
 /**
  * Resolve the workspace root to its canonical, symlink-free path.

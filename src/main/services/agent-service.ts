@@ -16,7 +16,7 @@ import { buildSystemPrompt } from './agent-system-prompt.ts'
 import { hasLastUsage } from './provider-usage.ts'
 import { clearActiveRunThread, recordThreadModel, setActiveRunThread } from './thread-models.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
-import { redactUserContent } from './pii-redactor.ts'
+import { redactUserContent } from './security/pii-redactor.ts'
 import { buildCommitSteeringPrompt, shouldSteerCommit } from '@shared/git/commit-attribution.ts'
 import {
   buildProvider,

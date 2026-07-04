@@ -20,7 +20,7 @@ import {
 } from './agent-prompt.ts'
 import { buildSemanticSearchPromptBlock } from './search/semantic-search.ts'
 import { OKF_MEMORIES_ENABLED_SETTING } from '../tools/memory-tools.ts'
-import { PII_REDACTION_ENABLED_SETTING } from './pii-redactor.ts'
+import { PII_REDACTION_ENABLED_SETTING } from './security/pii-redactor.ts'
 import { isProjectSandboxActive } from '../project-sandbox/state.ts'
 
 /** Assemble the system prompt for a run from base prompt + skills + instructions. */

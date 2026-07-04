@@ -9,7 +9,7 @@ import {
   PII_REDACTION_ENABLED_SETTING,
   type RampartModule,
   type PiiGuard,
-} from '../services/pii-redactor.ts'
+} from '../services/security/pii-redactor.ts'
 import { normalizeToolExecuteResult } from '@shared/types'
 import { revealPiiTool } from './reveal-pii-tool.ts'
 

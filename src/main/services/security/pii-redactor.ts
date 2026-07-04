@@ -1,5 +1,5 @@
 import type { UserContent } from '@shared/types/llm.ts'
-import { getSetting } from './settings.ts'
+import { getSetting } from '../settings.ts'
 
 /**
  * Experimental, opt-in client-side PII redaction (off by default).

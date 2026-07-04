@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { ToolDefinition, LLMTool, ToolExecuteResult } from '@shared/types'
 import { normalizeToolExecuteResult } from '@shared/types'
 import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
-import type { PermissionCheck } from './permission-policy.ts'
+import type { PermissionCheck } from './security/permission-policy.ts'
 import { isAgentRunReadonly } from './agent-run-readonly.ts'
 import { getMcpToolMeta } from './mcp/mcp-registry.ts'
 
@@ -14,7 +14,7 @@ let permissionGateDefault: PermissionGateFn | null = null
 async function ensurePermitted(check: PermissionCheck): Promise<boolean> {
   if (permissionGateOverride) return permissionGateOverride(check)
   if (!permissionGateDefault) {
-    const mod = await import('./permission-gate.ts')
+    const mod = await import('./security/permission-gate.ts')
     permissionGateDefault = mod.ensureToolPermitted
   }
   return permissionGateDefault(check)

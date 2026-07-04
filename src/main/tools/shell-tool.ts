@@ -9,16 +9,16 @@ import {
   sandboxViolationCountForCommand,
   spawnShellInProjectSandbox,
 } from '../project-sandbox/index.ts'
-import { detectSandboxFailure } from '../services/sandbox-failure.ts'
-import { promptInstallSocketFirewall, promptUnsandboxedShell } from '../services/permission-gate.ts'
+import { detectSandboxFailure } from '../services/security/sandbox-failure.ts'
+import { promptInstallSocketFirewall, promptUnsandboxedShell } from '../services/security/permission-gate.ts'
 import {
   shellRequiresOutsideSandbox,
   shellSandboxFailureShouldOfferUnsandboxedRetry,
-} from '../services/permission-policy.ts'
+} from '../services/security/permission-policy.ts'
 import { envForRendererChildProcess } from '../services/exec/child-process-env.ts'
 import { getSetting } from '../services/settings.ts'
-import { detectPackageInstall, wrapWithSocketFirewall } from '../services/safe-install.ts'
-import { installSocketFirewall, isSocketFirewallAvailable } from '../services/socket-firewall.ts'
+import { detectPackageInstall, wrapWithSocketFirewall } from '../services/security/safe-install.ts'
+import { installSocketFirewall, isSocketFirewallAvailable } from '../services/security/socket-firewall.ts'
 import {
   CappedOutputAccumulator,
   stripTerminalControlSequences,

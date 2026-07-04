@@ -28,7 +28,7 @@ import { flattenMcpContent, sanitizeMcpInputSchema } from './mcp-schema.ts'
 import { createBundledMcpServers } from './bundled-mcp-server.ts'
 import { dispatchCanvasArtefacts } from '../canvas-dispatch.ts'
 import { CURATED_MCP_SOURCE, getEnabledCuratedConfigs } from './mcp-curated.ts'
-import { isWorkspaceTrusted, setWorkspaceTrusted } from '../workspace-trust.ts'
+import { isWorkspaceTrusted, setWorkspaceTrusted } from '../security/workspace-trust.ts'
 import { appendFlatCapped, COMMAND_OUTPUT_MAX_BYTES } from '../exec/subprocess-output-cap.ts'
 import {
   discoverCursorPluginRoots,
