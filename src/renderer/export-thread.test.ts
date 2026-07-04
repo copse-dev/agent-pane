@@ -76,7 +76,7 @@ describe('export thread', () => {
       string,
       unknown
     >
-    assert.equal(header['exportVersion'], 2)
+    assert.equal(header['exportVersion'], 3)
     assert.equal(header['status'], 'error')
     assert.deepEqual(header['todos'], t.todos)
     assert.deepEqual(header['review'], t.review)

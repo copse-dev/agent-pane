@@ -7,10 +7,14 @@ import {
   copyFileSync,
   readFileSync,
 } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { e2eGitBranch } from './e2e-env.ts'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import type { Message } from '../../../src/shared/types/index.ts'
+import { explodeThread } from '../../../src/shared/threads/fold.ts'
+import { serializeSpine } from '../../../src/shared/threads/spine-schema.ts'
 
 /** Mirrors `app.setPath('userData', …)` in `src/main/app-init.ts`. */
 function copsePanelUserDataDir(): string {
@@ -29,6 +33,86 @@ function copsePanelUserDataDir(): string {
 const USER_DATA = copsePanelUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
 const SETTINGS_PATH = join(USER_DATA, 'settings.json')
+
+const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
+
+/** New-format chat-store root; mirrors `thread-store.ts` (COPSE_WORKSPACE_DIR override). */
+function e2eWorkspaceDir(): string {
+  const override = process.env.COPSE_WORKSPACE_DIR?.trim()
+  return override && override.length > 0 ? override : join(USER_DATA, 'workspace')
+}
+
+// Fixtures embed loose thread JSON where messages/tool-calls may omit fields the
+// real store explode path requires (`toolCalls`, tool `result`). Fill those in
+// so the seed matches what the app would have persisted.
+function normalizeMessage(msg: Record<string, unknown>): Record<string, unknown> {
+  const toolCalls = Array.isArray(msg.toolCalls) ? msg.toolCalls : []
+  return {
+    ...msg,
+    toolCalls: toolCalls.map((tc) => normalizeToolCall(tc as Record<string, unknown>)),
+  }
+}
+
+function normalizeToolCall(tc: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    ...tc,
+    result: tc.result === undefined ? null : tc.result,
+  }
+  const sub = tc.subagent as Record<string, unknown> | undefined
+  if (sub) {
+    const subMessages = Array.isArray(sub.messages) ? sub.messages : []
+    out.subagent = {
+      ...sub,
+      messages: subMessages.map((m) => normalizeMessage(m as Record<string, unknown>)),
+    }
+  }
+  return out
+}
+
+/**
+ * Write one seeded thread as a self-contained new-format directory under
+ * `COPSE_WORKSPACE_DIR/<projectId>/<threadId>/` (issue #644), using the same
+ * explode/spine logic the app persists with. The catalog is intentionally not
+ * written — the store rebuilds it from the thread dirs on first read.
+ */
+function seedThreadDir(projectId: string, thread: Record<string, unknown>): void {
+  const { messages, ...meta } = thread
+  const normalized = (Array.isArray(messages) ? messages : []).map((m) =>
+    normalizeMessage(m as Record<string, unknown>),
+  )
+  const dir = join(e2eWorkspaceDir(), projectId, String(meta.id))
+  rmSync(dir, { recursive: true, force: true })
+  mkdirSync(dir, { recursive: true })
+  const { spine, files } = explodeThread(normalized as unknown as Message[], sha256)
+  for (const file of files) {
+    const full = join(dir, file.ref)
+    mkdirSync(dirname(full), { recursive: true })
+    writeFileSync(full, file.contents)
+  }
+  writeFileSync(join(dir, 'events.jsonl'), serializeSpine(spine))
+  writeFileSync(join(dir, 'meta.json'), `${JSON.stringify(meta)}\n`)
+}
+
+/**
+ * Drop-in replacement for the fixtures' `writeFileSync(CONFIG_PATH, …)`: any
+ * `threads:<projectId>` array in the config is routed to the filesystem-native
+ * thread store the app now reads; everything else stays in `config.json`.
+ */
+export function writeSeedConfig(config: Record<string, unknown>): void {
+  mkdirSync(USER_DATA, { recursive: true })
+  const remaining: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(config)) {
+    const match = /^threads:(.+)$/.exec(key)
+    if (match && Array.isArray(value)) {
+      for (const thread of value) {
+        seedThreadDir(match[1], thread as Record<string, unknown>)
+      }
+    } else {
+      remaining[key] = value
+    }
+  }
+  writeFileSync(CONFIG_PATH, JSON.stringify(remaining), 'utf8')
+}
 
 export function resetUserData(): void {
   rmSync(CONFIG_PATH, { force: true })
@@ -81,15 +165,11 @@ export function seedEmptyProject(
   },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [],
+  })
   const settings: Record<string, unknown> = {}
   if (options?.subagentsEnabled !== undefined) {
     settings.subagentsEnabled = options.subagentsEnabled
@@ -134,19 +214,15 @@ export function seedProjectSwitchFixture(
   const projectBId = 'e2e-project-switch-b'
   const activeProjectId = options?.activeProjectId === 'project-b' ? projectBId : projectAId
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [
-        { id: projectAId, path: workspaceRoot, name: 'Project A' },
-        { id: projectBId, path: workspaceRoot, name: 'Project B' },
-      ],
-      activeProjectId,
-      [`threads:${projectAId}`]: [],
-      [`threads:${projectBId}`]: [],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [
+      { id: projectAId, path: workspaceRoot, name: 'Project A' },
+      { id: projectBId, path: workspaceRoot, name: 'Project B' },
+    ],
+    activeProjectId,
+    [`threads:${projectAId}`]: [],
+    [`threads:${projectBId}`]: [],
+  })
   writeSettings({})
   return { projectAId, projectBId }
 }
@@ -161,15 +237,11 @@ export function seedProjectSwitchFixture(
 export function seedOpenRouterFixture(workspaceRoot: string, options?: { apiBase?: string }): void {
   const projectId = 'e2e-openrouter-project'
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [],
+  })
   writeSettings({
     model: 'openrouter:qwen/qwen3-235b-a22b:free',
     openRouterModel: 'anthropic/claude-3.5-sonnet',
@@ -194,42 +266,38 @@ export function seedInnerHtmlToolArgsFixture(workspaceRoot: string): void {
   const projectId = 'e2e-innerhtml-project'
   const threadId = 'e2e-innerhtml-thread'
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'innerHTML trap test',
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-assistant-innerhtml',
-              role: 'assistant',
-              content: 'Wrote a file with tricky HTML-like content in the arguments.',
-              toolCalls: [
-                {
-                  id: 'tc-write-trap',
-                  name: 'write_file',
-                  args: INNERHTML_TRAP_ARGS,
-                  status: 'done',
-                  result: 'Wrote index.html',
-                  editStats: { additions: 1, deletions: 0 },
-                },
-              ],
-              createdAt: Date.now(),
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'innerHTML trap test',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-innerhtml',
+            role: 'assistant',
+            content: 'Wrote a file with tricky HTML-like content in the arguments.',
+            toolCalls: [
+              {
+                id: 'tc-write-trap',
+                name: 'write_file',
+                args: INNERHTML_TRAP_ARGS,
+                status: 'done',
+                result: 'Wrote index.html',
+                editStats: { additions: 1, deletions: 0 },
+              },
+            ],
+            createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 }
 
 export function seedMarkdownListFixture(workspaceRoot: string): void {
@@ -252,32 +320,28 @@ export function seedMarkdownListFixture(workspaceRoot: string): void {
     '- Persistence — `electron-store` for projects, threads, settings',
   ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Markdown list indent',
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-assistant-list',
-              role: 'assistant',
-              content,
-              createdAt: Date.now(),
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Markdown list indent',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-list',
+            role: 'assistant',
+            content,
+            createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 }
 
 /** Assistant message with sprint retrospective metadata using &nbsp; pipe separators. */
@@ -304,32 +368,28 @@ export function seedSprintRetroNbspFixture(workspaceRoot: string): void {
     '| Story Points | 55 | 42 | 76% |',
   ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Sprint retrospective nbsp',
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-assistant-sprint-retro',
-              role: 'assistant',
-              content,
-              createdAt: Date.now(),
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Sprint retrospective nbsp',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-sprint-retro',
+            role: 'assistant',
+            content,
+            createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 }
 
 /** Job description with two consecutive nbsp metadata lines (must not become a table). */
@@ -341,32 +401,28 @@ export function seedJobDescriptionMetadataFixture(workspaceRoot: string): void {
     'utf8',
   )
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Job description metadata',
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-assistant-jd-metadata',
-              role: 'assistant',
-              content,
-              createdAt: Date.now(),
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Job description metadata',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-jd-metadata',
+            role: 'assistant',
+            content,
+            createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 }
 
 /** Assistant message with a root-relative markdown link to a real workspace file. */
@@ -376,32 +432,28 @@ export function seedMarkdownWorkspaceLinkFixture(workspaceRoot: string): void {
   const content =
     'See [Type safety guide](/docs/type-safety.md) for renderer and main-process conventions.'
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Workspace markdown link',
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-assistant-workspace-link',
-              role: 'assistant',
-              content,
-              createdAt: Date.now(),
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Workspace markdown link',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-workspace-link',
+            role: 'assistant',
+            content,
+            createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 }
 
 /** Thematic breaks (spaced marker runs) + multi-backtick / multi-line code spans. */
@@ -421,64 +473,56 @@ export function seedMarkdownConformanceFixture(workspaceRoot: string): void {
     'and ``code`` renders too.',
   ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Markdown conformance',
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-assistant-conformance',
-              role: 'assistant',
-              content,
-              createdAt: Date.now(),
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Markdown conformance',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-conformance',
+            role: 'assistant',
+            content,
+            createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 }
 
 export function seedBrowserLinkChatFixture(workspaceRoot: string): void {
   const projectId = 'e2e-browser-link-chat-project'
   const threadId = 'e2e-browser-link-chat-thread'
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Browser link chat',
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-assistant-link',
-              role: 'assistant',
-              content: 'See [Example Domain](https://example.com) for details.',
-              createdAt: Date.now(),
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Browser link chat',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-link',
+            role: 'assistant',
+            content: 'See [Example Domain](https://example.com) for details.',
+            createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 }
 
 /** Thread with a GitHub PR markdown link for PR panel e2e. */
@@ -487,32 +531,28 @@ export function seedPrPanelChatFixture(workspaceRoot: string): void {
   const threadId = 'e2e-pr-panel-thread'
   const mockPrUrl = 'https://github.com/copse-dev/copse-panel/pull/42'
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'PR panel chat',
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-assistant-pr-link',
-              role: 'assistant',
-              content: `Track progress in [PR #42](${mockPrUrl}).`,
-              createdAt: Date.now(),
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'PR panel chat',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-pr-link',
+            role: 'assistant',
+            content: `Track progress in [PR #42](${mockPrUrl}).`,
+            createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 }
 
 /** Git tool cards followed by an ordered-list summary (typical post-tool agent reply). */
@@ -535,62 +575,58 @@ export function seedGitSummaryMarkdownFixture(workspaceRoot: string): void {
     'Adds sandbox spawn helpers and wires ASRT seatbelt initialization for macOS project commands.',
   ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Git summary markdown',
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-user-git-summary',
-              role: 'user',
-              content: 'Can you summarise the git changes?',
-              toolCalls: [],
-              createdAt: Date.now(),
-            },
-            {
-              id: 'msg-assistant-git-tools',
-              role: 'assistant',
-              content: '',
-              toolCalls: [
-                {
-                  id: 'tc-git-status',
-                  name: 'git_status',
-                  args: {},
-                  status: 'done',
-                  result: 'M sandbox-fs-client.ts\nM sandbox-fs-worker.ts\nM spawn.ts',
-                },
-                {
-                  id: 'tc-git-diff',
-                  name: 'git_diff',
-                  args: {},
-                  status: 'done',
-                  result: 'diff --git a/src/main/project-sandbox/spawn.ts',
-                },
-              ],
-              createdAt: Date.now(),
-            },
-            {
-              id: 'msg-assistant-git-summary',
-              role: 'assistant',
-              content: summary,
-              toolCalls: [],
-              createdAt: Date.now(),
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Git summary markdown',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-git-summary',
+            role: 'user',
+            content: 'Can you summarise the git changes?',
+            toolCalls: [],
+            createdAt: Date.now(),
+          },
+          {
+            id: 'msg-assistant-git-tools',
+            role: 'assistant',
+            content: '',
+            toolCalls: [
+              {
+                id: 'tc-git-status',
+                name: 'git_status',
+                args: {},
+                status: 'done',
+                result: 'M sandbox-fs-client.ts\nM sandbox-fs-worker.ts\nM spawn.ts',
+              },
+              {
+                id: 'tc-git-diff',
+                name: 'git_diff',
+                args: {},
+                status: 'done',
+                result: 'diff --git a/src/main/project-sandbox/spawn.ts',
+              },
+            ],
+            createdAt: Date.now(),
+          },
+          {
+            id: 'msg-assistant-git-summary',
+            role: 'assistant',
+            content: summary,
+            toolCalls: [],
+            createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 }
 
 export function seedCodeBlockCopyFixture(workspaceRoot: string): void {
@@ -612,32 +648,28 @@ export function seedCodeBlockCopyFixture(workspaceRoot: string): void {
     '```',
   ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Code block copy',
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-assistant-code-blocks',
-              role: 'assistant',
-              content,
-              createdAt: Date.now(),
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Code block copy',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-code-blocks',
+            role: 'assistant',
+            content,
+            createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 }
 
 export function seedMermaidDiagramFixture(workspaceRoot: string): void {
@@ -654,32 +686,28 @@ export function seedMermaidDiagramFixture(workspaceRoot: string): void {
     '```',
   ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Mermaid diagram',
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-assistant-mermaid',
-              role: 'assistant',
-              content,
-              createdAt: Date.now(),
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Mermaid diagram',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-mermaid',
+            role: 'assistant',
+            content,
+            createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 }
 
 /** Seeded thread with context snapshot and token usage for footer doughnut validation. */
@@ -689,40 +717,36 @@ export function seedContextWheelFixture(workspaceRoot: string): void {
   const conversationBudget = 180_000
   const conversationTokens = 54_000
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Context wheel test',
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-user-1',
-              role: 'user',
-              content: 'Explain this codebase.',
-              toolCalls: [],
-              createdAt: Date.now(),
-            },
-          ],
-          usage: { inputTokens: 1200, outputTokens: 800 },
-          contextSnapshot: {
-            contextWindow: 200_000,
-            conversationBudget,
-            conversationTokens,
-            fillRatio: conversationTokens / conversationBudget,
-            updatedAt: Date.now(),
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Context wheel test',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-1',
+            role: 'user',
+            content: 'Explain this codebase.',
+            toolCalls: [],
+            createdAt: Date.now(),
           },
-          createdAt: Date.now(),
+        ],
+        usage: { inputTokens: 1200, outputTokens: 800 },
+        contextSnapshot: {
+          contextWindow: 200_000,
+          conversationBudget,
+          conversationTokens,
+          fillRatio: conversationTokens / conversationBudget,
           updatedAt: Date.now(),
         },
-      ],
-    }),
-    'utf8',
-  )
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 }
 
 /** Footer with long model/branch labels plus context wheel + token usage for compact layout e2e. */
@@ -741,41 +765,37 @@ export function seedFooterCompactFixture(workspaceRoot: string): {
   const outputTokens = 1_800
   const tokenLabel = `${((inputTokens + outputTokens) / 1000).toFixed(1)}k tokens`
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Footer compact layout',
-          status: 'idle',
-          gitBranch: branch,
-          messages: [
-            {
-              id: 'msg-user-compact',
-              role: 'user',
-              content: 'Check footer layout at narrow widths.',
-              toolCalls: [],
-              createdAt: Date.now(),
-            },
-          ],
-          usage: { inputTokens, outputTokens },
-          contextSnapshot: {
-            contextWindow: 200_000,
-            conversationBudget,
-            conversationTokens,
-            fillRatio: conversationTokens / conversationBudget,
-            updatedAt: Date.now(),
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Footer compact layout',
+        status: 'idle',
+        gitBranch: branch,
+        messages: [
+          {
+            id: 'msg-user-compact',
+            role: 'user',
+            content: 'Check footer layout at narrow widths.',
+            toolCalls: [],
+            createdAt: Date.now(),
           },
-          createdAt: Date.now(),
+        ],
+        usage: { inputTokens, outputTokens },
+        contextSnapshot: {
+          contextWindow: 200_000,
+          conversationBudget,
+          conversationTokens,
+          fillRatio: conversationTokens / conversationBudget,
           updatedAt: Date.now(),
         },
-      ],
-    }),
-    'utf8',
-  )
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
   writeSettings({ model })
   return { model: 'qwen/qwen3.6-35b-a3b', branch, tokenLabel }
 }
@@ -788,33 +808,29 @@ export function seedPortraitRightPanelFixture(
   const projectId = 'e2e-portrait-right-panel-project'
   const threadId = 'e2e-portrait-right-panel-thread'
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Portrait right panel layout',
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-user-portrait-layout',
-              role: 'user',
-              content: 'Open the right panel in a portrait window.',
-              toolCalls: [],
-              createdAt: Date.now(),
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Portrait right panel layout',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-portrait-layout',
+            role: 'user',
+            content: 'Open the right panel in a portrait window.',
+            toolCalls: [],
+            createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
   writeSettings({ autoPortraitRightPanel, windowBounds })
 }
 
@@ -829,123 +845,115 @@ export function seedReviewInlineFixture(workspaceRoot: string): void {
   const threadId = 'e2e-review-inline-thread'
   const now = Date.now()
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      activeThreadId: threadId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Inline review test',
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-user-review',
-              role: 'user',
-              content: 'Add a null check to the JSON parser.',
-              toolCalls: [],
-              createdAt: now,
-            },
-            {
-              id: 'msg-assistant-review',
-              role: 'assistant',
-              content: 'Added the null guard and a regression test for empty input.',
-              toolCalls: [],
-              createdAt: now + 1,
-            },
-            {
-              id: 'msg-user-followup',
-              role: 'user',
-              content: 'Thanks — that looks right.',
-              toolCalls: [],
-              createdAt: now + 2,
-            },
-          ],
-          review: {
-            status: 'done',
-            summary:
-              'Reviewed the change to `src/parser.ts`. The null guard is correct and the new test covers the empty-input case. No issues found.',
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Inline review test',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-review',
+            role: 'user',
+            content: 'Add a null check to the JSON parser.',
+            toolCalls: [],
+            createdAt: now,
           },
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: now,
-          updatedAt: now + 2,
+          {
+            id: 'msg-assistant-review',
+            role: 'assistant',
+            content: 'Added the null guard and a regression test for empty input.',
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+          {
+            id: 'msg-user-followup',
+            role: 'user',
+            content: 'Thanks — that looks right.',
+            toolCalls: [],
+            createdAt: now + 2,
+          },
+        ],
+        review: {
+          status: 'done',
+          summary:
+            'Reviewed the change to `src/parser.ts`. The null guard is correct and the new test covers the empty-input case. No issues found.',
         },
-      ],
-    }),
-    'utf8',
-  )
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now + 2,
+      },
+    ],
+  })
 }
 
 export function seedSubagentFixture(workspaceRoot: string): void {
   const projectId = 'e2e-subagent-project'
   const threadId = 'e2e-subagent-thread'
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Subagent display test',
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-assistant-subagent',
-              role: 'assistant',
-              content: 'Here is what the subagent found.',
-              toolCalls: [
-                {
-                  id: 'tc-explore-1',
-                  name: 'explore',
-                  args: { query: 'Find README' },
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Subagent display test',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-subagent',
+            role: 'assistant',
+            content: 'Here is what the subagent found.',
+            toolCalls: [
+              {
+                id: 'tc-explore-1',
+                name: 'explore',
+                args: { query: 'Find README' },
+                status: 'done',
+                result: 'README describes Copse setup and dev workflow.',
+                subagent: {
+                  id: 'sub-session-1',
+                  kind: 'explore',
                   status: 'done',
-                  result: 'README describes Copse setup and dev workflow.',
-                  subagent: {
-                    id: 'sub-session-1',
-                    kind: 'explore',
-                    status: 'done',
-                    prompt: 'Find README',
-                    summary: 'README describes Copse setup and dev workflow.',
-                    messages: [
-                      {
-                        id: 'sub-msg-1',
-                        role: 'assistant',
-                        content: 'Reading **README.md** for project overview.',
-                        toolCalls: [
-                          {
-                            id: 'inner-read-1',
-                            name: 'read_file',
-                            args: { path: 'README.md' },
-                            status: 'done',
-                            result: '# Copse\n',
-                          },
-                        ],
-                      },
-                      {
-                        id: 'sub-msg-2',
-                        role: 'assistant',
-                        content: 'README describes Copse setup and dev workflow.',
-                        toolCalls: [],
-                      },
-                    ],
-                  },
+                  prompt: 'Find README',
+                  summary: 'README describes Copse setup and dev workflow.',
+                  messages: [
+                    {
+                      id: 'sub-msg-1',
+                      role: 'assistant',
+                      content: 'Reading **README.md** for project overview.',
+                      toolCalls: [
+                        {
+                          id: 'inner-read-1',
+                          name: 'read_file',
+                          args: { path: 'README.md' },
+                          status: 'done',
+                          result: '# Copse\n',
+                        },
+                      ],
+                    },
+                    {
+                      id: 'sub-msg-2',
+                      role: 'assistant',
+                      content: 'README describes Copse setup and dev workflow.',
+                      toolCalls: [],
+                    },
+                  ],
                 },
-              ],
-              createdAt: Date.now(),
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+              },
+            ],
+            createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 }
 
 /** Thread with a completed CI investigator subagent tool card for visual validation. */
@@ -960,77 +968,73 @@ export function seedCiInvestigatorFixture(workspaceRoot: string): void {
     '**Suggested fix:** pass the required `id` argument to `bar()` in `src/main/foo.ts`.',
   ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'CI investigator display test',
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-assistant-ci',
-              role: 'assistant',
-              content: 'I investigated the failing CI and found the root cause.',
-              toolCalls: [
-                {
-                  id: 'tc-investigate-ci-1',
-                  name: 'investigate_ci',
-                  args: { pr_number: 42 },
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'CI investigator display test',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-ci',
+            role: 'assistant',
+            content: 'I investigated the failing CI and found the root cause.',
+            toolCalls: [
+              {
+                id: 'tc-investigate-ci-1',
+                name: 'investigate_ci',
+                args: { pr_number: 42 },
+                status: 'done',
+                result: summary,
+                subagent: {
+                  id: 'sub-ci-1',
+                  kind: 'investigate_ci',
                   status: 'done',
-                  result: summary,
-                  subagent: {
-                    id: 'sub-ci-1',
-                    kind: 'investigate_ci',
-                    status: 'done',
-                    prompt: 'Investigate CI failures for PR #42',
-                    summary,
-                    messages: [
-                      {
-                        id: 'sub-ci-msg-1',
-                        role: 'assistant',
-                        content: 'Reading the **failing run logs** for PR #42.',
-                        toolCalls: [
-                          {
-                            id: 'inner-run-list-1',
-                            name: 'gh_run_list',
-                            args: { failed_only: true },
-                            status: 'done',
-                            result: '#1234 CI: FAILURE (feature @ abcdef1)',
-                          },
-                          {
-                            id: 'inner-run-view-1',
-                            name: 'gh_run_view',
-                            args: { run_id: 1234 },
-                            status: 'done',
-                            result: 'src/main/foo.ts(12,3): error TS2554: Expected 1 argument.',
-                          },
-                        ],
-                      },
-                      {
-                        id: 'sub-ci-msg-2',
-                        role: 'assistant',
-                        content: summary,
-                        toolCalls: [],
-                      },
-                    ],
-                  },
+                  prompt: 'Investigate CI failures for PR #42',
+                  summary,
+                  messages: [
+                    {
+                      id: 'sub-ci-msg-1',
+                      role: 'assistant',
+                      content: 'Reading the **failing run logs** for PR #42.',
+                      toolCalls: [
+                        {
+                          id: 'inner-run-list-1',
+                          name: 'gh_run_list',
+                          args: { failed_only: true },
+                          status: 'done',
+                          result: '#1234 CI: FAILURE (feature @ abcdef1)',
+                        },
+                        {
+                          id: 'inner-run-view-1',
+                          name: 'gh_run_view',
+                          args: { run_id: 1234 },
+                          status: 'done',
+                          result: 'src/main/foo.ts(12,3): error TS2554: Expected 1 argument.',
+                        },
+                      ],
+                    },
+                    {
+                      id: 'sub-ci-msg-2',
+                      role: 'assistant',
+                      content: summary,
+                      toolCalls: [],
+                    },
+                  ],
                 },
-              ],
-              createdAt: Date.now(),
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+              },
+            ],
+            createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 }
 
 const GIT_CHANGES_FIXTURE_ROOT = join(process.cwd(), 'tests/fixtures/git-changes-repo')
@@ -1091,26 +1095,22 @@ export function seedGitChangesFixture(): string {
   const projectId = 'e2e-git-changes-project'
   const threadId = 'e2e-git-changes-thread'
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: repoRoot, name: 'git-workspace' }],
-      activeProjectId: projectId,
-      workspaceRoot: repoRoot,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Git changes test',
-          status: 'idle',
-          messages: [],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: repoRoot, name: 'git-workspace' }],
+    activeProjectId: projectId,
+    workspaceRoot: repoRoot,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Git changes test',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 
   writeSettings({})
 
@@ -1158,25 +1158,21 @@ export function seedGitImageChangesFixture(): string {
   const projectId = 'e2e-git-image-changes-project'
   const threadId = 'e2e-git-image-changes-thread'
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: repoRoot, name: 'git-image-workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Git image changes test',
-          status: 'idle',
-          messages: [],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: repoRoot, name: 'git-image-workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Git image changes test',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 
   return repoRoot
 }
@@ -1200,25 +1196,21 @@ export function seedScrollToBottomFixture(workspaceRoot: string): void {
   })
 
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Scroll to bottom test',
-          status: 'idle',
-          messages,
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Scroll to bottom test',
+        status: 'idle',
+        messages,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 }
 
 /** One completed exchange plus a long history so scrolling up during streaming is meaningful. */
@@ -1237,25 +1229,21 @@ export function seedScrollStreamingFixture(workspaceRoot: string): void {
     }
   })
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Scroll while streaming',
-          status: 'idle',
-          messages: history,
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Scroll while streaming',
+        status: 'idle',
+        messages: history,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 }
 
 export function seedTodoPlanFixtures(workspaceRoot: string): {
@@ -1281,65 +1269,61 @@ export function seedTodoPlanFixtures(workspaceRoot: string): {
     { id: 'todo-5', content: 'Create GitHub issue for diagram steering', status: 'pending' },
   ]
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: planThreadId,
-          title: planThreadTitle,
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-user-todo',
-              role: 'user',
-              content: 'Implement mermaid and open an issue for diagram steering.',
-              toolCalls: [],
-              createdAt: Date.now(),
-            },
-            {
-              id: 'msg-assistant-todo',
-              role: 'assistant',
-              content: 'Working through the plan.',
-              toolCalls: [],
-              createdAt: Date.now(),
-            },
-          ],
-          todos,
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now() + 2,
-          updatedAt: Date.now() + 2,
-        },
-        {
-          id: noPlanThreadId,
-          title: noPlanThreadTitle,
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-user-no-plan',
-              role: 'user',
-              content: 'What files are in src/?',
-              toolCalls: [],
-              createdAt: Date.now(),
-            },
-            {
-              id: 'msg-assistant-no-plan',
-              role: 'assistant',
-              content: 'I can list the src directory for you.',
-              toolCalls: [],
-              createdAt: Date.now(),
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now() + 1,
-          updatedAt: Date.now() + 1,
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: planThreadId,
+        title: planThreadTitle,
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-todo',
+            role: 'user',
+            content: 'Implement mermaid and open an issue for diagram steering.',
+            toolCalls: [],
+            createdAt: Date.now(),
+          },
+          {
+            id: 'msg-assistant-todo',
+            role: 'assistant',
+            content: 'Working through the plan.',
+            toolCalls: [],
+            createdAt: Date.now(),
+          },
+        ],
+        todos,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now() + 2,
+        updatedAt: Date.now() + 2,
+      },
+      {
+        id: noPlanThreadId,
+        title: noPlanThreadTitle,
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-no-plan',
+            role: 'user',
+            content: 'What files are in src/?',
+            toolCalls: [],
+            createdAt: Date.now(),
+          },
+          {
+            id: 'msg-assistant-no-plan',
+            role: 'assistant',
+            content: 'I can list the src directory for you.',
+            toolCalls: [],
+            createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now() + 1,
+        updatedAt: Date.now() + 1,
+      },
+    ],
+  })
   return { planThreadTitle, noPlanThreadTitle }
 }
 
@@ -1360,55 +1344,51 @@ export function seedQueuedMessageFixture(workspaceRoot: string): {
   const queuedText = 'Then add unit tests for the parser.'
   const now = Date.now()
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      activeThreadId: threadId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Queued message edit',
-          status: 'running',
-          messages: [
-            {
-              id: 'msg-user-first',
-              role: 'user',
-              content: 'Refactor the JSON parser.',
-              toolCalls: [],
-              createdAt: now,
-            },
-            {
-              id: 'msg-assistant-first',
-              role: 'assistant',
-              content: 'Working on the refactor now…',
-              toolCalls: [],
-              createdAt: now + 1,
-            },
-            {
-              id: queuedMessageId,
-              role: 'user',
-              content: queuedText,
-              toolCalls: [],
-              createdAt: now + 2,
-            },
-          ],
-          pendingMessages: [
-            {
-              messageId: queuedMessageId,
-              payload: { content: queuedText, invokedSkills: [], priorTodos: [] },
-              createdAt: now + 2,
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: now,
-          updatedAt: now + 2,
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Queued message edit',
+        status: 'running',
+        messages: [
+          {
+            id: 'msg-user-first',
+            role: 'user',
+            content: 'Refactor the JSON parser.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-first',
+            role: 'assistant',
+            content: 'Working on the refactor now…',
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+          {
+            id: queuedMessageId,
+            role: 'user',
+            content: queuedText,
+            toolCalls: [],
+            createdAt: now + 2,
+          },
+        ],
+        pendingMessages: [
+          {
+            messageId: queuedMessageId,
+            payload: { content: queuedText, invokedSkills: [], priorTodos: [] },
+            createdAt: now + 2,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now + 2,
+      },
+    ],
+  })
   return { threadId, queuedMessageId, queuedText }
 }
 
@@ -1416,57 +1396,53 @@ export function seedToolDisplayFixture(workspaceRoot: string): void {
   const projectId = 'e2e-tool-display-project'
   const threadId = 'e2e-tool-display-thread'
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      expandedProjectId: projectId,
-      activeThreadId: threadId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Tool display test',
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-assistant-1',
-              role: 'assistant',
-              content: 'Here is what I found in the repo.',
-              toolCalls: [
-                {
-                  id: 'tc-read-1',
-                  name: 'read_file',
-                  args: { path: 'README.md' },
-                  status: 'done',
-                  result: '# Copse\n',
-                },
-                {
-                  id: 'tc-list-1',
-                  name: 'list_dir',
-                  args: { path: 'src' },
-                  status: 'done',
-                  result: 'd main\nf index.ts',
-                },
-                {
-                  id: 'tc-read-2',
-                  name: 'read_file',
-                  args: { path: 'missing.txt' },
-                  status: 'error',
-                  result: 'Error: ENOENT',
-                },
-              ],
-              createdAt: Date.now(),
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Tool display test',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-1',
+            role: 'assistant',
+            content: 'Here is what I found in the repo.',
+            toolCalls: [
+              {
+                id: 'tc-read-1',
+                name: 'read_file',
+                args: { path: 'README.md' },
+                status: 'done',
+                result: '# Copse\n',
+              },
+              {
+                id: 'tc-list-1',
+                name: 'list_dir',
+                args: { path: 'src' },
+                status: 'done',
+                result: 'd main\nf index.ts',
+              },
+              {
+                id: 'tc-read-2',
+                name: 'read_file',
+                args: { path: 'missing.txt' },
+                status: 'error',
+                result: 'Error: ENOENT',
+              },
+            ],
+            createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 }
 
 /** Thread showing built-in browser tool cards (navigate/snapshot/screenshot/interact). */
@@ -1474,64 +1450,59 @@ export function seedBrowserToolsFixture(workspaceRoot: string): void {
   const projectId = 'e2e-browser-tools-project'
   const threadId = 'e2e-browser-tools-thread'
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Browser tools test',
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-user-browser',
-              role: 'user',
-              content: 'Open the local dev server and check the heading renders.',
-              toolCalls: [],
-              createdAt: Date.now(),
-            },
-            {
-              id: 'msg-assistant-browser',
-              role: 'assistant',
-              content:
-                'Opened the page, read its accessibility snapshot, and captured a screenshot.',
-              toolCalls: [
-                {
-                  id: 'tc-browser-navigate',
-                  name: 'browser_navigate',
-                  args: { url: 'http://localhost:3000/' },
-                  status: 'done',
-                  result: 'Opened tab-1: Computer Use Demo\nhttp://localhost:3000/',
-                },
-                {
-                  id: 'tc-browser-snapshot',
-                  name: 'browser_snapshot',
-                  args: {},
-                  status: 'done',
-                  result:
-                    'page: "Computer Use Demo"\nurl: http://localhost:3000/\n\n- heading "Welcome"\n- link "Docs" [ref=e1]\n- textbox "Search" [ref=e2]',
-                },
-                {
-                  id: 'tc-browser-screenshot',
-                  name: 'browser_screenshot',
-                  args: {},
-                  status: 'done',
-                  result: 'Saved screenshot of tab-1 to /tmp/browser-screenshots/tab-1.png',
-                },
-              ],
-              createdAt: Date.now(),
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Browser tools test',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-browser',
+            role: 'user',
+            content: 'Open the local dev server and check the heading renders.',
+            toolCalls: [],
+            createdAt: Date.now(),
+          },
+          {
+            id: 'msg-assistant-browser',
+            role: 'assistant',
+            content: 'Opened the page, read its accessibility snapshot, and captured a screenshot.',
+            toolCalls: [
+              {
+                id: 'tc-browser-navigate',
+                name: 'browser_navigate',
+                args: { url: 'http://localhost:3000/' },
+                status: 'done',
+                result: 'Opened tab-1: Computer Use Demo\nhttp://localhost:3000/',
+              },
+              {
+                id: 'tc-browser-snapshot',
+                name: 'browser_snapshot',
+                args: {},
+                status: 'done',
+                result:
+                  'page: "Computer Use Demo"\nurl: http://localhost:3000/\n\n- heading "Welcome"\n- link "Docs" [ref=e1]\n- textbox "Search" [ref=e2]',
+              },
+              {
+                id: 'tc-browser-screenshot',
+                name: 'browser_screenshot',
+                args: {},
+                status: 'done',
+                result: 'Saved screenshot of tab-1 to /tmp/browser-screenshots/tab-1.png',
+              },
+            ],
+            createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 }
 
 /** Explore subagent thread with search-routing markdown matching semantic-search UI. */
@@ -1563,101 +1534,97 @@ export function seedSemanticSearchExploreFixture(workspaceRoot: string): void {
   ].join('\n')
 
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'copse-panel' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Mechanism Explained',
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-user-1',
-              role: 'user',
-              content: 'is there semantic search',
-              toolCalls: [],
-              createdAt: Date.now(),
-            },
-            {
-              id: 'msg-assistant-1',
-              role: 'assistant',
-              content:
-                "Good find — there *is* semantic search, but it's not in the file path indexer. It's in the **agent's code search routing**. Let me explore it.",
-              toolCalls: [
-                {
-                  id: 'tc-explore-semantic',
-                  name: 'explore',
-                  args: { query: 'How is semantic search routed?' },
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'copse-panel' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Mechanism Explained',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-1',
+            role: 'user',
+            content: 'is there semantic search',
+            toolCalls: [],
+            createdAt: Date.now(),
+          },
+          {
+            id: 'msg-assistant-1',
+            role: 'assistant',
+            content:
+              "Good find — there *is* semantic search, but it's not in the file path indexer. It's in the **agent's code search routing**. Let me explore it.",
+            toolCalls: [
+              {
+                id: 'tc-explore-semantic',
+                name: 'explore',
+                args: { query: 'How is semantic search routed?' },
+                status: 'done',
+                result: summary,
+                subagent: {
+                  id: 'sub-semantic-1',
+                  kind: 'explore',
                   status: 'done',
-                  result: summary,
-                  subagent: {
-                    id: 'sub-semantic-1',
-                    kind: 'explore',
-                    status: 'done',
-                    prompt: 'How is semantic search routed?',
-                    summary,
-                    messages: [
-                      {
-                        id: 'sub-msg-1',
-                        role: 'assistant',
-                        content: summary,
-                        toolCalls: [
-                          {
-                            id: 'inner-read-1',
-                            name: 'read_file',
-                            args: { path: 'src/main/services/search-routing.ts' },
-                            status: 'done',
-                            result: 'export function classifySearchQuery() {}',
-                          },
-                          {
-                            id: 'inner-search-1',
-                            name: 'search_codebase',
-                            args: { query: 'classifySearchQuery' },
-                            status: 'done',
-                            result: 'search-routing.ts:12',
-                          },
-                        ],
-                      },
-                      {
-                        id: 'sub-msg-2',
-                        role: 'assistant',
-                        content:
-                          'Let me find where this classification function is called and how semantic tools are passed in.',
-                        toolCalls: [
-                          {
-                            id: 'inner-search-2',
-                            name: 'search_codebase',
-                            args: { query: 'semantic search routing' },
-                            status: 'done',
-                            result: 'agent-service.ts:88',
-                          },
-                          {
-                            id: 'inner-read-2',
-                            name: 'read_file',
-                            args: { path: 'src/main/services/agent-service.ts' },
-                            status: 'done',
-                            result: 'const route = classifySearchQuery(query)',
-                          },
-                        ],
-                      },
-                    ],
-                  },
+                  prompt: 'How is semantic search routed?',
+                  summary,
+                  messages: [
+                    {
+                      id: 'sub-msg-1',
+                      role: 'assistant',
+                      content: summary,
+                      toolCalls: [
+                        {
+                          id: 'inner-read-1',
+                          name: 'read_file',
+                          args: { path: 'src/main/services/search-routing.ts' },
+                          status: 'done',
+                          result: 'export function classifySearchQuery() {}',
+                        },
+                        {
+                          id: 'inner-search-1',
+                          name: 'search_codebase',
+                          args: { query: 'classifySearchQuery' },
+                          status: 'done',
+                          result: 'search-routing.ts:12',
+                        },
+                      ],
+                    },
+                    {
+                      id: 'sub-msg-2',
+                      role: 'assistant',
+                      content:
+                        'Let me find where this classification function is called and how semantic tools are passed in.',
+                      toolCalls: [
+                        {
+                          id: 'inner-search-2',
+                          name: 'search_codebase',
+                          args: { query: 'semantic search routing' },
+                          status: 'done',
+                          result: 'agent-service.ts:88',
+                        },
+                        {
+                          id: 'inner-read-2',
+                          name: 'read_file',
+                          args: { path: 'src/main/services/agent-service.ts' },
+                          status: 'done',
+                          result: 'const route = classifySearchQuery(query)',
+                        },
+                      ],
+                    },
+                  ],
                 },
-              ],
-              createdAt: Date.now(),
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+              },
+            ],
+            createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 }
 
 export interface FooterBranchSeedIds {
@@ -1681,44 +1648,107 @@ export function seedDraftPromptFixture(workspaceRoot: string): {
   const now = Date.now()
 
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: blankThreadId,
-          title: blankThreadTitle,
-          status: 'idle',
-          messages: [],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: now + 1,
-          updatedAt: now + 1,
-        },
-        {
-          id: usedThreadId,
-          title: usedThreadTitle,
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-user-used',
-              role: 'user',
-              content: 'hello from used thread',
-              toolCalls: [],
-              createdAt: now,
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: now,
-          updatedAt: now,
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: blankThreadId,
+        title: blankThreadTitle,
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now + 1,
+        updatedAt: now + 1,
+      },
+      {
+        id: usedThreadId,
+        title: usedThreadTitle,
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-used',
+            role: 'user',
+            content: 'hello from used thread',
+            toolCalls: [],
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+  })
 
   return { usedThreadTitle, blankThreadTitle }
+}
+
+/**
+ * Active blank thread plus two past threads to `@`-reference (#644). The picker
+ * excludes the active thread and offers the other two.
+ */
+export function seedThreadReferenceFixture(workspaceRoot: string): {
+  projectId: string
+  activeThreadId: string
+  refTitles: [string, string]
+} {
+  const projectId = 'e2e-thread-ref-project'
+  const activeThreadId = 'e2e-thread-ref-active'
+  const refTitles: [string, string] = ['Auth refactor plan', 'Docs cleanup']
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId,
+    [`threads:${projectId}`]: [
+      {
+        id: activeThreadId,
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now + 2,
+        updatedAt: now + 2,
+      },
+      {
+        id: 'e2e-thread-ref-auth',
+        title: refTitles[0],
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-ref-auth',
+            role: 'user',
+            content: 'How should we refactor the auth layer?',
+            toolCalls: [],
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now + 1,
+        updatedAt: now + 1,
+      },
+      {
+        id: 'e2e-thread-ref-docs',
+        title: refTitles[1],
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-ref-docs',
+            role: 'user',
+            content: 'Clean up the README and docs index.',
+            toolCalls: [],
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+  })
+  return { projectId, activeThreadId, refTitles }
 }
 
 /** Two threads bound to different branches for footer branch / mismatch screenshots. */
@@ -1731,53 +1761,49 @@ export function seedFooterBranchFixture(workspaceRoot: string): FooterBranchSeed
   const now = Date.now()
 
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: matchThreadId,
-          title: 'Matching branch',
-          status: 'idle',
-          gitBranch: currentBranch,
-          messages: [
-            {
-              id: 'msg-user-match',
-              role: 'user',
-              content: 'Thread on the checked-out branch.',
-              toolCalls: [],
-              createdAt: now,
-            },
-          ],
-          usage: { inputTokens: 1200, outputTokens: 400 },
-          createdAt: now,
-          updatedAt: now,
-        },
-        {
-          id: mismatchThreadId,
-          title: 'Other branch',
-          status: 'idle',
-          gitBranch: mismatchBranch,
-          messages: [
-            {
-              id: 'msg-user-mismatch',
-              role: 'user',
-              content: 'Thread started on a different branch.',
-              toolCalls: [],
-              createdAt: now,
-            },
-          ],
-          usage: { inputTokens: 800, outputTokens: 200 },
-          createdAt: now,
-          updatedAt: now,
-        },
-      ],
-      activeThreadId: matchThreadId,
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: matchThreadId,
+        title: 'Matching branch',
+        status: 'idle',
+        gitBranch: currentBranch,
+        messages: [
+          {
+            id: 'msg-user-match',
+            role: 'user',
+            content: 'Thread on the checked-out branch.',
+            toolCalls: [],
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 1200, outputTokens: 400 },
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: mismatchThreadId,
+        title: 'Other branch',
+        status: 'idle',
+        gitBranch: mismatchBranch,
+        messages: [
+          {
+            id: 'msg-user-mismatch',
+            role: 'user',
+            content: 'Thread started on a different branch.',
+            toolCalls: [],
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 800, outputTokens: 200 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    activeThreadId: matchThreadId,
+  })
 
   return {
     projectId,
@@ -1800,26 +1826,22 @@ export function seedFooterBranchPickerFixture(workspaceRoot: string): {
   const now = Date.now()
 
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: blankThreadId,
-          title: 'New Thread',
-          status: 'idle',
-          messages: [],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: now,
-          updatedAt: now,
-        },
-      ],
-      activeThreadId: blankThreadId,
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: blankThreadId,
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    activeThreadId: blankThreadId,
+  })
 
   return { projectId, blankThreadId, currentBranch }
 }
@@ -1834,34 +1856,30 @@ export function seedFooterBranchMismatchFixture(workspaceRoot: string): FooterBr
   const now = Date.now()
 
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: mismatchThreadId,
-          title: 'Other branch',
-          status: 'idle',
-          gitBranch: mismatchBranch,
-          messages: [
-            {
-              id: 'msg-user-mismatch',
-              role: 'user',
-              content: 'Thread started on a different branch.',
-              toolCalls: [],
-              createdAt: now,
-            },
-          ],
-          usage: { inputTokens: 800, outputTokens: 200 },
-          createdAt: now,
-          updatedAt: now,
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: mismatchThreadId,
+        title: 'Other branch',
+        status: 'idle',
+        gitBranch: mismatchBranch,
+        messages: [
+          {
+            id: 'msg-user-mismatch',
+            role: 'user',
+            content: 'Thread started on a different branch.',
+            toolCalls: [],
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 800, outputTokens: 200 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+  })
 
   return {
     projectId,
@@ -1883,35 +1901,31 @@ export function seedComposerBranchWarningFixture(workspaceRoot: string): {
   const now = Date.now()
 
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Thread branch warning',
-          status: 'idle',
-          gitBranch: mismatchBranch,
-          messages: [
-            {
-              id: 'msg-user-branch-warning',
-              role: 'user',
-              content: 'Continue this branch.',
-              toolCalls: [],
-              createdAt: now,
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: now,
-          updatedAt: now,
-        },
-      ],
-      activeThreadId: threadId,
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Thread branch warning',
+        status: 'idle',
+        gitBranch: mismatchBranch,
+        messages: [
+          {
+            id: 'msg-user-branch-warning',
+            role: 'user',
+            content: 'Continue this branch.',
+            toolCalls: [],
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    activeThreadId: threadId,
+  })
 
   return { projectId, threadId, mismatchBranch }
 }
@@ -1944,33 +1958,29 @@ export function seedMarkdownBoldGlobFixture(workspaceRoot: string): void {
     '- **MCP host**: connects to MCP servers via `.cursor/mcp.json` or `~/.cursor/mcp.json`',
   ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Repo core files overview',
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-assistant-bold-glob',
-              role: 'assistant',
-              content,
-              toolCalls: [],
-              createdAt: Date.now(),
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Repo core files overview',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-bold-glob',
+            role: 'assistant',
+            content,
+            toolCalls: [],
+            createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 }
 
 /** PR-style draft table with narrow index/status columns and long branch names. */
@@ -1987,33 +1997,29 @@ export function seedMarkdownTableWrapFixture(workspaceRoot: string): void {
     '| 293 | Queued message composer badge polish | `jkt/auto/queued-message-badge` | DRAFT |',
   ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Open draft PRs',
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-assistant-table-wrap',
-              role: 'assistant',
-              content,
-              toolCalls: [],
-              createdAt: Date.now(),
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Open draft PRs',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-table-wrap',
+            role: 'assistant',
+            content,
+            toolCalls: [],
+            createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 }
 
 /** 3-column table whose first column is a lone code span (e.g. a test name).
@@ -2031,31 +2037,27 @@ export function seedMarkdownTableCodeFirstColumnFixture(workspaceRoot: string): 
     '| `sanitizeRenderedMarkdown` | ❌ | 1 subtest fails — the "is a no-op" test expects `<h2>` tags to survive sanitization |',
   ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify({
-      projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [
-        {
-          id: threadId,
-          title: 'Remaining failures',
-          status: 'idle',
-          messages: [
-            {
-              id: 'msg-assistant-table-code-first',
-              role: 'assistant',
-              content,
-              toolCalls: [],
-              createdAt: Date.now(),
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    }),
-    'utf8',
-  )
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Remaining failures',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-table-code-first',
+            role: 'assistant',
+            content,
+            toolCalls: [],
+            createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
 }
