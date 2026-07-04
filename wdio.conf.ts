@@ -93,6 +93,10 @@ export const config: Options.Testrunner = {
       // stable regardless of which branch the PR is built from.
       COPSE_PANEL_MOCK_BRANCH: E2E_GIT_BRANCH,
       COPSE_PANEL_USER_DATA: e2eUserDataDir,
+      // Filesystem-native thread store (issue #644) — isolate it per run under the
+      // throwaway profile so seeded threads don't touch the developer's real
+      // ~/.copse/workspace. Seed helpers mirror this path.
+      COPSE_WORKSPACE_DIR: join(e2eUserDataDir, 'workspace'),
       // Blank every provider key the app recognises so e2e is deterministic:
       // the mock LLM is used (no real key), and the env-key-detection scan
       // (Settings → General) finds nothing from the runner's environment.

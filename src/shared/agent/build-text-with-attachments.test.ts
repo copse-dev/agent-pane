@@ -61,6 +61,27 @@ describe('buildTextWithAttachments', () => {
     assert.match(result, /line 0\b/)
     assert.match(result, /line 4999\b/)
   })
+
+  it('emits one steering preamble + a line per thread ref, inlining nothing', () => {
+    const result = buildTextWithAttachments('compare these', [], [], {
+      threadRefs: [
+        { title: 'Auth refactor', date: '3d ago', spinePath: '/chat/proj/t1/events.jsonl' },
+        { title: 'Docs update', date: '2026-06-30', spinePath: '/chat/proj/t2/events.jsonl' },
+      ],
+    })
+    assert.match(result, /^compare these/)
+    // Exactly one preamble regardless of how many threads are attached.
+    assert.equal(result.match(/read-only through your file tools/g)?.length, 1)
+    assert.match(result, /- "Auth refactor" \(3d ago\): \/chat\/proj\/t1\/events\.jsonl/)
+    assert.match(result, /- "Docs update" \(2026-06-30\): \/chat\/proj\/t2\/events\.jsonl/)
+    // Nothing inlined → no fenced code blocks from thread refs.
+    assert.doesNotMatch(result, /```/)
+  })
+
+  it('adds no thread block when there are no thread refs', () => {
+    const result = buildTextWithAttachments('hi', [], [], { threadRefs: [] })
+    assert.equal(result, 'hi')
+  })
 })
 
 describe('truncateAttachmentContent', () => {
