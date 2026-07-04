@@ -20,6 +20,15 @@ When extending the renderer or its CSS, preserve these rules:
   to match. Mermaid SVG is produced after sanitization and is not re-sanitized.
   Rationale and the survey of streaming-parser alternatives live in
   `docs/plans/markdown-renderer-hardening.md`.
+- **Package boundary.** The core stays app-independent so it can version and ship on its own
+  (#601). An ESLint `no-restricted-imports` rule (`eslint.config.mjs`, scoped to
+  `packages/streaming-markdown/src`) forbids importing app modules (`@shared`/`@main`/`@renderer`)
+  or climbing out of the package. Host-specific link decoration is injected, not hard-coded: the
+  `LinkDecorator` hook (`setLinkDecorator`, `inline-links.ts`) returns the attributes for a
+  rendered `<a>`, defaulting to the app's workspace/browser routing (`appLinkDecorator`). A host
+  emitting attributes outside the escape/sink allowlists must widen `SAFE_OUTER_TAG_RE`
+  (`escape.ts`) and the DOMPurify `ALLOWED_ATTR` (`sanitize.ts`) to match — those stay the
+  security gate.
 - **Valid block HTML.** Block elements (`<ul>`, `<ol>`, `<h3>`, `<h4>`, `<pre>`, `<table>`,
   `<hr>`) must never end up inside `<p>`. Mixed single-newline blocks (heading → subheading → list)
   are common in LLM output; split at block boundaries before wrapping paragraphs.
