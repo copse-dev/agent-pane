@@ -1,7 +1,12 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { classifySearchQuery } from '@shared/agent/search-routing.ts'
-import { getWorkspaceRoot, resolveWorkspacePath, toRelativePath } from '../services/workspace.ts'
+import {
+  getWorkspaceRoot,
+  resolveWorkspacePath,
+  resolveReadablePath,
+  toRelativePath,
+} from '../services/workspace.ts'
 import { isRgAvailable } from '../services/tool-availability.ts'
 import { formatCodeSearchResults, searchCodeContent } from '../services/indexed-grep.ts'
 import { executeSemanticSearch } from '../services/semantic-search.ts'
@@ -72,7 +77,9 @@ export const searchCodebaseTool = defineTool({
       return 'Regex search unavailable: ripgrep (rg) not found on PATH.'
     }
 
-    const searchRoot = path ? resolveWorkspacePath(path) : root
+    // Regex path resolves the read-only chat store too (#644); the semantic index
+    // below stays workspace-only (chat-store discovery goes through catalog.jsonl).
+    const searchRoot = path ? resolveReadablePath(path) : root
     const { lines, backend } = await searchCodeContent({
       pattern: query,
       searchRoot,

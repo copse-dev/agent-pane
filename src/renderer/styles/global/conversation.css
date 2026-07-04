@@ -261,6 +261,21 @@
   /* pre-wrap on .message-text would otherwise render source newlines between items. */
   white-space: normal;
 }
+/* GFM task lists (#614): the checkbox is the marker, so drop the bullet and the
+   hanging indent. `li.task-list-item` also covers a task item mixed into an
+   otherwise-bulleted list. */
+.message-text ul.contains-task-list {
+  padding-inline-start: 0;
+  list-style: none;
+}
+.message-text li.task-list-item {
+  list-style: none;
+}
+.message-text li.task-list-item input[type='checkbox'] {
+  margin-inline-end: 0.45em;
+  vertical-align: middle;
+  cursor: default;
+}
 .message-text:empty {
   display: none;
 }
@@ -416,4 +431,32 @@
 .message-text pre code {
   background: none;
   padding: 0;
+}
+/* GFM table copy control (#615): mirror the code-block hover affordance. The
+   shell carries the table's block margin so wrapping causes no layout shift, and
+   the button floats in the top-right corner (revealed on hover/focus). */
+.message-text .table-copy-shell {
+  position: relative;
+  margin: var(--spacing-sm) 0;
+}
+.message-text .table-copy-shell > table {
+  margin: 0;
+}
+.table-copy {
+  position: absolute;
+  top: var(--spacing-xs);
+  right: var(--spacing-xs);
+  opacity: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px 8px;
+  transition: opacity 0.1s;
+  z-index: 1;
+}
+.message-text .table-copy-shell:hover .table-copy,
+.message-text .table-copy-shell:focus-within .table-copy {
+  opacity: 1;
 }
