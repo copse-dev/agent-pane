@@ -67,9 +67,9 @@ import { detectAcpAgents } from '../services/acp/acp-detect.ts'
 import { listAcpModelsForAgent } from '../services/acp/acp-agent-service.ts'
 import { runAcpAutoSetup } from '../services/acp/acp-auto-setup.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
-import { listSkills, initSkillsRegistry } from '../services/skills-registry.ts'
-import { listCursorPlugins } from '../services/cursor-plugins.ts'
-import { listCursorHooks } from '../services/cursor-hooks.ts'
+import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
+import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
+import { listCursorHooks } from '../services/skills/cursor-hooks.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
   registerSkillTools,

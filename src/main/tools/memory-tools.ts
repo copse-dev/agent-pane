@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
-import { splitSkillMarkdown } from '../services/parse-skill-frontmatter.ts'
+import { splitSkillMarkdown } from '../services/skills/parse-skill-frontmatter.ts'
 import { getActiveProjectRoot } from '../services/workspace.ts'
 import {
   addKnowledgeNote,

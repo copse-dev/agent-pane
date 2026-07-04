@@ -9,7 +9,7 @@ import {
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
-import { splitSkillMarkdown } from '../parse-skill-frontmatter.ts'
+import { splitSkillMarkdown } from '../skills/parse-skill-frontmatter.ts'
 import { getActiveProjectRoot } from '../workspace.ts'
 
 /**

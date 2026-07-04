@@ -9,7 +9,7 @@ import {
   buildInvokedSkillsBlock,
   buildSkillsCatalogBlock,
   buildSkillsToolsPromptLine,
-} from './skill-prompt.ts'
+} from './skills/skill-prompt.ts'
 import {
   BASE_SYSTEM_PROMPT,
   BASE_SYSTEM_PROMPT_DIRECT_READS,

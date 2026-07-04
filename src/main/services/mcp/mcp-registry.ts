@@ -34,7 +34,7 @@ import {
   discoverCursorPluginRoots,
   isCursorPluginMcpSource,
   resolvePluginMcpConfigPath,
-} from '../cursor-plugins.ts'
+} from '../skills/cursor-plugins.ts'
 
 const CONNECT_TIMEOUT_MS = 30_000
 const GRANTS_STORAGE_KEY = 'mcp-remembered-grants'

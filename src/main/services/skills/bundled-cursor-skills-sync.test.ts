@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import {
   BUNDLED_CURSOR_PLUGINS_COMMIT,
   syncBundledCursorSkills,
-} from '../../../scripts/bundled-cursor-skills-sync.mts'
+} from '../../../../scripts/bundled-cursor-skills-sync.mts'
 
 describe('bundled-cursor-skills-sync', () => {
   let cacheDir = ''

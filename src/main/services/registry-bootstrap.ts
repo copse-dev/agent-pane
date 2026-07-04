@@ -36,7 +36,7 @@ import { browserTools } from '../tools/browser-tools.ts'
 import { rememberTool, recallTool, OKF_MEMORIES_ENABLED_SETTING } from '../tools/memory-tools.ts'
 import { revealPiiTool } from '../tools/reveal-pii-tool.ts'
 import { PII_REDACTION_ENABLED_SETTING } from './security/pii-redactor.ts'
-import { listSkills } from './skills-registry.ts'
+import { listSkills } from './skills/skills-registry.ts'
 import { getSetting } from './storage/settings.ts'
 import { isGhAvailable } from './tool-availability.ts'
 import {

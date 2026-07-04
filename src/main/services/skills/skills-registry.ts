@@ -3,8 +3,8 @@ import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { discoverCursorPluginRoots, resolvePluginSkillsDir } from './cursor-plugins.ts'
 import { listBundledCursorPluginRoots } from './bundled-cursor-skills.ts'
-import { getSetting } from './storage/settings.ts'
-import { getWorkspaceRoot } from './workspace.ts'
+import { getSetting } from '../storage/settings.ts'
+import { getWorkspaceRoot } from '../workspace.ts'
 import {
   folderNameMatchesSkill,
   parseSkillFrontmatter,
@@ -19,7 +19,7 @@ import type {
 } from '@shared/types/skills.ts'
 import { READ_FILE_LIMITS_CEILING } from '@shared/agent/read-file-limits.ts'
 import { extractExternalLinkHosts } from '@shared/skills/extract-skill-links.ts'
-import { notifyRefreshContextEstimate } from './context-estimate-notify.ts'
+import { notifyRefreshContextEstimate } from '../context-estimate-notify.ts'
 
 /** Max bytes read from a skill file (auto-approved, outside workspace). */
 export const SKILL_READ_MAX_BYTES = READ_FILE_LIMITS_CEILING.maxChars * 4

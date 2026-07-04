@@ -5,14 +5,14 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createRegistry, registerSkillTools, syncOkfMemoryTools } from './registry-bootstrap.ts'
 import { ToolRegistry } from './tool-registry.ts'
-import { refreshSkillsRegistry, setSkillsForTest } from './skills-registry.ts'
+import { refreshSkillsRegistry, setSkillsForTest } from './skills/skills-registry.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 import { setSetting } from './storage/settings.test-shim.ts'
 import { setGhAvailableForTest } from './tool-availability.ts'
 import {
   setBundledCursorSkillsRootForTest,
   resetBundledCursorSkillsRootForTest,
-} from './bundled-cursor-skills.ts'
+} from './skills/bundled-cursor-skills.ts'
 
 describe('registerSkillTools', () => {
   let tempRoot = ''

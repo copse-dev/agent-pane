@@ -1,6 +1,6 @@
 import { getWorkspaceRoot } from '../workspace.ts'
 import { isWorkspaceTrusted } from './workspace-trust.ts'
-import { runPermissionHooks } from '../cursor-hooks.ts'
+import { runPermissionHooks } from '../skills/cursor-hooks.ts'
 import type { CursorPermissionHookEvent } from '@shared/types/cursor-hooks.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { classifyShellScope } from './safety-classifier.ts'
