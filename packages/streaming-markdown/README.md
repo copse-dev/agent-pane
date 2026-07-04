@@ -40,7 +40,12 @@ When extending the renderer or its CSS, preserve these rules:
   breaks without `<br>` tags.
 - **Agent-output shapes.** Support `-`, `*`, and `+` list markers. ATX `#` levels map to
   matching `<h1>`–`<h6>` tags; setext underlines (`===`/`---`) map to `<h1>`/`<h2>`
-  (see `render-blocks.ts`).
+  (see `render-blocks.ts`). A GFM task-list marker (`[ ]`/`[x]`/`[X]` followed by a space) at
+  the start of an item's first line renders a read-only `<input type="checkbox" disabled>`
+  (`parseTaskListMarker`/`renderListItem` in `render-blocks.ts`); the item gets
+  `class="task-list-item"` and its list `class="contains-task-list"` for bullet-free styling
+  (#614). `input` + `type`/`checked`/`disabled` are on the DOMPurify allowlist, and a sink hook
+  drops any non-checkbox `<input>` (see `sanitize.ts`).
 - **Benign raw inline HTML.** Attribute-less phrasing tags models emit in prose
   (`<b> <i> <u> <s> <del> <ins> <sub> <sup> <kbd> <mark> <br>`) pass through unescaped
   (`BENIGN_RAW_INLINE_TAG_RE` in `escape.ts`); the DOMPurify sink allowlist mirrors the set.
