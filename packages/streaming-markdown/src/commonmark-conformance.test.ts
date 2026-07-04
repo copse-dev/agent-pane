@@ -66,7 +66,7 @@ describe('CommonMark conformance (at rest)', () => {
     const baseline: ConformanceBaseline = {
       specVersion: SPEC_VERSION,
       source: `commonmark-spec@${SPEC_VERSION} (devDependency)`,
-      note: 'Examples from the official CommonMark spec that renderMarkdown() satisfies at rest, after the spec normalizer. This is a regression baseline, not a conformance goal — the renderer is intentionally app-specific.',
+      note: 'Examples from the official CommonMark spec that renderMarkdown() satisfies at rest, after the spec normalizer. This is a regression baseline, not a conformance goal — the renderer is intentionally app-specific and escapes untrusted HTML rather than passing it through (sanitize-at-the-sink; see sanitize.ts and #600). The HTML blocks (44 examples) and Raw HTML (20 examples) sections fail by design, so 652/652 is not the target; excluding those 64 HTML examples the in-scope conformance ceiling is 588. Per-section current pass counts are in summaryBySection.',
       total: spec.length,
       passing,
       summaryBySection: summarize(passingSet),
