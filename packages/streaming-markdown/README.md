@@ -24,9 +24,13 @@ When extending the renderer or its CSS, preserve these rules:
   `<hr>`) must never end up inside `<p>`. Mixed single-newline blocks (heading → subheading → list)
   are common in LLM output; split at block boundaries before wrapping paragraphs.
 - **Inline formatting order.** Fenced code → inline code → emphasis (delimiter stack) →
-  markdown links → bare HTTP autolinks. Emphasis runs before links so `*foo [bar](/url)*`
-  resolves correctly; link labels may already contain `<em>` / `<strong>` from that pass.
-  See #475 and [`docs/plans/markdown-renderer-hardening.md`](../../docs/plans/markdown-renderer-hardening.md).
+  GFM strikethrough → markdown links → bare HTTP autolinks. Emphasis runs before links so
+  `*foo [bar](/url)*` resolves correctly; link labels may already contain `<em>` / `<strong>`
+  from that pass. Strikethrough (`~~text~~` → `<del>`, `inline-strikethrough.ts`) sits between
+  emphasis and links so `~~*x*~~` nests and a struck `~~[a](b)~~` still resolves its link inside
+  the `<del>`; only paired **double** tildes delimit, so lone `~` (e.g. `20~25`) stays literal,
+  and its streaming hold (`strikethroughHoldStart`) suppresses a half-open trailing `~~foo`.
+  See #475, #613, and [`docs/plans/markdown-renderer-hardening.md`](../../docs/plans/markdown-renderer-hardening.md).
 - **Soft line breaks.** Prose paragraphs preserve single newlines in HTML (CommonMark soft breaks);
   hard breaks (two+ trailing spaces, or a backslash before the newline) emit `<br>` and swallow the
   next line's leading indentation. Breaks are marked before inline rendering (`markHardBreaks` in
@@ -113,7 +117,12 @@ list-style-position: outside`). Bullets should sit clearly inset from headings, 
   headings + lists, explore subagent with `` `snake_case` `` tool names), not single-line `- foo`.
 - **Fenced code.** Non-mermaid fences are highlighted at render time via `highlight.js` (core +
   per-language imports in `highlight.ts`). Unknown tags fall back to escaped plain text; empty
-  lang uses auto-detection. Theme tokens live in `global.css` (VS Code Dark+ inspired).
+  lang uses auto-detection. Theme tokens live in `global.css` (VS Code Dark+ inspired). Content is
+  kept **verbatim** — interior/leading/trailing blank lines and the first line's indentation
+  survive (`highlightFenceCode` no longer trims; blank-only fences are preserved), and only the
+  opening fence's own indentation is stripped from content lines (`parseFenceSlice`). The language
+  is the first word of the info string with backslash escapes / entities decoded
+  (`fenceInfoLanguage`, spec #24: ` `foo\+bar ```→`language-foo+bar`) (#598).
 - **Mermaid diagrams.** Fenced ` ```mermaid ` blocks render as SVG via lazy-loaded `mermaid`
   (`mermaid.ts`). Diagram rendering runs after final markdown insertion (`message_done`, thread
   restore) — not on every streaming token. Fenced blocks are extracted before HTML escaping; prose

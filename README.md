@@ -51,6 +51,10 @@ Conversations live in a filesystem-native store under `~/.copse/workspace/<proje
 
 If you already export provider keys in your shell (e.g. `ANTHROPIC_API_KEY` in `~/.zshrc`), Copse can pick them up for you. This is **opt-in**: click **Scan environment** in first-run setup or under **Settings → General**. Copse reads `process.env` plus a fixed allow-list of your own start-up files (`~/.zshrc`, `~/.bashrc`, `~/.profile`, `~/.config/fish/config.fish`, …), shows a masked preview of any keys it recognises (Anthropic, OpenAI, Cursor, OpenRouter, Mistral, Gemini, DeepSeek, Hugging Face, LM Studio), and lets you import the ones you don't already have configured. Nothing is read until you click Scan, raw secret values never leave the main process, and existing saved keys are never overwritten.
 
+### LM Studio context length resets on restart
+
+LM Studio reloads local models at a small default context length after a reboot, which trips Copse's low-context advisory. Copse reads the loaded context but can't safely reload the model at your machine's maximum — see [`docs/lm-studio-context-persistence.md`](./docs/lm-studio-context-persistence.md) for how to make your chosen context length restart-proof (save a per-model default, or script `lms load --context-length` at login).
+
 ## Commands
 
 | Command            | Purpose                                  |
