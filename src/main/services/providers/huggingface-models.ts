@@ -16,7 +16,7 @@
 // missing fields tolerated); verify against a live response if the import looks
 // empty or mispriced.
 
-import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
+import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import type { ExtraProviderModel } from '@shared/llm/extra-providers.ts'
 
 /** OpenAI-compatible base URL of the HF Inference Providers router. */

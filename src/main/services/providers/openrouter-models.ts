@@ -1,6 +1,6 @@
 import { OPENROUTER_BASE_URL } from '@shared/llm/openrouter.ts'
-import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
-import { getSetting } from './storage/settings.ts'
+import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
+import { getSetting } from '../storage/settings.ts'
 
 export interface OpenRouterModelSummary {
   id: string

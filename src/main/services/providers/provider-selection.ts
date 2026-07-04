@@ -18,7 +18,7 @@ import {
   getSettingTrimmed,
   getLmStudioApiKey,
   resolveApiKey,
-} from './storage/settings.ts'
+} from '../storage/settings.ts'
 import { resolveContextWindow } from './resolve-context-window.ts'
 import {
   fetchLmStudioModelsCached,
