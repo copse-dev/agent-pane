@@ -64,9 +64,10 @@ to the prompt.
 
 ## Follow-ups (not in this change)
 
-- **Cursor rules import** (#636) — read `.cursor/rules/*.mdc` (respecting `alwaysApply` /
-  glob scoping) and legacy `.cursorrules` as project instructions, since we advertise
-  Cursor compatibility but skip its rules today.
+- **Cursor rules import** (#636, _partly implemented — stacked on #637_) — reads
+  `.cursor/rules/*.mdc` marked `alwaysApply` and legacy `.cursorrules` as project
+  instructions. Still open: glob/description-scoped (Auto-Attached / Agent-Requested)
+  rules, which need an active-file context to apply.
 - **Global / user instructions** (#637, _implemented — stacked on #635_) — load
   `~/AGENTS.md` / `~/.claude/CLAUDE.md` as a lower-precedence global layer beneath project
   files, with an instruction `scope` surfaced in the Sources panel.
