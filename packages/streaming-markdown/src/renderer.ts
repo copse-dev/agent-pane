@@ -11,5 +11,8 @@ export { escapeHtml } from './escape.ts'
  */
 export function renderMarkdown(raw: string): string {
   const linkRefs = parseLinkReferenceDefinitions(raw)
-  return renderBlocks(raw, tokenizeBlocks(raw), { linkRefs })
+  // htmlFromIndent is set only here (the top-level entry) so indented raw HTML
+  // follows the raw-HTML policy instead of becoming a <pre> code block (#616);
+  // recursive list/blockquote rendering keeps CommonMark indented-code semantics.
+  return renderBlocks(raw, tokenizeBlocks(raw), { linkRefs, htmlFromIndent: true })
 }

@@ -1,9 +1,9 @@
 import { decodeEscapedPunctuation, encodeBackslashEscapes } from './backslash-escapes.ts'
-import { escapeHtml, escapeHtmlTextNodes } from './escape.ts'
+import { escapeHtmlTextNodes } from './escape.ts'
 import { renderAngleAutolinks } from './inline-autolinks.ts'
 import { renderInlineCode } from './inline-code-spans.ts'
 import { INLINE_HTML_SHIELD_RE, renderEmphasisOutsideInlineHtml } from './inline-emphasis.ts'
-import { renderInlineLinks, safeLinkHref } from './inline-links.ts'
+import { renderAnchor, renderInlineLinks, safeLinkHref } from './inline-links.ts'
 import { renderStrikethrough } from './inline-strikethrough.ts'
 import { type LinkReferenceMap } from './link-references.ts'
 
@@ -55,7 +55,8 @@ function renderStrongWithInlineHtml(text: string): string {
 }
 
 function renderedBareLink(label: string, href: string): string {
-  return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" data-browser-link="true">${label}</a>`
+  // Bare autolinks route through the active LinkDecorator like markdown links (#601).
+  return renderAnchor(label, href)
 }
 
 const BARE_HTTP_URL_RE = /(^|[\s(])((?:https?:\/\/)[^\s<]+)/gi
