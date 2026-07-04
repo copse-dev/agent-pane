@@ -303,12 +303,11 @@ jobs:
       # The build is validated once in the dedicated `build` job below (whose
       # dist artifact the e2e shards reuse), so it no longer runs here.
 
-  # Retrieval-quality gate for the semantic-search backend. The setup action
-  # provisions the gortex binary (vendor/gortex, fetched by postinstall / cache),
-  # so this job indexes the repo and runs the fixture query set, asserting
-  # recall@k and search latency stay within the committed thresholds. A drop in
-  # ranking quality (or a gortex CLI/JSON change that breaks parsing) fails here
-  # rather than silently degrading in-app search.
+  # Retrieval-quality gate for the semantic-search backend. This job indexes the
+  # repo and runs the fixture query set, asserting recall@k and search latency
+  # stay within the committed thresholds. A drop in ranking quality (or a gortex
+  # CLI/JSON change that breaks parsing) fails here rather than silently
+  # degrading in-app search.
   bench:
     needs: [pick-runner, precheck]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
@@ -316,6 +315,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.3
       - uses: ./.github/actions/setup
+      # Guarantee the gortex binary independently of the setup action. On a
+      # self-hosted runner whose baked image predates gortex, the baked-deps seed
+      # sets seeded=true (so npm ci + its postinstall fetch are skipped) yet the
+      # baked layer has no vendor/gortex to copy — leaving the binary absent.
+      # fetch-gortex is idempotent: a no-op when the (checksum-verified) binary is
+      # already present, a download when it isn't.
+      - run: node scripts/fetch-gortex.mts
       # The floor is a breakage detector, not a target: a gortex CLI/JSON change
       # that breaks parsing craters recall to ~0, and that's the main thing this
       # catches. Recall is deterministic per corpus (~81% observed on 16 fixture
