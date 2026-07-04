@@ -51,6 +51,12 @@ const ALLOWED_TAGS = [
   'sup',
   'kbd',
   'mark',
+  // GFM task-list checkboxes (#614). The renderer only ever emits the fixed,
+  // read-only form `<input type="checkbox" disabled [checked]>` inside an
+  // `<li class="task-list-item">`. Only `type`/`checked`/`disabled` are allowed
+  // below, and the `uponSanitizeElement` hook drops any non-checkbox `<input>`,
+  // so no interactive/form payload can survive.
+  'input',
   // Remote-agent artifact images. The renderer only ever emits the locked-down
   // form `<img class="remote-artifact-image" data-remote-artifact-path="…" …>`
   // (no `src`); `hydrateRemoteArtifactImages()` resolves the `src` to a
@@ -77,6 +83,10 @@ const ALLOWED_ATTR = [
   'data-remote-artifact-agent-id',
   'alt',
   'loading',
+  // Task-list checkbox attributes (#614) — read-only booleans, no XSS surface.
+  'type',
+  'checked',
+  'disabled',
 ]
 
 // Only this exact class marks a renderer-produced artifact image. Any `<img>`
@@ -90,6 +100,18 @@ function installImgHook(): void {
   if (imgHookInstalled) return
   imgHookInstalled = true
   DOMPurify.addHook('uponSanitizeElement', (node, data) => {
+    if (data.tagName === 'input') {
+      const el = node as Element
+      // Only the renderer's read-only task-list checkbox is allowed; drop any
+      // other `<input>` (text fields, buttons, image inputs) entirely and force
+      // the checkbox read-only so it can never be a real form control.
+      if (el.getAttribute('type') !== 'checkbox') {
+        el.remove()
+        return
+      }
+      el.setAttribute('disabled', '')
+      return
+    }
     if (data.tagName !== 'img') return
     const el = node as Element
     // Class-gate: drop any image that is not the renderer's artifact image.
