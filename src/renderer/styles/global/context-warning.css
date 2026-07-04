@@ -1,10 +1,8 @@
-/* Persistent startup banner: no chat model with a usable context window. */
+/* Persistent startup banner: no chat model with a usable context window.
+   Lives in normal flow directly below the titlebar (a flex child of #app), so it
+   pushes the app down instead of overlaying the titlebar controls. */
 .context-warning-banner {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 250;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -12,7 +10,6 @@
   background: var(--bg-elevated);
   color: var(--text-primary);
   border-bottom: 1px solid var(--warning, var(--border));
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   font-size: 13px;
   line-height: 1.4;
 }

@@ -59,7 +59,11 @@ export function mountContextWarningBanner(api: ApiClient): ContextWarningBanner 
       el('span', { class: 'context-warning-text' }, message),
       el('span', { class: 'context-warning-actions' }, openBtn, closeBtn),
     )
-    document.body.prepend(host)
+    // Sit in normal flow just below the titlebar so it pushes the app down rather
+    // than overlaying (and intercepting clicks on) the titlebar controls.
+    const titlebar = document.getElementById('titlebar')
+    if (titlebar?.parentElement) titlebar.after(host)
+    else (document.getElementById('app') ?? document.body).prepend(host)
   }
 
   async function refresh(): Promise<void> {

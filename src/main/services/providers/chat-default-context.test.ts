@@ -2,7 +2,7 @@ import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { evaluateChatDefaultContext } from './chat-default-context.ts'
 import { invalidateLmStudioModelsCache } from './lm-studio-models.ts'
-import { setApiKey, deleteApiKey, setSetting } from './storage/settings.test-shim.ts'
+import { setApiKey, deleteApiKey, setSetting } from '../storage/settings.test-shim.ts'
 
 function requestUrl(input: string | URL | Request): string {
   if (typeof input === 'string') return input
@@ -87,5 +87,19 @@ describe('evaluateChatDefaultContext', () => {
     const health = await evaluateChatDefaultContext()
     assert.equal(health.hasDecentChatDefault, false)
     assert.equal(health.bestAvailableContext, null)
+  })
+
+  it('treats mock-LLM mode as healthy without probing providers', async () => {
+    const prev = process.env['COPSE_PANEL_MOCK_LLM']
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    // No fetch stub installed: a real probe would try the network. The guard must
+    // short-circuit before that.
+    try {
+      const health = await evaluateChatDefaultContext()
+      assert.equal(health.hasDecentChatDefault, true)
+    } finally {
+      if (prev === undefined) delete process.env['COPSE_PANEL_MOCK_LLM']
+      else process.env['COPSE_PANEL_MOCK_LLM'] = prev
+    }
   })
 })

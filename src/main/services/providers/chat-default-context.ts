@@ -21,7 +21,7 @@ import { CLOUD_MODELS, getModelInfo } from '@shared/llm/model-catalog.ts'
 import { DEFAULT_LM_STUDIO_URL } from '@shared/lm-studio-defaults.ts'
 import { getResolvedExtraProviders } from './extra-providers-store.ts'
 import { fetchLmStudioModelsCached } from './lm-studio-models.ts'
-import { getSetting, isProviderAvailable } from './storage/settings.ts'
+import { getSetting, isProviderAvailable } from '../storage/settings.ts'
 
 export interface ChatDefaultContextHealth {
   /** True when at least one available chat model reaches the recommended window. */
@@ -94,6 +94,15 @@ async function loadedLmStudioContextWindows(): Promise<number[]> {
  * only for LM Studio, which is cached (60s) and fails soft to "no windows".
  */
 export async function evaluateChatDefaultContext(): Promise<ChatDefaultContextHealth> {
+  // The mock LLM (dev / e2e) answers for any model regardless of context, so a
+  // working chat default effectively exists — don't nag about context there.
+  if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') {
+    return {
+      hasDecentChatDefault: true,
+      minimum: RECOMMENDED_MIN_CONTEXT_WINDOW,
+      bestAvailableContext: null,
+    }
+  }
   const windows = [
     ...availableCloudContextWindows(),
     ...availableExtraProviderContextWindows(),
