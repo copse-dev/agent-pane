@@ -1,0 +1,85 @@
+{
+  "description": "Retrieval-quality fixtures for the semantic-search backend benchmark. Each query has a human-defined gold target (the file a developer would consider the correct answer), chosen independently of what any backend returns so the benchmark is not circular. A query counts as a hit when ANY expectedPath appears in the backend's top-k results. Keep queries phrased as natural-language concepts (not bare symbol names) so they exercise the semantic ranker rather than exact-name matching.",
+  "queries": [
+    {
+      "id": "coalesce-index-updates",
+      "query": "coalesce overlapping semantic index updates into a single in-flight run plus one trailing run",
+      "expectedPaths": ["src/main/services/semantic-index.ts"]
+    },
+    {
+      "id": "cap-index-cpu",
+      "query": "cap the number of worker threads so background indexing does not pin every CPU core",
+      "expectedPaths": ["src/main/services/semantic-index.ts"]
+    },
+    {
+      "id": "ensure-index-on-open",
+      "query": "register and build the semantic index when a workspace is opened",
+      "expectedPaths": ["src/main/services/semantic-index.ts"]
+    },
+    {
+      "id": "format-semantic-hits",
+      "query": "format semantic search hits for display including line ranges and scores",
+      "expectedPaths": ["src/main/services/semantic-index.ts"]
+    },
+    {
+      "id": "parse-ripgrep-json",
+      "query": "parse ripgrep JSON output including match and surrounding context lines",
+      "expectedPaths": ["src/main/services/indexed-grep.ts"]
+    },
+    {
+      "id": "probe-grep-backend",
+      "query": "probe which indexed grep backend is installed and fall back to ripgrep",
+      "expectedPaths": ["src/main/services/indexed-grep.ts"]
+    },
+    {
+      "id": "verify-checksum",
+      "query": "verify a downloaded binary against a SHA-256 checksum before making it executable",
+      "expectedPaths": ["scripts/fetch-gortex.mts", "scripts/fetch-codesearch.mts"]
+    },
+    {
+      "id": "download-extract-binary",
+      "query": "download a release archive and extract the binary out of the tarball or zip",
+      "expectedPaths": ["scripts/fetch-gortex.mts", "scripts/fetch-codesearch.mts"]
+    },
+    {
+      "id": "gh-auth-probe",
+      "query": "decide whether GitHub read-only tools should be exposed by checking gh auth status",
+      "expectedPaths": ["src/main/services/tool-availability.ts"]
+    },
+    {
+      "id": "to-relative-path",
+      "query": "convert an absolute filesystem path into a path relative to the workspace root",
+      "expectedPaths": ["src/main/services/workspace.ts"]
+    },
+    {
+      "id": "classify-search-query",
+      "query": "classify a search query as either a regex pattern or a conceptual semantic question",
+      "expectedPaths": ["src/shared/agent/search-routing.ts"]
+    },
+    {
+      "id": "resolve-bundled-binary",
+      "query": "resolve the path to the bundled semantic search binary shipped with the app",
+      "expectedPaths": ["src/main/services/bundled-semantic.ts"]
+    },
+    {
+      "id": "run-command-timeout",
+      "query": "run an external command with a timeout and a lowered process priority",
+      "expectedPaths": ["src/main/services/command-runner.ts"]
+    },
+    {
+      "id": "search-codebase-tool",
+      "query": "the agent tool that searches the codebase by regex or by meaning and auto-selects the mode",
+      "expectedPaths": ["src/main/tools/search-codebase-tool.ts"]
+    },
+    {
+      "id": "settings-schema-validation",
+      "query": "look up the validation schema for a settings key",
+      "expectedPaths": ["src/main/services/settings-schema.ts"]
+    },
+    {
+      "id": "migrate-legacy-threads",
+      "query": "migrate legacy per-project conversation threads to the new layout",
+      "expectedPaths": ["src/main/services/thread-persistence.ts"]
+    }
+  ]
+}

@@ -303,6 +303,32 @@ jobs:
       # The build is validated once in the dedicated `build` job below (whose
       # dist artifact the e2e shards reuse), so it no longer runs here.
 
+  # Retrieval-quality gate for the semantic-search backend. The setup action
+  # provisions the gortex binary (vendor/gortex, fetched by postinstall / cache),
+  # so this job indexes the repo and runs the fixture query set, asserting
+  # recall@k and search latency stay within the committed thresholds. A drop in
+  # ranking quality (or a gortex CLI/JSON change that breaks parsing) fails here
+  # rather than silently degrading in-app search.
+  bench:
+    needs: [pick-runner, precheck]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runs_on) }}
+    steps:
+      - uses: actions/checkout@v6.0.3
+      - uses: ./.github/actions/setup
+      # p95 ceiling is generous vs the ~150ms observed locally: CI runners are
+      # slower and the daemon is cold. Recall floor sits below the observed
+      # 87.5% so normal ranking variance doesn't flake the build.
+      - run: >-
+          node scripts/semantic-search-bench.mts --backend gortex --gate
+          --min-recall 0.75 --max-p95-ms 3000 --json bench-semantic.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-semantic
+          path: bench-semantic.json
+          if-no-files-found: ignore
+
   build:
     needs: [pick-runner, precheck]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
