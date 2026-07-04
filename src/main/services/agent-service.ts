@@ -145,9 +145,14 @@ export async function runAgent(
   priorMessages: LLMMessage[],
   host: AgentHost,
   registry: ToolRegistry,
-  options?: { invokedSkills?: string[]; priorTodos?: TodoItem[]; workingBrief?: string },
+  options?: {
+    invokedSkills?: string[]
+    priorTodos?: TodoItem[]
+    workingBrief?: string
+    model?: string
+  },
 ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> {
-  const requestedModel = getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
+  const requestedModel = options?.model ?? getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
   const resolved = await resolveAgentChatModel(requestedModel)
   const model = resolved.model
   recordThreadModel(threadId, model)
@@ -200,7 +205,7 @@ export async function runAgent(
       // its estimated usage is reported instead of a silent zero. The error
       // text is separated from any streamed text so the bubble stays readable.
       const partial = err instanceof AcpTurnFailure ? err.partial : null
-      const msg = classifyAgentError(err)
+      const msg = classifyAgentError(err, { acpAgentId })
       sendChunk({ type: 'text', text: partial?.assistantText ? `\n\n${msg}` : msg })
       sendChunk({ type: 'done' })
       return {

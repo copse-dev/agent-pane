@@ -15,9 +15,8 @@ approval UX.
 > authenticated with its own command (e.g. `claude setup-token`). The Settings
 > panel shows the exact install and sign-in commands per agent.
 
-> Status: this is the first slice of the client role (issue #264, Track 1).
-> Terminals and cross-turn session resume are not here yet — see
-> [Limitations](#limitations).
+> Status: client role, second slice (issues #264, #605). Terminals are not
+> here yet — see [Limitations](#limitations).
 
 ## How it works
 
@@ -36,7 +35,7 @@ approval UX.
   are handed to the agent via `session/new`, so it can mount them itself. The
   same trust and enable gating applies as for Copse's own connections.
 - A curated slice of **Copse's own tools** (GitHub/CI, semantic search,
-  staged-diff visibility, web/browser) is offered as a per-turn localhost MCP
+  staged-diff visibility, web/browser) is offered as a per-session localhost MCP
   server (the **native-tool bridge**, issue #602) when the agent supports http
   MCP servers. Calls execute inside Copse, so the normal permission gate and
   approval dialogs apply. Disable with the `acpNativeBridgeEnabled` setting.
@@ -51,7 +50,12 @@ approval UX.
   sandbox — sandboxed turns get a prompt note telling the agent so. Agent-run
   `git push`/`npm install` fail inside the sandbox — use Copse's own tools (or
   the bridge) for those.
-- Aborting the turn sends `session/cancel` and tears the agent process down.
+- **Sessions persist per thread** (issue #605): follow-up turns reuse the same
+  agent process and ACP session, so the agent keeps its own context (no
+  transcript replay) and background helpers it spawned keep running between
+  turns; their queued updates surface at the start of the next turn. Aborting a
+  turn sends `session/cancel` but keeps the session alive; sessions idle for 10
+  minutes are torn down.
 
 > **Scope of the write guarantee:** the diff queue only sees writes the agent
 > routes through `fs/write_text_file`. Well-behaved adapters (the Claude
@@ -161,9 +165,11 @@ native loop to an external ACP _client_.
 This first slice intentionally leaves the following for follow-ups (issue #264):
 
 - **No terminals.** `terminal/*` requests are not backed yet.
-- **No session resume.** Each turn spawns a fresh agent process and a fresh ACP
-  session. Prior conversation is replayed into the prompt as a compact preamble
-  so follow-ups keep context, but the agent has no durable session memory yet.
+- **Sessions are per-thread and idle-bounded.** The agent process and its ACP
+  session persist across turns in a thread (issue #605), so the agent keeps its
+  own memory and background helpers survive between turns — but a session idle
+  for 10 minutes is reaped, and a config change or failed turn respawns it; in
+  those cases the prior conversation is replayed once as a compact preamble.
 - **Text only on input.** Image attachments are dropped before the prompt is
   sent (the agent receives the text blocks).
 - **Native-tool bridge is http-only.** Agents that support only stdio MCP

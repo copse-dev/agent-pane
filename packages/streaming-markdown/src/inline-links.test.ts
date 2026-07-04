@@ -45,4 +45,26 @@ describe('renderInlineLinks', () => {
       '<a href="/uri" target="_blank" rel="noopener noreferrer" data-browser-link="true"><img src="moon.jpg" alt="moon" data-md-rendered="1" /></a>',
     )
   })
+
+  it('parses links whose labels contain rendered <code> spans', () => {
+    assert.equal(
+      renderInlineLinks('[<code>docs/foo.md</code>](docs/foo.md)', new Map(), (label) => label),
+      '<a href="docs/foo.md" class="workspace-markdown-link" data-workspace-link="true"><code>docs/foo.md</code></a>',
+    )
+  })
+
+  it('reduces image alt text to plain text (spec 574/575/577)', () => {
+    assert.equal(
+      renderInlineSpans('![foo *bar*](train.jpg)'),
+      '<img src="train.jpg" alt="foo bar" data-md-rendered="1" />',
+    )
+    assert.equal(
+      renderInlineSpans('![foo [bar](/url)](/url2)'),
+      '<img src="/url2" alt="foo bar" data-md-rendered="1" />',
+    )
+    assert.equal(
+      renderInlineSpans('![foo ![bar](/url)](/url2)'),
+      '<img src="/url2" alt="foo bar" data-md-rendered="1" />',
+    )
+  })
 })

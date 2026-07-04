@@ -15,6 +15,26 @@ npm install
 npm run dev
 ```
 
+### Hardened npm profiles (`ignore-scripts`)
+
+If your npm is configured with `ignore-scripts=true` (a common supply-chain hardening setting in `~/.npmrc`), `npm install` **skips this project's `postinstall`** — including the step that makes node-pty's `spawn-helper` executable. The published `node-pty` prebuild ships `spawn-helper` as mode `0644`, and nothing in node-pty's own install flow adds the execute bit, so without our `postinstall` the integrated terminal fails to launch with:
+
+```
+Failed to start terminal: ... 'terminal:create': Error: posix_spawnp failed.
+```
+
+Keep `ignore-scripts` on if you want it — just run the native postinstall once after each install (the chmod runs before the electron rebuild, so you can skip that):
+
+```bash
+SKIP_ELECTRON_REBUILD=1 npx tsx scripts/postinstall-native.mts
+```
+
+Or let scripts run for a single install without changing your global config:
+
+```bash
+npm install --ignore-scripts=false
+```
+
 Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for cloud models, add an `OPENROUTER_API_KEY` (Settings → API Keys) to reach Claude, GPT, Gemini, Llama and more through [OpenRouter](https://openrouter.ai), or configure a local provider in Settings. For cheap/free tiers you can also add a `MISTRAL_API_KEY` (Mistral's free Experiment tier), `GEMINI_API_KEY` (Google's free-tier Gemini Flash models), or `DEEPSEEK_API_KEY` (low-cost DeepSeek) — each appears as its own group in the model picker. Without keys, the app falls back to a built-in mock LLM for development.
 
 ### How API keys are stored
@@ -26,6 +46,10 @@ If **no keyring is available** — common on a headless or minimal Linux install
 ### Detecting keys from your environment
 
 If you already export provider keys in your shell (e.g. `ANTHROPIC_API_KEY` in `~/.zshrc`), Copse can pick them up for you. This is **opt-in**: click **Scan environment** in first-run setup or under **Settings → General**. Copse reads `process.env` plus a fixed allow-list of your own start-up files (`~/.zshrc`, `~/.bashrc`, `~/.profile`, `~/.config/fish/config.fish`, …), shows a masked preview of any keys it recognises (Anthropic, OpenAI, Cursor, OpenRouter, Mistral, Gemini, DeepSeek, Hugging Face, LM Studio), and lets you import the ones you don't already have configured. Nothing is read until you click Scan, raw secret values never leave the main process, and existing saved keys are never overwritten.
+
+### LM Studio context length resets on restart
+
+LM Studio reloads local models at a small default context length after a reboot, which trips Copse's low-context advisory. Copse reads the loaded context but can't safely reload the model at your machine's maximum — see [`docs/lm-studio-context-persistence.md`](./docs/lm-studio-context-persistence.md) for how to make your chosen context length restart-proof (save a per-model default, or script `lms load --context-length` at login).
 
 ## Commands
 

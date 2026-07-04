@@ -8,6 +8,7 @@ import type {
   PermissionOption,
   PermissionOptionKind,
   StopReason,
+  Usage,
   WriteTextFileRequest,
   WriteTextFileResponse,
 } from '@agentclientprotocol/sdk'
@@ -22,14 +23,14 @@ import {
 } from '@shared/llm/stream-retry.ts'
 import {
   listAcpAgentModels,
-  runAcpAgentPrompt,
+  runAcpSessionPrompt,
   willSandboxAcpAgent,
   type AcpAgentSpawnConfig,
   type AcpClientHandlers,
   type AcpModelSelector,
 } from './acp-client.ts'
 import { getAcpAgent, resolveAcpSandbox } from './acp-agent-registry.ts'
-import { startAcpNativeBridge } from './acp-native-bridge.ts'
+import { acquireAcpSession, disposeAcpSession } from './acp-session-pool.ts'
 import { listForwardableMcpServers } from '../mcp-registry.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import { isAcpPermissionRemembered, rememberAcpPermission } from './acp-permission-grants.ts'
@@ -62,9 +63,11 @@ import {
  * - `fs/write_text_file`         → the diff-approval queue (`diff-queue.ts`),
  *   blocking the agent's write until the user approves or rejects.
  *
- * Each turn spawns a fresh agent process and a fresh ACP session — cross-turn
- * memory (session/resume) is a follow-up (issue #264, C2), so prior conversation
- * is replayed into the prompt as a compact preamble to preserve continuity.
+ * Sessions are persistent per thread (issue #605): the agent process and ACP
+ * session live in `acp-session-pool.ts` across turns, so the agent keeps its
+ * own memory (no transcript replay on reuse) and background helpers it spawned
+ * survive between turns. History is replayed only into a fresh session — first
+ * turn, config change, post-failure respawn, or idle-reap.
  */
 
 export interface RunAcpAgentOptions {
@@ -217,10 +220,7 @@ export async function runAcpAgentFromSettings(
   }
 
   const sandbox = resolveAcpSandbox(agent)
-  const prompt = buildAcpPrompt(options.userPrompt, options.priorMessages, {
-    sandboxed: willSandboxAcpAgent(sandbox),
-  })
-  if (!prompt.trim()) {
+  if (!promptPayloadFromUserContent(options.userPrompt).text.trim()) {
     throw new Error('ACP agent prompt cannot be empty.')
   }
 
@@ -229,22 +229,16 @@ export async function runAcpAgentFromSettings(
   // (issue #602, tier 1). Best-effort: a config-read failure downgrades the turn
   // to "no forwarded servers" instead of failing it.
   const mcpServers = await listForwardableMcpServers().catch(() => [])
-  // Copse's own curated tools over a per-turn localhost MCP server (#602,
-  // tier 2). Started before the spawn so a sandboxed agent's seatbelt profile
-  // can include loopback; closed when the turn settles. Best-effort like the
-  // forwarded servers above.
-  const bridge = options.registry
-    ? await startAcpNativeBridge(options.registry, options.signal).catch(() => null)
-    : null
+  // No `model` and no `nativeBridge` here: the session pool owns the bridge
+  // (it must exist before spawn for the seatbelt's loopback), and the model
+  // switches live via session/set_config_option so it never forces a respawn.
   const spawnConfig: AcpAgentSpawnConfig = {
     command: agent.command,
     cwd,
     ...(agent.args ? { args: agent.args } : {}),
     ...(agent.env ? { env: agent.env } : {}),
-    ...(model ? { model } : {}),
     ...(mcpServers.length > 0 ? { mcpServers } : {}),
     ...(sandbox ? { sandbox } : {}),
-    ...(bridge ? { nativeBridge: { url: bridge.url, token: bridge.token } } : {}),
   }
 
   // Accumulate streamed assistant text so the turn contributes to thread history
@@ -273,19 +267,47 @@ export async function runAcpAgentFromSettings(
   const baseline = await captureWorktreeBaseline()
   const denialMark = networkDenialMarker()
 
+  // One attempt = acquire (reuse the thread's live session, or open a fresh
+  // one), install this turn's handlers, prompt. History is replayed only into
+  // a FRESH session — a reused one already has its own memory of the thread
+  // (issue #605). A failed attempt disposes the session so the retry (and the
+  // next turn) reopens cleanly with a full replay.
+  let lastPrompt = ''
+  const attempt = async (): Promise<{ stopReason: StopReason; usage?: Usage | null }> => {
+    const { entry, fresh } = await acquireAcpSession({
+      threadId: options.threadId,
+      config: spawnConfig,
+      registry: options.registry,
+    })
+    entry.open.handlers.current = handlers
+    const prompt = buildAcpPrompt(options.userPrompt, fresh ? options.priorMessages : [], {
+      sandboxed: willSandboxAcpAgent(sandbox),
+      includeNotes: fresh,
+    })
+    lastPrompt = prompt
+    try {
+      return await runAcpSessionPrompt(entry.open, prompt, model, options.signal)
+    } catch (err) {
+      disposeAcpSession(options.threadId)
+      throw err
+    } finally {
+      entry.lastUsedAt = Date.now()
+    }
+  }
+
   let stopReason: StopReason
-  let usage: Awaited<ReturnType<typeof runAcpAgentPrompt>>['usage']
+  let usage: Usage | null | undefined
   try {
-    ;({ stopReason, usage } = await runWithAcpRetry(
-      () => runAcpAgentPrompt(spawnConfig, prompt, handlers, options.signal),
-      { signal: options.signal, hasProgress: () => sawChunk },
-    ))
+    ;({ stopReason, usage } = await runWithAcpRetry(attempt, {
+      signal: options.signal,
+      hasProgress: () => sawChunk,
+    }))
   } catch (err) {
     // The turn died mid-flight. Attribute what it visibly consumed (estimated —
     // the agent never got to report usage) and hand the partial transcript to
     // the caller so history and the usage panel don't pretend it never ran.
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated inside the onChunk callback above; TS narrows to the `false` initializer
-    const turn = sawChunk ? acpTurnUsage(null, prompt, assistantText) : null
+    const turn = sawChunk ? acpTurnUsage(null, lastPrompt, assistantText) : null
     if (turn) {
       options.onChunk({
         type: 'usage',
@@ -305,8 +327,6 @@ export async function runAcpAgentFromSettings(
         ? { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens }
         : { inputTokens: 0, outputTokens: 0 },
     })
-  } finally {
-    if (bridge) await bridge.close()
   }
 
   emitNetworkDenialAudit(denialMark, options.onChunk)
@@ -317,7 +337,7 @@ export async function runAcpAgentFromSettings(
   // is optional/experimental (e.g. Cursor's adapter omits it), so when it's absent
   // we fall back to a local ~4 chars/token estimate of what we sent and received —
   // flagged `estimated` so the panel can mark it as approximate.
-  const turn = acpTurnUsage(usage, prompt, assistantText)
+  const turn = acpTurnUsage(usage, lastPrompt, assistantText)
   if (turn.inputTokens || turn.outputTokens) {
     options.onChunk({
       type: 'usage',
@@ -612,23 +632,27 @@ export const ACP_SANDBOX_PROMPT_NOTE =
   'scratch files in $TMPDIR or the workspace.'
 
 /**
- * Flatten the user prompt to text, replaying prior conversation as a compact
- * preamble. A fresh ACP session has no memory of earlier turns, so without this
- * a follow-up message would reach the agent with no context. `sandboxed` turns
- * additionally get {@link ACP_SANDBOX_PROMPT_NOTE} so the agent knows the
- * confines it is operating under.
+ * Flatten the user prompt to text. With persistent sessions (issue #605) the
+ * transcript replay and the session notes are only needed when the session is
+ * FRESH — a reused session already carries both in its own context, and
+ * re-sending them every turn would waste the agent's tokens (`includeNotes:
+ * false`, empty `priorMessages` on reuse). `sandboxed` turns additionally get
+ * {@link ACP_SANDBOX_PROMPT_NOTE} so the agent knows its confines.
  */
 export function buildAcpPrompt(
   userPrompt: UserContent,
   priorMessages: LLMMessage[],
-  opts?: { sandboxed?: boolean },
+  opts?: { sandboxed?: boolean; includeNotes?: boolean },
 ): string {
-  const note = ACP_TURN_PROMPT_NOTE + (opts?.sandboxed ? `\n\n${ACP_SANDBOX_PROMPT_NOTE}` : '')
+  const includeNotes = opts?.includeNotes ?? true
+  const note = includeNotes
+    ? ACP_TURN_PROMPT_NOTE + (opts?.sandboxed ? `\n\n${ACP_SANDBOX_PROMPT_NOTE}` : '') + '\n\n'
+    : ''
   const current = promptPayloadFromUserContent(userPrompt).text
   const transcript = priorMessages.map(messageLine).filter(Boolean).join('\n')
-  if (!transcript) return `${note}\n\n${current}`
+  if (!transcript) return `${note}${current}`
   return (
-    `${note}\n\n` +
+    note +
     'You are continuing an existing Copse chat. Use the prior conversation below ' +
     'for context, then respond to the new message.\n\n' +
     `${transcript}\n\n--- New message ---\n${current}`

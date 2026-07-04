@@ -12,9 +12,34 @@ import {
   switchProjectThread,
 } from '../controller/projects.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
+import { isThreadAwaitingAttention } from '../controller/attention.ts'
 
 const ICON_SIZE = '16'
 const SVG_NS = 'http://www.w3.org/2000/svg'
+
+/**
+ * Small bell shown on a thread (or collapsed project) that is waiting on the
+ * user while it isn't the focused thread — e.g. a background run hit a shell
+ * approval or an `ask_user` question. Draws the eye to work that would
+ * otherwise be silently blocked in another project/thread.
+ */
+function attentionBell(label: string): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg')
+  svg.setAttribute('class', 'chat-attention-bell')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('width', '14')
+  svg.setAttribute('height', '14')
+  svg.setAttribute('role', 'img')
+  svg.setAttribute('aria-label', label)
+  const path = document.createElementNS(SVG_NS, 'path')
+  path.setAttribute('fill', 'currentColor')
+  path.setAttribute(
+    'd',
+    'M12 2a1 1 0 0 1 1 1v.6a6 6 0 0 1 5 5.9v3l1.4 2.9A1 1 0 0 1 18.5 17h-13a1 1 0 0 1-.9-1.6L6 12.5v-3a6 6 0 0 1 5-5.9V3a1 1 0 0 1 1-1Zm0 20a2.5 2.5 0 0 1-2.45-2h4.9A2.5 2.5 0 0 1 12 22Z',
+  )
+  svg.append(path)
+  return svg
+}
 
 function settingsIcon(): SVGSVGElement {
   const svg = document.createElementNS(SVG_NS, 'svg')
@@ -79,6 +104,15 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         el('span', { class: 'project-twisty' }, isExpanded ? '▼' : '▶'),
         el('span', { class: 'project-name' }, project.name),
       )
+      // A collapsed project hides its thread rows, so surface any thread of its
+      // own that is waiting on the user right on the project row (expanded
+      // projects show the per-thread bells below instead).
+      if (
+        !isExpanded &&
+        getSidebarThreads(store, project.id).some((t) => isThreadAwaitingAttention(t.id))
+      ) {
+        projectRow.append(attentionBell('A thread in this project needs your attention'))
+      }
       projectRow.addEventListener('click', () => {
         switchProject(store, api, project.id)
       })
@@ -143,6 +177,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           switchProjectThread(store, api, project.id, thread.id)
         })
 
+        if (isThreadAwaitingAttention(thread.id)) {
+          chatRow.classList.add('needs-attention')
+          chatRow.append(attentionBell('This thread needs your attention'))
+        }
+
         const del = el('button', { class: 'chat-delete', 'aria-label': 'Delete thread' }, '✕')
         del.addEventListener('click', (e) => {
           e.stopPropagation()
@@ -173,6 +212,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     store.on('projects_changed', render),
     store.on('threads_changed', render),
     store.on('workspace_changed', render),
+    store.on('attention_changed', render),
   ]
 
   render()
