@@ -51,6 +51,23 @@ When extending the renderer or its CSS, preserve these rules:
   (`BENIGN_RAW_INLINE_TAG_RE` in `escape.ts`); the DOMPurify sink allowlist mirrors the set.
   Anything with attributes, and all block/structural raw HTML, stays escaped — see the
   raw-HTML policy discussion in #600 before widening this.
+- **Indented HTML blocks.** CommonMark makes any 4-space-indented line an indented code block,
+  so a model that indents a `<div>`/`<table>` snippet would otherwise get a literal `<pre><code>`
+  dump. At the **top level** (`renderMarkdown` sets `htmlFromIndent`), an `indented_code` block
+  whose first dedented line opens with a block-level HTML tag (`isIndentedHtmlBlock`,
+  `indented-html.ts`) is reclassified as prose so it follows the raw-HTML policy above — the same
+  output as its un-indented form. Gated to the top level on purpose: list/blockquote content is
+  tokenized recursively, so nested indented code keeps CommonMark semantics. Genuine indented code
+  that merely opens with an inline tag (spec #110, `    <a/>` then `*hi*`) is unaffected because
+  `a` is not in the block-tag list (#616). Example — this indented block renders as escaped
+  `&lt;div&gt;…` prose, not a code block:
+
+  ```text
+      <div>
+      <p>hi</p>
+      </div>
+  ```
+
 - **Streaming hold.** Incomplete block starts (fences, thematic breaks, blockquotes) stream as
   plain text in the inline pending tail until their line ends. Open fenced code blocks
   forward-pass into `.stream-forming` as `<pre class="stream-fence-forming">` with highlight.js on
