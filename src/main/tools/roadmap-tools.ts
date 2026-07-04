@@ -1,24 +1,43 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import {
-  addRoadmapItem,
-  loadRoadmapItems,
-  setRoadmapItemStatus,
-  ROADMAP_STATUSES,
-  type RoadmapItem,
-} from '../services/roadmap-plans-store.ts'
-
-function formatItem(item: RoadmapItem): string {
-  const notes = item.notes ? `\n  notes: ${item.notes}` : ''
-  return `- [${item.id}] (${item.status}) ${item.prompt}${notes}`
-}
+  addKnowledgeNote,
+  getKnowledgeNote,
+  loadKnowledgeNotes,
+  setKnowledgeNoteStatus,
+  type KnowledgeNote,
+} from '../services/knowledge-store.ts'
 
 /**
- * Experimental roadmap-plans tool (issue #556). Lets the agent record prompts to
- * run later and track their status across sessions, so longer-horizon work is
- * captured without being started prematurely. Registered only when the
- * `roadmapPlansEnabled` experimental setting is on.
+ * Experimental roadmap-plans feature (issue #556). A roadmap is a backlog of
+ * future-work prompts to run over a longer time horizon than the current change.
+ *
+ * Roadmap items are now stored as the `Roadmap` type in the shared knowledge
+ * store (issue #645) rather than a bespoke `items.json`: each item is an OKF
+ * markdown note whose body is the prompt, with the lifecycle `status` in
+ * frontmatter and any waiting-on context in a `notes` field. The tool surface and
+ * the `roadmapPlansEnabled` experimental flag are unchanged. Registered only when
+ * the flag is on (`registry-bootstrap.ts`).
  */
+export const ROADMAP_PLANS_ENABLED_SETTING = 'roadmapPlansEnabled'
+
+/** Knowledge-note type used for roadmap items. */
+const ROADMAP_TYPE = 'Roadmap'
+
+/**
+ * Where a roadmap item sits relative to in-flight work. `ready` means nothing
+ * blocks it; `blocked` / `conflicts` are set once starting it now would collide
+ * with an open PR. `done` and `archived` are terminal.
+ */
+export const ROADMAP_STATUSES = ['ready', 'blocked', 'conflicts', 'done', 'archived'] as const
+
+export type RoadmapStatus = (typeof ROADMAP_STATUSES)[number]
+
+function formatItem(note: KnowledgeNote): string {
+  const notes = note.fields['notes'] ? `\n  notes: ${note.fields['notes']}` : ''
+  return `- [${note.id}] (${note.status ?? 'ready'}) ${note.body}${notes}`
+}
+
 export const roadmapPlanTool = defineTool({
   name: 'roadmap_plan',
   description:
@@ -32,25 +51,35 @@ export const roadmapPlanTool = defineTool({
       .string()
       .optional()
       .describe('For action=add: optional context, e.g. which PR this waits on.'),
-    id: z.string().optional().describe('For action=set_status: the item id, e.g. "r3".'),
+    id: z.string().optional().describe('For action=set_status: the item id from `list`.'),
     status: z.enum(ROADMAP_STATUSES).optional().describe('For action=set_status: the new status.'),
   }),
   execute({ action, prompt, notes, id, status }) {
     if (action === 'add') {
       const trimmed = prompt?.trim()
       if (!trimmed) return 'roadmap_plan add requires a non-empty prompt.'
-      const item = addRoadmapItem({ prompt: trimmed, notes })
-      return `Added roadmap item ${item.id}.\n${formatItem(item)}`
+      const note = addKnowledgeNote({
+        type: ROADMAP_TYPE,
+        title: trimmed.slice(0, 80),
+        body: trimmed,
+        status: 'ready',
+        fields: notes?.trim() ? { notes: notes.trim() } : {},
+      })
+      return `Added roadmap item ${note.id}.\n${formatItem(note)}`
     }
     if (action === 'set_status') {
       if (!id) return 'roadmap_plan set_status requires an item id.'
       if (!status) return 'roadmap_plan set_status requires a status.'
-      const updated = setRoadmapItemStatus(id, status)
+      const existing = getKnowledgeNote(id)
+      if (!existing || existing.type !== ROADMAP_TYPE) {
+        return `No roadmap item with id "${id}".`
+      }
+      const updated = setKnowledgeNoteStatus(id, status)
       return updated
-        ? `Updated ${updated.id} → ${updated.status}.`
+        ? `Updated ${updated.id} → ${updated.status ?? status}.`
         : `No roadmap item with id "${id}".`
     }
-    const items = loadRoadmapItems()
+    const items = loadKnowledgeNotes(ROADMAP_TYPE)
     if (items.length === 0) {
       return 'The roadmap is empty. Use roadmap_plan add to record future work.'
     }
