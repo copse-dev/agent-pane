@@ -41,6 +41,41 @@ runs:
       env:
         HOMEBREW_NO_AUTO_UPDATE: '1'
         HOMEBREW_NO_ANALYTICS: '1'
+    # Warm-start on self-hosted runners whose image baked the dependency tree
+    # (see .github/runner*/Dockerfile). If the baked layer's lockfile hash still
+    # matches this checkout, seed node_modules + vendor/codesearch straight from
+    # local disk (a few seconds) instead of restoring ~525 MB from the Actions
+    # cache service — which crawled at ~1 MB/s (≈8 min) on freshly reprovisioned
+    # runners. Runs AFTER checkout (checkout's `clean` would wipe a pre-placed
+    # tree), and sets `seeded=true` to skip the cache restore + npm ci below. A
+    # miss — no baked layer (GitHub-hosted, or an older image) or a lockfile bump
+    # — leaves seeded=false, so the existing cache / npm ci path runs unchanged.
+    - id: baked
+      shell: bash
+      run: |
+        seeded=false
+        if [ -n "${COPSE_BAKED_DEPS:-}" ] && [ -f "${COPSE_BAKED_DEPS}/.ready" ]; then
+          want="$(sha256sum package-lock.json 2>/dev/null | awk '{ print $1 }' || echo want)"
+          have="$(cat "${COPSE_BAKED_DEPS}/.lockhash" 2>/dev/null || echo have)"
+          if [ "$want" = "$have" ]; then
+            # Best-effort: the seed runs inside the `if` condition, so a failing
+            # copy is caught (not fatal under set -e) — clean up and fall back.
+            if rm -rf node_modules \
+               && cp -a "${COPSE_BAKED_DEPS}/node_modules" node_modules \
+               && { [ ! -d "${COPSE_BAKED_DEPS}/vendor/codesearch" ] \
+                    || { mkdir -p vendor && rm -rf vendor/codesearch \
+                         && cp -a "${COPSE_BAKED_DEPS}/vendor/codesearch" vendor/codesearch; }; }; then
+              seeded=true
+              echo "Seeded node_modules + vendor/codesearch from ${COPSE_BAKED_DEPS} (lockfile match)"
+            else
+              echo "Baked-dep seed failed — cleaning up and falling back to cache / npm ci"
+              rm -rf node_modules
+            fi
+          else
+            echo "Baked deps present but stale (lockfile changed) — using cache / npm ci"
+          fi
+        fi
+        echo "seeded=$seeded" >> "$GITHUB_OUTPUT"
     # Cache the fully-installed dependency tree, not just the npm download cache.
     # The key is the lockfile hash, so an electron/node-pty bump (which changes
     # the native ABI) busts it and forces a fresh electron-rebuild. vendor/
@@ -55,6 +90,9 @@ runs:
     # (or vice-versa) fails at load with "@esbuild/darwin-arm64 could not be found".
     - uses: actions/cache@v4
       id: deps
+      # Skip the remote cache entirely when the baked layer already seeded the
+      # tree — the whole point is to avoid this network transfer.
+      if: steps.baked.outputs.seeded != 'true'
       with:
         path: |
           node_modules
@@ -78,7 +116,7 @@ runs:
     # additionally overrides any host `omit=optional`, which would otherwise drop
     # esbuild's @esbuild/<os>-<arch> optional package.
     - run: npm ci --include=optional
-      if: steps.deps.outputs.cache-hit != 'true'
+      if: steps.baked.outputs.seeded != 'true' && steps.deps.outputs.cache-hit != 'true'
       shell: bash
       env:
         npm_config_ignore_scripts: 'false'

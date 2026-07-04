@@ -43,9 +43,17 @@ API keys entered in **Settings → API Keys** are persisted in the app's `settin
 
 If **no keyring is available** — common on a headless or minimal Linux install — `safeStorage` cannot encrypt, so keys are stored as **base64 plaintext** instead (the app logs a one-line warning and keeps working so it is still usable without a keyring). In that case anyone with read access to your profile directory can recover the keys. To get encryption at rest on Linux, install and unlock a keyring such as `gnome-keyring` (with `libsecret`) before launching the app. Prefer not to store a key on disk at all? Provide it via the matching environment variable (e.g. `ANTHROPIC_API_KEY`) instead — env-var keys are never written to `settings.json`.
 
+### Where chat threads are stored
+
+Conversations live in a filesystem-native store under `~/.copse/workspace/<projectId>/<threadId>/` — one directory per thread (a tiny `meta.json`, an append-only `events.jsonl` history, and Markdown message files), not in `config.json`. This makes each thread greppable and lets the agent `@`-reference a past conversation and explore it read-only with its file tools. Set `COPSE_WORKSPACE_DIR` to relocate the store. Format details: [docs/thread-store-format.md](docs/thread-store-format.md).
+
 ### Detecting keys from your environment
 
 If you already export provider keys in your shell (e.g. `ANTHROPIC_API_KEY` in `~/.zshrc`), Copse can pick them up for you. This is **opt-in**: click **Scan environment** in first-run setup or under **Settings → General**. Copse reads `process.env` plus a fixed allow-list of your own start-up files (`~/.zshrc`, `~/.bashrc`, `~/.profile`, `~/.config/fish/config.fish`, …), shows a masked preview of any keys it recognises (Anthropic, OpenAI, Cursor, OpenRouter, Mistral, Gemini, DeepSeek, Hugging Face, LM Studio), and lets you import the ones you don't already have configured. Nothing is read until you click Scan, raw secret values never leave the main process, and existing saved keys are never overwritten.
+
+### LM Studio context length resets on restart
+
+LM Studio reloads local models at a small default context length after a reboot, which trips Copse's low-context advisory. Copse reads the loaded context but can't safely reload the model at your machine's maximum — see [`docs/lm-studio-context-persistence.md`](./docs/lm-studio-context-persistence.md) for how to make your chosen context length restart-proof (save a per-model default, or script `lms load --context-length` at login).
 
 ## Commands
 

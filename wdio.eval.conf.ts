@@ -81,11 +81,14 @@ export const config: Options.Testrunner = {
       join(process.cwd(), `.wdio-eval-userdata-${randomBytes(4).toString('hex')}-`),
     )
     process.env.COPSE_PANEL_USER_DATA = evalUserDataDir
+    const evalWorkspaceDir = join(evalUserDataDir, 'workspace')
+    process.env.COPSE_WORKSPACE_DIR = evalWorkspaceDir
 
     const evalEnv: Record<string, string> = {
       COPSE_E2E: '1',
       COPSE_AGENT_EVAL: '1',
       COPSE_PANEL_USER_DATA: evalUserDataDir,
+      COPSE_WORKSPACE_DIR: evalWorkspaceDir,
       ANTHROPIC_API_KEY: '',
       OPENAI_API_KEY: '',
     }

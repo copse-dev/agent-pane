@@ -1,4 +1,5 @@
 /** Shared block-level line patterns and fence helpers (tokenizer + renderer). */
+import { decodeHTMLStrict } from 'entities'
 
 /** Width of a line's leading whitespace in columns, expanding tabs to 4-col stops. */
 export function leadingIndentWidth(line: string): number {
@@ -75,6 +76,32 @@ export function fenceMarker(line: string): { marker: string; len: number; info: 
   return { marker, len: marker.length, info: (m[2] ?? '').trim() }
 }
 
+/** Number of leading spaces on the opening fence line (CommonMark allows 0–3). */
+function fenceOpenIndent(open: string): number {
+  return open.match(/^ {0,3}/)?.[0].length ?? 0
+}
+
+/** Remove up to `max` leading spaces from a content line (fence-indent removal). */
+function stripLeadingSpaces(line: string, max: number): string {
+  let i = 0
+  while (i < max && line[i] === ' ') i++
+  return line.slice(i)
+}
+
+const FENCE_INFO_BACKSLASH_RE = /\\([!-/:-@[-`{-~])/g
+
+/**
+ * The code-fence language: the first word of the info string, with backslash
+ * escapes and HTML entities decoded (CommonMark spec #24, ``` ```foo\+bar ```
+ * → `language-foo+bar`). Everything after the first whitespace run is metadata
+ * and does not affect the language class.
+ */
+export function fenceInfoLanguage(info: string): string {
+  const firstWord = info.trim().split(/\s+/)[0] ?? ''
+  if (!firstWord) return ''
+  return decodeHTMLStrict(firstWord.replace(FENCE_INFO_BACKSLASH_RE, '$1'))
+}
+
 export function fenceCloses(marker: string, len: number, line: string): boolean {
   const m = line.match(FENCE_CLOSE_RE)
   if (!m?.[1] || m[1][0] !== marker[0]) return false
@@ -86,7 +113,8 @@ export function parseFenceSlice(slice: string): { lang: string; code: string } {
   const open = lines[0] ?? ''
   const openMatch = open.match(FENCE_OPEN_RE)
   const marker = openMatch?.[1] ?? '```'
-  const lang = (openMatch?.[2] ?? '').trim()
+  const lang = fenceInfoLanguage(openMatch?.[2] ?? '')
+  const indent = fenceOpenIndent(open)
   let closeIndex = lines.length - 1
   while (closeIndex > 0) {
     const line = lines[closeIndex] ?? ''
@@ -95,7 +123,12 @@ export function parseFenceSlice(slice: string): { lang: string; code: string } {
     }
     closeIndex--
   }
-  const code = lines.slice(1, closeIndex).join('\n')
+  // Content is verbatim between the fences (blank lines and indentation kept);
+  // only the opening fence's own indentation is stripped, per spec.
+  const code = lines
+    .slice(1, closeIndex)
+    .map((line) => stripLeadingSpaces(line, indent))
+    .join('\n')
   return { lang, code }
 }
 
@@ -105,11 +138,12 @@ export function parseOpenFenceContent(source: string): { lang: string; code: str
   const open = lines[0] ?? ''
   const openMatch = open.match(FENCE_OPEN_RE)
   if (!openMatch?.[1]) return null
-  const lang = (openMatch[2] ?? '').trim()
+  const lang = fenceInfoLanguage(openMatch[2] ?? '')
+  const indent = fenceOpenIndent(open)
   let bodyLines = lines.slice(1)
   const last = bodyLines.at(-1) ?? ''
   if (bodyLines.length > 0 && fenceCloses(openMatch[1], openMatch[1].length, last)) {
     bodyLines = bodyLines.slice(0, -1)
   }
-  return { lang, code: bodyLines.join('\n') }
+  return { lang, code: bodyLines.map((line) => stripLeadingSpaces(line, indent)).join('\n') }
 }

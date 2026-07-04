@@ -8,6 +8,19 @@ export interface TextBlockAttachment {
   content: string
 }
 
+/**
+ * A reference to a past conversation (issue #644). Unlike files/text blocks,
+ * nothing is inlined — the agent is pointed at the thread's on-disk directory and
+ * explores it with the read tools, so there is no size cap to apply.
+ */
+export interface ThreadRefAttachment {
+  title: string
+  /** Human-readable date shown to the agent (e.g. "3 days ago" or "2026-06-30"). */
+  date: string
+  /** Absolute path to the thread's `events.jsonl` spine. */
+  spinePath: string
+}
+
 /** Minimum pasted plain-text length to treat as an attachment instead of inline input. */
 export const TEXT_BLOCK_MIN_CHARS = 200
 
@@ -95,6 +108,24 @@ export function truncateAttachmentContent(
 export interface BuildTextOptions {
   /** Per-attachment character ceiling; defaults to {@link ATTACHMENT_MAX_CHARS}. */
   maxCharsPerAttachment?: number
+  /** `@`-referenced past conversations to point the agent at (nothing inlined). */
+  threadRefs?: ThreadRefAttachment[]
+}
+
+// One compact preamble describes the on-disk thread layout so the agent can
+// explore any number of referenced threads with the file tools. Emitted once,
+// regardless of how many threads are attached.
+const THREAD_STEERING_PREAMBLE =
+  'The past conversation(s) referenced below are available read-only through your ' +
+  'file tools. Each is a directory: `events.jsonl` is the linear history (one JSON ' +
+  'line per finalized message, oldest first); message prose is under `messages/*.md`; ' +
+  'tool results and images under `blobs/`; nested subagent runs under `subagents/`. ' +
+  'Read a file with read_file, grep with search_code, or summarize a whole thread ' +
+  'with explore. The paths are absolute; do not try to write to them.'
+
+function buildThreadRefBlock(refs: ThreadRefAttachment[]): string {
+  const lines = refs.map((r) => `- "${r.title}" (${r.date}): ${r.spinePath}`)
+  return `${THREAD_STEERING_PREAMBLE}\n\nReferenced threads:\n${lines.join('\n')}`
 }
 
 export function buildTextWithAttachments(
@@ -104,6 +135,7 @@ export function buildTextWithAttachments(
   options: BuildTextOptions = {},
 ): string {
   const cap = options.maxCharsPerAttachment ?? ATTACHMENT_MAX_CHARS
+  const threadRefs = options.threadRefs ?? []
   const blocks = [
     ...files.map(
       (f) => `\`\`\`\n// ${f.path}\n${truncateAttachmentContent(f.content, cap)}\n\`\`\``,
@@ -111,6 +143,9 @@ export function buildTextWithAttachments(
     ...textBlocks.map(
       (b) => `\`\`\`\n// ${b.label}\n${truncateAttachmentContent(b.content, cap)}\n\`\`\``,
     ),
+    // No truncation path — thread refs inline nothing, so ATTACHMENT_MAX_CHARS
+    // never applies here.
+    ...(threadRefs.length > 0 ? [buildThreadRefBlock(threadRefs)] : []),
   ]
   return [text, ...blocks].filter(Boolean).join('\n\n')
 }
