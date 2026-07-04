@@ -55,7 +55,7 @@ describe('search_codebase tool', () => {
   })
 
   it('uses native semantic search when available', async () => {
-    setSemanticBackendForTest('codesearch')
+    setSemanticBackendForTest('gortex')
     setSemanticSearchExecutorForTest(async ({ query }) => ({
       hits: [
         {
@@ -64,7 +64,7 @@ describe('search_codebase tool', () => {
           text: `semantic hit for ${query}`,
         },
       ],
-      backend: 'codesearch',
+      backend: 'gortex',
     }))
 
     const result = normalizeToolExecuteResult(
@@ -98,6 +98,6 @@ describe('search_codebase tool', () => {
       ),
     ).result
     assert.match(result, /Semantic search unavailable/)
-    assert.match(result, /codesearch/)
+    assert.match(result, /gortex/)
   })
 })

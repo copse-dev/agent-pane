@@ -2,12 +2,11 @@ import { cpus } from 'node:os'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  codesearchCpuLimitEnv,
-  codesearchThreadCap,
   formatSemanticSearchResults,
-  parseCodesearchJson,
+  gortexCpuLimitEnv,
+  parseGortexJson,
   parseVeraJson,
-  resolveSemanticSearchRoot,
+  semanticThreadCap,
   setSemanticBackendForTest,
   setSemanticIndexUpdateRunnerForTest,
   updateSemanticIndex,
@@ -15,35 +14,6 @@ import {
 import { setWorkspaceRootForTest } from './workspace.ts'
 
 describe('semantic-index parsing', () => {
-  it('parses codesearch JSON results', () => {
-    const stdout = JSON.stringify({
-      results: [
-        {
-          path: '/tmp/repo/src/auth.ts',
-          start_line: 10,
-          end_line: 18,
-          snippet: 'export function authenticate() {}',
-          score: 0.912,
-        },
-      ],
-    })
-
-    const restore = setWorkspaceRootForTest('/tmp/repo')
-    try {
-      assert.deepEqual(parseCodesearchJson(stdout, 10), [
-        {
-          path: 'src/auth.ts',
-          startLine: 10,
-          endLine: 18,
-          text: 'export function authenticate() {}',
-          score: 0.912,
-        },
-      ])
-    } finally {
-      restore()
-    }
-  })
-
   it('parses vera JSON results', () => {
     const stdout = JSON.stringify([
       {
@@ -64,28 +34,52 @@ describe('semantic-index parsing', () => {
     ])
   })
 
-  it('parses codesearch content field from CLI JSON', () => {
+  it('parses gortex search_symbols JSON results', () => {
+    // Shape captured from `gortex call search_symbols --format json` (v0.58.3).
     const stdout = JSON.stringify({
+      next_cursor: 'eyJvZmZzZXQiOjV9',
+      query_class: 'concept',
       results: [
         {
-          path: '/tmp/repo/src/main/services/semantic-index.ts',
-          start_line: 146,
-          end_line: 165,
-          content: 'export async function searchSemanticContent() {}',
-          score: 0.048,
+          absolute_file_path: '/tmp/repo/src/main/services/semantic-index.ts',
+          doc: 'Incrementally update the semantic index after workspace file changes.',
+          file_path: 'src/main/services/semantic-index.ts',
+          id: 'src/main/services/semantic-index.ts::updateSemanticIndex',
+          kind: 'function',
+          name: 'updateSemanticIndex',
+          project_id: 'repo',
+          start_line: 247,
+          visibility: 'public',
+          workspace_id: 'repo',
+        },
+        {
+          absolute_file_path: '/tmp/repo/src/main/services/settings-schema.ts',
+          file_path: 'src/main/services/settings-schema.ts',
+          id: 'src/main/services/settings-schema.ts::getSettingSchema',
+          kind: 'function',
+          name: 'getSettingSchema',
+          project_id: 'repo',
+          start_line: 86,
+          visibility: 'public',
+          workspace_id: 'repo',
         },
       ],
+      total: 31,
+      truncated: true,
     })
 
     const restore = setWorkspaceRootForTest('/tmp/repo')
     try {
-      assert.deepEqual(parseCodesearchJson(stdout, 10), [
+      assert.deepEqual(parseGortexJson(stdout, 10), [
         {
           path: 'src/main/services/semantic-index.ts',
-          startLine: 146,
-          endLine: 165,
-          text: 'export async function searchSemanticContent() {}',
-          score: 0.048,
+          startLine: 247,
+          text: 'function updateSemanticIndex — Incrementally update the semantic index after workspace file changes.',
+        },
+        {
+          path: 'src/main/services/settings-schema.ts',
+          startLine: 86,
+          text: 'function getSettingSchema',
         },
       ])
     } finally {
@@ -93,17 +87,33 @@ describe('semantic-index parsing', () => {
     }
   })
 
-  it('resolveSemanticSearchRoot handles workspace root scope', () => {
-    const root = '/tmp/repo'
-    assert.equal(resolveSemanticSearchRoot(root), root)
-    assert.equal(resolveSemanticSearchRoot(root, '.'), root)
-    assert.equal(resolveSemanticSearchRoot(root, 'src/main'), `${root}/src/main`)
-    assert.equal(resolveSemanticSearchRoot(root, root), root)
-    assert.equal(resolveSemanticSearchRoot(root, `${root}/src`), `${root}/src`)
+  it('scopes gortex hits to a filter path client-side', () => {
+    const stdout = JSON.stringify({
+      results: [
+        { absolute_file_path: '/tmp/repo/src/main/a.ts', start_line: 1, name: 'a' },
+        { absolute_file_path: '/tmp/repo/src/renderer/b.ts', start_line: 2, name: 'b' },
+      ],
+    })
+
+    const restore = setWorkspaceRootForTest('/tmp/repo')
+    try {
+      const hits = parseGortexJson(stdout, 10, 'src/main')
+      assert.deepEqual(
+        hits.map((h) => h.path),
+        ['src/main/a.ts'],
+      )
+    } finally {
+      restore()
+    }
   })
 
-  it('caps codesearch threads to keep CPU bounded (#517)', () => {
-    const cap = codesearchThreadCap()
+  it('treats a gortex empty result set (results: null) as no hits', () => {
+    const stdout = JSON.stringify({ query_class: 'concept', results: null, total: 0 })
+    assert.deepEqual(parseGortexJson(stdout, 10), [])
+  })
+
+  it('caps semantic-index threads to keep CPU bounded (#517)', () => {
+    const cap = semanticThreadCap()
     const cores = Math.max(1, cpus().length)
     // Never zero/negative, never more than half the cores, never above the ceiling.
     assert.ok(cap >= 1)
@@ -111,16 +121,13 @@ describe('semantic-index parsing', () => {
     assert.ok(cap <= Math.max(1, Math.floor(cores / 2)))
   })
 
-  it('exposes thread-cap env vars for the codesearch process (#517)', () => {
-    const env = codesearchCpuLimitEnv()
-    const threads = String(codesearchThreadCap())
-    assert.equal(env['RAYON_NUM_THREADS'], threads)
-    assert.equal(env['TOKIO_WORKER_THREADS'], threads)
-    assert.equal(env['OMP_NUM_THREADS'], threads)
+  it('caps the gortex Go scheduler via GOMAXPROCS (#517)', () => {
+    const env = gortexCpuLimitEnv()
+    assert.equal(env['GOMAXPROCS'], String(semanticThreadCap()))
   })
 
   it('coalesces overlapping index updates into one in-flight run plus one trailing run (#517)', async () => {
-    setSemanticBackendForTest('codesearch')
+    setSemanticBackendForTest('gortex')
     let active = 0
     let maxConcurrent = 0
     let runs = 0
@@ -153,7 +160,7 @@ describe('semantic-index parsing', () => {
       }
       await Promise.all(calls)
 
-      // Never more than one codesearch process at a time...
+      // Never more than one indexer process at a time...
       assert.equal(maxConcurrent, 1)
       // ...and the burst collapses to one active + one trailing run, not five.
       assert.equal(runs, 2)
@@ -164,7 +171,7 @@ describe('semantic-index parsing', () => {
   })
 
   it('formats semantic hits with backend note', () => {
-    setSemanticBackendForTest('codesearch')
+    setSemanticBackendForTest('gortex')
     const text = formatSemanticSearchResults(
       [
         {
@@ -176,9 +183,9 @@ describe('semantic-index parsing', () => {
         },
       ],
       5,
-      'codesearch',
+      'gortex',
     )
     assert.match(text, /src\/auth\.ts:10-12/)
-    assert.match(text, /native codesearch backend/)
+    assert.match(text, /native gortex backend/)
   })
 })

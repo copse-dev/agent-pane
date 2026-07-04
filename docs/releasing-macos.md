@@ -125,10 +125,10 @@ it is active only in the packaged macOS build.
 
 ## Known limitations / follow-ups
 
-- **codesearch binary signing.** The bundled `vendor/codesearch` binary is
+- **gortex binary signing.** The bundled `vendor/gortex` binary is
   `asarUnpack`ed so electron-builder signs it under the hardened runtime. Verify
   semantic search works in a notarized build; if Gatekeeper blocks it, the app
-  falls back to a system `codesearch`/`vera` on `PATH`, and plain search still
+  falls back to a system `gortex`/`vera` on `PATH`, and plain search still
   works.
 - **Private-repo distribution.** GitHub Releases on a private repo require
   testers to have repo access. If that's friction, switch `build.publish` /

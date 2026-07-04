@@ -5,13 +5,13 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const CODESEARCH_VERSION = 'v1.0.209'
-const REPO = 'flupkede/codesearch'
-const OUT_DIR = resolve('vendor/codesearch')
-const BIN_NAME = process.platform === 'win32' ? 'codesearch.exe' : 'codesearch'
+const GORTEX_VERSION = 'v0.58.3'
+const REPO = 'zzet/gortex'
+const OUT_DIR = resolve('vendor/gortex')
+const BIN_NAME = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
-const CHECKSUMS_PATH = join(SCRIPT_DIR, 'codesearch-checksums.json')
+const CHECKSUMS_PATH = join(SCRIPT_DIR, 'gortex-checksums.json')
 
 type ChecksumManifest = Record<string, Record<string, string>>
 
@@ -30,7 +30,7 @@ async function loadChecksums(): Promise<ChecksumManifest> {
 }
 
 function expectedHash(manifest: ChecksumManifest, asset: string): string | null {
-  const forVersion = manifest[CODESEARCH_VERSION]
+  const forVersion = manifest[GORTEX_VERSION]
   if (!forVersion) return null
   const value = forVersion[asset]
   return typeof value === 'string' && value.length === 64 ? value : null
@@ -40,8 +40,9 @@ function expectedHash(manifest: ChecksumManifest, asset: string): string | null 
  * Verify the downloaded artifact against the committed SHA-256 manifest before
  * it is made executable. Fails closed: a missing expected hash aborts the
  * install rather than running an unverified binary (supply-chain finding L5).
- * To record hashes after bumping CODESEARCH_VERSION, run on a trusted machine:
- *   UPDATE_CHECKSUMS=1 node scripts/fetch-codesearch.mts
+ * The committed hashes come from the release's Sigstore-signed checksums.txt.
+ * To record hashes after bumping GORTEX_VERSION, run on a trusted machine:
+ *   UPDATE_CHECKSUMS=1 node scripts/fetch-gortex.mts
  */
 async function verifyChecksum(archivePath: string, asset: string): Promise<void> {
   const manifest = await loadChecksums()
@@ -49,18 +50,18 @@ async function verifyChecksum(archivePath: string, asset: string): Promise<void>
   const actual = await sha256File(archivePath)
 
   if (process.env['UPDATE_CHECKSUMS'] === '1') {
-    manifest[CODESEARCH_VERSION] = { ...(manifest[CODESEARCH_VERSION] ?? {}), [asset]: actual }
+    manifest[GORTEX_VERSION] = { ...(manifest[GORTEX_VERSION] ?? {}), [asset]: actual }
     await writeFile(CHECKSUMS_PATH, `${JSON.stringify(manifest, null, 2)}\n`)
-    console.log(`[fetch-codesearch] UPDATE_CHECKSUMS=1 — recorded ${asset} = ${actual}`)
+    console.log(`[fetch-gortex] UPDATE_CHECKSUMS=1 — recorded ${asset} = ${actual}`)
     return
   }
 
   if (!expected) {
     throw new Error(
-      `no expected SHA-256 for ${CODESEARCH_VERSION}/${asset} in ${CHECKSUMS_PATH}. ` +
+      `no expected SHA-256 for ${GORTEX_VERSION}/${asset} in ${CHECKSUMS_PATH}. ` +
         'Refusing to install an unverified binary. On a trusted machine run ' +
-        '`UPDATE_CHECKSUMS=1 node scripts/fetch-codesearch.mts` to record it, ' +
-        'or set SKIP_CODESEARCH_FETCH=1 to skip the fetch entirely.',
+        '`UPDATE_CHECKSUMS=1 node scripts/fetch-gortex.mts` to record it, ' +
+        'or set SKIP_GORTEX_FETCH=1 to skip the fetch entirely.',
     )
   }
 
@@ -71,18 +72,24 @@ async function verifyChecksum(archivePath: string, asset: string): Promise<void>
     )
   }
 
-  console.log(`[fetch-codesearch] verified ${asset} SHA-256 ${actual}`)
+  console.log(`[fetch-gortex] verified ${asset} SHA-256 ${actual}`)
 }
 
 function assetName(): string | null {
   if (process.platform === 'darwin' && process.arch === 'arm64') {
-    return 'codesearch-macos-arm64.tar.gz'
+    return 'gortex_darwin_arm64.tar.gz'
+  }
+  if (process.platform === 'darwin' && process.arch === 'x64') {
+    return 'gortex_darwin_amd64.tar.gz'
   }
   if (process.platform === 'linux' && process.arch === 'x64') {
-    return 'codesearch-linux-x86_64.tar.gz'
+    return 'gortex_linux_amd64.tar.gz'
+  }
+  if (process.platform === 'linux' && process.arch === 'arm64') {
+    return 'gortex_linux_arm64.tar.gz'
   }
   if (process.platform === 'win32' && process.arch === 'x64') {
-    return 'codesearch-windows-x86_64.zip'
+    return 'gortex_windows_amd64.zip'
   }
   return null
 }
@@ -91,7 +98,8 @@ async function binaryReady(): Promise<boolean> {
   try {
     const binPath = join(OUT_DIR, BIN_NAME)
     await access(binPath)
-    execFileSync(binPath, ['--version'], { stdio: 'pipe' })
+    // gortex has no `--version` flag; the `version` subcommand exits 0 offline.
+    execFileSync(binPath, ['version'], { stdio: 'pipe' })
     return true
   } catch {
     return false
@@ -151,37 +159,37 @@ async function findExtractedBinary(root: string): Promise<string | null> {
 }
 
 async function main(): Promise<void> {
-  if (process.env['SKIP_CODESEARCH_FETCH'] === '1') {
-    console.log('[fetch-codesearch] SKIP_CODESEARCH_FETCH=1 — skipping')
+  if (process.env['SKIP_GORTEX_FETCH'] === '1') {
+    console.log('[fetch-gortex] SKIP_GORTEX_FETCH=1 — skipping')
     return
   }
 
   const asset = assetName()
   if (!asset) {
     console.warn(
-      `[fetch-codesearch] no prebuilt binary for ${process.platform}/${process.arch} — install codesearch manually or use MCP`,
+      `[fetch-gortex] no prebuilt binary for ${process.platform}/${process.arch} — install gortex manually or rely on vera`,
     )
     return
   }
 
   if (await binaryReady()) {
-    console.log(`[fetch-codesearch] ${join(OUT_DIR, BIN_NAME)} already present`)
+    console.log(`[fetch-gortex] ${join(OUT_DIR, BIN_NAME)} already present`)
     return
   }
 
-  const url = `https://github.com/${REPO}/releases/download/${CODESEARCH_VERSION}/${asset}`
-  const tmpRoot = join(tmpdir(), `copse-panel-codesearch-${String(Date.now())}`)
+  const url = `https://github.com/${REPO}/releases/download/${GORTEX_VERSION}/${asset}`
+  const tmpRoot = join(tmpdir(), `copse-panel-gortex-${String(Date.now())}`)
   const archivePath = join(tmpRoot, asset)
   const extractDir = join(tmpRoot, 'extract')
 
   try {
     await mkdir(tmpRoot, { recursive: true })
-    console.log(`[fetch-codesearch] downloading ${asset} (${CODESEARCH_VERSION})`)
+    console.log(`[fetch-gortex] downloading ${asset} (${GORTEX_VERSION})`)
     await download(url, archivePath)
     // Integrity gate: verify before extracting / chmod / exec (fails closed).
     await verifyChecksum(archivePath, asset)
     if (process.env['UPDATE_CHECKSUMS'] === '1') {
-      console.log('[fetch-codesearch] UPDATE_CHECKSUMS=1 — checksum recorded, skipping install')
+      console.log('[fetch-gortex] UPDATE_CHECKSUMS=1 — checksum recorded, skipping install')
       return
     }
     await extract(archivePath, extractDir)
@@ -198,15 +206,15 @@ async function main(): Promise<void> {
       await chmod(outPath, 0o755)
     }
 
-    execFileSync(outPath, ['--version'], { stdio: 'inherit' })
+    execFileSync(outPath, ['version'], { stdio: 'inherit' })
     const sizeMb = ((await stat(outPath)).size / (1024 * 1024)).toFixed(1)
-    console.log(`[fetch-codesearch] installed ${outPath} (${sizeMb} MB)`)
+    console.log(`[fetch-gortex] installed ${outPath} (${sizeMb} MB)`)
   } finally {
     await rm(tmpRoot, { recursive: true, force: true })
   }
 }
 
 main().catch((err: unknown) => {
-  console.error('[fetch-codesearch]', err instanceof Error ? err.message : err)
+  console.error('[fetch-gortex]', err instanceof Error ? err.message : err)
   process.exit(1)
 })
