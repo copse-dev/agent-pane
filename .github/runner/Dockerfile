@@ -12,10 +12,11 @@
 # ship both.
 #
 # Base is Ubuntu 24.04 to MATCH the GitHub-hosted `ubuntu-latest` CI runner
-# (glibc 2.39). The vendored `codesearch` binary (and other prebuilts) are
-# built against glibc >= 2.38/2.39; on the older Debian bookworm (glibc 2.36)
-# the postinstall `codesearch --version` check fails with "GLIBC_2.39 not
-# found". Mirroring CI's OS guarantees every prebuilt behaves identically.
+# (glibc 2.39). Prebuilt native modules (Electron, node-pty) are built against
+# the CI toolchain; on an older distro (e.g. Debian bookworm, glibc 2.36) they
+# can fail to load with "GLIBC_2.39 not found". Mirroring CI's OS guarantees
+# every prebuilt behaves identically. (The vendored `gortex` binary is a static
+# Go build with no glibc dependency, so it is unaffected either way.)
 FROM ubuntu:24.04
 
 # Pin the runner agent; bump deliberately. https://github.com/actions/runner/releases

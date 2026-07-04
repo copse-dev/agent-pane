@@ -1947,7 +1947,7 @@ export function seedMarkdownBoldGlobFixture(workspaceRoot: string): void {
     '',
     '- **`README.md`** — Project overview, commands, layout',
     '- **`AGENTS.md`** — Detailed agent instructions: running headless, mock LLM, permission policy',
-    '- **`vendor/`** — Bundled `codesearch` binary (downloaded on `npm install`)',
+    '- **`vendor/`** — Bundled `gortex` binary (downloaded on `npm install`)',
     '',
     '## Architecture Notes',
     '',

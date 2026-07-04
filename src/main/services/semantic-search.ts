@@ -20,7 +20,7 @@ export interface SemanticSearchResult {
   text: string
 }
 
-/** Native gortex/codesearch/vera semantic search only. */
+/** Native gortex/vera semantic search only. */
 export async function executeSemanticSearch(
   request: SemanticSearchRequest,
   signal: AbortSignal,

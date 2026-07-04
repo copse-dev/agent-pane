@@ -1,62 +1,43 @@
 import { cpus } from 'node:os'
-import * as fsp from 'node:fs/promises'
-import { join, resolve, sep } from 'node:path'
+import { join, resolve } from 'node:path'
 import { app } from 'electron'
-import { getBundledCodesearchPath, getBundledGortexPath } from './bundled-semantic.ts'
+import { getBundledGortexPath } from './bundled-semantic.ts'
 import { runCommand, type RunCommandOptions } from './command-runner.ts'
 import { COMMAND_RUNNER_LONG_TIMEOUT_MS } from './subprocess-output-cap.ts'
 import { toRelativePath } from './workspace.ts'
 
-const LEGACY_CODESEARCH_DB_DIR = '.codesearch.db'
-
 /**
- * Hard ceiling on codesearch worker threads. Without a cap the native indexer
- * fans out across every core (we observed >600% CPU, #517), starving the rest
- * of the app. Cap to at most {@link CODESEARCH_MAX_THREADS} *and* at most half
- * the machine's cores so a background index never monopolises the CPU.
+ * Hard ceiling on semantic-index worker threads. Without a cap the native
+ * indexer fans out across every core (we observed >600% CPU, #517), starving
+ * the rest of the app. Cap to at most {@link SEMANTIC_MAX_THREADS} *and* at most
+ * half the machine's cores so a background index never monopolises the CPU.
  */
-const CODESEARCH_MAX_THREADS = 4
+const SEMANTIC_MAX_THREADS = 4
 
 /**
- * Bound how long an index/search may run. The CPU cap stops codesearch pinning
+ * Bound how long an index/search may run. The CPU cap stops the indexer pinning
  * every core, and this stops it pinning *some* cores for minutes on end (#517).
  * Indexing a fresh repo is the slow path, so it gets the larger budget.
  */
-const CODESEARCH_INDEX_TIMEOUT_MS = 5 * 60_000
-const CODESEARCH_SEARCH_TIMEOUT_MS = 60_000
+const SEMANTIC_INDEX_TIMEOUT_MS = 5 * 60_000
+const SEMANTIC_SEARCH_TIMEOUT_MS = 60_000
 
-/** Number of worker threads codesearch may use, capped for CPU fairness (#517). */
-export function codesearchThreadCap(): number {
+/** Number of worker threads the indexer may use, capped for CPU fairness (#517). */
+export function semanticThreadCap(): number {
   const cores = Math.max(1, cpus().length)
-  return Math.max(1, Math.min(CODESEARCH_MAX_THREADS, Math.floor(cores / 2)))
-}
-
-/**
- * Cap thread fan-out for the codesearch process. flupkede/codesearch does its
- * CPU-heavy work through three pools, each with a standard env knob we set here:
- * rayon (BM25 + tree-sitter chunking), tokio's multi-thread runtime, and the
- * ONNX Runtime / fastembed embedding inference (OpenMP). Env knobs are
- * release-robust — the binary exposes no thread CLI flag.
- */
-export function codesearchCpuLimitEnv(): NodeJS.ProcessEnv {
-  const threads = String(codesearchThreadCap())
-  return {
-    RAYON_NUM_THREADS: threads,
-    TOKIO_WORKER_THREADS: threads,
-    OMP_NUM_THREADS: threads,
-  }
+  return Math.max(1, Math.min(SEMANTIC_MAX_THREADS, Math.floor(cores / 2)))
 }
 
 /**
  * Cap thread fan-out for the gortex daemon/CLI. gortex is a single static Go
  * binary, so GOMAXPROCS is the one release-robust knob that bounds its
- * scheduler the way the rayon/tokio/OpenMP env vars bound codesearch (#517).
+ * scheduler and keeps a background index from pinning every core (#517).
  */
 export function gortexCpuLimitEnv(): NodeJS.ProcessEnv {
-  return { GOMAXPROCS: String(codesearchThreadCap()) }
+  return { GOMAXPROCS: String(semanticThreadCap()) }
 }
 
-export type SemanticBackend = 'gortex' | 'codesearch' | 'vera'
+export type SemanticBackend = 'gortex' | 'vera'
 
 export interface SemanticSearchOptions {
   query: string
@@ -78,7 +59,6 @@ let activeBackend: SemanticBackend | null = null
 let gortexCommand: string | null = null
 /** One daemon spawn per app session; reset on failure so a retry can respawn. */
 let gortexDaemonReady: Promise<boolean> | null = null
-let codesearchCommand: string | null = null
 let veraCommand = 'vera'
 const indexPromises = new Map<string, Promise<void>>()
 /** Roots with an in-flight {@link updateSemanticIndex} run, for overlap-free coalescing. */
@@ -132,7 +112,6 @@ export function setSemanticSearchExecutorForTest(
 export async function probeSemanticBackends(): Promise<SemanticBackend | null> {
   gortexCommand = null
   gortexDaemonReady = null
-  codesearchCommand = null
 
   // gortex has no `--version` flag; `gortex version` exits 0 without a daemon.
   const gortexCandidates = ['gortex', getBundledGortexPath()].filter(
@@ -143,17 +122,6 @@ export async function probeSemanticBackends(): Promise<SemanticBackend | null> {
       gortexCommand = cmd
       activeBackend = 'gortex'
       return 'gortex'
-    }
-  }
-
-  const codesearchCandidates = ['codesearch', getBundledCodesearchPath()].filter(
-    (cmd): cmd is string => typeof cmd === 'string' && cmd.length > 0,
-  )
-  for (const cmd of codesearchCandidates) {
-    if (await probe(cmd, ['--version'])) {
-      codesearchCommand = cmd
-      activeBackend = 'codesearch'
-      return 'codesearch'
     }
   }
 
@@ -170,7 +138,6 @@ export async function probeSemanticBackends(): Promise<SemanticBackend | null> {
 /** Whether the active semantic backend resolved to a binary we bundled (vs PATH). */
 export function isSemanticBackendBundled(): boolean {
   if (activeBackend === 'gortex') return gortexCommand === getBundledGortexPath()
-  if (activeBackend === 'codesearch') return codesearchCommand === getBundledCodesearchPath()
   return false
 }
 
@@ -181,11 +148,6 @@ async function probe(cmd: string, args: string[]): Promise<boolean> {
   } catch {
     return false
   }
-}
-
-function codesearchCmd(): string {
-  if (!codesearchCommand) throw new Error('codesearch backend is not configured')
-  return codesearchCommand
 }
 
 function gortexCmd(): string {
@@ -205,18 +167,18 @@ function gortexRunOpts(
   return {
     cwd: workspaceRoot,
     ...SEMANTIC_CMD_OPTS,
-    timeout_ms: CODESEARCH_SEARCH_TIMEOUT_MS,
+    timeout_ms: SEMANTIC_SEARCH_TIMEOUT_MS,
     lowPriority: true,
     // HOME scopes ~/.gortex (daemon socket hash, sqlite store, config) to our
-    // userData dir; GOMAXPROCS bounds the Go scheduler like the codesearch
-    // thread caps do (#517).
+    // userData dir; GOMAXPROCS bounds the Go scheduler so a background index
+    // can't pin every core (#517).
     env: { HOME: gortexHomeDir(), ...gortexCpuLimitEnv() },
     ...extra,
   }
 }
 
 /**
- * Unlike codesearch/vera, gortex is daemon-based: `track` and `call` fail hard
+ * Unlike vera, gortex is daemon-based: `track` and `call` fail hard
  * when no daemon is listening, and `daemon start --detach` exits non-zero when
  * one already is. Probe status first, spawn once per app session, and re-check
  * status after a failed spawn so a lost start race still counts as ready.
@@ -256,46 +218,6 @@ async function probeWithOpts(
   }
 }
 
-/** Synthetic HOME so codesearch global indexes live under Copse userData, not the workspace. */
-export function codesearchHomeDir(): string {
-  return join(app.getPath('userData'), 'codesearch')
-}
-
-function codesearchRunOpts(
-  workspaceRoot: string,
-  extra: Omit<RunCommandOptions, 'cwd' | 'env'> = {},
-): RunCommandOptions {
-  return {
-    cwd: workspaceRoot,
-    ...SEMANTIC_CMD_OPTS,
-    // Default to the search budget; index calls override timeout_ms via `extra`.
-    timeout_ms: CODESEARCH_SEARCH_TIMEOUT_MS,
-    // Cap thread fan-out so the indexer can't pin every core, and drop its
-    // scheduling priority so it yields to the UI even mid-index (#517).
-    lowPriority: true,
-    env: { HOME: codesearchHomeDir(), ...codesearchCpuLimitEnv() },
-    ...extra,
-  }
-}
-
-async function removeLegacyCodesearchDb(workspaceRoot: string): Promise<void> {
-  try {
-    await fsp.rm(join(workspaceRoot, LEGACY_CODESEARCH_DB_DIR), { recursive: true, force: true })
-  } catch {
-    /* best-effort migration from pre-global local indexes */
-  }
-}
-
-/** Resolve a semantic search scope path without breaking on "." or absolute paths. */
-export function resolveSemanticSearchRoot(workspaceRoot: string, filterPath?: string): string {
-  if (!filterPath || filterPath === '.') return workspaceRoot
-  const root = resolve(workspaceRoot)
-  const scoped = resolve(root, filterPath)
-  if (scoped === root) return root
-  if (scoped.startsWith(`${root}${sep}`)) return scoped
-  return root
-}
-
 /** Register and build the semantic index when a workspace opens. */
 export async function ensureSemanticIndex(workspaceRoot: string): Promise<void> {
   const backend = activeBackend
@@ -313,9 +235,6 @@ export async function ensureSemanticIndex(workspaceRoot: string): Promise<void> 
       switch (backend) {
         case 'gortex':
           await ensureGortexIndex(root)
-          break
-        case 'codesearch':
-          await ensureCodesearchIndex(root)
           break
         case 'vera':
           await ensureVeraIndex(root)
@@ -340,9 +259,9 @@ export async function ensureSemanticIndex(workspaceRoot: string): Promise<void> 
  * Coalesced per root: at most one update runs at a time, and any requests that
  * arrive while one is in flight collapse into a single trailing run. Without
  * this, the recursive workspace watcher (which only debounces *scheduling*)
- * spawns a fresh codesearch process on every burst of file changes — and since
- * an index can run for minutes, those processes stack and pin every core (#517),
- * defeating the per-process thread cap and lagging the UI.
+ * spawns a fresh index pass on every burst of file changes — and since an index
+ * can run for minutes, those runs stack and pin every core (#517), defeating the
+ * per-process thread cap and lagging the UI.
  */
 export async function updateSemanticIndex(workspaceRoot: string): Promise<void> {
   const backend = activeBackend
@@ -380,13 +299,6 @@ async function runSemanticIndexUpdate(backend: SemanticBackend, root: string): P
         // and re-indexes only what changed; --wait bounds it like an index run.
         await ensureGortexIndex(root)
         break
-      case 'codesearch':
-        await runCommand(
-          codesearchCmd(),
-          ['index', root],
-          codesearchRunOpts(root, { timeout_ms: CODESEARCH_INDEX_TIMEOUT_MS }),
-        )
-        break
       case 'vera':
         await runCommand(veraCommand, ['update', root], {
           cwd: root,
@@ -412,8 +324,6 @@ export async function searchSemanticContent(
   switch (backend) {
     case 'gortex':
       return searchWithGortex(opts)
-    case 'codesearch':
-      return searchWithCodesearch(opts)
     case 'vera':
       return searchWithVera(opts)
   }
@@ -424,23 +334,12 @@ async function ensureGortexIndex(workspaceRoot: string): Promise<void> {
     throw new Error('gortex daemon failed to start')
   }
   // --wait blocks until the graph is queryable so the first search after a
-  // workspace opens doesn't race a cold index (mirrors the codesearch flow).
+  // workspace opens doesn't race a cold index.
   await runCommand(
     gortexCmd(),
     ['track', workspaceRoot, '--wait', '--wait-timeout', '5m', '--no-progress'],
-    gortexRunOpts(workspaceRoot, { timeout_ms: CODESEARCH_INDEX_TIMEOUT_MS }),
+    gortexRunOpts(workspaceRoot, { timeout_ms: SEMANTIC_INDEX_TIMEOUT_MS }),
   )
-}
-
-async function ensureCodesearchIndex(workspaceRoot: string): Promise<void> {
-  const cmd = codesearchCmd()
-  const opts = codesearchRunOpts(workspaceRoot, { timeout_ms: CODESEARCH_INDEX_TIMEOUT_MS })
-  try {
-    await runCommand(cmd, ['index', 'add', '-g', workspaceRoot], opts)
-  } catch {
-    await runCommand(cmd, ['index', workspaceRoot], opts)
-  }
-  await removeLegacyCodesearchDb(workspaceRoot)
 }
 
 async function ensureVeraIndex(workspaceRoot: string): Promise<void> {
@@ -488,31 +387,6 @@ async function searchWithGortex(
   }
 }
 
-async function searchWithCodesearch(
-  opts: SemanticSearchOptions,
-): Promise<{ hits: SemanticSearchHit[]; backend: SemanticBackend }> {
-  const searchRoot = resolveSemanticSearchRoot(opts.workspaceRoot, opts.filterPath)
-
-  const args = [
-    'search',
-    opts.query,
-    '--json',
-    '--content',
-    '--max-results',
-    String(opts.maxResults),
-    '--path',
-    searchRoot,
-  ]
-
-  const { stdout } = await runCommand(
-    codesearchCmd(),
-    args,
-    codesearchRunOpts(opts.workspaceRoot, opts.signal ? { signal: opts.signal } : {}),
-  )
-
-  return { hits: parseCodesearchJson(stdout, opts.maxResults), backend: 'codesearch' }
-}
-
 async function searchWithVera(
   opts: SemanticSearchOptions,
 ): Promise<{ hits: SemanticSearchHit[]; backend: SemanticBackend }> {
@@ -547,15 +421,6 @@ export function parseGortexJson(
       ? hits.filter((hit) => hit.path === filterPath || hit.path.startsWith(`${filterPath}/`))
       : hits
   return scoped.slice(0, maxResults)
-}
-
-export function parseCodesearchJson(stdout: string, maxResults: number): SemanticSearchHit[] {
-  const parsed = parseJsonPayload(stdout)
-  const items = extractResultItems(parsed)
-  return items
-    .map(normalizeCodesearchHit)
-    .filter((hit): hit is SemanticSearchHit => hit !== null)
-    .slice(0, maxResults)
 }
 
 export function parseVeraJson(stdout: string, maxResults: number): SemanticSearchHit[] {
@@ -616,29 +481,6 @@ function normalizeGortexHit(item: unknown): SemanticSearchHit | null {
   const doc = readString(record, ['doc', 'snippet', 'content', 'signature']) ?? ''
   const symbol = [kind, name].filter(Boolean).join(' ')
   const text = [symbol, doc].filter(Boolean).join(' — ')
-  const score = readNumber(record, ['score', 'rrf_score', 'relevance'])
-
-  return {
-    path: toRelativePath(path),
-    startLine,
-    ...(endLine !== undefined ? { endLine } : {}),
-    text: text.trim(),
-    ...(score !== undefined ? { score } : {}),
-  }
-}
-
-function normalizeCodesearchHit(item: unknown): SemanticSearchHit | null {
-  if (typeof item !== 'object' || item === null) return null
-  const record = item as Record<string, unknown>
-  const path = readString(record, ['path', 'file', 'filename'])
-  if (!path) return null
-
-  const startLine = readNumber(record, ['start_line', 'line', 'line_number']) ?? 1
-  const endLine = readNumber(record, ['end_line', 'endLine'])
-  const text =
-    readString(record, ['snippet', 'content', 'text', 'signature']) ??
-    readString(record, ['summary']) ??
-    ''
   const score = readNumber(record, ['score', 'rrf_score', 'relevance'])
 
   return {

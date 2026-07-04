@@ -382,7 +382,7 @@ jobs:
     # Shard count is runner-dependent (computed by the precheck `shards` step):
     #   - hosted nightly: 8. Each shard runs its slice as one sequential wdio
     #     process, relaunching Electron per spec. On the 2-core/7GB runner, once a
-    #     shard runs too many specs the accumulated electron/codesearch processes
+    #     shard runs too many specs the accumulated electron/gortex processes
     #     exhaust it and a later spec's Electron fails to boot or OOM-crashes the
     #     runner ("shutdown signal"). #339's data showed 8 stays under that limit
     #     even in the densest spec range.

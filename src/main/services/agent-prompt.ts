@@ -89,7 +89,7 @@ export const BASE_SYSTEM_PROMPT_DIRECT_READS = buildBasePrompt({
 - str_replace: Replace a substring directly when safe; otherwise stage a proposed diff for approval
 - list_dir: List directory contents
 - search_codebase: Search by regex or meaning (auto-selects; prefer over search_code)
-- semantic_search: Search by meaning only (native gortex/codesearch/vera index)
+- semantic_search: Search by meaning only (native gortex/vera index)
 - search_code: Search for text/regex patterns (indexed grep when available, otherwise ripgrep)
 - find_files: Find files by name or glob pattern
 ${SHARED_WEB_TOOLS}`,

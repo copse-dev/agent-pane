@@ -22,11 +22,12 @@
 # OrbStack / Colima on macOS and Windows (Linux-containers mode). Multi-arch:
 # BuildKit builds the host's native arch (linux/amd64 or linux/arm64).
 #
-# Base is Ubuntu 24.04 to MATCH GitHub-hosted `ubuntu-latest` (glibc 2.39). The
-# vendored `codesearch` binary fetched during postinstall is built against
-# glibc >= 2.38/2.39; on older distros (e.g. Debian bookworm, glibc 2.36) the
-# postinstall `codesearch --version` check fails with "GLIBC_2.39 not found".
-# Mirroring CI's OS keeps every prebuilt behaving identically.
+# Base is Ubuntu 24.04 to MATCH GitHub-hosted `ubuntu-latest` (glibc 2.39).
+# Prebuilt native modules (Electron, node-pty) are built against the CI
+# toolchain; on older distros (e.g. Debian bookworm, glibc 2.36) they can fail
+# to load with "GLIBC_2.39 not found". Mirroring CI's OS keeps every prebuilt
+# behaving identically. (The vendored `gortex` binary is a static Go build with
+# no glibc dependency, so it is unaffected either way.)
 FROM ubuntu:24.04
 
 # Pin the runner agent; bump deliberately. https://github.com/actions/runner/releases

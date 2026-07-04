@@ -34,12 +34,12 @@
     {
       "id": "verify-checksum",
       "query": "verify a downloaded binary against a SHA-256 checksum before making it executable",
-      "expectedPaths": ["scripts/fetch-gortex.mts", "scripts/fetch-codesearch.mts"]
+      "expectedPaths": ["scripts/fetch-gortex.mts"]
     },
     {
       "id": "download-extract-binary",
       "query": "download a release archive and extract the binary out of the tarball or zip",
-      "expectedPaths": ["scripts/fetch-gortex.mts", "scripts/fetch-codesearch.mts"]
+      "expectedPaths": ["scripts/fetch-gortex.mts"]
     },
     {
       "id": "gh-auth-probe",

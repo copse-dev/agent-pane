@@ -2,8 +2,8 @@ name: Setup
 description: >-
   Install Node, ripgrep, and project dependencies with a cached node_modules.
   On a cache hit the slow postinstall steps (node-pty electron-rebuild + the
-  vendored codesearch download) are skipped entirely, since their outputs live
-  inside the cached node_modules / vendor/codesearch trees.
+  vendored gortex download) are skipped entirely, since their outputs live
+  inside the cached node_modules / vendor/gortex trees.
 
 runs:
   using: composite
@@ -79,12 +79,12 @@ runs:
     # Cache the fully-installed dependency tree, not just the npm download cache.
     # The key is the lockfile hash, so an electron/node-pty bump (which changes
     # the native ABI) busts it and forces a fresh electron-rebuild. vendor/
-    # codesearch is a pinned-version binary fetch that postinstall guards as
+    # gortex is a pinned-version binary fetch that postinstall guards as
     # idempotent, so it caches cleanly alongside node_modules.
     #
     # Key by runner.arch as well as runner.os: the tree holds arch-specific native
     # binaries (esbuild's @esbuild/<platform> optional dep, node-pty/electron
-    # rebuilds, the vendor/codesearch fetch), but `runner.os` is `macOS` for BOTH
+    # rebuilds, the vendor/gortex fetch), but `runner.os` is `macOS` for BOTH
     # Intel and Apple-Silicon runners. A mixed-arch self-hosted Mac fleet would
     # otherwise share one entry, and an arm64 box restoring an x64-populated cache
     # (or vice-versa) fails at load with "@esbuild/darwin-arm64 could not be found".
@@ -96,7 +96,6 @@ runs:
       with:
         path: |
           node_modules
-          vendor/codesearch
           vendor/gortex
         # The -vN token is a manual cache-bust: earlier runs on a runner with
         # ignore-scripts saved a node_modules with no native builds (no esbuild

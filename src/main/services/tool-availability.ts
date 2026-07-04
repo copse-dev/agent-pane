@@ -11,7 +11,7 @@ export async function checkToolAvailability(): Promise<void> {
   // run before the window opens on every launch. Under e2e, skip them: ripgrep
   // and git are provisioned in the e2e environment, so assume them present (the
   // git-changes and search specs rely on it), while gh and the indexed-grep /
-  // semantic-backend probes (a spawned codesearch binary) are unused by the
+  // semantic-backend probes (a spawned gortex binary) are unused by the
   // seeded suite, so leave them off rather than spawning anything.
   if (process.env['COPSE_E2E'] === '1') {
     rgAvail = true
@@ -35,7 +35,7 @@ export async function checkToolAvailability(): Promise<void> {
     )
   else
     console.warn(
-      '[copse-panel] gortex/codesearch/vera not found — semantic search disabled (run npm install or add CLI to PATH)',
+      '[copse-panel] gortex/vera not found — semantic search disabled (run npm install or add CLI to PATH)',
     )
   if (!gitAvail) console.warn('[copse-panel] git not found — git tools will be unavailable')
   if (!ghAvail)

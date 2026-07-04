@@ -16,8 +16,8 @@ registration mechanics, different payload:
 
 The check tier never starts Electron, so this image omits the entire
 Chromium/Xvfb/font stack — it builds and boots much faster while still matching
-GitHub-hosted `ubuntu-latest` (Ubuntu 24.04 / glibc 2.39) so the vendored
-`codesearch` prebuilt and the native `npm ci` builds behave identically to CI.
+GitHub-hosted `ubuntu-latest` (Ubuntu 24.04 / glibc 2.39) so the native `npm ci`
+builds behave identically to CI.
 
 ## Prerequisites
 

@@ -161,7 +161,7 @@ async function main(): Promise<void> {
   const asset = assetName()
   if (!asset) {
     console.warn(
-      `[fetch-gortex] no prebuilt binary for ${process.platform}/${process.arch} — install gortex manually or rely on codesearch/vera`,
+      `[fetch-gortex] no prebuilt binary for ${process.platform}/${process.arch} — install gortex manually or rely on vera`,
     )
     return
   }

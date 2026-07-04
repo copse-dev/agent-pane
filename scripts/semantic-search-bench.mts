@@ -1,21 +1,20 @@
 /**
- * Retrieval-quality benchmark for the semantic-search backends.
+ * Retrieval-quality benchmark for the gortex semantic-search backend.
  *
- * Measures whether a backend actually returns the right code for a natural-
+ * Measures whether the backend actually returns the right code for a natural-
  * language query — recall@k, MRR, and search latency — against a fixed fixture
  * set (`semantic-search-bench.fixtures.json`) whose gold targets are defined by
- * a human, independently of any backend, so the benchmark is not circular.
+ * a human, independently of the backend, so the benchmark is not circular.
  *
- * It is deliberately self-contained: it drives the `gortex` / `codesearch`
- * CLIs directly with its own temp HOME and does its own minimal result-path
- * extraction, so it runs in CI with no Electron/app harness. The CLI arg shapes
- * and JSON fields mirror the production code paths in
- * `src/main/services/semantic-index.ts` (searchWithGortex / parseGortexJson and
- * searchWithCodesearch / parseCodesearchJson) — keep them in sync when either
- * backend's CLI changes.
+ * It is deliberately self-contained: it drives the `gortex` CLI directly with
+ * its own temp HOME and does its own minimal result-path extraction, so it runs
+ * in CI with no Electron/app harness. The CLI arg shapes and JSON fields mirror
+ * the production code path in `src/main/services/semantic-index.ts`
+ * (searchWithGortex / parseGortexJson) — keep them in sync when the gortex CLI
+ * changes. (Structured per-backend so a second backend can be slotted in later.)
  *
  * Usage:
- *   node scripts/semantic-search-bench.mts [--backend gortex|codesearch|auto]
+ *   node scripts/semantic-search-bench.mts [--backend gortex|auto]
  *        [--repo <path>] [--k 5] [--json <out.json>]
  *        [--min-recall 0.8] [--max-p95-ms 2500] [--gate]
  *
@@ -35,7 +34,7 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(SCRIPT_DIR, '..')
 const FIXTURES_PATH = join(SCRIPT_DIR, 'semantic-search-bench.fixtures.json')
 
-type BackendName = 'gortex' | 'codesearch'
+type BackendName = 'gortex'
 
 interface Query {
   id: string
@@ -67,7 +66,7 @@ interface BackendReport {
 }
 
 interface Args {
-  backend: 'gortex' | 'codesearch' | 'auto'
+  backend: 'gortex' | 'auto'
   repo: string
   k: number
   jsonOut: string | null
@@ -96,8 +95,8 @@ function parseArgs(argv: string[]): Args {
     switch (flag) {
       case '--backend': {
         const v = next()
-        if (v !== 'gortex' && v !== 'codesearch' && v !== 'auto') {
-          throw new Error(`--backend must be gortex|codesearch|auto, got ${v}`)
+        if (v !== 'gortex' && v !== 'auto') {
+          throw new Error(`--backend must be gortex|auto, got ${v}`)
         }
         args.backend = v
         break
@@ -147,10 +146,9 @@ async function resolveBackend(backend: BackendName): Promise<string | null> {
     join(REPO_ROOT, 'dist', 'resources', backend, bin),
   ])
   if (vendored) return vendored
-  // Fall back to PATH: probe with a no-op the binary supports.
-  const probeArgs = backend === 'gortex' ? ['version'] : ['--version']
+  // Fall back to PATH: `gortex version` exits 0 without a daemon.
   try {
-    await execFileAsync(bin, probeArgs)
+    await execFileAsync(bin, ['version'])
     return bin
   } catch {
     return null
@@ -218,59 +216,6 @@ async function benchGortex(
   return { indexMs, results }
 }
 
-// ---- codesearch -----------------------------------------------------------
-
-async function benchCodesearch(
-  cmd: string,
-  repo: string,
-  home: string,
-  k: number,
-  queries: Query[],
-): Promise<{ indexMs: number; results: QueryResult[] }> {
-  const env = {
-    ...process.env,
-    HOME: home,
-    RAYON_NUM_THREADS: '4',
-    TOKIO_WORKER_THREADS: '4',
-    OMP_NUM_THREADS: '4',
-  }
-  const run = (args: string[]): Promise<{ stdout: string; stderr: string }> =>
-    execFileAsync(cmd, args, { cwd: repo, env, maxBuffer: 64 * 1024 * 1024 })
-
-  // Lifecycle mirrors ensureCodesearchIndex (index add -g, fallback to index).
-  const indexStart = performance.now()
-  await run(['index', 'add', '-g', repo]).catch(() => run(['index', repo]))
-  const indexMs = performance.now() - indexStart
-
-  const results: QueryResult[] = []
-  for (const q of queries) {
-    const start = performance.now()
-    const { stdout } = await run([
-      'search',
-      q.query,
-      '--json',
-      '--content',
-      '--max-results',
-      String(k),
-      '--path',
-      repo,
-    ])
-    const latencyMs = performance.now() - start
-    // parseCodesearchJson keys on path/file/filename inside results/matches/hits.
-    const parsed = JSON.parse(stdout) as Record<string, unknown>
-    const items = (parsed['results'] ?? parsed['matches'] ?? parsed['hits'] ?? []) as Array<
-      Record<string, unknown>
-    >
-    const paths = items
-      .map((r) => (r['path'] ?? r['file'] ?? r['filename']) as string | undefined)
-      .filter((p): p is string => typeof p === 'string')
-      .slice(0, k)
-      .map((p) => toRepoRelative(repo, p))
-    results.push(scoreQuery(q, paths, latencyMs))
-  }
-  return { indexMs, results }
-}
-
 function scoreQuery(q: Query, topPaths: string[], latencyMs: number): QueryResult {
   const gold = new Set(q.expectedPaths)
   let rank: number | null = null
@@ -333,26 +278,19 @@ function printReport(report: BackendReport, k: number): void {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2))
   const fixtures = JSON.parse(readFileSync(FIXTURES_PATH, 'utf8')) as Fixtures
-  const wanted: BackendName[] = args.backend === 'auto' ? ['gortex', 'codesearch'] : [args.backend]
+  const wanted: BackendName[] = ['gortex']
 
   const reports: BackendReport[] = []
   for (const backend of wanted) {
     const cmd = await resolveBackend(backend)
     if (!cmd) {
-      if (args.backend !== 'auto') {
-        console.error(`[bench] ${backend} binary not found (vendor/${backend} or PATH)`)
-        process.exit(2)
-      }
-      console.log(`[bench] skipping ${backend} — binary not found`)
-      continue
+      console.error(`[bench] ${backend} binary not found (vendor/${backend} or PATH)`)
+      process.exit(2)
     }
     const home = await mkdtemp(join(tmpdir(), `sem-bench-${backend}-`))
     try {
       await mkdir(home, { recursive: true })
-      const { indexMs, results } =
-        backend === 'gortex'
-          ? await benchGortex(cmd, args.repo, home, args.k, fixtures.queries)
-          : await benchCodesearch(cmd, args.repo, home, args.k, fixtures.queries)
+      const { indexMs, results } = await benchGortex(cmd, args.repo, home, args.k, fixtures.queries)
       const report = summarize(backend, cmd, indexMs, results)
       printReport(report, args.k)
       reports.push(report)
@@ -373,10 +311,8 @@ async function main(): Promise<void> {
   }
 
   if (args.gate) {
-    // Gate on the primary backend: the one explicitly requested, else gortex.
-    const primary =
-      reports.find((r) => r.backend === (args.backend === 'auto' ? 'gortex' : args.backend)) ??
-      reports[0]
+    // Gate on the primary (first-run) backend's recall + latency.
+    const primary = reports[0]
     if (!primary) process.exit(2)
     const failures: string[] = []
     if (primary.recall < args.minRecall) {
