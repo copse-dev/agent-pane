@@ -316,12 +316,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.3
       - uses: ./.github/actions/setup
-      # p95 ceiling is generous vs the ~150ms observed locally: CI runners are
-      # slower and the daemon is cold. Recall floor sits below the observed
-      # 87.5% so normal ranking variance doesn't flake the build.
+      # The floor is a breakage detector, not a target: a gortex CLI/JSON change
+      # that breaks parsing craters recall to ~0, and that's the main thing this
+      # catches. Recall is deterministic per corpus (~81% observed on 16 fixture
+      # queries), but unrelated PRs that add files shift rankings by a query or
+      # two, so the 0.65 floor leaves headroom to avoid flaking those builds. The
+      # p95 ceiling is generous vs the ~130ms observed locally (CI is slower, the
+      # daemon starts cold). Tighten either once the fixture set is larger.
       - run: >-
           node scripts/semantic-search-bench.mts --backend gortex --gate
-          --min-recall 0.75 --max-p95-ms 3000 --json bench-semantic.json
+          --min-recall 0.65 --max-p95-ms 3000 --json bench-semantic.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:

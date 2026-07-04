@@ -23,7 +23,7 @@
  */
 import { execFile } from 'node:child_process'
 import { access, mkdir, mkdtemp, rm } from 'node:fs/promises'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -278,6 +278,17 @@ function printReport(report: BackendReport, k: number): void {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2))
   const fixtures = JSON.parse(readFileSync(FIXTURES_PATH, 'utf8')) as Fixtures
+
+  // Fail loudly on a stale gold target (a file that was moved/renamed) rather
+  // than letting it silently count as a miss and quietly erode recall.
+  const stale = fixtures.queries.flatMap((q) =>
+    q.expectedPaths.filter((p) => !existsSync(join(args.repo, p))).map((p) => `${q.id} -> ${p}`),
+  )
+  if (stale.length) {
+    console.error(`[bench] stale gold target(s) — update the fixture:\n  ${stale.join('\n  ')}`)
+    process.exit(2)
+  }
+
   const wanted: BackendName[] = ['gortex']
 
   const reports: BackendReport[] = []

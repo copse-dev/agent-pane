@@ -79,7 +79,7 @@
     {
       "id": "migrate-legacy-threads",
       "query": "migrate legacy per-project conversation threads to the new layout",
-      "expectedPaths": ["src/main/services/thread-persistence.ts"]
+      "expectedPaths": ["src/main/services/thread-migration.ts"]
     }
   ]
 }
