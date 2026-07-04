@@ -65,7 +65,12 @@ When extending the renderer or its CSS, preserve these rules:
   matching heading weight/size until the line completes. **HTML entities** in prose
   (`&nbsp;`, `&#160;`) decode via `decodeSafeMarkdownEntities()` (with incomplete suffixes
   held so `&nbsp` never flashes literally); other entities stay escaped for XSS safety.
-  Inline hold still suppresses half-open `**` on the current line.
+  Inline hold still suppresses half-open `**` on the current line. **Forming links** reveal
+  their label early: `revealFormingLink` (`render-pending-line.ts`) turns a still-open
+  `[label` / `[label](https://partial` into just its label text — so no literal brackets flash
+  and the partial URL is never rendered or autolinked — then the completed `[label](url)` upgrades
+  to a real `<a>` on commit (#617). Only the trailing forming link is touched; earlier complete
+  links, `[ref]` shortcuts, and `[` inside code spans or after a backslash are left alone.
 
   Pending shapes (`streaming-pending-matrix.test.ts`):
 
