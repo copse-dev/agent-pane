@@ -18,12 +18,62 @@ export function safeLinkHref(raw: string): string | null {
   return encodeHrefForOutput(href)
 }
 
-function renderedLink(label: string, href: string, title?: string): string {
+/** Resolved link the {@link LinkDecorator} decorates. `href` is already safe/encoded. */
+export interface LinkDecoration {
+  href: string
+  /** True when the destination is an in-workspace path (not http/mailto). */
+  isWorkspace: boolean
+  title?: string
+}
+
+/**
+ * Host hook that returns the attribute string appended after `href` on a
+ * rendered `<a>` (e.g. ` target="_blank" rel="…" data-browser-link="true"`).
+ * Keeps app-specific link decoration out of the parser core so the package can
+ * be hosted elsewhere (#601). Replace with {@link setLinkDecorator}.
+ */
+export type LinkDecorator = (link: LinkDecoration) => string
+
+/**
+ * Default decorator — the Copse app's workspace/browser routing, so the package
+ * works in-app out of the box. `data-workspace-link` / `data-browser-link` flag
+ * links for `workspace-links.ts` / `browser-links.ts`; external links open in a
+ * new context. A different host injects its own via {@link setLinkDecorator}.
+ */
+export const appLinkDecorator: LinkDecorator = ({ isWorkspace, title }) => {
   const titleAttr = title ? ` title="${escapeHtml(title)}"` : ''
-  if (isWorkspaceMarkdownLinkHref(href)) {
-    return `<a href="${escapeHtml(href)}" class="workspace-markdown-link" data-workspace-link="true"${titleAttr}>${label}</a>`
-  }
-  return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" data-browser-link="true"${titleAttr}>${label}</a>`
+  return isWorkspace
+    ? ` class="workspace-markdown-link" data-workspace-link="true"${titleAttr}`
+    : ` target="_blank" rel="noopener noreferrer" data-browser-link="true"${titleAttr}`
+}
+
+let activeLinkDecorator: LinkDecorator = appLinkDecorator
+
+/**
+ * Inject a host {@link LinkDecorator}; pass `null` to restore the app default.
+ *
+ * Note: rendered `<a>` output still passes the escape allowlist
+ * (`SAFE_OUTER_TAG_RE` in `escape.ts`) and, at the host sink, DOMPurify
+ * (`sanitize.ts`). A decorator that emits attribute *names* outside those
+ * allowlists will have them stripped/escaped — widen both allowlists to match a
+ * custom decorator's vocabulary (they are the security gate, by design).
+ */
+export function setLinkDecorator(decorator: LinkDecorator | null): void {
+  activeLinkDecorator = decorator ?? appLinkDecorator
+}
+
+/** Render an `<a>` for a resolved link, applying the active {@link LinkDecorator}. */
+export function renderAnchor(label: string, href: string, title?: string): string {
+  const isWorkspace = isWorkspaceMarkdownLinkHref(href)
+  // `exactOptionalPropertyTypes`: omit `title` rather than pass an explicit undefined.
+  const decoration: LinkDecoration =
+    title === undefined ? { href, isWorkspace } : { href, isWorkspace, title }
+  const attrs = activeLinkDecorator(decoration)
+  return `<a href="${escapeHtml(href)}"${attrs}>${label}</a>`
+}
+
+function renderedLink(label: string, href: string, title?: string): string {
+  return renderAnchor(label, href, title)
 }
 
 /**
