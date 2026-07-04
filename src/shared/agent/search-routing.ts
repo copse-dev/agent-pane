@@ -1,5 +1,21 @@
 export type SearchQueryMode = 'regex' | 'semantic'
 
+/**
+ * Resolve the search text for the code-search tools, which accept it under
+ * either `pattern` or `query`. The tools historically disagreed — `search_code`
+ * wants `pattern`, `search_codebase`/`semantic_search` want `query` — and
+ * smaller models routinely pass the wrong one of the pair (a Zod
+ * "expected string, received undefined" on the missing name). Accepting both
+ * removes that foot-gun. Returns `undefined` when neither is a non-empty string.
+ */
+export function resolveSearchText(
+  primary: string | undefined,
+  alias: string | undefined,
+): string | undefined {
+  const value = primary ?? alias
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
 const REGEX_METACHAR_RE = /[.*+?^${}()|[\]\\]/
 const IDENTIFIER_RE = /^[A-Za-z_$][\w$.]*$/
 const IMPORT_PATH_RE = /^[\w./-]+\.(ts|tsx|js|jsx|py|go|rs)$/

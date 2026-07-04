@@ -54,6 +54,26 @@ describe('search_codebase tool', () => {
     assert.match(result, /auth\.ts/)
   })
 
+  it('accepts the `pattern` alias in place of `query`', async () => {
+    const result = normalizeToolExecuteResult(
+      await registry.execute(
+        'search_codebase',
+        { pattern: 'authenticate', mode: 'auto' },
+        new AbortController().signal,
+      ),
+    ).result
+    assert.match(result, /\[regex search\]/)
+    assert.match(result, /auth\.ts/)
+  })
+
+  it('reports a helpful message when neither query nor pattern is given', async () => {
+    const result = normalizeToolExecuteResult(
+      await registry.execute('search_codebase', { mode: 'auto' }, new AbortController().signal),
+    ).result
+    assert.match(result, /Provide a search query/)
+    assert.match(result, /pattern/)
+  })
+
   it('uses native semantic search when available', async () => {
     setSemanticBackendForTest('gortex')
     setSemanticSearchExecutorForTest(async ({ query }) => ({

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import micromatch from 'micromatch'
 import { defineTool } from '@shared/types'
+import { resolveSearchText } from '@shared/agent/search-routing.ts'
 import { resolveReadablePath, getWorkspaceRoot } from '../services/workspace.ts'
 import { isRgAvailable } from '../services/tool-availability.ts'
 import { getIndex } from '../services/search/file-index.ts'
@@ -12,7 +13,11 @@ export const searchCodeTool = defineTool({
   description:
     'Search for a text pattern or regex in the workspace. Uses a local content index when available (ig/trigrep), otherwise ripgrep (respects .gitignore). Without ripgrep, a bounded workspace walk applies .gitignore, glob, and case options. Returns matching lines with file:line format.',
   parameters: z.object({
-    pattern: z.string().describe('Search pattern (regex by default)'),
+    pattern: z.string().optional().describe('Search pattern (regex by default)'),
+    // Undocumented fallback: search_codebase uses `query`, and smaller models
+    // routinely pass that name here. Accepted but deliberately not described, so
+    // the tool surface stays lean — see resolveSearchText below.
+    query: z.string().optional(),
     path: z.string().optional().describe('Subdirectory to search in. Defaults to workspace root.'),
     file_glob: z.string().optional().describe('Glob to filter files, e.g. "*.ts"'),
     fixed_string: z.boolean().optional().default(false).describe('Treat pattern as literal string'),
@@ -28,17 +33,21 @@ export const searchCodeTool = defineTool({
       .describe('Lines of surrounding context to show before and after each match (like rg -C)'),
   }),
   async execute(
-    { pattern, path, file_glob, fixed_string, case_sensitive, max_results, context_lines },
+    { pattern, query, path, file_glob, fixed_string, case_sensitive, max_results, context_lines },
     signal,
   ) {
     const root = getWorkspaceRoot()
     if (!root) return 'No workspace open.'
+    const searchPattern = resolveSearchText(pattern, query)
+    if (searchPattern === undefined) {
+      return 'Provide a search pattern via `pattern` (its alias `query` also works).'
+    }
     const searchRoot = path ? resolveReadablePath(path) : root
 
     if (!isRgAvailable()) {
       return slowCodeSearch({
         searchRoot,
-        pattern,
+        pattern: searchPattern,
         maxResults: max_results,
         fixedString: fixed_string,
         caseSensitive: case_sensitive,
@@ -47,7 +56,7 @@ export const searchCodeTool = defineTool({
     }
 
     const { lines, backend } = await searchCodeContent({
-      pattern,
+      pattern: searchPattern,
       searchRoot,
       fixedString: fixed_string,
       caseSensitive: case_sensitive,
