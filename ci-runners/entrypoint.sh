@@ -23,7 +23,7 @@ set -euo pipefail
 #                   repo scope:  classic `repo`, or fine-grained repository
 #                                Administration -> Read & write.
 #                   org scope:   classic `admin:org`, or fine-grained
-#                                organization "Administration" -> Read & write.
+#                                organization "Self-hosted runners" -> Read & write.
 #   RUNNER_TOKEN  A pre-fetched registration token (refresh it yourself; expires
 #                 in ~1h).
 #

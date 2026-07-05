@@ -62,17 +62,18 @@ genuinely new versus today.
 
 | Role | Used when | Needs | New? |
 | ---- | --------- | ----- | ---- |
-| **Registration** (`ACCESS_TOKEN`) | container start, to register the runner | **Org:** classic `admin:org` or fine-grained org **Administration: Read & write**. (Repo-level: repository Administration R/W.) | Existing token, but scope **widens repo→org** if you go org-level |
+| **Registration** (`ACCESS_TOKEN`) | container start, to register the runner | **Org:** classic `admin:org` or fine-grained org **Self-hosted runners: Read & write**. (Repo-level: repository Administration R/W — repos have no separate runner permission.) | Existing token, but scope **widens repo→org** if you go org-level |
 | **Build-time clone** (`BUILD_GH_TOKEN`) | `docker build`, to clone `TARGET_REPO` and let its `npm ci` fetch the **private** `@copse/streaming-markdown` git dep | **Contents: Read** on **both** `agent-pane` **and** `streaming-markdown` (classic `repo`, or a fine-grained token scoped to both) | **NEW** — the old images had the repo in the build context, so they never cloned |
-| **`pick-runner` detection** (`RUNNERS_PAT`) | in CI, to list online runners for auto-routing | **Org:** classic `admin:org` / fine-grained org **Administration: Read** (repo Administration: Read today) | Existing token, but must query the **org** endpoint (scope widens repo→org) |
+| **`pick-runner` detection** (`RUNNERS_PAT`) | in CI, to list online runners for auto-routing | **Org:** classic `admin:org` / fine-grained org **Self-hosted runners: Read** | Existing token, but must query the **org** endpoint (scope widens repo→org) |
 
 **Why the clone token is unavoidable:** baking `agent-pane` runs `npm ci`, which
 pulls `@copse/streaming-markdown` — a **private** git dependency. So even the
 build needs read access to *both* repos. That's the same cross-repo access the
 `setup` action's `github-pat` input already handles at job time; here it moves
 to build time. (This is also an argument *for* one org-scoped token: a single
-fine-grained PAT with **Contents: Read on all repos** + org **Administration:
-Read & write** covers registration and baking in one credential.)
+fine-grained PAT with **Contents: Read on all repos** + org **Self-hosted
+runners: Read & write** covers registration, detection, and baking in one
+credential.)
 
 The clone token is passed as a **BuildKit secret** (`--secret`), mounted on
 tmpfs and consumed only inside the bake `RUN` via `GIT_CONFIG_*` env vars — it is
@@ -126,7 +127,7 @@ runner**. `docker-compose.yml` caps each at `mem_limit: 6g` with a 2 GB
    org default group grants all repos). Build + register with
    `make runners` — or `make runners-reprovision` to **replace the containers
    built from the now-deleted dirs**.
-2. **Add `RUNNERS_PAT`** (org or repo secret, org **Administration: Read**)
+2. **Add `RUNNERS_PAT`** (org or repo secret, org **Self-hosted runners: Read**)
    to both repos so `pick-runner` can enumerate the org fleet. Without it,
    routing fails open to hosted — CI still works, it just never uses self-hosted.
 3. **Confirm one green run** lands on the pool (an e2e job and a check job in
