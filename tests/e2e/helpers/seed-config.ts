@@ -162,6 +162,7 @@ export function seedEmptyProject(
     localSubagentsEnabled?: boolean
     autoPortraitRightPanel?: boolean
     rightPanelPosition?: 'auto' | 'side' | 'bottom'
+    okfMemoriesEnabled?: boolean
   },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
@@ -197,6 +198,9 @@ export function seedEmptyProject(
   }
   if (options?.rightPanelPosition !== undefined) {
     settings.rightPanelPosition = options.rightPanelPosition
+  }
+  if (options?.okfMemoriesEnabled !== undefined) {
+    settings.okfMemoriesEnabled = options.okfMemoriesEnabled
   }
   if (Object.keys(settings).length > 0) {
     writeSettings(settings)
