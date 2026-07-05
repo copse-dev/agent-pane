@@ -77,6 +77,7 @@ import {
   checkoutGitBranch,
   getBranches,
   getDefaultBranch,
+  getGitChangeStats,
   getGitFileDiff,
   getGitStatus,
   isInsideGitWorkTree,
@@ -459,6 +460,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   ipcMain.handle('git:isAvailable', async () => isGitAvailable() && (await isInsideGitWorkTree()))
   ipcMain.handle('git:status', () => getGitStatus())
+  ipcMain.handle('git:changeStats', () => getGitChangeStats())
   ipcMain.handle('git:fileDiff', (event, path: unknown, staged: unknown) => {
     assertMainFrameSender(event, win)
     const filePath = parseIpcArgs(zPathString, [path])

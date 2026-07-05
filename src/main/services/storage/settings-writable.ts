@@ -147,6 +147,13 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   modelClassifierEnabled: z.boolean(),
   advisorStrategyEnabled: z.boolean(),
   advisorModel: z.string().max(256),
+  // Experimental model comparison harness: run the working-diff review through
+  // two models plus a judge that compares their verdicts. See model-comparison.ts.
+  modelComparisonEnabled: z.boolean(),
+  modelComparisonAutoOnReview: z.boolean(),
+  comparisonModelA: z.string().max(256),
+  comparisonModelB: z.string().max(256),
+  comparisonJudgeModel: z.string().max(256),
   roadmapPlansEnabled: z.boolean(),
   backgroundTasksEnabled: z.boolean(),
   piiRedactionEnabled: z.boolean(),

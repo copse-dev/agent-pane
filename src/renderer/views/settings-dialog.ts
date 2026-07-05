@@ -11,6 +11,10 @@ import {
 } from '@shared/app-icon-variants.ts'
 import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
 import { DEFAULT_ADVISOR_MODEL } from '../../main/services/advisor-strategy.ts'
+import {
+  DEFAULT_COMPARISON_MODEL_B,
+  DEFAULT_COMPARISON_JUDGE_MODEL,
+} from '../../main/services/model-comparison.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { populateModelSelect, populateSmallTasksModelSelect } from './model-options.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
@@ -90,6 +94,8 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'longHorizonTasksEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'advisorStrategyEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'modelComparisonEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'modelComparisonAutoOnReview', kind: 'checkbox', default: false, save: true },
   { name: 'roadmapPlansEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'backgroundTasksEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'piiRedactionEnabled', kind: 'checkbox', default: false, save: true },
@@ -755,6 +761,49 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset>
+              <legend>Model comparison</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="modelComparisonEnabled" />
+                Compare two models on the working diff
+              </label>
+              <p class="field-hint">
+                Adds a <code>compare_models</code> tool that reviews the current diff through two
+                models independently, then a judge model compares their verdicts (agreements,
+                disagreements, and what each caught that the other missed). Since a run makes up to
+                three model calls, it asks for approval before spending on any paid model (you can
+                choose to remember the choice for the session). While off, the tool is not registered.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="modelComparisonAutoOnReview" />
+                Run the comparison automatically after editing turns
+              </label>
+              <p class="field-hint">
+                When on, the comparison runs as part of the post-turn review (still gated by the
+                spend approval). When off, run it on demand via the <code>compare_models</code> tool.
+              </p>
+              <label class="field-label" for="comparisonModelA">Reviewer A</label>
+              <select id="comparisonModelA" name="comparisonModelA">
+                <option value="">(loading…)</option>
+              </select>
+              <p class="field-hint">First reviewer. Leave blank to use your current chat model.</p>
+              <label class="field-label" for="comparisonModelB">Reviewer B</label>
+              <select id="comparisonModelB" name="comparisonModelB">
+                <option value="">(loading…)</option>
+              </select>
+              <p class="field-hint">
+                Second reviewer — pick a different model than Reviewer A. Defaults to
+                <code>claude-opus-4-8</code>.
+              </p>
+              <label class="field-label" for="comparisonJudgeModel">Judge</label>
+              <select id="comparisonJudgeModel" name="comparisonJudgeModel">
+                <option value="">(loading…)</option>
+              </select>
+              <p class="field-hint">
+                Model that compares the two reviews. Defaults to <code>claude-opus-4-8</code>.
+              </p>
+            </fieldset>
+
+            <fieldset>
               <legend>Roadmap plans</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="roadmapPlansEnabled" />
@@ -1316,6 +1365,26 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         api,
         advisorModel ?? DEFAULT_ADVISOR_MODEL,
       )
+      const comparisonModelA = (await api.settings.get('comparisonModelA')) as string | undefined
+      await populateModelSelect(
+        form.elements.namedItem('comparisonModelA') as HTMLSelectElement,
+        api,
+        comparisonModelA ?? '',
+      )
+      const comparisonModelB = (await api.settings.get('comparisonModelB')) as string | undefined
+      await populateModelSelect(
+        form.elements.namedItem('comparisonModelB') as HTMLSelectElement,
+        api,
+        comparisonModelB ?? DEFAULT_COMPARISON_MODEL_B,
+      )
+      const comparisonJudgeModel = (await api.settings.get('comparisonJudgeModel')) as
+        | string
+        | undefined
+      await populateModelSelect(
+        form.elements.namedItem('comparisonJudgeModel') as HTMLSelectElement,
+        api,
+        comparisonJudgeModel ?? DEFAULT_COMPARISON_JUDGE_MODEL,
+      )
       await loadSimpleFields(form, api)
       const savedWebOrigins = (await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING)) as
         | string[]
@@ -1381,6 +1450,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         'smallTasksModel',
         ((data.get('smallTasksModel') as string | null) ?? '').trim(),
       )
+      for (const key of ['comparisonModelA', 'comparisonModelB', 'comparisonJudgeModel'] as const) {
+        await api.settings.set(key, ((data.get(key) as string | null) ?? '').trim())
+      }
       await saveSimpleFields(data, api)
       await api.settings.set('theme', theme)
       await api.settings.set('fontSize', fontSize)
