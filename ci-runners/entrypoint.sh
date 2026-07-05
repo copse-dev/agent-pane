@@ -2,7 +2,16 @@
 set -euo pipefail
 
 # Registers this container as a GitHub Actions self-hosted runner, runs jobs,
-# and (when ephemeral) deregisters cleanly on exit.
+# and (when ephemeral) deregisters cleanly on exit. Identical registration flow
+# to agent-pane's .github/runner*/entrypoint.sh — the ONLY change is the default
+# label set, which now advertises BOTH tiers (copse-e2e + copse-checks) so a
+# single unified fleet serves e2e and check jobs alike.
+#
+# Repo OR org scope: GITHUB_URL may be a repo URL
+# (https://github.com/<owner>/<repo>) or an org URL (https://github.com/<owner>).
+# registration_token_url() picks the matching REST endpoint automatically, so
+# the same image registers an org-shared pool with no code change — just point
+# GITHUB_URL at the org and give ACCESS_TOKEN org-level runner admin.
 #
 # Required env:
 #   GITHUB_URL    Repo URL   https://github.com/<owner>/<repo>
@@ -10,15 +19,17 @@ set -euo pipefail
 #
 # Auth — provide exactly ONE:
 #   ACCESS_TOKEN  A PAT exchanged for a short-lived registration token on every
-#                 start. Classic PAT: `repo` scope. Fine-grained: repository
-#                 Administration -> Read & write. This is the easy path for
-#                 long-lived containers, since registration tokens expire in ~1h.
-#   RUNNER_TOKEN  A pre-fetched registration token (use if you don't want a PAT
-#                 in the container; you must refresh it yourself).
+#                 start.
+#                   repo scope:  classic `repo`, or fine-grained repository
+#                                Administration -> Read & write.
+#                   org scope:   classic `admin:org`, or fine-grained
+#                                organization "Self-hosted runners" -> Read & write.
+#   RUNNER_TOKEN  A pre-fetched registration token (refresh it yourself; expires
+#                 in ~1h).
 #
 # Optional env:
 #   RUNNER_NAME    default: docker-<container-hostname>-<pid>
-#   RUNNER_LABELS  default: self-hosted,linux,docker,copse-e2e
+#   RUNNER_LABELS  default: self-hosted,linux,docker,copse-e2e,copse-checks
 #   RUNNER_GROUP   default: default
 #   EPHEMERAL      "true" (default): take one job, then exit so the orchestrator
 #                  restarts a pristine container. "false": long-lived runner.
@@ -26,7 +37,11 @@ set -euo pipefail
 : "${GITHUB_URL:?set GITHUB_URL to the repo or org URL}"
 
 RUNNER_NAME="${RUNNER_NAME:-docker-$(hostname)-$$}"
-RUNNER_LABELS="${RUNNER_LABELS:-self-hosted,linux,docker,copse-e2e}"
+# Both labels by default: this unified image can serve either tier. CI targets
+# `copse-e2e` for the e2e job and `copse-checks` for the static+unit tier; a
+# runner carrying both is eligible for whichever is queued, so the pool
+# self-balances instead of splitting into idle/overworked halves.
+RUNNER_LABELS="${RUNNER_LABELS:-self-hosted,linux,docker,copse-e2e,copse-checks}"
 RUNNER_GROUP="${RUNNER_GROUP:-default}"
 EPHEMERAL="${EPHEMERAL:-true}"
 
@@ -69,11 +84,9 @@ trap 'cleanup; exit 143' TERM
 
 # A container's filesystem survives a `docker restart` / restart-policy bounce
 # (the same container is re-run, not recreated), so a prior run's registration
-# files can still be here — and config.sh refuses to reconfigure when they are
-# ("Cannot configure the runner because it is already configured."). Clear any
-# prior local config first; `--replace` below reclaims the same-named server
-# registration. `config.sh remove` deregisters cleanly when the token is still
-# valid; otherwise fall back to deleting the local config files directly.
+# files can still be here — and config.sh refuses to reconfigure when they are.
+# Clear any prior local config first; `--replace` below reclaims the same-named
+# server registration.
 if [[ -f .runner ]]; then
   echo "Existing runner config found — removing before reconfigure…"
   ./config.sh remove --token "${RUNNER_TOKEN}" 2>/dev/null \

@@ -100,11 +100,12 @@ export function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk |
           id: update.toolCallId,
           name: unwrapInlineCode(update.title),
           args: update.rawInput ?? {},
-          // Carry a *meaningful* ACP kind so the terminal's "Agent tasks" list
-          // can surface the agent's own shell commands (`kind: 'execute'`).
+          // Carry a *meaningful* ACP kind so the card groups/labels like the
+          // built-in tools (`getToolGroupKey`) and the terminal's "Agent tasks"
+          // list can surface the agent's own shell commands (`kind: 'execute'`).
           // `'other'` is ACP's unspecified default (see the `?? 'other'` sites in
           // acp-agent-service / acp-approval-presentation), so it carries no
-          // signal — dropping it keeps plain tool calls clean.
+          // signal — dropping it keeps plain tool calls ungrouped.
           ...(update.kind && update.kind !== 'other' ? { kind: update.kind } : {}),
         },
       }
@@ -116,6 +117,10 @@ export function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk |
         toolCallId: update.toolCallId,
         result: toolCallContentText(update.content),
         isError: update.status === 'failed',
+        // External agents author tool output as Markdown (fenced code blocks,
+        // lists, prose). Tag it so the renderer runs it through the Markdown
+        // pipeline instead of dumping literal backticks into a `<pre>`.
+        resultFormat: 'markdown',
       }
     }
     default:

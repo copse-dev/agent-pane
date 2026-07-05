@@ -94,6 +94,41 @@ For primary/secondary action buttons (Save / Cancel style):
 - Keep an action bar clear of the window's bottom edge. Don't let buttons sit flush against the
   bottom; add generous bottom spacing (e.g. `calc(var(--spacing-xl) + var(--spacing-lg))`).
 
+## Text selection: content is selectable, chrome is not
+
+Copse is a desktop app, so its window chrome (tabs, sidebars, labels, footers, dialog buttons)
+should behave like native chrome — dragging across it must **not** highlight text. But the agent's
+output is content the user will legitimately want to copy. The policy, enforced in
+[`base.css`](../src/renderer/styles/global/base.css):
+
+- `<body>` defaults to `user-select: none`, so nothing is selectable unless it opts back in. This is
+  a **default-deny** model: new UI is non-selectable for free, and you only think about selection
+  when you're adding a region that holds copyable content.
+- One rule re-enables `user-select: text` on the content regions: inputs the user authors
+  (`input`, `textarea`, `select`, `[contenteditable]`), rendered markdown
+  (`.message-text`, `.message-reasoning-text`), tool output (`.tool-result`, `.tool-args pre`), the
+  terminal (`.terminal-container`), and the editor (`.monaco-editor .view-lines`).
+
+### The test to apply
+
+Ask "is this **content** the agent produced (or the user typed), or is it **chrome**?"
+
+- **Content → selectable.** Every markdown-rendering surface must land in a container carrying
+  `.message-text` (the review card, PR description, and file preview all do this by composing the
+  class) or be added to the selection allow-list explicitly, as `.message-reasoning-text` is.
+- **Chrome → not selectable.** This includes the permission prompt (`.approval-body`). It reads like
+  content — it can even show the shell command about to run — but it's a transient modal asking a
+  yes/no question, not part of the transcript. It stays out of the allow-list. (If a future need to
+  copy the pending command arises, add a dedicated copy affordance rather than making the whole
+  prompt drag-selectable.)
+
+When you add a new markdown-rendering surface, either compose `.message-text` onto its container or
+add its class to the allow-list in `base.css` — otherwise the agent's output silently can't be
+copied. The contract test
+[`src/renderer/styles/text-selection.test.ts`](../src/renderer/styles/text-selection.test.ts) pins
+the policy: body defaults to non-selectable, the content regions opt back in, and the permission
+prompt stays non-selectable.
+
 ## Sticky footers inside scroll containers (gotcha)
 
 A `position: sticky; bottom: 0` element **cannot extend past its containing block's content box**.

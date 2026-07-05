@@ -40,7 +40,7 @@ export function mountContextPanel(
   fileToolbar.append(previewBtn, sourceBtn)
 
   const previewContainer = document.createElement('div')
-  previewContainer.className = 'markdown-file-preview message-text'
+  previewContainer.className = 'markdown-file-preview message-text streaming-markdown'
   previewContainer.hidden = true
 
   const fileContainer = document.createElement('div')
