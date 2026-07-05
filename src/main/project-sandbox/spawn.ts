@@ -117,6 +117,12 @@ export async function spawnShellInProjectSandbox(
     env?: NodeJS.ProcessEnv
     signal?: AbortSignal
     unsandboxed?: boolean
+    /**
+     * Seatbelt overlay for this run. Defaults to {@link workspaceSandboxOverlay}
+     * (workspace read+write). The command-routing layer passes a tighter overlay
+     * (e.g. {@link readonlySandboxOverlay} for the `read` tier).
+     */
+    sandboxConfig?: Partial<SandboxRuntimeConfig>
   } & Pick<SpawnOptionsWithoutStdio, 'stdio'>,
 ): Promise<ChildProcess> {
   if (!isProjectSandboxEnabled() || opts.unsandboxed) {
@@ -132,7 +138,7 @@ export async function spawnShellInProjectSandbox(
     })
   }
 
-  const customConfig = workspaceSandboxOverlay(opts.cwd)
+  const customConfig = opts.sandboxConfig ?? workspaceSandboxOverlay(opts.cwd)
   const { argv, env } = await SandboxManager.wrapWithSandboxArgv(
     shellCommandLine,
     shellForSandboxWrap(),

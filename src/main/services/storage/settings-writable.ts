@@ -94,6 +94,15 @@ export const webAllowedOriginsSchema = z
   )
   .max(128)
 
+export const commandRoutingTableSchema = z
+  .array(
+    z.object({
+      command: z.string().min(1).max(128),
+      tier: z.enum(['read', 'write', 'container', 'allow']),
+    }),
+  )
+  .max(500)
+
 export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   model: z.string().max(256),
   theme: z.enum(['light', 'dark']),
@@ -190,6 +199,9 @@ export const securitySettingsSchema = z.object({
   defaultReadonlyMode: z.boolean(),
   webAllowedOrigins: webAllowedOriginsSchema,
   webAllowUserApproval: z.boolean(),
+  // Per-project command→sandbox-tier routing rules. Optional so older bundles
+  // that never send it don't clobber a saved table.
+  commandRoutingTable: commandRoutingTableSchema.optional(),
 })
 
 export type SecuritySettings = z.infer<typeof securitySettingsSchema>

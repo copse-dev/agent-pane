@@ -3,12 +3,15 @@ import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { getWorkspaceRoot } from '../services/workspace.ts'
 import { getMainWindow } from '../windows/create-main-window.ts'
+import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import {
   afterSandboxedCommand,
   isProjectSandboxEnabled,
+  readonlySandboxOverlay,
   sandboxViolationCountForCommand,
   spawnShellInProjectSandbox,
 } from '../project-sandbox/index.ts'
+import { routeShellCommand } from '../services/security/command-routing-config.ts'
 import { detectSandboxFailure } from '../services/security/sandbox-failure.ts'
 import {
   promptInstallSocketFirewall,
@@ -48,6 +51,7 @@ async function runShellOnce(
   signal: AbortSignal,
   unsandboxed: boolean,
   env: NodeJS.ProcessEnv,
+  sandboxConfig?: Partial<SandboxRuntimeConfig>,
 ): Promise<ShellRunResult> {
   const win = getMainWindow()
 
@@ -61,6 +65,7 @@ async function runShellOnce(
           stdio: 'pipe',
           signal,
           unsandboxed,
+          ...(sandboxConfig ? { sandboxConfig } : {}),
         })
       } catch (err) {
         // Wrapping the command in the sandbox failed (runner-side, not command
@@ -257,7 +262,18 @@ export const runShellTool = defineTool({
     const { command: finalCommand, env, banner } = prepared
     const withBanner = (output: string): string => (banner ? `${banner}\n${output}` : output)
 
-    const outsideSandbox = shellRequiresOutsideSandbox(finalCommand, cwd, isProjectSandboxEnabled())
+    // Route the command to a sandbox tier so it runs in the minimal context that
+    // satisfies it: `allow` runs unsandboxed with no prompt (the gate approved it
+    // via the same routing), `read` runs under the read-only overlay, everything
+    // else keeps the default workspace overlay. Falls back to the existing
+    // external-command heuristic for the unsandboxed decision.
+    const sandboxEnabled = isProjectSandboxEnabled()
+    const routing = routeShellCommand(finalCommand)
+    const tier = routing.outcome === 'run' ? routing.tier : null
+    const outsideSandbox =
+      tier === 'allow' || shellRequiresOutsideSandbox(finalCommand, cwd, sandboxEnabled)
+    const sandboxConfig =
+      tier === 'read' && sandboxEnabled && !outsideSandbox ? readonlySandboxOverlay(cwd) : undefined
 
     // Strip LLM API keys (and other secrets) from the child env so a compromised
     // command — especially an unsandboxed retry with full network — cannot exfiltrate
@@ -279,6 +295,7 @@ export const runShellTool = defineTool({
         signal,
         outsideSandbox,
         childEnv,
+        sandboxConfig,
       )
 
       if (result.exitCode === 0) return withBanner(formatShellSuccess(result))

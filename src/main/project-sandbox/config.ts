@@ -364,8 +364,8 @@ export function portBindingSandboxOverlay(workspaceRoot: string): Partial<Sandbo
  *
  * The tmp dir remains writable because build/inspection tools routinely stage
  * scratch files via `$TMPDIR`; denying it would break otherwise read-only tools
- * without adding a workspace-write capability. The mandatory config/​git-hook
- * write-deny list still applies on top.
+ * without adding a workspace-write capability. The mandatory config-file and
+ * git-hook write-deny list still applies on top.
  */
 export function readonlySandboxOverlay(workspaceRoot: string): Partial<SandboxRuntimeConfig> {
   const base = workspaceSandboxOverlay(workspaceRoot)

@@ -76,17 +76,19 @@ describe('resolveCommandRouting', () => {
   it('routes a known read-only command to the read tier', () => {
     const r = resolveCommandRouting('ls -la', root, table())
     assert.equal(r.outcome, 'run')
-    assert.equal(r.outcome === 'run' && r.tier, 'read')
+    assert.equal(r.tier, 'read')
   })
 
   it('routes a workspace mutator to the write tier', () => {
     const r = resolveCommandRouting('mkdir build', root, table())
-    assert.equal(r.outcome === 'run' && r.tier, 'write')
+    assert.equal(r.outcome, 'run')
+    assert.equal(r.tier, 'write')
   })
 
   it('runs an unknown-but-contained command in the write tier', () => {
     const r = resolveCommandRouting('npm test', root, table())
-    assert.equal(r.outcome === 'run' && r.tier, 'write')
+    assert.equal(r.outcome, 'run')
+    assert.equal(r.tier, 'write')
   })
 
   it('prompts for an external command', () => {
@@ -98,7 +100,7 @@ describe('resolveCommandRouting', () => {
     const t = table([{ command: 'xcodebuild', tier: 'allow' }])
     const r = resolveCommandRouting('xcodebuild -project App.xcodeproj build', root, t)
     assert.equal(r.outcome, 'run')
-    assert.equal(r.outcome === 'run' && r.tier, 'allow')
+    assert.equal(r.tier, 'allow')
   })
 
   it('the flagship case: `mkdir && xcodebuild` runs allow-tier without a prompt', () => {
@@ -110,7 +112,7 @@ describe('resolveCommandRouting', () => {
     )
     assert.equal(r.outcome, 'run')
     // mkdir -> write, xcodebuild -> allow; join(write, allow) === allow.
-    assert.equal(r.outcome === 'run' && r.tier, 'allow')
+    assert.equal(r.tier, 'allow')
     const tiers = r.segments.map((s) => s.tier)
     assert.deepEqual(tiers, ['write', 'allow'])
   })
@@ -151,10 +153,23 @@ describe('resolveCommandRouting', () => {
     assert.equal(r.outcome, 'prompt')
   })
 
+  it('bumps a read-tier command that redirects to a file up to write', () => {
+    // `echo` is read, but `echo x > out` writes; it must run in the write overlay.
+    const r = resolveCommandRouting('echo hello > out.txt', root, table())
+    assert.equal(r.outcome, 'run')
+    assert.equal(r.tier, 'write')
+  })
+
+  it('keeps a read-tier command with only an input redirect at read', () => {
+    const r = resolveCommandRouting('wc -l < in.txt', root, table())
+    assert.equal(r.outcome, 'run')
+    assert.equal(r.tier, 'read')
+  })
+
   it('user routes override the built-in defaults', () => {
-    // Tighten `cat` from read to a prompt-worthy... no — tighten mkdir to read.
     const t = table([{ command: 'mkdir', tier: 'read' }])
     const r = resolveCommandRouting('mkdir build', root, t)
-    assert.equal(r.outcome === 'run' && r.tier, 'read')
+    assert.equal(r.outcome, 'run')
+    assert.equal(r.tier, 'read')
   })
 })

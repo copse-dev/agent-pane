@@ -26,6 +26,12 @@ import {
   WEB_ALLOWED_ORIGINS_SETTING,
   WEB_ALLOW_USER_APPROVAL_SETTING,
 } from '@shared/web-origins.ts'
+import {
+  COMMAND_ROUTES_SETTING,
+  formatCommandRoutes,
+  parseCommandRoutes,
+  sanitizeCommandRoutes,
+} from '@shared/command-routing.ts'
 
 export type SettingsSection =
   | 'general'
@@ -437,6 +443,33 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <label class="checkbox-label">
                 <input type="checkbox" name="autoRunSandboxCommands" />
                 Auto-run shell commands contained within the sandbox
+              </label>
+            </fieldset>
+
+            <fieldset>
+              <legend>Command routing</legend>
+              <p class="settings-fieldset-desc">
+                Route specific commands to a sandbox tier. <code>read</code> runs read-only,
+                <code>write</code> allows workspace writes, <code>container</code> uses the strongest
+                available isolation, and <code>allow</code> runs the command unsandboxed with no
+                prompt — for tools that can't be sandboxed but are safe (e.g.
+                <code>xcodebuild</code>). A compound like <code>mkdir build &amp;&amp; xcodebuild …</code>
+                runs allow-tier without a prompt, while a destructive or network segment still
+                prompts.
+              </p>
+              <label>
+                Routing rules
+                <textarea
+                  name="commandRoutes"
+                  rows="6"
+                  spellcheck="false"
+                  placeholder="xcodebuild:allow"
+                ></textarea>
+                <span class="field-hint">
+                  One <code>command:tier</code> per line (tier is
+                  <code>read</code>/<code>write</code>/<code>container</code>/<code>allow</code>).
+                  Matches the command basename. Requires auto-run to be on.
+                </span>
               </label>
             </fieldset>
           </section>
@@ -1291,6 +1324,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       ;(form.elements.namedItem('webAllowedOrigins') as HTMLTextAreaElement).value = (
         savedWebOrigins?.length ? savedWebOrigins : DEFAULT_WEB_ALLOWED_ORIGINS
       ).join('\n')
+      ;(form.elements.namedItem('commandRoutes') as HTMLTextAreaElement).value =
+        formatCommandRoutes(sanitizeCommandRoutes(await api.settings.get(COMMAND_ROUTES_SETTING)))
       ;(form.elements.namedItem('theme') as HTMLSelectElement).value = store.getState().theme
       ;(form.elements.namedItem('fontSize') as HTMLInputElement).value = String(
         store.getState().fontSize,
@@ -1368,6 +1403,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         defaultReadonlyMode: data.get('defaultReadonlyMode') === 'on',
         webAllowedOrigins: parseWebAllowedOrigins(data.get('webAllowedOrigins')),
         webAllowUserApproval: data.get(WEB_ALLOW_USER_APPROVAL_SETTING) === 'on',
+        commandRoutingTable: parseCommandRoutes(
+          typeof data.get('commandRoutes') === 'string'
+            ? (data.get('commandRoutes') as string)
+            : '',
+        ),
       })
 
       store.setState({

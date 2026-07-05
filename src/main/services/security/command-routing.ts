@@ -3,6 +3,9 @@ import {
   dangerousInSandboxReasons,
   normalizeShellCommandForAnalysis,
 } from './shell-scope.ts'
+import type { CommandRoute, CommandTier } from '@shared/command-routing.ts'
+
+export type { CommandRoute, CommandTier } from '@shared/command-routing.ts'
 
 /**
  * Command routing — decide *which sandbox context* a shell command runs in.
@@ -34,16 +37,6 @@ import {
  * allow-listed command.
  */
 
-/** Isolation/permission tier a command (or one of its segments) is routed to. */
-export type CommandTier = 'read' | 'write' | 'container' | 'allow' | 'prompt'
-
-/** A single routing rule: a command *head* (basename) mapped to a tier. */
-export interface CommandRoute {
-  /** Command basename this rule matches, e.g. `xcodebuild` or `mkdir`. */
-  command: string
-  tier: Exclude<CommandTier, 'prompt'>
-}
-
 export interface SegmentRouting {
   /** The raw segment text (a top-level `&&`/`||`/`;`/`|`-delimited slice). */
   segment: string
@@ -55,7 +48,12 @@ export interface SegmentRouting {
 }
 
 export type CommandRouting =
-  | { outcome: 'run'; tier: Exclude<CommandTier, 'prompt'>; segments: SegmentRouting[]; reasons: string[] }
+  | {
+      outcome: 'run'
+      tier: Exclude<CommandTier, 'prompt'>
+      segments: SegmentRouting[]
+      reasons: string[]
+    }
   | { outcome: 'prompt'; segments: SegmentRouting[]; reasons: string[] }
 
 /**
@@ -97,7 +95,9 @@ export const DEFAULT_COMMAND_ROUTES: readonly CommandRoute[] = [
 ]
 
 /** Merge user-defined routes over the built-in defaults (user wins per command). */
-export function buildRoutingTable(userRoutes: readonly CommandRoute[] = []): Map<string, CommandTier> {
+export function buildRoutingTable(
+  userRoutes: readonly CommandRoute[] = [],
+): Map<string, CommandTier> {
   const table = new Map<string, CommandTier>()
   for (const { command, tier } of DEFAULT_COMMAND_ROUTES) table.set(command, tier)
   for (const { command, tier } of userRoutes) table.set(command, tier)
@@ -140,8 +140,8 @@ export function splitSegments(command: string): string[] {
   let current = ''
   let quote: '"' | "'" | null = null
   for (let i = 0; i < command.length; i++) {
-    const ch = command[i]!
-    const next = command[i + 1]
+    const ch = command.charAt(i)
+    const next = command.charAt(i + 1)
     if (quote) {
       current += ch
       if (ch === quote) quote = null
@@ -180,6 +180,16 @@ function hasCommandSubstitution(command: string): boolean {
 }
 
 /**
+ * A file-writing redirect (`>`, `>>`, `&>`) turns an otherwise read-only command
+ * into a writer (`cat x > out`). Over-detection is safe here: it only ever bumps
+ * the `read` tier up to `write` (the default), never the reverse, so we do not
+ * bother excluding fd-dups like `2>&1`.
+ */
+function hasWriteRedirect(segment: string): boolean {
+  return segment.includes('>')
+}
+
+/**
  * Resolve one segment to a tier. `allow`-listed heads waive the network/outside-
  * path heuristic for *that* segment (the whole point of the trust grant), but the
  * whole-command destructive and substitution gates in {@link resolveCommandRouting}
@@ -194,7 +204,12 @@ function resolveSegmentTier(
   const routed = head ? table.get(head) : undefined
 
   if (routed === 'allow') {
-    return { segment, head, tier: 'allow', reasons: [`\`${head}\` is on the complete-allow list`] }
+    return {
+      segment,
+      head,
+      tier: 'allow',
+      reasons: [`\`${head ?? '?'}\` is on the complete-allow list`],
+    }
   }
 
   const analysis = analyzeShellCommand(segment, workspaceRoot)
@@ -203,6 +218,11 @@ function resolveSegmentTier(
   }
 
   if (routed) {
+    // A read-only command that redirects to a file actually writes; run it in the
+    // write overlay so the seatbelt does not deny the redirect.
+    if (routed === 'read' && hasWriteRedirect(segment)) {
+      return { segment, head, tier: 'write', reasons: [`\`${head ?? '?'}\` writes via redirect`] }
+    }
     return { segment, head, tier: routed, reasons: [`\`${head ?? '?'}\` routes to ${routed}`] }
   }
 
@@ -272,7 +292,8 @@ export function resolveCommandRouting(
 
   if (tier === 'prompt') {
     const reasons = segments.filter((s) => s.tier === 'prompt').flatMap((s) => s.reasons)
-    const incompatible = reasons.length === 0 ? ['incompatible sandbox contexts across segments'] : reasons
+    const incompatible =
+      reasons.length === 0 ? ['incompatible sandbox contexts across segments'] : reasons
     return { outcome: 'prompt', segments, reasons: incompatible }
   }
 

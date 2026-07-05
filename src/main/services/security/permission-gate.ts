@@ -28,6 +28,7 @@ import {
   GITHUB_READONLY_CI_TOOLS,
 } from './permission-policy.ts'
 import { detectPackageInstall } from './safe-install.ts'
+import { routeShellCommand } from './command-routing-config.ts'
 import {
   BROWSER_TOOLS,
   READ_ONLY_BROWSER_TOOLS,
@@ -209,12 +210,24 @@ async function checkShellPermission(args: unknown): Promise<boolean> {
   const command = shellCommandFromArgs(args)
   if (!command) return promptShell('(invalid command)', ['missing command argument'], false)
 
+  const autoRun = getSetting<boolean>('autoRunSandboxCommands', true)
+  // Complete-allow fast path: a command whose every segment is either explicitly
+  // allow-listed or statically sandbox-safe runs with no prompt (the prompt-fatigue
+  // lever). Gated behind the global auto-run toggle — turning auto-run off means
+  // "prompt for everything", which the explicit allow-list must not override. The
+  // whole-command destructive/substitution guards inside routeShellCommand still
+  // apply, so this can never auto-run a dangerous command (see command-routing.ts).
+  if (autoRun) {
+    const routing = routeShellCommand(command)
+    if (routing.outcome === 'run' && routing.tier === 'allow') return true
+  }
+
   const workspaceRoot = getWorkspaceRoot()
   const sandboxEnabled = isProjectSandboxEnabled()
   const decision = decideShellPermission(command, {
     workspaceRoot,
     sandboxEnabled,
-    autoRun: getSetting<boolean>('autoRunSandboxCommands', true),
+    autoRun,
     classification: sandboxEnabled ? null : await classifyShellScope(command),
     confidenceThreshold: getSetting<number>('safetyConfidenceThreshold', 0.85),
   })
