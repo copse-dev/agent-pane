@@ -8,7 +8,7 @@ per-repo, per-tier fleets that previously lived in `agent-pane/.github/runner`
 It folds three changes into one image:
 
 1. **One superset image, one pool.** The check tier's image is a strict subset
-   of the e2e image, so this image carries the full e2e stack and runs *both*
+   of the e2e image, so this image carries the full e2e stack and runs _both_
    tiers. A runner registers with both `copse-e2e` and `copse-checks` labels, so
    any box is eligible for whichever job is queued — the pool self-balances
    instead of one labelled fleet idling while the other is saturated. (This is
@@ -18,8 +18,8 @@ It folds three changes into one image:
    already picks the org vs repo registration endpoint automatically, so the
    same image registers an org-shared pool with no code change.
 
-3. **Repo-agnostic dep baking ("thread in main").** The old images baked *their
-   own* repo's `node_modules` by using the repo root as the Docker build
+3. **Repo-agnostic dep baking ("thread in main").** The old images baked _their
+   own_ repo's `node_modules` by using the repo root as the Docker build
    context. That couples the image to one repo. This image instead **clones the
    target repo's branch at build time** and bakes its deps — so the image can
    live in its own repo and be pointed at any consumer.
@@ -57,20 +57,20 @@ docker compose down      # tear down
 
 There are **three distinct token roles**. You do **not** need three separate
 tokens — one org-scoped fine-grained (or classic) PAT can cover all three — but
-they are separate *permissions*, and one of them (the build-time clone) is
+they are separate _permissions_, and one of them (the build-time clone) is
 genuinely new versus today.
 
-| Role | Used when | Needs | New? |
-| ---- | --------- | ----- | ---- |
-| **Registration** (`ACCESS_TOKEN`) | container start, to register the runner | **Org:** classic `admin:org` or fine-grained org **Self-hosted runners: Read & write**. (Repo-level: repository Administration R/W — repos have no separate runner permission.) | Existing token, but scope **widens repo→org** if you go org-level |
-| **Build-time clone** (`BUILD_GH_TOKEN`) | `docker build`, to clone `TARGET_REPO` and let its `npm ci` fetch the **private** `@copse/streaming-markdown` git dep | **Contents: Read** on **both** `agent-pane` **and** `streaming-markdown` (classic `repo`, or a fine-grained token scoped to both) | **NEW** — the old images had the repo in the build context, so they never cloned |
-| **`pick-runner` detection** (`RUNNERS_PAT`) | in CI, to list online runners for auto-routing | **Org:** classic `admin:org` / fine-grained org **Self-hosted runners: Read** | Existing token, but must query the **org** endpoint (scope widens repo→org) |
+| Role                                        | Used when                                                                                                             | Needs                                                                                                                                                                           | New?                                                                             |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| **Registration** (`ACCESS_TOKEN`)           | container start, to register the runner                                                                               | **Org:** classic `admin:org` or fine-grained org **Self-hosted runners: Read & write**. (Repo-level: repository Administration R/W — repos have no separate runner permission.) | Existing token, but scope **widens repo→org** if you go org-level                |
+| **Build-time clone** (`BUILD_GH_TOKEN`)     | `docker build`, to clone `TARGET_REPO` and let its `npm ci` fetch the **private** `@copse/streaming-markdown` git dep | **Contents: Read** on **both** `agent-pane` **and** `streaming-markdown` (classic `repo`, or a fine-grained token scoped to both)                                               | **NEW** — the old images had the repo in the build context, so they never cloned |
+| **`pick-runner` detection** (`RUNNERS_PAT`) | in CI, to list online runners for auto-routing                                                                        | **Org:** classic `admin:org` / fine-grained org **Self-hosted runners: Read**                                                                                                   | Existing token, but must query the **org** endpoint (scope widens repo→org)      |
 
 **Why the clone token is unavoidable:** baking `agent-pane` runs `npm ci`, which
 pulls `@copse/streaming-markdown` — a **private** git dependency. So even the
-build needs read access to *both* repos. That's the same cross-repo access the
+build needs read access to _both_ repos. That's the same cross-repo access the
 `setup` action's `github-pat` input already handles at job time; here it moves
-to build time. (This is also an argument *for* one org-scoped token: a single
+to build time. (This is also an argument _for_ one org-scoped token: a single
 fine-grained PAT with **Contents: Read on all repos** + org **Self-hosted
 runners: Read & write** covers registration, detection, and baking in one
 credential.)
