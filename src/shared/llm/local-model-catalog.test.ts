@@ -3,9 +3,11 @@ import assert from 'node:assert/strict'
 import { AGENT_ROLE_IDS } from './agent-roles.ts'
 import {
   BENCHMARKS,
+  CORE_LOCAL_ROLES,
   LOCAL_MODEL_CATALOG,
   getLocalModelCapability,
   recommendLocalModelsForRole,
+  recommendedLocalSetup,
   type Benchmark,
 } from './local-model-catalog.ts'
 
@@ -87,5 +89,24 @@ describe('local model catalog', () => {
 
   it('returns nothing for an impossible budget', () => {
     assert.deepEqual(recommendLocalModelsForRole('coder', { maxDownloadGb: 0.1 }), [])
+  })
+
+  it('recommends a budget-fitting local setup covering the core roles', () => {
+    const setup = recommendedLocalSetup({ maxDownloadGb: 64 })
+    assert.deepEqual(
+      setup.map((s) => s.role),
+      [...CORE_LOCAL_ROLES],
+    )
+    for (const { role, model } of setup) {
+      assert.ok(model.downloadGb <= 64)
+      assert.ok(model.bestForRoles.includes(role), `${model.id} not fit for ${role}`)
+    }
+  })
+
+  it('omits a core role that has no budget-fitting candidate rather than over-spending', () => {
+    // A 3 GB budget fits only the smallest models; the coder picks all exceed it.
+    const setup = recommendedLocalSetup({ maxDownloadGb: 3 })
+    assert.ok(!setup.some((s) => s.role === 'coder'))
+    for (const { model } of setup) assert.ok(model.downloadGb <= 3)
   })
 })

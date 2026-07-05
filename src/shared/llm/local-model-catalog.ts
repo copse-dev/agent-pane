@@ -207,3 +207,31 @@ export function recommendLocalModelsForRole(
     })
     .map(({ model }) => model)
 }
+
+/**
+ * Roles a fresh local install should cover out of the box — the main coding
+ * model plus the two lightweight helpers the app already ships defaults for
+ * (see `preferred-models.ts`). Ordered as presented to the user.
+ */
+export const CORE_LOCAL_ROLES: readonly AgentRoleId[] = ['coder', 'small-tasks', 'safety']
+
+export interface RecommendedAssignment {
+  role: AgentRoleId
+  model: LocalModelCapability
+}
+
+/**
+ * The "good default" local setup: the top budget-fitting recommendation for each
+ * core role. Powers both the default advice and a future one-click "download the
+ * recommended set" (each `model.id` feeds the existing `lmstudio:download` IPC).
+ * A role with no budget-fitting candidate is simply omitted rather than forcing
+ * an over-budget pick. Deterministic — no I/O, no clock.
+ */
+export function recommendedLocalSetup(opts: RecommendOptions = {}): RecommendedAssignment[] {
+  const out: RecommendedAssignment[] = []
+  for (const role of CORE_LOCAL_ROLES) {
+    const top = recommendLocalModelsForRole(role, opts)[0]
+    if (top) out.push({ role, model: top })
+  }
+  return out
+}

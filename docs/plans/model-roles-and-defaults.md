@@ -159,8 +159,12 @@ research benchmark.
   assign roles, and a decision on surfacing the security roles.
 - **Phase 2 — picker classifications:** capability/role badges and
   "recommended for" grouping in `model-options.ts`.
-- **Phase 3 — generalized download:** any catalog model + "recommended set" for a
-  role, reusing the existing LM Studio download path.
+- **Phase 3 — generalized download: _foundation done; UI pending._** The
+  `lmstudio:download` IPC already accepts any model id, so the backend is already
+  general — only the presentation was pinned to the three preferred ids.
+  `recommendedLocalSetup()` turns the catalog into a budget-fitting set of core
+  roles to download; each `model.id` feeds the existing download IPC.
+  _Remaining:_ a "download the recommended set" action in onboarding/settings.
 - **Phase 4 — light evals:** per-role rubric tasks, "measured" catalog column,
   feedback into the classifier.
 
