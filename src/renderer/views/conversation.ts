@@ -56,8 +56,17 @@ function createToolArgsSection(args: unknown): HTMLDetailsElement | null {
   )
 }
 
-function createToolResultSection(result: string | null): HTMLElement {
+function createToolResultSection(result: string | null, format?: 'markdown'): HTMLElement {
   if (!result) return el('div', { class: 'tool-result' })
+  // ACP tool output is agent-authored Markdown — render it through the same
+  // pipeline as assistant messages so fenced code, lists and prose display
+  // instead of literal backticks. Built-in results stay in a plain `<pre>`.
+  if (format === 'markdown') {
+    const wrap = el('div', { class: 'tool-result tool-result-markdown message-text' })
+    wrap.innerHTML = sanitizeRenderedMarkdown(renderMarkdown(result))
+    attachCodeBlockCopyButtons(wrap)
+    return wrap
+  }
   return el('div', { class: 'tool-result' }, el('pre', {}, renderToolArgs(result)))
 }
 
@@ -112,7 +121,7 @@ function appendStandardToolSections(
   card.append(
     createToolHeader(label, tc.status, summaryClass, count, tc.editStats, getToolEditPath(tc)),
     ...appendIfPresent(createToolArgsSection(tc.args)),
-    createToolResultSection(tc.result),
+    createToolResultSection(tc.result, tc.resultFormat),
   )
 }
 
@@ -299,7 +308,7 @@ function createGroupToolCard(item: Extract<ToolCallDisplayItem, { type: 'group' 
         getToolEditPath(tc),
       ),
       ...appendIfPresent(createToolArgsSection(tc.args)),
-      createToolResultSection(tc.result),
+      createToolResultSection(tc.result, tc.resultFormat),
     )
     groupItems.append(entry)
   }
