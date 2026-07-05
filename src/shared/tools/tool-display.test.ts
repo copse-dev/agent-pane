@@ -115,6 +115,34 @@ describe('tool-display', () => {
     assert.equal(items[0].label, 'Running commands')
   })
 
+  it('groups ACP tool calls by their kind, like the built-in tools', () => {
+    // External ACP agents send titles (`name`) the built-in vocabulary doesn't
+    // know, but the ACP `kind` maps onto the same groups.
+    assert.equal(getToolGroupKey('Terminal', 'execute'), 'shell')
+    assert.equal(getToolGroupKey('Read', 'read'), 'reading')
+    assert.equal(getToolGroupKey('Edit', 'edit'), 'writing')
+    assert.equal(getToolGroupKey('Search', 'search'), 'searching')
+    // Unmapped/absent kinds stay ungrouped.
+    assert.equal(getToolGroupKey('Whatever', 'think'), null)
+    assert.equal(getToolGroupKey('Whatever'), null)
+
+    const items = buildToolCallDisplayItems([
+      { ...tc('1', 'Read'), kind: 'read' },
+      { ...tc('2', 'Read'), kind: 'read' },
+    ])
+    assert.equal(items.length, 1)
+    assert.equal(items[0]?.type, 'group')
+    assert.equal(items[0].label, 'Reading files')
+  })
+
+  it('labels an ACP shell call with its command when present', () => {
+    const term = { ...tc('1', 'Terminal'), kind: 'execute', args: { command: 'npm test' } }
+    assert.equal(getToolCallLabel(term), 'npm test')
+    // With no command arg it falls back to the ACP title (its name).
+    const bare = { ...tc('2', 'Terminal'), kind: 'execute' }
+    assert.equal(getToolCallLabel(bare), 'Terminal')
+  })
+
   it('maps known tools to human-readable names', () => {
     assert.equal(getToolDisplayName('explore'), 'Explore files')
     assert.equal(getToolDisplayName('read_file'), 'Read file')

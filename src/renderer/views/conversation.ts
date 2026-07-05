@@ -56,8 +56,17 @@ function createToolArgsSection(args: unknown): HTMLDetailsElement | null {
   )
 }
 
-function createToolResultSection(result: string | null): HTMLElement {
+function createToolResultSection(result: string | null, format?: 'markdown'): HTMLElement {
   if (!result) return el('div', { class: 'tool-result' })
+  // ACP tool output is agent-authored Markdown — render it through the same
+  // pipeline as assistant messages so fenced code, lists and prose display
+  // instead of literal backticks. Built-in results stay in a plain `<pre>`.
+  if (format === 'markdown') {
+    const wrap = el('div', { class: 'tool-result tool-result-markdown message-text' })
+    wrap.innerHTML = sanitizeRenderedMarkdown(renderMarkdown(result))
+    attachCodeBlockCopyButtons(wrap)
+    return wrap
+  }
   return el('div', { class: 'tool-result' }, el('pre', {}, renderToolArgs(result)))
 }
 
@@ -112,7 +121,7 @@ function appendStandardToolSections(
   card.append(
     createToolHeader(label, tc.status, summaryClass, count, tc.editStats, getToolEditPath(tc)),
     ...appendIfPresent(createToolArgsSection(tc.args)),
-    createToolResultSection(tc.result),
+    createToolResultSection(tc.result, tc.resultFormat),
   )
 }
 
@@ -190,7 +199,9 @@ function setAssistantMarkdown(
 }
 
 function createSubagentMessageEl(content: string, streaming: boolean, api: ApiClient): HTMLElement {
-  const textEl = el('div', { class: 'subagent-message subagent-message-assistant message-text' })
+  const textEl = el('div', {
+    class: 'subagent-message subagent-message-assistant message-text streaming-markdown',
+  })
   setAssistantMarkdown(textEl, content, streaming, api)
   return textEl
 }
@@ -231,7 +242,9 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
   }
 
   if (preview && status !== 'running') {
-    const previewEl = el('div', { class: 'subagent-summary-preview message-text' })
+    const previewEl = el('div', {
+      class: 'subagent-summary-preview message-text streaming-markdown',
+    })
     setAssistantMarkdown(previewEl, summaryPreview(preview), false, api)
     card.append(previewEl)
   }
@@ -262,7 +275,8 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
 
   if (tc.result && status === 'done') {
     const resultEl = el('div', {
-      class: 'subagent-parent-result subagent-message subagent-message-assistant message-text',
+      class:
+        'subagent-parent-result subagent-message subagent-message-assistant message-text streaming-markdown',
     })
     setAssistantMarkdown(resultEl, tc.result, false, api)
     card.append(resultEl)
@@ -299,7 +313,7 @@ function createGroupToolCard(item: Extract<ToolCallDisplayItem, { type: 'group' 
         getToolEditPath(tc),
       ),
       ...appendIfPresent(createToolArgsSection(tc.args)),
-      createToolResultSection(tc.result),
+      createToolResultSection(tc.result, tc.resultFormat),
     )
     groupItems.append(entry)
   }
@@ -341,7 +355,7 @@ function appendMessageContent(
   if (msg.role === 'assistant' && msg.reasoning) {
     body.append(buildReasoningEl(msg.reasoning, !msg.content.trim()))
   }
-  const textEl = el('div', { class: 'message-text' })
+  const textEl = el('div', { class: 'message-text streaming-markdown' })
   if (msg.role === 'assistant' && msg.content) {
     setAssistantMarkdown(textEl, msg.content, false, api)
   } else {
