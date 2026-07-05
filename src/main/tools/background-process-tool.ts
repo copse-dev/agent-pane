@@ -12,62 +12,69 @@ function formatInfo(info: BackgroundProcessInfo): string {
   const state = info.running
     ? info.url
       ? `running at ${info.url}`
-      : 'running (no URL detected yet)'
+      : 'running'
     : `exited${info.exitCode !== null ? ` (code ${String(info.exitCode)})` : ''}`
   return `[${info.id}] ${info.command} — ${state}`
 }
 
-/** Trim logs so a chatty server doesn't dominate the tool result. */
+/** Trim logs so a chatty process doesn't dominate the tool result. */
 function tailLogs(logs: string, maxLines = 40): string {
   const lines = logs.split('\n')
   if (lines.length <= maxLines) return logs
   return ['[…]', ...lines.slice(lines.length - maxLines)].join('\n')
 }
 
-export const devServerTool = defineTool({
-  name: 'dev_server',
+export const runBackgroundTool = defineTool({
+  name: 'run_background',
   description:
-    'Start and manage a long-lived local dev server (e.g. `npm run dev`, `vite`, `python -m http.server`) that stays alive across turns. Actions: `start` a command (returns a handle and the detected http://localhost:<port> URL — open it with browser_navigate); `list` running servers; `logs` for a server by id; `stop` a server by id. Starting a server prompts for permission the first time per project.',
+    'Run a long-lived command in the background (dev server, watcher, build) that stays alive across turns. Actions: `start` a command; `list` running tasks; `logs` for a task by id; `stop` a task by id. Set `allow_port_binding: true` for a task that must bind a local port (e.g. a dev server) — it returns the detected http://localhost:<port> URL to open with browser_navigate, and prompts for permission the first time per project. Without it the task runs fully sandboxed (workspace-only, no network/binding).',
   parameters: z.object({
     action: z.enum(['start', 'list', 'logs', 'stop']),
     command: z
       .string()
       .optional()
-      .describe('For action=start: the server command, e.g. "npm run dev".'),
-    id: z.string().optional().describe('For action=logs/stop: the server handle from start/list.'),
+      .describe('For action=start: the command, e.g. "npm run dev" or "npm run build -- --watch".'),
+    allow_port_binding: z
+      .boolean()
+      .optional()
+      .describe('For action=start: allow the task to bind a loopback port (dev servers).'),
+    id: z.string().optional().describe('For action=logs/stop: the task handle from start/list.'),
   }),
-  async execute({ action, command, id }) {
+  async execute({ action, command, allow_port_binding, id }) {
     if (action === 'list') {
-      const servers = listBackgroundProcesses()
-      if (servers.length === 0) return 'No background servers running.'
-      return servers.map(formatInfo).join('\n')
+      const tasks = listBackgroundProcesses()
+      if (tasks.length === 0) return 'No background tasks running.'
+      return tasks.map(formatInfo).join('\n')
     }
 
     if (action === 'logs') {
-      if (!id) return 'dev_server logs requires an id.'
+      if (!id) return 'run_background logs requires an id.'
       const logs = getBackgroundProcessLogs(id)
-      if (logs === null) return `No background server with id "${id}".`
+      if (logs === null) return `No background task with id "${id}".`
       return logs.trim() || '(no output yet)'
     }
 
     if (action === 'stop') {
-      if (!id) return 'dev_server stop requires an id.'
-      return stopBackgroundProcess(id) ? `Stopped ${id}.` : `No background server with id "${id}".`
+      if (!id) return 'run_background stop requires an id.'
+      return stopBackgroundProcess(id) ? `Stopped ${id}.` : `No background task with id "${id}".`
     }
 
     // action === 'start'
-    if (!command?.trim()) return 'dev_server start requires a command.'
-    const info = await startBackgroundProcess({ command })
+    if (!command?.trim()) return 'run_background start requires a command.'
+    const info = await startBackgroundProcess({
+      command,
+      allowPortBinding: allow_port_binding === true,
+    })
     const lines = [formatInfo(info)]
     if (!info.running) {
       const logs = getBackgroundProcessLogs(info.id)
-      lines.push('', 'The server exited immediately. Recent output:', tailLogs(logs ?? ''))
+      lines.push('', 'The task exited immediately. Recent output:', tailLogs(logs ?? ''))
     } else if (info.url) {
       lines.push('', `Open it with browser_navigate → ${info.url}`)
-    } else {
+    } else if (allow_port_binding) {
       lines.push(
         '',
-        'No URL detected yet — check `dev_server logs` with this id once it finishes starting.',
+        'No URL detected yet — check `run_background logs` with this id once it finishes starting.',
       )
     }
     return lines.join('\n')

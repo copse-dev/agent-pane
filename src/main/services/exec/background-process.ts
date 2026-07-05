@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { ChildProcess } from 'node:child_process'
-import { spawnDevServerProcess } from '../../project-sandbox/index.ts'
+import { spawnBackgroundProcess } from '../../project-sandbox/index.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import { envForRendererChildProcess } from './child-process-env.ts'
 import { terminateProcessTree } from './subprocess-kill.ts'
@@ -10,14 +10,16 @@ import {
   stripTerminalControlSequences,
 } from './subprocess-output-cap.ts'
 
-/** Experimental gate (off by default, issue #691) for the `dev_server` tool. */
-export const BACKGROUND_PROCESS_ENABLED_SETTING = 'devServerToolEnabled'
+/** Experimental gate (off by default, issue #691) for the `run_background` tool. */
+export const BACKGROUND_TASKS_ENABLED_SETTING = 'backgroundTasksEnabled'
 
-/** Per-process output cap — smaller than a one-shot command so many servers stay bounded. */
+/** Per-process output cap — smaller than a one-shot command so many tasks stay bounded. */
 const BACKGROUND_OUTPUT_MAX_BYTES = Math.floor(COMMAND_OUTPUT_MAX_BYTES / 2)
 
-/** How long {@link startBackgroundProcess} waits for the server to announce a URL / crash. */
+/** How long a port-binding start waits for the server to announce a URL / crash. */
 const DEFAULT_URL_WAIT_MS = 4000
+/** A plain task only needs a brief window to catch an immediate crash. */
+const DEFAULT_SETTLE_MS = 1500
 
 interface BackgroundProcess {
   id: string
@@ -26,6 +28,8 @@ interface BackgroundProcess {
   proc: ChildProcess
   startedAt: number
   output: CappedOutputAccumulator
+  /** Whether this task ran with loopback port binding (and so URL detection). */
+  portBinding: boolean
   /** Detected loopback URL (e.g. http://localhost:3000), or null until announced. */
   url: string | null
   exited: boolean
@@ -87,7 +91,9 @@ function toInfo(entry: BackgroundProcess): BackgroundProcessInfo {
 
 function onOutput(entry: BackgroundProcess, chunk: Buffer): void {
   entry.output.append(chunk.toString())
-  if (entry.url === null) {
+  // Only a port-binding task is a server we should surface a URL for; a plain
+  // task's "port" mentions would be noise.
+  if (entry.portBinding && entry.url === null) {
     entry.url = detectServerUrl(entry.output.toString())
   }
 }
@@ -95,15 +101,17 @@ function onOutput(entry: BackgroundProcess, chunk: Buffer): void {
 export interface StartBackgroundProcessOptions {
   command: string
   cwd?: string
+  /** Escalate the sandbox to allow binding a loopback port, and detect the URL. */
+  allowPortBinding?: boolean
   /** Wait up to this long (ms) for a URL or early exit before resolving. */
-  urlWaitMs?: number
+  waitMs?: number
 }
 
 /**
- * Start a long-lived dev-server process. Resolves once the server announces a
- * loopback URL, exits early, or {@link StartBackgroundProcessOptions.urlWaitMs}
- * elapses — whichever comes first — so the caller gets the URL when it's ready
- * without blocking on a server that never prints one.
+ * Start a long-lived background process. Resolves once it announces a loopback
+ * URL (port-binding tasks only), exits early, or the wait window elapses —
+ * whichever comes first — so the caller gets the URL when it's ready without
+ * blocking on a task that never prints one.
  */
 export async function startBackgroundProcess(
   opts: StartBackgroundProcessOptions,
@@ -112,10 +120,12 @@ export async function startBackgroundProcess(
   if (!command) throw new Error('A command is required to start a background process.')
   const cwd = opts.cwd ?? getWorkspaceRoot()
   if (!cwd) throw new Error('No workspace open.')
+  const portBinding = opts.allowPortBinding === true
 
-  const proc = await spawnDevServerProcess(command, {
+  const proc = await spawnBackgroundProcess(command, {
     cwd,
     env: envForRendererChildProcess(),
+    allowPortBinding: portBinding,
   })
 
   const entry: BackgroundProcess = {
@@ -125,12 +135,14 @@ export async function startBackgroundProcess(
     proc,
     startedAt: Date.now(),
     output: new CappedOutputAccumulator(BACKGROUND_OUTPUT_MAX_BYTES),
+    portBinding,
     url: null,
     exited: false,
     exitCode: null,
   }
   processes.set(entry.id, entry)
 
+  const waitMs = opts.waitMs ?? (portBinding ? DEFAULT_URL_WAIT_MS : DEFAULT_SETTLE_MS)
   await new Promise<void>((resolve) => {
     let settled = false
     const done = (): void => {
@@ -139,7 +151,7 @@ export async function startBackgroundProcess(
       clearTimeout(timer)
       resolve()
     }
-    const timer = setTimeout(done, opts.urlWaitMs ?? DEFAULT_URL_WAIT_MS)
+    const timer = setTimeout(done, waitMs)
 
     proc.stdout?.on('data', (d: Buffer) => {
       onOutput(entry, d)

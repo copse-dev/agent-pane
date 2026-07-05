@@ -330,7 +330,8 @@ export function acpAgentSandboxOverlay(
 const LOOPBACK_DOMAINS = ['localhost', '127.0.0.1', '::1'] as const
 
 /**
- * Seatbelt overlay for a user-approved **local dev server** (issue #691).
+ * Seatbelt overlay for a user-approved **loopback-binding background process**
+ * (issue #691) — e.g. a local dev server.
  *
  * Same workspace-scoped filesystem rules as {@link workspaceSandboxOverlay},
  * with one deliberate relaxation: `allowLocalBinding: true` plus loopback-only
@@ -340,7 +341,7 @@ const LOOPBACK_DOMAINS = ['localhost', '127.0.0.1', '::1'] as const
  * under an explicit per-workspace grant (see the permission gate), never for
  * auto-run commands.
  */
-export function devServerSandboxOverlay(workspaceRoot: string): Partial<SandboxRuntimeConfig> {
+export function portBindingSandboxOverlay(workspaceRoot: string): Partial<SandboxRuntimeConfig> {
   const base = workspaceSandboxOverlay(workspaceRoot)
   return {
     ...base,
