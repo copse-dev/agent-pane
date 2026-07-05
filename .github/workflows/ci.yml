@@ -79,14 +79,25 @@ jobs:
           if [ -z "${RUNNERS_PAT:-}" ]; then
             echo "No runner-list PAT available — deferring to GitHub-hosted runners."
           else
-            runners="$(curl -fsSL \
+            # Capture the HTTP status alongside the body (no -f, which would hide
+            # it): append the code on its own trailing line, then split it back
+            # out. A non-200 logs the exact status so a misconfigured RUNNERS_PAT
+            # is self-diagnosing — 401 bad/immature token, 403 missing org
+            # "Self-hosted runners: Read" (or token pending org approval), 404
+            # wrong org/name — instead of a blind curl exit code.
+            resp="$(curl -sSL -w $'\n%{http_code}' \
               -H "Authorization: Bearer ${RUNNERS_PAT}" \
               -H "Accept: application/vnd.github+json" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
               "https://api.github.com/orgs/${GH_ORG}/actions/runners?per_page=100" 2>/dev/null)"
-            rc=$?
-            if [ $rc -ne 0 ] || [ -z "$runners" ]; then
-              echo "Runner query failed (curl exit $rc — token may lack org runner read) — deferring to GitHub-hosted runners."
+            code="$(printf '%s' "$resp" | tail -n1)"
+            runners="$(printf '%s' "$resp" | sed '$d')"
+            if [ "$code" != "200" ]; then
+              echo "Runner query returned HTTP ${code:-<none>} — deferring to GitHub-hosted runners."
+              echo "  401=bad/immature token · 403=RUNNERS_PAT lacks org 'Self-hosted runners: Read' or token pending org approval · 404=wrong org/name."
+              # The GitHub error body carries a 'message' explaining the refusal;
+              # it contains no secret, so surface a trimmed copy to aid debugging.
+              printf '%s' "$runners" | jq -r '.message? // empty' 2>/dev/null | head -c 200
             elif printf '%s' "$runners" | jq -e \
                 '[.runners[]? | select(.status=="online") | select(any((.labels // [])[]; .name=="copse-checks"))] | length > 0' \
                 >/dev/null 2>&1; then
