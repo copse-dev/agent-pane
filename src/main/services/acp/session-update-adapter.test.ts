@@ -154,6 +154,7 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
       toolCallId: 't9',
       result: 'part1 part2',
       isError: false,
+      resultFormat: 'markdown',
     })
   })
 

@@ -89,4 +89,32 @@ describe('tool call display (component)', () => {
     // The errored read must NOT be folded into the reading group.
     assert.equal(document.querySelector('.tool-card-group [data-tool-id="tc-read-2"]'), null)
   })
+
+  it('renders an ACP markdown result as markdown, not literal code fences', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, messageId, {
+      id: 'tc-acp-term',
+      name: 'Terminal',
+      args: {},
+      status: 'done',
+      kind: 'execute',
+      resultFormat: 'markdown',
+      result: '```console\n(Bash completed with no output)\n```',
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const card = document.querySelector('.tool-card[data-tool-id="tc-acp-term"]')
+    assert.ok(card, 'expected the ACP tool call to render a card')
+    const resultEl = card.querySelector('.tool-result')
+    assert.ok(resultEl, 'expected a tool-result section')
+    // The fence must become a real code element, not literal backticks.
+    assert.ok(resultEl.classList.contains('tool-result-markdown'))
+    assert.ok(resultEl.querySelector('code'), 'expected a rendered code element')
+    assert.equal(resultEl.textContent.includes('```'), false)
+    assert.ok(resultEl.textContent.includes('(Bash completed with no output)'))
+  })
 })
