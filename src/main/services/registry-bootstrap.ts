@@ -51,8 +51,8 @@ import { suggestModelTool } from '../tools/model-classifier-tool.ts'
 import { ADVISOR_STRATEGY_ENABLED_SETTING } from './advisor-strategy.ts'
 import { advisorTool } from '../tools/advisor-tool.ts'
 import { ROADMAP_PLANS_ENABLED_SETTING, roadmapPlanTool } from '../tools/roadmap-tools.ts'
-import { BACKGROUND_PROCESS_ENABLED_SETTING } from './exec/background-process.ts'
-import { devServerTool } from '../tools/background-process-tool.ts'
+import { BACKGROUND_TASKS_ENABLED_SETTING } from './exec/background-process.ts'
+import { runBackgroundTool } from '../tools/background-process-tool.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
@@ -128,13 +128,13 @@ export function createRegistry(): ToolRegistry {
   if (getSetting<boolean>(ROADMAP_PLANS_ENABLED_SETTING, false)) {
     registry.register(roadmapPlanTool)
   }
-  // Experimental dev-server tool (off by default, issue #691). Lets the agent
-  // start a long-lived local server that binds a loopback port and stays alive
-  // across turns, then open it with browser_navigate. Starting a server prompts
-  // for a per-workspace grant (permission-gate), then escalates the sandbox to
-  // allow loopback binding for that process's lifetime.
-  if (getSetting<boolean>(BACKGROUND_PROCESS_ENABLED_SETTING, false)) {
-    registry.register(devServerTool)
+  // Experimental background tasks (off by default, issue #691). Lets the agent
+  // run a long-lived command (dev server, watcher, build) that stays alive
+  // across turns. A task may opt into loopback port binding, which prompts for a
+  // per-workspace grant (permission-gate) and escalates the sandbox to allow
+  // binding for that process's lifetime; without it the task stays contained.
+  if (getSetting<boolean>(BACKGROUND_TASKS_ENABLED_SETTING, false)) {
+    registry.register(runBackgroundTool)
   }
   // Experimental PII redaction (off by default). Adds the reveal_pii tool that
   // turns a redacted placeholder back into its real value, gated by user

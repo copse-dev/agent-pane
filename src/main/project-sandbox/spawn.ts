@@ -7,8 +7,8 @@ import quote from 'shell-quote'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { posixQuote } from '../services/security/safe-install.ts'
 import {
-  devServerSandboxOverlay,
   ensureWorkspaceTmpDir,
+  portBindingSandboxOverlay,
   workspaceSandboxOverlay,
 } from './config.ts'
 import { acquireSandboxNetworkScope } from './network-scope.ts'
@@ -152,18 +152,22 @@ export async function spawnShellInProjectSandbox(
 }
 
 /**
- * Spawn a long-lived local dev server (issue #691). Unlike {@link runCommand}
- * this is fire-and-forget: the caller owns the returned child's lifetime and
- * kills it explicitly. When the project sandbox is active the child runs under
- * {@link devServerSandboxOverlay} — workspace-scoped filesystem rules plus
- * loopback-only binding — and a global network scope is acquired for the
- * process's lifetime (ASRT's proxies consult the GLOBAL config per connection;
- * the overlay's network block only wires restriction up). The scope is released
- * when the child closes or errors.
+ * Spawn a long-lived background process (issue #691) — a dev server, watcher,
+ * build, etc. Unlike {@link runCommand} this is fire-and-forget: the caller owns
+ * the returned child's lifetime and kills it explicitly.
+ *
+ * When the project sandbox is active the child runs under the workspace-scoped
+ * seatbelt. With `allowPortBinding`, it instead runs under
+ * {@link portBindingSandboxOverlay} (same filesystem rules, relaxed to allow
+ * loopback binding) and a global network scope is acquired for the process's
+ * lifetime — ASRT's proxies consult the GLOBAL config per connection, so the
+ * overlay's network block alone is not enough. The scope is released when the
+ * child closes or errors. Without the flag no scope is acquired, so a plain
+ * background task stays fully contained (workspace-only, no binding, no network).
  */
-export async function spawnDevServerProcess(
+export async function spawnBackgroundProcess(
   shellCommandLine: string,
-  opts: { cwd: string; env?: NodeJS.ProcessEnv },
+  opts: { cwd: string; env?: NodeJS.ProcessEnv; allowPortBinding?: boolean },
 ): Promise<ChildProcess> {
   if (!isProjectSandboxEnabled()) {
     const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh'
@@ -177,11 +181,17 @@ export async function spawnDevServerProcess(
     })
   }
 
-  const overlay = devServerSandboxOverlay(opts.cwd)
-  const release = acquireSandboxNetworkScope({
-    domains: overlay.network?.allowedDomains ?? [],
-    allowLocalBinding: overlay.network?.allowLocalBinding ?? false,
-  })
+  const overlay = opts.allowPortBinding
+    ? portBindingSandboxOverlay(opts.cwd)
+    : workspaceSandboxOverlay(opts.cwd)
+  // Only a port-binding task needs the global network scope widened; a contained
+  // task keeps the deny-all base, so acquiring a no-op scope would be misleading.
+  const release = opts.allowPortBinding
+    ? acquireSandboxNetworkScope({
+        domains: overlay.network?.allowedDomains ?? [],
+        allowLocalBinding: overlay.network?.allowLocalBinding ?? false,
+      })
+    : (): void => {}
   try {
     const { argv, env } = await SandboxManager.wrapWithSandboxArgv(
       shellCommandLine,

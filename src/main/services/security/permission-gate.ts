@@ -17,9 +17,9 @@ import {
   formatWebPromptBody,
   shellCommandFromArgs,
   formatShellPromptBody,
-  formatDevServerPromptBody,
-  devServerActionFromArgs,
-  devServerCommandFromArgs,
+  formatPortBindingPromptBody,
+  backgroundAllowsPortBinding,
+  backgroundCommandFromArgs,
   formatExternalSandboxPromptBody,
   formatInstallPromptBody,
   formatEphemeralRunnerPromptBody,
@@ -290,32 +290,33 @@ async function checkBrowserNavigatePermission(args: unknown): Promise<boolean> {
   return approved
 }
 
-const DEV_SERVER_ALLOWED_ROOTS_SETTING = 'devServerAllowedRoots'
+const PORT_BINDING_ALLOWED_ROOTS_SETTING = 'portBindingAllowedRoots'
 
 /**
- * Gate the `dev_server` tool. Only `start` launches a process; `list`/`logs`/
- * `stop` just manage servers already started under a grant, so they auto-run.
- * A start prompts the first time per workspace, then remembers the grant — the
- * same prompt-once model as browser origins and MCP servers.
+ * Gate the `run_background` tool. Only starting a task that binds a loopback
+ * port is an escalation worth prompting for; a plain contained task (and the
+ * list/logs/stop management actions) auto-runs like an in-sandbox run_shell.
+ * A port-binding start prompts the first time per workspace, then remembers the
+ * grant — the same prompt-once model as browser origins and MCP servers.
  */
-async function checkDevServerPermission(args: unknown): Promise<boolean> {
-  if (devServerActionFromArgs(args) !== 'start') return true
+async function checkBackgroundProcessPermission(args: unknown): Promise<boolean> {
+  if (!backgroundAllowsPortBinding(args)) return true
 
   const root = getWorkspaceRoot()
   if (!root) throw new Error('No workspace open.')
 
-  const allowed = getSetting<string[]>(DEV_SERVER_ALLOWED_ROOTS_SETTING, [])
+  const allowed = getSetting<string[]>(PORT_BINDING_ALLOWED_ROOTS_SETTING, [])
   if (allowed.includes(root)) return true
 
   const { approved, remember } = await requestApproval({
-    title: 'Start a local dev server?',
-    body: formatDevServerPromptBody(root, devServerCommandFromArgs(args)),
+    title: 'Allow this project to bind a local port?',
+    body: formatPortBindingPromptBody(root, backgroundCommandFromArgs(args)),
     type: 'shell',
     allowRemember: true,
-    rememberLabel: 'Always allow servers in this project',
+    rememberLabel: 'Always allow local port binding in this project',
   })
   if (approved && remember && !allowed.includes(root)) {
-    await setSetting(DEV_SERVER_ALLOWED_ROOTS_SETTING, [...allowed, root])
+    await setSetting(PORT_BINDING_ALLOWED_ROOTS_SETTING, [...allowed, root])
   }
   return approved
 }
@@ -444,8 +445,8 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
     return checkShellPermission(args)
   }
 
-  if (toolName === 'dev_server') {
-    return checkDevServerPermission(args)
+  if (toolName === 'run_background') {
+    return checkBackgroundProcessPermission(args)
   }
 
   // Default-allow: read-only/in-process tools (and mutating tools that are

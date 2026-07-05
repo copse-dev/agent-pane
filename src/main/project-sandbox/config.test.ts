@@ -7,7 +7,7 @@ import {
   acpAgentSandboxOverlay,
   baseSandboxConfig,
   containedSandboxNetworkConfig,
-  devServerSandboxOverlay,
+  portBindingSandboxOverlay,
   electronRuntimeAllowReadPaths,
   ensureWorkspaceTmpDir,
   fsWorkerSandboxOverlay,
@@ -74,9 +74,9 @@ describe('acpAgentSandboxOverlay', () => {
   })
 })
 
-describe('devServerSandboxOverlay', () => {
+describe('portBindingSandboxOverlay', () => {
   it('allows loopback binding on loopback-only domains', () => {
-    const overlay = devServerSandboxOverlay('/tmp/project')
+    const overlay = portBindingSandboxOverlay('/tmp/project')
     assert.deepEqual(overlay.network, {
       allowedDomains: ['localhost', '127.0.0.1', '::1'],
       deniedDomains: [],
@@ -86,7 +86,7 @@ describe('devServerSandboxOverlay', () => {
 
   it('keeps the workspace filesystem rules from the base overlay', () => {
     const base = workspaceSandboxOverlay('/tmp/project')
-    const overlay = devServerSandboxOverlay('/tmp/project')
+    const overlay = portBindingSandboxOverlay('/tmp/project')
     // Only the network is widened; filesystem confinement is unchanged.
     assert.deepEqual(overlay.filesystem, base.filesystem)
   })

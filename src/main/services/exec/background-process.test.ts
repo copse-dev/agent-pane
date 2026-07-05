@@ -43,11 +43,12 @@ describe('background process manager', () => {
     stopAllBackgroundProcesses()
   })
 
-  it('starts a server, detects its URL, exposes logs, and stops it', async () => {
+  it('starts a port-binding server, detects its URL, exposes logs, and stops it', async () => {
     const info = await startBackgroundProcess({
       command: "printf 'Local:   http://localhost:4321/\\n'; sleep 30",
       cwd: process.cwd(),
-      urlWaitMs: 4000,
+      allowPortBinding: true,
+      waitMs: 4000,
     })
     assert.equal(info.running, true)
     assert.equal(info.url, 'http://localhost:4321')
@@ -67,11 +68,22 @@ describe('background process manager', () => {
     const info = await startBackgroundProcess({
       command: 'echo boom; exit 3',
       cwd: process.cwd(),
-      urlWaitMs: 4000,
+      waitMs: 4000,
     })
     assert.equal(info.running, false)
     assert.equal(info.exitCode, 3)
     assert.equal(info.url, null)
+  })
+
+  it('does not surface a URL for a plain task that did not opt into port binding', async () => {
+    const info = await startBackgroundProcess({
+      command: "printf 'Local:   http://localhost:4321/\\n'; sleep 30",
+      cwd: process.cwd(),
+      waitMs: 400,
+    })
+    assert.equal(info.running, true)
+    assert.equal(info.url, null, 'URL detection is gated behind allowPortBinding')
+    stopBackgroundProcess(info.id)
   })
 
   it('rejects an empty command', async () => {

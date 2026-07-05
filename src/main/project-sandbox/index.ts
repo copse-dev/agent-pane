@@ -8,7 +8,7 @@ export {
   spawnInProjectSandbox,
   spawnShellInProjectSandbox,
   spawnPtyInProjectSandbox,
-  spawnDevServerProcess,
+  spawnBackgroundProcess,
   afterSandboxedCommand,
   isProjectSandboxEnabled,
   sandboxViolationCountForCommand,

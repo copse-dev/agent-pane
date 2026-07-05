@@ -8,8 +8,8 @@ import {
   formatEphemeralRunnerPromptBody,
   shellRequiresOutsideSandbox,
   shellSandboxFailureShouldOfferUnsandboxedRetry,
-  devServerActionFromArgs,
-  devServerCommandFromArgs,
+  backgroundCommandFromArgs,
+  backgroundAllowsPortBinding,
   SANDBOX_TOOLS,
 } from './permission-policy.ts'
 import { DEFAULT_WEB_ALLOWED_ORIGINS } from './web-origin-policy.ts'
@@ -104,19 +104,20 @@ describe('custom tool permission', () => {
   })
 })
 
-describe('dev_server arg helpers', () => {
-  it('reads action and command, tolerating missing/malformed args', () => {
-    assert.equal(devServerActionFromArgs({ action: 'start' }), 'start')
-    assert.equal(devServerActionFromArgs({}), null)
-    assert.equal(devServerActionFromArgs(null), null)
-    assert.equal(devServerCommandFromArgs({ command: 'npm run dev' }), 'npm run dev')
-    assert.equal(devServerCommandFromArgs({ command: 42 }), '')
-    assert.equal(devServerCommandFromArgs({}), '')
+describe('run_background arg helpers', () => {
+  it('reads command and the port-binding opt-in, tolerating malformed args', () => {
+    assert.equal(backgroundCommandFromArgs({ command: 'npm run dev' }), 'npm run dev')
+    assert.equal(backgroundCommandFromArgs({ command: 42 }), '')
+    assert.equal(backgroundCommandFromArgs({}), '')
+    assert.equal(backgroundAllowsPortBinding({ allow_port_binding: true }), true)
+    assert.equal(backgroundAllowsPortBinding({ allow_port_binding: false }), false)
+    assert.equal(backgroundAllowsPortBinding({}), false)
+    assert.equal(backgroundAllowsPortBinding(null), false)
   })
 })
 
-describe('dev_server permission', () => {
-  it('auto-allows non-start actions without prompting', async () => {
+describe('run_background permission', () => {
+  it('auto-allows management and non-binding starts without prompting', async () => {
     setPermissionGateForTests(null)
     let prompted = false
     setApprovalHandler(async () => {
@@ -124,43 +125,49 @@ describe('dev_server permission', () => {
       return { approved: false, remember: false }
     })
     try {
-      for (const action of ['list', 'logs', 'stop']) {
-        assert.equal(await ensureToolPermitted({ toolName: 'dev_server', args: { action } }), true)
+      const cases = [
+        { action: 'list' },
+        { action: 'logs', id: 'x' },
+        { action: 'stop', id: 'x' },
+        { action: 'start', command: 'npm run build -- --watch' },
+      ]
+      for (const args of cases) {
+        assert.equal(await ensureToolPermitted({ toolName: 'run_background', args }), true)
       }
-      assert.equal(prompted, false, 'managing existing servers must not prompt')
+      assert.equal(prompted, false, 'only a port-binding start should prompt')
     } finally {
       setApprovalHandler(null)
     }
   })
 
-  it('prompts on start, then remembers the grant per workspace', async () => {
+  it('prompts a port-binding start, then remembers the grant per workspace', async () => {
     setPermissionGateForTests(null)
-    const restore = setWorkspaceRootForTest('/tmp/dev-server-project')
+    const restore = setWorkspaceRootForTest('/tmp/port-binding-project')
     let prompts = 0
     setApprovalHandler(async () => {
       prompts++
       return { approved: true, remember: true }
     })
     try {
-      const args = { action: 'start', command: 'npm run dev' }
-      assert.equal(await ensureToolPermitted({ toolName: 'dev_server', args }), true)
-      assert.equal(await ensureToolPermitted({ toolName: 'dev_server', args }), true)
-      assert.equal(prompts, 1, 'second start in the same workspace must not re-prompt')
+      const args = { action: 'start', command: 'npm run dev', allow_port_binding: true }
+      assert.equal(await ensureToolPermitted({ toolName: 'run_background', args }), true)
+      assert.equal(await ensureToolPermitted({ toolName: 'run_background', args }), true)
+      assert.equal(prompts, 1, 'second port-binding start in the same workspace must not re-prompt')
     } finally {
       setApprovalHandler(null)
       restore()
     }
   })
 
-  it('returns false when the user declines the start', async () => {
+  it('returns false when the user declines a port-binding start', async () => {
     setPermissionGateForTests(null)
-    const restore = setWorkspaceRootForTest('/tmp/dev-server-denied')
+    const restore = setWorkspaceRootForTest('/tmp/port-binding-denied')
     setApprovalHandler(async () => ({ approved: false, remember: false }))
     try {
       assert.equal(
         await ensureToolPermitted({
-          toolName: 'dev_server',
-          args: { action: 'start', command: 'npm run dev' },
+          toolName: 'run_background',
+          args: { action: 'start', command: 'npm run dev', allow_port_binding: true },
         }),
         false,
       )
