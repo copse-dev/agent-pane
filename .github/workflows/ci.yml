@@ -37,8 +37,8 @@ jobs:
   # label with its own nightly-hosted fallback and is intentionally not routed
   # here — though on the unified fleet both labels ride the same containers.)
   #
-  # Listing ORG runners needs org-level runner read — classic `admin:org`, or a
-  # fine-grained token with organization "Self-hosted runners: Read" — which the
+  # Listing ORG runners needs org-level admin read — classic `admin:org`, or a
+  # fine-grained token with organization "Administration: Read" — which the
   # default GITHUB_TOKEN can't be granted, so detection uses a PAT in
   # secrets.RUNNERS_PAT. As a convenience it falls back to SCREENSHOTS_PAT, but
   # only a token that actually carries org runner read will work — a fine-grained
@@ -62,7 +62,7 @@ jobs:
       - id: pick
         env:
           # Dedicated token if provided, else try SCREENSHOTS_PAT. The query
-          # needs org runner read (admin:org / org Self-hosted runners: Read); if
+          # needs org admin read (admin:org / org Administration: Read); if
           # the token lacks it the request 4xxs and we fall open to hosted.
           RUNNERS_PAT: ${{ secrets.RUNNERS_PAT || secrets.SCREENSHOTS_PAT }}
           GH_ORG: ${{ github.repository_owner }}
