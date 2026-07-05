@@ -27,7 +27,7 @@ export const config: Options.Testrunner = {
   waitforTimeout: 30_000,
   connectionRetryTimeout: 120_000,
   connectionRetryCount: 3,
-  // CI e2e runs in headless Linux Docker containers (see .github/runner), which
+  // CI e2e runs in headless Linux Docker containers (see ci-runners/), which
   // have no display, so WDIO auto-spawns Xvfb to give Electron a virtual one.
   // Xvfb is X11/Linux only — a macOS host uses its native window server (and has
   // no `Xvfb` binary) — so enable it on Linux only.

@@ -2,8 +2,8 @@
 
 A single self-hosted GitHub Actions runner image that **both** `agent-pane` and
 `streaming-markdown` (and any future org repo) can share — replacing the two
-per-repo, per-tier fleets that live in `agent-pane/.github/runner` (e2e) and
-`agent-pane/.github/runner-checks` (checks).
+per-repo, per-tier fleets that previously lived in `agent-pane/.github/runner`
+(e2e) and `agent-pane/.github/runner-checks` (checks).
 
 It folds three changes into one image:
 
@@ -24,10 +24,17 @@ It folds three changes into one image:
    target repo's branch at build time** and bakes its deps — so the image can
    live in its own repo and be pointed at any consumer.
 
-> **Status: prototype.** These files are staged in `agent-pane` for review. The
-> existing `.github/runner` and `.github/runner-checks` are left in place and
-> still work. Nothing is wired into `ci.yml` yet — see
-> [Cutover](#cutover-not-done-in-this-prototype) for the remaining steps.
+> **Status: prototype — not yet live.** This directory replaces the two old
+> runner dirs (`.github/runner`, `.github/runner-checks`), which are **removed in
+> this branch**; `make runners*` now drives this unified fleet. But the pool has
+> **not** been built or stood up yet, and CI routing is unchanged — so **do not
+> merge until** the unified pool is registered and one green run (an e2e job and
+> a check job) has landed on it. See [Cutover](#cutover-remaining).
+>
+> ⚠️ The runners currently serving CI were built from the now-deleted dirs. Once
+> this merges you can no longer rebuild them from source — migrate by
+> reprovisioning from THIS image (`make runners-reprovision`) before tearing the
+> old containers down.
 
 ## Quick start
 
@@ -98,12 +105,16 @@ even though light jobs share the box: **~4-6 GB + ~2 cores per concurrent
 runner**. `docker-compose.yml` caps each at `mem_limit: 6g` with a 2 GB
 `/dev/shm`. Light check jobs simply under-use that budget — the cost of pooling.
 
-## Cutover (NOT done in this prototype)
+## Cutover (remaining)
 
-To actually adopt this in `agent-pane/.github/workflows/ci.yml`:
+Already done in this branch: the two old runner dirs are removed and the
+`Makefile` (`make runners*`) is repointed at this unified fleet. Still to do
+before/after merging:
 
 1. **Bring the pool up** at org scope (org `GITHUB_URL`, org `ACCESS_TOKEN`) and
-   put both repos in the runner group.
+   put both repos in the runner group. Reprovision from this image
+   (`make runners-reprovision`) to replace the containers built from the old
+   dirs.
 2. **`pick-runner`**: change its runner query from the repo endpoint
    (`/repos/{repo}/actions/runners`) to the org endpoint
    (`/orgs/copse-dev/actions/runners`), and give `RUNNERS_PAT` org
@@ -114,7 +125,8 @@ To actually adopt this in `agent-pane/.github/workflows/ci.yml`:
 4. **`streaming-markdown/.github/workflows/ci.yml`**: optionally add a
    `pick-runner`-style route so its `build` job can land on `copse-checks`
    (it has no e2e/Electron, so it only ever needs the check tier).
-5. Once green, delete `agent-pane/.github/runner` and `.github/runner-checks`.
+5. Confirm one green run lands on the unified pool (an e2e job and a check job),
+   then merge.
 
 ## Extracting to its own repo
 

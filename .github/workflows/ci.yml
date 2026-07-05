@@ -25,7 +25,7 @@ jobs:
   # Runner router: pick a self-hosted check runner when one is available, else
   # defer to GitHub-hosted. The static + unit tier below (precheck/check/build)
   # can run on the optional self-hosted `copse-checks` fleet (see
-  # .github/runner-checks) to save minutes and reuse a warm dep cache — but only
+  # ci-runners/) to save minutes and reuse a warm dep cache — but only
   # when such a runner is actually online. This job inspects the repo's
   # registered runners and emits a `runs_on` value those jobs consume:
   #   ["self-hosted","copse-checks"]  when ≥1 is online
@@ -361,7 +361,7 @@ jobs:
   e2e:
     needs: [build, precheck]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    # PR/push e2e runs on the self-hosted Docker runners (see .github/runner):
+    # PR/push e2e runs on the self-hosted Docker runners (see ci-runners/):
     # free minutes, and a box big enough to avoid the 2-core/7GB hosted-runner
     # OOM that most of the shard quarantines exist to work around. The nightly
     # `schedule` runs the full suite on GitHub-hosted ubuntu-latest.
