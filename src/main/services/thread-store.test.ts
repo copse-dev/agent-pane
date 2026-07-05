@@ -13,6 +13,10 @@ import {
   createThread,
   appendMessage,
   updateMeta,
+  getThreadMeta,
+  upsertThreadAgentLink,
+  lookupThreadByPrUrl,
+  rebuildAgentPrIndex,
 } from './thread-store.ts'
 
 function thread(id: string, overrides: Partial<Thread> = {}): Thread {
@@ -270,5 +274,147 @@ describe('thread-store', () => {
       await updateMeta('proj-1', 'ghost', { title: 'x' })
       assert.deepEqual(await loadProjectThreads('proj-1'), [])
     })
+  })
+})
+
+describe('thread-store agent-run ↔ PR link (issue #690, Q6)', () => {
+  let root: string
+  let previousRoot: string | undefined
+
+  beforeEach(() => {
+    previousRoot = process.env['COPSE_WORKSPACE_DIR']
+    root = mkdtempSync(join(tmpdir(), 'copse-agent-link-'))
+    process.env['COPSE_WORKSPACE_DIR'] = root
+  })
+
+  afterEach(() => {
+    if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+    else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('records a launch link on an existing thread and reads it back', async () => {
+    await createThread('proj-1', thread('t1'))
+    await upsertThreadAgentLink('proj-1', 't1', {
+      provider: 'cursor',
+      agentId: 'agent-1',
+      runId: 'run-1',
+      branch: 'claude/feature',
+      repo: 'copse-dev/agent-pane',
+      createdAt: 123,
+    })
+    const meta = await getThreadMeta('proj-1', 't1')
+    assert.ok(meta)
+    assert.deepEqual(meta.remoteAgentLink, {
+      provider: 'cursor',
+      agentId: 'agent-1',
+      runId: 'run-1',
+      branch: 'claude/feature',
+      repo: 'copse-dev/agent-pane',
+      createdAt: 123,
+    })
+  })
+
+  it('attaching a prUrl folds into the link and the reverse index', async () => {
+    await createThread('proj-1', thread('t1'))
+    await upsertThreadAgentLink('proj-1', 't1', {
+      provider: 'anthropic',
+      agentId: 'agent-1',
+      createdAt: 1,
+    })
+    await upsertThreadAgentLink('proj-1', 't1', {
+      prUrl: 'https://github.com/copse-dev/agent-pane/pull/42',
+    })
+
+    const meta = await getThreadMeta('proj-1', 't1')
+    assert.ok(meta)
+    const link = meta.remoteAgentLink
+    assert.ok(link)
+    assert.equal(link.prUrl, 'https://github.com/copse-dev/agent-pane/pull/42')
+    // Launch identity survives the prUrl patch.
+    assert.equal(link.agentId, 'agent-1')
+
+    const hit = await lookupThreadByPrUrl(
+      'proj-1',
+      'https://github.com/copse-dev/agent-pane/pull/42',
+    )
+    assert.deepEqual(hit, {
+      prUrl: 'https://github.com/copse-dev/agent-pane/pull/42',
+      threadId: 't1',
+      agentId: 'agent-1',
+      provider: 'anthropic',
+    })
+  })
+
+  it('resolves the index by canonical key regardless of URL trailing slash', async () => {
+    await createThread('proj-1', thread('t1'))
+    await upsertThreadAgentLink('proj-1', 't1', {
+      provider: 'cursor',
+      agentId: 'a',
+      prUrl: 'https://github.com/o/r/pull/7',
+      createdAt: 1,
+    })
+    const hit = await lookupThreadByPrUrl('proj-1', 'https://github.com/o/r/pull/7/')
+    assert.equal(hit?.threadId, 't1')
+  })
+
+  it('drops a prUrl patch that arrives before any launch was recorded', async () => {
+    await createThread('proj-1', thread('t1'))
+    await upsertThreadAgentLink('proj-1', 't1', {
+      prUrl: 'https://github.com/o/r/pull/1',
+    })
+    const meta = await getThreadMeta('proj-1', 't1')
+    assert.ok(meta)
+    assert.equal(meta.remoteAgentLink, undefined)
+    assert.equal(await lookupThreadByPrUrl('proj-1', 'https://github.com/o/r/pull/1'), null)
+  })
+
+  it('upsert on a never-created thread is a no-op', async () => {
+    await upsertThreadAgentLink('proj-1', 'ghost', {
+      provider: 'cursor',
+      agentId: 'a',
+      createdAt: 1,
+    })
+    assert.deepEqual(await loadProjectThreads('proj-1'), [])
+  })
+
+  it('rebuilds the reverse index from thread metas', async () => {
+    await createThread('proj-1', thread('t1'))
+    await createThread('proj-1', thread('t2'))
+    await upsertThreadAgentLink('proj-1', 't1', {
+      provider: 'cursor',
+      agentId: 'a1',
+      prUrl: 'https://github.com/o/r/pull/1',
+      createdAt: 1,
+    })
+    await upsertThreadAgentLink('proj-1', 't2', {
+      provider: 'anthropic',
+      agentId: 'a2',
+      prUrl: 'https://github.com/o/r/pull/2',
+      createdAt: 2,
+    })
+
+    const rebuilt = await rebuildAgentPrIndex('proj-1')
+    assert.equal(rebuilt.length, 2)
+    assert.equal(
+      (await lookupThreadByPrUrl('proj-1', 'https://github.com/o/r/pull/2'))?.threadId,
+      't2',
+    )
+  })
+
+  it('link survives an unrelated updateMeta patch (no clobber)', async () => {
+    await createThread('proj-1', thread('t1'))
+    await upsertThreadAgentLink('proj-1', 't1', {
+      provider: 'cursor',
+      agentId: 'a',
+      createdAt: 1,
+    })
+    await updateMeta('proj-1', 't1', { title: 'renamed' })
+    const meta = await getThreadMeta('proj-1', 't1')
+    assert.ok(meta)
+    assert.equal(meta.title, 'renamed')
+    const link = meta.remoteAgentLink
+    assert.ok(link)
+    assert.equal(link.agentId, 'a')
   })
 })

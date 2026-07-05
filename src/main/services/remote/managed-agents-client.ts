@@ -34,6 +34,7 @@ import {
   type RemoteAgentRunOptions,
   type RemoteAgentRunResult,
 } from './remote-agent-shared.ts'
+import { attachRemoteAgentPrFromText, recordRemoteAgentLaunch } from './remote-agent-link-store.ts'
 
 const MANAGED_AGENT_SESSION_PREFIX = 'managed-agent-session:'
 const ANTHROPIC_VERSION = '2023-06-01'
@@ -472,6 +473,18 @@ export async function runManagedAgentFromSettings(
 
   writeSession(options.threadId, session)
 
+  // Record the durable agent-run ↔ thread link on a fresh session (issue #690,
+  // Q6); follow-ups reuse the same agent, and the PR is attached from the reply.
+  if (!priorSession || !canReuse) {
+    await recordRemoteAgentLaunch({
+      threadId: options.threadId,
+      provider: REMOTE_AGENT_PROVIDER_ANTHROPIC,
+      agentId: session.agentId,
+      runId: session.sessionId,
+      createdAt: Date.now(),
+    })
+  }
+
   // Sessions persisted before repo-less support lack hasRepo; they were always
   // repo-backed.
   options.onChunk({ type: 'text', text: buildLaunchNotice(canReuse, session.hasRepo ?? true) })
@@ -534,6 +547,8 @@ export async function runManagedAgentFromSettings(
     options.onChunk(
       terminalStatus ? { type: 'done', stopReason: terminalStatus } : { type: 'done' },
     )
+    // Fold the PR the agent opened (surfaced in its reply) into the link/index.
+    await attachRemoteAgentPrFromText(options.threadId, assistantText)
     return {
       assistantText,
       inputTokens: deltaInput,

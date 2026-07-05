@@ -25,6 +25,7 @@ import {
   type RemoteAgentRunOptions,
   type RemoteAgentRunResult,
 } from './remote-agent-shared.ts'
+import { attachRemoteAgentPrFromText, recordRemoteAgentLaunch } from './remote-agent-link-store.ts'
 
 // Re-exported for callers/tests that import the repository resolver from here.
 export { resolveRemoteAgentRepository } from './remote-agent-shared.ts'
@@ -577,6 +578,19 @@ export async function runRemoteAgentFromSettings(
     ...(run.url ? { url: run.url } : {}),
   })
 
+  // Record the durable agent-run ↔ thread link at launch (issue #690, Q6). Only
+  // on a fresh agent — a follow-up reuses the same agent/link, and the PR it
+  // opens is attached from the reply below.
+  if (!canReuseSession) {
+    await recordRemoteAgentLaunch({
+      threadId: options.threadId,
+      provider: options.provider,
+      agentId: run.agentId,
+      runId: run.runId,
+      createdAt: Date.now(),
+    })
+  }
+
   // Make the remote hand-off explicit in the transcript (parity with how a local
   // chat shows its activity inline).
   options.onChunk({
@@ -647,6 +661,8 @@ export async function runRemoteAgentFromSettings(
       state.terminalStatus ? { type: 'done', stopReason: state.terminalStatus } : { type: 'done' },
     )
     const assistantText = state.assistantText || state.resultText
+    // Once the reply reveals the PR the agent opened, fold it into the link/index.
+    await attachRemoteAgentPrFromText(options.threadId, assistantText)
     return {
       assistantText,
       inputTokens: usage.inputTokens,
