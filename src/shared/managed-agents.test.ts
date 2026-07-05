@@ -6,7 +6,11 @@ import {
   createManagedAgentStreamState,
   managedAgentEventToChunks,
 } from './managed-agents-stream.ts'
-import { buildManagedAgentSystemPrompt, MANAGED_AGENT_REPO_MOUNT_PATH } from './managed-agents.ts'
+import {
+  buildManagedAgentNoRepoSystemPrompt,
+  buildManagedAgentSystemPrompt,
+  MANAGED_AGENT_REPO_MOUNT_PATH,
+} from './managed-agents.ts'
 
 function evt(payload: Record<string, unknown>): SseEvent {
   return { event: 'message', data: JSON.stringify(payload) }
@@ -126,5 +130,16 @@ describe('buildManagedAgentSystemPrompt', () => {
     assert.match(prompt, /do not create a new branch/)
     assert.match(prompt, /Do not open a pull request/)
     assert.doesNotMatch(prompt, /create a new working branch/)
+  })
+})
+
+describe('buildManagedAgentNoRepoSystemPrompt', () => {
+  it('orients the agent in an empty sandbox with no git instructions', () => {
+    const prompt = buildManagedAgentNoRepoSystemPrompt()
+    assert.match(prompt, /No repository is attached/)
+    assert.match(prompt, /Do not attempt to\s+clone, push, or open pull requests/)
+    assert.match(prompt, /inline in your final message/)
+    // Nothing repo-specific leaks into the repo-less prompt.
+    assert.doesNotMatch(prompt, /mounted at|working branch|pull request using the GitHub MCP tools/)
   })
 })

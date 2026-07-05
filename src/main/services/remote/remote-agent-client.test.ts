@@ -11,9 +11,11 @@ import {
   type RemoteStreamState,
 } from '@shared/remote-agent-stream.ts'
 import {
+  clearRemoteAgentSession,
   fetchRemoteArtifactImageDataUrl,
   formatRemoteArtifactsSummary,
   resolveRemoteAgentRepository,
+  runRemoteAgentFromSettings,
 } from './remote-agent-client.ts'
 import { storageSet } from '../storage/storage.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
@@ -52,6 +54,48 @@ describe('resolveRemoteAgentRepository', () => {
       assert.equal(resolvedRoot, projectRoot)
       assert.equal(repository, 'https://github.com/acme/project')
     } finally {
+      restoreWorkspace()
+    }
+  })
+
+  it('returns null when the project has no GitHub remote', async () => {
+    const restoreWorkspace = setWorkspaceRootForTest('/not-a-repo')
+    try {
+      const repository = await resolveRemoteAgentRepository({
+        getGithubRepoSlug: async () => null,
+      })
+      assert.equal(repository, null)
+    } finally {
+      restoreWorkspace()
+    }
+  })
+})
+
+describe('runRemoteAgentFromSettings (cursor)', () => {
+  it('rejects a non-GitHub project with a Cursor-specific error', async () => {
+    // No workspace and no active project → no repository can be resolved.
+    const restoreWorkspace = setWorkspaceRootForTest(null)
+    // The session store persists across runs; make sure no session is reused.
+    clearRemoteAgentSession('thread-cursor-no-repo')
+    const prevKey = process.env['CURSOR_API_KEY']
+    process.env['CURSOR_API_KEY'] = 'test-key'
+    try {
+      await assert.rejects(
+        runRemoteAgentFromSettings({
+          threadId: 'thread-cursor-no-repo',
+          provider: 'cursor',
+          userPrompt: 'do something',
+          signal: new AbortController().signal,
+          onChunk: () => {},
+          fetchImpl: () => {
+            throw new Error('unexpected network call')
+          },
+        }),
+        /needs a project backed by a GitHub remote/,
+      )
+    } finally {
+      if (prevKey === undefined) delete process.env['CURSOR_API_KEY']
+      else process.env['CURSOR_API_KEY'] = prevKey
       restoreWorkspace()
     }
   })

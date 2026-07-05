@@ -10,6 +10,7 @@ import {
   managedAgentEventToChunks,
 } from '@shared/managed-agents-stream.ts'
 import {
+  buildManagedAgentNoRepoSystemPrompt,
   buildManagedAgentSystemPrompt,
   DEFAULT_MANAGED_AGENT_BRANCH_PREFIX,
   DEFAULT_MANAGED_AGENT_MODEL,
@@ -46,6 +47,11 @@ interface ManagedAgentSession {
   sessionId: string
   agentId: string
   environmentId: string
+  /**
+   * Whether a github_repository resource is attached. Absent on sessions
+   * persisted before repo-less support; those were always repo-backed.
+   */
+  hasRepo?: boolean
   /** Last cumulative usage seen for this session, so follow-ups report a delta. */
   usageInput: number
   usageOutput: number
@@ -158,6 +164,8 @@ async function createAgent(input: {
   baseUrl: string
   apiKey: string
   system: string
+  /** Repo-less sessions have no GitHub auth, so skip the GitHub MCP toolset. */
+  withGithubTools: boolean
 }): Promise<string> {
   const body = {
     name: 'Copse Claude Agent',
@@ -170,10 +178,16 @@ async function createAgent(input: {
     // server automatically. If it does NOT, the MCP server needs its own auth
     // (e.g. an Authorization header) and PR creation will fail silently. Confirm
     // against the Managed Agents API before relying on auto PR creation.
-    mcp_servers: [{ type: 'url', name: GITHUB_MCP_SERVER_NAME, url: GITHUB_MCP_SERVER_URL }],
+    ...(input.withGithubTools
+      ? {
+          mcp_servers: [{ type: 'url', name: GITHUB_MCP_SERVER_NAME, url: GITHUB_MCP_SERVER_URL }],
+        }
+      : {}),
     tools: [
       { type: AGENT_TOOLSET_TYPE },
-      { type: 'mcp_toolset', mcp_server_name: GITHUB_MCP_SERVER_NAME },
+      ...(input.withGithubTools
+        ? [{ type: 'mcp_toolset', mcp_server_name: GITHUB_MCP_SERVER_NAME }]
+        : []),
     ],
   }
   const response = await input.fetchImpl(joinUrl(input.baseUrl, '/v1/agents'), {
@@ -211,24 +225,28 @@ async function createSession(input: {
   apiKey: string
   agentId: string
   environmentId: string
-  repository: string
-  githubToken: string
+  /** Null when the local project has no GitHub remote: run with no repo mounted. */
+  repository: string | null
+  githubToken: string | null
   title: string
 }): Promise<string> {
   const body = {
     agent: input.agentId,
     environment_id: input.environmentId,
     title: input.title,
-    resources: [
-      {
-        type: 'github_repository',
-        url: input.repository,
-        mount_path: MANAGED_AGENT_REPO_MOUNT_PATH,
-        // Used server-side only to clone and wire the git remote; per the API it
-        // is never echoed back and the agent never handles it directly.
-        authorization_token: input.githubToken,
-      },
-    ],
+    resources:
+      input.repository && input.githubToken
+        ? [
+            {
+              type: 'github_repository',
+              url: input.repository,
+              mount_path: MANAGED_AGENT_REPO_MOUNT_PATH,
+              // Used server-side only to clone and wire the git remote; per the API it
+              // is never echoed back and the agent never handles it directly.
+              authorization_token: input.githubToken,
+            },
+          ]
+        : [],
   }
   const response = await input.fetchImpl(joinUrl(input.baseUrl, '/v1/sessions'), {
     method: 'POST',
@@ -368,9 +386,12 @@ async function buildFirstHandoffPrompt(
   return { ...prompt, text: `${preamble}\n\n--- New message ---\n${prompt.text}` }
 }
 
-function buildLaunchNotice(reused: boolean): string {
+function buildLaunchNotice(reused: boolean, hasRepo: boolean): string {
   const verb = reused ? 'Continuing on' : 'Running on'
-  return `_${verb} Claude Agent — work happens on a remote sandbox and lands on a branch / PR, not in this local workspace._\n\n`
+  const outcome = hasRepo
+    ? 'work happens on a remote sandbox and lands on a branch / PR, not in this local workspace'
+    : 'work happens on a remote sandbox with no repository attached; results come back in the reply'
+  return `_${verb} Claude Agent — ${outcome}._\n\n`
 }
 
 /**
@@ -401,19 +422,29 @@ export async function runManagedAgentFromSettings(
     // follow-up is just the new message — no context preamble needed.
     turnPrompt = prompt
   } else {
-    const githubToken = resolveGithubToken()
+    // A project without a GitHub remote (or not a git repo at all) still gets a
+    // remote sandbox — just with no repository mounted and no GitHub tooling.
     const repository = await resolveRemoteAgentRepository()
-    const owner = parseGithubOwnerRepo(repository)
-    const system = buildManagedAgentSystemPrompt({
-      mountPath: MANAGED_AGENT_REPO_MOUNT_PATH,
-      branchPrefix: DEFAULT_MANAGED_AGENT_BRANCH_PREFIX,
-      // Branch from the project's current local branch (falls back to the repo
-      // default when it isn't pushed to the remote).
-      startingRef: (await getCurrentBranchName())?.trim() || '',
-      autoCreatePR: getSetting<boolean>('remoteAgentAutoCreatePR', true),
-      workOnCurrentBranch: getSetting<boolean>('remoteAgentWorkOnCurrentBranch', false),
+    const githubToken = repository ? resolveGithubToken() : null
+    const owner = repository ? parseGithubOwnerRepo(repository) : null
+    const system = repository
+      ? buildManagedAgentSystemPrompt({
+          mountPath: MANAGED_AGENT_REPO_MOUNT_PATH,
+          branchPrefix: DEFAULT_MANAGED_AGENT_BRANCH_PREFIX,
+          // Branch from the project's current local branch (falls back to the repo
+          // default when it isn't pushed to the remote).
+          startingRef: (await getCurrentBranchName())?.trim() || '',
+          autoCreatePR: getSetting<boolean>('remoteAgentAutoCreatePR', true),
+          workOnCurrentBranch: getSetting<boolean>('remoteAgentWorkOnCurrentBranch', false),
+        })
+      : buildManagedAgentNoRepoSystemPrompt()
+    const agentId = await createAgent({
+      fetchImpl,
+      baseUrl,
+      apiKey,
+      system,
+      withGithubTools: repository !== null,
     })
-    const agentId = await createAgent({ fetchImpl, baseUrl, apiKey, system })
     const environmentId = await createEnvironment({ fetchImpl, baseUrl, apiKey })
     const sessionId = await createSession({
       fetchImpl,
@@ -432,6 +463,7 @@ export async function runManagedAgentFromSettings(
       sessionId,
       agentId,
       environmentId,
+      hasRepo: repository !== null,
       usageInput: 0,
       usageOutput: 0,
     }
@@ -440,7 +472,9 @@ export async function runManagedAgentFromSettings(
 
   writeSession(options.threadId, session)
 
-  options.onChunk({ type: 'text', text: buildLaunchNotice(canReuse) })
+  // Sessions persisted before repo-less support lack hasRepo; they were always
+  // repo-backed.
+  options.onChunk({ type: 'text', text: buildLaunchNotice(canReuse, session.hasRepo ?? true) })
 
   const onAbort = (): void => {
     void interruptSession({ fetchImpl, baseUrl, apiKey, sessionId: session.sessionId }).catch(
