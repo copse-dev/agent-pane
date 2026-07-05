@@ -1,0 +1,3 @@
+# Never commit real tokens / local runner state.
+.env
+_work/
