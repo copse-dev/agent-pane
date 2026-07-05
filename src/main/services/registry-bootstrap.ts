@@ -46,11 +46,13 @@ import {
 import { CI_INVESTIGATOR_ENABLED_SETTING } from './github/ci-investigator-service.ts'
 import { LONG_HORIZON_TASKS_ENABLED_SETTING } from './storage/long-task-tracker.ts'
 import { trackLongTaskTool } from '../tools/long-task-tool.ts'
-import { MODEL_CLASSIFIER_ENABLED_SETTING } from './model-classifier.ts'
+import { MODEL_CLASSIFIER_ENABLED_SETTING } from './providers/model-classifier.ts'
 import { suggestModelTool } from '../tools/model-classifier-tool.ts'
 import { ADVISOR_STRATEGY_ENABLED_SETTING } from './advisor-strategy.ts'
 import { advisorTool } from '../tools/advisor-tool.ts'
 import { ROADMAP_PLANS_ENABLED_SETTING, roadmapPlanTool } from '../tools/roadmap-tools.ts'
+import { BACKGROUND_TASKS_ENABLED_SETTING } from './exec/background-process.ts'
+import { runBackgroundTool } from '../tools/background-process-tool.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
@@ -125,6 +127,14 @@ export function createRegistry(): ToolRegistry {
   // sessions so longer-horizon work is captured without being started early.
   if (getSetting<boolean>(ROADMAP_PLANS_ENABLED_SETTING, false)) {
     registry.register(roadmapPlanTool)
+  }
+  // Experimental background tasks (off by default, issue #691). Lets the agent
+  // run a long-lived command (dev server, watcher, build) that stays alive
+  // across turns. A task may opt into loopback port binding, which prompts for a
+  // per-workspace grant (permission-gate) and escalates the sandbox to allow
+  // binding for that process's lifetime; without it the task stays contained.
+  if (getSetting<boolean>(BACKGROUND_TASKS_ENABLED_SETTING, false)) {
+    registry.register(runBackgroundTool)
   }
   // Experimental PII redaction (off by default). Adds the reveal_pii tool that
   // turns a redacted placeholder back into its real value, gated by user

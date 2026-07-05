@@ -7,6 +7,7 @@ import {
   WEB_ALLOW_USER_APPROVAL_SETTING,
 } from '@shared/web-origins.ts'
 import {
+  LM_STUDIO_CONTEXT_GUIDE_URL,
   RECOMMENDED_MIN_CONTEXT_WINDOW,
   VRAM_CALCULATOR_URL,
   isContextWindowLow,
@@ -288,6 +289,17 @@ export function createLmStudioSection(
     contextAdvisory.replaceChildren(
       el('strong', {}, 'Low context window'),
       el('p', {}, advice ?? ''),
+      el(
+        'p',
+        {},
+        'Context length resets when you restart? See the ',
+        el(
+          'a',
+          { href: LM_STUDIO_CONTEXT_GUIDE_URL, target: '_blank', rel: 'noopener' },
+          'guide to making it restart-proof',
+        ),
+        '.',
+      ),
       el(
         'p',
         {},

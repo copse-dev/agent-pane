@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
-import { classifySearchQuery } from '@shared/agent/search-routing.ts'
+import { classifySearchQuery, resolveSearchText } from '@shared/agent/search-routing.ts'
 import {
   getWorkspaceRoot,
   resolveWorkspacePath,
@@ -18,7 +18,11 @@ export const searchCodebaseTool = defineTool({
   parameters: z.object({
     query: z
       .string()
+      .optional()
       .describe('Search text — regex pattern, symbol name, or natural-language question'),
+    // Undocumented fallback: search_code uses `pattern`, and smaller models
+    // routinely pass that name here. Accepted but deliberately not described.
+    pattern: z.string().optional(),
     mode: z
       .enum(['auto', 'regex', 'semantic'])
       .optional()
@@ -44,19 +48,24 @@ export const searchCodebaseTool = defineTool({
     max_results: z.number().int().min(1).max(500).optional().default(50),
   }),
   async execute(
-    { query, mode, path, file_glob, fixed_string, case_sensitive, max_results },
+    { query, pattern, mode, path, file_glob, fixed_string, case_sensitive, max_results },
     signal,
   ) {
     const root = getWorkspaceRoot()
     if (!root) return 'No workspace open.'
 
-    const resolvedMode = mode === 'auto' ? classifySearchQuery(query) : mode
+    const searchText = resolveSearchText(query, pattern)
+    if (searchText === undefined) {
+      return 'Provide a search query via `query` (its alias `pattern` also works).'
+    }
+
+    const resolvedMode = mode === 'auto' ? classifySearchQuery(searchText) : mode
     const filterPath = path ? toRelativePath(resolveWorkspacePath(path)) : undefined
 
     if (resolvedMode === 'semantic') {
       const semantic = await executeSemanticSearch(
         {
-          query,
+          query: searchText,
           maxResults: max_results,
           ...(filterPath ? { filterPath } : {}),
         },
@@ -81,7 +90,7 @@ export const searchCodebaseTool = defineTool({
     // below stays workspace-only (chat-store discovery goes through catalog.jsonl).
     const searchRoot = path ? resolveReadablePath(path) : root
     const { lines, backend } = await searchCodeContent({
-      pattern: query,
+      pattern: searchText,
       searchRoot,
       fixedString: fixed_string,
       caseSensitive: case_sensitive,
@@ -103,18 +112,28 @@ export const semanticSearchTool = defineTool({
   description:
     'Search the codebase by meaning using a local semantic index (gortex or vera CLI). Use for conceptual questions.',
   parameters: z.object({
-    query: z.string().describe('Natural-language question about code behavior or architecture'),
+    query: z
+      .string()
+      .optional()
+      .describe('Natural-language question about code behavior or architecture'),
+    // Undocumented fallback: accepted but deliberately not described.
+    pattern: z.string().optional(),
     path: z.string().optional().describe('Optional subdirectory scope'),
     max_results: z.number().int().min(1).max(100).optional().default(20),
   }),
-  async execute({ query, path, max_results }, signal) {
+  async execute({ query, pattern, path, max_results }, signal) {
     const root = getWorkspaceRoot()
     if (!root) return 'No workspace open.'
+
+    const searchText = resolveSearchText(query, pattern)
+    if (searchText === undefined) {
+      return 'Provide a query via `query` (its alias `pattern` also works).'
+    }
 
     const filterPath = path ? toRelativePath(resolveWorkspacePath(path)) : undefined
     const semantic = await executeSemanticSearch(
       {
-        query,
+        query: searchText,
         maxResults: max_results,
         ...(filterPath ? { filterPath } : {}),
       },

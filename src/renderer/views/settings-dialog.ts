@@ -27,7 +27,7 @@ import {
   WEB_ALLOW_USER_APPROVAL_SETTING,
 } from '@shared/web-origins.ts'
 
-type SettingsSection =
+export type SettingsSection =
   | 'general'
   | 'usage'
   | 'local-models'
@@ -85,6 +85,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'advisorStrategyEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'roadmapPlansEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'backgroundTasksEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'piiRedactionEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'devtoolsShortcutEnabled', kind: 'checkbox', default: false, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
@@ -134,9 +135,13 @@ function parseWebAllowedOrigins(value: FormDataEntryValue | null): string[] {
 }
 
 let overlayEl: HTMLDialogElement | null = null
+// Section to reveal on the next open (e.g. a deep-link from the low-context
+// warning). Read and cleared by the `settings-open` handler; null → General.
+let pendingSection: SettingsSection | null = null
 
-export function openSettingsDialog(): void {
+export function openSettingsDialog(section?: SettingsSection): void {
   if (!overlayEl || overlayEl.open) return
+  pendingSection = section ?? null
   // showModal() puts the dialog in the top layer: focus is trapped inside, the
   // background is made inert, and Esc closes it — all for free, replacing the
   // hand-rolled overlay + manual `hidden` toggle.
@@ -733,6 +738,24 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset>
+              <legend>Background tasks</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="backgroundTasksEnabled" />
+                Let the agent run long-lived background commands (dev servers, watchers)
+              </label>
+              <p class="field-hint">
+                Adds a <code>run_background</code> tool that starts a long-running command
+                (<code>npm run dev</code>, a build/test watcher, …) and keeps it alive across turns,
+                with list / logs / stop actions. A task can opt into binding a local port — for a
+                dev server — which reports its <code>http://localhost:&lt;port&gt;</code> URL so the
+                agent can open it in the built-in browser; that asks for your permission the first
+                time per project and relaxes the sandbox only to allow binding on localhost.
+                Otherwise a task stays fully sandboxed (workspace-only, no network). Tasks are
+                stopped when the app quits. While off, the tool is not registered.
+              </p>
+            </fieldset>
+
+            <fieldset>
               <legend>PII redaction (on-device)</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="piiRedactionEnabled" />
@@ -1232,7 +1255,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   })
 
   overlay.addEventListener('settings-open', () => {
-    showSection('general')
+    showSection(pendingSection ?? 'general')
+    pendingSection = null
     void (async (): Promise<void> => {
       await cursorKeySection.refreshKeyStatus()
       await claudeAgentKeySection.refreshKeyStatus()

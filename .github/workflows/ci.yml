@@ -295,11 +295,8 @@ jobs:
           name: coverage-report
           path: coverage/lcov-report
           if-no-files-found: ignore
-      # Differentially validate the JS CommonMark normalizer against the
-      # reference normalize.py. The script fetches normalize.py from a pinned,
-      # hash-verified upstream commit (not checked in) and runs the diff with
-      # python3 (preinstalled on the runner).
-      - run: npm run check:normalizer-parity
+      # The CommonMark normalizer-parity check now lives in the extracted
+      # @copse/streaming-markdown repo's CI (copse-dev/streaming-markdown).
       # The build is validated once in the dedicated `build` job below (whose
       # dist artifact the e2e shards reuse), so it no longer runs here.
 

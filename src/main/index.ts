@@ -42,12 +42,12 @@ import {
 import {
   listFreeOpenRouterModels,
   invalidateOpenRouterModelsCache,
-} from './services/openrouter-models.ts'
+} from './services/providers/openrouter-models.ts'
 import {
   detectLmStudio,
   downloadLmStudioModel,
   getLmStudioDownloadStatus,
-} from './services/lm-studio-setup.ts'
+} from './services/providers/lm-studio-setup.ts'
 import { estimateContextBreakdown } from './services/context-estimate.ts'
 import { suggestFollowUps } from './services/follow-up-service.ts'
 import { storageGet, storageSet } from './services/storage/storage.ts'
@@ -68,6 +68,7 @@ import {
   zThreadId,
 } from './ipc/ipc-guards.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
+import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
 
 // Prevent multiple instances stacking invisible windows at the same position.
 // A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.
@@ -322,6 +323,7 @@ let disposeTerminal: (() => void) | undefined
 async function cleanupBeforeQuit(): Promise<void> {
   disposeAllAcpSessions()
   destroyAllTerminalSessions()
+  stopAllBackgroundProcesses()
   disposeTerminal?.()
   disposeTerminal = undefined
   closeAllWatchers()
@@ -334,6 +336,7 @@ async function cleanupBeforeQuit(): Promise<void> {
 app.on('before-quit', (event) => {
   if (quitCleanupFinished) return
   destroyAllTerminalSessions()
+  stopAllBackgroundProcesses()
   event.preventDefault()
   if (quitCleanupStarted) return
   quitCleanupStarted = true

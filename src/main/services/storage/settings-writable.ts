@@ -139,6 +139,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   advisorStrategyEnabled: z.boolean(),
   advisorModel: z.string().max(256),
   roadmapPlansEnabled: z.boolean(),
+  backgroundTasksEnabled: z.boolean(),
   piiRedactionEnabled: z.boolean(),
   devtoolsShortcutEnabled: z.boolean(),
   customInstructions: z.string().max(8192),

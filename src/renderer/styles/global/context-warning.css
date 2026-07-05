@@ -1,0 +1,54 @@
+/* Persistent startup banner: no chat model with a usable context window.
+   Lives in normal flow directly below the titlebar (a flex child of #app), so it
+   pushes the app down instead of overlaying the titlebar controls. */
+.context-warning-banner {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--warning, var(--border));
+  font-size: 13px;
+  line-height: 1.4;
+}
+.context-warning-icon {
+  color: var(--warning, var(--text-primary));
+  font-size: 15px;
+  flex: none;
+}
+.context-warning-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.context-warning-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.context-warning-action {
+  padding: 4px 10px;
+  border-radius: var(--radius, 4px);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.context-warning-action:hover {
+  background: var(--bg-hover, var(--bg-elevated));
+}
+.context-warning-dismiss {
+  padding: 2px 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary, var(--text-primary));
+  font-size: 14px;
+  cursor: pointer;
+  line-height: 1;
+}
+.context-warning-dismiss:hover {
+  color: var(--text-primary);
+}

@@ -28,15 +28,18 @@ export interface RemoteAgentRunResult {
 
 export type GithubRepoSlugResolver = (root: string | null) => Promise<string | null>
 
+/**
+ * GitHub repository URL for the active project, or null when the project is not
+ * a git repo (or has no GitHub remote). Providers that can run without a
+ * repository treat null as "no repo attached"; providers that must clone one
+ * raise their own error.
+ */
 export async function resolveRemoteAgentRepository(
   options: { getGithubRepoSlug?: GithubRepoSlugResolver } = {},
-): Promise<string> {
+): Promise<string | null> {
   const resolveSlug = options.getGithubRepoSlug ?? getGithubRepoSlug
   const slug = await resolveSlug(getActiveProjectRoot() ?? getWorkspaceRoot())
-  if (slug) return `https://github.com/${slug}`
-  throw new Error(
-    'Could not infer a GitHub repository from the active project. Open a project backed by a GitHub remote to run a remote agent.',
-  )
+  return slug ? `https://github.com/${slug}` : null
 }
 
 /** Parse `owner` and `repo` out of a GitHub repository URL or `owner/repo` slug. */

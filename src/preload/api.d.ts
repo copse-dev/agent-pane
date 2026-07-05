@@ -162,6 +162,14 @@ export interface ApiClient {
   openRouter: {
     models: () => Promise<Array<{ id: string; name: string }>>
   }
+  models: {
+    /** Whether any available chat model reaches the recommended context window. */
+    chatDefaultContextHealth: () => Promise<{
+      hasDecentChatDefault: boolean
+      minimum: number
+      bestAvailableContext: number | null
+    }>
+  }
   lmStudio: {
     test: (
       url: string,

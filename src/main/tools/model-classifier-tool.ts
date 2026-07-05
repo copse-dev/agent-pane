@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
-import { classifyModelForTask } from '../services/model-classifier.ts'
+import { classifyModelForTask } from '../services/providers/model-classifier.ts'
 
 /**
  * Experimental model-classifier tool (issue #557). Returns a recommended

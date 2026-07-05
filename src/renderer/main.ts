@@ -30,6 +30,7 @@ import {
   openOnboardingDialog,
   shouldShowOnboarding,
 } from './views/onboarding-dialog.ts'
+import { mountContextWarningBanner } from './views/context-warning-banner.ts'
 import { mountApprovalDialog } from './views/approval-dialog.ts'
 import { mountAskUserDialog } from './views/ask-user-dialog.ts'
 import {
@@ -61,6 +62,12 @@ import { registerPanelKeyboardShortcuts } from './keyboard-shortcuts.ts'
 import { showErrorToast } from './views/toast.ts'
 import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layout.ts'
 import { isRightPanelPosition } from '@shared/types/state.ts'
+import { installArtifactImagePolicy } from './markdown/artifact-image-policy.ts'
+
+// Inject host markdown policies into @copse/streaming-markdown before any view
+// renders: remote-agent artifact <img> tags become inert placeholders that
+// hydrateRemoteArtifactImages() resolves after sanitization.
+installArtifactImagePolicy()
 
 const store = createStore()
 const api = window.api
@@ -114,6 +121,8 @@ async function boot(): Promise<void> {
   mountApprovalDialog(api, store)
   mountAskUserDialog(api, store)
   mountFileSearchDialog(store, api)
+  // Mounted after settings (it subscribes to the settings-close event to re-check).
+  const contextWarningBanner = mountContextWarningBanner(api)
 
   // Load persisted user preferences before the main layout mounts.
   const savedModel = (await api.settings.get('model')) as string | null
@@ -212,6 +221,11 @@ async function boot(): Promise<void> {
 
   if (await shouldShowOnboarding(api)) {
     openOnboardingDialog()
+  } else {
+    // Onboarding walks the user through model setup, so only nudge established
+    // users here: warn when no configured chat model has a usable context window
+    // (e.g. LM Studio reloaded everything at a tiny default after a reboot).
+    void contextWarningBanner.refresh()
   }
 }
 

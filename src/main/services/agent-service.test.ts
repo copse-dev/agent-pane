@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import * as agentService from './agent-service.ts'
-import * as providerSelection from './provider-selection.ts'
+import * as providerSelection from './providers/provider-selection.ts'
 import { suggestThreadTitle } from './title-generator.ts'
 import { setSetting } from './storage/settings.ts'
 import type { AgentHost } from '@shared/agent/agent-host.ts'

@@ -1,6 +1,6 @@
 import type { LLMMessage } from '@shared/types'
-import { buildProvider } from './provider-selection.ts'
-import { completeTextWithUsage } from './llm-complete-text.ts'
+import { buildProvider } from './providers/provider-selection.ts'
+import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { getSettingTrimmed } from './storage/settings.ts'
 import { addSubagentUsage } from './subagent-usage.ts'
 import {

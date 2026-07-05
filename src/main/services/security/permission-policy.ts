@@ -120,6 +120,29 @@ export function formatShellPromptBody(command: string, reasons: string[]): strin
   return `${command}${detail}`
 }
 
+/** Read the `command` field of a run_background tool call. */
+export function backgroundCommandFromArgs(args: unknown): string {
+  if (typeof args !== 'object' || args === null || !('command' in args)) return ''
+  const command = (args as { command?: unknown }).command
+  return typeof command === 'string' ? command : ''
+}
+
+/** Whether a run_background call opted into loopback port binding. */
+export function backgroundAllowsPortBinding(args: unknown): boolean {
+  if (typeof args !== 'object' || args === null || !('allow_port_binding' in args)) return false
+  return (args as { allow_port_binding?: unknown }).allow_port_binding === true
+}
+
+export function formatPortBindingPromptBody(workspaceRoot: string, command: string): string {
+  return (
+    `The agent wants to start a long-running background task that binds a ` +
+    `loopback port and stays alive across turns:\n\n${command || '(no command given)'}\n\n` +
+    `Project: ${workspaceRoot}\n\n` +
+    `It runs with the project's sandbox filesystem rules, relaxed only to allow ` +
+    `binding on localhost.`
+  )
+}
+
 export function formatExternalSandboxPromptBody(command: string, reasons: string[]): string {
   const detail = reasons.length ? reasons.join('; ') : 'network or outside-workspace access'
   return (

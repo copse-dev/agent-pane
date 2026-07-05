@@ -1,11 +1,12 @@
 # Markdown app glue
 
-The parser/renderer core lives in
-[`packages/streaming-markdown`](../../../packages/streaming-markdown/README.md)
-(`@copse/streaming-markdown`) — see its README for the design invariants,
-streaming architecture, and the CommonMark conformance + convergence-fuzz
-harness. Core files must not import app modules; anything app-specific belongs
-here instead.
+The parser/renderer core lives in the standalone
+[`@copse/streaming-markdown`](https://github.com/copse-dev/streaming-markdown)
+package (consumed as a dependency) — see its README/`docs/ARCHITECTURE.md` for the
+design invariants, streaming architecture, and the CommonMark conformance +
+convergence-fuzz harness. Core behaviour is injected, not imported: the app
+provides a `LinkDecorator`, a `RawImageRenderer`, and a `SanitizeExtension` (see
+`artifact-image-policy.ts`). Anything app-specific belongs here.
 
 This directory keeps the app-side integration only:
 
