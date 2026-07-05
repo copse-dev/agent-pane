@@ -105,28 +105,32 @@ even though light jobs share the box: **~4-6 GB + ~2 cores per concurrent
 runner**. `docker-compose.yml` caps each at `mem_limit: 6g` with a 2 GB
 `/dev/shm`. Light check jobs simply under-use that budget — the cost of pooling.
 
-## Cutover (remaining)
+## Cutover
 
-Already done in this branch: the two old runner dirs are removed and the
-`Makefile` (`make runners*`) is repointed at this unified fleet. Still to do
-before/after merging:
+**Done in this branch (code):**
 
-1. **Bring the pool up** at org scope (org `GITHUB_URL`, org `ACCESS_TOKEN`) and
-   put both repos in the runner group. Reprovision from this image
-   (`make runners-reprovision`) to replace the containers built from the old
-   dirs.
-2. **`pick-runner`**: change its runner query from the repo endpoint
-   (`/repos/{repo}/actions/runners`) to the org endpoint
-   (`/orgs/copse-dev/actions/runners`), and give `RUNNERS_PAT` org
-   **Self-hosted runners: Read**. (Org runners are not listed on the repo
-   endpoint, so without this the check tier silently stays on hosted.)
-3. **e2e job**: unchanged — it already targets `["self-hosted","copse-e2e"]`,
-   which these runners carry. Fork-PR fail-closed guard stays as-is.
-4. **`streaming-markdown/.github/workflows/ci.yml`**: optionally add a
-   `pick-runner`-style route so its `build` job can land on `copse-checks`
-   (it has no e2e/Electron, so it only ever needs the check tier).
-5. Confirm one green run lands on the unified pool (an e2e job and a check job),
-   then merge.
+- Removed the two old runner dirs; repointed the `Makefile` (`make runners*`) at
+  this unified fleet.
+- `agent-pane` `pick-runner` now queries the **org** endpoint
+  (`/orgs/{owner}/actions/runners`) instead of the repo endpoint. The e2e job is
+  unchanged — it already targets `["self-hosted","copse-e2e"]`, which these
+  runners carry.
+- `streaming-markdown/.github/workflows/ci.yml` gained a `pick-runner` route so
+  its check job lands on the shared `copse-checks` pool when available (fork PRs
+  stay on hosted).
+
+**Remaining (infra — do before/at merge):**
+
+1. **Bring the pool up** at org scope: set `.env` `GITHUB_URL` to the org, give
+   `ACCESS_TOKEN` org runner admin, and put both repos in the runner group (the
+   org default group grants all repos). Build + register with
+   `make runners` — or `make runners-reprovision` to **replace the containers
+   built from the now-deleted dirs**.
+2. **Add `RUNNERS_PAT`** (org or repo secret, org **Self-hosted runners: Read**)
+   to both repos so `pick-runner` can enumerate the org fleet. Without it,
+   routing fails open to hosted — CI still works, it just never uses self-hosted.
+3. **Confirm one green run** lands on the pool (an e2e job and a check job in
+   agent-pane, a check job in streaming-markdown), then **merge**.
 
 ## Extracting to its own repo
 
