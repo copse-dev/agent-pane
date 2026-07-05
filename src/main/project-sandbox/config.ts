@@ -326,6 +326,32 @@ export function acpAgentSandboxOverlay(
   }
 }
 
+/** Loopback hostnames a local dev server binds/serves on. */
+const LOOPBACK_DOMAINS = ['localhost', '127.0.0.1', '::1'] as const
+
+/**
+ * Seatbelt overlay for a user-approved **local dev server** (issue #691).
+ *
+ * Same workspace-scoped filesystem rules as {@link workspaceSandboxOverlay},
+ * with one deliberate relaxation: `allowLocalBinding: true` plus loopback-only
+ * allowed domains, so the process can `listen()` on `localhost`/`127.0.0.1` and
+ * be reached by the built-in browser. No public domains are added — this widens
+ * the sandbox to loopback binding only, never to the open network. Only used
+ * under an explicit per-workspace grant (see the permission gate), never for
+ * auto-run commands.
+ */
+export function devServerSandboxOverlay(workspaceRoot: string): Partial<SandboxRuntimeConfig> {
+  const base = workspaceSandboxOverlay(workspaceRoot)
+  return {
+    ...base,
+    network: {
+      allowedDomains: [...LOOPBACK_DOMAINS],
+      deniedDomains: [],
+      allowLocalBinding: true,
+    },
+  }
+}
+
 export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxRuntimeConfig> {
   const root = canonicalizeWorkspaceRoot(workspaceRoot)
   const toolchainRead = resolveNodeToolchainAllowRead()

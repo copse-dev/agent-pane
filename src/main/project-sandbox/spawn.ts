@@ -6,7 +6,8 @@ import type { IPty } from 'node-pty'
 import quote from 'shell-quote'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { posixQuote } from '../services/security/safe-install.ts'
-import { ensureWorkspaceTmpDir, workspaceSandboxOverlay } from './config.ts'
+import { devServerSandboxOverlay, ensureWorkspaceTmpDir, workspaceSandboxOverlay } from './config.ts'
+import { acquireSandboxNetworkScope } from './network-scope.ts'
 import { isProjectSandboxActive, setProjectSandboxActive } from './state.ts'
 
 export function isProjectSandboxEnabled(): boolean {
@@ -144,6 +145,60 @@ export async function spawnShellInProjectSandbox(
     signal: opts.signal,
     detached: detachForGroupKill,
   })
+}
+
+/**
+ * Spawn a long-lived local dev server (issue #691). Unlike {@link runCommand}
+ * this is fire-and-forget: the caller owns the returned child's lifetime and
+ * kills it explicitly. When the project sandbox is active the child runs under
+ * {@link devServerSandboxOverlay} — workspace-scoped filesystem rules plus
+ * loopback-only binding — and a global network scope is acquired for the
+ * process's lifetime (ASRT's proxies consult the GLOBAL config per connection;
+ * the overlay's network block only wires restriction up). The scope is released
+ * when the child closes or errors.
+ */
+export async function spawnDevServerProcess(
+  shellCommandLine: string,
+  opts: { cwd: string; env?: NodeJS.ProcessEnv },
+): Promise<ChildProcess> {
+  if (!isProjectSandboxEnabled()) {
+    const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh'
+    const shellArgs =
+      process.platform === 'win32' ? ['/c', shellCommandLine] : ['-c', shellCommandLine]
+    return spawn(shell, shellArgs, {
+      cwd: opts.cwd,
+      env: opts.env ?? process.env,
+      stdio: 'pipe',
+      detached: detachForGroupKill,
+    })
+  }
+
+  const overlay = devServerSandboxOverlay(opts.cwd)
+  const release = acquireSandboxNetworkScope({
+    domains: overlay.network?.allowedDomains ?? [],
+    allowLocalBinding: overlay.network?.allowLocalBinding ?? false,
+  })
+  try {
+    const { argv, env } = await SandboxManager.wrapWithSandboxArgv(
+      shellCommandLine,
+      shellForSandboxWrap(),
+      overlay,
+    )
+    const file = argv[0]
+    if (!file) throw new Error('sandbox wrap produced empty argv')
+    const child = spawn(file, argv.slice(1), {
+      cwd: opts.cwd,
+      env: mergeSpawnEnv(withWorkspaceTmpEnv(env), opts.env),
+      stdio: 'pipe',
+      detached: detachForGroupKill,
+    })
+    child.once('close', release)
+    child.once('error', release)
+    return child
+  } catch (err) {
+    release()
+    throw err
+  }
 }
 
 /**

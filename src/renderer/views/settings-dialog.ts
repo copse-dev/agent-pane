@@ -85,6 +85,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'advisorStrategyEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'roadmapPlansEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'devServerToolEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'piiRedactionEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'devtoolsShortcutEnabled', kind: 'checkbox', default: false, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
@@ -729,6 +730,24 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 so longer-horizon plans aren't started before the PRs they depend on merge. Items
                 are stored per project under <code>~/.copse/roadmap</code>. While off, the tool is
                 not registered.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Local dev server</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="devServerToolEnabled" />
+                Let the agent run a local dev server and open it in the browser
+              </label>
+              <p class="field-hint">
+                Adds a <code>dev_server</code> tool that starts a long-running local server
+                (<code>npm run dev</code>, <code>vite</code>, <code>python -m http.server</code>, …),
+                keeps it alive across turns, and reports its
+                <code>http://localhost:&lt;port&gt;</code> URL so the agent can open it with the
+                built-in browser. Starting a server asks for your permission the first time per
+                project; it then runs with the project's sandbox filesystem rules, relaxed only to
+                allow binding on localhost. Servers are stopped when the app quits. While off, the
+                tool is not registered.
               </p>
             </fieldset>
 
