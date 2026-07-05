@@ -6,7 +6,11 @@ import type { IPty } from 'node-pty'
 import quote from 'shell-quote'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { posixQuote } from '../services/security/safe-install.ts'
-import { devServerSandboxOverlay, ensureWorkspaceTmpDir, workspaceSandboxOverlay } from './config.ts'
+import {
+  devServerSandboxOverlay,
+  ensureWorkspaceTmpDir,
+  workspaceSandboxOverlay,
+} from './config.ts'
 import { acquireSandboxNetworkScope } from './network-scope.ts'
 import { isProjectSandboxActive, setProjectSandboxActive } from './state.ts'
 
