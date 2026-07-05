@@ -72,8 +72,8 @@ import { installSanitizerBackend } from './markdown/sanitizer-backend.ts'
 // Inject host markdown policies into @copse/streaming-markdown before any view
 // renders: turn remote-agent artifact <img> tags into inert placeholders that
 // hydrateRemoteArtifactImages() resolves after sanitization. The sanitizer
-// backend resolves the native Sanitizer API synchronously (Electron) or lazily
-// loads DOMPurify where it is absent — boot() awaits it before the first render.
+// backend (DOMPurify) is loaded via a deferred dynamic import; boot() awaits it
+// before the first render.
 const sanitizerReady = installSanitizerBackend()
 installArtifactImagePolicy()
 
