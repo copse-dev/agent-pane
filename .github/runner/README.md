@@ -109,7 +109,7 @@ directory):
 # from the repo root:
 docker build -t copse-ci-runner -f .github/runner/Dockerfile .
 docker run -d --restart always --init --shm-size 2g \
-  -e GITHUB_URL=https://github.com/jonathankingston/agent-pane \
+  -e GITHUB_URL=https://github.com/copse-dev/agent-pane \
   -e ACCESS_TOKEN=ghp_xxx \
   copse-ci-runner
 ```

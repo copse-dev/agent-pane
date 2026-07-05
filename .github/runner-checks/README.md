@@ -131,7 +131,7 @@ directory):
 # from the repo root:
 docker build -t copse-ci-checks-runner -f .github/runner-checks/Dockerfile .
 docker run -d --restart always --init \
-  -e GITHUB_URL=https://github.com/jonathankingston/agent-pane \
+  -e GITHUB_URL=https://github.com/copse-dev/agent-pane \
   -e ACCESS_TOKEN=ghp_xxx \
   copse-ci-checks-runner
 ```
