@@ -138,3 +138,69 @@
 .review-panel-body > :last-child {
   margin-bottom: 0;
 }
+
+/* Model comparison card: two reviewer columns + a judge synthesis. Shares the
+   review card's inline-in-transcript placement (see syncComparisonPanel). */
+.comparison-panel {
+  margin-top: var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent, var(--text-secondary));
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: 13px;
+}
+.comparison-panel-error {
+  border-left-color: var(--danger, #d9534f);
+}
+.comparison-panel-icon {
+  display: inline-flex;
+  align-items: center;
+}
+.comparison-panel-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+.comparison-panel-cost {
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.comparison-panel-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-sm);
+}
+/* Stack the two reviews on narrow panes rather than squeezing them. */
+@media (max-width: 640px) {
+  .comparison-panel-columns {
+    grid-template-columns: 1fr;
+  }
+}
+.comparison-panel-col-title {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-xs);
+  word-break: break-word;
+}
+.comparison-panel-synthesis {
+  margin-top: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--border);
+}
+.comparison-panel-md > :first-child {
+  margin-top: 0;
+}
+.comparison-panel-md > :last-child {
+  margin-bottom: 0;
+}
