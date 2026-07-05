@@ -149,14 +149,23 @@ research benchmark.
   (role registry) and `local-model-catalog.ts` (capability catalog + benchmark
   structure + `recommendLocalModelsForRole`), with tests. Additive; each module
   wired to a consumer so `check:dead-code` stays green.
-- **Phase 1 — role indirection: _backend done; UI pending._** `role-models.ts`
+- **Phase 1 — role indirection: _backend done; UI reframed._** `role-models.ts`
   resolves a role assignment (the renderer-writable `roleModels` setting) ahead
   of the legacy per-feature setting, with a fallback so behaviour is unchanged
   until a role is assigned. Wired into the coder / small-tasks / research
   resolution sites. The main-only security settings (`safetyModel`,
   `reviewModel`) are intentionally NOT routed through the renderer-writable bag
-  (they stay on the guarded security IPC). _Remaining:_ a settings-UI slice to
-  assign roles, and a decision on surfacing the security roles.
+  (they stay on the guarded security IPC).
+
+  **UI principle — roles _replace_ the granular controls, they don't stack on
+  top.** The indirection only simplifies if the default view shrinks: the
+  Settings routing section is now "Local model roles" with the two primary roles
+  (Coder, Research) visible and the finer routes (safety, review) collapsed under
+  "Advanced routes", so nothing is shown twice. `readValues()` is unchanged, so
+  the save flow is untouched. _Note:_ this changes the settings screenshot —
+  regenerate `settings-general-model-routing.png` (needs a runnable Electron env;
+  couldn't be done in the container this landed from). _Remaining:_ let a role
+  feed multiple features (the real payoff), and cloud-capable roles.
 - **Phase 2 — picker classifications:** capability/role badges and
   "recommended for" grouping in `model-options.ts`.
 - **Phase 3 — generalized download: _foundation done; UI pending._** The

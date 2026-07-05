@@ -419,6 +419,20 @@ dialog.settings-overlay::backdrop {
   margin-bottom: var(--spacing-sm);
 }
 
+.routing-advanced {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.routing-advanced summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.routing-advanced[open] summary {
+  margin-bottom: var(--spacing-sm);
+}
+
 .usage-section-root {
   display: flex;
   flex-direction: column;
