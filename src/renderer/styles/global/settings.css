@@ -259,6 +259,20 @@ dialog.settings-overlay::backdrop {
   width: 100%;
   max-width: 480px;
 }
+/* Colour swatch (Interface tint): a compact well rather than a full-width row. */
+.settings-content input[type='color'] {
+  width: 52px;
+  height: 30px;
+  padding: 2px;
+  cursor: pointer;
+}
+.settings-content input[type='color']::-webkit-color-swatch {
+  border: none;
+  border-radius: var(--radius-sm);
+}
+.settings-content input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
 .settings-nav,
 .settings-content,
 .settings-content button,

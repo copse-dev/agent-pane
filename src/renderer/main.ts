@@ -28,6 +28,10 @@ import {
   openSettingsDialog,
   isSettingsDialogOpen,
   closeSettingsDialog,
+  applyUiTint,
+  isUiTintStrength,
+  DEFAULT_TINT_COLOR,
+  DEFAULT_TINT_STRENGTH,
 } from './views/settings-dialog.ts'
 import {
   mountOnboardingDialog,
@@ -134,6 +138,14 @@ async function boot(): Promise<void> {
   const savedLayout = await api.settings.get('layout')
   const savedAutoPortraitRightPanel = await api.settings.get('autoPortraitRightPanel')
   const savedRightPanelPosition = await api.settings.get('rightPanelPosition')
+  // Restore the whole-app tint before the layout paints so surfaces come up
+  // already tinted rather than flashing neutral then shifting.
+  const savedTintColor = await api.settings.get('uiTintColor')
+  const savedTintStrength = await api.settings.get('uiTintStrength')
+  applyUiTint(
+    typeof savedTintColor === 'string' ? savedTintColor : DEFAULT_TINT_COLOR,
+    isUiTintStrength(savedTintStrength) ? savedTintStrength : DEFAULT_TINT_STRENGTH,
+  )
   store.setState({
     settings: { model: savedModel ?? DEFAULT_APP_CHAT_MODEL },
     layout: parseSavedLayout(savedLayout),
