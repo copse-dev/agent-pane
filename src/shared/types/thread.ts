@@ -187,6 +187,19 @@ export interface ToolCall {
   result: string | null
   /** Line add/delete counts for file edit tools (write_file, str_replace). */
   editStats?: { additions: number; deletions: number }
+  /**
+   * ACP tool-call `kind` (e.g. `'execute'`, `'read'`, `'search'`), carried from
+   * an external ACP agent so its cards group and label like the built-in tools
+   * (see `getToolGroupKey`). Absent for the built-in agent loop.
+   */
+  kind?: string
+  /**
+   * How to render `result`. External ACP agents author their tool output as
+   * Markdown (fenced code, lists, prose), so it renders through the same
+   * Markdown pipeline as assistant messages instead of a raw `<pre>`. Absent
+   * (plain text) for built-in tools, whose results are structured payloads.
+   */
+  resultFormat?: 'markdown'
   subagent?: SubagentSession
 }
 

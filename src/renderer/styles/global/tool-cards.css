@@ -117,6 +117,20 @@
   word-break: break-word;
   overflow-wrap: anywhere;
 }
+/* ACP tool output rendered as Markdown: prose font (not mono) so it matches
+   the assistant-message body, while fenced code blocks keep their own styling.
+   Roomier scroll cap than the plain `<pre>` variant since rendered output is
+   less dense than raw dumps. */
+.tool-result-markdown {
+  font-family: inherit;
+  max-height: 320px;
+}
+.tool-result-markdown > :first-child {
+  margin-top: 0;
+}
+.tool-result-markdown > :last-child {
+  margin-bottom: 0;
+}
 .tool-args details summary {
   cursor: pointer;
   color: var(--text-muted);
