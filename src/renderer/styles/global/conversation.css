@@ -110,7 +110,7 @@
 }
 .msg {
   padding: var(--spacing-sm) var(--spacing-md);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
 }
 /* Reasoning ("thinking") disclosure, shown above the answer. */
 .message-reasoning {
@@ -202,6 +202,9 @@
 .msg-user {
   background: var(--bg-elevated);
   border-left: 3px solid var(--accent);
+  /* Lift the reply bubble off the chat pane's gradient, echoing the drop
+     shadow the floating chrome already casts on that background. */
+  box-shadow: var(--shadow-sm);
 }
 .msg-assistant {
   background: transparent;
@@ -225,8 +228,17 @@
   --sm-fg-muted: var(--text-secondary);
   --sm-border: var(--border);
   --sm-accent: var(--accent);
+  --sm-link: var(--link);
   --sm-code-bg: var(--bg-elevated);
   --sm-error: var(--error);
+}
+/* Links inside rendered markdown follow the app's link tier (the package's
+   default keys them off its accent, which is too dim on the dark surfaces). */
+.streaming-markdown a {
+  color: var(--link);
+}
+.streaming-markdown a:hover {
+  color: var(--link-hover);
 }
 .message-text:empty {
   display: none;
