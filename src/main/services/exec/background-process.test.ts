@@ -5,6 +5,8 @@ import {
   startBackgroundProcess,
   listBackgroundProcesses,
   getBackgroundProcessLogs,
+  writeBackgroundProcess,
+  resizeBackgroundProcess,
   stopBackgroundProcess,
   stopAllBackgroundProcesses,
 } from './background-process.ts'
@@ -56,6 +58,10 @@ describe('background process manager', () => {
     assert.ok(listBackgroundProcesses().some((p) => p.id === info.id))
     assert.match(getBackgroundProcessLogs(info.id) ?? '', /http:\/\/localhost:4321/)
 
+    // Interactive controls act on the live PTY without throwing.
+    resizeBackgroundProcess(info.id, 100, 40)
+    writeBackgroundProcess(info.id, '\n')
+
     assert.equal(stopBackgroundProcess(info.id), true)
     assert.equal(
       listBackgroundProcesses().some((p) => p.id === info.id),
@@ -91,5 +97,14 @@ describe('background process manager', () => {
       () => startBackgroundProcess({ command: '   ', cwd: process.cwd() }),
       /command is required/,
     )
+  })
+
+  it('interactive controls on an unknown id are safe no-ops', () => {
+    assert.doesNotThrow(() => {
+      writeBackgroundProcess('nope', 'data')
+      resizeBackgroundProcess('nope', 80, 24)
+    })
+    assert.equal(getBackgroundProcessLogs('nope'), null)
+    assert.equal(stopBackgroundProcess('nope'), false)
   })
 })

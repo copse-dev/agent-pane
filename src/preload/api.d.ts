@@ -17,6 +17,7 @@ import type {
 } from '@shared/types/git.ts'
 import type { McpServerStatus, CuratedMcpServerStatus } from '@shared/types/mcp.ts'
 import type { CanvasArtefact } from '@shared/types/canvas.ts'
+import type { BackgroundProcessInfo } from '@shared/types/background.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
 import type {
   ExtraProvider,
@@ -328,6 +329,17 @@ export interface ApiClient {
     destroy: (sessionId: string) => Promise<void>
     onOutput: (handler: (sessionId: string, data: string) => void) => () => void
     onExit: (handler: (sessionId: string, code: number) => void) => () => void
+  }
+  background: {
+    list: () => Promise<BackgroundProcessInfo[]>
+    logs: (id: string) => Promise<string | null>
+    write: (id: string, data: string) => Promise<void>
+    resize: (id: string, cols: number, rows: number) => Promise<void>
+    stop: (id: string) => Promise<boolean>
+    onStarted: (handler: (info: BackgroundProcessInfo) => void) => () => void
+    onData: (handler: (id: string, data: string) => void) => () => void
+    onUrl: (handler: (id: string, url: string) => void) => () => void
+    onExit: (handler: (id: string, code: number | null) => void) => () => void
   }
   git: {
     isAvailable: () => Promise<boolean>

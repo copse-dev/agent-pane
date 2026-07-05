@@ -6,6 +6,7 @@ import { panePopoutButton } from './pane-popout-button.ts'
 import { registerTerminalSelectionToChatShortcut } from '../terminal/selection-to-chat.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import type { BackgroundProcessInfo } from '@shared/types/background.ts'
 import { installTerminalFileLinks, type TerminalFileLinks } from './terminal-file-links.ts'
 import { planScope, tabsForScope } from './scoped-tabs.ts'
 import { at } from '@shared/array-utils.ts'
@@ -27,8 +28,16 @@ const XTERM_THEME = {
 
 interface TerminalTab {
   id: string
+  /**
+   * 'user' — an interactive shell the user opened (thread-scoped). 'background' —
+   * an agent-started long-lived task (dev server / watcher, issue #691): global
+   * (always visible), driven over the `background:*` channel, stopped not closed.
+   */
+  kind: 'user' | 'background'
   /** Thread this shell belongs to; only the active thread's tabs are shown. */
   scopeId: string | null
+  /** Detected loopback URL for a background dev server (clickable chip). */
+  url: string | null
   label: string
   labelSpan: HTMLElement
   panel: HTMLElement
@@ -104,6 +113,41 @@ export function mountTerminalsPane(
     if (!tab) return
     tab.term.writeln(`\r\n\x1b[90m[Process exited with code ${String(code)}]\x1b[0m`)
     tab.sessionId = null
+  })
+
+  const tabBySession = (id: string): TerminalTab | undefined =>
+    [...tabs.values()].find((t) => t.sessionId === id)
+
+  // Agent-started background tasks stream over their own channel. onStarted adds
+  // (or the initial list restores) a persistent, interactive tab; onData/onExit
+  // drive its terminal; onUrl surfaces the dev-server link.
+  const unsubBgStarted = api.background.onStarted((info) => {
+    addBackgroundTab(info)
+  })
+  const unsubBgData = api.background.onData((id, data) => {
+    const tab = tabBySession(id)
+    if (tab) {
+      tab.term.write(data)
+      tab.fileLinks.refresh()
+    }
+  })
+  const unsubBgUrl = api.background.onUrl((id, url) => {
+    const tab = tabBySession(id)
+    if (tab) {
+      tab.url = url
+      renderBackgroundTabButton(tab)
+    }
+  })
+  const unsubBgExit = api.background.onExit((id, code) => {
+    const tab = tabBySession(id)
+    if (!tab) return
+    const suffix = code != null ? ` with code ${String(code)}` : ''
+    tab.term.writeln(`\r\n\x1b[90m[Task exited${suffix}]\x1b[0m`)
+    tab.tabBtn.dataset['status'] = 'exited'
+  })
+
+  void api.background.list().then((list) => {
+    for (const info of list) addBackgroundTab(info)
   })
 
   function createXterm(): { term: Terminal; fitAddon: FitAddon } {
@@ -227,6 +271,9 @@ export function mountTerminalsPane(
   }
 
   async function ensureSession(tab: TerminalTab): Promise<void> {
+    // Background tasks are spawned by the agent in the main process; their PTY
+    // already exists, so the renderer only attaches — it never creates one.
+    if (tab.kind === 'background') return
     if (tab.sessionId || tab.creating) return
     if (!store.getState().workspaceRoot) {
       tab.term.writeln('\x1b[90mOpen a folder to use the terminal.\x1b[0m')
@@ -249,7 +296,10 @@ export function mountTerminalsPane(
     if (!tab.sessionId) return
     const old = tab.sessionId
     tab.sessionId = null
-    await api.terminal.destroy(old)
+    // Closing a background tab stops the agent's task; closing a user tab ends
+    // its shell session.
+    if (tab.kind === 'background') await api.background.stop(old)
+    else await api.terminal.destroy(old)
   }
 
   function fitTab(tab: TerminalTab): void {
@@ -258,7 +308,8 @@ export function mountTerminalsPane(
     try {
       tab.fitAddon.fit()
       if (tab.sessionId && tab.term.cols > 0 && tab.term.rows > 0) {
-        void api.terminal.resize(tab.sessionId, tab.term.cols, tab.term.rows)
+        const resize = tab.kind === 'background' ? api.background.resize : api.terminal.resize
+        void resize(tab.sessionId, tab.term.cols, tab.term.rows)
       }
     } catch {
       // FitAddon throws when the container has zero dimensions.
@@ -294,6 +345,10 @@ export function mountTerminalsPane(
     // command output can be referenced as a prompt attachment.
     registerTerminalSelectionToChatShortcut(tab.term, () => tab.label)
     tab.term.onData((data) => {
+      if (tab.kind === 'background') {
+        if (tab.sessionId) void api.background.write(tab.sessionId, data)
+        return
+      }
       if (data.includes('\r')) {
         tab.commandRan = true
         scheduleAutoName(tab)
@@ -314,13 +369,124 @@ export function mountTerminalsPane(
     return store.getState().activeThreadId
   }
 
+  function userTabs(): TerminalTab[] {
+    return [...tabs.values()].filter((t) => t.kind === 'user')
+  }
+
+  function backgroundTabs(): TerminalTab[] {
+    return [...tabs.values()].filter((t) => t.kind === 'background')
+  }
+
+  // Background tasks are global (they outlive the thread), so they stay visible
+  // across thread switches; only user shells are thread-scoped.
   function visibleTabs(): TerminalTab[] {
-    return tabsForScope(tabs.values(), currentThreadId())
+    return [...tabsForScope(userTabs(), currentThreadId()), ...backgroundTabs()]
   }
 
   function setTabVisible(tab: TerminalTab, visible: boolean): void {
     tab.tabBtn.hidden = !visible
     if (!visible) tab.panel.classList.remove('is-active')
+  }
+
+  // Show/refresh the dev-server URL chip on a background tab's button.
+  function renderBackgroundTabButton(tab: TerminalTab): void {
+    const existing = tab.tabBtn.querySelector('.terminals-tab-url')
+    if (tab.url) {
+      if (!existing) {
+        const chip = el(
+          'a',
+          { class: 'terminals-tab-url', role: 'button', title: `Open ${tab.url}` },
+          '↗',
+        )
+        chip.addEventListener('click', (e) => {
+          e.stopPropagation()
+          if (tab.url) store.emit('browser_url_requested', tab.url)
+        })
+        tab.tabBtn.insertBefore(chip, tab.tabBtn.querySelector('.terminals-tab-close'))
+      }
+    } else if (existing) {
+      existing.remove()
+    }
+  }
+
+  // Attach a tab for an agent-started background task. Its PTY already lives in
+  // the main process, so the tab binds to the existing session (no create) and
+  // primes its scrollback from the capped log buffer. Not auto-activated — it
+  // appears in the list without stealing the user's focus.
+  function addBackgroundTab(info: BackgroundProcessInfo): void {
+    if (tabBySession(info.id)) return // dedupe: onStarted may race the initial list()
+    const id = crypto.randomUUID()
+    const label = info.command
+    const dot = el('span', { class: 'terminals-tab-dot' })
+    const labelSpan = el('span', { class: 'terminals-tab-label' }, label)
+    const closeBtn = el(
+      'span',
+      { class: 'terminals-tab-close', role: 'button', 'aria-label': 'Stop task', title: 'Stop' },
+      '×',
+    )
+    const tabBtn = el(
+      'button',
+      { type: 'button', class: 'terminals-tab is-background', 'data-tab-id': id, title: label },
+      dot,
+      labelSpan,
+      closeBtn,
+    )
+    tabBtn.dataset['status'] = info.running ? 'running' : 'exited'
+
+    const panel = el('div', { class: 'terminals-tab-panel', 'data-tab-id': id })
+    const container = el('div', { class: 'terminal-container' })
+    panel.append(container)
+
+    const { term, fitAddon } = createXterm()
+    const fileLinks = installTerminalFileLinks(term, store, api)
+    const tab: TerminalTab = {
+      id,
+      kind: 'background',
+      scopeId: null,
+      url: info.url,
+      label,
+      labelSpan,
+      panel,
+      container,
+      tabBtn,
+      term,
+      fitAddon,
+      fileLinks,
+      sessionId: info.id,
+      creating: false,
+      pendingInput: [],
+      termOpened: false,
+      commandRan: false,
+      autoNamed: false,
+      renamed: false,
+      naming: false,
+      nameTimer: null,
+    }
+
+    tabBtn.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement
+      if (target.closest('.terminals-tab-close') || target.closest('.terminals-tab-url')) return
+      setActiveTab(id)
+      store.emit('shell_tab_activated')
+      requestAnimationFrame(() => {
+        fitTab(tab)
+        focusTab(tab)
+      })
+    })
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      void removeTab(id)
+    })
+
+    wireTabInput(tab)
+    tabs.set(id, tab)
+    tabsWrap.append(tabBtn)
+    body.append(panel)
+    renderBackgroundTabButton(tab)
+
+    void api.background.logs(info.id).then((text) => {
+      if (text) tab.term.write(text)
+    })
   }
 
   function addTab(options?: { activate?: boolean }): string {
@@ -353,7 +519,9 @@ export function mountTerminalsPane(
     const fileLinks = installTerminalFileLinks(term, store, api)
     const tab: TerminalTab = {
       id,
+      kind: 'user',
       scopeId: currentThreadId(),
+      url: null,
       label,
       labelSpan,
       panel,
@@ -434,7 +602,7 @@ export function mountTerminalsPane(
   // so a background thread's shells stay rooted in that project; switching back
   // restores them rather than showing the other thread's shells (issue #502).
   function onScopeSwitch(): void {
-    const { visible, hidden, needsNew } = planScope(tabs.values(), currentThreadId())
+    const { visible, hidden, needsNew } = planScope(userTabs(), currentThreadId())
     for (const tab of hidden) setTabVisible(tab, false)
     for (const tab of visible) setTabVisible(tab, true)
 
@@ -536,6 +704,10 @@ export function mountTerminalsPane(
     resizeObserver.disconnect()
     unsubOutput()
     unsubExit()
+    unsubBgStarted()
+    unsubBgData()
+    unsubBgUrl()
+    unsubBgExit()
     void (async (): Promise<void> => {
       for (const tab of tabs.values()) {
         if (tab.nameTimer != null) clearTimeout(tab.nameTimer)

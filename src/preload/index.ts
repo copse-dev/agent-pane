@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { BackgroundProcessInfo } from '@shared/types/background.ts'
 
 contextBridge.exposeInMainWorld('api', {
   workspace: {
@@ -426,6 +427,50 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('terminal:exit', listener)
       return (): void => {
         ipcRenderer.off('terminal:exit', listener)
+      }
+    },
+  },
+  background: {
+    list: () => ipcRenderer.invoke('background:list'),
+    logs: (id: string) => ipcRenderer.invoke('background:logs', id),
+    write: (id: string, data: string) => ipcRenderer.invoke('background:write', id, data),
+    resize: (id: string, cols: number, rows: number) =>
+      ipcRenderer.invoke('background:resize', id, cols, rows),
+    stop: (id: string) => ipcRenderer.invoke('background:stop', id),
+    onStarted: (handler: (info: BackgroundProcessInfo) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, info: BackgroundProcessInfo): void => {
+        handler(info)
+      }
+      ipcRenderer.on('background:started', listener)
+      return (): void => {
+        ipcRenderer.off('background:started', listener)
+      }
+    },
+    onData: (handler: (id: string, data: string) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, id: string, data: string): void => {
+        handler(id, data)
+      }
+      ipcRenderer.on('background:data', listener)
+      return (): void => {
+        ipcRenderer.off('background:data', listener)
+      }
+    },
+    onUrl: (handler: (id: string, url: string) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, id: string, url: string): void => {
+        handler(id, url)
+      }
+      ipcRenderer.on('background:url', listener)
+      return (): void => {
+        ipcRenderer.off('background:url', listener)
+      }
+    },
+    onExit: (handler: (id: string, code: number | null) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, id: string, code: number | null): void => {
+        handler(id, code)
+      }
+      ipcRenderer.on('background:exit', listener)
+      return (): void => {
+        ipcRenderer.off('background:exit', listener)
       }
     },
   },

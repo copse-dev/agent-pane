@@ -1,11 +1,11 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
+import type { BackgroundProcessInfo } from '@shared/types/background.ts'
 import {
   getBackgroundProcessLogs,
   listBackgroundProcesses,
   startBackgroundProcess,
   stopBackgroundProcess,
-  type BackgroundProcessInfo,
 } from '../services/exec/background-process.ts'
 
 function formatInfo(info: BackgroundProcessInfo): string {

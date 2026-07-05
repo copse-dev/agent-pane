@@ -152,70 +152,6 @@ export async function spawnShellInProjectSandbox(
 }
 
 /**
- * Spawn a long-lived background process (issue #691) — a dev server, watcher,
- * build, etc. Unlike {@link runCommand} this is fire-and-forget: the caller owns
- * the returned child's lifetime and kills it explicitly.
- *
- * When the project sandbox is active the child runs under the workspace-scoped
- * seatbelt. With `allowPortBinding`, it instead runs under
- * {@link portBindingSandboxOverlay} (same filesystem rules, relaxed to allow
- * loopback binding) and a global network scope is acquired for the process's
- * lifetime — ASRT's proxies consult the GLOBAL config per connection, so the
- * overlay's network block alone is not enough. The scope is released when the
- * child closes or errors. Without the flag no scope is acquired, so a plain
- * background task stays fully contained (workspace-only, no binding, no network).
- */
-export async function spawnBackgroundProcess(
-  shellCommandLine: string,
-  opts: { cwd: string; env?: NodeJS.ProcessEnv; allowPortBinding?: boolean },
-): Promise<ChildProcess> {
-  if (!isProjectSandboxEnabled()) {
-    const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh'
-    const shellArgs =
-      process.platform === 'win32' ? ['/c', shellCommandLine] : ['-c', shellCommandLine]
-    return spawn(shell, shellArgs, {
-      cwd: opts.cwd,
-      env: opts.env ?? process.env,
-      stdio: 'pipe',
-      detached: detachForGroupKill,
-    })
-  }
-
-  const overlay = opts.allowPortBinding
-    ? portBindingSandboxOverlay(opts.cwd)
-    : workspaceSandboxOverlay(opts.cwd)
-  // Only a port-binding task needs the global network scope widened; a contained
-  // task keeps the deny-all base, so acquiring a no-op scope would be misleading.
-  const release = opts.allowPortBinding
-    ? acquireSandboxNetworkScope({
-        domains: overlay.network?.allowedDomains ?? [],
-        allowLocalBinding: overlay.network?.allowLocalBinding ?? false,
-      })
-    : (): void => {}
-  try {
-    const { argv, env } = await SandboxManager.wrapWithSandboxArgv(
-      shellCommandLine,
-      shellForSandboxWrap(),
-      overlay,
-    )
-    const file = argv[0]
-    if (!file) throw new Error('sandbox wrap produced empty argv')
-    const child = spawn(file, argv.slice(1), {
-      cwd: opts.cwd,
-      env: mergeSpawnEnv(withWorkspaceTmpEnv(env), opts.env),
-      stdio: 'pipe',
-      detached: detachForGroupKill,
-    })
-    child.once('close', release)
-    child.once('error', release)
-    return child
-  } catch (err) {
-    release()
-    throw err
-  }
-}
-
-/**
  * Number of sandbox policy violations the runner (ASRT) recorded for a command.
  * This is a runner/kernel-side signal — it is NOT derived from the command's own
  * stdout/stderr, so a command cannot forge it by echoing "operation not permitted"
@@ -246,9 +182,25 @@ export interface SpawnPtyOptions {
   env?: NodeJS.ProcessEnv
   /** Integrated terminals are user-controlled; default is outside the project sandbox. */
   unsandboxed?: boolean
+  /**
+   * Run this command in the PTY instead of an interactive login shell. Used for
+   * agent-owned background tasks (dev servers, watchers) — the PTY makes them
+   * interactive (stdin/Ctrl-C/resize) and streamable (issue #691).
+   */
+  command?: string
+  /**
+   * Escalate the sandbox to allow binding a loopback port for the PTY's lifetime
+   * (a dev server). Only meaningful when sandboxed; ignored otherwise. A global
+   * network scope is acquired before spawn and released when the PTY exits.
+   */
+  allowPortBinding?: boolean
 }
 
-/** Spawn an interactive shell PTY; optionally routed through ASRT when the project sandbox is active. */
+/**
+ * Spawn a PTY, optionally routed through ASRT when the project sandbox is active.
+ * With no `command` it is an interactive login shell (integrated terminals); with
+ * `command` it runs that command interactively (agent background tasks).
+ */
 export async function spawnPtyInProjectSandbox(
   shell: string,
   opts: SpawnPtyOptions,
@@ -269,24 +221,52 @@ export async function spawnPtyInProjectSandbox(
   }
 
   if (!isProjectSandboxEnabled() || opts.unsandboxed) {
-    return pty.spawn(shell, [], ptyOpts)
+    // `-i` keeps job control (Ctrl-C) working; `-l` loads the login profile.
+    const args = opts.command
+      ? process.platform === 'win32'
+        ? ['/c', opts.command]
+        : ['-lic', opts.command]
+      : []
+    return pty.spawn(shell, args, ptyOpts)
   }
 
-  const customConfig = { ...workspaceSandboxOverlay(opts.cwd), allowPty: true }
-  const innerCommand = `exec ${quote.quote([shell])} -il`
-  // cwd is handed to pty.spawn via ptyOpts; no main-process chdir during wrap (#74).
-  const { argv, env } = await SandboxManager.wrapWithSandboxArgv(
-    innerCommand,
-    shellForSandboxWrap(shell),
-    customConfig,
-  )
+  const baseOverlay =
+    opts.command && opts.allowPortBinding
+      ? portBindingSandboxOverlay(opts.cwd)
+      : workspaceSandboxOverlay(opts.cwd)
+  const customConfig = { ...baseOverlay, allowPty: true }
+  const innerCommand = opts.command
+    ? `exec ${quote.quote([shell])} -lic ${quote.quote([opts.command])}`
+    : `exec ${quote.quote([shell])} -il`
+  // ASRT's proxies consult the GLOBAL network config per connection, so a
+  // port-binding task must widen it for the PTY's lifetime (see network-scope.ts).
+  const release =
+    opts.command && opts.allowPortBinding
+      ? acquireSandboxNetworkScope({
+          domains: baseOverlay.network?.allowedDomains ?? [],
+          allowLocalBinding: baseOverlay.network?.allowLocalBinding ?? false,
+        })
+      : null
+  try {
+    // cwd is handed to pty.spawn via ptyOpts; no main-process chdir during wrap (#74).
+    const { argv, env } = await SandboxManager.wrapWithSandboxArgv(
+      innerCommand,
+      shellForSandboxWrap(shell),
+      customConfig,
+    )
 
-  const file = argv[0]
-  if (!file) throw new Error('sandbox wrap produced empty argv')
-  return pty.spawn(file, argv.slice(1), {
-    ...ptyOpts,
-    // Workspace tmp wins over the host TMPDIR carried in termEnv: this branch is
-    // sandbox-wrapped, so the system temp dir is denied (issue #481).
-    env: withWorkspaceTmpEnv({ ...env, ...termEnv }),
-  })
+    const file = argv[0]
+    if (!file) throw new Error('sandbox wrap produced empty argv')
+    const ptyProcess = pty.spawn(file, argv.slice(1), {
+      ...ptyOpts,
+      // Workspace tmp wins over the host TMPDIR carried in termEnv: this branch is
+      // sandbox-wrapped, so the system temp dir is denied (issue #481).
+      env: withWorkspaceTmpEnv({ ...env, ...termEnv }),
+    })
+    if (release) ptyProcess.onExit(release)
+    return ptyProcess
+  } catch (err) {
+    release?.()
+    throw err
+  }
 }

@@ -407,6 +407,33 @@
 .terminals-tab:hover .terminals-tab-close {
   opacity: 1;
 }
+/* Agent-started background tasks (dev servers / watchers, issue #691): a status
+   dot and a clickable dev-server URL chip mark them apart from user shells. */
+.terminals-tab-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.terminals-tab[data-status='running'] .terminals-tab-dot {
+  background: var(--accent);
+  animation: agent-task-pulse 1.2s ease-in-out infinite;
+}
+.terminals-tab[data-status='exited'] .terminals-tab-dot {
+  background: var(--text-muted);
+}
+.terminals-tab-url {
+  flex-shrink: 0;
+  color: var(--accent);
+  font-size: 11px;
+  padding: 0 4px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.terminals-tab-url:hover {
+  color: var(--text-primary);
+}
 .terminals-new-btn {
   font-size: 14px;
   line-height: 1;

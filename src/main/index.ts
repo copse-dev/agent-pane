@@ -25,6 +25,7 @@ import { initDiffQueue } from './services/diff-queue.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
 import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-watcher.ts'
 import { initTerminal } from './ipc/terminal.ts'
+import { initBackground } from './ipc/background.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
 import { initSkillsRegistry } from './services/skills/skills-registry.ts'
 import { parseAgentRunPayload } from '@shared/agent/parse-agent-run-payload.ts'
@@ -141,6 +142,7 @@ app
     initDiffQueue(win)
     initFsWatcher(win)
     const disposeTerminalHandlers = initTerminal(win)
+    const disposeBackgroundHandlers = initBackground(win)
     registerAllHandlers(win, registry)
 
     // Register before async bootstrap so onboarding/settings can query models on first paint.
@@ -313,12 +315,14 @@ app
     await loadCustomTools(registry)
 
     disposeTerminal = disposeTerminalHandlers
+    disposeBackground = disposeBackgroundHandlers
   })
   .catch(console.error)
 
 let quitCleanupStarted = false
 let quitCleanupFinished = false
 let disposeTerminal: (() => void) | undefined
+let disposeBackground: (() => void) | undefined
 
 async function cleanupBeforeQuit(): Promise<void> {
   disposeAllAcpSessions()
@@ -326,6 +330,8 @@ async function cleanupBeforeQuit(): Promise<void> {
   stopAllBackgroundProcesses()
   disposeTerminal?.()
   disposeTerminal = undefined
+  disposeBackground?.()
+  disposeBackground = undefined
   closeAllWatchers()
   stopWorkspaceIndexWatcher()
   shutdownBrowserSession()
