@@ -124,6 +124,7 @@ import {
   fetchRemoteArtifactImageDataUrl,
   resolveRemoteArtifactDownloadUrl,
 } from '../services/remote/remote-agent-client.ts'
+import { listActiveProjectAgentPrLinks } from '../services/remote/remote-agent-link-store.ts'
 import {
   gatewayListDir,
   gatewayReadFile,
@@ -510,6 +511,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const parsedUrl = parseIpcArgs(z.url().max(2048), [url])
     return resolveGithubPrRef(parsedUrl)
   })
+  // Local-only: which PRs in the active project were opened by an agent this app
+  // launched (issue #690, Q6). No network, no user input — reads the thread metas.
+  ipcMain.handle('gh:agentPrLinks', () => listActiveProjectAgentPrLinks())
   ipcMain.handle('remoteAgent:downloadArtifact', async (event, agentId: unknown, path: unknown) => {
     assertMainFrameSender(event, win)
     const parsedAgentId = parseIpcArgs(z.string().min(1).max(128), [agentId])

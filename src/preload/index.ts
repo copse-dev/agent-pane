@@ -452,6 +452,7 @@ contextBridge.exposeInMainWorld('api', {
     prFileDiff: (owner: string, repo: string, number: number, path: string) =>
       ipcRenderer.invoke('gh:prFileDiff', owner, repo, number, path),
     resolvePrUrl: (url: string) => ipcRenderer.invoke('gh:resolvePrUrl', url),
+    agentPrLinks: () => ipcRenderer.invoke('gh:agentPrLinks'),
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),

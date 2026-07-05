@@ -605,6 +605,12 @@
   opacity: 0.5;
 }
 /* no_checks keeps the transparent default — an empty slot, no dot. */
+.pr-list-agent-badge {
+  flex-shrink: 0;
+  margin-left: var(--spacing-xs);
+  font-size: 10px;
+  line-height: 1;
+}
 .pr-other-toggle {
   display: flex;
   align-items: center;
@@ -657,9 +663,13 @@
   color: var(--text-muted);
 }
 .pr-viewer-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
   margin-top: var(--spacing-xs);
 }
-.pr-open-external-btn {
+.pr-open-external-btn,
+.pr-open-thread-btn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -667,7 +677,8 @@
   color: var(--text-secondary);
   padding: 2px 0;
 }
-.pr-open-external-btn:hover {
+.pr-open-external-btn:hover,
+.pr-open-thread-btn:hover {
   color: var(--text-primary);
 }
 .pr-viewer-description {

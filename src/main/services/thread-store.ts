@@ -450,6 +450,16 @@ export function rebuildAgentPrIndex(projectId: string): Promise<RemoteAgentPrInd
   return runSerialized(queueKey(projectId), () => [...rebuildAgentPrIndexInner(projectId).values()])
 }
 
+/** Every `prUrl → thread` link for a project, rebuilding the index if absent. */
+export function listAgentPrLinks(projectId: string): Promise<RemoteAgentPrIndexEntry[]> {
+  return runSerialized(queueKey(projectId), () => {
+    const index = existsSync(agentPrIndexPath(projectId))
+      ? readAgentPrIndex(projectId)
+      : rebuildAgentPrIndexInner(projectId)
+    return [...index.values()]
+  })
+}
+
 export function loadProjectThreads(projectId: string): Promise<Thread[]> {
   return runSerialized(queueKey(projectId), () => readProjectThreads(projectId))
 }

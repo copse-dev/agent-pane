@@ -3,7 +3,7 @@ import type { RemoteAgentLink, RemoteAgentPrIndexEntry } from '@shared/remote-ag
 import { extractGithubPrUrls } from '@shared/git/github-pr-url.ts'
 import { getActiveProjectId } from '../workspace.ts'
 import { getCurrentBranchName } from '../github/git-service.ts'
-import { lookupThreadByPrUrl, upsertThreadAgentLink } from '../thread-store.ts'
+import { listAgentPrLinks, lookupThreadByPrUrl, upsertThreadAgentLink } from '../thread-store.ts'
 import { parseGithubOwnerRepo, resolveRemoteAgentRepository } from './remote-agent-shared.ts'
 
 /**
@@ -91,5 +91,17 @@ export async function findThreadForPrUrl(prUrl: string): Promise<RemoteAgentPrIn
   } catch (err) {
     console.warn('[remote-agent-link] PR lookup failed:', err)
     return null
+  }
+}
+
+/** Every agent-owned PR in the active project, for the PR pane to annotate rows. */
+export async function listActiveProjectAgentPrLinks(): Promise<RemoteAgentPrIndexEntry[]> {
+  const projectId = getActiveProjectId()
+  if (!projectId) return []
+  try {
+    return await listAgentPrLinks(projectId)
+  } catch (err) {
+    console.warn('[remote-agent-link] list failed:', err)
+    return []
   }
 }

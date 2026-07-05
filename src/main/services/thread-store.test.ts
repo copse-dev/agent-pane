@@ -17,6 +17,7 @@ import {
   upsertThreadAgentLink,
   lookupThreadByPrUrl,
   rebuildAgentPrIndex,
+  listAgentPrLinks,
 } from './thread-store.ts'
 
 function thread(id: string, overrides: Partial<Thread> = {}): Thread {
@@ -400,6 +401,35 @@ describe('thread-store agent-run ↔ PR link (issue #690, Q6)', () => {
       (await lookupThreadByPrUrl('proj-1', 'https://github.com/o/r/pull/2'))?.threadId,
       't2',
     )
+  })
+
+  it('listAgentPrLinks returns every linked PR, rebuilding when the index is absent', async () => {
+    await createThread('proj-1', thread('t1'))
+    await upsertThreadAgentLink('proj-1', 't1', {
+      provider: 'cursor',
+      agentId: 'a1',
+      prUrl: 'https://github.com/o/r/pull/1',
+      createdAt: 1,
+    })
+    // A thread with a launch link but no PR yet must not appear in the index.
+    await createThread('proj-1', thread('t2'))
+    await upsertThreadAgentLink('proj-1', 't2', {
+      provider: 'anthropic',
+      agentId: 'a2',
+      createdAt: 2,
+    })
+    // Drop the derived index; listAgentPrLinks must rebuild it from the metas.
+    rmSync(join(root, 'proj-1', 'agent-pr-index.jsonl'), { force: true })
+
+    const links = await listAgentPrLinks('proj-1')
+    assert.deepEqual(links, [
+      {
+        prUrl: 'https://github.com/o/r/pull/1',
+        threadId: 't1',
+        agentId: 'a1',
+        provider: 'cursor',
+      },
+    ])
   })
 
   it('link survives an unrelated updateMeta patch (no clobber)', async () => {

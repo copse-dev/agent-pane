@@ -5,9 +5,10 @@ import { panePopoutButton } from './pane-popout-button.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GhCliStatus, GhPrChecksState, GhPrDetails, GhPrSummary } from '@shared/types/git.ts'
-import { getActiveThread } from '@shared/store/thread-helpers.ts'
+import { getActiveThread, switchThread } from '@shared/store/thread-helpers.ts'
 import { at } from '@shared/array-utils.ts'
-import { extractGithubPrUrls, githubPrKey } from '@shared/git/github-pr-url.ts'
+import { extractGithubPrUrls, githubPrKey, parseGithubPrUrl } from '@shared/git/github-pr-url.ts'
+import type { RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { sanitizeRenderedMarkdown } from '@copse/streaming-markdown'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
@@ -30,6 +31,28 @@ const STATUS_LABEL: Record<string, string> = {
   modified: 'M',
   removed: 'D',
   renamed: 'R',
+}
+
+/** Human label for the agent that opened a PR (issue #690 reverse index). */
+const AGENT_PROVIDER_LABEL: Record<string, string> = {
+  cursor: 'Cursor',
+  anthropic: 'Claude',
+}
+
+function agentProviderLabel(provider: string): string {
+  return AGENT_PROVIDER_LABEL[provider] ?? provider
+}
+
+/** Index agent-PR links by the same `owner/repo#number` key the pane uses for PRs. */
+function indexAgentLinksByPrKey(
+  entries: RemoteAgentPrIndexEntry[],
+): Map<string, RemoteAgentPrIndexEntry> {
+  const map = new Map<string, RemoteAgentPrIndexEntry>()
+  for (const entry of entries) {
+    const ref = parseGithubPrUrl(entry.prUrl)
+    if (ref) map.set(githubPrKey(ref), entry)
+  }
+  return map
 }
 
 function prsModeActive(store: AppStore): boolean {
@@ -118,6 +141,8 @@ export function mountPrPane(
   viewerRoot.append(metaHost, descriptionHost, filesHost, diffWrap, emptyState)
 
   let ghStatus: GhCliStatus | null = null
+  // Agent-owned PRs in this project (issue #690), keyed by `owner/repo#number`.
+  let agentLinks = new Map<string, RemoteAgentPrIndexEntry>()
   let linkedRefs: PrRef[] = []
   let myPrs: GhPrSummary[] = []
   let workspacePrs: GhPrSummary[] = []
@@ -221,6 +246,17 @@ export function mountPrPane(
     const state = knownChecks(pr)
     applyCiClass(ci, state ?? 'loading')
     ciEls.set(githubPrKey(pr), ci)
+    const agent = agentLinks.get(githubPrKey(pr))
+    const agentBadge = agent
+      ? el(
+          'span',
+          {
+            class: 'pr-list-agent-badge',
+            title: `Opened by a ${agentProviderLabel(agent.provider)} agent launched from this app`,
+          },
+          '🤖',
+        )
+      : null
     const row = el(
       'button',
       {
@@ -230,6 +266,7 @@ export function mountPrPane(
       },
       el('span', { class: 'pr-list-number' }, `#${String(pr.number)}`),
       el('span', { class: 'git-change-path pr-list-title' }, pr.title),
+      ...(agentBadge ? [agentBadge] : []),
       ci,
     )
     row.addEventListener('click', () => void selectPr(pr))
@@ -366,6 +403,26 @@ export function mountPrPane(
       void api.shell.openExternal(prUrl)
     })
 
+    // When this PR was opened by an agent we launched, offer a jump back to the
+    // chat thread that owns it (issue #690 reverse index).
+    const agent = agentLinks.get(githubPrKey(selectedPr))
+    const openThreadBtn = agent
+      ? el(
+          'button',
+          {
+            type: 'button',
+            class: 'pr-open-thread-btn',
+            title: `Go to the thread that launched this ${agentProviderLabel(agent.provider)} agent`,
+          },
+          el('span', {}, `Open ${agentProviderLabel(agent.provider)} agent thread`),
+        )
+      : null
+    if (openThreadBtn && agent) {
+      openThreadBtn.addEventListener('click', () => {
+        switchThread(store, agent.threadId)
+      })
+    }
+
     const stats: string[] = []
     if (typeof prDetails.changedFiles === 'number')
       stats.push(`${String(prDetails.changedFiles)} files`)
@@ -388,7 +445,7 @@ export function mountPrPane(
         `#${String(prDetails.number)} · ${prDetails.owner}/${prDetails.repo}`,
         stats.length > 0 ? ` · ${stats.join(' · ')}` : '',
       ),
-      el('div', { class: 'pr-viewer-actions' }, openBtn),
+      el('div', { class: 'pr-viewer-actions' }, openBtn, ...(openThreadBtn ? [openThreadBtn] : [])),
     )
   }
 
@@ -548,6 +605,8 @@ export function mountPrPane(
 
   async function refresh(): Promise<void> {
     ghStatus = await api.gh.status()
+    // Agent ownership is local (no gh needed), so load it regardless of gh auth.
+    agentLinks = indexAgentLinksByPrKey(await api.gh.agentPrLinks().catch(() => []))
     linkedRefs = collectLinkedPrs(store)
     resetOther()
     if (!ghStatus.installed || !ghStatus.authenticated) {
@@ -612,9 +671,10 @@ export function mountPrPane(
       selectedPr = null
       prDetails = null
       // Everything below belongs to the previous workspace; drop it so a stale
-      // repo section or CI dot can't flash before the refresh completes.
+      // repo section, CI dot, or agent badge can't flash before the refresh completes.
       workspacePrs = []
       prList = []
+      agentLinks = new Map()
       resetOther()
       if (prsModeActive(store)) void refresh()
       else renderList()
@@ -624,6 +684,15 @@ export function mountPrPane(
       linkedRefs = collectLinkedPrs(store)
       prList = mergePrLists(linkedRefs, [workspacePrs, myPrs])
       renderList()
+      // A run that just finished may have recorded a new agent↔PR link; pick it
+      // up so the badge appears without waiting for a manual refresh.
+      void api.gh
+        .agentPrLinks()
+        .then((entries) => {
+          agentLinks = indexAgentLinksByPrKey(entries)
+          renderList()
+        })
+        .catch(() => undefined)
     }),
     store.on('pr_open_requested', (owner, repo, number) => {
       pendingOpen = { owner, repo, number }
