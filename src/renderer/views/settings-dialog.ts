@@ -85,6 +85,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'advisorStrategyEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'roadmapPlansEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'backgroundTasksEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'piiRedactionEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'devtoolsShortcutEnabled', kind: 'checkbox', default: false, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
@@ -733,6 +734,24 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 so longer-horizon plans aren't started before the PRs they depend on merge. Items
                 are stored per project under <code>~/.copse/roadmap</code>. While off, the tool is
                 not registered.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Background tasks</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="backgroundTasksEnabled" />
+                Let the agent run long-lived background commands (dev servers, watchers)
+              </label>
+              <p class="field-hint">
+                Adds a <code>run_background</code> tool that starts a long-running command
+                (<code>npm run dev</code>, a build/test watcher, …) and keeps it alive across turns,
+                with list / logs / stop actions. A task can opt into binding a local port — for a
+                dev server — which reports its <code>http://localhost:&lt;port&gt;</code> URL so the
+                agent can open it in the built-in browser; that asks for your permission the first
+                time per project and relaxes the sandbox only to allow binding on localhost.
+                Otherwise a task stays fully sandboxed (workspace-only, no network). Tasks are
+                stopped when the app quits. While off, the tool is not registered.
               </p>
             </fieldset>
 

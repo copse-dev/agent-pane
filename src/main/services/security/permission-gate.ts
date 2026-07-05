@@ -17,6 +17,9 @@ import {
   formatWebPromptBody,
   shellCommandFromArgs,
   formatShellPromptBody,
+  formatPortBindingPromptBody,
+  backgroundAllowsPortBinding,
+  backgroundCommandFromArgs,
   formatExternalSandboxPromptBody,
   formatInstallPromptBody,
   formatEphemeralRunnerPromptBody,
@@ -287,6 +290,37 @@ async function checkBrowserNavigatePermission(args: unknown): Promise<boolean> {
   return approved
 }
 
+const PORT_BINDING_ALLOWED_ROOTS_SETTING = 'portBindingAllowedRoots'
+
+/**
+ * Gate the `run_background` tool. Only starting a task that binds a loopback
+ * port is an escalation worth prompting for; a plain contained task (and the
+ * list/logs/stop management actions) auto-runs like an in-sandbox run_shell.
+ * A port-binding start prompts the first time per workspace, then remembers the
+ * grant — the same prompt-once model as browser origins and MCP servers.
+ */
+async function checkBackgroundProcessPermission(args: unknown): Promise<boolean> {
+  if (!backgroundAllowsPortBinding(args)) return true
+
+  const root = getWorkspaceRoot()
+  if (!root) throw new Error('No workspace open.')
+
+  const allowed = getSetting<string[]>(PORT_BINDING_ALLOWED_ROOTS_SETTING, [])
+  if (allowed.includes(root)) return true
+
+  const { approved, remember } = await requestApproval({
+    title: 'Allow this project to bind a local port?',
+    body: formatPortBindingPromptBody(root, backgroundCommandFromArgs(args)),
+    type: 'shell',
+    allowRemember: true,
+    rememberLabel: 'Always allow local port binding in this project',
+  })
+  if (approved && remember && !allowed.includes(root)) {
+    await setSetting(PORT_BINDING_ALLOWED_ROOTS_SETTING, [...allowed, root])
+  }
+  return approved
+}
+
 /** Gate a raw shell command string (todo verification, etc.) through the same policy as run_shell. */
 export async function ensureShellCommandPermitted(command: string): Promise<boolean> {
   return checkShellPermission({ command })
@@ -409,6 +443,10 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
 
   if (toolName === 'run_shell') {
     return checkShellPermission(args)
+  }
+
+  if (toolName === 'run_background') {
+    return checkBackgroundProcessPermission(args)
   }
 
   // Default-allow: read-only/in-process tools (and mutating tools that are
