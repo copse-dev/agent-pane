@@ -353,6 +353,35 @@ export function portBindingSandboxOverlay(workspaceRoot: string): Partial<Sandbo
   }
 }
 
+/**
+ * Read-only seatbelt overlay for the `read` routing tier (see
+ * `services/security/command-routing.ts`). Identical filesystem *reads* to
+ * {@link workspaceSandboxOverlay} — the workspace, toolchain, and git config —
+ * but with **no writable roots except the scratch tmp dir** the toolchain itself
+ * needs. Network stays denied. Used to run known read-only commands (`ls`, `cat`,
+ * …) with strictly less privilege than the default write overlay: the seatbelt,
+ * not just static analysis, enforces that they cannot mutate the tree.
+ *
+ * The tmp dir remains writable because build/inspection tools routinely stage
+ * scratch files via `$TMPDIR`; denying it would break otherwise read-only tools
+ * without adding a workspace-write capability. The mandatory config/​git-hook
+ * write-deny list still applies on top.
+ */
+export function readonlySandboxOverlay(workspaceRoot: string): Partial<SandboxRuntimeConfig> {
+  const base = workspaceSandboxOverlay(workspaceRoot)
+  const fs = base.filesystem
+  if (!fs) throw new Error('workspaceSandboxOverlay must define a filesystem config')
+  const tmpDir = ensureWorkspaceTmpDir()
+  return {
+    ...base,
+    filesystem: {
+      ...fs,
+      // Drop the workspace roots from allowWrite; keep only the scratch tmp dir.
+      allowWrite: [tmpDir, `${tmpDir}/**`],
+    },
+  }
+}
+
 export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxRuntimeConfig> {
   const root = canonicalizeWorkspaceRoot(workspaceRoot)
   const toolchainRead = resolveNodeToolchainAllowRead()
