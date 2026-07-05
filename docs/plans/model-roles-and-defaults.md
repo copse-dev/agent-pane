@@ -166,6 +166,7 @@ research benchmark.
   regenerate `settings-general-model-routing.png` (needs a runnable Electron env;
   couldn't be done in the container this landed from). _Remaining:_ let a role
   feed multiple features (the real payoff), and cloud-capable roles.
+
 - **Phase 2 — picker classifications:** capability/role badges and
   "recommended for" grouping in `model-options.ts`.
 - **Phase 3 — generalized download: _foundation done; UI pending._** The
