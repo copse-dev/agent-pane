@@ -1,4 +1,4 @@
-import type { ModelUsage, SubagentSession } from './thread.ts'
+import type { ModelComparison, ModelUsage, SubagentSession } from './thread.ts'
 import type { TodoItem } from './todo.ts'
 
 export type StreamChunk =
@@ -74,6 +74,8 @@ export type StreamChunk =
     }
   | { type: 'todo_worker_done'; todoId: string; summary: string; passed: boolean }
   | { type: 'post_turn_review'; status: 'running' | 'done' | 'error'; summary: string }
+  /** Two-model diff-review comparison (running placeholder, then the full result). */
+  | { type: 'model_comparison'; comparison: ModelComparison }
   | { type: 'done'; stopReason?: string }
 
 export interface ToolCallChunk {

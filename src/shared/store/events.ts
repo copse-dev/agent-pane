@@ -39,6 +39,7 @@ export interface StoreEvents {
   context_updated: [threadId: string]
   todos_changed: [threadId: string]
   review_changed: [threadId: string]
+  comparison_changed: [threadId: string]
   git_branch_changed: []
   composer_draft_flush: []
   // Terminal tab: the user selected an agent task to view (id) or cleared it
