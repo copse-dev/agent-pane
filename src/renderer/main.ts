@@ -22,6 +22,7 @@ import { mountTerminalsPane } from './views/terminals-pane.ts'
 import { mountAgentTasks } from './views/agent-tasks.ts'
 import { mountGitChangesPane } from './views/git-changes-pane.ts'
 import { mountPrPane } from './views/pr-pane.ts'
+import { mountMemoriesPane } from './views/memories-pane.ts'
 import { mountBrowserPane } from './views/browser-pane.ts'
 import {
   mountSettingsDialog,
@@ -72,13 +73,19 @@ import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layo
 import { isRightPanelPosition } from '@shared/types/state.ts'
 import { installArtifactImagePolicy } from './markdown/artifact-image-policy.ts'
 import { installSanitizerBackend } from './markdown/sanitizer-backend.ts'
+import { installHighlighterBackend } from './markdown/highlighter-backend.ts'
 
 // Inject host markdown policies into @copse/streaming-markdown before any view
 // renders: turn remote-agent artifact <img> tags into inert placeholders that
 // hydrateRemoteArtifactImages() resolves after sanitization. The sanitizer
-// backend (DOMPurify) is loaded via a deferred dynamic import; boot() awaits it
-// before the first render.
+// backend resolves the native Sanitizer API synchronously (Electron) or lazily
+// loads DOMPurify where it is absent; boot() awaits it before the first render.
 const sanitizerReady = installSanitizerBackend()
+// Highlighting is a pluggable backend too (streaming-markdown #37): without it,
+// fenced code renders as plain text with no `hljs-*` token spans. Lazily load the
+// highlight.js backend (code-split, off the eager path) and register it; boot()
+// awaits it before the first render.
+const highlighterReady = installHighlighterBackend()
 installArtifactImagePolicy()
 
 const store = createStore()
@@ -88,7 +95,14 @@ const api = window.api
 // mode we boot the app normally (so the pane gets the real workspace/threads),
 // but force the pane open and let popout.css hide the projects sidebar, chat,
 // and titlebar so the detached window shows only that pane.
-const POPOUT_MODES = new Set<RightPanelMode>(['explorer', 'terminal', 'changes', 'prs', 'browser'])
+const POPOUT_MODES = new Set<RightPanelMode>([
+  'explorer',
+  'terminal',
+  'changes',
+  'prs',
+  'browser',
+  'memories',
+])
 function getPopoutMode(): RightPanelMode | null {
   const raw = new URLSearchParams(window.location.search).get('popout')
   return raw && POPOUT_MODES.has(raw as RightPanelMode) ? (raw as RightPanelMode) : null
@@ -121,10 +135,11 @@ window.addEventListener('unhandledrejection', (event) => {
 let layoutMounted = false
 
 async function boot(): Promise<void> {
-  // Sanitizer backend must be in place before any markdown sink renders.
-  // Resolves instantly on the native path; only awaits a load if DOMPurify had
-  // to be lazily pulled in.
-  await sanitizerReady
+  // Sanitizer and highlighter backends must be in place before any markdown sink
+  // renders. The sanitizer resolves instantly on the native path (only awaits a
+  // load if DOMPurify had to be lazily pulled in); the highlighter awaits its
+  // code-split highlight.js chunk so code blocks get their hljs token spans.
+  await Promise.all([sanitizerReady, highlighterReady])
   mountSettingsDialog(store, api)
   mountOnboardingDialog(store, api)
   mountApprovalDialog(api, store)
@@ -300,6 +315,12 @@ function mountFullLayout(): void {
   mountBrowserPane(
     requireElement('browser-tabs-host'),
     requireElement('browser-viewer-host'),
+    store,
+    api,
+  )
+  mountMemoriesPane(
+    requireElement('memories-host'),
+    requireElement('memories-viewer-host'),
     store,
     api,
   )
