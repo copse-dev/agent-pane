@@ -1,4 +1,5 @@
 import { getModelInfo, type TrackedModel } from '@shared/llm/model-catalog.ts'
+import { getAgentRole, type AgentRoleId } from '@shared/llm/agent-roles.ts'
 
 /**
  * Experimental, opt-in "model classifier" feature (tracked in
@@ -116,4 +117,57 @@ export function classifyModelForTask(input: ClassifyModelInput): ModelRecommenda
     : 'no strong signals — default balanced tier'
 
   return { tier, model, confidence, rationale }
+}
+
+// Keyword → pipeline role, most-specific first (first match wins). This is the
+// *role* axis (what job the task is), orthogonal to the *tier* axis above (how
+// capable a model it needs). See docs/plans/model-roles-and-defaults.md.
+const ROLE_HINTS: ReadonlyArray<readonly [AgentRoleId, RegExp]> = [
+  ['security-auditor', /\b(vulnerab|security|exploit|CVE|injection|threat model|auth[nz]?)\b/i],
+  [
+    'test-gen',
+    /\b(unit tests?|integration tests?|property tests?|write tests?|test coverage|add tests?)\b/i,
+  ],
+  ['reviewer', /\b(review|maintainab|code quality|readabilit|nitpick)\b/i],
+  [
+    'refactor',
+    /\b(refactor|rename|extract (a )?(function|method|variable)|restructure|clean up)\b/i,
+  ],
+  [
+    'debugger',
+    /\b(bug|fix the|crash|stack trace|root cause|debug|regression|why is .* failing)\b/i,
+  ],
+  ['planner', /\b(plan the|break (this )?down|decompose|roadmap|design doc|architecture)\b/i],
+  ['docs', /\b(document|readme|docstring|api docs?|write comments?|changelog)\b/i],
+  ['research', /\b(look up|research|how does|what is|find out|investigate|compare)\b/i],
+]
+
+export interface RoleRecommendation {
+  role: AgentRoleId
+  /** Human-readable role label, for display. */
+  label: string
+  /** Why this role was chosen. */
+  rationale: string
+}
+
+/**
+ * Heuristically pick the pipeline role a task belongs to (coder by default).
+ * Pure — keyword-only, no I/O — so it's cheap and unit-testable. Advisory: it
+ * names the *kind* of work, which a caller can pair with the tier above to route
+ * to the model assigned to that role.
+ */
+export function suggestRoleForTask(task: string): RoleRecommendation {
+  const text = task.trim()
+  for (const [role, re] of ROLE_HINTS) {
+    if (re.test(text)) {
+      const label = getAgentRole(role)?.label ?? role
+      return { role, label, rationale: `task looks like ${label.toLowerCase()} work` }
+    }
+  }
+  const coder = getAgentRole('coder')
+  return {
+    role: 'coder',
+    label: coder?.label ?? 'coder',
+    rationale: 'no role-specific signal — default to coding',
+  }
 }
