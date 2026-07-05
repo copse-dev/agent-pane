@@ -2,7 +2,12 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { addMessage, createThread, setThreadComparison } from '@shared/store/thread-helpers.ts'
+import {
+  addMessage,
+  createThread,
+  setThreadComparison,
+  setThreadReview,
+} from '@shared/store/thread-helpers.ts'
 import type { ModelComparison } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
@@ -89,5 +94,29 @@ describe('model comparison renders inline in the transcript (component)', () => 
 
     const cards = document.querySelectorAll('[data-comparison-card]')
     assert.equal(cards.length, 1, 'only one comparison card should exist after an update')
+  })
+
+  it('keeps the review card above the comparison card when the comparison lands first', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    addMessage(store, threadId, 'assistant', 'Working.')
+
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    // The manual tool can emit the comparison mid-turn, then the post-turn review
+    // lands after it — the review must still render above the comparison.
+    setThreadComparison(store, threadId, comparison)
+    setThreadReview(store, threadId, { status: 'done', summary: 'Looks correct.' })
+
+    const list = document.querySelector('.messages-list')
+    assert.ok(list)
+    const children = [...list.children]
+    const reviewIdx = children.findIndex((c) => c.hasAttribute('data-review-card'))
+    const compareIdx = children.findIndex((c) => c.hasAttribute('data-comparison-card'))
+    assert.ok(reviewIdx >= 0 && compareIdx >= 0, 'both cards should be present')
+    assert.ok(reviewIdx < compareIdx, 'review card must come before the comparison card')
+    assert.equal(list.lastElementChild, children[compareIdx], 'comparison card stays last')
   })
 })
