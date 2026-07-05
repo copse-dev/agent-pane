@@ -1,2 +1,6 @@
+# Never commit real tokens / local runner state.
+.env
+_work/
+
 # The repo root ignores `.env.*`; keep the template tracked here.
 !.env.example

@@ -1,0 +1,53 @@
+# Spin up N identical unified Linux runners that serve BOTH the e2e and check
+# tiers, for one repo or a whole org:
+#
+#   cd ci-runners
+#   cp .env.example .env          # fill in GITHUB_URL + ACCESS_TOKEN + BUILD_GH_TOKEN
+#   DOCKER_BUILDKIT=1 docker compose up -d --build --scale runner=3
+#
+# BuildKit is required for the build-time clone token (secret). On recent Docker
+# it is the default; older Engines need DOCKER_BUILDKIT=1 (as above).
+#
+# Works unchanged on Linux, macOS (Docker Desktop/OrbStack/Colima), and Windows
+# (Docker Desktop in Linux-containers mode). Scale `runner` to your core/RAM
+# budget — this superset image runs Chromium-under-Xvfb for e2e, so size for the
+# heavy tier: ~4-6 GB + ~2 cores per concurrent runner.
+services:
+  runner:
+    build:
+      # The build context is THIS directory (Dockerfile + entrypoint only) — the
+      # image no longer needs a consumer repo as its context. It clones the
+      # target repo itself (see TARGET_REPO) to bake deps.
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Which consumer repo's dependency tree to bake for a warm start, and at
+        # which ref ("thread in main"). Point at your heaviest consumer; other
+        # repos still run here, they just fall back to npm ci at job time.
+        TARGET_REPO: ${TARGET_REPO:-copse-dev/agent-pane}
+        TARGET_REF: ${TARGET_REF:-main}
+      secrets:
+        # Read token used ONLY at build time to clone TARGET_REPO and let its
+        # `npm ci` fetch the private @copse/streaming-markdown git dependency.
+        # BuildKit keeps it on tmpfs — it is never written into an image layer.
+        - gh_token
+    image: copse-ci-runner:latest
+    # Ephemeral runners exit after each job; `always` restarts a fresh, clean
+    # container that re-registers. Per-job isolation for free.
+    restart: always
+    env_file: .env
+    environment:
+      EPHEMERAL: 'true'
+    init: true # PID 1 reaps stray electron/chromedriver children
+    # Superset image runs the memory-hungry Chromium-under-Xvfb e2e suite, so
+    # size for the heavy tier even though light jobs also land here. ~4-6 GB per
+    # concurrent runner; cap so one shard can't take the host down.
+    mem_limit: 6g
+    # A roomy /dev/shm avoids Chromium shm crashes (wdio also passes
+    # --disable-dev-shm-usage as a fallback).
+    shm_size: '2gb'
+
+# The build-time clone token, sourced from the BUILD_GH_TOKEN env var in .env.
+secrets:
+  gh_token:
+    environment: BUILD_GH_TOKEN
