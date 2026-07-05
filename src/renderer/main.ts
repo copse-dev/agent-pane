@@ -67,10 +67,14 @@ import { showErrorToast } from './views/toast.ts'
 import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layout.ts'
 import { isRightPanelPosition } from '@shared/types/state.ts'
 import { installArtifactImagePolicy } from './markdown/artifact-image-policy.ts'
+import { installSanitizerBackend } from './markdown/sanitizer-backend.ts'
 
 // Inject host markdown policies into @copse/streaming-markdown before any view
-// renders: remote-agent artifact <img> tags become inert placeholders that
-// hydrateRemoteArtifactImages() resolves after sanitization.
+// renders: pin the sanitizer backend (the package defaults to the native
+// Sanitizer API and throws where it is absent), and turn remote-agent artifact
+// <img> tags into inert placeholders that hydrateRemoteArtifactImages() resolves
+// after sanitization.
+installSanitizerBackend()
 installArtifactImagePolicy()
 
 const store = createStore()

@@ -1,4 +1,14 @@
 import { Window } from 'happy-dom'
+import { setSanitizerBackend } from '@copse/streaming-markdown'
+
+// happy-dom has no native Sanitizer API, so @copse/streaming-markdown's default
+// backend would throw. Unit tests assert on the DOM structure of the renderer's
+// (already-escaped, trusted) output, not on sanitizer security — that is covered
+// by the package's own suite and by e2e in real Chromium — so a pass-through
+// backend is sufficient here and avoids pulling DOMPurify's window-dependent
+// module into the bundled test environment before this DOM is installed.
+setSanitizerBackend({ sanitize: (html) => html })
+
 const win = new Window()
 Object.assign(globalThis, {
   document: win.document,
