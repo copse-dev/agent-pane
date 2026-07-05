@@ -45,7 +45,9 @@ dialog.settings-overlay::backdrop {
 .settings-header h2 {
   font-size: var(--font-size-sm);
   font-weight: 600;
-  color: var(--text-secondary);
+  /* The window's one title shouldn't sit in the secondary tier — it reads
+     as disabled against the elevated titlebar. */
+  color: var(--text-primary);
   line-height: var(--titlebar-height);
 }
 .settings-close-btn {
@@ -93,6 +95,8 @@ dialog.settings-overlay::backdrop {
   background: var(--bg-hover);
   color: var(--text-primary);
   font-weight: 600;
+  /* Distinguish "selected" from mere hover, which shares the same fill. */
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 .settings-content {
   flex: 1;
@@ -164,8 +168,42 @@ dialog.settings-overlay::backdrop {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+/* Each fieldset is a distinct group: give it real separation from its
+   neighbours and roomier internal padding so related controls cluster
+   together and unrelated ones don't crowd. */
 .settings-content fieldset {
   background: var(--bg-elevated);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  margin-bottom: var(--spacing-xl);
+}
+.settings-content fieldset:last-child {
+  margin-bottom: 0;
+}
+/* The group's title should read as a heading, not a faint caption — it anchors
+   everything below it. */
+.settings-content legend {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+/* A field and its own controls stay tight; the gap belongs *between* fields. */
+.settings-content fieldset label {
+  margin-bottom: var(--spacing-lg);
+}
+.settings-content fieldset label:last-child {
+  margin-bottom: 0;
+}
+/* A hint explains the control right above it, so pull it in close and, for a
+   checkbox, indent it under the label text it belongs to. */
+.settings-content .checkbox-label + .field-hint,
+.settings-content .checkbox-label + .settings-fieldset-desc {
+  margin-top: calc(-1 * var(--spacing-sm));
+  margin-bottom: var(--spacing-md);
+  padding-left: calc(var(--spacing-lg) + var(--spacing-xs));
+}
+/* Consecutive checkboxes are one cluster — keep them snug, not double-spaced. */
+.settings-content .checkbox-label + .checkbox-label {
+  margin-top: calc(-1 * var(--spacing-sm));
 }
 .app-icon-picker {
   display: flex;
@@ -220,6 +258,20 @@ dialog.settings-overlay::backdrop {
 .settings-content label input[type='number'] {
   width: 100%;
   max-width: 480px;
+}
+/* Colour swatch (Interface tint): a compact well rather than a full-width row. */
+.settings-content input[type='color'] {
+  width: 52px;
+  height: 30px;
+  padding: 2px;
+  cursor: pointer;
+}
+.settings-content input[type='color']::-webkit-color-swatch {
+  border: none;
+  border-radius: var(--radius-sm);
+}
+.settings-content input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 0;
 }
 .settings-nav,
 .settings-content,
