@@ -145,11 +145,18 @@ research benchmark.
 
 ## Phasing
 
-- **Phase 0 — data foundation (no behaviour change):** capability catalog module
-  - role registry as data, with tests. Additive; wire each module to a consumer
-    as it lands so `check:dead-code` stays green.
-- **Phase 1 — role indirection:** roles become the source of truth for routing;
-  existing keys alias onto roles; settings migration; routing UI shows roles.
+- **Phase 0 — data foundation (no behaviour change): _done._** `agent-roles.ts`
+  (role registry) and `local-model-catalog.ts` (capability catalog + benchmark
+  structure + `recommendLocalModelsForRole`), with tests. Additive; each module
+  wired to a consumer so `check:dead-code` stays green.
+- **Phase 1 — role indirection: _backend done; UI pending._** `role-models.ts`
+  resolves a role assignment (the renderer-writable `roleModels` setting) ahead
+  of the legacy per-feature setting, with a fallback so behaviour is unchanged
+  until a role is assigned. Wired into the coder / small-tasks / research
+  resolution sites. The main-only security settings (`safetyModel`,
+  `reviewModel`) are intentionally NOT routed through the renderer-writable bag
+  (they stay on the guarded security IPC). _Remaining:_ a settings-UI slice to
+  assign roles, and a decision on surfacing the security roles.
 - **Phase 2 — picker classifications:** capability/role badges and
   "recommended for" grouping in `model-options.ts`.
 - **Phase 3 — generalized download:** any catalog model + "recommended set" for a

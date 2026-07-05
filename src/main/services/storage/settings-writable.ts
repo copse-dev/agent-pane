@@ -109,6 +109,11 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   localDefaultModel: z.string().max(256),
   smallTasksModel: z.string().max(256),
   subagentModel: z.string().max(256),
+  // Role → model assignments (the indirection layer, see agent-roles.ts). A role
+  // entry overrides the legacy per-feature setting for the renderer-writable
+  // routing roles (coder / small-tasks / research); main-only security roles
+  // (safety, review) are NOT routed here so they stay on the guarded security IPC.
+  roleModels: z.record(z.string().max(64), z.string().max(256)),
   openRouterModel: z.string().max(256),
   localSubagentsEnabled: z.boolean(),
   localTodoItemsEnabled: z.boolean(),

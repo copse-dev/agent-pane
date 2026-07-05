@@ -20,6 +20,7 @@ import {
   resolveApiKey,
 } from '../storage/settings.ts'
 import { resolveContextWindow } from './resolve-context-window.ts'
+import { routedModelSetting } from './role-models.ts'
 import {
   fetchLmStudioModelsCached,
   invalidateLmStudioModelsCache as invalidateLmStudioModelsCacheImpl,
@@ -75,9 +76,9 @@ export async function resolveLocalModelId(
   url: string,
   roleDefault = '',
 ): Promise<string | null> {
-  const configured = getSettingTrimmed(roleKey, roleDefault)
+  const configured = routedModelSetting(roleKey, roleDefault)
   if (configured) return configured
-  const fallback = getSettingTrimmed('localDefaultModel', LM_STUDIO_MODEL_IDS.chat)
+  const fallback = routedModelSetting('localDefaultModel', LM_STUDIO_MODEL_IDS.chat)
   if (fallback) return fallback
   return fetchFirstLocalModel(url)
 }
