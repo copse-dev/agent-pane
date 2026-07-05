@@ -121,8 +121,6 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup
-        with:
-          github-pat: ${{ secrets.REPO_READ || secrets.SCREENSHOTS_PAT }}
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run format:check
@@ -263,8 +261,6 @@ jobs:
           ref: ${{ github.head_ref }}
           token: ${{ secrets.SCREENSHOTS_PAT || github.token }}
       - uses: ./.github/actions/setup
-        with:
-          github-pat: ${{ secrets.REPO_READ || secrets.SCREENSHOTS_PAT }}
       # `|| true`: a non-autofixable lint error must not abort the run — we still
       # want the fixes ESLint did apply to land. Real lint failures stay the job
       # of precheck's `lint` gate, not this fixer.
@@ -290,8 +286,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.3
       - uses: ./.github/actions/setup
-        with:
-          github-pat: ${{ secrets.REPO_READ || secrets.SCREENSHOTS_PAT }}
       # Unit suite under c8 + coverage-baseline.json ratchet (replaces the
       # separate coverage job — same tests, no duplicate npm test run).
       - run: npm run coverage:ci
@@ -318,8 +312,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.3
       - uses: ./.github/actions/setup
-        with:
-          github-pat: ${{ secrets.REPO_READ || secrets.SCREENSHOTS_PAT }}
       # Guarantee the gortex binary independently of the setup action. On a
       # self-hosted runner whose baked image predates gortex, the baked-deps seed
       # sets seeded=true (so npm ci + its postinstall fetch are skipped) yet the
@@ -357,8 +349,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.3
       - uses: ./.github/actions/setup
-        with:
-          github-pat: ${{ secrets.REPO_READ || secrets.SCREENSHOTS_PAT }}
       - run: npm run build
       - run: tar -cf dist.tar dist
       - uses: actions/upload-artifact@v4
@@ -426,8 +416,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.3
       - uses: ./.github/actions/setup
-        with:
-          github-pat: ${{ secrets.REPO_READ || secrets.SCREENSHOTS_PAT }}
       # Reclaim ~20-30 GB of runner-preloaded toolchains (dotnet/android/ghc/
       # CodeQL/swift) and cached Docker images. The e2e shards have hit "No space
       # left on device" mid-run, which cascades into OOM / runner-shutdown and
