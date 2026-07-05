@@ -1,16 +1,24 @@
-import { setSanitizerBackend } from '@copse/streaming-markdown'
-import { dompurifyBackend } from '@copse/streaming-markdown/sanitizers/dompurify'
+import { isBrowserSanitizerSupported, setSanitizerBackend } from '@copse/streaming-markdown'
 
-// @copse/streaming-markdown ≥0.2 sanitizes through a pluggable backend and, when
-// none is set, defaults to the browser-native Sanitizer API — throwing where it
-// is absent. Pin the bundled DOMPurify backend so sanitization is available
-// regardless of the runtime's Sanitizer-API support and matches the sanitizer
-// agent-pane used before the renderer package went pluggable. Call once at
-// startup, before the first markdown sink renders.
-let installed = false
+let ready: Promise<void> | null = null
 
-export function installSanitizerBackend(): void {
-  if (installed) return
-  installed = true
-  setSanitizerBackend(dompurifyBackend)
+/**
+ * Ensure @copse/streaming-markdown has a working sanitizer backend before any
+ * markdown sink renders.
+ *
+ * The package sanitizes through a pluggable backend and defaults to the
+ * zero-dependency native Sanitizer API (`Element.setHTML`), which the Electron
+ * renderer's Chromium provides — so on the normal path nothing is loaded. Only
+ * where the native API is missing (older engines, some non-browser contexts) do
+ * we import the DOMPurify backend, deferring it to a dynamic import so it stays
+ * off the startup path rather than being an eager dependency. Idempotent;
+ * awaiting the returned promise guarantees the backend is in place.
+ */
+export function installSanitizerBackend(): Promise<void> {
+  ready ??= isBrowserSanitizerSupported()
+    ? Promise.resolve()
+    : import('@copse/streaming-markdown/sanitizers/dompurify').then(({ dompurifyBackend }) => {
+        setSanitizerBackend(dompurifyBackend)
+      })
+  return ready
 }
