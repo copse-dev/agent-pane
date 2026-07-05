@@ -134,6 +134,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           args: chunk.toolCall.args,
           status: 'running',
           result: null,
+          ...(chunk.toolCall.kind !== undefined ? { kind: chunk.toolCall.kind } : {}),
         })
         st.toolSinceText = true
         st.writing = false
@@ -146,6 +147,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
             status: chunk.isError ? 'error' : 'done',
             result: chunk.result,
             ...(chunk.editStats ? { editStats: chunk.editStats } : {}),
+            ...(chunk.resultFormat ? { resultFormat: chunk.resultFormat } : {}),
           })
           if (chunk.toolCallId && !chunk.isError) {
             const toolCall = findToolCall(store, st.msgId, chunk.toolCallId)

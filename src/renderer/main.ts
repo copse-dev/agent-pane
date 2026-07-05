@@ -1,4 +1,9 @@
 import './styles/tokens.css'
+// Shared markdown styling lives in the renderer package; agent-pane maps its
+// theme tokens onto the sheet's `--sm-*` knobs (see the bridge in
+// styles/global/conversation.css). Imported before global.css so app rules win
+// ties. The `.streaming-markdown` scope class is added to each render sink.
+import '@copse/streaming-markdown/styles/default.css'
 import './styles/global.css'
 import './styles/themes.css'
 import './styles/global/popout.css'
@@ -63,10 +68,14 @@ import { showErrorToast } from './views/toast.ts'
 import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layout.ts'
 import { isRightPanelPosition } from '@shared/types/state.ts'
 import { installArtifactImagePolicy } from './markdown/artifact-image-policy.ts'
+import { installSanitizerBackend } from './markdown/sanitizer-backend.ts'
 
 // Inject host markdown policies into @copse/streaming-markdown before any view
-// renders: remote-agent artifact <img> tags become inert placeholders that
-// hydrateRemoteArtifactImages() resolves after sanitization.
+// renders: turn remote-agent artifact <img> tags into inert placeholders that
+// hydrateRemoteArtifactImages() resolves after sanitization. The sanitizer
+// backend (DOMPurify) is loaded via a deferred dynamic import; boot() awaits it
+// before the first render.
+const sanitizerReady = installSanitizerBackend()
 installArtifactImagePolicy()
 
 const store = createStore()
@@ -116,6 +125,10 @@ window.addEventListener('unhandledrejection', (event) => {
 let layoutMounted = false
 
 async function boot(): Promise<void> {
+  // Sanitizer backend must be in place before any markdown sink renders.
+  // Resolves instantly on the native path; only awaits a load if DOMPurify had
+  // to be lazily pulled in.
+  await sanitizerReady
   mountSettingsDialog(store, api)
   mountOnboardingDialog(store, api)
   mountApprovalDialog(api, store)

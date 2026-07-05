@@ -25,26 +25,31 @@ jobs:
   # Runner router: pick a self-hosted check runner when one is available, else
   # defer to GitHub-hosted. The static + unit tier below (precheck/check/build)
   # can run on the optional self-hosted `copse-checks` fleet (see
-  # .github/runner-checks) to save minutes and reuse a warm dep cache — but only
-  # when such a runner is actually online. This job inspects the repo's
-  # registered runners and emits a `runs_on` value those jobs consume:
+  # ci-runners/) to save minutes and reuse a warm dep cache — but only
+  # when such a runner is actually online. The unified fleet is registered at ORG
+  # scope (see ci-runners/) and shared across repos, so this job inspects the
+  # ORG's registered runners and emits a `runs_on` value those jobs consume:
   #   ["self-hosted","copse-checks"]  when ≥1 is online
   #   ["ubuntu-latest"]               otherwise
   # It NEVER pins onto a fleet that isn't there — any uncertainty (no PAT, API
   # error, none online) falls back to hosted, so nothing queues forever waiting
-  # on a runner that doesn't exist. (The e2e job keeps its own dedicated
-  # copse-e2e fleet + nightly-hosted model and is intentionally not routed here.)
+  # on a runner that doesn't exist. (The e2e job routes itself off the copse-e2e
+  # label with its own nightly-hosted fallback and is intentionally not routed
+  # here — though on the unified fleet both labels ride the same containers.)
   #
-  # Listing self-hosted runners needs repository Administration: Read, which the
-  # default GITHUB_TOKEN can't be granted — so detection uses a PAT in
-  # secrets.RUNNERS_PAT (classic `repo`, or fine-grained Administration: Read).
-  # As a convenience it falls back to SCREENSHOTS_PAT, but only a token that
-  # actually carries admin read will work — a fine-grained SCREENSHOTS_PAT
-  # scoped to Contents alone returns 4xx and is treated as "no runners". When no
-  # token can list the fleet (none set, or insufficient scope) the query fails
-  # OPEN to GitHub-hosted runners — the pre-existing behaviour — so the routing
-  # only ever *adds* the self-hosted option, never breaks CI. To actually enable
-  # self-hosted routing, set RUNNERS_PAT with Administration: Read.
+  # Listing ORG runners needs org-level runner read — classic `admin:org`, or a
+  # fine-grained token with organization "Self-hosted runners: Read" — which the
+  # default GITHUB_TOKEN can't be granted, so detection uses a PAT in
+  # secrets.RUNNERS_PAT. As a convenience it falls back to SCREENSHOTS_PAT, but
+  # only a token that actually carries org runner read will work — a fine-grained
+  # SCREENSHOTS_PAT scoped to Contents alone returns 4xx and is treated as "no
+  # runners". When no token can list the fleet (none set, or insufficient scope)
+  # the query fails OPEN to GitHub-hosted runners — the pre-existing behaviour —
+  # so the routing only ever *adds* the self-hosted option, never breaks CI. To
+  # actually enable self-hosted routing, set RUNNERS_PAT with org runner read.
+  # (Assumes the runner group grants this repo access, which the org default
+  # group does; a restricted group online but not shared with this repo would be
+  # counted here yet unusable — put both repos in the group.)
   #
   # Same fork guard as the jobs below: never runs for fork PRs, so the PAT is
   # never exposed to untrusted code and self-hosted boxes never see fork commits.
@@ -57,10 +62,10 @@ jobs:
       - id: pick
         env:
           # Dedicated token if provided, else try SCREENSHOTS_PAT. The query
-          # needs repository Administration: Read; if the token lacks it the
-          # request 4xxs and we fall open to hosted (see below).
+          # needs org runner read (admin:org / org Self-hosted runners: Read); if
+          # the token lacks it the request 4xxs and we fall open to hosted.
           RUNNERS_PAT: ${{ secrets.RUNNERS_PAT || secrets.SCREENSHOTS_PAT }}
-          GH_REPO: ${{ github.repository }}
+          GH_ORG: ${{ github.repository_owner }}
         run: |
           # GitHub's default step shell is `bash -e {0}`, so errexit is ON and a
           # failing curl (e.g. `-f` on an HTTP 4xx) would abort the step. The
@@ -78,10 +83,10 @@ jobs:
               -H "Authorization: Bearer ${RUNNERS_PAT}" \
               -H "Accept: application/vnd.github+json" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
-              "https://api.github.com/repos/${GH_REPO}/actions/runners?per_page=100" 2>/dev/null)"
+              "https://api.github.com/orgs/${GH_ORG}/actions/runners?per_page=100" 2>/dev/null)"
             rc=$?
             if [ $rc -ne 0 ] || [ -z "$runners" ]; then
-              echo "Runner query failed (curl exit $rc — token may lack Administration: Read) — deferring to GitHub-hosted runners."
+              echo "Runner query failed (curl exit $rc — token may lack org runner read) — deferring to GitHub-hosted runners."
             elif printf '%s' "$runners" | jq -e \
                 '[.runners[]? | select(.status=="online") | select(any((.labels // [])[]; .name=="copse-checks"))] | length > 0' \
                 >/dev/null 2>&1; then
@@ -361,7 +366,7 @@ jobs:
   e2e:
     needs: [build, precheck]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    # PR/push e2e runs on the self-hosted Docker runners (see .github/runner):
+    # PR/push e2e runs on the self-hosted Docker runners (see ci-runners/):
     # free minutes, and a box big enough to avoid the 2-core/7GB hosted-runner
     # OOM that most of the shard quarantines exist to work around. The nightly
     # `schedule` runs the full suite on GitHub-hosted ubuntu-latest.

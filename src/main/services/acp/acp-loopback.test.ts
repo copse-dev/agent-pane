@@ -85,6 +85,9 @@ describe('ACP agent <-> client loopback', () => {
       toolCallId: 't1',
       result: 'file contents',
       isError: false,
+      // ACP tool output is agent-authored Markdown, so the client-side adapter
+      // tags it for the Markdown render path.
+      resultFormat: 'markdown',
     })
   })
 })
