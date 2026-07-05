@@ -42,15 +42,18 @@ html {
   height: 100vh;
   position: relative;
 }
-/* Regions where copying text is intentional */
+/* Regions where copying text is intentional: text the user authors (inputs) and
+   agent/tool *content* — rendered markdown answers, reasoning, tool output, and
+   the terminal. Pure chrome (permission prompts, dialogs, labels) stays
+   non-selectable so drag-selecting content doesn't sweep up UI text. */
 input,
 textarea,
 select,
 [contenteditable='true'],
 .message-text,
+.message-reasoning-text,
 .tool-result,
 .tool-args pre,
-.approval-body,
 .terminal-container,
 .monaco-editor .view-lines {
   user-select: text;
