@@ -5,7 +5,12 @@ import { createStore } from '@shared/store/store.ts'
 import { bindBrowserLinkClicks } from './browser-links.ts'
 import { hydrateRemoteArtifactImages } from './remote-artifact-images.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
+import { installArtifactImagePolicy } from './artifact-image-policy.ts'
 import { qsRequired } from '../dom/helpers.ts'
+
+// renderMarkdown only produces artifact <img> placeholders once the host policy
+// is injected (as main.ts does at startup).
+installArtifactImagePolicy()
 
 describe('markdown browser links', () => {
   it('opens HTTP links in the browser panel', () => {
@@ -180,9 +185,7 @@ describe('markdown browser links', () => {
       renderMarkdown(
         '_Running on Cursor Cloud Agent — follow along at https://cursor.com/agents/bc-00000000-0000-0000-0000-000000000001_',
       ),
-      renderMarkdown(
-        '<img alt="C-S-S rendered" src="/opt/cursor/artifacts/screenshots/css-new-tab.png" />',
-      ),
+      renderMarkdown('<img alt="C-S-S rendered" src="artifacts/screenshots/css-new-tab.png" />'),
     ].join('\n')
 
     hydrateRemoteArtifactImages(root, {
@@ -204,7 +207,7 @@ describe('markdown browser links', () => {
   it('retries artifact image hydration after restored messages attach to the thread', async () => {
     const finalMessage = document.createElement('div')
     finalMessage.innerHTML = renderMarkdown(
-      '<img alt="C-S-S rendered" src="/opt/cursor/artifacts/screenshots/css-new-tab.png" />',
+      '<img alt="C-S-S rendered" src="artifacts/screenshots/css-new-tab.png" />',
     )
     const calls: Array<{ agentId: string; path: string }> = []
     const api = {

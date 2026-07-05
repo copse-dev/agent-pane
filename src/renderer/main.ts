@@ -60,6 +60,12 @@ import { registerPanelKeyboardShortcuts } from './keyboard-shortcuts.ts'
 import { showErrorToast } from './views/toast.ts'
 import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layout.ts'
 import { isRightPanelPosition } from '@shared/types/state.ts'
+import { installArtifactImagePolicy } from './markdown/artifact-image-policy.ts'
+
+// Inject host markdown policies into @copse/streaming-markdown before any view
+// renders: remote-agent artifact <img> tags become inert placeholders that
+// hydrateRemoteArtifactImages() resolves after sanitization.
+installArtifactImagePolicy()
 
 const store = createStore()
 const api = window.api
