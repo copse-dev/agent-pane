@@ -17,6 +17,9 @@ import {
   formatWebPromptBody,
   shellCommandFromArgs,
   formatShellPromptBody,
+  formatDevServerPromptBody,
+  devServerActionFromArgs,
+  devServerCommandFromArgs,
   formatExternalSandboxPromptBody,
   formatInstallPromptBody,
   formatEphemeralRunnerPromptBody,
@@ -287,6 +290,36 @@ async function checkBrowserNavigatePermission(args: unknown): Promise<boolean> {
   return approved
 }
 
+const DEV_SERVER_ALLOWED_ROOTS_SETTING = 'devServerAllowedRoots'
+
+/**
+ * Gate the `dev_server` tool. Only `start` launches a process; `list`/`logs`/
+ * `stop` just manage servers already started under a grant, so they auto-run.
+ * A start prompts the first time per workspace, then remembers the grant — the
+ * same prompt-once model as browser origins and MCP servers.
+ */
+async function checkDevServerPermission(args: unknown): Promise<boolean> {
+  if (devServerActionFromArgs(args) !== 'start') return true
+
+  const root = getWorkspaceRoot()
+  if (!root) throw new Error('No workspace open.')
+
+  const allowed = getSetting<string[]>(DEV_SERVER_ALLOWED_ROOTS_SETTING, [])
+  if (allowed.includes(root)) return true
+
+  const { approved, remember } = await requestApproval({
+    title: 'Start a local dev server?',
+    body: formatDevServerPromptBody(root, devServerCommandFromArgs(args)),
+    type: 'shell',
+    allowRemember: true,
+    rememberLabel: 'Always allow servers in this project',
+  })
+  if (approved && remember && !allowed.includes(root)) {
+    await setSetting(DEV_SERVER_ALLOWED_ROOTS_SETTING, [...allowed, root])
+  }
+  return approved
+}
+
 /** Gate a raw shell command string (todo verification, etc.) through the same policy as run_shell. */
 export async function ensureShellCommandPermitted(command: string): Promise<boolean> {
   return checkShellPermission({ command })
@@ -409,6 +442,10 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
 
   if (toolName === 'run_shell') {
     return checkShellPermission(args)
+  }
+
+  if (toolName === 'dev_server') {
+    return checkDevServerPermission(args)
   }
 
   // Default-allow: read-only/in-process tools (and mutating tools that are

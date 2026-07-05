@@ -8,6 +8,8 @@ import {
   formatEphemeralRunnerPromptBody,
   shellRequiresOutsideSandbox,
   shellSandboxFailureShouldOfferUnsandboxedRetry,
+  devServerActionFromArgs,
+  devServerCommandFromArgs,
   SANDBOX_TOOLS,
 } from './permission-policy.ts'
 import { DEFAULT_WEB_ALLOWED_ORIGINS } from './web-origin-policy.ts'
@@ -98,6 +100,73 @@ describe('custom tool permission', () => {
     } finally {
       setApprovalHandler(null)
       setCustomToolRequiresApprovalForTests(toolName, false)
+    }
+  })
+})
+
+describe('dev_server arg helpers', () => {
+  it('reads action and command, tolerating missing/malformed args', () => {
+    assert.equal(devServerActionFromArgs({ action: 'start' }), 'start')
+    assert.equal(devServerActionFromArgs({}), null)
+    assert.equal(devServerActionFromArgs(null), null)
+    assert.equal(devServerCommandFromArgs({ command: 'npm run dev' }), 'npm run dev')
+    assert.equal(devServerCommandFromArgs({ command: 42 }), '')
+    assert.equal(devServerCommandFromArgs({}), '')
+  })
+})
+
+describe('dev_server permission', () => {
+  it('auto-allows non-start actions without prompting', async () => {
+    setPermissionGateForTests(null)
+    let prompted = false
+    setApprovalHandler(async () => {
+      prompted = true
+      return { approved: false, remember: false }
+    })
+    try {
+      for (const action of ['list', 'logs', 'stop']) {
+        assert.equal(await ensureToolPermitted({ toolName: 'dev_server', args: { action } }), true)
+      }
+      assert.equal(prompted, false, 'managing existing servers must not prompt')
+    } finally {
+      setApprovalHandler(null)
+    }
+  })
+
+  it('prompts on start, then remembers the grant per workspace', async () => {
+    setPermissionGateForTests(null)
+    const restore = setWorkspaceRootForTest('/tmp/dev-server-project')
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts++
+      return { approved: true, remember: true }
+    })
+    try {
+      const args = { action: 'start', command: 'npm run dev' }
+      assert.equal(await ensureToolPermitted({ toolName: 'dev_server', args }), true)
+      assert.equal(await ensureToolPermitted({ toolName: 'dev_server', args }), true)
+      assert.equal(prompts, 1, 'second start in the same workspace must not re-prompt')
+    } finally {
+      setApprovalHandler(null)
+      restore()
+    }
+  })
+
+  it('returns false when the user declines the start', async () => {
+    setPermissionGateForTests(null)
+    const restore = setWorkspaceRootForTest('/tmp/dev-server-denied')
+    setApprovalHandler(async () => ({ approved: false, remember: false }))
+    try {
+      assert.equal(
+        await ensureToolPermitted({
+          toolName: 'dev_server',
+          args: { action: 'start', command: 'npm run dev' },
+        }),
+        false,
+      )
+    } finally {
+      setApprovalHandler(null)
+      restore()
     }
   })
 })

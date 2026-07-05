@@ -7,6 +7,7 @@ import {
   acpAgentSandboxOverlay,
   baseSandboxConfig,
   containedSandboxNetworkConfig,
+  devServerSandboxOverlay,
   electronRuntimeAllowReadPaths,
   ensureWorkspaceTmpDir,
   fsWorkerSandboxOverlay,
@@ -70,6 +71,24 @@ describe('acpAgentSandboxOverlay', () => {
       assert.ok(list.includes(`/private/tmp/claude-${String(uid)}`))
       assert.ok(list.includes(`/private/tmp/claude-${String(uid)}/**`))
     }
+  })
+})
+
+describe('devServerSandboxOverlay', () => {
+  it('allows loopback binding on loopback-only domains', () => {
+    const overlay = devServerSandboxOverlay('/tmp/project')
+    assert.deepEqual(overlay.network, {
+      allowedDomains: ['localhost', '127.0.0.1', '::1'],
+      deniedDomains: [],
+      allowLocalBinding: true,
+    })
+  })
+
+  it('keeps the workspace filesystem rules from the base overlay', () => {
+    const base = workspaceSandboxOverlay('/tmp/project')
+    const overlay = devServerSandboxOverlay('/tmp/project')
+    // Only the network is widened; filesystem confinement is unchanged.
+    assert.deepEqual(overlay.filesystem, base.filesystem)
   })
 })
 
