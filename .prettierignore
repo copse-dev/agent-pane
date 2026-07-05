@@ -8,7 +8,5 @@ tests/e2e/electron-shell/.e2e-env.json
 .wdio-profile-*
 .wdio-git-fixture-*
 tests/fixtures/git-changes-repo/
-# Generated CommonMark conformance baseline (written by the conformance test).
-packages/streaming-markdown/tests/fixtures/commonmark/
-packages/streaming-markdown/tests/fixtures/terms-of-service-streaming.md
-packages/streaming-markdown/tests/fixtures/job-description-metadata.md
+# E2E markdown fixture with intentional hard-break trailing spaces + &nbsp;.
+tests/fixtures/job-description-metadata.md
