@@ -5,9 +5,64 @@ description: >-
   vendored gortex download) are skipped entirely, since their outputs live
   inside the cached node_modules / vendor/gortex trees.
 
+inputs:
+  github-pat:
+    description: >-
+      Optional PAT with read access to copse-dev/streaming-markdown. When set, it
+      authenticates `npm ci`'s fetch of the private @copse/streaming-markdown git
+      dependency. Left empty, git auth is untouched (fine on a cache/baked hit,
+      where npm ci is skipped).
+    required: false
+    default: ''
+
 runs:
   using: composite
   steps:
+    # npm records the @copse/streaming-markdown git dependency as git+ssh in the
+    # lockfile (npm normalizes github: hosts to ssh regardless of the spec form),
+    # but Actions runners have no SSH key — so `npm ci` below would die with
+    # "Permission denied (publickey)". Rewrite the ssh:// form to https and, when a
+    # PAT is provided, authenticate it.
+    #
+    # This MUST go through GIT_CONFIG_* env vars (exported to $GITHUB_ENV so the
+    # later `npm ci` step inherits them), NOT `git config --global`: npm spawns git
+    # in its own temp clone whose only shared config is the environment.
+    #
+    # Auth is an http.extraheader rather than a token in the URL because a
+    # self-hosted runner image can bake in its OWN github credential (a global
+    # http.<github>.extraheader), which overrides a URL-embedded token and 403s on
+    # repos it can't read. Setting the extraheader to an empty value first RESETS
+    # the accumulated list (git's documented override), clearing the baked-in one;
+    # we then append ours. Only ssh://github URLs are rewritten (the sole git
+    # dependency). Anonymous https when no PAT is set (public dep); authenticated
+    # when a PAT with read access is provided.
+    - shell: bash
+      env:
+        GH_DEP_PAT: ${{ inputs.github-pat }}
+      run: |
+        if [ -n "${GH_DEP_PAT}" ]; then
+          auth="$(printf 'x-access-token:%s' "${GH_DEP_PAT}" | base64 | tr -d '\n')"
+          echo "::add-mask::${auth}"
+          {
+            echo "GIT_CONFIG_COUNT=4"
+            echo "GIT_CONFIG_KEY_0=http.https://github.com/.extraheader"
+            echo "GIT_CONFIG_VALUE_0="
+            echo "GIT_CONFIG_KEY_1=http.https://github.com/.extraheader"
+            echo "GIT_CONFIG_VALUE_1=Authorization: Basic ${auth}"
+            echo "GIT_CONFIG_KEY_2=url.https://github.com/.insteadOf"
+            echo "GIT_CONFIG_VALUE_2=ssh://git@github.com/"
+            echo "GIT_CONFIG_KEY_3=url.https://github.com/.insteadOf"
+            echo "GIT_CONFIG_VALUE_3=git@github.com:"
+          } >> "$GITHUB_ENV"
+        else
+          {
+            echo "GIT_CONFIG_COUNT=2"
+            echo "GIT_CONFIG_KEY_0=url.https://github.com/.insteadOf"
+            echo "GIT_CONFIG_VALUE_0=ssh://git@github.com/"
+            echo "GIT_CONFIG_KEY_1=url.https://github.com/.insteadOf"
+            echo "GIT_CONFIG_VALUE_1=git@github.com:"
+          } >> "$GITHUB_ENV"
+        fi
     # Deliberately NO `cache: 'npm'` here. That option caches ~/.npm (the npm
     # download cache — inputs to `npm ci`), which on this repo is ~2.5 GB. But the
     # actions/cache step below already caches node_modules (the *output* of the

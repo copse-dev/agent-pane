@@ -4,8 +4,7 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@shared/*": ["./src/shared/*"],
-      "@copse/streaming-markdown": ["./packages/streaming-markdown/src/index.ts"]
+      "@shared/*": ["./src/shared/*"]
     }
   }
 }

@@ -57,39 +57,7 @@ export default ts.config(
     },
   },
   {
-    // Package-boundary guard (#601): the @copse/streaming-markdown core must
-    // stay app-independent so it can version and ship on its own. Ban imports of
-    // app modules (path aliases) and any relative import that climbs out of the
-    // package. Host-specific behaviour is injected (e.g. a LinkDecorator), not
-    // imported. Tests are exempt (they may reach into ../tests helpers).
-    files: ['packages/streaming-markdown/src/**/*.ts'],
-    ignores: ['packages/streaming-markdown/src/**/*.test.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['@shared', '@shared/*', '@main', '@main/*', '@renderer', '@renderer/*'],
-              message:
-                'The markdown package core must stay app-independent (#601): inject host behaviour (e.g. a LinkDecorator) instead of importing app modules.',
-            },
-            {
-              group: ['../../*', '../../**'],
-              message: 'Do not import from outside the @copse/streaming-markdown package (#601).',
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
-    files: [
-      'src/**/*.test.ts',
-      'tests/**/*.ts',
-      'packages/*/src/**/*.test.ts',
-      'packages/*/tests/**/*.ts',
-    ],
+    files: ['src/**/*.test.ts', 'tests/**/*.ts'],
     rules: {
       '@typescript-eslint/no-floating-promises': 'off',
       // Test doubles must stay `async` to match the real async interfaces they
