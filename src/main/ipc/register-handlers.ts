@@ -48,6 +48,7 @@ import {
   HUGGINGFACE_SLUG,
 } from '../services/providers/extra-providers-store.ts'
 import { fetchOpenAiCompatibleModels } from '../services/providers/provider-models.ts'
+import { evaluateChatDefaultContext } from '../services/providers/chat-default-context.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
 import {
   loadProjectThreads,
@@ -346,6 +347,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     return { imported, skipped }
   })
+  ipcMain.handle('models:chatDefaultContextHealth', () => evaluateChatDefaultContext())
   ipcMain.handle('settings:extraProviders', () => getResolvedExtraProviders())
   ipcMain.handle('settings:saveExtraProvider', async (event, record: unknown) => {
     assertMainFrameSender(event, win)
