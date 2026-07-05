@@ -862,7 +862,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (thread?.review) {
       const card = createReviewCardEl(thread.review, api)
       card.setAttribute('data-review-card', '')
-      list.append(card)
+      // Keep the review card above the comparison card regardless of which sync
+      // ran last (the comparison can land mid-turn via the tool, the review after).
+      const comparisonCard = list.querySelector('[data-comparison-card]')
+      if (comparisonCard) list.insertBefore(card, comparisonCard)
+      else list.append(card)
     }
   }
 

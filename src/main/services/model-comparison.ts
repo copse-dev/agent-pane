@@ -16,6 +16,8 @@
  * model-comparison-runner.ts and the tool gating in registry-bootstrap.ts.
  */
 
+import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
+
 export const MODEL_COMPARISON_ENABLED_SETTING = 'modelComparisonEnabled'
 export const MODEL_COMPARISON_AUTO_ON_REVIEW_SETTING = 'modelComparisonAutoOnReview'
 export const COMPARISON_MODEL_A_SETTING = 'comparisonModelA'
@@ -47,7 +49,14 @@ export function resolveComparisonModels(opts: {
   chatModel: string
 }): ComparisonModels {
   const a = opts.modelA?.trim() || opts.chatModel
-  const b = opts.modelB?.trim() || DEFAULT_COMPARISON_MODEL_B
+  const configuredB = opts.modelB?.trim()
+  let b = configuredB || DEFAULT_COMPARISON_MODEL_B
+  // When B falls back to its default and would collide with A, pick a different
+  // frontier so the default-on experience isn't a silent no-op — e.g. an Opus
+  // chat model (A) against the Opus default (B) would otherwise make A === B.
+  // An *explicit* B === A is left alone: that is the user's own misconfiguration
+  // and the distinct-reviewer check surfaces it.
+  if (!configuredB && b === a) b = DEFAULT_CLOUD_MODEL
   const judge = opts.judge?.trim() || DEFAULT_COMPARISON_JUDGE_MODEL
   return { a, b, judge }
 }

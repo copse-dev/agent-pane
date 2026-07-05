@@ -37,6 +37,22 @@ describe('resolveComparisonModels', () => {
     assert.equal(models.a, 'lm-studio')
     assert.equal(models.b, DEFAULT_COMPARISON_MODEL_B)
   })
+
+  it('avoids a defaulted B colliding with A (Opus chat model)', () => {
+    const models = resolveComparisonModels({ chatModel: DEFAULT_COMPARISON_MODEL_B })
+    assert.equal(models.a, DEFAULT_COMPARISON_MODEL_B)
+    assert.notEqual(models.b, models.a, 'defaulted B must differ from A')
+  })
+
+  it('respects an explicit B even when it equals A (user misconfig, surfaced later)', () => {
+    const models = resolveComparisonModels({
+      modelA: 'gpt-5',
+      modelB: 'gpt-5',
+      chatModel: 'gpt-5',
+    })
+    assert.equal(models.b, 'gpt-5')
+    assert.equal(comparisonReviewersDistinct(models), false)
+  })
 })
 
 describe('comparisonReviewersDistinct', () => {
