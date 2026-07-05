@@ -29,6 +29,10 @@ import {
   openSettingsDialog,
   isSettingsDialogOpen,
   closeSettingsDialog,
+  applyUiTint,
+  isUiTintStrength,
+  DEFAULT_TINT_COLOR,
+  DEFAULT_TINT_STRENGTH,
 } from './views/settings-dialog.ts'
 import {
   mountOnboardingDialog,
@@ -149,9 +153,32 @@ async function boot(): Promise<void> {
   const savedLayout = await api.settings.get('layout')
   const savedAutoPortraitRightPanel = await api.settings.get('autoPortraitRightPanel')
   const savedRightPanelPosition = await api.settings.get('rightPanelPosition')
+  // Theme and editor font size persist too. Restore them here (the store
+  // otherwise keeps its dark/14 defaults on every launch) and apply the theme to
+  // the document root before the layout paints — panes read both from the store
+  // as they mount below, so no post-mount re-theming is needed.
+  const savedTheme = await api.settings.get('theme')
+  const theme =
+    savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : store.getState().theme
+  const savedFontSize = await api.settings.get('fontSize')
+  const fontSize =
+    typeof savedFontSize === 'number' && savedFontSize >= 8 && savedFontSize <= 32
+      ? savedFontSize
+      : store.getState().fontSize
+  document.documentElement.dataset['theme'] = theme
+  // Restore the whole-app tint before the layout paints so surfaces come up
+  // already tinted rather than flashing neutral then shifting.
+  const savedTintColor = await api.settings.get('uiTintColor')
+  const savedTintStrength = await api.settings.get('uiTintStrength')
+  applyUiTint(
+    typeof savedTintColor === 'string' ? savedTintColor : DEFAULT_TINT_COLOR,
+    isUiTintStrength(savedTintStrength) ? savedTintStrength : DEFAULT_TINT_STRENGTH,
+  )
   store.setState({
     settings: { model: savedModel ?? DEFAULT_APP_CHAT_MODEL },
     layout: parseSavedLayout(savedLayout),
+    theme,
+    fontSize,
     autoPortraitRightPanel:
       typeof savedAutoPortraitRightPanel === 'boolean' ? savedAutoPortraitRightPanel : true,
     rightPanelPosition: isRightPanelPosition(savedRightPanelPosition)
