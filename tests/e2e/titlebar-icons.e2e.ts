@@ -62,7 +62,10 @@ describe('titlebar panel icons', () => {
       await expect(styles.strokeLinecap).toBe('round')
       await expect(styles.strokeLinejoin).toBe('round')
     }
-    await expect(await $$('.titlebar-text-btn svg.titlebar-btn-icon')).toBeElementsArrayOfSize(5)
+    // Six outline-icon buttons: the five checked above plus the experimental
+    // Memories button, which is rendered up front but hidden until the
+    // okfMemoriesEnabled setting is on — its SVG is still in the DOM here.
+    await expect(await $$('.titlebar-text-btn svg.titlebar-btn-icon')).toBeElementsArrayOfSize(6)
     await browser.execute(() => {
       const dragRegion = document.querySelector<HTMLElement>('.titlebar-drag')
       if (!dragRegion) throw new Error('Missing titlebar drag region')
