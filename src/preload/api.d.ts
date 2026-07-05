@@ -318,6 +318,21 @@ export interface ApiClient {
       candidates: string[],
     ) => Promise<{ candidate: string; path: string; kind: 'file' | 'directory' }[]>
   }
+  memories: {
+    list: () => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote[]>
+    create: (
+      title: string,
+      body: string,
+      tags?: string[],
+    ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote>
+    update: (
+      id: string,
+      title: string,
+      body: string,
+      tags?: string[],
+    ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
+    delete: (id: string) => Promise<boolean>
+  }
   skills: {
     list: () => Promise<SkillSummary[]>
   }
