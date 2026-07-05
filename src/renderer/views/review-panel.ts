@@ -47,7 +47,7 @@ export function createReviewCardEl(review: ThreadReview, api: ApiClient): HTMLEl
 
   if (review.status === 'running') return panel
 
-  const body = el('div', { class: 'review-panel-body message-text' })
+  const body = el('div', { class: 'review-panel-body message-text streaming-markdown' })
   body.innerHTML = sanitizeRenderedMarkdown(renderMarkdown(review.summary || '(no review output)'))
   // Linkify printed file paths in the review subagent's output so they open in
   // the explorer, matching main-chat assistant text. Click handling is already

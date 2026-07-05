@@ -52,7 +52,9 @@ describe('reasoning display (component)', () => {
     assert.equal(details.querySelector('.message-reasoning-title')?.textContent, 'Thinking')
     assert.equal(
       details.querySelector('.message-reasoning-text')?.innerHTML,
-      'Let me check the file.',
+      // @copse/streaming-markdown ≥0.2 wraps a single prose line in <p> (styled
+      // flush by .message-reasoning-text p); older versions emitted it bare.
+      '<p>Let me check the file.</p>',
     )
     // Sits before the answer text in the body.
     const body = document.querySelector('.msg-assistant .message-body')
