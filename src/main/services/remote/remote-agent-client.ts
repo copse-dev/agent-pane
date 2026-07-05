@@ -209,6 +209,14 @@ async function createRemoteAgent(input: {
   prompt: PromptPayload
 }): Promise<{ agentId: string; runId: string; url?: string }> {
   const repository = await resolveRemoteAgentRepository()
+  // Cursor's agent API clones the source repo on its side, so there is no
+  // repo-less mode for this provider (unlike Claude Cloud Agent).
+  if (!repository) {
+    throw new Error(
+      'Cursor Cloud Agent needs a project backed by a GitHub remote (the remote machine clones it to work). ' +
+        'Open a GitHub-backed project, or switch to Claude Cloud Agent, which can run without a repository.',
+    )
+  }
   // Branch the remote run from whatever branch this project is on locally. The
   // remote clones from GitHub, so a branch that hasn't been pushed falls back to
   // the repo's default ref (startingRef omitted).

@@ -79,3 +79,20 @@ export function buildManagedAgentSystemPrompt(input: ManagedAgentSystemPromptInp
 
   return lines.join('\n')
 }
+
+/**
+ * System prompt for a session with no repository attached (the local project is
+ * not a git repo or has no GitHub remote). The sandbox starts empty and nothing
+ * in it persists for the user, so results must come back in the reply itself.
+ */
+export function buildManagedAgentNoRepoSystemPrompt(): string {
+  return [
+    'You are an autonomous software engineering agent working in an isolated cloud sandbox.',
+    'No repository is attached to this session — the workspace starts empty. Do not attempt to',
+    'clone, push, or open pull requests.',
+    '',
+    'Do the work the user asks for directly in the sandbox. Nothing in the sandbox is delivered',
+    'back to the user automatically, so include any code, file contents, or other results they',
+    'need inline in your final message.',
+  ].join('\n')
+}
