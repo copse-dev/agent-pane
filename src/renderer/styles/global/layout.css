@@ -152,7 +152,7 @@
   background: var(--bg-hover);
 }
 .chat-row.selected {
-  background: var(--bg-active);
+  background: var(--bg-selected);
   color: var(--text-primary);
 }
 .chat-title {
@@ -397,7 +397,7 @@
   background: var(--bg-hover);
 }
 .terminals-tab.is-active {
-  background: var(--bg-active);
+  background: var(--bg-selected);
   color: var(--text-primary);
 }
 .terminals-tab-close {
@@ -465,7 +465,7 @@
   color: var(--accent);
 }
 .git-change-row-proposed.is-selected {
-  background: color-mix(in srgb, var(--accent) 16%, var(--bg-active));
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-selected));
 }
 .git-changes-title {
   font-size: var(--font-size-sm);
@@ -526,7 +526,7 @@
   background: var(--bg-hover);
 }
 .git-change-row.is-selected {
-  background: var(--bg-active);
+  background: var(--bg-selected);
   color: var(--text-primary);
 }
 .git-change-status {
@@ -846,7 +846,7 @@
   background: var(--bg-hover);
 }
 .agent-task-tab.is-active {
-  background: var(--bg-active);
+  background: var(--bg-selected);
   color: var(--text-primary);
 }
 .agent-task-dot {
@@ -964,7 +964,7 @@
   background: var(--bg-hover);
 }
 .browser-tabs-tab.is-active {
-  background: var(--bg-active);
+  background: var(--bg-selected);
   color: var(--text-primary);
 }
 .browser-tabs-tab-close {
@@ -1169,7 +1169,7 @@
   opacity: 1;
 }
 .tree-row.selected {
-  background: var(--bg-active);
+  background: var(--bg-selected);
   color: var(--text-primary);
 }
 .tree-twisty {

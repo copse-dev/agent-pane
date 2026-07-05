@@ -163,8 +163,8 @@
   text-overflow: ellipsis;
 }
 .diff-file-btn.selected {
-  background: var(--bg-active);
-  color: white;
+  background: var(--bg-selected);
+  color: var(--text-primary);
 }
 .diff-editor-wrap {
   flex: 1;
