@@ -53,6 +53,28 @@ export interface ThreadReview {
   summary: string
 }
 
+/**
+ * Result of running the working-diff review through two models and a judge that
+ * compares their findings (the "model comparison harness"). `reviewA`/`reviewB`
+ * are each model's independent verdict; `synthesis` is the judge's comparison
+ * (agreements, disagreements, unique catches, overall recommendation).
+ */
+export interface ModelComparison {
+  status: 'running' | 'done' | 'error'
+  /** Model ids used for the two reviews (a, b) and the judge synthesis. */
+  models: { a: string; b: string; judge: string }
+  /** Verdict text from model A. */
+  reviewA: string
+  /** Verdict text from model B. */
+  reviewB: string
+  /** The judge's comparison of the two verdicts. */
+  synthesis: string
+  /** Human-readable cost estimate for the whole run (e.g. `~$0.04`). */
+  cost?: string
+  /** Populated when `status === 'error'`. */
+  error?: string
+}
+
 export interface Thread {
   id: string
   title: string
@@ -67,6 +89,8 @@ export interface Thread {
   todos?: TodoItem[]
   /** Latest post-turn review verdict produced after an editing turn. */
   review?: ThreadReview
+  /** Latest two-model comparison produced for an editing turn (auto or on demand). */
+  comparison?: ModelComparison
   /** Persisted parent/explore goal; set on the first user message in the thread. */
   workingBrief?: string
   /** Git branch this thread was started on; set on first message and persisted. */
