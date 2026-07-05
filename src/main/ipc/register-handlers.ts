@@ -604,9 +604,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   ipcMain.handle('panes:popout', (event, mode: unknown) => {
     assertMainFrameSender(event, win)
-    const parsed = parseIpcArgs(z.enum(['explorer', 'terminal', 'changes', 'prs', 'browser']), [
-      mode,
-    ])
+    const parsed = parseIpcArgs(
+      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'browser']),
+      [mode],
+    )
     createPanePopoutWindow(parsed)
   })
 
