@@ -22,6 +22,7 @@ import { mountTerminalsPane } from './views/terminals-pane.ts'
 import { mountAgentTasks } from './views/agent-tasks.ts'
 import { mountGitChangesPane } from './views/git-changes-pane.ts'
 import { mountPrPane } from './views/pr-pane.ts'
+import { mountMemoriesPane } from './views/memories-pane.ts'
 import { mountBrowserPane } from './views/browser-pane.ts'
 import {
   mountSettingsDialog,
@@ -84,7 +85,14 @@ const api = window.api
 // mode we boot the app normally (so the pane gets the real workspace/threads),
 // but force the pane open and let popout.css hide the projects sidebar, chat,
 // and titlebar so the detached window shows only that pane.
-const POPOUT_MODES = new Set<RightPanelMode>(['explorer', 'terminal', 'changes', 'prs', 'browser'])
+const POPOUT_MODES = new Set<RightPanelMode>([
+  'explorer',
+  'terminal',
+  'changes',
+  'prs',
+  'browser',
+  'memories',
+])
 function getPopoutMode(): RightPanelMode | null {
   const raw = new URLSearchParams(window.location.search).get('popout')
   return raw && POPOUT_MODES.has(raw as RightPanelMode) ? (raw as RightPanelMode) : null
@@ -273,6 +281,12 @@ function mountFullLayout(): void {
   mountBrowserPane(
     requireElement('browser-tabs-host'),
     requireElement('browser-viewer-host'),
+    store,
+    api,
+  )
+  mountMemoriesPane(
+    requireElement('memories-host'),
+    requireElement('memories-viewer-host'),
     store,
     api,
   )
