@@ -109,7 +109,7 @@
     "@agentclientprotocol/sdk": "^0.29.0",
     "@anthropic-ai/sandbox-runtime": "^0.0.56",
     "@anthropic-ai/sdk": "^0.104.2",
-    "@copse/streaming-markdown": "git+https://github.com/copse-dev/streaming-markdown.git#260c78f254bec2656d8252662b5f8d652e72a231",
+    "@copse/streaming-markdown": "git+https://github.com/copse-dev/streaming-markdown.git#2f355b6cc5822c83f085e54c70ca6441bd10a561",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "@mozilla/readability": "^0.6.0",
     "@xterm/addon-fit": "^0.11.0",
