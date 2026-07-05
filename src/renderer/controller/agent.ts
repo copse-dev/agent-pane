@@ -16,6 +16,7 @@ import {
   updateContextSnapshot,
   setThreadTodos,
   setThreadReview,
+  setThreadComparison,
   getThreadById,
 } from '@shared/store/thread-helpers.ts'
 import { syncThreadGitBranchAfterShell } from './sync-thread-branch-after-shell.ts'
@@ -281,6 +282,13 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
       case 'post_turn_review': {
         setThreadReview(store, threadId, { status: chunk.status, summary: chunk.summary })
         if (chunk.status === 'running') store.emit('agent_activity', threadId, 'Reviewing changes…')
+        break
+      }
+      case 'model_comparison': {
+        setThreadComparison(store, threadId, chunk.comparison)
+        if (chunk.comparison.status === 'running') {
+          store.emit('agent_activity', threadId, 'Comparing models…')
+        }
         break
       }
       case 'done': {

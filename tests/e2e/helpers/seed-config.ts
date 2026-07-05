@@ -890,6 +890,61 @@ export function seedReviewInlineFixture(workspaceRoot: string): void {
   })
 }
 
+/**
+ * Thread with a completed two-model comparison for the inline-comparison-card
+ * e2e. The comparison card mirrors the review card: it must render INSIDE the
+ * scrolling `.messages-list` as its last child, with the two reviewer columns,
+ * the judge synthesis, and the cost line all present.
+ */
+export function seedComparisonInlineFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-comparison-inline-project'
+  const threadId = 'e2e-comparison-inline-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Inline comparison test',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-comparison',
+            role: 'user',
+            content: 'Add a null check to the JSON parser.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-comparison',
+            role: 'assistant',
+            content: 'Added the null guard and a regression test for empty input.',
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+        ],
+        comparison: {
+          status: 'done',
+          models: { a: 'gpt-5', b: 'claude-opus-4-8', judge: 'claude-opus-4-8' },
+          reviewA:
+            'The null guard in `src/parser.ts` is correct. Consider also handling a whitespace-only string.',
+          reviewB:
+            'Looks correct and the new test covers the empty-input case. No blocking issues.',
+          synthesis:
+            'Both agree the guard is correct. Only A flags whitespace-only input as an untested edge case — worth a quick follow-up test.',
+          cost: '~$0.04',
+        },
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now + 1,
+      },
+    ],
+  })
+}
+
 export function seedSubagentFixture(workspaceRoot: string): void {
   const projectId = 'e2e-subagent-project'
   const threadId = 'e2e-subagent-thread'
