@@ -77,6 +77,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // Built-in browser tools (Electron's bundled Chromium); on by default so the
   // agent renders/screenshots web UIs in-app instead of installing a browser.
   { name: 'browserToolsEnabled', kind: 'checkbox', default: true, save: true },
+  { name: 'acpAutoApproveEditsWithBackup', kind: 'checkbox', default: true, save: true },
   // Experimental, opt-in features (off by default).
   { name: 'mcpUiArtefactsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'ciInvestigatorEnabled', kind: 'checkbox', default: false, save: true },
@@ -438,6 +439,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <input type="checkbox" name="autoRunSandboxCommands" />
                 Auto-run shell commands contained within the sandbox
               </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="acpAutoApproveEditsWithBackup" />
+                Auto-approve external agent file edits (a backup is taken first)
+              </label>
+              <p class="field-hint">
+                External ACP agents (e.g. Claude) skip the per-edit approval modal for
+                edits, deletes, and moves once Copse has snapshotted your uncommitted work to a
+                restorable <code>refs/copse/backups/*</code> ref. Shell commands and web fetches still
+                prompt. Turn off to review every agent file edit.
+              </p>
             </fieldset>
           </section>
 

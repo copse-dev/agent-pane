@@ -66,9 +66,6 @@ const MAIN_ONLY_SETTING_SCHEMAS = {
   safetyModel: z.string().max(256),
   reviewModel: z.string().max(256),
   autoRunSandboxCommands: z.boolean(),
-  // Auto-approve an external ACP agent's file edits/deletes/moves once a durable
-  // worktree backup exists, instead of prompting per edit. Default on.
-  acpAutoApproveEditsWithBackup: z.boolean(),
   mcpAutoAllowReadOnly: z.boolean(),
   safeInstallEnabled: z.boolean(),
   mockFollowUps: z.boolean(),
