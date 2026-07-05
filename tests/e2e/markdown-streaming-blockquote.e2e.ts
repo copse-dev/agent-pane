@@ -28,7 +28,7 @@ describe('markdown streaming blockquote pending', () => {
       const msg = document.createElement('div')
       msg.className = 'msg msg-assistant'
       const text = document.createElement('div')
-      text.className = 'message-text is-streaming'
+      text.className = 'message-text streaming-markdown is-streaming'
       text.innerHTML = [
         '<div class="stream-complete">',
         '<p>Intro paragraph.</p>',
