@@ -1,11 +1,25 @@
 :root {
-  --bg-base: #1e1e1e;
-  --bg-elevated: #252526;
-  --bg-hover: #2a2d2e;
-  --bg-active: #094771;
-  --bg-muted: #2d2d2d;
-  --bg-subtle: #232324;
+  /* ---- Whole-app tint --------------------------------------------------
+     Every neutral surface is mixed from a base grey plus `--tint-amount` of
+     `--tint-hue`. At the default 0% the mix returns the base grey untouched,
+     so the app looks exactly as before. Raise `--tint-amount` (e.g. to 4–8%)
+     and/or change `--tint-hue` to wash a colour through the entire UI —
+     backgrounds, panels, hovers — in one place. Themes below re-derive the
+     same tokens from their own greys, so tinting works in light and dark. */
+  --tint-hue: var(--accent);
+  --tint-amount: 0%;
+
+  --bg-base: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #1e1e1e);
+  --bg-elevated: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #252526);
+  --bg-hover: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #2a2d2e);
+  --bg-muted: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #2d2d2d);
+  --bg-subtle: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #232324);
   --bg-input: var(--bg-base);
+  --bg-active: #094771;
+  /* Selection fill for list rows (file tree, chats, terminal tabs, PRs). A
+     gentle accent wash rather than the heavy VS Code blue, so a selected row
+     reads as highlighted without shouting — and stays consistent everywhere. */
+  --bg-selected: color-mix(in srgb, var(--accent) 20%, var(--bg-elevated));
   --text-primary: #d4d4d4;
   --text-secondary: #a6a6a6;
   --text-muted: #808080;
@@ -22,6 +36,7 @@
   --chat-gradient-glow: color-mix(in srgb, var(--accent) 6%, var(--bg-elevated));
   --accent: #007acc;
   --accent-hover: #1177bb;
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
   --link: #58a6ff;
   --link-hover: #79b8ff;
   --error: #f48771;
@@ -30,12 +45,13 @@
   --warning: #cca700;
   /* Shared elevation scale. sm lifts content off the chat gradient (user
      replies, chips); md floats popovers/menus/toasts; lg floats dialogs and
-     the centered composer; composer casts the docked input bar's glow up
-     onto the conversation. */
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.25);
+     the centered composer; composer casts the docked input bar's soft glow up
+     onto the conversation — kept gentle so it doesn't harden against the pane
+     resizer lines it sits beside. */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
   --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.5);
-  --shadow-composer: 0 -8px 28px rgba(0, 0, 0, 0.22);
+  --shadow-composer: 0 -6px 18px rgba(0, 0, 0, 0.1);
   --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   --font-size-xs: 11px;
@@ -45,7 +61,7 @@
   --font-size-lg: 16px;
   --radius-sm: 4px;
   --radius: 6px;
-  --radius-lg: 10px;
+  --radius-lg: 8px;
   --spacing-xs: 4px;
   --spacing-sm: 8px;
   --spacing-md: 12px;

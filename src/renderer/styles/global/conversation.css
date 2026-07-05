@@ -110,7 +110,7 @@
 }
 .msg {
   padding: var(--spacing-sm) var(--spacing-md);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius);
 }
 /* Reasoning ("thinking") disclosure, shown above the answer. */
 .message-reasoning {
@@ -199,11 +199,12 @@
 .message-body:hover:has(.code-block-shell:focus-within) .msg-copy {
   opacity: 0;
 }
+/* The user's own replies read as "yours" through a soft accent-tinted fill and
+   matching hairline — no hard left bar. It lifts off the chat gradient with a
+   faint shadow and rounds like the other panels. */
 .msg-user {
-  background: var(--bg-elevated);
-  border-left: 3px solid var(--accent);
-  /* Lift the reply bubble off the chat pane's gradient, echoing the drop
-     shadow the floating chrome already casts on that background. */
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
   box-shadow: var(--shadow-sm);
 }
 .msg-assistant {
