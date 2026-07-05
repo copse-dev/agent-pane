@@ -2,7 +2,15 @@ import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { FollowUpSuggestion, FollowUpContext } from '@shared/follow-ups/types.ts'
+import { reconcileChangesSuggestion } from '@shared/follow-ups/changes-stat.ts'
 import { switchThread, getThreadById } from '@shared/store/thread-helpers.ts'
+
+/** Open the changeset reviewer pane (mirrors the diff-conflict banner path). */
+function openChangesReviewer(store: AppStore): void {
+  store.setState({ rightPanelMode: 'changes', filesPaneOpen: true })
+  store.emit('right_panel_mode_changed')
+  store.emit('files_pane_changed')
+}
 
 export interface FollowUpSuggestionsMount {
   root: HTMLElement
@@ -28,6 +36,7 @@ export function mountFollowUpSuggestions(
   })
 
   let fetchToken = 0
+  let changesRefreshTimer: ReturnType<typeof setTimeout> | null = null
   let displayedThreadId: string | null = null
   const suggestionsByThread = new Map<string, CachedSuggestions>()
 
@@ -72,6 +81,13 @@ export function mountFollowUpSuggestions(
       }
 
       btn.addEventListener('click', () => {
+        // The changeset chip is a shortcut into the reviewer pane, not a prompt:
+        // dropping a canned "review my changes" message into the chat was
+        // surprising, and the reviewer is where accept/reject actions live.
+        if (suggestion.variant === 'changes') {
+          openChangesReviewer(store)
+          return
+        }
         const sourceThreadId = displayedThreadId ?? threadId
         clearSuggestions()
         if (store.getState().activeThreadId !== sourceThreadId) {
@@ -140,6 +156,35 @@ export function mountFollowUpSuggestions(
     }
   }
 
+  // Keep the deterministic "Changes" chip's +/- counts current. Suggestions are
+  // otherwise computed once per turn, so the count would otherwise freeze on a
+  // snapshot and go stale as the working tree moves (edits, commits, accept /
+  // reject of proposed diffs). This refreshes just that chip — model picks are
+  // left untouched, so no LLM call is made on filesystem churn.
+  async function refreshChangesStat(): Promise<void> {
+    const activeId = store.getState().activeThreadId
+    if (!activeId) return
+    const cached = suggestionsByThread.get(activeId)
+    // The bubbles only appear after a turn produces a set; nothing to maintain
+    // mid-run (the reviewer pane covers live changes during a run).
+    if (!cached) return
+    let stats: { additions: number; deletions: number } | null
+    try {
+      stats = await api.git.changeStats()
+    } catch {
+      return
+    }
+    const next = reconcileChangesSuggestion(cached.suggestions, stats)
+    if (next === cached.suggestions) return
+    suggestionsByThread.set(activeId, { turnKey: cached.turnKey, suggestions: next })
+    if (store.getState().activeThreadId === activeId) renderSuggestions(activeId, next)
+  }
+
+  function scheduleChangesRefresh(): void {
+    if (changesRefreshTimer) clearTimeout(changesRefreshTimer)
+    changesRefreshTimer = setTimeout(() => void refreshChangesStat(), 400)
+  }
+
   function showForActiveThread(): void {
     const activeId = store.getState().activeThreadId
     if (!activeId) {
@@ -178,6 +223,9 @@ export function mountFollowUpSuggestions(
     store.on('threads_changed', () => {
       showForActiveThread()
     }),
+    api.fs.onChanged(() => {
+      scheduleChangesRefresh()
+    }),
   ]
 
   return {
@@ -185,6 +233,7 @@ export function mountFollowUpSuggestions(
     clearSuggestions,
     destroy: (): void => {
       fetchToken++
+      if (changesRefreshTimer) clearTimeout(changesRefreshTimer)
       unsubs.forEach((u) => {
         u()
       })

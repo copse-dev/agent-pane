@@ -355,6 +355,8 @@ export interface ApiClient {
   git: {
     isAvailable: () => Promise<boolean>
     status: () => Promise<GitStatusResult | null>
+    /** Live +/- line totals across staged + unstaged changes, or null when clean. */
+    changeStats: () => Promise<{ additions: number; deletions: number } | null>
     fileDiff: (path: string, staged: boolean) => Promise<GitFileDiff | null>
     branchStatus: (forBranch?: string) => Promise<GitBranchStatus>
     checkoutBranch: (branch: string) => Promise<void>
