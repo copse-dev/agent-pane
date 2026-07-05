@@ -26,6 +26,7 @@ import {
   type RemoteAgentLink,
   type RemoteAgentPrIndexEntry,
 } from '@shared/remote-agent-link.ts'
+import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
 import { storageGet } from './storage/storage.ts'
 import { runSerialized } from './storage/write-queue.ts'
 
@@ -359,6 +360,21 @@ function indexAgentLink(
   })
 }
 
+/** Drop every reverse-index entry pointing at a thread. Returns whether it changed. */
+function removeThreadFromIndex(
+  map: Map<string, RemoteAgentPrIndexEntry>,
+  threadId: string,
+): boolean {
+  let changed = false
+  for (const [key, entry] of map) {
+    if (entry.threadId === threadId) {
+      map.delete(key)
+      changed = true
+    }
+  }
+  return changed
+}
+
 /** Rebuild the reverse index by scanning every thread's `meta.json`. */
 function rebuildAgentPrIndexInner(projectId: string): Map<string, RemoteAgentPrIndexEntry> {
   const map = new Map<string, RemoteAgentPrIndexEntry>()
@@ -370,25 +386,28 @@ function rebuildAgentPrIndexInner(projectId: string): Map<string, RemoteAgentPrI
   return map
 }
 
+/** Read the reverse index, rebuilding it from thread metas when the file is absent. */
+function loadOrRebuildAgentPrIndex(projectId: string): Map<string, RemoteAgentPrIndexEntry> {
+  return existsSync(agentPrIndexPath(projectId))
+    ? readAgentPrIndex(projectId)
+    : rebuildAgentPrIndexInner(projectId)
+}
+
+function canonicalPrUrl(ref: GithubPrRef): string {
+  return `https://github.com/${ref.owner}/${ref.repo}/pull/${String(ref.number)}`
+}
+
 /**
- * Merge two links, requiring the result to carry the launch-time identity
- * (`provider`/`agentId`/`createdAt`). Returns null when the merge cannot form a
- * valid link — e.g. a prUrl-only patch arriving before any launch was recorded,
- * which we drop rather than persist a half-formed link.
+ * Pick which PR the agent actually opened from the URLs scraped out of its reply.
+ * When the launch recorded a repo, keep only PRs in that repo and take the last
+ * mention (the PR it just opened tends to follow any it merely references) — and
+ * if none match, attach nothing rather than mislink a referenced PR. With no
+ * launch repo (git lookup failed), fall back to the last PR mentioned.
  */
-function mergeAgentLink(
-  existing: RemoteAgentLink | undefined,
-  patch: Partial<RemoteAgentLink>,
-): RemoteAgentLink | null {
-  const merged = { ...(existing ?? {}), ...patch }
-  if (
-    typeof merged.provider !== 'string' ||
-    typeof merged.agentId !== 'string' ||
-    typeof merged.createdAt !== 'number'
-  ) {
-    return null
-  }
-  return merged as RemoteAgentLink
+function pickPrUrlForRepo(refs: GithubPrRef[], repo: string | undefined): string | undefined {
+  const candidates = repo ? refs.filter((r) => `${r.owner}/${r.repo}` === repo) : refs
+  const chosen = candidates.length > 0 ? candidates[candidates.length - 1] : undefined
+  return chosen ? canonicalPrUrl(chosen) : undefined
 }
 
 // --- Public API (mirrors the former thread-persistence surface) -------------
@@ -401,32 +420,59 @@ export function getThreadMeta(projectId: string, threadId: string): Promise<Thre
 }
 
 /**
- * Merge `patch` into the thread's `remoteAgentLink` and keep the reverse index
- * in step — atomically, on the same per-project queue as every other meta write
- * so a concurrent renderer reconcile can't clobber it. Used to record the launch
- * (provider/agentId/runId/branch/repo/createdAt) and later attach the `prUrl`.
+ * Record the launch link on a thread, replacing any prior one — a fresh launch
+ * supersedes the previous run, so its stale reverse-index entries are dropped
+ * (the new link has no `prUrl` yet; {@link attachThreadPrUrl} fills it in). Runs
+ * on the same per-project queue as every other meta write so a concurrent
+ * renderer reconcile can't clobber it.
  */
-export function upsertThreadAgentLink(
+export function recordThreadAgentLink(
   projectId: string,
   threadId: string,
-  patch: Partial<RemoteAgentLink>,
+  link: RemoteAgentLink,
 ): Promise<void> {
   return runSerialized(queueKey(projectId), () => {
     const dir = threadDir(projectId, threadId)
     const current = readMeta(dir)
     // Only patch an existing thread; the renderer writes the initial meta.json.
     if (current === null) return
-    const merged = mergeAgentLink(current.remoteAgentLink, patch)
-    if (merged === null) return
+    const nextMeta: ThreadMeta = { ...current, remoteAgentLink: { ...link }, id: threadId }
+    writeFileSync(join(dir, META_FILE), `${JSON.stringify(nextMeta)}\n`)
+    const index = loadOrRebuildAgentPrIndex(projectId)
+    let changed = removeThreadFromIndex(index, threadId)
+    if (link.prUrl) {
+      indexAgentLink(index, threadId, link)
+      changed = true
+    }
+    if (changed) writeAgentPrIndex(projectId, index)
+  })
+}
+
+/**
+ * Attach the PR the agent opened, chosen from the URLs scraped out of its reply.
+ * Write-once: it no-ops unless a launch was recorded and no PR is linked yet, so
+ * a follow-up turn that mentions another PR can't repoint the link. See
+ * {@link pickPrUrlForRepo} for how the PR is selected.
+ */
+export function attachThreadPrUrl(
+  projectId: string,
+  threadId: string,
+  refs: GithubPrRef[],
+): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    if (refs.length === 0) return
+    const dir = threadDir(projectId, threadId)
+    const current = readMeta(dir)
+    const link = current?.remoteAgentLink
+    if (!current || !link || link.prUrl) return
+    const prUrl = pickPrUrlForRepo(refs, link.repo)
+    if (!prUrl) return
+    const merged: RemoteAgentLink = { ...link, prUrl }
     const nextMeta: ThreadMeta = { ...current, remoteAgentLink: merged, id: threadId }
     writeFileSync(join(dir, META_FILE), `${JSON.stringify(nextMeta)}\n`)
-    if (merged.prUrl) {
-      const index = existsSync(agentPrIndexPath(projectId))
-        ? readAgentPrIndex(projectId)
-        : rebuildAgentPrIndexInner(projectId)
-      indexAgentLink(index, threadId, merged)
-      writeAgentPrIndex(projectId, index)
-    }
+    const index = loadOrRebuildAgentPrIndex(projectId)
+    indexAgentLink(index, threadId, merged)
+    writeAgentPrIndex(projectId, index)
   })
 }
 
@@ -438,10 +484,7 @@ export function lookupThreadByPrUrl(
   return runSerialized(queueKey(projectId), () => {
     const key = remoteAgentPrIndexKey(prUrl)
     if (!key) return null
-    const index = existsSync(agentPrIndexPath(projectId))
-      ? readAgentPrIndex(projectId)
-      : rebuildAgentPrIndexInner(projectId)
-    return index.get(key) ?? null
+    return loadOrRebuildAgentPrIndex(projectId).get(key) ?? null
   })
 }
 
@@ -452,12 +495,9 @@ export function rebuildAgentPrIndex(projectId: string): Promise<RemoteAgentPrInd
 
 /** Every `prUrl → thread` link for a project, rebuilding the index if absent. */
 export function listAgentPrLinks(projectId: string): Promise<RemoteAgentPrIndexEntry[]> {
-  return runSerialized(queueKey(projectId), () => {
-    const index = existsSync(agentPrIndexPath(projectId))
-      ? readAgentPrIndex(projectId)
-      : rebuildAgentPrIndexInner(projectId)
-    return [...index.values()]
-  })
+  return runSerialized(queueKey(projectId), () => [
+    ...loadOrRebuildAgentPrIndex(projectId).values(),
+  ])
 }
 
 export function loadProjectThreads(projectId: string): Promise<Thread[]> {
@@ -552,6 +592,12 @@ export function deleteProjectThread(projectId: string, threadId: string): Promis
     rmSync(threadDir(projectId, threadId), { recursive: true, force: true })
     const entries = readCatalog(projectId)
     if (entries.delete(threadId)) writeCatalog(projectId, entries)
+    // Drop the thread's reverse-index entries too, so a deleted thread can't
+    // keep badging a PR / offering an "open thread" jump to a ghost thread.
+    if (existsSync(agentPrIndexPath(projectId))) {
+      const index = readAgentPrIndex(projectId)
+      if (removeThreadFromIndex(index, threadId)) writeAgentPrIndex(projectId, index)
+    }
   })
 }
 

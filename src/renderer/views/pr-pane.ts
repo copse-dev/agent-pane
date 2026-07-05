@@ -7,8 +7,8 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { GhCliStatus, GhPrChecksState, GhPrDetails, GhPrSummary } from '@shared/types/git.ts'
 import { getActiveThread, switchThread } from '@shared/store/thread-helpers.ts'
 import { at } from '@shared/array-utils.ts'
-import { extractGithubPrUrls, githubPrKey, parseGithubPrUrl } from '@shared/git/github-pr-url.ts'
-import type { RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
+import { extractGithubPrUrls, githubPrKey } from '@shared/git/github-pr-url.ts'
+import { remoteAgentPrIndexKey, type RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { sanitizeRenderedMarkdown } from '@copse/streaming-markdown'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
@@ -49,8 +49,8 @@ function indexAgentLinksByPrKey(
 ): Map<string, RemoteAgentPrIndexEntry> {
   const map = new Map<string, RemoteAgentPrIndexEntry>()
   for (const entry of entries) {
-    const ref = parseGithubPrUrl(entry.prUrl)
-    if (ref) map.set(githubPrKey(ref), entry)
+    const key = remoteAgentPrIndexKey(entry.prUrl)
+    if (key) map.set(key, entry)
   }
   return map
 }
@@ -143,6 +143,9 @@ export function mountPrPane(
   let ghStatus: GhCliStatus | null = null
   // Agent-owned PRs in this project (issue #690), keyed by `owner/repo#number`.
   let agentLinks = new Map<string, RemoteAgentPrIndexEntry>()
+  // Invalidates an in-flight agentPrLinks fetch across a refresh / workspace
+  // switch, so a late resolve can't repopulate the map for the wrong workspace.
+  let agentLinksGen = 0
   let linkedRefs: PrRef[] = []
   let myPrs: GhPrSummary[] = []
   let workspacePrs: GhPrSummary[] = []
@@ -604,9 +607,11 @@ export function mountPrPane(
   }
 
   async function refresh(): Promise<void> {
+    const gen = ++agentLinksGen
     ghStatus = await api.gh.status()
     // Agent ownership is local (no gh needed), so load it regardless of gh auth.
-    agentLinks = indexAgentLinksByPrKey(await api.gh.agentPrLinks().catch(() => []))
+    const entries = await api.gh.agentPrLinks().catch(() => [] as RemoteAgentPrIndexEntry[])
+    if (gen === agentLinksGen) agentLinks = indexAgentLinksByPrKey(entries)
     linkedRefs = collectLinkedPrs(store)
     resetOther()
     if (!ghStatus.installed || !ghStatus.authenticated) {
@@ -675,6 +680,7 @@ export function mountPrPane(
       workspacePrs = []
       prList = []
       agentLinks = new Map()
+      agentLinksGen++
       resetOther()
       if (prsModeActive(store)) void refresh()
       else renderList()
@@ -685,10 +691,13 @@ export function mountPrPane(
       prList = mergePrLists(linkedRefs, [workspacePrs, myPrs])
       renderList()
       // A run that just finished may have recorded a new agent↔PR link; pick it
-      // up so the badge appears without waiting for a manual refresh.
+      // up so the badge appears without waiting for a manual refresh. Guard the
+      // async result against a workspace switch that lands while it's in flight.
+      const gen = agentLinksGen
       void api.gh
         .agentPrLinks()
         .then((entries) => {
+          if (gen !== agentLinksGen) return
           agentLinks = indexAgentLinksByPrKey(entries)
           renderList()
         })

@@ -3,14 +3,21 @@ import type { RemoteAgentLink, RemoteAgentPrIndexEntry } from '@shared/remote-ag
 import { extractGithubPrUrls } from '@shared/git/github-pr-url.ts'
 import { getActiveProjectId } from '../workspace.ts'
 import { getCurrentBranchName } from '../github/git-service.ts'
-import { listAgentPrLinks, lookupThreadByPrUrl, upsertThreadAgentLink } from '../thread-store.ts'
+import {
+  attachThreadPrUrl,
+  listAgentPrLinks,
+  lookupThreadByPrUrl,
+  recordThreadAgentLink,
+} from '../thread-store.ts'
 import { parseGithubOwnerRepo, resolveRemoteAgentRepository } from './remote-agent-shared.ts'
 
 /**
  * Records the `agent-run ↔ PR ↔ thread` link on the launching thread (issue
- * #690, Q6). The remote-agent clients only carry a `threadId`, so the active
- * project is resolved here; everything is best-effort and swallows errors — a
- * failed link write must never break an agent turn.
+ * #690, Q6). The launching project is captured by the caller at run start and
+ * passed in — resolving it lazily at completion would misroute the link if the
+ * user switched projects mid-run. Everything is best-effort and swallows every
+ * error (including the lookups before the write): a failed link write must never
+ * break an agent turn that has already launched a cloud agent.
  */
 
 async function resolveRepoSlug(): Promise<string | undefined> {
@@ -34,49 +41,50 @@ async function resolveBranch(): Promise<string | undefined> {
 
 /**
  * Persist the launch-time link when a cloud agent is first created for a thread.
- * `branch`/`repo` are resolved from the active project. Awaited by the caller so
- * the link exists before a later {@link attachRemoteAgentPrFromText} for the same
- * turn (both hop the same per-project write queue, preserving order).
+ * `branch`/`repo` are resolved from the launching project. Awaited by the caller
+ * so the link exists before a later {@link attachRemoteAgentPrFromText} for the
+ * same turn (both hop the same per-project write queue, preserving order).
  */
 export async function recordRemoteAgentLaunch(input: {
+  projectId: string | null
   threadId: string
   provider: RemoteAgentProvider
   agentId: string
   runId?: string
   createdAt: number
 }): Promise<void> {
-  const projectId = getActiveProjectId()
-  if (!projectId) return
-  const [branch, repo] = await Promise.all([resolveBranch(), resolveRepoSlug()])
-  const link: RemoteAgentLink = {
-    provider: input.provider,
-    agentId: input.agentId,
-    ...(input.runId ? { runId: input.runId } : {}),
-    ...(branch ? { branch } : {}),
-    ...(repo ? { repo } : {}),
-    createdAt: input.createdAt,
-  }
+  if (!input.projectId) return
   try {
-    await upsertThreadAgentLink(projectId, input.threadId, link)
+    const [branch, repo] = await Promise.all([resolveBranch(), resolveRepoSlug()])
+    const link: RemoteAgentLink = {
+      provider: input.provider,
+      agentId: input.agentId,
+      ...(input.runId ? { runId: input.runId } : {}),
+      ...(branch ? { branch } : {}),
+      ...(repo ? { repo } : {}),
+      createdAt: input.createdAt,
+    }
+    await recordThreadAgentLink(input.projectId, input.threadId, link)
   } catch (err) {
     console.warn('[remote-agent-link] launch record failed:', err)
   }
 }
 
 /**
- * Attach the PR URL to a thread's link once the agent's output reveals it (the
- * PR the run opened surfaces only in the streamed reply). No-op when the text
- * carries no PR URL or no launch was recorded for the thread.
+ * Attach the PR the agent opened once its reply reveals it. Write-once and
+ * repo-filtered (see thread-store `attachThreadPrUrl`), so a reply that also
+ * references an unrelated PR — or a follow-up turn — can't repoint the link.
  */
-export async function attachRemoteAgentPrFromText(threadId: string, text: string): Promise<void> {
-  if (!text) return
-  const refs = extractGithubPrUrls(text)
-  const prUrl = refs[0]?.url
-  if (!prUrl) return
-  const projectId = getActiveProjectId()
-  if (!projectId) return
+export async function attachRemoteAgentPrFromText(
+  projectId: string | null,
+  threadId: string,
+  text: string,
+): Promise<void> {
+  if (!projectId || !text) return
   try {
-    await upsertThreadAgentLink(projectId, threadId, { prUrl })
+    const refs = extractGithubPrUrls(text)
+    if (refs.length === 0) return
+    await attachThreadPrUrl(projectId, threadId, refs)
   } catch (err) {
     console.warn('[remote-agent-link] PR attach failed:', err)
   }

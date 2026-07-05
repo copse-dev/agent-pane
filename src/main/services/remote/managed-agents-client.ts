@@ -27,6 +27,7 @@ import {
 import { getSetting, resolveApiKey } from '../storage/settings.ts'
 import { validateRemoteAgentBaseUrl } from '../security/web-origin-policy.ts'
 import { getCurrentBranchName } from '../github/git-service.ts'
+import { getActiveProjectId } from '../workspace.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
 import {
   parseGithubOwnerRepo,
@@ -411,6 +412,10 @@ export async function runManagedAgentFromSettings(
     throw new Error('Claude Agent prompt cannot be empty.')
   }
 
+  // Capture the launching project up front: a long remote run can outlast a
+  // project switch, and the link/PR must land on the project it started in.
+  const launchProjectId = getActiveProjectId()
+
   const priorSession = readSession(options.threadId)
   const canReuse =
     priorSession?.provider === REMOTE_AGENT_PROVIDER_ANTHROPIC && priorSession.baseUrl === baseUrl
@@ -475,8 +480,9 @@ export async function runManagedAgentFromSettings(
 
   // Record the durable agent-run ↔ thread link on a fresh session (issue #690,
   // Q6); follow-ups reuse the same agent, and the PR is attached from the reply.
-  if (!priorSession || !canReuse) {
+  if (!canReuse) {
     await recordRemoteAgentLaunch({
+      projectId: launchProjectId,
       threadId: options.threadId,
       provider: REMOTE_AGENT_PROVIDER_ANTHROPIC,
       agentId: session.agentId,
@@ -548,7 +554,7 @@ export async function runManagedAgentFromSettings(
       terminalStatus ? { type: 'done', stopReason: terminalStatus } : { type: 'done' },
     )
     // Fold the PR the agent opened (surfaced in its reply) into the link/index.
-    await attachRemoteAgentPrFromText(options.threadId, assistantText)
+    await attachRemoteAgentPrFromText(launchProjectId, options.threadId, assistantText)
     return {
       assistantText,
       inputTokens: deltaInput,

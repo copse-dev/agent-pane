@@ -18,6 +18,7 @@ import {
 import { getApiKey, getSetting } from '../storage/settings.ts'
 import { validateRemoteAgentBaseUrl } from '../security/web-origin-policy.ts'
 import { getCurrentBranchName } from '../github/git-service.ts'
+import { getActiveProjectId } from '../workspace.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
 import { clearManagedAgentSession, runManagedAgentFromSettings } from './managed-agents-client.ts'
 import {
@@ -547,6 +548,10 @@ export async function runRemoteAgentFromSettings(
     throw new Error('Remote agent prompt cannot be empty.')
   }
 
+  // Capture the launching project up front: a long remote run can outlast a
+  // project switch, and the link/PR must land on the project it started in.
+  const launchProjectId = getActiveProjectId()
+
   const priorSession = readSession(options.threadId)
   const canReuseSession =
     priorSession?.provider === options.provider && priorSession.baseUrl === baseUrl
@@ -583,6 +588,7 @@ export async function runRemoteAgentFromSettings(
   // opens is attached from the reply below.
   if (!canReuseSession) {
     await recordRemoteAgentLaunch({
+      projectId: launchProjectId,
       threadId: options.threadId,
       provider: options.provider,
       agentId: run.agentId,
@@ -662,7 +668,7 @@ export async function runRemoteAgentFromSettings(
     )
     const assistantText = state.assistantText || state.resultText
     // Once the reply reveals the PR the agent opened, fold it into the link/index.
-    await attachRemoteAgentPrFromText(options.threadId, assistantText)
+    await attachRemoteAgentPrFromText(launchProjectId, options.threadId, assistantText)
     return {
       assistantText,
       inputTokens: usage.inputTokens,

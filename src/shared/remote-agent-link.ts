@@ -37,9 +37,10 @@ export interface RemoteAgentPrIndexEntry {
 
 /**
  * Stable key for the `prUrl → thread` reverse index (`owner/repo#number`), or
- * null when the string is not a recognizable GitHub PR URL. Normalizing to the
- * canonical key means the same PR indexed via slightly different URLs (trailing
- * slash, `/files` suffix stripped upstream) collapses to one entry.
+ * null when the string is not a recognizable GitHub PR URL. The key is derived
+ * from owner/repo/number, so the same PR referenced by slightly different URLs
+ * (trailing slash, a `/files` or `/commits` sub-tab suffix) collapses to one
+ * entry.
  */
 export function remoteAgentPrIndexKey(prUrl: string): string | null {
   const ref = parseGithubPrUrl(prUrl)

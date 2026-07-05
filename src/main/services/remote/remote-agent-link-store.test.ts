@@ -45,6 +45,7 @@ describe('remote-agent-link-store', () => {
   it('records a launch link then attaches the PR scraped from the reply', async () => {
     await createThread('proj-1', thread('t1'))
     await recordRemoteAgentLaunch({
+      projectId: 'proj-1',
       threadId: 't1',
       provider: 'cursor',
       agentId: 'agent-1',
@@ -63,6 +64,7 @@ describe('remote-agent-link-store', () => {
     assert.equal(launched.prUrl, undefined)
 
     await attachRemoteAgentPrFromText(
+      'proj-1',
       't1',
       'Opened the PR: https://github.com/copse-dev/agent-pane/pull/99 — take a look.',
     )
@@ -72,6 +74,7 @@ describe('remote-agent-link-store', () => {
     assert.ok(linked)
     assert.equal(linked.prUrl, 'https://github.com/copse-dev/agent-pane/pull/99')
 
+    // findThreadForPrUrl resolves the active project (set in beforeEach).
     const hit = await findThreadForPrUrl('https://github.com/copse-dev/agent-pane/pull/99')
     assert.deepEqual(hit, {
       prUrl: 'https://github.com/copse-dev/agent-pane/pull/99',
@@ -84,12 +87,13 @@ describe('remote-agent-link-store', () => {
   it('attach is a no-op when the reply carries no PR URL', async () => {
     await createThread('proj-1', thread('t1'))
     await recordRemoteAgentLaunch({
+      projectId: 'proj-1',
       threadId: 't1',
       provider: 'anthropic',
       agentId: 'a',
       createdAt: 1,
     })
-    await attachRemoteAgentPrFromText('t1', 'no links here, just prose')
+    await attachRemoteAgentPrFromText('proj-1', 't1', 'no links here, just prose')
     const meta = await getThreadMeta('proj-1', 't1')
     assert.ok(meta)
     const link = meta.remoteAgentLink
@@ -97,10 +101,10 @@ describe('remote-agent-link-store', () => {
     assert.equal(link.prUrl, undefined)
   })
 
-  it('does nothing when no project is active', async () => {
-    storageSet('activeProjectId', null)
+  it('does nothing when the launching project is null', async () => {
     await createThread('proj-1', thread('t1'))
     await recordRemoteAgentLaunch({
+      projectId: null,
       threadId: 't1',
       provider: 'cursor',
       agentId: 'a',

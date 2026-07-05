@@ -14,11 +14,18 @@ import {
   appendMessage,
   updateMeta,
   getThreadMeta,
-  upsertThreadAgentLink,
+  recordThreadAgentLink,
+  attachThreadPrUrl,
   lookupThreadByPrUrl,
   rebuildAgentPrIndex,
   listAgentPrLinks,
 } from './thread-store.ts'
+import { parseGithubPrUrl, type GithubPrRef } from '@shared/git/github-pr-url.ts'
+
+/** Build PR refs from URL strings, matching what the link store feeds attach. */
+function prRefs(...urls: string[]): GithubPrRef[] {
+  return urls.map(parseGithubPrUrl).filter((r): r is GithubPrRef => r !== null)
+}
 
 function thread(id: string, overrides: Partial<Thread> = {}): Thread {
   return {
@@ -294,46 +301,43 @@ describe('thread-store agent-run ↔ PR link (issue #690, Q6)', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
+  const CURSOR_LAUNCH = {
+    provider: 'cursor' as const,
+    agentId: 'agent-1',
+    runId: 'run-1',
+    branch: 'claude/feature',
+    repo: 'o/r',
+    createdAt: 123,
+  }
+
   it('records a launch link on an existing thread and reads it back', async () => {
     await createThread('proj-1', thread('t1'))
-    await upsertThreadAgentLink('proj-1', 't1', {
-      provider: 'cursor',
-      agentId: 'agent-1',
-      runId: 'run-1',
-      branch: 'claude/feature',
-      repo: 'copse-dev/agent-pane',
-      createdAt: 123,
-    })
+    await recordThreadAgentLink('proj-1', 't1', CURSOR_LAUNCH)
     const meta = await getThreadMeta('proj-1', 't1')
     assert.ok(meta)
-    assert.deepEqual(meta.remoteAgentLink, {
-      provider: 'cursor',
-      agentId: 'agent-1',
-      runId: 'run-1',
-      branch: 'claude/feature',
-      repo: 'copse-dev/agent-pane',
-      createdAt: 123,
-    })
+    assert.deepEqual(meta.remoteAgentLink, CURSOR_LAUNCH)
   })
 
-  it('attaching a prUrl folds into the link and the reverse index', async () => {
+  it('attaches the PR (canonical url) into the link and the reverse index', async () => {
     await createThread('proj-1', thread('t1'))
-    await upsertThreadAgentLink('proj-1', 't1', {
+    await recordThreadAgentLink('proj-1', 't1', {
       provider: 'anthropic',
       agentId: 'agent-1',
+      repo: 'copse-dev/agent-pane',
       createdAt: 1,
     })
-    await upsertThreadAgentLink('proj-1', 't1', {
-      prUrl: 'https://github.com/copse-dev/agent-pane/pull/42',
-    })
+    await attachThreadPrUrl(
+      'proj-1',
+      't1',
+      prRefs('https://github.com/copse-dev/agent-pane/pull/42'),
+    )
 
     const meta = await getThreadMeta('proj-1', 't1')
     assert.ok(meta)
     const link = meta.remoteAgentLink
     assert.ok(link)
     assert.equal(link.prUrl, 'https://github.com/copse-dev/agent-pane/pull/42')
-    // Launch identity survives the prUrl patch.
-    assert.equal(link.agentId, 'agent-1')
+    assert.equal(link.agentId, 'agent-1') // launch identity survives
 
     const hit = await lookupThreadByPrUrl(
       'proj-1',
@@ -349,51 +353,123 @@ describe('thread-store agent-run ↔ PR link (issue #690, Q6)', () => {
 
   it('resolves the index by canonical key regardless of URL trailing slash', async () => {
     await createThread('proj-1', thread('t1'))
-    await upsertThreadAgentLink('proj-1', 't1', {
-      provider: 'cursor',
-      agentId: 'a',
-      prUrl: 'https://github.com/o/r/pull/7',
-      createdAt: 1,
-    })
+    await recordThreadAgentLink('proj-1', 't1', CURSOR_LAUNCH)
+    await attachThreadPrUrl('proj-1', 't1', prRefs('https://github.com/o/r/pull/7'))
     const hit = await lookupThreadByPrUrl('proj-1', 'https://github.com/o/r/pull/7/')
     assert.equal(hit?.threadId, 't1')
   })
 
-  it('drops a prUrl patch that arrives before any launch was recorded', async () => {
+  it('links a PR whose url points at a sub-tab (/files)', async () => {
     await createThread('proj-1', thread('t1'))
-    await upsertThreadAgentLink('proj-1', 't1', {
-      prUrl: 'https://github.com/o/r/pull/1',
-    })
+    await recordThreadAgentLink('proj-1', 't1', CURSOR_LAUNCH)
+    await attachThreadPrUrl('proj-1', 't1', prRefs('https://github.com/o/r/pull/99/files'))
+    const meta = await getThreadMeta('proj-1', 't1')
+    // Canonical url stored, /files stripped; still resolvable via the base url.
+    assert.equal(meta?.remoteAgentLink?.prUrl, 'https://github.com/o/r/pull/99')
+    assert.equal(
+      (await lookupThreadByPrUrl('proj-1', 'https://github.com/o/r/pull/99'))?.threadId,
+      't1',
+    )
+  })
+
+  it('picks the launch-repo PR, not a referenced one mentioned first', async () => {
+    await createThread('proj-1', thread('t1'))
+    await recordThreadAgentLink('proj-1', 't1', CURSOR_LAUNCH) // repo 'o/r'
+    await attachThreadPrUrl(
+      'proj-1',
+      't1',
+      // The agent references another repo's PR before naming its own.
+      prRefs('https://github.com/other/x/pull/5', 'https://github.com/o/r/pull/9'),
+    )
+    assert.equal(
+      (await getThreadMeta('proj-1', 't1'))?.remoteAgentLink?.prUrl,
+      'https://github.com/o/r/pull/9',
+    )
+  })
+
+  it('attaches nothing when no scraped PR is in the launch repo', async () => {
+    await createThread('proj-1', thread('t1'))
+    await recordThreadAgentLink('proj-1', 't1', CURSOR_LAUNCH) // repo 'o/r'
+    await attachThreadPrUrl('proj-1', 't1', prRefs('https://github.com/other/x/pull/5'))
+    assert.equal((await getThreadMeta('proj-1', 't1'))?.remoteAgentLink?.prUrl, undefined)
+  })
+
+  it('falls back to the last PR when the launch recorded no repo', async () => {
+    await createThread('proj-1', thread('t1'))
+    await recordThreadAgentLink('proj-1', 't1', { provider: 'cursor', agentId: 'a', createdAt: 1 })
+    await attachThreadPrUrl(
+      'proj-1',
+      't1',
+      prRefs('https://github.com/a/b/pull/1', 'https://github.com/c/d/pull/2'),
+    )
+    assert.equal(
+      (await getThreadMeta('proj-1', 't1'))?.remoteAgentLink?.prUrl,
+      'https://github.com/c/d/pull/2',
+    )
+  })
+
+  it('is write-once: a follow-up PR does not repoint the link or leave a dangling index entry', async () => {
+    await createThread('proj-1', thread('t1'))
+    await recordThreadAgentLink('proj-1', 't1', CURSOR_LAUNCH)
+    await attachThreadPrUrl('proj-1', 't1', prRefs('https://github.com/o/r/pull/1'))
+    await attachThreadPrUrl('proj-1', 't1', prRefs('https://github.com/o/r/pull/2'))
+    assert.equal(
+      (await getThreadMeta('proj-1', 't1'))?.remoteAgentLink?.prUrl,
+      'https://github.com/o/r/pull/1',
+    )
+    // The superseding PR was ignored, so the index maps only the first PR.
+    const links = await listAgentPrLinks('proj-1')
+    assert.deepEqual(
+      links.map((l) => l.prUrl),
+      ['https://github.com/o/r/pull/1'],
+    )
+    assert.equal(await lookupThreadByPrUrl('proj-1', 'https://github.com/o/r/pull/2'), null)
+  })
+
+  it('a fresh launch supersedes the prior PR and drops its index entry', async () => {
+    await createThread('proj-1', thread('t1'))
+    await recordThreadAgentLink('proj-1', 't1', CURSOR_LAUNCH)
+    await attachThreadPrUrl('proj-1', 't1', prRefs('https://github.com/o/r/pull/1'))
+    // Re-launch a new agent on the same thread.
+    await recordThreadAgentLink('proj-1', 't1', { ...CURSOR_LAUNCH, agentId: 'agent-2' })
+    const link = (await getThreadMeta('proj-1', 't1'))?.remoteAgentLink
+    assert.ok(link)
+    assert.equal(link.agentId, 'agent-2')
+    assert.equal(link.prUrl, undefined)
+    assert.equal(await lookupThreadByPrUrl('proj-1', 'https://github.com/o/r/pull/1'), null)
+    assert.deepEqual(await listAgentPrLinks('proj-1'), [])
+  })
+
+  it('attach before any launch is a no-op', async () => {
+    await createThread('proj-1', thread('t1'))
+    await attachThreadPrUrl('proj-1', 't1', prRefs('https://github.com/o/r/pull/1'))
     const meta = await getThreadMeta('proj-1', 't1')
     assert.ok(meta)
     assert.equal(meta.remoteAgentLink, undefined)
     assert.equal(await lookupThreadByPrUrl('proj-1', 'https://github.com/o/r/pull/1'), null)
   })
 
-  it('upsert on a never-created thread is a no-op', async () => {
-    await upsertThreadAgentLink('proj-1', 'ghost', {
-      provider: 'cursor',
-      agentId: 'a',
-      createdAt: 1,
-    })
+  it('record on a never-created thread is a no-op', async () => {
+    await recordThreadAgentLink('proj-1', 'ghost', CURSOR_LAUNCH)
     assert.deepEqual(await loadProjectThreads('proj-1'), [])
+  })
+
+  it('deleting a thread prunes its reverse-index entry', async () => {
+    await createThread('proj-1', thread('t1'))
+    await recordThreadAgentLink('proj-1', 't1', CURSOR_LAUNCH)
+    await attachThreadPrUrl('proj-1', 't1', prRefs('https://github.com/o/r/pull/1'))
+    await deleteProjectThread('proj-1', 't1')
+    assert.equal(await lookupThreadByPrUrl('proj-1', 'https://github.com/o/r/pull/1'), null)
+    assert.deepEqual(await listAgentPrLinks('proj-1'), [])
   })
 
   it('rebuilds the reverse index from thread metas', async () => {
     await createThread('proj-1', thread('t1'))
     await createThread('proj-1', thread('t2'))
-    await upsertThreadAgentLink('proj-1', 't1', {
-      provider: 'cursor',
-      agentId: 'a1',
-      prUrl: 'https://github.com/o/r/pull/1',
-      createdAt: 1,
-    })
-    await upsertThreadAgentLink('proj-1', 't2', {
-      provider: 'anthropic',
-      agentId: 'a2',
-      prUrl: 'https://github.com/o/r/pull/2',
-      createdAt: 2,
-    })
+    await recordThreadAgentLink('proj-1', 't1', CURSOR_LAUNCH)
+    await attachThreadPrUrl('proj-1', 't1', prRefs('https://github.com/o/r/pull/1'))
+    await recordThreadAgentLink('proj-1', 't2', { ...CURSOR_LAUNCH, agentId: 'a2' })
+    await attachThreadPrUrl('proj-1', 't2', prRefs('https://github.com/o/r/pull/2'))
 
     const rebuilt = await rebuildAgentPrIndex('proj-1')
     assert.equal(rebuilt.length, 2)
@@ -405,19 +481,11 @@ describe('thread-store agent-run ↔ PR link (issue #690, Q6)', () => {
 
   it('listAgentPrLinks returns every linked PR, rebuilding when the index is absent', async () => {
     await createThread('proj-1', thread('t1'))
-    await upsertThreadAgentLink('proj-1', 't1', {
-      provider: 'cursor',
-      agentId: 'a1',
-      prUrl: 'https://github.com/o/r/pull/1',
-      createdAt: 1,
-    })
+    await recordThreadAgentLink('proj-1', 't1', CURSOR_LAUNCH)
+    await attachThreadPrUrl('proj-1', 't1', prRefs('https://github.com/o/r/pull/1'))
     // A thread with a launch link but no PR yet must not appear in the index.
     await createThread('proj-1', thread('t2'))
-    await upsertThreadAgentLink('proj-1', 't2', {
-      provider: 'anthropic',
-      agentId: 'a2',
-      createdAt: 2,
-    })
+    await recordThreadAgentLink('proj-1', 't2', { ...CURSOR_LAUNCH, agentId: 'a2', repo: 'o/r' })
     // Drop the derived index; listAgentPrLinks must rebuild it from the metas.
     rmSync(join(root, 'proj-1', 'agent-pr-index.jsonl'), { force: true })
 
@@ -426,7 +494,7 @@ describe('thread-store agent-run ↔ PR link (issue #690, Q6)', () => {
       {
         prUrl: 'https://github.com/o/r/pull/1',
         threadId: 't1',
-        agentId: 'a1',
+        agentId: 'agent-1',
         provider: 'cursor',
       },
     ])
@@ -434,17 +502,11 @@ describe('thread-store agent-run ↔ PR link (issue #690, Q6)', () => {
 
   it('link survives an unrelated updateMeta patch (no clobber)', async () => {
     await createThread('proj-1', thread('t1'))
-    await upsertThreadAgentLink('proj-1', 't1', {
-      provider: 'cursor',
-      agentId: 'a',
-      createdAt: 1,
-    })
+    await recordThreadAgentLink('proj-1', 't1', CURSOR_LAUNCH)
     await updateMeta('proj-1', 't1', { title: 'renamed' })
     const meta = await getThreadMeta('proj-1', 't1')
     assert.ok(meta)
     assert.equal(meta.title, 'renamed')
-    const link = meta.remoteAgentLink
-    assert.ok(link)
-    assert.equal(link.agentId, 'a')
+    assert.equal(meta.remoteAgentLink?.agentId, 'agent-1')
   })
 })
