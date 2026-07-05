@@ -45,7 +45,9 @@ dialog.settings-overlay::backdrop {
 .settings-header h2 {
   font-size: var(--font-size-sm);
   font-weight: 600;
-  color: var(--text-secondary);
+  /* The window's one title shouldn't sit in the secondary tier — it reads
+     as disabled against the elevated titlebar. */
+  color: var(--text-primary);
   line-height: var(--titlebar-height);
 }
 .settings-close-btn {
@@ -93,6 +95,8 @@ dialog.settings-overlay::backdrop {
   background: var(--bg-hover);
   color: var(--text-primary);
   font-weight: 600;
+  /* Distinguish "selected" from mere hover, which shares the same fill. */
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 .settings-content {
   flex: 1;

@@ -247,15 +247,18 @@
   width: min(720px, calc(100% - 2 * var(--spacing-lg)));
   transform: translate(-50%, -50%);
   border-top: none;
-  border-radius: var(--radius);
-  box-shadow: 0 0 0 1px var(--border);
+  border-radius: var(--radius-lg);
+  /* Floats over the chat gradient: keep the hairline ring, add real depth. */
+  box-shadow:
+    0 0 0 1px var(--border),
+    var(--shadow-lg);
 }
 .pane-chat.composer-centered .prompt-input {
   border-top: none;
-  border-radius: var(--radius) var(--radius) 0 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 .pane-chat.composer-centered .input-footer {
-  border-radius: 0 0 var(--radius) var(--radius);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
 .conversation {
   flex: 1 1 0;

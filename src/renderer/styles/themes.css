@@ -3,15 +3,49 @@
   --bg-base: #1e1e1e;
   --bg-elevated: #252526;
   --bg-hover: #2a2d2e;
-  --text-primary: #cccccc;
-  --border: #3c3c3c;
+  --bg-muted: #2d2d2d;
+  --bg-subtle: #232324;
+  --text-primary: #d4d4d4;
+  --text-secondary: #a6a6a6;
+  --text-muted: #808080;
+  --border: #414141;
+  --border-subtle: #333333;
+  --border-strong: #565656;
+  --link: #58a6ff;
+  --link-hover: #79b8ff;
+  --error: #f48771;
+  --danger: #f14c4c;
+  --success: #4ec9b0;
+  --warning: #cca700;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.5);
+  --shadow-composer: 0 -8px 28px rgba(0, 0, 0, 0.22);
 }
 [data-theme='light'] {
   color-scheme: light;
   --bg-base: #ffffff;
   --bg-elevated: #f3f3f3;
   --bg-hover: #e8e8e8;
+  --bg-muted: #ececec;
+  --bg-subtle: #f7f7f7;
+  /* The dark-theme greys read as low-contrast smudges on white — every text
+     tier and the status colours need their own light values. */
   --text-primary: #333333;
-  --border: #e0e0e0;
+  --text-secondary: #5f5f5f;
+  --text-muted: #767676;
+  --border: #d4d4d4;
+  --border-subtle: #e4e4e4;
+  --border-strong: #ababab;
   --bg-active: #0060c0;
+  --link: #0969da;
+  --link-hover: #0550ae;
+  --error: #cf222e;
+  --danger: #cf222e;
+  --success: #1a7f37;
+  --warning: #9a6700;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.14);
+  --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.2);
+  --shadow-composer: 0 -8px 28px rgba(0, 0, 0, 0.08);
 }
