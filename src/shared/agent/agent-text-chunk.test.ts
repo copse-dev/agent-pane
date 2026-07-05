@@ -41,6 +41,126 @@ describe('planAgentTextChunk', () => {
     })
   })
 
+  it('keeps a mid-sentence fragment in one bubble when a tool interrupts', () => {
+    // "I" streamed, then a tool call, then "'ve kicked off…" resumes the sentence.
+    const { plan } = planAgentTextChunk(
+      { msgId: 'msg-1', toolSinceText: true, currentText: 'I' },
+      "'ve kicked off the build",
+    )
+    assert.deepEqual(plan, {
+      action: 'append',
+      text: "'ve kicked off the build",
+      startNewMessage: false,
+    })
+  })
+
+  it('appends a lowercase continuation after a mid-sentence tool call', () => {
+    const { plan } = planAgentTextChunk(
+      { msgId: 'msg-1', toolSinceText: true, currentText: 'Let me check the' },
+      ' file now.',
+    )
+    assert.deepEqual(plan, {
+      action: 'append',
+      text: ' file now.',
+      startNewMessage: false,
+    })
+  })
+
+  it('starts a new bubble when a fresh capitalized sentence follows tool calls', () => {
+    const { plan } = planAgentTextChunk(
+      { msgId: 'msg-1', toolSinceText: true, currentText: 'Let me check the file.' },
+      'The build succeeded.',
+    )
+    assert.deepEqual(plan, {
+      action: 'append',
+      text: 'The build succeeded.',
+      finalizeMsgId: 'msg-1',
+      startNewMessage: true,
+    })
+  })
+
+  it('starts a new bubble when prior text ended with terminal punctuation', () => {
+    // Even though the incoming chunk is a lowercase continuation char, the prior
+    // text ended at a sentence boundary, so this is a genuine fresh answer.
+    const { plan } = planAgentTextChunk(
+      { msgId: 'msg-1', toolSinceText: true, currentText: 'All done.' },
+      'and more',
+    )
+    assert.deepEqual(plan, {
+      action: 'append',
+      text: 'and more',
+      finalizeMsgId: 'msg-1',
+      startNewMessage: true,
+    })
+  })
+
+  it('starts a new bubble when prior text ended with a question mark', () => {
+    const { plan } = planAgentTextChunk(
+      { msgId: 'msg-1', toolSinceText: true, currentText: 'Ready?' },
+      'yes',
+    )
+    assert.deepEqual(plan, {
+      action: 'append',
+      text: 'yes',
+      finalizeMsgId: 'msg-1',
+      startNewMessage: true,
+    })
+  })
+
+  it('starts a new bubble when prior text ended with a trailing newline', () => {
+    const { plan } = planAgentTextChunk(
+      { msgId: 'msg-1', toolSinceText: true, currentText: 'A list item\n' },
+      'and another',
+    )
+    assert.deepEqual(plan, {
+      action: 'append',
+      text: 'and another',
+      finalizeMsgId: 'msg-1',
+      startNewMessage: true,
+    })
+  })
+
+  it('starts a new bubble when the continuation begins with an uppercase letter', () => {
+    const { plan } = planAgentTextChunk(
+      { msgId: 'msg-1', toolSinceText: true, currentText: 'checking' },
+      'Result ready',
+    )
+    assert.deepEqual(plan, {
+      action: 'append',
+      text: 'Result ready',
+      finalizeMsgId: 'msg-1',
+      startNewMessage: true,
+    })
+  })
+
+  it('appends when the continuation begins with a comma', () => {
+    const { plan } = planAgentTextChunk(
+      { msgId: 'msg-1', toolSinceText: true, currentText: 'Running the tests' },
+      ', which pass.',
+    )
+    assert.deepEqual(plan, {
+      action: 'append',
+      text: ', which pass.',
+      startNewMessage: false,
+    })
+  })
+
+  it('threads currentText through the returned state on append', () => {
+    const { state } = planAgentTextChunk(
+      { msgId: 'msg-1', toolSinceText: false, currentText: 'Hello' },
+      ' world',
+    )
+    assert.equal(state.currentText, 'Hello world')
+  })
+
+  it('resets currentText to the chunk when a new message begins', () => {
+    const { state } = planAgentTextChunk(
+      { msgId: 'msg-1', toolSinceText: true, currentText: 'All done.' },
+      'Fresh sentence.',
+    )
+    assert.equal(state.currentText, 'Fresh sentence.')
+  })
+
   it('preserves newline-only deltas during active streaming', () => {
     let state: AgentTextChunkState = { msgId: 'msg-1', toolSinceText: false }
     const chunks = ['## Title', '\n', '- item one', '\n', '- item two']
