@@ -190,7 +190,9 @@ function setAssistantMarkdown(
 }
 
 function createSubagentMessageEl(content: string, streaming: boolean, api: ApiClient): HTMLElement {
-  const textEl = el('div', { class: 'subagent-message subagent-message-assistant message-text streaming-markdown' })
+  const textEl = el('div', {
+    class: 'subagent-message subagent-message-assistant message-text streaming-markdown',
+  })
   setAssistantMarkdown(textEl, content, streaming, api)
   return textEl
 }
@@ -231,7 +233,9 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
   }
 
   if (preview && status !== 'running') {
-    const previewEl = el('div', { class: 'subagent-summary-preview message-text streaming-markdown' })
+    const previewEl = el('div', {
+      class: 'subagent-summary-preview message-text streaming-markdown',
+    })
     setAssistantMarkdown(previewEl, summaryPreview(preview), false, api)
     card.append(previewEl)
   }
@@ -262,7 +266,8 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
 
   if (tc.result && status === 'done') {
     const resultEl = el('div', {
-      class: 'subagent-parent-result subagent-message subagent-message-assistant message-text streaming-markdown',
+      class:
+        'subagent-parent-result subagent-message subagent-message-assistant message-text streaming-markdown',
     })
     setAssistantMarkdown(resultEl, tc.result, false, api)
     card.append(resultEl)
