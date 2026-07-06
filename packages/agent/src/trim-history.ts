@@ -1,4 +1,4 @@
-import type { LLMMessage, UserContent } from '@shared/types'
+import type { LLMMessage, UserContent } from '@copse/llm/wire-types.ts'
 
 /** Flat estimate per image block (avoids counting base64 at ~4 chars/token). */
 export const ESTIMATED_IMAGE_TOKENS = 1600

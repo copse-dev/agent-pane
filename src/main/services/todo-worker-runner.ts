@@ -1,4 +1,4 @@
-import { runAgentLoop } from '@shared/agent/run-agent-loop.ts'
+import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
 import type { LLMMessage, LLMProvider, LLMTool, StreamChunk } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
 import type { ToolRegistry } from './tool-registry.ts'

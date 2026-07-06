@@ -24,13 +24,14 @@ import {
   zPathString,
   zProjectId,
 } from './ipc-guards.ts'
-import { buildIndex, getIndex } from '../services/search/file-index.ts'
+import { getIndex, whenFileIndexReady } from '../services/search/file-index.ts'
 import { resolveFileReferences } from '../services/search/file-reference-resolver.ts'
-import { ensureSemanticIndex } from '../services/search/semantic-index.ts'
 import {
-  scheduleIndexRebuild,
-  startWorkspaceIndexWatcher,
-} from '../services/search/workspace-index-watcher.ts'
+  getWorkspaceIndexStatus,
+  onWorkspaceIndexStatusChanged,
+} from '../services/search/index-status.ts'
+import { startWorkspaceIndexing } from '../services/search/workspace-indexing.ts'
+import { scheduleIndexRebuild } from '../services/search/workspace-index-watcher.ts'
 import { getSetting, setSetting, hasApiKey, setApiKey } from '../services/storage/settings.ts'
 import { scanEnvForKeys, maskSecret } from '../services/providers/env-key-detection.ts'
 import {
@@ -165,9 +166,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (result.canceled || !result.filePaths[0]) return null
     const root = registerAllowedWorkspaceRoot(result.filePaths[0])
     setWorkspaceRoot(root)
-    await buildIndex(root)
-    void ensureSemanticIndex(root)
-    startWorkspaceIndexWatcher(root)
+    // Scheduled, not awaited — index builds must not block the renderer's
+    // swap to the full layout; the footer indicator reports progress.
+    startWorkspaceIndexing(root)
     await initSkillsRegistry()
     registerSkillTools(registry)
     return root
@@ -180,9 +181,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     seedAllowedWorkspaceRoots(projects.map((p) => p.path))
     const canonical = assertAllowedWorkspaceRoot(root)
     setWorkspaceRoot(canonical)
-    await buildIndex(canonical)
-    void ensureSemanticIndex(canonical)
-    startWorkspaceIndexWatcher(canonical)
+    startWorkspaceIndexing(canonical)
     await initSkillsRegistry()
     registerSkillTools(registry)
     return canonical
@@ -222,21 +221,32 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       .sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1))
   })
 
-  ipcMain.handle('index:query', (event, pattern: unknown) => {
+  ipcMain.handle('index:query', async (event, pattern: unknown) => {
     assertMainFrameSender(event, win)
     if (pattern !== undefined && typeof pattern !== 'string') {
       throw new IpcValidationError('Index query pattern must be a string')
     }
     const query = typeof pattern === 'string' ? pattern : ''
     if (query && !isIndexQueryPattern(query)) return []
+    await whenFileIndexReady()
     const idx = getIndex()
     if (!idx) return []
     return query ? micromatch(idx.paths, `**/*${query}*`).slice(0, 20) : idx.paths.slice(0, 20)
   })
 
-  ipcMain.handle('index:resolveFileReferences', (event, rawCandidates: unknown) => {
+  ipcMain.handle('index:status', (event) => {
+    assertMainFrameSender(event, win)
+    return getWorkspaceIndexStatus()
+  })
+
+  onWorkspaceIndexStatusChanged((status) => {
+    if (!win.isDestroyed()) win.webContents.send('index:status_changed', status)
+  })
+
+  ipcMain.handle('index:resolveFileReferences', async (event, rawCandidates: unknown) => {
     assertMainFrameSender(event, win)
     const candidates = parseIpcArgs(z.array(z.string().min(1).max(4096)).max(200), [rawCandidates])
+    await whenFileIndexReady()
     return resolveFileReferences(candidates)
   })
 

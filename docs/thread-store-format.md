@@ -4,7 +4,7 @@ Filesystem-native chat store introduced in [#644](https://github.com/jonathanKin
 Each thread is a self-contained directory, so a past conversation can be
 explored with the ordinary read tools (`read_file`, `list_dir`, `search_code`,
 `explore`). This format is a **stable-ish contract**: the `@`-thread steering
-preamble ([`build-text-with-attachments.ts`](../src/shared/agent/build-text-with-attachments.ts))
+preamble ([`build-text-with-attachments.ts`](../packages/agent/src/build-text-with-attachments.ts))
 describes it to the agent, so changing the layout means updating that preamble.
 
 ## Location
