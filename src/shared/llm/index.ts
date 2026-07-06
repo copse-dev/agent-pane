@@ -7,9 +7,11 @@
 // stable specifier while the files move from `src/shared/llm/` to the package's
 // own `src/`. New app code should prefer `@shared/llm` over `@shared/llm/<file>`.
 
+// Wire types: the provider contract and the values that cross it.
+export * from './wire-types.ts'
+
 // Provider construction + the interface every provider implements.
 export * from './create-provider.ts'
-export type { LLMProvider } from './types.ts'
 
 // Model catalog, cost estimation, and usage-adjacent helpers.
 export * from './model-catalog.ts'

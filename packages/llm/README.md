@@ -35,21 +35,38 @@ surface is the `index.ts` barrel.
   `remote-agent.ts` re-exports it.)
 - **Clear API** — imported by ~30 files, all through `@shared/llm`.
 
-## The one remaining prerequisite before a real cutover
+## Wire types now travel with the module
 
-The module's wire types still live in the app-wide `@shared/types` barrel:
-`LLMMessage`, `LLMTool`, `StreamChunk`, `ThreadUsage`, `ModelUsage`. They must
-travel **with** the package (as `@copse/streaming-markdown` owned its own types)
-rather than stay in `@shared/types`, which is imported by 100+ files. Options:
+The prerequisite that used to block a clean cutover — the module's wire types
+living in the app-wide `@shared/types` barrel — is done. `src/shared/llm/wire-types.ts`
+now owns `LLMMessage` (+ `UserContent`/`ToolCallContent`/`ToolResult`), `LLMTool`,
+`ModelUsage`, `ThreadUsage`, `LLMProvider`, `ToolCallChunk`, and the provider
+output type `ProviderStreamChunk`. `@shared/types` re-exports every one of them,
+so the 100+ files importing these from `@shared/types` are unchanged (app →
+package, the direction extraction needs), and the whole `src/shared/llm/`
+module — source **and** tests — imports its types only from `./wire-types.ts`.
 
-1. Move those five types into this package and have the app import them from
-   `@copse/llm`; or
-2. Publish a thin `@copse/llm-types` (or shared `@copse/types`) that both depend
-   on.
+Two knots were untied to get there:
+
+- **`StreamChunk` was fat.** The app's `StreamChunk` carried orchestration
+  events providers never emit (`subagent_*`, `todo_*`, `context_*`,
+  `model_comparison`, `post_turn_review`, `text_replace`) and dragged in
+  `SubagentSession`, `ModelComparison`, `TodoItem`. The module now owns the
+  narrow `ProviderStreamChunk` (the six variants providers actually emit —
+  text/reasoning/tool_call/tool_result/usage/done); the app's `StreamChunk` is
+  `ProviderStreamChunk | <orchestration events>`. Because a provider stream is a
+  subset, it stays assignable to every `StreamChunk` sink. Narrowing the
+  `LLMProvider` contract surfaced two app-side test mocks that leaned on the fat
+  type — now corrected to the real provider contract.
+- **`LLMProvider` was duplicated** verbatim in `@shared/types/provider.ts` and
+  `src/shared/llm/types.ts`. Folded into one definition in `wire-types.ts`.
 
 ## Cutover checklist (mirrors PR #689 for streaming-markdown)
 
-1. Relocate the LLM wire types out of `@shared/types` (see above).
+1. ~~Relocate the LLM wire types out of `@shared/types`.~~ Done — they live in
+   `src/shared/llm/wire-types.ts` and `@shared/types` re-exports them. On the
+   physical move, the `@shared/types` re-export lines flip to point at
+   `@copse/llm`.
 2. Move `src/shared/llm/*` → `packages/llm/src/*`.
 3. Re-add `"workspaces": ["packages/*"]` to the root `package.json`; add the
    `@copse/llm` path alias to `tsconfig{,.node,.web}.json`,

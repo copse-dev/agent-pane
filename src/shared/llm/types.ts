@@ -1,5 +1,4 @@
-import type { LLMMessage, LLMTool, StreamChunk } from '@shared/types'
-
-export interface LLMProvider {
-  stream(messages: LLMMessage[], tools: LLMTool[], signal?: AbortSignal): AsyncIterable<StreamChunk>
-}
+// The provider contract now lives with the rest of the module's wire types in
+// ./wire-types.ts. Re-exported here so existing `./types.ts` importers within
+// the module are unchanged.
+export type { LLMProvider } from './wire-types.ts'

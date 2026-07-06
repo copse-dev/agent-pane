@@ -16,11 +16,9 @@ export function normalizeToolExecuteResult(value: ToolExecuteResult): {
   return value
 }
 
-export interface LLMTool {
-  name: string
-  description: string
-  parameters: Record<string, unknown> // JSON Schema object
-}
+// Owned by the LLM module (crosses the provider contract); re-exported here so
+// `@shared/types` consumers are unchanged.
+export type { LLMTool } from '@shared/llm/wire-types.ts'
 
 export interface ToolDefinition<TArgs = unknown> {
   name: string
