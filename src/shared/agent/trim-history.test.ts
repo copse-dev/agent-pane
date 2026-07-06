@@ -11,11 +11,71 @@ import {
   setLastMeasuredInputTokens,
   effectiveConversationTokens,
   estimateConversationTokens,
+  conversationTokenBudget,
 } from './trim-history.ts'
 
 beforeEach(() => {
   setLastMeasuredInputTokens(null)
 })
+
+// Faithful copy of the pre-#583 algorithm: it re-measures the WHOLE conversation
+// every iteration via effectiveConversationTokens. The precompute rewrite must
+// produce byte-identical results, so this acts as the behavioral oracle.
+type TrimOpts = {
+  reserveTokens?: number
+  minTailMessages?: number
+  completionReserveTokens?: number
+}
+
+function refContentStartIndex(messages: LLMMessage[]): number {
+  return messages[0]?.role === 'system' ? 1 : 0
+}
+
+function refDroppableSpan(messages: LLMMessage[], index: number): number {
+  const m = messages[index]
+  if (!m || m.role === 'user') return 0
+  if (m.role === 'tool') {
+    const prev = messages[index - 1]
+    if (prev?.role === 'assistant' && Array.isArray(prev.content)) return 0
+    return 1
+  }
+  if (m.role === 'assistant' && Array.isArray(m.content)) {
+    const next = messages[index + 1]
+    if (next?.role === 'tool') return 2
+  }
+  return 1
+}
+
+function refFindOldestDroppableIndex(messages: LLMMessage[], minTail: number): number {
+  const start = refContentStartIndex(messages)
+  for (let i = start; i < messages.length; i++) {
+    if (messages[i]?.role === 'user') continue
+    const span = refDroppableSpan(messages, i)
+    if (span === 0) continue
+    if (messages.length - span < minTail) return -1
+    return i
+  }
+  return -1
+}
+
+function refTrimMessagesInPlace(
+  messages: LLMMessage[],
+  maxContextTokens: number,
+  opts?: TrimOpts,
+): boolean {
+  const minTail = opts?.minTailMessages ?? 5
+  const conversationBudget = conversationTokenBudget(messages, maxContextTokens, opts)
+  let trimmed = false
+  repairToolUseToolResultPairing(messages)
+  while (messages.length > minTail && effectiveConversationTokens(messages) > conversationBudget) {
+    const dropIndex = refFindOldestDroppableIndex(messages, minTail)
+    if (dropIndex < 0) break
+    const span = refDroppableSpan(messages, dropIndex)
+    messages.splice(dropIndex, span)
+    trimmed = true
+  }
+  return trimmed
+}
 
 describe('historyTokenBudget', () => {
   it('uses most of the context window minus tool and completion reserve', () => {
@@ -188,5 +248,128 @@ describe('effectiveConversationTokens', () => {
     const messages: LLMMessage[] = [{ role: 'user', content: 'short' }]
     setLastMeasuredInputTokens(75_000)
     assert.equal(effectiveConversationTokens(messages), 75_000)
+  })
+})
+
+describe('trimMessagesInPlace precompute (#583)', () => {
+  function assistantToolPair(idBase: string, size: number): LLMMessage[] {
+    return [
+      { role: 'assistant', content: [{ id: idBase, name: 'read_file', args: { n: idBase } }] },
+      { role: 'tool', toolResults: [{ toolCallId: idBase, result: 'r'.repeat(size) }] },
+    ]
+  }
+
+  function imageMessage(pixels: number): LLMMessage {
+    return {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'look at this' },
+        { type: 'image', dataUrl: 'data:image/png;base64,' + 'A'.repeat(pixels) },
+      ],
+    }
+  }
+
+  const fixtures = {
+    plainText: (): LLMMessage[] => [
+      { role: 'system', content: 'you are helpful' },
+      { role: 'user', content: 'q1 '.repeat(50) },
+      { role: 'assistant', content: 'a1 '.repeat(50) },
+      { role: 'user', content: 'q2 '.repeat(50) },
+      { role: 'assistant', content: 'a2 '.repeat(50) },
+      { role: 'user', content: 'q3 '.repeat(50) },
+      { role: 'assistant', content: 'a3 '.repeat(50) },
+    ],
+    withToolPairs: (): LLMMessage[] => [
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: 'do stuff' },
+      ...assistantToolPair('t1', 400),
+      { role: 'assistant', content: 'thinking '.repeat(80) },
+      ...assistantToolPair('t2', 400),
+      { role: 'user', content: 'more' },
+      { role: 'assistant', content: 'done '.repeat(80) },
+    ],
+    withImages: (): LLMMessage[] => [
+      { role: 'system', content: 'sys' },
+      imageMessage(30_000),
+      { role: 'assistant', content: 'a '.repeat(60) },
+      imageMessage(30_000),
+      { role: 'assistant', content: 'b '.repeat(60) },
+      { role: 'user', content: 'final question' },
+      { role: 'assistant', content: 'c '.repeat(60) },
+    ],
+    noSystemPrompt: (): LLMMessage[] => [
+      { role: 'user', content: 'hello '.repeat(40) },
+      { role: 'assistant', content: 'world '.repeat(40) },
+      { role: 'user', content: 'again '.repeat(40) },
+      { role: 'assistant', content: 'reply '.repeat(40) },
+      { role: 'user', content: 'more '.repeat(40) },
+      { role: 'assistant', content: 'ok '.repeat(40) },
+    ],
+    danglingToolUse: (): LLMMessage[] => [
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: 'go' },
+      { role: 'assistant', content: [{ id: 'x1', name: 'ls', args: {} }] },
+      { role: 'assistant', content: 'summary '.repeat(70) },
+      { role: 'user', content: 'thanks' },
+      { role: 'assistant', content: 'welcome '.repeat(70) },
+    ],
+  }
+
+  const budgets = [30, 80, 150, 400, 1_000, 5_000]
+  const tailSizes = [2, 3, 5]
+
+  for (const [name, build] of Object.entries(fixtures)) {
+    for (const budget of budgets) {
+      for (const minTailMessages of tailSizes) {
+        it(`matches the recompute oracle: ${name} budget=${String(budget)} minTail=${String(minTailMessages)}`, () => {
+          const opts = { reserveTokens: 0, completionReserveTokens: 0, minTailMessages }
+          const actual = build()
+          const expected = build()
+          const actualTrimmed = trimMessagesInPlace(actual, budget, opts)
+          const expectedTrimmed = refTrimMessagesInPlace(expected, budget, opts)
+          assert.equal(actualTrimmed, expectedTrimmed)
+          assert.equal(JSON.stringify(actual), JSON.stringify(expected))
+        })
+      }
+    }
+  }
+
+  it('stops once a full recompute confirms the survivors fit (no drift from subtraction)', () => {
+    // After trimming, the surviving conversation measured by a fresh full-array
+    // recompute must fit the budget, unless nothing droppable remains — proving the
+    // running subtraction never let the loop stop early or trim one message too many.
+    const messages = fixtures.plainText()
+    const opts = { reserveTokens: 0, completionReserveTokens: 0, minTailMessages: 3 }
+    trimMessagesInPlace(messages, 120, opts)
+    const recomputed = estimateConversationTokens(messages)
+    const budget = conversationTokenBudget(messages, 120, opts)
+    const noneDroppable = refFindOldestDroppableIndex(messages, opts.minTailMessages) < 0
+    assert.ok(recomputed <= budget || noneDroppable)
+  })
+
+  it('measured input tokens stay constant across drops (does not use precompute total)', () => {
+    // With a measured size far above budget, trimming must proceed down to minTail
+    // exactly as the pre-#583 code did, ignoring per-message estimates entirely.
+    const withMeasured = fixtures.plainText()
+    const withoutMeasured = fixtures.plainText()
+    setLastMeasuredInputTokens(500_000)
+    const trimmedMeasured = trimMessagesInPlace(withMeasured, 1_000, {
+      reserveTokens: 0,
+      completionReserveTokens: 0,
+      minTailMessages: 3,
+    })
+    setLastMeasuredInputTokens(500_000)
+    const refMeasured = refTrimMessagesInPlace(withoutMeasured, 1_000, {
+      reserveTokens: 0,
+      completionReserveTokens: 0,
+      minTailMessages: 3,
+    })
+    setLastMeasuredInputTokens(null)
+    assert.equal(trimmedMeasured, refMeasured)
+    assert.equal(JSON.stringify(withMeasured), JSON.stringify(withoutMeasured))
+    // The constant measured size never shrinks, so trimming drops every droppable
+    // message it can rather than stopping once a shrinking estimate fit the budget.
+    assert.ok(withMeasured.length < fixtures.plainText().length)
+    assert.equal(refFindOldestDroppableIndex(withMeasured, 3), -1)
   })
 })
