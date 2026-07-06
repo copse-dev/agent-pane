@@ -17,7 +17,9 @@ permissions:
 
 jobs:
   sync:
-    runs-on: ubuntu-latest
+    # CHECKS_RUNNER routes to the self-hosted check fleet when set (see
+    # ci.yml's routing note); hosted otherwise. Scheduled, trusted-main only.
+    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v6.0.3
 
