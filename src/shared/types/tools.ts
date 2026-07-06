@@ -18,7 +18,7 @@ export function normalizeToolExecuteResult(value: ToolExecuteResult): {
 
 // Owned by the LLM module (crosses the provider contract); re-exported here so
 // `@shared/types` consumers are unchanged.
-export type { LLMTool } from '@shared/llm/wire-types.ts'
+export type { LLMTool } from '@copse/llm/wire-types.ts'
 
 export interface ToolDefinition<TArgs = unknown> {
   name: string

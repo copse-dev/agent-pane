@@ -1,11 +1,11 @@
-// Public API surface of the LLM module — the single entry point the rest of the
-// app should import from, and the barrel that becomes `@copse/llm`'s `exports["."]`
-// when this module is extracted to a standalone package (see ./README.md).
+// Full public API surface of `@copse/llm` — this barrel is the package's
+// `exports["."]` entry (bare `@copse/llm`).
 //
-// Importing through this barrel (rather than deep-reaching into individual files)
-// is what lets the extraction be a mechanical cutover later: consumers keep a
-// stable specifier while the files move from `src/shared/llm/` to the package's
-// own `src/`. New app code should prefer `@shared/llm` over `@shared/llm/<file>`.
+// Note: in-repo consumers deep-import granular subpaths (`@copse/llm/model-catalog`,
+// `@copse/llm/extra-providers`, …) rather than this barrel, deliberately — the
+// renderer imports only the pure, browser-safe modules, and a flat barrel would
+// drag the node-only provider SDKs (openai, @anthropic-ai/sdk) into its bundle.
+// The barrel remains the convenient all-in-one entry for node-side consumers.
 
 // Wire types: the provider contract and the values that cross it.
 export * from './wire-types.ts'

@@ -25,13 +25,7 @@ const SHARED = resolve(ROOT, 'src/shared')
 
 // Files that are deliberately not imported anywhere. Each needs a reason so the
 // next person knows it is intentional rather than forgotten dead code.
-const ALLOWED_UNLINKED: Record<string, string> = {
-  // Forward-looking public API barrel for the `@copse/llm` extraction. Consumers
-  // still deep-import (`@shared/llm/<file>`); this becomes the package entry
-  // point (`exports["."]`) on cutover, at which point it stops being unlinked.
-  // See packages/llm/README.md.
-  'src/shared/llm/index.ts': 'public API barrel for the pending @copse/llm extraction',
-}
+const ALLOWED_UNLINKED: Record<string, string> = {}
 
 const abs = (p: string): string => resolve(ROOT, p)
 const isModuleTs = (p: string): boolean => /\.(mts|cts|tsx|ts)$/.test(p) && !p.endsWith('.d.ts')

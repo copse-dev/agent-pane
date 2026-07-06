@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { at } from '@shared/array-utils.ts'
+import { at } from './internal-utils.ts'
 import type { ProviderStreamChunk } from './wire-types.ts'
 import { OpenAIProvider } from './openai-provider.ts'
 

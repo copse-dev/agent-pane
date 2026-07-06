@@ -6,7 +6,7 @@ import {
   validateOpenAiApiKey,
   validateOpenRouterApiKey,
 } from './validate-api-key.ts'
-import { BUILTIN_EXTRA_PROVIDERS, type ExtraProvider } from '@shared/llm/extra-providers.ts'
+import { BUILTIN_EXTRA_PROVIDERS, type ExtraProvider } from '@copse/llm/extra-providers.ts'
 
 const PRESET = (slug: string): ExtraProvider => {
   const preset = BUILTIN_EXTRA_PROVIDERS.find((p) => p.id === slug)

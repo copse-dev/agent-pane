@@ -8,7 +8,7 @@ import {
   REASONING_RUNAWAY_FORCE_ANSWER_NUDGE,
   REASONING_RUNAWAY_GIVEUP_MESSAGE,
   TRUNCATION_CONTINUE_NUDGE,
-} from '../llm/provider-stop-reason.ts'
+} from '@copse/llm/provider-stop-reason.ts'
 import type { LLMMessage, LLMProvider, ProviderStreamChunk, StreamChunk } from '@shared/types'
 
 function mockProvider(chunks: ProviderStreamChunk[][]): LLMProvider {

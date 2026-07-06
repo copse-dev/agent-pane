@@ -3,8 +3,8 @@ import type { TodoItem } from './todo.ts'
 // Token-usage types are owned by the LLM module (a provider reports usage across
 // the contract). Imported for use by the thread types below and re-exported so
 // `@shared/types` consumers are unchanged.
-import type { ModelUsage, ThreadUsage } from '@shared/llm/wire-types.ts'
-export type { ModelUsage, ThreadUsage } from '@shared/llm/wire-types.ts'
+import type { ModelUsage, ThreadUsage } from '@copse/llm/wire-types.ts'
+export type { ModelUsage, ThreadUsage } from '@copse/llm/wire-types.ts'
 
 export type ThreadStatus = 'idle' | 'running' | 'error'
 

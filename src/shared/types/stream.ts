@@ -2,12 +2,12 @@ import type { ModelComparison, ModelUsage, SubagentSession } from './thread.ts'
 import type { TodoItem } from './todo.ts'
 // The provider-emitted chunks are owned by the LLM module. The app's StreamChunk
 // is that narrow contract plus the agent-loop/orchestration events below.
-import type { ProviderStreamChunk, ToolCallChunk } from '@shared/llm/wire-types.ts'
+import type { ProviderStreamChunk, ToolCallChunk } from '@copse/llm/wire-types.ts'
 
 // `ProviderStreamChunk` (the narrow provider contract) and `ToolCallChunk` live
 // in the LLM module; re-exported here so app code can name the provider-level
 // output type (e.g. provider mocks) alongside the fat `StreamChunk`.
-export type { ProviderStreamChunk, ToolCallChunk } from '@shared/llm/wire-types.ts'
+export type { ProviderStreamChunk, ToolCallChunk } from '@copse/llm/wire-types.ts'
 
 /**
  * Everything that can flow through the app's single output stream. It is the

@@ -1,78 +1,69 @@
-# @copse/llm (extraction prototype)
+# @copse/llm
 
-This directory is a **scaffold**, not yet wired into the build. It sketches the
-package boundary for extracting the LLM client that currently lives in
-`src/shared/llm/`, following the same path the markdown renderer took:
-in-repo `packages/*` workspace → standalone repo consumed as a git dependency
-(`@copse/streaming-markdown`).
+A provider-agnostic LLM client, extracted from `src/shared/llm/` into an in-repo
+workspace package — the same staging step the markdown renderer took before it
+became the standalone `@copse/streaming-markdown` git dependency (PR #689).
 
-The working code still lives at `src/shared/llm/` and is imported through the
-`@shared/llm` barrel (`src/shared/llm/index.ts`). This `package.json` documents
-the target manifest — its name, entry point, and the only two runtime
-dependencies the module actually needs (`openai`, `@anthropic-ai/sdk`).
+The module's source now lives here (`packages/llm/src/`). App code imports it via
+the `@copse/llm/*` specifier, resolved by a tsconfig path alias + esbuild alias
+(the same mechanism `@shared` uses), so no `npm install` / workspace symlink is
+required in-repo. Runtime dependencies: `openai` and `@anthropic-ai/sdk`. The
+package imports **nothing** from the host app.
 
-## What the module is
+## What's in it
 
-A provider-agnostic LLM client, ~2,180 LOC across 18 files:
+~2,180 LOC:
 
 - **Provider adapters** — `anthropic-provider`, `openai-provider`, `openrouter`,
   `extra-providers` (OpenAI-compatible presets + user endpoints), `mock-provider`.
 - **Cross-cutting machinery** — `model-catalog`, `estimate-cost`,
   `redact-secrets` / `redacting-provider`, `stream-retry`, `parse-tool-args`,
   `provider-stop-reason`, `provider-slug`, `credential-url`, `reserved-prefixes`.
+- **Wire types** (`wire-types.ts`) — the provider contract and the values that
+  cross it: `LLMMessage` (+ `UserContent`/`ToolCallContent`/`ToolResult`),
+  `LLMTool`, `ModelUsage`, `ThreadUsage`, `LLMProvider`, `ToolCallChunk`, and the
+  provider output type `ProviderStreamChunk`. `@shared/types` re-exports every one
+  of these, so the 100+ app files importing them from `@shared/types` are
+  unchanged.
+- **`internal-utils.ts`** — vendored copies of the app's `at` / `errorMessage`
+  helpers, so the package pulls nothing from `@shared/*`.
 
-Every provider implements the `LLMProvider` interface (`types.ts`). The public
-surface is the `index.ts` barrel.
+## Imports: granular subpaths, not the barrel
 
-## Why it's a good extraction candidate
+`index.ts` is the full public API (`exports["."]`, bare `@copse/llm`), but app
+code deep-imports granular subpaths (`@copse/llm/model-catalog`,
+`@copse/llm/extra-providers`, …) — **deliberately**. The renderer imports only the
+pure, browser-safe modules (model catalog, extra-providers, provider-slug, …); a
+flat barrel would drag the node-only provider SDKs (`openai`,
+`@anthropic-ai/sdk`) into its bundle. Verified: a browser bundle of the
+renderer-side subpaths pulls in **zero** SDK modules.
 
-- **Cohesive and reusable** — a generic multi-provider client, useful outside
-  this app.
-- **Self-contained** — after the change that landed alongside this scaffold, it
-  has **zero upward imports** into app-specific code. (Previously
-  `extra-providers.ts` reached up into `../remote-agent.ts` for one constant;
-  that constant now lives in the module at `reserved-prefixes.ts`, and
-  `remote-agent.ts` re-exports it.)
-- **Clear API** — imported by ~30 files, all through `@shared/llm`.
+## Design decisions made during extraction
 
-## Wire types now travel with the module
+- **`StreamChunk` was fat.** The app's `StreamChunk` carried orchestration events
+  providers never emit (`subagent_*`, `todo_*`, `context_*`, `model_comparison`,
+  `post_turn_review`, `text_replace`) and dragged in `SubagentSession`,
+  `ModelComparison`, `TodoItem`. The package owns the narrow `ProviderStreamChunk`
+  (the six variants providers actually emit — text/reasoning/tool_call/tool_result/
+  usage/done); the app's `StreamChunk` is `ProviderStreamChunk | <orchestration
+events>`. Because a provider stream is a subset, it stays assignable to every
+  `StreamChunk` sink. Narrowing the `LLMProvider` contract surfaced two app-side
+  test mocks that leaned on the fat type — corrected to the real contract.
+- **`LLMProvider` was duplicated** verbatim in `@shared/types/provider.ts` and the
+  module's `types.ts`. Folded into one definition in `wire-types.ts`.
+- **The one upward import was severed.** `extra-providers.ts` used to reach into
+  `../remote-agent.ts` for `REMOTE_AGENT_MODEL_PREFIX`; that model-id constant now
+  lives in `reserved-prefixes.ts` and `remote-agent.ts` re-exports it.
 
-The prerequisite that used to block a clean cutover — the module's wire types
-living in the app-wide `@shared/types` barrel — is done. `src/shared/llm/wire-types.ts`
-now owns `LLMMessage` (+ `UserContent`/`ToolCallContent`/`ToolResult`), `LLMTool`,
-`ModelUsage`, `ThreadUsage`, `LLMProvider`, `ToolCallChunk`, and the provider
-output type `ProviderStreamChunk`. `@shared/types` re-exports every one of them,
-so the 100+ files importing these from `@shared/types` are unchanged (app →
-package, the direction extraction needs), and the whole `src/shared/llm/`
-module — source **and** tests — imports its types only from `./wire-types.ts`.
+## Remaining step for a true standalone repo
 
-Two knots were untied to get there:
+The only thing left to mirror PR #689 fully is lifting `packages/llm/` into its
+own repository and consuming it as a git/npm dependency. At that point:
 
-- **`StreamChunk` was fat.** The app's `StreamChunk` carried orchestration
-  events providers never emit (`subagent_*`, `todo_*`, `context_*`,
-  `model_comparison`, `post_turn_review`, `text_replace`) and dragged in
-  `SubagentSession`, `ModelComparison`, `TodoItem`. The module now owns the
-  narrow `ProviderStreamChunk` (the six variants providers actually emit —
-  text/reasoning/tool_call/tool_result/usage/done); the app's `StreamChunk` is
-  `ProviderStreamChunk | <orchestration events>`. Because a provider stream is a
-  subset, it stays assignable to every `StreamChunk` sink. Narrowing the
-  `LLMProvider` contract surfaced two app-side test mocks that leaned on the fat
-  type — now corrected to the real provider contract.
-- **`LLMProvider` was duplicated** verbatim in `@shared/types/provider.ts` and
-  `src/shared/llm/types.ts`. Folded into one definition in `wire-types.ts`.
+- flip the `@copse/llm/*` tsconfig-path + esbuild aliases to a real
+  `node_modules` resolution (add `"workspaces": ["packages/*"]`, or publish);
+- the `@shared/types` re-export lines already point at `@copse/llm` and need no
+  change.
 
-## Cutover checklist (mirrors PR #689 for streaming-markdown)
-
-1. ~~Relocate the LLM wire types out of `@shared/types`.~~ Done — they live in
-   `src/shared/llm/wire-types.ts` and `@shared/types` re-exports them. On the
-   physical move, the `@shared/types` re-export lines flip to point at
-   `@copse/llm`.
-2. Move `src/shared/llm/*` → `packages/llm/src/*`.
-3. Re-add `"workspaces": ["packages/*"]` to the root `package.json`; add the
-   `@copse/llm` path alias to `tsconfig{,.node,.web}.json`,
-   `scripts/build.mts`, and `scripts/run-tests.mts` (as `@shared` is aliased
-   today); include `packages/*` in `.c8rc.json`.
-4. Rewrite the ~30 `@shared/llm[...]` importers to the bare `@copse/llm`
-   specifier.
-5. Later, cut the in-repo workspace over to a standalone repo consumed as a git
-   dependency, exactly as PR #689 did for the markdown package.
+Everything else — the boundary, the self-containment, the type ownership, the
+bundling story — is done and enforced by the build.
