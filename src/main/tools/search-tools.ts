@@ -4,7 +4,7 @@ import { defineTool } from '@shared/types'
 import { resolveSearchText } from '@shared/agent/search-routing.ts'
 import { resolveReadablePath, getWorkspaceRoot } from '../services/workspace.ts'
 import { isRgAvailable } from '../services/tool-availability.ts'
-import { getIndex } from '../services/search/file-index.ts'
+import { getIndex, whenFileIndexReady } from '../services/search/file-index.ts'
 import { formatCodeSearchResults, searchCodeContent } from '../services/search/indexed-grep.ts'
 import { slowCodeSearch } from '../services/search/slow-code-search.ts'
 
@@ -79,7 +79,10 @@ export const findFilesTool = defineTool({
       .describe('Filename or glob. Examples: "*.ts", "package.json", "src/**/*service*"'),
     max_results: z.number().int().min(1).max(200).optional().default(50),
   }),
-  execute({ pattern, max_results }) {
+  async execute({ pattern, max_results }) {
+    // Workspace open schedules the index build without blocking — ride any
+    // in-flight build instead of failing during the boot window.
+    await whenFileIndexReady()
     const idx = getIndex()
     if (!idx) return 'File index not available. Try opening the workspace again.'
     // Take one extra so we can tell "exactly max_results total" from "more were dropped".
