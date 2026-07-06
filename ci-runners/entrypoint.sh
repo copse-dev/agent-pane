@@ -107,7 +107,16 @@ CONFIG_ARGS=(
 
 ./config.sh "${CONFIG_ARGS[@]}"
 
+# The runner is now registered (config.sh wrote .credentials). Scrub the
+# registration/build secrets so they are NOT inherited by the runner agent or by
+# any job step it spawns — otherwise every workflow that lands on this pool could
+# read them with a bare `env`. ACCESS_TOKEN (a long-lived org/repo PAT) and
+# BUILD_GH_TOKEN (build-time only) are removed from the whole process; the
+# short-lived RUNNER_TOKEN is only stripped from the runner's environment (via
+# `env -u`) while staying available to the deregister trap in this shell.
+unset ACCESS_TOKEN BUILD_GH_TOKEN
+
 # Run in the foreground so the container's lifecycle tracks the runner's. `wait`
 # lets the INT/TERM traps fire promptly for a clean deregister + restart.
-./run.sh &
+env -u RUNNER_TOKEN ./run.sh &
 wait $!
