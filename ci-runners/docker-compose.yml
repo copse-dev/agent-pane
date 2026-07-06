@@ -35,6 +35,10 @@ services:
     # Ephemeral runners exit after each job; `always` restarts a fresh, clean
     # container that re-registers. Per-job isolation for free.
     restart: always
+    # .env carries GITHUB_URL + the registration/build secrets (ACCESS_TOKEN,
+    # BUILD_GH_TOKEN). entrypoint.sh consumes ACCESS_TOKEN to register the runner,
+    # then unsets ACCESS_TOKEN/BUILD_GH_TOKEN (and strips RUNNER_TOKEN from the
+    # runner's env) BEFORE starting the agent, so job steps never inherit them.
     env_file: .env
     environment:
       EPHEMERAL: 'true'
