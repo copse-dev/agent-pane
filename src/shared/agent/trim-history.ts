@@ -191,10 +191,23 @@ export function trimMessagesInPlace(
 
   repairToolUseToolResultPairing(messages)
 
-  while (messages.length > minTail && effectiveConversationTokens(messages) > conversationBudget) {
+  // The provider-measured input size (#52) is a fixed snapshot of the previous
+  // request — it does NOT shrink as we splice messages out. Driving the loop
+  // directly off it would drop every droppable message down to `minTail` on the
+  // first pass once measured tokens cross the budget. Instead, track how much
+  // estimated content we remove and subtract it from the measured baseline so the
+  // loop stops as soon as the (approximate) remaining size fits. The estimate-only
+  // path (no measured value) keeps recomputing exactly as before.
+  const measured = lastMeasuredInputTokens
+  let removedEstimate = 0
+  const remainingTokens = (): number =>
+    measured != null ? measured - removedEstimate : estimateConversationTokens(messages)
+
+  while (messages.length > minTail && remainingTokens() > conversationBudget) {
     const dropIndex = findOldestDroppableIndex(messages, minTail)
     if (dropIndex < 0) break
     const span = droppableSpan(messages, dropIndex)
+    removedEstimate += estimateMessageTokens(messages.slice(dropIndex, dropIndex + span))
     messages.splice(dropIndex, span)
     trimmed = true
   }

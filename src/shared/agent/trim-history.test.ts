@@ -84,6 +84,39 @@ describe('trimMessagesInPlace', () => {
     assert.equal(messages.length, 2)
   })
 
+  it('does not collapse the whole history when measured tokens only slightly exceed budget (#52 regression)', () => {
+    // A long conversation, with the provider-measured input size roughly equal
+    // to the estimated content (the realistic case). When the budget sits just
+    // under that size, the trim must drop only the oldest few pairs it needs —
+    // not everything down to minTail. Before the fix, the loop read a fixed
+    // measured value that never shrank, so it collapsed the whole history.
+    const messages: LLMMessage[] = [{ role: 'system', content: 'sys' }]
+    for (let i = 0; i < 20; i++) {
+      messages.push({ role: 'user', content: 'q'.repeat(400) })
+      messages.push({ role: 'assistant', content: 'a'.repeat(400) })
+    }
+    const lengthBefore = messages.length
+
+    const estimated = estimateConversationTokens(messages)
+    setLastMeasuredInputTokens(Math.round(estimated))
+    // Budget ~10% under the measured size — a few pairs of headroom.
+    const maxContextTokens = Math.round(estimated * 0.9)
+
+    const trimmed = trimMessagesInPlace(messages, maxContextTokens, {
+      reserveTokens: 0,
+      minTailMessages: 5,
+      completionReserveTokens: 0,
+    })
+
+    assert.equal(trimmed, true)
+    // The regression would have left ~minTail (5-6) messages. The fix should
+    // keep the large majority, dropping only enough to get ~10% under budget.
+    assert.ok(
+      messages.length >= 25,
+      `expected a small trim, only ${String(messages.length)} of ${String(lengthBefore)} messages left`,
+    )
+  })
+
   it('drops assistant+tool pairs together when trimming', () => {
     const messages: LLMMessage[] = [
       { role: 'user', content: 'go' },
