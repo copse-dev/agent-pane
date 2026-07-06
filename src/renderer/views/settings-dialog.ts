@@ -9,7 +9,7 @@ import {
   isAppIconVariant,
   type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
-import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
+import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
 import { DEFAULT_ADVISOR_MODEL } from '../../main/services/advisor-strategy.ts'
 import {
   DEFAULT_COMPARISON_MODEL_B,

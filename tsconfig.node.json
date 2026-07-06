@@ -15,7 +15,9 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "paths": {
-      "@shared/*": ["./src/shared/*"]
+      "@shared/*": ["./src/shared/*"],
+      "@copse/llm": ["./packages/llm/src/index.ts"],
+      "@copse/llm/*": ["./packages/llm/src/*"]
     },
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
@@ -28,5 +30,11 @@
     "noUncheckedSideEffectImports": true,
     "erasableSyntaxOnly": true
   },
-  "include": ["src/main/**/*", "src/preload/**/*", "src/shared/**/*", "scripts/**/*"]
+  "include": [
+    "src/main/**/*",
+    "src/preload/**/*",
+    "src/shared/**/*",
+    "scripts/**/*",
+    "packages/llm/src/**/*"
+  ]
 }
