@@ -1,4 +1,4 @@
-import type { LLMMessage } from '@shared/types'
+import type { LLMMessage } from '@copse/llm/wire-types.ts'
 import { conversationTokenBudget, effectiveConversationTokens } from './trim-history.ts'
 
 export const SOFT_NUDGE_FILL_RATIO = 0.7
