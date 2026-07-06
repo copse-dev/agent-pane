@@ -50,6 +50,8 @@ import { MODEL_CLASSIFIER_ENABLED_SETTING } from './providers/model-classifier.t
 import { suggestModelTool } from '../tools/model-classifier-tool.ts'
 import { ADVISOR_STRATEGY_ENABLED_SETTING } from './advisor-strategy.ts'
 import { advisorTool } from '../tools/advisor-tool.ts'
+import { MODEL_COMPARISON_ENABLED_SETTING } from './model-comparison.ts'
+import { compareModelsTool } from '../tools/compare-models-tool.ts'
 import { ROADMAP_PLANS_ENABLED_SETTING, roadmapPlanTool } from '../tools/roadmap-tools.ts'
 import { BACKGROUND_TASKS_ENABLED_SETTING } from './exec/background-process.ts'
 import { runBackgroundTool } from '../tools/background-process-tool.ts'
@@ -121,6 +123,13 @@ export function createRegistry(): ToolRegistry {
   // on-device model. Shaped to match Claude's native advisor tool contract.
   if (getSetting<boolean>(ADVISOR_STRATEGY_ENABLED_SETTING, false)) {
     registry.register(advisorTool)
+  }
+  // Experimental model comparison harness (off by default). Adds a no-parameter
+  // `compare_models` tool that runs the working-diff review through two models
+  // plus a judge that compares their verdicts. While off, the tool is not
+  // registered (and the auto-on-review trigger is inert).
+  if (getSetting<boolean>(MODEL_COMPARISON_ENABLED_SETTING, false)) {
+    registry.register(compareModelsTool)
   }
   // Experimental roadmap plans (off by default, issue #556). Adds a roadmap_plan
   // tool that records future-work prompts and tracks their status across

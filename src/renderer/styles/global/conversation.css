@@ -199,9 +199,13 @@
 .message-body:hover:has(.code-block-shell:focus-within) .msg-copy {
   opacity: 0;
 }
+/* The user's own replies read as "yours" through a soft accent-tinted fill and
+   matching hairline — no hard left bar. It lifts off the chat gradient with a
+   faint shadow and rounds like the other panels. */
 .msg-user {
-  background: var(--bg-elevated);
-  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+  box-shadow: var(--shadow-sm);
 }
 .msg-assistant {
   background: transparent;
@@ -210,71 +214,32 @@
   background: rgba(244, 135, 113, 0.1);
   border-left: 3px solid var(--error);
 }
-.message-text {
-  white-space: normal;
-  word-break: break-word;
-  line-height: 1.55;
+/* Markdown content styling lives in @copse/streaming-markdown's default.css,
+   scoped under `.streaming-markdown` (added to every render sink). Map the
+   package's `--sm-*` knobs onto agent-pane's theme tokens so rendered markdown
+   tracks the active theme. Host-only chrome the package never emits — code/table
+   copy buttons, mermaid expand/zoom, artifact images — stays below. */
+.streaming-markdown {
+  --sm-space-xs: var(--spacing-xs);
+  --sm-space-sm: var(--spacing-sm);
+  --sm-space-md: var(--spacing-md);
+  --sm-radius: var(--radius);
+  --sm-font-mono: var(--font-mono);
+  --sm-font-size-sm: var(--font-size-sm);
+  --sm-fg-muted: var(--text-secondary);
+  --sm-border: var(--border);
+  --sm-accent: var(--accent);
+  --sm-link: var(--link);
+  --sm-code-bg: var(--bg-elevated);
+  --sm-error: var(--error);
 }
-.message-text strong {
-  font-weight: 600;
+/* Links inside rendered markdown follow the app's link tier (the package's
+   default keys them off its accent, which is too dim on the dark surfaces). */
+.streaming-markdown a {
+  color: var(--link);
 }
-.message-text p {
-  margin: 0;
-  white-space: pre-wrap;
-}
-.message-text h2,
-.message-text h3,
-.message-text h4,
-.message-text .stream-pending-h1,
-.message-text .stream-pending-h2,
-.message-text .stream-pending-h3,
-.message-text .stream-pending-h4 {
-  margin: var(--spacing-md) 0 var(--spacing-xs);
-  font-weight: 600;
-  line-height: 1.35;
-}
-.message-text > :first-child,
-.message-text h2:first-child,
-.message-text h3:first-child,
-.message-text h4:first-child {
-  margin-top: 0;
-}
-.message-text p + p,
-.message-text p + ul,
-.message-text p + ol,
-.message-text ul + p,
-.message-text ol + p,
-.message-text h2 + p,
-.message-text h3 + p,
-.message-text h4 + p,
-.message-text p + h2,
-.message-text p + h3,
-.message-text p + h4 {
-  margin-top: var(--spacing-sm);
-}
-.message-text ul,
-.message-text ol {
-  /* Global reset zeros list padding; restore a readable hanging indent. */
-  margin: var(--spacing-sm) 0;
-  padding-inline-start: 1.5em;
-  list-style-position: outside;
-  /* pre-wrap on .message-text would otherwise render source newlines between items. */
-  white-space: normal;
-}
-/* GFM task lists (#614): the checkbox is the marker, so drop the bullet and the
-   hanging indent. `li.task-list-item` also covers a task item mixed into an
-   otherwise-bulleted list. */
-.message-text ul.contains-task-list {
-  padding-inline-start: 0;
-  list-style: none;
-}
-.message-text li.task-list-item {
-  list-style: none;
-}
-.message-text li.task-list-item input[type='checkbox'] {
-  margin-inline-end: 0.45em;
-  vertical-align: middle;
-  cursor: default;
+.streaming-markdown a:hover {
+  color: var(--link-hover);
 }
 .message-text:empty {
   display: none;
@@ -296,89 +261,6 @@
   border: 1px solid var(--border);
   background: var(--bg-base);
 }
-.message-text .stream-pending {
-  white-space: pre-wrap;
-}
-
-.message-text .stream-pending.stream-pending-paragraph,
-.message-text p.stream-pending-paragraph {
-  display: block;
-  margin: 0;
-  white-space: pre-wrap;
-}
-
-.message-text li.stream-pending-list-item {
-  white-space: normal;
-}
-
-.message-text .stream-pending.stream-pending-list-continuation,
-.message-text span.stream-pending-list-continuation {
-  white-space: normal;
-}
-
-.message-text .stream-pending.stream-pending-heading,
-.message-text div.stream-pending-heading,
-.message-text p.stream-pending-heading {
-  display: block;
-  white-space: normal;
-}
-
-.message-text .stream-complete > .stream-pending-heading:first-child,
-.message-text .stream-pending-heading:first-child {
-  margin-top: 0;
-}
-
-.message-text .stream-pending-h1,
-.message-text .stream-pending-h2 {
-  font-size: 1.15em;
-}
-
-.message-text .stream-pending-h3 {
-  font-size: 1.05em;
-}
-
-.message-text .stream-pending-h4,
-.message-text .stream-pending-h5,
-.message-text .stream-pending-h6 {
-  font-size: 1em;
-}
-
-.message-text blockquote.stream-pending-blockquote {
-  /* Inherits .message-text blockquote chrome; keep paragraph spacing inside. */
-  margin: var(--spacing-sm) 0;
-}
-
-.message-text blockquote.stream-pending-blockquote p {
-  margin: 0;
-  white-space: pre-wrap;
-}
-
-.message-text .stream-complete > .stream-pending-block:last-child {
-  margin-top: var(--spacing-sm);
-}
-
-.message-text .stream-complete > h2 + .stream-pending-block,
-.message-text .stream-complete > h3 + .stream-pending-block,
-.message-text .stream-complete > h4 + .stream-pending-block {
-  margin-top: var(--spacing-sm);
-}
-
-.message-text code {
-  font-family: var(--font-mono);
-  background: var(--bg-elevated);
-  padding: 1px 4px;
-  border-radius: 2px;
-  font-size: var(--font-size-sm);
-}
-.message-text a {
-  color: var(--accent);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-.message-text a:hover {
-  opacity: 0.85;
-}
 .message-text .remote-artifact-image {
   display: block;
   max-width: 100%;
@@ -388,16 +270,6 @@
   border-radius: var(--radius);
   background: var(--bg-elevated);
   object-fit: contain;
-}
-.message-text pre {
-  background: var(--bg-elevated);
-  padding: var(--spacing-sm);
-  border-radius: var(--radius);
-  overflow-x: auto;
-  white-space: pre;
-}
-.message-text pre code {
-  white-space: pre;
 }
 .message-text .code-block-shell {
   position: relative;
@@ -427,10 +299,6 @@
   .code-block-shell:not(:focus-within):not(:hover)
   .code-block-copy {
   opacity: 0;
-}
-.message-text pre code {
-  background: none;
-  padding: 0;
 }
 /* GFM table copy control (#615): mirror the code-block hover affordance. The
    shell carries the table's block margin so wrapping causes no layout shift, and

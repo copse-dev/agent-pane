@@ -36,21 +36,37 @@ html {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
+/* Default link treatment. The UA blue/purple pair is illegible on the dark
+   surfaces and clashes with the accent; give every theme a link tier with
+   comfortable contrast. Component-specific link classes still win on
+   specificity. */
+a {
+  color: var(--link);
+  text-decoration-color: color-mix(in srgb, var(--link) 45%, transparent);
+  text-underline-offset: 2px;
+}
+a:hover {
+  color: var(--link-hover);
+  text-decoration-color: currentColor;
+}
 #app {
   display: flex;
   flex-direction: column;
   height: 100vh;
   position: relative;
 }
-/* Regions where copying text is intentional */
+/* Regions where copying text is intentional: text the user authors (inputs) and
+   agent/tool *content* — rendered markdown answers, reasoning, tool output, and
+   the terminal. Pure chrome (permission prompts, dialogs, labels) stays
+   non-selectable so drag-selecting content doesn't sweep up UI text. */
 input,
 textarea,
 select,
 [contenteditable='true'],
 .message-text,
+.message-reasoning-text,
 .tool-result,
 .tool-args pre,
-.approval-body,
 .terminal-container,
 .monaco-editor .view-lines {
   user-select: text;

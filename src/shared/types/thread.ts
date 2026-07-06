@@ -1,5 +1,10 @@
 import type { AgentRunPayload } from './skills.ts'
 import type { TodoItem } from './todo.ts'
+// Token-usage types are owned by the LLM module (a provider reports usage across
+// the contract). Imported for use by the thread types below and re-exported so
+// `@shared/types` consumers are unchanged.
+import type { ModelUsage, ThreadUsage } from '@copse/llm/wire-types.ts'
+export type { ModelUsage, ThreadUsage } from '@copse/llm/wire-types.ts'
 
 export type ThreadStatus = 'idle' | 'running' | 'error'
 
@@ -53,6 +58,28 @@ export interface ThreadReview {
   summary: string
 }
 
+/**
+ * Result of running the working-diff review through two models and a judge that
+ * compares their findings (the "model comparison harness"). `reviewA`/`reviewB`
+ * are each model's independent verdict; `synthesis` is the judge's comparison
+ * (agreements, disagreements, unique catches, overall recommendation).
+ */
+export interface ModelComparison {
+  status: 'running' | 'done' | 'error'
+  /** Model ids used for the two reviews (a, b) and the judge synthesis. */
+  models: { a: string; b: string; judge: string }
+  /** Verdict text from model A. */
+  reviewA: string
+  /** Verdict text from model B. */
+  reviewB: string
+  /** The judge's comparison of the two verdicts. */
+  synthesis: string
+  /** Human-readable cost estimate for the whole run (e.g. `~$0.04`). */
+  cost?: string
+  /** Populated when `status === 'error'`. */
+  error?: string
+}
+
 export interface Thread {
   id: string
   title: string
@@ -67,6 +94,8 @@ export interface Thread {
   todos?: TodoItem[]
   /** Latest post-turn review verdict produced after an editing turn. */
   review?: ThreadReview
+  /** Latest two-model comparison produced for an editing turn (auto or on demand). */
+  comparison?: ModelComparison
   /** Persisted parent/explore goal; set on the first user message in the thread. */
   workingBrief?: string
   /** Git branch this thread was started on; set on first message and persisted. */
@@ -163,34 +192,20 @@ export interface ToolCall {
   result: string | null
   /** Line add/delete counts for file edit tools (write_file, str_replace). */
   editStats?: { additions: number; deletions: number }
+  /**
+   * ACP tool-call `kind` (e.g. `'execute'`, `'read'`, `'search'`), carried from
+   * an external ACP agent so its cards group and label like the built-in tools
+   * (see `getToolGroupKey`). Absent for the built-in agent loop.
+   */
+  kind?: string
+  /**
+   * How to render `result`. External ACP agents author their tool output as
+   * Markdown (fenced code, lists, prose), so it renders through the same
+   * Markdown pipeline as assistant messages instead of a raw `<pre>`. Absent
+   * (plain text) for built-in tools, whose results are structured payloads.
+   */
+  resultFormat?: 'markdown'
   subagent?: SubagentSession
-}
-
-export interface ModelUsage {
-  inputTokens: number
-  outputTokens: number
-  /**
-   * Portion of `inputTokens` served from the provider prompt cache (Anthropic
-   * `cache_read_input_tokens`). Billed far cheaper than fresh input; absent for
-   * providers/usage that don't report cache stats.
-   */
-  cacheReadTokens?: number
-  /**
-   * Portion of `inputTokens` written to the provider prompt cache (Anthropic
-   * `cache_creation_input_tokens`).
-   */
-  cacheCreationTokens?: number
-}
-
-export interface ThreadUsage {
-  inputTokens: number
-  outputTokens: number
-  /** Cumulative cache-read tokens across the thread (subset of `inputTokens`). */
-  cacheReadTokens?: number
-  /** Cumulative cache-creation tokens across the thread (subset of `inputTokens`). */
-  cacheCreationTokens?: number
-  /** Token totals keyed by model id (e.g. claude-sonnet-4-6, lmstudio:qwen). */
-  byModel?: Record<string, ModelUsage>
 }
 
 export interface UsageDelta extends ModelUsage {

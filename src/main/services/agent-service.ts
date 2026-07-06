@@ -48,6 +48,11 @@ import { setExploreSubagentContext } from './explore-subagent-runner.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
 import { setCiInvestigatorContext } from './ci-investigator-runner.ts'
 import { setAdvisorContext, resolveAdvisorModelId } from './advisor-runner.ts'
+import {
+  runModelComparison,
+  setModelComparisonContext,
+  isAutoComparisonEnabled,
+} from './model-comparison-runner.ts'
 import { resetSubagentUsage, getAccumulatedSubagentUsage } from './subagent-usage.ts'
 import { setAgentRunTodoContext, clearAgentRunTodos, getAgentRunTodos } from './agent-run-todos.ts'
 import {
@@ -305,6 +310,9 @@ export async function runAgent(
 
     // Set when the turn runs any file-mutating tool, gating the post-turn review.
     let turnChangedFiles = false
+    // Set when the agent already ran a comparison via the `compare_models` tool
+    // this turn, so the auto-on-review trigger doesn't run a second (billable) one.
+    let comparisonRanThisTurn = false
     // The agent loop's terminal `done` chunk is held back until the post-turn
     // review finishes, so the thread doesn't flip to idle (and drain its queued
     // messages) while the review is still running.
@@ -526,6 +534,23 @@ export async function runAgent(
                 setAdvisorContext(null)
               }
             }
+            if (name === 'compare_models') {
+              // Manual trigger: run the two-model diff comparison on demand, with
+              // the live parent goal/registry so the reviewers see the same diff.
+              comparisonRanThisTurn = true
+              setModelComparisonContext({
+                threadId,
+                parentGoal,
+                registry,
+                chatModel: model,
+                onChunk: sendChunk,
+              })
+              try {
+                return await registry.executeNormalized(name, args, signal)
+              } finally {
+                setModelComparisonContext(null)
+              }
+            }
             if (name === 'run_shell') {
               // Tag the command's streamed output with this tool-call id so the
               // terminal pane can route it into the matching "Agent tasks" card.
@@ -611,6 +636,17 @@ export async function runAgent(
         const detail = controller.signal.aborted ? 'Review cancelled.' : classifyAgentError(err)
         sendChunk({ type: 'post_turn_review', status: 'error', summary: detail })
       }
+    }
+
+    // Auto model comparison: when this turn changed files and the harness is set
+    // to run on review, compare two models on the working diff (gated by a spend
+    // approval for billable models). Usage is folded in via the emitted chunks.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated inside the runAgentLoop callback above; TS narrows to the `false` initializer
+    if (turnChangedFiles && !comparisonRanThisTurn && isAutoComparisonEnabled()) {
+      await runModelComparison(
+        { threadId, parentGoal, registry, chatModel: model, onChunk: sendChunk },
+        controller.signal,
+      )
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- assigned inside the onChunk callback above; TS narrows to the `null` initializer

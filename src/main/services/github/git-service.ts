@@ -373,6 +373,40 @@ export async function getGitStatus(): Promise<GitStatusResult | null> {
   return normalizeGitStatusForWorkspace(parsePorcelainV1(stdout), prefix.trim())
 }
 
+/** Sum added/deleted line counts from `git diff --numstat` output (binary rows use `-`). */
+export function sumDiffNumstat(raw: string): { additions: number; deletions: number } {
+  let additions = 0
+  let deletions = 0
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue
+    const [add, del] = line.split('\t')
+    if (!add || !del) continue
+    if (add !== '-') additions += Number.parseInt(add, 10) || 0
+    if (del !== '-') deletions += Number.parseInt(del, 10) || 0
+  }
+  return { additions, deletions }
+}
+
+/**
+ * Live add/delete line totals across the working tree (staged + unstaged), or
+ * null when there is nothing to show. Cheap enough to call on every filesystem
+ * change so the "Changes" follow-up chip stays current instead of freezing on a
+ * per-turn snapshot.
+ */
+export async function getGitChangeStats(): Promise<{
+  additions: number
+  deletions: number
+} | null> {
+  if (!isGitAvailable() || !(await isInsideGitWorkTree())) return null
+  const unstaged = await runGit(['diff', '--numstat'])
+  const staged = await runGit(['diff', '--cached', '--numstat'])
+  const u = unstaged.code === 0 ? sumDiffNumstat(unstaged.stdout) : { additions: 0, deletions: 0 }
+  const s = staged.code === 0 ? sumDiffNumstat(staged.stdout) : { additions: 0, deletions: 0 }
+  const additions = u.additions + s.additions
+  const deletions = u.deletions + s.deletions
+  return additions + deletions > 0 ? { additions, deletions } : null
+}
+
 export async function checkoutGitBranch(branch: string): Promise<void> {
   if (!isGitAvailable() || !(await isInsideGitWorkTree())) {
     throw new Error('No git repository is open.')

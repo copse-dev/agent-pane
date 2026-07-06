@@ -1,4 +1,4 @@
-import { formatThreadUsageCost } from '@shared/llm/estimate-cost.ts'
+import { formatThreadUsageCost } from '@copse/llm/estimate-cost.ts'
 import type { ContextBreakdown, ContextSnapshot, Message, ThreadUsage } from '@shared/types'
 
 const CHARS_PER_TOKEN = 4
@@ -68,7 +68,7 @@ export function formatFooterUsageSummary(
     costVisible: boolean
     model: string
     measuredUsage: ThreadUsage
-    extra?: import('@shared/llm/estimate-cost.ts').ExtraPricing
+    extra?: import('@copse/llm/estimate-cost.ts').ExtraPricing
   },
 ): string {
   const { inputTokens, outputTokens, estimated } = display

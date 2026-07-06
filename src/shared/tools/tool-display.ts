@@ -83,6 +83,21 @@ const TOOL_TO_GROUP = new Map<string, string>(
   Object.entries(TOOL_GROUPS).flatMap(([key, { tools }]) => tools.map((name) => [name, key])),
 )
 
+// External ACP agents don't use the built-in tool names, but they do tag each
+// call with a coarse ACP `kind`. Mapping the kind onto the same group keys lets
+// their cards collapse and read like the native ones (e.g. a run of reads →
+// "Reading files"). `'other'`/`'think'` stay ungrouped (they never reach here —
+// the adapter only carries meaningful kinds).
+const ACP_KIND_TO_GROUP: Record<string, string> = {
+  execute: 'shell',
+  read: 'reading',
+  edit: 'writing',
+  delete: 'writing',
+  move: 'writing',
+  search: 'searching',
+  fetch: 'web',
+}
+
 export type ToolCallDisplayItem =
   | { type: 'group'; key: string; label: string; toolCalls: ToolCall[] }
   | { type: 'individual'; toolCall: ToolCall; label: string }
@@ -195,18 +210,21 @@ export function getToolCallLabel(tc: ToolCall): string {
     const path = fileEditPath(tc.args)
     if (path) return `Created directory ${path}`
   }
-  if (tc.name === 'run_shell') {
+  if (tc.name === 'run_shell' || tc.kind === 'execute') {
+    // ACP shells (`kind: 'execute'`) may carry the command in `rawInput`; when
+    // they don't, the ACP title (the tool's `name`) is already the command.
     const command = shellCommandArg(tc.args)
     if (command) return shellCommandLabel(command)
   }
   return getToolDisplayName(tc.name)
 }
 
-export function getToolGroupKey(name: string): string | null {
+export function getToolGroupKey(name: string, kind?: string): string | null {
   const builtIn = TOOL_TO_GROUP.get(name)
   if (builtIn) return builtIn
   const mcp = parseMcp(name)
   if (mcp) return `${MCP_GROUP_PREFIX}${mcp.server}`
+  if (kind && ACP_KIND_TO_GROUP[kind]) return ACP_KIND_TO_GROUP[kind]
   return null
 }
 
@@ -246,7 +264,7 @@ export function buildToolCallDisplayItems(toolCalls: ToolCall[]): ToolCallDispla
 
   const groupMembers = new Map<string, ToolCall[]>()
   for (const tc of toolCalls) {
-    const groupKey = getToolGroupKey(tc.name)
+    const groupKey = getToolGroupKey(tc.name, tc.kind)
     if (!groupKey) continue
     const key = bucketKey(groupKey, tc.status === 'error')
     const members = groupMembers.get(key) ?? []
@@ -258,7 +276,7 @@ export function buildToolCallDisplayItems(toolCalls: ToolCall[]): ToolCallDispla
   const emittedGroups = new Set<string>()
 
   for (const tc of toolCalls) {
-    const groupKey = getToolGroupKey(tc.name)
+    const groupKey = getToolGroupKey(tc.name, tc.kind)
     if (!groupKey) {
       result.push({ type: 'individual', toolCall: tc, label: getToolCallLabel(tc) })
       continue

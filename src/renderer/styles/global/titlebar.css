@@ -16,6 +16,9 @@
   flex-shrink: 0;
   background: var(--bg-base);
   border-top: 1px solid var(--border);
+  /* Cast the docked composer's shadow up onto the chat gradient so it reads
+     as floating above the conversation, matching the centered variant. */
+  box-shadow: var(--shadow-composer);
 }
 .titlebar {
   -webkit-app-region: drag;

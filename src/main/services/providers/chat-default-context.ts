@@ -17,7 +17,7 @@ import {
   bestKnownContextWindow,
   hasDecentContextWindow,
 } from '@shared/context-window-advice.ts'
-import { CLOUD_MODELS, getModelInfo } from '@shared/llm/model-catalog.ts'
+import { CLOUD_MODELS, getModelInfo } from '@copse/llm/model-catalog.ts'
 import { DEFAULT_LM_STUDIO_URL } from '@shared/lm-studio-defaults.ts'
 import { getResolvedExtraProviders } from './extra-providers-store.ts'
 import { fetchLmStudioModelsCached } from './lm-studio-models.ts'

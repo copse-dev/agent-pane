@@ -9,8 +9,12 @@ import {
   isAppIconVariant,
   type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
-import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
+import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
 import { DEFAULT_ADVISOR_MODEL } from '../../main/services/advisor-strategy.ts'
+import {
+  DEFAULT_COMPARISON_MODEL_B,
+  DEFAULT_COMPARISON_JUDGE_MODEL,
+} from '../../main/services/model-comparison.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { populateModelSelect, populateSmallTasksModelSelect } from './model-options.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
@@ -35,6 +39,34 @@ export type SettingsSection =
   | 'sources'
   | 'appearance'
   | 'experimental'
+
+/**
+ * Whole-app tint (Appearance ▸ Interface tint). The hue is mixed into every
+ * neutral surface at a strength that maps to a percentage; `off` disables it.
+ * Applied by writing --tint-hue / --tint-amount on the document root, which
+ * tokens.css folds into every --bg-* surface (see its --tint-* comment).
+ */
+export type UiTintStrength = 'off' | 'subtle' | 'medium' | 'strong'
+export const DEFAULT_TINT_COLOR = '#007acc'
+export const DEFAULT_TINT_STRENGTH: UiTintStrength = 'off'
+const TINT_STRENGTH_AMOUNTS: Record<UiTintStrength, string> = {
+  off: '0%',
+  subtle: '4%',
+  medium: '7%',
+  strong: '10%',
+}
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
+
+export function isUiTintStrength(value: unknown): value is UiTintStrength {
+  return value === 'off' || value === 'subtle' || value === 'medium' || value === 'strong'
+}
+
+/** Push the tint onto the document root so every surface picks it up at once. */
+export function applyUiTint(color: string, strength: UiTintStrength): void {
+  const root = document.documentElement
+  if (HEX_COLOR.test(color)) root.style.setProperty('--tint-hue', color)
+  root.style.setProperty('--tint-amount', TINT_STRENGTH_AMOUNTS[strength])
+}
 
 /**
  * Single source of truth for the simple form fields, so each setting's default
@@ -85,6 +117,8 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'longHorizonTasksEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'advisorStrategyEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'modelComparisonEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'modelComparisonAutoOnReview', kind: 'checkbox', default: false, save: true },
   { name: 'roadmapPlansEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'backgroundTasksEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'piiRedactionEnabled', kind: 'checkbox', default: false, save: true },
@@ -607,6 +641,28 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset>
+              <legend>Interface tint</legend>
+              <p class="settings-fieldset-desc">
+                Wash a colour through every surface — panels, sidebars, hovers, and the chat
+                background. Kept subtle by design; leave the strength at Off for the plain neutral
+                theme. Works in both light and dark.
+              </p>
+              <label>
+                Tint colour
+                <input type="color" name="uiTintColor" />
+              </label>
+              <label>
+                Strength
+                <select name="uiTintStrength">
+                  <option value="off">Off</option>
+                  <option value="subtle">Subtle</option>
+                  <option value="medium">Medium</option>
+                  <option value="strong">Strong</option>
+                </select>
+              </label>
+            </fieldset>
+
+            <fieldset>
               <legend>App icon</legend>
               <p class="settings-fieldset-desc">
                 Choose the icon shown in the Dock, taskbar, and window title bar.
@@ -729,6 +785,49 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <p class="field-hint">
                 Model used for advisor consultations. Pick a configured cloud provider; defaults to
                 <code>claude-opus-4-8</code>.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Model comparison</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="modelComparisonEnabled" />
+                Compare two models on the working diff
+              </label>
+              <p class="field-hint">
+                Adds a <code>compare_models</code> tool that reviews the current diff through two
+                models independently, then a judge model compares their verdicts (agreements,
+                disagreements, and what each caught that the other missed). Since a run makes up to
+                three model calls, it asks for approval before spending on any paid model (you can
+                choose to remember the choice for the session). While off, the tool is not registered.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="modelComparisonAutoOnReview" />
+                Run the comparison automatically after editing turns
+              </label>
+              <p class="field-hint">
+                When on, the comparison runs as part of the post-turn review (still gated by the
+                spend approval). When off, run it on demand via the <code>compare_models</code> tool.
+              </p>
+              <label class="field-label" for="comparisonModelA">Reviewer A</label>
+              <select id="comparisonModelA" name="comparisonModelA">
+                <option value="">(loading…)</option>
+              </select>
+              <p class="field-hint">First reviewer. Leave blank to use your current chat model.</p>
+              <label class="field-label" for="comparisonModelB">Reviewer B</label>
+              <select id="comparisonModelB" name="comparisonModelB">
+                <option value="">(loading…)</option>
+              </select>
+              <p class="field-hint">
+                Second reviewer — pick a different model than Reviewer A. Defaults to
+                <code>claude-opus-4-8</code>.
+              </p>
+              <label class="field-label" for="comparisonJudgeModel">Judge</label>
+              <select id="comparisonJudgeModel" name="comparisonJudgeModel">
+                <option value="">(loading…)</option>
+              </select>
+              <p class="field-hint">
+                Model that compares the two reviews. Defaults to <code>claude-opus-4-8</code>.
               </p>
             </fieldset>
 
@@ -1294,6 +1393,26 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         api,
         advisorModel ?? DEFAULT_ADVISOR_MODEL,
       )
+      const comparisonModelA = (await api.settings.get('comparisonModelA')) as string | undefined
+      await populateModelSelect(
+        form.elements.namedItem('comparisonModelA') as HTMLSelectElement,
+        api,
+        comparisonModelA ?? '',
+      )
+      const comparisonModelB = (await api.settings.get('comparisonModelB')) as string | undefined
+      await populateModelSelect(
+        form.elements.namedItem('comparisonModelB') as HTMLSelectElement,
+        api,
+        comparisonModelB ?? DEFAULT_COMPARISON_MODEL_B,
+      )
+      const comparisonJudgeModel = (await api.settings.get('comparisonJudgeModel')) as
+        | string
+        | undefined
+      await populateModelSelect(
+        form.elements.namedItem('comparisonJudgeModel') as HTMLSelectElement,
+        api,
+        comparisonJudgeModel ?? DEFAULT_COMPARISON_JUDGE_MODEL,
+      )
       await loadSimpleFields(form, api)
       const savedWebOrigins = (await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING)) as
         | string[]
@@ -1310,6 +1429,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         store.getState().autoPortraitRightPanel
       ;(form.elements.namedItem('rightPanelPosition') as HTMLSelectElement).value =
         store.getState().rightPanelPosition
+
+      const savedTintColor = await api.settings.get('uiTintColor')
+      ;(form.elements.namedItem('uiTintColor') as HTMLInputElement).value =
+        typeof savedTintColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(savedTintColor)
+          ? savedTintColor
+          : DEFAULT_TINT_COLOR
+      const savedTintStrength = await api.settings.get('uiTintStrength')
+      ;(form.elements.namedItem('uiTintStrength') as HTMLSelectElement).value = isUiTintStrength(
+        savedTintStrength,
+      )
+        ? savedTintStrength
+        : DEFAULT_TINT_STRENGTH
 
       const savedIconVariant = await api.settings.get('appIconVariant')
       const appIconVariant = isAppIconVariant(savedIconVariant)
@@ -1352,16 +1483,31 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const appIconVariant = data.get('appIconVariant') as AppIconVariant
       const confidence = parseFloat(data.get('safetyConfidenceThreshold') as string)
 
+      const tintColorRaw = data.get('uiTintColor')
+      const uiTintColor =
+        typeof tintColorRaw === 'string' && /^#[0-9a-fA-F]{6}$/.test(tintColorRaw)
+          ? tintColorRaw
+          : DEFAULT_TINT_COLOR
+      const tintStrengthRaw = data.get('uiTintStrength')
+      const uiTintStrength = isUiTintStrength(tintStrengthRaw)
+        ? tintStrengthRaw
+        : DEFAULT_TINT_STRENGTH
+
       await api.settings.set('model', model)
       await api.settings.set(
         'smallTasksModel',
         ((data.get('smallTasksModel') as string | null) ?? '').trim(),
       )
+      for (const key of ['comparisonModelA', 'comparisonModelB', 'comparisonJudgeModel'] as const) {
+        await api.settings.set(key, ((data.get(key) as string | null) ?? '').trim())
+      }
       await saveSimpleFields(data, api)
       await api.settings.set('theme', theme)
       await api.settings.set('fontSize', fontSize)
       await api.settings.set('autoPortraitRightPanel', autoPortraitRightPanel)
       await api.settings.set('rightPanelPosition', rightPanelPosition)
+      await api.settings.set('uiTintColor', uiTintColor)
+      await api.settings.set('uiTintStrength', uiTintStrength)
       if (isAppIconVariant(appIconVariant)) {
         await api.settings.set('appIconVariant', appIconVariant)
         await api.appIcon.apply()
@@ -1392,6 +1538,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       store.emit('settings_changed')
       window.dispatchEvent(new Event('copse:skills-changed'))
       document.documentElement.dataset['theme'] = theme
+      applyUiTint(uiTintColor, uiTintStrength)
       closeSettingsDialog()
     })()
   })

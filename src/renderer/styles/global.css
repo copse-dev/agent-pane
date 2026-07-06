@@ -6,7 +6,6 @@
 @import './global/titlebar.css';
 @import './global/forms.css';
 @import './global/conversation.css';
-@import './global/syntax-highlight.css';
 @import './global/markdown.css';
 @import './global/tool-cards.css';
 @import './global/input-bar.css';
@@ -22,3 +21,4 @@
 @import './global/todo.css';
 @import './global/toasts.css';
 @import './global/context-warning.css';
+@import './global/memories.css';
