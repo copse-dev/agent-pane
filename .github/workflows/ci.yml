@@ -712,11 +712,11 @@ jobs:
           git push
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Comment on PR with updated screenshots
-        # Post when real shots were committed, shots were ignored as noise (the
-        # ignored list is offered for manual acceptance), shots were held as
-        # flapping or contested, OR main couldn't be merged automatically because
-        # source conflicts need a human.
-        if: steps.diff.outputs.changed == 'true' || steps.filter.outputs.ignored-count != '0' || steps.filter.outputs.flapping-count != '0' || steps.filter.outputs.contested-count != '0' || steps.reconcile.outputs.manual == 'true'
+        # Always run: when there's something to report (refreshed shots, ignored
+        # noise, held flapping/contested renders, or a source conflict needing a
+        # human) we post/update the summary; when there's nothing and a prior
+        # comment exists we flip it to an "all match" note. The empty-and-no-comment
+        # case no-ops inside the script.
         uses: actions/github-script@v9
         env:
           CHANGED_FILES: ${{ steps.diff.outputs.files }}
@@ -785,13 +785,14 @@ jobs:
               );
             }
             if (ignored.length) {
-              const lines = ignored.map((s) => `- \`${s.name}\` — ${s.diffPixels} px (${s.ratioPct})`);
+              const noun = ignored.length === 1 ? 'shot' : 'shots';
+              const verb = ignored.length === 1 ? 'was' : 'were';
               sections.push(
                 `### Ignored as render noise (${ignored.length})\n\n` +
-                  `These re-rendered below the variance threshold (font hinting / anti-alias ` +
-                  `wobble) and were **not** committed. To accept them anyway, add the ` +
-                  `\`update-screenshots\` label or commit the rendered PNGs by hand:\n\n` +
-                  lines.join('\n'),
+                  `${ignored.length} ${noun} re-rendered below the variance threshold ` +
+                  `(font hinting / anti-alias wobble) and ${verb} **not** committed. To ` +
+                  `accept them anyway, add the \`update-screenshots\` label or commit the ` +
+                  `rendered PNGs by hand.`,
               );
             }
             if (flapping.length) {
@@ -814,14 +815,16 @@ jobs:
                   lines.join('\n'),
               );
             }
-            const body = [
-              marker,
-              '## E2E screenshot updates',
-              '',
-              sections.join('\n\n'),
-              '',
-              'These PNGs live under `tests/e2e/screenshots/` for human visual review; CI asserts DOM structure, not pixel diffs.',
-            ].join('\n');
+            const body = sections.length
+              ? [
+                  marker,
+                  '## E2E screenshot updates',
+                  '',
+                  sections.join('\n\n'),
+                  '',
+                  'These PNGs live under `tests/e2e/screenshots/` for human visual review; CI asserts DOM structure, not pixel diffs.',
+                ].join('\n')
+              : [marker, '## E2E screenshot updates', '', 'All screenshots match — nothing re-rendered above the noise threshold.'].join('\n');
 
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
@@ -834,6 +837,11 @@ jobs:
                 typeof c.body === 'string' &&
                 c.body.includes(marker),
             );
+            // Nothing to report and no prior comment to reconcile — don't open a
+            // fresh "all match" thread on every unrelated PR.
+            if (!sections.length && !existing) {
+              return;
+            }
             if (existing) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
