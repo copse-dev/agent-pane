@@ -245,11 +245,68 @@ export function mcpToolLabel(toolName: string): string {
   return toolName
 }
 
+/**
+ * The bare tool name with the `mcp__<server>__` prefix stripped. For a
+ * non-prefixed name (or a malformed one) the input is returned unchanged.
+ */
+export function bareMcpToolName(toolName: string): string {
+  const parts = toolName.split('__')
+  if (parts[0] === 'mcp' && parts.length >= 3) {
+    return parts.slice(2).join('__')
+  }
+  return toolName
+}
+
+/**
+ * Leading verbs that make a tool name *structurally* read-only. These are the
+ * standard read/query verbs used across MCP servers (e.g. `list_activities`,
+ * `get_athlete_profile`, `search_code`, `read_file`) and match nothing that
+ * mutates state. The set is intentionally tight — anything outside it prompts.
+ */
+const READ_ONLY_TOOL_NAME_VERBS = [
+  'list',
+  'get',
+  'read',
+  'search',
+  'fetch',
+  'describe',
+  'show',
+  'find',
+  'query',
+  'count',
+] as const
+
+/**
+ * Whether a tool's NAME is structurally read-only: it begins with a known
+ * read-only verb bounded by the end of the name, a `_`/`-` separator, a digit,
+ * or a camelCase hump. So `get`, `get_x`, `get-x`, `getX` all qualify, but
+ * `getaway` and `settings` do not.
+ *
+ * This is a *local* structural check, independent of any server-reported hint.
+ * The auto-allow gate requires BOTH this and a read-only hint, so a compromised
+ * server can no longer self-declare its way past the prompt with the hint alone.
+ */
+export function isStructurallyReadOnlyMcpToolName(toolName: string | undefined): boolean {
+  if (!toolName) return false
+  const name = bareMcpToolName(toolName).trim()
+  if (!name) return false
+  const lower = name.toLowerCase()
+  return READ_ONLY_TOOL_NAME_VERBS.some((verb) => {
+    if (!lower.startsWith(verb)) return false
+    const rest = name.slice(verb.length)
+    if (rest === '') return true
+    const next = rest.charAt(0)
+    return next === '_' || next === '-' || /[A-Z0-9]/.test(next)
+  })
+}
+
 export type McpPermissionDecision =
   | { action: 'allow'; reasons: string[] }
   | { action: 'prompt'; reasons: string[] }
 
 export interface McpPermissionInput {
+  /** Full tool name (`mcp__<server>__<tool>`), used for the structural read-only name check. */
+  toolName?: string | undefined
   /** Server-reported annotation hints for the tool, if any. */
   annotations?: McpToolAnnotations | undefined
   /** The user previously chose "always allow" for this exact tool. */
@@ -282,8 +339,18 @@ export function decideMcpPermission(input: McpPermissionInput): McpPermissionDec
   if (input.bundled) {
     return { action: 'allow', reasons: ['first-party bundled tool'] }
   }
+  // Auto-allow only when the tool NAME is structurally read-only AND the server
+  // hint agrees. The name check is a local, non-forgeable gate: a compromised
+  // server can no longer self-declare `readOnlyHint` to skip the prompt on a
+  // mutating-named tool (issue #661). Anything else always prompts.
   if (ann?.readOnlyHint && input.autoAllowReadOnly) {
-    return { action: 'allow', reasons: ['tool is flagged read-only'] }
+    if (isStructurallyReadOnlyMcpToolName(input.toolName)) {
+      return { action: 'allow', reasons: ['read-only tool name and read-only hint'] }
+    }
+    return {
+      action: 'prompt',
+      reasons: ['read-only hint not corroborated by a read-only tool name'],
+    }
   }
 
   return { action: 'prompt', reasons: ['external MCP tool requires approval'] }
