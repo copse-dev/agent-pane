@@ -35,7 +35,15 @@ export function mountFollowUpSuggestions(
     hidden: '',
   })
 
-  let fetchToken = 0
+  // Per-thread fetch tokens: a shared counter let a completion in thread B
+  // invalidate an in-flight fetch for thread A (they interleave when several
+  // threads go idle), so A's suggestions were silently dropped and never cached.
+  const fetchTokens = new Map<string, number>()
+  const nextFetchToken = (threadId: string): number => {
+    const token = (fetchTokens.get(threadId) ?? 0) + 1
+    fetchTokens.set(threadId, token)
+    return token
+  }
   let changesRefreshTimer: ReturnType<typeof setTimeout> | null = null
   let displayedThreadId: string | null = null
   const suggestionsByThread = new Map<string, CachedSuggestions>()
@@ -139,18 +147,18 @@ export function mountFollowUpSuggestions(
       return
     }
 
-    const token = ++fetchToken
+    const token = nextFetchToken(threadId)
     try {
       // Result crosses the IPC boundary; the runtime value may be undefined despite the typed contract.
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       const suggestions = (await api.agent.suggestFollowUps(JSON.stringify(exchange.context))) ?? []
-      if (token !== fetchToken) return
+      if (token !== fetchTokens.get(threadId)) return
       suggestionsByThread.set(threadId, { turnKey: exchange.turnKey, suggestions })
       if (store.getState().activeThreadId === threadId) {
         renderSuggestions(threadId, suggestions)
       }
     } catch {
-      if (token !== fetchToken) return
+      if (token !== fetchTokens.get(threadId)) return
       suggestionsByThread.delete(threadId)
       if (store.getState().activeThreadId === threadId) clearSuggestions()
     }
@@ -213,7 +221,7 @@ export function mountFollowUpSuggestions(
       if (status === 'running') {
         suggestionsByThread.delete(tid)
         if (tid === store.getState().activeThreadId) {
-          fetchToken++
+          nextFetchToken(tid)
           clearSuggestions()
         }
         return
@@ -232,7 +240,9 @@ export function mountFollowUpSuggestions(
     root,
     clearSuggestions,
     destroy: (): void => {
-      fetchToken++
+      // Invalidate every in-flight fetch: after clear(), get() returns undefined
+      // so any pending `token !== fetchTokens.get(threadId)` check bails.
+      fetchTokens.clear()
       if (changesRefreshTimer) clearTimeout(changesRefreshTimer)
       unsubs.forEach((u) => {
         u()
