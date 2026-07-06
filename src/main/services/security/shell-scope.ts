@@ -1,5 +1,6 @@
 import { homedir } from 'node:os'
-import { resolve } from 'node:path'
+import { basename, resolve } from 'node:path'
+import { parse as parseShellCommand } from 'shell-quote'
 
 export type ScopeVerdict = 'sandbox' | 'external' | 'ambiguous'
 
@@ -13,6 +14,12 @@ export interface ShellScopeAnalysis {
  * On macOS, project seatbelt is the real confinement; elsewhere, users must approve
  * commands that look external. Evasion (substitution, encoding, uncommon tools) is
  * possible; patterns here reduce obvious false auto-runs only.
+ *
+ * Classification is regex-first, with an ADDITIVE shell-quote tokenization layer
+ * (see `tokenBasedExternalReasons`) that reinforces the most fragile checks by
+ * keying off `argv[0]`. The token layer can only ever add reasons / escalate; it
+ * never removes a reason or downgrades a verdict, so it cannot make the gate more
+ * permissive than the regex path alone.
  */
 
 // A command-invocation position: start of the string, or immediately after a
@@ -167,6 +174,98 @@ const REGISTRY_REDIRECT_PATTERNS: Array<{ re: RegExp; reason: string }> = [
   },
 ]
 
+// Interpreters whose *first operand* is a script/inline body opaque to this
+// classifier. Keyed off `argv[0]` (the resolved executable, path-stripped) after
+// shell-quote lexing, so quoting/indirection can't hide the interpreter name.
+const TOKEN_INTERPRETERS = new Set([
+  'python',
+  'python2',
+  'python3',
+  'node',
+  'deno',
+  'bun',
+  'ruby',
+  'perl',
+  'bash',
+  'sh',
+  'zsh',
+])
+// Recognised script-file extensions — kept byte-for-byte in sync with the
+// interpreter-runs-file regex in EXTERNAL_PATTERNS so tokenization never diverges
+// from (only reinforces) the regex baseline.
+const TOKEN_SCRIPT_EXT = /\.(?:js|cjs|mjs|ts|py|rb|pl|sh|bash|zsh)$/i
+// Inline-code flags: the body is opaque, so an interpreter carrying one must prompt.
+const TOKEN_INLINE_FLAGS = new Set(['-c', '-e', '--eval'])
+// Exact reason strings shared with the regex entries above, so token-derived and
+// regex-derived hits dedupe against each other.
+const REASON_INTERPRETER_FILE =
+  'runs a local script via an interpreter (contents opaque to analysis)'
+const REASON_INTERPRETER_INLINE = 'inline script (interpreter -c/-e/--eval)'
+
+/**
+ * Structured, token-based detectors that complement — never replace — the regex
+ * pass. Running shell-quote's lexer lets classification key off `argv[0]` (the
+ * actual executable) and structured arguments instead of substring matching, which
+ * closes quoting/indirection gaps the fragile interpreter-runs-file regex misses
+ * (e.g. `node -r ./preload build.js`, where the non-flag `-r` argument defeats the
+ * regex's flag-skip, or `deno run server.ts`, where the subcommand sits between the
+ * interpreter and the file).
+ *
+ * It is strictly ADDITIVE: it only ever appends reasons or promotes to `hasHard`,
+ * and callers union its result with the regex baseline. It can never remove a reason
+ * or downgrade a verdict, so it cannot make the permission gate more permissive than
+ * the regex path alone. Anything shell-quote can't lex into a plain argv — operators,
+ * command/process substitution, globs, comments, or a parse failure — is left
+ * entirely to the regex fallback: such tokens merely delimit the simple-command
+ * segments we inspect and are otherwise ignored here.
+ */
+function tokenBasedExternalReasons(command: string): { reasons: string[]; hasHard: boolean } {
+  const reasons: string[] = []
+  let hasHard = false
+
+  let tokens: ReturnType<typeof parseShellCommand>
+  try {
+    tokens = parseShellCommand(command)
+  } catch {
+    // Un-lexable input → defer entirely to the regex fallback.
+    return { reasons, hasHard }
+  }
+
+  const addReason = (reason: string): void => {
+    if (!reasons.includes(reason)) reasons.push(reason)
+  }
+
+  // Split the token stream into simple-command segments at every non-string token
+  // (operator / substitution / glob / comment object). Each segment is a plain argv
+  // the shell would execute directly; structural tokens between them stay the regex
+  // path's responsibility.
+  let segment: string[] = []
+  const inspect = (): void => {
+    const exe0 = segment[0]
+    if (exe0 === undefined) return
+    const exe = basename(exe0).toLowerCase()
+    if (TOKEN_INTERPRETERS.has(exe)) {
+      const args = segment.slice(1)
+      if (args.some((a) => TOKEN_INLINE_FLAGS.has(a))) {
+        addReason(REASON_INTERPRETER_INLINE)
+        hasHard = true
+      }
+      if (args.some((a) => TOKEN_SCRIPT_EXT.test(a))) {
+        addReason(REASON_INTERPRETER_FILE)
+        hasHard = true
+      }
+    }
+    segment = []
+  }
+  for (const token of tokens) {
+    if (typeof token === 'string') segment.push(token)
+    else inspect()
+  }
+  inspect()
+
+  return { reasons, hasHard }
+}
+
 // `hasHard` is true when at least one matched signal is a definite escape
 // (network download, install, git push, command substitution, …) rather than a
 // fuzzy `ambiguous` matcher. It decides whether the verdict is `external`
@@ -193,6 +292,13 @@ function collectExternalReasons(command: string): { reasons: string[]; hasHard: 
     reasons.push('command substitution (may hide network or outside-path tools)')
     hasHard = true
   }
+  // Additive token pass: reinforces the fragile interpreter checks above without
+  // ever loosening the result (union of reasons; hasHard only promoted, never cleared).
+  const tokenHits = tokenBasedExternalReasons(command)
+  for (const reason of tokenHits.reasons) {
+    if (!reasons.includes(reason)) reasons.push(reason)
+  }
+  if (tokenHits.hasHard) hasHard = true
   return { reasons, hasHard }
 }
 
