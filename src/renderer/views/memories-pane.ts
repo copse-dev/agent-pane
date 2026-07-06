@@ -127,19 +127,38 @@ export function mountMemoriesPane(
     errorLine.hidden = false
   }
 
-  function renderEditor(): void {
+  /** True when the visible form holds edits not yet reflected in the stored note. */
+  function isEditorDirty(note: Memory | null | undefined): boolean {
+    return (
+      titleInput.value !== (note?.title ?? '') ||
+      tagsInput.value !== (note?.tags.join(', ') ?? '') ||
+      bodyInput.value !== (note?.body ?? '')
+    )
+  }
+
+  // `preserveDirty` is set by background refreshes (store events) so an in-progress
+  // edit or new-note draft is not silently overwritten with the persisted values.
+  // Explicit navigation (selecting a note, New, Cancel) passes it unset to load fresh.
+  function renderEditor(opts?: { preserveDirty?: boolean }): void {
     errorLine.hidden = true
     const note = selectedId ? memories.find((m) => m.id === selectedId) : null
+    const editing = !form.hidden
+    const dirty = editing && (creating || isEditorDirty(note))
     if (!note && !creating) {
+      // Keep an in-progress draft visible rather than collapsing to the empty
+      // state when a refresh fires while the user is typing.
+      if (opts?.preserveDirty && dirty) return
       form.hidden = true
       emptyState.hidden = false
       return
     }
     emptyState.hidden = true
     form.hidden = false
-    titleInput.value = note?.title ?? ''
-    tagsInput.value = note?.tags.join(', ') ?? ''
-    bodyInput.value = note?.body ?? ''
+    if (!(opts?.preserveDirty && dirty)) {
+      titleInput.value = note?.title ?? ''
+      tagsInput.value = note?.tags.join(', ') ?? ''
+      bodyInput.value = note?.body ?? ''
+    }
     deleteBtn.hidden = !note
     if (note?.updatedAt) {
       metaLine.hidden = false
@@ -188,7 +207,10 @@ export function mountMemoriesPane(
     }
   }
 
-  async function refresh(): Promise<void> {
+  // `preserveDirty` is passed only by background store-event refreshes so an
+  // in-progress edit/draft is not clobbered. Explicit actions (save, delete,
+  // workspace change) refresh without it so the editor renders fresh.
+  async function refresh(opts?: { preserveDirty?: boolean }): Promise<void> {
     const token = ++loadToken
     let next: Memory[]
     try {
@@ -204,7 +226,7 @@ export function mountMemoriesPane(
       selectedId = null
     }
     renderList()
-    renderEditor()
+    renderEditor(opts)
   }
 
   function startNew(): void {
@@ -280,10 +302,10 @@ export function mountMemoriesPane(
 
   const unsubs = [
     store.on('right_panel_mode_changed', () => {
-      if (memoriesModeActive(store)) void refresh()
+      if (memoriesModeActive(store)) void refresh({ preserveDirty: true })
     }),
     store.on('files_pane_changed', () => {
-      if (memoriesModeActive(store)) void refresh()
+      if (memoriesModeActive(store)) void refresh({ preserveDirty: true })
     }),
     store.on('workspace_changed', () => {
       // Memories are per-project; drop the previous workspace's selection.
