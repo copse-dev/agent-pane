@@ -166,6 +166,19 @@ describe('fetchModelOptions visibility', () => {
     assert.ok(options.every((o) => o.group || !o.value))
   })
 
+  it('classifies a catalog-known local model with a role hint, leaving unknowns bare', async () => {
+    const options = await fetchModelOptions(
+      mockApi({ lmStudioModels: ['qwen/qwen2.5-coder-32b', 'some-unknown-local'] }),
+      '',
+    )
+    const known = options.find((o) => o.value === 'lmstudio:qwen/qwen2.5-coder-32b')
+    assert.ok(known)
+    assert.match(known.label, /qwen\/qwen2\.5-coder-32b — coder/)
+    const unknown = options.find((o) => o.value === 'lmstudio:some-unknown-local')
+    assert.ok(unknown)
+    assert.equal(unknown.label, 'some-unknown-local')
+  })
+
   it('keeps the current selection selectable even with no key', async () => {
     const options = await fetchModelOptions(mockApi(), 'gpt-5')
     const current = options.find((o) => o.value === 'gpt-5')

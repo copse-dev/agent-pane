@@ -1,5 +1,6 @@
 import type { ApiClient } from '../../preload/api.d.ts'
 import { CLOUD_MODELS } from '@shared/llm/model-catalog.ts'
+import { localModelRoleHint } from '@shared/llm/local-model-catalog.ts'
 import {
   isOpenRouterModel,
   openRouterDisplayLabel,
@@ -211,7 +212,10 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
   } catch {
     models = []
   }
-  for (const id of models) options.push({ value: `lmstudio:${id}`, label: id, group: lmGroup })
+  for (const id of models) {
+    const hint = localModelRoleHint(id)
+    options.push({ value: `lmstudio:${id}`, label: hint ? `${id} — ${hint}` : id, group: lmGroup })
+  }
 
   if (current && !options.some((o) => o.value === current)) {
     if (current.startsWith('lmstudio:')) {

@@ -167,8 +167,11 @@ research benchmark.
   couldn't be done in the container this landed from). _Remaining:_ let a role
   feed multiple features (the real payoff), and cloud-capable roles.
 
-- **Phase 2 — picker classifications:** capability/role badges and
-  "recommended for" grouping in `model-options.ts`.
+- **Phase 2 — picker classifications: _first cut done._** Local models in the
+  picker now carry a compact role hint from the catalog (e.g. "qwen/qwen2.5-coder-32b
+  — coder · refactor · test-gen") via `localModelRoleHint()`; unknown models render
+  bare. Unit-tested in `model-options.test.ts`. _Remaining:_ "recommended for
+  &lt;role&gt;" grouping and badges for cloud models.
 - **Phase 3 — generalized download: _foundation done; UI pending._** The
   `lmstudio:download` IPC already accepts any model id, so the backend is already
   general — only the presentation was pinned to the three preferred ids.

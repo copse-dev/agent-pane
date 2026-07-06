@@ -165,6 +165,17 @@ export function getLocalModelCapability(id: string): LocalModelCapability | null
   return MODEL_BY_ID.get(id) ?? null
 }
 
+/**
+ * Compact capability hint for the model picker (e.g. "coder · refactor · test-gen"),
+ * or null when the id isn't in the catalog. Lets the dropdown classify a local
+ * model by the roles it suits without a guess for unknown models.
+ */
+export function localModelRoleHint(id: string): string | null {
+  const cap = getLocalModelCapability(id)
+  if (!cap || cap.bestForRoles.length === 0) return null
+  return cap.bestForRoles.slice(0, 3).join(' · ')
+}
+
 export interface RecommendOptions {
   /** Only consider models whose download fits this budget (GB). */
   maxDownloadGb?: number
