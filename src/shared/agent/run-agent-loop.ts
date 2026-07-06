@@ -40,7 +40,7 @@ import {
   REASONING_RUNAWAY_GIVEUP_MESSAGE,
   REFUSAL_USER_MESSAGE,
   TRUNCATION_CONTINUE_NUDGE,
-} from '../llm/provider-stop-reason.ts'
+} from '@copse/llm/provider-stop-reason.ts'
 import {
   AGENT_RUN_HARD_MAX_MS,
   AGENT_RUN_IDLE_TIMEOUT_MS,

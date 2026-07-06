@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import type { LLMProvider, LLMMessage, LLMTool, StreamChunk } from '@shared/types'
+import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 import { anthropicMaxOutputTokens } from './model-catalog.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
@@ -18,7 +18,7 @@ export class AnthropicProvider implements LLMProvider {
     messages: LLMMessage[],
     tools: LLMTool[],
     signal?: AbortSignal,
-  ): AsyncIterable<StreamChunk> {
+  ): AsyncIterable<ProviderStreamChunk> {
     const { client, model } = this
     const self = this
     const systemMsg = messages.find((m) => m.role === 'system')

@@ -7,7 +7,7 @@ import {
   pruneUsageEvents,
   type UsageSummary,
 } from '@shared/usage/aggregate-usage.ts'
-import { extraProviderPricingMap } from '@shared/llm/extra-providers.ts'
+import { extraProviderPricingMap } from '@copse/llm/extra-providers.ts'
 import { getResolvedExtraProviders } from '../providers/extra-providers-store.ts'
 import {
   USAGE_EVENTS_STORAGE_KEY,
