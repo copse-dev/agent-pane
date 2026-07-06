@@ -4,7 +4,9 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@shared/*": ["./src/shared/*"]
+      "@shared/*": ["./src/shared/*"],
+      "@copse/llm": ["./packages/llm/src/index.ts"],
+      "@copse/llm/*": ["./packages/llm/src/*"]
     }
   }
 }

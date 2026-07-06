@@ -1,4 +1,4 @@
-import type { LLMTool } from '@shared/types'
+import type { LLMTool } from './wire-types.ts'
 
 /** One step in an ordered mock script (e2e registers these via IPC). */
 export interface MockScriptStep {

@@ -1,0 +1,16 @@
+{
+  "name": "@copse/llm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Provider-agnostic LLM client: multi-provider adapters, model catalog, cost estimation, secret redaction, and streaming resilience",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.104.2",
+    "openai": "^6.44.0"
+  }
+}
