@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
-import { classifySearchQuery, resolveSearchText } from '@shared/agent/search-routing.ts'
+import { classifySearchQuery, resolveSearchText } from '@copse/agent/search-routing.ts'
 import {
   getWorkspaceRoot,
   resolveWorkspacePath,
@@ -9,7 +9,10 @@ import {
 } from '../services/workspace.ts'
 import { isRgAvailable } from '../services/tool-availability.ts'
 import { formatCodeSearchResults, searchCodeContent } from '../services/search/indexed-grep.ts'
-import { executeSemanticSearch } from '../services/search/semantic-search.ts'
+import {
+  executeSemanticSearch,
+  semanticIndexBuildingNote,
+} from '../services/search/semantic-search.ts'
 
 export const searchCodebaseTool = defineTool({
   name: 'search_codebase',
@@ -62,6 +65,7 @@ export const searchCodebaseTool = defineTool({
     const resolvedMode = mode === 'auto' ? classifySearchQuery(searchText) : mode
     const filterPath = path ? toRelativePath(resolveWorkspacePath(path)) : undefined
 
+    let semanticFallback: 'building' | 'unavailable' | null = null
     if (resolvedMode === 'semantic') {
       const semantic = await executeSemanticSearch(
         {
@@ -71,15 +75,16 @@ export const searchCodebaseTool = defineTool({
         },
         signal,
       )
-      if (semantic !== null) {
+      if (semantic.status === 'ok') {
         return `[native semantic search]\n${semantic.text}`
       }
       if (mode === 'semantic') {
-        return (
-          'Semantic search unavailable. Bundled gortex failed to install or ' +
-          'gortex/vera is missing on PATH (see README.md), or retry with mode: regex.'
-        )
+        return semantic.status === 'building'
+          ? semanticIndexBuildingNote()
+          : 'Semantic search unavailable. Bundled gortex failed to install or ' +
+              'gortex/vera is missing on PATH (see README.md), or retry with mode: regex.'
       }
+      semanticFallback = semantic.status
     }
 
     if (!isRgAvailable()) {
@@ -100,9 +105,11 @@ export const searchCodebaseTool = defineTool({
     })
 
     const header =
-      resolvedMode === 'semantic'
-        ? '[semantic search unavailable — regex fallback]\n'
-        : '[regex search]\n'
+      semanticFallback === 'building'
+        ? '[semantic index still building — regex fallback]\n'
+        : semanticFallback === 'unavailable'
+          ? '[semantic search unavailable — regex fallback]\n'
+          : '[regex search]\n'
     return header + formatCodeSearchResults(lines, max_results, backend)
   },
 })
@@ -139,7 +146,10 @@ export const semanticSearchTool = defineTool({
       },
       signal,
     )
-    if (semantic === null) {
+    if (semantic.status === 'building') {
+      return semanticIndexBuildingNote()
+    }
+    if (semantic.status === 'unavailable') {
       return (
         'Semantic search unavailable. Bundled gortex failed to install or ' +
         'gortex/vera is missing on PATH (see README.md).'

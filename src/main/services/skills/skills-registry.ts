@@ -17,7 +17,7 @@ import type {
   SkillSource,
   SkillSummary,
 } from '@shared/types/skills.ts'
-import { READ_FILE_LIMITS_CEILING } from '@shared/agent/read-file-limits.ts'
+import { READ_FILE_LIMITS_CEILING } from '@copse/agent/read-file-limits.ts'
 import { extractExternalLinkHosts } from '@shared/skills/extract-skill-links.ts'
 import { notifyRefreshContextEstimate } from '../context-estimate-notify.ts'
 

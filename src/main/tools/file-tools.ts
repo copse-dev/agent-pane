@@ -13,7 +13,7 @@ import { getIndex } from '../services/search/file-index.ts'
 import micromatch from 'micromatch'
 import { getAgentRunReadFileLimits } from '../services/agent-run-read-limits.ts'
 import { readTextLineRange } from '../services/read-text-file.ts'
-import { buildReadFilePageMeta, formatReadFilePageFooter } from '@shared/agent/read-file-page.ts'
+import { buildReadFilePageMeta, formatReadFilePageFooter } from '@copse/agent/read-file-page.ts'
 import { getStagedDiffEntry } from '../services/diff-queue.ts'
 
 export const LIST_DIR_MAX_ENTRIES = 1000

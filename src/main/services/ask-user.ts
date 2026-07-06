@@ -1,7 +1,7 @@
 import type { BrowserWindow } from 'electron'
 import { ipcMain } from 'electron'
 import { randomUUID } from 'node:crypto'
-import type { AskUserQuestion } from '@shared/agent/ask-user-format.ts'
+import type { AskUserQuestion } from '@copse/agent/ask-user-format.ts'
 import {
   askRespondSchema,
   assertMainFrameSender,

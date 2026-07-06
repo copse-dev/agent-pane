@@ -1,57 +1,34 @@
-import type { ModelComparison, ModelUsage, SubagentSession } from './thread.ts'
+import type { ModelComparison } from './thread.ts'
 import type { TodoItem } from './todo.ts'
-// The provider-emitted chunks are owned by the LLM module. The app's StreamChunk
-// is that narrow contract plus the agent-loop/orchestration events below.
-import type { ProviderStreamChunk, ToolCallChunk } from '@copse/llm/wire-types.ts'
+// The provider-emitted chunks are owned by the LLM module; the loop-emitted
+// chunks (provider contract + text rewrites, context pressure, subagents) are
+// owned by the agent module. The app's StreamChunk is that loop contract plus
+// the app-level orchestration events below.
+import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
 
-// `ProviderStreamChunk` (the narrow provider contract) and `ToolCallChunk` live
-// in the LLM module; re-exported here so app code can name the provider-level
-// output type (e.g. provider mocks) alongside the fat `StreamChunk`.
+// `AgentStreamChunk` (what the agent loop emits), `ProviderStreamChunk` (the
+// narrow provider contract), and `ToolCallChunk` live in their owning packages;
+// re-exported here so app code can name them alongside the fat `StreamChunk`.
+export type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
 export type { ProviderStreamChunk, ToolCallChunk } from '@copse/llm/wire-types.ts'
 
 /**
- * Everything that can flow through the app's single output stream. It is the
- * provider contract (`ProviderStreamChunk`: text/reasoning/tool_call/
- * tool_result/usage/done) plus the orchestration events the agent loop injects
- * around provider output — subagents, todos, context-window signals, and the
- * two-model diff comparison. Providers only ever emit the `ProviderStreamChunk`
- * subset, so a provider stream is always assignable to a `StreamChunk` sink.
+ * Everything that can flow through the app's single output stream. It is what
+ * the agent loop emits (`AgentStreamChunk`: the provider contract plus text
+ * rewrites, context-pressure signals, and subagent lifecycle) plus the
+ * app-level orchestration events injected around the loop — todos, history
+ * trimming, post-turn review, and the two-model diff comparison. The loop only
+ * ever emits the `AgentStreamChunk` subset, so a loop stream is always
+ * assignable to a `StreamChunk` sink.
  */
 export type StreamChunk =
-  | ProviderStreamChunk
-  /** Replace accumulated assistant text (e.g. after stripping embedded pseudo tool XML). */
-  | { type: 'text_replace'; text: string }
+  | AgentStreamChunk
   | {
       type: 'context_trimmed'
       contextWindow: number
       historyBudget: number
       estimatedTokens: number
     }
-  | {
-      type: 'context_pressure'
-      contextWindow: number
-      conversationBudget: number
-      conversationTokens: number
-      fillRatio: number
-    }
-  | { type: 'subagent_start'; parentToolCallId: string; session: SubagentSession }
-  | { type: 'subagent_text'; parentToolCallId: string; messageId: string; text: string }
-  | {
-      type: 'subagent_tool_call'
-      parentToolCallId: string
-      messageId: string
-      toolCall: ToolCallChunk
-    }
-  | {
-      type: 'subagent_tool_result'
-      parentToolCallId: string
-      toolCallId: string
-      result: string
-      isError: boolean
-      editStats?: { additions: number; deletions: number }
-    }
-  | { type: 'subagent_done'; parentToolCallId: string; summary: string; usage?: ModelUsage }
-  | { type: 'subagent_error'; parentToolCallId: string; error: string }
   | { type: 'todo_update'; todos: TodoItem[] }
   | {
       type: 'todo_worker_start'
