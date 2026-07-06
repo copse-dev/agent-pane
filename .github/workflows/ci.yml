@@ -691,12 +691,13 @@ jobs:
         # Post when real shots were committed, shots were ignored as noise (the
         # ignored list is offered for manual acceptance), OR main couldn't be merged
         # automatically because source conflicts need a human.
-        if: steps.diff.outputs.changed == 'true' || steps.filter.outputs.ignored-count != '0' || steps.reconcile.outputs.manual == 'true'
+        if: steps.diff.outputs.changed == 'true' || steps.filter.outputs.ignored-count != '0' || steps.filter.outputs.flapping-count != '0' || steps.reconcile.outputs.manual == 'true'
         uses: actions/github-script@v7
         env:
           CHANGED_FILES: ${{ steps.diff.outputs.files }}
           COMMIT_SHA: ${{ steps.push.outputs.sha }}
           IGNORED_JSON: ${{ steps.filter.outputs.ignored-json }}
+          FLAPPING_JSON: ${{ steps.filter.outputs.flapping-json }}
           MANUAL_MERGE_FILES: ${{ steps.reconcile.outputs.manual-files }}
         with:
           script: |
@@ -705,6 +706,7 @@ jobs:
             const repo = context.repo.owner + '/' + context.repo.repo;
             const files = (process.env.CHANGED_FILES || '').split('\n').filter(Boolean);
             const ignored = JSON.parse(process.env.IGNORED_JSON || '[]');
+            const flapping = JSON.parse(process.env.FLAPPING_JSON || '[]');
             const manualMerge = (process.env.MANUAL_MERGE_FILES || '').split('\n').filter(Boolean);
             const sections = [];
             if (manualMerge.length) {
@@ -736,6 +738,19 @@ jobs:
                   `These re-rendered below the variance threshold (font hinting / anti-alias ` +
                   `wobble) and were **not** committed. To accept them anyway, add the ` +
                   `\`update-screenshots\` label or commit the rendered PNGs by hand:\n\n` +
+                  lines.join('\n'),
+              );
+            }
+            if (flapping.length) {
+              const lines = flapping.map((s) => `- \`${s.name}\` — ${s.diffPixels} px (${s.ratioPct})`);
+              sections.push(
+                `### Held — render flapping (${flapping.length})\n\n` +
+                  `These shots alternate between two runner render states and were **not** ` +
+                  `committed, to stop the CI screenshot ping-pong ([#609](https://github.com/${repo}/issues/609)): ` +
+                  `each re-render matched a recently committed version, so committing again would ` +
+                  `just re-trigger CI and bring the other state back. If a real change is hiding ` +
+                  `here, add the \`update-screenshots\` label to force it, or pin the runner ` +
+                  `font/GPU rendering:\n\n` +
                   lines.join('\n'),
               );
             }
