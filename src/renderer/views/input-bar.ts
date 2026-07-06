@@ -27,6 +27,7 @@ import {
   type AttachedThreadRef,
 } from './mention-picker.ts'
 import { initSkillPicker } from './skill-picker.ts'
+import { mountFooterIndexStatus } from './footer-index-status.ts'
 import { resolveSkillInvocation } from '@shared/skills/parse-skill-invocation.ts'
 import { buildSkillUserText } from '@shared/skills/build-skill-user-content.ts'
 import type { ContextBreakdown, UserContent } from '@shared/types'
@@ -135,6 +136,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const usageGroup = el('div', { class: 'footer-usage-group' })
   const queueIndicator = el('span', { class: 'footer-queue', hidden: '', 'aria-live': 'polite' })
   const contextWheel = createContextWheel()
+  // Appends its chip first, so it sits left of the wheel/queue/usage widgets.
+  const indexStatusChip = mountFooterIndexStatus(usageGroup, api)
   usageGroup.append(contextWheel.root, queueIndicator, usageBtn)
   footer.append(modelHost, branchHost, exportBtn)
   const footerOverflow = mountFooterOverflow(footer, [
@@ -929,6 +932,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     footerOverflow.destroy()
     footerCompact.destroy()
     branchControl.destroy()
+    indexStatusChip.destroy()
     skillPicker()
   }
 }
