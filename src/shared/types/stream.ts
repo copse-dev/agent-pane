@@ -1,45 +1,31 @@
 import type { ModelComparison, ModelUsage, SubagentSession } from './thread.ts'
 import type { TodoItem } from './todo.ts'
+// The provider-emitted chunks are owned by the LLM module. The app's StreamChunk
+// is that narrow contract plus the agent-loop/orchestration events below.
+import type { ProviderStreamChunk, ToolCallChunk } from '@copse/llm/wire-types.ts'
 
+// `ProviderStreamChunk` (the narrow provider contract) and `ToolCallChunk` live
+// in the LLM module; re-exported here so app code can name the provider-level
+// output type (e.g. provider mocks) alongside the fat `StreamChunk`.
+export type { ProviderStreamChunk, ToolCallChunk } from '@copse/llm/wire-types.ts'
+
+/**
+ * Everything that can flow through the app's single output stream. It is the
+ * provider contract (`ProviderStreamChunk`: text/reasoning/tool_call/
+ * tool_result/usage/done) plus the orchestration events the agent loop injects
+ * around provider output — subagents, todos, context-window signals, and the
+ * two-model diff comparison. Providers only ever emit the `ProviderStreamChunk`
+ * subset, so a provider stream is always assignable to a `StreamChunk` sink.
+ */
 export type StreamChunk =
-  | { type: 'text'; text: string }
+  | ProviderStreamChunk
   /** Replace accumulated assistant text (e.g. after stripping embedded pseudo tool XML). */
   | { type: 'text_replace'; text: string }
-  /**
-   * Incremental reasoning / "thinking" text the model emits before (or alongside)
-   * its answer. Surfaced live so the user can click the "Thinking" disclosure and
-   * watch what the model is doing. Carried separately from `text` so it never
-   * lands in the assistant's answer or the conversation history sent upstream.
-   */
-  | { type: 'reasoning'; text: string }
-  | { type: 'tool_call'; toolCall: ToolCallChunk }
-  | {
-      type: 'tool_result'
-      toolCallId: string
-      result: string
-      isError: boolean
-      editStats?: { additions: number; deletions: number }
-      /**
-       * `'markdown'` when `result` is agent-authored Markdown (ACP tool output)
-       * and should render through the Markdown pipeline rather than a raw `<pre>`.
-       */
-      resultFormat?: 'markdown'
-    }
   | {
       type: 'context_trimmed'
       contextWindow: number
       historyBudget: number
       estimatedTokens: number
-    }
-  | {
-      type: 'usage'
-      model: string
-      inputTokens: number
-      outputTokens: number
-      cacheReadTokens?: number
-      cacheCreationTokens?: number
-      /** Token counts are a local ~4 chars/token estimate, not agent-reported. */
-      estimated?: boolean
     }
   | {
       type: 'context_pressure'
@@ -76,24 +62,3 @@ export type StreamChunk =
   | { type: 'post_turn_review'; status: 'running' | 'done' | 'error'; summary: string }
   /** Two-model diff-review comparison (running placeholder, then the full result). */
   | { type: 'model_comparison'; comparison: ModelComparison }
-  | { type: 'done'; stopReason?: string }
-
-export interface ToolCallChunk {
-  id: string
-  name: string
-  args: unknown
-  /**
-   * Set when the provider could not parse the tool-call arguments JSON (e.g. a
-   * truncated or malformed streamed tool call). When present, `args` is not
-   * trustworthy and the agent loop must surface an error tool result instead of
-   * executing the tool with empty/partial args.
-   */
-  argsError?: string
-  /**
-   * ACP tool-call `kind` (e.g. `'execute'`, `'read'`, `'search'`), carried from
-   * an external ACP agent so the UI can recognise its shell/terminal commands
-   * (`'execute'`) even though they don't use the built-in `run_shell` tool.
-   * Absent for the built-in agent loop.
-   */
-  kind?: string
-}

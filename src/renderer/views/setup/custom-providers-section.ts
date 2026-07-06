@@ -1,5 +1,5 @@
 import type { ApiClient, ExtraProvider, ExtraProviderModel } from '../../../preload/api.d.ts'
-import { providerSlugFromBaseUrl } from '@shared/llm/provider-slug.ts'
+import { providerSlugFromBaseUrl } from '@copse/llm/provider-slug.ts'
 import { el, clear } from '../../dom/helpers.ts'
 import { closeIcon } from '../../dom/icons.ts'
 import { setInlineStatus } from '../../dom/inline-status.ts'

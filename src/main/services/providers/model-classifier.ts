@@ -1,4 +1,4 @@
-import { getModelInfo, type TrackedModel } from '@shared/llm/model-catalog.ts'
+import { getModelInfo, type TrackedModel } from '@copse/llm/model-catalog.ts'
 
 /**
  * Experimental, opt-in "model classifier" feature (tracked in

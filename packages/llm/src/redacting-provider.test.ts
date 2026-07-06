@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { LLMProvider, LLMMessage, LLMTool, StreamChunk } from '@shared/types'
+import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 import { withSecretRedaction } from './redacting-provider.ts'
 
 function fakeProvider(): {
@@ -14,9 +14,9 @@ function fakeProvider(): {
       messages: LLMMessage[],
       _tools: LLMTool[],
       _signal?: AbortSignal,
-    ): AsyncIterable<StreamChunk> {
+    ): AsyncIterable<ProviderStreamChunk> {
       seen.messages = messages
-      return (async function* (): AsyncIterable<StreamChunk> {
+      return (async function* (): AsyncIterable<ProviderStreamChunk> {
         yield { type: 'done' }
       })()
     },
