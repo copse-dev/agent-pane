@@ -102,7 +102,7 @@ export function createApiKeysSection(
   const plaintextNote = el(
     'p',
     { class: 'field-hint', 'data-at-rest-note': '', hidden: true },
-    'One or more keys are stored unencrypted because the OS secure storage is unavailable. On Linux, install and unlock a system keyring (e.g. gnome-keyring / libsecret) to encrypt them at rest.',
+    'One or more keys are stored unencrypted because the OS secure storage is unavailable. Install and unlock a system keyring to encrypt them at rest.',
   )
 
   const fieldset = el(
@@ -191,8 +191,7 @@ export function createApiKeysSection(
     const label = API_KEY_PROVIDER_CONFIGS[provider].label
     return confirm(
       `No OS keyring is available to encrypt your ${label} at rest. ` +
-        'On Linux, install and unlock a system keyring (e.g. gnome-keyring / libsecret) ' +
-        'to store it encrypted.\n\n' +
+        'Install and unlock a system keyring to store it encrypted.\n\n' +
         'Store it unencrypted on this machine anyway?',
     )
   }

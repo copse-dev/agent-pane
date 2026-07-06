@@ -105,7 +105,7 @@ export function setApiKey(
 
   if (!available) {
     console.warn(
-      `[copse-panel] OS secure storage is unavailable; the ${provider} API key will be stored as base64 plaintext in settings.json (with explicit consent). Install/unlock a system keyring (e.g. gnome-keyring / libsecret on Linux) to encrypt it at rest.`,
+      `[copse-panel] OS secure storage is unavailable; the ${provider} API key will be stored as base64 plaintext in settings.json (with explicit consent). Install and unlock a system keyring to encrypt it at rest.`,
     )
   }
   const bytes = available ? safeStorage.encryptString(trimmed) : Buffer.from(trimmed, 'utf8')

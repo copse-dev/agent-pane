@@ -427,9 +427,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       }
       // Honour the plaintext gate here too: a bulk env import must not write keys
       // unencrypted without consent. Skipped rather than silently stored in clear.
+      // The user can add the key manually via the Settings UI where the per-save
+      // confirm dialog lets them approve plaintext storage explicitly.
       const result = setApiKey(d.provider, d.value)
       if (!result.ok) {
-        skipped.push({ provider: d.provider, reason: result.reason })
+        skipped.push({ provider: d.provider, reason: 'plaintext-storage-refused' })
         continue
       }
       imported.push({ provider: d.provider, source: d.source })
