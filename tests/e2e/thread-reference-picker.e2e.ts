@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedThreadReferenceFixture } from './helpers/seed-config.ts'
+import { setComposerValue } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -19,10 +20,9 @@ describe('@-reference past threads (#644)', () => {
   })
 
   it('shows past threads in the @ picker and attaches a thread chip on select', async () => {
-    const textarea = await $('.prompt-input')
     // Empty query after `@` still resolves via a shared token in the seeded
     // thread titles/digests ("the"), which keeps the file list short too.
-    await textarea.setValue('@the')
+    await setComposerValue('@the')
 
     const threadItem = await $('.mention-picker .mention-item-thread')
     await threadItem.waitForDisplayed({ timeout: 10_000 })

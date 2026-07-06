@@ -90,7 +90,9 @@ describe('Monaco selection to chat attachment', () => {
     await dragSelectFirstMonacoLine()
     await pressControlChord('l')
 
-    const chip = await $('.attachment-chip.text-chip')
+    // The selection lands as a chip inline in the composer text, not in the
+    // detached attachment row (composer-editor.ts).
+    const chip = await $('.prompt-input .inline-paste-chip')
     await chip.waitForDisplayed({ timeout: 5_000 })
     await expect(await chip.getText()).toContain(`${SAMPLE_FILE}:`)
 

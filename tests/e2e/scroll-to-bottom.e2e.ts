@@ -8,6 +8,7 @@ import {
 } from './helpers/seed-config.ts'
 import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
 import { itSkipInCi } from './helpers/ci-gate.ts'
+import { setComposerValue } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -112,7 +113,7 @@ describe('scroll to bottom', () => {
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await waitForPromptReady()
-    await $('.prompt-input').setValue('Please write a longer follow-up answer')
+    await setComposerValue('Please write a longer follow-up answer')
     await $('.submit-btn').click()
 
     await browser.waitUntil(
@@ -147,7 +148,7 @@ describe('scroll to bottom', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await waitForPromptReady()
 
-    await $('.prompt-input').setValue('Please write a longer follow-up answer')
+    await setComposerValue('Please write a longer follow-up answer')
     await $('.submit-btn').click()
 
     await browser.waitUntil(

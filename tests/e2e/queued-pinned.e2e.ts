@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedScrollStreamingFixture } from './helpers/seed-config.ts'
+import { setComposerValue } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -21,7 +22,7 @@ describe('queued chats stay pinned to the bottom', function () {
     await $('.messages-list .msg-assistant').waitForExist({ timeout: 30_000 })
 
     // Kick off a slow turn so the agent stays running while we queue follow-ups.
-    await $('.prompt-input').setValue('Please refactor this module [[mock:delay_ms 6000]]')
+    await setComposerValue('Please refactor this module [[mock:delay_ms 6000]]')
     await $('.submit-btn').click()
     await browser.waitUntil(async () => (await $('.stop-btn').getProperty('hidden')) !== true, {
       timeout: 10_000,
@@ -30,9 +31,9 @@ describe('queued chats stay pinned to the bottom', function () {
     // Queue two follow-ups while the agent is busy.
     for (const text of ['Also add unit tests for it.', 'Then update the README.']) {
       await browser.execute((value: string) => {
-        const input = document.querySelector('.prompt-input') as HTMLTextAreaElement | null
+        const input = document.querySelector('.prompt-input') as HTMLElement | null
         const btn = document.querySelector('.submit-btn') as HTMLButtonElement | null
-        if (input) input.value = value
+        if (input) input.textContent = value
         btn?.click()
       }, text)
     }

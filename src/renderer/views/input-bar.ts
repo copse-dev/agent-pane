@@ -15,9 +15,9 @@ import { nextWorkingBrief } from '@copse/agent/working-brief.ts'
 import {
   buildTextWithAttachments,
   isTextBlockAttachment,
-  textBlockLabel,
   type ThreadRefAttachment,
 } from '@copse/agent/build-text-with-attachments.ts'
+import { CHIP_CHAR, mountComposerEditor } from './composer-editor.ts'
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import { bindFileDropTarget, attachFiles } from '../attachments/handle-file-drop.ts'
 import {
@@ -53,12 +53,8 @@ import { createComposerDraftAutosave } from './composer-draft-autosave.ts'
 
 export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const chips = el('div', { class: 'attachment-chips' })
-  const textarea = el('textarea', {
-    class: 'prompt-input',
-    rows: '3',
-    'aria-label': 'Message',
-    placeholder: 'Message…',
-  })
+  const composer = mountComposerEditor()
+  composer.setPlaceholder('Message…')
   const submitBtn = el('button', { class: 'submit-btn', type: 'button' }, 'Send')
   const stopBtn = el(
     'button',
@@ -91,7 +87,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const inputRow = el(
     'div',
     { class: 'input-row' },
-    textarea,
+    composer.el,
     attachBtn,
     fileInput,
     stopBtn,
@@ -201,7 +197,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   root.append(chips, branchWarning, inputRow, footer)
 
   const followUps = mountFollowUpSuggestions(store, api, (prompt) => {
-    textarea.value = prompt
+    composer.value = prompt
     void submit()
   })
   root.insertBefore(followUps.root, inputRow)
@@ -209,7 +205,6 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const followUpPlaceholder = 'Send follow-up'
 
   let attachedFiles: { path: string; content: string }[] = []
-  let attachedTextBlocks: { id: string; label: string; content: string }[] = []
   let attachedImages: { dataUrl: string; mimeType: string }[] = []
   // `@`-referenced past threads (#644): the agent gets a path reference + steering
   // preamble, nothing inlined. Composer-only state, like file/image chips.
@@ -253,20 +248,22 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
 
   let activeComposerThreadId = getActiveThreadId()
 
+  // Drafts persist the *expanded* text: a chip's content survives a thread
+  // switch or restart as plain text (the chip itself is composer-only state).
   function persistComposerDraft(): void {
     const id = activeComposerThreadId
     if (!id) return
-    setThreadDraftPrompt(store, id, textarea.value)
+    setThreadDraftPrompt(store, id, composer.expandedValue())
   }
 
   function syncComposerThread(): void {
     const id = getActiveThreadId()
     if (id === activeComposerThreadId) return
     if (activeComposerThreadId) {
-      setThreadDraftPrompt(store, activeComposerThreadId, textarea.value)
+      setThreadDraftPrompt(store, activeComposerThreadId, composer.expandedValue())
     }
     const thread = getThreadById(store, id)
-    textarea.value = thread?.draftPrompt ?? ''
+    composer.value = thread?.draftPrompt ?? ''
     activeComposerThreadId = id
     // New thread → drop the prior thread's estimate and recompute for this one.
     lastBreakdown = null
@@ -275,12 +272,12 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
 
   const draftAutosave = createComposerDraftAutosave({
     getActiveThreadId,
-    getValue: () => textarea.value,
+    getValue: () => composer.expandedValue(),
     save: (id, value) => {
       setThreadDraftPrompt(store, id, value)
     },
   })
-  textarea.addEventListener('input', () => {
+  composer.el.addEventListener('input', () => {
     scheduleContextEstimate()
     draftAutosave.schedule()
   })
@@ -289,12 +286,11 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     const running = isRunning()
     stopBtn.hidden = !running
     submitBtn.classList.toggle('with-stop', running)
-    textarea.classList.toggle('with-stop', running)
+    composer.el.classList.toggle('with-stop', running)
   }
 
   function showBranchMismatch(branch: string): void {
     mismatchBranch = branch
-    textarea.setCustomValidity('')
     branchWarning.hidden = false
     branchWarningText.textContent = threadGitBranchMismatchMessage(branch)
     branchWarningText.title = threadGitBranchMismatchMessage(branch)
@@ -358,9 +354,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     const snapshotUsable =
       !!snapshot && snapshot.conversationBudget > 0 && snapshot.fillRatio > 0.01
     const draftNonEmpty =
-      textarea.value.trim().length > 0 ||
+      composer.value.trim().length > 0 ||
       attachedFiles.length > 0 ||
-      attachedTextBlocks.length > 0 ||
       attachedImages.length > 0 ||
       attachedThreads.length > 0
     // Show the pre-send breakdown while composing (or on fresh threads with no live
@@ -409,14 +404,15 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   }
 
   function composeEstimatePayload(): string {
-    const rawText = textarea.value.trim()
+    // Expanded so inline paste chips weigh their full content, not one char.
+    const rawText = composer.expandedValue().trim()
     const skillNames = (skillsCache ?? []).map((skill) => skill.name)
     const invocation = resolveSkillInvocation(rawText, skillNames)
     const invokedSkills =
       invocation && (skillsCache ?? []).some((skill) => skill.name === invocation.skillName)
         ? [invocation.skillName]
         : []
-    const draftText = buildTextWithAttachments(rawText, attachedFiles, attachedTextBlocks, {
+    const draftText = buildTextWithAttachments(rawText, attachedFiles, [], {
       threadRefs: currentThreadRefs(),
     })
     const model = getActiveThread(store)?.model
@@ -515,7 +511,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     return root.querySelector('.mention-picker:not([hidden])') !== null
   }
 
-  textarea.addEventListener('keydown', (e) => {
+  composer.el.addEventListener('keydown', (e) => {
     if (e.isComposing) return
     if (e.key !== 'Enter' || e.shiftKey) return
     if (isAutocompletePickerOpen()) return
@@ -542,12 +538,15 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
 
   async function performSubmit(): Promise<void> {
     followUps.clearSuggestions()
-    textarea.placeholder = defaultPlaceholder
-    const rawText = textarea.value.trim()
+    composer.setPlaceholder(defaultPlaceholder)
+    // Visible text keeps chips as single placeholder chars (for the transcript
+    // display); the expanded text inlines each chip's fenced block in place and
+    // is what actually gets sent.
+    const visibleText = composer.value.trim()
+    const rawText = composer.expandedValue().trim()
     if (
       !rawText &&
       attachedFiles.length === 0 &&
-      attachedTextBlocks.length === 0 &&
       attachedImages.length === 0 &&
       attachedThreads.length === 0
     )
@@ -576,8 +575,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       : undefined
 
     if (invocation && !invokedSkill) {
-      textarea.setCustomValidity(`Unknown skill: /${invocation.skillName}`)
-      textarea.reportValidity()
+      showToast(`Unknown skill: /${invocation.skillName}`, { variant: 'error' })
       return
     }
 
@@ -601,7 +599,6 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
           attachedFiles.length > 0 || attachedImages.length > 0,
         )
       : rawText
-    textarea.setCustomValidity('')
 
     let fullContent: UserContent
     if (attachedImages.length > 0) {
@@ -609,13 +606,13 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
         ...attachedImages.map((img) => ({ type: 'image' as const, dataUrl: img.dataUrl })),
         {
           type: 'text' as const,
-          text: buildTextWithAttachments(text, attachedFiles, attachedTextBlocks, {
+          text: buildTextWithAttachments(text, attachedFiles, [], {
             threadRefs: currentThreadRefs(),
           }),
         },
       ]
     } else {
-      fullContent = buildTextWithAttachments(text, attachedFiles, attachedTextBlocks, {
+      fullContent = buildTextWithAttachments(text, attachedFiles, [], {
         threadRefs: currentThreadRefs(),
       })
     }
@@ -636,9 +633,14 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     // before dispatching to the agent — the controller only adds assistant
     // messages, so without this the user's own prompt never appears.
     const displayParts: string[] = []
-    if (rawText) displayParts.push(rawText)
+    // The transcript shows the visible text with each inline chip rendered as
+    // its 📝 label, keeping the paste's position in the sentence.
+    const chipLabels = composer.getBlocks().map((b) => b.label)
+    const displayText = visibleText
+      .split(CHIP_CHAR)
+      .reduce((acc, part, i) => (i === 0 ? part : `${acc}📝 ${chipLabels[i - 1] ?? ''}${part}`), '')
+    if (displayText) displayParts.push(displayText)
     attachedFiles.forEach((f) => displayParts.push(`📎 ${f.path.split('/').pop() ?? f.path}`))
-    attachedTextBlocks.forEach((b) => displayParts.push(`📝 ${b.label}`))
     attachedThreads.forEach((t) => displayParts.push(`🧵 ${t.title || 'Untitled thread'}`))
     const imageUrls = attachedImages.map((img) => img.dataUrl)
     const messageId = addMessage(
@@ -659,10 +661,9 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     } else {
       dispatchAgentRun(store, api, id, payload)
     }
-    textarea.value = ''
+    composer.clear()
     setThreadDraftPrompt(store, id, '')
     attachedFiles = []
-    attachedTextBlocks = []
     attachedImages = []
     attachedThreads = []
     clear(chips)
@@ -707,25 +708,6 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     scheduleContextEstimate()
   }
 
-  function addTextChip(content: string, explicitLabel?: string): void {
-    const id = crypto.randomUUID()
-    const label = explicitLabel ?? textBlockLabel(content)
-    attachedTextBlocks.push({ id, label, content })
-    const chip = document.createElement('span')
-    chip.className = 'attachment-chip text-chip'
-    chip.textContent = label
-    const remove = document.createElement('button')
-    remove.textContent = '✕'
-    remove.addEventListener('click', () => {
-      attachedTextBlocks = attachedTextBlocks.filter((b) => b.id !== id)
-      chip.remove()
-      scheduleContextEstimate()
-    })
-    chip.append(remove)
-    chips.append(chip)
-    scheduleContextEstimate()
-  }
-
   function addImageChip(dataUrl: string, mimeType: string): void {
     attachedImages.push({ dataUrl, mimeType })
     const chip = document.createElement('span')
@@ -759,11 +741,15 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
 
   const attachmentHandlers = {
     attachFile: addChip,
-    attachTextBlock: addTextChip,
+    // Text selections (Monaco/terminal) land as inline chips at the caret, so
+    // the reference sits inside the sentence the user is writing.
+    attachTextBlock: (content: string, label?: string): void => {
+      composer.insertPasteChip(content, label)
+    },
     attachImage: addImageChip,
     focusComposer: (): void => {
       requestAnimationFrame(() => {
-        textarea.focus()
+        composer.focus()
       })
     },
   }
@@ -794,11 +780,11 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       return
     }
 
-    if (!textarea.matches(':focus')) return
+    if (!composer.isFocused()) return
     const text = e.clipboardData?.getData('text/plain') ?? ''
     if (!isTextBlockAttachment(text)) return
     e.preventDefault()
-    addTextChip(text)
+    composer.insertPasteChip(text)
   }
   document.addEventListener('paste', onPaste)
 
@@ -810,7 +796,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   )
 
   initMentionPicker({
-    textarea,
+    input: composer,
     inputBar: root,
     store,
     api,
@@ -841,7 +827,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   window.addEventListener('copse:skills-changed', onSkillsChanged)
 
   const skillPicker = initSkillPicker({
-    textarea,
+    input: composer,
     inputBar: root,
     listSkills: () => api.skills.list(),
   })
@@ -902,7 +888,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
 
   const observer = new MutationObserver(() => {
     const hasSuggestions = !followUps.root.hidden
-    textarea.placeholder = hasSuggestions ? followUpPlaceholder : defaultPlaceholder
+    composer.setPlaceholder(hasSuggestions ? followUpPlaceholder : defaultPlaceholder)
   })
   observer.observe(followUps.root, { attributes: true, attributeFilter: ['hidden'] })
 
@@ -916,7 +902,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     stopContextEstimates()
     draftAutosave.cancel()
     if (activeComposerThreadId) {
-      setThreadDraftPrompt(store, activeComposerThreadId, textarea.value)
+      setThreadDraftPrompt(store, activeComposerThreadId, composer.expandedValue())
     }
     unsubs.forEach((u) => {
       u()

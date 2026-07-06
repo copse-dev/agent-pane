@@ -124,9 +124,9 @@ describe('input bar branch mismatch warning', () => {
     )
     await settle()
 
-    const textarea = host.querySelector<HTMLTextAreaElement>('.prompt-input')
-    assert.ok(textarea)
-    textarea.value = 'Continue'
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    composer.textContent = 'Continue'
     const submitBtn = host.querySelector<HTMLButtonElement>('.submit-btn')
     assert.ok(submitBtn)
     submitBtn.click()

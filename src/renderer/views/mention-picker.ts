@@ -1,6 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { ThreadCatalogHit } from '@shared/types'
+import type { ComposerTextInput } from './composer-editor.ts'
 import { clear } from '../dom/helpers.ts'
 import { outlineIcon } from '../dom/outline-icon.ts'
 
@@ -25,7 +26,7 @@ export interface AttachedThreadRef {
 }
 
 export interface MentionPickerOptions {
-  textarea: HTMLTextAreaElement
+  input: ComposerTextInput
   inputBar: HTMLElement
   store: AppStore
   api: ApiClient
@@ -50,7 +51,7 @@ export function relativeDate(ts: number): string {
 }
 
 export function initMentionPicker(opts: MentionPickerOptions): () => void {
-  const { textarea, inputBar, store, api, onAttach, onAttachThread } = opts
+  const { input, inputBar, store, api, onAttach, onAttachThread } = opts
 
   const picker = document.createElement('div')
   picker.className = 'mention-picker'
@@ -111,8 +112,8 @@ export function initMentionPicker(opts: MentionPickerOptions): () => void {
   }
 
   function removeMentionText(): void {
-    const val = textarea.value
-    textarea.value = val.slice(0, mentionStart) + val.slice(textarea.selectionStart)
+    const val = input.value
+    input.value = val.slice(0, mentionStart) + val.slice(input.selectionStart)
   }
 
   async function selectItem(idx: number): Promise<void> {
@@ -153,9 +154,9 @@ export function initMentionPicker(opts: MentionPickerOptions): () => void {
       .forEach((el, i) => el.classList.toggle('selected', i === selectedIdx))
   }
 
-  textarea.addEventListener('input', () => {
-    const val = textarea.value
-    const cursor = textarea.selectionStart
+  input.el.addEventListener('input', () => {
+    const val = input.value
+    const cursor = input.selectionStart
     const atIdx = val.lastIndexOf('@', cursor - 1)
     if (atIdx === -1 || val.slice(atIdx + 1, cursor).includes(' ')) {
       hidePicker()
@@ -165,7 +166,7 @@ export function initMentionPicker(opts: MentionPickerOptions): () => void {
     void updatePicker(val.slice(atIdx + 1, cursor))
   })
 
-  textarea.addEventListener('keydown', (e) => {
+  input.el.addEventListener('keydown', (e) => {
     if (picker.hidden) return
     if (e.key === 'ArrowDown') {
       e.preventDefault()

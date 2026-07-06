@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { setComposerValue } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -22,8 +23,7 @@ describe('npx package command approval', () => {
   })
 
   it('shows fetch-and-run wording for npx commands', async () => {
-    const textarea = await $('.prompt-input')
-    await textarea.setValue('[[mcp:run_shell {"command":"npx tsc --noEmit"}]]')
+    await setComposerValue('[[mcp:run_shell {"command":"npx tsc --noEmit"}]]')
     await $('.submit-btn').click()
 
     const dialog = await $('#approval-dialog')
