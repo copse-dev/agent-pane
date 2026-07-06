@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { LLMMessage } from '@shared/types'
+import type { LLMMessage } from './wire-types.ts'
 import { redactSecrets, redactMessages } from './redact-secrets.ts'
 
 describe('redactSecrets — secret patterns (#518)', () => {

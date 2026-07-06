@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { validateCredentialBaseUrl } from '@shared/llm/credential-url.ts'
+import { validateCredentialBaseUrl } from '@copse/llm/credential-url.ts'
 import { RENDERER_WRITABLE_SETTING_SCHEMAS, webAllowedOriginsSchema } from './settings-writable.ts'
 
 // A provider base URL carries the provider's API key as an Authorization header,

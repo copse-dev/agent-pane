@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import Anthropic from '@anthropic-ai/sdk'
 import { anthropicMaxOutputTokens, getModelInfo } from './model-catalog.ts'
 import { isRetryableStreamError, streamRetryDelayMs } from './stream-retry.ts'
-import type { StreamChunk } from '@shared/types'
+import type { ProviderStreamChunk } from './wire-types.ts'
 import { createLocalOpenAIProvider, createProvider } from './create-provider.ts'
 import { OpenAIProvider } from './openai-provider.ts'
 
@@ -109,7 +109,7 @@ describe('createLocalOpenAIProvider', () => {
       })()
     }
 
-    const chunks: StreamChunk[] = []
+    const chunks: ProviderStreamChunk[] = []
     for await (const chunk of provider.stream([{ role: 'user', content: 'hi' }], [])) {
       chunks.push(chunk)
     }

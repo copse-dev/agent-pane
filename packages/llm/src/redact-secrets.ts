@@ -1,4 +1,4 @@
-import type { LLMMessage } from '@shared/types'
+import type { LLMMessage } from './wire-types.ts'
 
 /**
  * Deterministic secret redaction for the outbound REMOTE-LLM request path (#518).
