@@ -1,3 +1,5 @@
+import type { TodoItem } from './wire-types.ts'
+
 /** Tools that only gather context — repeating them often indicates a stuck loop. */
 export const EXPLORE_TOOL_NAMES = new Set([
   'list_dir',
@@ -44,3 +46,15 @@ export const STUCK_FINALIZE_NUDGE =
 
 export const DUPLICATE_TOOL_RESULT_PREFIX =
   '[Duplicate tool call skipped — same arguments as a recent step. Use prior results, run_shell if needed, or answer in text.]'
+
+/**
+ * True while any todo is still pending or in progress. The loop uses this to
+ * swap the finalize nudge for {@link OPEN_TODOS_FINALIZE_NUDGE} so a run does
+ * not end with the plan half-done.
+ */
+export function hasOpenTodos(todos: readonly TodoItem[]): boolean {
+  return todos.some((t) => t.status === 'pending' || t.status === 'in_progress')
+}
+
+export const OPEN_TODOS_FINALIZE_NUDGE =
+  'You still have open todos. Complete or cancel each pending/in_progress item with update_todos before finishing, or cancel items you will not do.'

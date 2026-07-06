@@ -12,7 +12,7 @@ import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/fil
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
 import { hydrateRemoteArtifactImages } from '../markdown/remote-artifact-images.ts'
-import { stripTextToolCallBlocks } from '@shared/agent/parse-text-tool-calls.ts'
+import { stripTextToolCallBlocks } from '@copse/agent/parse-text-tool-calls.ts'
 import type { Message, ToolCall } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { agentActivityLabel } from '../agent-activity.ts'

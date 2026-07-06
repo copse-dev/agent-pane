@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { at } from '@shared/array-utils.ts'
+import { at } from './internal-utils.ts'
 import { z } from 'zod'
 import {
   recoverTextToolCalls,

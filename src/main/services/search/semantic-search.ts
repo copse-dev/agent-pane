@@ -1,4 +1,4 @@
-import { buildSearchRoutingPromptBlock } from '@shared/agent/search-routing.ts'
+import { buildSearchRoutingPromptBlock } from '@copse/agent/search-routing.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import { getWorkspaceIndexStatus } from './index-status.ts'
 import {
