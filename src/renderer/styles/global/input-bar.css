@@ -289,7 +289,7 @@
   color: var(--text-primary);
 }
 .footer-branch-status.is-link {
-  color: var(--accent);
+  color: var(--link);
   text-decoration: underline dotted;
   text-underline-offset: 2px;
   cursor: pointer;
@@ -335,7 +335,7 @@
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-md);
   z-index: 100;
   padding: 4px 0;
 }
@@ -431,7 +431,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: var(--spacing-xs) 0;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-md);
 }
 .model-picker-group-label {
   padding: 4px var(--spacing-md);
@@ -507,7 +507,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: var(--spacing-xs) 0;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-md);
 }
 .footer-overflow-item {
   display: block;
@@ -547,7 +547,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: var(--spacing-sm) var(--spacing-md);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-md);
   font-size: 11px;
   color: var(--text-primary);
   pointer-events: none;

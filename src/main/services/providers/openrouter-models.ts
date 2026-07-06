@@ -1,4 +1,4 @@
-import { OPENROUTER_BASE_URL } from '@shared/llm/openrouter.ts'
+import { OPENROUTER_BASE_URL } from '@copse/llm/openrouter.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import { getSetting } from '../storage/settings.ts'
 
