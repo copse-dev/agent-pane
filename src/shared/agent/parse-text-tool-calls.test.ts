@@ -277,4 +277,27 @@ src/renderer/views/projects-pane.ts
     assert.equal(at(toolCalls, 0).name, 'run_shell')
     assert.ok(cleanedText.includes('`<tool_call>`'))
   })
+
+  it('preserves backtick code spans inside a function parameter value (#519 arg corruption)', () => {
+    const content = 'Run `npm test` then `npm run build` to finish.'
+    const text = `<tool_call>
+<function=write_file>
+<parameter=path>README.md</parameter>
+<parameter=content>${content}</parameter>
+</function>
+</tool_call>`
+    const { toolCalls } = recoverTextToolCalls(text)
+    assert.equal(toolCalls.length, 1)
+    assert.equal(at(toolCalls, 0).name, 'write_file')
+    assert.equal((at(toolCalls, 0).args as { content?: string }).content, content)
+  })
+
+  it('preserves backtick code spans inside a bare <invoke> parameter (#519 arg corruption)', () => {
+    const command = 'echo `date` && ls'
+    const text = `<invoke name="run_shell"><command>${command}</command></invoke>`
+    const { toolCalls } = recoverTextToolCalls(text)
+    assert.equal(toolCalls.length, 1)
+    assert.equal(at(toolCalls, 0).name, 'run_shell')
+    assert.equal((at(toolCalls, 0).args as { command?: string }).command, command)
+  })
 })
