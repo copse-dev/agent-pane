@@ -17,7 +17,7 @@
 
 import { OPENROUTER_MODEL_PREFIX } from './openrouter.ts'
 import { isSafeCredentialBaseUrl } from './credential-url.ts'
-import { REMOTE_AGENT_MODEL_PREFIX } from '../remote-agent.ts'
+import { LMSTUDIO_MODEL_PREFIX, REMOTE_AGENT_MODEL_PREFIX } from './reserved-prefixes.ts'
 
 /** Fallback context window for any provider/model whose size we don't know. */
 export const DEFAULT_EXTRA_PROVIDER_CONTEXT = 128_000
@@ -311,7 +311,7 @@ const BUILTIN_BY_SLUG = new Map(BUILTIN_EXTRA_PROVIDERS.map((p) => [p.id, p]))
 // classification can stay list-free (works in synchronous renderer paths).
 const NON_EXTRA_PREFIXES: readonly string[] = [
   OPENROUTER_MODEL_PREFIX,
-  'lmstudio:',
+  LMSTUDIO_MODEL_PREFIX,
   REMOTE_AGENT_MODEL_PREFIX,
 ]
 const SLUG_RE = /^[a-z0-9-]+$/

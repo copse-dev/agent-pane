@@ -8,13 +8,13 @@ import {
   REASONING_RUNAWAY_FORCE_ANSWER_NUDGE,
   REASONING_RUNAWAY_GIVEUP_MESSAGE,
   TRUNCATION_CONTINUE_NUDGE,
-} from '../llm/provider-stop-reason.ts'
-import type { LLMMessage, LLMProvider, StreamChunk } from '@shared/types'
+} from '@copse/llm/provider-stop-reason.ts'
+import type { LLMMessage, LLMProvider, ProviderStreamChunk, StreamChunk } from '@shared/types'
 
-function mockProvider(chunks: StreamChunk[][]): LLMProvider {
+function mockProvider(chunks: ProviderStreamChunk[][]): LLMProvider {
   let call = 0
   return {
-    async *stream(): AsyncGenerator<StreamChunk> {
+    async *stream(): AsyncGenerator<ProviderStreamChunk> {
       for (const chunk of at(chunks, call++ % chunks.length)) yield chunk
     },
   }
@@ -155,11 +155,11 @@ describe('runAgentLoop', () => {
     // first turn floods text well past the per-stream output cap (>32k tokens ≈
     // >128k chars) and never emits `done`; the loop must abort that turn instead
     // of consuming forever, then accept the next turn's concise answer.
-    const flood: StreamChunk[] = []
+    const flood: ProviderStreamChunk[] = []
     for (let i = 0; i < 200; i++) flood.push({ type: 'text', text: 'x'.repeat(1000) })
     let streamCalls = 0
     const provider: LLMProvider = {
-      async *stream(): AsyncGenerator<StreamChunk> {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
         streamCalls++
         if (streamCalls === 1) {
           for (const c of flood) yield c
@@ -191,11 +191,11 @@ describe('runAgentLoop', () => {
     // per-stream cap with no answer and no tool call. Reasoning never lands in
     // history, so "continue from where you left off" would just restart the loop.
     // The loop must instead push a force-answer nudge and accept the next answer.
-    const flood: StreamChunk[] = []
+    const flood: ProviderStreamChunk[] = []
     for (let i = 0; i < 200; i++) flood.push({ type: 'reasoning', text: 'x'.repeat(1000) })
     let streamCalls = 0
     const provider: LLMProvider = {
-      async *stream(): AsyncGenerator<StreamChunk> {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
         streamCalls++
         if (streamCalls === 1) {
           for (const c of flood) yield c
@@ -237,11 +237,11 @@ describe('runAgentLoop', () => {
     // The model ignores the force-answer nudge and loops in reasoning again. Rather
     // than re-prime until the wall-clock deadline, the run ends after the second
     // reasoning runaway with a surfaced explanation.
-    const flood: StreamChunk[] = []
+    const flood: ProviderStreamChunk[] = []
     for (let i = 0; i < 200; i++) flood.push({ type: 'reasoning', text: 'x'.repeat(1000) })
     let streamCalls = 0
     const provider: LLMProvider = {
-      async *stream(): AsyncGenerator<StreamChunk> {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
         streamCalls++
         for (const c of flood) yield c // every stream loops, never emits `done`
       },
@@ -726,7 +726,7 @@ src/renderer/views/projects-pane.ts
   it('prefers per-stream usage chunks over the shared lastUsage field (#112)', async () => {
     const provider = {
       lastUsage: { inputTokens: 99999, outputTokens: 88888 },
-      async *stream(): AsyncIterable<StreamChunk> {
+      async *stream(): AsyncIterable<ProviderStreamChunk> {
         yield { type: 'text', text: 'answer' }
         yield { type: 'usage', model: 'real-model', inputTokens: 321, outputTokens: 12 }
         yield { type: 'done' }
@@ -752,7 +752,7 @@ src/renderer/views/projects-pane.ts
   it('falls back to getLastUsage when the stream emits no usage chunk', async () => {
     const provider = {
       lastUsage: { inputTokens: 120, outputTokens: 80 },
-      async *stream(): AsyncIterable<StreamChunk> {
+      async *stream(): AsyncIterable<ProviderStreamChunk> {
         yield { type: 'text', text: 'answer' }
         yield { type: 'done' }
       },
