@@ -229,6 +229,73 @@ describe('analyzeShellCommand', () => {
     assert.equal(pipr.verdict, 'external')
     assert.ok(pipr.reasons.some((x) => /custom pip index/.test(x)))
   })
+
+  // --- shell-quote tokenization layer (#663) ---------------------------------
+
+  it('catches interpreter-runs-file cases that the regex flag-skip missed (tokenization)', () => {
+    // `-r ./preload` is a flag with a non-flag argument, which defeats the regex's
+    // `(?:-\S+\s+)*` skip so the trailing `build.js` was never reached — the token
+    // layer keys off argv[0]=node instead and still sees the .js operand.
+    const nodeCase = analyzeShellCommand('node -r ./preload build.js', root)
+    assert.equal(nodeCase.verdict, 'external')
+    assert.ok(nodeCase.reasons.some((x) => /runs a local script via an interpreter/.test(x)))
+
+    // A subcommand between the interpreter and the file (`deno run server.ts`) also
+    // slipped past the regex; tokenization scans the whole argv.
+    const denoCase = analyzeShellCommand('deno run server.ts', root)
+    assert.equal(denoCase.verdict, 'external')
+    assert.ok(denoCase.reasons.some((x) => /runs a local script via an interpreter/.test(x)))
+  })
+
+  it('catches an interpreter invoked via an absolute path (argv[0] is path-stripped)', () => {
+    const r = analyzeShellCommand('/usr/local/bin/python3 -c "import os"', root)
+    assert.equal(r.verdict, 'external')
+    assert.ok(r.reasons.some((x) => /inline script/.test(x)))
+  })
+
+  it('does not downgrade or newly-permit anything the regex path already classified', () => {
+    // Tokenization is purely additive: every previously-classified command keeps its
+    // exact verdict (no regressions, no loosening).
+    const expectations: Array<[string, string]> = [
+      ['npm test -- --coverage', 'sandbox'],
+      ['npm run build', 'sandbox'],
+      ['cat src/index.ts', 'sandbox'],
+      ['ls -la node_modules', 'sandbox'],
+      ['git status', 'sandbox'],
+      ['grep -n foo src/main/services/gh-pr-service.ts | head -20', 'sandbox'],
+      ['gh pr view --json state', 'ambiguous'],
+      ['npx tsx scripts/build-thing.mts', 'ambiguous'],
+      ['curl https://example.com', 'external'],
+      ['npm install lodash', 'external'],
+      ['git push origin main', 'external'],
+      ['node ./evil.js', 'external'],
+      ['python3 -c "import os"', 'external'],
+    ]
+    for (const [cmd, verdict] of expectations) {
+      assert.equal(analyzeShellCommand(cmd, root).verdict, verdict, `verdict drift for: ${cmd}`)
+    }
+  })
+
+  it('falls back to regex (and never loosens) on multi-statement / operator commands', () => {
+    // Operators and substitution split the token stream, so the token fast-path never
+    // classifies them on its own — the regex fallback still fires and prompts.
+    assert.equal(
+      analyzeShellCommand('echo hi && curl https://evil.example', root).verdict,
+      'external',
+    )
+    assert.equal(analyzeShellCommand('foo; git push origin main', root).verdict, 'external')
+    assert.equal(analyzeShellCommand('$(printf curl) example.com', root).verdict, 'external')
+    // A benign multi-statement pipe stays sandbox exactly as before — tokenization
+    // must not turn every operator command into a prompt.
+    assert.equal(analyzeShellCommand('grep -n foo src/a.ts | head -5', root).verdict, 'sandbox')
+  })
+
+  it('token pass leaves ephemeral runners of local tools ambiguous (not promoted)', () => {
+    // npx is not an interpreter to the token layer, and `.mts` is intentionally not a
+    // recognised script extension, so nothing here escalates past the ambiguous npx.
+    const r = analyzeShellCommand('npx tsx scripts/build-thing.mts', root)
+    assert.equal(r.verdict, 'ambiguous')
+  })
 })
 
 describe('dangerousInSandboxReasons', () => {

@@ -5,6 +5,11 @@ import { getBundledGortexPath } from './bundled-semantic.ts'
 import { runCommand, type RunCommandOptions } from '../exec/command-runner.ts'
 import { COMMAND_RUNNER_LONG_TIMEOUT_MS } from '../exec/subprocess-output-cap.ts'
 import { toRelativePath } from '../workspace.ts'
+import {
+  indexBuildStarted,
+  indexBuildFinished,
+  setSemanticIndexUnavailable,
+} from './index-status.ts'
 
 /**
  * Hard ceiling on semantic-index worker threads. Without a cap the native
@@ -61,6 +66,13 @@ let gortexCommand: string | null = null
 let gortexDaemonReady: Promise<boolean> | null = null
 let veraCommand = 'vera'
 const indexPromises = new Map<string, Promise<void>>()
+/**
+ * Roots whose index completed at least one successful build/update pass this
+ * session. Until a root is here, a semantic search would block on the cold
+ * build (up to {@link SEMANTIC_INDEX_TIMEOUT_MS}, #517) — callers check
+ * {@link isSemanticIndexReady} and fall back to text search instead.
+ */
+const readyRoots = new Set<string>()
 /** Roots with an in-flight {@link updateSemanticIndex} run, for overlap-free coalescing. */
 const updateInFlight = new Map<string, Promise<void>>()
 /** Roots that received an update request while a run was already in flight. */
@@ -91,6 +103,17 @@ export function getSemanticBackend(): SemanticBackend | null {
 
 export function isSemanticSearchAvailable(): boolean {
   return activeBackend !== null
+}
+
+/** Whether this root's semantic index has completed a build pass this session. */
+export function isSemanticIndexReady(workspaceRoot: string): boolean {
+  return readyRoots.has(resolve(workspaceRoot))
+}
+
+/** Test hook — mark a root ready (or clear all readiness with null). */
+export function setSemanticIndexReadyForTest(workspaceRoot: string | null): void {
+  if (workspaceRoot === null) readyRoots.clear()
+  else readyRoots.add(resolve(workspaceRoot))
 }
 
 /** Test hook — force backend without probing PATH. */
@@ -132,6 +155,7 @@ export async function probeSemanticBackends(): Promise<SemanticBackend | null> {
   }
 
   activeBackend = null
+  setSemanticIndexUnavailable()
   return null
 }
 
@@ -231,6 +255,7 @@ export async function ensureSemanticIndex(workspaceRoot: string): Promise<void> 
   }
 
   const promise = (async (): Promise<void> => {
+    indexBuildStarted('semantic')
     try {
       switch (backend) {
         case 'gortex':
@@ -240,7 +265,10 @@ export async function ensureSemanticIndex(workspaceRoot: string): Promise<void> 
           await ensureVeraIndex(root)
           break
       }
+      readyRoots.add(root)
+      indexBuildFinished('semantic', true)
     } catch (err) {
+      indexBuildFinished('semantic', false)
       console.warn('[copse-panel] semantic index setup failed:', err)
     }
   })()
@@ -292,6 +320,7 @@ export async function updateSemanticIndex(workspaceRoot: string): Promise<void> 
 }
 
 async function runSemanticIndexUpdate(backend: SemanticBackend, root: string): Promise<void> {
+  indexBuildStarted('semantic')
   try {
     switch (backend) {
       case 'gortex':
@@ -306,7 +335,10 @@ async function runSemanticIndexUpdate(backend: SemanticBackend, root: string): P
         })
         break
     }
+    readyRoots.add(root)
+    indexBuildFinished('semantic', true)
   } catch (err) {
+    indexBuildFinished('semantic', false)
     console.warn('[copse-panel] semantic index update failed:', err)
   }
 }

@@ -1,14 +1,13 @@
-import { errorMessage } from '@shared/errors.ts'
+import { errorMessage } from './internal-utils.ts'
 import type {
   LLMProvider,
   LLMMessage,
   LLMTool,
-  StreamChunk,
   ToolCallChunk,
   ToolResult,
-  ToolExecuteResult,
-} from '@shared/types'
-import { normalizeToolExecuteResult } from '@shared/types'
+} from '@copse/llm/wire-types.ts'
+import type { AgentStreamChunk, ToolExecuteResult } from './wire-types.ts'
+import { normalizeToolExecuteResult } from './wire-types.ts'
 import {
   trimMessagesInPlace,
   repairToolUseToolResultPairing,
@@ -16,7 +15,7 @@ import {
   getLastMeasuredInputTokens,
   setLastMeasuredInputTokens,
 } from './trim-history.ts'
-import type { TodoItem } from '@shared/types/todo.ts'
+import type { TodoItem } from './wire-types.ts'
 import {
   DUPLICATE_TOOL_RESULT_PREFIX,
   isDuplicateExploreCall,
@@ -49,7 +48,7 @@ import {
   isAgentRunTimeoutAbort,
   isStreamOutputRunaway,
 } from './agent-loop-limits.ts'
-import { hasOpenTodos, OPEN_TODOS_FINALIZE_NUDGE } from '@shared/todos/todo-logic.ts'
+import { hasOpenTodos, OPEN_TODOS_FINALIZE_NUDGE } from './agent-loop-guards.ts'
 
 const RECENT_FINGERPRINT_WINDOW = 16
 /** Consecutive reasoning-only runaway streams tolerated before the run gives up. */
@@ -63,7 +62,7 @@ export interface AgentLoopOptions {
   provider: LLMProvider
   messages: LLMMessage[] // mutated in-place as turns are added
   tools: LLMTool[]
-  onChunk: (chunk: StreamChunk) => void
+  onChunk: (chunk: AgentStreamChunk) => void
   executeTool: (
     name: string,
     args: unknown,
@@ -147,7 +146,7 @@ type StepUsage = {
 function emitStepUsage(
   streamUsage: StepUsage | null,
   getLastUsage: (() => StepUsage | null) | undefined,
-  onChunk: (chunk: StreamChunk) => void,
+  onChunk: (chunk: AgentStreamChunk) => void,
   usageModel?: string,
 ): void {
   const usage = streamUsage ?? getLastUsage?.()
@@ -176,7 +175,7 @@ function emitContextPressure(
     toolOnlySteps: number
     trimEvents: number
   },
-  onChunk: (chunk: StreamChunk) => void,
+  onChunk: (chunk: AgentStreamChunk) => void,
 ): void {
   const pressure = measureConversationPressure(input)
   onChunk({
@@ -192,7 +191,7 @@ function emitContextPressure(
 function applyTextToolCallRecovery(
   assistantText: string,
   pendingToolCalls: ToolCallChunk[],
-  onChunk: (chunk: StreamChunk) => void,
+  onChunk: (chunk: AgentStreamChunk) => void,
   coerceTextToolCallArgs?: CoerceToolArgsFn,
 ): string {
   // Recover on either the Cursor `<tool_call>` wrapper or a bare Anthropic/MiniMax
@@ -228,7 +227,7 @@ interface TextOnlyTurnResult {
 async function streamTextOnlyTurn(
   provider: LLMProvider,
   messages: LLMMessage[],
-  onChunk: (chunk: StreamChunk) => void,
+  onChunk: (chunk: AgentStreamChunk) => void,
   budget: LlmCallBudget,
   nudge = FINALIZE_NUDGE,
   getLastUsage?: () => { inputTokens: number; outputTokens: number } | null,
@@ -324,9 +323,95 @@ type ToolBatchContext = {
   messages: LLMMessage[]
   executeTool: AgentLoopOptions['executeTool']
   signal?: AbortSignal | undefined
-  onChunk: (chunk: StreamChunk) => void
+  onChunk: (chunk: AgentStreamChunk) => void
   recentFingerprints: string[]
   budget: LlmCallBudget
+}
+
+/**
+ * How many `explore` subagents may run concurrently when the model fans out
+ * several in one turn. Bounded so a wide fan-out doesn't stack up nested
+ * model streams and search subprocesses.
+ */
+const EXPLORE_PARALLELISM = 4
+
+type SettledToolExecution =
+  | { ok: true; value: string | ToolExecuteResult }
+  | { ok: false; error: unknown }
+
+/**
+ * Pre-start the batch's leading run of consecutive `explore` calls so those
+ * subagents run concurrently instead of one-after-another — each is a nested
+ * agent loop of up to ~10 model round-trips, so a serial ×3 fan-out triples
+ * the wall-clock for no reason (explores are read-only). Only the *leading*
+ * run is parallelized: an explore that follows another tool in the same batch
+ * must still observe that tool's effects, so it stays serial. Duplicate
+ * explores (per the fingerprint guard) are left to the serial loop, which
+ * answers them without executing. Each promise is settled into a result shape
+ * immediately so an early rejection can't raise an unhandled rejection while
+ * the loop is still on an earlier call.
+ *
+ * Note: concurrent subagents share the `lastMeasuredInputTokens` global, so a
+ * subagent's trim heuristic may read a sibling's measurement. Explore
+ * histories are small (≤10 steps) and the parent's snapshot/restore around
+ * the batch is unaffected, so the worst case is a slightly early/late trim
+ * inside one subagent.
+ */
+function startLeadingParallelExplores(
+  ctx: ToolBatchContext,
+): Map<string, Promise<SettledToolExecution>> {
+  const { pendingToolCalls, executeTool, signal, recentFingerprints } = ctx
+  const started = new Map<string, Promise<SettledToolExecution>>()
+
+  // Mirror the serial loop's duplicate detection (same order, same window) so
+  // a call the loop will refuse is never pre-executed.
+  const fingerprints = [...recentFingerprints]
+  const leading: { tc: ToolCallChunk; args: unknown }[] = []
+  for (const tc of pendingToolCalls) {
+    if (tc.name !== 'explore' || tc.argsError) break
+    const args = normalizeExploreArgs(tc.name, tc.args)
+    if (!isDuplicateExploreCall(tc.name, args, fingerprints)) leading.push({ tc, args })
+    fingerprints.push(toolCallFingerprint(tc.name, args))
+  }
+  if (leading.length < 2) return started
+
+  let active = 0
+  const waiters: (() => void)[] = []
+  const acquire = async (): Promise<void> => {
+    if (active < EXPLORE_PARALLELISM) {
+      active += 1
+      return
+    }
+    await new Promise<void>((resolve) => waiters.push(resolve))
+    active += 1
+  }
+  const release = (): void => {
+    active -= 1
+    waiters.shift()?.()
+  }
+
+  for (const { tc, args } of leading) {
+    started.set(
+      tc.id,
+      (async (): Promise<SettledToolExecution> => {
+        await acquire()
+        try {
+          const value = await executeTool(
+            tc.name,
+            args,
+            signal ?? new AbortController().signal,
+            tc.id,
+          )
+          return { ok: true, value }
+        } catch (error) {
+          return { ok: false, error }
+        } finally {
+          release()
+        }
+      })(),
+    )
+  }
+  return started
 }
 
 async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
@@ -336,6 +421,7 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
   const toolResults: ToolResult[] = []
   budget.deadline.pause()
   try {
+    const startedExplores = startLeadingParallelExplores(ctx)
     for (let ti = 0; ti < pendingToolCalls.length; ti++) {
       const tc = pendingToolCalls[ti]
       if (!tc) continue
@@ -368,14 +454,24 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
       }
 
       try {
-        const raw = duplicate
-          ? DUPLICATE_TOOL_RESULT_PREFIX
-          : await executeTool(
+        let raw: string | ToolExecuteResult
+        if (duplicate) {
+          raw = DUPLICATE_TOOL_RESULT_PREFIX
+        } else {
+          const preStarted = startedExplores.get(tc.id)
+          if (preStarted) {
+            const settled = await preStarted
+            if (!settled.ok) throw settled.error
+            raw = settled.value
+          } else {
+            raw = await executeTool(
               tc.name,
               normalizedArgs,
               signal ?? new AbortController().signal,
               tc.id,
             )
+          }
+        }
         const { result, editStats } = normalizeToolExecuteResult(raw)
         toolResults.push({ toolCallId: tc.id, result })
         onChunk({
@@ -408,7 +504,7 @@ function handleContextOverflowInLoop(
   maxContextTokens: number | undefined,
   toolSchemaReserveTokens: number,
   tools: LLMTool[],
-  onChunk: (chunk: StreamChunk) => void,
+  onChunk: (chunk: AgentStreamChunk) => void,
   onHistoryTrimmed?: () => void,
 ): boolean {
   if (!maxContextTokens) {

@@ -1,6 +1,6 @@
-import { runSubagent, EXPLORE_TOOL_NAMES } from '@shared/agent/run-subagent.ts'
-import { conversationTokenBudget } from '@shared/agent/trim-history.ts'
-import { readFileLimitsForSubagent } from '@shared/agent/read-file-limits.ts'
+import { runSubagent, EXPLORE_TOOL_NAMES } from '@copse/agent/run-subagent.ts'
+import { conversationTokenBudget } from '@copse/agent/trim-history.ts'
+import { readFileLimitsForSubagent } from '@copse/agent/read-file-limits.ts'
 import type {
   LLMProvider,
   LLMMessage,
@@ -12,7 +12,7 @@ import type {
 import type { ToolRegistry } from './tool-registry.ts'
 import { runWithAgentRunReadFileLimits } from './agent-run-read-limits.ts'
 import { getWorkspaceRoot } from './workspace.ts'
-import { buildExploreSearchRoutingAddon } from '@shared/agent/search-routing.ts'
+import { buildExploreSearchRoutingAddon } from '@copse/agent/search-routing.ts'
 import { isSemanticSearchAvailable } from './search/semantic-index.ts'
 
 export interface RunExploreSubagentOptions {

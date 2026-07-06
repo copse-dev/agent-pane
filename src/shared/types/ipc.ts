@@ -180,6 +180,11 @@ export interface IpcInvokeMap {
 
   // Index
   'index:query': { args: [pattern: string]; result: string[] }
+  'index:status': { args: []; result: import('./index-status.ts').WorkspaceIndexStatus }
+  'index:resolveFileReferences': {
+    args: [candidates: string[]]
+    result: { candidate: string; path: string; kind: 'file' | 'directory' }[]
+  }
 
   // Terminal
   'terminal:create': { args: [cols: number, rows: number]; result: string }
@@ -293,6 +298,7 @@ export interface IpcEventMap {
     },
   ]
   'mcp:status_changed': [statuses: McpServerStatus[]]
+  'index:status_changed': [status: import('./index-status.ts').WorkspaceIndexStatus]
   'diff:queued': [entries: { path: string; language: string }[]]
   'diff:conflict': [paths: string[]]
   'fs:changed': [path: string, content: string | null]
