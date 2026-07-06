@@ -17,7 +17,7 @@
 // empty or mispriced.
 
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
-import type { ExtraProviderModel } from '@shared/llm/extra-providers.ts'
+import type { ExtraProviderModel } from '@copse/llm/extra-providers.ts'
 
 /** OpenAI-compatible base URL of the HF Inference Providers router. */
 export const HUGGINGFACE_ROUTER_BASE_URL = 'https://router.huggingface.co/v1'

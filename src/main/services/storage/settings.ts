@@ -1,7 +1,7 @@
 import { safeStorage } from 'electron'
 import ElectronStore from 'electron-store'
 import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
-import { BUILTIN_EXTRA_PROVIDERS } from '@shared/llm/extra-providers.ts'
+import { BUILTIN_EXTRA_PROVIDERS } from '@copse/llm/extra-providers.ts'
 import { runSerialized } from './write-queue.ts'
 import { getSettingSchema } from './settings-schema.ts'
 
