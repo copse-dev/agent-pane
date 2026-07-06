@@ -49,6 +49,14 @@ export interface BenchmarkScore {
   source: string
   /** ISO date the score was recorded, e.g. "2025-03". Required. */
   asOf: string
+  /**
+   * True when `value` is a full-precision score adjusted down by the modelled
+   * quantization penalty (see `quant-penalty.ts`) rather than a direct quantized
+   * measurement. The UI must surface estimates as estimates.
+   */
+  estimated?: boolean
+  /** Derivation for an estimate (e.g. the penalty applied), for the "why" tooltip. */
+  basis?: string
 }
 
 export interface LocalModelCapability {

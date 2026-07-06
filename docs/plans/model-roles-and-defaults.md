@@ -129,6 +129,26 @@ Copse-specific evals (Phase 4) earn their keep later; the public seed fills what
 it can and leaves the rest "—". The sync needs a model-id **alias map** (leaderboard
 names like `Qwen2.5-Coder-32B-Instruct` / `ollama/qwen2.5-coder:32b` → our ids).
 
+**Estimating the 4-bit "damage" (caveat 2).** Rather than discard the plentiful
+full-precision numbers, adjust them down by a modelled quantization penalty
+(`quant-penalty.ts`). The penalty is monotonic — fewer bits per weight → more
+damage (steep below ~4 bpw); larger models → less damage — anchored so a 30B
+model loses ≈1.2% at Q4_K_M, ≈13% at Q2_K, near-nothing at Q8:
+
+| bpw \ size | 70B  | 32B  | 13B  | 7B   | 3B   |
+| ---------- | ---- | ---- | ---- | ---- | ---- |
+| Q5_K_M     | 0.2% | 0.3% | 0.5% | 0.6% | 0.9% |
+| Q4_K_M     | 0.9% | 1.2% | 1.7% | 2.2% | 3.0% |
+| Q3_K_M     | 3.4% | 4.7% | 6.7% | 8.6% | 12%  |
+| Q2_K       | 9.3% | 13%  | 18%  | 23%  | 33%  |
+
+An estimated score is stored with `estimated: true` + a `basis` string and must
+render _as an estimate_, never as measured. The constants are **tunable**: a
+calibration pass refits them from the paired (fp16, quantized) points the
+leaderboards do have (Aider's fp16 vs `ollama/*` GGUF entries) and from
+llama.cpp's K-quant perplexity/KL-divergence tables. So the layering is:
+measured-quantized > estimated-from-full > unknown ("—").
+
 ### 3. Defaults: role → recommended model
 
 For each role, a ranked recommendation is computed from the catalog: filter by
