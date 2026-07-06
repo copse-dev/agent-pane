@@ -20,6 +20,7 @@ await esbuild.build({
   external: ['electron', 'node-pty', 'jsdom', '@mozilla/readability', 'turndown', 'mermaid'],
   alias: {
     '@shared': resolve('./src/shared'),
+    '@copse/agent': resolve('./packages/agent/src'),
     '@copse/llm': resolve('./packages/llm/src'),
   },
   // Unit tests cover the directive parser, so they always build with it enabled.

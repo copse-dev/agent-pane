@@ -11,13 +11,13 @@ import {
   setThreadDraftPrompt,
 } from '@shared/store/thread-helpers.ts'
 import { dispatchAgentRun, enqueueUserMessage } from '../controller/message-queue.ts'
-import { nextWorkingBrief } from '@shared/agent/working-brief.ts'
+import { nextWorkingBrief } from '@copse/agent/working-brief.ts'
 import {
   buildTextWithAttachments,
   isTextBlockAttachment,
   textBlockLabel,
   type ThreadRefAttachment,
-} from '@shared/agent/build-text-with-attachments.ts'
+} from '@copse/agent/build-text-with-attachments.ts'
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import { bindFileDropTarget, attachFiles } from '../attachments/handle-file-drop.ts'
 import {

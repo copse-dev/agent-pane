@@ -1,7 +1,7 @@
 import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { composeContextBreakdown } from '@shared/agent/context-breakdown.ts'
+import { composeContextBreakdown } from '@copse/agent/context-breakdown.ts'
 import { createContextWheel } from './context-wheel.ts'
 
 // Component-level port of tests/e2e/context-breakdown.e2e.ts. That spec is

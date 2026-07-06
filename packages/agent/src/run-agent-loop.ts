@@ -1,14 +1,13 @@
-import { errorMessage } from '@shared/errors.ts'
+import { errorMessage } from './internal-utils.ts'
 import type {
   LLMProvider,
   LLMMessage,
   LLMTool,
-  StreamChunk,
   ToolCallChunk,
   ToolResult,
-  ToolExecuteResult,
-} from '@shared/types'
-import { normalizeToolExecuteResult } from '@shared/types'
+} from '@copse/llm/wire-types.ts'
+import type { AgentStreamChunk, ToolExecuteResult } from './wire-types.ts'
+import { normalizeToolExecuteResult } from './wire-types.ts'
 import {
   trimMessagesInPlace,
   repairToolUseToolResultPairing,
@@ -16,7 +15,7 @@ import {
   getLastMeasuredInputTokens,
   setLastMeasuredInputTokens,
 } from './trim-history.ts'
-import type { TodoItem } from '@shared/types/todo.ts'
+import type { TodoItem } from './wire-types.ts'
 import {
   DUPLICATE_TOOL_RESULT_PREFIX,
   isDuplicateExploreCall,
@@ -49,7 +48,7 @@ import {
   isAgentRunTimeoutAbort,
   isStreamOutputRunaway,
 } from './agent-loop-limits.ts'
-import { hasOpenTodos, OPEN_TODOS_FINALIZE_NUDGE } from '@shared/todos/todo-logic.ts'
+import { hasOpenTodos, OPEN_TODOS_FINALIZE_NUDGE } from './agent-loop-guards.ts'
 
 const RECENT_FINGERPRINT_WINDOW = 16
 /** Consecutive reasoning-only runaway streams tolerated before the run gives up. */
@@ -63,7 +62,7 @@ export interface AgentLoopOptions {
   provider: LLMProvider
   messages: LLMMessage[] // mutated in-place as turns are added
   tools: LLMTool[]
-  onChunk: (chunk: StreamChunk) => void
+  onChunk: (chunk: AgentStreamChunk) => void
   executeTool: (
     name: string,
     args: unknown,
@@ -147,7 +146,7 @@ type StepUsage = {
 function emitStepUsage(
   streamUsage: StepUsage | null,
   getLastUsage: (() => StepUsage | null) | undefined,
-  onChunk: (chunk: StreamChunk) => void,
+  onChunk: (chunk: AgentStreamChunk) => void,
   usageModel?: string,
 ): void {
   const usage = streamUsage ?? getLastUsage?.()
@@ -176,7 +175,7 @@ function emitContextPressure(
     toolOnlySteps: number
     trimEvents: number
   },
-  onChunk: (chunk: StreamChunk) => void,
+  onChunk: (chunk: AgentStreamChunk) => void,
 ): void {
   const pressure = measureConversationPressure(input)
   onChunk({
@@ -192,7 +191,7 @@ function emitContextPressure(
 function applyTextToolCallRecovery(
   assistantText: string,
   pendingToolCalls: ToolCallChunk[],
-  onChunk: (chunk: StreamChunk) => void,
+  onChunk: (chunk: AgentStreamChunk) => void,
   coerceTextToolCallArgs?: CoerceToolArgsFn,
 ): string {
   if (pendingToolCalls.length > 0 || !/<\s*tool_call\s*>/i.test(assistantText)) {
@@ -223,7 +222,7 @@ interface TextOnlyTurnResult {
 async function streamTextOnlyTurn(
   provider: LLMProvider,
   messages: LLMMessage[],
-  onChunk: (chunk: StreamChunk) => void,
+  onChunk: (chunk: AgentStreamChunk) => void,
   budget: LlmCallBudget,
   nudge = FINALIZE_NUDGE,
   getLastUsage?: () => { inputTokens: number; outputTokens: number } | null,
@@ -319,7 +318,7 @@ type ToolBatchContext = {
   messages: LLMMessage[]
   executeTool: AgentLoopOptions['executeTool']
   signal?: AbortSignal | undefined
-  onChunk: (chunk: StreamChunk) => void
+  onChunk: (chunk: AgentStreamChunk) => void
   recentFingerprints: string[]
   budget: LlmCallBudget
 }
@@ -500,7 +499,7 @@ function handleContextOverflowInLoop(
   maxContextTokens: number | undefined,
   toolSchemaReserveTokens: number,
   tools: LLMTool[],
-  onChunk: (chunk: StreamChunk) => void,
+  onChunk: (chunk: AgentStreamChunk) => void,
   onHistoryTrimmed?: () => void,
 ): boolean {
   if (!maxContextTokens) {

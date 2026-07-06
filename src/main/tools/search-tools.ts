@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import micromatch from 'micromatch'
 import { defineTool } from '@shared/types'
-import { resolveSearchText } from '@shared/agent/search-routing.ts'
+import { resolveSearchText } from '@copse/agent/search-routing.ts'
 import { resolveReadablePath, getWorkspaceRoot } from '../services/workspace.ts'
 import { isRgAvailable } from '../services/tool-availability.ts'
 import { getIndex, whenFileIndexReady } from '../services/search/file-index.ts'
