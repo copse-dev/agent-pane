@@ -9,7 +9,7 @@
   background: var(--bg-elevated);
   color: var(--text-primary);
   overflow: hidden;
-  box-shadow: 0 12px 48px rgb(0 0 0 / 50%);
+  box-shadow: var(--shadow-lg);
 }
 .file-search-overlay::backdrop {
   background: rgb(0 0 0 / 40%);

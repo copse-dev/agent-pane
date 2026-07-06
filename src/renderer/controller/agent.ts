@@ -16,6 +16,7 @@ import {
   updateContextSnapshot,
   setThreadTodos,
   setThreadReview,
+  setThreadComparison,
   getThreadById,
 } from '@shared/store/thread-helpers.ts'
 import { syncThreadGitBranchAfterShell } from './sync-thread-branch-after-shell.ts'
@@ -134,6 +135,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           args: chunk.toolCall.args,
           status: 'running',
           result: null,
+          ...(chunk.toolCall.kind !== undefined ? { kind: chunk.toolCall.kind } : {}),
         })
         st.toolSinceText = true
         st.writing = false
@@ -146,6 +148,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
             status: chunk.isError ? 'error' : 'done',
             result: chunk.result,
             ...(chunk.editStats ? { editStats: chunk.editStats } : {}),
+            ...(chunk.resultFormat ? { resultFormat: chunk.resultFormat } : {}),
           })
           if (chunk.toolCallId && !chunk.isError) {
             const toolCall = findToolCall(store, st.msgId, chunk.toolCallId)
@@ -281,6 +284,13 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
       case 'post_turn_review': {
         setThreadReview(store, threadId, { status: chunk.status, summary: chunk.summary })
         if (chunk.status === 'running') store.emit('agent_activity', threadId, 'Reviewing changes…')
+        break
+      }
+      case 'model_comparison': {
+        setThreadComparison(store, threadId, chunk.comparison)
+        if (chunk.comparison.status === 'running') {
+          store.emit('agent_activity', threadId, 'Comparing models…')
+        }
         break
       }
       case 'done': {

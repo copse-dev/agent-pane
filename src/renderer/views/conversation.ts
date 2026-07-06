@@ -26,6 +26,7 @@ import {
 import { navigateToChange } from '../controller/panels.ts'
 import { createTodoListEl } from './todo-panel.ts'
 import { createReviewCardEl } from './review-panel.ts'
+import { createComparisonCardEl } from './comparison-panel.ts'
 import { renderToolArgs } from './tool-args-format.ts'
 import {
   drainMessageQueue,
@@ -56,8 +57,17 @@ function createToolArgsSection(args: unknown): HTMLDetailsElement | null {
   )
 }
 
-function createToolResultSection(result: string | null): HTMLElement {
+function createToolResultSection(result: string | null, format?: 'markdown'): HTMLElement {
   if (!result) return el('div', { class: 'tool-result' })
+  // ACP tool output is agent-authored Markdown — render it through the same
+  // pipeline as assistant messages so fenced code, lists and prose display
+  // instead of literal backticks. Built-in results stay in a plain `<pre>`.
+  if (format === 'markdown') {
+    const wrap = el('div', { class: 'tool-result tool-result-markdown message-text' })
+    wrap.innerHTML = sanitizeRenderedMarkdown(renderMarkdown(result))
+    attachCodeBlockCopyButtons(wrap)
+    return wrap
+  }
   return el('div', { class: 'tool-result' }, el('pre', {}, renderToolArgs(result)))
 }
 
@@ -112,7 +122,7 @@ function appendStandardToolSections(
   card.append(
     createToolHeader(label, tc.status, summaryClass, count, tc.editStats, getToolEditPath(tc)),
     ...appendIfPresent(createToolArgsSection(tc.args)),
-    createToolResultSection(tc.result),
+    createToolResultSection(tc.result, tc.resultFormat),
   )
 }
 
@@ -190,7 +200,9 @@ function setAssistantMarkdown(
 }
 
 function createSubagentMessageEl(content: string, streaming: boolean, api: ApiClient): HTMLElement {
-  const textEl = el('div', { class: 'subagent-message subagent-message-assistant message-text' })
+  const textEl = el('div', {
+    class: 'subagent-message subagent-message-assistant message-text streaming-markdown',
+  })
   setAssistantMarkdown(textEl, content, streaming, api)
   return textEl
 }
@@ -231,7 +243,9 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
   }
 
   if (preview && status !== 'running') {
-    const previewEl = el('div', { class: 'subagent-summary-preview message-text' })
+    const previewEl = el('div', {
+      class: 'subagent-summary-preview message-text streaming-markdown',
+    })
     setAssistantMarkdown(previewEl, summaryPreview(preview), false, api)
     card.append(previewEl)
   }
@@ -262,7 +276,8 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
 
   if (tc.result && status === 'done') {
     const resultEl = el('div', {
-      class: 'subagent-parent-result subagent-message subagent-message-assistant message-text',
+      class:
+        'subagent-parent-result subagent-message subagent-message-assistant message-text streaming-markdown',
     })
     setAssistantMarkdown(resultEl, tc.result, false, api)
     card.append(resultEl)
@@ -299,7 +314,7 @@ function createGroupToolCard(item: Extract<ToolCallDisplayItem, { type: 'group' 
         getToolEditPath(tc),
       ),
       ...appendIfPresent(createToolArgsSection(tc.args)),
-      createToolResultSection(tc.result),
+      createToolResultSection(tc.result, tc.resultFormat),
     )
     groupItems.append(entry)
   }
@@ -341,7 +356,7 @@ function appendMessageContent(
   if (msg.role === 'assistant' && msg.reasoning) {
     body.append(buildReasoningEl(msg.reasoning, !msg.content.trim()))
   }
-  const textEl = el('div', { class: 'message-text' })
+  const textEl = el('div', { class: 'message-text streaming-markdown' })
   if (msg.role === 'assistant' && msg.content) {
     setAssistantMarkdown(textEl, msg.content, false, api)
   } else {
@@ -832,10 +847,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       attachCopyButton(body, msgId, store)
     }
 
-    // Keep the inline review card (if any) last in the transcript: new messages
-    // belong above a review produced for an earlier turn.
-    const reviewCard = list.querySelector('[data-review-card]')
-    if (reviewCard) list.insertBefore(msgEl, reviewCard)
+    // Keep the inline review / comparison cards (if any) last in the transcript:
+    // new messages belong above cards produced for an earlier turn.
+    const trailingCard = list.querySelector('[data-review-card], [data-comparison-card]')
+    if (trailingCard) list.insertBefore(msgEl, trailingCard)
     else list.append(msgEl)
     hydrateRemoteArtifactImages(list, api)
     // Re-render any tool cards this message already carries (restored threads).
@@ -861,6 +876,22 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (thread?.review) {
       const card = createReviewCardEl(thread.review, api)
       card.setAttribute('data-review-card', '')
+      // Keep the review card above the comparison card regardless of which sync
+      // ran last (the comparison can land mid-turn via the tool, the review after).
+      const comparisonCard = list.querySelector('[data-comparison-card]')
+      if (comparisonCard) list.insertBefore(card, comparisonCard)
+      else list.append(card)
+    }
+  }
+
+  function syncComparisonPanel(): void {
+    // Render the comparison card inline as the last child of the message list,
+    // after the review card, so it joins the transcript flow. Replace on sync.
+    list.querySelector('[data-comparison-card]')?.remove()
+    const thread = getActiveThread(store)
+    if (thread?.comparison) {
+      const card = createComparisonCardEl(thread.comparison, api)
+      card.setAttribute('data-comparison-card', '')
       list.append(card)
     }
   }
@@ -878,6 +909,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
     syncTodoPanel()
     syncReviewPanel()
+    syncComparisonPanel()
     if (thread) {
       renderQueuedPanel(thread.id)
     } else {
@@ -975,6 +1007,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }),
     store.on('review_changed', () => {
       syncReviewPanel()
+      scrollToBottom()
+    }),
+    store.on('comparison_changed', () => {
+      syncComparisonPanel()
       scrollToBottom()
     }),
     store.on('thread_status_changed', (tid, status) => {

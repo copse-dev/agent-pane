@@ -317,6 +317,21 @@ export interface ApiClient {
       candidates: string[],
     ) => Promise<{ candidate: string; path: string; kind: 'file' | 'directory' }[]>
   }
+  memories: {
+    list: () => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote[]>
+    create: (
+      title: string,
+      body: string,
+      tags?: string[],
+    ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote>
+    update: (
+      id: string,
+      title: string,
+      body: string,
+      tags?: string[],
+    ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
+    delete: (id: string) => Promise<boolean>
+  }
   skills: {
     list: () => Promise<SkillSummary[]>
   }
@@ -340,6 +355,8 @@ export interface ApiClient {
   git: {
     isAvailable: () => Promise<boolean>
     status: () => Promise<GitStatusResult | null>
+    /** Live +/- line totals across staged + unstaged changes, or null when clean. */
+    changeStats: () => Promise<{ additions: number; deletions: number } | null>
     fileDiff: (path: string, staged: boolean) => Promise<GitFileDiff | null>
     branchStatus: (forBranch?: string) => Promise<GitBranchStatus>
     checkoutBranch: (branch: string) => Promise<void>
