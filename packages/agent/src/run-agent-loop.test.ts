@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { at } from '@shared/array-utils.ts'
+import { at } from './internal-utils.ts'
 import { runAgentLoop } from './run-agent-loop.ts'
 import { AGENT_RUN_ABORT_REASON_TIMEOUT, AgentRunDeadline } from './agent-loop-limits.ts'
 import { getLastMeasuredInputTokens, setLastMeasuredInputTokens } from './trim-history.ts'
@@ -9,7 +9,8 @@ import {
   REASONING_RUNAWAY_GIVEUP_MESSAGE,
   TRUNCATION_CONTINUE_NUDGE,
 } from '@copse/llm/provider-stop-reason.ts'
-import type { LLMMessage, LLMProvider, ProviderStreamChunk, StreamChunk } from '@shared/types'
+import type { LLMMessage, LLMProvider, ProviderStreamChunk } from '@copse/llm/wire-types.ts'
+import type { AgentStreamChunk } from './wire-types.ts'
 
 function mockProvider(chunks: ProviderStreamChunk[][]): LLMProvider {
   let call = 0
@@ -39,7 +40,7 @@ function assertToolPairingValid(messages: LLMMessage[]): void {
 
 describe('runAgentLoop', () => {
   it('emits done after text-only response', async () => {
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     await runAgentLoop({
       provider: mockProvider([[{ type: 'text', text: 'hi' }, { type: 'done' }]]),
       messages: [{ role: 'user', content: 'hello' }],
@@ -53,7 +54,7 @@ describe('runAgentLoop', () => {
   it('respects AbortSignal', async () => {
     const controller = new AbortController()
     controller.abort()
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     await runAgentLoop({
       provider: mockProvider([[{ type: 'text', text: 'hi' }, { type: 'done' }]]),
       messages: [{ role: 'user', content: 'hello' }],
@@ -67,7 +68,7 @@ describe('runAgentLoop', () => {
 
   it('executes tools and adds tool_result chunks', async () => {
     let executed = false
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     await runAgentLoop({
       provider: mockProvider([
         [{ type: 'tool_call', toolCall: { id: '1', name: 'test', args: {} } }, { type: 'done' }],
@@ -87,7 +88,7 @@ describe('runAgentLoop', () => {
 
   it('does not execute tools with unparseable args; returns an error result (#114)', async () => {
     let executed = false
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     await runAgentLoop({
       provider: mockProvider([
         [
@@ -133,7 +134,7 @@ describe('runAgentLoop', () => {
   })
 
   it('emits a final text answer after maxSteps tool-only loop', async () => {
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     await runAgentLoop({
       provider: mockProvider([
         [{ type: 'tool_call', toolCall: { id: '1', name: 'loop', args: {} } }, { type: 'done' }],
@@ -169,7 +170,7 @@ describe('runAgentLoop', () => {
         yield { type: 'done' }
       },
     }
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     await runAgentLoop({
       provider,
       messages: [{ role: 'user', content: 'go' }],
@@ -206,7 +207,7 @@ describe('runAgentLoop', () => {
       },
     }
     const messages: LLMMessage[] = [{ role: 'user', content: 'go' }]
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     await runAgentLoop({
       provider,
       messages,
@@ -246,7 +247,7 @@ describe('runAgentLoop', () => {
         for (const c of flood) yield c // every stream loops, never emits `done`
       },
     }
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     await runAgentLoop({
       provider,
       messages: [{ role: 'user', content: 'go' }],
@@ -297,7 +298,7 @@ describe('runAgentLoop', () => {
 <parameter=command>npm run lint</parameter>
 </function>
 </tool_call>`
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     await runAgentLoop({
       provider: mockProvider([
         [{ type: 'text', text: embedded }, { type: 'done' }],
@@ -350,7 +351,7 @@ src/renderer/views/projects-pane.ts
         yield { type: 'done' }
       },
     }
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     await runAgentLoop({
       provider,
       messages: [{ role: 'user', content: 'verify settings icons' }],
@@ -396,7 +397,7 @@ src/renderer/views/projects-pane.ts
         yield { type: 'done' }
       },
     }
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     await runAgentLoop({
       provider,
       messages: [{ role: 'user', content: 'verify settings icons' }],
@@ -425,7 +426,7 @@ src/renderer/views/projects-pane.ts
   })
 
   it('stops when max LLM call budget is exhausted', async () => {
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     await runAgentLoop({
       provider: mockProvider([
         [{ type: 'tool_call', toolCall: { id: '1', name: 'loop', args: {} } }, { type: 'done' }],
@@ -443,7 +444,7 @@ src/renderer/views/projects-pane.ts
   })
 
   it('surfaces a terminal message when finalize returns empty', async () => {
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     await runAgentLoop({
       provider: mockProvider([[{ type: 'done' }], [{ type: 'done' }]]),
       messages: [{ role: 'user', content: 'review the repo' }],
@@ -459,7 +460,7 @@ src/renderer/views/projects-pane.ts
   })
 
   it('surfaces refusal when provider reports stopReason refusal', async () => {
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     await runAgentLoop({
       provider: mockProvider([[{ type: 'done', stopReason: 'refusal' }]]),
       messages: [{ role: 'user', content: 'hello' }],
@@ -484,7 +485,7 @@ src/renderer/views/projects-pane.ts
         }
       },
     }
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     await runAgentLoop({
       provider,
       messages: [{ role: 'user', content: 'hello' }],
@@ -499,7 +500,7 @@ src/renderer/views/projects-pane.ts
   it('adds cancelled tool results when aborted mid-batch', async () => {
     const controller = new AbortController()
     const messages = [{ role: 'user', content: 'go' }] as const
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     await runAgentLoop({
       provider: mockProvider([
         [
@@ -527,7 +528,7 @@ src/renderer/views/projects-pane.ts
   })
 
   it('nudges to close open todos before finalize', async () => {
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     let nudgeText = ''
     const provider: LLMProvider = {
       async *stream(messages) {
@@ -629,7 +630,7 @@ src/renderer/views/projects-pane.ts
         yield { type: 'done' }
       },
     }
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     const messages: LLMMessage[] = [{ role: 'user', content: 'go' }]
     await runAgentLoop({
       provider,
@@ -650,7 +651,7 @@ src/renderer/views/projects-pane.ts
   it('surfaces the run limit message when aborted for timeout', async () => {
     const controller = new AbortController()
     controller.abort(AGENT_RUN_ABORT_REASON_TIMEOUT)
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     await runAgentLoop({
       provider: mockProvider([[{ type: 'text', text: 'hi' }, { type: 'done' }]]),
       messages: [{ role: 'user', content: 'hello' }],
@@ -666,7 +667,7 @@ src/renderer/views/projects-pane.ts
   it('stays silent on a user-initiated abort (non-timeout reason)', async () => {
     const controller = new AbortController()
     controller.abort('user-stop')
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     await runAgentLoop({
       provider: mockProvider([[{ type: 'text', text: 'hi' }, { type: 'done' }]]),
       messages: [{ role: 'user', content: 'hello' }],
@@ -701,7 +702,7 @@ src/renderer/views/projects-pane.ts
       origResume(now)
     }
     let pausedDuringTool: boolean | null = null
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     await runAgentLoop({
       provider: mockProvider([
         [{ type: 'tool_call', toolCall: { id: '1', name: 'slow', args: {} } }, { type: 'done' }],
@@ -732,7 +733,7 @@ src/renderer/views/projects-pane.ts
         yield { type: 'done' }
       },
     }
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     await runAgentLoop({
       provider,
       messages: [{ role: 'user', content: 'hi' }],
@@ -757,7 +758,7 @@ src/renderer/views/projects-pane.ts
         yield { type: 'done' }
       },
     }
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     await runAgentLoop({
       provider,
       messages: [{ role: 'user', content: 'hi' }],

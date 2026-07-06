@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
-import { classifySearchQuery, resolveSearchText } from '@shared/agent/search-routing.ts'
+import { classifySearchQuery, resolveSearchText } from '@copse/agent/search-routing.ts'
 import {
   getWorkspaceRoot,
   resolveWorkspacePath,

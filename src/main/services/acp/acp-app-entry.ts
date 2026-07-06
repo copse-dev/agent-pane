@@ -7,8 +7,8 @@ import { loadMcpServers } from '../mcp/mcp-registry.ts'
 import { runAgent, abortAgent } from '../agent-service.ts'
 import { setApprovalHandler, type ApprovalRequest } from '../approval.ts'
 import { setStagedDiffResolver } from '../diff-queue.ts'
-import type { AgentHost } from '@shared/agent/agent-host.ts'
-import type { LLMMessage } from '@shared/types'
+import type { AgentHost } from '@copse/agent/agent-host.ts'
+import type { LLMMessage, StreamChunk } from '@shared/types'
 
 /**
  * Headless entry for `copse --acp`: expose the Copse agent loop to an ACP
@@ -39,7 +39,7 @@ export async function runAcpAgentMode(): Promise<void> {
   const history: LLMMessage[] = []
 
   const runner: AcpTurnRunner = async (ctx) => {
-    const host: AgentHost = {
+    const host: AgentHost<StreamChunk> = {
       emit: (_threadId, chunk) => {
         void ctx.emit(chunk)
       },

@@ -3,7 +3,7 @@ import {
   askUserParamsSchema,
   formatAnswersResult,
   pairQuestionsWithAnswers,
-} from '@shared/agent/ask-user-format.ts'
+} from '@copse/agent/ask-user-format.ts'
 import { requestUserAnswers } from '../services/ask-user.ts'
 
 export const askUserTool = defineTool({
