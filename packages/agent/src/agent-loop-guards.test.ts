@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  hasOpenTodos,
   isDuplicateExploreCall,
   toolCallFingerprint,
   normalizeExploreArgs,
@@ -23,5 +24,13 @@ describe('isDuplicateExploreCall', () => {
   it('ignores non-explore tools', () => {
     const fp = toolCallFingerprint('run_shell', { command: 'npm test' })
     assert.equal(isDuplicateExploreCall('run_shell', { command: 'npm test' }, [fp]), false)
+  })
+})
+
+describe('hasOpenTodos', () => {
+  it('detects pending and in_progress', () => {
+    assert.equal(hasOpenTodos([{ id: '1', content: 'x', status: 'completed' }]), false)
+    assert.equal(hasOpenTodos([{ id: '1', content: 'x', status: 'pending' }]), true)
+    assert.equal(hasOpenTodos([{ id: '1', content: 'x', status: 'in_progress' }]), true)
   })
 })

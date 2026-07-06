@@ -317,6 +317,10 @@ export interface ApiClient {
     resolveFileReferences: (
       candidates: string[],
     ) => Promise<{ candidate: string; path: string; kind: 'file' | 'directory' }[]>
+    status: () => Promise<import('@shared/types/index-status.ts').WorkspaceIndexStatus>
+    onStatusChanged: (
+      handler: (status: import('@shared/types/index-status.ts').WorkspaceIndexStatus) => void,
+    ) => () => void
   }
   memories: {
     list: () => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote[]>

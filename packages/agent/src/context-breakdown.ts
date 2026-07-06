@@ -1,8 +1,4 @@
-import type {
-  ContextBreakdown,
-  ContextBreakdownSegment,
-  ContextSegmentKey,
-} from '@shared/types/thread.ts'
+import type { ContextBreakdown, ContextBreakdownSegment, ContextSegmentKey } from './wire-types.ts'
 
 /** Human-readable labels for each context segment, shown in the wheel popover. */
 export const CONTEXT_SEGMENT_LABELS: Record<ContextSegmentKey, string> = {

@@ -4,7 +4,7 @@ import {
   runWithAgentRunReadFileLimits,
   getAgentRunReadFileLimits,
 } from './agent-run-read-limits.ts'
-import { READ_FILE_LIMITS_CEILING } from '@shared/agent/read-file-limits.ts'
+import { READ_FILE_LIMITS_CEILING } from '@copse/agent/read-file-limits.ts'
 
 describe('agent-run-read-limits', () => {
   it('returns ceiling when no run is active', () => {

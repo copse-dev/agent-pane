@@ -1,19 +1,8 @@
-export type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled'
-
-export type TodoCheck =
-  | { kind: 'shell'; command: string; expectExit?: number | undefined }
-  | { kind: 'fileExists'; path: string }
-  | { kind: 'typecheck' }
-
-export type TodoAssignedModel = 'cloud' | 'local'
-
-export interface TodoItem {
-  id: string
-  content: string
-  status: TodoStatus
-  check?: TodoCheck
-  assignedModel?: TodoAssignedModel
-}
+// The todo item itself is owned by the agent module (it crosses the loop
+// contract via `AgentRunPayload.priorTodos` and the finalize gate); re-exported
+// here so `@shared/types` consumers are unchanged.
+import type { TodoStatus, TodoCheck, TodoAssignedModel } from '@copse/agent/wire-types.ts'
+export type { TodoStatus, TodoCheck, TodoAssignedModel, TodoItem } from '@copse/agent/wire-types.ts'
 
 export interface TodoUpdateInput {
   id?: string | undefined
