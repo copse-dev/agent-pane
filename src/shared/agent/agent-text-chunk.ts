@@ -25,13 +25,23 @@ function endsAtBoundary(text: string): boolean {
   return lastVisible === '.' || lastVisible === '?' || lastVisible === '!' || lastVisible === ':'
 }
 
-// A chunk that continues (rather than starts) a sentence: it begins with a
-// lowercase letter, an apostrophe, a comma, or a similar continuation char.
-function continuesSentence(text: string): boolean {
-  const first = text.trimStart().slice(0, 1)
+// A chunk that continues (rather than starts) a sentence. Continuation
+// punctuation and clitics ('’,;)…–—) attach directly to the previous word, so
+// they always count. A bare lowercase word only counts when a whitespace
+// word-boundary separates it from the prior text — otherwise joining "thinking"
+// and "final answer" would mangle into "thinkingfinal answer". The boundary is
+// present when either the prior text ends with whitespace or this chunk begins
+// with whitespace.
+function continuesSentence(prevText: string, text: string): boolean {
+  const trimmedStart = text.trimStart()
+  const first = trimmedStart.slice(0, 1)
   if (!first) return false
-  if (first >= 'a' && first <= 'z') return true
-  return "'’,;)…–—".includes(first)
+  if ("'’,;)…–—".includes(first)) return true
+  if (first >= 'a' && first <= 'z') {
+    const hasWordBoundary = text !== trimmedStart || /\s$/.test(prevText)
+    return hasWordBoundary
+  }
+  return false
 }
 
 export function planAgentTextChunk(
@@ -59,7 +69,7 @@ export function planAgentTextChunk(
     state.msgId !== null &&
     state.toolSinceText &&
     !endsAtBoundary(currentText) &&
-    continuesSentence(text)
+    continuesSentence(currentText, text)
 
   const needsNewMessage = (!state.msgId || state.toolSinceText) && !isMidSentenceContinuation
   if (!isWhitespaceOnly && needsNewMessage) {

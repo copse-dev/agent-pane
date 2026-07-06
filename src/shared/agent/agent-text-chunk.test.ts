@@ -66,6 +66,22 @@ describe('planAgentTextChunk', () => {
     })
   })
 
+  it('starts a new bubble when a lowercase word would join without a boundary', () => {
+    // "thinking" then a tool call then "final answer": there is no whitespace
+    // boundary between the fragments, so joining them would mangle into
+    // "thinkingfinal answer". These are separate messages, not a continuation.
+    const { plan } = planAgentTextChunk(
+      { msgId: 'msg-1', toolSinceText: true, currentText: 'thinking' },
+      'final answer',
+    )
+    assert.deepEqual(plan, {
+      action: 'append',
+      text: 'final answer',
+      finalizeMsgId: 'msg-1',
+      startNewMessage: true,
+    })
+  })
+
   it('starts a new bubble when a fresh capitalized sentence follows tool calls', () => {
     const { plan } = planAgentTextChunk(
       { msgId: 'msg-1', toolSinceText: true, currentText: 'Let me check the file.' },
