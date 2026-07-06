@@ -2,12 +2,12 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from '@shared/array-utils.ts'
 import { runSubagent, CI_INVESTIGATOR_SYSTEM_PROMPT } from './run-subagent.ts'
-import type { LLMMessage, LLMProvider, StreamChunk } from '@shared/types'
+import type { LLMMessage, LLMProvider, ProviderStreamChunk, StreamChunk } from '@shared/types'
 
-function mockProvider(chunks: StreamChunk[][]): LLMProvider {
+function mockProvider(chunks: ProviderStreamChunk[][]): LLMProvider {
   let call = 0
   return {
-    async *stream(): AsyncGenerator<StreamChunk> {
+    async *stream(): AsyncGenerator<ProviderStreamChunk> {
       for (const chunk of at(chunks, call++ % chunks.length)) yield chunk
     },
   }
@@ -67,7 +67,7 @@ describe('runSubagent', () => {
     ]
     const provider = {
       lastUsage: null as { inputTokens: number; outputTokens: number } | null,
-      async *stream(): AsyncGenerator<StreamChunk> {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
         const u = at(usages, call)
         provider.lastUsage = u
         const chunks =
@@ -105,7 +105,7 @@ describe('runSubagent', () => {
     let call = 0
     const provider = {
       lastUsage: { inputTokens: 99999, outputTokens: 88888 },
-      async *stream(): AsyncGenerator<StreamChunk> {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
         const chunks =
           call++ === 0
             ? ([
@@ -143,7 +143,7 @@ describe('runSubagent', () => {
     const subagentChunks: StreamChunk[] = []
     const provider = {
       lastUsage: null as { inputTokens: number; outputTokens: number } | null,
-      async *stream(): AsyncGenerator<StreamChunk> {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
         yield { type: 'text' as const, text: 'Summary' }
         yield {
           type: 'usage' as const,
