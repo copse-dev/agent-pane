@@ -73,6 +73,13 @@ function createApi(options: {
     skills: {
       list: async () => [],
     },
+    index: {
+      status: async () => ({
+        fileIndex: { phase: 'idle' },
+        semantic: { phase: 'idle' },
+      }),
+      onStatusChanged: () => () => {},
+    },
   } as unknown as ApiClient
 }
 
