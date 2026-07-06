@@ -32,7 +32,13 @@ import {
 } from '../services/search/index-status.ts'
 import { startWorkspaceIndexing } from '../services/search/workspace-indexing.ts'
 import { scheduleIndexRebuild } from '../services/search/workspace-index-watcher.ts'
-import { getSetting, setSetting, hasApiKey, setApiKey } from '../services/storage/settings.ts'
+import {
+  getSetting,
+  setSetting,
+  hasApiKey,
+  setApiKey,
+  isApiKeyEncrypted,
+} from '../services/storage/settings.ts'
 import { scanEnvForKeys, maskSecret } from '../services/providers/env-key-detection.ts'
 import {
   isRendererWritableSettingKey,
@@ -343,6 +349,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('settings:getKey', (_e, provider: unknown) => {
     const p = parseIpcArgs(keyProviderSchema, [provider])
     return hasApiKey(p)
+  })
+  // At-rest state for a provider's stored key: true = OS-encrypted, false = base64
+  // plaintext fallback, null = no key stored. Lets the Settings UI flag the
+  // plaintext-at-rest condition instead of leaving it to a console.warn.
+  ipcMain.handle('settings:getKeyEncrypted', (_e, provider: unknown) => {
+    const p = parseIpcArgs(keyProviderSchema, [provider])
+    return isApiKeyEncrypted(p)
   })
   ipcMain.handle('settings:setKey', (event, provider: unknown, key: unknown) => {
     assertMainFrameSender(event, win)

@@ -99,6 +99,9 @@ export interface IpcInvokeMap {
     result: undefined
   }
   'settings:getKey': { args: [provider: Provider]; result: boolean }
+  // At-rest state for a stored key: true = OS-encrypted, false = base64 plaintext
+  // (secure-storage fallback), null = no key stored.
+  'settings:getKeyEncrypted': { args: [provider: Provider]; result: boolean | null }
   'settings:setKey': { args: [provider: Provider, key: string]; result: undefined }
   'settings:refreshHuggingFaceModels': {
     args: [key?: string]

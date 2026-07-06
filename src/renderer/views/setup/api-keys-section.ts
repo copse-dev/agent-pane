@@ -82,22 +82,35 @@ export function createApiKeysSection(
       autocomplete: 'off',
     })
     const status = el('span', { class: 'key-status', 'data-key': provider })
+    // At-rest storage badge, shown next to the key once one is saved: whether the
+    // stored key is OS-encrypted or fell back to base64 plaintext on disk.
+    const atRest = el('span', { class: 'key-status', 'data-at-rest': provider })
     const label = el(
       'label',
       {},
       config.label,
       input,
       status,
+      atRest,
       el('span', { class: 'field-hint' }, config.hint),
     )
-    return { ...config, input, status, label }
+    return { ...config, input, status, atRest, label }
   })
+
+  // Fieldset-level guidance shown only when at least one stored key is at rest as
+  // plaintext (OS keyring unavailable). Hidden otherwise.
+  const plaintextNote = el(
+    'p',
+    { class: 'field-hint', 'data-at-rest-note': '', hidden: true },
+    'One or more keys are stored unencrypted because the OS secure storage is unavailable. On Linux, install and unlock a system keyring (e.g. gnome-keyring / libsecret) to encrypt them at rest.',
+  )
 
   const fieldset = el(
     'fieldset',
     {},
     el('legend', {}, legend),
     ...fields.map((field) => field.label),
+    plaintextNote,
   )
 
   const validationTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -148,13 +161,28 @@ export function createApiKeysSection(
   }
 
   async function refreshKeyStatus(): Promise<void> {
+    let anyPlaintext = false
     for (const field of fields) {
       const saved = await api.settings.getKey(field.provider)
       if (!field.input.value.trim()) {
         setInlineStatus(field.status, saved ? 'filled' : 'pending', saved ? 'saved' : 'not set')
         field.status.className = 'key-status'
       }
+      // At-rest badge: only meaningful once a key is stored. `null` means no key.
+      const encrypted = saved ? await api.settings.getKeyEncrypted(field.provider) : null
+      if (encrypted === true) {
+        setInlineStatus(field.atRest, 'ok', 'Encrypted by OS keychain')
+        field.atRest.className = 'key-status'
+      } else if (encrypted === false) {
+        anyPlaintext = true
+        setInlineStatus(field.atRest, 'warn', 'Stored unencrypted')
+        field.atRest.className = 'key-status'
+      } else {
+        field.atRest.replaceChildren()
+        field.atRest.className = 'key-status'
+      }
     }
+    plaintextNote.hidden = !anyPlaintext
   }
 
   async function saveKeys(): Promise<void> {
