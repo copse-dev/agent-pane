@@ -1,4 +1,4 @@
-import type { ThreadUsage, ModelUsage } from '@shared/types'
+import type { ThreadUsage, ModelUsage } from './wire-types.ts'
 import { getModelInfo } from './model-catalog.ts'
 import type { ExtraProviderPricing } from './extra-providers.ts'
 

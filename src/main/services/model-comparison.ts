@@ -16,7 +16,7 @@
  * model-comparison-runner.ts and the tool gating in registry-bootstrap.ts.
  */
 
-import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
+import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
 
 export const MODEL_COMPARISON_ENABLED_SETTING = 'modelComparisonEnabled'
 export const MODEL_COMPARISON_AUTO_ON_REVIEW_SETTING = 'modelComparisonAutoOnReview'

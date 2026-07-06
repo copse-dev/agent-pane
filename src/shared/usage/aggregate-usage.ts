@@ -1,5 +1,5 @@
 import type { ModelUsage, Thread } from '@shared/types'
-import { isLocalModel, costForModelUsage, type ExtraPricing } from '@shared/llm/estimate-cost.ts'
+import { isLocalModel, costForModelUsage, type ExtraPricing } from '@copse/llm/estimate-cost.ts'
 import type { UsageEvent } from './usage-event.ts'
 
 export const DAY_MS = 24 * 60 * 60 * 1000

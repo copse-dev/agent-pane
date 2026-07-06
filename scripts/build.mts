@@ -8,6 +8,7 @@ const bundledGortexName = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
 
 const sharedAlias = {
   '@shared': resolve('./src/shared'),
+  '@copse/llm': resolve('./packages/llm/src'),
 }
 
 function fetchBundledCursorSkillsForBuild(): void {

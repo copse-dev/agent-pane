@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { at } from '@shared/array-utils.ts'
-import type { StreamChunk } from '@shared/types'
+import { at } from './internal-utils.ts'
+import type { ProviderStreamChunk } from './wire-types.ts'
 import { OpenAIProvider } from './openai-provider.ts'
 
 interface CapturedChatCompletionRequest {
@@ -63,8 +63,8 @@ function withFakeStream(provider: OpenAIProvider, events: ChatCompletionChunk[])
   withFakeCreate(provider, () => streamEvents(events))
 }
 
-async function collect(provider: OpenAIProvider): Promise<StreamChunk[]> {
-  const out: StreamChunk[] = []
+async function collect(provider: OpenAIProvider): Promise<ProviderStreamChunk[]> {
+  const out: ProviderStreamChunk[] = []
   for await (const chunk of provider.stream([{ role: 'user', content: 'hi' }], [])) {
     out.push(chunk)
   }
@@ -154,7 +154,7 @@ describe('OpenAIProvider stream parsing', () => {
     const chunks = await collect(provider)
 
     const text = chunks
-      .filter((c): c is Extract<StreamChunk, { type: 'text' }> => c.type === 'text')
+      .filter((c): c is Extract<ProviderStreamChunk, { type: 'text' }> => c.type === 'text')
       .map((c) => c.text)
       .join('')
     assert.equal(text, 'Hello world')
@@ -198,7 +198,7 @@ describe('OpenAIProvider stream parsing', () => {
 
     const chunks = await collect(provider)
     const toolCalls = chunks.filter(
-      (c): c is Extract<StreamChunk, { type: 'tool_call' }> => c.type === 'tool_call',
+      (c): c is Extract<ProviderStreamChunk, { type: 'tool_call' }> => c.type === 'tool_call',
     )
     assert.equal(toolCalls.length, 1)
     assert.equal(at(toolCalls, 0).toolCall.id, 'call_1')
@@ -241,7 +241,7 @@ describe('OpenAIProvider stream parsing', () => {
 
     const chunks = await collect(provider)
     const toolCalls = chunks.filter(
-      (c): c is Extract<StreamChunk, { type: 'tool_call' }> => c.type === 'tool_call',
+      (c): c is Extract<ProviderStreamChunk, { type: 'tool_call' }> => c.type === 'tool_call',
     )
     assert.equal(toolCalls.length, 1)
     assert.equal(at(toolCalls, 0).toolCall.name, 'list_dir')
@@ -268,7 +268,7 @@ describe('OpenAIProvider stream parsing', () => {
 
     const chunks = await collect(provider)
     const toolCall = chunks.find(
-      (c): c is Extract<StreamChunk, { type: 'tool_call' }> => c.type === 'tool_call',
+      (c): c is Extract<ProviderStreamChunk, { type: 'tool_call' }> => c.type === 'tool_call',
     )
     assert.ok(toolCall)
     assert.ok(toolCall.toolCall.argsError)
@@ -290,12 +290,14 @@ describe('OpenAIProvider stream parsing', () => {
 
     const chunks = await collect(provider)
     const reasoning = chunks
-      .filter((c): c is Extract<StreamChunk, { type: 'reasoning' }> => c.type === 'reasoning')
+      .filter(
+        (c): c is Extract<ProviderStreamChunk, { type: 'reasoning' }> => c.type === 'reasoning',
+      )
       .map((c) => c.text)
       .join('')
     assert.equal(reasoning, 'Think harder.')
     const text = chunks
-      .filter((c): c is Extract<StreamChunk, { type: 'text' }> => c.type === 'text')
+      .filter((c): c is Extract<ProviderStreamChunk, { type: 'text' }> => c.type === 'text')
       .map((c) => c.text)
       .join('')
     assert.equal(text, 'Answer')

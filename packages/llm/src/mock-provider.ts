@@ -1,6 +1,6 @@
-import type { LLMProvider, LLMMessage, LLMTool, StreamChunk } from '@shared/types'
+import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 import { takeMockScriptStep } from './mock-script.ts'
-import { at } from '@shared/array-utils.ts'
+import { at } from './internal-utils.ts'
 const randomUUID = (): string => globalThis.crypto.randomUUID()
 const MAX_MOCK_DELAY_MS = 5_000
 
@@ -25,7 +25,7 @@ export class MockLLMProvider implements LLMProvider {
     messages: LLMMessage[],
     tools: LLMTool[],
     signal?: AbortSignal,
-  ): AsyncIterable<StreamChunk> {
+  ): AsyncIterable<ProviderStreamChunk> {
     const systemText = messages
       .filter((m) => m.role === 'system')
       .map((m) => (typeof m.content === 'string' ? m.content : ''))

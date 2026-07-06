@@ -20,7 +20,7 @@ import {
   DEFAULT_STREAM_MAX_ATTEMPTS,
   sleepMs,
   streamRetryDelayMs,
-} from '@shared/llm/stream-retry.ts'
+} from '@copse/llm/stream-retry.ts'
 import {
   listAcpAgentModels,
   runAcpSessionPrompt,
