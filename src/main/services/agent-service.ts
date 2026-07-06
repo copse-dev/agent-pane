@@ -193,6 +193,7 @@ export async function runAgent(
         signal: controller.signal,
         onChunk: sendChunk,
         registry,
+        ...(options?.invokedSkills?.length ? { invokedSkills: options.invokedSkills } : {}),
         ...(acpSelection?.model ? { model: acpSelection.model } : {}),
       })
       sendChunk({ type: 'done', stopReason: result.stopReason })
