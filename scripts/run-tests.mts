@@ -9,6 +9,7 @@ const storageShim = resolve('src/main/services/storage/storage.test-shim.ts')
 const testFiles: string[] = []
 for await (const f of glob('src/**/*.test.ts')) testFiles.push(f)
 for await (const f of glob('packages/*/src/**/*.test.ts')) testFiles.push(f)
+for await (const f of glob('scripts/**/*.test.ts')) testFiles.push(f)
 await rm('dist-test', { recursive: true, force: true })
 await esbuild.build({
   entryPoints: testFiles,
