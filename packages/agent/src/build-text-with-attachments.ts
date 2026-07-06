@@ -24,6 +24,9 @@ export interface ThreadRefAttachment {
 /** Minimum pasted plain-text length to treat as an attachment instead of inline input. */
 export const TEXT_BLOCK_MIN_CHARS = 200
 
+/** Minimum pasted line count to treat as an attachment instead of inline input. */
+export const TEXT_BLOCK_MIN_LINES = 10
+
 /**
  * Per-attachment character ceiling for inlined content.
  *
@@ -44,14 +47,28 @@ export const ATTACHMENT_MAX_CHARS = 16_000
 /** Fraction of the budget kept from the head; the remainder is kept from the tail. */
 const HEAD_FRACTION = 0.7
 
+/**
+ * Whether a paste is big enough to fold into an attachment chip. Short pastes —
+ * even multi-line ones — stay inline in the composer where the user can read and
+ * edit them; only genuinely large blocks (long, or many lines) become chips.
+ */
 export function isTextBlockAttachment(text: string): boolean {
   const trimmed = text.trim()
   if (!trimmed) return false
-  return trimmed.includes('\n') || trimmed.length >= TEXT_BLOCK_MIN_CHARS
+  if (trimmed.length >= TEXT_BLOCK_MIN_CHARS) return true
+  return countNewlines(trimmed) + 1 >= TEXT_BLOCK_MIN_LINES
 }
 
+/**
+ * Chip label for a pasted block: the first non-blank line, so a paste that
+ * starts with blank lines still gets a readable preview instead of an empty chip.
+ */
 export function textBlockLabel(content: string): string {
-  const firstLine = content.split('\n')[0]?.trim() ?? 'Pasted text'
+  const firstLine =
+    content
+      .split('\n')
+      .find((line) => line.trim() !== '')
+      ?.trim() ?? 'Pasted text'
   return firstLine.length > 48 ? `${firstLine.slice(0, 45)}…` : firstLine
 }
 

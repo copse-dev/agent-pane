@@ -801,7 +801,7 @@ jobs:
   ci-passed:
     name: CI Passed
     if: always()
-    needs: [pick-runner, precheck, check, build, e2e]
+    needs: [pick-runner, precheck, check, bench, build, e2e]
     runs-on: ubuntu-latest
     steps:
       - name: Check upstream job results
