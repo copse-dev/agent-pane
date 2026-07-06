@@ -9,6 +9,7 @@
   max-height: 200px;
   overflow-y: auto;
   z-index: 100;
+  box-shadow: var(--shadow-md);
 }
 .mention-item {
   padding: 6px 10px;
@@ -122,6 +123,7 @@
   background: var(--bg-hover);
   border-color: var(--border-strong, var(--border));
   color: var(--text);
+  box-shadow: var(--shadow-sm);
 }
 .follow-up-bubble-changes .follow-up-label {
   color: var(--text-muted);
@@ -161,8 +163,8 @@
   text-overflow: ellipsis;
 }
 .diff-file-btn.selected {
-  background: var(--bg-active);
-  color: white;
+  background: var(--bg-selected);
+  color: var(--text-primary);
 }
 .diff-editor-wrap {
   flex: 1;

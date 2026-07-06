@@ -199,9 +199,13 @@
 .message-body:hover:has(.code-block-shell:focus-within) .msg-copy {
   opacity: 0;
 }
+/* The user's own replies read as "yours" through a soft accent-tinted fill and
+   matching hairline — no hard left bar. It lifts off the chat gradient with a
+   faint shadow and rounds like the other panels. */
 .msg-user {
-  background: var(--bg-elevated);
-  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+  box-shadow: var(--shadow-sm);
 }
 .msg-assistant {
   background: transparent;
@@ -225,8 +229,17 @@
   --sm-fg-muted: var(--text-secondary);
   --sm-border: var(--border);
   --sm-accent: var(--accent);
+  --sm-link: var(--link);
   --sm-code-bg: var(--bg-elevated);
   --sm-error: var(--error);
+}
+/* Links inside rendered markdown follow the app's link tier (the package's
+   default keys them off its accent, which is too dim on the dark surfaces). */
+.streaming-markdown a {
+  color: var(--link);
+}
+.streaming-markdown a:hover {
+  color: var(--link-hover);
 }
 .message-text:empty {
   display: none;
