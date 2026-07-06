@@ -1,35 +1,23 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import {
-  buildRoutingTable,
-  commandHead,
-  joinTiers,
-  resolveCommandRouting,
-  splitSegments,
-  type CommandRoute,
-} from './command-routing.ts'
+import { commandHead, resolveCommandRouting, splitSegments } from './command-routing.ts'
 
 const root = '/Users/me/project'
-const table = (extra: CommandRoute[] = []): Map<string, ReturnType<typeof joinTiers>> =>
-  buildRoutingTable(extra)
+const trust = (...names: string[]): Set<string> => new Set(names)
 
 describe('commandHead', () => {
   it('extracts the basename of a path', () => {
     assert.equal(commandHead('/usr/bin/xcodebuild -project App.xcodeproj'), 'xcodebuild')
-    assert.equal(commandHead('./scripts/build.sh'), 'build.sh')
   })
 
   it('skips env assignments and transparent wrappers', () => {
     assert.equal(commandHead('FOO=bar BAZ=1 mkdir build'), 'mkdir')
-    assert.equal(commandHead('env nohup xcodebuild'), 'xcodebuild')
+    assert.equal(commandHead('nohup xcodebuild'), 'xcodebuild')
   })
 
-  it('strips leading grouping punctuation', () => {
-    assert.equal(commandHead('( ls -la )'), 'ls')
-  })
-
-  it('returns null for an empty segment', () => {
-    assert.equal(commandHead('   '), null)
+  it('is quote-aware and returns null for a leading operator', () => {
+    assert.equal(commandHead('"my tool" arg'), 'my tool')
+    assert.equal(commandHead('> file'), null)
   })
 })
 
@@ -50,126 +38,123 @@ describe('splitSegments', () => {
     assert.deepEqual(splitSegments('echo "a && b" ; ls'), ['echo "a && b"', 'ls'])
     assert.deepEqual(splitSegments("echo 'a | b'"), ["echo 'a | b'"])
   })
-})
 
-describe('joinTiers', () => {
-  it('prompts if any segment prompts', () => {
-    assert.equal(joinTiers(['read', 'prompt', 'allow']), 'prompt')
+  it('honours backslash escapes so \\; is not a separator', () => {
+    assert.deepEqual(splitSegments('find . -exec rm {} \\; && echo done'), [
+      'find . -exec rm {} \\;',
+      'echo done',
+    ])
   })
 
-  it('prefers allow over sandbox tiers', () => {
-    assert.equal(joinTiers(['write', 'read', 'allow']), 'allow')
+  it('does not split a redirect fd-dup (2>&1) or &> on the &', () => {
+    assert.deepEqual(splitSegments('grep foo bar 2>&1'), ['grep foo bar 2>&1'])
+    assert.deepEqual(splitSegments('cmd &> log'), ['cmd &> log'])
   })
 
-  it('treats allow + container as incompatible', () => {
-    assert.equal(joinTiers(['allow', 'container']), 'prompt')
-  })
-
-  it('escalates read -> write -> container', () => {
-    assert.equal(joinTiers(['read', 'read']), 'read')
-    assert.equal(joinTiers(['read', 'write']), 'write')
-    assert.equal(joinTiers(['read', 'write', 'container']), 'container')
+  it('does not let an escaped quote flip quote state', () => {
+    // echo "a \" b" ; ls  → the \" stays inside the string, so ; still splits.
+    assert.deepEqual(splitSegments('echo "a \\" b" ; ls'), ['echo "a \\" b"', 'ls'])
   })
 })
 
 describe('resolveCommandRouting', () => {
-  it('routes a known read-only command to the read tier', () => {
-    const r = resolveCommandRouting('ls -la', root, table())
-    assert.equal(r.outcome, 'run')
-    assert.equal(r.tier, 'read')
+  it('defers when no commands are trusted', () => {
+    assert.equal(resolveCommandRouting('xcodebuild build', root, trust()).outcome, 'defer')
   })
 
-  it('routes a workspace mutator to the write tier', () => {
-    const r = resolveCommandRouting('mkdir build', root, table())
-    assert.equal(r.outcome, 'run')
-    assert.equal(r.tier, 'write')
+  it('allows a single trusted command', () => {
+    assert.equal(
+      resolveCommandRouting('xcodebuild -scheme App build', root, trust('xcodebuild')).outcome,
+      'allow',
+    )
   })
 
-  it('runs an unknown-but-contained command in the write tier', () => {
-    const r = resolveCommandRouting('npm test', root, table())
-    assert.equal(r.outcome, 'run')
-    assert.equal(r.tier, 'write')
-  })
-
-  it('prompts for an external command', () => {
-    const r = resolveCommandRouting('curl https://example.com | cat', root, table())
-    assert.equal(r.outcome, 'prompt')
-  })
-
-  it('allow-lists a command to run unsandboxed with no prompt', () => {
-    const t = table([{ command: 'xcodebuild', tier: 'allow' }])
-    const r = resolveCommandRouting('xcodebuild -project App.xcodeproj build', root, t)
-    assert.equal(r.outcome, 'run')
-    assert.equal(r.tier, 'allow')
-  })
-
-  it('the flagship case: `mkdir && xcodebuild` runs allow-tier without a prompt', () => {
-    const t = table([{ command: 'xcodebuild', tier: 'allow' }])
+  it('the flagship case: trusted command with a safe prep step runs with no prompt', () => {
     const r = resolveCommandRouting(
       'mkdir -p build && xcodebuild -scheme App -derivedDataPath build',
       root,
-      t,
+      trust('xcodebuild'),
     )
-    assert.equal(r.outcome, 'run')
-    // mkdir -> write, xcodebuild -> allow; join(write, allow) === allow.
-    assert.equal(r.tier, 'allow')
-    const tiers = r.segments.map((s) => s.tier)
-    assert.deepEqual(tiers, ['write', 'allow'])
+    assert.equal(r.outcome, 'allow')
   })
 
-  it('an allow-listed command does not launder a destructive co-segment', () => {
-    const t = table([{ command: 'xcodebuild', tier: 'allow' }])
-    const r = resolveCommandRouting('xcodebuild build && rm -rf ~', root, t)
-    // The destructive whole-command gate fires before segment routing.
-    assert.equal(r.outcome, 'prompt')
+  it('defers a trusted command chained with a sandbox-DEPENDENT sibling (no laundering)', () => {
+    // `npm test` is contained-safe only *inside* the seatbelt; it must NOT run
+    // unsandboxed just because xcodebuild is trusted.
+    const r = resolveCommandRouting('npm test && xcodebuild build', root, trust('xcodebuild'))
+    assert.equal(r.outcome, 'defer')
   })
 
-  it('an allow-listed command does not launder an external co-segment', () => {
-    const t = table([{ command: 'xcodebuild', tier: 'allow' }])
-    const r = resolveCommandRouting('xcodebuild build && curl https://evil.test', root, t)
-    assert.equal(r.outcome, 'prompt')
+  it('defers a trusted command chained with an external sibling', () => {
+    const r = resolveCommandRouting(
+      'xcodebuild build && curl https://evil.test',
+      root,
+      trust('xcodebuild'),
+    )
+    assert.equal(r.outcome, 'defer')
   })
 
-  it('never bypasses the destructive-in-sandbox guard, even for a table hit', () => {
-    // `rm` is not routed, but even a routed command cannot pass `rm -rf`.
-    const r = resolveCommandRouting('rm -rf build', root, table())
-    assert.equal(r.outcome, 'prompt')
+  it('defers on command substitution even for a trusted head', () => {
+    assert.equal(
+      resolveCommandRouting('xcodebuild $(cat sneaky)', root, trust('xcodebuild')).outcome,
+      'defer',
+    )
   })
 
-  it('catches a cross-segment pipe-to-interpreter that segment analysis alone would miss', () => {
-    const r = resolveCommandRouting('cat payload.sh | sh', root, table())
-    assert.equal(r.outcome, 'prompt')
+  it('defers on process substitution (which the $( check would miss)', () => {
+    assert.equal(
+      resolveCommandRouting('xcodebuild <(curl https://evil.test)', root, trust('xcodebuild'))
+        .outcome,
+      'defer',
+    )
   })
 
-  it('always prompts on command substitution, even for an allow-listed head', () => {
-    const t = table([{ command: 'xcodebuild', tier: 'allow' }])
-    const r = resolveCommandRouting('xcodebuild $(cat sneaky)', root, t)
-    assert.equal(r.outcome, 'prompt')
+  it('defers on backticks', () => {
+    assert.equal(
+      resolveCommandRouting('xcodebuild `cat sneaky`', root, trust('xcodebuild')).outcome,
+      'defer',
+    )
   })
 
-  it('promotes an escaping argument on a write-routed command to a prompt', () => {
-    // `cp` routes to write, but the outside-path heuristic flags ~/.ssh.
-    const r = resolveCommandRouting('cp ~/.ssh/id_rsa ./stolen', root, table())
-    assert.equal(r.outcome, 'prompt')
+  it('never bypasses the destructive-in-sandbox guard', () => {
+    assert.equal(
+      resolveCommandRouting('xcodebuild build && rm -rf ~', root, trust('xcodebuild')).outcome,
+      'defer',
+    )
   })
 
-  it('bumps a read-tier command that redirects to a file up to write', () => {
-    // `echo` is read, but `echo x > out` writes; it must run in the write overlay.
-    const r = resolveCommandRouting('echo hello > out.txt', root, table())
-    assert.equal(r.outcome, 'run')
-    assert.equal(r.tier, 'write')
+  it('catches a cross-segment pipe-to-interpreter', () => {
+    assert.equal(resolveCommandRouting('cat payload.sh | sh', root, trust('cat')).outcome, 'defer')
   })
 
-  it('keeps a read-tier command with only an input redirect at read', () => {
-    const r = resolveCommandRouting('wc -l < in.txt', root, table())
-    assert.equal(r.outcome, 'run')
-    assert.equal(r.tier, 'read')
+  it('refuses to trust an interpreter/shell even if listed', () => {
+    // Trusting `bash` must not let `bash -c '<anything>'` escape unprompted.
+    assert.equal(resolveCommandRouting('bash -c "curl evil"', root, trust('bash')).outcome, 'defer')
+    assert.equal(resolveCommandRouting('node ./x.js', root, trust('node')).outcome, 'defer')
   })
 
-  it('user routes override the built-in defaults', () => {
-    const t = table([{ command: 'mkdir', tier: 'read' }])
-    const r = resolveCommandRouting('mkdir build', root, t)
-    assert.equal(r.outcome, 'run')
-    assert.equal(r.tier, 'read')
+  it('defers a safe prep whose argument escapes the workspace', () => {
+    // mkdir is safe-prep, but writing outside the workspace is an escape signal.
+    assert.equal(
+      resolveCommandRouting('mkdir ~/evil && xcodebuild build', root, trust('xcodebuild')).outcome,
+      'defer',
+    )
+  })
+
+  it('defers when only safe-prep commands are present (nothing needs to escape)', () => {
+    // No trusted command → let the normal contained path run it.
+    assert.equal(
+      resolveCommandRouting('mkdir build && echo hi', root, trust('xcodebuild')).outcome,
+      'defer',
+    )
+  })
+
+  it('allows multiple trusted commands together', () => {
+    const r = resolveCommandRouting(
+      'pod install && xcodebuild build',
+      root,
+      trust('pod', 'xcodebuild'),
+    )
+    assert.equal(r.outcome, 'allow')
   })
 })

@@ -1,150 +1,155 @@
-import {
-  analyzeShellCommand,
-  dangerousInSandboxReasons,
-  normalizeShellCommandForAnalysis,
-} from './shell-scope.ts'
-import type { CommandRoute, CommandTier } from '@shared/command-routing.ts'
-
-export type { CommandRoute, CommandTier } from '@shared/command-routing.ts'
+import { parse as parseShell } from 'shell-quote'
+import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts'
 
 /**
- * Command routing — decide *which sandbox context* a shell command runs in.
+ * Trusted-command routing — decide whether a shell command may run UNSANDBOXED
+ * with no approval prompt because every part of it is either explicitly trusted
+ * by the user or a trivially-safe preparation step.
  *
- * This layer sits on top of {@link analyzeShellCommand} (the network/outside-path
- * heuristic) and turns its binary sandbox/external verdict into a richer set of
- * execution tiers, so an approved command can run in the *minimal* context that
- * actually satisfies it instead of the coarse "contained-or-prompt" split:
+ * This is the "complete allow" lever: a narrow set of commands that cannot run
+ * inside the workspace sandbox (host toolchain, code signing, vendor endpoints —
+ * `xcodebuild` is the canonical example) but are safe for a trusted project, so
+ * they should not interrupt the user on every invocation.
  *
- * - `read`      — sandbox-confined, filesystem **read-only**, no network.
- * - `write`     — sandbox-confined, workspace read+write, no network (today's
- *                 default contained overlay).
- * - `container` — stronger host isolation (a VM/container). No cross-platform
- *                 backend ships yet, so the tier is modelled here and the wiring
- *                 layer maps it to the strongest available sandbox (or a prompt).
- * - `allow`     — run **unsandboxed with no prompt**. The user's explicit trust
- *                 grant for a narrow set of commands that cannot be sandboxed but
- *                 are safe (e.g. `xcodebuild`, which needs the host toolchain,
- *                 code-signing, and Apple endpoints). This is the prompt-fatigue
- *                 lever: an allow-listed command never interrupts the user.
- * - `prompt`    — not resolvable to a safe auto-run context; ask the user (the
- *                 existing behaviour for unknown/external/destructive commands).
+ * SAFETY MODEL. This is a UX lever layered on the existing gate, not a new
+ * boundary, and it is deliberately conservative — a command runs unsandboxed with
+ * no prompt ONLY when ALL of the following hold:
  *
- * This module is PURE and has no side effects — it mirrors `shell-scope.ts` so it
- * can be unit-tested exhaustively and wired into the permission gate separately.
- * It is a UX/routing refinement, **not** a new security boundary: the OS sandbox
- * (macOS seatbelt) remains the real containment, and the destructive-pattern and
- * command-substitution guards below are never bypassed — not even for an
- * allow-listed command.
+ *  - the command has no command substitution, subshell grouping, or backticks
+ *    (they can hide arbitrary tools);
+ *  - it triggers none of the destructive-in-sandbox patterns (`rm -rf`, fork
+ *    bombs, pipe-to-interpreter, …) on the whole command;
+ *  - EVERY top-level segment (split on `&&`/`||`/`;`/`|`/`&`) is either
+ *      (a) an explicitly trusted command whose basename is in the allow-list, OR
+ *      (b) a trivially-safe prep command (`mkdir`, `cd`, `echo`, …) that itself
+ *          shows NO network/outside-workspace signals under {@link analyzeShellCommand};
+ *  - at least one segment is actually trusted (otherwise there is nothing that
+ *    needs to escape the sandbox — it runs contained via the normal path);
+ *  - no segment's head is an interpreter/shell that can execute arbitrary code
+ *    (`sh`, `bash`, `node`, `python`, `ssh`, `sudo`, …) — allow-listing one of
+ *    those would turn a single grant into an unbounded escape, so we refuse it.
+ *
+ * Crucially, the trust waiver applies ONLY to the specific trusted segment: a
+ * sibling `curl`/`git push`/`npm test` segment is NOT trusted and NOT trivially
+ * safe, so the whole command falls back to the normal gate (which sandboxes or
+ * prompts). Unlike a "run the whole line at the most-permissive tier" rule, this
+ * never runs a sandbox-dependent co-process (e.g. `npm test`) unsandboxed just
+ * because a sibling is trusted.
+ *
+ * The resolver is PURE; the settings-backed wrapper (workspace-trust gating,
+ * auto-run gating, caching) lives in `command-routing-config.ts`.
  */
-
-export interface SegmentRouting {
-  /** The raw segment text (a top-level `&&`/`||`/`;`/`|`-delimited slice). */
-  segment: string
-  /** The resolved command head, or null when none could be extracted. */
-  head: string | null
-  tier: CommandTier
-  /** Why this tier was chosen (for the approval dialog / observability). */
-  reasons: string[]
-}
 
 export type CommandRouting =
-  | {
-      outcome: 'run'
-      tier: Exclude<CommandTier, 'prompt'>
-      segments: SegmentRouting[]
-      reasons: string[]
-    }
-  | { outcome: 'prompt'; segments: SegmentRouting[]; reasons: string[] }
+  | { outcome: 'allow'; reasons: string[] }
+  | { outcome: 'defer'; reasons: string[] }
 
 /**
- * Built-in routing defaults. These only ever *refine within the safe space* a
- * command already occupies — a table hit cannot promote a command past the
- * whole-command destructive/substitution gates, and the network/outside-path
- * heuristic still applies to every tier except `allow`.
- *
- * The `allow` tier ships EMPTY on purpose: running a binary unsandboxed with no
- * prompt is a real per-project trust decision, so users opt in (e.g. add
- * `xcodebuild` for an iOS project). The seeded entries are limited to commands
- * whose safety does not depend on their subcommand or flags — so `git` is absent
- * (its network subcommands are the analyzer's job), and `cp`/`mv` route to
- * `write` while the outside-path guard still forces a prompt when their arguments
- * escape the workspace.
+ * Commands trivially safe to run unsandboxed: they make directories, print, or
+ * change directory and cannot exfiltrate or damage anything on their own. Any
+ * argument that tries to escape the workspace (`mkdir ~/x`, `cp /etc/…`) is
+ * caught by {@link analyzeShellCommand} returning a non-`sandbox` verdict, which
+ * disqualifies the whole command — so this set only needs to list heads whose
+ * *base* behaviour is harmless. Deliberately excludes `rm`, `cp`, `mv` and any
+ * command whose safety depends on flags.
  */
-export const DEFAULT_COMMAND_ROUTES: readonly CommandRoute[] = [
-  // Pure inspectors — no writes, no network.
-  { command: 'ls', tier: 'read' },
-  { command: 'pwd', tier: 'read' },
-  { command: 'echo', tier: 'read' },
-  { command: 'cat', tier: 'read' },
-  { command: 'head', tier: 'read' },
-  { command: 'tail', tier: 'read' },
-  { command: 'wc', tier: 'read' },
-  { command: 'which', tier: 'read' },
-  { command: 'basename', tier: 'read' },
-  { command: 'dirname', tier: 'read' },
-  { command: 'date', tier: 'read' },
-  { command: 'true', tier: 'read' },
-  { command: 'false', tier: 'read' },
-  // Workspace mutators — writes stay inside the seatbelt; the outside-path guard
-  // still promotes an escaping argument to a prompt.
-  { command: 'mkdir', tier: 'write' },
-  { command: 'touch', tier: 'write' },
-  { command: 'cp', tier: 'write' },
-  { command: 'mv', tier: 'write' },
-  { command: 'tee', tier: 'write' },
-]
-
-/** Merge user-defined routes over the built-in defaults (user wins per command). */
-export function buildRoutingTable(
-  userRoutes: readonly CommandRoute[] = [],
-): Map<string, CommandTier> {
-  const table = new Map<string, CommandTier>()
-  for (const { command, tier } of DEFAULT_COMMAND_ROUTES) table.set(command, tier)
-  for (const { command, tier } of userRoutes) table.set(command, tier)
-  return table
-}
-
-// Leading tokens that wrap the *real* command without changing what runs: env
-// assignments (`FOO=bar cmd`) and a few transparent launchers. `sudo`/`su` are
-// intentionally absent — they are privilege escalation and already force a prompt
-// via the destructive-pattern guard, so we never want to see past them.
-const TRANSPARENT_PREFIXES = new Set(['env', 'command', 'exec', 'nohup', 'nice', 'time', 'builtin'])
+const SAFE_PREP_COMMANDS = new Set([
+  'mkdir',
+  'cd',
+  'pwd',
+  'echo',
+  'printf',
+  'true',
+  'false',
+  ':',
+  'basename',
+  'dirname',
+])
 
 /**
- * Extract the command head (basename) from a segment for table lookup:
- * strips leading subshell/grouping punctuation, `VAR=val` assignments, and
- * transparent wrappers, then reduces a path to its basename (`/usr/bin/xcodebuild`
- * → `xcodebuild`). Returns null when no command token can be found.
+ * Heads that must NEVER be honoured as trusted even if the user adds them:
+ * interpreters, shells, and remote-exec tools run arbitrary code, so trusting
+ * `bash` would let `bash -c '<anything>'` escape with no prompt — defeating the
+ * point of a narrow allow-list. Listing one of these is treated as if it were
+ * not on the list at all.
  */
-export function commandHead(segment: string): string | null {
-  let text = normalizeShellCommandForAnalysis(segment).trim()
-  // Drop leading grouping/redirection punctuation a segment can open with.
-  text = text.replace(/^[({\s]+/, '')
-  const tokens = text.split(/\s+/).filter(Boolean)
-  for (const token of tokens) {
-    if (/^\w+=/.test(token)) continue // environment assignment
-    const base = token.includes('/') ? token.slice(token.lastIndexOf('/') + 1) : token
-    if (TRANSPARENT_PREFIXES.has(base)) continue
-    return base || null
-  }
-  return null
+const NON_TRUSTABLE_COMMANDS = new Set([
+  'sh',
+  'bash',
+  'zsh',
+  'dash',
+  'fish',
+  'ksh',
+  'csh',
+  'tcsh',
+  'env',
+  'eval',
+  'exec',
+  'command',
+  'xargs',
+  'find',
+  'node',
+  'deno',
+  'bun',
+  'python',
+  'python2',
+  'python3',
+  'ruby',
+  'perl',
+  'php',
+  'ssh',
+  'scp',
+  'sudo',
+  'su',
+  'doas',
+  'nc',
+  'ncat',
+  'netcat',
+  'socat',
+  'awk',
+  'gawk',
+]) satisfies Set<string>
+
+// Leading tokens that wrap the real command without changing what runs.
+const TRANSPARENT_PREFIXES = new Set(['nohup', 'nice', 'stdbuf', 'time', 'builtin'])
+
+/**
+ * Command substitution / subshell grouping / backticks can hide arbitrary tools
+ * from segment analysis, so their mere presence disqualifies the fast path. The
+ * check is intentionally over-broad (it does not exclude occurrences inside
+ * single quotes) because a false positive only means "fall back to the normal
+ * gate", never an unsafe auto-run.
+ */
+function hasGroupingOrSubstitution(command: string): boolean {
+  return /[`(]/.test(command)
 }
 
-// Split a command line into top-level segments at shell control operators
-// (`&&`, `||`, `;`, `|`, `&`, newline), respecting single/double quotes so an
-// operator inside a string literal (`echo "a && b"`) does not split. Command
-// substitution is handled separately (it forces a prompt), so we do not descend
-// into `$(...)`/backticks here.
+/**
+ * Split a command line into top-level segments at the control operators
+ * `&&`/`||`/`;`/`|`/`&` (and newlines), honouring single/double quotes and
+ * backslash escapes so an operator inside a string literal or an escaped `\;`
+ * does not split. A lone `&` that is part of a redirect (`2>&1`, `&>file`) is
+ * NOT treated as a control operator. Callers must have already rejected command
+ * substitution / grouping via {@link hasGroupingOrSubstitution}.
+ */
 export function splitSegments(command: string): string[] {
   const segments: string[] = []
   let current = ''
   let quote: '"' | "'" | null = null
   for (let i = 0; i < command.length; i++) {
     const ch = command.charAt(i)
-    const next = command.charAt(i + 1)
     if (quote) {
       current += ch
-      if (ch === quote) quote = null
+      if (quote === '"' && ch === '\\' && i + 1 < command.length) {
+        current += command.charAt(++i) // escaped char stays literal, cannot close the quote
+      } else if (ch === quote) {
+        quote = null
+      }
+      continue
+    }
+    if (ch === '\\') {
+      current += ch
+      if (i + 1 < command.length) current += command.charAt(++i)
       continue
     }
     if (ch === '"' || ch === "'") {
@@ -152,18 +157,24 @@ export function splitSegments(command: string): string[] {
       current += ch
       continue
     }
-    if (ch === '\n' || ch === ';') {
+    const two = command.slice(i, i + 2)
+    if (two === '&&' || two === '||') {
+      segments.push(current)
+      current = ''
+      i++
+      continue
+    }
+    if (ch === ';' || ch === '\n' || ch === '|') {
       segments.push(current)
       current = ''
       continue
     }
-    if ((ch === '&' || ch === '|') && next === ch) {
-      segments.push(current)
-      current = ''
-      i++ // consume the doubled operator
-      continue
-    }
-    if (ch === '|' || ch === '&') {
+    if (ch === '&') {
+      // `>&`/`&>` are redirects, not control operators — keep them in the segment.
+      if (command.charAt(i - 1) === '>' || command.charAt(i + 1) === '>') {
+        current += ch
+        continue
+      }
       segments.push(current)
       current = ''
       continue
@@ -174,133 +185,71 @@ export function splitSegments(command: string): string[] {
   return segments.map((s) => s.trim()).filter(Boolean)
 }
 
-/** Command substitution can hide arbitrary tools; it always forces a prompt. */
-function hasCommandSubstitution(command: string): boolean {
-  return /\$\(|`/.test(command)
-}
-
 /**
- * A file-writing redirect (`>`, `>>`, `&>`) turns an otherwise read-only command
- * into a writer (`cat x > out`). Over-detection is safe here: it only ever bumps
- * the `read` tier up to `write` (the default), never the reverse, so we do not
- * bother excluding fd-dups like `2>&1`.
+ * Extract the command head (basename) of a segment via shell-quote's tokenizer
+ * (quote-aware), skipping `VAR=val` assignments and transparent wrappers. Returns
+ * null when no plain command word can be found (e.g. a leading operator token).
  */
-function hasWriteRedirect(segment: string): boolean {
-  return segment.includes('>')
+export function commandHead(segment: string): string | null {
+  let tokens: ReturnType<typeof parseShell>
+  try {
+    tokens = parseShell(segment)
+  } catch {
+    return null
+  }
+  for (const token of tokens) {
+    if (typeof token !== 'string') return null // an operator/glob before any command word
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) continue // environment assignment
+    const base = token.includes('/') ? token.slice(token.lastIndexOf('/') + 1) : token
+    if (TRANSPARENT_PREFIXES.has(base)) continue
+    return base || null
+  }
+  return null
 }
 
 /**
- * Resolve one segment to a tier. `allow`-listed heads waive the network/outside-
- * path heuristic for *that* segment (the whole point of the trust grant), but the
- * whole-command destructive and substitution gates in {@link resolveCommandRouting}
- * are applied first and are never reached here as `allow`.
- */
-function resolveSegmentTier(
-  segment: string,
-  workspaceRoot: string | null,
-  table: Map<string, CommandTier>,
-): SegmentRouting {
-  const head = commandHead(segment)
-  const routed = head ? table.get(head) : undefined
-
-  if (routed === 'allow') {
-    return {
-      segment,
-      head,
-      tier: 'allow',
-      reasons: [`\`${head ?? '?'}\` is on the complete-allow list`],
-    }
-  }
-
-  const analysis = analyzeShellCommand(segment, workspaceRoot)
-  if (analysis.verdict === 'external') {
-    return { segment, head, tier: 'prompt', reasons: analysis.reasons }
-  }
-
-  if (routed) {
-    // A read-only command that redirects to a file actually writes; run it in the
-    // write overlay so the seatbelt does not deny the redirect.
-    if (routed === 'read' && hasWriteRedirect(segment)) {
-      return { segment, head, tier: 'write', reasons: [`\`${head ?? '?'}\` writes via redirect`] }
-    }
-    return { segment, head, tier: routed, reasons: [`\`${head ?? '?'}\` routes to ${routed}`] }
-  }
-
-  // No table entry and not external → sandbox-contained. Both `sandbox` and
-  // `ambiguous` auto-run inside the seatbelt today, so both map to `write`.
-  return {
-    segment,
-    head,
-    tier: 'write',
-    reasons: analysis.verdict === 'ambiguous' ? analysis.reasons : ['contained: no escape signals'],
-  }
-}
-
-/**
- * Join the per-segment tiers into the single execution context that satisfies
- * every segment, or `prompt` when no safe context does:
+ * Resolve whether {@link command} may run unsandboxed with no prompt.
  *
- * - any `prompt` segment → `prompt` (never silently escalate an unknown command);
- * - `allow` + `container` are incompatible (a command cannot be both unsandboxed
- *   and containerized) → `prompt`;
- * - otherwise the most-permissive required context wins:
- *   `allow` > `container` > `write` > `read`.
- */
-export function joinTiers(tiers: readonly CommandTier[]): CommandTier {
-  if (tiers.includes('prompt')) return 'prompt'
-  const hasAllow = tiers.includes('allow')
-  const hasContainer = tiers.includes('container')
-  if (hasAllow && hasContainer) return 'prompt'
-  if (hasAllow) return 'allow'
-  if (hasContainer) return 'container'
-  if (tiers.includes('write')) return 'write'
-  return 'read'
-}
-
-/**
- * Route a (possibly compound) shell command to its execution context.
- *
- * Whole-command gates run first and are never bypassed — they catch cross-segment
- * tricks that per-segment analysis would miss (e.g. `cat local | sh` pipes a file
- * into an interpreter across a segment boundary). Only once those pass do we split
- * and classify each segment to pick the minimal shared context.
+ * @param trusted allow-listed command basenames (already validated).
  */
 export function resolveCommandRouting(
   command: string,
   workspaceRoot: string | null,
-  table: Map<string, CommandTier>,
+  trusted: ReadonlySet<string>,
 ): CommandRouting {
   const trimmed = command.trim()
-  if (!trimmed) {
-    return { outcome: 'run', tier: 'read', segments: [], reasons: ['empty command'] }
+  if (!trimmed) return { outcome: 'defer', reasons: ['empty command'] }
+  if (trusted.size === 0) return { outcome: 'defer', reasons: ['no trusted commands configured'] }
+
+  if (hasGroupingOrSubstitution(trimmed)) {
+    return { outcome: 'defer', reasons: ['command substitution or subshell present'] }
+  }
+  if (dangerousInSandboxReasons(trimmed).length > 0) {
+    return { outcome: 'defer', reasons: ['destructive pattern present'] }
   }
 
-  if (hasCommandSubstitution(trimmed)) {
-    return {
-      outcome: 'prompt',
-      segments: [],
-      reasons: ['command substitution (may hide network or outside-path tools)'],
+  let anyTrusted = false
+  for (const segment of splitSegments(trimmed)) {
+    const head = commandHead(segment)
+    if (head && trusted.has(head) && !NON_TRUSTABLE_COMMANDS.has(head)) {
+      anyTrusted = true
+      continue
+    }
+    // Not trusted → must be a trivially-safe prep command with no escape signals.
+    if (!head || !SAFE_PREP_COMMANDS.has(head)) {
+      return { outcome: 'defer', reasons: [`segment not trusted: ${head ?? segment}`] }
+    }
+    if (analyzeShellCommand(segment, workspaceRoot).verdict !== 'sandbox') {
+      return { outcome: 'defer', reasons: [`prep command shows escape signals: ${segment}`] }
+    }
+    if (dangerousInSandboxReasons(segment).length > 0) {
+      return { outcome: 'defer', reasons: [`prep command is destructive: ${segment}`] }
     }
   }
-  const dangerous = dangerousInSandboxReasons(trimmed)
-  if (dangerous.length > 0) {
-    return { outcome: 'prompt', segments: [], reasons: dangerous }
-  }
 
-  const segments = splitSegments(trimmed).map((s) => resolveSegmentTier(s, workspaceRoot, table))
-  const tier = joinTiers(segments.map((s) => s.tier))
-
-  if (tier === 'prompt') {
-    const reasons = segments.filter((s) => s.tier === 'prompt').flatMap((s) => s.reasons)
-    const incompatible =
-      reasons.length === 0 ? ['incompatible sandbox contexts across segments'] : reasons
-    return { outcome: 'prompt', segments, reasons: incompatible }
+  if (!anyTrusted) {
+    // Nothing here needs to escape the sandbox — let the normal path run it contained.
+    return { outcome: 'defer', reasons: ['no trusted command in a fully-safe command line'] }
   }
-
-  return {
-    outcome: 'run',
-    tier,
-    segments,
-    reasons: [`runs in ${tier} context`, ...segments.flatMap((s) => s.reasons)],
-  }
+  return { outcome: 'allow', reasons: ['all segments trusted or trivially safe'] }
 }

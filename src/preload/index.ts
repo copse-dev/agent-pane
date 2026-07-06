@@ -364,7 +364,7 @@ contextBridge.exposeInMainWorld('api', {
       defaultReadonlyMode: boolean
       webAllowedOrigins: string[]
       webAllowUserApproval: boolean
-      commandRoutingTable?: { command: string; tier: 'read' | 'write' | 'container' | 'allow' }[]
+      trustedShellCommands?: string[]
     }) => ipcRenderer.invoke('settings:setSecurity', prefs),
     getKey: (provider: string) => ipcRenderer.invoke('settings:getKey', provider),
     setKey: (provider: string, key: string) => ipcRenderer.invoke('settings:setKey', provider, key),

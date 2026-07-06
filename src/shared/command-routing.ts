@@ -1,74 +1,68 @@
 /**
- * Shared command-routing types and the plain-text serialization used by the
- * Settings UI. Kept free of Node built-ins so it can be imported from the
- * renderer (the resolution logic in
- * `src/main/services/security/command-routing.ts` depends on `shell-scope.ts`
- * and stays main-process-only).
+ * Shared types and text serialization for the trusted-shell-command allow-list.
+ *
+ * Kept free of Node built-ins so the Settings renderer can import it; the
+ * resolution logic (which depends on `shell-scope.ts` and `shell-quote`) lives
+ * in `src/main/services/security/command-routing.ts`.
+ *
+ * The feature is an allow-list of command *basenames* (e.g. `xcodebuild`) that
+ * the user trusts to run UNSANDBOXED with no approval prompt — for tools that
+ * genuinely cannot run inside the workspace sandbox (host toolchain, code
+ * signing, vendor endpoints) but are safe for a trusted project. It is honoured
+ * only in a trusted workspace and only when auto-run is enabled. See the resolver
+ * for the exact eligibility rules and the safety argument.
  */
 
-/** Isolation/permission tier a command (or one of its segments) is routed to. */
-export type CommandTier = 'read' | 'write' | 'container' | 'allow' | 'prompt'
+/** Setting key holding the trusted-command allow-list (array of basenames). */
+export const TRUSTED_COMMANDS_SETTING = 'trustedShellCommands'
 
-/** A tier a user may assign in the routing table (`prompt` is a resolution outcome, not assignable). */
-export type AssignableTier = Exclude<CommandTier, 'prompt'>
+// A command basename: no path separators, whitespace, or shell metacharacters.
+// This is what the resolver matches against a segment's head, so keeping the
+// stored form to bare names avoids a rule like `/usr/bin/xcodebuild` or
+// `xcodebuild build` ever silently never matching.
+const VALID_COMMAND = /^[A-Za-z0-9._+-]+$/
 
-/** A single routing rule: a command *head* (basename) mapped to a tier. */
-export interface CommandRoute {
-  /** Command basename this rule matches, e.g. `xcodebuild` or `mkdir`. */
-  command: string
-  tier: AssignableTier
-}
-
-/** Persisted per-project routing table (array of `{ command, tier }`). */
-export const COMMAND_ROUTES_SETTING = 'commandRoutingTable'
-
-export const ASSIGNABLE_TIERS: readonly AssignableTier[] = ['read', 'write', 'container', 'allow']
-
-function isAssignableTier(value: string): value is AssignableTier {
-  return (ASSIGNABLE_TIERS as readonly string[]).includes(value)
+export function isValidTrustedCommand(name: string): boolean {
+  return VALID_COMMAND.test(name)
 }
 
 /**
- * Parse the Settings textarea (`command:tier` per line) into routes. Tolerant by
- * design: blank lines and `#` comments are skipped, malformed lines and unknown
- * tiers are dropped, and the first rule for a command wins on duplicates.
+ * Parse the Settings textarea (one command per line) into a normalized list.
+ * Tolerant: blank lines and `#` comments are skipped, a `command:tier`-style
+ * suffix is trimmed to the bare command (forward-compatible with the fuller
+ * routing design), invalid names are dropped, and duplicates collapse.
  */
-export function parseCommandRoutes(text: string): CommandRoute[] {
-  const routes: CommandRoute[] = []
+export function parseTrustedCommands(text: string): string[] {
+  const out: string[] = []
   const seen = new Set<string>()
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim()
     if (!line || line.startsWith('#')) continue
-    const idx = line.lastIndexOf(':')
-    if (idx <= 0) continue
-    const command = line.slice(0, idx).trim()
-    const tier = line.slice(idx + 1).trim()
-    if (!command || seen.has(command) || !isAssignableTier(tier)) continue
-    seen.add(command)
-    routes.push({ command, tier })
+    // Accept a bare `xcodebuild` or a `xcodebuild:allow` form; keep only the name.
+    const name = (line.split(':', 1)[0] ?? '').trim()
+    if (!name || seen.has(name) || !isValidTrustedCommand(name)) continue
+    seen.add(name)
+    out.push(name)
   }
-  return routes
+  return out
 }
 
-/** Serialize routes back to the `command:tier` textarea format. */
-export function formatCommandRoutes(routes: readonly CommandRoute[]): string {
-  return routes.map((r) => `${r.command}:${r.tier}`).join('\n')
+/** Serialize the allow-list back to the one-per-line textarea format. */
+export function formatTrustedCommands(commands: readonly string[]): string {
+  return commands.join('\n')
 }
 
-/** Validate a route array coming off the settings store (drops malformed entries). */
-export function sanitizeCommandRoutes(value: unknown): CommandRoute[] {
+/** Validate a value coming off the settings store, dropping malformed entries. */
+export function sanitizeTrustedCommands(value: unknown): string[] {
   if (!Array.isArray(value)) return []
-  const routes: CommandRoute[] = []
+  const out: string[] = []
   const seen = new Set<string>()
   for (const entry of value) {
-    if (typeof entry !== 'object' || entry === null) continue
-    const command = (entry as { command?: unknown }).command
-    const tier = (entry as { tier?: unknown }).tier
-    if (typeof command !== 'string' || typeof tier !== 'string') continue
-    const trimmed = command.trim()
-    if (!trimmed || seen.has(trimmed) || !isAssignableTier(tier)) continue
-    seen.add(trimmed)
-    routes.push({ command: trimmed, tier })
+    if (typeof entry !== 'string') continue
+    const name = entry.trim()
+    if (!name || seen.has(name) || !isValidTrustedCommand(name)) continue
+    seen.add(name)
+    out.push(name)
   }
-  return routes
+  return out
 }

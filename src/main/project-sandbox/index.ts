@@ -19,7 +19,6 @@ export {
   gatewayReaddir,
   gatewayListDir,
 } from './sandbox-fs-client.ts'
-export { readonlySandboxOverlay, workspaceSandboxOverlay } from './config.ts'
 
 /**
  * Start Anthropic Sandbox Runtime for macOS project subprocesses (shell, git, rg, indexer).

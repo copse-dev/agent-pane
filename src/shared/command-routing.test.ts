@@ -1,48 +1,49 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  formatCommandRoutes,
-  parseCommandRoutes,
-  sanitizeCommandRoutes,
+  formatTrustedCommands,
+  isValidTrustedCommand,
+  parseTrustedCommands,
+  sanitizeTrustedCommands,
 } from './command-routing.ts'
 
-describe('parseCommandRoutes', () => {
-  it('parses `command:tier` lines and skips comments/blanks', () => {
-    const routes = parseCommandRoutes('# comment\n\nxcodebuild:allow\nls:read\n')
-    assert.deepEqual(routes, [
-      { command: 'xcodebuild', tier: 'allow' },
-      { command: 'ls', tier: 'read' },
+describe('parseTrustedCommands', () => {
+  it('parses one command per line, skipping comments/blanks', () => {
+    assert.deepEqual(parseTrustedCommands('# tools\n\nxcodebuild\npod\n'), ['xcodebuild', 'pod'])
+  })
+
+  it('accepts a legacy `command:tier` line by keeping the bare name', () => {
+    assert.deepEqual(parseTrustedCommands('xcodebuild:allow'), ['xcodebuild'])
+  })
+
+  it('drops invalid names and duplicates', () => {
+    assert.deepEqual(parseTrustedCommands('xcodebuild\n/usr/bin/x\nrm -rf\nxcodebuild'), [
+      'xcodebuild',
     ])
   })
 
-  it('drops unknown tiers and malformed lines', () => {
-    const routes = parseCommandRoutes('foo:bogus\nno-colon\nbar:write')
-    assert.deepEqual(routes, [{ command: 'bar', tier: 'write' }])
-  })
-
-  it('keeps the first rule on duplicate commands', () => {
-    const routes = parseCommandRoutes('git:read\ngit:allow')
-    assert.deepEqual(routes, [{ command: 'git', tier: 'read' }])
-  })
-
-  it('round-trips through formatCommandRoutes', () => {
-    const text = 'xcodebuild:allow\nmkdir:write'
-    assert.equal(formatCommandRoutes(parseCommandRoutes(text)), text)
+  it('round-trips through formatTrustedCommands', () => {
+    const text = 'xcodebuild\npod'
+    assert.equal(formatTrustedCommands(parseTrustedCommands(text)), text)
   })
 })
 
-describe('sanitizeCommandRoutes', () => {
-  it('drops non-array and malformed entries', () => {
-    assert.deepEqual(sanitizeCommandRoutes(null), [])
-    assert.deepEqual(
-      sanitizeCommandRoutes([
-        { command: 'ls', tier: 'read' },
-        { command: '', tier: 'read' },
-        { command: 'x', tier: 'nope' },
-        { command: 'ls', tier: 'write' }, // duplicate
-        'garbage',
-      ]),
-      [{ command: 'ls', tier: 'read' }],
-    )
+describe('isValidTrustedCommand', () => {
+  it('accepts bare basenames and rejects paths/args/metacharacters', () => {
+    assert.ok(isValidTrustedCommand('xcodebuild'))
+    assert.ok(isValidTrustedCommand('swift-format'))
+    assert.ok(!isValidTrustedCommand('/usr/bin/x'))
+    assert.ok(!isValidTrustedCommand('rm -rf'))
+    assert.ok(!isValidTrustedCommand('a;b'))
+  })
+})
+
+describe('sanitizeTrustedCommands', () => {
+  it('drops non-array, non-string, and malformed entries', () => {
+    assert.deepEqual(sanitizeTrustedCommands(null), [])
+    assert.deepEqual(sanitizeTrustedCommands(['xcodebuild', '', 'a b', 'xcodebuild', 42, 'pod']), [
+      'xcodebuild',
+      'pod',
+    ])
   })
 })

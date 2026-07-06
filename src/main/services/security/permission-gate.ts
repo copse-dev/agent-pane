@@ -210,18 +210,15 @@ async function checkShellPermission(args: unknown): Promise<boolean> {
   const command = shellCommandFromArgs(args)
   if (!command) return promptShell('(invalid command)', ['missing command argument'], false)
 
-  const autoRun = getSetting<boolean>('autoRunSandboxCommands', true)
-  // Complete-allow fast path: a command whose every segment is either explicitly
-  // allow-listed or statically sandbox-safe runs with no prompt (the prompt-fatigue
-  // lever). Gated behind the global auto-run toggle — turning auto-run off means
-  // "prompt for everything", which the explicit allow-list must not override. The
-  // whole-command destructive/substitution guards inside routeShellCommand still
-  // apply, so this can never auto-run a dangerous command (see command-routing.ts).
-  if (autoRun) {
-    const routing = routeShellCommand(command)
-    if (routing.outcome === 'run' && routing.tier === 'allow') return true
-  }
+  // Trusted-command fast path: a command whose every segment is either an
+  // explicitly trusted (allow-listed) command or a trivially-safe prep step runs
+  // with no prompt — the prompt-fatigue lever for unsandboxable-but-safe tools
+  // (e.g. xcodebuild). routeShellCommand internally requires auto-run to be on
+  // AND the workspace to be trusted, and never waives analysis for an untrusted
+  // co-segment, so this can only fire for a genuinely safe command line.
+  if (routeShellCommand(command).outcome === 'allow') return true
 
+  const autoRun = getSetting<boolean>('autoRunSandboxCommands', true)
   const workspaceRoot = getWorkspaceRoot()
   const sandboxEnabled = isProjectSandboxEnabled()
   const decision = decideShellPermission(command, {

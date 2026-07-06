@@ -255,7 +255,7 @@ export interface ApiClient {
       defaultReadonlyMode: boolean
       webAllowedOrigins: string[]
       webAllowUserApproval: boolean
-      commandRoutingTable?: { command: string; tier: 'read' | 'write' | 'container' | 'allow' }[]
+      trustedShellCommands?: string[]
     }) => Promise<void>
     getKey: (provider: string) => Promise<boolean>
     setKey: (provider: string, key: string) => Promise<void>

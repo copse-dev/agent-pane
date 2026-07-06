@@ -31,10 +31,10 @@ import {
   WEB_ALLOW_USER_APPROVAL_SETTING,
 } from '@shared/web-origins.ts'
 import {
-  COMMAND_ROUTES_SETTING,
-  formatCommandRoutes,
-  parseCommandRoutes,
-  sanitizeCommandRoutes,
+  TRUSTED_COMMANDS_SETTING,
+  formatTrustedCommands,
+  parseTrustedCommands,
+  sanitizeTrustedCommands,
 } from '@shared/command-routing.ts'
 
 export type SettingsSection =
@@ -136,6 +136,12 @@ async function saveSimpleFields(data: FormData, api: ApiClient): Promise<void> {
       await api.settings.set(field.name, trimmed ? value.trim() : value)
     }
   }
+}
+
+/** Read a text field from FormData, narrowing to string without a cast. */
+function formDataString(data: FormData, key: string): string {
+  const value = data.get(key)
+  return typeof value === 'string' ? value : ''
 }
 
 function parseWebAllowedOrigins(value: FormDataEntryValue | null): string[] {
@@ -453,28 +459,28 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset>
-              <legend>Command routing</legend>
+              <legend>Trusted commands</legend>
               <p class="settings-fieldset-desc">
-                Route specific commands to a sandbox tier. <code>read</code> runs read-only,
-                <code>write</code> allows workspace writes, <code>container</code> uses the strongest
-                available isolation, and <code>allow</code> runs the command unsandboxed with no
-                prompt — for tools that can't be sandboxed but are safe (e.g.
-                <code>xcodebuild</code>). A compound like <code>mkdir build &amp;&amp; xcodebuild …</code>
-                runs allow-tier without a prompt, while a destructive or network segment still
-                prompts.
+                Commands trusted to run <strong>unsandboxed with no prompt</strong> — for tools that
+                can't run inside the workspace sandbox but are safe (e.g.
+                <code>xcodebuild</code>). A line like <code>mkdir build &amp;&amp; xcodebuild …</code>
+                runs without a prompt because <code>mkdir</code> is a trivially-safe prep step and
+                <code>xcodebuild</code> is trusted; a destructive, network, or untrusted segment
+                (e.g. <code>curl</code>, <code>npm test</code>) makes the whole line prompt as usual.
+                Only honoured in a trusted workspace and when auto-run is on; shells and interpreters
+                (<code>sh</code>, <code>bash</code>, <code>node</code>, …) can't be trusted this way.
               </p>
               <label>
-                Routing rules
+                Trusted command names
                 <textarea
-                  name="commandRoutes"
-                  rows="6"
+                  name="trustedShellCommands"
+                  rows="5"
                   spellcheck="false"
-                  placeholder="xcodebuild:allow"
+                  placeholder="xcodebuild"
                 ></textarea>
                 <span class="field-hint">
-                  One <code>command:tier</code> per line (tier is
-                  <code>read</code>/<code>write</code>/<code>container</code>/<code>allow</code>).
-                  Matches the command basename. Requires auto-run to be on.
+                  One command basename per line (e.g. <code>xcodebuild</code>). Matches the command's
+                  basename only, never its arguments.
                 </span>
               </label>
             </fieldset>
@@ -1393,8 +1399,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       ;(form.elements.namedItem('webAllowedOrigins') as HTMLTextAreaElement).value = (
         savedWebOrigins?.length ? savedWebOrigins : DEFAULT_WEB_ALLOWED_ORIGINS
       ).join('\n')
-      ;(form.elements.namedItem('commandRoutes') as HTMLTextAreaElement).value =
-        formatCommandRoutes(sanitizeCommandRoutes(await api.settings.get(COMMAND_ROUTES_SETTING)))
+      ;(form.elements.namedItem('trustedShellCommands') as HTMLTextAreaElement).value =
+        formatTrustedCommands(
+          sanitizeTrustedCommands(await api.settings.get(TRUSTED_COMMANDS_SETTING)),
+        )
       ;(form.elements.namedItem('theme') as HTMLSelectElement).value = store.getState().theme
       ;(form.elements.namedItem('fontSize') as HTMLInputElement).value = String(
         store.getState().fontSize,
@@ -1475,11 +1483,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         defaultReadonlyMode: data.get('defaultReadonlyMode') === 'on',
         webAllowedOrigins: parseWebAllowedOrigins(data.get('webAllowedOrigins')),
         webAllowUserApproval: data.get(WEB_ALLOW_USER_APPROVAL_SETTING) === 'on',
-        commandRoutingTable: parseCommandRoutes(
-          typeof data.get('commandRoutes') === 'string'
-            ? (data.get('commandRoutes') as string)
-            : '',
-        ),
+        trustedShellCommands: parseTrustedCommands(formDataString(data, 'trustedShellCommands')),
       })
 
       store.setState({
