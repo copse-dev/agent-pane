@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { AnthropicProvider } from './anthropic-provider.ts'
-import type { StreamChunk } from '@shared/types'
+import type { ProviderStreamChunk } from './wire-types.ts'
 
 /**
  * Build a fake SDK stream event sequence and inject it into the provider's
@@ -23,8 +23,8 @@ function withFakeStream(provider: AnthropicProvider, events: unknown[]): void {
   ;(provider as unknown as { client: unknown }).client = fakeClient
 }
 
-async function collect(provider: AnthropicProvider): Promise<StreamChunk[]> {
-  const out: StreamChunk[] = []
+async function collect(provider: AnthropicProvider): Promise<ProviderStreamChunk[]> {
+  const out: ProviderStreamChunk[] = []
   for await (const chunk of provider.stream([{ role: 'user', content: 'hi' }], [])) {
     out.push(chunk)
   }
@@ -73,12 +73,14 @@ describe('AnthropicProvider usage accounting (#111)', () => {
 
     const chunks = await collect(provider)
     const reasoning = chunks
-      .filter((c): c is Extract<StreamChunk, { type: 'reasoning' }> => c.type === 'reasoning')
+      .filter(
+        (c): c is Extract<ProviderStreamChunk, { type: 'reasoning' }> => c.type === 'reasoning',
+      )
       .map((c) => c.text)
       .join('')
     assert.equal(reasoning, 'Let me check.')
     const text = chunks
-      .filter((c): c is Extract<StreamChunk, { type: 'text' }> => c.type === 'text')
+      .filter((c): c is Extract<ProviderStreamChunk, { type: 'text' }> => c.type === 'text')
       .map((c) => c.text)
       .join('')
     assert.equal(text, 'Hello')

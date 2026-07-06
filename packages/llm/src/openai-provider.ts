@@ -1,5 +1,5 @@
 import OpenAI from 'openai'
-import type { LLMProvider, LLMMessage, LLMTool, StreamChunk } from '@shared/types'
+import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
 
@@ -7,7 +7,7 @@ type ToolCallBuilder = { id: string; name: string; argsJson: string }
 
 function* yieldAssembledToolCalls(
   toolCallBuilders: Map<number, ToolCallBuilder>,
-): Generator<StreamChunk> {
+): Generator<ProviderStreamChunk> {
   for (const [, builder] of toolCallBuilders) {
     const parsed = parseToolArgs(builder.argsJson)
     yield {
@@ -57,7 +57,7 @@ export class OpenAIProvider implements LLMProvider {
     messages: LLMMessage[],
     tools: LLMTool[],
     signal?: AbortSignal,
-  ): AsyncIterable<StreamChunk> {
+  ): AsyncIterable<ProviderStreamChunk> {
     const { client, model } = this
     const self = this
     return yieldStreamWithRetry(

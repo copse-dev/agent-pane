@@ -1,5 +1,5 @@
 import { DEFAULT_APP_CHAT_MODEL, LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
-import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
+import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
 import {
   REMOTE_AGENT_MODELS,
   REMOTE_AGENT_PROVIDER_CURSOR,

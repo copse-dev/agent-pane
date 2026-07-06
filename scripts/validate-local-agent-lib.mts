@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import { runAgentLoop } from '../src/shared/agent/run-agent-loop.ts'
-import { createLMStudioProvider } from '../src/shared/llm/create-provider.ts'
+import { createLMStudioProvider } from '@copse/llm/create-provider.ts'
 import type { LLMTool, StreamChunk } from '../src/shared/types'
 
 const INCOMPLETE = 'stopped before producing a final answer'
