@@ -64,9 +64,11 @@ formatting); the loop itself is main-process-only.
   `OPEN_TODOS_FINALIZE_NUDGE` had exactly one consumer — the loop — so they
   moved from `@shared/todos/todo-logic.ts` into `agent-loop-guards.ts`
   alongside the sibling nudge constants.
-- **Two `EXPLORE_TOOL_NAMES` exist** (run-subagent's tool allowlist and
-  agent-loop-guards' duplicate-detection set). The barrel explicitly re-exports
-  the subagent allowlist — the one app code imports; deep imports see both.
+- **The explore-tool lists are two distinct constants** — `run-subagent`'s
+  `EXPLORE_TOOL_NAMES` (the subagent tool allowlist, the one app code imports)
+  and `agent-loop-guards`' `DUPLICATE_EXPLORE_TOOLS` (the duplicate-call
+  detection set). Their membership differs deliberately: the detection set
+  omits `semantic_search`.
 
 ## Remaining step for a true standalone repo
 
@@ -75,3 +77,8 @@ it as a git/npm dependency, flipping the `@copse/agent/*` tsconfig-path +
 esbuild aliases to a real `node_modules` resolution. The boundary, the
 self-containment, the type ownership, and the bundling story are done and
 enforced by the build.
+
+The `@shared/types` re-export shims are the permanent facade for app code: app
+files keep importing the wire types from `@shared/types`, and the shims are the
+single place that repoints to the git/npm dependency when the lift happens. App
+imports are not planned to move to `@copse/agent` directly.
