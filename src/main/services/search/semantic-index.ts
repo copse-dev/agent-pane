@@ -5,6 +5,11 @@ import { getBundledGortexPath } from './bundled-semantic.ts'
 import { runCommand, type RunCommandOptions } from '../exec/command-runner.ts'
 import { COMMAND_RUNNER_LONG_TIMEOUT_MS } from '../exec/subprocess-output-cap.ts'
 import { toRelativePath } from '../workspace.ts'
+import {
+  indexBuildStarted,
+  indexBuildFinished,
+  setSemanticIndexUnavailable,
+} from './index-status.ts'
 
 /**
  * Hard ceiling on semantic-index worker threads. Without a cap the native
@@ -132,6 +137,7 @@ export async function probeSemanticBackends(): Promise<SemanticBackend | null> {
   }
 
   activeBackend = null
+  setSemanticIndexUnavailable()
   return null
 }
 
@@ -231,6 +237,7 @@ export async function ensureSemanticIndex(workspaceRoot: string): Promise<void> 
   }
 
   const promise = (async (): Promise<void> => {
+    indexBuildStarted('semantic')
     try {
       switch (backend) {
         case 'gortex':
@@ -240,7 +247,9 @@ export async function ensureSemanticIndex(workspaceRoot: string): Promise<void> 
           await ensureVeraIndex(root)
           break
       }
+      indexBuildFinished('semantic', true)
     } catch (err) {
+      indexBuildFinished('semantic', false)
       console.warn('[copse-panel] semantic index setup failed:', err)
     }
   })()
@@ -292,6 +301,7 @@ export async function updateSemanticIndex(workspaceRoot: string): Promise<void> 
 }
 
 async function runSemanticIndexUpdate(backend: SemanticBackend, root: string): Promise<void> {
+  indexBuildStarted('semantic')
   try {
     switch (backend) {
       case 'gortex':
@@ -306,7 +316,9 @@ async function runSemanticIndexUpdate(backend: SemanticBackend, root: string): P
         })
         break
     }
+    indexBuildFinished('semantic', true)
   } catch (err) {
+    indexBuildFinished('semantic', false)
     console.warn('[copse-panel] semantic index update failed:', err)
   }
 }

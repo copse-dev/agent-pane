@@ -3,7 +3,8 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { buildIndex, getIndex, invalidateIndex } from './file-index.ts'
+import { buildIndex, getIndex, invalidateIndex, whenFileIndexReady } from './file-index.ts'
+import { getWorkspaceIndexStatus, resetWorkspaceIndexStatusForTest } from './index-status.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 
 describe('file-index', () => {
@@ -32,5 +33,22 @@ describe('file-index', () => {
     assert.ok(idx.paths.includes('src/main.ts'))
     assert.ok(idx.paths.includes('package.json'))
     assert.ok(idx.lastBuilt > 0)
+  })
+
+  it('reports building while a build is in flight, then ready', async () => {
+    resetWorkspaceIndexStatusForTest()
+    const build = buildIndex(tempRoot)
+    assert.equal(getWorkspaceIndexStatus().fileIndex.phase, 'building')
+    await build
+    assert.equal(getWorkspaceIndexStatus().fileIndex.phase, 'ready')
+  })
+
+  it('whenFileIndexReady rides an in-flight build and resolves immediately when idle', async () => {
+    const build = buildIndex(tempRoot)
+    await whenFileIndexReady()
+    assert.ok(getIndex())
+    await build
+    // No build in flight — must resolve without hanging.
+    await whenFileIndexReady()
   })
 })
