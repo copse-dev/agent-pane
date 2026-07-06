@@ -1,8 +1,8 @@
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
-import type { ExtraProvider } from '@shared/llm/extra-providers.ts'
+import type { ExtraProvider } from '@copse/llm/extra-providers.ts'
 import { getResolvedExtraProvider } from './extra-providers-store.ts'
 import { getSetting } from '../storage/settings.ts'
-import { OPENROUTER_BASE_URL } from '@shared/llm/openrouter.ts'
+import { OPENROUTER_BASE_URL } from '@copse/llm/openrouter.ts'
 
 // Same overridable base the model catalog fetch uses (openrouter-models.ts): the
 // hidden `openRouterApiBase` setting lets e2e point validation at a local

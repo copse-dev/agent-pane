@@ -1,14 +1,14 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { MockLLMProvider } from './mock-provider.ts'
-import type { LLMMessage, LLMTool, StreamChunk } from '@shared/types'
+import type { LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 
 async function collectChunks(
   provider: MockLLMProvider,
   messages: LLMMessage[],
   tools: LLMTool[],
-): Promise<StreamChunk[]> {
-  const chunks: StreamChunk[] = []
+): Promise<ProviderStreamChunk[]> {
+  const chunks: ProviderStreamChunk[] = []
   for await (const chunk of provider.stream(messages, tools)) {
     chunks.push(chunk)
   }
