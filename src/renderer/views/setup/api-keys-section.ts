@@ -185,11 +185,40 @@ export function createApiKeysSection(
     plaintextNote.hidden = !anyPlaintext
   }
 
+  // Explicit per-key consent to store unencrypted when no OS keyring is available.
+  // Returns whether the user approved a plaintext write for this provider.
+  function confirmPlaintextStorage(provider: ApiKeyProvider): boolean {
+    const label = API_KEY_PROVIDER_CONFIGS[provider].label
+    return confirm(
+      `No OS keyring is available to encrypt your ${label} at rest. ` +
+        'On Linux, install and unlock a system keyring (e.g. gnome-keyring / libsecret) ' +
+        'to store it encrypted.\n\n' +
+        'Store it unencrypted on this machine anyway?',
+    )
+  }
+
   async function saveKeys(): Promise<void> {
     for (const field of fields) {
       const key = field.input.value.trim()
-      if (key) await api.settings.setKey(field.provider, key)
-      field.input.value = ''
+      if (!key) {
+        field.input.value = ''
+        continue
+      }
+      let result = await api.settings.setKey(field.provider, key)
+      // Not ok means `plaintext-consent-required`: OS secure storage is unavailable
+      // and no consent was given yet. Ask before writing the key to disk in the
+      // clear, and retry with explicit consent on approval.
+      if (!result.ok && confirmPlaintextStorage(field.provider)) {
+        result = await api.settings.setKey(field.provider, key, { allowPlaintext: true })
+      }
+      if (result.ok) {
+        field.input.value = ''
+      } else {
+        // Declined (or still refused): leave the entered value in place and flag
+        // that it was not saved so the user can retry or set up a keyring first.
+        setInlineStatus(field.status, 'error', 'Not saved — unencrypted storage declined')
+        field.status.className = keyStatusClass(false)
+      }
     }
     await refreshKeyStatus()
   }

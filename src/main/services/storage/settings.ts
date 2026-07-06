@@ -66,30 +66,52 @@ function envVarFor(provider: KeyProvider): string | null {
   return PROVIDER_ENV_VARS[provider] ?? null
 }
 
-export function setApiKey(provider: KeyProvider, key: string): void {
+/**
+ * Outcome of {@link setApiKey}. `plaintext-consent-required` means OS secure
+ * storage is unavailable and the caller has not explicitly approved storing this
+ * key unencrypted, so nothing was written — the caller must obtain consent and
+ * retry with `{ allowPlaintext: true }`.
+ */
+export type SetApiKeyResult = { ok: true } | { ok: false; reason: 'plaintext-consent-required' }
+
+export function setApiKey(
+  provider: KeyProvider,
+  key: string,
+  opts: { allowPlaintext?: boolean } = {},
+): SetApiKeyResult {
   const trimmed = key.trim()
   // An empty/whitespace value clears the key rather than persisting a blank one
   // and stomping the current session's env var with an empty string.
   if (!trimmed) {
     deleteApiKey(provider)
-    return
+    return { ok: true }
+  }
+
+  const available = safeStorage.isEncryptionAvailable()
+  // Encryption unavailable and no explicit per-key consent to store plaintext:
+  // refuse to persist rather than silently writing the key to disk in the clear.
+  // The caller (IPC → renderer) surfaces a confirmation and retries with
+  // `allowPlaintext: true` once the user approves storing this key unencrypted.
+  if (!available && opts.allowPlaintext !== true) {
+    return { ok: false, reason: 'plaintext-consent-required' }
   }
 
   // Reflect cloud keys into the environment so the current session uses them
   // even if persistence fails. LM Studio is read from storage on demand, so it
-  // needs no env var.
+  // needs no env var. Done only once we're committing to store the key, so a
+  // declined plaintext key leaks into neither the environment nor disk.
   const envVar = envVarFor(provider)
   if (envVar) process.env[envVar] = trimmed
 
-  const available = safeStorage.isEncryptionAvailable()
   if (!available) {
     console.warn(
-      `[copse-panel] OS secure storage is unavailable; the ${provider} API key will be stored as base64 plaintext in settings.json. Install/unlock a system keyring (e.g. gnome-keyring / libsecret on Linux) to encrypt it at rest.`,
+      `[copse-panel] OS secure storage is unavailable; the ${provider} API key will be stored as base64 plaintext in settings.json (with explicit consent). Install/unlock a system keyring (e.g. gnome-keyring / libsecret on Linux) to encrypt it at rest.`,
     )
   }
   const bytes = available ? safeStorage.encryptString(trimmed) : Buffer.from(trimmed, 'utf8')
   const record: StoredKey = { v: 1, enc: bytes.toString('base64'), plain: !available }
   store.set(`apiKey.${provider}`, record)
+  return { ok: true }
 }
 
 /** Remove a stored API key and clear the corresponding session env var. */

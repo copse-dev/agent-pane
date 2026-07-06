@@ -18,6 +18,7 @@ import {
   assertStorageKey,
   IpcValidationError,
   keyProviderSchema,
+  setKeyOptionsSchema,
   parseIpcArgs,
   zMcpServerName,
   zNonEmptyString,
@@ -357,17 +358,22 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const p = parseIpcArgs(keyProviderSchema, [provider])
     return isApiKeyEncrypted(p)
   })
-  ipcMain.handle('settings:setKey', (event, provider: unknown, key: unknown) => {
+  ipcMain.handle('settings:setKey', (event, provider: unknown, key: unknown, opts: unknown) => {
     assertMainFrameSender(event, win)
     const p = parseIpcArgs(keyProviderSchema, [provider])
     const apiKey = parseIpcArgs(z.string().max(8192), [key])
-    setApiKey(p, apiKey)
+    const options = parseIpcArgs(setKeyOptionsSchema, [opts])
+    const result = setApiKey(p, apiKey, options)
+    // Encryption unavailable and no plaintext consent: nothing was stored. Report
+    // back so the renderer can prompt for explicit consent and retry.
+    if (!result.ok) return result
     invalidateProviderKeyStatus(p)
     // Saving an HF token auto-populates its priced, provider-pinned model list so
     // the picker and cost estimate work without a manual fetch (fire-and-forget).
     if (p === HUGGINGFACE_SLUG && apiKey.trim()) {
       void refreshHuggingFaceModels(apiKey).catch(() => {})
     }
+    return result
   })
   ipcMain.handle('settings:availableProviders', async () => {
     const available: Record<string, boolean> = {
@@ -419,7 +425,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         skipped.push({ provider: d.provider, reason: 'already-configured' })
         continue
       }
-      setApiKey(d.provider, d.value)
+      // Honour the plaintext gate here too: a bulk env import must not write keys
+      // unencrypted without consent. Skipped rather than silently stored in clear.
+      const result = setApiKey(d.provider, d.value)
+      if (!result.ok) {
+        skipped.push({ provider: d.provider, reason: result.reason })
+        continue
+      }
       imported.push({ provider: d.provider, source: d.source })
     }
     return { imported, skipped }

@@ -102,7 +102,14 @@ export interface IpcInvokeMap {
   // At-rest state for a stored key: true = OS-encrypted, false = base64 plaintext
   // (secure-storage fallback), null = no key stored.
   'settings:getKeyEncrypted': { args: [provider: Provider]; result: boolean | null }
-  'settings:setKey': { args: [provider: Provider, key: string]; result: undefined }
+  // Persist a key. When OS secure storage is unavailable, the key is only written
+  // if the caller passes `{ allowPlaintext: true }` (explicit per-save consent);
+  // otherwise nothing is stored and the result reports `plaintext-consent-required`
+  // so the renderer can confirm and retry.
+  'settings:setKey': {
+    args: [provider: Provider, key: string, opts?: { allowPlaintext?: boolean }]
+    result: { ok: true } | { ok: false; reason: 'plaintext-consent-required' }
+  }
   'settings:refreshHuggingFaceModels': {
     args: [key?: string]
     result: { ok: boolean; count: number; error?: string }

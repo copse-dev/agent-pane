@@ -4,9 +4,15 @@ import assert from 'node:assert/strict'
 import type { ApiClient } from '../../../preload/api.d.ts'
 import { createApiKeysSection } from './api-keys-section.ts'
 
+type SetKeyResult = { ok: true } | { ok: false; reason: 'plaintext-consent-required' }
+
 interface StubState {
   savedKeys: Record<string, string>
   encrypted?: Record<string, boolean>
+  // When false, the (main-process) storage refuses to persist without explicit
+  // plaintext consent — mirrors safeStorage.isEncryptionAvailable() === false.
+  encryptionAvailable?: boolean
+  setKeyCalls?: { provider: string; allowPlaintext: boolean }[]
 }
 
 function stubApi(state: StubState): ApiClient {
@@ -18,8 +24,19 @@ function stubApi(state: StubState): ApiClient {
         const enc = state.encrypted?.[provider]
         return enc === undefined ? true : enc
       },
-      setKey: async (provider: string, value: string): Promise<void> => {
+      setKey: async (
+        provider: string,
+        value: string,
+        opts?: { allowPlaintext?: boolean },
+      ): Promise<SetKeyResult> => {
+        state.setKeyCalls?.push({ provider, allowPlaintext: opts?.allowPlaintext === true })
+        const available = state.encryptionAvailable !== false
+        if (!available && opts?.allowPlaintext !== true) {
+          return { ok: false, reason: 'plaintext-consent-required' }
+        }
         state.savedKeys[provider] = value
+        if (state.encrypted) state.encrypted[provider] = available
+        return { ok: true }
       },
       validateKey: async (): Promise<{ ok: true } | { ok: false; error: string }> => ({ ok: true }),
     },
@@ -80,5 +97,73 @@ describe('api-keys-section', () => {
     assert.ok(note)
     assert.equal(note.hidden, false)
     assert.match(note.textContent, /keyring/i)
+  })
+
+  it('confirms and re-saves with allowPlaintext when consent is required', async () => {
+    const state: StubState = {
+      savedKeys: {},
+      encrypted: {},
+      encryptionAvailable: false,
+      setKeyCalls: [],
+    }
+    const section = createApiKeysSection(stubApi(state), {
+      providers: ['anthropic'],
+      validateOnInput: false,
+    })
+    document.body.append(section.root)
+    const input = section.root.querySelector<HTMLInputElement>('input[name="anthropicKey"]')
+    assert.ok(input)
+    input.value = 'sk-test'
+
+    const priorConfirm = globalThis.confirm
+    globalThis.confirm = (): boolean => true
+    try {
+      await section.saveKeys()
+    } finally {
+      globalThis.confirm = priorConfirm
+    }
+
+    // First call without consent (refused), second retried with allowPlaintext.
+    assert.deepEqual(state.setKeyCalls, [
+      { provider: 'anthropic', allowPlaintext: false },
+      { provider: 'anthropic', allowPlaintext: true },
+    ])
+    assert.equal(state.savedKeys['anthropic'], 'sk-test')
+    assert.equal(input.value, '')
+    const atRest = section.root.querySelector<HTMLElement>('[data-at-rest="anthropic"]')
+    assert.equal(atRest?.textContent, 'Stored unencrypted')
+  })
+
+  it('does not store the key when the user declines plaintext consent', async () => {
+    const state: StubState = {
+      savedKeys: {},
+      encrypted: {},
+      encryptionAvailable: false,
+      setKeyCalls: [],
+    }
+    const section = createApiKeysSection(stubApi(state), {
+      providers: ['anthropic'],
+      validateOnInput: false,
+    })
+    document.body.append(section.root)
+    const input = section.root.querySelector<HTMLInputElement>('input[name="anthropicKey"]')
+    assert.ok(input)
+    input.value = 'sk-test'
+
+    const priorConfirm = globalThis.confirm
+    globalThis.confirm = (): boolean => false
+    try {
+      await section.saveKeys()
+    } finally {
+      globalThis.confirm = priorConfirm
+    }
+
+    // Only the initial consent-less attempt was made; no plaintext retry.
+    assert.deepEqual(state.setKeyCalls, [{ provider: 'anthropic', allowPlaintext: false }])
+    assert.equal(state.savedKeys['anthropic'], undefined)
+    // Entered value is preserved and the field flags it was not saved.
+    assert.equal(input.value, 'sk-test')
+    const status = section.root.querySelector<HTMLElement>('[data-key="anthropic"]')
+    assert.match(status?.textContent ?? '', /not saved/i)
   })
 })

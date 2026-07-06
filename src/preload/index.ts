@@ -367,7 +367,8 @@ contextBridge.exposeInMainWorld('api', {
     }) => ipcRenderer.invoke('settings:setSecurity', prefs),
     getKey: (provider: string) => ipcRenderer.invoke('settings:getKey', provider),
     getKeyEncrypted: (provider: string) => ipcRenderer.invoke('settings:getKeyEncrypted', provider),
-    setKey: (provider: string, key: string) => ipcRenderer.invoke('settings:setKey', provider, key),
+    setKey: (provider: string, key: string, opts?: { allowPlaintext?: boolean }) =>
+      ipcRenderer.invoke('settings:setKey', provider, key, opts),
     availableProviders: () => ipcRenderer.invoke('settings:availableProviders'),
     validateKey: (provider: string, key: string) =>
       ipcRenderer.invoke('settings:validateKey', provider, key),
