@@ -43,7 +43,7 @@ import { runWithAgentRunReadonly } from './agent-run-readonly.ts'
 import { isToolAllowedInReadonlyMode } from '@shared/tools/readonly-tools.ts'
 import { getMcpToolMeta } from './mcp/mcp-registry.ts'
 import { formatReadFileLimitHint } from '@shared/agent/read-file-limits.ts'
-import { setExploreSubagentContext } from './explore-subagent-runner.ts'
+import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
 import { setCiInvestigatorContext } from './ci-investigator-runner.ts'
 import { setAdvisorContext, resolveAdvisorModelId } from './advisor-runner.ts'
@@ -479,22 +479,22 @@ export async function runAgent(
           executeTool: async (name, args, signal, toolCallId) => {
             if (isEditTool(name)) turnChangedFiles = true
             if (name === 'explore' && subagentsEnabled) {
-              setExploreSubagentContext({
-                parentToolCallId: toolCallId,
-                parentGoal,
-                provider: subagentRoute?.provider ?? provider,
-                registry,
-                contextWindow: subagentRoute?.contextWindow ?? contextWindow,
-                toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
-                onChunk: sendChunk,
-                usageModel: subagentUsageModel,
-                localFallback: subagentLocalFallback,
-              })
-              try {
-                return await registry.execute(name, args, signal)
-              } finally {
-                setExploreSubagentContext(null)
-              }
+              // ALS-scoped (not a global slot): the loop runs fanned-out
+              // explore calls concurrently, each with its own context.
+              return runWithExploreSubagentContext(
+                {
+                  parentToolCallId: toolCallId,
+                  parentGoal,
+                  provider: subagentRoute?.provider ?? provider,
+                  registry,
+                  contextWindow: subagentRoute?.contextWindow ?? contextWindow,
+                  toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
+                  onChunk: sendChunk,
+                  usageModel: subagentUsageModel,
+                  localFallback: subagentLocalFallback,
+                },
+                () => registry.execute(name, args, signal),
+              )
             }
             if (name === 'investigate_ci' && subagentsEnabled) {
               setCiInvestigatorContext({
