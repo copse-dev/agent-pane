@@ -1,4 +1,4 @@
-import type { LLMProvider, LLMMessage, LLMTool, StreamChunk } from '@shared/types'
+import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 import { redactMessages } from './redact-secrets.ts'
 
 /**
@@ -19,7 +19,7 @@ export function withSecretRedaction(
       messages: LLMMessage[],
       tools: LLMTool[],
       signal?: AbortSignal,
-    ): AsyncIterable<StreamChunk> {
+    ): AsyncIterable<ProviderStreamChunk> {
       return inner.stream(redactMessages(messages, literalSecrets), tools, signal)
     },
   }

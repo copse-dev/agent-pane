@@ -3,9 +3,9 @@ import {
   createLocalOpenAIProvider,
   createOpenRouterProvider,
   createExtraCloudProvider,
-} from '@shared/llm/create-provider.ts'
-import { isOpenRouterModel, openRouterModelId } from '@shared/llm/openrouter.ts'
-import { extraProviderForModel, extraProviderModelId } from '@shared/llm/extra-providers.ts'
+} from '@copse/llm/create-provider.ts'
+import { isOpenRouterModel, openRouterModelId } from '@copse/llm/openrouter.ts'
+import { extraProviderForModel, extraProviderModelId } from '@copse/llm/extra-providers.ts'
 import { getResolvedExtraProviders } from './extra-providers-store.ts'
 import type { LLMProvider } from '@shared/types'
 import {
@@ -24,8 +24,8 @@ import {
   fetchLmStudioModelsCached,
   invalidateLmStudioModelsCache as invalidateLmStudioModelsCacheImpl,
 } from './lm-studio-models.ts'
-import { isLocalModel } from '@shared/llm/estimate-cost.ts'
-import { withSecretRedaction } from '@shared/llm/redacting-provider.ts'
+import { isLocalModel } from '@copse/llm/estimate-cost.ts'
+import { withSecretRedaction } from '@copse/llm/redacting-provider.ts'
 import { PROVIDER_ENV_VARS } from './env-key-detection.ts'
 
 export { DEFAULT_LM_STUDIO_URL }

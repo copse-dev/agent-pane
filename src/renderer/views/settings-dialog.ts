@@ -9,7 +9,7 @@ import {
   isAppIconVariant,
   type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
-import { DEFAULT_CLOUD_MODEL } from '@shared/llm/model-catalog.ts'
+import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
 import { DEFAULT_ADVISOR_MODEL } from '../../main/services/advisor-strategy.ts'
 import {
   DEFAULT_COMPARISON_MODEL_B,
@@ -39,6 +39,34 @@ export type SettingsSection =
   | 'sources'
   | 'appearance'
   | 'experimental'
+
+/**
+ * Whole-app tint (Appearance ▸ Interface tint). The hue is mixed into every
+ * neutral surface at a strength that maps to a percentage; `off` disables it.
+ * Applied by writing --tint-hue / --tint-amount on the document root, which
+ * tokens.css folds into every --bg-* surface (see its --tint-* comment).
+ */
+export type UiTintStrength = 'off' | 'subtle' | 'medium' | 'strong'
+export const DEFAULT_TINT_COLOR = '#007acc'
+export const DEFAULT_TINT_STRENGTH: UiTintStrength = 'off'
+const TINT_STRENGTH_AMOUNTS: Record<UiTintStrength, string> = {
+  off: '0%',
+  subtle: '4%',
+  medium: '7%',
+  strong: '10%',
+}
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
+
+export function isUiTintStrength(value: unknown): value is UiTintStrength {
+  return value === 'off' || value === 'subtle' || value === 'medium' || value === 'strong'
+}
+
+/** Push the tint onto the document root so every surface picks it up at once. */
+export function applyUiTint(color: string, strength: UiTintStrength): void {
+  const root = document.documentElement
+  if (HEX_COLOR.test(color)) root.style.setProperty('--tint-hue', color)
+  root.style.setProperty('--tint-amount', TINT_STRENGTH_AMOUNTS[strength])
+}
 
 /**
  * Single source of truth for the simple form fields, so each setting's default
@@ -599,6 +627,28 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Only applies when the position above is "Automatic": splits portrait windows
                 horizontally so Projects + chat stay above Explorer, Terminal, Changes, and Plan.
               </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Interface tint</legend>
+              <p class="settings-fieldset-desc">
+                Wash a colour through every surface — panels, sidebars, hovers, and the chat
+                background. Kept subtle by design; leave the strength at Off for the plain neutral
+                theme. Works in both light and dark.
+              </p>
+              <label>
+                Tint colour
+                <input type="color" name="uiTintColor" />
+              </label>
+              <label>
+                Strength
+                <select name="uiTintStrength">
+                  <option value="off">Off</option>
+                  <option value="subtle">Subtle</option>
+                  <option value="medium">Medium</option>
+                  <option value="strong">Strong</option>
+                </select>
+              </label>
             </fieldset>
 
             <fieldset>
@@ -1369,6 +1419,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       ;(form.elements.namedItem('rightPanelPosition') as HTMLSelectElement).value =
         store.getState().rightPanelPosition
 
+      const savedTintColor = await api.settings.get('uiTintColor')
+      ;(form.elements.namedItem('uiTintColor') as HTMLInputElement).value =
+        typeof savedTintColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(savedTintColor)
+          ? savedTintColor
+          : DEFAULT_TINT_COLOR
+      const savedTintStrength = await api.settings.get('uiTintStrength')
+      ;(form.elements.namedItem('uiTintStrength') as HTMLSelectElement).value = isUiTintStrength(
+        savedTintStrength,
+      )
+        ? savedTintStrength
+        : DEFAULT_TINT_STRENGTH
+
       const savedIconVariant = await api.settings.get('appIconVariant')
       const appIconVariant = isAppIconVariant(savedIconVariant)
         ? savedIconVariant
@@ -1410,6 +1472,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const appIconVariant = data.get('appIconVariant') as AppIconVariant
       const confidence = parseFloat(data.get('safetyConfidenceThreshold') as string)
 
+      const tintColorRaw = data.get('uiTintColor')
+      const uiTintColor =
+        typeof tintColorRaw === 'string' && /^#[0-9a-fA-F]{6}$/.test(tintColorRaw)
+          ? tintColorRaw
+          : DEFAULT_TINT_COLOR
+      const tintStrengthRaw = data.get('uiTintStrength')
+      const uiTintStrength = isUiTintStrength(tintStrengthRaw)
+        ? tintStrengthRaw
+        : DEFAULT_TINT_STRENGTH
+
       await api.settings.set('model', model)
       await api.settings.set(
         'smallTasksModel',
@@ -1423,6 +1495,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await api.settings.set('fontSize', fontSize)
       await api.settings.set('autoPortraitRightPanel', autoPortraitRightPanel)
       await api.settings.set('rightPanelPosition', rightPanelPosition)
+      await api.settings.set('uiTintColor', uiTintColor)
+      await api.settings.set('uiTintStrength', uiTintStrength)
       if (isAppIconVariant(appIconVariant)) {
         await api.settings.set('appIconVariant', appIconVariant)
         await api.appIcon.apply()
@@ -1453,6 +1527,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       store.emit('settings_changed')
       window.dispatchEvent(new Event('copse:skills-changed'))
       document.documentElement.dataset['theme'] = theme
+      applyUiTint(uiTintColor, uiTintStrength)
       closeSettingsDialog()
     })()
   })

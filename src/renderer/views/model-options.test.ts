@@ -2,7 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ApiClient, ExtraProvider } from '../../preload/api.d.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
-import { resolveExtraProviders } from '@shared/llm/extra-providers.ts'
+import { resolveExtraProviders } from '@copse/llm/extra-providers.ts'
 import { fetchModelOptions } from './model-options.ts'
 
 interface MockOpts {
