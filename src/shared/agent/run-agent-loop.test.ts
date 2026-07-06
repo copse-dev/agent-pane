@@ -811,3 +811,122 @@ src/renderer/views/projects-pane.ts
     assert.equal(measuredAtSecondStream, 1000)
   })
 })
+
+describe('parallel explore fan-out', () => {
+  function instrumentedExecuteTool(delaysMs: Record<string, number>): {
+    executeTool: (
+      name: string,
+      args: unknown,
+      signal: AbortSignal,
+      toolCallId: string,
+    ) => Promise<string>
+    maxInFlight: () => number
+  } {
+    let inFlight = 0
+    let max = 0
+    return {
+      executeTool: async (_name, _args, _signal, toolCallId): Promise<string> => {
+        inFlight++
+        max = Math.max(max, inFlight)
+        await new Promise((resolve) => setTimeout(resolve, delaysMs[toolCallId] ?? 1))
+        inFlight--
+        return `${toolCallId}-summary`
+      },
+      maxInFlight: (): number => max,
+    }
+  }
+
+  it('runs a fanned-out batch of explore calls concurrently, results in call order', async () => {
+    const messages: LLMMessage[] = [{ role: 'user', content: 'go' }]
+    // e1 finishes last, e3 first — result order must still follow call order.
+    const tools = instrumentedExecuteTool({ e1: 30, e2: 20, e3: 10 })
+    await runAgentLoop({
+      provider: mockProvider([
+        [
+          { type: 'tool_call', toolCall: { id: 'e1', name: 'explore', args: { query: 'a' } } },
+          { type: 'tool_call', toolCall: { id: 'e2', name: 'explore', args: { query: 'b' } } },
+          { type: 'tool_call', toolCall: { id: 'e3', name: 'explore', args: { query: 'c' } } },
+          { type: 'done' },
+        ],
+        [{ type: 'text', text: 'done' }, { type: 'done' }],
+      ]),
+      messages,
+      tools: [],
+      onChunk: () => {},
+      executeTool: tools.executeTool,
+    })
+    assert.ok(
+      tools.maxInFlight() >= 2,
+      `explore calls must overlap (max in flight: ${String(tools.maxInFlight())})`,
+    )
+    const toolMsg = messages.find((m) => m.role === 'tool')
+    assert.ok(toolMsg?.role === 'tool')
+    assert.deepEqual(
+      toolMsg.toolResults.map((r) => r.toolCallId),
+      ['e1', 'e2', 'e3'],
+    )
+    assert.deepEqual(
+      toolMsg.toolResults.map((r) => r.result),
+      ['e1-summary', 'e2-summary', 'e3-summary'],
+    )
+    assertToolPairingValid(messages)
+  })
+
+  it('keeps explores serial when they follow another tool in the batch', async () => {
+    const messages: LLMMessage[] = [{ role: 'user', content: 'go' }]
+    const tools = instrumentedExecuteTool({ r1: 10, e1: 5, e2: 5 })
+    await runAgentLoop({
+      provider: mockProvider([
+        [
+          { type: 'tool_call', toolCall: { id: 'r1', name: 'run_shell', args: {} } },
+          { type: 'tool_call', toolCall: { id: 'e1', name: 'explore', args: { query: 'a' } } },
+          { type: 'tool_call', toolCall: { id: 'e2', name: 'explore', args: { query: 'b' } } },
+          { type: 'done' },
+        ],
+        [{ type: 'text', text: 'done' }, { type: 'done' }],
+      ]),
+      messages,
+      tools: [],
+      onChunk: () => {},
+      executeTool: tools.executeTool,
+    })
+    assert.equal(
+      tools.maxInFlight(),
+      1,
+      'explores after a mutating tool must observe its effects — no overlap',
+    )
+    assertToolPairingValid(messages)
+  })
+
+  it('propagates a pre-started explore failure through the normal error path', async () => {
+    const messages: LLMMessage[] = [{ role: 'user', content: 'go' }]
+    const results: { toolCallId: string; isError: boolean }[] = []
+    await runAgentLoop({
+      provider: mockProvider([
+        [
+          { type: 'tool_call', toolCall: { id: 'e1', name: 'explore', args: { query: 'a' } } },
+          { type: 'tool_call', toolCall: { id: 'e2', name: 'explore', args: { query: 'b' } } },
+          { type: 'done' },
+        ],
+        [{ type: 'text', text: 'done' }, { type: 'done' }],
+      ]),
+      messages,
+      tools: [],
+      onChunk: (c) => {
+        if (c.type === 'tool_result') results.push({ toolCallId: c.toolCallId, isError: c.isError })
+      },
+      executeTool: async (_name, _args, _signal, toolCallId) => {
+        // The failing call rejects immediately, before the loop awaits it —
+        // the settled wrapper must hold it without an unhandled rejection.
+        if (toolCallId === 'e1') throw new Error('explore blew up')
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        return 'ok'
+      },
+    })
+    assert.deepEqual(results, [
+      { toolCallId: 'e1', isError: true },
+      { toolCallId: 'e2', isError: false },
+    ])
+    assertToolPairingValid(messages)
+  })
+})
