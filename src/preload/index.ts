@@ -393,6 +393,16 @@ contextBridge.exposeInMainWorld('api', {
     query: (pattern: string) => ipcRenderer.invoke('index:query', pattern),
     resolveFileReferences: (candidates: string[]) =>
       ipcRenderer.invoke('index:resolveFileReferences', candidates),
+    status: () => ipcRenderer.invoke('index:status'),
+    onStatusChanged: (handler: (status: unknown) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, status: unknown): void => {
+        handler(status)
+      }
+      ipcRenderer.on('index:status_changed', listener)
+      return (): void => {
+        ipcRenderer.off('index:status_changed', listener)
+      }
+    },
   },
   memories: {
     list: () => ipcRenderer.invoke('memories:list'),

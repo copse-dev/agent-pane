@@ -1,6 +1,7 @@
 import { runCommand } from '../exec/command-runner.ts'
 import { isRgAvailable } from '../tool-availability.ts'
 import { toRelativePath } from '../workspace.ts'
+import { indexBuildStarted, indexBuildFinished } from './index-status.ts'
 import * as fs from 'node:fs/promises'
 
 interface FileIndex {
@@ -9,19 +10,45 @@ interface FileIndex {
 }
 
 let index: FileIndex | null = null
+let buildInFlight: Promise<void> | null = null
 
 export async function buildIndex(workspaceRoot: string): Promise<void> {
-  let paths: string[]
-  if (isRgAvailable()) {
-    const { stdout } = await runCommand('rg', ['--files', '--sort', 'path', workspaceRoot])
-    paths = stdout
-      .split('\n')
-      .filter(Boolean)
-      .map((p) => toRelativePath(p))
-  } else {
-    paths = await walkPaths(workspaceRoot, workspaceRoot)
+  indexBuildStarted('fileIndex')
+  const build = (async (): Promise<void> => {
+    let paths: string[]
+    if (isRgAvailable()) {
+      const { stdout } = await runCommand('rg', ['--files', '--sort', 'path', workspaceRoot])
+      paths = stdout
+        .split('\n')
+        .filter(Boolean)
+        .map((p) => toRelativePath(p))
+    } else {
+      paths = await walkPaths(workspaceRoot, workspaceRoot)
+    }
+    index = { paths, lastBuilt: Date.now() }
+  })()
+  buildInFlight = build
+  try {
+    await build
+    indexBuildFinished('fileIndex', true)
+  } catch (err) {
+    indexBuildFinished('fileIndex', false)
+    throw err
+  } finally {
+    if (buildInFlight === build) buildInFlight = null
   }
-  index = { paths, lastBuilt: Date.now() }
+}
+
+/**
+ * Resolve once no file-index build is in flight (immediately when none is).
+ * Workspace open schedules the build without blocking the renderer, so index
+ * consumers (find_files, `@` file references, workspace links) briefly ride
+ * the in-flight build here instead of seeing "no index" during boot.
+ */
+export async function whenFileIndexReady(): Promise<void> {
+  while (buildInFlight) {
+    await buildInFlight.catch(() => undefined)
+  }
 }
 
 export function getIndex(): FileIndex | null {

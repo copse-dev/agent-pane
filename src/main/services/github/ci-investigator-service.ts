@@ -2,9 +2,9 @@ import {
   runSubagent,
   CI_INVESTIGATOR_TOOL_NAMES,
   CI_INVESTIGATOR_SYSTEM_PROMPT,
-} from '@shared/agent/run-subagent.ts'
-import { conversationTokenBudget } from '@shared/agent/trim-history.ts'
-import { readFileLimitsForSubagent } from '@shared/agent/read-file-limits.ts'
+} from '@copse/agent/run-subagent.ts'
+import { conversationTokenBudget } from '@copse/agent/trim-history.ts'
+import { readFileLimitsForSubagent } from '@copse/agent/read-file-limits.ts'
 import type {
   LLMProvider,
   LLMMessage,

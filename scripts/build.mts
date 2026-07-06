@@ -8,6 +8,7 @@ const bundledGortexName = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
 
 const sharedAlias = {
   '@shared': resolve('./src/shared'),
+  '@copse/agent': resolve('./packages/agent/src'),
   '@copse/llm': resolve('./packages/llm/src'),
 }
 

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { LLMMessage } from '@shared/types'
+import type { LLMMessage } from '@copse/llm/wire-types.ts'
 import {
   extractParentGoal,
   nextWorkingBrief,

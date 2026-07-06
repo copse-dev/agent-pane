@@ -11,6 +11,7 @@ import { setIndexedGrepBackendForTest } from '../services/search/indexed-grep.ts
 import { setRgAvailableForTest } from '../services/tool-availability.ts'
 import {
   setSemanticBackendForTest,
+  setSemanticIndexReadyForTest,
   setSemanticSearchExecutorForTest,
 } from '../services/search/semantic-index.ts'
 
@@ -30,6 +31,7 @@ describe('search_codebase tool', () => {
     setRgAvailableForTest(true)
     setSemanticBackendForTest(null)
     setSemanticSearchExecutorForTest(null)
+    setSemanticIndexReadyForTest(tempRoot)
   })
 
   afterEach(async () => {
@@ -38,6 +40,7 @@ describe('search_codebase tool', () => {
     setRgAvailableForTest(null)
     setSemanticBackendForTest(null)
     setSemanticSearchExecutorForTest(null)
+    setSemanticIndexReadyForTest(null)
     restoreWorkspace?.()
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
   })
@@ -119,5 +122,37 @@ describe('search_codebase tool', () => {
     ).result
     assert.match(result, /Semantic search unavailable/)
     assert.match(result, /gortex/)
+  })
+
+  it('falls back to regex without blocking while the semantic index is cold', async () => {
+    setSemanticBackendForTest('gortex')
+    setSemanticIndexReadyForTest(null) // cold: no build pass has completed
+    setSemanticSearchExecutorForTest(async () => {
+      throw new Error('search must not run against a cold index')
+    })
+
+    const result = normalizeToolExecuteResult(
+      await registry.execute(
+        'search_codebase',
+        { query: 'where is authentication handled', mode: 'auto' },
+        new AbortController().signal,
+      ),
+    ).result
+    assert.match(result, /\[semantic index still building — regex fallback\]/)
+  })
+
+  it('returns the building note instead of blocking in explicit semantic mode', async () => {
+    setSemanticBackendForTest('gortex')
+    setSemanticIndexReadyForTest(null)
+
+    const result = normalizeToolExecuteResult(
+      await registry.execute(
+        'search_codebase',
+        { query: 'where is auth handled', mode: 'semantic' },
+        new AbortController().signal,
+      ),
+    ).result
+    assert.match(result, /still building/)
+    assert.match(result, /search_code/)
   })
 })
