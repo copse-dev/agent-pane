@@ -476,13 +476,85 @@ describe('decideMcpPermission', () => {
     assert.equal(decideMcpPermission({ ...baseInput, remembered: true }).action, 'allow')
   })
 
+  const readOnlyName = 'mcp__srv__list_items'
+
   it('auto-allows read-only tools only when the setting is on', () => {
     const ann = { readOnlyHint: true }
-    assert.equal(decideMcpPermission({ ...baseInput, annotations: ann }).action, 'prompt')
     assert.equal(
-      decideMcpPermission({ ...baseInput, annotations: ann, autoAllowReadOnly: true }).action,
+      decideMcpPermission({ ...baseInput, toolName: readOnlyName, annotations: ann }).action,
+      'prompt',
+    )
+    assert.equal(
+      decideMcpPermission({
+        ...baseInput,
+        toolName: readOnlyName,
+        annotations: ann,
+        autoAllowReadOnly: true,
+      }).action,
       'allow',
     )
+  })
+
+  it('prompts a hint-only tool whose name is not structurally read-only (#661)', () => {
+    // Was auto-allowed on the hint alone; a compromised server can no longer
+    // self-declare read-only to skip the prompt on a mutating-named tool.
+    const d = decideMcpPermission({
+      ...baseInput,
+      toolName: 'mcp__srv__delete_everything',
+      annotations: { readOnlyHint: true },
+      autoAllowReadOnly: true,
+    })
+    assert.equal(d.action, 'prompt')
+  })
+
+  it('auto-allows a read-only-named tool when the hint also says read-only (#661)', () => {
+    const d = decideMcpPermission({
+      ...baseInput,
+      toolName: 'mcp__srv__get_profile',
+      annotations: { readOnlyHint: true },
+      autoAllowReadOnly: true,
+    })
+    assert.equal(d.action, 'allow')
+  })
+
+  it('prompts a read-only-named tool when the hint is not read-only (#661)', () => {
+    const d = decideMcpPermission({
+      ...baseInput,
+      toolName: 'mcp__srv__get_profile',
+      annotations: { readOnlyHint: false },
+      autoAllowReadOnly: true,
+    })
+    assert.equal(d.action, 'prompt')
+  })
+
+  it('never auto-allows more than the pre-#661 hint gate did', () => {
+    // The old gate auto-allowed iff (readOnlyHint && autoAllowReadOnly && !destructive
+    // && !remembered && !bundled). The new gate additionally requires a structurally
+    // read-only NAME, so every previously-prompting input must still prompt and no
+    // previously-prompting input may now auto-allow.
+    const names = [
+      'mcp__srv__list_items', // read-only name
+      'mcp__srv__delete_items', // mutating name
+      'mcp__srv__update_record', // mutating name
+      'mcp__srv__run_migration', // mutating name
+      'mcp__srv__settings', // false-prefix ("set"-like) but not a verb match
+    ]
+    for (const toolName of names) {
+      for (const readOnlyHint of [true, false]) {
+        for (const autoAllowReadOnly of [true, false]) {
+          const oldAllow = readOnlyHint && autoAllowReadOnly
+          const newAllow =
+            decideMcpPermission({
+              toolName,
+              remembered: false,
+              autoAllowReadOnly,
+              annotations: { readOnlyHint },
+            }).action === 'allow'
+          // Never loosens: a new auto-allow implies the old gate also auto-allowed.
+          assert.equal(newAllow && !oldAllow, false, `loosened for ${toolName}`)
+        }
+      }
+    }
   })
 
   it('always prompts for destructive tools even when read-only auto-allow is on', () => {
