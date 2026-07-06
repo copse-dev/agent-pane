@@ -11,7 +11,7 @@ import {
   buildProvider,
 } from './provider-selection.ts'
 import { setSetting, setApiKey } from '../storage/settings.test-shim.ts'
-import { MockLLMProvider } from '@shared/llm/mock-provider.ts'
+import { MockLLMProvider } from '@copse/llm/mock-provider.ts'
 
 const SOURCE_PATH = resolve(process.cwd(), 'src/main/services/providers/lm-studio-models.ts')
 

@@ -22,7 +22,7 @@ import type {
   ExtraProvider,
   ExtraProviderModel,
   StoredExtraProvider,
-} from '@shared/llm/extra-providers.ts'
+} from '@copse/llm/extra-providers.ts'
 import type { DetectedAcpAgent } from '@shared/acp-known-agents.ts'
 import type { AcpModelSelector, AcpAutoSetupResult } from '@shared/types/acp.ts'
 

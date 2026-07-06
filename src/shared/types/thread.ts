@@ -1,5 +1,10 @@
 import type { AgentRunPayload } from './skills.ts'
 import type { TodoItem } from './todo.ts'
+// Token-usage types are owned by the LLM module (a provider reports usage across
+// the contract). Imported for use by the thread types below and re-exported so
+// `@shared/types` consumers are unchanged.
+import type { ModelUsage, ThreadUsage } from '@copse/llm/wire-types.ts'
+export type { ModelUsage, ThreadUsage } from '@copse/llm/wire-types.ts'
 
 export type ThreadStatus = 'idle' | 'running' | 'error'
 
@@ -201,33 +206,6 @@ export interface ToolCall {
    */
   resultFormat?: 'markdown'
   subagent?: SubagentSession
-}
-
-export interface ModelUsage {
-  inputTokens: number
-  outputTokens: number
-  /**
-   * Portion of `inputTokens` served from the provider prompt cache (Anthropic
-   * `cache_read_input_tokens`). Billed far cheaper than fresh input; absent for
-   * providers/usage that don't report cache stats.
-   */
-  cacheReadTokens?: number
-  /**
-   * Portion of `inputTokens` written to the provider prompt cache (Anthropic
-   * `cache_creation_input_tokens`).
-   */
-  cacheCreationTokens?: number
-}
-
-export interface ThreadUsage {
-  inputTokens: number
-  outputTokens: number
-  /** Cumulative cache-read tokens across the thread (subset of `inputTokens`). */
-  cacheReadTokens?: number
-  /** Cumulative cache-creation tokens across the thread (subset of `inputTokens`). */
-  cacheCreationTokens?: number
-  /** Token totals keyed by model id (e.g. claude-sonnet-4-6, lmstudio:qwen). */
-  byModel?: Record<string, ModelUsage>
 }
 
 export interface UsageDelta extends ModelUsage {

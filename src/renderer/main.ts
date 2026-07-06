@@ -29,6 +29,10 @@ import {
   openSettingsDialog,
   isSettingsDialogOpen,
   closeSettingsDialog,
+  applyUiTint,
+  isUiTintStrength,
+  DEFAULT_TINT_COLOR,
+  DEFAULT_TINT_STRENGTH,
 } from './views/settings-dialog.ts'
 import {
   mountOnboardingDialog,
@@ -69,13 +73,19 @@ import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layo
 import { isRightPanelPosition } from '@shared/types/state.ts'
 import { installArtifactImagePolicy } from './markdown/artifact-image-policy.ts'
 import { installSanitizerBackend } from './markdown/sanitizer-backend.ts'
+import { installHighlighterBackend } from './markdown/highlighter-backend.ts'
 
 // Inject host markdown policies into @copse/streaming-markdown before any view
 // renders: turn remote-agent artifact <img> tags into inert placeholders that
 // hydrateRemoteArtifactImages() resolves after sanitization. The sanitizer
-// backend (DOMPurify) is loaded via a deferred dynamic import; boot() awaits it
-// before the first render.
+// backend resolves the native Sanitizer API synchronously (Electron) or lazily
+// loads DOMPurify where it is absent; boot() awaits it before the first render.
 const sanitizerReady = installSanitizerBackend()
+// Highlighting is a pluggable backend too (streaming-markdown #37): without it,
+// fenced code renders as plain text with no `hljs-*` token spans. Lazily load the
+// highlight.js backend (code-split, off the eager path) and register it; boot()
+// awaits it before the first render.
+const highlighterReady = installHighlighterBackend()
 installArtifactImagePolicy()
 
 const store = createStore()
@@ -125,10 +135,11 @@ window.addEventListener('unhandledrejection', (event) => {
 let layoutMounted = false
 
 async function boot(): Promise<void> {
-  // Sanitizer backend must be in place before any markdown sink renders.
-  // Resolves instantly on the native path; only awaits a load if DOMPurify had
-  // to be lazily pulled in.
-  await sanitizerReady
+  // Sanitizer and highlighter backends must be in place before any markdown sink
+  // renders. The sanitizer resolves instantly on the native path (only awaits a
+  // load if DOMPurify had to be lazily pulled in); the highlighter awaits its
+  // code-split highlight.js chunk so code blocks get their hljs token spans.
+  await Promise.all([sanitizerReady, highlighterReady])
   mountSettingsDialog(store, api)
   mountOnboardingDialog(store, api)
   mountApprovalDialog(api, store)
@@ -142,9 +153,32 @@ async function boot(): Promise<void> {
   const savedLayout = await api.settings.get('layout')
   const savedAutoPortraitRightPanel = await api.settings.get('autoPortraitRightPanel')
   const savedRightPanelPosition = await api.settings.get('rightPanelPosition')
+  // Theme and editor font size persist too. Restore them here (the store
+  // otherwise keeps its dark/14 defaults on every launch) and apply the theme to
+  // the document root before the layout paints — panes read both from the store
+  // as they mount below, so no post-mount re-theming is needed.
+  const savedTheme = await api.settings.get('theme')
+  const theme =
+    savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : store.getState().theme
+  const savedFontSize = await api.settings.get('fontSize')
+  const fontSize =
+    typeof savedFontSize === 'number' && savedFontSize >= 8 && savedFontSize <= 32
+      ? savedFontSize
+      : store.getState().fontSize
+  document.documentElement.dataset['theme'] = theme
+  // Restore the whole-app tint before the layout paints so surfaces come up
+  // already tinted rather than flashing neutral then shifting.
+  const savedTintColor = await api.settings.get('uiTintColor')
+  const savedTintStrength = await api.settings.get('uiTintStrength')
+  applyUiTint(
+    typeof savedTintColor === 'string' ? savedTintColor : DEFAULT_TINT_COLOR,
+    isUiTintStrength(savedTintStrength) ? savedTintStrength : DEFAULT_TINT_STRENGTH,
+  )
   store.setState({
     settings: { model: savedModel ?? DEFAULT_APP_CHAT_MODEL },
     layout: parseSavedLayout(savedLayout),
+    theme,
+    fontSize,
     autoPortraitRightPanel:
       typeof savedAutoPortraitRightPanel === 'boolean' ? savedAutoPortraitRightPanel : true,
     rightPanelPosition: isRightPanelPosition(savedRightPanelPosition)

@@ -116,7 +116,7 @@ import {
   clearMockScript,
   mockScriptCursorForTests,
   type MockScriptStep,
-} from '@shared/llm/mock-script.ts'
+} from '@copse/llm/mock-script.ts'
 import { applyAppIcon } from '../app-icon.ts'
 import {
   getMainWindow,
