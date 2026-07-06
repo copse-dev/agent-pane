@@ -5,9 +5,9 @@ import {
   isPrivateOrLinkLocalHost,
   normalizeHostname,
   validateCredentialBaseUrl,
-} from '@shared/llm/credential-url.ts'
+} from '@copse/llm/credential-url.ts'
 
-export { isLoopbackHostname } from '@shared/llm/credential-url.ts'
+export { isLoopbackHostname } from '@copse/llm/credential-url.ts'
 
 export {
   DEFAULT_WEB_ALLOWED_ORIGINS,
