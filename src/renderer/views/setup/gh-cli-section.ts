@@ -1,3 +1,4 @@
+import { escapeHtml } from '@copse/streaming-markdown'
 import { errorMessage } from '@shared/errors.ts'
 import type { ApiClient } from '../../../preload/api.d.ts'
 import { el } from '../../dom/helpers.ts'
@@ -24,7 +25,8 @@ export function createGhCliSection(api: ApiClient): GhCliSection {
           '<strong>Installed, not signed in.</strong> Run <code>gh auth login</code> in a terminal to connect your GitHub account.'
         return
       }
-      const user = status.username ? `@${status.username}` : 'your GitHub account'
+      // `gh api user` stdout is external data — escape before it reaches innerHTML.
+      const user = status.username ? `@${escapeHtml(status.username)}` : 'your GitHub account'
       statusEl.innerHTML = `<strong>Ready.</strong> Signed in as ${user}. Pull request links in chat open in the PRs panel.`
     } catch (err) {
       statusEl.textContent = errorMessage(err)
