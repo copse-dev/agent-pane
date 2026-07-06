@@ -1,17 +1,17 @@
 import { errorMessage } from '@shared/errors.ts'
-import { runAgentLoop } from '@shared/agent/run-agent-loop.ts'
-import type { AgentHost } from '@shared/agent/agent-host.ts'
+import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
+import type { AgentHost } from '@copse/agent/agent-host.ts'
 import {
   createAgentRunAbortScheduler,
   DEFAULT_MAX_LLM_CALLS,
-} from '@shared/agent/agent-loop-limits.ts'
+} from '@copse/agent/agent-loop-limits.ts'
 import type { LLMMessage, LLMTool, StreamChunk, UserContent } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { getSetting } from './storage/settings.ts'
 import { resolveContextWindow } from './providers/resolve-context-window.ts'
 import { classifyAgentError } from './agent-errors.ts'
-import { resolveParentGoal } from '@shared/agent/working-brief.ts'
+import { resolveParentGoal } from '@copse/agent/working-brief.ts'
 import { buildSystemPrompt } from './agent-system-prompt.ts'
 import { hasLastUsage } from './providers/provider-usage.ts'
 import { clearActiveRunThread, recordThreadModel, setActiveRunThread } from './thread-models.ts'
@@ -25,7 +25,7 @@ import {
   isLocalChatModel,
 } from './providers/provider-selection.ts'
 import { runPostTurnReview } from './review-subagent-runner.ts'
-import { isEditTool } from '@shared/agent/review-subagent.ts'
+import { isEditTool } from '@copse/agent/review-subagent.ts'
 import {
   prepareAgentHistory,
   contextTrimmedChunk,
@@ -42,7 +42,7 @@ import {
 import { runWithAgentRunReadonly } from './agent-run-readonly.ts'
 import { isToolAllowedInReadonlyMode } from '@shared/tools/readonly-tools.ts'
 import { getMcpToolMeta } from './mcp/mcp-registry.ts'
-import { formatReadFileLimitHint } from '@shared/agent/read-file-limits.ts'
+import { formatReadFileLimitHint } from '@copse/agent/read-file-limits.ts'
 import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
 import { setCiInvestigatorContext } from './ci-investigator-runner.ts'
@@ -148,7 +148,7 @@ export async function runAgent(
   threadId: string,
   userPrompt: UserContent,
   priorMessages: LLMMessage[],
-  host: AgentHost,
+  host: AgentHost<StreamChunk>,
   registry: ToolRegistry,
   options?: {
     invokedSkills?: string[]

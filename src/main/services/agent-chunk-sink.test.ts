@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { AgentHost } from '@shared/agent/agent-host.ts'
+import type { AgentHost } from '@copse/agent/agent-host.ts'
 import type { StreamChunk } from '@shared/types'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { getThreadModels } from './thread-models.ts'
@@ -13,7 +13,7 @@ describe('createAgentChunkSink', () => {
     storageSet(USAGE_EVENTS_STORAGE_KEY, [])
     storageSet('activeProjectId', 'proj-1')
     const emitted: StreamChunk[] = []
-    const host: AgentHost = { emit: (_threadId, chunk) => emitted.push(chunk) }
+    const host: AgentHost<StreamChunk> = { emit: (_threadId, chunk) => emitted.push(chunk) }
     const sink = createAgentChunkSink('thread-1', host)
 
     sink({

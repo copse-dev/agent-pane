@@ -1,4 +1,4 @@
-import type { ToolCallChunk } from '@shared/types'
+import type { ToolCallChunk } from '@copse/llm/wire-types.ts'
 
 /** Cursor / Qwen-style tool calls embedded in assistant text instead of native tool_calls. */
 const TOOL_CALL_BLOCK_RE = /<\s*tool_call\s*>([\s\S]*?)<\s*\/\s*tool_call\s*>/gi

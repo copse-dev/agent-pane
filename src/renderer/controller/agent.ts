@@ -29,7 +29,7 @@ import {
   updateSubagentToolCall,
   finishSubagent,
 } from '@shared/store/subagent-helpers.ts'
-import { planAgentTextChunk } from '@shared/agent/agent-text-chunk.ts'
+import { planAgentTextChunk } from '@copse/agent/agent-text-chunk.ts'
 import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY } from '../agent-activity.ts'
 import { drainMessageQueue } from './message-queue.ts'
 import { usageRecordFromAgentDelta } from '@shared/usage/usage-record-input.ts'

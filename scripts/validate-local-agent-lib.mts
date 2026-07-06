@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
-import { runAgentLoop } from '../src/shared/agent/run-agent-loop.ts'
+import { runAgentLoop } from '../packages/agent/src/run-agent-loop.ts'
 import { createLMStudioProvider } from '@copse/llm/create-provider.ts'
 import type { LLMTool, StreamChunk } from '../src/shared/types'
 
