@@ -5,6 +5,8 @@
     "baseUrl": ".",
     "paths": {
       "@shared/*": ["./src/shared/*"],
+      "@copse/agent": ["./packages/agent/src/index.ts"],
+      "@copse/agent/*": ["./packages/agent/src/*"],
       "@copse/llm": ["./packages/llm/src/index.ts"],
       "@copse/llm/*": ["./packages/llm/src/*"]
     }

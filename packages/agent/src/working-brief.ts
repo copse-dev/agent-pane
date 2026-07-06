@@ -1,4 +1,4 @@
-import type { LLMMessage, UserContent } from '@shared/types'
+import type { LLMMessage, UserContent } from '@copse/llm/wire-types.ts'
 
 export const WORKING_BRIEF_MAX_LEN = 2000
 

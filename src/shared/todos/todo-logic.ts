@@ -8,10 +8,6 @@ export function todoProgress(todos: readonly TodoItem[]): { done: number; total:
   return { done, total: active.length }
 }
 
-export function hasOpenTodos(todos: readonly TodoItem[]): boolean {
-  return todos.some((t) => t.status === 'pending' || t.status === 'in_progress')
-}
-
 export function formatTodoProgress(todos: readonly TodoItem[]): string | null {
   const { done, total } = todoProgress(todos)
   if (total === 0) return null
@@ -134,9 +130,6 @@ export function findNewlyCompleted(
   }
   return null
 }
-
-export const OPEN_TODOS_FINALIZE_NUDGE =
-  'You still have open todos. Complete or cancel each pending/in_progress item with update_todos before finishing, or cancel items you will not do.'
 
 export const TODO_STEERING_PROMPT = `When the user asks for multi-step work (refactors, implement-and-test, changes across several files):
 1. Call update_todos once with 3+ concrete steps before executing tools.
