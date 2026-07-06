@@ -4,10 +4,13 @@ import { AGENT_ROLE_IDS } from './agent-roles.ts'
 import {
   BENCHMARKS,
   CORE_LOCAL_ROLES,
+  HARDWARE_CLASSES,
   LOCAL_MODEL_CATALOG,
+  getHardwareClass,
   getLocalModelCapability,
   recommendLocalModelsForRole,
   recommendedLocalSetup,
+  recommendedSetupForClass,
   type Benchmark,
 } from './local-model-catalog.ts'
 
@@ -108,5 +111,31 @@ describe('local model catalog', () => {
     const setup = recommendedLocalSetup({ maxDownloadGb: 3 })
     assert.ok(!setup.some((s) => s.role === 'coder'))
     for (const { model } of setup) assert.ok(model.downloadGb <= 3)
+  })
+
+  it('orders hardware classes by increasing memory and download budget', () => {
+    for (let i = 1; i < HARDWARE_CLASSES.length; i++) {
+      const prev = HARDWARE_CLASSES[i - 1]
+      const cur = HARDWARE_CLASSES[i]
+      assert.ok(prev && cur)
+      assert.ok(cur.memoryGb > prev.memoryGb, `${cur.id} memory not increasing`)
+      assert.ok(cur.maxDownloadGb > prev.maxDownloadGb, `${cur.id} budget not increasing`)
+      // Budget leaves headroom below memory (except the unbounded server tier).
+      if (Number.isFinite(cur.maxDownloadGb)) assert.ok(cur.maxDownloadGb < cur.memoryGb)
+    }
+  })
+
+  it('sizes the recommended setup to the hardware class', () => {
+    const compact = recommendedSetupForClass('compact')
+    for (const { model } of compact)
+      assert.ok(model.downloadGb <= 6, `${model.id} too big for compact`)
+    // A bigger class fits at least as many roles as a smaller one.
+    assert.ok(recommendedSetupForClass('workstation').length >= compact.length)
+    assert.deepEqual(recommendedSetupForClass('not-a-class'), [])
+  })
+
+  it('resolves hardware classes by id', () => {
+    assert.equal(getHardwareClass('standard')?.memoryGb, 16)
+    assert.equal(getHardwareClass('nope'), null)
   })
 })

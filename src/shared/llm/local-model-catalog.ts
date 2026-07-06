@@ -246,3 +246,41 @@ export function recommendedLocalSetup(opts: RecommendOptions = {}): RecommendedA
   }
   return out
 }
+
+export interface HardwareClass {
+  id: string
+  /** Human label for the picker/onboarding. */
+  label: string
+  /** Approximate unified memory / VRAM this class targets, in GB. */
+  memoryGb: number
+  /**
+   * Largest model download we recommend for the class, in GB. Held well below
+   * `memoryGb` (≈65–70%) so there's headroom for the KV cache, the OS, and the
+   * app — a model that just fits in memory still thrashes once context grows.
+   */
+  maxDownloadGb: number
+}
+
+/**
+ * A few hardware tiers so recommendations fit the user's machine instead of a
+ * single 64 GB reference. `maxDownloadGb` is the budget passed to the recommender
+ * (footprint at 4-bit ≈ on-disk size). Ordered smallest first.
+ */
+export const HARDWARE_CLASSES: readonly HardwareClass[] = [
+  { id: 'compact', label: 'Compact (≈8 GB)', memoryGb: 8, maxDownloadGb: 6 },
+  { id: 'standard', label: 'Standard (≈16 GB)', memoryGb: 16, maxDownloadGb: 11 },
+  { id: 'plus', label: 'Plus (≈24–32 GB)', memoryGb: 32, maxDownloadGb: 22 },
+  { id: 'workstation', label: 'Workstation (≈48–64 GB)', memoryGb: 64, maxDownloadGb: 45 },
+  { id: 'server', label: 'Server (96 GB+)', memoryGb: 96, maxDownloadGb: Infinity },
+]
+
+export function getHardwareClass(id: string): HardwareClass | null {
+  return HARDWARE_CLASSES.find((c) => c.id === id) ?? null
+}
+
+/** The recommended local setup sized for a hardware class (see {@link recommendedLocalSetup}). */
+export function recommendedSetupForClass(classId: string): RecommendedAssignment[] {
+  const hw = getHardwareClass(classId)
+  if (!hw) return []
+  return recommendedLocalSetup({ maxDownloadGb: hw.maxDownloadGb })
+}

@@ -109,6 +109,26 @@ and the UI shows "—", never a guess. Note the repo already references
 forward-looking ids (`qwen/qwen3.6-35b-a3b`, `google/gemma-4-e4b`), so catalog
 ids stay data, not literals baked into logic.
 
+**Seed from public leaderboards, don't self-measure (yet).** Concrete, fetchable
+sources (all machine-readable, git/HF-hosted like LiteLLM):
+
+- **Coding / agent edit:** Aider polyglot + edit leaderboards
+  (`Aider-AI/aider` → `aider/website/_data/*.yml`; `pass_rate_2` is the headline).
+- **HumanEval+/MBPP+:** EvalPlus results.
+- **LiveCodeBench:** its leaderboard export.
+- **GPQA / MMLU-Pro / IFEval / BBH:** Open LLM Leaderboard v2 (HF dataset;
+  archived mid-2025 but data persists).
+- **Preference:** LMArena (HF dataset). **SWE-bench:** swebench.com JSON.
+
+**Two caveats confirmed by probing Aider's live data:** (1) _Coverage is sparse
+for small local models_ — of our six-model shortlist only Qwen2.5-Coder-32B has a
+clean polyglot entry; the rest are absent or only appear at other sizes.
+(2) _Published scores are full-precision, not the 4-bit GGUF a user actually
+runs_ — so a synced number is directional, an upper bound. Both are exactly why
+Copse-specific evals (Phase 4) earn their keep later; the public seed fills what
+it can and leaves the rest "—". The sync needs a model-id **alias map** (leaderboard
+names like `Qwen2.5-Coder-32B-Instruct` / `ollama/qwen2.5-coder:32b` → our ids).
+
 ### 3. Defaults: role → recommended model
 
 For each role, a ranked recommendation is computed from the catalog: filter by
@@ -117,6 +137,13 @@ role (e.g. `coder` ranks on SWE-bench + Aider Polyglot; `tool-use` on τ-bench;
 `judge` on GPQA + determinism). This is the "good defaults" seed — and because
 it is derived from data, it updates automatically as the catalog is re-synced.
 Every recommendation is overridable, and the UI shows _why_ it was picked.
+
+**Hardware classes (VRAM tiers).** Rather than a single 64 GB reference, the
+budget comes from a named class (`HARDWARE_CLASSES`): Compact (≈8 GB) → Standard
+(≈16 GB) → Plus (≈24–32 GB) → Workstation (≈48–64 GB) → Server (96 GB+). Each
+class caps the model download at ≈65–70% of memory to leave headroom for the KV
+cache, OS, and app. `recommendedSetupForClass(id)` sizes the whole role setup to
+the machine. _Done in Phase 0/3 code; UI to pick the class is pending._
 
 ### 4. Classifications in the picker
 
