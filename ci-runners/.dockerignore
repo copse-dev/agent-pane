@@ -1,0 +1,11 @@
+# Build context for the unified runner image is THIS directory. The Dockerfile
+# only COPYs entrypoint.sh (deps are baked by cloning TARGET_REPO at build time,
+# not from this context), but keep local runner state and credentials out of the
+# context regardless — defense-in-depth so a token in .env can never be sent to
+# the daemon or land in an image layer.
+.env
+.env.*
+!.env.example
+_work
+*.log
+.DS_Store

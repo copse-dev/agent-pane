@@ -1,17 +1,53 @@
+/* Dark inherits the tint-derived --bg-* surfaces straight from :root (tokens.css
+   already holds the dark greys), so they are intentionally not repeated here —
+   that keeps the whole-app tint working without duplicating the color-mix. Only
+   the non-surface tiers are restated. */
 [data-theme='dark'] {
   color-scheme: dark;
-  --bg-base: #1e1e1e;
-  --bg-elevated: #252526;
-  --bg-hover: #2a2d2e;
-  --text-primary: #cccccc;
-  --border: #3c3c3c;
+  --text-primary: #d4d4d4;
+  --text-secondary: #a6a6a6;
+  --text-muted: #808080;
+  --border: #414141;
+  --border-subtle: #333333;
+  --border-strong: #565656;
+  --link: #58a6ff;
+  --link-hover: #79b8ff;
+  --error: #f48771;
+  --danger: #f14c4c;
+  --success: #4ec9b0;
+  --warning: #cca700;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.5);
+  --shadow-composer: 0 -6px 18px rgba(0, 0, 0, 0.1);
 }
 [data-theme='light'] {
   color-scheme: light;
-  --bg-base: #ffffff;
-  --bg-elevated: #f3f3f3;
-  --bg-hover: #e8e8e8;
-  --text-primary: #333333;
-  --border: #e0e0e0;
+  /* Re-derive the surfaces from light greys so the tint still washes through. */
+  --bg-base: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #ffffff);
+  --bg-elevated: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #f3f3f3);
+  --bg-hover: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #e8e8e8);
+  --bg-muted: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #ececec);
+  --bg-subtle: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #f7f7f7);
   --bg-active: #0060c0;
+  --bg-selected: color-mix(in srgb, var(--accent) 13%, var(--bg-elevated));
+  /* The dark-theme greys read as low-contrast smudges on white — every text
+     tier and the status colours need their own light values. */
+  --text-primary: #333333;
+  --text-secondary: #5f5f5f;
+  --text-muted: #767676;
+  --border: #d4d4d4;
+  --border-subtle: #e4e4e4;
+  --border-strong: #ababab;
+  --accent-soft: color-mix(in srgb, var(--accent) 10%, var(--bg-elevated));
+  --link: #0969da;
+  --link-hover: #0550ae;
+  --error: #cf222e;
+  --danger: #cf222e;
+  --success: #1a7f37;
+  --warning: #9a6700;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.14);
+  --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.2);
+  --shadow-composer: 0 -6px 18px rgba(0, 0, 0, 0.05);
 }

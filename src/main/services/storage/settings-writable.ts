@@ -100,6 +100,11 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   fontSize: z.number().int().min(8).max(32),
   autoPortraitRightPanel: z.boolean(),
   rightPanelPosition: z.enum(['auto', 'side', 'bottom']),
+  // Whole-app tint: a hue mixed into every neutral surface at a chosen
+  // strength. Colour is a #rrggbb hex; strength maps to a mix percentage in
+  // the renderer (off = no tint). See tokens.css --tint-hue / --tint-amount.
+  uiTintColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  uiTintStrength: z.enum(['off', 'subtle', 'medium', 'strong']),
   appIconVariant: z.enum(APP_ICON_VARIANTS),
   layout: z.object({
     projectsPaneWidth: z.number().int().min(180).max(400),
@@ -138,6 +143,13 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   modelClassifierEnabled: z.boolean(),
   advisorStrategyEnabled: z.boolean(),
   advisorModel: z.string().max(256),
+  // Experimental model comparison harness: run the working-diff review through
+  // two models plus a judge that compares their verdicts. See model-comparison.ts.
+  modelComparisonEnabled: z.boolean(),
+  modelComparisonAutoOnReview: z.boolean(),
+  comparisonModelA: z.string().max(256),
+  comparisonModelB: z.string().max(256),
+  comparisonJudgeModel: z.string().max(256),
   roadmapPlansEnabled: z.boolean(),
   backgroundTasksEnabled: z.boolean(),
   piiRedactionEnabled: z.boolean(),

@@ -1,4 +1,9 @@
 import './styles/tokens.css'
+// Shared markdown styling lives in the renderer package; agent-pane maps its
+// theme tokens onto the sheet's `--sm-*` knobs (see the bridge in
+// styles/global/conversation.css). Imported before global.css so app rules win
+// ties. The `.streaming-markdown` scope class is added to each render sink.
+import '@copse/streaming-markdown/styles/default.css'
 import './styles/global.css'
 import './styles/themes.css'
 import './styles/global/popout.css'
@@ -17,12 +22,17 @@ import { mountTerminalsPane } from './views/terminals-pane.ts'
 import { mountAgentTasks } from './views/agent-tasks.ts'
 import { mountGitChangesPane } from './views/git-changes-pane.ts'
 import { mountPrPane } from './views/pr-pane.ts'
+import { mountMemoriesPane } from './views/memories-pane.ts'
 import { mountBrowserPane } from './views/browser-pane.ts'
 import {
   mountSettingsDialog,
   openSettingsDialog,
   isSettingsDialogOpen,
   closeSettingsDialog,
+  applyUiTint,
+  isUiTintStrength,
+  DEFAULT_TINT_COLOR,
+  DEFAULT_TINT_STRENGTH,
 } from './views/settings-dialog.ts'
 import {
   mountOnboardingDialog,
@@ -62,10 +72,20 @@ import { showErrorToast } from './views/toast.ts'
 import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layout.ts'
 import { isRightPanelPosition } from '@shared/types/state.ts'
 import { installArtifactImagePolicy } from './markdown/artifact-image-policy.ts'
+import { installSanitizerBackend } from './markdown/sanitizer-backend.ts'
+import { installHighlighterBackend } from './markdown/highlighter-backend.ts'
 
 // Inject host markdown policies into @copse/streaming-markdown before any view
-// renders: remote-agent artifact <img> tags become inert placeholders that
-// hydrateRemoteArtifactImages() resolves after sanitization.
+// renders: turn remote-agent artifact <img> tags into inert placeholders that
+// hydrateRemoteArtifactImages() resolves after sanitization. The sanitizer
+// backend resolves the native Sanitizer API synchronously (Electron) or lazily
+// loads DOMPurify where it is absent; boot() awaits it before the first render.
+const sanitizerReady = installSanitizerBackend()
+// Highlighting is a pluggable backend too (streaming-markdown #37): without it,
+// fenced code renders as plain text with no `hljs-*` token spans. Lazily load the
+// highlight.js backend (code-split, off the eager path) and register it; boot()
+// awaits it before the first render.
+const highlighterReady = installHighlighterBackend()
 installArtifactImagePolicy()
 
 const store = createStore()
@@ -75,7 +95,14 @@ const api = window.api
 // mode we boot the app normally (so the pane gets the real workspace/threads),
 // but force the pane open and let popout.css hide the projects sidebar, chat,
 // and titlebar so the detached window shows only that pane.
-const POPOUT_MODES = new Set<RightPanelMode>(['explorer', 'terminal', 'changes', 'prs', 'browser'])
+const POPOUT_MODES = new Set<RightPanelMode>([
+  'explorer',
+  'terminal',
+  'changes',
+  'prs',
+  'browser',
+  'memories',
+])
 function getPopoutMode(): RightPanelMode | null {
   const raw = new URLSearchParams(window.location.search).get('popout')
   return raw && POPOUT_MODES.has(raw as RightPanelMode) ? (raw as RightPanelMode) : null
@@ -108,6 +135,11 @@ window.addEventListener('unhandledrejection', (event) => {
 let layoutMounted = false
 
 async function boot(): Promise<void> {
+  // Sanitizer and highlighter backends must be in place before any markdown sink
+  // renders. The sanitizer resolves instantly on the native path (only awaits a
+  // load if DOMPurify had to be lazily pulled in); the highlighter awaits its
+  // code-split highlight.js chunk so code blocks get their hljs token spans.
+  await Promise.all([sanitizerReady, highlighterReady])
   mountSettingsDialog(store, api)
   mountOnboardingDialog(store, api)
   mountApprovalDialog(api, store)
@@ -121,9 +153,32 @@ async function boot(): Promise<void> {
   const savedLayout = await api.settings.get('layout')
   const savedAutoPortraitRightPanel = await api.settings.get('autoPortraitRightPanel')
   const savedRightPanelPosition = await api.settings.get('rightPanelPosition')
+  // Theme and editor font size persist too. Restore them here (the store
+  // otherwise keeps its dark/14 defaults on every launch) and apply the theme to
+  // the document root before the layout paints — panes read both from the store
+  // as they mount below, so no post-mount re-theming is needed.
+  const savedTheme = await api.settings.get('theme')
+  const theme =
+    savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : store.getState().theme
+  const savedFontSize = await api.settings.get('fontSize')
+  const fontSize =
+    typeof savedFontSize === 'number' && savedFontSize >= 8 && savedFontSize <= 32
+      ? savedFontSize
+      : store.getState().fontSize
+  document.documentElement.dataset['theme'] = theme
+  // Restore the whole-app tint before the layout paints so surfaces come up
+  // already tinted rather than flashing neutral then shifting.
+  const savedTintColor = await api.settings.get('uiTintColor')
+  const savedTintStrength = await api.settings.get('uiTintStrength')
+  applyUiTint(
+    typeof savedTintColor === 'string' ? savedTintColor : DEFAULT_TINT_COLOR,
+    isUiTintStrength(savedTintStrength) ? savedTintStrength : DEFAULT_TINT_STRENGTH,
+  )
   store.setState({
     settings: { model: savedModel ?? DEFAULT_APP_CHAT_MODEL },
     layout: parseSavedLayout(savedLayout),
+    theme,
+    fontSize,
     autoPortraitRightPanel:
       typeof savedAutoPortraitRightPanel === 'boolean' ? savedAutoPortraitRightPanel : true,
     rightPanelPosition: isRightPanelPosition(savedRightPanelPosition)
@@ -260,6 +315,12 @@ function mountFullLayout(): void {
   mountBrowserPane(
     requireElement('browser-tabs-host'),
     requireElement('browser-viewer-host'),
+    store,
+    api,
+  )
+  mountMemoriesPane(
+    requireElement('memories-host'),
+    requireElement('memories-viewer-host'),
     store,
     api,
   )

@@ -59,6 +59,18 @@ export function isLocalChatModel(model: string): boolean {
   return isLocalModel(model)
 }
 
+/**
+ * True when running `model` costs money: not an LM Studio / local model and not
+ * an OpenAI-compatible *local* extra provider (Ollama, llama.cpp, …). Used to
+ * decide whether a model-comparison run needs a spend approval.
+ */
+export function isBillableModel(model: string): boolean {
+  if (isLocalModel(model)) return false
+  const extra = extraProviderForModel(getResolvedExtraProviders(), model)
+  if (extra?.local) return false
+  return true
+}
+
 // Fetch the first model id a local OpenAI-compatible server has loaded. Routes
 // through the shared cache so repeated callers don't each pay a network round-trip.
 export async function fetchFirstLocalModel(baseURL: string): Promise<string | null> {

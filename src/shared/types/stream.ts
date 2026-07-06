@@ -1,4 +1,4 @@
-import type { ModelUsage, SubagentSession } from './thread.ts'
+import type { ModelComparison, ModelUsage, SubagentSession } from './thread.ts'
 import type { TodoItem } from './todo.ts'
 
 export type StreamChunk =
@@ -19,6 +19,11 @@ export type StreamChunk =
       result: string
       isError: boolean
       editStats?: { additions: number; deletions: number }
+      /**
+       * `'markdown'` when `result` is agent-authored Markdown (ACP tool output)
+       * and should render through the Markdown pipeline rather than a raw `<pre>`.
+       */
+      resultFormat?: 'markdown'
     }
   | {
       type: 'context_trimmed'
@@ -69,6 +74,8 @@ export type StreamChunk =
     }
   | { type: 'todo_worker_done'; todoId: string; summary: string; passed: boolean }
   | { type: 'post_turn_review'; status: 'running' | 'done' | 'error'; summary: string }
+  /** Two-model diff-review comparison (running placeholder, then the full result). */
+  | { type: 'model_comparison'; comparison: ModelComparison }
   | { type: 'done'; stopReason?: string }
 
 export interface ToolCallChunk {

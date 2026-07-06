@@ -12,11 +12,28 @@ import {
   getGitShowText,
   parsePorcelainV1,
   resolveWorkspaceRelativeGitPath,
+  sumDiffNumstat,
   toGitShowPath,
 } from './git-service.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { setGitAvailableForTest } from '../tool-availability.ts'
 import { DEFAULT_GIT_BRANCH } from '@shared/types/git.ts'
+
+describe('sumDiffNumstat', () => {
+  it('sums additions and deletions across rows', () => {
+    const raw = '3\t1\tsrc/foo.ts\n10\t5\tsrc/bar.ts\n'
+    assert.deepEqual(sumDiffNumstat(raw), { additions: 13, deletions: 6 })
+  })
+
+  it('treats binary placeholder dashes as zero', () => {
+    const raw = '-\t-\tlogo.png\n2\t0\tsrc/baz.ts\n'
+    assert.deepEqual(sumDiffNumstat(raw), { additions: 2, deletions: 0 })
+  })
+
+  it('returns zeros for empty output', () => {
+    assert.deepEqual(sumDiffNumstat(''), { additions: 0, deletions: 0 })
+  })
+})
 
 describe('parsePorcelainV1', () => {
   it('returns empty lists for clean tree', () => {
