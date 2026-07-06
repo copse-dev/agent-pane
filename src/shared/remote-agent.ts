@@ -1,4 +1,8 @@
-export const REMOTE_AGENT_MODEL_PREFIX = 'remote-agent:'
+// Canonical definition lives in the LLM module, which owns the model-id
+// namespacing vocabulary; re-exported here so remote-agent consumers keep their
+// existing import path and the literal never drifts between the two.
+export { REMOTE_AGENT_MODEL_PREFIX } from './llm/reserved-prefixes.ts'
+import { REMOTE_AGENT_MODEL_PREFIX } from './llm/reserved-prefixes.ts'
 
 export const REMOTE_AGENT_PROVIDER_CURSOR = 'cursor'
 export const REMOTE_AGENT_PROVIDER_ANTHROPIC = 'anthropic'
