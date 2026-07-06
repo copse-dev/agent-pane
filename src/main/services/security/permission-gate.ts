@@ -108,6 +108,7 @@ export async function promptInstallSocketFirewall(command: string): Promise<bool
 async function checkMcpPermission(toolName: string, args: unknown): Promise<boolean> {
   const meta = getMcpToolMeta(toolName)
   const decision = decideMcpPermission({
+    toolName,
     annotations: meta?.annotations,
     remembered: isMcpToolRemembered(toolName),
     autoAllowReadOnly: getSetting<boolean>('mcpAutoAllowReadOnly', false),
