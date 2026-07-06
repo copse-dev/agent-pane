@@ -6,6 +6,7 @@ import {
   textBlockLabel,
   truncateAttachmentContent,
   TEXT_BLOCK_MIN_CHARS,
+  TEXT_BLOCK_MIN_LINES,
   ATTACHMENT_MAX_CHARS,
 } from './build-text-with-attachments.ts'
 
@@ -15,8 +16,16 @@ describe('isTextBlockAttachment', () => {
     assert.equal(isTextBlockAttachment('   \n  '), false)
   })
 
-  it('accepts multiline text regardless of length', () => {
-    assert.equal(isTextBlockAttachment('line one\nline two'), true)
+  it('keeps short multiline pastes inline (a few lines is not an attachment)', () => {
+    assert.equal(isTextBlockAttachment('line one\nline two'), false)
+    assert.equal(isTextBlockAttachment('The editor points:\n\n- tighten intro\n- fix typos'), false)
+  })
+
+  it(`accepts pastes of ${String(TEXT_BLOCK_MIN_LINES)}+ lines regardless of char length`, () => {
+    const lines = Array.from({ length: TEXT_BLOCK_MIN_LINES }, (_, i) => `l${String(i)}`)
+    assert.ok(lines.join('\n').length < TEXT_BLOCK_MIN_CHARS)
+    assert.equal(isTextBlockAttachment(lines.join('\n')), true)
+    assert.equal(isTextBlockAttachment(lines.slice(0, -1).join('\n')), false)
   })
 
   it(`accepts long single-line text (>= ${String(TEXT_BLOCK_MIN_CHARS)} chars)`, () => {
@@ -31,6 +40,14 @@ describe('isTextBlockAttachment', () => {
 describe('textBlockLabel', () => {
   it('uses the first line as the label', () => {
     assert.equal(textBlockLabel('function foo() {\n  return 1\n}'), 'function foo() {')
+  })
+
+  it('skips leading blank lines so the chip preview is never empty', () => {
+    assert.equal(textBlockLabel('\n\n  \nEditor feedback\nmore detail'), 'Editor feedback')
+  })
+
+  it('falls back to a placeholder for whitespace-only content', () => {
+    assert.equal(textBlockLabel('\n   \n'), 'Pasted text')
   })
 
   it('truncates long first lines', () => {
