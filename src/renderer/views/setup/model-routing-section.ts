@@ -31,34 +31,39 @@ export function createModelRoutingSection(api: ApiClient): ModelRoutingSection {
   const safetyModel = el('select', { name: 'safetyModel' })
   const reviewModel = el('select', { name: 'reviewModel' })
 
+  // Roles are the simple front: pick the local model for each named job. The
+  // finer-grained routes that most users never touch live under "Advanced" so
+  // the default view stays short. Leave any route on “auto” to use the first
+  // loaded model. (These cover local routing; cloud roles are a follow-up.)
   const fieldset = el(
     'fieldset',
     {},
-    el('legend', {}, 'Model routing'),
+    el('legend', {}, 'Local model roles'),
     el(
       'p',
       { class: 'settings-fieldset-desc' },
-      'Choose which loaded local model handles each task. Leave a route on “auto” to use the first model the server reports.',
+      'Assign a local model to each role. Features that share a role reuse the same model, so you set it once here.',
     ),
+    routingField('Coder', localDefaultModel, 'Main local model for coding and general chat'),
     routingField(
-      'Default local model',
-      localDefaultModel,
-      'Fallback when a local model is selected in chat but not specified',
-    ),
-    routingField(
-      'Exploration subagent model',
+      'Research',
       subagentModel,
       'File exploration when the chat model is a cloud API model',
     ),
-    routingField(
-      'Instruct / safety model',
-      safetyModel,
-      'Classifies shell commands when the OS sandbox is off',
-    ),
-    routingField(
-      'Post-turn review model',
-      reviewModel,
-      'Reviews the diff after an editing turn (auto reuses the chat model)',
+    el(
+      'details',
+      { class: 'routing-advanced' },
+      el('summary', {}, 'Advanced routes'),
+      routingField(
+        'Instruct / safety model',
+        safetyModel,
+        'Classifies shell commands when the OS sandbox is off',
+      ),
+      routingField(
+        'Post-turn review model',
+        reviewModel,
+        'Reviews the diff after an editing turn (auto reuses the chat model)',
+      ),
     ),
   )
 
