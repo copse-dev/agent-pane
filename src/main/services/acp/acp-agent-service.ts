@@ -31,6 +31,7 @@ import {
 } from './acp-client.ts'
 import { getAcpAgent, resolveAcpSandbox } from './acp-agent-registry.ts'
 import { acquireAcpSession, disposeAcpSession } from './acp-session-pool.ts'
+import { buildInvokedSkillsBlock } from '../skills/skill-prompt.ts'
 import { listForwardableMcpServers } from '../mcp/mcp-registry.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import { isAcpPermissionRemembered, rememberAcpPermission } from './acp-permission-grants.ts'
@@ -43,6 +44,8 @@ import {
   stageDiff,
 } from '../diff-queue.ts'
 import { networkDenialMarker, networkDenialsSince } from '../../project-sandbox/network-scope.ts'
+import { ensureWorktreeRecoverable, resetSessionBackup } from '../worktree-backup.ts'
+import { getSetting } from '../storage/settings.ts'
 import { detectLanguage } from '../language.ts'
 import {
   getActiveProjectRoot,
@@ -87,6 +90,14 @@ export interface RunAcpAgentOptions {
    * Overrides the agent config's default `model` for this turn.
    */
   model?: string
+  /**
+   * Skills the user invoked this turn via `/skill-name`. Their SKILL.md bodies
+   * are resolved against Copse's local registry and inlined into the forwarded
+   * prompt: an external ACP agent keeps its own separate skill catalog and never
+   * sees Copse's, so the instructions must travel with the turn rather than
+   * relying on the agent to already know the skill.
+   */
+  invokedSkills?: string[]
 }
 
 export interface RunAcpAgentResult {
@@ -150,12 +161,13 @@ export class AcpTurnFailure extends Error {
 }
 
 /**
- * Retryability check for ACP turn failures. External agents surface provider
- * failures as opaque JSON-RPC error text (no status code or SDK error class to
- * inspect, unlike `isRetryableStreamError`), so match the transient signatures
- * in the message: Anthropic 529/overloaded, rate limits, and 5xx server errors.
+ * A transient *provider* failure surfaced through the agent. External agents
+ * relay provider errors as opaque JSON-RPC error text (no status code or SDK
+ * error class to inspect, unlike `isRetryableStreamError`), so match the
+ * transient signatures in the message: Anthropic 529/overloaded, rate limits,
+ * and 5xx server errors.
  */
-export function isRetryableAcpError(err: unknown): boolean {
+export function isTransientProviderError(err: unknown): boolean {
   const msg = errorMessage(err)
   if (/\boverloaded\b/i.test(msg)) return true
   if (/\brate[ _-]?limit/i.test(msg)) return true
@@ -165,7 +177,36 @@ export function isRetryableAcpError(err: unknown): boolean {
 }
 
 /**
- * Retry a whole-turn ACP prompt on transient provider errors, mirroring
+ * A dropped ACP *transport* — the connection closed or the agent process died
+ * (crash, broken stdio pipe) rather than a provider hiccup. Kept distinct from
+ * {@link isTransientProviderError} because the remedy differs: the failed
+ * attempt disposes the dead session (see `attempt()` below), so the retry
+ * respawns the agent and replays history into a fresh session instead of
+ * re-driving a connection that no longer exists. This is the `"ACP connection
+ * closed"` case that previously surfaced straight to the user with no retry.
+ */
+export function isAcpConnectionDropped(err: unknown): boolean {
+  const msg = errorMessage(err)
+  if (/connection (?:closed|reset|lost)/i.test(msg)) return true
+  if (/\b(?:EPIPE|ECONNRESET)\b/.test(msg)) return true
+  if (/premature close/i.test(msg)) return true
+  if (/write after end/i.test(msg)) return true
+  return false
+}
+
+/**
+ * Retryability gate for ACP turn failures: a transient provider error or a
+ * dropped connection. Either is safe to retry only because `runWithAcpRetry`
+ * still requires `hasProgress()` to be false — a failure that arrives after
+ * tool calls ran or text streamed is never re-run.
+ */
+export function isRetryableAcpError(err: unknown): boolean {
+  return isTransientProviderError(err) || isAcpConnectionDropped(err)
+}
+
+/**
+ * Retry a whole-turn ACP prompt on a retryable failure (a transient provider
+ * error or a dropped connection — see {@link isRetryableAcpError}), mirroring
  * `yieldStreamWithRetry`'s guard: only attempts that made no visible progress
  * (`hasProgress()` false — no chunk reached the UI yet) are retried, so a
  * mid-turn failure never re-runs tool calls or duplicates streamed text.
@@ -264,8 +305,22 @@ export async function runAcpAgentFromSettings(
     readTextFile,
     writeTextFile: (req) => writeViaDiffQueue(req, options.signal, queueWrites),
   }
+  // New turn: reset the restore point so this turn's first file-write approval
+  // snapshots the user's current uncommitted work (see respondToPermission).
+  resetSessionBackup()
   const baseline = await captureWorktreeBaseline()
   const denialMark = networkDenialMarker()
+
+  // Resolve the invoked skills' full instructions here, in the GUI process,
+  // against the same local registry the `/` picker used — so a skill the user
+  // could pick is guaranteed to resolve — then inline it into the forwarded
+  // prompt. The external ACP agent has its own separate skill catalog and never
+  // receives Copse's, so shipping the SKILL.md body with the turn is the only
+  // way the agent gets the instructions. Sent every turn a skill is invoked
+  // (not gated on session freshness): the agent does not retain it across turns.
+  const skillsBlock = await buildInvokedSkillsBlock(options.invokedSkills ?? [], {
+    sandboxActive: willSandboxAcpAgent(sandbox),
+  })
 
   // One attempt = acquire (reuse the thread's live session, or open a fresh
   // one), install this turn's handlers, prompt. History is replayed only into
@@ -283,6 +338,7 @@ export async function runAcpAgentFromSettings(
     const prompt = buildAcpPrompt(options.userPrompt, fresh ? options.priorMessages : [], {
       sandboxed: willSandboxAcpAgent(sandbox),
       includeNotes: fresh,
+      ...(skillsBlock ? { skills: skillsBlock } : {}),
     })
     lastPrompt = prompt
     try {
@@ -389,6 +445,14 @@ export async function listAcpModelsForAgent(agentId: string): Promise<AcpModelSe
  * a grant and also answers with the agent's own `allow_always` option so the
  * agent-side session stops asking within the turn.
  */
+/**
+ * ACP tool kinds whose only effect is mutating files in the worktree, so a
+ * worktree backup fully covers the risk. Shell (`execute`) and web (`fetch`) are
+ * excluded: their side effects (deleting outside the tree, spending money,
+ * sending data) are not undone by restoring a git snapshot.
+ */
+const WRITE_TOOL_KINDS = new Set(['edit', 'delete', 'move'])
+
 async function respondToPermission(
   agent: { id: string; title: string },
   req: RequestPermissionRequest,
@@ -396,6 +460,16 @@ async function respondToPermission(
   const kind = req.toolCall.kind ?? 'other'
   if (isAcpPermissionRemembered(agent.id, kind)) {
     return permissionResponseFor(req.options, true, { preferAlways: true })
+  }
+  // File-mutating kinds (edit/delete/move) are auto-approved once a durable
+  // backup of the user's worktree exists — the same safety net the native tools
+  // use. Nothing the agent overwrites is unrecoverable, so the per-edit modal
+  // adds friction without adding protection. Shell/web/other still prompt: a
+  // stash makes overwritten files recoverable, not a `rm -rf` or a network call.
+  if (WRITE_TOOL_KINDS.has(kind) && getSetting<boolean>('acpAutoApproveEditsWithBackup', true)) {
+    if (await ensureWorktreeRecoverable()) {
+      return permissionResponseFor(req.options, true)
+    }
   }
   const presentation = presentPermissionRequest(agent.title, req)
   const { approved, remember } = await requestApproval({
@@ -642,13 +716,16 @@ export const ACP_SANDBOX_PROMPT_NOTE =
 export function buildAcpPrompt(
   userPrompt: UserContent,
   priorMessages: LLMMessage[],
-  opts?: { sandboxed?: boolean; includeNotes?: boolean },
+  opts?: { sandboxed?: boolean; includeNotes?: boolean; skills?: string },
 ): string {
   const includeNotes = opts?.includeNotes ?? true
   const note = includeNotes
     ? ACP_TURN_PROMPT_NOTE + (opts?.sandboxed ? `\n\n${ACP_SANDBOX_PROMPT_NOTE}` : '') + '\n\n'
     : ''
-  const current = promptPayloadFromUserContent(userPrompt).text
+  // `opts.skills` carries the invoked skills' instructions (already prefixed with
+  // its own `---` separator by buildInvokedSkillsBlock). Attach it to the current
+  // message so the agent reads the instructions alongside the invocation.
+  const current = promptPayloadFromUserContent(userPrompt).text + (opts?.skills ?? '')
   const transcript = priorMessages.map(messageLine).filter(Boolean).join('\n')
   if (!transcript) return `${note}${current}`
   return (

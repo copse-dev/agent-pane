@@ -16,6 +16,7 @@ import {
   DEFAULT_COMPARISON_JUDGE_MODEL,
 } from '../../main/services/model-comparison.ts'
 import { qsRequired } from '../dom/helpers.ts'
+import { inlineStatus, setInlineStatus } from '../dom/inline-status.ts'
 import { populateModelSelect, populateSmallTasksModelSelect } from './model-options.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createCustomProvidersSection } from './setup/custom-providers-section.ts'
@@ -109,6 +110,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // Built-in browser tools (Electron's bundled Chromium); on by default so the
   // agent renders/screenshots web UIs in-app instead of installing a browser.
   { name: 'browserToolsEnabled', kind: 'checkbox', default: true, save: true },
+  { name: 'acpAutoApproveEditsWithBackup', kind: 'checkbox', default: true, save: true },
   // Experimental, opt-in features (off by default).
   { name: 'mcpUiArtefactsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'ciInvestigatorEnabled', kind: 'checkbox', default: false, save: true },
@@ -472,6 +474,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <input type="checkbox" name="autoRunSandboxCommands" />
                 Auto-run shell commands contained within the sandbox
               </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="acpAutoApproveEditsWithBackup" />
+                Auto-approve external agent file edits (a backup is taken first)
+              </label>
+              <p class="field-hint">
+                External ACP agents (e.g. Claude) skip the per-edit approval modal for
+                edits, deletes, and moves once Copse has snapshotted your uncommitted work to a
+                restorable <code>refs/copse/backups/*</code> ref. Shell commands and web fetches still
+                prompt. Turn off to review every agent file edit.
+              </p>
             </fieldset>
           </section>
 
@@ -1157,16 +1169,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     }
 
     for (const s of statuses) {
-      const badge =
+      const badge: Node =
         s.state === 'connected'
-          ? '● connected'
+          ? inlineStatus('filled', 'connected')
           : s.state === 'error'
-            ? '✗ error'
+            ? inlineStatus('error', 'error')
             : s.state === 'disabled'
-              ? '○ disabled'
+              ? inlineStatus('pending', 'disabled')
               : s.state === 'untrusted'
-                ? '⚠ not trusted'
-                : '… connecting'
+                ? inlineStatus('warn', 'not trusted')
+                : document.createTextNode('… connecting')
       const row = document.createElement('div')
       row.className = `mcp-server-row mcp-state-${s.state}`
 
@@ -1206,7 +1218,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       const title = document.createElement('div')
       title.className = 'mcp-server-summary'
-      title.textContent = `${s.name} (${s.transport}) — ${badge}`
+      title.append(`${s.name} (${s.transport}) — `, badge)
 
       header.append(toggleLabel, title)
       row.append(header)
@@ -1307,12 +1319,17 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       if (s.enabled) {
         const status = document.createElement('div')
         status.className = 'mcp-curated-status'
-        status.textContent =
-          s.state === 'connected'
-            ? `● connected — ${String(s.toolCount)} tool(s)${s.tools.length ? `: ${s.tools.join(', ')}` : ''}`
-            : s.state === 'error'
-              ? `✗ ${s.error ?? 'error'}`
-              : '… connecting'
+        if (s.state === 'connected') {
+          setInlineStatus(
+            status,
+            'filled',
+            `connected — ${String(s.toolCount)} tool(s)${s.tools.length ? `: ${s.tools.join(', ')}` : ''}`,
+          )
+        } else if (s.state === 'error') {
+          setInlineStatus(status, 'error', s.error ?? 'error')
+        } else {
+          status.textContent = '… connecting'
+        }
         body.append(status)
       }
 
@@ -1340,11 +1357,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         void refreshCuratedServers()
         const visible = statuses.filter((s) => !s.curated)
         const ok = visible.filter((s) => s.state === 'connected').length
-        statusEl.textContent = `✓ ${String(ok)}/${String(visible.length)} server(s) connected`
+        setInlineStatus(
+          statusEl,
+          'ok',
+          `${String(ok)}/${String(visible.length)} server(s) connected`,
+        )
         statusEl.classList.add('ok')
       })
       .catch((err: unknown) => {
-        statusEl.textContent = `✗ ${errorMessage(err)}`
+        setInlineStatus(statusEl, 'error', errorMessage(err))
         statusEl.classList.add('err')
       })
   })

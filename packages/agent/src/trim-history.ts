@@ -1,4 +1,4 @@
-import type { LLMMessage, UserContent } from '@shared/types'
+import type { LLMMessage, UserContent } from '@copse/llm/wire-types.ts'
 
 /** Flat estimate per image block (avoids counting base64 at ~4 chars/token). */
 export const ESTIMATED_IMAGE_TOKENS = 1600
@@ -113,6 +113,33 @@ export function effectiveConversationTokens(messages: LLMMessage[]): number {
   return estimateConversationTokens(messages)
 }
 
+/**
+ * A single message's additive contribution to {@link estimateConversationTokens}.
+ *
+ * `estimateConversationTokens` stringifies the whole conversation array, whose
+ * length is `sum(len(msg)) + (n + 1)` — two brackets plus `n - 1` commas. Folding
+ * one separator unit into every element makes the estimate a simple sum:
+ * `estimateConversationTokens(conv) === CONVERSATION_ENVELOPE_TOKENS + Σ estimate`.
+ * Every term is a multiple of 0.25, so the sum is exact in IEEE-754 doubles, which
+ * lets `trimMessagesInPlace` subtract a dropped message's estimate on each splice
+ * instead of re-stringifying the entire conversation every iteration (#583).
+ */
+function conversationMessageEstimate(message: LLMMessage): number {
+  let tokens = (JSON.stringify(message).length + 1) / 4
+  if (message.role === 'user' && Array.isArray(message.content)) {
+    for (const block of message.content) {
+      if (block.type === 'image') {
+        tokens -= block.dataUrl.length / 4
+        tokens += ESTIMATED_IMAGE_TOKENS
+      }
+    }
+  }
+  return tokens
+}
+
+/** Constant `[]`/separator overhead left over once each element folds in one unit. */
+const CONVERSATION_ENVELOPE_TOKENS = 1 / 4
+
 /** Ensure every assistant tool_use block has matching tool_result rows (#54). */
 export function repairToolUseToolResultPairing(messages: LLMMessage[]): void {
   for (let i = 0; i < messages.length; i++) {
@@ -191,23 +218,35 @@ export function trimMessagesInPlace(
 
   repairToolUseToolResultPairing(messages)
 
-  // The provider-measured input size (#52) is a fixed snapshot of the previous
-  // request — it does NOT shrink as we splice messages out. Driving the loop
-  // directly off it would drop every droppable message down to `minTail` on the
-  // first pass once measured tokens cross the budget. Instead, track how much
-  // estimated content we remove and subtract it from the measured baseline so the
-  // loop stops as soon as the (approximate) remaining size fits. The estimate-only
-  // path (no measured value) keeps recomputing exactly as before.
-  const measured = lastMeasuredInputTokens
-  let removedEstimate = 0
-  const remainingTokens = (): number =>
-    measured != null ? measured - removedEstimate : estimateConversationTokens(messages)
+  // Precompute per-message estimates once and track a running total, so each trim
+  // step subtracts the dropped message(s) instead of re-stringifying the whole
+  // conversation every iteration (#583). The running total must shrink as we drop
+  // even when a provider-measured input size is available (#52): the measured value
+  // is a fixed snapshot of the previous request and never shrinks on its own, so
+  // seeding `currentTokens` from it and then not decrementing would collapse the
+  // whole history down to `minTail` on the first pass once measured tokens cross the
+  // budget. Seed from the measured size when present (more accurate than the
+  // estimate), otherwise from the estimated total, then decrement by our per-message
+  // estimates on every drop. `estimates` stays index-aligned with `messages`; the
+  // system prompt is never a drop target.
+  const measured = getLastMeasuredInputTokens()
+  const estimates = messages.map(conversationMessageEstimate)
+  let currentTokens: number
+  if (measured != null) {
+    currentTokens = measured
+  } else {
+    const start = contentStartIndex(messages)
+    let total = CONVERSATION_ENVELOPE_TOKENS
+    for (let i = start; i < estimates.length; i++) total += estimates[i] ?? 0
+    currentTokens = total
+  }
 
-  while (messages.length > minTail && remainingTokens() > conversationBudget) {
+  while (messages.length > minTail && currentTokens > conversationBudget) {
     const dropIndex = findOldestDroppableIndex(messages, minTail)
     if (dropIndex < 0) break
     const span = droppableSpan(messages, dropIndex)
-    removedEstimate += estimateMessageTokens(messages.slice(dropIndex, dropIndex + span))
+    for (let i = dropIndex; i < dropIndex + span; i++) currentTokens -= estimates[i] ?? 0
+    estimates.splice(dropIndex, span)
     messages.splice(dropIndex, span)
     trimmed = true
   }

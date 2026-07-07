@@ -18,20 +18,28 @@ import {
   assertStorageKey,
   IpcValidationError,
   keyProviderSchema,
+  setKeyOptionsSchema,
   parseIpcArgs,
   zMcpServerName,
   zNonEmptyString,
   zPathString,
   zProjectId,
 } from './ipc-guards.ts'
-import { buildIndex, getIndex } from '../services/search/file-index.ts'
+import { getIndex, whenFileIndexReady } from '../services/search/file-index.ts'
 import { resolveFileReferences } from '../services/search/file-reference-resolver.ts'
-import { ensureSemanticIndex } from '../services/search/semantic-index.ts'
 import {
-  scheduleIndexRebuild,
-  startWorkspaceIndexWatcher,
-} from '../services/search/workspace-index-watcher.ts'
-import { getSetting, setSetting, hasApiKey, setApiKey } from '../services/storage/settings.ts'
+  getWorkspaceIndexStatus,
+  onWorkspaceIndexStatusChanged,
+} from '../services/search/index-status.ts'
+import { startWorkspaceIndexing } from '../services/search/workspace-indexing.ts'
+import { scheduleIndexRebuild } from '../services/search/workspace-index-watcher.ts'
+import {
+  getSetting,
+  setSetting,
+  hasApiKey,
+  setApiKey,
+  isApiKeyEncrypted,
+} from '../services/storage/settings.ts'
 import { scanEnvForKeys, maskSecret } from '../services/providers/env-key-detection.ts'
 import {
   isRendererWritableSettingKey,
@@ -165,9 +173,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (result.canceled || !result.filePaths[0]) return null
     const root = registerAllowedWorkspaceRoot(result.filePaths[0])
     setWorkspaceRoot(root)
-    await buildIndex(root)
-    void ensureSemanticIndex(root)
-    startWorkspaceIndexWatcher(root)
+    // Scheduled, not awaited — index builds must not block the renderer's
+    // swap to the full layout; the footer indicator reports progress.
+    startWorkspaceIndexing(root)
     await initSkillsRegistry()
     registerSkillTools(registry)
     return root
@@ -180,9 +188,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     seedAllowedWorkspaceRoots(projects.map((p) => p.path))
     const canonical = assertAllowedWorkspaceRoot(root)
     setWorkspaceRoot(canonical)
-    await buildIndex(canonical)
-    void ensureSemanticIndex(canonical)
-    startWorkspaceIndexWatcher(canonical)
+    startWorkspaceIndexing(canonical)
     await initSkillsRegistry()
     registerSkillTools(registry)
     return canonical
@@ -222,21 +228,32 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       .sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1))
   })
 
-  ipcMain.handle('index:query', (event, pattern: unknown) => {
+  ipcMain.handle('index:query', async (event, pattern: unknown) => {
     assertMainFrameSender(event, win)
     if (pattern !== undefined && typeof pattern !== 'string') {
       throw new IpcValidationError('Index query pattern must be a string')
     }
     const query = typeof pattern === 'string' ? pattern : ''
     if (query && !isIndexQueryPattern(query)) return []
+    await whenFileIndexReady()
     const idx = getIndex()
     if (!idx) return []
     return query ? micromatch(idx.paths, `**/*${query}*`).slice(0, 20) : idx.paths.slice(0, 20)
   })
 
-  ipcMain.handle('index:resolveFileReferences', (event, rawCandidates: unknown) => {
+  ipcMain.handle('index:status', (event) => {
+    assertMainFrameSender(event, win)
+    return getWorkspaceIndexStatus()
+  })
+
+  onWorkspaceIndexStatusChanged((status) => {
+    if (!win.isDestroyed()) win.webContents.send('index:status_changed', status)
+  })
+
+  ipcMain.handle('index:resolveFileReferences', async (event, rawCandidates: unknown) => {
     assertMainFrameSender(event, win)
     const candidates = parseIpcArgs(z.array(z.string().min(1).max(4096)).max(200), [rawCandidates])
+    await whenFileIndexReady()
     return resolveFileReferences(candidates)
   })
 
@@ -334,17 +351,29 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const p = parseIpcArgs(keyProviderSchema, [provider])
     return hasApiKey(p)
   })
-  ipcMain.handle('settings:setKey', (event, provider: unknown, key: unknown) => {
+  // At-rest state for a provider's stored key: true = OS-encrypted, false = base64
+  // plaintext fallback, null = no key stored. Lets the Settings UI flag the
+  // plaintext-at-rest condition instead of leaving it to a console.warn.
+  ipcMain.handle('settings:getKeyEncrypted', (_e, provider: unknown) => {
+    const p = parseIpcArgs(keyProviderSchema, [provider])
+    return isApiKeyEncrypted(p)
+  })
+  ipcMain.handle('settings:setKey', (event, provider: unknown, key: unknown, opts: unknown) => {
     assertMainFrameSender(event, win)
     const p = parseIpcArgs(keyProviderSchema, [provider])
     const apiKey = parseIpcArgs(z.string().max(8192), [key])
-    setApiKey(p, apiKey)
+    const options = parseIpcArgs(setKeyOptionsSchema, [opts])
+    const result = setApiKey(p, apiKey, options)
+    // Encryption unavailable and no plaintext consent: nothing was stored. Report
+    // back so the renderer can prompt for explicit consent and retry.
+    if (!result.ok) return result
     invalidateProviderKeyStatus(p)
     // Saving an HF token auto-populates its priced, provider-pinned model list so
     // the picker and cost estimate work without a manual fetch (fire-and-forget).
     if (p === HUGGINGFACE_SLUG && apiKey.trim()) {
       void refreshHuggingFaceModels(apiKey).catch(() => {})
     }
+    return result
   })
   ipcMain.handle('settings:availableProviders', async () => {
     const available: Record<string, boolean> = {
@@ -396,7 +425,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         skipped.push({ provider: d.provider, reason: 'already-configured' })
         continue
       }
-      setApiKey(d.provider, d.value)
+      // Honour the plaintext gate here too: a bulk env import must not write keys
+      // unencrypted without consent. Skipped rather than silently stored in clear.
+      // The user can add the key manually via the Settings UI where the per-save
+      // confirm dialog lets them approve plaintext storage explicitly.
+      const result = setApiKey(d.provider, d.value)
+      if (!result.ok) {
+        skipped.push({ provider: d.provider, reason: 'plaintext-storage-refused' })
+        continue
+      }
       imported.push({ provider: d.provider, source: d.source })
     }
     return { imported, skipped }

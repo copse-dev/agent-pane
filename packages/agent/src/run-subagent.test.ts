@@ -1,8 +1,9 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { at } from '@shared/array-utils.ts'
+import { at } from './internal-utils.ts'
 import { runSubagent, CI_INVESTIGATOR_SYSTEM_PROMPT } from './run-subagent.ts'
-import type { LLMMessage, LLMProvider, ProviderStreamChunk, StreamChunk } from '@shared/types'
+import type { LLMMessage, LLMProvider, ProviderStreamChunk } from '@copse/llm/wire-types.ts'
+import type { AgentStreamChunk } from './wire-types.ts'
 
 function mockProvider(chunks: ProviderStreamChunk[][]): LLMProvider {
   let call = 0
@@ -15,7 +16,7 @@ function mockProvider(chunks: ProviderStreamChunk[][]): LLMProvider {
 
 describe('runSubagent', () => {
   it('returns summary from final assistant text', async () => {
-    const subagentChunks: StreamChunk[] = []
+    const subagentChunks: AgentStreamChunk[] = []
     const { summary, session } = await runSubagent({
       provider: mockProvider([
         [{ type: 'text', text: 'Found auth in src/auth.ts' }, { type: 'done' }],
@@ -35,7 +36,7 @@ describe('runSubagent', () => {
   })
 
   it('forwards inner tool calls as subagent chunks', async () => {
-    const subagentChunks: StreamChunk[] = []
+    const subagentChunks: AgentStreamChunk[] = []
     await runSubagent({
       provider: mockProvider([
         [
@@ -140,7 +141,7 @@ describe('runSubagent', () => {
   })
 
   it('records cache tokens and emits subagent usage on subagent_done', async () => {
-    const subagentChunks: StreamChunk[] = []
+    const subagentChunks: AgentStreamChunk[] = []
     const provider = {
       lastUsage: null as { inputTokens: number; outputTokens: number } | null,
       async *stream(): AsyncGenerator<ProviderStreamChunk> {
@@ -218,7 +219,7 @@ describe('runSubagent', () => {
   })
 
   it('emits a subagent_start chunk carrying the requested kind', async () => {
-    const chunks: StreamChunk[] = []
+    const chunks: AgentStreamChunk[] = []
     await runSubagent({
       provider: mockProvider([[{ type: 'text', text: 'done' }, { type: 'done' }]]),
       prompt: 'Investigate CI',

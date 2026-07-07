@@ -1,6 +1,5 @@
-import type { UserContent } from '@shared/types'
-import type { AgentRunPayload } from '@shared/types/skills.ts'
-import type { TodoItem } from '@shared/types/todo.ts'
+import type { UserContent } from '@copse/llm/wire-types.ts'
+import type { AgentRunPayload, TodoItem } from './wire-types.ts'
 
 export function parseAgentRunPayload(rawPrompt: string): {
   userContent: UserContent

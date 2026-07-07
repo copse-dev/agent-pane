@@ -5,6 +5,19 @@ import type { TodoItem } from './todo.ts'
 // `@shared/types` consumers are unchanged.
 import type { ModelUsage, ThreadUsage } from '@copse/llm/wire-types.ts'
 export type { ModelUsage, ThreadUsage } from '@copse/llm/wire-types.ts'
+// The subagent session/tool-call record and the context-breakdown shapes are
+// owned by the agent module (the loop constructs sessions and reports the
+// breakdown); imported for the thread types below and re-exported so
+// `@shared/types` consumers are unchanged.
+import type { ToolCall } from '@copse/agent/wire-types.ts'
+export type {
+  ToolCall,
+  SubagentMessage,
+  SubagentSession,
+  ContextSegmentKey,
+  ContextBreakdownSegment,
+  ContextBreakdown,
+} from '@copse/agent/wire-types.ts'
 
 export type ThreadStatus = 'idle' | 'running' | 'error'
 
@@ -29,27 +42,6 @@ export interface ContextSnapshot {
   conversationTokens: number
   fillRatio: number
   updatedAt: number
-}
-
-/** Which part of the assembled prompt a breakdown segment represents. */
-export type ContextSegmentKey = 'system' | 'tools' | 'mcp' | 'skills' | 'history' | 'message'
-
-/** One slice of the pre-send context estimate (e.g. system prompt, tools, your message). */
-export interface ContextBreakdownSegment {
-  key: ContextSegmentKey
-  label: string
-  tokens: number
-}
-
-/**
- * Estimated token cost of everything that would be sent on the next prompt,
- * split into named parts. Computed before sending so the composer can show
- * what the default context costs and how the draft message adds to it.
- */
-export interface ContextBreakdown {
-  segments: ContextBreakdownSegment[]
-  totalTokens: number
-  contextWindow: number
 }
 
 /** Verdict from the post-turn review subagent for the most recent editing turn. */
@@ -150,62 +142,6 @@ export interface Message {
   /** Small-model rollup label for this message's batch of shell commands. */
   commandSummary?: string
   createdAt: number
-}
-
-export interface SubagentSession {
-  id: string
-  kind: 'explore' | 'investigate_ci'
-  status: 'running' | 'done' | 'error'
-  prompt: string
-  summary: string | null
-  messages: SubagentMessage[]
-  /** Token totals for this subagent's own loop (also folded into the parent thread total). */
-  usage?: ModelUsage
-  /**
-   * Model this subagent ran on (`lmstudio:<id>` = local). Surfaced on the card
-   * so "did this explore actually use my local model?" is answerable per run.
-   */
-  model?: string
-  /**
-   * True when local subagent routing was enabled but unavailable (LM Studio
-   * down / no model resolvable), so the run silently used the cloud parent
-   * model. Rendered as a warning on the card — otherwise the fallback is
-   * indistinguishable from intentional cloud routing.
-   */
-  localFallback?: boolean
-}
-
-export interface SubagentMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  toolCalls: ToolCall[]
-  /** Wall-clock time the message was first created; absent on sessions persisted before timestamps existed. */
-  createdAt?: number
-}
-
-export interface ToolCall {
-  id: string
-  name: string
-  args: unknown
-  status: 'running' | 'done' | 'error'
-  result: string | null
-  /** Line add/delete counts for file edit tools (write_file, str_replace). */
-  editStats?: { additions: number; deletions: number }
-  /**
-   * ACP tool-call `kind` (e.g. `'execute'`, `'read'`, `'search'`), carried from
-   * an external ACP agent so its cards group and label like the built-in tools
-   * (see `getToolGroupKey`). Absent for the built-in agent loop.
-   */
-  kind?: string
-  /**
-   * How to render `result`. External ACP agents author their tool output as
-   * Markdown (fenced code, lists, prose), so it renders through the same
-   * Markdown pipeline as assistant messages instead of a raw `<pre>`. Absent
-   * (plain text) for built-in tools, whose results are structured payloads.
-   */
-  resultFormat?: 'markdown'
-  subagent?: SubagentSession
 }
 
 export interface UsageDelta extends ModelUsage {

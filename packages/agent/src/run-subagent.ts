@@ -1,15 +1,13 @@
-import { errorMessage } from '@shared/errors.ts'
+import { errorMessage } from './internal-utils.ts'
 import { runAgentLoop } from './run-agent-loop.ts'
 import { defaultMaxLlmCallsForSteps } from './agent-loop-limits.ts'
+import type { LLMProvider, LLMMessage, LLMTool } from '@copse/llm/wire-types.ts'
 import type {
-  LLMProvider,
-  LLMMessage,
-  LLMTool,
-  StreamChunk,
+  AgentStreamChunk,
   SubagentSession,
   SubagentMessage,
   ToolExecuteResult,
-} from '@shared/types'
+} from './wire-types.ts'
 
 const randomUUID = (): string => globalThis.crypto.randomUUID()
 
@@ -81,7 +79,7 @@ export interface RunSubagentOptions {
   maxSteps?: number
   maxContextTokens?: number
   toolSchemaReserveTokens?: number
-  onSubagentChunk: (chunk: StreamChunk) => void
+  onSubagentChunk: (chunk: AgentStreamChunk) => void
   parentToolCallId: string
   systemPromptSuffix?: string
   /** Replace the default explore system prompt entirely (e.g. for a review subagent). */
@@ -178,7 +176,7 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
   // the loop emits (#58). Each chunk reflects exactly one stream, so subagent
   // usage is attributed once and never read from the shared mutable
   // provider.lastUsage that the parent also writes to (#112).
-  const recordUsage = (chunk: Extract<StreamChunk, { type: 'usage' }>): void => {
+  const recordUsage = (chunk: Extract<AgentStreamChunk, { type: 'usage' }>): void => {
     const prev = session.usage ?? { inputTokens: 0, outputTokens: 0 }
     const next: NonNullable<SubagentSession['usage']> = {
       inputTokens: prev.inputTokens + chunk.inputTokens,
@@ -206,7 +204,7 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
       getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
       executeTool: (name: string, args: unknown, signal: AbortSignal, _toolCallId: string) =>
         executeTool(name, args, signal),
-      onChunk: (chunk: StreamChunk) => {
+      onChunk: (chunk: AgentStreamChunk) => {
         if (chunk.type === 'usage') {
           recordUsage(chunk)
         }

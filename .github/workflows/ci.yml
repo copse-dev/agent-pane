@@ -22,82 +22,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Runner router: pick a self-hosted check runner when one is available, else
-  # defer to GitHub-hosted. The static + unit tier below (precheck/check/build)
-  # can run on the optional self-hosted `copse-checks` fleet (see
-  # ci-runners/) to save minutes and reuse a warm dep cache — but only
-  # when such a runner is actually online. The unified fleet is registered at ORG
-  # scope (see ci-runners/) and shared across repos, so this job inspects the
-  # ORG's registered runners and emits a `runs_on` value those jobs consume:
-  #   ["self-hosted","copse-checks"]  when ≥1 is online
-  #   ["ubuntu-latest"]               otherwise
-  # It NEVER pins onto a fleet that isn't there — any uncertainty (no PAT, API
-  # error, none online) falls back to hosted, so nothing queues forever waiting
-  # on a runner that doesn't exist. (The e2e job routes itself off the copse-e2e
-  # label with its own nightly-hosted fallback and is intentionally not routed
-  # here — though on the unified fleet both labels ride the same containers.)
+  # Check-tier runner routing: every `runs-on` below (except e2e, which routes
+  # by label with its own nightly-hosted exception, and release-mac in its own
+  # workflow) reads the CHECKS_RUNNER Actions variable and falls back to
+  # GitHub-hosted when it is unset or empty:
+  #   CHECKS_RUNNER=copse-checks  ->  the org self-hosted check fleet (ci-runners/)
+  #   (unset or '')               ->  ubuntu-latest
+  # This replaces the old `pick-runner` probe job, which burned a billed
+  # GitHub-hosted minute on EVERY run (a 3-second API probe rounds up to a full
+  # minute) just to make this decision — and quietly routed the whole check
+  # tier to paid hosted runners whenever its PAT lacked org runner read. A
+  # variable costs nothing, needs no PAT, and is flipped by hand when the
+  # fleet comes up or goes down:
+  #   gh variable set CHECKS_RUNNER --org copse-dev --body copse-checks --visibility all
+  #   gh variable delete CHECKS_RUNNER --org copse-dev
+  # (or Settings -> Secrets and variables -> Actions -> Variables; a repo-level
+  # CHECKS_RUNNER overrides the org one, and an empty value means hosted).
   #
-  # Listing ORG runners needs org-level runner read — classic `admin:org`, or a
-  # fine-grained token with organization "Self-hosted runners: Read" — which the
-  # default GITHUB_TOKEN can't be granted, so detection uses a PAT in
-  # secrets.RUNNERS_PAT. As a convenience it falls back to SCREENSHOTS_PAT, but
-  # only a token that actually carries org runner read will work — a fine-grained
-  # SCREENSHOTS_PAT scoped to Contents alone returns 4xx and is treated as "no
-  # runners". When no token can list the fleet (none set, or insufficient scope)
-  # the query fails OPEN to GitHub-hosted runners — the pre-existing behaviour —
-  # so the routing only ever *adds* the self-hosted option, never breaks CI. To
-  # actually enable self-hosted routing, set RUNNERS_PAT with org runner read.
-  # (Assumes the runner group grants this repo access, which the org default
-  # group does; a restricted group online but not shared with this repo would be
-  # counted here yet unusable — put both repos in the group.)
-  #
-  # Same fork guard as the jobs below: never runs for fork PRs, so the PAT is
-  # never exposed to untrusted code and self-hosted boxes never see fork commits.
-  pick-runner:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    outputs:
-      runs_on: ${{ steps.pick.outputs.runs_on }}
-    steps:
-      - id: pick
-        env:
-          # Dedicated token if provided, else try SCREENSHOTS_PAT. The query
-          # needs org runner read (admin:org / org Self-hosted runners: Read); if
-          # the token lacks it the request 4xxs and we fall open to hosted.
-          RUNNERS_PAT: ${{ secrets.RUNNERS_PAT || secrets.SCREENSHOTS_PAT }}
-          GH_ORG: ${{ github.repository_owner }}
-        run: |
-          # GitHub's default step shell is `bash -e {0}`, so errexit is ON and a
-          # failing curl (e.g. `-f` on an HTTP 4xx) would abort the step. The
-          # router must do the OPPOSITE — fail OPEN to hosted on ANY problem — so
-          # explicitly disable errexit and guard each fallible command.
-          set +e
-          set -uo pipefail
-          hosted='["ubuntu-latest"]'
-          selfhosted='["self-hosted","copse-checks"]'
-          choice="$hosted"
-          if [ -z "${RUNNERS_PAT:-}" ]; then
-            echo "No runner-list PAT available — deferring to GitHub-hosted runners."
-          else
-            runners="$(curl -fsSL \
-              -H "Authorization: Bearer ${RUNNERS_PAT}" \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "https://api.github.com/orgs/${GH_ORG}/actions/runners?per_page=100" 2>/dev/null)"
-            rc=$?
-            if [ $rc -ne 0 ] || [ -z "$runners" ]; then
-              echo "Runner query failed (curl exit $rc — token may lack org runner read) — deferring to GitHub-hosted runners."
-            elif printf '%s' "$runners" | jq -e \
-                '[.runners[]? | select(.status=="online") | select(any((.labels // [])[]; .name=="copse-checks"))] | length > 0' \
-                >/dev/null 2>&1; then
-              echo "An online copse-checks runner is available — using the self-hosted check fleet."
-              choice="$selfhosted"
-            else
-              echo "No online copse-checks runner — deferring to GitHub-hosted runners."
-            fi
-          fi
-          echo "runs_on=$choice" >> "$GITHUB_OUTPUT"
-          echo "Selected check-tier runner: $choice"
+  # Tradeoff vs the probe: nothing auto-detects the fleet going offline. If the
+  # variable names a fleet with no online runner, routed jobs queue until a
+  # runner returns or the variable is cleared — clear it when taking the fleet
+  # down. Fork-PR safety is unchanged: every routed job that executes repo code
+  # keeps its same-repo `if` guard (and ci-passed checks out no code), so
+  # untrusted commits never run on the fleet.
 
   # Cheap static gate + e2e planning. Runs the fast static checks (typecheck,
   # lint, format, dead-code, oracle liveness) AND computes the e2e oracle plan in
@@ -107,11 +54,10 @@ jobs:
   # Folding the former standalone `plan-e2e` job in here drops a duplicate
   # checkout + node setup (and its rounded-up billed minute) from every run.
   precheck:
-    needs: pick-runner
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    # Self-hosted copse-checks fleet when one is online, else GitHub-hosted —
-    # decided by the pick-runner router above.
-    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runs_on) }}
+    # Self-hosted copse-checks fleet when CHECKS_RUNNER is set, else
+    # GitHub-hosted — see the routing note at the top of `jobs:`.
+    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     # Consumed by the e2e job: how much of the e2e tier this run needs (mode/
     # specs), and the runner-dependent shard fan-out (e2e_shards / shard_total).
     outputs:
@@ -255,9 +201,8 @@ jobs:
   # job finds no diff and pushes nothing. Falls back to github.token when the
   # secret is unset (commit lands, just no CI re-trigger — pre-PAT behaviour).
   autoformat:
-    needs: pick-runner
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runs_on) }}
+    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     permissions:
       contents: write
     steps:
@@ -285,9 +230,9 @@ jobs:
           git push
 
   check:
-    needs: [pick-runner, precheck]
+    needs: precheck
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runs_on) }}
+    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v6.0.3
       - uses: ./.github/actions/setup
@@ -311,9 +256,9 @@ jobs:
   # CLI/JSON change that breaks parsing) fails here rather than silently
   # degrading in-app search.
   bench:
-    needs: [pick-runner, precheck]
+    needs: precheck
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runs_on) }}
+    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v6.0.3
       - uses: ./.github/actions/setup
@@ -342,9 +287,9 @@ jobs:
           if-no-files-found: ignore
 
   build:
-    needs: [pick-runner, precheck]
+    needs: precheck
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runs_on) }}
+    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     # Build dist once and hand it to every e2e shard. Previously each shard ran
     # its own `npm run build`; an earlier attempt to share dist via upload/
     # download dropped some Monaco worker files, breaking specs that open the
@@ -559,7 +504,7 @@ jobs:
       always() && needs.e2e.result == 'success' &&
       github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     permissions:
       contents: write
       pull-requests: write
@@ -691,12 +636,13 @@ jobs:
         # Post when real shots were committed, shots were ignored as noise (the
         # ignored list is offered for manual acceptance), OR main couldn't be merged
         # automatically because source conflicts need a human.
-        if: steps.diff.outputs.changed == 'true' || steps.filter.outputs.ignored-count != '0' || steps.reconcile.outputs.manual == 'true'
+        if: steps.diff.outputs.changed == 'true' || steps.filter.outputs.ignored-count != '0' || steps.filter.outputs.flapping-count != '0' || steps.reconcile.outputs.manual == 'true'
         uses: actions/github-script@v7
         env:
           CHANGED_FILES: ${{ steps.diff.outputs.files }}
           COMMIT_SHA: ${{ steps.push.outputs.sha }}
           IGNORED_JSON: ${{ steps.filter.outputs.ignored-json }}
+          FLAPPING_JSON: ${{ steps.filter.outputs.flapping-json }}
           MANUAL_MERGE_FILES: ${{ steps.reconcile.outputs.manual-files }}
         with:
           script: |
@@ -705,6 +651,7 @@ jobs:
             const repo = context.repo.owner + '/' + context.repo.repo;
             const files = (process.env.CHANGED_FILES || '').split('\n').filter(Boolean);
             const ignored = JSON.parse(process.env.IGNORED_JSON || '[]');
+            const flapping = JSON.parse(process.env.FLAPPING_JSON || '[]');
             const manualMerge = (process.env.MANUAL_MERGE_FILES || '').split('\n').filter(Boolean);
             const sections = [];
             if (manualMerge.length) {
@@ -736,6 +683,19 @@ jobs:
                   `These re-rendered below the variance threshold (font hinting / anti-alias ` +
                   `wobble) and were **not** committed. To accept them anyway, add the ` +
                   `\`update-screenshots\` label or commit the rendered PNGs by hand:\n\n` +
+                  lines.join('\n'),
+              );
+            }
+            if (flapping.length) {
+              const lines = flapping.map((s) => `- \`${s.name}\` — ${s.diffPixels} px (${s.ratioPct})`);
+              sections.push(
+                `### Held — render flapping (${flapping.length})\n\n` +
+                  `These shots alternate between two runner render states and were **not** ` +
+                  `committed, to stop the CI screenshot ping-pong ([#609](https://github.com/${repo}/issues/609)): ` +
+                  `each re-render matched a recently committed version, so committing again would ` +
+                  `just re-trigger CI and bring the other state back. If a real change is hiding ` +
+                  `here, add the \`update-screenshots\` label to force it, or pin the runner ` +
+                  `font/GPU rendering:\n\n` +
                   lines.join('\n'),
               );
             }
@@ -786,15 +746,15 @@ jobs:
   ci-passed:
     name: CI Passed
     if: always()
-    needs: [pick-runner, precheck, check, build, e2e]
-    runs-on: ubuntu-latest
+    needs: [precheck, check, bench, build, e2e]
+    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     steps:
       - name: Check upstream job results
         run: |
           MODE="${{ needs.precheck.outputs.mode }}"
           ANY_FAILURE=${{ contains(needs.*.result, 'failure') }}
           ANY_BAD=${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
-          CORE_OK=${{ needs.pick-runner.result == 'success' && needs.precheck.result == 'success' }}
+          CORE_OK=${{ needs.precheck.result == 'success' }}
           # Skip-mode runs (screenshots-only pushes, e.g. the e2e screenshot
           # bot's own commits) intentionally do not execute check/build/e2e;
           # those jobs surface as 'cancelled', which must not fail the gate —

@@ -4,10 +4,12 @@ import assert from 'node:assert/strict'
 import {
   formatSemanticSearchResults,
   gortexCpuLimitEnv,
+  isSemanticIndexReady,
   parseGortexJson,
   parseVeraJson,
   semanticThreadCap,
   setSemanticBackendForTest,
+  setSemanticIndexReadyForTest,
   setSemanticIndexUpdateRunnerForTest,
   updateSemanticIndex,
 } from './semantic-index.ts'
@@ -167,6 +169,17 @@ describe('semantic-index parsing', () => {
     } finally {
       setSemanticIndexUpdateRunnerForTest(null)
       setSemanticBackendForTest(null)
+    }
+  })
+
+  it('tracks per-root readiness against resolved paths', () => {
+    try {
+      assert.equal(isSemanticIndexReady('/tmp/repo'), false)
+      setSemanticIndexReadyForTest('/tmp/other/../repo')
+      assert.equal(isSemanticIndexReady('/tmp/repo'), true)
+      assert.equal(isSemanticIndexReady('/tmp/elsewhere'), false)
+    } finally {
+      setSemanticIndexReadyForTest(null)
     }
   })
 

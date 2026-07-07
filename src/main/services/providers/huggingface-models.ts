@@ -145,6 +145,8 @@ export async function fetchHuggingFaceModels(
   try {
     const res = await fetch(`${HUGGINGFACE_ROUTER_BASE_URL}/models`, {
       headers: { Authorization: `Bearer ${key}` },
+      // Never forward the Authorization header to a redirect target.
+      redirect: 'manual',
       signal: AbortSignal.timeout(FETCH_TIMEOUTS.modelList),
     })
     if (!res.ok) {
