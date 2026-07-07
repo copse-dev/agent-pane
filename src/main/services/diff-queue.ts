@@ -9,6 +9,7 @@ import { buildIndex } from './search/file-index.ts'
 import { getGitStatus } from './github/git-service.ts'
 import { assertMainFrameSender } from '../ipc/ipc-guards.ts'
 import { isAgentRunReadonly } from './agent-run-readonly.ts'
+import { ensureSessionBackup, getSessionBackup } from './worktree-backup.ts'
 import { READONLY_MODE_BLOCK_MESSAGE } from '@shared/tools/readonly-tools.ts'
 
 export type DiffOp = 'write' | 'delete' | 'rename' | 'mkdir'
@@ -210,9 +211,21 @@ async function canApplyDirectly(
     (changedPath) => !directAppliedSnapshots.has(ownedKey(changedPath)),
   )
   if (unownedChanges.length > 0) {
-    return {
-      ok: false,
-      reason: `git already has unowned changes: ${[...new Set(unownedChanges)].join(', ')}`,
+    // The user has uncommitted work Copse didn't make this turn. Rather than
+    // route every edit through the approval panel to protect it, take one
+    // durable backup of the whole worktree and adopt those paths as recoverable.
+    // With a restore point in hand, overwriting them is safe, so the edit — and
+    // later edits this turn — can apply directly. Only fall back to approval when
+    // the backup fails (e.g. git unavailable), leaving no safety net.
+    const backup = await ensureSessionBackup()
+    if (!backup) {
+      return {
+        ok: false,
+        reason: `git has unowned changes that could not be backed up: ${[...new Set(unownedChanges)].join(', ')}`,
+      }
+    }
+    for (const changedPath of new Set(unownedChanges)) {
+      recordDirectAppliedSnapshot(changedPath, await readCurrentContent(changedPath))
     }
   }
 
@@ -609,7 +622,11 @@ export async function applyOrStageDiff(
     recordDecision({ path, status: 'applied_directly' })
     const root = getWorkspaceRoot()
     if (root) await buildIndex(root)
-    return `Applied edit directly to ${path}. Git was clean except for Copse-applied edits in this session, so no approval was required. You can validate with run_shell/read_file/git now.`
+    const backup = getSessionBackup()
+    const safetyNote = backup
+      ? `The worktree had uncommitted changes, so those were backed up to ${backup.ref} first; no approval was required.`
+      : `Git was clean except for Copse-applied edits in this session, so no approval was required.`
+    return `Applied edit directly to ${path}. ${safetyNote} You can validate with run_shell/read_file/git now.`
   }
   if (result.status === 'conflict') {
     const staged = await stageDiff(path, result.current, after, language)

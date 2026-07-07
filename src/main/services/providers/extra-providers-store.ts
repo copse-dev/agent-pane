@@ -10,8 +10,8 @@ import {
   BUILTIN_EXTRA_PROVIDER_SLUGS,
   type ExtraProvider,
   type StoredExtraProvider,
-} from '@shared/llm/extra-providers.ts'
-import { providerSlugFromBaseUrl, uniqueProviderSlug } from '@shared/llm/provider-slug.ts'
+} from '@copse/llm/extra-providers.ts'
+import { providerSlugFromBaseUrl, uniqueProviderSlug } from '@copse/llm/provider-slug.ts'
 import { getSetting, setSetting, deleteApiKey, resolveApiKey } from '../storage/settings.ts'
 import { fetchHuggingFaceModels } from './huggingface-models.ts'
 

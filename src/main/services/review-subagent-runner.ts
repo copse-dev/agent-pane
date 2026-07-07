@@ -1,11 +1,11 @@
-import { runSubagent } from '@shared/agent/run-subagent.ts'
-import { conversationTokenBudget } from '@shared/agent/trim-history.ts'
-import { readFileLimitsForSubagent } from '@shared/agent/read-file-limits.ts'
+import { runSubagent } from '@copse/agent/run-subagent.ts'
+import { conversationTokenBudget } from '@copse/agent/trim-history.ts'
+import { readFileLimitsForSubagent } from '@copse/agent/read-file-limits.ts'
 import {
   REVIEW_TOOL_NAMES,
   REVIEW_SYSTEM_PROMPT,
   buildReviewPrompt,
-} from '@shared/agent/review-subagent.ts'
+} from '@copse/agent/review-subagent.ts'
 import type {
   LLMProvider,
   LLMMessage,

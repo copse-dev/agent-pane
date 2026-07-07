@@ -54,7 +54,7 @@
     {
       "id": "classify-search-query",
       "query": "classify a search query as either a regex pattern or a conceptual semantic question",
-      "expectedPaths": ["src/shared/agent/search-routing.ts"]
+      "expectedPaths": ["packages/agent/src/search-routing.ts"]
     },
     {
       "id": "resolve-bundled-binary",

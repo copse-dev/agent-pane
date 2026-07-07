@@ -99,7 +99,17 @@ export interface IpcInvokeMap {
     result: undefined
   }
   'settings:getKey': { args: [provider: Provider]; result: boolean }
-  'settings:setKey': { args: [provider: Provider, key: string]; result: undefined }
+  // At-rest state for a stored key: true = OS-encrypted, false = base64 plaintext
+  // (secure-storage fallback), null = no key stored.
+  'settings:getKeyEncrypted': { args: [provider: Provider]; result: boolean | null }
+  // Persist a key. When OS secure storage is unavailable, the key is only written
+  // if the caller passes `{ allowPlaintext: true }` (explicit per-save consent);
+  // otherwise nothing is stored and the result reports `plaintext-consent-required`
+  // so the renderer can confirm and retry.
+  'settings:setKey': {
+    args: [provider: Provider, key: string, opts?: { allowPlaintext?: boolean }]
+    result: { ok: true } | { ok: false; reason: 'plaintext-consent-required' }
+  }
   'settings:refreshHuggingFaceModels': {
     args: [key?: string]
     result: { ok: boolean; count: number; error?: string }
@@ -180,6 +190,11 @@ export interface IpcInvokeMap {
 
   // Index
   'index:query': { args: [pattern: string]; result: string[] }
+  'index:status': { args: []; result: import('./index-status.ts').WorkspaceIndexStatus }
+  'index:resolveFileReferences': {
+    args: [candidates: string[]]
+    result: { candidate: string; path: string; kind: 'file' | 'directory' }[]
+  }
 
   // Terminal
   'terminal:create': { args: [cols: number, rows: number]; result: string }
@@ -293,6 +308,7 @@ export interface IpcEventMap {
     },
   ]
   'mcp:status_changed': [statuses: McpServerStatus[]]
+  'index:status_changed': [status: import('./index-status.ts').WorkspaceIndexStatus]
   'diff:queued': [entries: { path: string; language: string }[]]
   'diff:conflict': [paths: string[]]
   'fs:changed': [path: string, content: string | null]

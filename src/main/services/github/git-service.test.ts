@@ -1,6 +1,6 @@
 import { describe, it, before, after, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process'
@@ -430,6 +430,15 @@ describe('getGitShowText', { skip: !gitOk && 'git not installed' }, () => {
   it('rejects a path that escapes the workspace root', async () => {
     const out = await getGitShowText('HEAD', '../escape.txt')
     assert.match(out, /outside workspace/)
+  })
+
+  it('rejects a ref that would be parsed as a git option (option injection)', async () => {
+    const escaped = join(repo, 'escaped-by-option-injection.txt')
+    const out = await getGitShowText(`--output=${escaped}`)
+    assert.match(out, /cannot start with "-"/)
+    // The rejection must happen before git runs, so no file is written.
+    const written = await readFile(escaped, 'utf8').catch(() => null)
+    assert.equal(written, null)
   })
 
   it('reports a blank ref', async () => {
