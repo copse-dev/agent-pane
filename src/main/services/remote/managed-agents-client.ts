@@ -27,6 +27,7 @@ import {
 import { getSetting, resolveApiKey } from '../storage/settings.ts'
 import { validateRemoteAgentBaseUrl } from '../security/web-origin-policy.ts'
 import { getCurrentBranchName } from '../github/git-service.ts'
+import { getActiveProjectId } from '../workspace.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
 import {
   parseGithubOwnerRepo,
@@ -34,6 +35,7 @@ import {
   type RemoteAgentRunOptions,
   type RemoteAgentRunResult,
 } from './remote-agent-shared.ts'
+import { attachRemoteAgentPrFromText, recordRemoteAgentLaunch } from './remote-agent-link-store.ts'
 
 const MANAGED_AGENT_SESSION_PREFIX = 'managed-agent-session:'
 const ANTHROPIC_VERSION = '2023-06-01'
@@ -410,6 +412,10 @@ export async function runManagedAgentFromSettings(
     throw new Error('Claude Agent prompt cannot be empty.')
   }
 
+  // Capture the launching project up front: a long remote run can outlast a
+  // project switch, and the link/PR must land on the project it started in.
+  const launchProjectId = getActiveProjectId()
+
   const priorSession = readSession(options.threadId)
   const canReuse =
     priorSession?.provider === REMOTE_AGENT_PROVIDER_ANTHROPIC && priorSession.baseUrl === baseUrl
@@ -471,6 +477,19 @@ export async function runManagedAgentFromSettings(
   }
 
   writeSession(options.threadId, session)
+
+  // Record the durable agent-run ↔ thread link on a fresh session (issue #690,
+  // Q6); follow-ups reuse the same agent, and the PR is attached from the reply.
+  if (!canReuse) {
+    await recordRemoteAgentLaunch({
+      projectId: launchProjectId,
+      threadId: options.threadId,
+      provider: REMOTE_AGENT_PROVIDER_ANTHROPIC,
+      agentId: session.agentId,
+      runId: session.sessionId,
+      createdAt: Date.now(),
+    })
+  }
 
   // Sessions persisted before repo-less support lack hasRepo; they were always
   // repo-backed.
@@ -534,6 +553,8 @@ export async function runManagedAgentFromSettings(
     options.onChunk(
       terminalStatus ? { type: 'done', stopReason: terminalStatus } : { type: 'done' },
     )
+    // Fold the PR the agent opened (surfaced in its reply) into the link/index.
+    await attachRemoteAgentPrFromText(launchProjectId, options.threadId, assistantText)
     return {
       assistantText,
       inputTokens: deltaInput,
