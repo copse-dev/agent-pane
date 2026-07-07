@@ -559,6 +559,48 @@ export function seedPrPanelChatFixture(workspaceRoot: string): void {
   })
 }
 
+/**
+ * Like {@link seedPrPanelChatFixture}, but the thread also carries a
+ * `remoteAgentLink` (issue #690) pointing at the same PR, so the PR pane badges
+ * the row as agent-owned and offers an "open thread" jump. The reverse index is
+ * rebuilt from this meta on first read (no index file is seeded).
+ */
+export function seedPrPanelAgentLinkFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-pr-agent-link-project'
+  const threadId = 'e2e-pr-agent-link-thread'
+  const mockPrUrl = 'https://github.com/copse-dev/copse-panel/pull/42'
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Agent PR chat',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-pr-link',
+            role: 'assistant',
+            content: `Opened [PR #42](${mockPrUrl}) for you.`,
+            createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        remoteAgentLink: {
+          provider: 'cursor',
+          agentId: 'e2e-agent-1',
+          prUrl: mockPrUrl,
+          repo: 'copse-dev/copse-panel',
+          createdAt: Date.now(),
+        },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
+}
+
 /** Git tool cards followed by an ordered-list summary (typical post-tool agent reply). */
 export function seedGitSummaryMarkdownFixture(workspaceRoot: string): void {
   const projectId = 'e2e-git-summary-md-project'

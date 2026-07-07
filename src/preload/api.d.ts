@@ -16,6 +16,7 @@ import type {
   GhPrSummary,
 } from '@shared/types/git.ts'
 import type { McpServerStatus, CuratedMcpServerStatus } from '@shared/types/mcp.ts'
+import type { RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
 import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
 import type {
@@ -389,6 +390,8 @@ export interface ApiClient {
       path: string,
     ) => Promise<GhPrFileDiff | null>
     resolvePrUrl: (url: string) => Promise<{ owner: string; repo: string; number: number } | null>
+    /** PRs in the active project opened by an agent this app launched (issue #690). */
+    agentPrLinks: () => Promise<RemoteAgentPrIndexEntry[]>
   }
   shell: {
     openExternal: (url: string) => Promise<void>
