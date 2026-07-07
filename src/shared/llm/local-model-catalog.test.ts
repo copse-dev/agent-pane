@@ -133,6 +133,18 @@ describe('local model catalog', () => {
     assert.equal(localBenchmarkScore(gemma, 'aider-polyglot'), null)
   })
 
+  it('uses a measured-quantized score directly, without estimating', () => {
+    // aider-edit was measured on a Q4_K_M GGUF, so it needs no penalty applied.
+    const qwen = getLocalModelCapability('qwen/qwen2.5-coder-32b')
+    assert.ok(qwen)
+    const measured = qwen.benchmarks['aider-edit']
+    assert.ok(measured)
+    const local = localBenchmarkScore(qwen, 'aider-edit')
+    assert.ok(local)
+    assert.notEqual(local.estimated, true)
+    assert.equal(local.value, measured.value)
+  })
+
   it('returns nothing for an impossible budget', () => {
     assert.deepEqual(recommendLocalModelsForRole('coder', { maxDownloadGb: 0.1 }), [])
   })

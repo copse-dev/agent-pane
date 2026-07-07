@@ -25,7 +25,8 @@ export type Benchmark =
   | 'swe-bench' // SWE-bench Verified — agentic bug-fix on real repos
   | 'humaneval-plus' // HumanEval+ — function synthesis with extra tests
   | 'livecodebench' // LiveCodeBench — contamination-resistant coding
-  | 'aider-polyglot' // Aider polyglot — multi-language edit benchmark
+  | 'aider-polyglot' // Aider polyglot — multi-language diff-edit benchmark
+  | 'aider-edit' // Aider edit — Python Exercism edit benchmark (has GGUF runs)
   | 'multipl-e' // MultiPL-E — HumanEval translated to many languages
   | 'gpqa' // GPQA — graduate-level reasoning
   | 'mmlu-pro' // MMLU-Pro — harder MMLU
@@ -37,6 +38,7 @@ export const BENCHMARKS: readonly Benchmark[] = [
   'humaneval-plus',
   'livecodebench',
   'aider-polyglot',
+  'aider-edit',
   'multipl-e',
   'gpqa',
   'mmlu-pro',

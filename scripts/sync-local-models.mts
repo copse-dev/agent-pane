@@ -15,9 +15,12 @@
 //
 // Run locally:  npm run sync:local-models
 //
-// Sources:
-//   Aider polyglot leaderboard — Aider-AI/aider → aider/website/_data/polyglot_leaderboard.yml
-//   (`pass_rate_2` is the headline pass rate; entries are full-precision API runs).
+// Sources (both Aider leaderboards share the same YAML shape; `pass_rate_2` is
+// the headline pass rate):
+//   aider-polyglot — Aider-AI/aider → aider/website/_data/polyglot_leaderboard.yml
+//                    (multi-language diff edits; entries are full-precision API runs)
+//   aider-edit     — Aider-AI/aider → aider/website/_data/edit_leaderboard.yml
+//                    (Python Exercism; includes real `ollama/*` GGUF quantized runs)
 
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -25,12 +28,19 @@ import { execFileSync } from 'node:child_process'
 
 const GENERATED_PATH = resolve('src/shared/llm/local-model-benchmarks.generated.ts')
 
-const AIDER_POLYGLOT_URL =
-  'https://raw.githubusercontent.com/Aider-AI/aider/main/aider/website/_data/polyglot_leaderboard.yml'
+const RAW_BASE = 'https://raw.githubusercontent.com/Aider-AI/aider/main/aider/website/_data'
+
+// Each Aider board → the benchmark id it populates.
+const AIDER_BOARDS: ReadonlyArray<{ benchmark: string; url: string }> = [
+  { benchmark: 'aider-polyglot', url: `${RAW_BASE}/polyglot_leaderboard.yml` },
+  { benchmark: 'aider-edit', url: `${RAW_BASE}/edit_leaderboard.yml` },
+]
 
 // leaderboard model name → our catalog id, the benchmark it feeds, and the bits
-// per weight it was measured at (16 = full precision API run). Extend this to
-// widen coverage; a name with no entry here is ignored.
+// per weight it was measured at (16 = full-precision API run; ~4.5 = a Q4_K_M
+// GGUF run). Prefer a quantized entry over an fp16 one for the same
+// (model, benchmark) — it's the on-device truth. Extend this to widen coverage;
+// a leaderboard name with no entry here is ignored.
 const ALIASES: ReadonlyArray<{
   leaderboardModel: string
   catalogId: string
@@ -42,6 +52,13 @@ const ALIASES: ReadonlyArray<{
     catalogId: 'qwen/qwen2.5-coder-32b',
     benchmark: 'aider-polyglot',
     measuredBitsPerWeight: 16,
+  },
+  {
+    // Real Q4_K_M GGUF run — a measured on-device number, no estimate needed.
+    leaderboardModel: 'ollama/qwen2.5-coder:32b',
+    catalogId: 'qwen/qwen2.5-coder-32b',
+    benchmark: 'aider-edit',
+    measuredBitsPerWeight: 4.5,
   },
 ]
 
@@ -97,22 +114,30 @@ function isIsoDate(value: string | undefined): value is string {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
 }
 
-/** Best (highest pass_rate_2) polyglot record per aliased model. */
-function collectPolyglot(records: Array<Record<string, string>>): Map<string, Score> {
+/** Best (highest pass_rate_2) record per aliased model for one Aider board. */
+function collectFromBoard(
+  records: Array<Record<string, string>>,
+  benchmark: string,
+  today: string,
+): Map<string, Score> {
   const byCatalogId = new Map<string, Score>()
   for (const alias of ALIASES) {
-    if (alias.benchmark !== 'aider-polyglot') continue
+    if (alias.benchmark !== benchmark) continue
     const matching = records.filter((r) => r['model'] === alias.leaderboardModel)
     let best: Score | null = null
     for (const rec of matching) {
       const rate = Number(rec['pass_rate_2'])
       if (!Number.isFinite(rate)) continue
-      const asOf = isIsoDate(rec['date']) ? rec['date'] : new Date().toISOString().slice(0, 10)
+      const dateField = isIsoDate(rec['date'])
+        ? rec['date']
+        : isIsoDate(rec['_released'])
+          ? rec['_released']
+          : today
       if (!best || rate > best.value) {
         best = {
           value: rate,
-          source: `Aider polyglot leaderboard (${alias.leaderboardModel})`,
-          asOf,
+          source: `Aider ${benchmark.replace('aider-', '')} leaderboard (${alias.leaderboardModel})`,
+          asOf: dateField,
           measuredBitsPerWeight: alias.measuredBitsPerWeight,
         }
       }
@@ -162,17 +187,19 @@ function runPrettier(): void {
 }
 
 async function main(): Promise<void> {
-  const polyglotYaml = await fetchText(AIDER_POLYGLOT_URL)
-  const polyglot = collectPolyglot(parseAiderRecords(polyglotYaml))
-
+  const today = new Date().toISOString().slice(0, 10)
   const scoresByModel = new Map<string, Map<string, Score>>()
-  for (const [catalogId, score] of polyglot) {
-    const map = scoresByModel.get(catalogId) ?? new Map<string, Score>()
-    map.set('aider-polyglot', score)
-    scoresByModel.set(catalogId, map)
+
+  for (const board of AIDER_BOARDS) {
+    const yaml = await fetchText(board.url)
+    const collected = collectFromBoard(parseAiderRecords(yaml), board.benchmark, today)
+    for (const [catalogId, score] of collected) {
+      const map = scoresByModel.get(catalogId) ?? new Map<string, Score>()
+      map.set(board.benchmark, score)
+      scoresByModel.set(catalogId, map)
+    }
   }
 
-  const today = new Date().toISOString().slice(0, 10)
   const content = renderFile(scoresByModel, today)
   const existing = await readFile(GENERATED_PATH, 'utf8').catch(() => '')
   const stripSyncDate = (s: string): string =>

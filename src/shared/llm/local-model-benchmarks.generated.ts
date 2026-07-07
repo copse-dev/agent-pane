@@ -13,6 +13,12 @@ export interface LocalBenchmarkScore {
 
 export const LOCAL_MODEL_BENCHMARKS: Record<string, Record<string, LocalBenchmarkScore>> = {
   'qwen/qwen2.5-coder-32b': {
+    'aider-edit': {
+      value: 72.9,
+      source: 'Aider edit leaderboard (ollama/qwen2.5-coder:32b)',
+      asOf: '2024-11-28',
+      measuredBitsPerWeight: 4.5,
+    },
     'aider-polyglot': {
       value: 16.4,
       source: 'Aider polyglot leaderboard (Qwen2.5-Coder-32B-Instruct)',

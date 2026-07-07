@@ -54,7 +54,7 @@ export const AGENT_ROLES: readonly AgentRole[] = [
     id: 'coder',
     label: 'Coder',
     description: 'Writing new code — the chat default when coding',
-    wants: ['swe-bench', 'aider-polyglot', 'humaneval-plus', 'livecodebench'],
+    wants: ['swe-bench', 'aider-polyglot', 'aider-edit', 'humaneval-plus', 'livecodebench'],
   },
   {
     id: 'debugger',
@@ -90,7 +90,7 @@ export const AGENT_ROLES: readonly AgentRole[] = [
     id: 'refactor',
     label: 'Refactorer',
     description: 'Behaviour-preserving changes',
-    wants: ['aider-polyglot', 'swe-bench'],
+    wants: ['aider-polyglot', 'aider-edit', 'swe-bench'],
   },
   {
     id: 'planner',

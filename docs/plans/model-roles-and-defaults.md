@@ -150,12 +150,14 @@ llama.cpp's K-quant perplexity/KL-divergence tables. So the layering is:
 measured-quantized > estimated-from-full > unknown ("—").
 
 **Landed:** `scripts/sync-local-models.mts` (`npm run sync:local-models`) pulls
-the Aider polyglot leaderboard, joins on an `ALIASES` map, and writes measured
-scores + their precision to `local-model-benchmarks.generated.ts`, merged into
-the catalog. `localBenchmarkScore()` applies the layering above — returning the
-measured score, or a quant-penalty-adjusted estimate when only a higher-precision
-number exists. A first run populated Qwen2.5-Coder-32B's polyglot score (16.4%
-fp16 → ~16.2% est. at Q4). Extend `ALIASES` / add sources to widen coverage.
+the Aider **polyglot** and **edit** leaderboards, joins on an `ALIASES` map, and
+writes measured scores + their precision to `local-model-benchmarks.generated.ts`,
+merged into the catalog. `localBenchmarkScore()` applies the layering above.
+Qwen2.5-Coder-32B now carries both a full-precision polyglot score (16.4% →
+~16.2% est. at Q4) _and_ a real Q4_K_M GGUF edit score (72.9%, used directly —
+the measured-quantized "gold" case). Widen coverage by extending `ALIASES` and
+adding sources (EvalPlus → `humaneval-plus`, LiveCodeBench, Open LLM Leaderboard
+v2 → `gpqa`/`mmlu-pro`, LMArena → `arena`).
 
 ### 3. Defaults: role → recommended model
 
