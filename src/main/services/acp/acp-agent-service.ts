@@ -31,6 +31,7 @@ import {
 } from './acp-client.ts'
 import { getAcpAgent, resolveAcpSandbox } from './acp-agent-registry.ts'
 import { acquireAcpSession, disposeAcpSession } from './acp-session-pool.ts'
+import { buildInvokedSkillsBlock } from '../skills/skill-prompt.ts'
 import { listForwardableMcpServers } from '../mcp/mcp-registry.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import { isAcpPermissionRemembered, rememberAcpPermission } from './acp-permission-grants.ts'
@@ -87,6 +88,14 @@ export interface RunAcpAgentOptions {
    * Overrides the agent config's default `model` for this turn.
    */
   model?: string
+  /**
+   * Skills the user invoked this turn via `/skill-name`. Their SKILL.md bodies
+   * are resolved against Copse's local registry and inlined into the forwarded
+   * prompt: an external ACP agent keeps its own separate skill catalog and never
+   * sees Copse's, so the instructions must travel with the turn rather than
+   * relying on the agent to already know the skill.
+   */
+  invokedSkills?: string[]
 }
 
 export interface RunAcpAgentResult {
@@ -267,6 +276,17 @@ export async function runAcpAgentFromSettings(
   const baseline = await captureWorktreeBaseline()
   const denialMark = networkDenialMarker()
 
+  // Resolve the invoked skills' full instructions here, in the GUI process,
+  // against the same local registry the `/` picker used — so a skill the user
+  // could pick is guaranteed to resolve — then inline it into the forwarded
+  // prompt. The external ACP agent has its own separate skill catalog and never
+  // receives Copse's, so shipping the SKILL.md body with the turn is the only
+  // way the agent gets the instructions. Sent every turn a skill is invoked
+  // (not gated on session freshness): the agent does not retain it across turns.
+  const skillsBlock = await buildInvokedSkillsBlock(options.invokedSkills ?? [], {
+    sandboxActive: willSandboxAcpAgent(sandbox),
+  })
+
   // One attempt = acquire (reuse the thread's live session, or open a fresh
   // one), install this turn's handlers, prompt. History is replayed only into
   // a FRESH session — a reused one already has its own memory of the thread
@@ -283,6 +303,7 @@ export async function runAcpAgentFromSettings(
     const prompt = buildAcpPrompt(options.userPrompt, fresh ? options.priorMessages : [], {
       sandboxed: willSandboxAcpAgent(sandbox),
       includeNotes: fresh,
+      ...(skillsBlock ? { skills: skillsBlock } : {}),
     })
     lastPrompt = prompt
     try {
@@ -642,13 +663,16 @@ export const ACP_SANDBOX_PROMPT_NOTE =
 export function buildAcpPrompt(
   userPrompt: UserContent,
   priorMessages: LLMMessage[],
-  opts?: { sandboxed?: boolean; includeNotes?: boolean },
+  opts?: { sandboxed?: boolean; includeNotes?: boolean; skills?: string },
 ): string {
   const includeNotes = opts?.includeNotes ?? true
   const note = includeNotes
     ? ACP_TURN_PROMPT_NOTE + (opts?.sandboxed ? `\n\n${ACP_SANDBOX_PROMPT_NOTE}` : '') + '\n\n'
     : ''
-  const current = promptPayloadFromUserContent(userPrompt).text
+  // `opts.skills` carries the invoked skills' instructions (already prefixed with
+  // its own `---` separator by buildInvokedSkillsBlock). Attach it to the current
+  // message so the agent reads the instructions alongside the invocation.
+  const current = promptPayloadFromUserContent(userPrompt).text + (opts?.skills ?? '')
   const transcript = priorMessages.map(messageLine).filter(Boolean).join('\n')
   if (!transcript) return `${note}${current}`
   return (
