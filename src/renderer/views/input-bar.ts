@@ -634,11 +634,12 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     // messages, so without this the user's own prompt never appears.
     const displayParts: string[] = []
     // The transcript shows the visible text with each inline chip rendered as
-    // its 📝 label, keeping the paste's position in the sentence.
+    // its bracketed label — the plain-text analog of the composer pill — keeping
+    // the paste's position in the sentence without a platform-dependent emoji.
     const chipLabels = composer.getBlocks().map((b) => b.label)
     const displayText = visibleText
       .split(CHIP_CHAR)
-      .reduce((acc, part, i) => (i === 0 ? part : `${acc}📝 ${chipLabels[i - 1] ?? ''}${part}`), '')
+      .reduce((acc, part, i) => (i === 0 ? part : `${acc}[${chipLabels[i - 1] ?? ''}]${part}`), '')
     if (displayText) displayParts.push(displayText)
     attachedFiles.forEach((f) => displayParts.push(`📎 ${f.path.split('/').pop() ?? f.path}`))
     attachedThreads.forEach((t) => displayParts.push(`🧵 ${t.title || 'Untitled thread'}`))
