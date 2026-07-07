@@ -653,6 +653,14 @@ export async function getGitShowText(ref: string, path?: string): Promise<string
   if (trimmedRef.includes(':')) {
     return "Invalid ref: pass a file path via the `path` argument instead of embedding ':<path>' in the ref."
   }
+  // A ref beginning with `-` would be parsed by git as an option, not a revision
+  // (e.g. `--output=<file>` writes the diff to an arbitrary path, `--ext-diff`
+  // runs an external driver). git parses options positionally before `--`, so the
+  // trailing `-- .` below does not contain it. Reject up front — no real ref name
+  // starts with a dash.
+  if (trimmedRef.startsWith('-')) {
+    return 'Invalid ref: a git ref cannot start with "-".'
+  }
 
   let args: string[]
   if (path === undefined) {
