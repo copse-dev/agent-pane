@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
-import { classifyModelForTask } from '../services/providers/model-classifier.ts'
+import { classifyModelForTask, suggestRoleForTask } from '../services/providers/model-classifier.ts'
 
 /**
  * Experimental model-classifier tool (issue #557). Returns a recommended
@@ -12,7 +12,7 @@ import { classifyModelForTask } from '../services/providers/model-classifier.ts'
 export const suggestModelTool = defineTool({
   name: 'suggest_model',
   description:
-    'Recommend which model capability tier (fast / balanced / frontier) best fits a task, with a representative model id, confidence, and rationale. Advisory: it does not switch models. Useful before delegating a subtask to decide whether a cheaper/faster model would do.',
+    'Recommend which model capability tier (fast / balanced / frontier) and pipeline role (coder, reviewer, security-auditor, …) best fit a task, with a representative model id, confidence, and rationale. Advisory: it does not switch models. Useful before delegating a subtask to decide whether a cheaper/faster model would do.',
   parameters: z.object({
     task: z.string().describe('The task or prompt you want to route.'),
     contextTokensEstimate: z
@@ -27,11 +27,13 @@ export const suggestModelTool = defineTool({
   execute({ task, contextTokensEstimate, agentic }) {
     if (!task.trim()) return 'suggest_model requires a non-empty task.'
     const rec = classifyModelForTask({ task, contextTokensEstimate, agentic })
+    const roleRec = suggestRoleForTask(task)
     return [
       `Recommended tier: ${rec.tier}`,
       `Representative model: ${rec.model}`,
+      `Suggested role: ${roleRec.role} (${roleRec.label})`,
       `Confidence: ${rec.confidence.toFixed(2)}`,
-      `Why: ${rec.rationale}`,
+      `Why: ${rec.rationale}; ${roleRec.rationale}`,
     ].join('\n')
   },
 })

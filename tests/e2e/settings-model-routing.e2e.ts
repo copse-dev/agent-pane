@@ -119,10 +119,10 @@ describe('settings model routing placement', () => {
     assert.equal(placement.generalHasRouting, true)
     assert.equal(placement.localModelsHasRouting, false)
     assert.equal(placement.routingFollowsSmallTasks, true)
-    assert.equal(placement.routingLegend, 'Model routing')
+    assert.equal(placement.routingLegend, 'Local model roles')
     assert.deepEqual(placement.routingFieldLabels, [
-      'Default local model',
-      'Exploration subagent model',
+      'Coder',
+      'Research',
       'Instruct / safety model',
       'Post-turn review model',
     ])

@@ -4,14 +4,15 @@ import {
   LM_STUDIO_MODEL_IDS,
   lmStudioChatModelValue,
 } from '@shared/lm-studio-defaults.ts'
-import { getSetting, getSettingTrimmed } from '../storage/settings.ts'
+import { getSetting } from '../storage/settings.ts'
 import { buildProvider } from './provider-selection.ts'
+import { routedModelSetting } from './role-models.ts'
 
 const AUTO_LOCAL_DEFAULT = lmStudioChatModelValue(LM_STUDIO_MODEL_IDS.smallTasks)
 
 /** Resolve the configured small-tasks model (empty = auto local default). */
 export function resolveSmallTasksModelId(): string {
-  const configured = getSettingTrimmed('smallTasksModel')
+  const configured = routedModelSetting('smallTasksModel')
   return configured || AUTO_LOCAL_DEFAULT
 }
 
