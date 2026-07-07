@@ -17,7 +17,7 @@ import {
   isTextBlockAttachment,
   type ThreadRefAttachment,
 } from '@copse/agent/build-text-with-attachments.ts'
-import { CHIP_CHAR, mountComposerEditor } from './composer-editor.ts'
+import { mountComposerEditor } from './composer-editor.ts'
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import { bindFileDropTarget, attachFiles } from '../attachments/handle-file-drop.ts'
 import {
@@ -30,7 +30,7 @@ import { initSkillPicker } from './skill-picker.ts'
 import { mountFooterIndexStatus } from './footer-index-status.ts'
 import { resolveSkillInvocation } from '@shared/skills/parse-skill-invocation.ts'
 import { buildSkillUserText } from '@shared/skills/build-skill-user-content.ts'
-import type { ContextBreakdown, UserContent } from '@shared/types'
+import type { ContextBreakdown, TranscriptAttachment, UserContent } from '@shared/types'
 import type { AgentRunPayload, SkillSummary } from '@shared/types/skills.ts'
 import { mountFooterModelPicker } from './footer-model-picker.ts'
 import { mountFooterBranchStatus } from './footer-branch-status.ts'
@@ -632,24 +632,32 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     // Record the user's message in the conversation and mark the thread running
     // before dispatching to the agent — the controller only adds assistant
     // messages, so without this the user's own prompt never appears.
-    const displayParts: string[] = []
-    // The transcript shows the visible text with each inline chip rendered as
-    // its bracketed label — the plain-text analog of the composer pill — keeping
-    // the paste's position in the sentence without a platform-dependent emoji.
-    const chipLabels = composer.getBlocks().map((b) => b.label)
-    const displayText = visibleText
-      .split(CHIP_CHAR)
-      .reduce((acc, part, i) => (i === 0 ? part : `${acc}[${chipLabels[i - 1] ?? ''}]${part}`), '')
-    if (displayText) displayParts.push(displayText)
-    attachedFiles.forEach((f) => displayParts.push(`📎 ${f.path.split('/').pop() ?? f.path}`))
-    attachedThreads.forEach((t) => displayParts.push(`🧵 ${t.title || 'Untitled thread'}`))
+    // The transcript keeps the typed text verbatim — each inline paste stays as
+    // its U+FFFC placeholder (composer-editor.ts) — while the chip labels and
+    // file/thread refs travel as structured attachments. This keeps the stored/
+    // exported content free of glyphs or markers, and lets the renderer draw each
+    // as an SVG-icon chip: pastes inline at their placeholder, files/threads in a
+    // trailing row. Order matters — pastes first, in composer order, so the Nth
+    // placeholder maps to the Nth paste attachment.
+    const attachments: TranscriptAttachment[] = [
+      ...composer.getBlocks().map((b) => ({ kind: 'paste' as const, label: b.label })),
+      ...attachedFiles.map((f) => ({
+        kind: 'file' as const,
+        label: f.path.split('/').pop() ?? f.path,
+      })),
+      ...attachedThreads.map((t) => ({
+        kind: 'thread' as const,
+        label: t.title || 'Untitled thread',
+      })),
+    ]
     const imageUrls = attachedImages.map((img) => img.dataUrl)
     const messageId = addMessage(
       store,
       id,
       'user',
-      displayParts.join('\n'),
+      visibleText,
       imageUrls.length ? imageUrls : undefined,
+      attachments.length ? attachments : undefined,
     )
     if (currentBranch) bindThreadGitBranchIfUnset(store, id, currentBranch)
 

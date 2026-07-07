@@ -346,3 +346,38 @@
 .message-text .table-copy-shell:focus-within .table-copy {
   opacity: 1;
 }
+
+/* Transcript attachment chips (conversation.ts renderUserTranscript): a paste
+   sits inline at its placeholder; files/threads follow in .transcript-attachment-row.
+   Display-only siblings of the composer's .inline-paste-chip — no remove button. */
+.transcript-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 260px;
+  margin: 0 2px;
+  padding: 1px 7px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: var(--font-size-sm);
+  vertical-align: baseline;
+}
+.transcript-attachment-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+}
+.transcript-attachment-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.transcript-attachment-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}

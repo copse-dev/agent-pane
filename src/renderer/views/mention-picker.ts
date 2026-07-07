@@ -3,19 +3,14 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { ThreadCatalogHit } from '@shared/types'
 import type { ComposerTextInput } from './composer-editor.ts'
 import { clear } from '../dom/helpers.ts'
-import { outlineIcon } from '../dom/outline-icon.ts'
+import { attachmentIcon } from '../dom/attachment-icons.ts'
 
-// lucide `messages-square` — a past conversation thread. Rendered as a
-// `currentColor` outline icon (matching the titlebar/attach chrome) instead of a
-// 🧵 emoji so it stays theme-aware and platform-consistent.
-const THREAD_ICON_PATHS = [
-  'M14 9a2 2 0 0 1-2 2H6l-4 4V4c0-1.1.9-2 2-2h8a2 2 0 0 1 2 2Z',
-  'M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1',
-]
-
+// A past conversation thread reference. Rendered as a `currentColor` outline
+// icon (matching the titlebar/attach chrome) instead of a 🧵 emoji so it stays
+// theme-aware and platform-consistent — see `attachment-icons.ts`.
 /** The thread-reference icon at a caller-styled size/color. */
 export function threadIcon(className: string): SVGSVGElement {
-  return outlineIcon('thread', THREAD_ICON_PATHS, className)
+  return attachmentIcon('thread', className)
 }
 
 export interface AttachedThreadRef {
