@@ -1,0 +1,9 @@
+{
+  "id": "off-by-one-sum",
+  "description": "Seed real-model task (#752): SWE-bench-shaped — a fixture repo with a failing test suite; the agent must find and fix the bug, and grading re-runs the suite.",
+  "prompt": "The test suite in this repository fails — run `node test.js` to see it. Find the bug, fix it with a minimal edit, and re-run the tests until they pass.",
+  "fixture": "benchmarks/fixtures/off-by-one",
+  "grade": { "kind": "shell", "command": "node test.js" },
+  "maxSteps": 12,
+  "timeoutMs": 300000
+}
