@@ -1,17 +1,23 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { AnthropicProvider } from './anthropic-provider.ts'
+import { AnthropicProvider, markTrailingCacheBreakpoint } from './anthropic-provider.ts'
 import type { ProviderStreamChunk } from './wire-types.ts'
 
 /**
  * Build a fake SDK stream event sequence and inject it into the provider's
  * private client so we can exercise the message_start / message_delta usage
- * accounting (#111) without hitting the network.
+ * accounting (#111) without hitting the network. Returns a capture object
+ * whose `params` records the request body passed to the SDK.
  */
-function withFakeStream(provider: AnthropicProvider, events: unknown[]): void {
+function withFakeStream(
+  provider: AnthropicProvider,
+  events: unknown[],
+): { params: Record<string, unknown> | null } {
+  const capture: { params: Record<string, unknown> | null } = { params: null }
   const fakeClient = {
     messages: {
-      stream(): AsyncIterable<unknown> {
+      stream(params: Record<string, unknown>): AsyncIterable<unknown> {
+        capture.params = params
         return {
           async *[Symbol.asyncIterator](): AsyncGenerator {
             for (const e of events) yield e
@@ -21,6 +27,7 @@ function withFakeStream(provider: AnthropicProvider, events: unknown[]): void {
     },
   }
   ;(provider as unknown as { client: unknown }).client = fakeClient
+  return capture
 }
 
 async function collect(provider: AnthropicProvider): Promise<ProviderStreamChunk[]> {
@@ -108,5 +115,68 @@ describe('AnthropicProvider usage accounting (#111)', () => {
     assert.ok(usage)
     assert.equal(usage.inputTokens, 800)
     assert.equal(usage.outputTokens, 9)
+  })
+})
+
+describe('AnthropicProvider prompt caching (#582)', () => {
+  const doneEvents = [
+    { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 1 } },
+  ]
+
+  it('marks the last tool and the last message block with cache_control', async () => {
+    const provider = new AnthropicProvider('claude-test', { apiKey: 'test' })
+    const capture = withFakeStream(provider, doneEvents)
+    const tools = [
+      { name: 'a', description: 'first', parameters: {} },
+      { name: 'b', description: 'second', parameters: {} },
+    ]
+    for await (const _ of provider.stream(
+      [
+        { role: 'system', content: 'sys' },
+        { role: 'user', content: 'question' },
+        { role: 'assistant', content: 'answer' },
+      ],
+      tools,
+    )) {
+      void _
+    }
+
+    assert.ok(capture.params)
+    const sentTools = capture.params['tools'] as Array<Record<string, unknown>>
+    assert.equal(sentTools[0]?.['cache_control'], undefined)
+    assert.deepEqual(sentTools[1]?.['cache_control'], { type: 'ephemeral' })
+    const sentMessages = capture.params['messages'] as Array<{
+      content: string | Array<Record<string, unknown>>
+    }>
+    // Earlier messages keep their plain string content …
+    assert.equal(sentMessages[0]?.content, 'question')
+    // … while the final message's final block carries the breakpoint.
+    const lastContent = sentMessages.at(-1)?.content
+    assert.ok(Array.isArray(lastContent))
+    assert.deepEqual(lastContent.at(-1), {
+      type: 'text',
+      text: 'answer',
+      cache_control: { type: 'ephemeral' },
+    })
+  })
+
+  it('markTrailingCacheBreakpoint handles block-array and empty inputs', () => {
+    const toolResult = [
+      {
+        role: 'user' as const,
+        content: [{ type: 'tool_result' as const, tool_use_id: 't1', content: 'ok' }],
+      },
+    ]
+    markTrailingCacheBreakpoint(toolResult)
+    assert.deepEqual(
+      (toolResult[0]?.content[0] as unknown as Record<string, unknown>)['cache_control'],
+      { type: 'ephemeral' },
+    )
+
+    // Empty conversation and empty-string content are left untouched.
+    markTrailingCacheBreakpoint([])
+    const empty = [{ role: 'user' as const, content: '' }]
+    markTrailingCacheBreakpoint(empty)
+    assert.equal(empty[0]?.content, '')
   })
 })

@@ -184,10 +184,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   ipcMain.handle('workspace:get', () => getWorkspaceRoot())
 
-  ipcMain.handle('workspace:set', async (_e, root: string) => {
+  ipcMain.handle('workspace:set', async (event, root: unknown) => {
+    assertMainFrameSender(event, win)
+    const parsedRoot = parseIpcArgs(zPathString, [root])
     const projects = (storageGet('projects') as { path: string }[] | null) ?? []
     seedAllowedWorkspaceRoots(projects.map((p) => p.path))
-    const canonical = assertAllowedWorkspaceRoot(root)
+    const canonical = assertAllowedWorkspaceRoot(parsedRoot)
     setWorkspaceRoot(canonical)
     startWorkspaceIndexing(canonical)
     await initSkillsRegistry()
@@ -348,14 +350,16 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const prefs = securitySettingsSchema.parse(raw)
     await Promise.all(Object.entries(prefs).map(([k, v]) => setSetting(k, v)))
   })
-  ipcMain.handle('settings:getKey', (_e, provider: unknown) => {
+  ipcMain.handle('settings:getKey', (event, provider: unknown) => {
+    assertMainFrameSender(event, win)
     const p = parseIpcArgs(keyProviderSchema, [provider])
     return hasApiKey(p)
   })
   // At-rest state for a provider's stored key: true = OS-encrypted, false = base64
   // plaintext fallback, null = no key stored. Lets the Settings UI flag the
   // plaintext-at-rest condition instead of leaving it to a console.warn.
-  ipcMain.handle('settings:getKeyEncrypted', (_e, provider: unknown) => {
+  ipcMain.handle('settings:getKeyEncrypted', (event, provider: unknown) => {
+    assertMainFrameSender(event, win)
     const p = parseIpcArgs(keyProviderSchema, [provider])
     return isApiKeyEncrypted(p)
   })
@@ -558,9 +562,20 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const isStaged = parseIpcArgs(z.boolean(), [staged])
     return getGitFileDiff(filePath, isStaged)
   })
-  ipcMain.handle('git:branchStatus', (_e, forBranch: unknown) => {
+  ipcMain.handle('git:branchStatus', (event, forBranch: unknown) => {
+    assertMainFrameSender(event, win)
+    // Git-ref charset only, no leading dash: the branch reaches `gh pr list
+    // --head <branch>` and must never be option-shaped (#580).
     const branch =
-      forBranch === undefined ? undefined : parseIpcArgs(z.string().max(256), [forBranch])
+      forBranch === undefined
+        ? undefined
+        : parseIpcArgs(
+            z
+              .string()
+              .max(256)
+              .regex(/^[A-Za-z0-9_][A-Za-z0-9_\-./]*$/),
+            [forBranch],
+          )
     return getGitBranchStatus(branch)
   })
   ipcMain.handle('git:checkoutBranch', async (event, branch: unknown) => {
@@ -574,13 +589,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('gh:status', () => getGhCliStatus())
   ipcMain.handle('gh:listMyOpenPrs', () => listMyOpenPrs())
   ipcMain.handle('gh:listWorkspaceOpenPrs', () => listWorkspaceOpenPrs())
-  ipcMain.handle('gh:prChecks', (_e, owner: unknown, repo: unknown, number: unknown) => {
+  ipcMain.handle('gh:prChecks', (event, owner: unknown, repo: unknown, number: unknown) => {
+    assertMainFrameSender(event, win)
     const parsedOwner = parseIpcArgs(z.string().min(1).max(128), [owner])
     const parsedRepo = parseIpcArgs(z.string().min(1).max(128), [repo])
     const parsedNumber = parseIpcArgs(z.number().int().positive(), [number])
     return getGhPrChecksState({ owner: parsedOwner, repo: parsedRepo, number: parsedNumber })
   })
-  ipcMain.handle('gh:prDetails', (_e, owner: unknown, repo: unknown, number: unknown) => {
+  ipcMain.handle('gh:prDetails', (event, owner: unknown, repo: unknown, number: unknown) => {
+    assertMainFrameSender(event, win)
     const parsedOwner = parseIpcArgs(z.string().min(1).max(128), [owner])
     const parsedRepo = parseIpcArgs(z.string().min(1).max(128), [repo])
     const parsedNumber = parseIpcArgs(z.number().int().positive(), [number])
@@ -588,7 +605,8 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   })
   ipcMain.handle(
     'gh:prFileDiff',
-    (_e, owner: unknown, repo: unknown, number: unknown, path: unknown) => {
+    (event, owner: unknown, repo: unknown, number: unknown, path: unknown) => {
+      assertMainFrameSender(event, win)
       const parsedOwner = parseIpcArgs(z.string().min(1).max(128), [owner])
       const parsedRepo = parseIpcArgs(z.string().min(1).max(128), [repo])
       const parsedNumber = parseIpcArgs(z.number().int().positive(), [number])
@@ -599,7 +617,8 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       )
     },
   )
-  ipcMain.handle('gh:resolvePrUrl', (_e, url: unknown) => {
+  ipcMain.handle('gh:resolvePrUrl', (event, url: unknown) => {
+    assertMainFrameSender(event, win)
     const parsedUrl = parseIpcArgs(z.url().max(2048), [url])
     return resolveGithubPrRef(parsedUrl)
   })
