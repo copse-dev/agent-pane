@@ -34,6 +34,8 @@
     "coverage:ci": "npm run coverage && npm run coverage:check",
     "bench:thread-store": "node scripts/bench-thread-store.mts",
     "validate:local-agent": "node scripts/run-validate-local-agent.mts",
+    "bench:agent": "node scripts/run-bench-agent.mts",
+    "bench:swe-tasks": "node scripts/fetch-swe-bench-subset.mts",
     "validate:browser-tools": "node scripts/validate-browser-tools.mts",
     "test:e2e": "wdio run wdio.conf.ts",
     "test:e2e:ci": "wdio run wdio.ci.conf.ts",

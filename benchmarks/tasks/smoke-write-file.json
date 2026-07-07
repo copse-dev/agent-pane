@@ -1,0 +1,12 @@
+{
+  "id": "smoke-write-file",
+  "description": "Harness self-test (#752): the mock provider is steered by the [[mcp:…]] directive to write a file; grading checks its content. Fully deterministic — proves the harness plumbing without a model.",
+  "prompt": "Create solution.txt containing the required phrase. [[mcp:write_file {\"path\":\"solution.txt\",\"content\":\"hello from the bench harness\"}]]",
+  "grade": {
+    "kind": "file-contains",
+    "path": "solution.txt",
+    "needle": "hello from the bench harness"
+  },
+  "maxSteps": 4,
+  "timeoutMs": 60000
+}
