@@ -56,6 +56,26 @@ describe('fileReferenceMatches', () => {
     )
   })
 
+  it('matches directories with a trailing slash, stripping it from the candidate (#506)', () => {
+    // `git status` prints untracked directories exactly like this.
+    const [match] = fileReferenceMatches('\tsrc/renderer/')
+    assert.ok(match)
+    assert.equal(match.candidate, 'src/renderer')
+    assert.equal(match.text, 'src/renderer/')
+    assert.equal('\tsrc/renderer/'.slice(match.start, match.end), 'src/renderer/')
+  })
+
+  it('matches dotfiles without a directory prefix (#506)', () => {
+    assert.deepEqual(
+      fileReferenceMatches('new file: .gitignore, also .env and .eslintrc.json').map(
+        (m) => m.candidate,
+      ),
+      ['.gitignore', '.env', '.eslintrc.json'],
+    )
+    // A bare ellipsis or sentence dot must not become a link.
+    assert.deepEqual(fileReferenceMatches('wait... done.'), [])
+  })
+
   it('matches hyphenated filenames', () => {
     const [match] = fileReferenceMatches('see DEVELOPMENT-NOTES.md next')
     assert.ok(match)
