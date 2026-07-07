@@ -20,9 +20,7 @@ export interface RunCommandOptions {
   cwd?: string
   signal?: AbortSignal
   unsandboxed?: boolean
-  /** When true, base env excludes LLM/provider secrets (same as run_shell / terminal). */
-  useRendererEnv?: boolean
-  /** Extra env vars merged on top of `process.env` (and any built-in tweaks like git's). */
+  /** Extra env vars merged on top of the stripped base env (and any built-in tweaks like git's). */
   env?: NodeJS.ProcessEnv
   /** Defaults to {@link COMMAND_RUNNER_DEFAULT_TIMEOUT_MS}; pass `0` to disable. */
   timeout_ms?: number
@@ -70,9 +68,11 @@ export function runCommand(
   const stdoutMaxBytes = opts.stdoutMaxBytes ?? COMMAND_OUTPUT_MAX_BYTES
 
   let spawnArgs = args
-  let spawnEnv: NodeJS.ProcessEnv = opts.useRendererEnv
-    ? envForRendererChildProcess()
-    : { ...process.env }
+  // Base env always excludes LLM/provider secrets (#579): every caller is a
+  // git/gh/ripgrep-style tool that never needs them, and the strip list keeps
+  // tool tokens (GITHUB_TOKEN, NPM_TOKEN, AWS_*). Callers that genuinely need
+  // a secret can pass it explicitly via `opts.env`.
+  let spawnEnv: NodeJS.ProcessEnv = envForRendererChildProcess()
   if (cmd === 'git') {
     const git = prepareGitInvocation(args, spawnEnv)
     spawnArgs = git.args
