@@ -220,17 +220,22 @@ export function trimMessagesInPlace(
 
   // Precompute per-message estimates once and track the running total, so each
   // trim step subtracts the dropped message(s) instead of re-stringifying the
-  // whole conversation every iteration (#583). When a provider-measured input
-  // size is available it is used verbatim and stays fixed across drops, exactly
-  // as effectiveConversationTokens would return it. `estimates` stays index-aligned
+  // whole conversation every iteration (#583). `estimates` stays index-aligned
   // with `messages`; the system prompt is never a drop target.
+  //
+  // When a provider-measured input size is available it seeds the baseline (#52),
+  // but it must STILL shrink as messages are dropped — the measured value is a
+  // fixed snapshot of the previous request and does not decrease on its own.
+  // Holding it fixed made a single over-budget pass drop every droppable message
+  // down to `minTail`, wiping the task and all exploration mid-run (#717). Subtract
+  // each dropped span's estimate from the measured baseline so the loop stops as
+  // soon as the (approximate) remaining size fits.
   const measured = getLastMeasuredInputTokens()
-  let estimates: number[] | null = null
+  const estimates = messages.map(conversationMessageEstimate)
   let currentTokens: number
   if (measured != null) {
     currentTokens = measured
   } else {
-    estimates = messages.map(conversationMessageEstimate)
     const start = contentStartIndex(messages)
     let total = CONVERSATION_ENVELOPE_TOKENS
     for (let i = start; i < estimates.length; i++) total += estimates[i] ?? 0
@@ -241,10 +246,8 @@ export function trimMessagesInPlace(
     const dropIndex = findOldestDroppableIndex(messages, minTail)
     if (dropIndex < 0) break
     const span = droppableSpan(messages, dropIndex)
-    if (estimates != null) {
-      for (let i = dropIndex; i < dropIndex + span; i++) currentTokens -= estimates[i] ?? 0
-      estimates.splice(dropIndex, span)
-    }
+    for (let i = dropIndex; i < dropIndex + span; i++) currentTokens -= estimates[i] ?? 0
+    estimates.splice(dropIndex, span)
     messages.splice(dropIndex, span)
     trimmed = true
   }

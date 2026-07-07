@@ -372,4 +372,34 @@ describe('trimMessagesInPlace precompute (#583)', () => {
     assert.ok(withMeasured.length < fixtures.plainText().length)
     assert.equal(refFindOldestDroppableIndex(withMeasured, 3), -1)
   })
+
+  it('does not collapse to minTail when measured tokens only slightly exceed budget (#717)', () => {
+    // Realistic case: the provider-measured size roughly equals the estimated
+    // content, and the budget sits just under it. The trim must drop only the
+    // oldest few spans it needs — not everything down to minTail. Before the fix,
+    // the measured baseline never shrank, so one pass wiped the whole history.
+    const messages: LLMMessage[] = [{ role: 'system', content: 'sys' }]
+    for (let i = 0; i < 20; i++) {
+      messages.push({ role: 'user', content: 'q'.repeat(400) })
+      messages.push({ role: 'assistant', content: 'a'.repeat(400) })
+    }
+    const lengthBefore = messages.length
+    const estimated = estimateConversationTokens(messages)
+    setLastMeasuredInputTokens(Math.round(estimated))
+    const maxContextTokens = Math.round(estimated * 0.9) // ~10% over → a few spans
+
+    const trimmed = trimMessagesInPlace(messages, maxContextTokens, {
+      reserveTokens: 0,
+      minTailMessages: 5,
+      completionReserveTokens: 0,
+    })
+    setLastMeasuredInputTokens(null)
+
+    assert.equal(trimmed, true)
+    // The regression would leave ~minTail (5-6). The fix keeps the large majority.
+    assert.ok(
+      messages.length >= 25,
+      `expected a small trim, only ${String(messages.length)} of ${String(lengthBefore)} left`,
+    )
+  })
 })
