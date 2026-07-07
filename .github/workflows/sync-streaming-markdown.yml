@@ -110,6 +110,14 @@ jobs:
       - name: Create branch and PR
         uses: peter-evans/create-pull-request@v8
         with:
+          # WORKFLOW_PR_TOKEN (fine-grained PAT: Contents + Pull requests
+          # read/write on this repo) sidesteps two GITHUB_TOKEN limitations:
+          # the "GitHub Actions is not permitted to create or approve pull
+          # requests" org/repo policy, and PAT-opened PRs trigger CI while
+          # GITHUB_TOKEN-opened ones don't. Falls back to GITHUB_TOKEN when
+          # the secret is unset (then the branch still pushes, and PR creation
+          # needs that policy checkbox enabled).
+          token: ${{ secrets.WORKFLOW_PR_TOKEN || github.token }}
           branch: chore/bump-streaming-markdown
           delete-branch: true
           add-paths: |
@@ -124,7 +132,8 @@ jobs:
 
             `npm run check` on this branch: **${{ steps.check.outcome }}**.
 
-            Note: PRs opened with `GITHUB_TOKEN` don't trigger the CI workflow —
+            Note: if this PR was opened with the fallback `GITHUB_TOKEN` (no
+            `WORKFLOW_PR_TOKEN` secret configured), CI won't have triggered —
             close/reopen this PR (or push to the branch) to get a full CI run
             before merging.
 
