@@ -136,6 +136,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   registeredAcpAgents: registeredAcpAgentsSchema,
   browserToolsEnabled: z.boolean(),
   browserAllowedOrigins: z.array(z.string().max(2048)).max(256),
+  // Auto-approve an external ACP agent's file edits/deletes/moves once a durable
+  // worktree backup of the user's uncommitted work exists, instead of prompting
+  // per edit. Default on. Off restores the per-edit approval modal.
+  acpAutoApproveEditsWithBackup: z.boolean(),
   // Experimental features, opt-in and off by default. See the experimental
   // section in Settings.
   mcpUiArtefactsEnabled: z.boolean(),
