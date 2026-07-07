@@ -133,3 +133,10 @@ export const cloudProviderSchema = z.enum([
 // Any provider key slug: the fixed providers above plus arbitrary user-added
 // custom-provider slugs (URL-safe, derived from a base-URL hostname).
 export const keyProviderSchema = z.string().regex(/^[a-z0-9-]{1,64}$/)
+
+// Per-save consent for storing a key unencrypted when OS secure storage is
+// unavailable. Defaults to no consent so the plaintext write is always opt-in.
+export const setKeyOptionsSchema = z
+  .object({ allowPlaintext: z.boolean().optional() })
+  .optional()
+  .transform((v) => ({ allowPlaintext: v?.allowPlaintext === true }))
