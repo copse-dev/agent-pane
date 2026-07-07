@@ -22,6 +22,7 @@ import {
   readdirSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
@@ -39,8 +40,12 @@ export interface BenchTask {
   prompt: string
   /** Directory (repo-relative) copied into a fresh temp workspace; omitted → empty workspace. */
   fixture?: string
+  /** Git checkout into the temp workspace (SWE-bench-style tasks). Mutually exclusive with fixture. */
+  repo?: { url: string; commit: string }
+  /** Shell command run in the workspace before the agent starts (dependency install etc.). */
+  setup?: string
   grade:
-    | { kind: 'shell'; command: string }
+    | { kind: 'shell'; command: string; applyPatch?: string }
     | { kind: 'file-contains'; path: string; needle: string }
   maxSteps?: number
   timeoutMs?: number
@@ -70,7 +75,18 @@ export interface BenchSummary {
 
 const MAX_TOOL_OUTPUT = 12_000
 const SHELL_TIMEOUT_MS = 120_000
+const SETUP_TIMEOUT_MS = 15 * 60_000
 const DEFAULT_TASK_TIMEOUT_MS = 10 * 60_000
+const BASELINE_PATH = 'benchmarks/bench-baseline.json'
+/** Headroom over the baseline tokens-per-solve before the gate fails (model runs are noisy). */
+const TOKENS_PER_SOLVE_HEADROOM = 1.25
+
+/** Per-model baseline entry for the `--gate` ratchet (coverage-baseline.json pattern). */
+interface BaselineEntry {
+  solved: number
+  total: number
+  outputTokensPerSolve: number | null
+}
 
 const TOOLS: LLMTool[] = [
   {
@@ -159,6 +175,24 @@ async function executeTool(workspace: string, name: string, args: unknown): Prom
 
 function grade(task: BenchTask, workspace: string): { solved: boolean; detail: string } {
   if (task.grade.kind === 'shell') {
+    // SWE-bench-style grading: the graders' test patch is applied only now, so
+    // the agent never sees the reference tests while it works.
+    if (task.grade.applyPatch) {
+      const patchPath = join(workspace, '.bench-grade.patch')
+      writeFileSync(patchPath, task.grade.applyPatch, 'utf8')
+      const applied = spawnSync('git', ['apply', patchPath], {
+        cwd: workspace,
+        encoding: 'utf8',
+        timeout: SHELL_TIMEOUT_MS,
+      })
+      rmSync(patchPath, { force: true })
+      if (applied.status !== 0) {
+        return {
+          solved: false,
+          detail: `grade patch failed to apply: ${`${applied.stdout}${applied.stderr}`.trim().slice(-300)}`,
+        }
+      }
+    }
     const out = spawnSync(task.grade.command, {
       cwd: workspace,
       shell: true,
@@ -206,13 +240,76 @@ function argValue(flag: string): string | undefined {
   return i !== -1 ? process.argv[i + 1] : undefined
 }
 
+/** A zeroed unsolved result for tasks that die before the agent runs. */
+function preparationFailedResult(task: BenchTask, stage: string, detail: string): TaskResult {
+  return {
+    id: task.id,
+    solved: false,
+    gradeDetail: `${stage} failed`,
+    toolCalls: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    usageEstimated: true,
+    durationMs: 0,
+    trace: '',
+    error: `${stage} failed: ${detail}`,
+  }
+}
+
+/**
+ * Populate the temp workspace: fixture copy, pinned-commit git checkout
+ * (SWE-bench-style tasks; shallow-fetch so big repos don't pull full history),
+ * then the task's setup command. Returns a failure result or null on success.
+ */
+function prepareWorkspace(task: BenchTask, workspace: string): TaskResult | null {
+  if (task.fixture) cpSync(resolve(task.fixture), workspace, { recursive: true })
+  if (task.repo) {
+    // GitHub allows fetching an arbitrary full SHA at depth 1, so the checkout
+    // stays O(tree) instead of O(history) even for SWE-bench-sized repos.
+    const gitSteps: string[][] = [
+      ['init', '-q', '.'],
+      ['remote', 'add', 'origin', task.repo.url],
+      ['fetch', '-q', '--depth', '1', 'origin', task.repo.commit],
+      ['checkout', '-q', 'FETCH_HEAD'],
+    ]
+    for (const args of gitSteps) {
+      const step = spawnSync('git', args, {
+        cwd: workspace,
+        encoding: 'utf8',
+        timeout: SETUP_TIMEOUT_MS,
+      })
+      if (step.status !== 0) {
+        const detail = `git ${args[0] ?? ''}: ${`${step.stdout}${step.stderr}`.trim().slice(-500)}`
+        return preparationFailedResult(task, 'checkout', detail)
+      }
+    }
+  }
+  if (task.setup) {
+    const setup = spawnSync(task.setup, {
+      cwd: workspace,
+      shell: true,
+      encoding: 'utf8',
+      timeout: SETUP_TIMEOUT_MS,
+    })
+    if (setup.status !== 0) {
+      const detail = `${setup.stdout}${setup.stderr}`.trim().slice(-500)
+      return preparationFailedResult(task, 'setup', detail)
+    }
+  }
+  return null
+}
+
 async function runTask(
   task: BenchTask,
   provider: LLMProvider,
   outDir: string,
 ): Promise<TaskResult> {
   const workspace = mkdtempSync(join(tmpdir(), 'copse-bench-'))
-  if (task.fixture) cpSync(resolve(task.fixture), workspace, { recursive: true })
+  const preparationFailure = prepareWorkspace(task, workspace)
+  if (preparationFailure) {
+    rmSync(workspace, { recursive: true, force: true })
+    return preparationFailure
+  }
 
   const tracePath = join(outDir, `${task.id}.jsonl`)
   const traceLines: string[] = []
@@ -341,6 +438,69 @@ export async function runBench(): Promise<void> {
     console.error('bench:agent FAIL: --require-solved set and not every task solved.')
     process.exit(1)
   }
+
+  if (process.argv.includes('--update-baseline')) {
+    updateBaseline(summary)
+    return
+  }
+  if (process.argv.includes('--gate')) gateAgainstBaseline(summary)
+}
+
+function readBaselines(): Record<string, BaselineEntry> {
+  try {
+    return JSON.parse(readFileSync(BASELINE_PATH, 'utf8')) as Record<string, BaselineEntry>
+  } catch {
+    return {}
+  }
+}
+
+function updateBaseline(summary: BenchSummary): void {
+  const baselines = readBaselines()
+  baselines[summary.model] = {
+    solved: summary.solved,
+    total: summary.total,
+    outputTokensPerSolve: summary.outputTokensPerSolve,
+  }
+  writeFileSync(BASELINE_PATH, `${JSON.stringify(baselines, null, 2)}\n`, 'utf8')
+  console.log(`bench:agent baseline for '${summary.model}' updated in ${BASELINE_PATH}.`)
+}
+
+/**
+ * Trend ratchet, coverage-baseline.json style: solve rate must not drop below
+ * the committed baseline for this model, and tokens-per-solve must stay within
+ * headroom of it. Rebaseline deliberately with `--update-baseline`.
+ */
+function gateAgainstBaseline(summary: BenchSummary): void {
+  const baseline = readBaselines()[summary.model]
+  if (!baseline) {
+    console.log(
+      `bench:agent gate: no baseline for model '${summary.model}' in ${BASELINE_PATH} — run --update-baseline to start one. Not gating.`,
+    )
+    return
+  }
+  const failures: string[] = []
+  if (summary.total !== baseline.total) {
+    failures.push(
+      `task count changed (${String(summary.total)} vs baseline ${String(baseline.total)}) — rebaseline after adding/removing tasks`,
+    )
+  }
+  if (summary.solved < baseline.solved) {
+    failures.push(`solved ${String(summary.solved)} < baseline ${String(baseline.solved)}`)
+  }
+  if (
+    summary.outputTokensPerSolve != null &&
+    baseline.outputTokensPerSolve != null &&
+    summary.outputTokensPerSolve > baseline.outputTokensPerSolve * TOKENS_PER_SOLVE_HEADROOM
+  ) {
+    failures.push(
+      `outputTokensPerSolve ${String(summary.outputTokensPerSolve)} > ${String(TOKENS_PER_SOLVE_HEADROOM)}x baseline ${String(baseline.outputTokensPerSolve)}`,
+    )
+  }
+  if (failures.length > 0) {
+    console.error(`bench:agent gate FAIL (model '${summary.model}'): ${failures.join('; ')}`)
+    process.exit(1)
+  }
+  console.log(`bench:agent gate OK (model '${summary.model}').`)
 }
 
 if (require.main === module) {

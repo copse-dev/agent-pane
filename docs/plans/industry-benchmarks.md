@@ -9,13 +9,22 @@ replay corpora are in the per-PR unit tier
 `tests/fixtures/tool-args-json-corpus.json` +
 `parse-tool-args.corpus.test.ts`, and
 `packages/agent/src/trim-history.needle.test.ts`). Phase 2's headless
-harness exists as `npm run bench:agent` (`scripts/bench-agent-lib.mts`)
-over `benchmarks/tasks/*.json`, with a deterministic `--mock` self-test
-and an LM Studio path; nightly wiring, the pinned SWE-bench subset, and
+harness is `npm run bench:agent` (`scripts/bench-agent-lib.mts`) over
+`benchmarks/tasks/*.json`, with a deterministic `--mock` self-test, an LM
+Studio path, git-checkout workspaces, and a `--gate` /
+`--update-baseline` trend ratchet against `benchmarks/bench-baseline.json`
+(the coverage-baseline pattern). CI runs the mock self-test + gate per PR
+inside the `bench` job; the `bench-agent-model` job runs the SWE-bench
+Verified pinned subset (`benchmarks/swe-bench/verified-subset.ids.json`
+resolved by `npm run bench:swe-tasks`, graded by applying each instance's
+held-back test patch and running its FAIL*TO_PASS pytest ids) nightly or
+via the `bench-agent` label on a runner named by the `LM_EVAL_RUNNER`
+variable. Grading fidelity caveat: the runner's Python env, not the
+official per-instance Docker images — trend data, not leaderboard claims.
 Phases 3–4 remain. This doc maps where public agent benchmarks
 (SWE-bench, Terminal-Bench, BFCL, TAU-bench, RULER-style long-context
 suites, MCP conformance suites) plug into the harness we already have,
-and what each one buys the _plumbing_ specifically.
+and what each one buys the \_plumbing* specifically.
 
 ## The framing: benchmarks as harness evals, not model evals
 
