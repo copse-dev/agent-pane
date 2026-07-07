@@ -218,19 +218,23 @@ export function trimMessagesInPlace(
 
   repairToolUseToolResultPairing(messages)
 
-  // Precompute per-message estimates once and track the running total, so each
-  // trim step subtracts the dropped message(s) instead of re-stringifying the
-  // whole conversation every iteration (#583). When a provider-measured input
-  // size is available it is used verbatim and stays fixed across drops, exactly
-  // as effectiveConversationTokens would return it. `estimates` stays index-aligned
-  // with `messages`; the system prompt is never a drop target.
+  // Precompute per-message estimates once and track a running total, so each trim
+  // step subtracts the dropped message(s) instead of re-stringifying the whole
+  // conversation every iteration (#583). The running total must shrink as we drop
+  // even when a provider-measured input size is available (#52): the measured value
+  // is a fixed snapshot of the previous request and never shrinks on its own, so
+  // seeding `currentTokens` from it and then not decrementing would collapse the
+  // whole history down to `minTail` on the first pass once measured tokens cross the
+  // budget. Seed from the measured size when present (more accurate than the
+  // estimate), otherwise from the estimated total, then decrement by our per-message
+  // estimates on every drop. `estimates` stays index-aligned with `messages`; the
+  // system prompt is never a drop target.
   const measured = getLastMeasuredInputTokens()
-  let estimates: number[] | null = null
+  const estimates = messages.map(conversationMessageEstimate)
   let currentTokens: number
   if (measured != null) {
     currentTokens = measured
   } else {
-    estimates = messages.map(conversationMessageEstimate)
     const start = contentStartIndex(messages)
     let total = CONVERSATION_ENVELOPE_TOKENS
     for (let i = start; i < estimates.length; i++) total += estimates[i] ?? 0
@@ -241,10 +245,8 @@ export function trimMessagesInPlace(
     const dropIndex = findOldestDroppableIndex(messages, minTail)
     if (dropIndex < 0) break
     const span = droppableSpan(messages, dropIndex)
-    if (estimates != null) {
-      for (let i = dropIndex; i < dropIndex + span; i++) currentTokens -= estimates[i] ?? 0
-      estimates.splice(dropIndex, span)
-    }
+    for (let i = dropIndex; i < dropIndex + span; i++) currentTokens -= estimates[i] ?? 0
+    estimates.splice(dropIndex, span)
     messages.splice(dropIndex, span)
     trimmed = true
   }

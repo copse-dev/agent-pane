@@ -1,0 +1,55 @@
+{
+  "$comment": "Streamed tool-argument JSON conformance corpus (#752). Each case replays an accumulated argument payload through parseToolArgs; malformed payloads must surface an error (never silently degrade to empty args, #114). Enforced by packages/llm/src/parse-tool-args.corpus.test.ts.",
+  "cases": [
+    {
+      "id": "empty-string-is-no-arg-call",
+      "rawJson": "",
+      "expect": { "args": {} }
+    },
+    {
+      "id": "whitespace-only-is-no-arg-call",
+      "rawJson": " \n\t ",
+      "expect": { "args": {} }
+    },
+    {
+      "id": "null-payload-is-no-arg-call",
+      "rawJson": null,
+      "expect": { "args": {} }
+    },
+    {
+      "id": "valid-object",
+      "rawJson": "{\"path\": \"src/a.ts\", \"line\": 3}",
+      "expect": { "args": { "path": "src/a.ts", "line": 3 } }
+    },
+    {
+      "id": "valid-nested-object",
+      "rawJson": "{\"edit\": {\"old\": \"a\", \"new\": \"b\"}, \"paths\": [\"x.ts\", \"y.ts\"]}",
+      "expect": { "args": { "edit": { "old": "a", "new": "b" }, "paths": ["x.ts", "y.ts"] } }
+    },
+    {
+      "id": "truncated-mid-string",
+      "rawJson": "{\"command\": \"ls -la",
+      "expect": { "errorIncludes": "Could not parse tool arguments" }
+    },
+    {
+      "id": "single-quoted-not-json",
+      "rawJson": "{'path': 'a.ts'}",
+      "expect": { "errorIncludes": "Could not parse tool arguments" }
+    },
+    {
+      "id": "trailing-comma-not-json",
+      "rawJson": "{\"a\": 1,}",
+      "expect": { "errorIncludes": "Could not parse tool arguments" }
+    },
+    {
+      "id": "python-constant-not-json",
+      "rawJson": "{\"flag\": True}",
+      "expect": { "errorIncludes": "Could not parse tool arguments" }
+    },
+    {
+      "id": "double-encoded-json-parses-to-string",
+      "rawJson": "\"{\\\"a\\\":1}\"",
+      "expect": { "args": "{\"a\":1}" }
+    }
+  ]
+}

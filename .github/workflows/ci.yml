@@ -285,6 +285,47 @@ jobs:
           name: bench-semantic
           path: bench-semantic.json
           if-no-files-found: ignore
+      # Agent bench harness self-test (#752): the deterministic mock run drives
+      # run-agent-loop headlessly end-to-end (directive tool call → workspace
+      # write → grading) and the --gate ratchet compares solve rate and
+      # tokens-per-solve against benchmarks/bench-baseline.json. No model, ~30s.
+      - run: npm run bench:agent -- --mock --gate
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-agent-mock
+          path: bench-results/
+          if-no-files-found: ignore
+
+  # Real-model agent benchmark (#752): the SWE-bench Verified pinned subset
+  # driven by a local model on a self-hosted runner with an LM Studio host.
+  # Runs nightly (schedule) or on demand via the `bench-agent` PR label, and
+  # only when the LM_EVAL_RUNNER repo variable names a runner. Deliberately
+  # OUT of the ci-passed critical path (docs/testing-strategy.md): slow,
+  # non-deterministic trend data, not a merge gate.
+  bench-agent-model:
+    needs: precheck
+    if: >-
+      vars.LM_EVAL_RUNNER != '' &&
+      (github.event_name == 'schedule' ||
+       contains(github.event.pull_request.labels.*.name, 'bench-agent'))
+    runs-on: ${{ vars.LM_EVAL_RUNNER }}
+    steps:
+      - uses: actions/checkout@v6.0.3
+      - uses: ./.github/actions/setup
+      # Resolve the pinned instance ids into task files (network required).
+      - run: npm run bench:swe-tasks
+      - env:
+          LM_STUDIO_URL: ${{ vars.LM_STUDIO_URL }}
+          LM_STUDIO_MODEL: ${{ vars.LM_STUDIO_MODEL }}
+          LM_STUDIO_API_KEY: ${{ secrets.LM_STUDIO_API_KEY }}
+        run: npm run bench:agent -- --tasks benchmarks/tasks/swe-bench --gate
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-agent-model
+          path: bench-results/
+          if-no-files-found: ignore
 
   build:
     needs: precheck
