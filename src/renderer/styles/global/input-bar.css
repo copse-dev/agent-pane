@@ -179,6 +179,14 @@
   color: var(--text-muted);
   white-space: nowrap;
 }
+.footer-indexing {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.footer-indexing[data-state='error'] {
+  color: var(--danger);
+}
 .message-queued-badge {
   display: inline-block;
   margin-bottom: var(--spacing-xs);

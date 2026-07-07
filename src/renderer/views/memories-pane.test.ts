@@ -213,4 +213,29 @@ describe('memories pane', () => {
       unmount()
     }
   })
+
+  it('does not discard an in-progress edit on a background refresh', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'memories' })
+    const { api } = makeApi([makeNote('a', 'Title', 'Old body')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountMemoriesPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.memories-row')?.click()
+      const body = viewer.querySelector<HTMLTextAreaElement>('.memories-body-input')
+      assert.ok(body)
+      // User is mid-edit...
+      body.value = 'Half-typed new body'
+      // ...when a background store event fires (e.g. the staged-diff queue drains).
+      store.emit('files_pane_changed')
+      await flush()
+      // The draft must survive rather than being overwritten with the stored note.
+      assert.equal(
+        viewer.querySelector<HTMLTextAreaElement>('.memories-body-input')?.value,
+        'Half-typed new body',
+      )
+    } finally {
+      unmount()
+    }
+  })
 })

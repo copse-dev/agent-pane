@@ -142,6 +142,8 @@ async function fetchJson(
     const res = await fetch(url, {
       signal: AbortSignal.timeout(FETCH_TIMEOUTS.modelList),
       headers: { Authorization: `Bearer ${apiKey}` },
+      // Never forward the Authorization header to a redirect target.
+      redirect: 'manual',
     })
     if (!res.ok) {
       return { ok: false, status: res.status, statusText: res.statusText }

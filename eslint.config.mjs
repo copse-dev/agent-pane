@@ -57,7 +57,12 @@ export default ts.config(
     },
   },
   {
-    files: ['src/**/*.test.ts', 'tests/**/*.ts'],
+    files: [
+      'src/**/*.test.ts',
+      'packages/*/src/**/*.test.ts',
+      'scripts/**/*.test.ts',
+      'tests/**/*.ts',
+    ],
     rules: {
       '@typescript-eslint/no-floating-promises': 'off',
       // Test doubles must stay `async` to match the real async interfaces they

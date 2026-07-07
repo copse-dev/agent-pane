@@ -5,7 +5,7 @@
 // preset without bespoke per-server logic.
 
 import type { ApiClient } from '../../../preload/api.d.ts'
-import { BUILTIN_EXTRA_PROVIDERS } from '@shared/llm/extra-providers.ts'
+import { BUILTIN_EXTRA_PROVIDERS } from '@copse/llm/extra-providers.ts'
 import { DEFAULT_LM_STUDIO_URL } from '@shared/lm-studio-defaults.ts'
 
 export interface LocalServerTarget {

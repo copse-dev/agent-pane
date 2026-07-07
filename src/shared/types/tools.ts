@@ -1,26 +1,13 @@
 import type { z } from 'zod'
 
-/** Per-file line add/delete counts for write_file / str_replace tool cards. */
-export interface ToolEditStats {
-  additions: number
-  deletions: number
-}
-
-export type ToolExecuteResult = string | { result: string; editStats?: ToolEditStats }
-
-export function normalizeToolExecuteResult(value: ToolExecuteResult): {
-  result: string
-  editStats?: ToolEditStats
-} {
-  if (typeof value === 'string') return { result: value }
-  return value
-}
-
-export interface LLMTool {
-  name: string
-  description: string
-  parameters: Record<string, unknown> // JSON Schema object
-}
+// The tool-execution result contract is owned by the agent module (it is what
+// a tool hands back to the loop); `LLMTool` is owned by the LLM module (it
+// crosses the provider contract). Re-exported here so `@shared/types`
+// consumers are unchanged.
+import type { ToolExecuteResult } from '@copse/agent/wire-types.ts'
+export type { ToolEditStats, ToolExecuteResult } from '@copse/agent/wire-types.ts'
+export { normalizeToolExecuteResult } from '@copse/agent/wire-types.ts'
+export type { LLMTool } from '@copse/llm/wire-types.ts'
 
 export interface ToolDefinition<TArgs = unknown> {
   name: string

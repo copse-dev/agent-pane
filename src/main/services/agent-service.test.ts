@@ -4,7 +4,7 @@ import * as agentService from './agent-service.ts'
 import * as providerSelection from './providers/provider-selection.ts'
 import { suggestThreadTitle } from './title-generator.ts'
 import { setSetting } from './storage/settings.ts'
-import type { AgentHost } from '@shared/agent/agent-host.ts'
+import type { AgentHost } from '@copse/agent/agent-host.ts'
 import type { StreamChunk } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 
@@ -34,7 +34,7 @@ describe('agent-service public surface', () => {
 })
 
 // Phase 1 of ACP support decouples the agent core from Electron: runAgent streams
-// its output through an injected AgentHost rather than a BrowserWindow. This proves
+// its output through an injected AgentHost<StreamChunk> rather than a BrowserWindow. This proves
 // a full turn can be driven with a mock host and no Electron present.
 describe('runAgent AgentHost decoupling', () => {
   it('streams a fallback notice when a remote agent is selected without a valid key', async () => {
@@ -43,7 +43,7 @@ describe('runAgent AgentHost decoupling', () => {
     await setSetting('model', 'remote-agent:cursor')
 
     const received: Array<{ threadId: string; chunk: StreamChunk }> = []
-    const host: AgentHost = {
+    const host: AgentHost<StreamChunk> = {
       emit: (threadId, chunk) => received.push({ threadId, chunk }),
     }
     const registry = { toLLMTools: () => [] } as unknown as ToolRegistry

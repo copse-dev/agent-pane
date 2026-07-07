@@ -6,7 +6,7 @@ import {
   isBrowserWebContents,
 } from './windows/browser-web-contents.ts'
 import { applyAppIcon } from './app-icon.ts'
-import type { LLMMessage } from '@shared/types'
+import type { LLMMessage, StreamChunk } from '@shared/types'
 import { createMainWindow } from './windows/create-main-window.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
 import { initAutoUpdate } from './services/auto-update.ts'
@@ -27,8 +27,8 @@ import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-wat
 import { initTerminal } from './ipc/terminal.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
 import { initSkillsRegistry } from './services/skills/skills-registry.ts'
-import { parseAgentRunPayload } from '@shared/agent/parse-agent-run-payload.ts'
-import type { AgentHost } from '@shared/agent/agent-host.ts'
+import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
+import type { AgentHost } from '@copse/agent/agent-host.ts'
 import {
   runAgent,
   abortAgent,
@@ -130,7 +130,7 @@ app
     // The only Electron-specific seam the agent run needs: forward stream chunks
     // to the renderer. Injecting it as an AgentHost keeps runAgent free of BrowserWindow.
     // Guard against a window destroyed mid-run (e.g. closed while the agent streams).
-    const agentHost: AgentHost = {
+    const agentHost: AgentHost<StreamChunk> = {
       emit: (threadId, chunk) => {
         if (!win.isDestroyed()) win.webContents.send('agent:chunk', threadId, chunk)
       },

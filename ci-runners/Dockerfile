@@ -73,10 +73,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # 2) Node.js (NodeSource) — the 22.x line that mirrors CI's setup-node; Ubuntu's
 #    archive Node is too old for this repo's >=22.18 engine + .mts scripts.
-RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && rm -rf /var/lib/apt/lists/* \
-    && node --version && npm --version
+#    Install via the signed NodeSource apt repo (GPG keyring + apt source) rather
+#    than piping `setup_${NODE_MAJOR}.x` to bash as root: apt then verifies every
+#    package against the pinned key, and no remote script executes as root.
+RUN set -eux; \
+    mkdir -p /etc/apt/keyrings; \
+    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+      | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg; \
+    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_${NODE_MAJOR}.x nodistro main" \
+      > /etc/apt/sources.list.d/nodesource.list; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends nodejs; \
+    rm -rf /var/lib/apt/lists/*; \
+    node --version; npm --version
 
 # 3) Non-root user. The runner agent refuses to run as root without
 #    RUNNER_ALLOW_RUNASROOT; a normal user is the supported path.

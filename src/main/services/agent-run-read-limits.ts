@@ -3,7 +3,7 @@ import {
   readFileLimitsFromConversationBudget,
   READ_FILE_LIMITS_CEILING,
   type ReadFileLimits,
-} from '@shared/agent/read-file-limits.ts'
+} from '@copse/agent/read-file-limits.ts'
 
 const store = new AsyncLocalStorage<ReadFileLimits>()
 
