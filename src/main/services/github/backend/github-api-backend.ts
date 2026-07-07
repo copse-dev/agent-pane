@@ -1,6 +1,8 @@
 import { getGithubRepoSlug } from '../git-service.ts'
+import { isFailingConclusion } from '../gh-service.ts'
 import { detectLanguage } from '../../language.ts'
 import { deriveOverallState, rollupToCiChecks } from '../github-ci-service.ts'
+import { safeJsonParse } from '@shared/safe-json.ts'
 import type {
   GhCliStatus,
   GhPrChangedFile,
@@ -33,15 +35,12 @@ interface RestResponse {
   errorMessage: string | null
 }
 
-class MissingTokenError extends Error {
-  constructor() {
-    super('No GitHub token available. Set GITHUB_TOKEN or run `gh auth login`.')
-  }
-}
+const NO_TOKEN_MESSAGE = 'No GitHub token available. Set GITHUB_TOKEN or run `gh auth login`.'
 
-async function authHeaders(): Promise<Record<string, string>> {
+/** Auth headers, or null when no token is available (callers degrade, never throw). */
+async function authHeaders(): Promise<Record<string, string> | null> {
   const token = await resolveGitHubApiToken()
-  if (!token) throw new MissingTokenError()
+  if (!token) return null
   return {
     Authorization: `Bearer ${token}`,
     Accept: 'application/vnd.github+json',
@@ -63,28 +62,19 @@ async function rest(
   init: { method?: string; body?: unknown } = {},
 ): Promise<RestResponse> {
   const headers = await authHeaders()
+  if (!headers) return { ok: false, status: 401, json: null, errorMessage: NO_TOKEN_MESSAGE }
+  if (init.body !== undefined) headers['Content-Type'] = 'application/json'
   const url = path.startsWith('http') ? path : `${apiRoots().rest}${path}`
   const requestInit: RequestInit = { method: init.method ?? 'GET', headers }
-  if (init.body !== undefined) {
-    requestInit.body = JSON.stringify(init.body)
-    headers['Content-Type'] = 'application/json'
-  }
+  if (init.body !== undefined) requestInit.body = JSON.stringify(init.body)
   const response = await fetch(url, requestInit)
   const text = await response.text()
-  const json: unknown = text ? safeParse(text) : null
+  const json: unknown = text ? safeJsonParse(text) : null
   return {
     ok: response.ok,
     status: response.status,
     json,
     errorMessage: response.ok ? null : extractErrorMessage(response.status, json),
-  }
-}
-
-function safeParse(text: string): unknown {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return null
   }
 }
 
@@ -95,13 +85,14 @@ interface GraphqlResult {
 
 async function graphql(query: string, variables: Record<string, unknown>): Promise<GraphqlResult> {
   const headers = await authHeaders()
+  if (!headers) return { data: null, errorMessage: NO_TOKEN_MESSAGE }
   headers['Content-Type'] = 'application/json'
   const response = await fetch(apiRoots().graphql, {
     method: 'POST',
     headers,
     body: JSON.stringify({ query, variables }),
   })
-  const json = safeParse(await response.text())
+  const json = safeJsonParse(await response.text())
   const errors =
     json && typeof json === 'object' && 'errors' in json
       ? (json as { errors?: Array<{ message?: string }> }).errors
@@ -182,6 +173,18 @@ async function getPull(ref: PrRef): Promise<RestResponse> {
   return rest(`/repos/${ref.owner}/${ref.repo}/pulls/${String(ref.number)}`)
 }
 
+/** PR review decision (APPROVED / CHANGES_REQUESTED / REVIEW_REQUIRED), GraphQL-only; null on any error. */
+async function fetchReviewDecision(ref: PrRef): Promise<string | null> {
+  const result = await graphql(
+    'query($owner: String!, $repo: String!, $number: Int!) { repository(owner: $owner, name: $repo) { pullRequest(number: $number) { reviewDecision } } }',
+    { owner: ref.owner, repo: ref.repo, number: ref.number },
+  )
+  if (result.errorMessage || !result.data || typeof result.data !== 'object') return null
+  const decision = (result.data as { repository?: { pullRequest?: { reviewDecision?: unknown } } })
+    .repository?.pullRequest?.reviewDecision
+  return typeof decision === 'string' ? decision : null
+}
+
 async function listPullFiles(ref: PrRef): Promise<GhPrChangedFile[]> {
   const result = await rest(
     `/repos/${ref.owner}/${ref.repo}/pulls/${String(ref.number)}/files?per_page=100`,
@@ -248,12 +251,10 @@ export const githubApiBackend: GitHubBackend = {
   async getStatus(): Promise<GhCliStatus> {
     const token = await resolveGitHubApiToken()
     if (!token) {
-      return {
-        installed: false,
-        authenticated: false,
-        username: null,
-        message: 'No GitHub token available. Set GITHUB_TOKEN or run `gh auth login`.',
-      }
+      // installed:true — the API backend is "present"; it just needs a token.
+      // Reporting installed:false would send the renderer down the misleading
+      // "install GitHub CLI" path for a user who explicitly chose this backend.
+      return { installed: true, authenticated: false, username: null, message: NO_TOKEN_MESSAGE }
     }
     const me = await rest('/user')
     if (!me.ok) {
@@ -309,12 +310,19 @@ export const githubApiBackend: GitHubBackend = {
   },
 
   async getPrDetails(ref: PrRef): Promise<GhPrDetails | null> {
-    const result = await getPull(ref)
+    // The pull, its files, and its review decision are independent — fetch
+    // concurrently rather than serially. reviewDecision is GraphQL-only (the
+    // REST pulls payload omits it) and best-effort: a failure just drops the
+    // Approved badge, it never fails the details load.
+    const [result, files, reviewDecision] = await Promise.all([
+      getPull(ref),
+      listPullFiles(ref),
+      fetchReviewDecision(ref),
+    ])
     if (result.status === 404) return null
     if (!result.ok) throw new Error(result.errorMessage ?? 'Could not load pull request.')
     const pull = result.json as RestPull
     if (!pull.html_url) return null
-    const files = await listPullFiles(ref)
     const details: GhPrDetails = {
       owner: ref.owner,
       repo: ref.repo,
@@ -338,6 +346,7 @@ export const githubApiBackend: GitHubBackend = {
     if (pull.updated_at) details.updatedAt = pull.updated_at
     if (typeof pull.draft === 'boolean') details.isDraft = pull.draft
     if (pull.auto_merge) details.autoMergeEnabled = true
+    if (reviewDecision) details.reviewDecision = reviewDecision
     return details
   },
 
@@ -356,26 +365,35 @@ export const githubApiBackend: GitHubBackend = {
   },
 
   async getPrChecksState(ref: PrRef): Promise<GhPrChecksState> {
-    const pull = await getPull(ref)
-    if (!pull.ok) return 'no_checks'
-    const headSha = (pull.json as RestPull).head?.sha
-    if (!headSha) return 'no_checks'
-    const runs = await rest(
-      `/repos/${ref.owner}/${ref.repo}/commits/${headSha}/check-runs?per_page=100`,
-    )
-    if (!runs.ok) return 'no_checks'
-    const checkRuns =
-      (runs.json as { check_runs?: Array<{ name?: string; status?: string; conclusion?: string }> })
-        .check_runs ?? []
-    const rollup = checkRuns.map((run) => {
-      const item: { name?: string; status?: string; conclusion?: string } = {
-        status: (run.status ?? '').toUpperCase(),
-        conclusion: (run.conclusion ?? '').toUpperCase(),
-      }
-      if (run.name) item.name = run.name
-      return item
-    })
-    return deriveOverallState(rollupToCiChecks(rollup))
+    // Contract: this read never throws — a missing token or network error
+    // degrades to 'no_checks', matching the CLI backend and the old service.
+    try {
+      const pull = await getPull(ref)
+      if (!pull.ok) return 'no_checks'
+      const headSha = (pull.json as RestPull).head?.sha
+      if (!headSha) return 'no_checks'
+      const runs = await rest(
+        `/repos/${ref.owner}/${ref.repo}/commits/${headSha}/check-runs?per_page=100`,
+      )
+      if (!runs.ok) return 'no_checks'
+      const checkRuns =
+        (
+          runs.json as {
+            check_runs?: Array<{ name?: string; status?: string; conclusion?: string }>
+          }
+        ).check_runs ?? []
+      const rollup = checkRuns.map((run) => {
+        const item: { name?: string; status?: string; conclusion?: string } = {
+          status: (run.status ?? '').toUpperCase(),
+          conclusion: (run.conclusion ?? '').toUpperCase(),
+        }
+        if (run.name) item.name = run.name
+        return item
+      })
+      return deriveOverallState(rollupToCiChecks(rollup))
+    } catch {
+      return 'no_checks'
+    }
   },
 
   async rerunFailedRuns(ref: PrRef): Promise<PrActionResult> {
@@ -395,7 +413,7 @@ export const githubApiBackend: GitHubBackend = {
     const runs =
       (list.json as { workflow_runs?: Array<{ id?: number; conclusion?: string }> })
         .workflow_runs ?? []
-    const failed = runs.filter((run) => (run.conclusion ?? '').toLowerCase() === 'failure')
+    const failed = runs.filter((run) => isFailingConclusion(run.conclusion))
     if (failed.length === 0) {
       return {
         ok: true,

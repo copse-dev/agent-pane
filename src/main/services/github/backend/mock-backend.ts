@@ -20,7 +20,8 @@ import {
 
 /**
  * Mutable per-PR state layered on top of the (immutable) mock fixtures so the
- * lifecycle write actions have something to visibly change. Keyed by PR number.
+ * lifecycle write actions have something to visibly change. Keyed by
+ * owner/repo/number (see stateKey).
  */
 interface MockPrState {
   autoMergeEnabled: boolean
@@ -29,7 +30,13 @@ interface MockPrState {
   failedRuns: number
 }
 
-const prState = new Map<number, MockPrState>()
+const prState = new Map<string, MockPrState>()
+
+// Match the real backends: state is per owner/repo/number, not per number, so
+// same-numbered PRs in different repos don't share draft/approve/auto-merge state.
+function stateKey(ref: PrRef): string {
+  return `${ref.owner}/${ref.repo}#${String(ref.number)}`
+}
 
 /**
  * The write-action e2e opts in with `COPSE_PANEL_MOCK_GH_ACTIONS=1` so the
@@ -41,19 +48,20 @@ function actionsFixtureEnabled(): boolean {
   return process.env['COPSE_PANEL_MOCK_GH_ACTIONS'] === '1'
 }
 
-function initialState(number: number): MockPrState {
+function initialState(ref: PrRef): MockPrState {
   return {
     autoMergeEnabled: false,
-    isDraft: actionsFixtureEnabled() && number === MOCK_GH_PR_NUMBER,
-    failedRuns: number === MOCK_GH_WORKSPACE_PR_NUMBER ? 1 : 0,
+    isDraft: actionsFixtureEnabled() && ref.number === MOCK_GH_PR_NUMBER,
+    failedRuns: ref.number === MOCK_GH_WORKSPACE_PR_NUMBER ? 1 : 0,
   }
 }
 
-function ensureState(number: number): MockPrState {
-  let state = prState.get(number)
+function ensureState(ref: PrRef): MockPrState {
+  const key = stateKey(ref)
+  let state = prState.get(key)
   if (!state) {
-    state = initialState(number)
-    prState.set(number, state)
+    state = initialState(ref)
+    prState.set(key, state)
   }
   return state
 }
@@ -84,7 +92,7 @@ export const mockGitHubBackend: GitHubBackend = {
   getPrDetails(ref: PrRef): Promise<GhPrDetails | null> {
     const base = mockGetGhPrDetails(ref)
     if (!base) return Promise.resolve(null)
-    const state = ensureState(ref.number)
+    const state = ensureState(ref)
     const details: GhPrDetails = {
       ...base,
       isDraft: state.isDraft,
@@ -103,7 +111,7 @@ export const mockGitHubBackend: GitHubBackend = {
   },
 
   rerunFailedRuns(ref: PrRef): Promise<PrActionResult> {
-    const state = ensureState(ref.number)
+    const state = ensureState(ref)
     if (state.failedRuns === 0) {
       return Promise.resolve({
         ok: true,
@@ -124,7 +132,7 @@ export const mockGitHubBackend: GitHubBackend = {
   },
 
   approvePr(ref: PrRef): Promise<PrActionResult> {
-    ensureState(ref.number).reviewDecision = 'APPROVED'
+    ensureState(ref).reviewDecision = 'APPROVED'
     return Promise.resolve({
       ok: true,
       backend: 'mock',
@@ -133,7 +141,7 @@ export const mockGitHubBackend: GitHubBackend = {
   },
 
   markPrReady(ref: PrRef): Promise<PrActionResult> {
-    const state = ensureState(ref.number)
+    const state = ensureState(ref)
     if (!state.isDraft) {
       return Promise.resolve({
         ok: true,
@@ -151,7 +159,7 @@ export const mockGitHubBackend: GitHubBackend = {
   },
 
   enableAutoMerge(ref: PrRef): Promise<PrActionResult> {
-    const state = ensureState(ref.number)
+    const state = ensureState(ref)
     if (state.autoMergeEnabled) {
       return Promise.resolve({
         ok: true,

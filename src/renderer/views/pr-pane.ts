@@ -400,6 +400,34 @@ export function mountPrPane(
     renderList()
   }
 
+  function isStillSelected(ref: PrRef): boolean {
+    return (
+      selectedPr != null &&
+      selectedPr.owner === ref.owner &&
+      selectedPr.repo === ref.repo &&
+      selectedPr.number === ref.number
+    )
+  }
+
+  /**
+   * Reload a PR's details after a lifecycle action without the heavier
+   * selectPr(): keep the existing details (and therefore the action buttons and
+   * the outcome status line) if the reload fails, and bail if the user has since
+   * selected a different PR so we never render one PR's data into another's view.
+   */
+  async function refreshDetailsAfterAction(ref: PrRef): Promise<void> {
+    if (!isStillSelected(ref)) return
+    let fresh: GhPrDetails | null
+    try {
+      fresh = await api.gh.prDetails(ref.owner, ref.repo, ref.number)
+    } catch {
+      fresh = null
+    }
+    if (!isStillSelected(ref)) return
+    if (fresh) prDetails = fresh
+    renderMeta()
+  }
+
   /** A PR lifecycle action button: confirm → invoke → show outcome → refresh. */
   function actionButton(
     label: string,
@@ -415,18 +443,18 @@ export function mountPrPane(
         other.disabled = true
       }
       void (async (): Promise<void> => {
+        let outcome: { text: string; ok: boolean }
         try {
           const result = await run(ref)
-          lastActionMessage = { text: result.message, ok: result.ok }
+          outcome = { text: result.message, ok: result.ok }
         } catch (err) {
-          lastActionMessage = {
-            text: err instanceof Error ? err.message : 'Action failed',
-            ok: false,
-          }
+          outcome = { text: err instanceof Error ? err.message : 'Action failed', ok: false }
         }
-        // Re-select the same PR to reload details (badges) and re-render with the
-        // outcome message; selectPr keeps lastActionMessage for the same ref.
-        await selectPr(ref)
+        // Only surface the outcome if this PR is still the one on screen — a
+        // mid-flight switch to another PR must not show this result there.
+        if (!isStillSelected(ref)) return
+        lastActionMessage = outcome
+        await refreshDetailsAfterAction(ref)
       })()
     })
     return btn

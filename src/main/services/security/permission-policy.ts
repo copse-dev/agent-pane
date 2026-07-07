@@ -36,6 +36,21 @@ export const GITHUB_READONLY_CI_TOOLS = new Set([
   'get_ci_failure_logs',
 ])
 
+/**
+ * Mutating GitHub PR tools (rerun CI, approve, mark-ready, enable-auto-merge).
+ * Unlike the read-only sets above, these change state on github.com, so the gate
+ * MUST prompt for them — they are deliberately kept out of every auto-run set so
+ * the default-allow branch never reaches them. Names mirror the tools defined in
+ * src/main/tools/gh-pr-action-tools.ts. (issue #690 Q3 — per-repo "remember"
+ * granularity is still open, so for now every call prompts.)
+ */
+export const GITHUB_WRITE_TOOLS = new Set([
+  'gh_pr_rerun_failed_ci',
+  'gh_pr_approve',
+  'gh_pr_mark_ready',
+  'gh_pr_enable_auto_merge',
+])
+
 export interface PermissionCheck {
   toolName: string
   args: unknown

@@ -30,26 +30,28 @@ export function hasGitHubApiToken(base: NodeJS.ProcessEnv = process.env): boolea
   return githubTokenFromEnv(base) !== null
 }
 
-let cachedGhAuthToken: string | null | undefined
+let cachedGhAuthToken: string | null = null
 
 export function resetGitHubApiTokenCacheForTest(): void {
-  cachedGhAuthToken = undefined
+  cachedGhAuthToken = null
 }
 
 /**
  * Resolve a token for a live API call: prefer an env token, else fall back to
  * `gh auth token` (so a user with only `gh auth login` can still use the API
- * backend). The `gh auth token` result is cached for the process lifetime.
+ * backend). Only a *successful* `gh auth token` is cached — a transient failure
+ * (no workspace open yet, timeout, locked keychain) must not permanently lock
+ * the API backend out, so failures are retried on the next call.
  */
 export async function resolveGitHubApiToken(): Promise<string | null> {
   const envToken = githubTokenFromEnv()
   if (envToken) return envToken
-  if (cachedGhAuthToken !== undefined) return cachedGhAuthToken
+  if (cachedGhAuthToken) return cachedGhAuthToken
   try {
     const { stdout, code } = await runGh(['auth', 'token'], { timeout_ms: 10_000 })
-    cachedGhAuthToken = code === 0 && stdout.trim() ? stdout.trim() : null
+    if (code === 0 && stdout.trim()) cachedGhAuthToken = stdout.trim()
   } catch {
-    cachedGhAuthToken = null
+    // Leave the cache empty so the next call retries.
   }
   return cachedGhAuthToken
 }

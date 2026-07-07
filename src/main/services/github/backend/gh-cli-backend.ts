@@ -1,4 +1,4 @@
-import { runGh } from '../gh-service.ts'
+import { isFailingConclusion, runGh } from '../gh-service.ts'
 import { getGithubRepoSlug } from '../git-service.ts'
 import { isGhAvailable } from '../../tool-availability.ts'
 import { detectLanguage } from '../../language.ts'
@@ -42,7 +42,6 @@ interface GhPrViewJson {
   isDraft?: boolean
   reviewDecision?: string
   autoMergeRequest?: { enabledAt?: string } | null
-  repository?: { name?: string; owner?: { login?: string } }
   statusCheckRollup?: Array<{
     __typename?: string
     name?: string
@@ -70,7 +69,6 @@ interface GhApiPullFile {
 interface GhRunJson {
   databaseId?: number
   conclusion?: string
-  status?: string
 }
 
 const PR_VIEW_FIELDS = [
@@ -389,8 +387,18 @@ export const ghCliBackend: GitHubBackend = {
   },
 
   async rerunFailedRuns(ref: PrRef): Promise<PrActionResult> {
-    const details = await this.getPrDetails(ref)
-    const branch = details?.headRefName
+    // Only the head branch is needed here — a slim `gh pr view --json headRefName`
+    // avoids the full details fetch (20 fields + a possible paginated files call).
+    const view = await runGh([
+      'pr',
+      'view',
+      ...prRefToArgs(ref),
+      '--json',
+      'headRefName',
+      '-q',
+      '.headRefName',
+    ])
+    const branch = view.code === 0 ? view.stdout.trim() : ''
     if (!branch) {
       return {
         ok: false,
@@ -408,11 +416,11 @@ export const ghCliBackend: GitHubBackend = {
       '--limit',
       '25',
       '--json',
-      'databaseId,conclusion,status',
+      'databaseId,conclusion',
     ])
     if (code !== 0) return { ok: false, backend: 'cli', message: formatGhError(stderr, code) }
     const runs = safeJsonParse<GhRunJson[]>(stdout.trim()) ?? []
-    const failed = runs.filter((run) => (run.conclusion ?? '').toLowerCase() === 'failure')
+    const failed = runs.filter((run) => isFailingConclusion(run.conclusion))
     if (failed.length === 0) {
       return {
         ok: true,

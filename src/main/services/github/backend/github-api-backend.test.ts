@@ -135,6 +135,8 @@ describe('githubApiBackend', () => {
               { id: 1, conclusion: 'failure' },
               { id: 2, conclusion: 'success' },
               { id: 3, conclusion: 'failure' },
+              // timed_out counts as failing (isFailingConclusion) and must be re-run.
+              { id: 4, conclusion: 'timed_out' },
             ],
           },
         }
@@ -143,9 +145,9 @@ describe('githubApiBackend', () => {
     }
     const result = await githubApiBackend.rerunFailedRuns(REF)
     assert.equal(result.ok, true)
-    assert.equal(result.rerunCount, 2)
+    assert.equal(result.rerunCount, 3)
     const rerunCalls = calls.filter((call) => call.url.includes('/rerun-failed-jobs'))
-    assert.equal(rerunCalls.length, 2)
+    assert.equal(rerunCalls.length, 3)
     assert.ok(rerunCalls.every((call) => call.method === 'POST'))
   })
 
@@ -159,8 +161,11 @@ describe('githubApiBackend', () => {
     assert.match(result.message, /not accessible/)
   })
 
-  it('maps PR details from the REST pull payload', async () => {
+  it('maps PR details from the REST pull payload and GraphQL review decision', async () => {
     router = (_m: string, url: string): RouteResult => {
+      if (url.endsWith('/graphql')) {
+        return { body: { data: { repository: { pullRequest: { reviewDecision: 'APPROVED' } } } } }
+      }
       if (url.endsWith('/files?per_page=100')) {
         return { body: [{ filename: 'a.ts', status: 'modified', additions: 3, deletions: 1 }] }
       }
@@ -183,6 +188,13 @@ describe('githubApiBackend', () => {
     assert.equal(details.state, 'OPEN')
     assert.equal(details.isDraft, true)
     assert.equal(details.autoMergeEnabled, true)
+    assert.equal(details.reviewDecision, 'APPROVED')
     assert.equal(details.files.length, 1)
+  })
+
+  it('getPrChecksState returns no_checks instead of throwing on a network error', async () => {
+    globalThis.fetch = (): Promise<Response> => Promise.reject(new Error('network down'))
+    const state = await githubApiBackend.getPrChecksState(REF)
+    assert.equal(state, 'no_checks')
   })
 })

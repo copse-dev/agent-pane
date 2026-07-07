@@ -124,6 +124,10 @@ describe('PR panel (mock gh)', () => {
     await expect(await $('.gh-cli-status')).toHaveText(
       expect.stringMatching(/signed in as @mock-user/i),
     )
+    // The GitHub backend selector (gh CLI vs API) lives in the same fieldset.
+    const backendSelect = await $('.gh-backend-field select[name="githubBackend"]')
+    await expect(backendSelect).toBeDisplayed()
+    await expect(await backendSelect.$$('option')).toBeElementsArrayOfSize(3)
     await saveElementScreenshot('#settings-dialog', 'pr-panel-settings-gh-cli.png')
     await $('.settings-close-btn').click()
   })
