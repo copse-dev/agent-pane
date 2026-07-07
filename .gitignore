@@ -17,6 +17,7 @@ __pycache__/
 
 # Test artifacts
 test-results/
+bench-results/
 .wdio-profile-*/
 .wdio-git-fixture-*/
 tests/fixtures/git-changes-repo/.git/
