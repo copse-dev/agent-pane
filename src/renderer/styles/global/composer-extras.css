@@ -71,19 +71,24 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  max-width: 240px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 2px 8px;
   font-size: var(--font-size-sm);
 }
+/* A long label ellipsizes inside the pill instead of overflowing its border;
+   min-width lets the flex item actually shrink below its content size. */
+.attachment-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .image-chip img {
   border-radius: 2px;
   object-fit: cover;
-}
-.thread-chip {
-  max-width: 240px;
-  white-space: nowrap;
 }
 .attachment-chip button {
   display: inline-flex;

@@ -51,6 +51,23 @@ describe('modern CSS adoptions', () => {
     )
   })
 
+  it('clips attachment-chip labels inside the pill', () => {
+    const css = read('composer-extras.css')
+    assert.ok(
+      declares(css, '.attachment-chip', /max-width:/),
+      '.attachment-chip must cap its width so long labels cannot stretch the row',
+    )
+    assert.ok(
+      declares(css, '.attachment-chip-label', /overflow:\s*hidden/) &&
+        declares(css, '.attachment-chip-label', /text-overflow:\s*ellipsis/),
+      '.attachment-chip-label must ellipsize instead of overflowing the pill border',
+    )
+    assert.ok(
+      declares(css, '.attachment-chip-label', /min-width:\s*0/),
+      '.attachment-chip-label needs min-width: 0 so the flex item can shrink below its content',
+    )
+  })
+
   it('auto-sizes the composer to its content', () => {
     const css = read('input-bar.css')
     // The composer is a contenteditable (composer-editor.ts), which grows with

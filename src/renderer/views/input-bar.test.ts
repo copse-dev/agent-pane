@@ -196,6 +196,10 @@ describe('input bar browse button', () => {
 
     const chip = host.querySelector<HTMLElement>('.attachment-chips .attachment-chip')
     assert.ok(chip, 'an attachment chip is rendered for the selected file')
-    assert.match(chip.textContent, /notes\.txt/)
+    // The name renders inside the clipped label span, so a long filename
+    // ellipsizes instead of overflowing the pill.
+    const label = chip.querySelector<HTMLElement>('.attachment-chip-label')
+    assert.ok(label, 'the chip renders its name in the clipped label span')
+    assert.match(label.textContent, /notes\.txt/)
   })
 })

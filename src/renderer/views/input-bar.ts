@@ -674,7 +674,10 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     attachedFiles.push(file)
     const chip = document.createElement('span')
     chip.className = 'attachment-chip'
-    chip.textContent = file.path.split('/').pop() ?? file.path
+    const name = document.createElement('span')
+    name.className = 'attachment-chip-label'
+    name.textContent = file.path.split('/').pop() ?? file.path
+    chip.append(name)
     const remove = document.createElement('button')
     remove.textContent = '✕'
     remove.addEventListener('click', () => {
@@ -692,10 +695,10 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     attachedThreads.push(ref)
     const chip = document.createElement('span')
     chip.className = 'attachment-chip thread-chip'
-    chip.append(
-      threadIcon('thread-chip-icon'),
-      document.createTextNode(ref.title || 'Untitled thread'),
-    )
+    const title = document.createElement('span')
+    title.className = 'attachment-chip-label'
+    title.textContent = ref.title || 'Untitled thread'
+    chip.append(threadIcon('thread-chip-icon'), title)
     const remove = document.createElement('button')
     remove.textContent = '✕'
     remove.addEventListener('click', () => {
