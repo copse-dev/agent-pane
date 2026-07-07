@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { errorMessage } from '@shared/errors.ts'
 import { getWorkspaceRoot, resolveWorkspacePath, toRelativePath } from '../workspace.ts'
 import { runCommand } from '../exec/command-runner.ts'
+import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { isGitAvailable } from '../tool-availability.ts'
 import { detectLanguage } from '../language.ts'
 import { parseGithubRepoSlug } from '@shared/git/github-link-steering.ts'
@@ -214,8 +215,9 @@ function runGitBuffer(args: string[]): { stdout: Buffer; code: number } {
   const cwd = getWorkspaceRoot()
   if (!cwd) return { stdout: Buffer.alloc(0), code: 1 }
   const prepared = ['--no-pager', '-c', 'core.pager=cat', '-c', 'color.ui=false', ...args]
+  // Strip LLM/provider secrets from the env, matching runCommand (#579).
   const env: NodeJS.ProcessEnv = {
-    ...process.env,
+    ...envForRendererChildProcess(),
     GIT_OPTIONAL_LOCKS: '0',
     GIT_PAGER: 'cat',
     GIT_TERMINAL_PROMPT: '0',

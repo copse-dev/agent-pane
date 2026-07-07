@@ -47,7 +47,6 @@ export async function verifyTodoCheck(
       const r = await runCommand('npm', ['run', 'typecheck'], {
         cwd: root,
         signal,
-        useRendererEnv: true,
       })
       const expect = 0
       const passed = r.code === expect
@@ -70,7 +69,6 @@ export async function verifyTodoCheck(
         cwd: root,
         signal,
         unsandboxed,
-        useRendererEnv: true,
       })
       const expect = check.expectExit ?? 0
       const passed = r.code === expect

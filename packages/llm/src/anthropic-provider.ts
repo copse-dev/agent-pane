@@ -23,6 +23,7 @@ export class AnthropicProvider implements LLMProvider {
     const self = this
     const systemMsg = messages.find((m) => m.role === 'system')
     const apiMessages = toAnthropicMessages(messages.filter((m) => m.role !== 'system'))
+    markTrailingCacheBreakpoint(apiMessages)
     const maxTokens = anthropicMaxOutputTokens(model)
 
     return yieldStreamWithRetry(
@@ -43,10 +44,13 @@ export class AnthropicProvider implements LLMProvider {
                 }
               : {}),
             messages: apiMessages,
-            tools: tools.map((t) => ({
+            // The last tool gets a cache breakpoint so the (large, stable) tool
+            // schemas are cached instead of re-sent every loop iteration (#582).
+            tools: tools.map((t, i) => ({
               name: t.name,
               description: t.description,
               input_schema: t.parameters as Anthropic.Messages.Tool['input_schema'],
+              ...(i === tools.length - 1 ? { cache_control: { type: 'ephemeral' as const } } : {}),
             })),
           },
           { signal },
@@ -142,6 +146,31 @@ export class AnthropicProvider implements LLMProvider {
       { ...(signal ? { signal } : {}) },
     )
   }
+}
+
+/**
+ * Put a cache breakpoint on the final content block of the final message, so
+ * the whole conversation prefix is cached across agent-loop iterations instead
+ * of only the system prompt (#582). Each request's breakpoint lands one turn
+ * further along; Anthropic then matches the previous request's breakpoint as a
+ * cached prefix. String contents are converted to a single text block, which
+ * the API treats identically. With the system + last-tool breakpoints this
+ * stays within the 4-breakpoint API limit.
+ */
+export function markTrailingCacheBreakpoint(apiMessages: Anthropic.MessageParam[]): void {
+  const last = apiMessages.at(-1)
+  if (!last) return
+  if (typeof last.content === 'string') {
+    // An empty text block would be rejected by the API; leave such (already
+    // invalid) messages untouched rather than converting them.
+    if (!last.content) return
+    last.content = [{ type: 'text', text: last.content }]
+  }
+  const block = last.content.at(-1)
+  // Thinking/redacted-thinking blocks cannot carry cache_control; every block
+  // shape this provider emits (text, image, tool_use, tool_result) can.
+  if (!block || block.type === 'thinking' || block.type === 'redacted_thinking') return
+  block.cache_control = { type: 'ephemeral' }
 }
 
 function toAnthropicMessages(messages: LLMMessage[]): Anthropic.MessageParam[] {
