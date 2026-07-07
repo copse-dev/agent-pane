@@ -32,6 +32,33 @@ describe('runCommand stdoutMaxBytes', () => {
   })
 })
 
+describe('runCommand env stripping (#579)', () => {
+  it('never passes LLM/provider secrets to the child by default', async () => {
+    process.env['ANTHROPIC_API_KEY'] = 'sk-test-should-not-leak'
+    try {
+      const { stdout, code } = await runCommand(
+        process.execPath,
+        ['-e', `process.stdout.write(process.env.ANTHROPIC_API_KEY ?? 'absent')`],
+        { unsandboxed: true },
+      )
+      assert.equal(code, 0)
+      assert.equal(stdout, 'absent')
+    } finally {
+      delete process.env['ANTHROPIC_API_KEY']
+    }
+  })
+
+  it('still forwards explicit opts.env entries', async () => {
+    const { stdout, code } = await runCommand(
+      process.execPath,
+      ['-e', `process.stdout.write(process.env.EXPLICIT_VALUE ?? 'absent')`],
+      { unsandboxed: true, env: { EXPLICIT_VALUE: 'passed' } },
+    )
+    assert.equal(code, 0)
+    assert.equal(stdout, 'passed')
+  })
+})
+
 describe('runCommand git wrapper', () => {
   it('runs rev-parse without passing invalid global git flags', async () => {
     const result = await runCommand('git', ['rev-parse', '--is-inside-work-tree'], {

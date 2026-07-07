@@ -242,13 +242,17 @@ describe('AcpTurnFailure', () => {
 })
 
 describe('buildAcpPrompt', () => {
-  it('always leads with the turn-scoped session notes', () => {
+  it('always leads with the session notes', () => {
     const prompt = buildAcpPrompt('hello', [])
-    assert.match(prompt, /^Session notes: this session is turn-scoped/)
+    assert.match(prompt, /^Session notes: this session persists across turns/)
     assert.match(prompt, /hello$/)
-    // Both dogfooding pain points must be steered: doomed background subagents
-    // (#605) and context-burning find/ls sweeps.
-    assert.match(prompt, /background or async subagents\s+will NOT survive/i)
+    // Post-#621 the note must NOT scare the agent off background subagents —
+    // sessions are pooled per thread and background work survives the turn
+    // (#588); the real constraints are the idle reap and app shutdown. The
+    // context-burning find/ls steer stays.
+    assert.match(prompt, /background or async\s+subagents survive/i)
+    assert.doesNotMatch(prompt, /will NOT survive/i)
+    assert.match(prompt, /reaped after ~10 idle minutes/)
     assert.match(prompt, /targeted searches/)
   })
 

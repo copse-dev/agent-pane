@@ -11,7 +11,7 @@
  */
 
 const FILE_REFERENCE_RE =
-  /(^|[^A-Za-z0-9_./-])((?:\.\/)?(?:[A-Za-z0-9_@+$.-]+\/)+[A-Za-z0-9_@+$.-]+|[A-Za-z0-9_@+$-]+\.[A-Za-z0-9][A-Za-z0-9.-]{0,15}|Dockerfile|Makefile)(?::(\d+)(?::(\d+))?)?(?=$|[^A-Za-z0-9_./-])/g
+  /(^|[^A-Za-z0-9_./-])((?:\.\/)?(?:[A-Za-z0-9_@+$.-]+\/)+[A-Za-z0-9_@+$.-]*|\.[A-Za-z0-9_@+$-][A-Za-z0-9_@+$.-]{0,30}|[A-Za-z0-9_@+$-]+\.[A-Za-z0-9][A-Za-z0-9.-]{0,15}|Dockerfile|Makefile)(?::(\d+)(?::(\d+))?)?(?=$|[^A-Za-z0-9_./-])/g
 
 const TRAILING_PROSE_PUNCTUATION_RE = /[.,;:!?]+$/
 
@@ -62,7 +62,12 @@ export function fileReferenceMatches(text: string): FileReferenceMatch[] {
 
     const trimmed = path.replace(TRAILING_PROSE_PUNCTUATION_RE, '')
     if (trimmed === '') continue
-    matches.push({ candidate: trimmed, text: trimmed, start, end: start + trimmed.length })
+    // Directories print with a trailing slash (`git status` untracked dirs,
+    // `ls -F`, tab completion). Keep the slash in the displayed text but strip
+    // it from the candidate — the resolver rejects empty path segments (#506).
+    const candidate = trimmed.replace(/\/+$/, '')
+    if (candidate === '') continue
+    matches.push({ candidate, text: trimmed, start, end: start + trimmed.length })
   }
   return matches
 }
