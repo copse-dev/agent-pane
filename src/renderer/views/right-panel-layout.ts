@@ -10,29 +10,34 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     const isTerminal = mode === 'terminal'
     const isChanges = mode === 'changes'
     const isPrs = mode === 'prs'
+    const isMemories = mode === 'memories'
     const isBrowser = mode === 'browser'
 
     const treeHost = document.getElementById('file-tree-host')
     const terminalsList = document.getElementById('terminals-list-host')
     const gitChangesHost = document.getElementById('git-changes-host')
     const prListHost = document.getElementById('pr-list-host')
+    const memoriesHost = document.getElementById('memories-host')
     const browserTabsHost = document.getElementById('browser-tabs-host')
     const treeResizer = document.getElementById('resizer-tree')
     const fileViewer = document.getElementById('file-viewer')
     const terminalsViewer = document.getElementById('terminals-viewer-host')
     const gitDiffViewer = document.getElementById('git-diff-viewer-host')
     const prViewer = document.getElementById('pr-viewer-host')
+    const memoriesViewer = document.getElementById('memories-viewer-host')
     const browserViewer = document.getElementById('browser-viewer-host')
 
     if (treeHost) treeHost.hidden = !isExplorer
     if (terminalsList) terminalsList.hidden = !isTerminal
     if (gitChangesHost) gitChangesHost.hidden = !isChanges
     if (prListHost) prListHost.hidden = !isPrs
+    if (memoriesHost) memoriesHost.hidden = !isMemories
     if (browserTabsHost) browserTabsHost.hidden = !isBrowser
     if (fileViewer) fileViewer.hidden = !isExplorer
     if (terminalsViewer) terminalsViewer.hidden = !isTerminal
     if (gitDiffViewer) gitDiffViewer.hidden = !isChanges
     if (prViewer) prViewer.hidden = !isPrs
+    if (memoriesViewer) memoriesViewer.hidden = !isMemories
     if (browserViewer) browserViewer.hidden = !isBrowser
     if (treeResizer) treeResizer.hidden = !store.getState().filesPaneOpen
   }

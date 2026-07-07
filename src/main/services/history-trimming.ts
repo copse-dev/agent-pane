@@ -5,7 +5,7 @@ import {
   estimateMessageTokens,
   estimateConversationTokens,
   conversationTokenBudget,
-} from '@shared/agent/trim-history.ts'
+} from '@copse/agent/trim-history.ts'
 
 export interface PreparedAgentHistory {
   trimmed: LLMMessage[]

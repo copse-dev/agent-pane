@@ -24,15 +24,7 @@ export interface SkillReadResult {
   relativePath: string
 }
 
-import type { UserContent } from './llm.ts'
-import type { TodoItem } from './todo.ts'
-
-export interface AgentRunPayload {
-  content: UserContent
-  invokedSkills?: string[]
-  priorTodos?: TodoItem[]
-  /** Thread working brief captured in renderer store before the run. */
-  workingBrief?: string
-  /** Per-thread model override; absent means "use the global default setting". */
-  model?: string
-}
+// The run payload is owned by the agent module (`parseAgentRunPayload` parses
+// it back — the loop's run input); re-exported here so `@shared/types`
+// consumers are unchanged.
+export type { AgentRunPayload } from '@copse/agent/wire-types.ts'

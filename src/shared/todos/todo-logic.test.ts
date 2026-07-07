@@ -3,7 +3,6 @@ import assert from 'node:assert/strict'
 import {
   applyTodoUpdate,
   gateCompletedStatus,
-  hasOpenTodos,
   shouldRouteToLocal,
   shouldSteerTodos,
   todoProgress,
@@ -53,12 +52,6 @@ describe('todo-logic', () => {
   it('gateCompletedStatus allows completed without check', () => {
     const item: TodoItem = { id: '1', content: 'Think', status: 'completed' }
     assert.equal(gateCompletedStatus(item, null).status, 'completed')
-  })
-
-  it('hasOpenTodos detects pending and in_progress', () => {
-    assert.equal(hasOpenTodos([{ id: '1', content: 'x', status: 'completed' }]), false)
-    assert.equal(hasOpenTodos([{ id: '1', content: 'x', status: 'pending' }]), true)
-    assert.equal(hasOpenTodos([{ id: '1', content: 'x', status: 'in_progress' }]), true)
   })
 
   it('todoProgress ignores cancelled items in total', () => {

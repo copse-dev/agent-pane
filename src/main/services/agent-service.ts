@@ -1,17 +1,18 @@
 import { errorMessage } from '@shared/errors.ts'
-import { runAgentLoop } from '@shared/agent/run-agent-loop.ts'
-import type { AgentHost } from '@shared/agent/agent-host.ts'
+import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
+import type { AgentHost } from '@copse/agent/agent-host.ts'
 import {
   createAgentRunAbortScheduler,
   DEFAULT_MAX_LLM_CALLS,
-} from '@shared/agent/agent-loop-limits.ts'
+} from '@copse/agent/agent-loop-limits.ts'
 import type { LLMMessage, LLMTool, StreamChunk, UserContent } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { getSetting } from './storage/settings.ts'
+import { resetSessionBackup } from './worktree-backup.ts'
 import { resolveContextWindow } from './providers/resolve-context-window.ts'
 import { classifyAgentError } from './agent-errors.ts'
-import { resolveParentGoal } from '@shared/agent/working-brief.ts'
+import { resolveParentGoal } from '@copse/agent/working-brief.ts'
 import { buildSystemPrompt } from './agent-system-prompt.ts'
 import { hasLastUsage } from './providers/provider-usage.ts'
 import { clearActiveRunThread, recordThreadModel, setActiveRunThread } from './thread-models.ts'
@@ -25,7 +26,7 @@ import {
   isLocalChatModel,
 } from './providers/provider-selection.ts'
 import { runPostTurnReview } from './review-subagent-runner.ts'
-import { isEditTool } from '@shared/agent/review-subagent.ts'
+import { isEditTool } from '@copse/agent/review-subagent.ts'
 import {
   prepareAgentHistory,
   contextTrimmedChunk,
@@ -42,11 +43,16 @@ import {
 import { runWithAgentRunReadonly } from './agent-run-readonly.ts'
 import { isToolAllowedInReadonlyMode } from '@shared/tools/readonly-tools.ts'
 import { getMcpToolMeta } from './mcp/mcp-registry.ts'
-import { formatReadFileLimitHint } from '@shared/agent/read-file-limits.ts'
-import { setExploreSubagentContext } from './explore-subagent-runner.ts'
+import { formatReadFileLimitHint } from '@copse/agent/read-file-limits.ts'
+import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
 import { setCiInvestigatorContext } from './ci-investigator-runner.ts'
 import { setAdvisorContext, resolveAdvisorModelId } from './advisor-runner.ts'
+import {
+  runModelComparison,
+  setModelComparisonContext,
+  isAutoComparisonEnabled,
+} from './model-comparison-runner.ts'
 import { resetSubagentUsage, getAccumulatedSubagentUsage } from './subagent-usage.ts'
 import { setAgentRunTodoContext, clearAgentRunTodos, getAgentRunTodos } from './agent-run-todos.ts'
 import {
@@ -143,7 +149,7 @@ export async function runAgent(
   threadId: string,
   userPrompt: UserContent,
   priorMessages: LLMMessage[],
-  host: AgentHost,
+  host: AgentHost<StreamChunk>,
   registry: ToolRegistry,
   options?: {
     invokedSkills?: string[]
@@ -152,6 +158,10 @@ export async function runAgent(
     model?: string
   },
 ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> {
+  // A new turn: drop last turn's restore point so the next dirty-worktree edit
+  // snapshots the user's current uncommitted work before applying over it.
+  resetSessionBackup()
+
   const requestedModel = options?.model ?? getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
   const resolved = await resolveAgentChatModel(requestedModel)
   const model = resolved.model
@@ -188,6 +198,7 @@ export async function runAgent(
         signal: controller.signal,
         onChunk: sendChunk,
         registry,
+        ...(options?.invokedSkills?.length ? { invokedSkills: options.invokedSkills } : {}),
         ...(acpSelection?.model ? { model: acpSelection.model } : {}),
       })
       sendChunk({ type: 'done', stopReason: result.stopReason })
@@ -300,6 +311,9 @@ export async function runAgent(
 
     // Set when the turn runs any file-mutating tool, gating the post-turn review.
     let turnChangedFiles = false
+    // Set when the agent already ran a comparison via the `compare_models` tool
+    // this turn, so the auto-on-review trigger doesn't run a second (billable) one.
+    let comparisonRanThisTurn = false
     // The agent loop's terminal `done` chunk is held back until the post-turn
     // review finishes, so the thread doesn't flip to idle (and drain its queued
     // messages) while the review is still running.
@@ -471,22 +485,22 @@ export async function runAgent(
           executeTool: async (name, args, signal, toolCallId) => {
             if (isEditTool(name)) turnChangedFiles = true
             if (name === 'explore' && subagentsEnabled) {
-              setExploreSubagentContext({
-                parentToolCallId: toolCallId,
-                parentGoal,
-                provider: subagentRoute?.provider ?? provider,
-                registry,
-                contextWindow: subagentRoute?.contextWindow ?? contextWindow,
-                toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
-                onChunk: sendChunk,
-                usageModel: subagentUsageModel,
-                localFallback: subagentLocalFallback,
-              })
-              try {
-                return await registry.execute(name, args, signal)
-              } finally {
-                setExploreSubagentContext(null)
-              }
+              // ALS-scoped (not a global slot): the loop runs fanned-out
+              // explore calls concurrently, each with its own context.
+              return runWithExploreSubagentContext(
+                {
+                  parentToolCallId: toolCallId,
+                  parentGoal,
+                  provider: subagentRoute?.provider ?? provider,
+                  registry,
+                  contextWindow: subagentRoute?.contextWindow ?? contextWindow,
+                  toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
+                  onChunk: sendChunk,
+                  usageModel: subagentUsageModel,
+                  localFallback: subagentLocalFallback,
+                },
+                () => registry.execute(name, args, signal),
+              )
             }
             if (name === 'investigate_ci' && subagentsEnabled) {
               setCiInvestigatorContext({
@@ -519,6 +533,23 @@ export async function runAgent(
                 return await registry.executeNormalized(name, args, signal)
               } finally {
                 setAdvisorContext(null)
+              }
+            }
+            if (name === 'compare_models') {
+              // Manual trigger: run the two-model diff comparison on demand, with
+              // the live parent goal/registry so the reviewers see the same diff.
+              comparisonRanThisTurn = true
+              setModelComparisonContext({
+                threadId,
+                parentGoal,
+                registry,
+                chatModel: model,
+                onChunk: sendChunk,
+              })
+              try {
+                return await registry.executeNormalized(name, args, signal)
+              } finally {
+                setModelComparisonContext(null)
               }
             }
             if (name === 'run_shell') {
@@ -606,6 +637,17 @@ export async function runAgent(
         const detail = controller.signal.aborted ? 'Review cancelled.' : classifyAgentError(err)
         sendChunk({ type: 'post_turn_review', status: 'error', summary: detail })
       }
+    }
+
+    // Auto model comparison: when this turn changed files and the harness is set
+    // to run on review, compare two models on the working diff (gated by a spend
+    // approval for billable models). Usage is folded in via the emitted chunks.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated inside the runAgentLoop callback above; TS narrows to the `false` initializer
+    if (turnChangedFiles && !comparisonRanThisTurn && isAutoComparisonEnabled()) {
+      await runModelComparison(
+        { threadId, parentGoal, registry, chatModel: model, onChunk: sendChunk },
+        controller.signal,
+      )
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- assigned inside the onChunk callback above; TS narrows to the `null` initializer

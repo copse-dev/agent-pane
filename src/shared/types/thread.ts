@@ -1,6 +1,24 @@
 import type { AgentRunPayload } from './skills.ts'
 import type { TodoItem } from './todo.ts'
 import type { RemoteAgentLink } from '../remote-agent-link.ts'
+// Token-usage types are owned by the LLM module (a provider reports usage across
+// the contract). Imported for use by the thread types below and re-exported so
+// `@shared/types` consumers are unchanged.
+import type { ModelUsage, ThreadUsage } from '@copse/llm/wire-types.ts'
+export type { ModelUsage, ThreadUsage } from '@copse/llm/wire-types.ts'
+// The subagent session/tool-call record and the context-breakdown shapes are
+// owned by the agent module (the loop constructs sessions and reports the
+// breakdown); imported for the thread types below and re-exported so
+// `@shared/types` consumers are unchanged.
+import type { ToolCall } from '@copse/agent/wire-types.ts'
+export type {
+  ToolCall,
+  SubagentMessage,
+  SubagentSession,
+  ContextSegmentKey,
+  ContextBreakdownSegment,
+  ContextBreakdown,
+} from '@copse/agent/wire-types.ts'
 
 export type ThreadStatus = 'idle' | 'running' | 'error'
 
@@ -27,31 +45,32 @@ export interface ContextSnapshot {
   updatedAt: number
 }
 
-/** Which part of the assembled prompt a breakdown segment represents. */
-export type ContextSegmentKey = 'system' | 'tools' | 'mcp' | 'skills' | 'history' | 'message'
-
-/** One slice of the pre-send context estimate (e.g. system prompt, tools, your message). */
-export interface ContextBreakdownSegment {
-  key: ContextSegmentKey
-  label: string
-  tokens: number
-}
-
-/**
- * Estimated token cost of everything that would be sent on the next prompt,
- * split into named parts. Computed before sending so the composer can show
- * what the default context costs and how the draft message adds to it.
- */
-export interface ContextBreakdown {
-  segments: ContextBreakdownSegment[]
-  totalTokens: number
-  contextWindow: number
-}
-
 /** Verdict from the post-turn review subagent for the most recent editing turn. */
 export interface ThreadReview {
   status: 'running' | 'done' | 'error'
   summary: string
+}
+
+/**
+ * Result of running the working-diff review through two models and a judge that
+ * compares their findings (the "model comparison harness"). `reviewA`/`reviewB`
+ * are each model's independent verdict; `synthesis` is the judge's comparison
+ * (agreements, disagreements, unique catches, overall recommendation).
+ */
+export interface ModelComparison {
+  status: 'running' | 'done' | 'error'
+  /** Model ids used for the two reviews (a, b) and the judge synthesis. */
+  models: { a: string; b: string; judge: string }
+  /** Verdict text from model A. */
+  reviewA: string
+  /** Verdict text from model B. */
+  reviewB: string
+  /** The judge's comparison of the two verdicts. */
+  synthesis: string
+  /** Human-readable cost estimate for the whole run (e.g. `~$0.04`). */
+  cost?: string
+  /** Populated when `status === 'error'`. */
+  error?: string
 }
 
 export interface Thread {
@@ -68,6 +87,8 @@ export interface Thread {
   todos?: TodoItem[]
   /** Latest post-turn review verdict produced after an editing turn. */
   review?: ThreadReview
+  /** Latest two-model comparison produced for an editing turn (auto or on demand). */
+  comparison?: ModelComparison
   /** Persisted parent/explore goal; set on the first user message in the thread. */
   workingBrief?: string
   /** Git branch this thread was started on; set on first message and persisted. */
@@ -128,76 +149,6 @@ export interface Message {
   /** Small-model rollup label for this message's batch of shell commands. */
   commandSummary?: string
   createdAt: number
-}
-
-export interface SubagentSession {
-  id: string
-  kind: 'explore' | 'investigate_ci'
-  status: 'running' | 'done' | 'error'
-  prompt: string
-  summary: string | null
-  messages: SubagentMessage[]
-  /** Token totals for this subagent's own loop (also folded into the parent thread total). */
-  usage?: ModelUsage
-  /**
-   * Model this subagent ran on (`lmstudio:<id>` = local). Surfaced on the card
-   * so "did this explore actually use my local model?" is answerable per run.
-   */
-  model?: string
-  /**
-   * True when local subagent routing was enabled but unavailable (LM Studio
-   * down / no model resolvable), so the run silently used the cloud parent
-   * model. Rendered as a warning on the card — otherwise the fallback is
-   * indistinguishable from intentional cloud routing.
-   */
-  localFallback?: boolean
-}
-
-export interface SubagentMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  toolCalls: ToolCall[]
-  /** Wall-clock time the message was first created; absent on sessions persisted before timestamps existed. */
-  createdAt?: number
-}
-
-export interface ToolCall {
-  id: string
-  name: string
-  args: unknown
-  status: 'running' | 'done' | 'error'
-  result: string | null
-  /** Line add/delete counts for file edit tools (write_file, str_replace). */
-  editStats?: { additions: number; deletions: number }
-  subagent?: SubagentSession
-}
-
-export interface ModelUsage {
-  inputTokens: number
-  outputTokens: number
-  /**
-   * Portion of `inputTokens` served from the provider prompt cache (Anthropic
-   * `cache_read_input_tokens`). Billed far cheaper than fresh input; absent for
-   * providers/usage that don't report cache stats.
-   */
-  cacheReadTokens?: number
-  /**
-   * Portion of `inputTokens` written to the provider prompt cache (Anthropic
-   * `cache_creation_input_tokens`).
-   */
-  cacheCreationTokens?: number
-}
-
-export interface ThreadUsage {
-  inputTokens: number
-  outputTokens: number
-  /** Cumulative cache-read tokens across the thread (subset of `inputTokens`). */
-  cacheReadTokens?: number
-  /** Cumulative cache-creation tokens across the thread (subset of `inputTokens`). */
-  cacheCreationTokens?: number
-  /** Token totals keyed by model id (e.g. claude-sonnet-4-6, lmstudio:qwen). */
-  byModel?: Record<string, ModelUsage>
 }
 
 export interface UsageDelta extends ModelUsage {

@@ -12,7 +12,7 @@ import type {
   ContextSnapshot,
 } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
-import type { Thread, ThreadReview } from '@shared/types'
+import type { ModelComparison, Thread, ThreadReview } from '@shared/types'
 
 export function sortThreadsNewestFirst(threads: Thread[]): Thread[] {
   return [...threads].sort((a, b) => b.createdAt - a.createdAt)
@@ -156,11 +156,14 @@ export function deleteThread(store: AppStore, id: string): void {
   const { threads, activeThreadId } = store.getState()
   const remaining = threads.filter((t) => t.id !== id)
   if (remaining.length === 0) {
-    // Always keep at least one thread
-    const newId = createThread(store)
+    // Deleting the only thread: create a fresh replacement (which also becomes
+    // active), then drop the deleted one. createThread prepends the new thread
+    // and sets it active, so we filter out `id`, not the new thread.
+    createThread(store)
     store.setState({
-      threads: store.getState().threads.filter((t) => t.id !== newId || remaining.length > 0),
+      threads: store.getState().threads.filter((t) => t.id !== id),
     })
+    store.emit('threads_changed')
     return
   }
   const index = threads.findIndex((t) => t.id === id)
@@ -457,6 +460,23 @@ export function setThreadReview(
   })
   store.setState({ threads })
   store.emit('review_changed', threadId)
+}
+
+/** Store the two-model comparison for a thread (clears with `null`). */
+export function setThreadComparison(
+  store: AppStore,
+  threadId: string,
+  comparison: ModelComparison | null,
+): void {
+  const threads = store.getState().threads.map((t) => {
+    if (t.id !== threadId) return t
+    const next = { ...t, updatedAt: Date.now() }
+    if (comparison) next.comparison = comparison
+    else delete next.comparison
+    return next
+  })
+  store.setState({ threads })
+  store.emit('comparison_changed', threadId)
 }
 
 /** Suspend/resume FIFO draining of a thread's queued messages (e.g. while editing). */

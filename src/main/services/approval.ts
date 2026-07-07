@@ -12,7 +12,7 @@ import { getActiveRunThread } from './thread-models.ts'
 export interface ApprovalRequest {
   title: string
   body: string
-  type: 'shell' | 'mcp' | 'web' | 'pii'
+  type: 'shell' | 'mcp' | 'web' | 'pii' | 'model-compare'
   allowRemember?: boolean
   rememberLabel?: string
 }

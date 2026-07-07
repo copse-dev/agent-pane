@@ -1,12 +1,12 @@
 import { app, Menu, dialog, type BrowserWindow } from 'electron'
 import { registerAllowedWorkspaceRoot, setWorkspaceRoot } from '../services/workspace.ts'
-import { buildIndex } from '../services/search/file-index.ts'
+import { startWorkspaceIndexing } from '../services/search/workspace-indexing.ts'
 import { checkForUpdatesManually } from '../services/auto-update.ts'
 
 // Builds the native application menu. The File ▸ Open Folder… item drives the
 // same flow as the renderer's Open Folder button: pick a directory, set it as
-// the workspace, build the index, and notify the renderer to swap to the full
-// layout via the 'workspace:opened' event.
+// the workspace, kick off indexing, and notify the renderer to swap to the
+// full layout via the 'workspace:opened' event.
 export function buildAppMenu(win: BrowserWindow): void {
   const isMac = process.platform === 'darwin'
 
@@ -19,7 +19,9 @@ export function buildAppMenu(win: BrowserWindow): void {
     // would leave the index and renderer 'workspace:opened' path inconsistent.
     const root = registerAllowedWorkspaceRoot(result.filePaths[0])
     setWorkspaceRoot(root)
-    await buildIndex(root)
+    // Same indexing flow as workspace:open/set — this path previously built
+    // only the file index, silently skipping the semantic index and watcher.
+    startWorkspaceIndexing(root)
     win.webContents.send('workspace:opened', root)
   }
 

@@ -27,6 +27,7 @@ import {
   type RemoteAgentRunResult,
 } from './remote-agent-shared.ts'
 import { attachRemoteAgentPrFromText, recordRemoteAgentLaunch } from './remote-agent-link-store.ts'
+import { LruStringCache } from './lru-string-cache.ts'
 
 // Re-exported for callers/tests that import the repository resolver from here.
 export { resolveRemoteAgentRepository } from './remote-agent-shared.ts'
@@ -34,7 +35,17 @@ export { resolveRemoteAgentRepository } from './remote-agent-shared.ts'
 const REMOTE_AGENT_SESSION_PREFIX = 'remote-agent-session:'
 const REMOTE_AGENT_MODE = 'agent'
 const MAX_REMOTE_ARTIFACT_IMAGE_BYTES = 15 * 1024 * 1024
-const artifactImageDataUrlCache = new Map<string, string>()
+// Bound the artifact-image cache so long sessions don't slowly leak memory.
+// Each entry is a base64 data URL that can be ~20 MB, so we cap by total bytes
+// (the memory that actually matters) with an entry-count backstop for the
+// many-small-images case. 64 MB keeps a few large images or dozens of small
+// ones hot while guaranteeing an upper bound.
+const MAX_REMOTE_ARTIFACT_IMAGE_CACHE_ENTRIES = 64
+const MAX_REMOTE_ARTIFACT_IMAGE_CACHE_BYTES = 64 * 1024 * 1024
+const artifactImageDataUrlCache = new LruStringCache(
+  MAX_REMOTE_ARTIFACT_IMAGE_CACHE_ENTRIES,
+  MAX_REMOTE_ARTIFACT_IMAGE_CACHE_BYTES,
+)
 
 interface RemoteAgentSession {
   v: 1
