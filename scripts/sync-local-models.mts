@@ -36,6 +36,25 @@ const AIDER_BOARDS: ReadonlyArray<{ benchmark: string; url: string }> = [
   { benchmark: 'aider-edit', url: `${RAW_BASE}/edit_leaderboard.yml` },
 ]
 
+// EvalPlus HumanEval+ leaderboard (JSON: model → { "pass@1": { "humaneval+" } }).
+// Full-precision "prompted" runs with no per-model date, so we pin `asOf` to the
+// snapshot date recorded when the alias was added.
+const EVALPLUS_URL =
+  'https://raw.githubusercontent.com/evalplus/evalplus.github.io/main/results.json'
+const EVALPLUS_ALIASES: ReadonlyArray<{
+  evalplusModel: string
+  catalogId: string
+  asOf: string
+  measuredBitsPerWeight: number
+}> = [
+  {
+    evalplusModel: 'Qwen2.5-Coder-32B-Instruct',
+    catalogId: 'qwen/qwen2.5-coder-32b',
+    asOf: '2026-07-07',
+    measuredBitsPerWeight: 16,
+  },
+]
+
 // leaderboard model name → our catalog id, the benchmark it feeds, and the bits
 // per weight it was measured at (16 = full-precision API run; ~4.5 = a Q4_K_M
 // GGUF run). Prefer a quantized entry over an fp16 one for the same
@@ -147,6 +166,23 @@ function collectFromBoard(
   return byCatalogId
 }
 
+/** HumanEval+ pass@1 per aliased model from the EvalPlus results JSON. */
+function collectEvalPlus(json: unknown): Map<string, Score> {
+  const data = (json ?? {}) as Record<string, { 'pass@1'?: Record<string, number> }>
+  const out = new Map<string, Score>()
+  for (const alias of EVALPLUS_ALIASES) {
+    const value = data[alias.evalplusModel]?.['pass@1']?.['humaneval+']
+    if (typeof value !== 'number' || !Number.isFinite(value)) continue
+    out.set(alias.catalogId, {
+      value,
+      source: `EvalPlus HumanEval+ leaderboard (${alias.evalplusModel})`,
+      asOf: alias.asOf,
+      measuredBitsPerWeight: alias.measuredBitsPerWeight,
+    })
+  }
+  return out
+}
+
 function renderFile(scoresByModel: Map<string, Map<string, Score>>, today: string): string {
   const modelIds = [...scoresByModel.keys()].sort()
   const body = modelIds
@@ -190,15 +226,25 @@ async function main(): Promise<void> {
   const today = new Date().toISOString().slice(0, 10)
   const scoresByModel = new Map<string, Map<string, Score>>()
 
+  const set = (catalogId: string, benchmark: string, score: Score): void => {
+    const map = scoresByModel.get(catalogId) ?? new Map<string, Score>()
+    map.set(benchmark, score)
+    scoresByModel.set(catalogId, map)
+  }
+
   for (const board of AIDER_BOARDS) {
     const yaml = await fetchText(board.url)
-    const collected = collectFromBoard(parseAiderRecords(yaml), board.benchmark, today)
-    for (const [catalogId, score] of collected) {
-      const map = scoresByModel.get(catalogId) ?? new Map<string, Score>()
-      map.set(board.benchmark, score)
-      scoresByModel.set(catalogId, map)
+    for (const [catalogId, score] of collectFromBoard(
+      parseAiderRecords(yaml),
+      board.benchmark,
+      today,
+    )) {
+      set(catalogId, board.benchmark, score)
     }
   }
+
+  const evalplus = collectEvalPlus(JSON.parse(await fetchText(EVALPLUS_URL)))
+  for (const [catalogId, score] of evalplus) set(catalogId, 'humaneval-plus', score)
 
   const content = renderFile(scoresByModel, today)
   const existing = await readFile(GENERATED_PATH, 'utf8').catch(() => '')

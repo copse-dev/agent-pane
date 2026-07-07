@@ -25,5 +25,11 @@ export const LOCAL_MODEL_BENCHMARKS: Record<string, Record<string, LocalBenchmar
       asOf: '2024-12-26',
       measuredBitsPerWeight: 16,
     },
+    'humaneval-plus': {
+      value: 87.2,
+      source: 'EvalPlus HumanEval+ leaderboard (Qwen2.5-Coder-32B-Instruct)',
+      asOf: '2026-07-07',
+      measuredBitsPerWeight: 16,
+    },
   },
 }
