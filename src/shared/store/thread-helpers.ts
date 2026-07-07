@@ -156,11 +156,14 @@ export function deleteThread(store: AppStore, id: string): void {
   const { threads, activeThreadId } = store.getState()
   const remaining = threads.filter((t) => t.id !== id)
   if (remaining.length === 0) {
-    // Always keep at least one thread
-    const newId = createThread(store)
+    // Deleting the only thread: create a fresh replacement (which also becomes
+    // active), then drop the deleted one. createThread prepends the new thread
+    // and sets it active, so we filter out `id`, not the new thread.
+    createThread(store)
     store.setState({
-      threads: store.getState().threads.filter((t) => t.id !== newId || remaining.length > 0),
+      threads: store.getState().threads.filter((t) => t.id !== id),
     })
+    store.emit('threads_changed')
     return
   }
   const index = threads.findIndex((t) => t.id === id)
