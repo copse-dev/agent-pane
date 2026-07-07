@@ -492,7 +492,15 @@ jobs:
         run: |
           mkdir -p changed/tests/e2e/screenshots
           touch "changed/.shard-${{ matrix.shard }}"
-          mapfile -t files < <(git diff --name-only -- tests/e2e/screenshots/)
+          # Untracked PNGs are first-time reference shots from a new spec —
+          # without ls-files --others they would never reach commit-screenshots
+          # (filter-screenshots.mts already classifies untracked files).
+          mapfile -t files < <(
+            {
+              git diff --name-only -- tests/e2e/screenshots/
+              git ls-files --others --exclude-standard -- tests/e2e/screenshots/
+            } | sort -u
+          )
           for f in "${files[@]}"; do
             [ -n "$f" ] || continue
             cp "$f" "changed/tests/e2e/screenshots/"
