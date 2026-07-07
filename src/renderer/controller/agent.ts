@@ -16,6 +16,7 @@ import {
   updateContextSnapshot,
   setThreadTodos,
   setThreadReview,
+  setThreadComparison,
   getThreadById,
 } from '@shared/store/thread-helpers.ts'
 import { syncThreadGitBranchAfterShell } from './sync-thread-branch-after-shell.ts'
@@ -28,7 +29,7 @@ import {
   updateSubagentToolCall,
   finishSubagent,
 } from '@shared/store/subagent-helpers.ts'
-import { planAgentTextChunk } from '@shared/agent/agent-text-chunk.ts'
+import { planAgentTextChunk } from '@copse/agent/agent-text-chunk.ts'
 import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY } from '../agent-activity.ts'
 import { drainMessageQueue } from './message-queue.ts'
 import { usageRecordFromAgentDelta } from '@shared/usage/usage-record-input.ts'
@@ -57,6 +58,10 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
   type ThreadStreamState = {
     msgId: string | null
     toolSinceText: boolean
+    // Accumulated visible text of the current assistant message, threaded into
+    // planAgentTextChunk so a tool call that interrupts mid-sentence keeps the
+    // resumed text in the same bubble.
+    currentText: string
     writing: boolean
     // Which message we've already requested a command summary for, and at what
     // shell-command count, so we re-summarize only when more commands arrive.
@@ -70,6 +75,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
       st = {
         msgId: null,
         toolSinceText: false,
+        currentText: '',
         writing: false,
         summaryMsgId: null,
         summaryCount: 0,
@@ -87,7 +93,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     switch (chunk.type) {
       case 'text': {
         const { plan, state: nextState } = planAgentTextChunk(
-          { msgId: st.msgId, toolSinceText: st.toolSinceText },
+          { msgId: st.msgId, toolSinceText: st.toolSinceText, currentText: st.currentText },
           chunk.text,
         )
         if (plan.action === 'ignore') break
@@ -97,6 +103,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           st.msgId = addMessage(store, threadId, 'assistant')
         }
         st.toolSinceText = nextState.toolSinceText
+        st.currentText = nextState.currentText ?? ''
         if (st.msgId === null) throw new Error('assistant message id missing for text chunk')
         appendToken(store, st.msgId, plan.text)
 
@@ -115,6 +122,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           if (st.toolSinceText && st.msgId) store.emit('message_done', st.msgId)
           st.msgId = addMessage(store, threadId, 'assistant')
           st.toolSinceText = false
+          st.currentText = ''
         }
         appendReasoning(store, st.msgId, chunk.text)
         st.writing = false
@@ -124,6 +132,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
       case 'text_replace': {
         if (!st.msgId) st.msgId = addMessage(store, threadId, 'assistant')
         setMessageContent(store, st.msgId, chunk.text)
+        st.currentText = chunk.text
         break
       }
       case 'tool_call': {
@@ -134,6 +143,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           args: chunk.toolCall.args,
           status: 'running',
           result: null,
+          ...(chunk.toolCall.kind !== undefined ? { kind: chunk.toolCall.kind } : {}),
         })
         st.toolSinceText = true
         st.writing = false
@@ -146,6 +156,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
             status: chunk.isError ? 'error' : 'done',
             result: chunk.result,
             ...(chunk.editStats ? { editStats: chunk.editStats } : {}),
+            ...(chunk.resultFormat ? { resultFormat: chunk.resultFormat } : {}),
           })
           if (chunk.toolCallId && !chunk.isError) {
             const toolCall = findToolCall(store, st.msgId, chunk.toolCallId)
@@ -281,6 +292,13 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
       case 'post_turn_review': {
         setThreadReview(store, threadId, { status: chunk.status, summary: chunk.summary })
         if (chunk.status === 'running') store.emit('agent_activity', threadId, 'Reviewing changes…')
+        break
+      }
+      case 'model_comparison': {
+        setThreadComparison(store, threadId, chunk.comparison)
+        if (chunk.comparison.status === 'running') {
+          store.emit('agent_activity', threadId, 'Comparing models…')
+        }
         break
       }
       case 'done': {

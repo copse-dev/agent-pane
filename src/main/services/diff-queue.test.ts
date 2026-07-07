@@ -23,6 +23,7 @@ import {
 } from './diff-queue.ts'
 import { setGitAvailableForTest } from './tool-availability.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
+import { resetSessionBackup } from './worktree-backup.ts'
 
 function git(cwd: string, args: string[]): void {
   execFileSync('git', args, {
@@ -170,6 +171,7 @@ describe('applyOrStageDiff direct-apply policy', () => {
 
   beforeEach(async () => {
     clearDiffQueueForTest()
+    resetSessionBackup()
     setGitAvailableForTest(true)
     tempRoot = await mkdtemp(join(tmpdir(), 'agent-pane-diff-direct-'))
     workspaceRoot = join(tempRoot, 'packages/app')
@@ -180,6 +182,7 @@ describe('applyOrStageDiff direct-apply policy', () => {
 
   afterEach(async () => {
     clearDiffQueueForTest()
+    resetSessionBackup()
     setGitAvailableForTest(null)
     restoreWorkspace?.()
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
@@ -199,14 +202,34 @@ describe('applyOrStageDiff direct-apply policy', () => {
     assert.equal(getDiffQueueForTest().length, 0)
   })
 
-  it('stages for approval when git already has unowned changes', async () => {
+  it('backs up unowned changes and applies directly instead of staging for approval', async () => {
+    await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
+    git(tempRoot, ['add', 'packages/app/a.txt'])
+    git(tempRoot, ['commit', '-m', 'add workspace file'])
+    // The user has uncommitted work Copse did not make this turn.
+    await writeFile(join(workspaceRoot, 'dirty.txt'), 'dirty\n', 'utf-8')
+
+    const result = await applyOrStageDiff('a.txt', 'one\n', 'two\n', 'plaintext')
+    // No longer prompts: the worktree is snapshotted and the edit applies.
+    assert.match(result, /Applied edit directly/)
+    assert.match(result, /backed up to refs\/copse\/backups\//)
+    assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf-8'), 'two\n')
+    assert.equal(getDiffQueueForTest().length, 0)
+    // The user's uncommitted file is untouched on disk and recoverable from the ref.
+    assert.equal(await readFile(join(workspaceRoot, 'dirty.txt'), 'utf-8'), 'dirty\n')
+  })
+
+  it('stages for approval when unowned changes cannot be backed up (no safety net)', async () => {
     await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
     git(tempRoot, ['add', 'packages/app/a.txt'])
     git(tempRoot, ['commit', '-m', 'add workspace file'])
     await writeFile(join(workspaceRoot, 'dirty.txt'), 'dirty\n', 'utf-8')
+    // Git reports unavailable, so the worktree state can't be verified or backed
+    // up — with no safety net, fall back to prompting.
+    setGitAvailableForTest(false)
 
     const result = await applyOrStageDiff('a.txt', 'one\n', 'two\n', 'plaintext')
-    assert.match(result, /Reason approval is required: git already has unowned changes: dirty\.txt/)
+    assert.match(result, /approval is required/)
     assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf-8'), 'one\n')
     assert.equal(getStagedDiffEntry('a.txt')?.after, 'two\n')
   })
@@ -265,6 +288,7 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
 
   beforeEach(async () => {
     clearDiffQueueForTest()
+    resetSessionBackup()
     setGitAvailableForTest(true)
     tempRoot = await mkdtemp(join(tmpdir(), 'agent-pane-adopt-'))
     workspaceRoot = join(tempRoot, 'packages/app')
@@ -275,6 +299,7 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
 
   afterEach(async () => {
     clearDiffQueueForTest()
+    resetSessionBackup()
     setGitAvailableForTest(null)
     restoreWorkspace?.()
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
@@ -315,12 +340,15 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
     const adopted = await adoptWorktreeChangesSince(baseline)
     assert.deepEqual(adopted, ['a.txt'])
 
-    // The untouched manual edit is still unowned, so an edit must propose, not apply.
+    // The untouched manual edit is still unowned. It no longer forces a prompt,
+    // but because it is unowned it triggers a worktree backup before the edit
+    // applies — proving adoption stayed scoped to the command's own change (had
+    // manual.txt been silently adopted, the edit would apply with no backup).
     const result = await applyOrStageDiff('a.txt', 'one-touched\n', 'next\n', 'plaintext')
-    assert.match(
-      result,
-      /Reason approval is required: git already has unowned changes: manual\.txt/,
-    )
+    assert.match(result, /Applied edit directly/)
+    assert.match(result, /backed up to refs\/copse\/backups\//)
+    // The manual edit is preserved on disk (and recoverable from the backup ref).
+    assert.equal(await readFile(join(workspaceRoot, 'manual.txt'), 'utf-8'), 'user edit\n')
   })
 
   it('listWorktreeChangesSince reports changed paths without adopting them (ACP audit)', async () => {
@@ -337,9 +365,11 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
     assert.deepEqual(changed.sort(), ['a.txt', 'new.txt'])
 
     // Unlike adoption, listing leaves the paths unowned: a later Copse edit to
-    // the shell-touched file must propose, not silently overwrite it.
+    // the shell-touched file backs up the worktree first (the unowned-change
+    // path) rather than treating it as a silently-owned edit.
     const result = await applyOrStageDiff('a.txt', 'shell edit\n', 'next\n', 'plaintext')
-    assert.match(result, /approval is required/)
+    assert.match(result, /Applied edit directly/)
+    assert.match(result, /backed up to refs\/copse\/backups\//)
   })
 })
 

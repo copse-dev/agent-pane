@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from '@shared/array-utils.ts'
-import { BUILTIN_EXTRA_PROVIDERS } from '@shared/llm/extra-providers.ts'
+import { BUILTIN_EXTRA_PROVIDERS } from '@copse/llm/extra-providers.ts'
 import {
   PROVIDER_ENV_VARS,
   WELL_KNOWN_ENV_FILES,

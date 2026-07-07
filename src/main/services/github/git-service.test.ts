@@ -1,6 +1,6 @@
 import { describe, it, before, after, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process'
@@ -12,11 +12,28 @@ import {
   getGitShowText,
   parsePorcelainV1,
   resolveWorkspaceRelativeGitPath,
+  sumDiffNumstat,
   toGitShowPath,
 } from './git-service.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { setGitAvailableForTest } from '../tool-availability.ts'
 import { DEFAULT_GIT_BRANCH } from '@shared/types/git.ts'
+
+describe('sumDiffNumstat', () => {
+  it('sums additions and deletions across rows', () => {
+    const raw = '3\t1\tsrc/foo.ts\n10\t5\tsrc/bar.ts\n'
+    assert.deepEqual(sumDiffNumstat(raw), { additions: 13, deletions: 6 })
+  })
+
+  it('treats binary placeholder dashes as zero', () => {
+    const raw = '-\t-\tlogo.png\n2\t0\tsrc/baz.ts\n'
+    assert.deepEqual(sumDiffNumstat(raw), { additions: 2, deletions: 0 })
+  })
+
+  it('returns zeros for empty output', () => {
+    assert.deepEqual(sumDiffNumstat(''), { additions: 0, deletions: 0 })
+  })
+})
 
 describe('parsePorcelainV1', () => {
   it('returns empty lists for clean tree', () => {
@@ -413,6 +430,15 @@ describe('getGitShowText', { skip: !gitOk && 'git not installed' }, () => {
   it('rejects a path that escapes the workspace root', async () => {
     const out = await getGitShowText('HEAD', '../escape.txt')
     assert.match(out, /outside workspace/)
+  })
+
+  it('rejects a ref that would be parsed as a git option (option injection)', async () => {
+    const escaped = join(repo, 'escaped-by-option-injection.txt')
+    const out = await getGitShowText(`--output=${escaped}`)
+    assert.match(out, /cannot start with "-"/)
+    // The rejection must happen before git runs, so no file is written.
+    const written = await readFile(escaped, 'utf8').catch(() => null)
+    assert.equal(written, null)
   })
 
   it('reports a blank ref', async () => {

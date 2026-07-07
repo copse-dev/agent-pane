@@ -1,31 +1,6 @@
-.message-text table {
-  /* separated borders + overflow clip so the outer corners can be rounded */
-  border-collapse: separate;
-  border-spacing: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  width: 100%;
-  max-width: 100%;
-  table-layout: auto;
-  margin: var(--spacing-sm) 0;
-  font-size: var(--font-size-sm);
-  white-space: normal;
-  /* Scroll only when a cell has an unbreakable run (e.g. very long hash). */
-  overflow-x: auto;
-}
-.message-text th,
-.message-text td {
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  padding: 4px 10px;
-  text-align: left;
-  vertical-align: top;
-  /* .message-text uses pre-wrap; reset so table cells wrap on words, not every char. */
-  white-space: normal;
-  word-break: normal;
-  overflow-wrap: break-word;
-  min-width: 0;
-}
+/* Base table styling (borders, padding, header, zebra stripe, cell wrapping)
+   comes from @copse/streaming-markdown's default.css. The rules below are
+   agent-pane refinements layered on top of that base. */
 /* Tables with 3+ columns: pin only the first column (PR/number) to 1%
    so the last (content) column expands to fill remaining space. */
 .message-text:has(th:nth-child(3)) th:first-child,
@@ -46,42 +21,6 @@
   box-sizing: border-box;
   white-space: normal;
   overflow-wrap: anywhere;
-}
-.message-text th:last-child,
-.message-text td:last-child {
-  border-right: none;
-}
-.message-text tr:last-child td {
-  border-bottom: none;
-}
-.message-text th {
-  background: var(--bg-elevated);
-  font-weight: 600;
-}
-.message-text tbody tr:nth-child(even) td {
-  background: rgba(255, 255, 255, 0.02);
-}
-.message-text li > :first-child {
-  margin-top: 0;
-}
-.message-text hr {
-  border: none;
-  border-top: 1px solid var(--border);
-  margin: var(--spacing-md) 0;
-}
-.message-text blockquote {
-  border-left: 3px solid var(--border);
-  margin: var(--spacing-sm) 0;
-  padding: var(--spacing-xs) var(--spacing-sm);
-  color: var(--text-secondary);
-  background: var(--bg-elevated);
-  border-radius: 0 var(--radius) var(--radius) 0;
-}
-.message-text blockquote p {
-  margin: 0;
-}
-.message-text blockquote p + p {
-  margin-top: var(--spacing-xs);
 }
 .message-text .mermaid-diagram {
   /* Cap height before/after mermaid.run so large source/SVG cannot blow flex layout. */
@@ -108,11 +47,6 @@
   color: var(--text-muted);
   text-align: center;
   pointer-events: none;
-}
-.message-text .mermaid-diagram svg {
-  max-width: 100%;
-  height: auto;
-  display: block;
 }
 .mermaid-expand-dialog {
   width: min(96vw, 1200px);
@@ -200,9 +134,6 @@
 .mermaid-expand-close:hover {
   color: var(--text-primary);
   background: var(--bg-hover);
-}
-.message-text .mermaid-diagram .error-icon {
-  fill: var(--error);
 }
 .mermaid-fallback-title {
   font-size: var(--font-size-sm);

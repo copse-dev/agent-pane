@@ -3,9 +3,9 @@ import {
   createLocalOpenAIProvider,
   createOpenRouterProvider,
   createExtraCloudProvider,
-} from '@shared/llm/create-provider.ts'
-import { isOpenRouterModel, openRouterModelId } from '@shared/llm/openrouter.ts'
-import { extraProviderForModel, extraProviderModelId } from '@shared/llm/extra-providers.ts'
+} from '@copse/llm/create-provider.ts'
+import { isOpenRouterModel, openRouterModelId } from '@copse/llm/openrouter.ts'
+import { extraProviderForModel, extraProviderModelId } from '@copse/llm/extra-providers.ts'
 import { getResolvedExtraProviders } from './extra-providers-store.ts'
 import type { LLMProvider } from '@shared/types'
 import {
@@ -25,8 +25,8 @@ import {
   fetchLmStudioModelsCached,
   invalidateLmStudioModelsCache as invalidateLmStudioModelsCacheImpl,
 } from './lm-studio-models.ts'
-import { isLocalModel } from '@shared/llm/estimate-cost.ts'
-import { withSecretRedaction } from '@shared/llm/redacting-provider.ts'
+import { isLocalModel } from '@copse/llm/estimate-cost.ts'
+import { withSecretRedaction } from '@copse/llm/redacting-provider.ts'
 import { PROVIDER_ENV_VARS } from './env-key-detection.ts'
 
 export { DEFAULT_LM_STUDIO_URL }
@@ -58,6 +58,18 @@ function storedOrEnvApiKey(provider: string): string | null {
 
 export function isLocalChatModel(model: string): boolean {
   return isLocalModel(model)
+}
+
+/**
+ * True when running `model` costs money: not an LM Studio / local model and not
+ * an OpenAI-compatible *local* extra provider (Ollama, llama.cpp, …). Used to
+ * decide whether a model-comparison run needs a spend approval.
+ */
+export function isBillableModel(model: string): boolean {
+  if (isLocalModel(model)) return false
+  const extra = extraProviderForModel(getResolvedExtraProviders(), model)
+  if (extra?.local) return false
+  return true
 }
 
 // Fetch the first model id a local OpenAI-compatible server has loaded. Routes

@@ -366,7 +366,9 @@ contextBridge.exposeInMainWorld('api', {
       webAllowUserApproval: boolean
     }) => ipcRenderer.invoke('settings:setSecurity', prefs),
     getKey: (provider: string) => ipcRenderer.invoke('settings:getKey', provider),
-    setKey: (provider: string, key: string) => ipcRenderer.invoke('settings:setKey', provider, key),
+    getKeyEncrypted: (provider: string) => ipcRenderer.invoke('settings:getKeyEncrypted', provider),
+    setKey: (provider: string, key: string, opts?: { allowPlaintext?: boolean }) =>
+      ipcRenderer.invoke('settings:setKey', provider, key, opts),
     availableProviders: () => ipcRenderer.invoke('settings:availableProviders'),
     validateKey: (provider: string, key: string) =>
       ipcRenderer.invoke('settings:validateKey', provider, key),
@@ -393,6 +395,24 @@ contextBridge.exposeInMainWorld('api', {
     query: (pattern: string) => ipcRenderer.invoke('index:query', pattern),
     resolveFileReferences: (candidates: string[]) =>
       ipcRenderer.invoke('index:resolveFileReferences', candidates),
+    status: () => ipcRenderer.invoke('index:status'),
+    onStatusChanged: (handler: (status: unknown) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, status: unknown): void => {
+        handler(status)
+      }
+      ipcRenderer.on('index:status_changed', listener)
+      return (): void => {
+        ipcRenderer.off('index:status_changed', listener)
+      }
+    },
+  },
+  memories: {
+    list: () => ipcRenderer.invoke('memories:list'),
+    create: (title: string, body: string, tags?: string[]) =>
+      ipcRenderer.invoke('memories:create', title, body, tags),
+    update: (id: string, title: string, body: string, tags?: string[]) =>
+      ipcRenderer.invoke('memories:update', id, title, body, tags),
+    delete: (id: string) => ipcRenderer.invoke('memories:delete', id),
   },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
@@ -435,6 +455,7 @@ contextBridge.exposeInMainWorld('api', {
   git: {
     isAvailable: () => ipcRenderer.invoke('git:isAvailable'),
     status: () => ipcRenderer.invoke('git:status'),
+    changeStats: () => ipcRenderer.invoke('git:changeStats'),
     fileDiff: (path: string, staged: boolean) => ipcRenderer.invoke('git:fileDiff', path, staged),
     branchStatus: (forBranch?: string) => ipcRenderer.invoke('git:branchStatus', forBranch),
     checkoutBranch: (branch: string) => ipcRenderer.invoke('git:checkoutBranch', branch),

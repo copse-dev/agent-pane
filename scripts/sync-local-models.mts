@@ -1,7 +1,7 @@
-// Regenerates src/shared/llm/local-model-benchmarks.generated.ts from public
+// Regenerates packages/llm/src/local-model-benchmarks.generated.ts from public
 // benchmark leaderboards. Companion to sync-model-catalog.mts (cloud pricing from
 // LiteLLM); this one seeds *measured* benchmark scores for the local models in
-// src/shared/llm/local-model-catalog.ts.
+// packages/llm/src/local-model-catalog.ts.
 //
 // Design notes:
 //   - We record only MEASURED facts (value + source URL + date + the precision it
@@ -26,7 +26,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 
-const GENERATED_PATH = resolve('src/shared/llm/local-model-benchmarks.generated.ts')
+const GENERATED_PATH = resolve('packages/llm/src/local-model-benchmarks.generated.ts')
 
 const RAW_BASE = 'https://raw.githubusercontent.com/Aider-AI/aider/main/aider/website/_data'
 

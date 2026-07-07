@@ -1,12 +1,12 @@
 import type { ApiClient } from '../../preload/api.d.ts'
-import { CLOUD_MODELS } from '@shared/llm/model-catalog.ts'
-import { localModelRoleHint } from '@shared/llm/local-model-catalog.ts'
+import { CLOUD_MODELS } from '@copse/llm/model-catalog.ts'
+import { localModelRoleHint } from '@copse/llm/local-model-catalog.ts'
 import {
   isOpenRouterModel,
   openRouterDisplayLabel,
   openRouterModelId,
   toOpenRouterModel,
-} from '@shared/llm/openrouter.ts'
+} from '@copse/llm/openrouter.ts'
 import {
   extraProviderDisplayLabel,
   extraProviderModelId,
@@ -14,7 +14,7 @@ import {
   isExtraProviderModel,
   toExtraProviderModel,
   type ExtraProvider,
-} from '@shared/llm/extra-providers.ts'
+} from '@copse/llm/extra-providers.ts'
 
 type AvailableProviders = Awaited<ReturnType<ApiClient['settings']['availableProviders']>>
 import {

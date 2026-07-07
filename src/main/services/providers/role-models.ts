@@ -8,7 +8,7 @@
 // actually assigned. See `agent-roles.ts` (`LEGACY_ROLE_ALIASES`) for the full
 // mapping; this module wires only the *renderer-writable* routing roles.
 
-import type { AgentRoleId } from '@shared/llm/agent-roles.ts'
+import type { AgentRoleId } from '@copse/llm/agent-roles.ts'
 import { getSetting, getSettingTrimmed } from '../storage/settings.ts'
 
 /**

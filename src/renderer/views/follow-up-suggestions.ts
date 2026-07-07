@@ -2,7 +2,15 @@ import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { FollowUpSuggestion, FollowUpContext } from '@shared/follow-ups/types.ts'
+import { reconcileChangesSuggestion } from '@shared/follow-ups/changes-stat.ts'
 import { switchThread, getThreadById } from '@shared/store/thread-helpers.ts'
+
+/** Open the changeset reviewer pane (mirrors the diff-conflict banner path). */
+function openChangesReviewer(store: AppStore): void {
+  store.setState({ rightPanelMode: 'changes', filesPaneOpen: true })
+  store.emit('right_panel_mode_changed')
+  store.emit('files_pane_changed')
+}
 
 export interface FollowUpSuggestionsMount {
   root: HTMLElement
@@ -27,7 +35,16 @@ export function mountFollowUpSuggestions(
     hidden: '',
   })
 
-  let fetchToken = 0
+  // Per-thread fetch tokens: a shared counter let a completion in thread B
+  // invalidate an in-flight fetch for thread A (they interleave when several
+  // threads go idle), so A's suggestions were silently dropped and never cached.
+  const fetchTokens = new Map<string, number>()
+  const nextFetchToken = (threadId: string): number => {
+    const token = (fetchTokens.get(threadId) ?? 0) + 1
+    fetchTokens.set(threadId, token)
+    return token
+  }
+  let changesRefreshTimer: ReturnType<typeof setTimeout> | null = null
   let displayedThreadId: string | null = null
   const suggestionsByThread = new Map<string, CachedSuggestions>()
 
@@ -72,6 +89,13 @@ export function mountFollowUpSuggestions(
       }
 
       btn.addEventListener('click', () => {
+        // The changeset chip is a shortcut into the reviewer pane, not a prompt:
+        // dropping a canned "review my changes" message into the chat was
+        // surprising, and the reviewer is where accept/reject actions live.
+        if (suggestion.variant === 'changes') {
+          openChangesReviewer(store)
+          return
+        }
         const sourceThreadId = displayedThreadId ?? threadId
         clearSuggestions()
         if (store.getState().activeThreadId !== sourceThreadId) {
@@ -123,21 +147,50 @@ export function mountFollowUpSuggestions(
       return
     }
 
-    const token = ++fetchToken
+    const token = nextFetchToken(threadId)
     try {
       // Result crosses the IPC boundary; the runtime value may be undefined despite the typed contract.
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       const suggestions = (await api.agent.suggestFollowUps(JSON.stringify(exchange.context))) ?? []
-      if (token !== fetchToken) return
+      if (token !== fetchTokens.get(threadId)) return
       suggestionsByThread.set(threadId, { turnKey: exchange.turnKey, suggestions })
       if (store.getState().activeThreadId === threadId) {
         renderSuggestions(threadId, suggestions)
       }
     } catch {
-      if (token !== fetchToken) return
+      if (token !== fetchTokens.get(threadId)) return
       suggestionsByThread.delete(threadId)
       if (store.getState().activeThreadId === threadId) clearSuggestions()
     }
+  }
+
+  // Keep the deterministic "Changes" chip's +/- counts current. Suggestions are
+  // otherwise computed once per turn, so the count would otherwise freeze on a
+  // snapshot and go stale as the working tree moves (edits, commits, accept /
+  // reject of proposed diffs). This refreshes just that chip — model picks are
+  // left untouched, so no LLM call is made on filesystem churn.
+  async function refreshChangesStat(): Promise<void> {
+    const activeId = store.getState().activeThreadId
+    if (!activeId) return
+    const cached = suggestionsByThread.get(activeId)
+    // The bubbles only appear after a turn produces a set; nothing to maintain
+    // mid-run (the reviewer pane covers live changes during a run).
+    if (!cached) return
+    let stats: { additions: number; deletions: number } | null
+    try {
+      stats = await api.git.changeStats()
+    } catch {
+      return
+    }
+    const next = reconcileChangesSuggestion(cached.suggestions, stats)
+    if (next === cached.suggestions) return
+    suggestionsByThread.set(activeId, { turnKey: cached.turnKey, suggestions: next })
+    if (store.getState().activeThreadId === activeId) renderSuggestions(activeId, next)
+  }
+
+  function scheduleChangesRefresh(): void {
+    if (changesRefreshTimer) clearTimeout(changesRefreshTimer)
+    changesRefreshTimer = setTimeout(() => void refreshChangesStat(), 400)
   }
 
   function showForActiveThread(): void {
@@ -168,7 +221,7 @@ export function mountFollowUpSuggestions(
       if (status === 'running') {
         suggestionsByThread.delete(tid)
         if (tid === store.getState().activeThreadId) {
-          fetchToken++
+          nextFetchToken(tid)
           clearSuggestions()
         }
         return
@@ -178,13 +231,19 @@ export function mountFollowUpSuggestions(
     store.on('threads_changed', () => {
       showForActiveThread()
     }),
+    api.fs.onChanged(() => {
+      scheduleChangesRefresh()
+    }),
   ]
 
   return {
     root,
     clearSuggestions,
     destroy: (): void => {
-      fetchToken++
+      // Invalidate every in-flight fetch: after clear(), get() returns undefined
+      // so any pending `token !== fetchTokens.get(threadId)` check bails.
+      fetchTokens.clear()
+      if (changesRefreshTimer) clearTimeout(changesRefreshTimer)
       unsubs.forEach((u) => {
         u()
       })

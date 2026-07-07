@@ -3,11 +3,13 @@ import assert from 'node:assert/strict'
 import { createStore } from './store.ts'
 import {
   createThread,
+  deleteThread,
   openNewThread,
   switchThread,
   addMessage,
   addUsageDelta,
   getThreadById,
+  getActiveThread,
   isBlankThread,
   hasUnsubmittedPrompt,
   normalizeBlankThreads,
@@ -258,5 +260,62 @@ describe('draft prompt events', () => {
 
     setThreadDraftPrompt(store, id, 'same')
     assert.equal(draftChanged, 0)
+  })
+})
+
+describe('deleteThread', () => {
+  // Add a message right after creating each thread so it is non-blank before the
+  // next create — addMessage prunes *other* blank threads on a thread's first
+  // message, so creating both first and messaging afterwards would drop one.
+  it('removes the thread and picks a neighbouring active thread', () => {
+    const store = createStore()
+    const first = createThread(store)
+    addMessage(store, first, 'user', 'first')
+    const second = createThread(store)
+    addMessage(store, second, 'user', 'second')
+    switchThread(store, first)
+
+    deleteThread(store, first)
+
+    const state = store.getState()
+    assert.equal(
+      state.threads.some((t) => t.id === first),
+      false,
+    )
+    assert.equal(state.activeThreadId, second)
+    assert.ok(getActiveThread(store))
+  })
+
+  it('keeps a non-active thread as active when deleting another', () => {
+    const store = createStore()
+    const first = createThread(store)
+    addMessage(store, first, 'user', 'first')
+    const second = createThread(store)
+    addMessage(store, second, 'user', 'second')
+    switchThread(store, second)
+
+    deleteThread(store, first)
+
+    const state = store.getState()
+    assert.equal(state.activeThreadId, second)
+    assert.equal(state.threads.length, 1)
+  })
+
+  it('deleting the only thread removes it and leaves a fresh active thread', () => {
+    const store = createStore()
+    const only = createThread(store)
+
+    deleteThread(store, only)
+
+    const state = store.getState()
+    // The deleted thread is gone...
+    assert.equal(
+      state.threads.some((t) => t.id === only),
+      false,
+    )
+    // ...exactly one replacement remains, and it is the active one.
+    assert.equal(state.threads.length, 1)
+    assert.equal(state.activeThreadId, state.threads[0]?.id)
+    assert.ok(getActiveThread(store))
   })
 })

@@ -1,5 +1,5 @@
-import { getModelInfo, type TrackedModel } from '@shared/llm/model-catalog.ts'
-import { getAgentRole, type AgentRoleId } from '@shared/llm/agent-roles.ts'
+import { getModelInfo, type TrackedModel } from '@copse/llm/model-catalog.ts'
+import { getAgentRole, type AgentRoleId } from '@copse/llm/agent-roles.ts'
 
 /**
  * Experimental, opt-in "model classifier" feature (tracked in

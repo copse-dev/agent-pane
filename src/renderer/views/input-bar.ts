@@ -11,13 +11,13 @@ import {
   setThreadDraftPrompt,
 } from '@shared/store/thread-helpers.ts'
 import { dispatchAgentRun, enqueueUserMessage } from '../controller/message-queue.ts'
-import { nextWorkingBrief } from '@shared/agent/working-brief.ts'
+import { nextWorkingBrief } from '@copse/agent/working-brief.ts'
 import {
   buildTextWithAttachments,
   isTextBlockAttachment,
   textBlockLabel,
   type ThreadRefAttachment,
-} from '@shared/agent/build-text-with-attachments.ts'
+} from '@copse/agent/build-text-with-attachments.ts'
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import { bindFileDropTarget, attachFiles } from '../attachments/handle-file-drop.ts'
 import {
@@ -27,6 +27,7 @@ import {
   type AttachedThreadRef,
 } from './mention-picker.ts'
 import { initSkillPicker } from './skill-picker.ts'
+import { mountFooterIndexStatus } from './footer-index-status.ts'
 import { resolveSkillInvocation } from '@shared/skills/parse-skill-invocation.ts'
 import { buildSkillUserText } from '@shared/skills/build-skill-user-content.ts'
 import type { ContextBreakdown, UserContent } from '@shared/types'
@@ -38,8 +39,8 @@ import { bindFooterCompactLayout } from './footer-compact.ts'
 import { mountFooterOverflow } from './footer-overflow.ts'
 import { downloadThreadJsonl, threadHasExportableContent } from '../export-thread.ts'
 import { formatFooterUsageSummary, resolveFooterUsage } from '@shared/usage/footer-usage-summary.ts'
-import { type ExtraPricing } from '@shared/llm/estimate-cost.ts'
-import { extraProviderPricingMap } from '@shared/llm/extra-providers.ts'
+import { type ExtraPricing } from '@copse/llm/estimate-cost.ts'
+import { extraProviderPricingMap } from '@copse/llm/extra-providers.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { mountFollowUpSuggestions } from './follow-up-suggestions.ts'
 import {
@@ -135,6 +136,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const usageGroup = el('div', { class: 'footer-usage-group' })
   const queueIndicator = el('span', { class: 'footer-queue', hidden: '', 'aria-live': 'polite' })
   const contextWheel = createContextWheel()
+  // Appends its chip first, so it sits left of the wheel/queue/usage widgets.
+  const indexStatusChip = mountFooterIndexStatus(usageGroup, api)
   usageGroup.append(contextWheel.root, queueIndicator, usageBtn)
   footer.append(modelHost, branchHost, exportBtn)
   const footerOverflow = mountFooterOverflow(footer, [
@@ -929,6 +932,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     footerOverflow.destroy()
     footerCompact.destroy()
     branchControl.destroy()
+    indexStatusChip.destroy()
     skillPicker()
   }
 }

@@ -3,12 +3,12 @@
 # Two jobs, both idempotent and safe to re-run:
 #
 #   1. Docker CI runners — provision / (re)build / reprovision the self-hosted
-#      GitHub Actions runner fleets (`make runners`). With no TIER it brings up
-#      BOTH fleets (checks + e2e) in one shot; verifies the required tooling is
-#      installed, that each tier's `.env` is present and filled in, and scales
-#      to however many runners you ask for. The runner images bake the
-#      dependency tree at build time, so freshly (re)provisioned runners start
-#      warm instead of downloading ~525 MB of node_modules on their first job.
+#      GitHub Actions runner fleet (`make runners`). One unified image
+#      (ci-runners/) serves both the e2e and check tiers; verifies the required
+#      tooling is installed, that the `.env` is present and filled in, and scales
+#      to however many runners you ask for. The runner image bakes the dependency
+#      tree at build time, so freshly (re)provisioned runners start warm instead
+#      of downloading ~525 MB of node_modules on their first job.
 #
 #   2. App dev loop — keep dependencies and the `dist/` build in sync, then run
 #      the app (`make run`). Dependencies are only reinstalled when
@@ -27,34 +27,13 @@ SHELL := bash
 # Configuration (override on the command line, e.g. `make runners RUNNERS=5`)
 # ----------------------------------------------------------------------------
 
-# Which runner fleet to act on: `e2e` (the Chromium/Xvfb suite) or `checks`
-# (the lighter typecheck/lint/unit tier). Picks the compose stack + defaults.
-TIER ?= e2e
-
-ifeq ($(TIER),e2e)
-  RUNNER_DIR := .github/runner
-  # Chromium-under-Xvfb is memory hungry (~4-6 GB/runner) — 3 is a sane default.
-  RUNNERS ?= 3
-else ifeq ($(TIER),checks)
-  RUNNER_DIR := .github/runner-checks
-  # The static + unit tier is lighter; 2 is plenty.
-  RUNNERS ?= 2
-else
-  $(error TIER must be 'e2e' or 'checks' (got '$(TIER)'))
-endif
-
-# Which fleets the umbrella targets act on. When TIER is NOT pinned on the
-# command line, `runners`, `runners-build`, `runners-reprovision`,
-# `runners-restart` and `runners-down` fan out over BOTH fleets — so
-# `make runners` on a fresh machine brings up checks + e2e in one shot. Pin
-# TIER=e2e or TIER=checks to scope any of them to a single fleet. (`origin`
-# is `command line` only when the caller passed TIER=…; the `?=` default above
-# leaves it `file`.)
-ifeq ($(filter command line,$(origin TIER)),command line)
-  TIERS := $(TIER)
-else
-  TIERS := checks e2e
-endif
+# The unified runner fleet lives in ci-runners/ — one superset image that serves
+# BOTH the e2e (Chromium/Xvfb) and check (typecheck/lint/unit) tiers via a single
+# pool, so a box is eligible for whichever job is queued instead of one labelled
+# fleet idling while the other saturates. Size for the heavy tier since e2e jobs
+# land here too (~4-6 GB/runner), so 3 is a sane default.
+RUNNER_DIR := ci-runners
+RUNNERS ?= 3
 
 # `docker compose` (v2 plugin) is preferred; fall back to legacy `docker-compose`.
 DOCKER ?= docker
@@ -63,9 +42,9 @@ COMPOSE ?= $(shell \
   elif command -v docker-compose >/dev/null 2>&1; then echo "docker-compose"; \
   else echo "$(DOCKER) compose"; fi)
 
-# Run compose from inside the tier directory so its `.env` and `build.context`
-# resolve exactly as the READMEs document.
-COMPOSE_IN_TIER := cd $(RUNNER_DIR) && $(COMPOSE)
+# Run compose from inside the fleet directory so its `.env` resolves exactly as
+# the README documents.
+COMPOSE_IN_DIR := cd $(RUNNER_DIR) && $(COMPOSE)
 
 # Minimum Node major.minor required by package.json `engines` (>=22.18).
 NODE_MIN_MAJOR := 22
@@ -89,15 +68,15 @@ BUILD_SRC := $(shell find src packages scripts -type f 2>/dev/null) \
 help:
 	@echo "Copse Makefile"
 	@echo
-	@echo "Docker CI runners (no TIER = BOTH fleets; TIER=e2e|checks, RUNNERS=N):"
-	@echo "  make runners             Provision, build & (re)start the fleet(s) [$(TIERS)]"
-	@echo "  make runners-build       Build/refresh the runner image(s) only (pulls latest base)"
+	@echo "Docker CI runners (unified e2e+check fleet; RUNNERS=N):"
+	@echo "  make runners             Provision, build & (re)start the fleet"
+	@echo "  make runners-build       Build/refresh the runner image only (pulls latest base)"
 	@echo "  make runners-reprovision Clean rebuild: down → build --no-cache → up (picks up new deps)"
 	@echo "  make runners-restart     Restart the running containers"
-	@echo "  make runners-down        Stop & remove the fleet(s)"
-	@echo "  make runners-logs        Follow ONE fleet's logs (TIER=e2e|checks, default $(TIER))"
+	@echo "  make runners-down        Stop & remove the fleet"
+	@echo "  make runners-logs        Follow the fleet's logs"
 	@echo "  make runners-ps          Show fleet status"
-	@echo "  make runner-env          Check/scaffold the $(TIER) .env file"
+	@echo "  make runner-env          Check/scaffold the ci-runners/.env file"
 	@echo
 	@echo "App dev loop:"
 	@echo "  make deps              Install deps if package-lock.json changed"
@@ -110,10 +89,9 @@ help:
 	@echo "  make check-node        Verify Node satisfies engines (>=$(NODE_MIN_MAJOR).$(NODE_MIN_MINOR))"
 	@echo
 	@echo "Examples:"
-	@echo "  make runners                      # BOTH fleets (checks + e2e) on this machine"
-	@echo "  make runners-reprovision          # clean-rebuild BOTH fleets (after a repull)"
-	@echo "  make runners RUNNERS=5             # both fleets, 5 runners each"
-	@echo "  make runners TIER=checks RUNNERS=2 # just the check-tier fleet"
+	@echo "  make runners                      # bring the fleet up on this machine"
+	@echo "  make runners-reprovision          # clean-rebuild the fleet (after a repull)"
+	@echo "  make runners RUNNERS=5             # 5 runners"
 	@echo "  make run                           # sync deps+build, then launch"
 
 # ============================================================================
@@ -178,98 +156,56 @@ runner-env:
 	  missing=1; \
 	fi; \
 	if [ "$$missing" -ne 0 ]; then exit 1; fi; \
-	echo "==> $(TIER) .env OK ($$env_file): GITHUB_URL set, credentials present."
+	echo "==> .env OK ($$env_file): GITHUB_URL set, credentials present."
 
 # --- provision / build / reprovision ---------------------------------------
-# The umbrella targets verify tooling once, then loop over $(TIERS), re-invoking
-# make once per fleet with TIER pinned. Each per-fleet sub-make re-parses this
-# file with its own TIER, so RUNNER_DIR, the tier `.env` and the RUNNERS default
-# all resolve correctly. A command-line `RUNNERS=N` propagates to the sub-makes
-# automatically (make forwards command-line variables), overriding both fleets.
+# One unified fleet, so each target acts on ci-runners/ directly. A command-line
+# `RUNNERS=N` overrides the default scale.
 
-# Bring the fleet(s) up. `up -d --build --pull always` (re)creates containers,
+# Bring the fleet up. `up -d --build --pull always` (re)creates containers,
 # rebuilds the image (pulling the latest base so the toolchain stays current),
-# and scales to $(RUNNERS). With no TIER this does checks + e2e.
+# and scales to $(RUNNERS).
 .PHONY: runners
-runners: check-tools
-	@for t in $(TIERS); do \
-	  $(MAKE) --no-print-directory _fleet-up TIER=$$t || exit $$?; \
-	done
+runners: check-tools runner-env
+	@echo "==> Provisioning $(RUNNERS) runner(s) from $(RUNNER_DIR)…"
+	$(COMPOSE_IN_DIR) up -d --build --pull always --scale runner=$(RUNNERS)
+	@echo "==> Fleet up. Follow logs with:  make runners-logs"
 
-.PHONY: _fleet-up
-_fleet-up: runner-env
-	@echo "==> Provisioning $(RUNNERS) '$(TIER)' runner(s) from $(RUNNER_DIR)…"
-	$(COMPOSE_IN_TIER) up -d --build --pull always --scale runner=$(RUNNERS)
-	@echo "==> '$(TIER)' fleet up. Follow logs with:  make runners-logs TIER=$(TIER)"
-
-# Rebuild the image(s) without touching running containers (pull latest base).
+# Rebuild the image without touching running containers (pull latest base).
 .PHONY: runners-build
 runners-build: check-tools
-	@for t in $(TIERS); do \
-	  $(MAKE) --no-print-directory _fleet-build TIER=$$t || exit $$?; \
-	done
-
-.PHONY: _fleet-build
-_fleet-build:
-	@echo "==> Building the '$(TIER)' runner image (pulling latest base)…"
-	$(COMPOSE_IN_TIER) build --pull
+	@echo "==> Building the runner image (pulling latest base)…"
+	$(COMPOSE_IN_DIR) build --pull
 
 # Clean reprovision: tear the fleet down, rebuild the image from scratch (no
 # layer cache, fresh base) so a new baked dependency layer is picked up, then
 # bring it back up. This is the "I just repulled / my runners are stale" button.
 .PHONY: runners-reprovision
-runners-reprovision: check-tools
-	@for t in $(TIERS); do \
-	  $(MAKE) --no-print-directory _fleet-reprovision TIER=$$t || exit $$?; \
-	done
-
-.PHONY: _fleet-reprovision
-_fleet-reprovision: runner-env
-	@echo "==> Reprovisioning the '$(TIER)' fleet (down → build --no-cache → up)…"
-	$(COMPOSE_IN_TIER) down --remove-orphans
-	$(COMPOSE_IN_TIER) build --no-cache --pull
-	$(COMPOSE_IN_TIER) up -d --scale runner=$(RUNNERS)
-	@echo "==> '$(TIER)' fleet reprovisioned ($(RUNNERS) runner(s))."
+runners-reprovision: check-tools runner-env
+	@echo "==> Reprovisioning the fleet (down → build --no-cache → up)…"
+	$(COMPOSE_IN_DIR) down --remove-orphans
+	$(COMPOSE_IN_DIR) build --no-cache --pull
+	$(COMPOSE_IN_DIR) up -d --scale runner=$(RUNNERS)
+	@echo "==> Fleet reprovisioned ($(RUNNERS) runner(s))."
 
 # Restart the current containers in place (no rebuild, no re-scale).
 .PHONY: runners-restart
 runners-restart: check-tools
-	@for t in $(TIERS); do \
-	  $(MAKE) --no-print-directory _fleet-restart TIER=$$t || exit $$?; \
-	done
-
-.PHONY: _fleet-restart
-_fleet-restart:
-	@echo "==> Restarting the '$(TIER)' fleet…"
-	$(COMPOSE_IN_TIER) restart
+	@echo "==> Restarting the fleet…"
+	$(COMPOSE_IN_DIR) restart
 
 .PHONY: runners-down
 runners-down: check-tools
-	@for t in $(TIERS); do \
-	  $(MAKE) --no-print-directory _fleet-down TIER=$$t || exit $$?; \
-	done
+	@echo "==> Stopping & removing the fleet…"
+	$(COMPOSE_IN_DIR) down
 
-.PHONY: _fleet-down
-_fleet-down:
-	@echo "==> Stopping & removing the '$(TIER)' fleet…"
-	$(COMPOSE_IN_TIER) down
-
-# logs follows a SINGLE fleet (tailing both at once is unreadable): TIER selects
-# it (default $(TIER)). ps shows every fleet in $(TIERS).
 .PHONY: runners-logs
 runners-logs:
-	@$(COMPOSE_IN_TIER) logs -f
+	@$(COMPOSE_IN_DIR) logs -f
 
 .PHONY: runners-ps
 runners-ps:
-	@for t in $(TIERS); do \
-	  echo "== $$t =="; \
-	  $(MAKE) --no-print-directory _fleet-ps TIER=$$t || exit $$?; \
-	done
-
-.PHONY: _fleet-ps
-_fleet-ps:
-	@$(COMPOSE_IN_TIER) ps
+	@$(COMPOSE_IN_DIR) ps
 
 # ============================================================================
 # 2) App dev loop: deps -> build -> run

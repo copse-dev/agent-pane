@@ -58,6 +58,17 @@ function prsIcon(): SVGSVGElement {
   )
 }
 
+function memoriesIcon(): SVGSVGElement {
+  return outlineIcon(
+    'memories',
+    [
+      'M4 19.5A2.5 2.5 0 0 1 6.5 17H20',
+      'M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z',
+    ],
+    'titlebar-btn-icon',
+  )
+}
+
 export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   // The structural #titlebar div needs the .titlebar class for its flex layout,
   // height, and traffic-light clearance to apply. Without it the controls
@@ -98,6 +109,15 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     prsIcon(),
     'PRs',
   )
+  // The Memories button is gated on the experimental okfMemoriesEnabled setting;
+  // it starts hidden and is revealed once the setting is read (and re-checked on
+  // settings_changed), mirroring how the tools themselves are gated.
+  const memoriesBtn = el(
+    'button',
+    { class: 'titlebar-btn titlebar-text-btn', 'aria-label': 'Open memories', hidden: true },
+    memoriesIcon(),
+    'Memories',
+  )
   const browserBtn = el(
     'button',
     { class: 'titlebar-btn titlebar-text-btn', 'aria-label': 'Open browser' },
@@ -111,6 +131,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     terminalBtn,
     changesBtn,
     prsBtn,
+    memoriesBtn,
     browserBtn,
   )
 
@@ -136,6 +157,11 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     syncPanelBtns()
   })
 
+  memoriesBtn.addEventListener('click', () => {
+    toggleRightPanelWithWorkspace(store, api, 'memories')
+    syncPanelBtns()
+  })
+
   browserBtn.addEventListener('click', () => {
     toggleRightPanelWithWorkspace(store, api, 'browser')
     syncPanelBtns()
@@ -147,7 +173,17 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     terminalBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'terminal')
     changesBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'changes')
     prsBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'prs')
+    memoriesBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'memories')
     browserBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'browser')
+  }
+
+  // Reveal the Memories button only while the experimental OKF memories feature
+  // is enabled. Read on mount and again whenever settings change so toggling it
+  // in the dialog takes effect without a restart.
+  function syncMemoriesBtn(): void {
+    void api.settings.get('okfMemoriesEnabled').then((enabled) => {
+      memoriesBtn.hidden = enabled !== true
+    })
   }
 
   // Surface the pending agent-proposed diff count on the Changes button so the
@@ -205,6 +241,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
   syncBranch()
   syncPanelBtns()
   syncChangesBadge()
+  syncMemoriesBtn()
   const unsubs = [
     store.on('workspace_changed', () => {
       syncName()
@@ -215,6 +252,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     store.on('files_pane_changed', syncPanelBtns),
     store.on('right_panel_mode_changed', syncPanelBtns),
     store.on('staged_diffs_changed', syncChangesBadge),
+    store.on('settings_changed', syncMemoriesBtn),
   ]
 
   return () => {
