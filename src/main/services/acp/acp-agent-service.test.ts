@@ -226,4 +226,23 @@ describe('buildAcpPrompt', () => {
     assert.match(prompt, /User: earlier/)
     assert.match(prompt, /look at this$/)
   })
+
+  it('appends the invoked-skills block after the current message', () => {
+    // An external ACP agent has its own skill catalog and never sees Copse's, so
+    // the resolved SKILL.md instructions must travel inlined with the turn.
+    const prompt = buildAcpPrompt('The user invoked /demo. Follow the skill instructions.', [], {
+      skills:
+        '\n\n---\n\n## Invoked skills\n\n<skill_content name="demo">do the thing</skill_content>',
+    })
+    assert.match(prompt, /The user invoked \/demo\./)
+    assert.match(prompt, /## Invoked skills/)
+    assert.match(prompt, /do the thing<\/skill_content>$/)
+  })
+
+  it('keeps the invoked-skills block with the new message when replaying a transcript', () => {
+    const prompt = buildAcpPrompt('go', [{ role: 'user', content: 'earlier' }], {
+      skills: '\n\n## Invoked skills\n\nBODY',
+    })
+    assert.match(prompt, /--- New message ---\ngo\n\n## Invoked skills\n\nBODY$/)
+  })
 })
