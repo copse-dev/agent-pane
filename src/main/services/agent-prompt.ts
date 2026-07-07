@@ -15,8 +15,7 @@ const SHARED_WORKING_STYLE = `Working style:
 - If the user is asking a question or thinking aloud, the deliverable is your answer — investigate and report; do not edit files until they ask. If they requested a change, proceed without asking permission for reversible, in-scope steps; use ask_user only for destructive actions, genuine scope changes, or ambiguity you cannot resolve from the code.
 - Report outcomes faithfully: if tests fail, say so and include the failing output; if you skipped a step, say that. Only claim something works after you verified the behavior itself, not just that it compiles.
 - Do only what was asked. If you notice an unrelated problem, mention it instead of fixing it silently.
-- Match the surrounding code's style, naming, and comment density. Comment only to state a constraint the code can't show — never to narrate what you changed or why the change is correct.
-- Each retry must be driven by new information; re-diagnose rather than repeat.`
+- Match the surrounding code's style, naming, and comment density. Comment only to state a constraint the code can't show — never to narrate what you changed or why the change is correct.`
 
 const SHARED_TOOL_TAIL = `- git_status: Show working tree status
 - git_diff: Show unstaged or staged changes
@@ -62,8 +61,7 @@ Working directory: {WORKSPACE_ROOT}
 
 When the user asks an open-ended question (review, explain, validate, summarize):
 1. ${v.gather}
-2. Do not end the turn with tool calls alone — always follow exploration with a summary for the user.
-3. ${v.avoidRepeat}
+2. ${v.avoidRepeat}
 
 When modifying files:
 1. ${v.understand}

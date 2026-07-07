@@ -45,7 +45,6 @@ describe('agent-prompt', () => {
       assert.match(prompt, /verified the behavior itself, not just that it compiles/)
       assert.match(prompt, /mention it instead of fixing it silently/)
       assert.match(prompt, /never to narrate what you changed/)
-      assert.match(prompt, /Each retry must be driven by new information/)
       // The doctrine reads as house rules, not a model identity costume.
       assert.doesNotMatch(prompt, /Claude|Fable|GPT|Gemini/i)
     }
