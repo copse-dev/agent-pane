@@ -44,6 +44,8 @@ import {
   stageDiff,
 } from '../diff-queue.ts'
 import { networkDenialMarker, networkDenialsSince } from '../../project-sandbox/network-scope.ts'
+import { ensureWorktreeRecoverable, resetSessionBackup } from '../worktree-backup.ts'
+import { getSetting } from '../storage/settings.ts'
 import { detectLanguage } from '../language.ts'
 import {
   getActiveProjectRoot,
@@ -303,6 +305,9 @@ export async function runAcpAgentFromSettings(
     readTextFile,
     writeTextFile: (req) => writeViaDiffQueue(req, options.signal, queueWrites),
   }
+  // New turn: reset the restore point so this turn's first file-write approval
+  // snapshots the user's current uncommitted work (see respondToPermission).
+  resetSessionBackup()
   const baseline = await captureWorktreeBaseline()
   const denialMark = networkDenialMarker()
 
@@ -440,6 +445,14 @@ export async function listAcpModelsForAgent(agentId: string): Promise<AcpModelSe
  * a grant and also answers with the agent's own `allow_always` option so the
  * agent-side session stops asking within the turn.
  */
+/**
+ * ACP tool kinds whose only effect is mutating files in the worktree, so a
+ * worktree backup fully covers the risk. Shell (`execute`) and web (`fetch`) are
+ * excluded: their side effects (deleting outside the tree, spending money,
+ * sending data) are not undone by restoring a git snapshot.
+ */
+const WRITE_TOOL_KINDS = new Set(['edit', 'delete', 'move'])
+
 async function respondToPermission(
   agent: { id: string; title: string },
   req: RequestPermissionRequest,
@@ -447,6 +460,16 @@ async function respondToPermission(
   const kind = req.toolCall.kind ?? 'other'
   if (isAcpPermissionRemembered(agent.id, kind)) {
     return permissionResponseFor(req.options, true, { preferAlways: true })
+  }
+  // File-mutating kinds (edit/delete/move) are auto-approved once a durable
+  // backup of the user's worktree exists — the same safety net the native tools
+  // use. Nothing the agent overwrites is unrecoverable, so the per-edit modal
+  // adds friction without adding protection. Shell/web/other still prompt: a
+  // stash makes overwritten files recoverable, not a `rm -rf` or a network call.
+  if (WRITE_TOOL_KINDS.has(kind) && getSetting<boolean>('acpAutoApproveEditsWithBackup', true)) {
+    if (await ensureWorktreeRecoverable()) {
+      return permissionResponseFor(req.options, true)
+    }
   }
   const presentation = presentPermissionRequest(agent.title, req)
   const { approved, remember } = await requestApproval({
