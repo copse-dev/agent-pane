@@ -16,6 +16,8 @@ import {
   ghRunListTool,
   ghRunViewTool,
 } from '../tools/gh-tools.ts'
+import { ghPrActionTools } from '../tools/gh-pr-action-tools.ts'
+import { hasGitHubApiToken } from './github/backend/github-token.ts'
 import { investigateCiTool } from '../tools/investigate-ci-tool.ts'
 import {
   getCiStatusTool,
@@ -90,6 +92,13 @@ export function createRegistry(): ToolRegistry {
     registry.register(getCiStatusTool)
     registry.register(waitForCiChecksTool)
     registry.register(getCiFailureLogsTool)
+  }
+  // PR lifecycle write tools work through the swappable GitHub backend, so they
+  // are available whenever *either* `gh` is usable or an API token is present —
+  // not gated on `gh` alone like the read tools above. They mutate GitHub state,
+  // so they stay out of the read-only allow-list and go through the approval gate.
+  if (ghAvailable || hasGitHubApiToken()) {
+    for (const tool of ghPrActionTools) registry.register(tool)
   }
   registry.register(runShellTool)
   registry.register(exploreTool)
