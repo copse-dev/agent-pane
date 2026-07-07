@@ -42,6 +42,7 @@
     "analyze:thread": "node scripts/run-analyze-thread.mts",
     "bench:semantic": "node scripts/semantic-search-bench.mts",
     "sync:models": "node scripts/sync-model-catalog.mts",
+    "sync:local-models": "node scripts/sync-local-models.mts",
     "sync:cursor-skills": "npx tsx scripts/fetch-bundled-cursor-skills.mts",
     "pack:mac": "npm run build:release && npm run icons:mac && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
     "dist:mac": "npm run build:release && electron-builder --mac",

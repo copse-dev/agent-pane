@@ -7,16 +7,19 @@ describe('quant penalty estimator', () => {
     const p8 = estimateQuantPenalty({ bitsPerWeight: 8, paramsB: 30 })
     const p4 = estimateQuantPenalty({ bitsPerWeight: 4.5, paramsB: 30 })
     const p2 = estimateQuantPenalty({ bitsPerWeight: 2.6, paramsB: 30 })
-    assert.ok(p8 < 0.005, `8bpw should be near-lossless, got ${p8}`)
-    assert.ok(p4 > p8 && p4 < 0.03, `4.5bpw@30B should be ~1-2%, got ${p4}`)
-    assert.ok(p2 > p4 && p2 > 0.1, `2.6bpw@30B should be sizeable, got ${p2}`)
+    assert.ok(p8 < 0.005, `8bpw should be near-lossless, got ${String(p8)}`)
+    assert.ok(p4 > p8 && p4 < 0.03, `4.5bpw@30B should be ~1-2%, got ${String(p4)}`)
+    assert.ok(p2 > p4 && p2 > 0.1, `2.6bpw@30B should be sizeable, got ${String(p2)}`)
   })
 
   it('penalizes smaller models more than larger ones at the same bit width', () => {
     const big = estimateQuantPenalty({ bitsPerWeight: 4.5, paramsB: 70 })
     const mid = estimateQuantPenalty({ bitsPerWeight: 4.5, paramsB: 13 })
     const small = estimateQuantPenalty({ bitsPerWeight: 4.5, paramsB: 3 })
-    assert.ok(small > mid && mid > big, `expected small>mid>big, got ${small}, ${mid}, ${big}`)
+    assert.ok(
+      small > mid && mid > big,
+      `expected small>mid>big, got ${String(small)}, ${String(mid)}, ${String(big)}`,
+    )
   })
 
   it('never exceeds the 0.6 cap even for extreme quant', () => {
@@ -32,7 +35,10 @@ describe('quant penalty estimator', () => {
   it('estimates a quantized score below the full score and flags it', () => {
     const est = estimateQuantizedScore(80, { bitsPerWeight: 4.5, paramsB: 32 })
     assert.equal(est.estimated, true)
-    assert.ok(est.value < 80 && est.value > 70, `expected a small drop from 80, got ${est.value}`)
+    assert.ok(
+      est.value < 80 && est.value > 70,
+      `expected a small drop from 80, got ${String(est.value)}`,
+    )
     assert.match(est.basis, /quant penalty/)
   })
 

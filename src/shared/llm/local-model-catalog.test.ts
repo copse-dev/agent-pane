@@ -8,6 +8,7 @@ import {
   LOCAL_MODEL_CATALOG,
   getHardwareClass,
   getLocalModelCapability,
+  localBenchmarkScore,
   recommendLocalModelsForRole,
   recommendedLocalSetup,
   recommendedSetupForClass,
@@ -73,21 +74,63 @@ describe('local model catalog', () => {
     assert.ok(!recs.some((m) => m.id === 'qwen/qwen3.6-35b-a3b'))
   })
 
-  it('is deterministic and falls back to catalog order when no scores are sourced', () => {
+  it('is deterministic, and falls back to catalog order for a role with no sourced scores', () => {
     const a = recommendLocalModelsForRole('coder')
     const b = recommendLocalModelsForRole('coder')
     assert.deepEqual(
       a.map((m) => m.id),
       b.map((m) => m.id),
     )
-    // With no sourced scores, order follows the catalog's declared order.
-    const catalogOrder = LOCAL_MODEL_CATALOG.filter((m) => m.bestForRoles.includes('coder')).map(
+    // `docs` models carry no synced scores, so their order follows the catalog.
+    const docs = recommendLocalModelsForRole('docs')
+    const catalogOrder = LOCAL_MODEL_CATALOG.filter((m) => m.bestForRoles.includes('docs')).map(
       (m) => m.id,
     )
     assert.deepEqual(
-      a.map((m) => m.id),
+      docs.map((m) => m.id),
       catalogOrder,
     )
+  })
+
+  it('ranks a model with a sourced score above unscored peers for that role', () => {
+    // Qwen2.5-Coder-32B has a synced aider-polyglot score (a `coder` benchmark),
+    // so it outranks coder models with no scores yet.
+    const coders = recommendLocalModelsForRole('coder').map((m) => m.id)
+    const scored = coders.indexOf('qwen/qwen2.5-coder-32b')
+    const unscored = coders.indexOf('deepseek/deepseek-coder-v2-lite')
+    assert.ok(scored >= 0 && unscored >= 0)
+    assert.ok(scored < unscored, 'the scored coder should rank ahead of the unscored one')
+  })
+
+  it('merges a measured score from the sync into the catalog', () => {
+    const qwen = getLocalModelCapability('qwen/qwen2.5-coder-32b')
+    const score = qwen?.benchmarks['aider-polyglot']
+    assert.ok(score, 'expected a synced aider-polyglot score')
+    assert.match(score.source, /Aider/)
+    assert.ok(score.asOf.length > 0)
+    assert.ok(Number.isFinite(score.value))
+  })
+
+  it('estimates the on-device score by adjusting a full-precision measurement down', () => {
+    const qwen = getLocalModelCapability('qwen/qwen2.5-coder-32b')
+    assert.ok(qwen)
+    const measured = qwen.benchmarks['aider-polyglot']
+    assert.ok(measured)
+    const local = localBenchmarkScore(qwen, 'aider-polyglot')
+    assert.ok(local)
+    // The catalog entry is 4-bit while the measurement is full precision, so the
+    // shown score is an estimate slightly below the measured full-precision one.
+    assert.equal(local.estimated, true)
+    assert.ok(local.value < measured.value)
+    assert.ok(local.value > measured.value * 0.9, 'a 32B Q4 penalty should be small')
+    assert.match(local.basis ?? '', /quant penalty/)
+  })
+
+  it('returns the measured score unchanged when it is not higher precision than the quant', () => {
+    // A model with no synced score returns null (nothing to show).
+    const gemma = getLocalModelCapability('google/gemma-3-12b')
+    assert.ok(gemma)
+    assert.equal(localBenchmarkScore(gemma, 'aider-polyglot'), null)
   })
 
   it('returns nothing for an impossible budget', () => {

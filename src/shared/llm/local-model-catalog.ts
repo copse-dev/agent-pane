@@ -17,6 +17,8 @@
 // forward-looking ids (e.g. `qwen/qwen3.6-35b-a3b`).
 
 import { AGENT_ROLES, type AgentRoleId } from './agent-roles.ts'
+import { LOCAL_MODEL_BENCHMARKS } from './local-model-benchmarks.generated.ts'
+import { estimateQuantizedScore } from './quant-penalty.ts'
 
 /** Benchmark axes we track. Keys are referenced by `AgentRole.wants`. */
 export type Benchmark =
@@ -49,6 +51,12 @@ export interface BenchmarkScore {
   source: string
   /** ISO date the score was recorded, e.g. "2025-03". Required. */
   asOf: string
+  /**
+   * Bits per weight the score was measured at (16 = full precision). Lets the
+   * runtime decide whether to adjust a full-precision number down to the model's
+   * actual quant. Absent for scores of unknown precision.
+   */
+  measuredBitsPerWeight?: number
   /**
    * True when `value` is a full-precision score adjusted down by the modelled
    * quantization penalty (see `quant-penalty.ts`) rather than a direct quantized
@@ -86,9 +94,10 @@ export interface LocalModelCapability {
 /**
  * Seed catalog. Includes the ids the app already ships (see
  * `preferred-models.ts`) plus the 64 GB / 4-bit reference shortlist from the
- * plan doc. Benchmarks start empty by design — see the sourcing rule above.
+ * plan doc. Inline `benchmarks` are the curated/editorial layer; measured scores
+ * are merged in from the sync-generated file below (see {@link LOCAL_MODEL_CATALOG}).
  */
-export const LOCAL_MODEL_CATALOG: readonly LocalModelCapability[] = [
+const BASE_CATALOG: readonly LocalModelCapability[] = [
   {
     id: 'qwen/qwen3.6-35b-a3b',
     label: 'Qwen3 35B A3B',
@@ -165,12 +174,72 @@ export const LOCAL_MODEL_CATALOG: readonly LocalModelCapability[] = [
   },
 ]
 
+/**
+ * The catalog, with measured benchmark scores from `sync:local-models` merged
+ * over the inline editorial entries. Synced scores win where both exist.
+ */
+export const LOCAL_MODEL_CATALOG: readonly LocalModelCapability[] = BASE_CATALOG.map((m) => {
+  const synced = LOCAL_MODEL_BENCHMARKS[m.id] as
+    | Partial<Record<Benchmark, BenchmarkScore>>
+    | undefined
+  if (!synced) return m
+  return { ...m, benchmarks: { ...m.benchmarks, ...synced } }
+})
+
 const MODEL_BY_ID: ReadonlyMap<string, LocalModelCapability> = new Map(
   LOCAL_MODEL_CATALOG.map((m) => [m.id, m]),
 )
 
 export function getLocalModelCapability(id: string): LocalModelCapability | null {
   return MODEL_BY_ID.get(id) ?? null
+}
+
+// Approximate effective bits per weight per K-quant family, for adjusting a
+// full-precision score down to how the model actually runs.
+const QUANT_BITS_PER_WEIGHT: Record<string, number> = {
+  q8: 8,
+  q6: 6.6,
+  q5: 5.5,
+  q4: 4.5,
+  q3: 3.4,
+  q2: 2.6,
+}
+
+/** Effective bits per weight for a quant label like "Q4_K_M" (default 4.5). */
+export function bitsPerWeightForQuant(quant: string): number {
+  const m = /q(\d)/i.exec(quant)
+  const key = m ? `q${m[1] ?? ''}` : ''
+  return QUANT_BITS_PER_WEIGHT[key] ?? 4.5
+}
+
+/**
+ * The benchmark score to show for a model *as it runs locally*: the measured
+ * score when it was measured at or below the model's quant, otherwise the
+ * full-precision measurement adjusted down by the modelled quant penalty (flagged
+ * `estimated`). Null when the benchmark is unknown for the model.
+ */
+export function localBenchmarkScore(
+  model: LocalModelCapability,
+  benchmark: Benchmark,
+): BenchmarkScore | null {
+  const measured = model.benchmarks[benchmark]
+  if (!measured) return null
+  const targetBpw = bitsPerWeightForQuant(model.quant)
+  if (measured.measuredBitsPerWeight === undefined || measured.measuredBitsPerWeight <= targetBpw) {
+    return measured
+  }
+  const est = estimateQuantizedScore(measured.value, {
+    bitsPerWeight: targetBpw,
+    paramsB: model.paramsB,
+  })
+  return {
+    value: est.value,
+    source: measured.source,
+    asOf: measured.asOf,
+    measuredBitsPerWeight: targetBpw,
+    estimated: true,
+    basis: est.basis,
+  }
 }
 
 /**
