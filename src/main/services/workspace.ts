@@ -65,6 +65,17 @@ export function getWorkspaceRoot(): string | null {
   return workspaceRoot
 }
 
+/**
+ * Id of the active project (the `activeProjectId` the renderer persists and keys
+ * the filesystem thread-store by), or null when none is set. Lets main-process
+ * services that only carry a `threadId` (e.g. the remote-agent clients) locate
+ * the thread's on-disk directory without a projectId being threaded through.
+ */
+export function getActiveProjectId(): string | null {
+  const id = storageGet(ACTIVE_PROJECT_KEY)
+  return typeof id === 'string' && id.length > 0 ? id : null
+}
+
 export function getActiveProjectRoot(): string | null {
   const activeProjectId = storageGet(ACTIVE_PROJECT_KEY)
   if (typeof activeProjectId !== 'string') return workspaceRoot
