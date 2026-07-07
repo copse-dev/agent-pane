@@ -194,7 +194,12 @@ function applyTextToolCallRecovery(
   onChunk: (chunk: AgentStreamChunk) => void,
   coerceTextToolCallArgs?: CoerceToolArgsFn,
 ): string {
-  if (pendingToolCalls.length > 0 || !/<\s*tool_call\s*>/i.test(assistantText)) {
+  // Recover on either the Cursor `<tool_call>` wrapper or a bare Anthropic/MiniMax
+  // `<invoke name="…">` block — MiniMax emits the latter with no wrapper (#519), and
+  // gating on `<tool_call>` alone left those turns to leak raw XML as a final answer.
+  const hasEmbeddedCall =
+    /<\s*tool_call\s*>/i.test(assistantText) || /<\s*invoke\b/i.test(assistantText)
+  if (pendingToolCalls.length > 0 || !hasEmbeddedCall) {
     return assistantText
   }
   const recovered = recoverTextToolCalls(assistantText, coerceTextToolCallArgs)

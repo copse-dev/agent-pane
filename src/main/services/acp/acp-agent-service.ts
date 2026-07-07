@@ -159,12 +159,13 @@ export class AcpTurnFailure extends Error {
 }
 
 /**
- * Retryability check for ACP turn failures. External agents surface provider
- * failures as opaque JSON-RPC error text (no status code or SDK error class to
- * inspect, unlike `isRetryableStreamError`), so match the transient signatures
- * in the message: Anthropic 529/overloaded, rate limits, and 5xx server errors.
+ * A transient *provider* failure surfaced through the agent. External agents
+ * relay provider errors as opaque JSON-RPC error text (no status code or SDK
+ * error class to inspect, unlike `isRetryableStreamError`), so match the
+ * transient signatures in the message: Anthropic 529/overloaded, rate limits,
+ * and 5xx server errors.
  */
-export function isRetryableAcpError(err: unknown): boolean {
+export function isTransientProviderError(err: unknown): boolean {
   const msg = errorMessage(err)
   if (/\boverloaded\b/i.test(msg)) return true
   if (/\brate[ _-]?limit/i.test(msg)) return true
@@ -174,7 +175,36 @@ export function isRetryableAcpError(err: unknown): boolean {
 }
 
 /**
- * Retry a whole-turn ACP prompt on transient provider errors, mirroring
+ * A dropped ACP *transport* — the connection closed or the agent process died
+ * (crash, broken stdio pipe) rather than a provider hiccup. Kept distinct from
+ * {@link isTransientProviderError} because the remedy differs: the failed
+ * attempt disposes the dead session (see `attempt()` below), so the retry
+ * respawns the agent and replays history into a fresh session instead of
+ * re-driving a connection that no longer exists. This is the `"ACP connection
+ * closed"` case that previously surfaced straight to the user with no retry.
+ */
+export function isAcpConnectionDropped(err: unknown): boolean {
+  const msg = errorMessage(err)
+  if (/connection (?:closed|reset|lost)/i.test(msg)) return true
+  if (/\b(?:EPIPE|ECONNRESET)\b/.test(msg)) return true
+  if (/premature close/i.test(msg)) return true
+  if (/write after end/i.test(msg)) return true
+  return false
+}
+
+/**
+ * Retryability gate for ACP turn failures: a transient provider error or a
+ * dropped connection. Either is safe to retry only because `runWithAcpRetry`
+ * still requires `hasProgress()` to be false — a failure that arrives after
+ * tool calls ran or text streamed is never re-run.
+ */
+export function isRetryableAcpError(err: unknown): boolean {
+  return isTransientProviderError(err) || isAcpConnectionDropped(err)
+}
+
+/**
+ * Retry a whole-turn ACP prompt on a retryable failure (a transient provider
+ * error or a dropped connection — see {@link isRetryableAcpError}), mirroring
  * `yieldStreamWithRetry`'s guard: only attempts that made no visible progress
  * (`hasProgress()` false — no chunk reached the UI yet) are retried, so a
  * mid-turn failure never re-runs tool calls or duplicates streamed text.
