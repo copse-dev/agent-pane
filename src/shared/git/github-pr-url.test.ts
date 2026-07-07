@@ -21,6 +21,16 @@ describe('parseGithubPrUrl', () => {
     })
   })
 
+  it('parses a link to a PR sub-tab as the PR itself', () => {
+    assert.deepEqual(parseGithubPrUrl('https://github.com/org/repo/pull/99/files'), {
+      owner: 'org',
+      repo: 'repo',
+      number: 99,
+      url: 'https://github.com/org/repo/pull/99/files',
+    })
+    assert.equal(parseGithubPrUrl('https://github.com/org/repo/pull/99/commits')?.number, 99)
+  })
+
   it('returns null for non-PR GitHub URLs', () => {
     assert.equal(parseGithubPrUrl('https://github.com/org/repo/issues/1'), null)
     assert.equal(parseGithubPrUrl('https://gitlab.com/org/repo/pull/1'), null)

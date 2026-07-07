@@ -37,6 +37,26 @@ describe('agent-prompt', () => {
     assert.match(BASE_SYSTEM_PROMPT_DIRECT_READS, /not run_shell/)
   })
 
+  it('includes the shared working-style doctrine in both modes', () => {
+    for (const prompt of [BASE_SYSTEM_PROMPT, BASE_SYSTEM_PROMPT_DIRECT_READS]) {
+      assert.match(prompt, /Working style:/)
+      assert.match(prompt, /Lead with the outcome/)
+      assert.match(prompt, /Report outcomes faithfully/)
+      assert.match(prompt, /verified the behavior itself, not just that it compiles/)
+      assert.match(prompt, /mention it instead of fixing it silently/)
+      assert.match(prompt, /never to narrate what you changed/)
+      // The doctrine reads as house rules, not a model identity costume.
+      assert.doesNotMatch(prompt, /Claude|Fable|GPT|Gemini/i)
+    }
+  })
+
+  it('replaces the two-strike retry rule with the re-diagnosis rule', () => {
+    for (const prompt of [BASE_SYSTEM_PROMPT, BASE_SYSTEM_PROMPT_DIRECT_READS]) {
+      assert.match(prompt, /If a retry would not be informed by new information/)
+      assert.doesNotMatch(prompt, /same error persists after two attempts/)
+    }
+  })
+
   it('external API safety block warns about secrets', () => {
     assert.match(EXTERNAL_API_SAFETY_BLOCK, /Never hardcode, commit, or log secrets or API keys/)
     assert.match(EXTERNAL_API_SAFETY_BLOCK, /manifest\/lockfile/)

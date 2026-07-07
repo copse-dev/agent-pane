@@ -18,6 +18,7 @@ import {
 import { getApiKey, getSetting } from '../storage/settings.ts'
 import { validateRemoteAgentBaseUrl } from '../security/web-origin-policy.ts'
 import { getCurrentBranchName } from '../github/git-service.ts'
+import { getActiveProjectId } from '../workspace.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
 import { clearManagedAgentSession, runManagedAgentFromSettings } from './managed-agents-client.ts'
 import {
@@ -25,6 +26,7 @@ import {
   type RemoteAgentRunOptions,
   type RemoteAgentRunResult,
 } from './remote-agent-shared.ts'
+import { attachRemoteAgentPrFromText, recordRemoteAgentLaunch } from './remote-agent-link-store.ts'
 import { LruStringCache } from './lru-string-cache.ts'
 
 // Re-exported for callers/tests that import the repository resolver from here.
@@ -557,6 +559,10 @@ export async function runRemoteAgentFromSettings(
     throw new Error('Remote agent prompt cannot be empty.')
   }
 
+  // Capture the launching project up front: a long remote run can outlast a
+  // project switch, and the link/PR must land on the project it started in.
+  const launchProjectId = getActiveProjectId()
+
   const priorSession = readSession(options.threadId)
   const canReuseSession =
     priorSession?.provider === options.provider && priorSession.baseUrl === baseUrl
@@ -587,6 +593,20 @@ export async function runRemoteAgentFromSettings(
     agentId: run.agentId,
     ...(run.url ? { url: run.url } : {}),
   })
+
+  // Record the durable agent-run ↔ thread link at launch (issue #690, Q6). Only
+  // on a fresh agent — a follow-up reuses the same agent/link, and the PR it
+  // opens is attached from the reply below.
+  if (!canReuseSession) {
+    await recordRemoteAgentLaunch({
+      projectId: launchProjectId,
+      threadId: options.threadId,
+      provider: options.provider,
+      agentId: run.agentId,
+      runId: run.runId,
+      createdAt: Date.now(),
+    })
+  }
 
   // Make the remote hand-off explicit in the transcript (parity with how a local
   // chat shows its activity inline).
@@ -658,6 +678,8 @@ export async function runRemoteAgentFromSettings(
       state.terminalStatus ? { type: 'done', stopReason: state.terminalStatus } : { type: 'done' },
     )
     const assistantText = state.assistantText || state.resultText
+    // Once the reply reveals the PR the agent opened, fold it into the link/index.
+    await attachRemoteAgentPrFromText(launchProjectId, options.threadId, assistantText)
     return {
       assistantText,
       inputTokens: usage.inputTokens,

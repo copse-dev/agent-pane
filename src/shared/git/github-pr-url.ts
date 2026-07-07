@@ -5,7 +5,9 @@ export interface GithubPrRef {
   url: string
 }
 
-const GITHUB_PR_PATH_RE = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)\/?$/i
+// Accept a trailing path after the PR number (`/files`, `/commits`, a trailing
+// slash) so a link to a PR sub-tab still resolves to the PR itself.
+const GITHUB_PR_PATH_RE = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/[^?#]*)?$/i
 
 /** Parse a GitHub pull request URL into owner, repo, and number. */
 export function parseGithubPrUrl(rawUrl: string): GithubPrRef | null {
