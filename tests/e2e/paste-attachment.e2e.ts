@@ -9,6 +9,7 @@ import { setComposerValue, composerText } from './helpers/composer.ts'
 
 const PROJECT_ID = 'e2e-paste-attachment-project'
 const SCREENSHOT = 'paste-attachment-chip.png'
+const TRANSCRIPT_SCREENSHOT = 'paste-attachment-transcript.png'
 
 const SHORT_PASTE = 'The editor points:\n\n- tighten the intro\n- fix the typos'
 // Starts with blank lines: the chip label must come from the first non-blank
@@ -90,5 +91,21 @@ describe('Pasting text into the composer', () => {
     await expect(layout?.raw).not.toContain('lorem ipsum')
 
     await saveAppScreenshot(SCREENSHOT)
+
+    // Send it: the paste must render in the transcript as an inline SVG-icon
+    // chip (composer block -> Message.attachments -> conversation.ts), not an
+    // emoji or the raw pasted text.
+    await $('.submit-btn').click()
+    const sentChip = await $(
+      '.messages-list .msg-user .transcript-attachment-chip.transcript-attachment-paste',
+    )
+    await sentChip.waitForExist({ timeout: 10_000 })
+    await expect(await sentChip.$('svg[data-icon="paste"]').isExisting()).toBe(true)
+    await expect(await sentChip.getText()).toContain('Editor feedback summary')
+    // The object-replacement placeholder that marks the paste position never
+    // shows as literal text.
+    await expect(await $('.messages-list .msg-user .message-text').getText()).not.toContain('￼')
+
+    await saveAppScreenshot(TRANSCRIPT_SCREENSHOT)
   })
 })
