@@ -15,7 +15,7 @@ const sharedAlias = {
 function fetchBundledCursorSkillsForBuild(): void {
   if (process.env['SKIP_BUNDLED_CURSOR_SKILLS_FETCH'] === '1') return
   try {
-    execSync('npx tsx scripts/fetch-bundled-cursor-skills.mts', { stdio: 'inherit' })
+    execSync('node scripts/fetch-bundled-cursor-skills.mts', { stdio: 'inherit' })
   } catch {
     console.warn('[build] bundled Cursor skills fetch failed — continuing without bundled skills')
   }
