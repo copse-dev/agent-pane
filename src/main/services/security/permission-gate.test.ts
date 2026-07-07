@@ -136,21 +136,30 @@ describe('run_background permission', () => {
     }
   })
 
-  it('routes a start command through the shell gate — a safe workspace command auto-runs', async () => {
-    // A start command clears the same gate as run_shell. A safe in-workspace
-    // command (a build script) auto-runs without prompting, exactly as run_shell
-    // would; only external/ambiguous commands prompt (see the two tests below).
+  it('routes a start command through the same decision as run_shell', async () => {
+    // The invariant under test is parity, not a fixed platform outcome: whether
+    // a given command auto-runs or prompts depends on the OS sandbox posture
+    // (macOS seatbelt auto-runs safe commands; off-sandbox they prompt), but a
+    // run_background start must always behave exactly like run_shell on the
+    // same command.
     setPermissionGateForTests(null)
     const restore = setWorkspaceRootForTest('/tmp/bg-start-project')
-    let prompted = false
+    const command = 'npm run build -- --watch'
+    let prompts = 0
     setApprovalHandler(async () => {
-      prompted = true
-      return { approved: false, remember: false }
+      prompts++
+      return { approved: true, remember: false }
     })
     try {
-      const args = { action: 'start', command: 'npm run build -- --watch' }
-      assert.equal(await ensureToolPermitted({ toolName: 'run_background', args }), true)
-      assert.equal(prompted, false, 'a safe workspace start auto-runs, like run_shell')
+      const shellAllowed = await ensureToolPermitted({ toolName: 'run_shell', args: { command } })
+      const shellPrompts = prompts
+      prompts = 0
+      const startAllowed = await ensureToolPermitted({
+        toolName: 'run_background',
+        args: { action: 'start', command },
+      })
+      assert.equal(startAllowed, shellAllowed, 'start must resolve like run_shell')
+      assert.equal(prompts, shellPrompts, 'start must prompt exactly like run_shell')
     } finally {
       setApprovalHandler(null)
       restore()
@@ -199,16 +208,22 @@ describe('run_background permission', () => {
   it('prompts a port-binding start, then remembers the grant per workspace', async () => {
     setPermissionGateForTests(null)
     const restore = setWorkspaceRootForTest('/tmp/port-binding-project')
-    let prompts = 0
-    setApprovalHandler(async () => {
-      prompts++
+    // The start command itself may also prompt through the shell gate depending
+    // on the platform's sandbox posture, so count only port-binding prompts.
+    let portPrompts = 0
+    setApprovalHandler(async (req) => {
+      if (req.title.includes('bind a local port')) portPrompts++
       return { approved: true, remember: true }
     })
     try {
       const args = { action: 'start', command: 'npm run dev', allow_port_binding: true }
       assert.equal(await ensureToolPermitted({ toolName: 'run_background', args }), true)
       assert.equal(await ensureToolPermitted({ toolName: 'run_background', args }), true)
-      assert.equal(prompts, 1, 'second port-binding start in the same workspace must not re-prompt')
+      assert.equal(
+        portPrompts,
+        1,
+        'second port-binding start in the same workspace must not re-prompt',
+      )
     } finally {
       setApprovalHandler(null)
       restore()
