@@ -40,3 +40,8 @@ registered and the model in use is never changed.
 - **Better classifier** — replace the heuristic with a small local model or a cheap
   model-judge, and add a feedback loop (did the chosen model succeed or need escalation?).
 - Source per-model pricing/latency metadata for cost-aware routing.
+
+See [`model-roles-and-defaults.md`](./model-roles-and-defaults.md) for a broader proposal
+that generalizes tiers into a full role registry (coder, reviewer, security-auditor, …), a
+benchmark-backed capability catalog, and data-derived defaults — the classifier becomes the
+runtime that routes a task onto a role.
