@@ -1,7 +1,7 @@
 import type { TodoItem } from './wire-types.ts'
 
 /** Tools that only gather context — repeating them often indicates a stuck loop. */
-export const EXPLORE_TOOL_NAMES = new Set([
+export const DUPLICATE_EXPLORE_TOOLS = new Set([
   'list_dir',
   'read_file',
   'find_files',
@@ -33,7 +33,7 @@ export function isDuplicateExploreCall(
   args: unknown,
   recentFingerprints: readonly string[],
 ): boolean {
-  if (!EXPLORE_TOOL_NAMES.has(name)) return false
+  if (!DUPLICATE_EXPLORE_TOOLS.has(name)) return false
   const fp = toolCallFingerprint(name, normalizeExploreArgs(name, args))
   return recentFingerprints.includes(fp)
 }

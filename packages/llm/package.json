@@ -7,7 +7,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./*": "./src/*.ts"
+    "./*": "./src/*"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.2",
