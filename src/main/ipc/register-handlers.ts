@@ -67,6 +67,10 @@ import {
   loadProjectCatalog,
 } from '../services/thread-store.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
+import {
+  listExternalEditors,
+  openWorkspaceInExternalEditor,
+} from '../services/editors/editor-launcher.ts'
 import { listAcpModelsForAgent } from '../services/acp/acp-agent-service.ts'
 import { runAcpAutoSetup } from '../services/acp/acp-auto-setup.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
@@ -660,6 +664,20 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       throw new IpcValidationError('URL must be http or https')
     }
     return shell.openExternal(href)
+  })
+
+  ipcMain.handle('editors:list', (event) => {
+    assertMainFrameSender(event, win)
+    return listExternalEditors()
+  })
+  ipcMain.handle('editors:open', (event, editorId: unknown) => {
+    assertMainFrameSender(event, win)
+    // Only a known editor id crosses this boundary; the folder to open is the
+    // main process's own workspace root, never renderer-supplied.
+    const parsedId = parseIpcArgs(z.string().regex(/^[a-z][a-z0-9-]{0,63}$/), [editorId])
+    const root = getWorkspaceRoot()
+    if (!root) throw new IpcValidationError('No workspace open')
+    return openWorkspaceInExternalEditor(parsedId, root)
   })
 
   ipcMain.handle('panes:popout', (event, mode: unknown) => {

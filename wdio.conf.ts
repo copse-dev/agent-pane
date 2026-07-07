@@ -92,6 +92,10 @@ export const config: Options.Testrunner = {
       // Pin the branch the app reports so footer/branch-picker screenshots stay
       // stable regardless of which branch the PR is built from.
       COPSE_PANEL_MOCK_BRANCH: E2E_GIT_BRANCH,
+      // Report a fixed set of installed editors for the "Open in editor" dropdown
+      // so the spec doesn't depend on what the runner has on PATH (launching is a
+      // no-op under this mock).
+      COPSE_PANEL_MOCK_EDITORS: 'vscode,cursor,zed',
       COPSE_PANEL_USER_DATA: e2eUserDataDir,
       // Filesystem-native thread store (issue #644) — isolate it per run under the
       // throwaway profile so seeded threads don't touch the developer's real

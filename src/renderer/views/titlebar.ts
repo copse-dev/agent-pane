@@ -3,6 +3,7 @@ import { outlineIcon } from '../dom/outline-icon.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { toggleRightPanelWithWorkspace } from '../controller/panels.ts'
+import { mountOpenInEditor } from './open-in-editor.ts'
 
 function basename(p: string): string {
   return p.split('/').pop() ?? p
@@ -79,6 +80,8 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
   const workspaceName = el('span', { class: 'workspace-name' }, 'No folder')
   const workspaceBranch = el('span', { class: 'workspace-branch', hidden: true })
   leftCluster.append(workspaceName, workspaceBranch)
+
+  const openInEditor = mountOpenInEditor(leftCluster, store, api)
 
   const dragRegion = el('div', { class: 'titlebar-drag' })
   // Opening projects lives in the projects panel; the titlebar only toggles the
@@ -257,6 +260,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
 
   return () => {
     if (branchTimer) clearTimeout(branchTimer)
+    openInEditor.destroy()
     unsubs.forEach((u) => {
       u()
     })

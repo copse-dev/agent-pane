@@ -484,6 +484,10 @@ contextBridge.exposeInMainWorld('api', {
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   },
+  editors: {
+    list: () => ipcRenderer.invoke('editors:list'),
+    open: (editorId: string) => ipcRenderer.invoke('editors:open', editorId),
+  },
   panes: {
     popout: (mode: string) => ipcRenderer.invoke('panes:popout', mode),
   },
