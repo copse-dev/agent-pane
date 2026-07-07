@@ -18,6 +18,8 @@ export default ts.config(
       'wdio.eval.conf.ts',
       'tests/e2e/**',
       'tests/fixtures/git-changes-repo/**',
+      // Bench-task fixture repos: code for the agent under eval to fix, not project code.
+      'benchmarks/fixtures/**',
     ],
   },
   js.configs.recommended,

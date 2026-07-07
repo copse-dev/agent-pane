@@ -1,0 +1,15 @@
+{
+  "$comment": "Pinned SWE-bench Verified instance ids for the nightly bench:agent run (#752). Deliberately restricted to pytest-graded repos: their FAIL_TO_PASS entries are pytest node ids that pass straight to `python -m pytest`, so no per-repo test-command translation layer is needed yet (django's runtests.py / sympy's bin/test conversions are follow-ups). scripts/fetch-swe-bench-subset.mts validates every id against the dataset and fails loudly on a stale pin, so correcting this list is cheap.",
+  "instances": [
+    "psf__requests-2317",
+    "psf__requests-1963",
+    "pytest-dev__pytest-5227",
+    "pytest-dev__pytest-7373",
+    "astropy__astropy-14995",
+    "sphinx-doc__sphinx-8721",
+    "matplotlib__matplotlib-23964",
+    "scikit-learn__scikit-learn-13439",
+    "pydata__xarray-5131",
+    "mwaskom__seaborn-3010"
+  ]
+}

@@ -1,0 +1,202 @@
+{
+  "$comment": "Tool-call dialect conformance corpus (#752). Each `recover` case replays an assistant text transcript through recoverTextToolCalls; each `strip` case through stripTextToolCallBlocks. Every new provider dialect bug should land here as a case, not only as a one-off regression test. Enforced by packages/agent/src/parse-text-tool-calls.corpus.test.ts.",
+  "recover": [
+    {
+      "id": "cursor-function-basic",
+      "description": "Cursor-style <function=…> block with multiline and numeric parameters",
+      "input": "I'll run eslint for you.\n\n<tool_call>\n<function=run_shell>\n<parameter=command>\nnpx eslint . --format compact 2>&1 | head -50\n</parameter>\n<parameter=timeout_ms>\n60000\n</parameter>\n</function>\n</tool_call>",
+      "expect": {
+        "toolCalls": [
+          {
+            "name": "run_shell",
+            "args": {
+              "command": "npx eslint . --format compact 2>&1 | head -50",
+              "timeout_ms": 60000
+            }
+          }
+        ],
+        "cleanedTextIncludes": ["I'll run eslint"],
+        "cleanedTextExcludes": ["<tool_call>", "<function"],
+        "keptRawBlocks": false
+      }
+    },
+    {
+      "id": "cursor-alias-normalization",
+      "description": "Mixed-case, hyphenated tool name normalizes through the alias table",
+      "input": "<tool_call>\n<function=Read-File>\n<parameter=path>src/a.ts</parameter>\n</function>\n</tool_call>",
+      "expect": {
+        "toolCalls": [{ "name": "read_file", "args": { "path": "src/a.ts" } }],
+        "keptRawBlocks": false
+      }
+    },
+    {
+      "id": "cursor-unclosed-function-lookahead",
+      "description": "First <function=…> never closes; the next <function=…> opener terminates it",
+      "input": "<tool_call>\n<function=read_file>\n<parameter=path>a.ts</parameter>\n<function=list_dir>\n<parameter=path>.</parameter>\n</function>\n</tool_call>",
+      "expect": {
+        "toolCalls": [
+          { "name": "read_file", "args": { "path": "a.ts" } },
+          { "name": "list_dir", "args": { "path": "." } }
+        ],
+        "keptRawBlocks": false
+      }
+    },
+    {
+      "id": "cursor-stringly-typed-coercion",
+      "description": "XML string parameters coerce to booleans/numbers; dotted versions stay strings",
+      "input": "<tool_call>\n<function=write_file>\n<parameter=force>true</parameter>\n<parameter=dry_run>false</parameter>\n<parameter=line>42</parameter>\n<parameter=ratio>-3.5</parameter>\n<parameter=exp>1e3</parameter>\n<parameter=version>1.2.3</parameter>\n</function>\n</tool_call>",
+      "expect": {
+        "toolCalls": [
+          {
+            "name": "write_file",
+            "args": {
+              "force": true,
+              "dry_run": false,
+              "line": 42,
+              "ratio": -3.5,
+              "exp": 1000,
+              "version": "1.2.3"
+            }
+          }
+        ],
+        "keptRawBlocks": false
+      }
+    },
+    {
+      "id": "minimax-delimited-invoke-in-tool-call",
+      "description": "MiniMax token delimiters stripped; Anthropic-style <invoke> inside <tool_call> (#519)",
+      "input": "]<]minimax[>[I'll read that file.]<]minimax[>[<tool_call>]<]minimax[>[<invoke name=\"read_file\">]<]minimax[>[<parameter name=\"path\">src/app.ts</parameter>]<]minimax[>[</invoke>]<]minimax[>[</tool_call>",
+      "expect": {
+        "toolCalls": [{ "name": "read_file", "args": { "path": "src/app.ts" } }],
+        "cleanedTextIncludes": ["I'll read that file."],
+        "cleanedTextExcludes": ["minimax", "<invoke", "<tool_call>"],
+        "keptRawBlocks": false
+      }
+    },
+    {
+      "id": "bare-invoke-no-wrapper",
+      "description": "MiniMax dialect: <invoke> with no <tool_call> wrapper and no parameters (#724)",
+      "input": "Let me check the status.\n\n<invoke name=\"git_status\">\n</invoke>",
+      "expect": {
+        "toolCalls": [{ "name": "git_status", "args": {} }],
+        "cleanedTextIncludes": ["Let me check the status."],
+        "cleanedTextExcludes": ["<invoke"],
+        "keptRawBlocks": false
+      }
+    },
+    {
+      "id": "invoke-bare-child-params",
+      "description": "Invoke parameters as bare child tags instead of <parameter name=…>",
+      "input": "<invoke name=\"run_shell\">\n<command>echo hi</command>\n</invoke>",
+      "expect": {
+        "toolCalls": [{ "name": "run_shell", "args": { "command": "echo hi" } }],
+        "keptRawBlocks": false
+      }
+    },
+    {
+      "id": "invoke-single-quoted-name",
+      "description": "Single-quoted attribute values on <invoke> and <parameter>",
+      "input": "<invoke name='write_file'>\n<parameter name='path'>notes.md</parameter>\n<parameter name='content'>hello</parameter>\n</invoke>",
+      "expect": {
+        "toolCalls": [{ "name": "write_file", "args": { "path": "notes.md", "content": "hello" } }],
+        "keptRawBlocks": false
+      }
+    },
+    {
+      "id": "quoted-inline-code-not-extracted",
+      "description": "A <tool_call> quoted in an inline code span is prose, not a call",
+      "input": "The parser strips `<tool_call>` blocks from assistant text.",
+      "expect": {
+        "toolCalls": [],
+        "cleanedTextIncludes": ["The parser strips `<tool_call>` blocks from assistant text."],
+        "keptRawBlocks": false
+      }
+    },
+    {
+      "id": "quoted-fenced-block-not-extracted",
+      "description": "A complete tool_call example inside a fenced code block is not executed",
+      "input": "Example dialect:\n\n```\n<tool_call>\n<function=run_shell>\n<parameter=command>rm -rf /</parameter>\n</function>\n</tool_call>\n```\n\nThat is how Cursor emits calls.",
+      "expect": {
+        "toolCalls": [],
+        "cleanedTextIncludes": ["rm -rf /", "That is how Cursor emits calls."],
+        "keptRawBlocks": false
+      }
+    },
+    {
+      "id": "empty-block-keeps-raw",
+      "description": "An empty <tool_call> block extracts nothing and keeps the raw XML in the transcript",
+      "input": "<tool_call>\n</tool_call>",
+      "expect": {
+        "toolCalls": [],
+        "cleanedTextIncludes": ["<tool_call>"],
+        "keptRawBlocks": true
+      }
+    },
+    {
+      "id": "unparseable-block-keeps-raw",
+      "description": "A block with no recognizable dialect keeps raw XML rather than silently vanishing",
+      "input": "<tool_call>\ngarbage that is not a function\n</tool_call>",
+      "expect": {
+        "toolCalls": [],
+        "keptRawBlocks": true
+      }
+    },
+    {
+      "id": "whitespace-in-delimiters",
+      "description": "Whitespace inside opener/closer tags still parses",
+      "input": "< tool_call >\n<function=list_dir>\n<parameter=path>.</parameter>\n</function>\n< / tool_call >",
+      "expect": {
+        "toolCalls": [{ "name": "list_dir", "args": { "path": "." } }],
+        "keptRawBlocks": false
+      }
+    },
+    {
+      "id": "prose-only",
+      "description": "Plain prose recovers nothing and passes through",
+      "input": "All done — the tests pass.",
+      "expect": {
+        "toolCalls": [],
+        "cleanedTextIncludes": ["All done — the tests pass."],
+        "keptRawBlocks": false
+      }
+    }
+  ],
+  "strip": [
+    {
+      "id": "complete-block-removed",
+      "description": "A closed tool_call block disappears from display text",
+      "input": "I'll run eslint for you.\n\n<tool_call>\n<function=run_shell>\n<parameter=command>ls</parameter>\n</function>\n</tool_call>",
+      "expected": "I'll run eslint for you."
+    },
+    {
+      "id": "unclosed-opener-held-back",
+      "description": "A streaming block with no closer yet is held back from the opener",
+      "input": "Working on it.\n\n<tool_call>\n<function=run_shell>",
+      "expected": "Working on it."
+    },
+    {
+      "id": "partial-opener-held-back",
+      "description": "A partial opener prefix arriving mid-stream is held back",
+      "input": "Streaming <tool_ca",
+      "expected": "Streaming"
+    },
+    {
+      "id": "unclosed-invoke-held-back",
+      "description": "A streaming <invoke …> opener with no closer is held back",
+      "input": "Checking.\n\n<invoke name=\"git_st",
+      "expected": "Checking."
+    },
+    {
+      "id": "quoted-code-preserved",
+      "description": "Inline-code mention of the delimiter does not freeze the message",
+      "input": "Use `<tool_call>` syntax.",
+      "expected": "Use `<tool_call>` syntax."
+    },
+    {
+      "id": "minimax-delimiters-stripped",
+      "description": "MiniMax token delimiters never reach the transcript (#519)",
+      "input": "]<]minimax[>[Hello]<]minimax[>[ world",
+      "expected": "Hello world"
+    }
+  ]
+}
