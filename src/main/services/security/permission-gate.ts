@@ -304,13 +304,20 @@ async function checkBrowserNavigatePermission(args: unknown): Promise<boolean> {
 const PORT_BINDING_ALLOWED_ROOTS_SETTING = 'portBindingAllowedRoots'
 
 /**
- * Gate the `run_background` tool. Only starting a task that binds a loopback
- * port is an escalation worth prompting for; a plain contained task (and the
- * list/logs/stop management actions) auto-runs like an in-sandbox run_shell.
- * A port-binding start prompts the first time per workspace, then remembers the
- * grant — the same prompt-once model as browser origins and MCP servers.
+ * Gate the `run_background` tool. A start action's command is first put through
+ * the *same* decision as run_shell: on macOS the seatbelt contains it (contained
+ * commands auto-run), but off the OS sandbox `spawnBackgroundProcess` runs the
+ * command through `/bin/sh -c` with no sandbox, so external/ambiguous commands
+ * must prompt rather than silently execute. The list/logs/stop management actions
+ * carry no command and are not gated. On top of that, opting into loopback port
+ * binding prompts the first time per workspace, then remembers the grant — the
+ * same prompt-once model as browser origins and MCP servers.
  */
 async function checkBackgroundProcessPermission(args: unknown): Promise<boolean> {
+  // Only a `start` action carries a command; management actions leave it empty.
+  const command = backgroundCommandFromArgs(args)
+  if (command && !(await checkShellPermission(args))) return false
+
   if (!backgroundAllowsPortBinding(args)) return true
 
   const root = getWorkspaceRoot()
