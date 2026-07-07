@@ -257,7 +257,16 @@ export interface ApiClient {
       webAllowUserApproval: boolean
     }) => Promise<void>
     getKey: (provider: string) => Promise<boolean>
-    setKey: (provider: string, key: string) => Promise<void>
+    /**
+     * At-rest encryption state for a stored key: `true` = OS-encrypted, `false` =
+     * base64 plaintext fallback (OS keyring unavailable), `null` = no key stored.
+     */
+    getKeyEncrypted: (provider: string) => Promise<boolean | null>
+    setKey: (
+      provider: string,
+      key: string,
+      opts?: { allowPlaintext?: boolean },
+    ) => Promise<{ ok: true } | { ok: false; reason: 'plaintext-consent-required' }>
     /** Availability keyed by provider slug: fixed cloud providers + every resolved extra provider. */
     availableProviders: () => Promise<Record<string, boolean>>
     validateKey: (
