@@ -31,9 +31,9 @@ describe('queued message delete', function () {
     })
 
     await browser.execute((value: string) => {
-      const input = document.querySelector('.prompt-input') as HTMLTextAreaElement | null
+      const input = document.querySelector('.prompt-input') as HTMLElement | null
       const btn = document.querySelector('.submit-btn') as HTMLButtonElement | null
-      if (input) input.value = value
+      if (input) input.textContent = value
       btn?.click()
     }, QUEUED_TEXT)
 
