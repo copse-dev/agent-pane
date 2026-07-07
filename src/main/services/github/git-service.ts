@@ -1,5 +1,7 @@
 import * as fsp from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { errorMessage } from '@shared/errors.ts'
 import { getWorkspaceRoot, resolveWorkspacePath, toRelativePath } from '../workspace.ts'
 import { runCommand } from '../exec/command-runner.ts'
@@ -305,6 +307,61 @@ export async function getGithubRepoSlug(
   const { stdout, code } = await runGit(['remote', 'get-url', 'origin'], root)
   if (code !== 0 || !stdout.trim()) return null
   return parseGithubRepoSlug(stdout.trim())
+}
+
+/**
+ * Snapshot the ENTIRE working tree — tracked modifications, staged changes, and
+ * untracked files — into a commit object, protected from garbage collection
+ * behind a `refs/copse/backups/*` ref, WITHOUT touching the user's index or
+ * working tree. Returns the ref name (a durable restore point) or null when git
+ * is unavailable or the snapshot could not be created.
+ *
+ * `git stash create` is deliberately not used: it silently omits untracked
+ * files, which Copse's ownership check counts as unowned changes — so a stash
+ * backup would leave a user's brand-new file unprotected when the agent writes
+ * over it. Staging into a throwaway `GIT_INDEX_FILE` with `add -A` captures
+ * untracked files too and never disturbs the real index. This is the safety net
+ * that lets edits apply/auto-approve over a dirty worktree without prompting:
+ * anything the agent overwrites is recoverable from the returned ref.
+ */
+export async function createWorktreeBackup(label: string): Promise<string | null> {
+  const root = getWorkspaceRoot()
+  if (!isGitAvailable() || !root || !(await isInsideGitWorkTree())) return null
+
+  const tmpIndex = join(tmpdir(), `copse-backup-${String(process.pid)}-${String(Date.now())}.index`)
+  // A throwaway index isolates our `add -A` from the user's staged state; the
+  // identity env lets `commit-tree` succeed even when the repo has no user.name.
+  const env: NodeJS.ProcessEnv = {
+    GIT_INDEX_FILE: tmpIndex,
+    GIT_AUTHOR_NAME: 'Copse',
+    GIT_AUTHOR_EMAIL: 'copse@localhost',
+    GIT_COMMITTER_NAME: 'Copse',
+    GIT_COMMITTER_EMAIL: 'copse@localhost',
+  }
+  const run = (args: string[]): Promise<{ stdout: string; code: number }> =>
+    runCommand('git', args, { cwd: root, env })
+
+  try {
+    const head = await runGit(['rev-parse', '--verify', 'HEAD'])
+    const hasHead = head.code === 0 && head.stdout.trim() !== ''
+    // Seed the throwaway index from HEAD so deletions show up in the snapshot.
+    // A fresh repo (no HEAD) starts from an empty index instead.
+    if (hasHead && (await run(['read-tree', 'HEAD'])).code !== 0) return null
+    if ((await run(['add', '-A'])).code !== 0) return null
+    const tree = (await run(['write-tree'])).stdout.trim()
+    if (!tree) return null
+    const commitArgs = ['commit-tree', tree, '-m', `copse backup: ${label}`]
+    if (hasHead) commitArgs.push('-p', head.stdout.trim())
+    const commit = (await run(commitArgs)).stdout.trim()
+    if (!commit) return null
+    const ref = `refs/copse/backups/${String(Date.now())}`
+    if ((await runGit(['update-ref', ref, commit])).code !== 0) return null
+    return ref
+  } catch {
+    return null
+  } finally {
+    await fsp.rm(tmpIndex, { force: true }).catch(() => {})
+  }
 }
 
 export async function getGitStatus(): Promise<GitStatusResult | null> {

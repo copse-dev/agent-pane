@@ -9,6 +9,7 @@ import type { LLMMessage, LLMTool, StreamChunk, UserContent } from '@shared/type
 import type { ToolRegistry } from './tool-registry.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { getSetting } from './storage/settings.ts'
+import { resetSessionBackup } from './worktree-backup.ts'
 import { resolveContextWindow } from './providers/resolve-context-window.ts'
 import { classifyAgentError } from './agent-errors.ts'
 import { resolveParentGoal } from '@copse/agent/working-brief.ts'
@@ -157,6 +158,10 @@ export async function runAgent(
     model?: string
   },
 ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> {
+  // A new turn: drop last turn's restore point so the next dirty-worktree edit
+  // snapshots the user's current uncommitted work before applying over it.
+  resetSessionBackup()
+
   const requestedModel = options?.model ?? getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
   const resolved = await resolveAgentChatModel(requestedModel)
   const model = resolved.model
