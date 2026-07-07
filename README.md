@@ -26,7 +26,7 @@ Failed to start terminal: ... 'terminal:create': Error: posix_spawnp failed.
 Keep `ignore-scripts` on if you want it — just run the native postinstall once after each install (the chmod runs before the electron rebuild, so you can skip that):
 
 ```bash
-SKIP_ELECTRON_REBUILD=1 npx tsx scripts/postinstall-native.mts
+SKIP_ELECTRON_REBUILD=1 node scripts/postinstall-native.mts
 ```
 
 Or let scripts run for a single install without changing your global config:
