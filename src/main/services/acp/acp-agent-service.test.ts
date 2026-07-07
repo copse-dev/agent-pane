@@ -4,7 +4,9 @@ import type { PermissionOption } from '@agentclientprotocol/sdk'
 import {
   AcpTurnFailure,
   buildAcpPrompt,
+  isAcpConnectionDropped,
   isRetryableAcpError,
+  isTransientProviderError,
   permissionResponseFor,
   runWithAcpRetry,
   sliceLines,
@@ -67,12 +69,47 @@ describe('sliceLines', () => {
   })
 })
 
-describe('isRetryableAcpError', () => {
+describe('isTransientProviderError', () => {
   it('matches transient provider failures surfaced as opaque agent text', () => {
+    assert.ok(isTransientProviderError(new Error('Internal error: API Error: Overloaded')))
+    assert.ok(isTransientProviderError(new Error('429 rate_limit_error')))
+    assert.ok(isTransientProviderError(new Error('upstream returned 503')))
+    assert.ok(isTransientProviderError(new Error('Internal Server Error')))
+  })
+
+  it('does not treat a dropped connection as a provider error', () => {
+    assert.ok(!isTransientProviderError(new Error('ACP connection closed')))
+  })
+})
+
+describe('isAcpConnectionDropped', () => {
+  it('matches a closed connection or dead agent process', () => {
+    // The exact string the SDK surfaces when the agent process dies mid-turn.
+    assert.ok(isAcpConnectionDropped(new Error('ACP connection closed')))
+    assert.ok(isAcpConnectionDropped(new Error('read ECONNRESET')))
+    assert.ok(isAcpConnectionDropped(new Error('write EPIPE')))
+    assert.ok(isAcpConnectionDropped(new Error('Premature close')))
+    assert.ok(isAcpConnectionDropped(new Error('write after end')))
+  })
+
+  it('does not match provider errors or ordinary failures', () => {
+    assert.ok(!isAcpConnectionDropped(new Error('Internal error: API Error: Overloaded')))
+    assert.ok(!isAcpConnectionDropped(new Error('401 Unauthorized')))
+    assert.ok(!isAcpConnectionDropped(new Error('Write to src/a.ts was rejected by the user.')))
+  })
+})
+
+describe('isRetryableAcpError', () => {
+  it('retries transient provider failures surfaced as opaque agent text', () => {
     assert.ok(isRetryableAcpError(new Error('Internal error: API Error: Overloaded')))
     assert.ok(isRetryableAcpError(new Error('429 rate_limit_error')))
     assert.ok(isRetryableAcpError(new Error('upstream returned 503')))
     assert.ok(isRetryableAcpError(new Error('Internal Server Error')))
+  })
+
+  it('retries a dropped connection so the turn respawns a fresh session', () => {
+    assert.ok(isRetryableAcpError(new Error('ACP connection closed')))
+    assert.ok(isRetryableAcpError(new Error('write EPIPE')))
   })
 
   it('rejects non-transient failures', () => {
@@ -97,6 +134,36 @@ describe('runWithAcpRetry', () => {
     )
     assert.equal(result, 'ok')
     assert.equal(attempts, 3)
+  })
+
+  it('retries a no-progress dropped connection and succeeds', async () => {
+    let attempts = 0
+    const result = await runWithAcpRetry(
+      () => {
+        attempts++
+        return attempts < 2
+          ? Promise.reject(new Error('ACP connection closed'))
+          : Promise.resolve('ok')
+      },
+      { signal: noAbort, hasProgress: () => false, delayMs: () => 0 },
+    )
+    assert.equal(result, 'ok')
+    assert.equal(attempts, 2)
+  })
+
+  it('does not retry a dropped connection once the turn streamed something', async () => {
+    let attempts = 0
+    await assert.rejects(
+      runWithAcpRetry(
+        () => {
+          attempts++
+          return Promise.reject(new Error('ACP connection closed'))
+        },
+        { signal: noAbort, hasProgress: () => true, delayMs: () => 0 },
+      ),
+      /connection closed/,
+    )
+    assert.equal(attempts, 1)
   })
 
   it('does not retry once the turn has made visible progress', async () => {
