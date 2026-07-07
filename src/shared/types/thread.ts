@@ -1,5 +1,6 @@
 import type { AgentRunPayload } from './skills.ts'
 import type { TodoItem } from './todo.ts'
+import type { RemoteAgentLink } from '../remote-agent-link.ts'
 // Token-usage types are owned by the LLM module (a provider reports usage across
 // the contract). Imported for use by the thread types below and re-exported so
 // `@shared/types` consumers are unchanged.
@@ -92,6 +93,12 @@ export interface Thread {
   workingBrief?: string
   /** Git branch this thread was started on; set on first message and persisted. */
   gitBranch?: string
+  /**
+   * Durable link to the cloud-agent run + PR this thread launched (issue #690).
+   * Recorded by the remote-agent clients at launch and completion, not the
+   * renderer; the per-project `agent-pr-index.jsonl` is derived from it.
+   */
+  remoteAgentLink?: RemoteAgentLink
   /** Prompts submitted while the agent is running; drained FIFO when idle. */
   pendingMessages?: QueuedUserMessage[]
   /** True while a queued message is being edited; suspends FIFO draining. */
