@@ -19,6 +19,17 @@ const MINIMAX_DELIMITER_RE = /\]<\]minimax\[>\[/gi
 /** Anthropic / MiniMax-style `<invoke name="tool">…</invoke>` tool call embedded in text. */
 const INVOKE_BLOCK_RE =
   /<\s*invoke\s+name\s*=\s*["']?([^"'>\s]+)["']?\s*>([\s\S]*?)<\s*\/\s*invoke\s*>/gi
+/**
+ * Non-global, greedy single-block inners. Block ranges are located on a
+ * code-blanked copy (so quoted examples don't mis-pair), but the inner body must
+ * be sliced from the ORIGINAL text — otherwise backtick code spans inside a real
+ * argument value (a `write_file` body or a `run_shell` command with inline code)
+ * are blanked to whitespace before parsing (#519 arg corruption). The tags never
+ * contain backticks, so a greedy single-block match is exact.
+ */
+const TOOL_CALL_INNER_RE = /<\s*tool_call\s*>([\s\S]*)<\s*\/\s*tool_call\s*>/i
+const INVOKE_INNER_RE =
+  /<\s*invoke\s+name\s*=\s*["']?[^"'>\s]+["']?\s*>([\s\S]*)<\s*\/\s*invoke\s*>/i
 /** An `<invoke …>` opener with no matching closer (block still streaming in). */
 const OPEN_INVOKE_RE = /<\s*invoke\b/i
 /** Anthropic-style parameter inside an invoke block: `<parameter name="x">value</parameter>`. */
@@ -191,6 +202,22 @@ function removeBlocksOutsideCode(text: string, re: RegExp): string {
   return out
 }
 
+/**
+ * Slice one block's inner text from `original` at the offsets of a match found on
+ * the blanked copy (identical indices/length), preserving code-span content.
+ * Returns null if the wrapper can't be re-matched in the slice.
+ */
+function sliceOriginalInner(
+  original: string,
+  start: number,
+  length: number,
+  innerRe: RegExp,
+): string | null {
+  const block = original.slice(start, start + length)
+  const m = innerRe.exec(block)
+  return m ? (m[1] ?? '') : null
+}
+
 /** Parameters of an `<invoke>` block: named `<parameter name="x">` first, else bare `<x>` child tags. */
 function parseInvokeParameters(body: string): Record<string, unknown> {
   const named: Record<string, unknown> = {}
@@ -217,6 +244,9 @@ function parseInvokeParameters(body: string): Record<string, unknown> {
 function parseInvokeBlocks(
   text: string,
   coerceToolArgs?: CoerceToolArgsFn,
+  // Where to slice each block's inner body from. When `text` is a code-blanked
+  // copy, pass the original here so argument values keep their backtick spans.
+  contentText: string = text,
 ): { toolCalls: ToolCallChunk[]; sawInvoke: boolean } {
   const toolCalls: ToolCallChunk[] = []
   let sawInvoke = false
@@ -224,7 +254,11 @@ function parseInvokeBlocks(
     sawInvoke = true
     const name = normalizeToolName(match[1] ?? '')
     if (!name) continue
-    const coerced = coerceStringlyTypedToolArgs(parseInvokeParameters(match[2] ?? ''))
+    const body =
+      sliceOriginalInner(contentText, match.index, match[0].length, INVOKE_INNER_RE) ??
+      match[2] ??
+      ''
+    const coerced = coerceStringlyTypedToolArgs(parseInvokeParameters(body))
     const args = coerceToolArgs ? coerceToolArgs(name, coerced) : coerced
     if (coerceToolArgs && args === null) continue
     toolCalls.push({
@@ -309,7 +343,10 @@ export function recoverTextToolCalls(
 
   for (const match of blanked.matchAll(TOOL_CALL_BLOCK_RE)) {
     sawBlock = true
-    const inner = match[1]
+    // Slice the inner from the original (not the blanked copy) so argument values
+    // containing backtick code spans survive; the blanked copy only locates the
+    // block range. (#519 arg corruption)
+    const inner = sliceOriginalInner(normalized, match.index, match[0].length, TOOL_CALL_INNER_RE)
     if (!inner?.trim()) {
       anyBlockUnparsed = true
       continue
@@ -323,7 +360,12 @@ export function recoverTextToolCalls(
 
   // MiniMax may emit `<invoke>` blocks without a surrounding `<tool_call>` wrapper.
   if (!sawBlock) {
-    const { toolCalls: invokeCalls, sawInvoke } = parseInvokeBlocks(blanked, coerceToolArgs)
+    // Detect on the blanked copy, but slice inner bodies from the original.
+    const { toolCalls: invokeCalls, sawInvoke } = parseInvokeBlocks(
+      blanked,
+      coerceToolArgs,
+      normalized,
+    )
     if (sawInvoke) {
       sawBlock = true
       if (invokeCalls.length === 0) anyBlockUnparsed = true
