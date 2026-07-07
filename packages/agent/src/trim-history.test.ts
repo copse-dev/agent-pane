@@ -372,4 +372,39 @@ describe('trimMessagesInPlace precompute (#583)', () => {
     assert.ok(withMeasured.length < fixtures.plainText().length)
     assert.equal(refFindOldestDroppableIndex(withMeasured, 3), -1)
   })
+
+  it('does not collapse the whole history when measured tokens only slightly exceed budget (#52 regression)', () => {
+    // Companion to the test above: a *large* measured overage (500x) collapses to
+    // minTail either way, but a *slight* one must not. The measured value is a fixed
+    // snapshot that never shrinks on its own, so seeding the loop from it without
+    // decrementing dropped estimates would collapse the whole history on the first
+    // pass once measured tokens cross the budget. Decrementing per-drop estimates
+    // keeps the trim proportional to the actual overage.
+    const messages: LLMMessage[] = [{ role: 'system', content: 'sys' }]
+    for (let i = 0; i < 20; i++) {
+      messages.push({ role: 'user', content: 'q'.repeat(400) })
+      messages.push({ role: 'assistant', content: 'a'.repeat(400) })
+    }
+    const lengthBefore = messages.length
+
+    const estimated = estimateConversationTokens(messages)
+    setLastMeasuredInputTokens(Math.round(estimated))
+    // Budget ~10% under the measured size — a few pairs of headroom.
+    const maxContextTokens = Math.round(estimated * 0.9)
+
+    const trimmed = trimMessagesInPlace(messages, maxContextTokens, {
+      reserveTokens: 0,
+      minTailMessages: 5,
+      completionReserveTokens: 0,
+    })
+    setLastMeasuredInputTokens(null)
+
+    assert.equal(trimmed, true)
+    // The regression would have left ~minTail (5-6) messages. The fix should keep
+    // the large majority, dropping only enough to get ~10% under budget.
+    assert.ok(
+      messages.length >= 25,
+      `expected a small trim, only ${String(messages.length)} of ${String(lengthBefore)} messages left`,
+    )
+  })
 })
