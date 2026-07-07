@@ -677,18 +677,21 @@ function raceDecisionAgainstAbort(
  * Steering prepended to every ACP prompt. Two failure modes it exists to
  * prevent, both observed dogfooding:
  *
- * - **Background subagents are doomed** (issue #605): the agent process is
- *   killed when the turn settles, so async/background helpers never deliver —
- *   ACP gives Copse no way to disable the agent's subagent tool, so steer.
- * - **Broad find/ls dumps burn the agent's own context/budget**: each turn is
- *   a fresh session, so undirected sweeps get re-paid every turn.
+ * - **Background work outliving the session** (issues #605/#588): since #621
+ *   the agent process is pooled per thread and survives across turns, so
+ *   background/async subagents DO deliver — but the pool reaps sessions after
+ *   ~10 idle minutes and on app shutdown, so open-ended background work can
+ *   still be lost. Steer toward bounded background tasks, not away from them.
+ * - **Broad find/ls dumps burn the agent's own context/budget**: undirected
+ *   sweeps stay in the session's context for its whole lifetime.
  */
 export const ACP_TURN_PROMPT_NOTE =
-  'Session notes: this session is turn-scoped — background or async subagents ' +
-  'will NOT survive the turn and their results will be lost, so do work inline ' +
-  '(foreground subagents that finish within the turn are fine). Keep exploration ' +
-  'lean: prefer targeted searches (specific paths, rg with globs) over broad ' +
-  'find/ls directory dumps, and prefer the "copse" MCP tools (e.g. ' +
+  'Session notes: this session persists across turns, and background or async ' +
+  'subagents survive the end of a turn — their results are delivered when the ' +
+  'next turn starts. The session IS reaped after ~10 idle minutes or on app ' +
+  'shutdown, so keep background work bounded rather than open-ended. Keep ' +
+  'exploration lean: prefer targeted searches (specific paths, rg with globs) ' +
+  'over broad find/ls directory dumps, and prefer the "copse" MCP tools (e.g. ' +
   'semantic_search) when available.'
 
 /**
