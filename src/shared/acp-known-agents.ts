@@ -156,6 +156,33 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     docsUrl: 'https://docs.cursor.com/en/cli/overview',
     note: 'Cursor CLI as a native ACP server (`cursor-agent acp`). Sign in with `cursor-agent login`.',
   },
+  {
+    id: 'codex',
+    title: 'Codex',
+    command: 'codex-acp',
+    args: [],
+    // Codex reads CODEX_API_KEY (or, as a fallback, OPENAI_API_KEY). OPENAI_API_KEY
+    // is scrubbed from the inherited env (child-process-env.ts), so a user relying
+    // on it must pass it through the agent's `env`; CODEX_API_KEY survives untouched.
+    envHints: ['CODEX_API_KEY', 'OPENAI_API_KEY'],
+    install: 'npm install -g @agentclientprotocol/codex-acp',
+    installPackage: '@agentclientprotocol/codex-acp',
+    // Gated on the `codex` CLI so auto-setup only installs the adapter for people
+    // who actually use Codex — the same "adapter follows its client" rule as Claude.
+    requiresClient: 'codex',
+    autoInstall: true,
+    preset: true,
+    sandbox: {
+      // OpenAI-owned infra wholesale: the API lives on api.openai.com, but the
+      // ChatGPT-login flow talks to chatgpt.com / auth.openai.com and these move
+      // between subdomains — pinning individual hosts breaks auth when they do.
+      allowedDomains: ['openai.com', '*.openai.com', 'chatgpt.com', '*.chatgpt.com'],
+      homeDirs: ['.codex', '.config/codex'],
+    },
+    setup: 'codex login', // ChatGPT sign-in; set NO_BROWSER=1 for headless, or use CODEX_API_KEY
+    docsUrl: 'https://www.npmjs.com/package/@agentclientprotocol/codex-acp',
+    note: 'OpenAI Codex over ACP. Sign in with `codex login` (ChatGPT), or set CODEX_API_KEY.',
+  },
 ]
 
 /** A {@link KnownAcpAgent} annotated with what was found on the device. */
