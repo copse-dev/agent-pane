@@ -57,6 +57,25 @@ const KNOWN_AGENTS: KnownAgent[] = [
     setup: 'claude setup-token',
     note: "Zed's Claude Code ACP adapter. Auth with `claude setup-token` or ANTHROPIC_API_KEY.",
   },
+  {
+    id: 'cursor',
+    title: 'Cursor',
+    command: 'cursor-agent',
+    args: ['acp'],
+    install: 'curl https://cursor.com/install | bash',
+    setup: 'cursor-agent login',
+    note: 'Cursor CLI as a native ACP server (`cursor-agent acp`). Sign in with `cursor-agent login`.',
+  },
+  {
+    id: 'codex',
+    title: 'Codex',
+    command: 'codex-acp',
+    args: [],
+    envHints: ['CODEX_API_KEY', 'OPENAI_API_KEY'],
+    install: 'npm install -g @agentclientprotocol/codex-acp',
+    setup: 'codex login',
+    note: 'OpenAI Codex over ACP. Sign in with `codex login` (ChatGPT), or set CODEX_API_KEY.',
+  },
 ]
 
 async function resolveOnPath(command: string): Promise<string | null> {
