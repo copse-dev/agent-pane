@@ -909,6 +909,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
           </section>
 
+          <div class="settings-search-results" id="settings-search-results"></div>
+
           <p class="settings-search-empty" id="settings-search-empty" hidden></p>
 
           <div class="settings-buttons">
@@ -1020,8 +1022,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   const contentEl = qsRequired(overlay, '.settings-content')
   const searchInput = qsRequired<HTMLInputElement>(overlay, '#settings-search-input')
   const searchEmpty = qsRequired(overlay, '#settings-search-empty')
+  const searchResults = qsRequired(overlay, '#settings-search-results')
   // The section a nav button last selected, restored when a search is cleared.
   let activeSection: SettingsSection = 'general'
+  // Blocks lifted into the results list, each with the comment node marking the
+  // spot to drop it back into when the search is cleared.
+  let liftedBlocks: { node: HTMLElement; marker: Comment }[] = []
+  // Async section content (ACP agents, Sources lists) loads only when its tab is
+  // opened; search reveals those blocks too, so populate them once per open.
+  let searchContentLoaded = false
 
   function showSection(id: SettingsSection): void {
     activeSection = id
@@ -1029,30 +1038,66 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     sections.forEach((sec) => sec.classList.toggle('active', sec.dataset['section'] === id))
   }
 
+  // A settings "block" is a top-level fieldset — one not nested inside another
+  // (LM Studio sits inside Local providers, so it isn't its own block).
+  function topLevelBlocks(root: ParentNode): HTMLElement[] {
+    return Array.from(root.querySelectorAll<HTMLElement>('fieldset')).filter(
+      (fs) => !fs.parentElement?.closest('fieldset'),
+    )
+  }
+
+  // Return each lifted block to the marker left in its original position.
+  function restoreLiftedBlocks(): void {
+    for (const { node, marker } of liftedBlocks) marker.replaceWith(node)
+    liftedBlocks = []
+  }
+
   /**
-   * Cross-section search: type text and every section whose text contains it is
-   * shown in full — heading, description, and all its blocks — no matter where it
-   * sits in the nav, so sections that would normally be one-at-a-time appear
-   * together. The whole section is kept (rather than just the matched block) so a
-   * hit lands with its surrounding, related settings for context. With the box
-   * empty, the normal one-section-at-a-time view is restored.
+   * Cross-section search: type text and every settings block (a top-level
+   * `<fieldset>`) whose text contains it is collected into one results list, no
+   * matter which section it lives in. Blocks are shown whole — never cropped —
+   * and ranked so a hit in the block's own heading (its legend) sorts above one
+   * that only matched body text, since the heading names what the block is. With
+   * the box empty, the normal one-section-at-a-time view is restored.
    */
   function applySearch(raw: string): void {
+    // Always start from a clean slate so each keystroke re-ranks from scratch.
+    restoreLiftedBlocks()
     const query = raw.trim().toLowerCase()
     if (!query) {
       contentEl.classList.remove('settings-searching')
       searchEmpty.hidden = true
+      searchResults.replaceChildren()
       showSection(activeSection)
       return
     }
+
+    // Pull in the lazily-loaded section content so matched blocks (e.g. the ACP
+    // agents list) render fully rather than as an empty shell.
+    if (!searchContentLoaded) {
+      searchContentLoaded = true
+      void acpAgentsSection.refresh()
+      void refreshSources()
+    }
+
     contentEl.classList.add('settings-searching')
-    let matchCount = 0
+    const matches: { node: HTMLElement; rank: number }[] = []
     sections.forEach((sec) => {
-      const hit = sec.textContent.toLowerCase().includes(query)
-      sec.classList.toggle('settings-search-match', hit)
-      if (hit) matchCount += 1
+      for (const block of topLevelBlocks(sec)) {
+        if (!block.textContent.toLowerCase().includes(query)) continue
+        const legend = block.querySelector('legend')?.textContent.toLowerCase() ?? ''
+        matches.push({ node: block, rank: legend.includes(query) ? 0 : 1 })
+      }
     })
-    if (matchCount === 0) {
+    // Stable sort (legend matches first) keeps document order within each rank.
+    matches.sort((a, b) => a.rank - b.rank)
+    for (const { node } of matches) {
+      const marker = document.createComment('lifted settings block')
+      node.replaceWith(marker)
+      searchResults.append(node)
+      liftedBlocks.push({ node, marker })
+    }
+    if (matches.length === 0) {
       searchEmpty.textContent = `No settings match “${raw.trim()}”.`
       searchEmpty.hidden = false
     } else {
@@ -1435,10 +1480,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   overlay.addEventListener('settings-open', () => {
     // A fresh open always starts on a section, never in a leftover search.
+    searchContentLoaded = false
     if (searchInput.value) {
       searchInput.value = ''
-      applySearch('')
     }
+    applySearch('')
     showSection(pendingSection ?? 'general')
     pendingSection = null
     void (async (): Promise<void> => {
