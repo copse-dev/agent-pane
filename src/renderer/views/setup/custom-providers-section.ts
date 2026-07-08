@@ -57,7 +57,7 @@ const FIXED_PROVIDERS: readonly FixedProvider[] = [
     id: 'openrouter',
     label: 'OpenRouter',
     placeholder: 'sk-or-…',
-    hint: 'Claude, GPT, Gemini, Llama and more via one key. Add a custom model id in the Chat model section.',
+    hint: 'Claude, GPT, Gemini, Llama and more via one key. Add a custom model id below.',
   },
 ]
 // Order of the leading cloud chips, per design. Remaining customs follow, then
@@ -269,6 +269,11 @@ export function createCustomProvidersSection(
 
   let providers: ExtraProvider[] = []
   let selected = defaultSelected
+  // OpenRouter-only custom model id (cloud panel). Loaded on refresh, edited in
+  // the OpenRouter form, flushed by saveKeys — mirrors the pendingKeys pattern
+  // so an unsaved edit survives chip switches and only persists on dialog Save.
+  let openRouterModelValue = ''
+  let pendingOpenRouterModel: string | null = null
 
   function chipKeys(): string[] {
     const extraById = new Map(providers.map((p) => [p.id, p]))
@@ -370,14 +375,46 @@ export function createCustomProvidersSection(
     )
   }
 
+  // ---- OpenRouter custom model field --------------------------------------
+  // A free-text model id that augments the built-in OpenRouter shortlist in the
+  // model picker. Lives inside the OpenRouter provider form (next to its key)
+  // rather than the generic Chat model section so every OpenRouter control sits
+  // together.
+  function openRouterModelField(): HTMLElement {
+    const input = el('input', {
+      type: 'text',
+      name: 'openRouterModel',
+      placeholder: 'vendor/model (e.g. anthropic/claude-3.7-sonnet)',
+      autocomplete: 'off',
+    })
+    input.value = pendingOpenRouterModel ?? openRouterModelValue
+    input.addEventListener('input', () => {
+      pendingOpenRouterModel = input.value
+    })
+    return el(
+      'div',
+      { class: 'provider-field-group' },
+      el('label', {}, 'Custom model', input),
+      el(
+        'span',
+        { class: 'field-hint' },
+        'Adds a model id beyond the built-in OpenRouter shortlist to the picker. Needs the key above. Browse ids at ',
+        el('code', {}, 'openrouter.ai/models'),
+        '.',
+      ),
+    )
+  }
+
   // ---- Fixed provider form ------------------------------------------------
   function fixedForm(fixed: FixedProvider): HTMLElement {
-    return el(
+    const form = el(
       'div',
       { class: 'provider-form' },
       el('h4', { class: 'provider-form-title' }, fixed.label),
       keyField(fixed.id, `${fixed.label} API key`, fixed.placeholder, fixed.hint),
     )
+    if (fixed.id === 'openrouter') form.append(openRouterModelField())
+    return form
   }
 
   // ---- Extra (OpenAI-compatible) provider form ----------------------------
@@ -717,6 +754,16 @@ export function createCustomProvidersSection(
     ) {
       selected = defaultSelected
     }
+    // Load the OpenRouter custom model id (cloud panel only) so its form field
+    // reflects the stored value; unsaved edits (pending) still take precedence.
+    if (!isLocal) {
+      try {
+        const saved = await api.settings.get('openRouterModel')
+        openRouterModelValue = typeof saved === 'string' ? saved : ''
+      } catch {
+        openRouterModelValue = ''
+      }
+    }
     // Let native providers (LM Studio) re-run their own detection.
     await Promise.all(nativeProviders.map(async (p) => p.refresh?.()))
     // Refresh the configured-key indicators for the chips.
@@ -741,6 +788,14 @@ export function createCustomProvidersSection(
       if (trimmed) await api.settings.setKey(slug, trimmed)
     }
     pendingKeys.clear()
+    // Persist the OpenRouter custom model id only if it was touched, so leaving
+    // the field alone never clobbers a previously saved value.
+    if (pendingOpenRouterModel !== null) {
+      const trimmed = pendingOpenRouterModel.trim()
+      await api.settings.set('openRouterModel', trimmed)
+      openRouterModelValue = trimmed
+      pendingOpenRouterModel = null
+    }
   }
 
   return { root: fieldset, refresh, saveKeys }
