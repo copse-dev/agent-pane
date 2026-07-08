@@ -4,17 +4,38 @@ import type { AppStore } from '@shared/store/store.ts'
 import { isSettingsDialogOpen, onSettingsDialogClose } from './settings-dialog.ts'
 import { setAttentionThreads } from '../controller/attention.ts'
 
-export function mountApprovalDialog(api: ApiClient, store: AppStore): void {
+/**
+ * How long the first pending request waits before the dialog pops, so a burst of
+ * concurrent `session/request_permission` calls (an agent running several tool
+ * calls in parallel) coalesces into one prompt instead of a modal per command.
+ * Kept well under 200ms so the first prompt still feels instant; requests that
+ * arrive after the dialog is already open are appended live, so this window only
+ * needs to catch the initial burst.
+ */
+export const APPROVAL_COALESCE_MS = 120
+
+/** Defers `fn` to gather the opening burst; overridable so tests run it inline. */
+export type CoalesceScheduler = (fn: () => void) => void
+
+const defaultScheduler: CoalesceScheduler = (fn) => {
+  setTimeout(fn, APPROVAL_COALESCE_MS)
+}
+
+export function mountApprovalDialog(
+  api: ApiClient,
+  store: AppStore,
+  scheduleCoalesce: CoalesceScheduler = defaultScheduler,
+): void {
   const rememberLabel = el(
     'label',
     { class: 'approval-remember' },
     el('input', { type: 'checkbox', class: 'approval-remember-input' }),
     'Always allow this tool',
   )
+  const list = el('div', { class: 'approval-list' })
   const dialog = el('dialog', { id: 'approval-dialog' })
   dialog.append(
-    el('h3', { class: 'approval-title' }),
-    el('pre', { class: 'approval-body' }),
+    list,
     rememberLabel,
     el(
       'div',
@@ -26,13 +47,10 @@ export function mountApprovalDialog(api: ApiClient, store: AppStore): void {
   document.body.append(dialog)
 
   const rememberInput = qsRequired<HTMLInputElement>(rememberLabel, '.approval-remember-input')
-
-  const approvalTitle = qsRequired(dialog, '.approval-title')
-  const approvalBody = qsRequired(dialog, '.approval-body')
+  const approveButton = qsRequired(dialog, '.approval-approve')
+  const rejectButton = qsRequired(dialog, '.approval-reject')
   const rememberLabelTextNode = rememberLabel.childNodes[1]
   if (!rememberLabelTextNode) throw new Error('approval dialog missing remember label text node')
-  // Bind to an explicitly non-optional type so the narrowing survives into the
-  // showNext() closure below.
   const rememberLabelText: ChildNode = rememberLabelTextNode
 
   interface PendingApproval {
@@ -45,13 +63,16 @@ export function mountApprovalDialog(api: ApiClient, store: AppStore): void {
     rememberLabel: string | undefined
   }
 
-  // A single shared `currentId` mis-routed answers when a second request arrived
-  // while the first was still open: the second overwrote the id, so clicking
-  // Approve/Reject answered the wrong (second) request and the first hung.
-  // Queue requests and show them one at a time, binding each answer to the
-  // request actually on screen.
+  // Requests waiting for their turn (background threads, or arrived before the
+  // coalesce window elapsed). `batch` holds the requests currently on screen —
+  // more than one when the agent fired several permission requests at once.
   const queue: PendingApproval[] = []
-  let active: PendingApproval | null = null
+  let batch: PendingApproval[] = []
+  let active = false
+  // True between scheduling the opening delay and its callback firing, so a burst
+  // of arrivals shares one timer (the delay counts from the *first* request, not
+  // the last) and other surfacing paths don't double-open.
+  let coalesceScheduled = false
 
   // Minimizing the window flips the renderer document to `hidden`. A modal shown
   // on a hidden window can't be painted, so it reads as a frozen/crashed pane and
@@ -84,46 +105,115 @@ export function mountApprovalDialog(api: ApiClient, store: AppStore): void {
     setAttentionThreads(store, 'approval', waiting)
   }
 
-  function showNext(): void {
+  /** Move every currently-showable queued request onto the on-screen batch,
+   * preserving arrival order (older requests stay at the top of the list). */
+  function drainShowableIntoBatch(): number {
+    let moved = 0
+    for (let i = 0; i < queue.length; ) {
+      const req = queue[i]
+      if (req && isShowable(req)) {
+        queue.splice(i, 1)
+        batch.push(req)
+        moved++
+      } else {
+        i++
+      }
+    }
+    return moved
+  }
+
+  /**
+   * The remember checkbox grants "always allow" for one agent+tool-kind (encoded
+   * in `rememberLabel`). It only stays coherent when every batched request shares
+   * that grant, so hide it for mixed batches rather than apply one label's grant
+   * to unrelated calls.
+   */
+  function rememberGrant(): string | null {
+    if (batch.length === 0) return null
+    if (!batch.every((req) => req.allowRemember)) return null
+    const label = batch[0]?.rememberLabel
+    if (!label || !batch.every((req) => req.rememberLabel === label)) return null
+    return label
+  }
+
+  function renderBatch(): void {
+    list.replaceChildren(
+      ...batch.map((req) =>
+        el(
+          'div',
+          { class: 'approval-item' },
+          el('h3', { class: 'approval-title' }, req.title),
+          el('pre', { class: 'approval-body' }, req.body),
+        ),
+      ),
+    )
+    const count = batch.length
+    approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : 'Approve'
+    rejectButton.textContent = count > 1 ? `Reject all (${String(count)})` : 'Reject'
+
+    const grant = rememberGrant()
+    rememberLabel.hidden = grant === null
+    if (grant === null) rememberInput.checked = false
+    else rememberLabelText.textContent = grant
+  }
+
+  /** Pop the dialog with whatever is showable now (no-op if nothing/blocked). */
+  function show(): void {
     // The settings dialog is itself a top-layer modal <dialog>. A second
     // showModal() while it is open stacks the approval prompt *above* settings
-    // (issue #501), even though the request came from a background chat. Keep
-    // such requests queued; onSettingsDialogClose() below flushes them once the
-    // user leaves settings, so the prompt appears in front of the chat instead.
+    // (issue #501). Keep requests queued; onSettingsDialogClose() flushes them.
     if (isSettingsDialogOpen()) return
     if (active) return
-    const idx = queue.findIndex(isShowable)
-    if (idx === -1) {
-      // Nothing for the focused thread; anything left is background attention.
+    if (drainShowableIntoBatch() === 0) {
       syncAttention()
       return
     }
-    active = queue.splice(idx, 1)[0] ?? null
-    if (!active) return
-    approvalTitle.textContent = active.title
-    approvalBody.textContent = active.body
-    rememberLabelText.textContent = active.rememberLabel ?? 'Always allow this tool'
     rememberInput.checked = false
-    rememberLabel.hidden = !active.allowRemember
+    renderBatch()
     dialog.showModal()
+    active = true
+    syncAttention()
+  }
+
+  /** First request of a burst: wait a beat for siblings, then pop once. */
+  function scheduleShow(): void {
+    if (active || coalesceScheduled) return
+    if (!queue.some(isShowable)) {
+      syncAttention()
+      return
+    }
+    coalesceScheduled = true
+    scheduleCoalesce(() => {
+      coalesceScheduled = false
+      show()
+    })
+  }
+
+  /** A request that landed while the dialog is open joins it live. */
+  function appendToOpen(): void {
+    if (!active) return
+    if (drainShowableIntoBatch() > 0) renderBatch()
     syncAttention()
   }
 
   function resolve(approved: boolean, remember: boolean): void {
-    const current = active
-    if (!current) return
+    if (!active || batch.length === 0) return
+    const answered = batch
     dialog.close()
-    active = null
-    void api.approval.respond(current.id, approved, remember)
-    showNext()
+    batch = []
+    active = false
+    for (const req of answered) void api.approval.respond(req.id, approved, remember)
+    // Surface anything that was waiting behind this batch immediately — it has
+    // already sat through its own coalesce window, so no extra delay.
+    show()
   }
 
   api.agent.onApprovalRequest(({ id, threadId, title, body, allowRemember, rememberLabel }) => {
     queue.push({ id, threadId, title, body, allowRemember, rememberLabel })
-    showNext()
-    // showNext() skips its attention sync when a modal is already up or Settings
-    // is open; sync unconditionally so a background request still flags its
-    // thread in those cases.
+    if (active) appendToOpen()
+    else scheduleShow()
+    // scheduleShow/appendToOpen sync attention on their own paths, but a request
+    // held back by the settings guard reaches neither; sync unconditionally.
     syncAttention()
   })
 
@@ -131,26 +221,28 @@ export function mountApprovalDialog(api: ApiClient, store: AppStore): void {
   // now-focused thread should surface. `threads_changed` also fires on project
   // switches, so this covers cross-project focus changes too.
   store.on('threads_changed', () => {
-    showNext()
+    if (active) appendToOpen()
+    else show()
   })
 
   // Restoring a minimized window makes deferred requests showable again; surface
   // them immediately so the user never has to switch threads to un-stick a prompt
-  // that was held back while the window was hidden.
+  // that was held back while the window was hidden. show() no-ops while hidden,
+  // so it only pops once the window is actually visible again.
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'hidden') showNext()
+    if (document.visibilityState !== 'hidden') show()
   })
 
-  // Requests that arrived while the user was in Settings were held back by
-  // showNext()'s guard; surface them now that settings is closed.
+  // Requests that arrived while the user was in Settings were held back by the
+  // settings guard; surface them now that settings is closed.
   onSettingsDialogClose(() => {
-    showNext()
+    show()
   })
 
-  qsRequired(dialog, '.approval-approve').addEventListener('click', () => {
+  approveButton.addEventListener('click', () => {
     resolve(true, rememberInput.checked)
   })
-  qsRequired(dialog, '.approval-reject').addEventListener('click', () => {
+  rejectButton.addEventListener('click', () => {
     resolve(false, false)
   })
 }
