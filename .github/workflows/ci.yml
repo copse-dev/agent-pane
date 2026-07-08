@@ -524,6 +524,15 @@ jobs:
   # branch) and only after a green e2e run, so we never commit half-rendered shots.
   # Deliberately NOT in `ci-passed`'s needs: it's a side effect, not a gate.
   #
+  # Write policy — UNCONTESTED SHOTS ONLY. A rendered shot is auto-committed only
+  # when nothing contests the write: the baseline was inherited from main (or is
+  # brand new) and neither this branch (by a non-bot author) nor main has touched
+  # it since the merge-base. A shot someone deliberately committed on the branch,
+  # or that main moved under the PR, is HELD — the branch's committed version
+  # always wins — and surfaced in the PR comment with a base-vs-branch image
+  # comparison. Adding the `update-screenshots` label is the explicit
+  # "regenerate and take CI's render" override. (filter-screenshots.mts decides.)
+  #
   # It also reconciles screenshot conflicts: if main re-rendered the same reference
   # PNG, that binary file can't 3-way merge and the PR goes `dirty`. The reconcile
   # step merges main, keeping the freshly re-rendered shots for any screenshot-path
@@ -566,12 +575,15 @@ jobs:
           if compgen -G "artifacts/tests/e2e/screenshots/*" > /dev/null; then
             cp -f artifacts/tests/e2e/screenshots/* tests/e2e/screenshots/
           fi
-      # Drop sub-threshold render noise before staging. A re-render of an unchanged
-      # screen still wobbles a few pixels (font hinting / anti-alias), and committing
-      # that churns the reference shots for nothing. filter-screenshots.mts pixel-
-      # compares each changed PNG against its committed baseline and reverts the ones
-      # whose difference is below the noise threshold (clearly-different shots stay).
-      # The reverted "near-identical" shots are reported back so the comment step can
+      # Drop sub-threshold render noise before staging, and hold contested shots. A
+      # re-render of an unchanged screen still wobbles a few pixels (font hinting /
+      # anti-alias), and committing that churns the reference shots for nothing.
+      # filter-screenshots.mts pixel-compares each changed PNG against its committed
+      # baseline and reverts the ones whose difference is below the noise threshold
+      # (clearly-different shots stay). It also reverts CONTESTED shots — a baseline
+      # deliberately committed on this branch by a non-bot author, or moved on main
+      # since the merge-base — so CI never overrides deliberate work (see the job
+      # comment above). The reverted shots are reported back so the comment step can
       # offer them for manual review. Needs Node + pixelmatch/pngjs only — install
       # just those two into node_modules (an isolated, scripts-off install, ~0.3s)
       # rather than a full `npm ci`; this job otherwise needs no dependency tree.
@@ -583,6 +595,12 @@ jobs:
         env:
           UPDATE_SCREENSHOTS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'update-screenshots') }}
         run: |
+          # The contested check compares against origin/main (merge-base, branch
+          # authorship, main-side changes). fetch-depth: 0 above usually brings it
+          # in already; fetch explicitly so a partial mirror can't silently
+          # disable the check. Best-effort: on failure the filter degrades to
+          # noise/flap-only (merge-base comes back empty), it doesn't clobber.
+          git fetch --no-tags origin main || true
           npm install --no-save --no-audit --no-fund --ignore-scripts \
             --prefix /tmp/ssfilter pixelmatch pngjs
           # `node_modules` is committed as a symlink, so a bare `mkdir -p` errors
@@ -624,8 +642,12 @@ jobs:
       # and STAYS that way: the render commit above only updates the head branch, it
       # never incorporates main, so head's PNG keeps conflicting with main's PNG.
       # Bring main in here so the conflict actually resolves. Generated PNGs have no
-      # meaningful 3-way merge — for any screenshot-path conflict we just keep the
-      # freshly re-rendered shot (--ours). But we NEVER auto-resolve source code:
+      # meaningful 3-way merge — for any screenshot-path conflict we keep the head
+      # branch's version (--ours). Because the filter step above already reverted
+      # contested renders, --ours here means: the fresh render for uncontested
+      # shots, and the branch's deliberately COMMITTED shot for contested ones —
+      # the branch always wins, but CI's render never displaces deliberate work.
+      # We NEVER auto-resolve source code:
       # if anything outside tests/e2e/screenshots/ conflicts, abort and leave it to
       # a human (the `manual` output drives a PR comment below).
       #
@@ -675,15 +697,18 @@ jobs:
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Comment on PR with updated screenshots
         # Post when real shots were committed, shots were ignored as noise (the
-        # ignored list is offered for manual acceptance), OR main couldn't be merged
-        # automatically because source conflicts need a human.
-        if: steps.diff.outputs.changed == 'true' || steps.filter.outputs.ignored-count != '0' || steps.filter.outputs.flapping-count != '0' || steps.reconcile.outputs.manual == 'true'
+        # ignored list is offered for manual acceptance), shots were held as
+        # flapping or contested, OR main couldn't be merged automatically because
+        # source conflicts need a human.
+        if: steps.diff.outputs.changed == 'true' || steps.filter.outputs.ignored-count != '0' || steps.filter.outputs.flapping-count != '0' || steps.filter.outputs.contested-count != '0' || steps.reconcile.outputs.manual == 'true'
         uses: actions/github-script@v7
         env:
           CHANGED_FILES: ${{ steps.diff.outputs.files }}
           COMMIT_SHA: ${{ steps.push.outputs.sha }}
           IGNORED_JSON: ${{ steps.filter.outputs.ignored-json }}
           FLAPPING_JSON: ${{ steps.filter.outputs.flapping-json }}
+          CONTESTED_JSON: ${{ steps.filter.outputs.contested-json }}
+          MAIN_SHA: ${{ steps.filter.outputs.main-sha }}
           MANUAL_MERGE_FILES: ${{ steps.reconcile.outputs.manual-files }}
         with:
           script: |
@@ -693,7 +718,10 @@ jobs:
             const files = (process.env.CHANGED_FILES || '').split('\n').filter(Boolean);
             const ignored = JSON.parse(process.env.IGNORED_JSON || '[]');
             const flapping = JSON.parse(process.env.FLAPPING_JSON || '[]');
+            const contested = JSON.parse(process.env.CONTESTED_JSON || '[]');
+            const mainSha = process.env.MAIN_SHA || '';
             const manualMerge = (process.env.MANUAL_MERGE_FILES || '').split('\n').filter(Boolean);
+            const blob = (ref, path) => `https://github.com/${repo}/blob/${ref}/${path}?raw=1`;
             const sections = [];
             if (manualMerge.length) {
               const lines = manualMerge.map((path) => `- \`${path}\``);
@@ -703,6 +731,29 @@ jobs:
                   `**non-screenshot** files conflict and can't be auto-merged. Resolve them by ` +
                   `hand (merge or rebase \`main\`) — the screenshot reconcile was skipped:\n\n` +
                   lines.join('\n'),
+              );
+            }
+            if (contested.length) {
+              // Everything shown here is already committed somewhere, so plain blob
+              // URLs work: main's version at the main tip, the branch's standing
+              // version at the pushed head. The held CI render itself is in no
+              // commit — labelling regenerates and commits it, making it visible.
+              const rows = contested.map((s) => {
+                const why = [
+                  s.branchTouched ? 'committed on this branch' : null,
+                  s.mainTouched ? 'changed on `main`' : null,
+                ].filter(Boolean).join('; ');
+                const diff = s.diffPixels == null ? 'differs' : `${s.diffPixels} px (${s.ratioPct})`;
+                const base = mainSha ? `![main](${blob(mainSha, s.path)})` : '—';
+                return `| \`${s.name}\`<br>${why}<br>CI render: ${diff} vs committed | ${base} | ![branch](${blob(sha, s.path)}) |`;
+              });
+              sections.push(
+                `### Held — conflicts with committed work (${contested.length})\n\n` +
+                  `CI re-rendered these, but their committed baselines are deliberate, so the fresh ` +
+                  `render was **not** committed — the branch's version stands. To regenerate and take ` +
+                  `CI's render instead, add the \`update-screenshots\` label:\n\n` +
+                  `| shot | \`main\` | this branch |\n| --- | --- | --- |\n` +
+                  rows.join('\n'),
               );
             }
             if (files.length) {
@@ -728,7 +779,14 @@ jobs:
               );
             }
             if (flapping.length) {
-              const lines = flapping.map((s) => `- \`${s.name}\` — ${s.diffPixels} px (${s.ratioPct})`);
+              // The matched prior state IS committed (that's what makes it a flap),
+              // so it can be shown inline at its commit's blob URL.
+              const lines = flapping.map((s) => {
+                const matched = s.matchedSha
+                  ? `; matches ${s.matchedSha.slice(0, 7)}: ![prior](${blob(s.matchedSha, s.path)})`
+                  : '';
+                return `- \`${s.name}\` — ${s.diffPixels} px (${s.ratioPct})${matched}`;
+              });
               sections.push(
                 `### Held — render flapping (${flapping.length})\n\n` +
                   `These shots alternate between two runner render states and were **not** ` +
