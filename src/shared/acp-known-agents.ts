@@ -166,11 +166,10 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     // on it must pass it through the agent's `env`; CODEX_API_KEY survives untouched.
     envHints: ['CODEX_API_KEY', 'OPENAI_API_KEY'],
     install: 'npm install -g @agentclientprotocol/codex-acp',
-    installPackage: '@agentclientprotocol/codex-acp',
-    // Gated on the `codex` CLI so auto-setup only installs the adapter for people
-    // who actually use Codex — the same "adapter follows its client" rule as Claude.
-    requiresClient: 'codex',
-    autoInstall: true,
+    // Standalone adapter (bundles @openai/codex, self-authenticates) — there is no
+    // parent client to gate on, so it is NOT auto-installed. Like Cursor: the UI
+    // shows the install command, and auto-setup registers it once the binary is on
+    // PATH. Drop `autoInstall`/`requiresClient` deliberately.
     preset: true,
     sandbox: {
       // OpenAI-owned infra wholesale: the API lives on api.openai.com, but the
