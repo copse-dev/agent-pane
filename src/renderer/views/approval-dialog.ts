@@ -60,10 +60,14 @@ export function mountApprovalDialog(
     el('input', { type: 'checkbox', class: 'approval-remember-input' }),
     'Always allow this tool',
   )
-  const list = el('div', { class: 'approval-list' })
+  // One heading for the whole prompt (fixed); the items scroll under it so a big
+  // batch doesn't push the buttons off screen.
+  const heading = el('h3', { class: 'approval-heading' })
+  const items = el('div', { class: 'approval-items' })
   const dialog = el('dialog', { id: 'approval-dialog' })
   dialog.append(
-    list,
+    heading,
+    items,
     rememberLabel,
     el(
       'div',
@@ -168,17 +172,27 @@ export function mountApprovalDialog(
   }
 
   function renderBatch(): void {
-    list.replaceChildren(
-      ...batch.map((req) =>
-        el(
-          'div',
-          { class: 'approval-item' },
-          el('h3', { class: 'approval-title' }, req.title),
-          el('pre', { class: 'approval-body' }, req.body),
-        ),
-      ),
-    )
     const count = batch.length
+    // Collapse the per-request title into one heading when the whole batch asks
+    // the same question (parallel fetches/reads/shell — the common case). A mixed
+    // batch gets a count heading and keeps a light per-row label so the rows stay
+    // distinguishable.
+    const uniqueTitles = new Set(batch.map((req) => req.title))
+    const sharedTitle = uniqueTitles.size === 1 ? (batch[0]?.title ?? '') : null
+    const showRowTitles = count > 1 && sharedTitle === null
+
+    heading.textContent =
+      count <= 1 ? (batch[0]?.title ?? '') : (sharedTitle ?? `${String(count)} requests`)
+
+    items.replaceChildren(
+      ...batch.map((req) => {
+        const rowChildren: (Node | string)[] = []
+        if (showRowTitles) rowChildren.push(el('div', { class: 'approval-item-title' }, req.title))
+        rowChildren.push(el('pre', { class: 'approval-body' }, req.body))
+        return el('div', { class: 'approval-item' }, ...rowChildren)
+      }),
+    )
+
     approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : 'Approve'
     rejectButton.textContent = count > 1 ? `Reject all (${String(count)})` : 'Reject'
 

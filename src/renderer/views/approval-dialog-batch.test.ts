@@ -146,8 +146,14 @@ describe('approval dialog coalescing', () => {
     if (!button) throw new Error('approve button missing')
     return button
   }
-  const titles = (): (string | null)[] =>
-    [...dialog.querySelectorAll('.approval-title')].map((n) => n.textContent)
+  const heading = (): string | null =>
+    dialog.querySelector('.approval-heading')?.textContent ?? null
+  // Each request always renders its body, so the body set is the stable way to
+  // read which requests are on screen regardless of single/collapsed/mixed layout.
+  const bodies = (): (string | null)[] =>
+    [...dialog.querySelectorAll('.approval-body')].map((n) => n.textContent)
+  const rowTitles = (): (string | null)[] =>
+    [...dialog.querySelectorAll('.approval-item-title')].map((n) => n.textContent)
 
   it('waits for the window before opening, then pops once', () => {
     emit({ id: 'a' })
@@ -157,8 +163,27 @@ describe('approval dialog coalescing', () => {
     fireWindow()
     // One prompt listing both requests.
     assert.equal(spy.showModalCalls, 1)
-    assert.deepEqual(titles(), ['title-a', 'title-b'])
-    assert.equal(dialog.querySelector('.approval-approve')?.textContent, 'Approve all (2)')
+    assert.deepEqual(bodies(), ['body-a', 'body-b'])
+    assert.equal(approve().textContent, 'Approve all (2)')
+  })
+
+  it('collapses a repeated header into a single heading', () => {
+    // Both requests ask the same question (parallel fetches) — the header should
+    // appear once, with no noisy per-row title repetition, just the two bodies.
+    emit({ id: 'a', title: 'Fetch from the web? — Claude', body: 'fetch one' })
+    emit({ id: 'b', title: 'Fetch from the web? — Claude', body: 'fetch two' })
+    fireWindow()
+    assert.equal(heading(), 'Fetch from the web? — Claude')
+    assert.deepEqual(rowTitles(), [])
+    assert.deepEqual(bodies(), ['fetch one', 'fetch two'])
+  })
+
+  it('keeps per-row labels and a count heading for a mixed batch', () => {
+    emit({ id: 'a', title: 'Run shell command? — Claude' })
+    emit({ id: 'b', title: 'Fetch from the web? — Claude' })
+    fireWindow()
+    assert.equal(heading(), '2 requests')
+    assert.deepEqual(rowTitles(), ['Run shell command? — Claude', 'Fetch from the web? — Claude'])
   })
 
   it('answers every coalesced request with one click', () => {
@@ -166,7 +191,7 @@ describe('approval dialog coalescing', () => {
     emit({ id: 'b' })
     emit({ id: 'c' })
     fireWindow()
-    dialog.querySelector<HTMLButtonElement>('.approval-approve')?.click()
+    approve().click()
     assert.deepEqual(responses.map((r) => r.id).sort(), ['a', 'b', 'c'])
     assert.ok(responses.every((r) => r.approved))
     assert.equal(dialog.open, false)
@@ -176,11 +201,11 @@ describe('approval dialog coalescing', () => {
     emit({ id: 'a' })
     fireWindow()
     assert.equal(spy.showModalCalls, 1)
-    assert.deepEqual(titles(), ['title-a'])
+    assert.deepEqual(bodies(), ['body-a'])
     // A sibling lands after the prompt is up — it joins the open list, no new modal.
     emit({ id: 'b' })
     assert.equal(spy.showModalCalls, 1)
-    assert.deepEqual(titles(), ['title-a', 'title-b'])
+    assert.deepEqual(bodies(), ['body-a', 'body-b'])
     dialog.querySelector<HTMLButtonElement>('.approval-reject')?.click()
     assert.deepEqual(
       responses.map((r) => ({ id: r.id, approved: r.approved })),
