@@ -278,6 +278,27 @@ describe('thread-store', () => {
       assert.match(entry.digest, /how do I parse JSON/)
     })
 
+    it('updateMeta clears a field when the patch sets it to undefined', async () => {
+      const queued = {
+        messageId: 'q1',
+        payload: { content: 'later', invokedSkills: [], priorTodos: [] },
+        createdAt: 5,
+      }
+      await createThread('proj-1', thread('t1', { pendingMessages: [queued], queuePaused: true }))
+      // The renderer sends an explicit `undefined` for keys it has dropped so the
+      // merge deletes them — without this a drained queue would resurrect on load.
+      const clearPatch: Record<string, unknown> = {
+        pendingMessages: undefined,
+        queuePaused: undefined,
+      }
+      await updateMeta('proj-1', 't1', clearPatch)
+
+      const [loaded] = await loadProjectThreads('proj-1')
+      assert.ok(loaded)
+      assert.equal('pendingMessages' in loaded, false)
+      assert.equal('queuePaused' in loaded, false)
+    })
+
     it('updateMeta on a never-created thread is a no-op', async () => {
       await updateMeta('proj-1', 'ghost', { title: 'x' })
       assert.deepEqual(await loadProjectThreads('proj-1'), [])

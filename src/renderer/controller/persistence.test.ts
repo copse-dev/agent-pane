@@ -191,6 +191,42 @@ test('a metadata change on a known thread emits updateMeta, not create', async (
   autosave.detach()
 })
 
+test('clearing an optional field sends an explicit undefined so it is deleted on disk', async () => {
+  __resetPersistenceForTest()
+  const { api, calls } = fakeApi()
+  const queued = {
+    messageId: 'q1',
+    payload: { content: 'later', invokedSkills: [], priorTodos: [] },
+    createdAt: 5,
+  }
+  const store = createStore({
+    activeProjectId: 'p1',
+    threads: [thread('t1', { pendingMessages: [queued], queuePaused: true })],
+    projects: [],
+  })
+  const autosave = attachAutosave(store, api)
+
+  // Baseline: create t1 with a pending message.
+  store.emit('threads_changed')
+  await waitDebounce()
+  assert.equal(calls.creates.length, 1)
+
+  // Drain the queue: the thread object drops both keys entirely (not [] / false).
+  store.setState({ threads: [thread('t1')] })
+  store.emit('threads_changed')
+  await waitDebounce()
+
+  const patch = calls.metas.at(-1)?.patch as Record<string, unknown> | undefined
+  assert.ok(patch, 'a meta patch should be emitted')
+  // The removed keys are present with `undefined` so the on-disk merge clears
+  // them, rather than absent (which would let the stale value linger).
+  assert.ok('pendingMessages' in patch)
+  assert.equal(patch['pendingMessages'], undefined)
+  assert.ok('queuePaused' in patch)
+  assert.equal(patch['queuePaused'], undefined)
+  autosave.detach()
+})
+
 test('a finalized message is appended immediately on message_done', async () => {
   __resetPersistenceForTest()
   const { api, calls } = fakeApi()
