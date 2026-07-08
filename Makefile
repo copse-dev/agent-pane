@@ -229,12 +229,20 @@ check-node:
 # --- dependencies -----------------------------------------------------------
 # Reinstall only when the lockfile (or package.json) is newer than the last
 # successful install. `npm ci` gives a clean, lockfile-exact tree.
+#
+# `--ignore-scripts=false` forces this project's `postinstall` to run even when
+# npm is hardened with `ignore-scripts=true` in ~/.npmrc — without it that
+# supply-chain setting silently skips the native postinstall (chmod on
+# node-pty's spawn-helper, electron-rebuild, gortex fetch) and the integrated
+# terminal fails to launch. The flag is scoped to this one invocation, so it
+# doesn't touch your global config. See the "Hardened npm profiles" section of
+# the README.
 .PHONY: deps
 deps: $(DEPS_STAMP)
 
 $(DEPS_STAMP): package-lock.json package.json | $(STAMP_DIR) check-node
-	@echo "==> Dependencies out of date — running 'npm ci'…"
-	npm ci
+	@echo "==> Dependencies out of date — running 'npm ci' (scripts forced on)…"
+	npm ci --ignore-scripts=false
 	touch $(DEPS_STAMP)
 
 # --- build ------------------------------------------------------------------
