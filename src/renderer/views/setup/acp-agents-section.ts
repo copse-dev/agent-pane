@@ -434,13 +434,17 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
   async function autoSetup(): Promise<void> {
     try {
       const result = await api.acp.autoSetup()
-      if (result.installed.length || result.registered.length) {
+      if (result.installed.length || result.registered.length || result.modelsDetected.length) {
         await reloadAgents()
         render()
         await scan()
         const bits = [
           result.installed.length ? `installed ${String(result.installed.length)}` : '',
           result.registered.length ? `added ${String(result.registered.length)}` : '',
+          // Only worth calling out when nothing was installed/added (a pure model refresh).
+          !result.installed.length && !result.registered.length && result.modelsDetected.length
+            ? `detected models for ${String(result.modelsDetected.length)}`
+            : '',
         ].filter(Boolean)
         if (bits.length) {
           setInlineStatus(scanStatus, 'ok', `Presets ready (${bits.join(', ')})`)
