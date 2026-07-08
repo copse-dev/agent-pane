@@ -30,6 +30,8 @@ export interface AcpAutoSetupInput {
   clientInstalled: boolean
   /** An agent with this id is already in `registeredAcpAgents`. */
   configured: boolean
+  /** The already-configured agent has a cached, non-empty `availableModels` list. */
+  hasModels: boolean
 }
 
 export interface AcpAutoSetupPlan {
@@ -37,22 +39,35 @@ export interface AcpAutoSetupPlan {
   install: KnownAcpAgent[]
   /** Presets to register now (binary available or about to be installed). */
   register: KnownAcpAgent[]
+  /**
+   * Already-registered presets whose models should be (re)probed because none are
+   * cached yet. First-run registration probes models too, but that probe fails
+   * silently when there's no open folder or the agent isn't signed in yet; this
+   * retries on later runs so models appear once the user installs + authenticates.
+   */
+  refreshModels: KnownAcpAgent[]
 }
 
-/** Decide, from detection facts, what to install and what to register. Pure. */
+/** Decide, from detection facts, what to install, register, and re-probe. Pure. */
 export function planAcpAutoSetup(inputs: readonly AcpAutoSetupInput[]): AcpAutoSetupPlan {
   const install: KnownAcpAgent[] = []
   const register: KnownAcpAgent[] = []
-  for (const { known, agentInstalled, clientInstalled, configured } of inputs) {
+  const refreshModels: KnownAcpAgent[] = []
+  for (const { known, agentInstalled, clientInstalled, configured, hasModels } of inputs) {
     if (!known.preset) continue
     const willInstall = Boolean(
       known.autoInstall && known.installPackage && clientInstalled && !agentInstalled,
     )
     if (willInstall) install.push(known)
-    // Register once the binary is (or is about to be) available and not already configured.
-    if (!configured && (agentInstalled || willInstall)) register.push(known)
+    if (!configured && (agentInstalled || willInstall)) {
+      // Register once the binary is (or is about to be) available and not already configured.
+      register.push(known)
+    } else if (configured && !hasModels && agentInstalled) {
+      // Already registered but still modelless — retry the probe now the binary is present.
+      refreshModels.push(known)
+    }
   }
-  return { install, register }
+  return { install, register, refreshModels }
 }
 
 export type { AcpAutoSetupResult }
@@ -91,7 +106,7 @@ async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupRes
     modelsDetected: [],
     failed: [],
   }
-  const configured = new Set(listAcpAgents().map((agent) => agent.id))
+  const existing = new Map(listAcpAgents().map((agent) => [agent.id, agent]))
   const presets = KNOWN_ACP_AGENTS.filter((known) => known.preset)
 
   const inputs: AcpAutoSetupInput[] = await Promise.all(
@@ -101,7 +116,8 @@ async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupRes
       clientInstalled: known.requiresClient
         ? (await resolveOnPath(known.requiresClient)) !== null
         : true,
-      configured: configured.has(known.id),
+      configured: existing.has(known.id),
+      hasModels: (existing.get(known.id)?.availableModels?.length ?? 0) > 0,
     })),
   )
   const plan = planAcpAutoSetup(inputs)
@@ -126,26 +142,51 @@ async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupRes
     if (!input?.agentInstalled && !installedNow.has(known.id)) continue
 
     let config = presetToConfig(known)
-    if (cwd) {
-      try {
-        const selector = await listAcpAgentModels({
-          command: known.command,
-          cwd,
-          ...(known.args.length ? { args: known.args } : {}),
-          ...(known.sandbox ? { sandbox: known.sandbox } : {}),
-        })
-        if (selector?.choices.length) {
-          config = { ...config, availableModels: selector.choices }
-          result.modelsDetected.push(known.id)
-        }
-      } catch {
-        // Model probe is best-effort (auth/network/timeout); the agent is still
-        // registered and the user can hit "Detect models" later.
-      }
+    const models = await probeModels(known, cwd)
+    if (models) {
+      config = { ...config, availableModels: models }
+      result.modelsDetected.push(known.id)
     }
     await upsertAcpAgent(config)
     result.registered.push(known.id)
   }
 
+  // Retry model detection for agents registered on an earlier run without models
+  // (installed/authenticated since). Preserves the user's config; only fills in
+  // availableModels once the probe finally succeeds.
+  for (const known of plan.refreshModels) {
+    if (signal.aborted) break
+    const config = existing.get(known.id)
+    if (!config) continue
+    const models = await probeModels(known, cwd)
+    if (models) {
+      await upsertAcpAgent({ ...config, availableModels: models })
+      result.modelsDetected.push(known.id)
+    }
+  }
+
   return result
+}
+
+/**
+ * Best-effort probe of a known agent's model selector. Returns the flattened
+ * choices, or null when there's no open folder or the probe fails (auth, network,
+ * timeout) — callers keep the agent registered and the user can "Detect models".
+ */
+async function probeModels(
+  known: KnownAcpAgent,
+  cwd: string | null,
+): Promise<AcpAgentConfig['availableModels'] | null> {
+  if (!cwd) return null
+  try {
+    const selector = await listAcpAgentModels({
+      command: known.command,
+      cwd,
+      ...(known.args.length ? { args: known.args } : {}),
+      ...(known.sandbox ? { sandbox: known.sandbox } : {}),
+    })
+    return selector?.choices.length ? selector.choices : null
+  } catch {
+    return null
+  }
 }

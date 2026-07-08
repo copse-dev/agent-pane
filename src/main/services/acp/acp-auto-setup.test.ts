@@ -33,6 +33,7 @@ const input = (known: KnownAcpAgent, over: Partial<AcpAutoSetupInput> = {}): Acp
   agentInstalled: false,
   clientInstalled: false,
   configured: false,
+  hasModels: false,
   ...over,
 })
 
@@ -83,12 +84,42 @@ describe('planAcpAutoSetup', () => {
     assert.deepEqual(absent.register, [])
   })
 
-  it('skips already-configured presets and ignores non-preset agents', () => {
+  it('skips already-configured presets that already have models, ignores non-presets', () => {
     const plan = planAcpAutoSetup([
-      input(claude, { clientInstalled: true, agentInstalled: true, configured: true }),
+      input(claude, {
+        clientInstalled: true,
+        agentInstalled: true,
+        configured: true,
+        hasModels: true,
+      }),
       input(nonPreset, { clientInstalled: true, agentInstalled: true }),
     ])
     assert.deepEqual(plan.install, [])
     assert.deepEqual(plan.register, [])
+    assert.deepEqual(plan.refreshModels, [])
+  })
+
+  it('re-probes a configured, installed preset that still has no cached models', () => {
+    const plan = planAcpAutoSetup([
+      input(claude, {
+        clientInstalled: true,
+        agentInstalled: true,
+        configured: true,
+        hasModels: false,
+      }),
+    ])
+    assert.deepEqual(plan.install, [])
+    assert.deepEqual(plan.register, [])
+    assert.deepEqual(
+      plan.refreshModels.map((k) => k.id),
+      ['claude-agent-acp'],
+    )
+  })
+
+  it('does not re-probe when the configured preset binary is missing', () => {
+    const plan = planAcpAutoSetup([
+      input(claude, { configured: true, agentInstalled: false, hasModels: false }),
+    ])
+    assert.deepEqual(plan.refreshModels, [])
   })
 })
