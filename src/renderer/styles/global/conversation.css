@@ -117,6 +117,12 @@
      scrollbar. A wide table scrolls in its own box (.table-copy-scroll), which
      sits closer to the content and so takes precedence over this. */
   overflow-x: auto;
+  /* overflow-x other than `visible` drops this flex item's automatic minimum
+     size to 0 (a column flex item's min-height:auto floor only holds while
+     overflow is visible). Without this, once the conversation overflows the
+     .messages-list column the flex layout shrinks and clips messages — they
+     appear "collapsed". Keep every message at its content height. */
+  flex-shrink: 0;
 }
 /* Reasoning ("thinking") disclosure, shown above the answer. */
 .message-reasoning {
