@@ -168,17 +168,33 @@ dialog.settings-overlay::backdrop {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
-/* Each fieldset is a distinct group: give it real separation from its
-   neighbours and roomier internal padding so related controls cluster
-   together and unrelated ones don't crowd. */
+/* Each fieldset is a distinct card: an elevated surface with roomier internal
+   padding so related controls cluster together and unrelated ones don't crowd.
+   Spacing *between* panels is handled separately (below) so it stays uniform
+   whether a panel is inline in the template or mounted by JS. */
 .settings-content fieldset {
   background: var(--bg-elevated);
   border-radius: var(--radius-lg);
   padding: var(--spacing-lg);
-  margin-bottom: var(--spacing-xl);
 }
-.settings-content fieldset:last-child {
-  margin-bottom: 0;
+/* Uniform gap between a section's top-level panels. Scoped to direct fieldsets
+   AND fieldsets injected into a `.settings-mount` host, so an inline panel and a
+   JS-mounted one share the exact same rhythm.
+
+   Deliberately NOT `.settings-content fieldset { margin-bottom } +
+   fieldset:last-child { 0 }`: the JS mount points wrap each injected panel in a
+   host <div>, which made that panel the *last child of its wrapper*. So the
+   `:last-child` reset matched — and zeroed — the gap after every mounted panel
+   (Providers, model routing, GitHub CLI, ACP agents, …) while inline panels kept
+   the full gap. That parent-relative reset was the inconsistent-spacing bug.
+
+   Nested fieldsets (e.g. the auth cards inside "Remote agents") are intentionally
+   excluded — they are not top-level panels and space themselves. No last-panel
+   reset is needed: the sticky `.settings-buttons` footer carries its own top
+   margin, which collapses with the final panel's bottom margin to the same gap. */
+.settings-section > fieldset,
+.settings-section > .settings-mount > fieldset {
+  margin-bottom: var(--spacing-xl);
 }
 /* The group's title should read as a heading, not a faint caption — it anchors
    everything below it. */
