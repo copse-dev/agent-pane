@@ -27,6 +27,7 @@ import { navigateToChange } from '../controller/panels.ts'
 import { createTodoListEl } from './todo-panel.ts'
 import { createReviewCardEl } from './review-panel.ts'
 import { createComparisonCardEl } from './comparison-panel.ts'
+import { retryComparison, retryReview } from '../controller/retry-review-comparison.ts'
 import { renderToolArgs } from './tool-args-format.ts'
 import {
   drainMessageQueue,
@@ -874,7 +875,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     list.querySelector('[data-review-card]')?.remove()
     const thread = getActiveThread(store)
     if (thread?.review) {
-      const card = createReviewCardEl(thread.review, api)
+      const threadId = thread.id
+      const card = createReviewCardEl(thread.review, api, () => {
+        retryReview(store, api, threadId)
+      })
       card.setAttribute('data-review-card', '')
       // Keep the review card above the comparison card regardless of which sync
       // ran last (the comparison can land mid-turn via the tool, the review after).
@@ -890,7 +894,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     list.querySelector('[data-comparison-card]')?.remove()
     const thread = getActiveThread(store)
     if (thread?.comparison) {
-      const card = createComparisonCardEl(thread.comparison, api)
+      const threadId = thread.id
+      const card = createComparisonCardEl(thread.comparison, api, () => {
+        retryComparison(store, api, threadId)
+      })
       card.setAttribute('data-comparison-card', '')
       list.append(card)
     }
