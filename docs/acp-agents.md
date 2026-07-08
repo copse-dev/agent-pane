@@ -73,9 +73,10 @@ approval UX.
 Open **Settings → Experimental → ACP agents** (it's opt-in and still evolving). It
 scans your device when you open the tab and shows:
 
-- **Known agents** — a shortlist (Gemini CLI, Claude Agent, Claude Code) with, for
-  each: whether it's installed, the **Install** command to get it, the **Sign in**
-  command to authenticate it (e.g. `claude setup-token`), and an **Add** button.
+- **Known agents** — a shortlist (Gemini CLI, Claude Agent, Claude Code, Cursor,
+  Codex) with, for each: whether it's installed, the **Install** command to get it,
+  the **Sign in** command to authenticate it (e.g. `claude setup-token`), and an
+  **Add** button.
 - **Configured agents** — edit / enable / remove what you've added.
 - **Add an agent** — a custom form (id, title, command, args one-per-line,
   `KEY=value` env, enabled) for anything not in the shortlist.
