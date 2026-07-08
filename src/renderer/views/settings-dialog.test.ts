@@ -90,3 +90,77 @@ describe('settings dialog (native <dialog>)', () => {
     assert.equal(isSettingsDialogOpen(), true)
   })
 })
+
+describe('settings search (cross-section block filter)', () => {
+  let content: HTMLElement
+  let searchInput: HTMLInputElement
+
+  function resultLegends(): string[] {
+    return Array.from(
+      document.querySelectorAll<HTMLElement>('#settings-search-results > fieldset > legend'),
+    ).map((l) => l.textContent.trim())
+  }
+
+  function search(value: string): void {
+    searchInput.value = value
+    searchInput.dispatchEvent(new Event('input'))
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = ''
+    mountSettingsDialog(createStore(), stubApi())
+    content = document.querySelector('.settings-content') as HTMLElement
+    searchInput = document.getElementById('settings-search-input') as HTMLInputElement
+  })
+
+  it('lifts a matching block out of another section into the results list', () => {
+    // "Interface tint" lives only in Appearance; General is the initially active
+    // section, so a hit here proves the search crosses sections.
+    search('interface tint')
+    assert.ok(content.classList.contains('settings-searching'))
+    assert.deepEqual(resultLegends(), ['Interface tint'])
+  })
+
+  it('matches text in a label or hint, not just the heading', () => {
+    // "DevTools" appears in a checkbox label / hint inside the Experimental block.
+    search('devtools')
+    assert.deepEqual(resultLegends(), ['DevTools shortcut'])
+  })
+
+  it('ranks a heading (legend) match above a body-only match', () => {
+    // "ACP agents" names the block via its legend; other blocks (e.g. Local
+    // models routing) only mention ACP in body copy, so they sort after it.
+    search('acp')
+    const legends = resultLegends()
+    assert.ok(legends.length >= 2, `expected multiple ACP matches, got ${JSON.stringify(legends)}`)
+    assert.equal(legends[0], 'ACP agents')
+  })
+
+  it('shows an empty-state message and no results for an unknown term', () => {
+    search('zzznotasetting')
+    const empty = document.getElementById('settings-search-empty') as HTMLElement
+    assert.equal(empty.hidden, false)
+    assert.match(empty.textContent, /zzznotasetting/)
+    assert.equal(resultLegends().length, 0)
+  })
+
+  it('clearing the query restores blocks to their sections', () => {
+    search('interface tint')
+    assert.ok(content.classList.contains('settings-searching'))
+    assert.deepEqual(resultLegends(), ['Interface tint'])
+    search('')
+    assert.ok(!content.classList.contains('settings-searching'))
+    assert.equal(document.querySelectorAll('#settings-search-results > *').length, 0)
+    assert.equal((document.getElementById('settings-search-empty') as HTMLElement).hidden, true)
+    // The Interface tint block is back inside the Appearance section.
+    const appearance = document.querySelector('.settings-section[data-section="appearance"]')
+    const legends = Array.from(appearance?.querySelectorAll('legend') ?? []).map((l) =>
+      l.textContent.trim(),
+    )
+    assert.ok(legends.includes('Interface tint'))
+    // Back to exactly one active section (General, the default).
+    const active = document.querySelectorAll('.settings-section.active')
+    assert.equal(active.length, 1)
+    assert.equal((active[0] as HTMLElement).dataset['section'], 'general')
+  })
+})

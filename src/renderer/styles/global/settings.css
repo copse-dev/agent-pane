@@ -98,6 +98,46 @@ dialog.settings-overlay::backdrop {
   /* Distinguish "selected" from mere hover, which shares the same fill. */
   box-shadow: inset 2px 0 0 var(--accent);
 }
+/* Cross-section search box, pinned above the section list in the sidebar. */
+.settings-search {
+  margin-bottom: var(--spacing-sm);
+}
+.settings-search-input {
+  width: 100%;
+  padding: 8px var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+.settings-search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.settings-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Search results mode: the matching blocks are lifted out of their sections
+   into #settings-search-results (ranked, legend hits first). Hide the section
+   list and show only that results list; cleared search restores the sections. */
+.settings-search-results {
+  display: none;
+}
+.settings-content.settings-searching .settings-section {
+  display: none;
+}
+.settings-content.settings-searching .settings-search-results {
+  display: block;
+}
+.settings-search-empty {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-md) 0;
+}
+
 .settings-content {
   flex: 1;
   overflow-y: auto;
