@@ -4,6 +4,7 @@ import { runPermissionHooks } from '../skills/cursor-hooks.ts'
 import type { CursorPermissionHookEvent } from '@shared/types/cursor-hooks.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { classifyShellScope } from './safety-classifier.ts'
+import { shellCommandArgv0, dangerousInSandboxReasons } from './shell-scope.ts'
 import { requestApproval } from '../approval.ts'
 import { getSetting, setSetting } from '../storage/settings.ts'
 import {
@@ -59,18 +60,55 @@ export { decideShellPermission } from './permission-policy.ts'
 
 import type { PermissionCheck } from './permission-policy.ts'
 
+/**
+ * Per-workspace allowlist of shell executables the user approved-and-remembered:
+ * `{ [workspaceRoot]: [argv0, …] }`. Keyed off the resolved binary name (e.g.
+ * `xcodebuild`) so a low-risk external tool prompts once, then auto-runs. Only the
+ * generic external prompt offers remembering; installs and hard-denied commands do not.
+ */
+const REMEMBERED_SHELL_COMMANDS_SETTING = 'rememberedShellCommands'
+
+function isRememberedShellCommand(command: string, workspaceRoot: string | null): boolean {
+  if (!workspaceRoot) return false
+  const argv0 = shellCommandArgv0(command)
+  if (!argv0) return false
+  const map = getSetting<Record<string, string[]>>(REMEMBERED_SHELL_COMMANDS_SETTING, {})
+  return map[workspaceRoot]?.includes(argv0) ?? false
+}
+
+async function rememberShellCommand(argv0: string, workspaceRoot: string): Promise<void> {
+  const map = getSetting<Record<string, string[]>>(REMEMBERED_SHELL_COMMANDS_SETTING, {})
+  const existing = map[workspaceRoot] ?? []
+  if (existing.includes(argv0)) return
+  await setSetting(REMEMBERED_SHELL_COMMANDS_SETTING, {
+    ...map,
+    [workspaceRoot]: [...existing, argv0],
+  })
+}
+
 async function promptShell(
   command: string,
   reasons: string[],
   outsideSandbox: boolean,
+  opts?: { workspaceRoot?: string | null; allowRemember?: boolean },
 ): Promise<boolean> {
-  const { approved } = await requestApproval({
+  // Offer "always allow this binary here" only when we can resolve a stable argv0
+  // to key the grant on — an unlexable command (substitution, pipeline) can't be
+  // remembered safely, so it keeps prompting.
+  const argv0 = opts?.allowRemember ? shellCommandArgv0(command) : null
+  const canRemember = argv0 !== null && !!opts?.workspaceRoot
+  const { approved, remember } = await requestApproval({
     title: outsideSandbox ? 'Run outside sandbox?' : 'Run shell command?',
     body: outsideSandbox
       ? formatExternalSandboxPromptBody(command, reasons)
       : formatShellPromptBody(command, reasons),
     type: 'shell',
+    allowRemember: canRemember,
+    ...(canRemember ? { rememberLabel: `Always allow \`${argv0}\` in this project` } : {}),
   })
+  if (approved && remember && argv0 && opts?.workspaceRoot) {
+    await rememberShellCommand(argv0, opts.workspaceRoot)
+  }
   return approved
 }
 
@@ -212,15 +250,29 @@ async function checkShellPermission(args: unknown): Promise<boolean> {
 
   const workspaceRoot = getWorkspaceRoot()
   const sandboxEnabled = isProjectSandboxEnabled()
+  // `safetyConfidenceThreshold` is the legacy single knob; new installs use the
+  // split sandbox-allow / external-deny thresholds and fall back to it for migration.
+  const legacyThreshold = getSetting<number>('safetyConfidenceThreshold', 0.85)
   const decision = decideShellPermission(command, {
     workspaceRoot,
     sandboxEnabled,
     autoRun: getSetting<boolean>('autoRunSandboxCommands', true),
     classification: sandboxEnabled ? null : await classifyShellScope(command),
-    confidenceThreshold: getSetting<number>('safetyConfidenceThreshold', 0.85),
+    sandboxAllowThreshold: getSetting<number>('safetySandboxAllowThreshold', legacyThreshold),
+    externalDenyThreshold: getSetting<number>('safetyExternalDenyThreshold', 1),
   })
 
   if (decision.action === 'allow') return true
+
+  // Strict-mode refusal: surface the reason to the agent rather than silently
+  // returning false (which reads as a plain user rejection).
+  if (decision.action === 'deny') {
+    throw new Error(`Command blocked by strict-mode safety policy: ${decision.reasons.join('; ')}`)
+  }
+
+  // Prompt-once-then-remember: a binary the user previously allowed for this
+  // workspace auto-runs. Deny above always takes precedence over a remembered grant.
+  if (isRememberedShellCommand(command, workspaceRoot)) return true
 
   const outsideSandbox = shellRequiresOutsideSandbox(command, workspaceRoot, sandboxEnabled)
 
@@ -251,7 +303,13 @@ async function checkShellPermission(args: unknown): Promise<boolean> {
     return approved
   }
 
-  return promptShell(command, decision.reasons, outsideSandbox)
+  return promptShell(command, decision.reasons, outsideSandbox, {
+    workspaceRoot,
+    // Don't let a destructive command (rm -rf, fork bomb, pipe-to-shell) be
+    // one-click-remembered into the allowlist — the allowlist is for low-risk
+    // external tools like xcodebuild, and every future match auto-runs.
+    allowRemember: dangerousInSandboxReasons(command).length === 0,
+  })
 }
 
 function browserUrlFromArgs(args: unknown): string | null {

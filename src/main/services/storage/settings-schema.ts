@@ -62,7 +62,14 @@ const MAIN_ONLY_SETTING_SCHEMAS = {
   // Security / safety toggles read in the main process.
   localServerUrl: z.string().max(2048),
   safetyClassifierEnabled: z.boolean(),
+  // Legacy single threshold, kept for migration reads (see safetySandboxAllowThreshold).
   safetyConfidenceThreshold: z.number().min(0).max(1),
+  // Min confidence for a `sandbox`-scoped classification to auto-run.
+  safetySandboxAllowThreshold: z.number().min(0).max(1),
+  // Strict-mode hard-deny bar for confident + destructive external commands (1 = off).
+  safetyExternalDenyThreshold: z.number().min(0).max(1),
+  // Per-workspace allowlist of shell executables approved-and-remembered by the user.
+  rememberedShellCommands: z.record(z.string().max(4096), z.array(z.string().max(256)).max(512)),
   safetyModel: z.string().max(256),
   reviewModel: z.string().max(256),
   autoRunSandboxCommands: z.boolean(),

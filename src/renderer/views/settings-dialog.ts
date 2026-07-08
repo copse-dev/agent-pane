@@ -130,7 +130,8 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'mcpAutoAllowReadOnly', kind: 'checkbox', default: false, save: false },
   { name: 'defaultReadonlyMode', kind: 'checkbox', default: false, save: false },
   { name: 'webAllowUserApproval', kind: 'checkbox', default: true, save: false },
-  { name: 'safetyConfidenceThreshold', kind: 'text', default: '0.85', save: false },
+  { name: 'safetySandboxAllowThreshold', kind: 'text', default: '0.85', save: false },
+  { name: 'safetyExternalDenyThreshold', kind: 'text', default: '1', save: false },
 ]
 
 async function loadSimpleFields(form: HTMLFormElement, api: ApiClient): Promise<void> {
@@ -147,6 +148,38 @@ async function loadSimpleFields(form: HTMLFormElement, api: ApiClient): Promise<
           : String(field.default)
     }
   }
+}
+
+/**
+ * Migrate the legacy single `safetyConfidenceThreshold` into the sandbox-allow
+ * slider when the split key hasn't been written yet, and keep each slider's numeric
+ * readout in sync as it moves. Called after the generic field load.
+ */
+async function wireSafetySliders(form: HTMLFormElement, api: ApiClient): Promise<void> {
+  const sandboxAllow = form.elements.namedItem('safetySandboxAllowThreshold') as HTMLInputElement
+  const externalDeny = form.elements.namedItem('safetyExternalDenyThreshold') as HTMLInputElement
+
+  // Back-compat: seed the sandbox-allow slider from the old single threshold when the
+  // split key has never been saved, so an existing preference isn't reset to 0.85.
+  const savedAllow = await api.settings.get('safetySandboxAllowThreshold')
+  if (typeof savedAllow !== 'number' && typeof savedAllow !== 'string') {
+    const legacy = await api.settings.get('safetyConfidenceThreshold')
+    if (typeof legacy === 'number' || typeof legacy === 'string') {
+      sandboxAllow.value = String(legacy)
+    }
+  }
+
+  const bind = (input: HTMLInputElement): void => {
+    const output = form.querySelector<HTMLOutputElement>(`output[for="${input.name}"]`)
+    if (!output) return
+    const sync = (): void => {
+      output.textContent = Number(input.value).toFixed(2)
+    }
+    input.addEventListener('input', sync)
+    sync()
+  }
+  bind(sandboxAllow)
+  bind(externalDeny)
 }
 
 async function saveSimpleFields(data: FormData, api: ApiClient): Promise<void> {
@@ -460,15 +493,32 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Use instruct model to classify shell commands (when OS sandbox is off)
               </label>
               <label>
-                Safety confidence threshold
-                <input
-                  type="number"
-                  name="safetyConfidenceThreshold"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                />
-                <span class="field-hint">Auto-allow sandbox-scoped commands at or above this confidence (0–1)</span>
+                Sandbox auto-allow confidence
+                <span class="slider-row">
+                  <input
+                    type="range"
+                    name="safetySandboxAllowThreshold"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                  />
+                  <output class="slider-value" for="safetySandboxAllowThreshold">0.85</output>
+                </span>
+                <span class="field-hint">Auto-run sandbox-scoped commands at or above this confidence. Higher = stricter (more prompts).</span>
+              </label>
+              <label>
+                Strict-mode external deny confidence
+                <span class="slider-row">
+                  <input
+                    type="range"
+                    name="safetyExternalDenyThreshold"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                  />
+                  <output class="slider-value" for="safetyExternalDenyThreshold">1.00</output>
+                </span>
+                <span class="field-hint">Hard-block (no prompt) commands the model is at least this confident are dangerous and external. Leave at 1.00 to disable.</span>
               </label>
               <label class="checkbox-label">
                 <input type="checkbox" name="autoRunSandboxCommands" />
@@ -1424,6 +1474,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         comparisonJudgeModel ?? DEFAULT_COMPARISON_JUDGE_MODEL,
       )
       await loadSimpleFields(form, api)
+      await wireSafetySliders(form, api)
       const savedWebOrigins = (await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING)) as
         | string[]
         | undefined
@@ -1491,7 +1542,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         ? rightPanelPositionRaw
         : 'auto'
       const appIconVariant = data.get('appIconVariant') as AppIconVariant
-      const confidence = parseFloat(data.get('safetyConfidenceThreshold') as string)
+      const sandboxAllow = parseFloat(data.get('safetySandboxAllowThreshold') as string)
+      const externalDeny = parseFloat(data.get('safetyExternalDenyThreshold') as string)
 
       const tintColorRaw = data.get('uiTintColor')
       const uiTintColor =
@@ -1529,7 +1581,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         safetyModel: routingValues.safetyModel,
         reviewModel: routingValues.reviewModel,
         safetyClassifierEnabled: data.get('safetyClassifierEnabled') === 'on',
-        safetyConfidenceThreshold: Number.isFinite(confidence) ? confidence : 0.85,
+        safetySandboxAllowThreshold: Number.isFinite(sandboxAllow) ? sandboxAllow : 0.85,
+        safetyExternalDenyThreshold: Number.isFinite(externalDeny) ? externalDeny : 1,
         autoRunSandboxCommands: data.get('autoRunSandboxCommands') === 'on',
         mcpAutoAllowReadOnly: data.get('mcpAutoAllowReadOnly') === 'on',
         defaultReadonlyMode: data.get('defaultReadonlyMode') === 'on',

@@ -1,6 +1,19 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts'
+import { analyzeShellCommand, dangerousInSandboxReasons, shellCommandArgv0 } from './shell-scope.ts'
+
+describe('shellCommandArgv0', () => {
+  it('resolves the path-stripped, lowercased executable name', () => {
+    assert.equal(shellCommandArgv0('xcodebuild -project App.xcodeproj'), 'xcodebuild')
+    assert.equal(shellCommandArgv0('/usr/bin/XCODEBUILD build'), 'xcodebuild')
+    assert.equal(shellCommandArgv0('npm test'), 'npm')
+  })
+
+  it('returns null when the command cannot be lexed to a leading word', () => {
+    assert.equal(shellCommandArgv0(''), null)
+    assert.equal(shellCommandArgv0('| grep x'), null)
+  })
+})
 
 describe('analyzeShellCommand', () => {
   const root = '/Users/me/project'

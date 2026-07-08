@@ -198,7 +198,11 @@ export function parseRendererWritableSetting(
 export const securitySettingsSchema = z.object({
   localServerUrl: z.string().max(2048),
   safetyClassifierEnabled: z.boolean(),
-  safetyConfidenceThreshold: z.number().min(0).max(1),
+  // Split thresholds sent by the Settings dialog. The legacy single value is kept
+  // optional for back-compat with older stored bundles but is no longer written.
+  safetySandboxAllowThreshold: z.number().min(0).max(1),
+  safetyExternalDenyThreshold: z.number().min(0).max(1),
+  safetyConfidenceThreshold: z.number().min(0).max(1).optional(),
   safetyModel: z.string().max(256),
   // Optional: distinct model for the post-turn review subagent. Empty/absent
   // means reuse the parent chat model.

@@ -135,6 +135,21 @@ dialog.settings-overlay::backdrop {
   color: var(--text-muted);
   line-height: 1.4;
 }
+/* A range slider paired with a live numeric readout. */
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.slider-row input[type='range'] {
+  flex: 1;
+}
+.slider-value {
+  min-width: 2.75em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
 .settings-buttons {
   display: flex;
   gap: var(--spacing-md);
