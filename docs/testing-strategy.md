@@ -124,6 +124,14 @@ When you add an e2e screenshot, ask: _if I rebuild this on a different branch,
 on a different day, on a different machine — does any pixel move?_ If yes, pin
 the source through a fixture or an e2e env override before committing the PNG.
 
+CI's `commit-screenshots` job auto-commits re-rendered shots **only when the
+write is uncontested**: the baseline is brand new or inherited untouched from
+main. A shot deliberately committed on the PR branch (by any non-bot author),
+or one main has changed since the merge-base, is never overridden — the
+branch's committed version stands, and the PR comment shows a base-vs-branch
+comparison instead. Add the `update-screenshots` label to explicitly regenerate
+and take CI's render (`scripts/filter-screenshots.mts` implements the policy).
+
 ## Quick rule of thumb
 
 | Question the test answers              | Tier             |
