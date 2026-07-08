@@ -111,6 +111,12 @@
 .msg {
   padding: var(--spacing-sm) var(--spacing-md);
   border-radius: var(--radius);
+  /* Contain horizontal overflow (wide code, long unbroken URLs) within the
+     message so it scrolls here rather than pushing the whole conversation
+     panel sideways. The message is auto-height, so this never adds a vertical
+     scrollbar. A wide table scrolls in its own box (.table-copy-scroll), which
+     sits closer to the content and so takes precedence over this. */
+  overflow-x: auto;
 }
 /* Reasoning ("thinking") disclosure, shown above the answer. */
 .message-reasoning {
