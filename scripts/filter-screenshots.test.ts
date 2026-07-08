@@ -1,9 +1,17 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { PNG } from 'pngjs'
-import { classifyScreenshotChange, type ClassifyOptions } from './filter-screenshots.mts'
+import {
+  classifyScreenshotChange,
+  type ClassifyOptions,
+  type PriorRender,
+} from './filter-screenshots.mts'
 
 const OPTS: ClassifyOptions = { colorThreshold: 0.1, ignoreRatio: 0.0008, ignoreMinPixels: 12 }
+
+function prior(bytes: Buffer, sha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'): PriorRender {
+  return { sha, bytes }
+}
 
 /** A solid-colour PNG encoded to PNG bytes. */
 function solid(width: number, height: number, [r, g, b]: [number, number, number]): Buffer {
@@ -70,9 +78,10 @@ describe('classifyScreenshotChange', () => {
     // render). Committing RED again just brings BLUE back next run — a flap.
     const head = solid(100, 100, BLUE)
     const rerender = solid(100, 100, RED)
-    const priorRed = solid(100, 100, RED)
+    const priorRed = prior(solid(100, 100, RED), 'feedfacefeedfacefeedfacefeedfacefeedface')
     const v = classifyScreenshotChange(head, rerender, [priorRed], OPTS)
     assert.equal(v.decision, 'flap')
+    assert.equal(v.matchedSha, priorRed.sha)
   })
 
   it('tolerates sub-threshold wobble when matching a prior render', () => {
@@ -80,7 +89,7 @@ describe('classifyScreenshotChange', () => {
     // (runner noise) — still recognised as the same flapping state.
     const head = solid(100, 100, BLUE)
     const rerender = withFlippedPixels(100, 100, RED, 4)
-    const priorRed = solid(100, 100, RED)
+    const priorRed = prior(solid(100, 100, RED))
     const v = classifyScreenshotChange(head, rerender, [priorRed], OPTS)
     assert.equal(v.decision, 'flap')
   })
@@ -88,7 +97,7 @@ describe('classifyScreenshotChange', () => {
   it('keeps a real change when no prior render matches', () => {
     const head = solid(100, 100, WHITE)
     const rerender = solid(100, 100, RED)
-    const priors = [solid(100, 100, BLUE), solid(100, 100, GREEN)]
+    const priors = [prior(solid(100, 100, BLUE)), prior(solid(100, 100, GREEN))]
     const v = classifyScreenshotChange(head, rerender, priors, OPTS)
     assert.equal(v.decision, 'keep')
   })
@@ -104,5 +113,57 @@ describe('classifyScreenshotChange', () => {
     const v = classifyScreenshotChange(solid(100, 100, WHITE), solid(120, 100, WHITE), [], OPTS)
     assert.equal(v.decision, 'keep')
     assert.equal(v.reason, 'dimensions changed')
+  })
+
+  it('holds a real change to a baseline committed deliberately on the branch', () => {
+    const v = classifyScreenshotChange(solid(100, 100, WHITE), solid(100, 100, RED), [], OPTS, {
+      branchTouched: true,
+      mainTouched: false,
+    })
+    assert.equal(v.decision, 'contested')
+  })
+
+  it('holds a real change to a baseline main has moved since the merge-base', () => {
+    const v = classifyScreenshotChange(solid(100, 100, WHITE), solid(100, 100, RED), [], OPTS, {
+      branchTouched: false,
+      mainTouched: true,
+    })
+    assert.equal(v.decision, 'contested')
+  })
+
+  it('still reports an identical re-render of a contested baseline as noise', () => {
+    const base = solid(100, 100, WHITE)
+    const v = classifyScreenshotChange(base, solid(100, 100, WHITE), [], OPTS, {
+      branchTouched: true,
+      mainTouched: false,
+    })
+    assert.equal(v.decision, 'ignore')
+  })
+
+  it('holds a contested baseline even when the re-render resized', () => {
+    // The uncontested path keeps a resized shot for review; a deliberate baseline
+    // must never be gambled away on it.
+    const v = classifyScreenshotChange(solid(100, 100, WHITE), solid(120, 100, WHITE), [], OPTS, {
+      branchTouched: true,
+      mainTouched: true,
+    })
+    assert.equal(v.decision, 'contested')
+  })
+
+  it('contested beats flap for a deliberate baseline', () => {
+    // Even when the render matches a prior committed state, a deliberate baseline
+    // is reported as contested — the human signal, not the runner-flap signal.
+    const head = solid(100, 100, BLUE)
+    const rerender = solid(100, 100, RED)
+    const v = classifyScreenshotChange(head, rerender, [prior(solid(100, 100, RED))], OPTS, {
+      branchTouched: true,
+      mainTouched: false,
+    })
+    assert.equal(v.decision, 'contested')
+  })
+
+  it('keeps a real change when contested info is explicitly null', () => {
+    const v = classifyScreenshotChange(solid(100, 100, WHITE), solid(100, 100, RED), [], OPTS, null)
+    assert.equal(v.decision, 'keep')
   })
 })
