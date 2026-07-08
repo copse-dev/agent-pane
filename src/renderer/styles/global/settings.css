@@ -98,6 +98,51 @@ dialog.settings-overlay::backdrop {
   /* Distinguish "selected" from mere hover, which shares the same fill. */
   box-shadow: inset 2px 0 0 var(--accent);
 }
+/* Cross-section search box, pinned above the section list in the sidebar. */
+.settings-search {
+  margin-bottom: var(--spacing-sm);
+}
+.settings-search-input {
+  width: 100%;
+  padding: 8px var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+.settings-search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.settings-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Search results mode: reveal every section at once so blocks from any section
+   can show together (the normal view shows exactly one). Non-matching sections
+   and blocks are folded away, leaving only the matched blocks under their
+   section heading. Scoped to .settings-searching so the toggle classes left on
+   elements are inert once the search box is cleared. */
+.settings-content.settings-searching .settings-section {
+  display: none;
+}
+.settings-content.settings-searching .settings-section.settings-search-match {
+  display: block;
+}
+.settings-content.settings-searching .settings-section > .settings-section-desc {
+  display: none;
+}
+.settings-content.settings-searching fieldset.settings-search-hidden {
+  display: none;
+}
+.settings-search-empty {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-md) 0;
+}
+
 .settings-content {
   flex: 1;
   overflow-y: auto;

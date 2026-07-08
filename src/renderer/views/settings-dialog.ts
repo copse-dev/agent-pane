@@ -222,6 +222,17 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       <div class="settings-body">
         <nav class="settings-nav" aria-label="Settings sections">
+          <div class="settings-search">
+            <input
+              type="search"
+              id="settings-search-input"
+              class="settings-search-input"
+              placeholder="Search settings…"
+              aria-label="Search all settings"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
           <button type="button" class="settings-nav-btn active" data-section="general">General</button>
           <button type="button" class="settings-nav-btn" data-section="usage">Usage</button>
           <button type="button" class="settings-nav-btn" data-section="local-models">Local models</button>
@@ -898,6 +909,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
           </section>
 
+          <p class="settings-search-empty" id="settings-search-empty" hidden></p>
+
           <div class="settings-buttons">
             <button type="submit">Save</button>
             <button type="button" id="settings-cancel">Cancel</button>
@@ -1004,16 +1017,72 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   const navBtns = overlay.querySelectorAll<HTMLButtonElement>('.settings-nav-btn')
   const sections = overlay.querySelectorAll<HTMLElement>('.settings-section')
+  const contentEl = qsRequired(overlay, '.settings-content')
+  const searchInput = qsRequired<HTMLInputElement>(overlay, '#settings-search-input')
+  const searchEmpty = qsRequired(overlay, '#settings-search-empty')
+  // The section a nav button last selected, restored when a search is cleared.
+  let activeSection: SettingsSection = 'general'
 
   function showSection(id: SettingsSection): void {
+    activeSection = id
     navBtns.forEach((btn) => btn.classList.toggle('active', btn.dataset['section'] === id))
     sections.forEach((sec) => sec.classList.toggle('active', sec.dataset['section'] === id))
   }
+
+  /**
+   * Cross-section search: type text and every settings block (a top-level
+   * `<fieldset>`) whose text contains it is shown, no matter which section it
+   * lives in — the section acts only as a heading grouping its matches. Nested
+   * fieldsets (e.g. LM Studio inside Local providers) aren't treated as separate
+   * blocks: matching text inside them reveals their whole parent block. With the
+   * box empty, the normal one-section-at-a-time view is restored.
+   */
+  function applySearch(raw: string): void {
+    const query = raw.trim().toLowerCase()
+    if (!query) {
+      contentEl.classList.remove('settings-searching')
+      searchEmpty.hidden = true
+      showSection(activeSection)
+      return
+    }
+    contentEl.classList.add('settings-searching')
+    let matchCount = 0
+    sections.forEach((sec) => {
+      const blocks = Array.from(sec.querySelectorAll<HTMLElement>('fieldset')).filter(
+        (fs) => !fs.parentElement?.closest('fieldset'),
+      )
+      let sectionMatches = false
+      for (const block of blocks) {
+        const hit = block.textContent.toLowerCase().includes(query)
+        block.classList.toggle('settings-search-hidden', !hit)
+        if (hit) {
+          sectionMatches = true
+          matchCount += 1
+        }
+      }
+      sec.classList.toggle('settings-search-match', sectionMatches)
+    })
+    if (matchCount === 0) {
+      searchEmpty.textContent = `No settings match “${raw.trim()}”.`
+      searchEmpty.hidden = false
+    } else {
+      searchEmpty.hidden = true
+    }
+  }
+
+  searchInput.addEventListener('input', () => {
+    applySearch(searchInput.value)
+  })
 
   navBtns.forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = btn.dataset['section'] as SettingsSection | undefined
       if (id) {
+        // Selecting a section is an explicit exit from search results.
+        if (searchInput.value) {
+          searchInput.value = ''
+          applySearch('')
+        }
         showSection(id)
         if (id === 'usage') void usageSection.refresh()
         // Defer disk scans until each tab is opened, so users who never visit them
@@ -1375,6 +1444,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   })
 
   overlay.addEventListener('settings-open', () => {
+    // A fresh open always starts on a section, never in a leftover search.
+    if (searchInput.value) {
+      searchInput.value = ''
+      applySearch('')
+    }
     showSection(pendingSection ?? 'general')
     pendingSection = null
     void (async (): Promise<void> => {
