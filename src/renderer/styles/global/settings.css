@@ -120,22 +120,15 @@ dialog.settings-overlay::backdrop {
   color: var(--text-muted);
 }
 
-/* Search results mode: reveal every section at once so blocks from any section
-   can show together (the normal view shows exactly one). Non-matching sections
-   and blocks are folded away, leaving only the matched blocks under their
-   section heading. Scoped to .settings-searching so the toggle classes left on
-   elements are inert once the search box is cleared. */
+/* Search results mode: reveal every matching section at once (the normal view
+   shows exactly one), each in full so a hit keeps its surrounding settings for
+   context. Non-matching sections are folded away. Scoped to .settings-searching
+   so the toggle class left on sections is inert once the box is cleared. */
 .settings-content.settings-searching .settings-section {
   display: none;
 }
 .settings-content.settings-searching .settings-section.settings-search-match {
   display: block;
-}
-.settings-content.settings-searching .settings-section > .settings-section-desc {
-  display: none;
-}
-.settings-content.settings-searching fieldset.settings-search-hidden {
-  display: none;
 }
 .settings-search-empty {
   color: var(--text-secondary);

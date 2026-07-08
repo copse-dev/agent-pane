@@ -1030,12 +1030,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   }
 
   /**
-   * Cross-section search: type text and every settings block (a top-level
-   * `<fieldset>`) whose text contains it is shown, no matter which section it
-   * lives in — the section acts only as a heading grouping its matches. Nested
-   * fieldsets (e.g. LM Studio inside Local providers) aren't treated as separate
-   * blocks: matching text inside them reveals their whole parent block. With the
-   * box empty, the normal one-section-at-a-time view is restored.
+   * Cross-section search: type text and every section whose text contains it is
+   * shown in full — heading, description, and all its blocks — no matter where it
+   * sits in the nav, so sections that would normally be one-at-a-time appear
+   * together. The whole section is kept (rather than just the matched block) so a
+   * hit lands with its surrounding, related settings for context. With the box
+   * empty, the normal one-section-at-a-time view is restored.
    */
   function applySearch(raw: string): void {
     const query = raw.trim().toLowerCase()
@@ -1048,19 +1048,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     contentEl.classList.add('settings-searching')
     let matchCount = 0
     sections.forEach((sec) => {
-      const blocks = Array.from(sec.querySelectorAll<HTMLElement>('fieldset')).filter(
-        (fs) => !fs.parentElement?.closest('fieldset'),
-      )
-      let sectionMatches = false
-      for (const block of blocks) {
-        const hit = block.textContent.toLowerCase().includes(query)
-        block.classList.toggle('settings-search-hidden', !hit)
-        if (hit) {
-          sectionMatches = true
-          matchCount += 1
-        }
-      }
-      sec.classList.toggle('settings-search-match', sectionMatches)
+      const hit = sec.textContent.toLowerCase().includes(query)
+      sec.classList.toggle('settings-search-match', hit)
+      if (hit) matchCount += 1
     })
     if (matchCount === 0) {
       searchEmpty.textContent = `No settings match “${raw.trim()}”.`

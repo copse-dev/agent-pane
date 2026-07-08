@@ -91,22 +91,16 @@ describe('settings dialog (native <dialog>)', () => {
   })
 })
 
-describe('settings search (cross-section block filter)', () => {
+describe('settings search (cross-section filter)', () => {
   let content: HTMLElement
   let searchInput: HTMLInputElement
 
-  function fieldsetByLegend(text: string): HTMLElement {
-    const match = Array.from(
-      document.querySelectorAll<HTMLElement>('.settings-content fieldset'),
-    ).find((fs) => fs.querySelector('legend')?.textContent.trim() === text)
-    if (!match) throw new Error(`no fieldset with legend ${JSON.stringify(text)}`)
-    return match
-  }
-
-  function sectionEl(section: string): HTMLElement {
-    const el = document.querySelector<HTMLElement>(`.settings-section[data-section="${section}"]`)
-    if (!el) throw new Error(`no section ${section}`)
-    return el
+  function matchedSections(): string[] {
+    return Array.from(
+      document.querySelectorAll<HTMLElement>('.settings-section.settings-search-match'),
+    )
+      .map((s) => s.dataset['section'])
+      .filter((s): s is string => typeof s === 'string')
   }
 
   function search(value: string): void {
@@ -121,23 +115,38 @@ describe('settings search (cross-section block filter)', () => {
     searchInput = document.getElementById('settings-search-input') as HTMLInputElement
   })
 
-  it('reveals a matching block from another section and hides the rest', () => {
-    // "Interface tint" is an Appearance block; General is the initially-active
-    // section, so a hit here proves the search crosses sections.
+  it('reveals the whole matching section from another nav entry', () => {
+    // "Interface tint" text lives only in Appearance; General is the initially
+    // active section, so a hit here proves the search crosses sections.
     search('interface tint')
     assert.ok(content.classList.contains('settings-searching'))
-    assert.ok(sectionEl('appearance').classList.contains('settings-search-match'))
-    assert.ok(!sectionEl('general').classList.contains('settings-search-match'))
-    // The matched block is shown; a sibling block in the same section is hidden.
-    assert.ok(!fieldsetByLegend('Interface tint').classList.contains('settings-search-hidden'))
-    assert.ok(fieldsetByLegend('Display').classList.contains('settings-search-hidden'))
+    assert.deepEqual(matchedSections(), ['appearance'])
+    // The whole section is kept for context, not just the matched block, so a
+    // sibling block in the same section stays visible (no per-block hiding).
+    assert.equal(document.querySelectorAll('fieldset.settings-search-hidden').length, 0)
   })
 
-  it('matches text anywhere in a block, not just its legend', () => {
-    // "DevTools" appears in the checkbox label / hint of the Experimental block.
+  it('matches text in a label or hint, not just headings', () => {
+    // "DevTools" appears in a checkbox label / hint inside Experimental.
     search('devtools')
-    assert.ok(sectionEl('experimental').classList.contains('settings-search-match'))
-    assert.ok(!fieldsetByLegend('DevTools shortcut').classList.contains('settings-search-hidden'))
+    assert.deepEqual(matchedSections(), ['experimental'])
+  })
+
+  it('shows every section that contains the term at once', () => {
+    // "agent" appears in General ("Remote agents") and Experimental (ACP agents).
+    search('agent')
+    const matched = matchedSections()
+    assert.ok(matched.includes('general'))
+    assert.ok(matched.includes('experimental'))
+  })
+
+  it('reveals the full ACP section when searching "acp" (no block stripping)', () => {
+    // Regression: the earlier per-block filter cropped the ACP agents block out
+    // of its section. A section-level match keeps Experimental whole. (ACP is
+    // also referenced under Local models, so that section matches too.)
+    search('acp')
+    assert.ok(matchedSections().includes('experimental'))
+    assert.equal(document.querySelectorAll('fieldset.settings-search-hidden').length, 0)
   })
 
   it('shows an empty-state message and no matches for an unknown term', () => {
