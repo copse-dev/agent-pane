@@ -307,7 +307,13 @@
   position: relative;
   margin: var(--spacing-sm) 0;
 }
-.message-text .table-copy-shell > table {
+/* A table too wide to fit (e.g. an unbroken URL) scrolls within its own box
+   rather than adding a horizontal scrollbar to the whole conversation. */
+.message-text .table-copy-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.message-text .table-copy-scroll > table {
   margin: 0;
 }
 .table-copy {
