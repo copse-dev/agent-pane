@@ -94,35 +94,58 @@ function shimModal(dialog: HTMLDialogElement): { showModalCalls: number } {
   return spy
 }
 
+const COALESCE_MS = 120
+const SETTLE_MS = 500
+
 describe('approval dialog coalescing', () => {
   let dialog: HTMLDialogElement
   let spy: { showModalCalls: number }
   let emit: (req: EmitReq) => void
   let responses: Responded[]
-  // Captured coalesce callback; call fireWindow() to close the opening window.
-  let pending: (() => void)[]
+  // Scheduled timers, tagged by their delay so a test can fire the coalesce
+  // (opening) window and the settle (Approve re-enable) window independently.
+  let timers: { fn: () => void; ms: number }[]
+  const fireTimers = (ms: number): void => {
+    const due = timers.filter((t) => t.ms === ms)
+    timers = timers.filter((t) => t.ms !== ms)
+    for (const t of due) t.fn()
+  }
   const fireWindow = (): void => {
-    const fns = pending
-    pending = []
-    for (const fn of fns) fn()
+    fireTimers(COALESCE_MS)
+  }
+  const fireSettle = (): void => {
+    fireTimers(SETTLE_MS)
   }
 
   beforeEach(() => {
     document.body.innerHTML = ''
     resetAttention()
-    pending = []
+    timers = []
     const made = makeApi()
     emit = made.emit
     responses = made.responses
     const store = createStore({ activeThreadId: 'focused' })
     mountSettingsDialog(store, made.api)
-    mountApprovalDialog(made.api, store, (fn) => {
-      pending.push(fn)
+    mountApprovalDialog(made.api, store, {
+      coalesceMs: COALESCE_MS,
+      settleMs: SETTLE_MS,
+      setTimer: (fn, ms): (() => void) => {
+        const entry = { fn, ms }
+        timers.push(entry)
+        return () => {
+          timers = timers.filter((t) => t !== entry)
+        }
+      },
     })
     dialog = document.getElementById('approval-dialog') as HTMLDialogElement
     spy = shimModal(dialog)
   })
 
+  const approve = (): HTMLButtonElement => {
+    const button = dialog.querySelector<HTMLButtonElement>('.approval-approve')
+    if (!button) throw new Error('approve button missing')
+    return button
+  }
   const titles = (): (string | null)[] =>
     [...dialog.querySelectorAll('.approval-title')].map((n) => n.textContent)
 
@@ -168,6 +191,49 @@ describe('approval dialog coalescing', () => {
     )
   })
 
+  it('pauses Approve when a request is appended, until the batch settles', () => {
+    emit({ id: 'a' })
+    fireWindow()
+    // Fresh prompt: Approve is live immediately (no appended change yet).
+    assert.equal(approve().disabled, false)
+
+    // A command lands under the open prompt — Approve is paused so it can't be
+    // clicked through the unread change (clickjack guard).
+    emit({ id: 'b' })
+    assert.equal(approve().disabled, true)
+    approve().click()
+    assert.equal(responses.length, 0)
+
+    // Once the list has held still for the settle window, Approve returns.
+    fireSettle()
+    assert.equal(approve().disabled, false)
+    approve().click()
+    assert.deepEqual(responses.map((r) => r.id).sort(), ['a', 'b'])
+    assert.ok(responses.every((r) => r.approved))
+  })
+
+  it('keeps Reject live while Approve is paused, so a mis-click can only deny', () => {
+    emit({ id: 'a' })
+    fireWindow()
+    emit({ id: 'b' })
+    assert.equal(approve().disabled, true)
+    dialog.querySelector<HTMLButtonElement>('.approval-reject')?.click()
+    assert.deepEqual(responses.map((r) => r.id).sort(), ['a', 'b'])
+    assert.ok(responses.every((r) => !r.approved))
+  })
+
+  it('re-arms the settle window on each successive append', () => {
+    emit({ id: 'a' })
+    fireWindow()
+    emit({ id: 'b' })
+    // A second append restarts the window: firing the first append's timer must
+    // not re-enable Approve while a newer change is still settling.
+    emit({ id: 'c' })
+    assert.equal(approve().disabled, true)
+    fireSettle()
+    assert.equal(approve().disabled, false)
+  })
+
   it('shows the remember checkbox only when the batch shares one grant', () => {
     const remember = dialog.querySelector('.approval-remember') as HTMLElement
     // Same agent+kind grant across the batch → checkbox offered, applied to all.
@@ -194,6 +260,6 @@ describe('approval dialog coalescing', () => {
     emit({ id: 'a' })
     emit({ id: 'b' })
     // The delay counts from the first request, so the burst shares one timer.
-    assert.equal(pending.length, 1)
+    assert.equal(timers.length, 1)
   })
 })

@@ -113,9 +113,12 @@ describe('approval dialog thread scoping', () => {
     // The approval dialog subscribes to the settings dialog's close event, which
     // requires settings to be mounted first. We never open it here.
     mountSettingsDialog(store, made.api)
-    // Run the coalesce window inline so opening the dialog is synchronous here.
-    mountApprovalDialog(made.api, store, (fn) => {
-      fn()
+    // Fire the coalesce/settle timers inline so opening the dialog is synchronous.
+    mountApprovalDialog(made.api, store, {
+      setTimer: (fn): (() => void) => {
+        fn()
+        return () => {}
+      },
     })
     dialog = document.getElementById('approval-dialog') as HTMLDialogElement
     spy = shimModal(dialog)

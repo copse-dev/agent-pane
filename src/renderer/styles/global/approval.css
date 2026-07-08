@@ -36,6 +36,12 @@
   border-radius: var(--radius);
   padding: 6px 16px;
 }
+/* Paused while an appended request settles, so it can't be clicked through an
+ * unread change (see APPROVAL_SETTLE_MS). */
+.approval-approve:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .approval-reject {
   background: var(--error);
   color: white;

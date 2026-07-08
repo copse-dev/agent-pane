@@ -105,10 +105,13 @@ describe('approval dialog vs settings (issue #501)', () => {
     // rejects after the test. We leave dispatchEvent intact because the close-event
     // path is exactly what the queue flush under test relies on.
 
-    // Run the coalesce window inline so opening the dialog is synchronous here;
-    // the timing-based batching is exercised in approval-dialog-batch.test.ts.
-    mountApprovalDialog(made.api, store, (fn) => {
-      fn()
+    // Fire the coalesce/settle timers inline so opening the dialog is synchronous
+    // here; the timing-based batching is exercised in approval-dialog-batch.test.ts.
+    mountApprovalDialog(made.api, store, {
+      setTimer: (fn): (() => void) => {
+        fn()
+        return () => {}
+      },
     })
     approvalDialog = document.getElementById('approval-dialog') as HTMLDialogElement
     approvalSpy = shimModal(approvalDialog)

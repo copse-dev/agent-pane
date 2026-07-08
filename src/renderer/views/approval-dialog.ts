@@ -14,18 +14,46 @@ import { setAttentionThreads } from '../controller/attention.ts'
  */
 export const APPROVAL_COALESCE_MS = 120
 
-/** Defers `fn` to gather the opening burst; overridable so tests run it inline. */
-export type CoalesceScheduler = (fn: () => void) => void
+/**
+ * How long Approve is disabled after a request is appended to an *already open*
+ * prompt. Live-appending means a command could land in the batch in the same
+ * instant the user commits a click on Approve — approving something they never
+ * read (a clickjack-style race). Pausing Approve until the list has been settled
+ * for this long forces a fresh, deliberate click on the changed batch. Longer
+ * than the coalesce window because it has to outlast an already-in-flight click,
+ * not just gather a burst. Reject stays live throughout: a mis-click during the
+ * churn can only ever deny, never approve something unseen.
+ */
+export const APPROVAL_SETTLE_MS = 500
 
-const defaultScheduler: CoalesceScheduler = (fn) => {
-  setTimeout(fn, APPROVAL_COALESCE_MS)
+/**
+ * Timer factory returning a cancel function. Overridable so tests drive the
+ * coalesce/settle windows deterministically instead of waiting on real time.
+ */
+export type ApprovalTimer = (fn: () => void, ms: number) => () => void
+
+export interface ApprovalDialogOptions {
+  coalesceMs?: number
+  settleMs?: number
+  setTimer?: ApprovalTimer
+}
+
+const defaultTimer: ApprovalTimer = (fn, ms) => {
+  const handle = setTimeout(fn, ms)
+  return () => {
+    clearTimeout(handle)
+  }
 }
 
 export function mountApprovalDialog(
   api: ApiClient,
   store: AppStore,
-  scheduleCoalesce: CoalesceScheduler = defaultScheduler,
+  options: ApprovalDialogOptions = {},
 ): void {
+  const coalesceMs = options.coalesceMs ?? APPROVAL_COALESCE_MS
+  const settleMs = options.settleMs ?? APPROVAL_SETTLE_MS
+  const setTimer = options.setTimer ?? defaultTimer
+
   const rememberLabel = el(
     'label',
     { class: 'approval-remember' },
@@ -47,8 +75,8 @@ export function mountApprovalDialog(
   document.body.append(dialog)
 
   const rememberInput = qsRequired<HTMLInputElement>(rememberLabel, '.approval-remember-input')
-  const approveButton = qsRequired(dialog, '.approval-approve')
-  const rejectButton = qsRequired(dialog, '.approval-reject')
+  const approveButton = qsRequired<HTMLButtonElement>(dialog, '.approval-approve')
+  const rejectButton = qsRequired<HTMLButtonElement>(dialog, '.approval-reject')
   const rememberLabelTextNode = rememberLabel.childNodes[1]
   if (!rememberLabelTextNode) throw new Error('approval dialog missing remember label text node')
   const rememberLabelText: ChildNode = rememberLabelTextNode
@@ -73,6 +101,9 @@ export function mountApprovalDialog(
   // of arrivals shares one timer (the delay counts from the *first* request, not
   // the last) and other surfacing paths don't double-open.
   let coalesceScheduled = false
+  let cancelCoalesce: (() => void) | null = null
+  // Cancels the pending Approve re-enable while the appended batch settles.
+  let cancelSettle: (() => void) | null = null
 
   // Minimizing the window flips the renderer document to `hidden`. A modal shown
   // on a hidden window can't be painted, so it reads as a frozen/crashed pane and
@@ -157,6 +188,32 @@ export function mountApprovalDialog(
     else rememberLabelText.textContent = grant
   }
 
+  /** Cancel any pending settle window and re-enable Approve. */
+  function clearSettle(): void {
+    if (cancelSettle) {
+      cancelSettle()
+      cancelSettle = null
+    }
+    approveButton.disabled = false
+  }
+
+  /**
+   * Disable Approve until the batch has held still for `settleMs`, restarting the
+   * window on every append so a stream of arrivals keeps it disabled until it
+   * stops. Reject is left enabled — see {@link APPROVAL_SETTLE_MS}.
+   */
+  function startSettle(): void {
+    clearSettle()
+    approveButton.disabled = true
+    // A synchronous timer (tests) runs the callback before this assignment,
+    // leaving `cancelSettle` holding a spent handle — harmless, since cancelling a
+    // fired timer is a no-op and the enabled/disabled state is set by the callback.
+    cancelSettle = setTimer(() => {
+      cancelSettle = null
+      approveButton.disabled = false
+    }, settleMs)
+  }
+
   /** Pop the dialog with whatever is showable now (no-op if nothing/blocked). */
   function show(): void {
     // The settings dialog is itself a top-layer modal <dialog>. A second
@@ -164,10 +221,18 @@ export function mountApprovalDialog(
     // (issue #501). Keep requests queued; onSettingsDialogClose() flushes them.
     if (isSettingsDialogOpen()) return
     if (active) return
+    if (cancelCoalesce) {
+      cancelCoalesce()
+      cancelCoalesce = null
+    }
+    coalesceScheduled = false
     if (drainShowableIntoBatch() === 0) {
       syncAttention()
       return
     }
+    // Fresh prompt the user is reading for the first time: Approve is live. The
+    // settle guard only applies to appends onto an already-open prompt.
+    clearSettle()
     rememberInput.checked = false
     renderBatch()
     dialog.showModal()
@@ -183,16 +248,25 @@ export function mountApprovalDialog(
       return
     }
     coalesceScheduled = true
-    scheduleCoalesce(() => {
+    // As in startSettle, a synchronous timer leaves a spent handle here; the
+    // open/queued decision keys off `coalesceScheduled`, not this handle.
+    cancelCoalesce = setTimer(() => {
       coalesceScheduled = false
+      cancelCoalesce = null
       show()
-    })
+    }, coalesceMs)
   }
 
-  /** A request that landed while the dialog is open joins it live. */
+  /**
+   * A request that landed while the dialog is open joins it live, and re-arms the
+   * settle window so Approve can't be clicked through the change unseen.
+   */
   function appendToOpen(): void {
     if (!active) return
-    if (drainShowableIntoBatch() > 0) renderBatch()
+    if (drainShowableIntoBatch() > 0) {
+      renderBatch()
+      startSettle()
+    }
     syncAttention()
   }
 
@@ -202,6 +276,7 @@ export function mountApprovalDialog(
     dialog.close()
     batch = []
     active = false
+    clearSettle()
     for (const req of answered) void api.approval.respond(req.id, approved, remember)
     // Surface anything that was waiting behind this batch immediately — it has
     // already sat through its own coalesce window, so no extra delay.
@@ -240,6 +315,9 @@ export function mountApprovalDialog(
   })
 
   approveButton.addEventListener('click', () => {
+    // The settle guard disables the button, but honour it defensively in case a
+    // click is dispatched anyway (e.g. keyboard activation during the window).
+    if (approveButton.disabled) return
     resolve(true, rememberInput.checked)
   })
   rejectButton.addEventListener('click', () => {
