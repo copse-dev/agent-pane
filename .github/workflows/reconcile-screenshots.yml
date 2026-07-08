@@ -7,7 +7,10 @@ name: Reconcile PR screenshots after main
 # chance to clear the conflict on an idle PR. This workflow closes that gap: on a
 # main push that changes screenshots, it merges the new main into each conflicting
 # PR head and keeps the PR's own shots for any screenshot-only conflict — the same
-# policy as ci.yml's reconcile, but driven reactively by the base moving.
+# policy as ci.yml's reconcile, but driven reactively by the base moving. The PR's
+# committed shots are trustworthy as the winning side because commit-screenshots
+# only ever auto-commits UNCONTESTED renders (see its write-policy comment):
+# anything deliberately committed on the branch is still the author's own work.
 #
 # It is intentionally cheap: a pure git merge, no build/e2e. The push that
 # resolves the conflict fires the PR's normal `synchronize` CI once (which, for a
