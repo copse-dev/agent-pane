@@ -50,6 +50,16 @@ COMPOSE_IN_DIR := cd $(RUNNER_DIR) && $(COMPOSE)
 NODE_MIN_MAJOR := 22
 NODE_MIN_MINOR := 18
 
+# nvm ships as a shell function loaded from nvm.sh, not a binary, so a recipe
+# can't just call `nvm`. Source it (honouring $NVM_DIR, default ~/.nvm) and run
+# `nvm use` to select the version pinned in .nvmrc before any node/npm command.
+# Each recipe line is its own subshell, so this prefixes every node-touching
+# recipe rather than running once. Sourced under `set +u` because nvm.sh trips
+# the Makefile's `-u` flag; a no-op when nvm isn't installed, so PATH's node is
+# used as a fallback (check-node then reports if that's too old).
+NVM_DIR ?= $(HOME)/.nvm
+USE_NVM := if [ -s "$(NVM_DIR)/nvm.sh" ]; then set +u; . "$(NVM_DIR)/nvm.sh"; nvm use >/dev/null || true; set -u; fi
+
 # Stamp files record the last successful install/build so we can skip no-op work.
 STAMP_DIR   := .tmp
 DEPS_STAMP  := $(STAMP_DIR)/deps.stamp
@@ -214,7 +224,8 @@ runners-ps:
 # --- node preflight ---------------------------------------------------------
 .PHONY: check-node
 check-node:
-	@if ! command -v node >/dev/null 2>&1; then \
+	@$(USE_NVM); \
+	if ! command -v node >/dev/null 2>&1; then \
 	  echo "ERROR: node is not installed (need >=$(NODE_MIN_MAJOR).$(NODE_MIN_MINOR); see .nvmrc)." >&2; \
 	  exit 1; \
 	fi; \
@@ -242,7 +253,7 @@ deps: $(DEPS_STAMP)
 
 $(DEPS_STAMP): package-lock.json package.json | $(STAMP_DIR) check-node
 	@echo "==> Dependencies out of date — running 'npm ci' (scripts forced on)…"
-	npm ci --ignore-scripts=false
+	@$(USE_NVM); npm ci --ignore-scripts=false
 	touch $(DEPS_STAMP)
 
 # --- build ------------------------------------------------------------------
@@ -254,7 +265,7 @@ build: $(BUILD_STAMP)
 $(BUILD_STAMP): $(DEPS_STAMP) $(BUILD_SRC) | $(STAMP_DIR)
 	@echo "==> Source changed — clearing dist/ and rebuilding…"
 	rm -rf dist
-	npm run build
+	@$(USE_NVM); npm run build
 	touch $(BUILD_STAMP)
 
 # --- run --------------------------------------------------------------------
@@ -262,7 +273,7 @@ $(BUILD_STAMP): $(DEPS_STAMP) $(BUILD_SRC) | $(STAMP_DIR)
 .PHONY: run
 run: build
 	@echo "==> Starting the app…"
-	npm start
+	@$(USE_NVM); npm start
 
 # --- cleanup ----------------------------------------------------------------
 .PHONY: clean
