@@ -702,6 +702,29 @@ jobs:
           echo "Screenshot-only conflict — keeping the freshly re-rendered shots"
           git checkout --ours -- tests/e2e/screenshots/
           git add tests/e2e/screenshots/
+          # The push authenticates with SCREENSHOTS_PAT, a classic PAT without
+          # `workflow` scope. If main advanced a file under .github/workflows/, the
+          # merge folds it in and GitHub rejects the push ("refusing to allow a
+          # Personal Access Token to create or update workflow ... without workflow
+          # scope"), hard-failing the job. We can't drop main's workflow change
+          # (reverting it to --ours would undo it when the PR merges), so abort the
+          # merge and hand it to a human — the same policy as a source conflict.
+          # Any screenshot render commit made above still pushes below; only the
+          # unpushable merge is skipped. Grant the PAT `workflow` scope to let CI
+          # resolve these automatically.
+          wf="$(git diff --cached --name-only -- .github/workflows/ || true)"
+          if [ -n "$wf" ]; then
+            echo "Merge updates workflow files the PAT can't push — leaving to a human:"
+            printf '%s\n' "$wf"
+            git merge --abort
+            {
+              echo "workflow=true"
+              echo "workflow-files<<EOF"
+              printf '%s\n' "$wf"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           git commit --no-edit
       - name: Push
         id: push
@@ -716,7 +739,7 @@ jobs:
         # ignored list is offered for manual acceptance), shots were held as
         # flapping or contested, OR main couldn't be merged automatically because
         # source conflicts need a human.
-        if: steps.diff.outputs.changed == 'true' || steps.filter.outputs.ignored-count != '0' || steps.filter.outputs.flapping-count != '0' || steps.filter.outputs.contested-count != '0' || steps.reconcile.outputs.manual == 'true'
+        if: steps.diff.outputs.changed == 'true' || steps.filter.outputs.ignored-count != '0' || steps.filter.outputs.flapping-count != '0' || steps.filter.outputs.contested-count != '0' || steps.reconcile.outputs.manual == 'true' || steps.reconcile.outputs.workflow == 'true'
         uses: actions/github-script@v9
         env:
           CHANGED_FILES: ${{ steps.diff.outputs.files }}
@@ -726,6 +749,7 @@ jobs:
           CONTESTED_JSON: ${{ steps.filter.outputs.contested-json }}
           MAIN_SHA: ${{ steps.filter.outputs.main-sha }}
           MANUAL_MERGE_FILES: ${{ steps.reconcile.outputs.manual-files }}
+          WORKFLOW_MERGE_FILES: ${{ steps.reconcile.outputs.workflow-files }}
         with:
           script: |
             const marker = '<!-- copse-e2e-screenshots -->';
@@ -737,6 +761,7 @@ jobs:
             const contested = JSON.parse(process.env.CONTESTED_JSON || '[]');
             const mainSha = process.env.MAIN_SHA || '';
             const manualMerge = (process.env.MANUAL_MERGE_FILES || '').split('\n').filter(Boolean);
+            const workflowMerge = (process.env.WORKFLOW_MERGE_FILES || '').split('\n').filter(Boolean);
             const blob = (ref, path) => `https://github.com/${repo}/blob/${ref}/${path}?raw=1`;
             const sections = [];
             if (manualMerge.length) {
@@ -746,6 +771,17 @@ jobs:
                   `Screenshot conflicts with \`main\` are resolved automatically, but these ` +
                   `**non-screenshot** files conflict and can't be auto-merged. Resolve them by ` +
                   `hand (merge or rebase \`main\`) — the screenshot reconcile was skipped:\n\n` +
+                  lines.join('\n'),
+              );
+            }
+            if (workflowMerge.length) {
+              const lines = workflowMerge.map((path) => `- \`${path}\``);
+              sections.push(
+                `### Merge needs a human (${workflowMerge.length})\n\n` +
+                  `Screenshot conflicts with \`main\` were resolved automatically, but the merge ` +
+                  `updates these **workflow** files, which CI's token isn't scoped to push. Merge ` +
+                  `or rebase \`main\` by hand — or grant the \`SCREENSHOTS_PAT\` the \`workflow\` ` +
+                  `scope to let CI resolve these automatically:\n\n` +
                   lines.join('\n'),
               );
             }
