@@ -97,7 +97,6 @@ interface SettingField {
 
 const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'customInstructions', kind: 'text', default: '', save: true },
-  { name: 'openRouterModel', kind: 'text', default: '', save: true },
   { name: 'externalApiSafety', kind: 'checkbox', default: false, save: true },
   { name: 'remoteAgentAutoCreatePR', kind: 'checkbox', default: true, save: true },
   { name: 'remoteAgentWorkOnCurrentBranch', kind: 'checkbox', default: false, save: true },
@@ -162,7 +161,7 @@ async function saveSimpleFields(data: FormData, api: ApiClient): Promise<void> {
       await api.settings.set(field.name, data.get(field.name) === 'on')
     } else {
       const value = (data.get(field.name) as string | null) ?? ''
-      const trimmed = field.name === 'customInstructions' || field.name === 'openRouterModel'
+      const trimmed = field.name === 'customInstructions'
       await api.settings.set(field.name, trimmed ? value.trim() : value)
     }
   }
@@ -277,20 +276,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Cloud instead of running it on this machine — configure it in the Remote agents
                 section.
               </span>
-              <label>
-                Custom OpenRouter model
-                <input
-                  type="text"
-                  name="openRouterModel"
-                  placeholder="vendor/model (e.g. anthropic/claude-3.7-sonnet)"
-                  autocomplete="off"
-                />
-                <span class="field-hint">
-                  Adds a model id beyond the built-in OpenRouter shortlist to the picker. Requires an
-                  OpenRouter API key in the Providers section. Browse ids at
-                  <code>openrouter.ai/models</code>.
-                </span>
-              </label>
             </fieldset>
 
             <fieldset>

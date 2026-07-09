@@ -1,5 +1,6 @@
 import { el } from '../dom/helpers.ts'
 import { searchIcon } from '../dom/icons.ts'
+import { createRetryButton } from './retry-button.ts'
 import type { ThreadReview } from '@shared/types'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { sanitizeRenderedMarkdown } from '@copse/streaming-markdown'
@@ -28,7 +29,11 @@ function statusLabel(status: ThreadReview['status']): string {
 // exists, render this card as a collapsed <details> when there are no issues.
 
 /** Compact card summarising the post-turn review verdict for a thread. */
-export function createReviewCardEl(review: ThreadReview, api: ApiClient): HTMLElement {
+export function createReviewCardEl(
+  review: ThreadReview,
+  api: ApiClient,
+  onRetry?: () => void,
+): HTMLElement {
   const panel = el('div', {
     class: `review-panel review-panel-${review.status}`,
     'data-status': review.status,
@@ -43,6 +48,12 @@ export function createReviewCardEl(review: ThreadReview, api: ApiClient): HTMLEl
     ),
     el('span', { class: 'review-panel-title' }, statusLabel(review.status)),
   )
+  // A failed review is usually recoverable in place (the local model server had
+  // the wrong model loaded, a transient provider error): offer a one-click
+  // re-run rather than making the user re-send the whole turn.
+  if (review.status === 'error' && onRetry) {
+    header.append(createRetryButton(onRetry))
+  }
   panel.append(header)
 
   if (review.status === 'running') return panel

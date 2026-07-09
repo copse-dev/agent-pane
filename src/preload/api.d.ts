@@ -80,6 +80,8 @@ export interface ApiClient {
     run: (threadId: string, prompt: string) => Promise<void>
     estimateContext: (threadId: string, payload: string) => Promise<ContextBreakdown>
     abort: (threadId: string) => Promise<void>
+    retryReview: (threadId: string, payload: string) => Promise<void>
+    retryComparison: (threadId: string, payload: string) => Promise<void>
     clearHistory: (threadId: string) => Promise<void>
     refreshModelContext: () => Promise<void>
     suggestTitle: (text: string) => Promise<string | null>

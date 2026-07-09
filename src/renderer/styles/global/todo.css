@@ -115,6 +115,32 @@
 .review-panel-error {
   border-left-color: var(--danger, #d9534f);
 }
+/* Retry action on a failed review/comparison card — pushed to the right edge of
+   the header (no cost badge is present in the error state that would claim it). */
+.card-retry-button {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: 2px var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: normal;
+  cursor: pointer;
+}
+.card-retry-button:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-hover, rgba(127, 127, 127, 0.12));
+}
+.card-retry-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 .review-panel-icon {
   display: inline-flex;
   align-items: center;
