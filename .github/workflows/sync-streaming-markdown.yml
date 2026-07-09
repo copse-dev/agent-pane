@@ -110,6 +110,17 @@ jobs:
       - name: Create branch and PR
         uses: peter-evans/create-pull-request@v8
         with:
+          # Open the PR with a PAT / App token (SYNC_PR_TOKEN) rather than the
+          # default GITHUB_TOKEN. Two reasons:
+          #   1. Org policy blocks GITHUB_TOKEN from creating PRs ("GitHub
+          #      Actions is not permitted to create or approve pull requests"),
+          #      so the default-token path fails at PR creation even though the
+          #      branch pushes fine.
+          #   2. A PR opened by GITHUB_TOKEN does not trigger downstream
+          #      workflows (CI), whereas one opened by a PAT/App token does —
+          #      so the bump PR gets a real CI run automatically.
+          # SYNC_PR_TOKEN needs Contents + Pull requests: write on this repo.
+          token: ${{ secrets.SYNC_PR_TOKEN }}
           branch: chore/bump-streaming-markdown
           delete-branch: true
           add-paths: |
@@ -123,10 +134,6 @@ jobs:
             dispatched by the [streaming-markdown ${{ github.event.client_payload.tag || format('v{0}', steps.version.outputs.version) }} release](https://github.com/copse-dev/streaming-markdown/releases/tag/${{ github.event.client_payload.tag || format('v{0}', steps.version.outputs.version) }}).
 
             `npm run check` on this branch: **${{ steps.check.outcome }}**.
-
-            Note: PRs opened with `GITHUB_TOKEN` don't trigger the CI workflow —
-            close/reopen this PR (or push to the branch) to get a full CI run
-            before merging.
 
       - name: Surface validation failure
         if: steps.check.outcome == 'failure'
