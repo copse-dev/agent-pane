@@ -53,20 +53,34 @@ export function mountApprovalDialog(api: ApiClient, store: AppStore): void {
   const queue: PendingApproval[] = []
   let active: PendingApproval | null = null
 
-  // A request only interrupts if it belongs to the focused thread (or isn't
-  // tied to a run at all). Everything else stays queued and is surfaced as a
-  // sidebar attention indicator until the user switches to that thread.
+  // Minimizing the window flips the renderer document to `hidden`. A modal shown
+  // on a hidden window can't be painted, so it reads as a frozen/crashed pane and
+  // the user has to switch threads (the only other showNext() trigger) to un-stick
+  // it. While hidden we therefore treat *every* request like a background one:
+  // defer it to the bell + dock bounce, and surface it on the next visibilitychange.
+  function isWindowHidden(): boolean {
+    return typeof document !== 'undefined' && document.visibilityState === 'hidden'
+  }
+
+  // A request only interrupts if it belongs to the focused thread (or isn't tied
+  // to a run at all) *and* the window can actually show it. Everything else stays
+  // queued and is surfaced as a sidebar attention indicator until the user
+  // switches to that thread or restores the window.
   function isShowable(req: PendingApproval): boolean {
+    if (isWindowHidden()) return false
     return !req.threadId || req.threadId === store.getState().activeThreadId
   }
 
-  // Reflect every queued request that belongs to a *non-focused* thread into the
-  // shared attention set, so the sidebar can flag those threads with a bell.
+  // Reflect every queued request that can't currently pop a modal into the shared
+  // attention set, so the sidebar can flag its thread with a bell. Normally that's
+  // just *non-focused* threads; while the window is hidden it includes the focused
+  // thread too, since its modal is deferred until the window comes back.
   function syncAttention(): void {
     const activeThreadId = store.getState().activeThreadId
+    const hidden = isWindowHidden()
     const waiting = queue
       .map((req) => req.threadId)
-      .filter((id): id is string => !!id && id !== activeThreadId)
+      .filter((id): id is string => !!id && (hidden || id !== activeThreadId))
     setAttentionThreads(store, 'approval', waiting)
   }
 
@@ -118,6 +132,13 @@ export function mountApprovalDialog(api: ApiClient, store: AppStore): void {
   // switches, so this covers cross-project focus changes too.
   store.on('threads_changed', () => {
     showNext()
+  })
+
+  // Restoring a minimized window makes deferred requests showable again; surface
+  // them immediately so the user never has to switch threads to un-stick a prompt
+  // that was held back while the window was hidden.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'hidden') showNext()
   })
 
   // Requests that arrived while the user was in Settings were held back by
