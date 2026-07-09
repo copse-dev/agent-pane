@@ -81,8 +81,6 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
   const workspaceBranch = el('span', { class: 'workspace-branch', hidden: true })
   leftCluster.append(workspaceName, workspaceBranch)
 
-  const openInEditor = mountOpenInEditor(leftCluster, store, api)
-
   const dragRegion = el('div', { class: 'titlebar-drag' })
   // Opening projects lives in the projects panel; the titlebar only toggles the
   // file explorer and opens settings.
@@ -137,6 +135,11 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     memoriesBtn,
     browserBtn,
   )
+
+  // "Open in editor" leads the right-hand cluster, sitting just before the Panel
+  // button. mountOpenInEditor appends to its root, so move it ahead of filesBtn.
+  const openInEditor = mountOpenInEditor(panelControls, store, api)
+  panelControls.insertBefore(openInEditor.element, filesBtn)
 
   root.append(leftCluster, dragRegion, panelControls)
 

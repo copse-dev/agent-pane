@@ -138,6 +138,49 @@ describe('open-in-editor titlebar control', () => {
     assert.equal(qsRequired(host, '.open-in-editor-menu').hasAttribute('hidden'), true)
   })
 
+  it('dismisses the menu when the backdrop is clicked', async () => {
+    const store = createStore({ workspaceRoot: '/repo' })
+    const host = document.createElement('div')
+    document.body.append(host)
+
+    mountOpenInEditor(
+      host,
+      store,
+      createApi({
+        editors: [
+          { id: 'vscode', name: 'Visual Studio Code' },
+          { id: 'cursor', name: 'Cursor' },
+        ],
+        lastUsedId: null,
+      }),
+    )
+    await settle()
+
+    // Backdrop is only present/visible while the menu is open.
+    assert.equal(qsRequired(host, '.open-in-editor-backdrop').hasAttribute('hidden'), true)
+    qsRequired<HTMLButtonElement>(host, '.open-in-editor-caret').click()
+    assert.equal(qsRequired(host, '.open-in-editor-backdrop').hasAttribute('hidden'), false)
+
+    qsRequired<HTMLButtonElement>(host, '.open-in-editor-backdrop').click()
+    assert.equal(qsRequired(host, '.open-in-editor-menu').hasAttribute('hidden'), true)
+    assert.equal(qsRequired(host, '.open-in-editor-backdrop').hasAttribute('hidden'), true)
+  })
+
+  it('returns the control element so callers can reposition it', async () => {
+    const store = createStore({ workspaceRoot: '/repo' })
+    const host = document.createElement('div')
+    document.body.append(host)
+
+    const handle = mountOpenInEditor(
+      host,
+      store,
+      createApi({ editors: [{ id: 'zed', name: 'Zed' }], lastUsedId: null }),
+    )
+    await settle()
+
+    assert.equal(handle.element, qsRequired(host, '.open-in-editor'))
+  })
+
   it('appears when a folder is opened after mount', async () => {
     const store = createStore({ workspaceRoot: null })
     const host = document.createElement('div')

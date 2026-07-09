@@ -147,7 +147,9 @@
   position: absolute;
   z-index: 70;
   top: calc(100% + 4px);
-  left: 0;
+  /* Right-aligned: the control leads the right-hand titlebar cluster, so the
+     menu grows leftward to stay clear of the window edge. */
+  right: 0;
   width: max-content;
   min-width: 160px;
   max-width: min(320px, 90vw);
@@ -160,6 +162,20 @@
   box-shadow: var(--shadow-md);
 }
 .open-in-editor-menu[hidden] {
+  display: none;
+}
+/* Transparent click-catcher that dismisses the menu even over the titlebar's
+   drag region (which otherwise swallows clicks before the DOM sees them).
+   Painted within #titlebar's stacking context, above the buttons and below the
+   menu; no-drag so it actually receives the click. */
+.open-in-editor-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  background: transparent;
+  -webkit-app-region: no-drag;
+}
+.open-in-editor-backdrop[hidden] {
   display: none;
 }
 .open-in-editor-option {

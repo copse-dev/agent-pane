@@ -31,7 +31,7 @@ export function mountOpenInEditor(
   root: HTMLElement,
   store: AppStore,
   api: ApiClient,
-): { destroy: () => void } {
+): { element: HTMLElement; destroy: () => void } {
   const wrap = el('div', { class: 'open-in-editor', hidden: true })
   const primary = el(
     'button',
@@ -55,7 +55,13 @@ export function mountOpenInEditor(
     chevronDownIcon('ui-icon ui-icon-sm'),
   )
   const menu = el('div', { class: 'open-in-editor-menu', role: 'menu', hidden: '' })
-  wrap.append(primary, caret, menu)
+  // A transparent full-window backdrop is the only reliable way to dismiss the
+  // menu: the titlebar's empty space is a `-webkit-app-region: drag` region, so
+  // the OS consumes clicks there for window-move and no DOM click reaches a
+  // document listener. The backdrop (no-drag, painted within the titlebar's
+  // stacking context above the buttons but below the menu) catches those clicks.
+  const backdrop = el('div', { class: 'open-in-editor-backdrop', hidden: '' })
+  wrap.append(primary, caret, menu, backdrop)
   root.append(wrap)
 
   let editors: ExternalEditor[] = []
@@ -72,8 +78,13 @@ export function mountOpenInEditor(
     // A single detected editor needs no menu — the primary button is enough.
     open = next && editors.length > 1
     caret.setAttribute('aria-expanded', String(open))
-    if (open) menu.removeAttribute('hidden')
-    else menu.setAttribute('hidden', '')
+    if (open) {
+      menu.removeAttribute('hidden')
+      backdrop.removeAttribute('hidden')
+    } else {
+      menu.setAttribute('hidden', '')
+      backdrop.setAttribute('hidden', '')
+    }
   }
 
   function launch(editorId: string): void {
@@ -151,8 +162,13 @@ export function mountOpenInEditor(
   caret.addEventListener('click', () => {
     setOpen(!open)
   })
+  backdrop.addEventListener('click', () => {
+    setOpen(false)
+  })
 
   cleanups.push(
+    // Fallback for clicks the backdrop doesn't cover (e.g. inside a webview
+    // pane); the backdrop handles the titlebar's drag region, which this can't.
     on(document, 'click', (e) => {
       if (open && !wrap.contains(e.target as Node)) setOpen(false)
     }),
@@ -165,6 +181,7 @@ export function mountOpenInEditor(
   void refresh()
 
   return {
+    element: wrap,
     destroy: (): void => {
       cleanups.forEach((u) => {
         u()
