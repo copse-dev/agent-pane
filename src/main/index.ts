@@ -32,6 +32,8 @@ import type { AgentHost } from '@copse/agent/agent-host.ts'
 import {
   runAgent,
   abortAgent,
+  retryPostTurnReview,
+  retryModelComparison,
   suggestThreadTitle,
   suggestTerminalTitle,
   suggestCommandSummary,
@@ -60,6 +62,7 @@ import {
   assertMainFrameSender,
   estimateContextPayloadSchema,
   followUpContextSchema,
+  retryReviewPayloadSchema,
   lmStudioDetectSchema,
   lmStudioDownloadSchema,
   lmStudioDownloadStatusSchema,
@@ -275,6 +278,64 @@ app
       const threadId = parseIpcArgs(zThreadId, [threadIdArg])
       abortAgent(threadId)
     })
+
+    // Re-run just the post-turn review / model comparison for a thread — the
+    // retry action on a failed card. Both read the current working diff, so a
+    // fixable failure (a mis-loaded local model, a transient provider error)
+    // recovers without re-running the whole editing turn.
+    const parseRetryPayload = (payloadJson: unknown): { workingBrief?: string; model?: string } => {
+      if (typeof payloadJson !== 'string') return {}
+      let raw: unknown
+      try {
+        raw = JSON.parse(payloadJson)
+      } catch {
+        return {}
+      }
+      const parsed = retryReviewPayloadSchema.safeParse(raw)
+      if (!parsed.success) return {}
+      // Spread only the present keys: exactOptionalPropertyTypes rejects an
+      // explicit `undefined` on RetryOptions' optional fields.
+      return {
+        ...(parsed.data.workingBrief !== undefined
+          ? { workingBrief: parsed.data.workingBrief }
+          : {}),
+        ...(parsed.data.model !== undefined ? { model: parsed.data.model } : {}),
+      }
+    }
+    const hydrateHistory = (threadId: string): LLMMessage[] => {
+      if (!messageHistory.has(threadId)) {
+        const stored = storageGet(`llm-history:${threadId}`)
+        if (Array.isArray(stored)) messageHistory.set(threadId, stored as LLMMessage[])
+      }
+      return messageHistory.get(threadId) ?? []
+    }
+
+    ipcMain.handle('agent:retryReview', async (event, threadIdArg: unknown, payload: unknown) => {
+      assertMainFrameSender(event, win)
+      const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+      await retryPostTurnReview(
+        threadId,
+        hydrateHistory(threadId),
+        agentHost,
+        registry,
+        parseRetryPayload(payload),
+      )
+    })
+
+    ipcMain.handle(
+      'agent:retryComparison',
+      async (event, threadIdArg: unknown, payload: unknown) => {
+        assertMainFrameSender(event, win)
+        const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+        await retryModelComparison(
+          threadId,
+          hydrateHistory(threadId),
+          agentHost,
+          registry,
+          parseRetryPayload(payload),
+        )
+      },
+    )
 
     ipcMain.handle('agent:suggestTitle', (event, text: string) => {
       assertMainFrameSender(event, win)

@@ -1,5 +1,6 @@
 import { el } from '../dom/helpers.ts'
 import { searchIcon } from '../dom/icons.ts'
+import { createRetryButton } from './retry-button.ts'
 import type { ModelComparison } from '@shared/types'
 import { renderMarkdown, sanitizeRenderedMarkdown } from '@copse/streaming-markdown'
 import { annotateFileReferences } from '../markdown/file-links.ts'
@@ -33,7 +34,11 @@ function markdownBlock(
 }
 
 /** Card summarising a two-model diff comparison (reviews A/B + judge synthesis). */
-export function createComparisonCardEl(comparison: ModelComparison, api: ApiClient): HTMLElement {
+export function createComparisonCardEl(
+  comparison: ModelComparison,
+  api: ApiClient,
+  onRetry?: () => void,
+): HTMLElement {
   const panel = el('div', {
     class: `comparison-panel comparison-panel-${comparison.status}`,
     'data-status': comparison.status,
@@ -50,6 +55,12 @@ export function createComparisonCardEl(comparison: ModelComparison, api: ApiClie
   )
   if (comparison.cost) {
     header.append(el('span', { class: 'comparison-panel-cost' }, comparison.cost))
+  }
+  // A failed/declined/cancelled comparison is retryable in place — offer a
+  // re-run so a fixable cause (mis-loaded local model, a declined spend the user
+  // now wants) doesn't require re-running the turn.
+  if (comparison.status === 'error' && onRetry) {
+    header.append(createRetryButton(onRetry))
   }
   panel.append(header)
 
