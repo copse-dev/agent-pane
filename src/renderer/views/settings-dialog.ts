@@ -241,7 +241,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <!-- JS-mounted panels sit in a host <div>. Any such host that holds a
                  top-level panel MUST carry class="settings-mount" so its injected
                  fieldset gets the same inter-panel spacing as inline ones — see the
-                 `.settings-section > .settings-mount > fieldset` rule in settings.css. -->
+                 .settings-section > .settings-mount > fieldset rule in settings.css. -->
             <div id="settings-custom-providers-host" class="settings-mount"></div>
 
             <div id="settings-env-detect-host" class="settings-mount"></div>
