@@ -21,6 +21,13 @@ export function matchNewThreadShortcut(e: KeyboardEvent): boolean {
   return e.key === 'n' || e.key === 'N'
 }
 
+/** Cmd/Ctrl+F opens the in-conversation find bar (find-in-page for the chat). */
+export function matchFindInChatShortcut(e: KeyboardEvent): boolean {
+  const meta = e.ctrlKey || e.metaKey
+  if (!meta || e.altKey || e.shiftKey) return false
+  return e.key === 'f' || e.key === 'F'
+}
+
 export type PanelShortcutAction = 'togglePanel' | { openPanel: RightPanelMode }
 
 export function matchPanelShortcut(e: KeyboardEvent): PanelShortcutAction | null {
