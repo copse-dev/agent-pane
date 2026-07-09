@@ -20,12 +20,42 @@ import {
 const SEMANTIC_MAX_THREADS = 4
 
 /**
- * Bound how long an index/search may run. The CPU cap stops the indexer pinning
- * every core, and this stops it pinning *some* cores for minutes on end (#517).
- * Indexing a fresh repo is the slow path, so it gets the larger budget.
+ * How long `gortex track --wait` blocks for the freshly-tracked graph to become
+ * queryable before it stops waiting. gortex is daemon-based, so when this budget
+ * elapses the detached daemon keeps indexing in the background — the wait timing
+ * out means "not queryable yet", not "indexing failed".
  */
-const SEMANTIC_INDEX_TIMEOUT_MS = 5 * 60_000
+const SEMANTIC_INDEX_WAIT_MS = 5 * 60_000
+
+/**
+ * Grace margin between gortex's own `--wait-timeout` and the command runner's
+ * hard-kill. gortex returning on its own is the graceful path; the kill turns
+ * that benign return into a thrown `Command timed out` error (which then flips
+ * the index status to `error`). The margin must be big enough that a healthy
+ * gortex client always exits first.
+ */
+const SEMANTIC_INDEX_KILL_GRACE_MS = 30_000
+
+/**
+ * Hard ceiling on the whole `track` invocation — the command runner SIGKILLs
+ * the process tree at this point (#517). It must exceed {@link
+ * SEMANTIC_INDEX_WAIT_MS} by {@link SEMANTIC_INDEX_KILL_GRACE_MS}: equal budgets
+ * (both were 5m) raced, and the kill usually won, so every file-change burst
+ * turned a still-indexing repo into a `semantic index update failed` error
+ * instead of letting gortex's `--wait-timeout` return gracefully.
+ */
+const SEMANTIC_INDEX_TIMEOUT_MS = SEMANTIC_INDEX_WAIT_MS + SEMANTIC_INDEX_KILL_GRACE_MS
 const SEMANTIC_SEARCH_TIMEOUT_MS = 60_000
+
+/** gortex `--wait-timeout` argument, derived from {@link SEMANTIC_INDEX_WAIT_MS} so the two never drift. */
+export function gortexIndexWaitArg(): string {
+  return `${String(Math.round(SEMANTIC_INDEX_WAIT_MS / 60_000))}m`
+}
+
+/** Command-runner hard-kill ceiling for a `gortex track` run; exposed for the timeout-invariant test. */
+export function gortexIndexKillTimeoutMs(): number {
+  return SEMANTIC_INDEX_TIMEOUT_MS
+}
 
 /** Number of worker threads the indexer may use, capped for CPU fairness (#517). */
 export function semanticThreadCap(): number {
@@ -366,10 +396,13 @@ async function ensureGortexIndex(workspaceRoot: string): Promise<void> {
     throw new Error('gortex daemon failed to start')
   }
   // --wait blocks until the graph is queryable so the first search after a
-  // workspace opens doesn't race a cold index.
+  // workspace opens doesn't race a cold index. The command-runner timeout sits
+  // a grace margin above gortex's own --wait-timeout so a slow index lets gortex
+  // return gracefully (daemon keeps indexing) rather than being SIGKILLed at the
+  // exact wait boundary and surfaced as an error (#517).
   await runCommand(
     gortexCmd(),
-    ['track', workspaceRoot, '--wait', '--wait-timeout', '5m', '--no-progress'],
+    ['track', workspaceRoot, '--wait', '--wait-timeout', gortexIndexWaitArg(), '--no-progress'],
     gortexRunOpts(workspaceRoot, { timeout_ms: SEMANTIC_INDEX_TIMEOUT_MS }),
   )
 }
