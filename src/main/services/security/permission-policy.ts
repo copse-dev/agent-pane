@@ -44,6 +44,7 @@ export interface PermissionCheck {
 export type ShellPermissionDecision =
   | { action: 'allow'; reasons: string[] }
   | { action: 'prompt'; reasons: string[] }
+  | { action: 'deny'; reasons: string[] }
 
 export function decideShellPermission(
   command: string,
@@ -52,7 +53,16 @@ export function decideShellPermission(
     sandboxEnabled: boolean
     autoRun: boolean
     classification: ClassificationResult | null
-    confidenceThreshold: number
+    /** Min confidence for a `sandbox`-scoped classification to auto-run (default 0.85). */
+    sandboxAllowThreshold: number
+    /**
+     * Strict-mode hard-deny bar: when the classifier is at least this confident a
+     * command is `external` *and* a deterministic destructive signal fires, the
+     * command is refused outright rather than surfaced for approval. Defaults to 1
+     * (effectively off — only a certainty-1.0 verdict denies) so existing behaviour
+     * is unchanged until the user lowers it. Never denies plain external work.
+     */
+    externalDenyThreshold?: number
   },
 ): ShellPermissionDecision {
   if (!opts.autoRun) {
@@ -86,6 +96,29 @@ export function decideShellPermission(
   // No OS sandbox: the heuristic is the only guard, so an ambiguous "may reach network"
   // verdict must prompt exactly like a hard-external one — auto-running it would be an
   // unprompted network/out-of-workspace call.
+  const { classification, sandboxAllowThreshold } = opts
+  const externalDenyThreshold = opts.externalDenyThreshold ?? 1
+
+  // Strict-mode hard-deny: refuse outright (no click-through) only when the safety
+  // model is confident the command is external *and* a deterministic destructive
+  // signal fires — "seems bad" by two independent measures. Checked before the
+  // prompt branches so a deny always wins. Off by default (threshold 1).
+  if (
+    classification &&
+    classification.scope === 'external' &&
+    classification.confidence >= externalDenyThreshold &&
+    dangerous.length > 0
+  ) {
+    return {
+      action: 'deny',
+      reasons: [
+        `safety model flags dangerous external activity: ${classification.reason} ` +
+          `(confidence ${classification.confidence.toFixed(2)})`,
+        ...dangerous,
+      ],
+    }
+  }
+
   if (analysis.verdict === 'external' || analysis.verdict === 'ambiguous') {
     return { action: 'prompt', reasons: analysis.reasons }
   }
@@ -93,11 +126,10 @@ export function decideShellPermission(
     return { action: 'prompt', reasons: dangerous }
   }
 
-  const { classification, confidenceThreshold } = opts
   if (
     classification &&
     classification.scope === 'sandbox' &&
-    classification.confidence >= confidenceThreshold
+    classification.confidence >= sandboxAllowThreshold
   ) {
     return { action: 'allow', reasons: [classification.reason] }
   }
