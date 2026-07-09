@@ -9,15 +9,13 @@ import {
   sandboxViolationCountForCommand,
   spawnShellInProjectSandbox,
 } from '../project-sandbox/index.ts'
+import { shellRunsOutsideSandbox } from '../services/security/command-routing-config.ts'
 import { detectSandboxFailure } from '../services/security/sandbox-failure.ts'
 import {
   promptInstallSocketFirewall,
   promptUnsandboxedShell,
 } from '../services/security/permission-gate.ts'
-import {
-  shellRequiresOutsideSandbox,
-  shellSandboxFailureShouldOfferUnsandboxedRetry,
-} from '../services/security/permission-policy.ts'
+import { shellSandboxFailureShouldOfferUnsandboxedRetry } from '../services/security/permission-policy.ts'
 import { envForRendererChildProcess } from '../services/exec/child-process-env.ts'
 import { getSetting } from '../services/storage/settings.ts'
 import { detectPackageInstall, wrapWithSocketFirewall } from '../services/security/safe-install.ts'
@@ -257,7 +255,12 @@ export const runShellTool = defineTool({
     const { command: finalCommand, env, banner } = prepared
     const withBanner = (output: string): string => (banner ? `${banner}\n${output}` : output)
 
-    const outsideSandbox = shellRequiresOutsideSandbox(finalCommand, cwd, isProjectSandboxEnabled())
+    // Decide sandbox vs unsandboxed from the RAW command (not the sfw-wrapped
+    // finalCommand) so this matches the permission gate's decision exactly: a
+    // trusted allow-listed command runs unsandboxed with no prompt, otherwise the
+    // existing external-command heuristic applies. shellRunsOutsideSandbox is the
+    // single source of truth shared with the gate and todo verification.
+    const outsideSandbox = shellRunsOutsideSandbox(command)
 
     // Strip LLM API keys (and other secrets) from the child env so a compromised
     // command — especially an unsandboxed retry with full network — cannot exfiltrate

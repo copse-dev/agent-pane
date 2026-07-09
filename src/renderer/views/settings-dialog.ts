@@ -31,6 +31,12 @@ import {
   WEB_ALLOWED_ORIGINS_SETTING,
   WEB_ALLOW_USER_APPROVAL_SETTING,
 } from '@shared/web-origins.ts'
+import {
+  TRUSTED_COMMANDS_SETTING,
+  formatTrustedCommands,
+  parseTrustedCommands,
+  sanitizeTrustedCommands,
+} from '@shared/command-routing.ts'
 
 export type SettingsSection =
   | 'general'
@@ -192,6 +198,12 @@ async function saveSimpleFields(data: FormData, api: ApiClient): Promise<void> {
       await api.settings.set(field.name, trimmed ? value.trim() : value)
     }
   }
+}
+
+/** Read a text field from FormData, narrowing to string without a cast. */
+function formDataString(data: FormData, key: string): string {
+  const value = data.get(key)
+  return typeof value === 'string' ? value : ''
 }
 
 function parseWebAllowedOrigins(value: FormDataEntryValue | null): string[] {
@@ -534,6 +546,33 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 restorable <code>refs/copse/backups/*</code> ref. Shell commands and web fetches still
                 prompt. Turn off to review every agent file edit.
               </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Trusted commands</legend>
+              <p class="settings-fieldset-desc">
+                Commands trusted to run <strong>unsandboxed with no prompt</strong> — for tools that
+                can't run inside the workspace sandbox but are safe (e.g.
+                <code>xcodebuild</code>). A line like <code>mkdir build &amp;&amp; xcodebuild …</code>
+                runs without a prompt because <code>mkdir</code> is a trivially-safe prep step and
+                <code>xcodebuild</code> is trusted; a destructive, network, or untrusted segment
+                (e.g. <code>curl</code>, <code>npm test</code>) makes the whole line prompt as usual.
+                Only honoured in a trusted workspace and when auto-run is on; shells and interpreters
+                (<code>sh</code>, <code>bash</code>, <code>node</code>, …) can't be trusted this way.
+              </p>
+              <label>
+                Trusted command names
+                <textarea
+                  name="trustedShellCommands"
+                  rows="5"
+                  spellcheck="false"
+                  placeholder="xcodebuild"
+                ></textarea>
+                <span class="field-hint">
+                  One command basename per line (e.g. <code>xcodebuild</code>). Matches the command's
+                  basename only, never its arguments.
+                </span>
+              </label>
             </fieldset>
           </section>
 
@@ -1581,6 +1620,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       ;(form.elements.namedItem('webAllowedOrigins') as HTMLTextAreaElement).value = (
         savedWebOrigins?.length ? savedWebOrigins : DEFAULT_WEB_ALLOWED_ORIGINS
       ).join('\n')
+      ;(form.elements.namedItem('trustedShellCommands') as HTMLTextAreaElement).value =
+        formatTrustedCommands(
+          sanitizeTrustedCommands(await api.settings.get(TRUSTED_COMMANDS_SETTING)),
+        )
       ;(form.elements.namedItem('theme') as HTMLSelectElement).value = store.getState().theme
       ;(form.elements.namedItem('fontSize') as HTMLInputElement).value = String(
         store.getState().fontSize,
@@ -1687,6 +1730,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         defaultReadonlyMode: data.get('defaultReadonlyMode') === 'on',
         webAllowedOrigins: parseWebAllowedOrigins(data.get('webAllowedOrigins')),
         webAllowUserApproval: data.get(WEB_ALLOW_USER_APPROVAL_SETTING) === 'on',
+        trustedShellCommands: parseTrustedCommands(formDataString(data, 'trustedShellCommands')),
       })
 
       store.setState({

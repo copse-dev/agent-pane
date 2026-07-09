@@ -3,7 +3,7 @@
 // its thread is flagged for attention (the sidebar bell), and the prompt only
 // surfaces once the user switches to that thread.
 import '../../../tests/setup-dom.ts'
-import { describe, it, beforeEach } from 'node:test'
+import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { AppStore } from '@shared/store/store.ts'
@@ -59,6 +59,17 @@ function makeApi(): {
     },
     responses,
   }
+}
+
+// jsdom reports `document.visibilityState` as 'visible' via a prototype getter;
+// shadow it on the instance so we can simulate minimizing the window, then fire
+// the `visibilitychange` event the renderer listens for.
+function setVisibility(state: DocumentVisibilityState): void {
+  Object.defineProperty(document, 'visibilityState', {
+    configurable: true,
+    get: () => state,
+  })
+  document.dispatchEvent(new Event('visibilitychange'))
 }
 
 function shimModal(dialog: HTMLDialogElement): { showModalCalls: number } {
@@ -153,5 +164,47 @@ describe('approval dialog thread scoping', () => {
     emit({ id: 'a' })
     assert.equal(spy.showModalCalls, 1)
     assert.equal(dialog.open, true)
+  })
+
+  describe('minimized (hidden) window', () => {
+    afterEach(() => {
+      // Leave the shared document visible for any later specs in this process.
+      setVisibility('visible')
+    })
+
+    it('defers a focused-thread prompt and flags it for attention while hidden', () => {
+      setVisibility('hidden')
+      emit({ id: 'a', threadId: 'focused' })
+
+      // No invisible modal on a minimized window; surface a bell instead so the
+      // pane doesn't look frozen.
+      assert.equal(spy.showModalCalls, 0)
+      assert.equal(dialog.open, false)
+      assert.equal(isThreadAwaitingAttention('focused'), true)
+    })
+
+    it('surfaces the deferred prompt when the window is restored', () => {
+      setVisibility('hidden')
+      emit({ id: 'a', threadId: 'focused' })
+      assert.equal(spy.showModalCalls, 0)
+
+      // Restoring the window must pop the prompt without a thread switch.
+      setVisibility('visible')
+
+      assert.equal(spy.showModalCalls, 1)
+      assert.equal(dialog.open, true)
+      assert.equal(isThreadAwaitingAttention('focused'), false)
+    })
+
+    it('also defers a no-threadId prompt while hidden and shows it on restore', () => {
+      setVisibility('hidden')
+      emit({ id: 'a' })
+      assert.equal(spy.showModalCalls, 0)
+      assert.equal(dialog.open, false)
+
+      setVisibility('visible')
+      assert.equal(spy.showModalCalls, 1)
+      assert.equal(dialog.open, true)
+    })
   })
 })
