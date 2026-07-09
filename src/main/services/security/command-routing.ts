@@ -1,4 +1,5 @@
 import { parse as parseShell } from 'shell-quote'
+import { isValidTrustedCommand } from '@shared/command-routing.ts'
 import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts'
 
 /**
@@ -252,4 +253,37 @@ export function resolveCommandRouting(
     return { outcome: 'defer', reasons: ['no trusted command in a fully-safe command line'] }
   }
   return { outcome: 'allow', reasons: ['all segments trusted or trivially safe'] }
+}
+
+/**
+ * The single binary an escalation prompt may offer to add to the trusted
+ * allow-list (via an "always allow" tick box), or null when this command is not
+ * eligible to be remembered as trusted.
+ *
+ * Eligible ONLY for a single simple command — no pipeline, `&&`/`||`/`;`, command
+ * substitution, or subshell — whose head resolves to a concrete binary that is
+ * not an interpreter/shell ({@link NON_TRUSTABLE_COMMANDS}), not a trivially-safe
+ * prep command (nothing to trust — those never need to escape), not destructive,
+ * and is a valid bare command name. Restricting the offer to one unambiguous
+ * binary is what makes remembering safe: the grant the user approves ("always
+ * allow xcodebuild") is exactly the basename stored, and every FUTURE use of it
+ * still passes through {@link resolveCommandRouting}'s per-segment analysis — so a
+ * later `xcodebuild && curl evil` is NOT laundered by the grant, it defers to the
+ * normal gate like any untrusted compound.
+ */
+export function trustableCommandHead(command: string): string | null {
+  const trimmed = command.trim()
+  if (!trimmed) return null
+  if (hasGroupingOrSubstitution(trimmed)) return null
+  if (dangerousInSandboxReasons(trimmed).length > 0) return null
+
+  const segments = splitSegments(trimmed)
+  if (segments.length !== 1) return null
+
+  const head = commandHead(segments[0] ?? '')
+  if (!head) return null
+  if (NON_TRUSTABLE_COMMANDS.has(head)) return null
+  if (SAFE_PREP_COMMANDS.has(head)) return null
+  if (!isValidTrustedCommand(head)) return null
+  return head
 }

@@ -120,5 +120,18 @@ shipped. The tier vision remains valid as future work.
 - `run_background` currently always sandboxes; extend the allow-list to it if a
   trusted long-lived task is needed.
 - A focused WebdriverIO e2e for the new Settings fieldset (per `AGENTS.md`).
-- "Always trust this command" affordance on the escalation prompt (prompt-once →
-  add to the list).
+
+### Shipped follow-ups
+
+- **"Always trust this command" tick box on the escalation prompt** (prompt-once →
+  add to the list). Both "run outside sandbox?" prompts — the up-front external
+  escalation and the post-failure unsandboxed retry — offer an "Always allow
+  `<binary>` in trusted projects" checkbox when a single eligible binary resolves
+  (`trustableCommandHead`: one simple command, no compound/pipeline/substitution,
+  not an interpreter, not destructive). Ticking it appends the basename to
+  `trustedShellCommands`, so future runs pass through `routeShellCommand` and run
+  unsandboxed with no prompt. This is the single grant path — there is deliberately
+  no separate per-invocation "remembered command" store; every remembered grant is
+  re-evaluated by the per-segment router at use time, so a later
+  `xcodebuild && curl evil` cannot be laundered by a prior `xcodebuild` grant. Only
+  offered in a trusted workspace (`offerableTrustedCommand`).

@@ -1,9 +1,13 @@
-import { getSetting } from '../storage/settings.ts'
+import { getSetting, setSetting } from '../storage/settings.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { isWorkspaceTrusted } from './workspace-trust.ts'
 import { TRUSTED_COMMANDS_SETTING, sanitizeTrustedCommands } from '@shared/command-routing.ts'
-import { resolveCommandRouting, type CommandRouting } from './command-routing.ts'
+import {
+  resolveCommandRouting,
+  trustableCommandHead,
+  type CommandRouting,
+} from './command-routing.ts'
 import { shellRequiresOutsideSandbox } from './permission-policy.ts'
 
 export { TRUSTED_COMMANDS_SETTING } from '@shared/command-routing.ts'
@@ -51,4 +55,33 @@ export function routeShellCommand(command: string): CommandRouting {
 export function shellRunsOutsideSandbox(command: string): boolean {
   if (routeShellCommand(command).outcome === 'allow') return true
   return shellRequiresOutsideSandbox(command, getWorkspaceRoot(), isProjectSandboxEnabled())
+}
+
+/**
+ * The binary an escalation prompt may offer to remember as trusted, or null when
+ * nothing is eligible. Layers the workspace-trust gate and the already-listed
+ * check on top of the pure {@link trustableCommandHead}: we only offer the tick
+ * box in a trusted workspace (an untrusted repo can't benefit from the allow-list,
+ * so remembering there would be a dead grant) and only for a binary not already
+ * on the list. Returns the exact basename that {@link addTrustedShellCommand}
+ * would store, so the prompt label and the stored grant can't drift apart.
+ */
+export function offerableTrustedCommand(command: string): string | null {
+  if (!isWorkspaceTrusted(getWorkspaceRoot())) return null
+  const head = trustableCommandHead(command)
+  if (!head) return null
+  return trustedCommandSet().has(head) ? null : head
+}
+
+/**
+ * Append a binary to the global trusted-command allow-list (the setting written by
+ * the Settings textarea). Idempotent and validated through the same sanitizer, so
+ * a duplicate or malformed entry is a no-op. The workspace-trust gate still applies
+ * at USE time via {@link routeShellCommand}, so this grant is global-but-gated: the
+ * command auto-runs only in trusted workspaces.
+ */
+export async function addTrustedShellCommand(name: string): Promise<void> {
+  const current = sanitizeTrustedCommands(getSetting<unknown>(TRUSTED_COMMANDS_SETTING, []))
+  if (current.includes(name)) return
+  await setSetting(TRUSTED_COMMANDS_SETTING, [...current, name])
 }

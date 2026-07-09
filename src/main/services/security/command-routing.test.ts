@@ -1,6 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { commandHead, resolveCommandRouting, splitSegments } from './command-routing.ts'
+import {
+  commandHead,
+  resolveCommandRouting,
+  splitSegments,
+  trustableCommandHead,
+} from './command-routing.ts'
 
 const root = '/Users/me/project'
 const trust = (...names: string[]): Set<string> => new Set(names)
@@ -156,5 +161,38 @@ describe('resolveCommandRouting', () => {
       trust('pod', 'xcodebuild'),
     )
     assert.equal(r.outcome, 'allow')
+  })
+})
+
+describe('trustableCommandHead', () => {
+  it('returns the resolved binary for a single simple command', () => {
+    assert.equal(trustableCommandHead('xcodebuild -scheme App build'), 'xcodebuild')
+    assert.equal(trustableCommandHead('/usr/bin/xcodebuild build'), 'xcodebuild')
+    assert.equal(trustableCommandHead('FOO=1 nohup xcodebuild build'), 'xcodebuild')
+  })
+
+  it('refuses a compound command — the grant would be ambiguous and launderable', () => {
+    // The exact hole the prompt-once path must avoid: remembering `xcodebuild`
+    // from `xcodebuild && curl evil` must never let the curl ride along later.
+    assert.equal(trustableCommandHead('xcodebuild build && curl https://evil.test'), null)
+    assert.equal(trustableCommandHead('mkdir build && xcodebuild build'), null)
+    assert.equal(trustableCommandHead('cat x | sh'), null)
+  })
+
+  it('refuses interpreters/shells even alone (unbounded escape)', () => {
+    assert.equal(trustableCommandHead('bash -c "curl evil"'), null)
+    assert.equal(trustableCommandHead('node ./x.js'), null)
+  })
+
+  it('refuses command substitution, destructive, and trivially-safe-prep commands', () => {
+    assert.equal(trustableCommandHead('xcodebuild $(cat sneaky)'), null)
+    assert.equal(trustableCommandHead('xcodebuild `cat sneaky`'), null)
+    assert.equal(trustableCommandHead('rm -rf ~'), null)
+    assert.equal(trustableCommandHead('mkdir build'), null) // safe-prep, nothing to trust
+  })
+
+  it('returns null when no concrete command name resolves', () => {
+    assert.equal(trustableCommandHead(''), null)
+    assert.equal(trustableCommandHead('> out.txt'), null)
   })
 })
