@@ -24,7 +24,7 @@ describe('shell permissions: macOS with ASRT sandbox active', () => {
     workspaceRoot: root,
     sandboxEnabled: true,
     autoRun: true,
-    confidenceThreshold: 0.85,
+    sandboxAllowThreshold: 0.85,
   }
 
   it('auto-runs sandbox-contained commands without consulting a classifier', () => {
@@ -61,7 +61,7 @@ describe('shell permissions: Linux/Windows or macOS sandbox-init failure (no OS 
     workspaceRoot: root,
     sandboxEnabled: false,
     autoRun: true,
-    confidenceThreshold: 0.85,
+    sandboxAllowThreshold: 0.85,
   }
 
   it('prompts for static-analysis "external" verdicts regardless of classifier', () => {
@@ -107,7 +107,7 @@ describe('shell permissions: auto-run disabled in Settings', () => {
       sandboxEnabled: true,
       autoRun: false,
       classification: { scope: 'sandbox', confidence: 1, reason: 'safe' },
-      confidenceThreshold: 0.85,
+      sandboxAllowThreshold: 0.85,
     })
     assert.equal(d.action, 'prompt')
     assert.ok(d.reasons.some((r) => /auto-run.*disabled/i.test(r)))

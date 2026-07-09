@@ -257,15 +257,25 @@ async function checkShellPermission(args: unknown): Promise<boolean> {
   const autoRun = getSetting<boolean>('autoRunSandboxCommands', true)
   const workspaceRoot = getWorkspaceRoot()
   const sandboxEnabled = isProjectSandboxEnabled()
+  // `safetyConfidenceThreshold` is the legacy single knob; new installs use the
+  // split sandbox-allow / external-deny thresholds and fall back to it for migration.
+  const legacyThreshold = getSetting<number>('safetyConfidenceThreshold', 0.85)
   const decision = decideShellPermission(command, {
     workspaceRoot,
     sandboxEnabled,
     autoRun,
     classification: sandboxEnabled ? null : await classifyShellScope(command),
-    confidenceThreshold: getSetting<number>('safetyConfidenceThreshold', 0.85),
+    sandboxAllowThreshold: getSetting<number>('safetySandboxAllowThreshold', legacyThreshold),
+    externalDenyThreshold: getSetting<number>('safetyExternalDenyThreshold', 1),
   })
 
   if (decision.action === 'allow') return true
+
+  // Strict-mode refusal: surface the reason to the agent rather than silently
+  // returning false (which reads as a plain user rejection).
+  if (decision.action === 'deny') {
+    throw new Error(`Command blocked by strict-mode safety policy: ${decision.reasons.join('; ')}`)
+  }
 
   const outsideSandbox = shellRequiresOutsideSandbox(command, workspaceRoot, sandboxEnabled)
 
