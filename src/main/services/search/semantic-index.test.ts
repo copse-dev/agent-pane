@@ -4,6 +4,8 @@ import assert from 'node:assert/strict'
 import {
   formatSemanticSearchResults,
   gortexCpuLimitEnv,
+  gortexIndexKillTimeoutMs,
+  gortexIndexWaitArg,
   isSemanticIndexReady,
   parseGortexJson,
   parseVeraJson,
@@ -126,6 +128,20 @@ describe('semantic-index parsing', () => {
   it('caps the gortex Go scheduler via GOMAXPROCS (#517)', () => {
     const env = gortexCpuLimitEnv()
     assert.equal(env['GOMAXPROCS'], String(semanticThreadCap()))
+  })
+
+  it('gives the gortex track kill-timeout a grace margin over its own --wait-timeout (#517)', () => {
+    const waitArg = gortexIndexWaitArg()
+    const match = /^(\d+)m$/.exec(waitArg)
+    assert.ok(match, `expected a gortex minute duration, got ${waitArg}`)
+    const waitMs = Number(match[1]) * 60_000
+    // The command runner must not SIGKILL gortex at the exact moment its own
+    // graceful --wait-timeout elapses — that race turned "still indexing" into a
+    // `Command timed out` error on every file-change burst.
+    assert.ok(
+      gortexIndexKillTimeoutMs() > waitMs,
+      `kill timeout ${String(gortexIndexKillTimeoutMs())}ms must exceed wait ${String(waitMs)}ms`,
+    )
   })
 
   it('coalesces overlapping index updates into one in-flight run plus one trailing run (#517)', async () => {
