@@ -1,10 +1,9 @@
 import { errorMessage } from '@shared/errors.ts'
 import { access } from 'node:fs/promises'
 import type { TodoCheck } from '@shared/types/todo.ts'
-import { isProjectSandboxEnabled } from '../project-sandbox/index.ts'
 import { runCommand } from './exec/command-runner.ts'
 import { ensureShellCommandPermitted } from './security/permission-gate.ts'
-import { shellRequiresOutsideSandbox } from './security/permission-policy.ts'
+import { shellRunsOutsideSandbox } from './security/command-routing-config.ts'
 import { getWorkspaceRoot, resolveWorkspacePath } from './workspace.ts'
 
 export interface TodoCheckResult {
@@ -65,12 +64,7 @@ export async function verifyTodoCheck(
       const parts = check.command.trim().split(/\s+/)
       const [cmd, ...args] = parts
       if (!cmd) return { passed: false, detail: 'empty shell command' }
-      const workspaceRoot = getWorkspaceRoot()
-      const unsandboxed = shellRequiresOutsideSandbox(
-        check.command,
-        workspaceRoot,
-        isProjectSandboxEnabled(),
-      )
+      const unsandboxed = shellRunsOutsideSandbox(check.command)
       const r = await runCommand(cmd, args, {
         cwd: root,
         signal,

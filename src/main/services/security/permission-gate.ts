@@ -29,6 +29,11 @@ import {
 } from './permission-policy.ts'
 import { detectPackageInstall } from './safe-install.ts'
 import {
+  addTrustedShellCommand,
+  offerableTrustedCommand,
+  routeShellCommand,
+} from './command-routing-config.ts'
+import {
   BROWSER_TOOLS,
   READ_ONLY_BROWSER_TOOLS,
   BROWSER_ALLOW_USER_APPROVAL_SETTING,
@@ -59,16 +64,48 @@ export { decideShellPermission } from './permission-policy.ts'
 
 import type { PermissionCheck } from './permission-policy.ts'
 
+/**
+ * Offer "always allow `<binary>` in trusted projects" on an escalation to run a
+ * command outside the sandbox, when a single eligible binary is resolvable (see
+ * offerableTrustedCommand). Ticking it appends that basename to the trusted
+ * allow-list, so future runs skip the prompt and run unsandboxed via
+ * routeShellCommand — the prompt-once path that replaces a separate remembered
+ * list. Returns the approval, persisting the grant on approve+remember.
+ */
+async function requestEscalationApproval(
+  command: string,
+  title: string,
+  body: string,
+): Promise<boolean> {
+  const trustable = offerableTrustedCommand(command)
+  const { approved, remember } = await requestApproval({
+    title,
+    body,
+    type: 'shell',
+    allowRemember: trustable !== null,
+    ...(trustable ? { rememberLabel: `Always allow \`${trustable}\` in trusted projects` } : {}),
+  })
+  if (approved && remember && trustable) await addTrustedShellCommand(trustable)
+  return approved
+}
+
 async function promptShell(
   command: string,
   reasons: string[],
   outsideSandbox: boolean,
 ): Promise<boolean> {
+  // The trusted-command tick box only makes sense on an escalation to OUTSIDE the
+  // sandbox (a trusted command runs unsandboxed); an in-sandbox prompt never offers it.
+  if (outsideSandbox) {
+    return requestEscalationApproval(
+      command,
+      'Run outside sandbox?',
+      formatExternalSandboxPromptBody(command, reasons),
+    )
+  }
   const { approved } = await requestApproval({
-    title: outsideSandbox ? 'Run outside sandbox?' : 'Run shell command?',
-    body: outsideSandbox
-      ? formatExternalSandboxPromptBody(command, reasons)
-      : formatShellPromptBody(command, reasons),
+    title: 'Run shell command?',
+    body: formatShellPromptBody(command, reasons),
     type: 'shell',
   })
   return approved
@@ -76,12 +113,11 @@ async function promptShell(
 
 /** Prompt when a sandboxed command failed and may succeed unsandboxed. */
 export async function promptUnsandboxedShell(command: string, reasons: string[]): Promise<boolean> {
-  const { approved } = await requestApproval({
-    title: 'Run outside sandbox?',
-    body: formatUnsandboxedPromptBody(command, reasons),
-    type: 'shell',
-  })
-  return approved
+  return requestEscalationApproval(
+    command,
+    'Run outside sandbox?',
+    formatUnsandboxedPromptBody(command, reasons),
+  )
 }
 
 /**
@@ -210,12 +246,21 @@ async function checkShellPermission(args: unknown): Promise<boolean> {
   const command = shellCommandFromArgs(args)
   if (!command) return promptShell('(invalid command)', ['missing command argument'], false)
 
+  // Trusted-command fast path: a command whose every segment is either an
+  // explicitly trusted (allow-listed) command or a trivially-safe prep step runs
+  // with no prompt — the prompt-fatigue lever for unsandboxable-but-safe tools
+  // (e.g. xcodebuild). routeShellCommand internally requires auto-run to be on
+  // AND the workspace to be trusted, and never waives analysis for an untrusted
+  // co-segment, so this can only fire for a genuinely safe command line.
+  if (routeShellCommand(command).outcome === 'allow') return true
+
+  const autoRun = getSetting<boolean>('autoRunSandboxCommands', true)
   const workspaceRoot = getWorkspaceRoot()
   const sandboxEnabled = isProjectSandboxEnabled()
   const decision = decideShellPermission(command, {
     workspaceRoot,
     sandboxEnabled,
-    autoRun: getSetting<boolean>('autoRunSandboxCommands', true),
+    autoRun,
     classification: sandboxEnabled ? null : await classifyShellScope(command),
     confidenceThreshold: getSetting<number>('safetyConfidenceThreshold', 0.85),
   })
