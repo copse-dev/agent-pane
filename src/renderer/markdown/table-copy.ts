@@ -38,7 +38,12 @@ export function attachTableCopyButtons(root: ParentNode): void {
 
     const shell = el('div', { class: 'table-copy-shell' })
     parent.insertBefore(shell, table)
-    shell.append(table)
+    // A wide table (e.g. a long unbroken URL) scrolls inside this container
+    // instead of stretching the whole conversation column. The copy button
+    // stays outside it so it stays pinned while the table scrolls.
+    const scroll = el('div', { class: 'table-copy-scroll' })
+    scroll.append(table)
+    shell.append(scroll)
 
     const copyBtn = el(
       'button',
