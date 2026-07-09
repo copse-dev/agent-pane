@@ -50,20 +50,42 @@ describe('comparison panel', () => {
     assert.match(card.querySelector('.comparison-panel-title')?.textContent ?? '', /Comparing/)
   })
 
+  const failed: ModelComparison = {
+    status: 'error',
+    models: done.models,
+    reviewA: '',
+    reviewB: '',
+    synthesis: '',
+    error: 'Comparison declined.',
+  }
+
   it('renders the error message when the run failed', () => {
-    const card = createComparisonCardEl(
-      {
-        status: 'error',
-        models: done.models,
-        reviewA: '',
-        reviewB: '',
-        synthesis: '',
-        error: 'Comparison declined.',
-      },
-      fakeApi(),
-    )
+    const card = createComparisonCardEl(failed, fakeApi())
     assert.equal(card.getAttribute('data-status'), 'error')
     assert.match(card.querySelector('.comparison-panel-error')?.textContent ?? '', /declined/)
+  })
+
+  it('shows a retry button on a failed card and fires the callback once', () => {
+    let calls = 0
+    const card = createComparisonCardEl(failed, fakeApi(), () => {
+      calls++
+    })
+    const button = card.querySelector<HTMLButtonElement>('.card-retry-button')
+    assert.ok(button, 'expected a retry button on the failed comparison card')
+    button.click()
+    button.click()
+    assert.equal(calls, 1, 'retry fires once then disables itself')
+    assert.equal(button.disabled, true)
+  })
+
+  it('omits the retry button when no onRetry handler is given', () => {
+    const card = createComparisonCardEl(failed, fakeApi())
+    assert.equal(card.querySelector('.card-retry-button'), null)
+  })
+
+  it('does not show a retry button on a successful card', () => {
+    const card = createComparisonCardEl(done, fakeApi(), () => {})
+    assert.equal(card.querySelector('.card-retry-button'), null)
   })
 
   it('linkifies file paths printed in a reviewer column', async () => {
