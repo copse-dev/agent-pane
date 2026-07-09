@@ -68,8 +68,6 @@ const MAIN_ONLY_SETTING_SCHEMAS = {
   safetySandboxAllowThreshold: z.number().min(0).max(1),
   // Strict-mode hard-deny bar for confident + destructive external commands (1 = off).
   safetyExternalDenyThreshold: z.number().min(0).max(1),
-  // Per-workspace allowlist of shell executables approved-and-remembered by the user.
-  rememberedShellCommands: z.record(z.string().max(4096), z.array(z.string().max(256)).max(512)),
   safetyModel: z.string().max(256),
   reviewModel: z.string().max(256),
   autoRunSandboxCommands: z.boolean(),

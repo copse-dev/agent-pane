@@ -155,25 +155,6 @@ export function normalizeShellCommandForAnalysis(command: string): string {
   return command.replace(/\\(?=[a-zA-Z0-9])/g, '').replace(/['"]/g, '')
 }
 
-/**
- * The resolved executable name of a command's first simple-command — `argv[0]`,
- * path-stripped and lowercased (e.g. `/usr/bin/xcodebuild -project …` → `xcodebuild`).
- * Returns null when the command can't be lexed into a leading plain word (operator,
- * substitution, or parse failure). Used to key the remembered-external-command
- * allowlist off the actual binary rather than a fragile substring of the whole line.
- */
-export function shellCommandArgv0(command: string): string | null {
-  let tokens: ReturnType<typeof parseShellCommand>
-  try {
-    tokens = parseShellCommand(command)
-  } catch {
-    return null
-  }
-  const first = tokens[0]
-  if (typeof first !== 'string' || first === '') return null
-  return basename(first).toLowerCase()
-}
-
 // Signals that a package command points at a non-default registry or carries
 // inline credentials — a classic vector for pulling from an attacker-controlled
 // mirror or leaking tokens (#174).
