@@ -100,9 +100,9 @@
   padding: var(--spacing-md);
   min-height: 0;
 }
-/* Post-turn review panel. Rendered inline as the last child of the message
-   list (see syncReviewPanel) so it scrolls with the transcript rather than
-   sticking to the bottom of the conversation. */
+/* Post-turn review panel. Rendered inline right after the message that concluded
+   the reviewed turn (see renderMessageReview) so it joins the transcript flow, in
+   position and one per turn, and scrolls with the conversation. */
 .review-panel {
   margin-top: var(--spacing-sm);
   border: 1px solid var(--border);

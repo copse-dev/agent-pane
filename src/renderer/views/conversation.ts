@@ -896,15 +896,19 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       attachCopyButton(body, msgId, store)
     }
 
-    // Keep the inline review / comparison cards (if any) last in the transcript:
-    // new messages belong above cards produced for an earlier turn.
-    const trailingCard = list.querySelector('[data-review-card], [data-comparison-card]')
+    // Keep the trailing comparison card (if any) last in the transcript: a new
+    // message belongs above a comparison produced for an earlier turn. Review
+    // cards are anchored inline after their own message (see renderMessageReview)
+    // and stay put — a new message naturally lands after them.
+    const trailingCard = list.querySelector('[data-comparison-card]')
     if (trailingCard) list.insertBefore(msgEl, trailingCard)
     else list.append(msgEl)
     hydrateRemoteArtifactImages(list, api)
     // Re-render any tool cards this message already carries (restored threads).
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
     renderToolCards(msgEl, msg.toolCalls ?? [], msg.commandSummary)
+    // Restore an inline review this message already carries (rebuilt threads).
+    if (msg.review) renderMessageReview(threadId, msgId)
     scrollToBottom(msg.role === 'user')
   }
 
@@ -916,24 +920,22 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
   }
 
-  function syncReviewPanel(): void {
-    // Render the review card inline as the last child of the scrolling message
-    // list so it joins the transcript flow instead of staying pinned to the
-    // bottom of the conversation. Replace any prior card on each sync.
-    list.querySelector('[data-review-card]')?.remove()
-    const thread = getActiveThread(store)
-    if (thread?.review) {
-      const threadId = thread.id
-      const card = createReviewCardEl(thread.review, api, () => {
-        retryReview(store, api, threadId)
-      })
-      card.setAttribute('data-review-card', '')
-      // Keep the review card above the comparison card regardless of which sync
-      // ran last (the comparison can land mid-turn via the tool, the review after).
-      const comparisonCard = list.querySelector('[data-comparison-card]')
-      if (comparisonCard) list.insertBefore(card, comparisonCard)
-      else list.append(card)
-    }
+  function renderMessageReview(threadId: string, messageId: string): void {
+    if (threadId !== store.getState().activeThreadId) return
+    // Each review is anchored to the message that concluded its turn and renders
+    // as that message's next sibling, so reviews join the transcript inline (in
+    // position, one per turn) rather than as a single trailing card. Drop any
+    // prior card for this message first (status transitions, retries, rebuilds).
+    list.querySelector(`[data-review-card][data-review-for="${messageId}"]`)?.remove()
+    const msg = getActiveThread(store)?.messages.find((m) => m.id === messageId)
+    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`)
+    if (!msg?.review || !msgEl) return
+    const card = createReviewCardEl(msg.review, api, () => {
+      retryReview(store, api, threadId, messageId)
+    })
+    card.setAttribute('data-review-card', '')
+    card.setAttribute('data-review-for', messageId)
+    msgEl.after(card)
   }
 
   function syncComparisonPanel(): void {
@@ -963,7 +965,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       })
     }
     syncTodoPanel()
-    syncReviewPanel()
+    // Inline review cards are rendered per message by appendMessageEl above.
     syncComparisonPanel()
     if (thread) {
       renderQueuedPanel(thread.id)
@@ -1060,8 +1062,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       syncFromStore()
       scrollToBottom()
     }),
-    store.on('review_changed', () => {
-      syncReviewPanel()
+    store.on('review_changed', (tid, mid) => {
+      renderMessageReview(tid, mid)
       scrollToBottom()
     }),
     store.on('comparison_changed', () => {
