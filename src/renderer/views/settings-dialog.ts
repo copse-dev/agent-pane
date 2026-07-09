@@ -260,9 +260,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               Cloud API keys, default chat model, and task-specific model choices.
             </p>
 
-            <div id="settings-custom-providers-host"></div>
+            <!-- JS-mounted panels sit in a host <div>. Any such host that holds a
+                 top-level panel MUST carry class="settings-mount" so its injected
+                 fieldset gets the same inter-panel spacing as inline ones — see the
+                 .settings-section > .settings-mount > fieldset rule in settings.css. -->
+            <div id="settings-custom-providers-host" class="settings-mount"></div>
 
-            <div id="settings-env-detect-host"></div>
+            <div id="settings-env-detect-host" class="settings-mount"></div>
 
             <fieldset>
               <legend>Chat model</legend>
@@ -326,9 +330,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </label>
             </fieldset>
 
-            <div id="settings-model-routing-host"></div>
+            <div id="settings-model-routing-host" class="settings-mount"></div>
 
-            <div id="settings-gh-cli-host"></div>
+            <div id="settings-gh-cli-host" class="settings-mount"></div>
 
             <fieldset>
               <legend>Agent behavior</legend>
@@ -428,7 +432,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               Costs are approximate and use catalog pricing, including Anthropic prompt-cache rates
               when cache tokens are reported.
             </p>
-            <div id="settings-usage-host"></div>
+            <div id="settings-usage-host" class="settings-mount"></div>
           </section>
 
           <section class="settings-section" data-section="local-models">
@@ -437,7 +441,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               Connect to an LM Studio (or other OpenAI-compatible) server.
             </p>
 
-            <div id="settings-local-providers-host"></div>
+            <div id="settings-local-providers-host" class="settings-mount"></div>
 
             <fieldset>
               <legend>Routing behavior</legend>
@@ -725,7 +729,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               and are off by default.
             </p>
 
-            <div id="settings-acp-agents-host"></div>
+            <div id="settings-acp-agents-host" class="settings-mount"></div>
 
             <fieldset>
               <legend>MCP UI artefacts (canvas)</legend>
