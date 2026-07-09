@@ -3,17 +3,25 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { resolveOnPath } from '../acp/acp-detect.ts'
 
-/** A GUI editor we know how to detect and launch with a folder argument. */
+/**
+ * An "open in …" target: an editor or system app we know how to detect and hand
+ * the current folder to. Modelled on Codex's menu, so it spans code editors
+ * (VS Code, Cursor, …) and macOS system apps (Finder, Terminal) alike.
+ */
 export interface KnownExternalEditor {
   id: string
   name: string
-  /** CLI launcher looked up on PATH (all platforms), e.g. `code`. */
-  command: string
-  /** macOS bundle names probed under /Applications and ~/Applications. */
+  /**
+   * CLI launcher looked up on PATH (all platforms), e.g. `code`. Omitted for
+   * targets that ship no shell command (Finder, Terminal) — those are found by
+   * their bundle only.
+   */
+  command?: string
+  /** macOS bundle names probed across the standard app locations. */
   macAppNames: string[]
 }
 
-/** An editor found on this device plus how to launch it. */
+/** A target found on this device plus how to launch it. */
 export interface DetectedEditorLaunch {
   editor: KnownExternalEditor
   /** Absolute path of the CLI launcher, when found on PATH. */
@@ -21,6 +29,17 @@ export interface DetectedEditorLaunch {
   /** Absolute path of the macOS .app bundle, when found. */
   macAppPath: string | null
 }
+
+// Directories scanned for macOS .app bundles, in priority order: user/global
+// apps first, then the system locations that hold Finder, Terminal, and other
+// bundled utilities (their layout changed with macOS Catalina, so probe both).
+const MAC_APP_DIRS = [
+  '/Applications',
+  '/Applications/Utilities',
+  '/System/Applications',
+  '/System/Applications/Utilities',
+  '/System/Library/CoreServices',
+]
 
 export const KNOWN_EXTERNAL_EDITORS: readonly KnownExternalEditor[] = [
   {
@@ -33,6 +52,13 @@ export const KNOWN_EXTERNAL_EDITORS: readonly KnownExternalEditor[] = [
   { id: 'windsurf', name: 'Windsurf', command: 'windsurf', macAppNames: ['Windsurf.app'] },
   { id: 'zed', name: 'Zed', command: 'zed', macAppNames: ['Zed.app', 'Zed Preview.app'] },
   { id: 'sublime', name: 'Sublime Text', command: 'subl', macAppNames: ['Sublime Text.app'] },
+  { id: 'xcode', name: 'Xcode', command: 'xed', macAppNames: ['Xcode.app'] },
+  {
+    id: 'android-studio',
+    name: 'Android Studio',
+    command: 'studio',
+    macAppNames: ['Android Studio.app'],
+  },
   {
     id: 'intellij',
     name: 'IntelliJ IDEA',
@@ -40,6 +66,10 @@ export const KNOWN_EXTERNAL_EDITORS: readonly KnownExternalEditor[] = [
     macAppNames: ['IntelliJ IDEA.app', 'IntelliJ IDEA CE.app'],
   },
   { id: 'webstorm', name: 'WebStorm', command: 'webstorm', macAppNames: ['WebStorm.app'] },
+  // macOS system targets — no shell command, guaranteed present, so they always
+  // round out the menu on a Mac.
+  { id: 'finder', name: 'Finder', macAppNames: ['Finder.app'] },
+  { id: 'terminal', name: 'Terminal', macAppNames: ['Terminal.app'] },
 ]
 
 /**
@@ -59,7 +89,7 @@ export function parseMockEditorIds(raw: string | undefined): string[] | null {
 
 function findMacAppPath(editor: KnownExternalEditor): string | null {
   for (const appName of editor.macAppNames) {
-    for (const dir of ['/Applications', join(homedir(), 'Applications')]) {
+    for (const dir of [...MAC_APP_DIRS, join(homedir(), 'Applications')]) {
       const candidate = join(dir, appName)
       if (existsSync(candidate)) return candidate
     }
@@ -68,9 +98,10 @@ function findMacAppPath(editor: KnownExternalEditor): string | null {
 }
 
 /**
- * Best-effort scan for installed editors: the CLI launcher on PATH everywhere,
- * plus the .app bundle on macOS (many users never install the shell command).
- * Probing never throws — a failed lookup just means "not installed".
+ * Best-effort scan for installed targets: the CLI launcher on PATH everywhere,
+ * plus the .app bundle on macOS (many users never install the shell command,
+ * and system apps like Finder have none). Probing never throws — a failed
+ * lookup just means "not installed".
  */
 export async function detectExternalEditors(
   platform: NodeJS.Platform = process.platform,
@@ -86,7 +117,7 @@ export async function detectExternalEditors(
   const probed = await Promise.all(
     KNOWN_EXTERNAL_EDITORS.map(async (editor) => ({
       editor,
-      cliPath: await resolveOnPath(editor.command),
+      cliPath: editor.command ? await resolveOnPath(editor.command) : null,
       macAppPath: platform === 'darwin' ? findMacAppPath(editor) : null,
     })),
   )

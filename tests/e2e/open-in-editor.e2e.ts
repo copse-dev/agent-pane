@@ -42,10 +42,13 @@ describe('open in editor dropdown', () => {
     await expect(menu).toBeDisplayed()
 
     const options = await $$('.open-in-editor-option')
-    await expect(options).toBeElementsArrayOfSize(3)
+    await expect(options).toBeElementsArrayOfSize(5)
     await expect(await $('[data-editor-id="vscode"]')).toHaveText('Open in Visual Studio Code')
     await expect(await $('[data-editor-id="cursor"]')).toHaveText('Open in Cursor')
     await expect(await $('[data-editor-id="zed"]')).toHaveText('Open in Zed')
+    // Codex-style system targets sit alongside the code editors.
+    await expect(await $('[data-editor-id="finder"]')).toHaveText('Open in Finder')
+    await expect(await $('[data-editor-id="terminal"]')).toHaveText('Open in Terminal')
 
     await $('.titlebar').saveScreenshot(join(SCREENSHOT_DIR, 'open-in-editor-open.png'))
   })

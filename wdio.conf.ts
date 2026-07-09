@@ -94,8 +94,8 @@ export const config: Options.Testrunner = {
       COPSE_PANEL_MOCK_BRANCH: E2E_GIT_BRANCH,
       // Report a fixed set of installed editors for the "Open in editor" dropdown
       // so the spec doesn't depend on what the runner has on PATH (launching is a
-      // no-op under this mock).
-      COPSE_PANEL_MOCK_EDITORS: 'vscode,cursor,zed',
+      // no-op under this mock). Mixes code editors with the macOS system targets.
+      COPSE_PANEL_MOCK_EDITORS: 'vscode,cursor,zed,finder,terminal',
       COPSE_PANEL_USER_DATA: e2eUserDataDir,
       // Filesystem-native thread store (issue #644) — isolate it per run under the
       // throwaway profile so seeded threads don't touch the developer's real

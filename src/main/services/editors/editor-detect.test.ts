@@ -23,6 +23,15 @@ describe('parseMockEditorIds', () => {
   it('treats an empty value as "no editors installed"', () => {
     assert.deepEqual(parseMockEditorIds(''), [])
   })
+
+  it('recognises the macOS system targets (Finder, Terminal)', () => {
+    assert.deepEqual(parseMockEditorIds('finder,terminal,xcode,android-studio'), [
+      'finder',
+      'terminal',
+      'xcode',
+      'android-studio',
+    ])
+  })
 })
 
 describe('detectExternalEditors under the e2e mock', () => {
@@ -68,6 +77,20 @@ describe('buildEditorLaunch', () => {
     assert.deepEqual(buildEditorLaunch(linux, '/repo', 'linux'), {
       command: '/usr/bin/code',
       args: ['/repo'],
+    })
+  })
+
+  it('opens command-less system targets (Finder, Terminal) via their bundle', () => {
+    const finder = KNOWN_EXTERNAL_EDITORS.find((e) => e.id === 'finder')
+    assert.ok(finder, 'finder must be a known target')
+    const launch = buildEditorLaunch(
+      { editor: finder, cliPath: null, macAppPath: '/System/Library/CoreServices/Finder.app' },
+      '/repo',
+      'darwin',
+    )
+    assert.deepEqual(launch, {
+      command: 'open',
+      args: ['-a', '/System/Library/CoreServices/Finder.app', '/repo'],
     })
   })
 
