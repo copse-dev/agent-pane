@@ -27,12 +27,7 @@ describe('git-derived-excludes', () => {
   })
 
   it('derives repo roots from find output by stripping the trailing .git', () => {
-    const findOutput = [
-      '/ws/.git',
-      '/ws/apple-browsers/.git',
-      '/ws/android/.git/',
-      '',
-    ].join('\n')
+    const findOutput = ['/ws/.git', '/ws/apple-browsers/.git', '/ws/android/.git/', ''].join('\n')
     assert.deepEqual(repoRootsFromGitDirs(findOutput).sort(), [
       '/ws',
       '/ws/android',

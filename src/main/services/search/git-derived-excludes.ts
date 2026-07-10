@@ -94,7 +94,10 @@ async function findGitRepos(workspaceRoot: string): Promise<string[]> {
 
 async function isGitRepo(dir: string): Promise<boolean> {
   try {
-    const { code } = await runCommand('git', ['rev-parse', '--git-dir'], { cwd: dir, ...GIT_CMD_OPTS })
+    const { code } = await runCommand('git', ['rev-parse', '--git-dir'], {
+      cwd: dir,
+      ...GIT_CMD_OPTS,
+    })
     return code === 0
   } catch {
     return false
