@@ -136,7 +136,6 @@ async function spawnShell(
     rows,
     cwd: sessionCwd(),
     env: envForRendererChildProcess(),
-    unsandboxed: true,
   })
 
   const session: TerminalSession = {

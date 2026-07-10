@@ -364,11 +364,29 @@ describe('run_background permission', () => {
 })
 
 describe('ensureTerminalPermitted', () => {
-  it('allows integrated terminal without shell approval when workspace is open', async () => {
+  it('requires approval when no project sandbox is active', async () => {
     const restore = setWorkspaceRootForTest('/tmp/project')
+    let approvalBody = ''
+    setApprovalHandler(async (request) => {
+      approvalBody = request.body
+      return { approved: true, remember: false }
+    })
     try {
       assert.equal(await ensureTerminalPermitted(), true)
+      assert.match(approvalBody, /full user account, filesystem, and network/i)
     } finally {
+      setApprovalHandler(null)
+      restore()
+    }
+  })
+
+  it('blocks terminal creation when the unsandboxed-terminal prompt is declined', async () => {
+    const restore = setWorkspaceRootForTest('/tmp/project')
+    setApprovalHandler(async () => ({ approved: false, remember: false }))
+    try {
+      assert.equal(await ensureTerminalPermitted(), false)
+    } finally {
+      setApprovalHandler(null)
       restore()
     }
   })

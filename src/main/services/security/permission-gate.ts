@@ -491,11 +491,23 @@ async function checkBackgroundProcessPermission(args: unknown): Promise<boolean>
   return approved
 }
 
-/** Integrated terminal is a direct user UI action; PTY always runs outside seatbelt (#180). */
-// eslint-disable-next-line @typescript-eslint/require-await -- part of the uniformly-async permission-gate API (awaited by the terminal IPC handler)
+/**
+ * The integrated terminal uses the project seatbelt when available. On a
+ * platform without that boundary (or after ASRT initialization failed), opening
+ * it creates a full-host shell and must be an explicit user decision. (#662)
+ */
 export async function ensureTerminalPermitted(): Promise<boolean> {
   if (!getWorkspaceRoot()) throw new Error('No workspace open.')
-  return true
+  if (isProjectSandboxEnabled()) return true
+  const { approved } = await requestApproval({
+    title: 'Open unsandboxed terminal?',
+    body:
+      'The integrated terminal cannot be confined by the project sandbox on this platform. ' +
+      'Commands you run in it can access your full user account, filesystem, and network.',
+    type: 'shell',
+    allowRemember: false,
+  })
+  return approved
 }
 
 /**

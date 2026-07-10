@@ -101,6 +101,9 @@ project-defined MCP servers are gated behind workspace trust, the
   all shell and background-start commands require explicit approval until the
   final scope releases. This prevents unrelated auto-run commands inheriting
   temporary network egress.
+- **Integrated terminal confinement.** The terminal PTY uses that same project
+  seatbelt on macOS. Where no OS sandbox is available, opening the terminal
+  presents an explicit warning and approval because it is a full-host shell.
 - **Trust gating.** Project-supplied MCP config is gated behind workspace trust;
   full-privilege custom tools load only from `<userData>/tools/`.
 - **Secret handling.** Provider keys stored via `safeStorage` where a keyring is

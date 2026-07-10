@@ -34,6 +34,9 @@ describe('integrated terminal', () => {
     await expect(terminalBtn).toHaveElementClass('active')
 
     await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 })
+    // On macOS the PTY is now seatbelt-wrapped, so opening the user-controlled
+    // terminal must not fall back to the unsandboxed-terminal approval path.
+    await expect($('#approval-dialog')).not.toBeDisplayed()
 
     const chrome = await browser.execute(() => {
       const viewer = document.querySelector('.terminals-viewer-host')
