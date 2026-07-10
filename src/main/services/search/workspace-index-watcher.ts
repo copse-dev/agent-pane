@@ -1,6 +1,7 @@
 import * as fs from 'node:fs'
 import { buildIndex } from './file-index.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
+import { isIgnoredWorkspacePath } from './index-ignore.ts'
 import { updateSemanticIndex } from './semantic-index.ts'
 
 const REBUILD_DEBOUNCE_MS = 500
@@ -15,7 +16,11 @@ export function startWorkspaceIndexWatcher(root: string): void {
   watchedRoot = root
 
   try {
-    watcher = fs.watch(root, { recursive: true, persistent: false }, () => {
+    watcher = fs.watch(root, { recursive: true, persistent: false }, (_event, filename) => {
+      // Ignore churn under build output / deps / .git / agent worktrees — none of
+      // it is indexed, and a burst there (e.g. a `dist/` rebuild or git op) would
+      // otherwise keep re-arming the semantic index treadmill (#517 follow-up).
+      if (filename !== null && isIgnoredWorkspacePath(filename)) return
       scheduleIndexRebuild()
     })
   } catch (err) {
