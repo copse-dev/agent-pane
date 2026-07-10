@@ -213,7 +213,10 @@ describe('analyzeShellCommand', () => {
     for (const cmd of ['open ./report.html', 'open -a Calculator', 'echo hi && open evil.app']) {
       const r = analyzeShellCommand(cmd, root)
       assert.equal(r.verdict, 'external', `expected external: ${cmd}`)
-      assert.ok(r.reasons.some((x) => /outside the sandbox \(open\)/.test(x)), cmd)
+      assert.ok(
+        r.reasons.some((x) => /outside the sandbox \(open\)/.test(x)),
+        cmd,
+      )
     }
     const xdg = analyzeShellCommand('xdg-open ./report.html', root)
     assert.equal(xdg.verdict, 'external')
@@ -255,7 +258,10 @@ describe('analyzeShellCommand', () => {
     ]) {
       const r = analyzeShellCommand(cmd, root)
       assert.equal(r.verdict, 'external', `expected external: ${cmd}`)
-      assert.ok(r.reasons.some((x) => /\/dev\/tcp/.test(x)), cmd)
+      assert.ok(
+        r.reasons.some((x) => /\/dev\/tcp/.test(x)),
+        cmd,
+      )
     }
   })
 
