@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const GORTEX_VERSION = 'v0.58.3'
+const GORTEX_VERSION = 'v0.60.0'
 const REPO = 'zzet/gortex'
 const OUT_DIR = resolve('vendor/gortex')
 const BIN_NAME = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
@@ -99,8 +99,12 @@ async function binaryReady(): Promise<boolean> {
     const binPath = join(OUT_DIR, BIN_NAME)
     await access(binPath)
     // gortex has no `--version` flag; the `version` subcommand exits 0 offline.
-    execFileSync(binPath, ['version'], { stdio: 'pipe' })
-    return true
+    // Require the output to name the pinned version so a GORTEX_VERSION bump
+    // actually re-fetches: this used to `return true` for any working gortex,
+    // so a stale binary would satisfy the check and the new version never
+    // downloaded.
+    const out = execFileSync(binPath, ['version'], { stdio: 'pipe' }).toString()
+    return out.includes(GORTEX_VERSION.replace(/^v/, ''))
   } catch {
     return false
   }
