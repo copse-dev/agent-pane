@@ -164,6 +164,7 @@ contextBridge.exposeInMainWorld('api', {
     reject: (path: string) => ipcRenderer.invoke('diff:reject', path),
     approveAll: () => ipcRenderer.invoke('diff:approveAll'),
     rejectAll: () => ipcRenderer.invoke('diff:rejectAll'),
+    content: (path: string) => ipcRenderer.invoke('diff:content', path),
     onShowDiff: (handler: (path: string, before: string, after: string, lang: string) => void) => {
       const listener = (
         _e: Electron.IpcRendererEvent,

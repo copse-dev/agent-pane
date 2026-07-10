@@ -1,5 +1,5 @@
 import type { StreamChunk, UsageDelta, ContextBreakdown } from '@shared/types'
-import type { RightPanelMode } from '@shared/types/state.ts'
+import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import type { CursorHookSummary } from '@shared/types/cursor-hooks.ts'
@@ -118,6 +118,7 @@ export interface ApiClient {
     reject: (path: string) => Promise<void>
     approveAll: () => Promise<void>
     rejectAll: () => Promise<void>
+    content: (path: string) => Promise<ActiveDiff | null>
     onShowDiff: (
       handler: (path: string, before: string, after: string, lang: string) => void,
     ) => () => void
