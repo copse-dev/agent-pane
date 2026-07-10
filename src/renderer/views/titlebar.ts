@@ -3,6 +3,7 @@ import { outlineIcon } from '../dom/outline-icon.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { toggleRightPanelWithWorkspace } from '../controller/panels.ts'
+import { mountOpenInEditor } from './open-in-editor.ts'
 
 function basename(p: string): string {
   return p.split('/').pop() ?? p
@@ -135,6 +136,11 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     browserBtn,
   )
 
+  // "Open in editor" leads the right-hand cluster, sitting just before the Panel
+  // button. mountOpenInEditor appends to its root, so move it ahead of filesBtn.
+  const openInEditor = mountOpenInEditor(panelControls, store, api)
+  panelControls.insertBefore(openInEditor.element, filesBtn)
+
   root.append(leftCluster, dragRegion, panelControls)
 
   filesBtn.addEventListener('click', () => {
@@ -257,6 +263,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
 
   return () => {
     if (branchTimer) clearTimeout(branchTimer)
+    openInEditor.destroy()
     unsubs.forEach((u) => {
       u()
     })

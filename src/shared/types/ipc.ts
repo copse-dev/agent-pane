@@ -238,6 +238,10 @@ export interface IpcInvokeMap {
   // Shell
   'shell:openExternal': { args: [url: string]; result: undefined }
 
+  // External editors ("Open in …" titlebar dropdown)
+  'editors:list': { args: []; result: import('./editors.ts').ExternalEditorList }
+  'editors:open': { args: [editorId: string]; result: undefined }
+
   // LM Studio
   'lmstudio:test': {
     args: [url: string, apiKey?: string]
