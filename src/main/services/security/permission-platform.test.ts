@@ -22,7 +22,7 @@ const root = '/Users/me/project'
 const SANDBOXED = 'npm test' // stays within the workspace, no network
 const EXTERNAL = 'curl https://example.com' // network access
 const OUTSIDE_FS = 'ls ~/.ssh'
-const AMBIGUOUS = 'gh pr list' // may reach GitHub, but auto-runs inside seatbelt
+const AMBIGUOUS = 'gh pr create' // writes to GitHub, but auto-runs inside seatbelt (read-only gh is sandbox-safe, #500)
 
 describe('shell permissions: macOS with ASRT sandbox active', () => {
   const opts = {

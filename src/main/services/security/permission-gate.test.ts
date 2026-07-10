@@ -395,23 +395,23 @@ describe('decideShellPermission', () => {
     assert.equal(shellRequiresOutsideSandbox('git pull origin main', root, true), true)
   })
 
-  it('auto-runs gh CLI inside the OS sandbox and escalates only if blocked', () => {
-    // gh is an ambiguous "may reach" matcher: under seatbelt it runs inside the
-    // sandbox (no upfront prompt — so a grep over a gh-* path isn't gated), and if
-    // the OS blocks it the failure path offers an unsandboxed retry.
-    const d = decideShellPermission('gh pr view --json state', {
+  it('auto-runs a writing gh CLI subcommand inside the OS sandbox and escalates only if blocked', () => {
+    // A writing gh subcommand is an ambiguous "may reach" matcher: under seatbelt it
+    // runs inside the sandbox (no upfront prompt — so a grep over a gh-* path isn't
+    // gated), and if the OS blocks it the failure path offers an unsandboxed retry.
+    const d = decideShellPermission('gh pr create --fill', {
       workspaceRoot: root,
       sandboxEnabled: true,
       autoRun: true,
       classification: null,
     })
     assert.equal(d.action, 'allow')
-    assert.equal(shellRequiresOutsideSandbox('gh pr view --json state', root, true), false)
-    assert.equal(shellSandboxFailureShouldOfferUnsandboxedRetry('gh pr view', root), true)
+    assert.equal(shellRequiresOutsideSandbox('gh pr create --fill', root, true), false)
+    assert.equal(shellSandboxFailureShouldOfferUnsandboxedRetry('gh pr create', root), true)
   })
 
-  it('still prompts for gh CLI when there is no OS sandbox', () => {
-    const d = decideShellPermission('gh pr view --json state', {
+  it('still prompts for a writing gh CLI subcommand when there is no OS sandbox', () => {
+    const d = decideShellPermission('gh pr create --fill', {
       workspaceRoot: root,
       sandboxEnabled: false,
       autoRun: true,
@@ -419,6 +419,31 @@ describe('decideShellPermission', () => {
     })
     assert.equal(d.action, 'prompt')
     assert.ok(d.reasons.some((x) => x.includes('GitHub CLI')))
+  })
+
+  it('lets a read-only gh subcommand auto-run via the classifier with no OS sandbox (#500)', () => {
+    // Read-only `gh pr view` now carries no external signal, so — unlike an ambiguous
+    // writing subcommand, which always prompts here — it can be auto-allowed when the
+    // safety classifier is confident it is sandbox-scoped.
+    const readOnly = decideShellPermission('gh pr view --json state', {
+      workspaceRoot: root,
+      sandboxEnabled: false,
+      autoRun: true,
+      classification: { scope: 'sandbox', confidence: 0.9, reason: 'read-only GitHub query' },
+      sandboxAllowThreshold: 0.85,
+    })
+    assert.equal(readOnly.action, 'allow')
+
+    // The same classification cannot rescue a writing subcommand — the ambiguous
+    // verdict prompts before the classifier is consulted.
+    const writing = decideShellPermission('gh pr create --fill', {
+      workspaceRoot: root,
+      sandboxEnabled: false,
+      autoRun: true,
+      classification: { scope: 'sandbox', confidence: 0.9, reason: 'looks fine' },
+      sandboxAllowThreshold: 0.85,
+    })
+    assert.equal(writing.action, 'prompt')
   })
 
   it('does not offer unsandboxed retries for network-only sandbox failures', () => {
