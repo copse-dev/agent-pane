@@ -1,7 +1,9 @@
+import { access, mkdir, writeFile } from 'node:fs/promises'
 import { cpus } from 'node:os'
 import { join, resolve } from 'node:path'
 import { app } from 'electron'
 import { getBundledGortexPath } from './bundled-semantic.ts'
+import { GORTEX_EXCLUDE_PATTERNS } from './index-ignore.ts'
 import { runCommand, type RunCommandOptions } from '../exec/command-runner.ts'
 import { COMMAND_RUNNER_LONG_TIMEOUT_MS } from '../exec/subprocess-output-cap.ts'
 import { toRelativePath } from '../workspace.ts'
@@ -94,6 +96,15 @@ let activeBackend: SemanticBackend | null = null
 let gortexCommand: string | null = null
 /** One daemon spawn per app session; reset on failure so a retry can respawn. */
 let gortexDaemonReady: Promise<boolean> | null = null
+/** gortex excludes are written to its config once per app session (idempotent). */
+let gortexExcludesReady: Promise<void> | null = null
+
+/**
+ * Sentinel filename (under {@link gortexHomeDir}) marking that this install has
+ * dropped its pre-exclude index once. Bump the suffix to force another reset
+ * after changing {@link GORTEX_EXCLUDE_PATTERNS}.
+ */
+const GORTEX_EXCLUDE_RESET_SENTINEL = '.copse-exclude-reset-v1'
 let veraCommand = 'vera'
 const indexPromises = new Map<string, Promise<void>>()
 /**
@@ -165,6 +176,7 @@ export function setSemanticSearchExecutorForTest(
 export async function probeSemanticBackends(): Promise<SemanticBackend | null> {
   gortexCommand = null
   gortexDaemonReady = null
+  gortexExcludesReady = null
 
   // gortex has no `--version` flag; `gortex version` exits 0 without a daemon.
   const gortexCandidates = ['gortex', getBundledGortexPath()].filter(
@@ -391,10 +403,83 @@ export async function searchSemanticContent(
   }
 }
 
+/**
+ * Register gortex's ignore list and shed any pre-exclude index, once per app
+ * session. Memoised on a shared promise so concurrent ensure/update passes for
+ * different roots don't race the config writes or the one-time reset.
+ *
+ * gortex does not honor `.gitignore`, so without this it walks the entire
+ * workspace — node_modules, dist, vendored binaries, `.git`, and the ephemeral
+ * agent worktrees, ~3 GB on a dev checkout — and a single `track --wait` never
+ * settles inside its window (#517 follow-up). `config exclude` bounds both
+ * indexing and gortex's own watcher; `--global` writes `~/.gortex/config.yaml`,
+ * which our {@link gortexHomeDir} HOME override scopes to Copse userData, so we
+ * never drop a `.gortex.yaml` into the user's repo.
+ */
+async function ensureGortexExcludes(workspaceRoot: string): Promise<void> {
+  const existing = gortexExcludesReady
+  if (existing) return existing
+
+  const ready = (async (): Promise<void> => {
+    for (const pattern of GORTEX_EXCLUDE_PATTERNS) {
+      // Best-effort + idempotent: re-adding a pattern is a no-op, and a single
+      // failed exclude must not block the index build.
+      await runCommand(
+        gortexCmd(),
+        ['config', 'exclude', 'add', pattern, '--global', '--no-progress'],
+        gortexRunOpts(workspaceRoot),
+      ).catch(() => undefined)
+    }
+    await resetPreExcludeIndex(workspaceRoot)
+  })()
+
+  gortexExcludesReady = ready
+  // Don't cache a rejection — let a later pass retry the config writes.
+  ready.catch(() => {
+    if (gortexExcludesReady === ready) gortexExcludesReady = null
+  })
+  return ready
+}
+
+/**
+ * One-time recovery: an index built before the exclude list existed keeps the
+ * ~3 GB of node_modules/dist/worktree nodes forever, since adding excludes does
+ * not retroactively prune. `untrack` drops the repo so the following `track`
+ * rebuilds clean under the new excludes. Gated by a sentinel so it runs once per
+ * install; the sentinel is written only on a clean untrack so a mis-invocation
+ * retries next session rather than silently marking recovery done.
+ */
+async function resetPreExcludeIndex(workspaceRoot: string): Promise<void> {
+  const sentinel = join(gortexHomeDir(), GORTEX_EXCLUDE_RESET_SENTINEL)
+  try {
+    await access(sentinel)
+    return // already reset on this install
+  } catch {
+    // no sentinel yet — first run under the exclude regime
+  }
+
+  const result = await runCommand(
+    gortexCmd(),
+    ['untrack', workspaceRoot, '--no-progress'],
+    gortexRunOpts(workspaceRoot),
+  ).catch(() => null)
+  if (!result || result.code !== 0) return
+
+  try {
+    await mkdir(gortexHomeDir(), { recursive: true })
+    await writeFile(sentinel, `${new Date().toISOString()}\n`)
+  } catch {
+    // Sentinel is an optimisation; if it can't be written we just reset again.
+  }
+}
+
 async function ensureGortexIndex(workspaceRoot: string): Promise<void> {
   if (!(await ensureGortexDaemon(workspaceRoot))) {
     throw new Error('gortex daemon failed to start')
   }
+  // Register excludes (and shed any pre-exclude index) before track so the very
+  // first build already honors them, rather than indexing ~3 GB once first.
+  await ensureGortexExcludes(workspaceRoot)
   // --wait blocks until the graph is queryable so the first search after a
   // workspace opens doesn't race a cold index. The command-runner timeout sits
   // a grace margin above gortex's own --wait-timeout so a slow index lets gortex
