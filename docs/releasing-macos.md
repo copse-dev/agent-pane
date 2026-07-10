@@ -133,6 +133,9 @@ it is active only in the packaged macOS build.
 - **Private-repo distribution.** GitHub Releases on a private repo require
   testers to have repo access. If that's friction, switch `build.publish` /
   hosting to a public static endpoint (see issue #507).
-- **Windows/Linux** packaging and updates are not set up yet.
+- **Windows/Linux** packaging and updates are not set up yet. The first general
+  availability release is therefore explicitly macOS-only; Linux and Windows are
+  not distributed GA targets until they have an equivalent command-execution
+  containment boundary.
 - **CI cost.** The release runs on a GitHub-hosted `macos-14` runner; a
   self-hosted Mac is also available (the e2e runners) if minutes become a concern.

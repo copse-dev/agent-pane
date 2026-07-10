@@ -319,7 +319,6 @@ describe('decideShellPermission', () => {
       sandboxEnabled: true,
       autoRun: false,
       classification: null,
-      sandboxAllowThreshold: 0.85,
     })
     assert.equal(d.action, 'prompt')
   })
@@ -330,7 +329,6 @@ describe('decideShellPermission', () => {
       sandboxEnabled: true,
       autoRun: true,
       classification: null,
-      sandboxAllowThreshold: 0.85,
     })
     assert.equal(d.action, 'allow')
   })
@@ -343,7 +341,6 @@ describe('decideShellPermission', () => {
       sandboxEnabled: true,
       autoRun: true,
       classification: null,
-      sandboxAllowThreshold: 0.85,
     })
     assert.equal(d.action, 'prompt')
     assert.ok(d.reasons.some((x) => x.includes('delete')))
@@ -355,7 +352,6 @@ describe('decideShellPermission', () => {
       sandboxEnabled: true,
       autoRun: true,
       classification: null,
-      sandboxAllowThreshold: 0.85,
     })
     assert.equal(d.action, 'prompt')
   })
@@ -366,7 +362,6 @@ describe('decideShellPermission', () => {
       sandboxEnabled: true,
       autoRun: true,
       classification: null,
-      sandboxAllowThreshold: 0.85,
     })
     assert.equal(d.action, 'prompt')
     assert.ok(d.reasons.some((x) => x.includes('curl')))
@@ -385,7 +380,6 @@ describe('decideShellPermission', () => {
       sandboxEnabled: true,
       autoRun: true,
       classification: null,
-      sandboxAllowThreshold: 0.85,
     })
     assert.equal(d.action, 'allow')
     assert.equal(shellRequiresOutsideSandbox('gh pr view --json state', root, true), false)
@@ -398,7 +392,6 @@ describe('decideShellPermission', () => {
       sandboxEnabled: false,
       autoRun: true,
       classification: null,
-      sandboxAllowThreshold: 0.85,
     })
     assert.equal(d.action, 'prompt')
     assert.ok(d.reasons.some((x) => x.includes('GitHub CLI')))
@@ -448,21 +441,19 @@ describe('decideShellPermission', () => {
       sandboxEnabled: true,
       autoRun: true,
       classification: null,
-      sandboxAllowThreshold: 0.85,
     })
     assert.equal(d.action, 'prompt')
     assert.ok(d.reasons.some((x) => x.includes('home directory')))
   })
 
-  it('uses safety model on unsandboxed platforms when confident', () => {
+  it('prompts on unsandboxed platforms even when the safety model is confident', () => {
     const d = decideShellPermission('npm test', {
       workspaceRoot: root,
       sandboxEnabled: false,
       autoRun: true,
       classification: { scope: 'sandbox', confidence: 0.95, reason: 'local test runner' },
-      sandboxAllowThreshold: 0.85,
     })
-    assert.equal(d.action, 'allow')
+    assert.equal(d.action, 'prompt')
   })
 
   it('prompts on unsandboxed platforms when safety model is uncertain', () => {
@@ -471,7 +462,6 @@ describe('decideShellPermission', () => {
       sandboxEnabled: false,
       autoRun: true,
       classification: { scope: 'sandbox', confidence: 0.5, reason: 'uncertain' },
-      sandboxAllowThreshold: 0.85,
     })
     assert.equal(d.action, 'prompt')
   })
@@ -482,7 +472,6 @@ describe('decideShellPermission', () => {
       sandboxEnabled: false,
       autoRun: true,
       classification: null,
-      sandboxAllowThreshold: 0.85,
     })
     assert.equal(d.action, 'prompt')
   })
@@ -493,7 +482,6 @@ describe('decideShellPermission', () => {
       sandboxEnabled: false,
       autoRun: true,
       classification: { scope: 'external', confidence: 0.99, reason: 'wipes the filesystem' },
-      sandboxAllowThreshold: 0.85,
       externalDenyThreshold: 0.9,
     })
     assert.equal(d.action, 'deny')
@@ -506,7 +494,6 @@ describe('decideShellPermission', () => {
       sandboxEnabled: false,
       autoRun: true,
       classification: { scope: 'external', confidence: 0.99, reason: 'wipes the filesystem' },
-      sandboxAllowThreshold: 0.85,
       // externalDenyThreshold omitted → defaults to 1 (only certainty-1.0 denies)
     })
     assert.equal(d.action, 'prompt')
@@ -518,23 +505,21 @@ describe('decideShellPermission', () => {
       sandboxEnabled: false,
       autoRun: true,
       classification: { scope: 'external', confidence: 1, reason: 'network fetch' },
-      sandboxAllowThreshold: 0.85,
       externalDenyThreshold: 0.5,
     })
     // No deterministic destructive signal, so it surfaces for approval rather than denying.
     assert.equal(d.action, 'prompt')
   })
 
-  it('gates auto-allow on the sandbox-allow threshold independently of the deny threshold', () => {
+  it('never lets a sandbox-scoped classification authorize host execution', () => {
     const d = decideShellPermission('npm test', {
       workspaceRoot: root,
       sandboxEnabled: false,
       autoRun: true,
       classification: { scope: 'sandbox', confidence: 0.8, reason: 'test runner' },
-      sandboxAllowThreshold: 0.9,
       externalDenyThreshold: 0.5,
     })
-    assert.equal(d.action, 'prompt') // 0.8 < 0.9 sandbox-allow bar
+    assert.equal(d.action, 'prompt')
   })
 })
 

@@ -291,15 +291,11 @@ async function checkShellPermission(args: unknown): Promise<boolean> {
   const autoRun = getSetting<boolean>('autoRunSandboxCommands', true)
   const workspaceRoot = getWorkspaceRoot()
   const sandboxEnabled = isProjectSandboxEnabled()
-  // `safetyConfidenceThreshold` is the legacy single knob; new installs use the
-  // split sandbox-allow / external-deny thresholds and fall back to it for migration.
-  const legacyThreshold = getSetting<number>('safetyConfidenceThreshold', 0.85)
   const decision = decideShellPermission(command, {
     workspaceRoot,
     sandboxEnabled,
     autoRun,
     classification: sandboxEnabled ? null : await classifyShellScope(command),
-    sandboxAllowThreshold: getSetting<number>('safetySandboxAllowThreshold', legacyThreshold),
     externalDenyThreshold: getSetting<number>('safetyExternalDenyThreshold', 1),
   })
 
