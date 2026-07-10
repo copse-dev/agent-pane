@@ -134,6 +134,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   skillPluginPaths: z.array(z.string().max(4096)).max(64),
   subagentsEnabled: z.boolean(),
   externalApiSafety: z.boolean(),
+  // Which backend the PR panel + PR tools use to reach GitHub: `auto` prefers
+  // the `gh` CLI and falls back to the REST/GraphQL API, or force one. See
+  // services/github/backend/backend.ts.
+  githubBackend: z.enum(['auto', 'cli', 'api']),
   remoteAgentBaseUrl: remoteAgentBaseUrlSchema,
   remoteAgentAutoCreatePR: z.boolean(),
   remoteAgentWorkOnCurrentBranch: z.boolean(),
