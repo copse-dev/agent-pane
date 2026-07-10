@@ -62,6 +62,47 @@ describe('ensureToolPermitted', () => {
       assert.equal(await ensureToolPermitted({ toolName: 'read_file', args: {} }), true)
     })
   })
+
+  it('prompts for mutating GitHub PR tools instead of auto-running them', async () => {
+    setPermissionGateForTests(null)
+    const writeTools = [
+      'gh_pr_approve',
+      'gh_pr_enable_auto_merge',
+      'gh_pr_mark_ready',
+      'gh_pr_rerun_failed_ci',
+    ]
+    for (const toolName of writeTools) {
+      let prompted = false
+      setApprovalHandler(async () => {
+        prompted = true
+        return { approved: false, remember: false }
+      })
+      try {
+        // Denied at the prompt → the call must not proceed.
+        assert.equal(
+          await ensureToolPermitted({ toolName, args: { number: 1 } }),
+          false,
+          `${toolName} must be blocked when the user denies`,
+        )
+        assert.equal(prompted, true, `${toolName} must prompt, not auto-run`)
+      } finally {
+        setApprovalHandler(null)
+      }
+    }
+  })
+
+  it('proceeds with a mutating GitHub PR tool when the user approves', async () => {
+    setPermissionGateForTests(null)
+    setApprovalHandler(async () => ({ approved: true, remember: false }))
+    try {
+      assert.equal(
+        await ensureToolPermitted({ toolName: 'gh_pr_approve', args: { number: 1 } }),
+        true,
+      )
+    } finally {
+      setApprovalHandler(null)
+    }
+  })
 })
 
 describe('custom tool permission', () => {
