@@ -1,90 +1,211 @@
 name: Release (macOS)
 
-# Build, sign (Developer ID Application), notarize, and publish a macOS
-# pre-release of Copse. Runs on a `v*` tag push, or manually via the Actions UI.
-#
-# electron-builder produces a DMG (first install) + zip (electron-updater feed)
-# for arm64 and x64, signs them with the Developer ID cert, submits them to
-# Apple's notary service, staples the ticket, and — when publishing — uploads
-# them plus `latest-mac.yml` to a GitHub *prerelease* (see package.json
-# `build.publish`).
-#
-# Signing/notarization/publish only happen when the secrets below are set. With
-# them absent the job still builds an unsigned DMG/zip (useful for a dry run),
-# because `release:mac` only flips notarization on when credentials are present.
+# Publish only a tag that has passed the full CI aggregate at the exact tagged
+# commit. Packaging and promotion are deliberately separate jobs: the publisher
+# downloads the already signed, notarized, smoke-tested files and never rebuilds.
 on:
   workflow_dispatch:
     inputs:
-      publish:
-        description: Publish artifacts to a GitHub prerelease
-        type: boolean
-        default: true
+      tag:
+        description: Existing v<package-version> tag to publish
+        required: true
+        type: string
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']
 
 permissions:
-  contents: write
+  contents: read
+  checks: read
+  attestations: write
+  id-token: write
 
 concurrency:
-  group: release-mac-${{ github.ref }}
+  group: release-mac-${{ inputs.tag || github.ref }}
   cancel-in-progress: false
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      release_sha: ${{ steps.release.outputs.release_sha }}
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7.0.0
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+      - id: release
+        name: Validate tag, version, ancestry, and exact-SHA CI
+        env:
+          REQUESTED_TAG: ${{ inputs.tag || github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$REQUESTED_TAG"
+          case "$tag" in
+            v*) ;;
+            *) echo "Release tag must start with v: $tag"; exit 1 ;;
+          esac
+          version="$(node -p "require('./package.json').version")"
+          if [ "${tag#v}" != "$version" ]; then
+            echo "Tag $tag does not match package.json version $version"
+            exit 1
+          fi
+          # For a manual dispatch GITHUB_SHA is the workflow's default-branch
+          # revision, not necessarily the requested tag. Checkout above has
+          # already resolved that tag, so HEAD is the only trustworthy source.
+          release_sha="$(git rev-parse 'HEAD^{commit}')"
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$release_sha" origin/main; then
+            echo "Release tag commit is not reachable from protected branch origin/main"
+            exit 1
+          fi
+          echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+          # A tag push starts CI and this workflow together. Wait for CI's
+          # aggregate status on precisely the commit we resolved above; do not
+          # accept a run for the branch tip, a PR merge ref, or any other SHA.
+          for attempt in $(seq 1 180); do
+            result="$(gh api "/repos/$GITHUB_REPOSITORY/commits/$release_sha/check-runs?check_name=CI%20Passed&per_page=100" \
+              --jq '[.check_runs[] | select(.name == "CI Passed")] | sort_by(.started_at) | last | {status, conclusion}' 2>/dev/null || true)"
+            status="$(printf '%s' "$result" | jq -r '.status // "missing"' 2>/dev/null || true)"
+            conclusion="$(printf '%s' "$result" | jq -r '.conclusion // ""' 2>/dev/null || true)"
+            if [ "$status" = "completed" ]; then
+              if [ "$conclusion" = "success" ]; then
+                echo "CI Passed succeeded for $release_sha"
+                exit 0
+              fi
+              echo "CI Passed concluded $conclusion for $release_sha"
+              exit 1
+            fi
+            echo "Waiting for CI Passed on $release_sha (attempt $attempt/180; status ${status:-missing})"
+            sleep 30
+          done
+          echo "Timed out waiting for CI Passed on $release_sha"
+          exit 1
+
   # Keep a deliberately uncached install in the release path. The shared setup
   # action restores a complete node_modules tree when possible, which is useful
   # for packaging but can hide an undeclared/transitive production dependency.
-  # This gate exercises the lockfile from scratch with install scripts disabled,
-  # then proves the production bundle is self-contained before packaging starts.
+  # Exercise the exact release commit from a clean lockfile install before any
+  # signing or packaging begins.
   verify-clean-release-build:
+    needs: preflight
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v7.0.0
+        with:
+          ref: ${{ needs.preflight.outputs.release_sha }}
       - uses: actions/setup-node@v6
         with: { node-version-file: '.nvmrc' }
       - name: Verify clean release build
         run: npm ci --ignore-scripts && npm run build:release
 
-  build-mac:
-    needs: verify-clean-release-build
-    # Apple-Silicon GitHub-hosted runner; electron-builder downloads the x64
-    # Electron to cross-build the Intel artifacts in the same run.
+  build-test:
+    needs: [preflight, verify-clean-release-build]
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v7.0.0
+        with:
+          ref: ${{ needs.preflight.outputs.release_sha }}
       - uses: ./.github/actions/setup
-      # Build + package. release:mac signs (CSC_*), notarizes (APPLE_* +
-      # `-c.mac.notarize=true`), and publishes; dist:mac is the unsigned dry run
-      # used when nothing should be published.
-      - name: Build, sign, notarize${{ (github.event_name == 'push' || inputs.publish) && ', publish' || '' }}
+      - name: Require signing and notarization credentials
         env:
-          # Developer ID Application certificate, base64-encoded .p12 + password.
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          # Apple notary (notarytool) credentials: an Apple ID + app-specific
-          # password + Team ID. electron-builder reads these when notarize=true.
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # electron-builder's GitHub publisher token (default token has the
-          # contents:write granted above).
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.publish }}" = "true" ]; then
-            npm run release:mac
-          else
-            npm run dist:mac
+          set -euo pipefail
+          for credential in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!credential:-}" ]; then
+              echo "Required release credential is unavailable: $credential"
+              exit 1
+            fi
+          done
+      - name: Build, sign, and notarize without publishing
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          npm run build:release
+          npx electron-builder --mac -c.mac.notarize=true --publish never
+      - name: Verify signatures, notarization, metadata, and packaged runtime
+        env:
+          COPSE_WORKSPACE_DIR: ${{ runner.temp }}/copse-release-smoke-workspace
+        run: |
+          set -euo pipefail
+          apps=()
+          while IFS= read -r app; do apps+=("$app"); done < <(find release -type d -name Copse.app -print)
+          if [ "${#apps[@]}" -ne 2 ]; then
+            echo "Expected signed arm64 and x64 app bundles, found ${#apps[@]}"
+            exit 1
           fi
-      - name: Upload build artifacts
-        if: always()
-        uses: actions/upload-artifact@v7
+          for app in "${apps[@]}"; do
+            echo "Verifying $app"
+            codesign --verify --deep --strict --verbose=2 "$app"
+            spctl -a -vvv -t install "$app"
+            xcrun stapler validate "$app"
+            test -x "$app/Contents/Resources/app.asar.unpacked/dist/resources/gortex/gortex"
+            "$app/Contents/Resources/app.asar.unpacked/dist/resources/gortex/gortex" version
+            test -s "$app/Contents/Resources/app-update.yml"
+            grep -q '^provider: github$' "$app/Contents/Resources/app-update.yml"
+            "$app/Contents/MacOS/Copse" --release-smoke-test
+          done
+          test -s release/latest-mac.yml
+          test -n "$(find release -maxdepth 1 -name '*.dmg' -print -quit)"
+          test -n "$(find release -maxdepth 1 -name '*.zip' -print -quit)"
+          test -n "$(find release -maxdepth 1 -name '*.blockmap' -print -quit)"
+          shasum -a 256 release/*.dmg release/*.zip release/latest-mac.yml > release/SHA256SUMS
+      - name: Attest tested release artifacts
+        uses: actions/attest@v4
         with:
-          name: copse-macos
+          subject-path: |
+            release/*.dmg
+            release/*.zip
+            release/*.blockmap
+            release/latest-mac.yml
+            release/SHA256SUMS
+      - uses: actions/upload-artifact@v7
+        with:
+          name: copse-macos-${{ needs.preflight.outputs.release_sha }}
           path: |
             release/*.dmg
             release/*.zip
+            release/*.blockmap
             release/latest-mac.yml
-          if-no-files-found: warn
-          retention-days: 7
+            release/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    needs: [preflight, build-test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: copse-macos-${{ needs.preflight.outputs.release_sha }}
+          path: release
+      - name: Promote the exact tested artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.preflight.outputs.tag }}
+          TARGET: ${{ needs.preflight.outputs.release_sha }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "A release already exists for $TAG; refusing to replace it"
+            exit 1
+          fi
+          gh release create "$TAG" release/*.dmg release/*.zip release/*.blockmap release/latest-mac.yml release/SHA256SUMS \
+            --target "$TARGET" --title "$TAG" --prerelease
