@@ -2,7 +2,12 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { addMessage, addToolCall, createThread, updateToolCall } from '@shared/store/thread-helpers.ts'
+import {
+  addMessage,
+  addToolCall,
+  createThread,
+  updateToolCall,
+} from '@shared/store/thread-helpers.ts'
 import type { SubagentSession, ToolCall } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
@@ -51,7 +56,11 @@ function runningSubagent(content: string): ToolCall {
   }
 }
 
-function mountWithCards(): { store: ReturnType<typeof createStore>; messageId: string; host: HTMLElement } {
+function mountWithCards(): {
+  store: ReturnType<typeof createStore>
+  messageId: string
+  host: HTMLElement
+} {
   const store = createStore()
   const threadId = createThread(store)
   const messageId = addMessage(store, threadId, 'assistant', 'Working…')
@@ -76,10 +85,16 @@ describe('tool card reconciliation on tool_call_updated (#728)', () => {
     assert.ok(editBefore, 'expected the sibling edit card to render')
 
     // A progress tick that only grows the subagent's streamed text.
-    updateToolCall(store, messageId, 'tc-sub-1', { subagent: runningSubagent('Analyzing the').subagent })
+    updateToolCall(store, messageId, 'tc-sub-1', {
+      subagent: runningSubagent('Analyzing the').subagent,
+    })
 
     const editAfter = host.querySelector('[data-tool-id="tc-edit-1"]')
-    assert.strictEqual(editAfter, editBefore, 'unchanged sibling card was rebuilt instead of reused')
+    assert.strictEqual(
+      editAfter,
+      editBefore,
+      'unchanged sibling card was rebuilt instead of reused',
+    )
   })
 
   it('keeps the running subagent card and its streaming message element across ticks', () => {
@@ -97,7 +112,11 @@ describe('tool card reconciliation on tool_call_updated (#728)', () => {
     })
 
     const cardAfter = host.querySelector('.tool-card-subagent')
-    assert.strictEqual(cardAfter, cardBefore, 'subagent card was rebuilt instead of updated in place')
+    assert.strictEqual(
+      cardAfter,
+      cardBefore,
+      'subagent card was rebuilt instead of updated in place',
+    )
     const streamAfter = cardAfter.querySelector('.subagent-message-assistant')
     assert.strictEqual(streamAfter, streamBefore, 'streaming message element was recreated')
     assert.equal((streamAfter as HTMLElement).dataset['sentinel'], 'kept')
@@ -114,7 +133,9 @@ describe('tool card reconciliation on tool_call_updated (#728)', () => {
       status: 'done',
       prompt: 'Find README',
       summary: 'README describes Copse setup.',
-      messages: [{ id: 'sub-msg-1', role: 'assistant', content: 'Analyzing the code', toolCalls: [] }],
+      messages: [
+        { id: 'sub-msg-1', role: 'assistant', content: 'Analyzing the code', toolCalls: [] },
+      ],
     }
     updateToolCall(store, messageId, 'tc-sub-1', {
       status: 'done',

@@ -221,9 +221,7 @@ function subagentModelBadge(session: SubagentSession): HTMLElement | null {
   if (!session.model) return null
   const isLocal = session.model.startsWith('lmstudio:')
   const badge = el('div', { class: 'subagent-model' })
-  badge.textContent = isLocal
-    ? `${session.model.slice('lmstudio:'.length)} · local`
-    : session.model
+  badge.textContent = isLocal ? `${session.model.slice('lmstudio:'.length)} · local` : session.model
   if (session.localFallback) {
     badge.textContent += ' — local model unavailable, ran on cloud'
     badge.classList.add('subagent-model-fallback')
@@ -320,7 +318,12 @@ function syncSubagentTimeline(
 // model badge, preview, args and parent result carry no streaming state and are
 // cheap to rebuild — and the preview/result only appear once the run settles, so
 // they don't churn during the flickery running phase.
-function populateSubagentCard(card: HTMLElement, tc: ToolCall, label: string, api: ApiClient): void {
+function populateSubagentCard(
+  card: HTMLElement,
+  tc: ToolCall,
+  label: string,
+  api: ApiClient,
+): void {
   const session = tc.subagent
   if (!session) throw new Error('populateSubagentCard requires tc.subagent')
   const status = subagentCardStatus(tc, session)
@@ -998,7 +1001,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
       if (item.type === 'group') {
         const status = aggregateToolStatus(item.toolCalls)
-        ;(card as HTMLDetailsElement).open = status === 'running' || userExpandedGroups.has(item.key)
+        ;(card as HTMLDetailsElement).open =
+          status === 'running' || userExpandedGroups.has(item.key)
       } else {
         const tc = item.toolCall
         const running = tc.status === 'running' || tc.subagent?.status === 'running'
