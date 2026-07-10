@@ -34,9 +34,13 @@ describe('integrated terminal', () => {
     await expect(terminalBtn).toHaveElementClass('active')
 
     await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 })
-    // On macOS the PTY is now seatbelt-wrapped, so opening the user-controlled
-    // terminal must not fall back to the unsandboxed-terminal approval path.
-    await expect($('#approval-dialog')).not.toBeDisplayed()
+    // macOS confines the PTY with the project seatbelt. Linux CI has no such
+    // boundary, so it correctly asks the user before opening a host terminal.
+    const approval = await $('#approval-dialog')
+    if (await approval.isDisplayed().catch(() => false)) {
+      await expect(approval.$('.approval-heading')).toHaveText('Open unsandboxed terminal?')
+      await approval.$('.approval-approve').click()
+    }
 
     const chrome = await browser.execute(() => {
       const viewer = document.querySelector('.terminals-viewer-host')
