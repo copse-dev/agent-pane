@@ -24,7 +24,7 @@ describe('settings-writable', () => {
     assert.equal(isRendererWritableSettingKey('appIconVariant'), true)
     assert.equal(isRendererWritableSettingKey('autoPortraitRightPanel'), true)
     assert.equal(parseRendererWritableSetting('theme', 'dark'), 'dark')
-    assert.equal(parseRendererWritableSetting('appIconVariant', 'wave'), 'wave')
+    assert.equal(parseRendererWritableSetting('appIconVariant', 'aurora'), 'aurora')
     assert.equal(parseRendererWritableSetting('autoPortraitRightPanel', false), false)
   })
 
