@@ -424,7 +424,9 @@ describe('decideShellPermission', () => {
   it('offers an unsandboxed retry when an ambiguous command hits a sandbox violation', () => {
     const blocked = detectSandboxFailure({ exitCode: 1, violationCount: 1, spawnFailed: false })
     assert.equal(blocked.likely, true)
-    for (const cmd of ['gh pr create', 'nc -l 4000', 'aws s3 cp a b', 'open https://x.test']) {
+    // NB: `open`/`open -a`/`open <url>` are hard-external (they launch a host app
+    // outside the seatbelt), so they are no longer part of the ambiguous set (#581).
+    for (const cmd of ['gh pr create', 'nc -l 4000', 'aws s3 cp a b', 'npx some-cli@latest']) {
       assert.equal(
         shellSandboxFailureShouldOfferUnsandboxedRetry(cmd, root) && blocked.likely,
         true,
