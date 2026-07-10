@@ -1,5 +1,6 @@
 import { Window } from 'happy-dom'
 import { setSanitizerBackend } from '@copse/streaming-markdown'
+import { installAppLinkDecorator } from '../src/renderer/markdown/link-decorator.ts'
 
 // happy-dom has no native Sanitizer API, so @copse/streaming-markdown's default
 // backend would throw. Unit tests assert on the DOM structure of the renderer's
@@ -8,6 +9,11 @@ import { setSanitizerBackend } from '@copse/streaming-markdown'
 // backend is sufficient here and avoids pulling DOMPurify's window-dependent
 // module into the bundled test environment before this DOM is installed.
 setSanitizerBackend({ sanitize: (html) => html })
+
+// streaming-markdown 0.10.0 defaults to a neutral link decorator (#112). The app
+// opts into the workspace/browser `data-*` link hooks at boot; mirror that here so
+// unit tests see the same decorated anchors the renderer emits in production.
+installAppLinkDecorator()
 
 const win = new Window()
 Object.assign(globalThis, {

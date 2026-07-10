@@ -5,7 +5,6 @@ import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/th
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
 import { attachTableCopyButtons } from '../markdown/table-copy.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
-import { sanitizeRenderedMarkdown } from '@copse/streaming-markdown'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { StreamingMarkdownRenderer } from '@copse/streaming-markdown'
 import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
@@ -67,7 +66,7 @@ function createToolResultSection(result: string | null, format?: 'markdown'): HT
   // instead of literal backticks. Built-in results stay in a plain `<pre>`.
   if (format === 'markdown') {
     const wrap = el('div', { class: 'tool-result tool-result-markdown message-text' })
-    wrap.innerHTML = sanitizeRenderedMarkdown(renderMarkdown(result))
+    wrap.innerHTML = renderMarkdown(result)
     attachCodeBlockCopyButtons(wrap)
     return wrap
   }
@@ -192,7 +191,7 @@ function setAssistantMarkdown(
   // Final render: replace the incremental scaffold with the finished markdown.
   el.classList.remove('is-streaming')
   streamingRenderers.delete(el)
-  el.innerHTML = sanitizeRenderedMarkdown(renderMarkdown(display))
+  el.innerHTML = renderMarkdown(display)
   attachCodeBlockCopyButtons(el)
   // Tables only on the committed final render — during streaming they are
   // patched with pending rows, so wrapping them then would fight the DOM sync.
@@ -443,7 +442,7 @@ function buildReasoningEl(reasoning: string, open: boolean): HTMLDetailsElement 
  * images) — reasoning is self-contained and doesn't reference external resources.
  */
 function renderReasoningText(el: HTMLElement, text: string): void {
-  el.innerHTML = sanitizeRenderedMarkdown(renderMarkdown(text))
+  el.innerHTML = renderMarkdown(text)
 }
 
 /**

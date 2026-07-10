@@ -3,7 +3,6 @@ import { searchIcon } from '../dom/icons.ts'
 import { createRetryButton } from './retry-button.ts'
 import type { ThreadReview } from '@shared/types'
 import { renderMarkdown } from '@copse/streaming-markdown'
-import { sanitizeRenderedMarkdown } from '@copse/streaming-markdown'
 import { annotateFileReferences } from '../markdown/file-links.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 
@@ -59,7 +58,7 @@ export function createReviewCardEl(
   if (review.status === 'running') return panel
 
   const body = el('div', { class: 'review-panel-body message-text streaming-markdown' })
-  body.innerHTML = sanitizeRenderedMarkdown(renderMarkdown(review.summary || '(no review output)'))
+  body.innerHTML = renderMarkdown(review.summary || '(no review output)')
   // Linkify printed file paths in the review subagent's output so they open in
   // the explorer, matching main-chat assistant text. Click handling is already
   // delegated from the conversation root (bindFileReferenceClicks) that this

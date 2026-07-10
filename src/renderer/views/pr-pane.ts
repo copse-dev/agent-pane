@@ -17,7 +17,6 @@ import { extractGithubPrUrls, githubPrKey } from '@shared/git/github-pr-url.ts'
 import { remoteAgentPrIndexKey, type RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
 import { mergePrLists, placeholderPrTitle, prListDisplayTitle, type PrRef } from './pr-pane-list.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
-import { sanitizeRenderedMarkdown } from '@copse/streaming-markdown'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
 import {
@@ -548,7 +547,7 @@ export function mountPrPane(
       return
     }
     descriptionHost.hidden = false
-    descriptionHost.innerHTML = sanitizeRenderedMarkdown(renderMarkdown(prDetails.body))
+    descriptionHost.innerHTML = renderMarkdown(prDetails.body)
   }
 
   function renderFiles(): void {
