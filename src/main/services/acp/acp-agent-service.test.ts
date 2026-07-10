@@ -252,6 +252,10 @@ describe('buildAcpPrompt', () => {
     // context-burning find/ls steer stays.
     assert.match(prompt, /background or async\s+subagents survive/i)
     assert.doesNotMatch(prompt, /will NOT survive/i)
+    // Since the between-turn update pump (#588), completions surface live —
+    // the note must not tell the agent results wait for the next turn.
+    assert.match(prompt, /surface in the thread\s+live as they complete/i)
+    assert.doesNotMatch(prompt, /delivered when the\s+next turn starts/i)
     assert.match(prompt, /reaped after ~10 idle minutes/)
     assert.match(prompt, /targeted searches/)
   })

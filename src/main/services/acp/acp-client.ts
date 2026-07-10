@@ -4,6 +4,7 @@ import {
   ndJsonStream,
   PROTOCOL_VERSION,
   type ActiveSession,
+  type ActiveSessionMessage,
   type ClientConnection,
   type McpCapabilities,
   type McpServer,
@@ -238,6 +239,12 @@ export interface MutableAcpHandlers {
   current: AcpClientHandlers | null
 }
 
+/** How a settled prompt turn reports back: ACP's `PromptResponse` essentials. */
+export interface AcpTurnStop {
+  stopReason: StopReason
+  usage?: Usage | null
+}
+
 /**
  * A live, reusable connection + session to an external ACP agent. Created by
  * {@link openAcpSession}; drive turns with {@link runAcpSessionPrompt}; the
@@ -250,6 +257,22 @@ export interface OpenAcpSession {
   mcpCapabilities: McpCapabilities | undefined
   /** Last model applied via `session/set_config_option` (avoid re-sending). */
   appliedModel: string | undefined
+  /**
+   * When true the update pump consumes the agent's updates without forwarding
+   * them to the UI. Set on turn abort (Stop button) so a cancelled agent's
+   * trailing output stays hidden; cleared when the next turn starts.
+   */
+  suppressChunks: boolean
+  /**
+   * The in-flight turn's settle slot: the update pump resolves it with the
+   * turn's `stop` response — strictly AFTER forwarding every update the agent
+   * sent before stopping — or rejects it when the prompt fails. Null between
+   * turns.
+   */
+  turnStop: {
+    resolve: (response: AcpTurnStop) => void
+    reject: (err: unknown) => void
+  } | null
   /** True once the connection closed or the agent process died. */
   isClosed: () => boolean
   dispose: () => void
@@ -276,11 +299,58 @@ async function spawnTransport(
 }
 
 /**
+ * The session's single consumer of `session.nextUpdate()`, running from open to
+ * dispose (issue #588). The SDK's update queue serves concurrent waiters FIFO,
+ * so exactly one loop may consume it — this pump owns that role for the
+ * session's whole life, which is what lets updates arriving BETWEEN turns (a
+ * background subagent finishing after its turn ended) surface in the UI
+ * immediately instead of queueing invisibly until the user's next message.
+ *
+ * Routing:
+ * - `stop` messages settle the in-flight turn via {@link OpenAcpSession.turnStop}.
+ *   The SDK enqueues a prompt's stop only after the response resolves, i.e.
+ *   after every update the agent sent before stopping was already pumped — so
+ *   a turn never settles ahead of its own chunks.
+ * - Updates translate to chunks and go to the CURRENT (or, between turns, the
+ *   most recent) handlers — unless {@link OpenAcpSession.suppressChunks} is set
+ *   by an aborted turn.
+ * - A rejected `nextUpdate` is a failed prompt request (also settles the turn;
+ *   double-settling is a no-op) or the connection closing (pump exits).
+ */
+function startAcpUpdatePump(open: OpenAcpSession): void {
+  void (async (): Promise<void> => {
+    for (;;) {
+      let message: ActiveSessionMessage
+      try {
+        message = await open.session.nextUpdate()
+      } catch (err) {
+        if (open.isClosed()) return
+        open.turnStop?.reject(err)
+        continue
+      }
+      if (message.kind === 'stop') {
+        open.turnStop?.resolve(message.response)
+        continue
+      }
+      if (open.suppressChunks) continue
+      try {
+        const chunk = sessionUpdateToStreamChunk(message.update)
+        if (chunk) open.handlers.current?.onChunk(chunk)
+      } catch {
+        // A sink failure must not kill the pump: turn-stop routing (and every
+        // future turn on this session) depends on the loop staying alive.
+      }
+    }
+  })()
+}
+
+/**
  * Open a persistent ACP session (issue #605): spawn the agent (or connect the
  * injected test transport), initialize, and start a long-lived session. Unlike
  * the old one-turn flow, nothing is torn down when a prompt settles — the
  * process and session survive between turns, so the agent keeps its own
- * context (no transcript replay) and background helpers it spawned can finish.
+ * context (no transcript replay) and background helpers it spawned can finish,
+ * with their updates surfacing live through the session's update pump.
  */
 export async function openAcpSession(
   config: AcpAgentSpawnConfig,
@@ -333,15 +403,19 @@ export async function openAcpSession(
     }
     const session = await connection.agent.buildSession({ cwd: config.cwd, mcpServers }).start()
 
-    return {
+    const open: OpenAcpSession = {
       session,
       connection,
       handlers,
       mcpCapabilities,
       appliedModel: undefined,
+      suppressChunks: false,
+      turnStop: null,
       isClosed: () => disposed || connection.signal.aborted,
       dispose,
     }
+    startAcpUpdatePump(open)
+    return open
   } catch (err) {
     dispose()
     throw err
@@ -362,17 +436,19 @@ export const ACP_CANCEL_GRACE_MS = 2000
 
 /**
  * Run one prompt turn on a persistent session: apply a model change if the
- * picker's selection moved, send the prompt, and pump updates to the CURRENT
- * turn handlers until this turn's stop. Updates the agent queued between turns
- * (e.g. a background helper finishing) drain here first, so nothing is lost —
- * it just surfaces at the start of the next turn.
+ * picker's selection moved, send the prompt, and wait for the turn's stop. The
+ * agent's updates — this turn's and any that arrive between turns — are
+ * forwarded to the UI by the session's update pump (see
+ * {@link startAcpUpdatePump}), which settles this turn once its stop message
+ * comes through, after all of the turn's own chunks.
  *
  * Cancellation (`signal` abort, i.e. the Stop button): we send `session/cancel`
- * and stop forwarding the agent's chunks to the UI immediately, then keep
- * draining updates so a compliant agent's cancelled-stop is still consumed and
- * the session stays reusable. If the agent doesn't acknowledge within
- * {@link ACP_CANCEL_GRACE_MS}, we dispose the session (killing the stuck
- * process, which the pool respawns next turn) and report the turn cancelled.
+ * and stop forwarding the agent's chunks to the UI immediately
+ * (`suppressChunks`), while the pump keeps consuming so a compliant agent's
+ * cancelled-stop is still processed and the session stays reusable. If the
+ * agent doesn't acknowledge within {@link ACP_CANCEL_GRACE_MS}, we dispose the
+ * session (killing the stuck process, which the pool respawns next turn) and
+ * report the turn cancelled.
  */
 export async function runAcpSessionPrompt(
   open: OpenAcpSession,
@@ -380,7 +456,7 @@ export async function runAcpSessionPrompt(
   model: string | undefined,
   signal?: AbortSignal,
   cancelGraceMs: number = ACP_CANCEL_GRACE_MS,
-): Promise<{ stopReason: StopReason; usage?: Usage | null }> {
+): Promise<AcpTurnStop> {
   const { session, connection } = open
 
   // Resolves only once the user has aborted AND the agent has failed to settle
@@ -392,11 +468,28 @@ export async function runAcpSessionPrompt(
   })
   let graceTimer: ReturnType<typeof setTimeout> | undefined
   const cancel = (): void => {
+    open.suppressChunks = true
     void connection.agent.notify('session/cancel', { sessionId: session.sessionId })
     graceTimer ??= setTimeout(() => {
       onGraceExpired('grace-expired')
     }, cancelGraceMs)
   }
+
+  // New turn: surface chunks again (a cancelled previous turn left them
+  // suppressed) and install the slot the update pump settles on this turn's
+  // stop. Install BEFORE wiring the abort path so an already-aborted signal
+  // re-suppresses.
+  open.suppressChunks = false
+  let settleStop!: NonNullable<OpenAcpSession['turnStop']>
+  const stopped = new Promise<AcpTurnStop>((resolve, reject) => {
+    settleStop = { resolve, reject }
+  })
+  // The grace-expired path abandons `stopped`; swallow its late rejection (the
+  // disposed connection rejects the in-flight prompt) so it never surfaces as
+  // an unhandled rejection.
+  void stopped.catch(() => {})
+  open.turnStop = settleStop
+
   if (signal?.aborted) cancel()
   else signal?.addEventListener('abort', cancel, { once: true })
 
@@ -425,28 +518,23 @@ export async function runAcpSessionPrompt(
       }
     }
 
-    // The turn's completion also arrives as a `stop` via nextUpdate(); we
-    // swallow this promise's rejection because disposing the session on a
-    // stuck cancel rejects the in-flight request, and the loop already settles
-    // via the grace timer below.
-    void session.prompt(prompt).catch(() => {})
-    for (;;) {
-      const message = await Promise.race([session.nextUpdate(), graceExpired])
-      if (message === 'grace-expired') {
-        // The agent never acknowledged the cancel. Tear the session down so the
-        // stuck process can't keep the turn alive; the pool respawns next turn.
-        open.dispose()
-        return { stopReason: 'cancelled' }
-      }
-      if (message.kind === 'stop') return message.response
-      // Once the user has aborted, stop surfacing further activity — the turn is
-      // ending. We keep draining so a compliant agent's stop is still consumed.
-      if (!signal?.aborted) {
-        const chunk = sessionUpdateToStreamChunk(message.update)
-        if (chunk) open.handlers.current?.onChunk(chunk)
-      }
+    // The turn's completion arrives back through the update pump as this
+    // turn's `stop`, strictly after the turn's own updates were forwarded. A
+    // failed prompt settles the turn here directly (the pump may also see the
+    // rejection; the second settle is a no-op).
+    void session.prompt(prompt).catch((err: unknown) => {
+      settleStop.reject(err)
+    })
+    const outcome = await Promise.race([stopped, graceExpired])
+    if (outcome === 'grace-expired') {
+      // The agent never acknowledged the cancel. Tear the session down so the
+      // stuck process can't keep the turn alive; the pool respawns next turn.
+      open.dispose()
+      return { stopReason: 'cancelled' }
     }
+    return outcome
   } finally {
+    open.turnStop = null
     signal?.removeEventListener('abort', cancel)
     if (graceTimer) clearTimeout(graceTimer)
   }

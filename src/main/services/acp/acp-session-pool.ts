@@ -13,7 +13,8 @@ import type { ToolRegistry } from '../tool-registry.ts'
  * session alive per Copse thread:
  *
  * - Follow-up turns reuse the live session (no replay, background work
- *   survives; updates queued between turns drain at the next turn's start).
+ *   survives; updates arriving between turns surface in the UI immediately
+ *   via the session's update pump — see `startAcpUpdatePump` in acp-client.ts).
  * - A config change (different agent/args/env/sandbox/servers) or a dead
  *   connection evicts and respawns; the caller then replays history once.
  * - Sessions idle longer than {@link IDLE_MS} are reaped, and everything is
