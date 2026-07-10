@@ -85,8 +85,6 @@ export interface Thread {
   contextSnapshot?: ContextSnapshot
   /** Structured task plan for multi-step agent work (updated via update_todos). */
   todos?: TodoItem[]
-  /** Latest post-turn review verdict produced after an editing turn. */
-  review?: ThreadReview
   /** Latest two-model comparison produced for an editing turn (auto or on demand). */
   comparison?: ModelComparison
   /** Persisted parent/explore goal; set on the first user message in the thread. */
@@ -162,6 +160,12 @@ export interface Message {
   toolCalls: ToolCall[]
   /** Small-model rollup label for this message's batch of shell commands. */
   commandSummary?: string
+  /**
+   * Post-turn review verdict for the editing turn this message concluded. Set on
+   * the turn's final assistant message so the review joins the transcript inline
+   * (in position, one per reviewed turn) rather than as a single trailing card.
+   */
+  review?: ThreadReview
   createdAt: number
 }
 

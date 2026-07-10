@@ -448,21 +448,30 @@ export function setThreadTodos(store: AppStore, threadId: string, todos: TodoIte
   store.emit('todos_changed', threadId)
 }
 
-/** Store the post-turn review verdict for a thread (clears with `null`). */
-export function setThreadReview(
+/**
+ * Store the post-turn review verdict on a specific message (clears with `null`).
+ * The review is anchored to the message that concluded the reviewed turn so it
+ * renders inline in the transcript, in position, one per turn — rather than as a
+ * single trailing card that the next turn's review would overwrite.
+ */
+export function setMessageReview(
   store: AppStore,
   threadId: string,
+  messageId: string,
   review: ThreadReview | null,
 ): void {
   const threads = store.getState().threads.map((t) => {
     if (t.id !== threadId) return t
-    const next = { ...t, updatedAt: Date.now() }
-    if (review) next.review = review
-    else delete next.review
-    return next
+    const messages = t.messages.map((m) => {
+      if (m.id !== messageId) return m
+      if (review) return { ...m, review }
+      const { review: _removed, ...rest } = m
+      return rest
+    })
+    return { ...t, messages, updatedAt: Date.now() }
   })
   store.setState({ threads })
-  store.emit('review_changed', threadId)
+  store.emit('review_changed', threadId, messageId)
 }
 
 /** Store the two-model comparison for a thread (clears with `null`). */

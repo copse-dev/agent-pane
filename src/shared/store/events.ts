@@ -38,7 +38,7 @@ export interface StoreEvents {
   usage_updated: [threadId: string]
   context_updated: [threadId: string]
   todos_changed: [threadId: string]
-  review_changed: [threadId: string]
+  review_changed: [threadId: string, messageId: string]
   comparison_changed: [threadId: string]
   git_branch_changed: []
   composer_draft_flush: []

@@ -882,9 +882,11 @@ export function seedPortraitRightPanelFixture(
 
 /**
  * Thread with a completed post-turn review for the inline-review-card e2e (#480).
- * The review must render INSIDE the scrolling `.messages-list` as its last child
- * (not pinned in a sibling `.conversation-review-host`), with the follow-up user
- * message staying above it.
+ * The review is anchored to the assistant message that concluded its turn and
+ * must render INSIDE the scrolling `.messages-list` as that message's next
+ * sibling (not pinned in a sibling `.conversation-review-host`), so the later
+ * follow-up user message stays BELOW it — proving the card sits in position in
+ * the transcript rather than at the bottom of the conversation.
  */
 export function seedReviewInlineFixture(workspaceRoot: string): void {
   const projectId = 'e2e-review-inline-project'
@@ -913,6 +915,11 @@ export function seedReviewInlineFixture(workspaceRoot: string): void {
             role: 'assistant',
             content: 'Added the null guard and a regression test for empty input.',
             toolCalls: [],
+            review: {
+              status: 'done',
+              summary:
+                'Reviewed the change to `src/parser.ts`. The null guard is correct and the new test covers the empty-input case. No issues found.',
+            },
             createdAt: now + 1,
           },
           {
@@ -923,11 +930,6 @@ export function seedReviewInlineFixture(workspaceRoot: string): void {
             createdAt: now + 2,
           },
         ],
-        review: {
-          status: 'done',
-          summary:
-            'Reviewed the change to `src/parser.ts`. The null guard is correct and the new test covers the empty-input case. No issues found.',
-        },
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: now,
         updatedAt: now + 2,

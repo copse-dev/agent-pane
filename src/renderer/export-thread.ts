@@ -25,7 +25,7 @@ function providersFromUsage(usage: Thread['usage']): string[] {
 }
 
 /** JSONL export schema revision — bump when thread/message header fields change. */
-export const THREAD_JSONL_EXPORT_VERSION = 3
+export const THREAD_JSONL_EXPORT_VERSION = 4
 
 // JSONL: one JSON object per line — easy to stream, grep, and re-import. The
 // message line uses the same field names as the on-disk spine
@@ -50,7 +50,6 @@ export function threadToJsonl(thread: Thread): string {
       contextTrims: thread.contextTrims,
       contextSnapshot: thread.contextSnapshot,
       todos: thread.todos,
-      review: thread.review,
       workingBrief: thread.workingBrief,
       gitBranch: thread.gitBranch,
       pendingMessages: thread.pendingMessages,
@@ -72,6 +71,7 @@ export function threadToJsonl(thread: Thread): string {
         ...(msg.reasoning !== undefined ? { reasoning: msg.reasoning } : {}),
         images: msg.images,
         commandSummary: msg.commandSummary,
+        ...(msg.review !== undefined ? { review: msg.review } : {}),
         toolCalls: msg.toolCalls,
       }),
     )
