@@ -8,7 +8,6 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { homedir } from 'node:os'
 import { dirname, join, relative, sep } from 'node:path'
 import type { Message, Thread, ThreadCatalogEntry, ThreadCatalogHit } from '@shared/types'
 import { sortThreadsNewestFirst } from '@shared/store/thread-helpers.ts'
@@ -36,6 +35,7 @@ import {
 } from '@shared/remote-agent-link.ts'
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
 import { storageGet } from './storage/storage.ts'
+import { projectStoreDir } from './storage/copse-paths.ts'
 import { runSerialized } from './storage/write-queue.ts'
 
 /**
@@ -65,16 +65,7 @@ const CONTENT_DIRS = ['messages', 'blobs', 'subagents']
 
 const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
 
-/** Root of the chat store. `COPSE_WORKSPACE_DIR` overrides it (tests, relocation). */
-function workspaceRoot(): string {
-  const override = process.env['COPSE_WORKSPACE_DIR']?.trim()
-  if (override) return override
-  return join(homedir(), '.copse', 'workspace')
-}
-
-function projectDir(projectId: string): string {
-  return join(workspaceRoot(), projectId)
-}
+const projectDir = projectStoreDir
 
 function threadDir(projectId: string, threadId: string): string {
   return join(projectDir(projectId), threadId)

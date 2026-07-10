@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, readlinkSync, realpathSync, statSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { storageGet, storageSet } from './storage/storage.ts'
+import { workspaceRoot as copseStoreRoot } from './storage/copse-paths.ts'
 
 const WORKSPACE_KEY = 'workspaceRoot'
 const PROJECTS_KEY = 'projects'
@@ -164,8 +164,7 @@ export function resolveWorkspacePath(path: string): string {
  * existing file tools, never write to them.
  */
 function chatStoreDir(): string {
-  const override = process.env['COPSE_WORKSPACE_DIR']?.trim()
-  return override && override.length > 0 ? override : join(homedir(), '.copse', 'workspace')
+  return copseStoreRoot()
 }
 
 /** Canonical (realpath'd) chat-store root, or null when it does not exist yet. */

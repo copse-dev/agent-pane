@@ -342,6 +342,14 @@ export interface ApiClient {
     getSummary: () => Promise<import('@shared/usage/aggregate-usage.ts').UsageSummary>
     getPlanUsage: () => Promise<import('@copse/plan-usage').PlanUsageSnapshot>
   }
+  decisions: {
+    list: (
+      projectId?: string,
+    ) => Promise<import('@shared/threads/decision-log.ts').DecisionEvent[]>
+    export: (
+      projectId?: string,
+    ) => Promise<{ path: string; count: number }>
+  }
   index: {
     query: (pattern: string) => Promise<string[]>
     resolveFileReferences: (

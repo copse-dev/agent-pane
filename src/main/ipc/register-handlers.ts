@@ -5,12 +5,17 @@ import micromatch from 'micromatch'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
 import {
   assertAllowedWorkspaceRoot,
+  getActiveProjectId,
   getWorkspaceRoot,
   registerAllowedWorkspaceRoot,
   resolveWorkspacePath,
   seedAllowedWorkspaceRoots,
   setWorkspaceRoot,
 } from '../services/workspace.ts'
+import {
+  exportDecisionLog,
+  readDecisionLog,
+} from '../services/security/decision-log-store.ts'
 import {
   assertFsWriteContent,
   isIndexQueryPattern,
@@ -682,6 +687,22 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   })
   ipcMain.handle('usage:getSummary', () => getUsageSummary())
   ipcMain.handle('usage:getPlanUsage', async () => loadPlanUsageSnapshot())
+  // Durable permission-decision audit log (#656). `projectId` is optional — an
+  // empty/absent value falls back to the active project.
+  ipcMain.handle('decisions:list', (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zNonEmptyString.max(256).optional(), [rawProjectId])
+    const resolved = projectId ?? getActiveProjectId()
+    if (!resolved) return []
+    return readDecisionLog(resolved)
+  })
+  ipcMain.handle('decisions:export', (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zNonEmptyString.max(256).optional(), [rawProjectId])
+    const resolved = projectId ?? getActiveProjectId()
+    if (!resolved) throw new Error('No project to export decisions for.')
+    return exportDecisionLog(resolved)
+  })
   ipcMain.handle('storage:get', (event, key: unknown) => {
     assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(256), [key])

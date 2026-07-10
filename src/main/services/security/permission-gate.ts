@@ -1,12 +1,13 @@
 import { getWorkspaceRoot } from '../workspace.ts'
 import { isWorkspaceTrusted } from './workspace-trust.ts'
-import { runPermissionHooks } from '../skills/cursor-hooks.ts'
+import { runPermissionHooks, type CursorHookDecision } from '../skills/cursor-hooks.ts'
 import { runClaudePreToolUseHooks } from '../skills/claude-hooks.ts'
 import type { CursorPermissionHookEvent } from '@shared/types/cursor-hooks.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { isSandboxNetworkScopeActive } from '../../project-sandbox/network-scope.ts'
 import { classifyShellScope } from './safety-classifier.ts'
 import { requestApproval } from '../approval.ts'
+import { recordDecision } from './decision-log-store.ts'
 import { getSetting, setSetting } from '../storage/settings.ts'
 import {
   SANDBOX_TOOLS,
@@ -92,6 +93,8 @@ async function requestEscalationApproval(
     title,
     body,
     type: 'shell',
+    subject: command,
+    scope: 'external',
     allowRemember: trustable !== null,
     ...(trustable ? { rememberLabel: `Always allow \`${trustable}\` in trusted projects` } : {}),
   })
@@ -117,6 +120,8 @@ async function promptShell(
     title: 'Run shell command?',
     body: formatShellPromptBody(command, reasons),
     type: 'shell',
+    subject: command,
+    scope: 'sandbox',
   })
   return approved
 }
@@ -143,6 +148,8 @@ export async function promptExpectedSandboxBlock(
     title: 'Run outside sandbox?',
     body: formatExpectedSandboxBlockPromptBody(command, reasons),
     type: 'shell',
+    subject: command,
+    scope: 'external',
   })
   return approved
 }
@@ -186,6 +193,8 @@ async function checkMcpPermission(toolName: string, args: unknown): Promise<bool
     title: `MCP tool: ${mcpToolLabel(toolName)}`,
     body: bodyLines.join('\n'),
     type: 'mcp',
+    subject: toolName,
+    scope: 'external',
     allowRemember: true,
   })
   if (approved && remember) await rememberMcpTool(toolName)
@@ -205,6 +214,8 @@ async function promptWebOrigin(origin: string, detail: string): Promise<boolean>
     title: 'Allow web origin?',
     body: formatWebPromptBody(origin, detail),
     type: 'web',
+    subject: origin,
+    scope: 'external',
     allowRemember: true,
     rememberLabel: 'Always allow this web origin',
   })
@@ -320,11 +331,26 @@ export async function ensureShellCommandPermitted(
   const autoRun = opts.autoRun ?? getSetting<boolean>('autoRunSandboxCommands', true)
   const workspaceRoot = getWorkspaceRoot()
   const sandboxEnabled = opts.sandboxEnabled ?? isProjectSandboxEnabled()
+  const classification = sandboxEnabled ? null : await classifyShellScope(command)
+  // Record the classifier's sandbox-vs-external verdict to the durable decision
+  // log (#656) — a control-plane decision made with no user prompt.
+  if (classification) {
+    recordDecision({
+      kind: 'classification',
+      actor: 'classifier',
+      verdict: classification.scope === 'sandbox' ? 'allowed' : 'blocked',
+      subject: command,
+      scope: classification.scope,
+      confidence: classification.confidence,
+      ...(classification.reason ? { reasons: [classification.reason] } : {}),
+      source: 'safety-classifier',
+    })
+  }
   const decision = decideShellPermission(command, {
     workspaceRoot,
     sandboxEnabled,
     autoRun,
-    classification: sandboxEnabled ? null : await classifyShellScope(command),
+    classification,
     externalDenyThreshold: getSetting<number>('safetyExternalDenyThreshold', 1),
   })
 
@@ -351,6 +377,8 @@ export async function ensureShellCommandPermitted(
             title: 'Run package command?',
             body: formatEphemeralRunnerPromptBody(command, { outsideSandbox, safeInstall }),
             type: 'shell',
+            subject: command,
+            scope: outsideSandbox ? 'external' : 'sandbox',
           }
         : {
             title: 'Run package install?',
@@ -360,6 +388,8 @@ export async function ensureShellCommandPermitted(
               jsManager: install.jsManager,
             }),
             type: 'shell',
+            subject: command,
+            scope: outsideSandbox ? 'external' : 'sandbox',
           },
     )
     return approved
@@ -399,6 +429,8 @@ async function checkBrowserNavigatePermission(args: unknown): Promise<boolean> {
     title: 'Allow browser navigation?',
     body: formatBrowserPromptBody(decision.origin, url),
     type: 'mcp',
+    subject: url,
+    scope: 'external',
     allowRemember: true,
   })
   if (approved && remember) await rememberBrowserOrigin(decision.origin)
@@ -494,6 +526,23 @@ function claudePreToolUseForTool(
   return null
 }
 
+/** Record non-allow hook verdicts to the durable decision log (#656). */
+function recordHookDecision(
+  toolName: string,
+  decision: CursorHookDecision,
+  source: string,
+): void {
+  if (decision.permission === 'allow') return
+  recordDecision({
+    kind: 'hook',
+    actor: 'hook',
+    verdict: decision.permission === 'deny' ? 'blocked' : 'ask',
+    subject: toolName,
+    ...(decision.agentMessage ? { reasons: [decision.agentMessage] } : {}),
+    source,
+  })
+}
+
 /**
  * Run matching Cursor hooks and Claude Code PreToolUse hooks for this tool call.
  * Hooks can only *block* — an allow/ask still falls through to Copse's own gate — so
@@ -513,6 +562,7 @@ async function cursorHooksAllow(check: PermissionCheck): Promise<boolean> {
       workspaceRoot,
       projectTrusted,
     })
+    recordHookDecision(check.toolName, decision, cursorMapped.event)
     if (decision.permission === 'deny') {
       console.warn(
         `[cursor-hooks] ${cursorMapped.event} denied ${check.toolName}` +
@@ -528,6 +578,7 @@ async function cursorHooksAllow(check: PermissionCheck): Promise<boolean> {
       workspaceRoot,
       projectTrusted,
     })
+    recordHookDecision(check.toolName, decision, 'PreToolUse')
     if (decision.permission === 'deny') {
       console.warn(
         `[claude-hooks] PreToolUse denied ${check.toolName}` +

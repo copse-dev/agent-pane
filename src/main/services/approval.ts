@@ -8,6 +8,7 @@ import {
   parseIpcArgs,
 } from '../ipc/ipc-guards.ts'
 import { getActiveRunThread } from './thread-models.ts'
+import { recordDecision } from './security/decision-log-store.ts'
 
 /** Model ids for a two-reviewer + judge comparison run. */
 export interface ComparisonModelSelection {
@@ -24,6 +25,14 @@ export interface ApprovalRequest {
   rememberLabel?: string
   /** Initial reviewer/judge ids when `type === 'model-compare'` (renderer shows pickers). */
   comparisonModels?: ComparisonModelSelection
+  /**
+   * Structured subject for the durable decision log (#656) — the command, tool
+   * name, or origin the prompt is about. Falls back to {@link title} when unset.
+   * Prefer a raw value here; the audit writer redacts secrets before persisting.
+   */
+  subject?: string
+  /** Scope the decision applies at (e.g. `sandbox` | `external`), for the audit log. */
+  scope?: string
 }
 
 export interface ApprovalResponse {
@@ -51,8 +60,20 @@ export function setApprovalHandler(next: ApprovalHandler | null): void {
   handler = next
 }
 
-export function requestApproval(req: ApprovalRequest): Promise<ApprovalResponse> {
-  return handler ? handler(req) : Promise.resolve({ approved: false, remember: false })
+export async function requestApproval(req: ApprovalRequest): Promise<ApprovalResponse> {
+  const response = handler ? await handler(req) : { approved: false, remember: false }
+  // Persist every user approval/denial to the durable decision log so "what did
+  // I approve, when, at what scope, and did I make it sticky?" survives the
+  // session. Best-effort — recordDecision never throws.
+  recordDecision({
+    kind: req.type,
+    actor: 'user',
+    verdict: response.approved ? 'approved' : 'denied',
+    subject: req.subject ?? req.title,
+    ...(req.scope ? { scope: req.scope } : {}),
+    remembered: response.remember,
+  })
+  return response
 }
 
 /**

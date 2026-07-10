@@ -430,6 +430,10 @@ contextBridge.exposeInMainWorld('api', {
     getSummary: () => ipcRenderer.invoke('usage:getSummary'),
     getPlanUsage: () => ipcRenderer.invoke('usage:getPlanUsage'),
   },
+  decisions: {
+    list: (projectId?: string) => ipcRenderer.invoke('decisions:list', projectId),
+    export: (projectId?: string) => ipcRenderer.invoke('decisions:export', projectId),
+  },
   index: {
     query: (pattern: string) => ipcRenderer.invoke('index:query', pattern),
     resolveFileReferences: (candidates: string[]) =>
