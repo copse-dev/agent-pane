@@ -9,6 +9,7 @@ import { getActiveThread, switchThread } from '@shared/store/thread-helpers.ts'
 import { at } from '@shared/array-utils.ts'
 import { extractGithubPrUrls, githubPrKey } from '@shared/git/github-pr-url.ts'
 import { remoteAgentPrIndexKey, type RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
+import { mergePrLists, placeholderPrTitle, prListDisplayTitle, type PrRef } from './pr-pane-list.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { sanitizeRenderedMarkdown } from '@copse/streaming-markdown'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
@@ -19,12 +20,6 @@ import {
   observeDiffHostLayout,
   setGitFileDiffModel,
 } from '../monaco/git-diff-viewer.ts'
-
-interface PrRef {
-  owner: string
-  repo: string
-  number: number
-}
 
 const STATUS_LABEL: Record<string, string> = {
   added: 'A',
@@ -74,37 +69,6 @@ function collectLinkedPrs(store: AppStore): PrRef[] {
     }
   }
   return refs
-}
-
-function mergePrLists(linked: PrRef[], pools: GhPrSummary[][]): GhPrSummary[] {
-  const seen = new Set<string>()
-  const merged: GhPrSummary[] = []
-  const known = pools.flat()
-  for (const ref of linked) {
-    const key = githubPrKey(ref)
-    if (seen.has(key)) continue
-    seen.add(key)
-    const fromPools = known.find(
-      (pr) => pr.owner === ref.owner && pr.repo === ref.repo && pr.number === ref.number,
-    )
-    merged.push(
-      fromPools ?? {
-        ...ref,
-        title: `PR #${String(ref.number)}`,
-        url: `https://github.com/${ref.owner}/${ref.repo}/pull/${String(ref.number)}`,
-        state: 'OPEN',
-      },
-    )
-  }
-  for (const pool of pools) {
-    for (const pr of pool) {
-      const key = githubPrKey(pr)
-      if (seen.has(key)) continue
-      seen.add(key)
-      merged.push(pr)
-    }
-  }
-  return merged
 }
 
 export function mountPrPane(
@@ -262,6 +226,7 @@ export function mountPrPane(
           '🤖',
         )
       : null
+    const titleText = prListDisplayTitle(pr)
     const row = el(
       'button',
       {
@@ -270,7 +235,7 @@ export function mountPrPane(
         'data-pr-section': section,
       },
       el('span', { class: 'pr-list-number' }, `#${String(pr.number)}`),
-      el('span', { class: 'git-change-path pr-list-title' }, pr.title),
+      el('span', { class: 'git-change-path pr-list-title', title: titleText }, titleText),
       ...(agentBadge ? [agentBadge] : []),
       ci,
     )
@@ -620,7 +585,7 @@ export function mountPrPane(
       workspacePrs = []
       prList = linkedRefs.map((ref) => ({
         ...ref,
-        title: `PR #${String(ref.number)}`,
+        title: placeholderPrTitle(ref.number),
         url: `https://github.com/${ref.owner}/${ref.repo}/pull/${String(ref.number)}`,
         state: 'OPEN',
       }))
