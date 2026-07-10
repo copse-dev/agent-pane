@@ -35,6 +35,26 @@ describe('review panel (subagent file links)', () => {
     assert.equal(card.querySelector('.review-panel-body'), null)
   })
 
+  it('shows a retry button on a failed review and fires the callback once', () => {
+    const review: ThreadReview = { status: 'error', summary: 'Subagent error: model load failed.' }
+    let calls = 0
+    const card = createReviewCardEl(review, fakeApi(), () => {
+      calls++
+    })
+    const button = card.querySelector<HTMLButtonElement>('.card-retry-button')
+    assert.ok(button, 'expected a retry button on the failed review card')
+    button.click()
+    button.click()
+    assert.equal(calls, 1, 'retry fires once then disables itself')
+    assert.equal(button.disabled, true)
+  })
+
+  it('does not show a retry button on a successful review', () => {
+    const review: ThreadReview = { status: 'done', summary: 'Looks good.' }
+    const card = createReviewCardEl(review, fakeApi(), () => {})
+    assert.equal(card.querySelector('.card-retry-button'), null)
+  })
+
   it('linkifies printed file paths in the review summary so they open in the explorer', async () => {
     const review: ThreadReview = {
       status: 'done',

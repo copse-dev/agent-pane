@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedContextWheelFixture, seedEmptyProject } from './helpers/seed-config.ts'
 import { describeSkipInCi } from './helpers/ci-gate.ts'
+import { setComposerValue } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -60,8 +61,7 @@ describeSkipInCi('context wheel footer live mock', () => {
   it('updates doughnut and tokens live during a mock agent run', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    const textarea = await $('.prompt-input')
-    await textarea.setValue('list files please')
+    await setComposerValue('list files please')
     await $('.submit-btn').click()
 
     const wheel = await $('.context-wheel')

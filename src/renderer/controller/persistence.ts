@@ -52,17 +52,38 @@ function metaOf(thread: Thread): ThreadMeta {
   return meta
 }
 
-function metaSig(thread: Thread): string {
-  return JSON.stringify(metaOf(thread))
+function metaSig(meta: ThreadMeta): string {
+  return JSON.stringify(meta)
 }
 
-// Signature of each thread's last-persisted metadata, keyed by project then
-// thread id. A change event only rewrites `meta.json` when the metadata actually
-// changed; created/deleted threads are detected by diffing the id set. Seeded
-// from disk on load so a freshly loaded project produces no spurious writes and
-// its deletions are still detected. Per-project so a project switch never
-// mistakes the other project's threads for deletions.
-const persistedMeta = new Map<string, Map<string, string>>()
+/**
+ * Build the `updateMeta` patch for a changed thread. On disk `updateMeta` merges
+ * `{ ...current, ...patch }`, which can set keys but never delete them — so a
+ * field the renderer has dropped (a drained `pendingMessages`, a lifted
+ * `queuePaused`, a cleared `contextSnapshot`) would otherwise linger in
+ * `meta.json` and, on the next restore, resurrect a phantom "queued" message and
+ * re-dispatch its run. Carry the full next meta plus an explicit `undefined` for
+ * every key that was present in the last-persisted meta but is now gone: the
+ * merge then writes `undefined`, which `JSON.stringify` drops, clearing the field
+ * on disk. Fields the renderer never carries (main-owned `remoteAgentLink`) never
+ * appear in `prev`, so they are never nulled and stay preserved by the merge.
+ */
+function metaPatch(prev: ThreadMeta, next: ThreadMeta): Partial<ThreadMeta> {
+  const patch: Record<string, unknown> = { ...next }
+  for (const key of Object.keys(prev)) {
+    if (!(key in next)) patch[key] = undefined
+  }
+  return patch
+}
+
+// Each thread's last-persisted metadata, keyed by project then thread id. A
+// change event only rewrites `meta.json` when the metadata actually changed
+// (compared by signature); created/deleted threads are detected by diffing the
+// id set, and the retained object lets us compute which keys a change removed.
+// Seeded from disk on load so a freshly loaded project produces no spurious
+// writes and its deletions are still detected. Per-project so a project switch
+// never mistakes the other project's threads for deletions.
+const persistedMeta = new Map<string, Map<string, ThreadMeta>>()
 
 /**
  * Diff a project's threads against the last-persisted metadata baseline and emit
@@ -71,18 +92,20 @@ const persistedMeta = new Map<string, Map<string, string>>()
  * thread's `create` writes its current messages too. Updates the baseline.
  */
 function reconcileThreads(api: ApiClient, projectId: string, threads: Thread[]): Promise<void> {
-  const prev = persistedMeta.get(projectId) ?? new Map<string, string>()
-  const next = new Map<string, string>()
+  const prev = persistedMeta.get(projectId) ?? new Map<string, ThreadMeta>()
+  const next = new Map<string, ThreadMeta>()
   const writes: Array<Promise<void>> = []
 
   for (const t of threads) {
-    const sig = metaSig(t)
-    next.set(t.id, sig)
+    const meta = metaOf(t)
+    next.set(t.id, meta)
     const key = threadWriteKey(projectId, t.id)
-    if (!prev.has(t.id)) {
+    const prevMeta = prev.get(t.id)
+    if (prevMeta === undefined) {
       writes.push(serializedWrite(key, () => api.threads.create(projectId, t)))
-    } else if (prev.get(t.id) !== sig) {
-      writes.push(serializedWrite(key, () => api.threads.updateMeta(projectId, t.id, metaOf(t))))
+    } else if (metaSig(prevMeta) !== metaSig(meta)) {
+      const patch = metaPatch(prevMeta, meta)
+      writes.push(serializedWrite(key, () => api.threads.updateMeta(projectId, t.id, patch)))
     }
   }
   for (const id of prev.keys()) {
@@ -138,10 +161,10 @@ export async function saveProjects(
 export async function loadThreads(api: ApiClient, projectId: string): Promise<Thread[]> {
   const threads = sortThreadsNewestFirst(await api.threads.loadProject(projectId))
   // Seed the persisted-metadata baseline so the autosave doesn't re-create these
-  // (they're already on disk) but still detects later deletions.
-  const sigs = new Map<string, string>()
-  for (const t of threads) sigs.set(t.id, metaSig(t))
-  persistedMeta.set(projectId, sigs)
+  // (they're already on disk) but still detects later deletions and removed keys.
+  const metas = new Map<string, ThreadMeta>()
+  for (const t of threads) metas.set(t.id, metaOf(t))
+  persistedMeta.set(projectId, metas)
   return threads
 }
 

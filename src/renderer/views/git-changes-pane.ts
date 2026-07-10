@@ -334,7 +334,20 @@ export function mountGitChangesPane(
     if (activeDiff) proposedDiffCache.set(activeDiff.path, activeDiff)
     selection = { kind: 'proposed', path }
     renderList()
-    const view = resolveStagedDiffView(queue, proposedDiffCache, path, activeDiff)
+    let view = resolveStagedDiffView(queue, proposedDiffCache, path, activeDiff)
+    if (!view && queue.some((e) => e.path === path)) {
+      // The queue lists this file but its full content never reached the cache —
+      // the `agent:show_diff` push predates this (async/re-)mount and nothing
+      // replays it. Pull the content the main-process queue still holds so the
+      // diff renders instead of clearing to an empty pane.
+      const requestId = ++selectRequestId
+      const fetched = await api.diff.content(path)
+      if (requestId !== selectRequestId) return
+      if (fetched) {
+        proposedDiffCache.set(path, fetched)
+        view = fetched
+      }
+    }
     if (!view) {
       clearViewer()
       return

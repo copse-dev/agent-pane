@@ -31,6 +31,12 @@ import {
   WEB_ALLOWED_ORIGINS_SETTING,
   WEB_ALLOW_USER_APPROVAL_SETTING,
 } from '@shared/web-origins.ts'
+import {
+  TRUSTED_COMMANDS_SETTING,
+  formatTrustedCommands,
+  parseTrustedCommands,
+  sanitizeTrustedCommands,
+} from '@shared/command-routing.ts'
 
 export type SettingsSection =
   | 'general'
@@ -91,7 +97,6 @@ interface SettingField {
 
 const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'customInstructions', kind: 'text', default: '', save: true },
-  { name: 'openRouterModel', kind: 'text', default: '', save: true },
   { name: 'externalApiSafety', kind: 'checkbox', default: false, save: true },
   { name: 'remoteAgentAutoCreatePR', kind: 'checkbox', default: true, save: true },
   { name: 'remoteAgentWorkOnCurrentBranch', kind: 'checkbox', default: false, save: true },
@@ -130,7 +135,8 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'mcpAutoAllowReadOnly', kind: 'checkbox', default: false, save: false },
   { name: 'defaultReadonlyMode', kind: 'checkbox', default: false, save: false },
   { name: 'webAllowUserApproval', kind: 'checkbox', default: true, save: false },
-  { name: 'safetyConfidenceThreshold', kind: 'text', default: '0.85', save: false },
+  { name: 'safetySandboxAllowThreshold', kind: 'text', default: '0.85', save: false },
+  { name: 'safetyExternalDenyThreshold', kind: 'text', default: '1', save: false },
 ]
 
 async function loadSimpleFields(form: HTMLFormElement, api: ApiClient): Promise<void> {
@@ -149,6 +155,38 @@ async function loadSimpleFields(form: HTMLFormElement, api: ApiClient): Promise<
   }
 }
 
+/**
+ * Migrate the legacy single `safetyConfidenceThreshold` into the sandbox-allow
+ * slider when the split key hasn't been written yet, and keep each slider's numeric
+ * readout in sync as it moves. Called after the generic field load.
+ */
+async function wireSafetySliders(form: HTMLFormElement, api: ApiClient): Promise<void> {
+  const sandboxAllow = form.elements.namedItem('safetySandboxAllowThreshold') as HTMLInputElement
+  const externalDeny = form.elements.namedItem('safetyExternalDenyThreshold') as HTMLInputElement
+
+  // Back-compat: seed the sandbox-allow slider from the old single threshold when the
+  // split key has never been saved, so an existing preference isn't reset to 0.85.
+  const savedAllow = await api.settings.get('safetySandboxAllowThreshold')
+  if (typeof savedAllow !== 'number' && typeof savedAllow !== 'string') {
+    const legacy = await api.settings.get('safetyConfidenceThreshold')
+    if (typeof legacy === 'number' || typeof legacy === 'string') {
+      sandboxAllow.value = String(legacy)
+    }
+  }
+
+  const bind = (input: HTMLInputElement): void => {
+    const output = form.querySelector<HTMLOutputElement>(`output[for="${input.name}"]`)
+    if (!output) return
+    const sync = (): void => {
+      output.textContent = Number(input.value).toFixed(2)
+    }
+    input.addEventListener('input', sync)
+    sync()
+  }
+  bind(sandboxAllow)
+  bind(externalDeny)
+}
+
 async function saveSimpleFields(data: FormData, api: ApiClient): Promise<void> {
   for (const field of SIMPLE_FIELDS) {
     if (!field.save) continue
@@ -156,10 +194,16 @@ async function saveSimpleFields(data: FormData, api: ApiClient): Promise<void> {
       await api.settings.set(field.name, data.get(field.name) === 'on')
     } else {
       const value = (data.get(field.name) as string | null) ?? ''
-      const trimmed = field.name === 'customInstructions' || field.name === 'openRouterModel'
+      const trimmed = field.name === 'customInstructions'
       await api.settings.set(field.name, trimmed ? value.trim() : value)
     }
   }
+}
+
+/** Read a text field from FormData, narrowing to string without a cast. */
+function formDataString(data: FormData, key: string): string {
+  const value = data.get(key)
+  return typeof value === 'string' ? value : ''
 }
 
 function parseWebAllowedOrigins(value: FormDataEntryValue | null): string[] {
@@ -222,6 +266,17 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       <div class="settings-body">
         <nav class="settings-nav" aria-label="Settings sections">
+          <div class="settings-search">
+            <input
+              type="search"
+              id="settings-search-input"
+              class="settings-search-input"
+              placeholder="Search settings…"
+              aria-label="Search all settings"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
           <button type="button" class="settings-nav-btn active" data-section="general">General</button>
           <button type="button" class="settings-nav-btn" data-section="usage">Usage</button>
           <button type="button" class="settings-nav-btn" data-section="local-models">Local models</button>
@@ -238,9 +293,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               Cloud API keys, default chat model, and task-specific model choices.
             </p>
 
-            <div id="settings-custom-providers-host"></div>
+            <!-- JS-mounted panels sit in a host <div>. Any such host that holds a
+                 top-level panel MUST carry class="settings-mount" so its injected
+                 fieldset gets the same inter-panel spacing as inline ones — see the
+                 .settings-section > .settings-mount > fieldset rule in settings.css. -->
+            <div id="settings-custom-providers-host" class="settings-mount"></div>
 
-            <div id="settings-env-detect-host"></div>
+            <div id="settings-env-detect-host" class="settings-mount"></div>
 
             <fieldset>
               <legend>Chat model</legend>
@@ -254,20 +313,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Cloud instead of running it on this machine — configure it in the Remote agents
                 section.
               </span>
-              <label>
-                Custom OpenRouter model
-                <input
-                  type="text"
-                  name="openRouterModel"
-                  placeholder="vendor/model (e.g. anthropic/claude-3.7-sonnet)"
-                  autocomplete="off"
-                />
-                <span class="field-hint">
-                  Adds a model id beyond the built-in OpenRouter shortlist to the picker. Requires an
-                  OpenRouter API key in the Providers section. Browse ids at
-                  <code>openrouter.ai/models</code>.
-                </span>
-              </label>
             </fieldset>
 
             <fieldset>
@@ -318,9 +363,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </label>
             </fieldset>
 
-            <div id="settings-model-routing-host"></div>
+            <div id="settings-model-routing-host" class="settings-mount"></div>
 
-            <div id="settings-gh-cli-host"></div>
+            <div id="settings-gh-cli-host" class="settings-mount"></div>
 
             <fieldset>
               <legend>Agent behavior</legend>
@@ -420,7 +465,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               Costs are approximate and use catalog pricing, including Anthropic prompt-cache rates
               when cache tokens are reported.
             </p>
-            <div id="settings-usage-host"></div>
+            <div id="settings-usage-host" class="settings-mount"></div>
           </section>
 
           <section class="settings-section" data-section="local-models">
@@ -429,7 +474,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               Connect to an LM Studio (or other OpenAI-compatible) server.
             </p>
 
-            <div id="settings-local-providers-host"></div>
+            <div id="settings-local-providers-host" class="settings-mount"></div>
 
             <fieldset>
               <legend>Routing behavior</legend>
@@ -460,15 +505,32 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Use instruct model to classify shell commands (when OS sandbox is off)
               </label>
               <label>
-                Safety confidence threshold
-                <input
-                  type="number"
-                  name="safetyConfidenceThreshold"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                />
-                <span class="field-hint">Auto-allow sandbox-scoped commands at or above this confidence (0–1)</span>
+                Sandbox auto-allow confidence
+                <span class="slider-row">
+                  <input
+                    type="range"
+                    name="safetySandboxAllowThreshold"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                  />
+                  <output class="slider-value" for="safetySandboxAllowThreshold">0.85</output>
+                </span>
+                <span class="field-hint">Auto-run sandbox-scoped commands at or above this confidence. Higher = stricter (more prompts).</span>
+              </label>
+              <label>
+                Strict-mode external deny confidence
+                <span class="slider-row">
+                  <input
+                    type="range"
+                    name="safetyExternalDenyThreshold"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                  />
+                  <output class="slider-value" for="safetyExternalDenyThreshold">1.00</output>
+                </span>
+                <span class="field-hint">Hard-block (no prompt) commands the model is at least this confident are dangerous and external. Leave at 1.00 to disable.</span>
               </label>
               <label class="checkbox-label">
                 <input type="checkbox" name="autoRunSandboxCommands" />
@@ -484,6 +546,33 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 restorable <code>refs/copse/backups/*</code> ref. Shell commands and web fetches still
                 prompt. Turn off to review every agent file edit.
               </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Trusted commands</legend>
+              <p class="settings-fieldset-desc">
+                Commands trusted to run <strong>unsandboxed with no prompt</strong> — for tools that
+                can't run inside the workspace sandbox but are safe (e.g.
+                <code>xcodebuild</code>). A line like <code>mkdir build &amp;&amp; xcodebuild …</code>
+                runs without a prompt because <code>mkdir</code> is a trivially-safe prep step and
+                <code>xcodebuild</code> is trusted; a destructive, network, or untrusted segment
+                (e.g. <code>curl</code>, <code>npm test</code>) makes the whole line prompt as usual.
+                Only honoured in a trusted workspace and when auto-run is on; shells and interpreters
+                (<code>sh</code>, <code>bash</code>, <code>node</code>, …) can't be trusted this way.
+              </p>
+              <label>
+                Trusted command names
+                <textarea
+                  name="trustedShellCommands"
+                  rows="5"
+                  spellcheck="false"
+                  placeholder="xcodebuild"
+                ></textarea>
+                <span class="field-hint">
+                  One command basename per line (e.g. <code>xcodebuild</code>). Matches the command's
+                  basename only, never its arguments.
+                </span>
+              </label>
             </fieldset>
           </section>
 
@@ -690,7 +779,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               and are off by default.
             </p>
 
-            <div id="settings-acp-agents-host"></div>
+            <div id="settings-acp-agents-host" class="settings-mount"></div>
 
             <fieldset>
               <legend>MCP UI artefacts (canvas)</legend>
@@ -898,6 +987,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
           </section>
 
+          <div class="settings-search-results" id="settings-search-results"></div>
+
+          <p class="settings-search-empty" id="settings-search-empty" hidden></p>
+
           <div class="settings-buttons">
             <button type="submit">Save</button>
             <button type="button" id="settings-cancel">Cancel</button>
@@ -1004,16 +1097,105 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   const navBtns = overlay.querySelectorAll<HTMLButtonElement>('.settings-nav-btn')
   const sections = overlay.querySelectorAll<HTMLElement>('.settings-section')
+  const contentEl = qsRequired(overlay, '.settings-content')
+  const searchInput = qsRequired<HTMLInputElement>(overlay, '#settings-search-input')
+  const searchEmpty = qsRequired(overlay, '#settings-search-empty')
+  const searchResults = qsRequired(overlay, '#settings-search-results')
+  // The section a nav button last selected, restored when a search is cleared.
+  let activeSection: SettingsSection = 'general'
+  // Blocks lifted into the results list, each with the comment node marking the
+  // spot to drop it back into when the search is cleared.
+  let liftedBlocks: { node: HTMLElement; marker: Comment }[] = []
+  // Async section content (ACP agents, Sources lists) loads only when its tab is
+  // opened; search reveals those blocks too, so populate them once per open.
+  let searchContentLoaded = false
 
   function showSection(id: SettingsSection): void {
+    activeSection = id
     navBtns.forEach((btn) => btn.classList.toggle('active', btn.dataset['section'] === id))
     sections.forEach((sec) => sec.classList.toggle('active', sec.dataset['section'] === id))
   }
+
+  // A settings "block" is a top-level fieldset — one not nested inside another
+  // (LM Studio sits inside Local providers, so it isn't its own block).
+  function topLevelBlocks(root: ParentNode): HTMLElement[] {
+    return Array.from(root.querySelectorAll<HTMLElement>('fieldset')).filter(
+      (fs) => !fs.parentElement?.closest('fieldset'),
+    )
+  }
+
+  // Return each lifted block to the marker left in its original position.
+  function restoreLiftedBlocks(): void {
+    for (const { node, marker } of liftedBlocks) marker.replaceWith(node)
+    liftedBlocks = []
+  }
+
+  /**
+   * Cross-section search: type text and every settings block (a top-level
+   * `<fieldset>`) whose text contains it is collected into one results list, no
+   * matter which section it lives in. Blocks are shown whole — never cropped —
+   * and ranked so a hit in the block's own heading (its legend) sorts above one
+   * that only matched body text, since the heading names what the block is. With
+   * the box empty, the normal one-section-at-a-time view is restored.
+   */
+  function applySearch(raw: string): void {
+    // Always start from a clean slate so each keystroke re-ranks from scratch.
+    restoreLiftedBlocks()
+    const query = raw.trim().toLowerCase()
+    if (!query) {
+      contentEl.classList.remove('settings-searching')
+      searchEmpty.hidden = true
+      searchResults.replaceChildren()
+      showSection(activeSection)
+      return
+    }
+
+    // Pull in the lazily-loaded section content so matched blocks (e.g. the ACP
+    // agents list) render fully rather than as an empty shell.
+    if (!searchContentLoaded) {
+      searchContentLoaded = true
+      void acpAgentsSection.refresh()
+      void refreshSources()
+    }
+
+    contentEl.classList.add('settings-searching')
+    const matches: { node: HTMLElement; rank: number }[] = []
+    sections.forEach((sec) => {
+      for (const block of topLevelBlocks(sec)) {
+        if (!block.textContent.toLowerCase().includes(query)) continue
+        const legend = block.querySelector('legend')?.textContent.toLowerCase() ?? ''
+        matches.push({ node: block, rank: legend.includes(query) ? 0 : 1 })
+      }
+    })
+    // Stable sort (legend matches first) keeps document order within each rank.
+    matches.sort((a, b) => a.rank - b.rank)
+    for (const { node } of matches) {
+      const marker = document.createComment('lifted settings block')
+      node.replaceWith(marker)
+      searchResults.append(node)
+      liftedBlocks.push({ node, marker })
+    }
+    if (matches.length === 0) {
+      searchEmpty.textContent = `No settings match “${raw.trim()}”.`
+      searchEmpty.hidden = false
+    } else {
+      searchEmpty.hidden = true
+    }
+  }
+
+  searchInput.addEventListener('input', () => {
+    applySearch(searchInput.value)
+  })
 
   navBtns.forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = btn.dataset['section'] as SettingsSection | undefined
       if (id) {
+        // Selecting a section is an explicit exit from search results.
+        if (searchInput.value) {
+          searchInput.value = ''
+          applySearch('')
+        }
         showSection(id)
         if (id === 'usage') void usageSection.refresh()
         // Defer disk scans until each tab is opened, so users who never visit them
@@ -1375,6 +1557,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   })
 
   overlay.addEventListener('settings-open', () => {
+    // A fresh open always starts on a section, never in a leftover search.
+    searchContentLoaded = false
+    if (searchInput.value) {
+      searchInput.value = ''
+    }
+    applySearch('')
     showSection(pendingSection ?? 'general')
     pendingSection = null
     void (async (): Promise<void> => {
@@ -1424,6 +1612,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         comparisonJudgeModel ?? DEFAULT_COMPARISON_JUDGE_MODEL,
       )
       await loadSimpleFields(form, api)
+      await wireSafetySliders(form, api)
       const savedWebOrigins = (await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING)) as
         | string[]
         | undefined
@@ -1431,6 +1620,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       ;(form.elements.namedItem('webAllowedOrigins') as HTMLTextAreaElement).value = (
         savedWebOrigins?.length ? savedWebOrigins : DEFAULT_WEB_ALLOWED_ORIGINS
       ).join('\n')
+      ;(form.elements.namedItem('trustedShellCommands') as HTMLTextAreaElement).value =
+        formatTrustedCommands(
+          sanitizeTrustedCommands(await api.settings.get(TRUSTED_COMMANDS_SETTING)),
+        )
       ;(form.elements.namedItem('theme') as HTMLSelectElement).value = store.getState().theme
       ;(form.elements.namedItem('fontSize') as HTMLInputElement).value = String(
         store.getState().fontSize,
@@ -1491,7 +1684,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         ? rightPanelPositionRaw
         : 'auto'
       const appIconVariant = data.get('appIconVariant') as AppIconVariant
-      const confidence = parseFloat(data.get('safetyConfidenceThreshold') as string)
+      const sandboxAllow = parseFloat(data.get('safetySandboxAllowThreshold') as string)
+      const externalDeny = parseFloat(data.get('safetyExternalDenyThreshold') as string)
 
       const tintColorRaw = data.get('uiTintColor')
       const uiTintColor =
@@ -1529,12 +1723,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         safetyModel: routingValues.safetyModel,
         reviewModel: routingValues.reviewModel,
         safetyClassifierEnabled: data.get('safetyClassifierEnabled') === 'on',
-        safetyConfidenceThreshold: Number.isFinite(confidence) ? confidence : 0.85,
+        safetySandboxAllowThreshold: Number.isFinite(sandboxAllow) ? sandboxAllow : 0.85,
+        safetyExternalDenyThreshold: Number.isFinite(externalDeny) ? externalDeny : 1,
         autoRunSandboxCommands: data.get('autoRunSandboxCommands') === 'on',
         mcpAutoAllowReadOnly: data.get('mcpAutoAllowReadOnly') === 'on',
         defaultReadonlyMode: data.get('defaultReadonlyMode') === 'on',
         webAllowedOrigins: parseWebAllowedOrigins(data.get('webAllowedOrigins')),
         webAllowUserApproval: data.get(WEB_ALLOW_USER_APPROVAL_SETTING) === 'on',
+        trustedShellCommands: parseTrustedCommands(formDataString(data, 'trustedShellCommands')),
       })
 
       store.setState({

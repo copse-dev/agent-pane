@@ -32,6 +32,16 @@ export interface TodoItem {
   assignedModel?: TodoAssignedModel
 }
 
+/** A todo patch: merges into an existing item by `id`, or adds a new one when
+ * `id` is omitted. Used by update_todos and post-turn review todo updates. */
+export interface TodoUpdateInput {
+  id?: string | undefined
+  content: string
+  status: TodoStatus
+  check?: TodoCheck | undefined
+  assignedModel?: TodoAssignedModel | undefined
+}
+
 /**
  * The JSON payload a host serializes into an agent run's prompt. Parsed back by
  * `parseAgentRunPayload` — the loop's run input, so the shape lives with the loop.

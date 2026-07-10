@@ -98,6 +98,46 @@ dialog.settings-overlay::backdrop {
   /* Distinguish "selected" from mere hover, which shares the same fill. */
   box-shadow: inset 2px 0 0 var(--accent);
 }
+/* Cross-section search box, pinned above the section list in the sidebar. */
+.settings-search {
+  margin-bottom: var(--spacing-sm);
+}
+.settings-search-input {
+  width: 100%;
+  padding: 8px var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+.settings-search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.settings-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Search results mode: the matching blocks are lifted out of their sections
+   into #settings-search-results (ranked, legend hits first). Hide the section
+   list and show only that results list; cleared search restores the sections. */
+.settings-search-results {
+  display: none;
+}
+.settings-content.settings-searching .settings-section {
+  display: none;
+}
+.settings-content.settings-searching .settings-search-results {
+  display: block;
+}
+.settings-search-empty {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-md) 0;
+}
+
 .settings-content {
   flex: 1;
   overflow-y: auto;
@@ -135,6 +175,21 @@ dialog.settings-overlay::backdrop {
   color: var(--text-muted);
   line-height: 1.4;
 }
+/* A range slider paired with a live numeric readout. */
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.slider-row input[type='range'] {
+  flex: 1;
+}
+.slider-value {
+  min-width: 2.75em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
 .settings-buttons {
   display: flex;
   gap: var(--spacing-md);
@@ -168,17 +223,33 @@ dialog.settings-overlay::backdrop {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
-/* Each fieldset is a distinct group: give it real separation from its
-   neighbours and roomier internal padding so related controls cluster
-   together and unrelated ones don't crowd. */
+/* Each fieldset is a distinct card: an elevated surface with roomier internal
+   padding so related controls cluster together and unrelated ones don't crowd.
+   Spacing *between* panels is handled separately (below) so it stays uniform
+   whether a panel is inline in the template or mounted by JS. */
 .settings-content fieldset {
   background: var(--bg-elevated);
   border-radius: var(--radius-lg);
   padding: var(--spacing-lg);
-  margin-bottom: var(--spacing-xl);
 }
-.settings-content fieldset:last-child {
-  margin-bottom: 0;
+/* Uniform gap between a section's top-level panels. Scoped to direct fieldsets
+   AND fieldsets injected into a `.settings-mount` host, so an inline panel and a
+   JS-mounted one share the exact same rhythm.
+
+   Deliberately NOT `.settings-content fieldset { margin-bottom } +
+   fieldset:last-child { 0 }`: the JS mount points wrap each injected panel in a
+   host <div>, which made that panel the *last child of its wrapper*. So the
+   `:last-child` reset matched — and zeroed — the gap after every mounted panel
+   (Providers, model routing, GitHub CLI, ACP agents, …) while inline panels kept
+   the full gap. That parent-relative reset was the inconsistent-spacing bug.
+
+   Nested fieldsets (e.g. the auth cards inside "Remote agents") are intentionally
+   excluded — they are not top-level panels and space themselves. No last-panel
+   reset is needed: the sticky `.settings-buttons` footer carries its own top
+   margin, which collapses with the final panel's bottom margin to the same gap. */
+.settings-section > fieldset,
+.settings-section > .settings-mount > fieldset {
+  margin-bottom: var(--spacing-xl);
 }
 /* The group's title should read as a heading, not a faint caption — it anchors
    everything below it. */

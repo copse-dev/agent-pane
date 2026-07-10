@@ -174,10 +174,10 @@ async function typePrompt(prompt: EvalPrompt): Promise<void> {
   await waitForPromptReady()
   await attachPromptFiles(attachments)
   await browser.execute((value) => {
-    const el = document.querySelector('.prompt-input') as HTMLTextAreaElement | null
+    const el = document.querySelector('.prompt-input') as HTMLElement | null
     if (!el) throw new Error('.prompt-input not found')
     el.focus()
-    el.value = value
+    el.textContent = value
     el.dispatchEvent(new Event('input', { bubbles: true }))
   }, text)
 }

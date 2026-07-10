@@ -50,6 +50,10 @@ contextBridge.exposeInMainWorld('api', {
     estimateContext: (threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:estimateContext', threadId, payload),
     abort: (threadId: string) => ipcRenderer.invoke('agent:abort', threadId),
+    retryReview: (threadId: string, payload: string) =>
+      ipcRenderer.invoke('agent:retryReview', threadId, payload),
+    retryComparison: (threadId: string, payload: string) =>
+      ipcRenderer.invoke('agent:retryComparison', threadId, payload),
     clearHistory: (threadId: string) => ipcRenderer.invoke('agent:clearHistory', threadId),
     refreshModelContext: () => ipcRenderer.invoke('agent:refreshModelContext'),
     suggestTitle: (text: string) => ipcRenderer.invoke('agent:suggestTitle', text),
@@ -160,6 +164,7 @@ contextBridge.exposeInMainWorld('api', {
     reject: (path: string) => ipcRenderer.invoke('diff:reject', path),
     approveAll: () => ipcRenderer.invoke('diff:approveAll'),
     rejectAll: () => ipcRenderer.invoke('diff:rejectAll'),
+    content: (path: string) => ipcRenderer.invoke('diff:content', path),
     onShowDiff: (handler: (path: string, before: string, after: string, lang: string) => void) => {
       const listener = (
         _e: Electron.IpcRendererEvent,
@@ -356,7 +361,8 @@ contextBridge.exposeInMainWorld('api', {
     setSecurity: (prefs: {
       localServerUrl: string
       safetyClassifierEnabled: boolean
-      safetyConfidenceThreshold: number
+      safetySandboxAllowThreshold: number
+      safetyExternalDenyThreshold: number
       safetyModel: string
       reviewModel?: string
       autoRunSandboxCommands: boolean
@@ -364,6 +370,7 @@ contextBridge.exposeInMainWorld('api', {
       defaultReadonlyMode: boolean
       webAllowedOrigins: string[]
       webAllowUserApproval: boolean
+      trustedShellCommands?: string[]
     }) => ipcRenderer.invoke('settings:setSecurity', prefs),
     getKey: (provider: string) => ipcRenderer.invoke('settings:getKey', provider),
     getKeyEncrypted: (provider: string) => ipcRenderer.invoke('settings:getKeyEncrypted', provider),
@@ -474,9 +481,21 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('gh:prFileDiff', owner, repo, number, path),
     resolvePrUrl: (url: string) => ipcRenderer.invoke('gh:resolvePrUrl', url),
     agentPrLinks: () => ipcRenderer.invoke('gh:agentPrLinks'),
+    rerunFailedRuns: (owner: string, repo: string, number: number) =>
+      ipcRenderer.invoke('gh:rerunFailedRuns', owner, repo, number),
+    approvePr: (owner: string, repo: string, number: number) =>
+      ipcRenderer.invoke('gh:approvePr', owner, repo, number),
+    markPrReady: (owner: string, repo: string, number: number) =>
+      ipcRenderer.invoke('gh:markPrReady', owner, repo, number),
+    enableAutoMerge: (owner: string, repo: string, number: number) =>
+      ipcRenderer.invoke('gh:enableAutoMerge', owner, repo, number),
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
+  },
+  editors: {
+    list: () => ipcRenderer.invoke('editors:list'),
+    open: (editorId: string) => ipcRenderer.invoke('editors:open', editorId),
   },
   panes: {
     popout: (mode: string) => ipcRenderer.invoke('panes:popout', mode),

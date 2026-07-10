@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { setComposerValue } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -23,14 +24,13 @@ describe('package install approval', () => {
   it('shows a clean, install-specific approval dialog', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    const textarea = await $('.prompt-input')
-    await textarea.setValue('[[mcp:run_shell {"command":"npm install"}]]')
+    await setComposerValue('[[mcp:run_shell {"command":"npm install"}]]')
     await $('.submit-btn').click()
 
     const dialog = await $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
 
-    await expect(dialog.$('.approval-title')).toHaveText('Run package install?')
+    await expect(dialog.$('.approval-heading')).toHaveText('Run package install?')
 
     const body = await dialog.$('.approval-body').getText()
     expect(body).toContain('npm install')

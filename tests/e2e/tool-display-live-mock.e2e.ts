@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { setComposerValue } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -27,8 +28,7 @@ describe('tool call display live mock', () => {
   it('shows human-readable single tool name', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    const textarea = await $('.prompt-input')
-    await textarea.setValue('list files please')
+    await setComposerValue('list files please')
     await $('.submit-btn').click()
 
     await expect($('.tool-card .tool-name')).toHaveText('List directory', { wait: 30_000 })

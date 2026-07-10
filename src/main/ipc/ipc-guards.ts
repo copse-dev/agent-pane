@@ -69,6 +69,11 @@ export const estimateContextPayloadSchema = z.object({
   model: z.string().optional(),
 })
 
+export const retryReviewPayloadSchema = z.object({
+  workingBrief: z.string().max(8192).optional(),
+  model: z.string().max(256).optional(),
+})
+
 export const followUpContextSchema = z.object({
   userMessage: z.string(),
   assistantMessage: z.string(),

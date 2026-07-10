@@ -36,6 +36,21 @@ export const GITHUB_READONLY_CI_TOOLS = new Set([
   'get_ci_failure_logs',
 ])
 
+/**
+ * Mutating GitHub PR tools (rerun CI, approve, mark-ready, enable-auto-merge).
+ * Unlike the read-only sets above, these change state on github.com, so the gate
+ * MUST prompt for them — they are deliberately kept out of every auto-run set so
+ * the default-allow branch never reaches them. Names mirror the tools defined in
+ * src/main/tools/gh-pr-action-tools.ts. (issue #690 Q3 — per-repo "remember"
+ * granularity is still open, so for now every call prompts.)
+ */
+export const GITHUB_WRITE_TOOLS = new Set([
+  'gh_pr_rerun_failed_ci',
+  'gh_pr_approve',
+  'gh_pr_mark_ready',
+  'gh_pr_enable_auto_merge',
+])
+
 export interface PermissionCheck {
   toolName: string
   args: unknown
@@ -44,6 +59,7 @@ export interface PermissionCheck {
 export type ShellPermissionDecision =
   | { action: 'allow'; reasons: string[] }
   | { action: 'prompt'; reasons: string[] }
+  | { action: 'deny'; reasons: string[] }
 
 export function decideShellPermission(
   command: string,
@@ -52,7 +68,16 @@ export function decideShellPermission(
     sandboxEnabled: boolean
     autoRun: boolean
     classification: ClassificationResult | null
-    confidenceThreshold: number
+    /** Min confidence for a `sandbox`-scoped classification to auto-run (default 0.85). */
+    sandboxAllowThreshold: number
+    /**
+     * Strict-mode hard-deny bar: when the classifier is at least this confident a
+     * command is `external` *and* a deterministic destructive signal fires, the
+     * command is refused outright rather than surfaced for approval. Defaults to 1
+     * (effectively off — only a certainty-1.0 verdict denies) so existing behaviour
+     * is unchanged until the user lowers it. Never denies plain external work.
+     */
+    externalDenyThreshold?: number
   },
 ): ShellPermissionDecision {
   if (!opts.autoRun) {
@@ -86,6 +111,29 @@ export function decideShellPermission(
   // No OS sandbox: the heuristic is the only guard, so an ambiguous "may reach network"
   // verdict must prompt exactly like a hard-external one — auto-running it would be an
   // unprompted network/out-of-workspace call.
+  const { classification, sandboxAllowThreshold } = opts
+  const externalDenyThreshold = opts.externalDenyThreshold ?? 1
+
+  // Strict-mode hard-deny: refuse outright (no click-through) only when the safety
+  // model is confident the command is external *and* a deterministic destructive
+  // signal fires — "seems bad" by two independent measures. Checked before the
+  // prompt branches so a deny always wins. Off by default (threshold 1).
+  if (
+    classification &&
+    classification.scope === 'external' &&
+    classification.confidence >= externalDenyThreshold &&
+    dangerous.length > 0
+  ) {
+    return {
+      action: 'deny',
+      reasons: [
+        `safety model flags dangerous external activity: ${classification.reason} ` +
+          `(confidence ${classification.confidence.toFixed(2)})`,
+        ...dangerous,
+      ],
+    }
+  }
+
   if (analysis.verdict === 'external' || analysis.verdict === 'ambiguous') {
     return { action: 'prompt', reasons: analysis.reasons }
   }
@@ -93,11 +141,10 @@ export function decideShellPermission(
     return { action: 'prompt', reasons: dangerous }
   }
 
-  const { classification, confidenceThreshold } = opts
   if (
     classification &&
     classification.scope === 'sandbox' &&
-    classification.confidence >= confidenceThreshold
+    classification.confidence >= sandboxAllowThreshold
   ) {
     return { action: 'allow', reasons: [classification.reason] }
   }
@@ -148,6 +195,24 @@ export function formatExternalSandboxPromptBody(command: string, reasons: string
   return (
     `This command needs access the macOS project sandbox blocks (${detail}).\n\n` +
     `${command}\n\n` +
+    `Allow running it once outside the sandbox?`
+  )
+}
+
+/**
+ * Approval body when the agent asked up front (via `expects_sandbox_block`) to run
+ * an ambiguously-external command outside the sandbox. Unlike the retry prompt,
+ * this is NOT backed by a recorded sandbox violation — it is the agent's
+ * expectation — so the wording says so plainly and invites more scrutiny.
+ */
+export function formatExpectedSandboxBlockPromptBody(command: string, reasons: string[]): string {
+  const detail = reasons.length ? reasons.join('; ') : 'network or outside-workspace access'
+  return (
+    `The agent expects this command to need access the macOS project sandbox blocks ` +
+    `(${detail}) and is asking to run it outside the sandbox up front, rather than ` +
+    `letting it fail inside first.\n\n` +
+    `${command}\n\n` +
+    `This is the agent's expectation, not a confirmed sandbox block. ` +
     `Allow running it once outside the sandbox?`
   )
 }
@@ -215,6 +280,34 @@ export function shellRequiresOutsideSandbox(
 ): boolean {
   if (!sandboxEnabled) return false
   return analyzeShellCommand(command, workspaceRoot).verdict === 'external'
+}
+
+/**
+ * Whether the agent's up-front `expects_sandbox_block` hint may pull the
+ * unsandboxed-escalation prompt forward for this command.
+ *
+ * Eligible ONLY for the `ambiguous` verdict — commands that would otherwise
+ * auto-run inside seatbelt and escalate to an unsandboxed retry if the OS
+ * actually blocked them (gh, cloud CLIs, ephemeral runners, nc). For those, the
+ * hint just moves the same approval earlier, avoiding a partial in-sandbox run
+ * before the retry. It is deliberately NOT honored for:
+ *   - `external`: already prompts + runs outside up front, so there is nothing to
+ *     pull forward, and
+ *   - `sandbox`: no external signal at all — honoring a model-declared hint here
+ *     would let it route a fully-contained command outside without a
+ *     runner-verified block, the exact self-declared-escalation lever the retry
+ *     path avoids (issues #103/#104). Such commands must still earn their escape
+ *     from a real, non-forgeable sandbox violation, never the model's say-so.
+ */
+export function shellExpectedBlockEscalation(
+  command: string,
+  workspaceRoot: string | null,
+  sandboxEnabled: boolean,
+): { eligible: boolean; reasons: string[] } {
+  if (!sandboxEnabled) return { eligible: false, reasons: [] }
+  const analysis = analyzeShellCommand(command, workspaceRoot)
+  if (analysis.verdict !== 'ambiguous') return { eligible: false, reasons: [] }
+  return { eligible: true, reasons: analysis.reasons }
 }
 
 export function shellSandboxFailureShouldOfferUnsandboxedRetry(

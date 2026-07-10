@@ -61,6 +61,15 @@ describe('attachTableCopyButtons', () => {
     assert.equal(qsRequired<HTMLTableElement>(root, 'table').dataset['copyAttached'], 'true')
   })
 
+  it('wraps the table in a scroll container so a wide table scrolls itself', () => {
+    const root = tableRoot()
+    attachTableCopyButtons(root)
+    const scroll = qsRequired(root, '.table-copy-shell > .table-copy-scroll')
+    assert.equal(scroll.querySelector('table')?.tagName, 'TABLE')
+    // The copy button sits outside the scroll box so it stays pinned.
+    assert.equal(scroll.querySelector('button.table-copy'), null)
+  })
+
   it('copies TSV and flips to Copied, then resets', () => {
     const writes = installClipboard()
     const root = tableRoot()

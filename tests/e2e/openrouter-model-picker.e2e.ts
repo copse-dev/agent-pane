@@ -134,16 +134,30 @@ describe('OpenRouter model picker', () => {
     await saveElementScreenshot('.model-picker-menu', 'openrouter-model-picker-menu.png')
   })
 
-  it('exposes an OpenRouter API key field and custom model input in Settings', async () => {
+  it('exposes an OpenRouter API key field and custom model input in the OpenRouter provider form', async () => {
     await browser.keys('Escape')
     await $('[aria-label="Settings"]').click()
     await $('.settings-section[data-section="general"]').waitForExist({ timeout: 15_000 })
 
+    // The key and custom-model fields live inside the OpenRouter provider form,
+    // shown only once its chip is selected in the Providers panel.
+    const selected = await browser.execute(() => {
+      const chip = [...document.querySelectorAll<HTMLButtonElement>('.provider-chip')].find(
+        (el) => el.textContent?.trim() === 'OpenRouter',
+      )
+      chip?.click()
+      return !!chip
+    })
+    assert.equal(selected, true, 'expected an OpenRouter provider chip')
+
+    await $('.provider-form input[name="openRouterModel"]').waitForExist({ timeout: 5_000 })
+
     const fields = await browser.execute(() => ({
-      hasOpenRouterKey: !!document.querySelector('input[name="openrouterKey"]'),
-      hasCustomModel: !!document.querySelector('input[name="openRouterModel"]'),
+      hasOpenRouterKey: !!document.querySelector('.provider-form input[type="password"]'),
+      hasCustomModel: !!document.querySelector('.provider-form input[name="openRouterModel"]'),
       customModelValue:
-        document.querySelector<HTMLInputElement>('input[name="openRouterModel"]')?.value ?? '',
+        document.querySelector<HTMLInputElement>('.provider-form input[name="openRouterModel"]')
+          ?.value ?? '',
     }))
 
     assert.equal(fields.hasOpenRouterKey, true)

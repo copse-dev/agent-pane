@@ -5,7 +5,13 @@ import {
   createAgentRunAbortScheduler,
   DEFAULT_MAX_LLM_CALLS,
 } from '@copse/agent/agent-loop-limits.ts'
-import type { LLMMessage, LLMTool, StreamChunk, UserContent } from '@shared/types'
+import type {
+  LLMMessage,
+  LLMTool,
+  StreamChunk,
+  ToolExecuteResult,
+  UserContent,
+} from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { getSetting } from './storage/settings.ts'
@@ -25,8 +31,18 @@ import {
   buildReviewRoute,
   isLocalChatModel,
 } from './providers/provider-selection.ts'
+import {
+  applyReviewTodoUpdates,
+  buildReviewRemediationNudge,
+  MAX_POST_TURN_REVIEW_CYCLES,
+  runParentContinuationTurn,
+  runPostTurnReviewOnce,
+  runPreReviewTodoGate,
+  type RunParentContinuationOptions,
+} from './post-turn-orchestration.ts'
 import { runPostTurnReview } from './review-subagent-runner.ts'
 import { isEditTool } from '@copse/agent/review-subagent.ts'
+import { hasOpenTodos } from '@copse/agent/agent-loop-guards.ts'
 import {
   prepareAgentHistory,
   contextTrimmedChunk,
@@ -54,7 +70,12 @@ import {
   isAutoComparisonEnabled,
 } from './model-comparison-runner.ts'
 import { resetSubagentUsage, getAccumulatedSubagentUsage } from './subagent-usage.ts'
-import { setAgentRunTodoContext, clearAgentRunTodos, getAgentRunTodos } from './agent-run-todos.ts'
+import {
+  setAgentRunTodoContext,
+  clearAgentRunTodos,
+  getAgentRunTodos,
+  setAgentRunTodos,
+} from './agent-run-todos.ts'
 import {
   buildGithubLinkSteeringPrompt,
   shouldSteerGithubLinks,
@@ -96,6 +117,13 @@ export {
 } from './title-generator.ts'
 
 const abortMap = new Map<string, AbortController>()
+
+// LM Studio models advertise smaller tool-schema budgets than cloud providers,
+// so reserve more of the window for their tool definitions. Shared by the turn
+// path and the standalone review/comparison retries below.
+function toolSchemaReserveForModel(model: string): number {
+  return model === 'lm-studio' || model.startsWith('lmstudio:') ? 2_500 : 1_000
+}
 
 export const PARENT_DELEGATED_TOOLS = [
   'read_file',
@@ -296,7 +324,7 @@ export async function runAgent(
       SUBAGENTS_ENABLED_DEFAULT,
     )
     const contextWindow = await resolveContextWindow(model)
-    const toolSchemaReserve = model === 'lm-studio' || model.startsWith('lmstudio:') ? 2_500 : 1_000
+    const toolSchemaReserve = toolSchemaReserveForModel(model)
     const provider = await buildProvider(model)
     const subagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
     const subagentUsageModel = subagentRoute?.usageModel ?? model
@@ -470,100 +498,112 @@ export async function runAgent(
       return { todos, ...(extraMessage ? { extraMessage } : {}) }
     })
 
+    const parentLoopTools = parentTools(registry, subagentsEnabled, readonlyMode)
+
+    // The parent tool executor, shared by the main loop and any post-turn parent
+    // continuation turns (pre-review todo gate, review remediation) so both route
+    // subagents, advisor, comparison, and shell tagging identically.
+    const executeParentTool = async (
+      name: string,
+      args: unknown,
+      signal: AbortSignal,
+      toolCallId: string,
+    ): Promise<ToolExecuteResult> => {
+      if (isEditTool(name)) turnChangedFiles = true
+      if (name === 'explore' && subagentsEnabled) {
+        // ALS-scoped (not a global slot): the loop runs fanned-out
+        // explore calls concurrently, each with its own context.
+        return runWithExploreSubagentContext(
+          {
+            parentToolCallId: toolCallId,
+            parentGoal,
+            provider: subagentRoute?.provider ?? provider,
+            registry,
+            contextWindow: subagentRoute?.contextWindow ?? contextWindow,
+            toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
+            onChunk: sendChunk,
+            usageModel: subagentUsageModel,
+            localFallback: subagentLocalFallback,
+          },
+          () => registry.execute(name, args, signal),
+        )
+      }
+      if (name === 'investigate_ci' && subagentsEnabled) {
+        setCiInvestigatorContext({
+          parentToolCallId: toolCallId,
+          parentGoal,
+          provider: subagentRoute?.provider ?? provider,
+          registry,
+          contextWindow: subagentRoute?.contextWindow ?? contextWindow,
+          toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
+          onChunk: sendChunk,
+          usageModel: subagentUsageModel,
+          localFallback: subagentLocalFallback,
+        })
+        try {
+          return await registry.execute(name, args, signal)
+        } finally {
+          setCiInvestigatorContext(null)
+        }
+      }
+      if (name === 'advisor') {
+        // Client-side advisor: hand the tool the live transcript so it can
+        // forward it to a larger advisor model (issue #566). Mirrors the
+        // native tool's automatic transcript forwarding.
+        setAdvisorContext({
+          advisorModel: resolveAdvisorModelId(),
+          executorModel: model,
+          getTranscript: () => trimmed,
+        })
+        try {
+          return await registry.executeNormalized(name, args, signal)
+        } finally {
+          setAdvisorContext(null)
+        }
+      }
+      if (name === 'compare_models') {
+        // Manual trigger: run the two-model diff comparison on demand, with
+        // the live parent goal/registry so the reviewers see the same diff.
+        comparisonRanThisTurn = true
+        setModelComparisonContext({
+          threadId,
+          parentGoal,
+          registry,
+          chatModel: model,
+          onChunk: sendChunk,
+        })
+        try {
+          return await registry.executeNormalized(name, args, signal)
+        } finally {
+          setModelComparisonContext(null)
+        }
+      }
+      if (name === 'run_shell') {
+        // Tag the command's streamed output with this tool-call id so the
+        // terminal pane can route it into the matching "Agent tasks" card.
+        setCurrentShellTaskId(toolCallId)
+        try {
+          return await registry.executeNormalized(name, args, signal)
+        } finally {
+          setCurrentShellTaskId(null)
+        }
+      }
+      return registry.executeNormalized(name, args, signal)
+    }
+
     await runWithAgentRunReadonly(readonlyMode, async () => {
       await runWithAgentRunReadFileLimits(runReadLimits, async () => {
         await runAgentLoop({
           provider,
           messages: trimmed,
-          tools: parentTools(registry, subagentsEnabled, readonlyMode),
+          tools: parentLoopTools,
           usageModel: model,
           maxLlmCalls: DEFAULT_MAX_LLM_CALLS,
           runDeadline: runAbort.deadline,
           onRunDeadlineActivity: runAbort.schedule,
           coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
           getOpenTodos: () => getAgentRunTodos(),
-          executeTool: async (name, args, signal, toolCallId) => {
-            if (isEditTool(name)) turnChangedFiles = true
-            if (name === 'explore' && subagentsEnabled) {
-              // ALS-scoped (not a global slot): the loop runs fanned-out
-              // explore calls concurrently, each with its own context.
-              return runWithExploreSubagentContext(
-                {
-                  parentToolCallId: toolCallId,
-                  parentGoal,
-                  provider: subagentRoute?.provider ?? provider,
-                  registry,
-                  contextWindow: subagentRoute?.contextWindow ?? contextWindow,
-                  toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
-                  onChunk: sendChunk,
-                  usageModel: subagentUsageModel,
-                  localFallback: subagentLocalFallback,
-                },
-                () => registry.execute(name, args, signal),
-              )
-            }
-            if (name === 'investigate_ci' && subagentsEnabled) {
-              setCiInvestigatorContext({
-                parentToolCallId: toolCallId,
-                parentGoal,
-                provider: subagentRoute?.provider ?? provider,
-                registry,
-                contextWindow: subagentRoute?.contextWindow ?? contextWindow,
-                toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
-                onChunk: sendChunk,
-                usageModel: subagentUsageModel,
-                localFallback: subagentLocalFallback,
-              })
-              try {
-                return await registry.execute(name, args, signal)
-              } finally {
-                setCiInvestigatorContext(null)
-              }
-            }
-            if (name === 'advisor') {
-              // Client-side advisor: hand the tool the live transcript so it can
-              // forward it to a larger advisor model (issue #566). Mirrors the
-              // native tool's automatic transcript forwarding.
-              setAdvisorContext({
-                advisorModel: resolveAdvisorModelId(),
-                executorModel: model,
-                getTranscript: () => trimmed,
-              })
-              try {
-                return await registry.executeNormalized(name, args, signal)
-              } finally {
-                setAdvisorContext(null)
-              }
-            }
-            if (name === 'compare_models') {
-              // Manual trigger: run the two-model diff comparison on demand, with
-              // the live parent goal/registry so the reviewers see the same diff.
-              comparisonRanThisTurn = true
-              setModelComparisonContext({
-                threadId,
-                parentGoal,
-                registry,
-                chatModel: model,
-                onChunk: sendChunk,
-              })
-              try {
-                return await registry.executeNormalized(name, args, signal)
-              } finally {
-                setModelComparisonContext(null)
-              }
-            }
-            if (name === 'run_shell') {
-              // Tag the command's streamed output with this tool-call id so the
-              // terminal pane can route it into the matching "Agent tasks" card.
-              setCurrentShellTaskId(toolCallId)
-              try {
-                return await registry.executeNormalized(name, args, signal)
-              } finally {
-                setCurrentShellTaskId(null)
-              }
-            }
-            return registry.executeNormalized(name, args, signal)
-          },
+          executeTool: executeParentTool,
           signal: controller.signal,
           maxContextTokens: contextWindow,
           toolSchemaReserveTokens: toolSchemaReserve,
@@ -604,38 +644,115 @@ export async function runAgent(
       })
     })
 
-    // Post-turn review: when this turn changed files, run a read-only review
-    // subagent over the working diff and surface its verdict. Runs before the
-    // deferred `done` so the thread stays "running" until the review lands.
+    const parentContinuationBase: RunParentContinuationOptions = {
+      provider,
+      messages: trimmed,
+      tools: parentLoopTools,
+      contextWindow,
+      toolSchemaReserve,
+      signal: controller.signal,
+      usageModel: model,
+      executeTool: executeParentTool,
+      onChunk: (chunk: StreamChunk): void => {
+        if (chunk.type === 'done') return
+        sendChunk(chunk)
+        if (chunk.type === 'usage') {
+          inputTokens += chunk.inputTokens
+          outputTokens += chunk.outputTokens
+        }
+      },
+      getOpenTodos: (): TodoItem[] => getAgentRunTodos(),
+      setTodos: (todos: TodoItem[]): void => {
+        setAgentRunTodos(todos)
+      },
+      onHistoryTrimmed: (): void => {
+        notifyTrimmed(sendTrimNotice)
+      },
+      getLastUsage: (): { inputTokens: number; outputTokens: number } | null =>
+        hasLastUsage(provider) ? provider.lastUsage : null,
+      coerceTextToolCallArgs: (name: string, args: unknown) => registry.tryCoerceArgs(name, args),
+      onEditTool: (name: string): void => {
+        if (isEditTool(name)) turnChangedFiles = true
+      },
+      userNudge: '',
+      maxSteps: 6,
+    }
+
+    // Pre-review gate: if the plan still has open todos, give the parent a couple
+    // of deterministic continuation turns to reconcile them before review runs.
+    if (getAgentRunTodos().length > 0 && hasOpenTodos(getAgentRunTodos())) {
+      await runWithAgentRunReadFileLimits(runReadLimits, async () => {
+        await runPreReviewTodoGate(parentContinuationBase)
+      })
+    }
+
+    // Post-turn review: read-only review over the working diff, with an optional
+    // bounded parent remediation loop when the reviewer requests follow-up. Runs
+    // before the deferred `done` so the thread stays "running" until it lands.
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated inside the runAgentLoop callback above; TS narrows to the `false` initializer
     if (turnChangedFiles && getSetting<boolean>('postTurnReviewEnabled', true)) {
-      sendChunk({ type: 'post_turn_review', status: 'running', summary: '' })
-      try {
-        const reviewRoute = await buildReviewRoute()
-        const reviewUsageModel = reviewRoute?.usageModel ?? model
-        const review = await runPostTurnReview({
-          parentGoal,
-          provider: reviewRoute?.provider ?? provider,
-          registry,
-          contextWindow: reviewRoute?.contextWindow ?? contextWindow,
-          toolSchemaReserve: reviewRoute?.toolSchemaReserve ?? toolSchemaReserve,
-          signal: controller.signal,
-          usageModel: reviewUsageModel,
-          onUsage: (u) => {
-            inputTokens += u.inputTokens
-            outputTokens += u.outputTokens
-            sendChunk({
-              type: 'usage',
-              model: reviewUsageModel,
-              inputTokens: u.inputTokens,
-              outputTokens: u.outputTokens,
+      const reviewRoute = await buildReviewRoute()
+      const reviewProvider = reviewRoute?.provider ?? provider
+      const reviewUsageModel = reviewRoute?.usageModel ?? model
+      const reviewContextWindow = reviewRoute?.contextWindow ?? contextWindow
+      const reviewToolSchemaReserve = reviewRoute?.toolSchemaReserve ?? toolSchemaReserve
+
+      for (let cycle = 0; cycle < MAX_POST_TURN_REVIEW_CYCLES; cycle++) {
+        sendChunk({ type: 'post_turn_review', status: 'running', summary: '' })
+        try {
+          const review = await runPostTurnReviewOnce({
+            parentGoal,
+            todos: getAgentRunTodos(),
+            provider: reviewProvider,
+            registry,
+            contextWindow: reviewContextWindow,
+            toolSchemaReserve: reviewToolSchemaReserve,
+            signal: controller.signal,
+            usageModel: reviewUsageModel,
+            onUsage: (u) => {
+              inputTokens += u.inputTokens
+              outputTokens += u.outputTokens
+              sendChunk({
+                type: 'usage',
+                model: reviewUsageModel,
+                inputTokens: u.inputTokens,
+                outputTokens: u.outputTokens,
+              })
+            },
+          })
+
+          const todosAfterReview = applyReviewTodoUpdates(getAgentRunTodos(), review.verdict)
+          if (todosAfterReview.length > 0 || getAgentRunTodos().length > 0) {
+            setAgentRunTodos(todosAfterReview)
+          }
+
+          sendChunk({ type: 'post_turn_review', status: 'done', summary: review.summary })
+
+          const lastCycle = cycle >= MAX_POST_TURN_REVIEW_CYCLES - 1
+          if (!review.verdict.requestFollowUp || lastCycle || controller.signal.aborted) {
+            break
+          }
+
+          const remediation = { madeEdits: false }
+          await runWithAgentRunReadFileLimits(runReadLimits, async () => {
+            await runParentContinuationTurn({
+              ...parentContinuationBase,
+              userNudge: buildReviewRemediationNudge(review.verdict),
+              maxSteps: 8,
+              onEditTool: (name: string): void => {
+                if (isEditTool(name)) {
+                  turnChangedFiles = true
+                  remediation.madeEdits = true
+                }
+              },
             })
-          },
-        })
-        sendChunk({ type: 'post_turn_review', status: 'done', summary: review.summary })
-      } catch (err) {
-        const detail = controller.signal.aborted ? 'Review cancelled.' : classifyAgentError(err)
-        sendChunk({ type: 'post_turn_review', status: 'error', summary: detail })
+          })
+          if (!remediation.madeEdits) break
+        } catch (err) {
+          const detail = controller.signal.aborted ? 'Review cancelled.' : classifyAgentError(err)
+          sendChunk({ type: 'post_turn_review', status: 'error', summary: detail })
+          break
+        }
       }
     }
 
@@ -670,4 +787,115 @@ export async function runAgent(
 
 export function abortAgent(threadId: string): void {
   abortMap.get(threadId)?.abort()
+}
+
+export interface RetryOptions {
+  workingBrief?: string
+  model?: string
+}
+
+/** Register a fresh abort controller for a standalone review/comparison retry,
+ *  mirroring the turn path so the Stop button (agent:abort) can cancel it. */
+function beginRetryRun(threadId: string): {
+  controller: AbortController
+  runAbort: ReturnType<typeof createAgentRunAbortScheduler>
+} {
+  const controller = new AbortController()
+  abortMap.set(threadId, controller)
+  setActiveRunThread(threadId)
+  const runAbort = createAgentRunAbortScheduler(controller)
+  runAbort.schedule()
+  return { controller, runAbort }
+}
+
+/**
+ * Re-run the post-turn review for a thread on demand — the retry action on a
+ * failed review card. The review reads the current working diff, so a failure
+ * the user can fix in place (e.g. the local model server had a different model
+ * loaded, or a transient provider error) is recoverable without re-running the
+ * whole turn. Rebuilds the model context from the thread's current model and
+ * emits the same `post_turn_review` chunks as the auto path, then a `done` so
+ * the thread returns to idle.
+ */
+export async function retryPostTurnReview(
+  threadId: string,
+  priorMessages: LLMMessage[],
+  host: AgentHost<StreamChunk>,
+  registry: ToolRegistry,
+  options?: RetryOptions,
+): Promise<void> {
+  const requestedModel = options?.model ?? getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
+  const model = (await resolveAgentChatModel(requestedModel)).model
+  const sendChunk = createAgentChunkSink(threadId, host)
+  const { controller, runAbort } = beginRetryRun(threadId)
+
+  sendChunk({ type: 'post_turn_review', status: 'running', summary: '' })
+  try {
+    const contextWindow = await resolveContextWindow(model)
+    const toolSchemaReserve = toolSchemaReserveForModel(model)
+    const provider = await buildProvider(model)
+    const parentGoal = resolveParentGoal(options?.workingBrief, priorMessages, '')
+    const reviewRoute = await buildReviewRoute()
+    const reviewUsageModel = reviewRoute?.usageModel ?? model
+    const review = await runPostTurnReview({
+      parentGoal,
+      provider: reviewRoute?.provider ?? provider,
+      registry,
+      contextWindow: reviewRoute?.contextWindow ?? contextWindow,
+      toolSchemaReserve: reviewRoute?.toolSchemaReserve ?? toolSchemaReserve,
+      signal: controller.signal,
+      usageModel: reviewUsageModel,
+      onUsage: (u) => {
+        sendChunk({
+          type: 'usage',
+          model: reviewUsageModel,
+          inputTokens: u.inputTokens,
+          outputTokens: u.outputTokens,
+        })
+      },
+    })
+    sendChunk({ type: 'post_turn_review', status: 'done', summary: review.summary })
+  } catch (err) {
+    const detail = controller.signal.aborted ? 'Review cancelled.' : classifyAgentError(err)
+    sendChunk({ type: 'post_turn_review', status: 'error', summary: detail })
+  } finally {
+    runAbort.clear()
+    clearActiveRunThread(threadId)
+    abortMap.delete(threadId)
+    sendChunk({ type: 'done' })
+  }
+}
+
+/**
+ * Re-run the two-model comparison for a thread on demand — the retry action on a
+ * failed comparison card. Like {@link retryPostTurnReview}, it reviews the
+ * current working diff, so a fixable failure (a mis-loaded local model, a
+ * declined/aborted run) can be retried in place. `runModelComparison` emits its
+ * own running/terminal `model_comparison` chunks (and re-asks for spend approval
+ * when a model is billable); we bracket it with a `done` so the thread idles.
+ */
+export async function retryModelComparison(
+  threadId: string,
+  priorMessages: LLMMessage[],
+  host: AgentHost<StreamChunk>,
+  registry: ToolRegistry,
+  options?: RetryOptions,
+): Promise<void> {
+  const requestedModel = options?.model ?? getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
+  const model = (await resolveAgentChatModel(requestedModel)).model
+  const sendChunk = createAgentChunkSink(threadId, host)
+  const { controller, runAbort } = beginRetryRun(threadId)
+
+  try {
+    const parentGoal = resolveParentGoal(options?.workingBrief, priorMessages, '')
+    await runModelComparison(
+      { threadId, parentGoal, registry, chatModel: model, onChunk: sendChunk },
+      controller.signal,
+    )
+  } finally {
+    runAbort.clear()
+    clearActiveRunThread(threadId)
+    abortMap.delete(threadId)
+    sendChunk({ type: 'done' })
+  }
 }

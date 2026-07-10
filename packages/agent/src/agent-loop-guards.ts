@@ -56,5 +56,18 @@ export function hasOpenTodos(todos: readonly TodoItem[]): boolean {
   return todos.some((t) => t.status === 'pending' || t.status === 'in_progress')
 }
 
-export const OPEN_TODOS_FINALIZE_NUDGE =
-  'You still have open todos. Complete or cancel each pending/in_progress item with update_todos before finishing, or cancel items you will not do.'
+/** Max tool-enabled closeout turns while open todos remain at finalize. */
+export const MAX_TODO_CLOSEOUT_ATTEMPTS = 3
+
+export const OPEN_TODOS_FINALIZE_NUDGE = `You still have open todos in the plan. Before finishing:
+1. Call update_todos (merge=true) to mark each finished item completed or cancel items you will not do.
+2. If work remains, continue the pending/in_progress items — do not stop with open todos.
+Do not reply with plain text claiming todos are done; the plan only updates via update_todos.`
+
+export const OPEN_TODOS_FINALIZE_NUDGE_STRICT = `Open todos remain and were not updated. You MUST call update_todos now:
+- merge=true, patch each item by id with status completed or cancelled, OR
+- continue executing the remaining pending/in_progress work, then update_todos.
+Plain-text claims that work is done are not accepted — update_todos is required.`
+
+export const OPEN_TODOS_STILL_OPEN_MESSAGE =
+  'Note: the task plan still has open items — the agent did not reconcile todos before finishing.'

@@ -1,11 +1,32 @@
-.approval-title {
+/* Single heading for the whole prompt; stays put while the items scroll. */
+.approval-heading {
   margin-bottom: var(--spacing-md);
+}
+/* Stacked list of pending requests; more than one item when a burst of
+ * concurrent permission requests was coalesced into a single prompt. A large
+ * batch scrolls as a group rather than growing the dialog unbounded. */
+.approval-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  max-height: 55vh;
+  overflow-y: auto;
+  margin-bottom: var(--spacing-md);
+}
+.approval-item + .approval-item {
+  border-top: 1px solid var(--border);
+  padding-top: var(--spacing-md);
+}
+/* Light per-row label, shown only for a mixed batch so rows stay identifiable. */
+.approval-item-title {
+  margin-bottom: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
 }
 .approval-body {
   background: var(--bg-base);
   padding: var(--spacing-md);
   border-radius: var(--radius);
-  margin-bottom: var(--spacing-md);
   white-space: pre-wrap;
   max-height: 200px;
   overflow-y: auto;
@@ -21,6 +42,12 @@
   color: #000;
   border-radius: var(--radius);
   padding: 6px 16px;
+}
+/* Paused while an appended request settles, so it can't be clicked through an
+ * unread change (see APPROVAL_SETTLE_MS). */
+.approval-approve:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .approval-reject {
   background: var(--error);

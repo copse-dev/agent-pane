@@ -8,12 +8,13 @@ import {
   seedGitChangesFixture,
 } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { setComposerValue } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
 async function completeMockTurn(): Promise<void> {
   await $('.prompt-input').waitForExist({ timeout: 30_000 })
-  await $('.prompt-input').setValue('review my changes')
+  await setComposerValue('review my changes')
   await $('.submit-btn').click()
 
   await waitForAgentIdle(20_000)
@@ -49,7 +50,7 @@ describe('follow-up suggestion bubbles', () => {
       const ciBubble = await $('.follow-up-bubble[data-id="debug-ci"]')
       await expect(ciBubble).toHaveText('Debug CI Failure')
 
-      await expect($('.prompt-input')).toHaveAttribute('placeholder', 'Send follow-up')
+      await expect($('.prompt-input')).toHaveAttribute('data-placeholder', 'Send follow-up')
 
       await browser.saveScreenshot(join(SCREENSHOT_DIR, 'follow-up-suggestions-demo.png'))
     })

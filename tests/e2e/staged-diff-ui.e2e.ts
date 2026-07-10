@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { collectErrorToasts } from './helpers/assert-no-error-toasts.ts'
+import { setComposerValue } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const PROJECT_ID = 'e2e-staged-diff-project'
@@ -18,8 +19,7 @@ async function waitForAgentIdle(timeoutMs = 60_000): Promise<void> {
 
 async function runWriteFileDirective(path: string, content: string): Promise<void> {
   const args = JSON.stringify({ path, content })
-  const textarea = await $('.prompt-input')
-  await textarea.setValue(`[[mcp:write_file ${args}]]`)
+  await setComposerValue(`[[mcp:write_file ${args}]]`)
   await $('.submit-btn').click()
   await waitForAgentIdle()
 }

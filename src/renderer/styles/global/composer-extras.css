@@ -71,20 +71,24 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  max-width: 240px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 2px 8px;
   font-size: var(--font-size-sm);
 }
+/* A long label ellipsizes inside the pill instead of overflowing its border;
+   min-width lets the flex item actually shrink below its content size. */
+.attachment-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .image-chip img {
   border-radius: 2px;
   object-fit: cover;
-}
-.text-chip,
-.thread-chip {
-  max-width: 240px;
-  white-space: nowrap;
 }
 .attachment-chip button {
   display: inline-flex;
@@ -94,6 +98,37 @@
   cursor: pointer;
   line-height: 1;
   padding: 0 2px;
+}
+/* Pasted-text chip rendered inline with the composer text (composer-editor.ts).
+   Mirrors .attachment-chip's pill look, but sized to sit in a line of text. */
+.inline-paste-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 240px;
+  margin: 0 2px;
+  padding: 0 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: var(--font-size-sm);
+  vertical-align: baseline;
+  user-select: none;
+}
+.inline-paste-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inline-paste-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 2px;
+  color: inherit;
 }
 .follow-up-suggestions {
   display: flex;

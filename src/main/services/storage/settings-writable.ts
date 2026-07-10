@@ -94,6 +94,8 @@ export const webAllowedOriginsSchema = z
   )
   .max(128)
 
+export const trustedShellCommandsSchema = z.array(z.string().min(1).max(128)).max(500)
+
 export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   model: z.string().max(256),
   theme: z.enum(['light', 'dark']),
@@ -132,6 +134,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   skillPluginPaths: z.array(z.string().max(4096)).max(64),
   subagentsEnabled: z.boolean(),
   externalApiSafety: z.boolean(),
+  // Which backend the PR panel + PR tools use to reach GitHub: `auto` prefers
+  // the `gh` CLI and falls back to the REST/GraphQL API, or force one. See
+  // services/github/backend/backend.ts.
+  githubBackend: z.enum(['auto', 'cli', 'api']),
   remoteAgentBaseUrl: remoteAgentBaseUrlSchema,
   remoteAgentAutoCreatePR: z.boolean(),
   remoteAgentWorkOnCurrentBranch: z.boolean(),
@@ -198,7 +204,11 @@ export function parseRendererWritableSetting(
 export const securitySettingsSchema = z.object({
   localServerUrl: z.string().max(2048),
   safetyClassifierEnabled: z.boolean(),
-  safetyConfidenceThreshold: z.number().min(0).max(1),
+  // Split thresholds sent by the Settings dialog. The legacy single value is kept
+  // optional for back-compat with older stored bundles but is no longer written.
+  safetySandboxAllowThreshold: z.number().min(0).max(1),
+  safetyExternalDenyThreshold: z.number().min(0).max(1),
+  safetyConfidenceThreshold: z.number().min(0).max(1).optional(),
   safetyModel: z.string().max(256),
   // Optional: distinct model for the post-turn review subagent. Empty/absent
   // means reuse the parent chat model.
@@ -211,6 +221,9 @@ export const securitySettingsSchema = z.object({
   defaultReadonlyMode: z.boolean(),
   webAllowedOrigins: webAllowedOriginsSchema,
   webAllowUserApproval: z.boolean(),
+  // Allow-list of command basenames trusted to run unsandboxed with no prompt.
+  // Optional so bundles that never send it don't clobber a saved list.
+  trustedShellCommands: trustedShellCommandsSchema.optional(),
 })
 
 export type SecuritySettings = z.infer<typeof securitySettingsSchema>

@@ -87,7 +87,8 @@ export interface IpcInvokeMap {
       prefs: {
         localServerUrl: string
         safetyClassifierEnabled: boolean
-        safetyConfidenceThreshold: number
+        safetySandboxAllowThreshold: number
+        safetyExternalDenyThreshold: number
         safetyModel: string
         autoRunSandboxCommands: boolean
         mcpAutoAllowReadOnly: boolean
@@ -236,6 +237,10 @@ export interface IpcInvokeMap {
 
   // Shell
   'shell:openExternal': { args: [url: string]; result: undefined }
+
+  // External editors ("Open in …" titlebar dropdown)
+  'editors:list': { args: []; result: import('./editors.ts').ExternalEditorList }
+  'editors:open': { args: [editorId: string]; result: undefined }
 
   // LM Studio
   'lmstudio:test': {

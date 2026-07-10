@@ -71,6 +71,25 @@ test('round-trips reasoning, images, and commandSummary', () => {
   deepStrictEqual(roundTrip(messages).messages, messages)
 })
 
+test('round-trips a user message with transcript attachments', () => {
+  const messages: Message[] = [
+    {
+      id: 'u1',
+      role: 'user',
+      // The ￼ placeholder marks where the pasted block sits inline.
+      content: 'apply this ￼ to the intro',
+      attachments: [
+        { kind: 'paste', label: 'Editor feedback' },
+        { kind: 'file', label: 'notes.txt' },
+        { kind: 'thread', label: 'Auth refactor' },
+      ],
+      toolCalls: [],
+      createdAt: 7,
+    },
+  ]
+  deepStrictEqual(roundTrip(messages).messages, messages)
+})
+
 test('round-trips tool calls with inline args and a spilled result', () => {
   const messages: Message[] = [
     {

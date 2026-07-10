@@ -5,6 +5,7 @@ import type {
   SubagentSession,
   Thread,
   ToolCall,
+  TranscriptAttachment,
 } from '@shared/types'
 import {
   type ContentRef,
@@ -43,6 +44,7 @@ interface MessageLike {
   reasoning?: string
   images?: string[]
   commandSummary?: string
+  attachments?: TranscriptAttachment[]
 }
 
 export interface ExplodedMessage {
@@ -151,6 +153,8 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
   }
 
   if (msg.commandSummary !== undefined) line.commandSummary = msg.commandSummary
+  if (msg.attachments !== undefined && msg.attachments.length > 0)
+    line.attachments = msg.attachments
 
   for (const tc of msg.toolCalls) {
     const { spine, files: tcFiles } = explodeToolCall(tc, hash)
@@ -289,6 +293,7 @@ function foldOne(
   }
 
   if (line.commandSummary !== undefined) msg.commandSummary = line.commandSummary
+  if (line.attachments !== undefined) msg.attachments = line.attachments
   return msg
 }
 
@@ -308,6 +313,7 @@ export function foldMessage(
     ...(m.reasoning !== undefined ? { reasoning: m.reasoning } : {}),
     ...(m.images !== undefined ? { images: m.images } : {}),
     ...(m.commandSummary !== undefined ? { commandSummary: m.commandSummary } : {}),
+    ...(m.attachments !== undefined ? { attachments: m.attachments } : {}),
   }
 }
 

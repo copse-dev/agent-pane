@@ -77,6 +77,37 @@ export interface GhPrDetails extends GhPrSummary {
   deletions?: number
   changedFiles?: number
   files: GhPrChangedFile[]
+  /** True while the PR is a draft (mark-ready targets this). */
+  isDraft?: boolean
+  /** True once merge-when-ready / auto-merge has been enabled. */
+  autoMergeEnabled?: boolean
+  /** GitHub review decision, e.g. `APPROVED`, `REVIEW_REQUIRED`, `CHANGES_REQUESTED`. */
+  reviewDecision?: string
+}
+
+/** Which backend implementation serviced a GitHub operation. */
+export type GitHubBackendKind = 'cli' | 'api' | 'mock'
+
+/** User preference for how the PR panel talks to GitHub. */
+export type GitHubBackendPreference = 'auto' | 'cli' | 'api'
+
+/**
+ * Result of a PR lifecycle write action (rerun CI, approve, mark-ready,
+ * enable-merge-when-ready). Shared by the main-process backends, the IPC
+ * surface, the agent tools, and the PR pane so all four speak one shape.
+ */
+export interface PrActionResult {
+  ok: boolean
+  /** Human-readable summary shown in the PR pane and returned by agent tools. */
+  message: string
+  /** Which backend serviced the action (diagnostics + tests). */
+  backend: GitHubBackendKind
+  /** The action left state unchanged because it already held (idempotent no-op). */
+  noop?: boolean
+  /** Auto-merge strategy chosen from the repo's allowed merge methods. */
+  strategy?: 'squash' | 'merge' | 'rebase'
+  /** Number of failed workflow runs that were re-run. */
+  rerunCount?: number
 }
 
 export interface GhPrChangedFile {

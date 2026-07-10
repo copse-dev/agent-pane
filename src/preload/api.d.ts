@@ -1,5 +1,5 @@
 import type { StreamChunk, UsageDelta, ContextBreakdown } from '@shared/types'
-import type { RightPanelMode } from '@shared/types/state.ts'
+import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import type { CursorHookSummary } from '@shared/types/cursor-hooks.ts'
@@ -14,6 +14,7 @@ import type {
   GhPrDetails,
   GhPrFileDiff,
   GhPrSummary,
+  PrActionResult,
 } from '@shared/types/git.ts'
 import type { McpServerStatus, CuratedMcpServerStatus } from '@shared/types/mcp.ts'
 import type { RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
@@ -26,6 +27,7 @@ import type {
 } from '@copse/llm/extra-providers.ts'
 import type { DetectedAcpAgent } from '@shared/acp-known-agents.ts'
 import type { AcpModelSelector, AcpAutoSetupResult } from '@shared/types/acp.ts'
+import type { ExternalEditorList } from '@shared/types/editors.ts'
 
 export type { DetectedAcpAgent }
 
@@ -80,6 +82,8 @@ export interface ApiClient {
     run: (threadId: string, prompt: string) => Promise<void>
     estimateContext: (threadId: string, payload: string) => Promise<ContextBreakdown>
     abort: (threadId: string) => Promise<void>
+    retryReview: (threadId: string, payload: string) => Promise<void>
+    retryComparison: (threadId: string, payload: string) => Promise<void>
     clearHistory: (threadId: string) => Promise<void>
     refreshModelContext: () => Promise<void>
     suggestTitle: (text: string) => Promise<string | null>
@@ -114,6 +118,7 @@ export interface ApiClient {
     reject: (path: string) => Promise<void>
     approveAll: () => Promise<void>
     rejectAll: () => Promise<void>
+    content: (path: string) => Promise<ActiveDiff | null>
     onShowDiff: (
       handler: (path: string, before: string, after: string, lang: string) => void,
     ) => () => void
@@ -248,7 +253,8 @@ export interface ApiClient {
     setSecurity: (prefs: {
       localServerUrl: string
       safetyClassifierEnabled: boolean
-      safetyConfidenceThreshold: number
+      safetySandboxAllowThreshold: number
+      safetyExternalDenyThreshold: number
       safetyModel: string
       reviewModel?: string
       autoRunSandboxCommands: boolean
@@ -256,6 +262,7 @@ export interface ApiClient {
       defaultReadonlyMode: boolean
       webAllowedOrigins: string[]
       webAllowUserApproval: boolean
+      trustedShellCommands?: string[]
     }) => Promise<void>
     getKey: (provider: string) => Promise<boolean>
     /**
@@ -392,9 +399,23 @@ export interface ApiClient {
     resolvePrUrl: (url: string) => Promise<{ owner: string; repo: string; number: number } | null>
     /** PRs in the active project opened by an agent this app launched (issue #690). */
     agentPrLinks: () => Promise<RemoteAgentPrIndexEntry[]>
+    /** Re-run the failed workflow runs on the PR's head branch. */
+    rerunFailedRuns: (owner: string, repo: string, number: number) => Promise<PrActionResult>
+    /** Approve the pull request. */
+    approvePr: (owner: string, repo: string, number: number) => Promise<PrActionResult>
+    /** Mark a draft pull request ready for review. */
+    markPrReady: (owner: string, repo: string, number: number) => Promise<PrActionResult>
+    /** Enable merge-when-ready (auto-merge) with the repo's preferred strategy. */
+    enableAutoMerge: (owner: string, repo: string, number: number) => Promise<PrActionResult>
   }
   shell: {
     openExternal: (url: string) => Promise<void>
+  }
+  editors: {
+    /** Installed external editors plus the sticky last-used default. */
+    list: () => Promise<ExternalEditorList>
+    /** Open the active workspace root in a detected editor. */
+    open: (editorId: string) => Promise<void>
   }
   panes: {
     /** Detach a right-panel pane into its own window. */

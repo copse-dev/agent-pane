@@ -111,6 +111,18 @@
 .msg {
   padding: var(--spacing-sm) var(--spacing-md);
   border-radius: var(--radius);
+  /* Contain horizontal overflow (wide code, long unbroken URLs) within the
+     message so it scrolls here rather than pushing the whole conversation
+     panel sideways. The message is auto-height, so this never adds a vertical
+     scrollbar. A wide table scrolls in its own box (.table-copy-scroll), which
+     sits closer to the content and so takes precedence over this. */
+  overflow-x: auto;
+  /* overflow-x other than `visible` drops this flex item's automatic minimum
+     size to 0 (a column flex item's min-height:auto floor only holds while
+     overflow is visible). Without this, once the conversation overflows the
+     .messages-list column the flex layout shrinks and clips messages — they
+     appear "collapsed". Keep every message at its content height. */
+  flex-shrink: 0;
 }
 /* Reasoning ("thinking") disclosure, shown above the answer. */
 .message-reasoning {
@@ -307,7 +319,13 @@
   position: relative;
   margin: var(--spacing-sm) 0;
 }
-.message-text .table-copy-shell > table {
+/* A table too wide to fit (e.g. an unbroken URL) scrolls within its own box
+   rather than adding a horizontal scrollbar to the whole conversation. */
+.message-text .table-copy-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.message-text .table-copy-scroll > table {
   margin: 0;
 }
 .table-copy {
@@ -327,4 +345,39 @@
 .message-text .table-copy-shell:hover .table-copy,
 .message-text .table-copy-shell:focus-within .table-copy {
   opacity: 1;
+}
+
+/* Transcript attachment chips (conversation.ts renderUserTranscript): a paste
+   sits inline at its placeholder; files/threads follow in .transcript-attachment-row.
+   Display-only siblings of the composer's .inline-paste-chip — no remove button. */
+.transcript-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 260px;
+  margin: 0 2px;
+  padding: 1px 7px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: var(--font-size-sm);
+  vertical-align: baseline;
+}
+.transcript-attachment-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+}
+.transcript-attachment-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.transcript-attachment-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
 }

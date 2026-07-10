@@ -13,7 +13,9 @@ import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
 import { hydrateRemoteArtifactImages } from '../markdown/remote-artifact-images.ts'
 import { stripTextToolCallBlocks } from '@copse/agent/parse-text-tool-calls.ts'
-import type { Message, ToolCall } from '@shared/types'
+import type { Message, ToolCall, TranscriptAttachment } from '@shared/types'
+import { attachmentIcon } from '../dom/attachment-icons.ts'
+import { CHIP_CHAR } from './composer-editor.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { agentActivityLabel } from '../agent-activity.ts'
 import {
@@ -27,6 +29,7 @@ import { navigateToChange } from '../controller/panels.ts'
 import { createTodoListEl } from './todo-panel.ts'
 import { createReviewCardEl } from './review-panel.ts'
 import { createComparisonCardEl } from './comparison-panel.ts'
+import { retryComparison, retryReview } from '../controller/retry-review-comparison.ts'
 import { renderToolArgs } from './tool-args-format.ts'
 import {
   drainMessageQueue,
@@ -344,7 +347,13 @@ function createMessageImages(images: string[]): HTMLElement {
 
 function appendMessageContent(
   body: HTMLElement,
-  msg: { role: string; content: string; images?: string[]; reasoning?: string },
+  msg: {
+    role: string
+    content: string
+    images?: string[]
+    reasoning?: string
+    attachments?: TranscriptAttachment[]
+  },
   api: ApiClient,
 ): void {
   if (msg.role === 'user' && msg.images?.length) {
@@ -359,10 +368,50 @@ function appendMessageContent(
   const textEl = el('div', { class: 'message-text streaming-markdown' })
   if (msg.role === 'assistant' && msg.content) {
     setAssistantMarkdown(textEl, msg.content, false, api)
+  } else if (msg.role === 'user' && msg.attachments?.length) {
+    renderUserTranscript(textEl, msg.content, msg.attachments)
   } else {
     textEl.textContent = msg.content
   }
   body.append(textEl)
+}
+
+/** A display-only transcript chip: an outline icon + its (clipped) label. */
+function transcriptChip(kind: TranscriptAttachment['kind'], label: string): HTMLElement {
+  const chip = el('span', { class: `transcript-attachment-chip transcript-attachment-${kind}` })
+  chip.append(
+    attachmentIcon(kind, 'transcript-attachment-icon'),
+    el('span', { class: 'transcript-attachment-label' }, label),
+  )
+  return chip
+}
+
+/**
+ * Render a sent user message with its attachment chips: each pasted block sits
+ * inline at its U+FFFC placeholder (in `content`), and file/thread references
+ * follow in a trailing row. Pastes are matched to placeholders by order.
+ */
+function renderUserTranscript(
+  host: HTMLElement,
+  content: string,
+  attachments: TranscriptAttachment[],
+): void {
+  const pastes = attachments.filter((a) => a.kind === 'paste')
+  const trailing = attachments.filter((a) => a.kind !== 'paste')
+
+  const parts = content.split(CHIP_CHAR)
+  parts.forEach((part, i) => {
+    if (part) host.append(document.createTextNode(part))
+    if (i < parts.length - 1) {
+      host.append(transcriptChip('paste', pastes[i]?.label ?? 'Pasted text'))
+    }
+  })
+
+  if (trailing.length) {
+    const row = el('div', { class: 'transcript-attachment-row' })
+    for (const a of trailing) row.append(transcriptChip(a.kind, a.label))
+    host.append(row)
+  }
 }
 
 /**
@@ -874,7 +923,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     list.querySelector('[data-review-card]')?.remove()
     const thread = getActiveThread(store)
     if (thread?.review) {
-      const card = createReviewCardEl(thread.review, api)
+      const threadId = thread.id
+      const card = createReviewCardEl(thread.review, api, () => {
+        retryReview(store, api, threadId)
+      })
       card.setAttribute('data-review-card', '')
       // Keep the review card above the comparison card regardless of which sync
       // ran last (the comparison can land mid-turn via the tool, the review after).
@@ -890,7 +942,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     list.querySelector('[data-comparison-card]')?.remove()
     const thread = getActiveThread(store)
     if (thread?.comparison) {
-      const card = createComparisonCardEl(thread.comparison, api)
+      const threadId = thread.id
+      const card = createComparisonCardEl(thread.comparison, api, () => {
+        retryComparison(store, api, threadId)
+      })
       card.setAttribute('data-comparison-card', '')
       list.append(card)
     }

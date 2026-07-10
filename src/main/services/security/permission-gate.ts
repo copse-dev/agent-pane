@@ -21,13 +21,20 @@ import {
   backgroundAllowsPortBinding,
   backgroundCommandFromArgs,
   formatExternalSandboxPromptBody,
+  formatExpectedSandboxBlockPromptBody,
   formatInstallPromptBody,
   formatEphemeralRunnerPromptBody,
   shellRequiresOutsideSandbox,
   mcpToolLabel,
   GITHUB_READONLY_CI_TOOLS,
+  GITHUB_WRITE_TOOLS,
 } from './permission-policy.ts'
 import { detectPackageInstall } from './safe-install.ts'
+import {
+  addTrustedShellCommand,
+  offerableTrustedCommand,
+  routeShellCommand,
+} from './command-routing-config.ts'
 import {
   BROWSER_TOOLS,
   READ_ONLY_BROWSER_TOOLS,
@@ -59,16 +66,48 @@ export { decideShellPermission } from './permission-policy.ts'
 
 import type { PermissionCheck } from './permission-policy.ts'
 
+/**
+ * Offer "always allow `<binary>` in trusted projects" on an escalation to run a
+ * command outside the sandbox, when a single eligible binary is resolvable (see
+ * offerableTrustedCommand). Ticking it appends that basename to the trusted
+ * allow-list, so future runs skip the prompt and run unsandboxed via
+ * routeShellCommand — the prompt-once path that replaces a separate remembered
+ * list. Returns the approval, persisting the grant on approve+remember.
+ */
+async function requestEscalationApproval(
+  command: string,
+  title: string,
+  body: string,
+): Promise<boolean> {
+  const trustable = offerableTrustedCommand(command)
+  const { approved, remember } = await requestApproval({
+    title,
+    body,
+    type: 'shell',
+    allowRemember: trustable !== null,
+    ...(trustable ? { rememberLabel: `Always allow \`${trustable}\` in trusted projects` } : {}),
+  })
+  if (approved && remember && trustable) await addTrustedShellCommand(trustable)
+  return approved
+}
+
 async function promptShell(
   command: string,
   reasons: string[],
   outsideSandbox: boolean,
 ): Promise<boolean> {
+  // The trusted-command tick box only makes sense on an escalation to OUTSIDE the
+  // sandbox (a trusted command runs unsandboxed); an in-sandbox prompt never offers it.
+  if (outsideSandbox) {
+    return requestEscalationApproval(
+      command,
+      'Run outside sandbox?',
+      formatExternalSandboxPromptBody(command, reasons),
+    )
+  }
   const { approved } = await requestApproval({
-    title: outsideSandbox ? 'Run outside sandbox?' : 'Run shell command?',
-    body: outsideSandbox
-      ? formatExternalSandboxPromptBody(command, reasons)
-      : formatShellPromptBody(command, reasons),
+    title: 'Run shell command?',
+    body: formatShellPromptBody(command, reasons),
     type: 'shell',
   })
   return approved
@@ -76,9 +115,25 @@ async function promptShell(
 
 /** Prompt when a sandboxed command failed and may succeed unsandboxed. */
 export async function promptUnsandboxedShell(command: string, reasons: string[]): Promise<boolean> {
+  return requestEscalationApproval(
+    command,
+    'Run outside sandbox?',
+    formatUnsandboxedPromptBody(command, reasons),
+  )
+}
+
+/**
+ * Prompt when the agent declared up front (via `expects_sandbox_block`) that it
+ * expects an ambiguously-external command to be blocked, asking to run it outside
+ * the sandbox before the first attempt instead of after a recorded block.
+ */
+export async function promptExpectedSandboxBlock(
+  command: string,
+  reasons: string[],
+): Promise<boolean> {
   const { approved } = await requestApproval({
     title: 'Run outside sandbox?',
-    body: formatUnsandboxedPromptBody(command, reasons),
+    body: formatExpectedSandboxBlockPromptBody(command, reasons),
     type: 'shell',
   })
   return approved
@@ -206,21 +261,55 @@ async function checkCustomToolPermission(toolName: string, args: unknown): Promi
   return approved
 }
 
+/**
+ * Mutating GitHub PR actions always prompt (issue #690 Q3). There is no
+ * "remember" yet — the per-repo grant granularity is still an open question, so
+ * every approve / merge-when-ready / mark-ready / rerun-CI call asks first.
+ */
+async function checkGithubWriteToolPermission(toolName: string, args: unknown): Promise<boolean> {
+  const { approved } = await requestApproval({
+    title: `GitHub action: ${toolName}`,
+    body: JSON.stringify(args, null, 2),
+    type: 'mcp',
+    allowRemember: false,
+  })
+  return approved
+}
+
 async function checkShellPermission(args: unknown): Promise<boolean> {
   const command = shellCommandFromArgs(args)
   if (!command) return promptShell('(invalid command)', ['missing command argument'], false)
 
+  // Trusted-command fast path: a command whose every segment is either an
+  // explicitly trusted (allow-listed) command or a trivially-safe prep step runs
+  // with no prompt — the prompt-fatigue lever for unsandboxable-but-safe tools
+  // (e.g. xcodebuild). routeShellCommand internally requires auto-run to be on
+  // AND the workspace to be trusted, and never waives analysis for an untrusted
+  // co-segment, so this can only fire for a genuinely safe command line.
+  if (routeShellCommand(command).outcome === 'allow') return true
+
+  const autoRun = getSetting<boolean>('autoRunSandboxCommands', true)
   const workspaceRoot = getWorkspaceRoot()
   const sandboxEnabled = isProjectSandboxEnabled()
+  // `safetyConfidenceThreshold` is the legacy single knob; new installs use the
+  // split sandbox-allow / external-deny thresholds and fall back to it for migration.
+  const legacyThreshold = getSetting<number>('safetyConfidenceThreshold', 0.85)
   const decision = decideShellPermission(command, {
     workspaceRoot,
     sandboxEnabled,
-    autoRun: getSetting<boolean>('autoRunSandboxCommands', true),
+    autoRun,
     classification: sandboxEnabled ? null : await classifyShellScope(command),
-    confidenceThreshold: getSetting<number>('safetyConfidenceThreshold', 0.85),
+    sandboxAllowThreshold: getSetting<number>('safetySandboxAllowThreshold', legacyThreshold),
+    externalDenyThreshold: getSetting<number>('safetyExternalDenyThreshold', 1),
   })
 
   if (decision.action === 'allow') return true
+
+  // Strict-mode refusal: surface the reason to the agent rather than silently
+  // returning false (which reads as a plain user rejection).
+  if (decision.action === 'deny') {
+    throw new Error(`Command blocked by strict-mode safety policy: ${decision.reasons.join('; ')}`)
+  }
 
   const outsideSandbox = shellRequiresOutsideSandbox(command, workspaceRoot, sandboxEnabled)
 
@@ -439,6 +528,12 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
   // They auto-run without prompting; nothing they do needs user approval.
   if (GITHUB_READONLY_CI_TOOLS.has(toolName)) {
     return true
+  }
+
+  // Mutating PR actions (approve / merge-when-ready / mark-ready / rerun CI)
+  // change state on github.com, so they always prompt — never auto-run.
+  if (GITHUB_WRITE_TOOLS.has(toolName)) {
+    return checkGithubWriteToolPermission(toolName, args)
   }
 
   if (toolName.startsWith('mcp__')) {

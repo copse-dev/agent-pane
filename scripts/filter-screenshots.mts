@@ -26,6 +26,15 @@
  *           states for this shot: committing again just re-triggers CI and the
  *           other state comes back next run — an unbounded ping-pong (#609). We
  *           restore HEAD (do not commit) and surface the shot for human review.
+ *   contested
+ *           The committed baseline is DELIBERATE: the file was modified on this
+ *           branch since the merge-base by someone other than the CI bot (a human
+ *           or agent hand-committed a specific reference shot), and/or main has
+ *           modified it since the merge-base. CI must not override deliberate
+ *           work with its own render — restore HEAD (the branch's committed
+ *           version always wins) and surface the shot in the PR comment with a
+ *           base-vs-branch comparison. The `update-screenshots` label is the
+ *           explicit "regenerate and take CI's render" escape hatch.
  *
  * Anti-aliased pixels are excluded by pixelmatch itself (its AA detector), which
  * already swallows most font-edge wobble; the threshold below is the small residual
@@ -55,11 +64,16 @@
  *   SCREENSHOT_FLAP_LOOKBACK         number of recent DISTINCT committed renders of
  *                                    each shot to compare a real change against for
  *                                    flap detection (default 4). 0 disables it.
+ *   SCREENSHOT_MAIN_REF              ref the contested check compares against
+ *                                    (default origin/main). When the ref is absent
+ *                                    (local runs), contested detection is disabled.
  *
  * Outputs (CI): when GITHUB_OUTPUT is set, emits `ignored-count`, `kept-count`,
- * `flapping-count`, `ignored-json`, and `flapping-json` (JSON arrays of
- * { name, path, diffPixels, ratioPct }) so the commit job can list the near-
- * identical and the flapping shots in its PR comment for a human to eyeball.
+ * `flapping-count`, `contested-count`, `ignored-json`, `flapping-json`,
+ * `contested-json` (JSON arrays of { name, path, diffPixels, ratioPct, ... };
+ * flap items carry `matchedSha`, contested items carry `branchTouched` /
+ * `mainTouched`) and `main-sha` (tip of SCREENSHOT_MAIN_REF, for blob-URL image
+ * links) so the commit job's PR comment can show the held shots for a human.
  *
  * Run: node scripts/filter-screenshots.mts [--dir tests/e2e/screenshots] [--dry-run]
  */
@@ -96,10 +110,37 @@ export interface ClassifyOptions {
   ignoreMinPixels: number
 }
 
+/** A recent committed render of a shot, with the commit it came from. */
+export interface PriorRender {
+  sha: string
+  bytes: Buffer
+}
+
+/** Who deliberately touched the committed baseline since the merge-base. */
+export interface ContestedInfo {
+  branchTouched: boolean
+  mainTouched: boolean
+}
+
 export type Verdict =
   | { decision: 'keep'; reason: string; diffPixels?: number; ratio?: number }
   | { decision: 'ignore'; reason: string; diffPixels: number; ratio: number }
-  | { decision: 'flap'; reason: string; diffPixels: number; ratio: number; matchedPixels: number }
+  | {
+      decision: 'flap'
+      reason: string
+      diffPixels: number
+      ratio: number
+      matchedPixels: number
+      matchedSha: string
+    }
+  | {
+      decision: 'contested'
+      reason: string
+      diffPixels?: number
+      ratio?: number
+      branchTouched: boolean
+      mainTouched: boolean
+    }
 
 function argValue(flag: string): string | undefined {
   const i = process.argv.indexOf(flag)
@@ -140,13 +181,17 @@ function committedBytes(path: string): Buffer | null {
  * change is checked against for flap detection — if the new render matches one of
  * them, the shot is oscillating between already-committed states.
  */
-function priorCommittedRenders(path: string, headBytes: Buffer | null, lookback: number): Buffer[] {
+function priorCommittedRenders(
+  path: string,
+  headBytes: Buffer | null,
+  lookback: number,
+): PriorRender[] {
   if (lookback <= 0) return []
   const shas = git(['log', '-n', String(lookback + 4), '--format=%H', '--', path])
     .split('\n')
     .map((s) => s.trim())
     .filter(Boolean)
-  const out: Buffer[] = []
+  const out: PriorRender[] = []
   const seen = new Set<string>()
   if (headBytes) seen.add(createHash('sha1').update(headBytes).digest('hex'))
   for (const sha of shas) {
@@ -163,9 +208,44 @@ function priorCommittedRenders(path: string, headBytes: Buffer | null, lookback:
     const key = createHash('sha1').update(bytes).digest('hex')
     if (seen.has(key)) continue
     seen.add(key)
-    out.push(bytes)
+    out.push({ sha, bytes })
   }
   return out
+}
+
+const BOT_AUTHOR = 'github-actions[bot]'
+const MAIN_REF = process.env['SCREENSHOT_MAIN_REF'] || 'origin/main'
+
+let mergeBaseCache: string | null | undefined
+/** merge-base of HEAD and MAIN_REF, or null when the ref is absent (local runs). */
+function mergeBaseWithMain(): string | null {
+  if (mergeBaseCache === undefined) {
+    const mb = git(['merge-base', 'HEAD', MAIN_REF]).trim()
+    mergeBaseCache = mb || null
+  }
+  return mergeBaseCache
+}
+
+/**
+ * Whether the committed baseline of `path` is deliberate work CI must not
+ * override: modified on this branch since the merge-base by a non-bot author
+ * (a hand-committed reference shot), and/or modified on main since the
+ * merge-base (main moved under the PR). Null when neither — or when MAIN_REF
+ * isn't available, in which case contested detection is disabled and the
+ * pre-existing behaviour applies.
+ */
+function contestedInfo(path: string): ContestedInfo | null {
+  const mb = mergeBaseWithMain()
+  if (!mb) return null
+  const branchTouched = git(['log', '--format=%an', `${mb}..HEAD`, '--', path])
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .some((author) => author !== BOT_AUTHOR)
+  const mainTouched =
+    git(['log', '-n', '1', '--format=%H', `${mb}..${MAIN_REF}`, '--', path]).trim() !== ''
+  if (!branchTouched && !mainTouched) return null
+  return { branchTouched, mainTouched }
 }
 
 function decode(bytes: Buffer): PNG | null {
@@ -197,38 +277,63 @@ function isNoise(diff: { diffPixels: number; ratio: number }, opts: ClassifyOpti
 /**
  * Pure classification of one re-rendered shot. `priorRenders` are recent committed
  * renders of the same shot (see priorCommittedRenders); pass [] to disable flap
- * detection. Kept pure (bytes in, verdict out) so it is unit-testable without git.
+ * detection. `contested` marks a deliberate committed baseline (see contestedInfo);
+ * pass null/undefined when uncontested. Kept pure (bytes in, verdict out) so it is
+ * unit-testable without git.
  */
 export function classifyScreenshotChange(
   oldBytes: Buffer | null,
   newBytes: Buffer,
-  priorRenders: Buffer[],
+  priorRenders: PriorRender[],
   opts: ClassifyOptions,
+  contested?: ContestedInfo | null,
 ): Verdict {
+  // No baseline → nothing committed to override; a brand-new shot is never
+  // contested.
   if (!oldBytes) return { decision: 'keep', reason: 'new screenshot (no baseline)' }
 
   const oldPng = decode(oldBytes)
   const newPng = decode(newBytes)
+  const comparable =
+    oldPng && newPng && oldPng.width === newPng.width && oldPng.height === newPng.height
+  const vsHead = comparable ? diffPixels(oldPng, newPng, opts.colorThreshold) : null
+
+  // Noise first even on a contested file: restoring HEAD is the outcome either
+  // way, and "identical re-render" is the accurate report, not a conflict.
+  if (vsHead && isNoise(vsHead, opts)) {
+    return { decision: 'ignore', reason: 'below noise threshold', ...vsHead }
+  }
+
+  // A deliberate baseline is held unconditionally — including the decode-failed
+  // and resized cases below, which for an uncontested file would gamble on
+  // committing for review. The branch's committed version always wins; the
+  // update-screenshots label is the explicit override.
+  if (contested && (contested.branchTouched || contested.mainTouched)) {
+    const parts = []
+    if (contested.branchTouched) parts.push('deliberately committed on this branch')
+    if (contested.mainTouched) parts.push('changed on main since the merge-base')
+    return {
+      decision: 'contested',
+      reason: parts.join('; '),
+      ...(vsHead ? { diffPixels: vsHead.diffPixels, ratio: vsHead.ratio } : {}),
+      branchTouched: contested.branchTouched,
+      mainTouched: contested.mainTouched,
+    }
+  }
+
   if (!oldPng || !newPng) {
     // Undecodable on either side → don't gamble, let it commit for human review.
     return { decision: 'keep', reason: 'decode failed' }
   }
-  if (oldPng.width !== newPng.width || oldPng.height !== newPng.height) {
+  if (!vsHead) {
     return { decision: 'keep', reason: 'dimensions changed' }
-  }
-
-  const vsHead = diffPixels(oldPng, newPng, opts.colorThreshold)
-  // Dimensions are equal here, so diffPixels never returns null.
-  if (!vsHead) return { decision: 'keep', reason: 'dimensions changed' }
-  if (isNoise(vsHead, opts)) {
-    return { decision: 'ignore', reason: 'below noise threshold', ...vsHead }
   }
 
   // A real change versus HEAD. If it matches a recent committed render of this
   // same shot, the shot is flapping between already-committed states (#609):
   // committing again would just re-trigger CI and bring the other state back.
   for (const prior of priorRenders) {
-    const priorPng = decode(prior)
+    const priorPng = decode(prior.bytes)
     if (!priorPng) continue
     const vsPrior = diffPixels(priorPng, newPng, opts.colorThreshold)
     if (!vsPrior) continue
@@ -239,6 +344,7 @@ export function classifyScreenshotChange(
         diffPixels: vsHead.diffPixels,
         ratio: vsHead.ratio,
         matchedPixels: vsPrior.diffPixels,
+        matchedSha: prior.sha,
       }
     }
   }
@@ -275,11 +381,20 @@ function classify(path: string): PathVerdict {
     return { path, decision: 'keep', reason: 'unreadable in working tree' }
   }
   const priorRenders = priorCommittedRenders(path, oldBytes, FLAP_LOOKBACK)
-  const verdict = classifyScreenshotChange(oldBytes, newBytes, priorRenders, {
-    colorThreshold: COLOR_THRESHOLD,
-    ignoreRatio: IGNORE_RATIO,
-    ignoreMinPixels: IGNORE_MIN_PIXELS,
-  })
+  // Only an existing baseline can be contested; skip the git history walk for
+  // brand-new shots.
+  const contested = oldBytes ? contestedInfo(path) : null
+  const verdict = classifyScreenshotChange(
+    oldBytes,
+    newBytes,
+    priorRenders,
+    {
+      colorThreshold: COLOR_THRESHOLD,
+      ignoreRatio: IGNORE_RATIO,
+      ignoreMinPixels: IGNORE_MIN_PIXELS,
+    },
+    contested,
+  )
   return { path, ...verdict }
 }
 
@@ -304,6 +419,21 @@ function reportJson(items: Array<Extract<PathVerdict, { diffPixels: number }>>):
       path: v.path,
       diffPixels: v.diffPixels,
       ratioPct: pct(v.ratio),
+      ...(v.decision === 'flap' ? { matchedSha: v.matchedSha } : {}),
+    })),
+  )
+}
+
+function contestedJson(items: Array<Extract<PathVerdict, { decision: 'contested' }>>): string {
+  return JSON.stringify(
+    items.map((v) => ({
+      name: v.path.split('/').pop(),
+      path: v.path,
+      // Null when the render wasn't pixel-comparable (decode failure / resize).
+      diffPixels: v.diffPixels ?? null,
+      ratioPct: v.ratio !== undefined ? pct(v.ratio) : null,
+      branchTouched: v.branchTouched,
+      mainTouched: v.mainTouched,
     })),
   )
 }
@@ -315,14 +445,17 @@ export function main(): void {
     emitOutput('ignored-count', '0')
     emitOutput('kept-count', '0')
     emitOutput('flapping-count', '0')
+    emitOutput('contested-count', '0')
     emitOutput('ignored-json', '[]')
     emitOutput('flapping-json', '[]')
+    emitOutput('contested-json', '[]')
     return
   }
 
   // Escape hatch: the `update-screenshots` label means "refresh everything", so
-  // keep all changed shots — including sub-threshold micro-diffs and shots that
-  // would otherwise be held as flapping.
+  // keep all changed shots — including sub-threshold micro-diffs, shots that
+  // would otherwise be held as flapping, and contested shots (this is the
+  // explicit "regenerate and take CI's render" override).
   if (process.env['UPDATE_SCREENSHOTS_LABEL'] === 'true') {
     console.log(
       `screenshot filter: update-screenshots label present — keeping all ${String(changed.length)} changed shot(s) unfiltered`,
@@ -330,8 +463,10 @@ export function main(): void {
     emitOutput('ignored-count', '0')
     emitOutput('kept-count', String(changed.length))
     emitOutput('flapping-count', '0')
+    emitOutput('contested-count', '0')
     emitOutput('ignored-json', '[]')
     emitOutput('flapping-json', '[]')
+    emitOutput('contested-json', '[]')
     return
   }
 
@@ -343,12 +478,17 @@ export function main(): void {
   const flapping = verdicts.filter(
     (v): v is Extract<PathVerdict, { decision: 'flap' }> => v.decision === 'flap',
   )
+  const contested = verdicts.filter(
+    (v): v is Extract<PathVerdict, { decision: 'contested' }> => v.decision === 'contested',
+  )
 
   console.log(
     `screenshot filter: ${String(changed.length)} changed, ${String(kept.length)} kept (real), ` +
-      `${String(ignored.length)} ignored (noise), ${String(flapping.length)} held (flapping) ` +
+      `${String(ignored.length)} ignored (noise), ${String(flapping.length)} held (flapping), ` +
+      `${String(contested.length)} held (contested) ` +
       `[color-threshold=${String(COLOR_THRESHOLD)}, ignore-ratio=${String(IGNORE_RATIO)}, ` +
-      `min-pixels=${String(IGNORE_MIN_PIXELS)}, flap-lookback=${String(FLAP_LOOKBACK)}]`,
+      `min-pixels=${String(IGNORE_MIN_PIXELS)}, flap-lookback=${String(FLAP_LOOKBACK)}, ` +
+      `main-ref=${MAIN_REF}]`,
   )
 
   for (const v of kept) {
@@ -369,16 +509,30 @@ export function main(): void {
   // bring the other render state back (the #609 ping-pong). Surface for a human.
   for (const v of flapping) {
     console.log(
-      `  flap   ${v.path} (${String(v.diffPixels)} px vs HEAD, matches a prior render within ${String(v.matchedPixels)} px)`,
+      `  flap   ${v.path} (${String(v.diffPixels)} px vs HEAD, matches ${v.matchedSha.slice(0, 7)} within ${String(v.matchedPixels)} px)`,
     )
+    if (!DRY_RUN) git(['checkout', 'HEAD', '--', v.path])
+  }
+
+  // Revert contested shots — the committed baseline is deliberate (hand-committed
+  // on this branch and/or changed on main), so CI's render never overrides it.
+  // The PR comment surfaces a base-vs-branch comparison instead.
+  for (const v of contested) {
+    const detail = v.diffPixels !== undefined ? `${String(v.diffPixels)} px vs HEAD` : 'differs'
+    console.log(`  hold   ${v.path} (contested: ${v.reason}; ${detail})`)
     if (!DRY_RUN) git(['checkout', 'HEAD', '--', v.path])
   }
 
   emitOutput('ignored-count', String(ignored.length))
   emitOutput('kept-count', String(kept.length))
   emitOutput('flapping-count', String(flapping.length))
+  emitOutput('contested-count', String(contested.length))
   emitOutput('ignored-json', reportJson(ignored))
   emitOutput('flapping-json', reportJson(flapping))
+  emitOutput('contested-json', contestedJson(contested))
+  // Tip of the main ref, so the PR comment can blob-link the base version of a
+  // contested shot for an inline side-by-side. Empty when the ref is absent.
+  emitOutput('main-sha', git(['rev-parse', MAIN_REF]).trim())
 }
 
 // Run only when invoked directly (`node scripts/filter-screenshots.mts`), not when
