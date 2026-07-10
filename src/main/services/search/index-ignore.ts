@@ -25,6 +25,15 @@ export const GORTEX_EXCLUDE_PATTERNS = [
   'vendor/',
   '.git/',
   '.claude/',
+  // Swift/Xcode build output — gortex's builtin baseline covers node_modules,
+  // Pods, target, build, .gradle, etc. but misses the Apple toolchain, so a
+  // SwiftPM/Xcode checkout indexes its build dirs unless we name them here.
+  // Verified: adding these cut a DuckDuckGo checkout from 235k to 109k files.
+  '.build/',
+  '.swiftpm/',
+  'DerivedData/',
+  'SourcePackages/',
+  'Carthage/',
 ] as const
 
 /**
