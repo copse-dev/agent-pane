@@ -1,14 +1,15 @@
 import type { SkillSummary } from '@shared/types/skills.ts'
+import type { ComposerTextInput } from './composer-editor.ts'
 import { clear } from '../dom/helpers.ts'
 
 export interface SkillPickerOptions {
-  textarea: HTMLTextAreaElement
+  input: ComposerTextInput
   inputBar: HTMLElement
   listSkills: () => Promise<SkillSummary[]>
 }
 
 export function initSkillPicker(opts: SkillPickerOptions): () => void {
-  const { textarea, inputBar, listSkills } = opts
+  const { input, inputBar, listSkills } = opts
 
   const picker = document.createElement('div')
   picker.className = 'mention-picker skill-picker'
@@ -71,14 +72,14 @@ export function initSkillPicker(opts: SkillPickerOptions): () => void {
       hidePicker()
       return
     }
-    const val = textarea.value
+    const val = input.value
     const before = val.slice(0, slashStart)
-    const after = val.slice(textarea.selectionStart)
-    textarea.value = `${before}/${skill.name} ${after.replace(/^\S*/, '')}`
+    const after = val.slice(input.selectionStart)
+    input.value = `${before}/${skill.name} ${after.replace(/^\S*/, '')}`
     const cursor = before.length + skill.name.length + 2
-    textarea.setSelectionRange(cursor, cursor)
+    input.setSelectionRange(cursor, cursor)
     hidePicker()
-    textarea.focus()
+    input.focus()
   }
 
   function hidePicker(): void {
@@ -108,9 +109,9 @@ export function initSkillPicker(opts: SkillPickerOptions): () => void {
     }
   }
 
-  textarea.addEventListener('input', () => {
-    const val = textarea.value
-    const cursor = textarea.selectionStart
+  input.el.addEventListener('input', () => {
+    const val = input.value
+    const cursor = input.selectionStart
     const slashIdx = val.lastIndexOf('/', cursor - 1)
     if (slashIdx === -1) {
       hidePicker()
@@ -125,7 +126,7 @@ export function initSkillPicker(opts: SkillPickerOptions): () => void {
     void updatePicker(prefix)
   })
 
-  textarea.addEventListener('keydown', (e) => {
+  input.el.addEventListener('keydown', (e) => {
     if (picker.hidden) return
     if (e.key === 'ArrowDown') {
       e.preventDefault()

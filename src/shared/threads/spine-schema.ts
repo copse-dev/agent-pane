@@ -1,4 +1,4 @@
-import type { ModelUsage, SubagentSession, Thread } from '@shared/types'
+import type { ModelUsage, SubagentSession, Thread, TranscriptAttachment } from '@shared/types'
 
 /**
  * On-disk format for the filesystem-native thread store (issue #644).
@@ -72,6 +72,8 @@ export interface SpineMessageLine {
   reasoning?: ContentRef
   images?: ImageRef[]
   commandSummary?: string
+  /** Display-only transcript attachment chips (user messages); short, inlined here. */
+  attachments?: TranscriptAttachment[]
   toolCalls: SpineToolCall[]
 }
 

@@ -20,8 +20,8 @@ export function bindChatComposerLayout(store: AppStore): () => void {
 
     if (centered) {
       pane.style.setProperty('--chat-composer-height', '0px')
-      const textarea = input.querySelector<HTMLTextAreaElement>('.prompt-input')
-      textarea?.focus()
+      const composer = input.querySelector<HTMLElement>('.prompt-input')
+      composer?.focus()
       return
     }
 

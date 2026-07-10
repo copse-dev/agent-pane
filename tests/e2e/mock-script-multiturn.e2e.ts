@@ -4,6 +4,7 @@ import { $, browser, expect } from '@wdio/globals'
 import type { MockScriptStep } from '../../src/shared/llm/mock-script.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
+import { setComposerValue } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -59,7 +60,7 @@ describe('mock script multi-turn', () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
     await installMockScript()
 
-    await $('.prompt-input').setValue('Please list the src directory for me')
+    await setComposerValue('Please list the src directory for me')
     await $('.submit-btn').click()
 
     const listCard = await $('.tool-card[data-status="done"]')
@@ -68,7 +69,7 @@ describe('mock script multi-turn', () => {
     await waitForAgentIdle()
 
     await waitForPromptReady()
-    await $('.prompt-input').setValue('Can you summarize what you found?')
+    await setComposerValue('Can you summarize what you found?')
     await $('.submit-btn').click()
     await waitForAgentIdle(30_000)
 
