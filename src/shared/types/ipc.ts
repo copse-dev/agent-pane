@@ -198,7 +198,10 @@ export interface IpcInvokeMap {
   }
 
   // Terminal
-  'terminal:create': { args: [cols: number, rows: number]; result: string }
+  'terminal:create': {
+    args: [cols: number, rows: number, unsandboxed?: boolean]
+    result: string
+  }
   'terminal:write': { args: [sessionId: string, data: string]; result: undefined }
   'terminal:resize': { args: [sessionId: string, cols: number, rows: number]; result: undefined }
   'terminal:destroy': { args: [sessionId: string]; result: undefined }

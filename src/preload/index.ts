@@ -434,7 +434,8 @@ contextBridge.exposeInMainWorld('api', {
     list: () => ipcRenderer.invoke('instructions:list'),
   },
   terminal: {
-    create: (cols: number, rows: number) => ipcRenderer.invoke('terminal:create', cols, rows),
+    create: (cols: number, rows: number, unsandboxed?: boolean) =>
+      ipcRenderer.invoke('terminal:create', cols, rows, unsandboxed),
     write: (sessionId: string, data: string) =>
       ipcRenderer.invoke('terminal:write', sessionId, data),
     resize: (sessionId: string, cols: number, rows: number) =>
