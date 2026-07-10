@@ -1,5 +1,8 @@
-import { describe, it, afterEach } from 'node:test'
+import { describe, it, afterEach, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   requestApproval,
   setApprovalHandler,
@@ -11,8 +14,22 @@ import {
 const req: ApprovalRequest = { title: 'Run shell', body: 'rm -rf build', type: 'shell' }
 
 describe('requestApproval pluggable transport', () => {
+  // requestApproval now persists each decision to the durable audit log (#656);
+  // point that write at a throwaway dir so the suite never touches the real store.
+  let auditRoot: string
+  let previousRoot: string | undefined
+
+  beforeEach(() => {
+    previousRoot = process.env['COPSE_WORKSPACE_DIR']
+    auditRoot = mkdtempSync(join(tmpdir(), 'copse-approval-audit-'))
+    process.env['COPSE_WORKSPACE_DIR'] = auditRoot
+  })
+
   afterEach(() => {
     setApprovalHandler(null)
+    if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+    else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
+    rmSync(auditRoot, { recursive: true, force: true })
   })
 
   it('denies (without hanging) when no handler is registered', async () => {
