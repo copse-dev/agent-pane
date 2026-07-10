@@ -15,8 +15,9 @@ import { runCommand } from '../exec/command-runner.ts'
 
 /** Perf-only: dirs we never descend into while *discovering* nested repos. Not a
  * correctness list — git supplies the real excludes; this just keeps the `.git`
- * walk from diving through hundreds of thousands of build-output files. */
-const REPO_SCAN_PRUNE_DIRS = ['node_modules', '.build', '.swiftpm', 'DerivedData', '.git']
+ * walk from diving through hundreds of thousands of build-output files. (`.git`
+ * is handled separately: it's pruned *and printed*, not skipped.) */
+const REPO_SCAN_PRUNE_DIRS = ['node_modules', '.build', '.swiftpm', 'DerivedData']
 
 /** Bound the nested-repo scan so a pathological tree can't make discovery run away. */
 const REPO_SCAN_MAX_DEPTH = 8
@@ -62,9 +63,10 @@ async function findGitRepos(workspaceRoot: string): Promise<string[]> {
   const roots = new Set<string>()
   if (await isGitRepo(workspaceRoot)) roots.add(workspaceRoot)
 
-  // `-prune` on each `.git` stops the walk from entering repo internals; the
-  // extra prune list keeps it out of the giant build-output dirs while hunting
-  // for embedded repos. Failure (e.g. no `find`) just yields the root repo.
+  // Standard "find repos without descending into them" idiom: prune the giant
+  // build-output dirs outright, and for a `.git` dir, `-prune -print` reports it
+  // but stops the walk from entering repo internals. Failure (e.g. no `find`)
+  // just yields the root repo.
   const args = [
     workspaceRoot,
     '-maxdepth',
@@ -78,6 +80,7 @@ async function findGitRepos(workspaceRoot: string): Promise<string[]> {
     'd',
     '-name',
     '.git',
+    '-prune',
     '-print',
   ]
   try {
