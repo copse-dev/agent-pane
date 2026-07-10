@@ -1,0 +1,81 @@
+/* In-conversation find bar (Cmd/Ctrl+F). Floats over the top-right of the chat
+   transcript; positioned against `.pane-chat` (the nearest positioned ancestor). */
+.chat-search {
+  position: absolute;
+  top: var(--spacing-sm);
+  right: var(--spacing-lg);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: 4px 6px 4px var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+.chat-search[hidden] {
+  display: none;
+}
+.chat-search-icon {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+.chat-search-input {
+  width: 200px;
+  padding: 2px 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  outline: none;
+}
+.chat-search-input::placeholder {
+  color: var(--text-muted);
+}
+.chat-search-input.chat-search-nomatch {
+  color: var(--danger, #f14c4c);
+}
+.chat-search-count {
+  min-width: 3.5ch;
+  text-align: right;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.chat-search-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.chat-search-nav,
+.chat-search-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary, var(--text-muted));
+  cursor: pointer;
+}
+.chat-search-nav:hover,
+.chat-search-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Match highlights are painted through the CSS Custom Highlight API — see
+   conversation-search.ts. Only a limited set of properties apply here. */
+::highlight(chat-search) {
+  background-color: color-mix(in srgb, var(--warning) 45%, transparent);
+  color: inherit;
+}
+::highlight(chat-search-current) {
+  background-color: var(--accent);
+  color: #ffffff;
+}
