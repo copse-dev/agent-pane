@@ -185,6 +185,24 @@ export function formatExternalSandboxPromptBody(command: string, reasons: string
 }
 
 /**
+ * Approval body when the agent asked up front (via `expects_sandbox_block`) to run
+ * an ambiguously-external command outside the sandbox. Unlike the retry prompt,
+ * this is NOT backed by a recorded sandbox violation — it is the agent's
+ * expectation — so the wording says so plainly and invites more scrutiny.
+ */
+export function formatExpectedSandboxBlockPromptBody(command: string, reasons: string[]): string {
+  const detail = reasons.length ? reasons.join('; ') : 'network or outside-workspace access'
+  return (
+    `The agent expects this command to need access the macOS project sandbox blocks ` +
+    `(${detail}) and is asking to run it outside the sandbox up front, rather than ` +
+    `letting it fail inside first.\n\n` +
+    `${command}\n\n` +
+    `This is the agent's expectation, not a confirmed sandbox block. ` +
+    `Allow running it once outside the sandbox?`
+  )
+}
+
+/**
  * Approval body for a detected package install. Installs always need the network,
  * so the generic "external command" reason list (and its nested parentheticals)
  * just adds noise — this states plainly that it's an install, where it runs, and
@@ -247,6 +265,34 @@ export function shellRequiresOutsideSandbox(
 ): boolean {
   if (!sandboxEnabled) return false
   return analyzeShellCommand(command, workspaceRoot).verdict === 'external'
+}
+
+/**
+ * Whether the agent's up-front `expects_sandbox_block` hint may pull the
+ * unsandboxed-escalation prompt forward for this command.
+ *
+ * Eligible ONLY for the `ambiguous` verdict — commands that would otherwise
+ * auto-run inside seatbelt and escalate to an unsandboxed retry if the OS
+ * actually blocked them (gh, cloud CLIs, ephemeral runners, nc). For those, the
+ * hint just moves the same approval earlier, avoiding a partial in-sandbox run
+ * before the retry. It is deliberately NOT honored for:
+ *   - `external`: already prompts + runs outside up front, so there is nothing to
+ *     pull forward, and
+ *   - `sandbox`: no external signal at all — honoring a model-declared hint here
+ *     would let it route a fully-contained command outside without a
+ *     runner-verified block, the exact self-declared-escalation lever the retry
+ *     path avoids (issues #103/#104). Such commands must still earn their escape
+ *     from a real, non-forgeable sandbox violation, never the model's say-so.
+ */
+export function shellExpectedBlockEscalation(
+  command: string,
+  workspaceRoot: string | null,
+  sandboxEnabled: boolean,
+): { eligible: boolean; reasons: string[] } {
+  if (!sandboxEnabled) return { eligible: false, reasons: [] }
+  const analysis = analyzeShellCommand(command, workspaceRoot)
+  if (analysis.verdict !== 'ambiguous') return { eligible: false, reasons: [] }
+  return { eligible: true, reasons: analysis.reasons }
 }
 
 export function shellSandboxFailureShouldOfferUnsandboxedRetry(
