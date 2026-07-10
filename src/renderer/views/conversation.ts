@@ -12,7 +12,7 @@ import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
 import { hydrateRemoteArtifactImages } from '../markdown/remote-artifact-images.ts'
 import { stripTextToolCallBlocks } from '@copse/agent/parse-text-tool-calls.ts'
-import type { Message, ToolCall, TranscriptAttachment } from '@shared/types'
+import type { Message, SubagentSession, ToolCall, TranscriptAttachment } from '@shared/types'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -209,41 +209,136 @@ function createSubagentMessageEl(content: string, streaming: boolean, api: ApiCl
   return textEl
 }
 
-function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HTMLElement {
-  const session = tc.subagent
-  if (!session) throw new Error('createSubagentToolCard requires tc.subagent')
-  const status =
-    tc.status === 'running' || session.status === 'running'
-      ? 'running'
-      : session.status === 'error' || tc.status === 'error'
-        ? 'error'
-        : 'done'
+function subagentCardStatus(tc: ToolCall, session: SubagentSession): ToolCall['status'] {
+  if (tc.status === 'running' || session.status === 'running') return 'running'
+  if (session.status === 'error' || tc.status === 'error') return 'error'
+  return 'done'
+}
 
-  const card = el('details', {
-    class: 'tool-card tool-card-subagent',
-    'data-tool-id': tc.id,
-    'data-status': status,
-  })
+// Which model ran this subagent — the whole point of local routing is invisible
+// without it, and so is the silent cloud fallback when LM Studio is unreachable.
+function subagentModelBadge(session: SubagentSession): HTMLElement | null {
+  if (!session.model) return null
+  const isLocal = session.model.startsWith('lmstudio:')
+  const badge = el('div', { class: 'subagent-model' })
+  badge.textContent = isLocal
+    ? `${session.model.slice('lmstudio:'.length)} · local`
+    : session.model
+  if (session.localFallback) {
+    badge.textContent += ' — local model unavailable, ran on cloud'
+    badge.classList.add('subagent-model-fallback')
+  }
+  return badge
+}
 
-  const preview = session.summary ?? tc.result ?? ''
-  card.append(createToolHeader(label, status, 'tool-card-header'))
+// Committed (final-render) text of a subagent timeline message element, so a
+// completed message whose content is unchanged since the last tick is left
+// untouched rather than re-rendered. The running (last) message keeps streaming
+// through its existing StreamingMarkdownRenderer — that is why its element
+// identity must survive across `tool_call_updated` ticks (#728).
+const subagentMessageCommitted = new WeakMap<HTMLElement, string>()
+// Signature of an inner-tool wrapper's tool calls, so a message's nested tools
+// are rebuilt only when they actually change.
+const subagentInnerToolsSig = new WeakMap<HTMLElement, string>()
 
-  // Which model ran this subagent — the whole point of local routing is
-  // invisible without it, and so is the silent cloud fallback when LM Studio
-  // is unreachable.
-  if (session.model) {
-    const isLocal = session.model.startsWith('lmstudio:')
-    const badge = el('div', { class: 'subagent-model' })
-    badge.textContent = isLocal
-      ? `${session.model.slice('lmstudio:'.length)} · local`
-      : session.model
-    if (session.localFallback) {
-      badge.textContent += ' — local model unavailable, ran on cloud'
-      badge.classList.add('subagent-model-fallback')
-    }
-    card.append(badge)
+// Reconcile the subagent timeline in place, keyed by message id. Reuses each
+// message's rendered element across ticks so the running subagent's streaming
+// markdown (and its code-block copy buttons) stop flickering on every progress
+// update — the prior code tore down and rebuilt the whole subtree each tick,
+// minting a fresh streaming renderer that replayed the settle-fade (#728).
+function syncSubagentTimeline(
+  timeline: HTMLElement,
+  session: SubagentSession,
+  status: ToolCall['status'],
+  api: ApiClient,
+): void {
+  const existing = new Map<string, HTMLElement>()
+  for (const node of Array.from(timeline.children) as HTMLElement[]) {
+    const key = node.dataset['timelineKey']
+    if (key) existing.set(key, node)
   }
 
+  const desired: HTMLElement[] = []
+  for (let i = 0; i < session.messages.length; i++) {
+    const msg = session.messages[i]
+    if (!msg) continue
+    const isLast = i === session.messages.length - 1
+    const streaming = status === 'running' && isLast
+
+    if (msg.content.trim()) {
+      const key = `msg:${msg.id}`
+      let node = existing.get(key)
+      if (!node) {
+        node = createSubagentMessageEl(msg.content, streaming, api)
+        node.dataset['timelineKey'] = key
+        if (!streaming) subagentMessageCommitted.set(node, msg.content)
+      } else if (streaming) {
+        // Same element → the WeakMap in setAssistantMarkdown hits, so the block
+        // settle-fade runs once instead of replaying on every tick.
+        setAssistantMarkdown(node, msg.content, true, api)
+        subagentMessageCommitted.delete(node)
+      } else if (subagentMessageCommitted.get(node) !== msg.content) {
+        // A message that just stopped streaming (or whose text changed) commits
+        // its final render once; unchanged completed messages fall through and
+        // are reused untouched.
+        setAssistantMarkdown(node, msg.content, false, api)
+        subagentMessageCommitted.set(node, msg.content)
+      }
+      desired.push(node)
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
+    const innerToolCalls = msg.toolCalls ?? []
+    if (innerToolCalls.length > 0) {
+      const key = `tools:${msg.id}`
+      const sig = JSON.stringify(innerToolCalls)
+      let wrap = existing.get(key)
+      if (!wrap || subagentInnerToolsSig.get(wrap) !== sig) {
+        const fresh = el('div', { class: 'subagent-inner-tools' })
+        fresh.dataset['timelineKey'] = key
+        for (const inner of innerToolCalls) {
+          fresh.append(createInnerToolCard(inner))
+        }
+        subagentInnerToolsSig.set(fresh, sig)
+        void annotateFileReferences(fresh, api)
+        wrap = fresh
+      }
+      desired.push(wrap)
+    }
+  }
+
+  const keep = new Set(desired)
+  existing.forEach((node) => {
+    if (!keep.has(node)) node.remove()
+  })
+  // Re-append in order: moves reused nodes into place and inserts new ones.
+  for (const node of desired) timeline.append(node)
+}
+
+// Fill (or refresh in place) a subagent card. The timeline is reconciled so the
+// running subagent's streaming message keeps its element/renderer; the header,
+// model badge, preview, args and parent result carry no streaming state and are
+// cheap to rebuild — and the preview/result only appear once the run settles, so
+// they don't churn during the flickery running phase.
+function populateSubagentCard(card: HTMLElement, tc: ToolCall, label: string, api: ApiClient): void {
+  const session = tc.subagent
+  if (!session) throw new Error('populateSubagentCard requires tc.subagent')
+  const status = subagentCardStatus(tc, session)
+  card.dataset['status'] = status
+
+  const timeline =
+    (Array.from(card.children) as HTMLElement[]).find((node) =>
+      node.classList.contains('subagent-timeline'),
+    ) ?? el('div', { class: 'subagent-timeline' })
+  syncSubagentTimeline(timeline, session, status, api)
+
+  clear(card)
+  card.append(createToolHeader(label, status, 'tool-card-header'))
+
+  const badge = subagentModelBadge(session)
+  if (badge) card.append(badge)
+
+  const preview = session.summary ?? tc.result ?? ''
   if (preview && status !== 'running') {
     const previewEl = el('div', {
       class: 'subagent-summary-preview message-text streaming-markdown',
@@ -255,25 +350,6 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
   const argsSection = createToolArgsSection(tc.args)
   if (argsSection) card.append(argsSection)
 
-  const timeline = el('div', { class: 'subagent-timeline' })
-  for (let i = 0; i < session.messages.length; i++) {
-    const msg = session.messages[i]
-    if (!msg) continue
-    if (msg.content.trim()) {
-      const isLast = i === session.messages.length - 1
-      timeline.append(createSubagentMessageEl(msg.content, status === 'running' && isLast, api))
-    }
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    const innerToolCalls = msg.toolCalls ?? []
-    if (innerToolCalls.length > 0) {
-      const toolsWrap = el('div', { class: 'subagent-inner-tools' })
-      for (const inner of innerToolCalls) {
-        toolsWrap.append(createInnerToolCard(inner))
-      }
-      timeline.append(toolsWrap)
-      void annotateFileReferences(toolsWrap, api)
-    }
-  }
   card.append(timeline)
 
   if (tc.result && status === 'done') {
@@ -284,7 +360,14 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
     setAssistantMarkdown(resultEl, tc.result, false, api)
     card.append(resultEl)
   }
+}
 
+function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HTMLElement {
+  const card = el('details', {
+    class: 'tool-card tool-card-subagent',
+    'data-tool-id': tc.id,
+  })
+  populateSubagentCard(card, tc, label, api)
   return card
 }
 
@@ -327,6 +410,24 @@ function createGroupToolCard(item: Extract<ToolCallDisplayItem, { type: 'group' 
 function createToolCard(item: ToolCallDisplayItem, api: ApiClient): HTMLElement {
   if (item.type === 'group') return createGroupToolCard(item)
   return createIndividualToolCard(item.toolCall, item.label, api)
+}
+
+// Stable identity for a tool card across `tool_call_updated` ticks: group cards
+// key on the group bucket, individual cards on the tool-call id. Held in
+// WeakMaps (rather than DOM attributes) so large signatures don't bloat the DOM.
+const toolCardKeys = new WeakMap<HTMLElement, string>()
+const toolCardSignatures = new WeakMap<HTMLElement, string>()
+
+function toolCardKey(item: ToolCallDisplayItem): string {
+  return item.type === 'group' ? `g:${item.key}` : `t:${item.toolCall.id}`
+}
+
+// Everything that determines a card's rendered output. When it is unchanged
+// since the last tick the existing card is reused verbatim, so its markdown is
+// not re-rendered and its copy buttons are not re-attached (#728). Wire tool
+// calls are plain JSON, so a stringify captures args/result/status/subagent.
+function toolCardSignature(item: ToolCallDisplayItem): string {
+  return JSON.stringify(item)
 }
 
 function createMessageImages(images: string[]): HTMLElement {
@@ -849,28 +950,71 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         if (id) userExpandedTools.add(id)
       })
 
-    msgEl.querySelectorAll('.tool-card').forEach((node) => {
-      node.remove()
-    })
-
-    for (const item of buildToolCallDisplayItems(toolCalls)) {
+    const items = buildToolCallDisplayItems(toolCalls)
+    for (const item of items) {
       // LLM-only rollup: a small-model summary, when ready, replaces the generic
       // "Running commands" header for the shell group.
       if (item.type === 'group' && item.key === 'shell' && commandSummary) {
         item.label = commandSummary
       }
-      const card = createToolCard(item, api) as HTMLDetailsElement
+    }
+
+    // Index the cards already in the DOM by their stable key so unchanged ones
+    // are reused wholesale instead of torn down and rebuilt on every tick — the
+    // former remove-all/rebuild-all churned every card's markdown and copy
+    // buttons while a subagent streamed (#728).
+    const existing = new Map<string, HTMLElement>()
+    for (const node of Array.from(msgEl.children) as HTMLElement[]) {
+      if (!node.classList.contains('tool-card')) continue
+      const key = toolCardKeys.get(node)
+      if (key) existing.set(key, node)
+    }
+
+    const desired: HTMLElement[] = []
+    for (const item of items) {
+      const key = toolCardKey(item)
+      const sig = toolCardSignature(item)
+      let card = existing.get(key) ?? null
+      if (card) existing.delete(key)
+
+      if (card && toolCardSignatures.get(card) === sig) {
+        // Nothing this card renders has changed — leave its DOM (and any
+        // streaming renderers / copy buttons) exactly as they are.
+      } else if (
+        card &&
+        item.type === 'individual' &&
+        item.toolCall.subagent &&
+        card.classList.contains('tool-card-subagent')
+      ) {
+        // Running subagent: update in place so the timeline's streaming message
+        // keeps the same element (and renderer) across ticks.
+        populateSubagentCard(card, item.toolCall, item.label, api)
+        toolCardSignatures.set(card, sig)
+      } else {
+        card = createToolCard(item, api)
+        toolCardKeys.set(card, key)
+        toolCardSignatures.set(card, sig)
+      }
+
       if (item.type === 'group') {
         const status = aggregateToolStatus(item.toolCalls)
-        card.open = status === 'running' || userExpandedGroups.has(item.key)
+        ;(card as HTMLDetailsElement).open = status === 'running' || userExpandedGroups.has(item.key)
       } else {
         const tc = item.toolCall
-        const subStatus = tc.subagent?.status
-        const running = tc.status === 'running' || subStatus === 'running'
-        card.open = running || userExpandedTools.has(tc.id)
+        const running = tc.status === 'running' || tc.subagent?.status === 'running'
+        ;(card as HTMLDetailsElement).open = running || userExpandedTools.has(tc.id)
       }
-      msgEl.append(card)
+      desired.push(card)
     }
+
+    // Drop cards whose tool calls are gone (e.g. an individual card absorbed
+    // into a newly-formed group).
+    existing.forEach((node) => {
+      node.remove()
+    })
+    // Re-append in order: moves reused nodes to the correct position and inserts
+    // freshly built ones. Tool cards are the trailing children of the message.
+    for (const node of desired) msgEl.append(node)
   }
 
   function appendMessageEl(threadId: string, msgId: string): void {
