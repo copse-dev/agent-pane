@@ -98,7 +98,7 @@ export const trustedShellCommandsSchema = z.array(z.string().min(1).max(128)).ma
 
 export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   model: z.string().max(256),
-  theme: z.enum(['light', 'dark']),
+  theme: z.enum(['system', 'light', 'dark']),
   fontSize: z.number().int().min(8).max(32),
   autoPortraitRightPanel: z.boolean(),
   rightPanelPosition: z.enum(['auto', 'side', 'bottom']),

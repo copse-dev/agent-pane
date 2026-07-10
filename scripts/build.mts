@@ -96,7 +96,7 @@ await esbuild.build({
 
 copyFileSync('src/renderer/index.html', 'dist/renderer/index.html')
 cpSync('assets', 'dist/assets', { recursive: true })
-copyFileSync('assets/icons/aurora/icon-32.png', 'dist/renderer/favicon.png')
+copyFileSync('assets/icons/rose/icon-32.png', 'dist/renderer/favicon.png')
 cpSync('src/renderer/icon-previews', 'dist/renderer/icon-previews', { recursive: true })
 copyMonacoWorkers('dist/renderer')
 cpSync('node_modules/vscode-material-icons/generated/icons', 'dist/renderer/material-icons', {

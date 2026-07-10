@@ -1,4 +1,5 @@
 export const APP_ICON_VARIANTS = [
+  'rose',
   'aurora',
   'citrus',
   'candy',
@@ -17,9 +18,10 @@ export const APP_ICON_VARIANTS = [
 ] as const
 export type AppIconVariant = (typeof APP_ICON_VARIANTS)[number]
 
-export const DEFAULT_APP_ICON_VARIANT: AppIconVariant = 'aurora'
+export const DEFAULT_APP_ICON_VARIANT: AppIconVariant = 'rose'
 
 export const APP_ICON_VARIANT_LABELS: Record<AppIconVariant, string> = {
+  rose: 'Rose',
   aurora: 'Aurora',
   citrus: 'Citrus',
   candy: 'Candy',
@@ -54,6 +56,7 @@ export interface AppIconScheme {
 }
 
 export const APP_ICON_VARIANT_SCHEMES: Record<AppIconVariant, AppIconScheme> = {
+  rose: { start: '#FDA4AF', end: '#F472B6', bg: '#7A1145' },
   aurora: { start: '#7C3AED', end: '#22D3EE', bg: '#0F172A' },
   citrus: { start: '#79F042', end: '#4C7EF0', bg: '#121C0D' },
   candy: { start: '#4265F0', end: '#F04C86', bg: '#0D101C' },

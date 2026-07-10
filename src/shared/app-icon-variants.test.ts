@@ -9,10 +9,11 @@ import {
 } from './app-icon-variants.ts'
 
 describe('app-icon-variants', () => {
-  it('lists the 15 Icon Studio colour schemes', () => {
+  it('lists the Icon Studio colour schemes', () => {
     assert.deepEqual(
       [...APP_ICON_VARIANTS],
       [
+        'rose',
         'aurora',
         'citrus',
         'candy',
@@ -32,8 +33,8 @@ describe('app-icon-variants', () => {
     )
   })
 
-  it('defaults to aurora', () => {
-    assert.equal(DEFAULT_APP_ICON_VARIANT, 'aurora')
+  it('defaults to rose', () => {
+    assert.equal(DEFAULT_APP_ICON_VARIANT, 'rose')
   })
 
   it('has a label and a colour scheme for every variant', () => {

@@ -277,9 +277,13 @@ dialog.settings-overlay::backdrop {
   margin-top: calc(-1 * var(--spacing-sm));
 }
 .app-icon-picker {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
+  /* Fixed 4 columns so the 16 variants land as a clean 4×4 grid with no
+     orphaned last row. Capped width keeps the tiles grouped rather than
+     spread thin across the settings column. */
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px 16px;
+  max-width: 560px;
 }
 .app-icon-option {
   display: flex;
@@ -306,9 +310,9 @@ dialog.settings-overlay::backdrop {
 }
 .app-icon-preview img {
   display: block;
-  width: 64px;
-  height: 64px;
-  border-radius: 8px;
+  width: 80px;
+  height: 80px;
+  border-radius: 10px;
 }
 .app-icon-option:hover .app-icon-preview {
   border-color: var(--border-strong);
