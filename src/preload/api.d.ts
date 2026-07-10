@@ -27,6 +27,7 @@ import type {
 } from '@copse/llm/extra-providers.ts'
 import type { DetectedAcpAgent } from '@shared/acp-known-agents.ts'
 import type { AcpModelSelector, AcpAutoSetupResult } from '@shared/types/acp.ts'
+import type { ExternalEditorList } from '@shared/types/editors.ts'
 
 export type { DetectedAcpAgent }
 
@@ -408,6 +409,12 @@ export interface ApiClient {
   }
   shell: {
     openExternal: (url: string) => Promise<void>
+  }
+  editors: {
+    /** Installed external editors plus the sticky last-used default. */
+    list: () => Promise<ExternalEditorList>
+    /** Open the active workspace root in a detected editor. */
+    open: (editorId: string) => Promise<void>
   }
   panes: {
     /** Detach a right-panel pane into its own window. */
