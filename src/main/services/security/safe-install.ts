@@ -20,13 +20,17 @@
  * Command substitution / unusual quoting can evade detection.
  */
 
+import { normalizeShellCommandForAnalysis } from './shell-scope.ts'
+
 // Split on top-level shell operators so each segment can be classified on its own.
 // Quotes/substitution are not honoured (see file note).
 const SEGMENT_RE = /(?:&&|\|\||;|\|)/
 
-// Leading `VAR=val` assignments and an optional `sudo`, stripped before we read
-// the command word.
-const PREFIX_RE = /^(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^\s]*)\s+)*(?:sudo\s+)?/
+// Leading `VAR=val` assignments and any run of `sudo` / `eval` command words,
+// stripped before we read the command word. `eval npm install` (and, after quote
+// normalization, `eval "npm install"`) would otherwise hide the manager token
+// behind the eval builtin. (#581)
+const PREFIX_RE = /^(?:(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^\s]*)|sudo|eval)\s+)*/
 
 const NPM_INSTALL_VERBS = new Set(['install', 'i', 'add', 'ci', 'update', 'up'])
 const PNPM_INSTALL_VERBS = new Set(['install', 'i', 'add', 'update', 'up'])
@@ -105,7 +109,12 @@ export function detectPackageInstall(command: string): InstallDetection {
   let isInstall = false
   let isEphemeralRunner = false
   let jsManager = false
-  for (const segment of command.split(SEGMENT_RE)) {
+  // Undo the cheap quote/backslash obfuscation the shell collapses away (`n""pm`,
+  // `n\pm` → `npm`) before tokenizing, so a package-manager token can't be hidden
+  // from the whitespace splitter. Detection only — the untouched original command
+  // is what actually runs (and is wrapped). (#581)
+  const normalized = normalizeShellCommandForAnalysis(command)
+  for (const segment of normalized.split(SEGMENT_RE)) {
     const spec = classifySegment(segment)
     if (!spec) continue
     isInstall = true

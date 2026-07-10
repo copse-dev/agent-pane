@@ -369,7 +369,14 @@
   height: 14px;
   color: var(--text-muted);
 }
+/* The icon is the chip's first flex item, and with align-items: center nothing
+   participates in baseline alignment — so the flex container exports the icon's
+   bottom edge as its baseline and the whole pill floats ~3px above the sentence
+   it sits in. Opting the label into baseline alignment makes the label text the
+   chip's baseline, so it reads inline with the surrounding prompt text. (The
+   label is the tallest item, so its own position inside the pill is unchanged.) */
 .transcript-attachment-label {
+  align-self: baseline;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

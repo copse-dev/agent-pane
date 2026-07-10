@@ -68,6 +68,21 @@ describe('modern CSS adoptions', () => {
     )
   })
 
+  it('keeps transcript chips on the surrounding text baseline', () => {
+    const css = read('conversation.css')
+    // The chip's first flex item is the icon, so without this the flex container
+    // exports the icon's bottom edge as its baseline and the pill floats above
+    // the sentence it sits in (happy-dom cannot measure this; pin the rule).
+    assert.ok(
+      declares(css, '.transcript-attachment-label', /align-self:\s*baseline/),
+      '.transcript-attachment-label must align-self: baseline so the chip sits on the line',
+    )
+    assert.ok(
+      declares(css, '.transcript-attachment-chip', /vertical-align:\s*baseline/),
+      '.transcript-attachment-chip must keep vertical-align: baseline',
+    )
+  })
+
   it('auto-sizes the composer to its content', () => {
     const css = read('input-bar.css')
     // The composer is a contenteditable (composer-editor.ts), which grows with

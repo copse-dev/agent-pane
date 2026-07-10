@@ -25,7 +25,13 @@ const SHARED = resolve(ROOT, 'src/shared')
 
 // Files that are deliberately not imported anywhere. Each needs a reason so the
 // next person knows it is intentional rather than forgotten dead code.
-const ALLOWED_UNLINKED: Record<string, string> = {}
+const ALLOWED_UNLINKED: Record<string, string> = {
+  // Ports panel Phase 0 core: the impure scan/process-table edge, split from the
+  // pure parsers (port-scan / process-ancestry) so those stay unit-testable
+  // without the subprocess graph. Its consumer (the ports registry + IPC) lands
+  // in Phase 0 wiring; remove this entry when that imports it.
+  'src/main/services/ports/host-scan.ts': 'awaiting Phase 0 wiring (ports registry/IPC)',
+}
 
 const abs = (p: string): string => resolve(ROOT, p)
 const isModuleTs = (p: string): boolean => /\.(mts|cts|tsx|ts)$/.test(p) && !p.endsWith('.d.ts')

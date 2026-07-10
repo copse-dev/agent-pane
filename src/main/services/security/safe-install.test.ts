@@ -75,6 +75,24 @@ describe('detectPackageInstall', () => {
   it('does not re-detect an already sfw-wrapped command', () => {
     assert.equal(detectPackageInstall('sfw npm install').isInstall, false)
   })
+
+  // --- #581: obfuscation must not dodge the sfw wrap / ignore_scripts ----------
+
+  it('sees through quote-splitting obfuscation of the manager token', () => {
+    for (const cmd of ['n""pm install', `n''pm install`, 'p""npm add react', 'y\\arn add react']) {
+      const d = detectPackageInstall(cmd)
+      assert.equal(d.isInstall, true, cmd)
+      assert.equal(d.jsManager, true, cmd)
+    }
+  })
+
+  it('sees through a leading eval (quoted or bare)', () => {
+    for (const cmd of ['eval npm install', 'eval "npm install"', `eval 'pnpm add react'`]) {
+      const d = detectPackageInstall(cmd)
+      assert.equal(d.isInstall, true, cmd)
+      assert.equal(d.jsManager, true, cmd)
+    }
+  })
 })
 
 describe('posixQuote', () => {
