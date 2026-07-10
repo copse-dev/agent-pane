@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { setComposerValue } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const QUEUED_TEXT = 'Then add unit tests for the parser.'
@@ -23,16 +24,16 @@ describe('queued message delete', function () {
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    await $('.prompt-input').setValue('Refactor the JSON parser. [[mock:delay_ms 6000]]')
+    await setComposerValue('Refactor the JSON parser. [[mock:delay_ms 6000]]')
     await $('.submit-btn').click()
     await browser.waitUntil(async () => (await $('.stop-btn').getProperty('hidden')) !== true, {
       timeout: 10_000,
     })
 
     await browser.execute((value: string) => {
-      const input = document.querySelector('.prompt-input') as HTMLTextAreaElement | null
+      const input = document.querySelector('.prompt-input') as HTMLElement | null
       const btn = document.querySelector('.submit-btn') as HTMLButtonElement | null
-      if (input) input.value = value
+      if (input) input.textContent = value
       btn?.click()
     }, QUEUED_TEXT)
 

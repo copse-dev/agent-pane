@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { setComposerValue } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -26,7 +27,7 @@ describe('double submit guard', function () {
     // Start a slow turn so the thread stays running, mirroring the laggy state
     // where the user manages to press Send/Enter more than once.
     const firstPrompt = 'first prompt [[mock:delay_ms 2000]]'
-    await $('.prompt-input').setValue(firstPrompt)
+    await setComposerValue(firstPrompt)
     await $('.submit-btn').click()
 
     const becameRunning = await browser
@@ -39,9 +40,9 @@ describe('double submit guard', function () {
     // Fire two synchronous clicks back-to-back, exactly as a frozen renderer
     // would replay buffered input events once the main thread unblocks.
     await browser.execute(() => {
-      const input = document.querySelector('.prompt-input') as HTMLTextAreaElement | null
+      const input = document.querySelector('.prompt-input') as HTMLElement | null
       const btn = document.querySelector('.submit-btn') as HTMLButtonElement | null
-      if (input) input.value = 'queued follow up'
+      if (input) input.textContent = 'queued follow up'
       btn?.click()
       btn?.click()
     })

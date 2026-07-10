@@ -134,10 +134,24 @@ export interface ThreadCatalogHit extends ThreadCatalogEntry {
   spinePath: string
 }
 
+/**
+ * A display-only attachment chip shown in a user message's transcript. The agent
+ * receives the expanded fenced blocks in its run payload, not these — so this is
+ * purely how the sent message renders. `paste` chips are positional: each maps,
+ * in order, to a U+FFFC (object-replacement) placeholder in the message
+ * `content`; `file`/`thread` chips render as a trailing row.
+ */
+export interface TranscriptAttachment {
+  kind: 'paste' | 'file' | 'thread'
+  label: string
+}
+
 export interface Message {
   id: string
   role: 'user' | 'assistant' | 'error'
   content: string // accumulated text (appended during streaming)
+  /** Display-only attachment chips for user messages (see {@link TranscriptAttachment}). */
+  attachments?: TranscriptAttachment[]
   /**
    * Accumulated reasoning / "thinking" text streamed before the answer, shown in
    * a collapsible disclosure. Never sent back upstream as conversation history.

@@ -145,6 +145,19 @@ function buildThreadRefBlock(refs: ThreadRefAttachment[]): string {
   return `${THREAD_STEERING_PREAMBLE}\n\nReferenced threads:\n${lines.join('\n')}`
 }
 
+/**
+ * The fenced block a labelled attachment inlines into the prompt. Shared by the
+ * end-of-message attachment path below and the composer's inline paste chips,
+ * which expand in place, so both render the one format the agent sees.
+ */
+export function renderTextBlock(
+  label: string,
+  content: string,
+  maxChars: number = ATTACHMENT_MAX_CHARS,
+): string {
+  return `\`\`\`\n// ${label}\n${truncateAttachmentContent(content, maxChars)}\n\`\`\``
+}
+
 export function buildTextWithAttachments(
   text: string,
   files: FileAttachment[],
@@ -154,12 +167,8 @@ export function buildTextWithAttachments(
   const cap = options.maxCharsPerAttachment ?? ATTACHMENT_MAX_CHARS
   const threadRefs = options.threadRefs ?? []
   const blocks = [
-    ...files.map(
-      (f) => `\`\`\`\n// ${f.path}\n${truncateAttachmentContent(f.content, cap)}\n\`\`\``,
-    ),
-    ...textBlocks.map(
-      (b) => `\`\`\`\n// ${b.label}\n${truncateAttachmentContent(b.content, cap)}\n\`\`\``,
-    ),
+    ...files.map((f) => renderTextBlock(f.path, f.content, cap)),
+    ...textBlocks.map((b) => renderTextBlock(b.label, b.content, cap)),
     // No truncation path — thread refs inline nothing, so ATTACHMENT_MAX_CHARS
     // never applies here.
     ...(threadRefs.length > 0 ? [buildThreadRefBlock(threadRefs)] : []),

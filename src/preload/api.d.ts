@@ -14,6 +14,7 @@ import type {
   GhPrDetails,
   GhPrFileDiff,
   GhPrSummary,
+  PrActionResult,
 } from '@shared/types/git.ts'
 import type { McpServerStatus, CuratedMcpServerStatus } from '@shared/types/mcp.ts'
 import type { RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
@@ -396,6 +397,14 @@ export interface ApiClient {
     resolvePrUrl: (url: string) => Promise<{ owner: string; repo: string; number: number } | null>
     /** PRs in the active project opened by an agent this app launched (issue #690). */
     agentPrLinks: () => Promise<RemoteAgentPrIndexEntry[]>
+    /** Re-run the failed workflow runs on the PR's head branch. */
+    rerunFailedRuns: (owner: string, repo: string, number: number) => Promise<PrActionResult>
+    /** Approve the pull request. */
+    approvePr: (owner: string, repo: string, number: number) => Promise<PrActionResult>
+    /** Mark a draft pull request ready for review. */
+    markPrReady: (owner: string, repo: string, number: number) => Promise<PrActionResult>
+    /** Enable merge-when-ready (auto-merge) with the repo's preferred strategy. */
+    enableAutoMerge: (owner: string, repo: string, number: number) => Promise<PrActionResult>
   }
   shell: {
     openExternal: (url: string) => Promise<void>

@@ -12,10 +12,14 @@ import {
 import { shellRunsOutsideSandbox } from '../services/security/command-routing-config.ts'
 import { detectSandboxFailure } from '../services/security/sandbox-failure.ts'
 import {
+  promptExpectedSandboxBlock,
   promptInstallSocketFirewall,
   promptUnsandboxedShell,
 } from '../services/security/permission-gate.ts'
-import { shellSandboxFailureShouldOfferUnsandboxedRetry } from '../services/security/permission-policy.ts'
+import {
+  shellExpectedBlockEscalation,
+  shellSandboxFailureShouldOfferUnsandboxedRetry,
+} from '../services/security/permission-policy.ts'
 import { envForRendererChildProcess } from '../services/exec/child-process-env.ts'
 import { getSetting } from '../services/storage/settings.ts'
 import { detectPackageInstall, wrapWithSocketFirewall } from '../services/security/safe-install.ts'
@@ -241,12 +245,21 @@ function formatShellFailure(result: ShellRunResult): Error {
 export const runShellTool = defineTool({
   name: 'run_shell',
   description:
-    'Run a shell command for tests, builds, installs, and other tasks not covered by a dedicated tool — not for reading files or searching code (use read_file/search tools or explore). Output is streamed to the conversation. Commands contained within the sandbox auto-run; network or outside-workspace access (e.g. gh, curl, git push) prompts for approval and runs outside the sandbox when the macOS project sandbox is active. If a sandbox-contained command fails because the sandbox blocks filesystem/process access (e.g. Playwright), the user may approve running it once outside the sandbox. Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) are automatically run through Socket Firewall to scan for malicious packages, with install lifecycle scripts disabled.',
+    'Run a shell command for tests, builds, installs, and other tasks not covered by a dedicated tool — not for reading files or searching code (use read_file/search tools or explore). Output is streamed to the conversation. Commands contained within the sandbox auto-run; network or outside-workspace access (e.g. gh, curl, git push) prompts for approval and runs outside the sandbox when the macOS project sandbox is active. If a sandbox-contained command fails because the sandbox blocks filesystem/process access (e.g. Playwright), the user may approve running it once outside the sandbox. If you already expect a command to need the network or files outside the workspace (e.g. gh, cloud CLIs), set expects_sandbox_block so the user is asked up front instead of after a failed sandboxed attempt. Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) are automatically run through Socket Firewall to scan for malicious packages, with install lifecycle scripts disabled.',
   parameters: z.object({
     command: z.string().describe('Shell command to run'),
     timeout_ms: z.number().int().min(1000).max(300_000).optional().default(30_000),
+    expects_sandbox_block: z
+      .boolean()
+      .optional()
+      .describe(
+        'Set true when you already expect this command to need access the sandbox blocks — network ' +
+          '(e.g. gh, cloud CLIs, nc) or files outside the workspace — so the user is asked to run it ' +
+          'outside the sandbox up front rather than after it fails inside. Only affects commands that ' +
+          'might reach outside the sandbox; fully local commands run sandboxed regardless of this flag.',
+      ),
   }),
-  async execute({ command, timeout_ms }, signal) {
+  async execute({ command, timeout_ms, expects_sandbox_block }, signal) {
     const cwd = getWorkspaceRoot()
     if (!cwd) return 'No workspace open.'
 
@@ -260,7 +273,31 @@ export const runShellTool = defineTool({
     // trusted allow-listed command runs unsandboxed with no prompt, otherwise the
     // existing external-command heuristic applies. shellRunsOutsideSandbox is the
     // single source of truth shared with the gate and todo verification.
-    const outsideSandbox = shellRunsOutsideSandbox(command)
+    const sandboxEnabled = isProjectSandboxEnabled()
+    let outsideSandbox = shellRunsOutsideSandbox(command)
+
+    // If the agent declared up front that it expects the sandbox to block this
+    // command, pull the escalation prompt forward instead of running inside the
+    // sandbox and offering an unsandboxed retry only after a real block. Bounded to
+    // the 'ambiguous' verdict (see shellExpectedBlockEscalation): a hard-'external'
+    // command already prompts + runs outside here, and a fully-contained command
+    // must still earn its escape from a runner-verified block, never this hint.
+    // Analyze the same RAW command as the outsideSandbox decision above, so the
+    // hint can never escalate a command whose real verdict is fully-contained.
+    let suppressUnsandboxedRetry = false
+    if (!outsideSandbox && expects_sandbox_block === true) {
+      const escalation = shellExpectedBlockEscalation(command, cwd, sandboxEnabled)
+      if (escalation.eligible) {
+        if (await promptExpectedSandboxBlock(command, escalation.reasons)) {
+          outsideSandbox = true
+        } else {
+          // The user declined the up-front escalation. Still run the command inside
+          // the sandbox, but don't nag with the reactive retry prompt on failure —
+          // they just answered that exact question for this command.
+          suppressUnsandboxedRetry = true
+        }
+      }
+    }
 
     // Strip LLM API keys (and other secrets) from the child env so a compromised
     // command — especially an unsandboxed retry with full network — cannot exfiltrate
@@ -286,18 +323,20 @@ export const runShellTool = defineTool({
 
       if (result.exitCode === 0) return withBanner(formatShellSuccess(result))
 
-      const retry = await maybeRetryUnsandboxed(
-        finalCommand,
-        cwd,
-        timeout_ms,
-        signal,
-        result,
-        childEnv,
-      )
-      if (retry === 'declined') return 'User declined to run outside the sandbox.'
-      if (retry) {
-        if (retry.exitCode === 0) return withBanner(formatShellSuccess(retry))
-        throw formatShellFailure(retry)
+      if (!suppressUnsandboxedRetry) {
+        const retry = await maybeRetryUnsandboxed(
+          finalCommand,
+          cwd,
+          timeout_ms,
+          signal,
+          result,
+          childEnv,
+        )
+        if (retry === 'declined') return 'User declined to run outside the sandbox.'
+        if (retry) {
+          if (retry.exitCode === 0) return withBanner(formatShellSuccess(retry))
+          throw formatShellFailure(retry)
+        }
       }
 
       throw formatShellFailure(result)

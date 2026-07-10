@@ -10,6 +10,7 @@ import type {
   UsageDelta,
   ContextTrimRecord,
   ContextSnapshot,
+  TranscriptAttachment,
 } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
 import type { ModelComparison, Thread, ThreadReview } from '@shared/types'
@@ -199,6 +200,7 @@ export function addMessage(
   role: Message['role'],
   content = '',
   images?: string[],
+  attachments?: TranscriptAttachment[],
 ): string {
   const id = randomUUID()
   const { threads } = store.getState()
@@ -214,6 +216,7 @@ export function addMessage(
               role,
               content,
               ...(images?.length ? { images } : {}),
+              ...(attachments?.length ? { attachments } : {}),
               toolCalls: [],
               createdAt: Date.now(),
             },

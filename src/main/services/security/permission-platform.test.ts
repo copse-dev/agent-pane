@@ -12,12 +12,17 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { decideShellPermission, shellRequiresOutsideSandbox } from './permission-policy.ts'
+import {
+  decideShellPermission,
+  shellExpectedBlockEscalation,
+  shellRequiresOutsideSandbox,
+} from './permission-policy.ts'
 
 const root = '/Users/me/project'
 const SANDBOXED = 'npm test' // stays within the workspace, no network
 const EXTERNAL = 'curl https://example.com' // network access
 const OUTSIDE_FS = 'ls ~/.ssh'
+const AMBIGUOUS = 'gh pr list' // may reach GitHub, but auto-runs inside seatbelt
 
 describe('shell permissions: macOS with ASRT sandbox active', () => {
   const opts = {
@@ -97,6 +102,31 @@ describe('shell permissions: Linux/Windows or macOS sandbox-init failure (no OS 
 
   it('never claims a command needs to run "outside the sandbox" when there is no sandbox', () => {
     assert.equal(shellRequiresOutsideSandbox(EXTERNAL, root, false), false)
+  })
+})
+
+describe('shell permissions: agent-declared "expects_sandbox_block" up-front escalation', () => {
+  it('is eligible for an ambiguous command when the sandbox is active', () => {
+    // gh/cloud CLIs/nc would auto-run inside seatbelt and escalate on a real block;
+    // the up-front hint may pull that same prompt forward.
+    const e = shellExpectedBlockEscalation(AMBIGUOUS, root, true)
+    assert.equal(e.eligible, true)
+    assert.ok(e.reasons.some((r) => /GitHub CLI/i.test(r)))
+  })
+
+  it('is NOT eligible for a hard-external command (it already prompts + runs outside)', () => {
+    assert.equal(shellExpectedBlockEscalation(EXTERNAL, root, true).eligible, false)
+    assert.equal(shellExpectedBlockEscalation(OUTSIDE_FS, root, true).eligible, false)
+  })
+
+  it('is NOT eligible for a fully-contained command (no self-declared escape)', () => {
+    // A 'sandbox' verdict has no external signal at all; honoring the hint here
+    // would let the model route a contained command outside without a real block.
+    assert.equal(shellExpectedBlockEscalation(SANDBOXED, root, true).eligible, false)
+  })
+
+  it('is NOT eligible when there is no OS sandbox to escalate out of', () => {
+    assert.equal(shellExpectedBlockEscalation(AMBIGUOUS, root, false).eligible, false)
   })
 })
 
