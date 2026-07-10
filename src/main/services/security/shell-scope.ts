@@ -29,6 +29,14 @@ export interface ShellScopeAnalysis {
 // (a read-only grep on a gh-* filename was misclassified as a GitHub CLI call).
 const CMD_POS = String.raw`(?:^|[\n|;&(])\s*`
 
+// Direct execution of a workspace-relative file (`./build`, `../tool`, `bin/x`).
+// The agent can author and `chmod +x` such a file, so its contents are opaque to
+// this classifier (and to the file-blind safety classifier) — a hard escape even
+// under the sandbox, exactly like `node ./x.js`. Shared verbatim between the regex
+// entry and the token layer so the two dedupe against each other. (#581)
+const REASON_LOCAL_EXECUTABLE =
+  'executes an in-workspace file directly (contents opaque to analysis)'
+
 // Commands that clearly reach outside the workspace or network.
 //
 // `ambiguous: true` marks fuzzy "may reach" matchers — short/overloaded command
@@ -75,6 +83,11 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: string; ambiguous?: boolean
   },
   { re: /\bssh\b|\bscp\b|\brsync\b/i, reason: 'remote shell/copy (ssh/scp/rsync)' },
   { re: /\bsocat\b|\blftp\b|\bftp\b/i, reason: 'network utility (socat/ftp/lftp)' },
+  // Bash's magic `/dev/tcp/<host>/<port>` and `/dev/udp/...` pseudo-devices open a
+  // raw socket via a redirect (`cat </dev/tcp/evil/443`, `exec 3<>/dev/tcp/...`),
+  // with no network-tool name for the matchers above to catch. The outside-path
+  // scanner deliberately skips `/dev/`, so it must be flagged here. (#581)
+  { re: /\/dev\/(?:tcp|udp)\//i, reason: 'raw network socket via /dev/tcp|/dev/udp redirect' },
   // Allow interspersed global options (`git -c protocol.ext.allow=always clone …`,
   // which is a classic clone-time RCE vector) and cover submodule/archive, which
   // also reach the network. `-c` takes a `key=val` argument that isn't flag-shaped,
@@ -95,7 +108,22 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: string; ambiguous?: boolean
     reason: 'GitHub CLI (may reach GitHub)',
     ambiguous: true,
   },
-  { re: /\bopen\s+https?:|\bxdg-open\s+https?:/i, reason: 'open external URL', ambiguous: true },
+  // `open` / `open -a` (macOS) and `xdg-open` (Linux) hand a file or URL to the OS
+  // handler, which launches a *host application in a new process outside* the
+  // seatbelt. Unlike most matchers this escapes even when the sandbox is active, so
+  // it is hard-external (always prompt), not ambiguous. (#581)
+  {
+    re: new RegExp(`${CMD_POS}open\\b`, 'i'),
+    reason: 'launches a host app/file outside the sandbox (open)',
+  },
+  { re: /\bxdg-open\b/i, reason: 'launches a host app/file outside the sandbox (xdg-open)' },
+  {
+    // Direct execution of a workspace-relative file starting with `./` or `../`.
+    // Relative paths with a slash but no leading dot (`bin/tool`) are caught by the
+    // token layer, which keys off argv[0]. (#581)
+    re: new RegExp(`${CMD_POS}\\.\\.?/\\S+`),
+    reason: REASON_LOCAL_EXECUTABLE,
+  },
   {
     re: new RegExp(`${CMD_POS}nc\\b|\\bnetcat\\b|\\btelnet\\b`, 'i'),
     reason: 'raw network utility',
@@ -243,6 +271,15 @@ function tokenBasedExternalReasons(command: string): { reasons: string[]; hasHar
   const inspect = (): void => {
     const exe0 = segment[0]
     if (exe0 === undefined) return
+    // argv[0] is a workspace-relative path (`./x`, `../x`, `bin/tool`) — the shell
+    // executes the file directly from the cwd. Absolute paths are left to the
+    // outside-path scanner; a bare name (no slash) is a PATH lookup, not a local
+    // file. This catches the extensionless executables the regex extension list
+    // can't. (#581)
+    if (!exe0.startsWith('/') && exe0.includes('/')) {
+      addReason(REASON_LOCAL_EXECUTABLE)
+      hasHard = true
+    }
     const exe = basename(exe0).toLowerCase()
     if (TOKEN_INTERPRETERS.has(exe)) {
       const args = segment.slice(1)
