@@ -20,9 +20,6 @@ async function smokeTestPty(): Promise<void> {
     rows: 24,
     cwd: process.cwd(),
     env: process.env,
-    // The terminal is normally an explicit user-controlled escape from the
-    // project sandbox; keep this smoke path aligned with that product path.
-    unsandboxed: true,
   })
   const output = await new Promise<string>((resolve, reject) => {
     let data = ''

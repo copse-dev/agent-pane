@@ -32,7 +32,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.0
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          # Dispatch accepts a tag *name*, never an arbitrary branch/ref.
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
           fetch-depth: 0
       - id: release
         name: Validate tag, version, ancestry, and exact-SHA CI
@@ -46,6 +47,10 @@ jobs:
             v*) ;;
             *) echo "Release tag must start with v: $tag"; exit 1 ;;
           esac
+          if ! git show-ref --verify --quiet "refs/tags/$tag"; then
+            echo "Release target must be an existing tag: $tag"
+            exit 1
+          fi
           version="$(node -p "require('./package.json').version")"
           if [ "${tag#v}" != "$version" ]; then
             echo "Tag $tag does not match package.json version $version"
