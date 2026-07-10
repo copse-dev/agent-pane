@@ -4,7 +4,6 @@ import type { OpenFile } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
-import { sanitizeRenderedMarkdown } from '@copse/streaming-markdown'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
@@ -62,7 +61,7 @@ export function mountContextPanel(
   }
 
   function renderMarkdownPreview(content: string): void {
-    previewContainer.innerHTML = sanitizeRenderedMarkdown(renderMarkdown(content))
+    previewContainer.innerHTML = renderMarkdown(content)
     attachCodeBlockCopyButtons(previewContainer)
     void annotateFileReferences(previewContainer, api)
     void renderMermaidIn(previewContainer)

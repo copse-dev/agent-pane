@@ -2,7 +2,7 @@ import { el } from '../dom/helpers.ts'
 import { searchIcon } from '../dom/icons.ts'
 import { createRetryButton } from './retry-button.ts'
 import type { ModelComparison } from '@shared/types'
-import { renderMarkdown, sanitizeRenderedMarkdown } from '@copse/streaming-markdown'
+import { renderMarkdown } from '@copse/streaming-markdown'
 import { annotateFileReferences } from '../markdown/file-links.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 
@@ -27,7 +27,7 @@ function markdownBlock(
   const block = el('div', { class: className })
   block.append(el('div', { class: 'comparison-panel-col-title' }, title))
   const md = el('div', { class: 'comparison-panel-md message-text' })
-  md.innerHTML = sanitizeRenderedMarkdown(renderMarkdown(body || '(no output)'))
+  md.innerHTML = renderMarkdown(body || '(no output)')
   void annotateFileReferences(md, api)
   block.append(md)
   return block
