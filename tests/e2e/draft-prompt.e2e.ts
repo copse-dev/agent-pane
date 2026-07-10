@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedDraftPromptFixture } from './helpers/seed-config.ts'
+import { setComposerValue } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const DRAFT_TEXT = 'still typing a draft prompt…'
@@ -33,7 +34,7 @@ describe('draft prompt preservation', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await expect($('.chat-row.selected .chat-title')).toHaveText(blankThreadTitle)
 
-    await $('.prompt-input').setValue(DRAFT_TEXT)
+    await setComposerValue(DRAFT_TEXT)
     await clickThreadByTitle(usedThreadTitle)
     await expect($('.chat-row.selected .chat-title')).toHaveText(usedThreadTitle)
     await expect($('.messages-list .msg-user')).toHaveText('hello from used thread')
@@ -43,12 +44,12 @@ describe('draft prompt preservation', () => {
 
     await clickThreadByTitle(blankThreadTitle)
     await expect($('.chat-row.selected .chat-title')).toHaveText(blankThreadTitle)
-    await expect($('.prompt-input')).toHaveValue(DRAFT_TEXT)
+    await expect($('.prompt-input')).toHaveText(DRAFT_TEXT)
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'draft-prompt-restored.png'))
 
     await $('.project-new-thread-btn').click()
-    await expect($('.prompt-input')).toHaveValue('')
+    await expect($('.prompt-input')).toHaveText('')
 
     // Creating a new thread appends its row asynchronously (store emit →
     // re-render), so snapshotting `$$` right after the click races the insert

@@ -5,6 +5,31 @@ import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { ThreadCatalogHit } from '@shared/types'
 import { initMentionPicker, type AttachedThreadRef } from './mention-picker.ts'
+import type { ComposerTextInput } from './composer-editor.ts'
+
+// The picker depends only on the textarea-shaped ComposerTextInput slice, so a
+// plain textarea behind that interface keeps this test focused on picker logic
+// (the real composer editor has its own unit + e2e coverage).
+function asTextInput(textarea: HTMLTextAreaElement): ComposerTextInput {
+  return {
+    el: textarea,
+    get value(): string {
+      return textarea.value
+    },
+    set value(v: string) {
+      textarea.value = v
+    },
+    get selectionStart(): number {
+      return textarea.selectionStart
+    },
+    setSelectionRange: (start, end): void => {
+      textarea.setSelectionRange(start, end)
+    },
+    focus: (): void => {
+      textarea.focus()
+    },
+  }
+}
 
 function hit(id: string, title: string, updatedAt = Date.now()): ThreadCatalogHit {
   return {
@@ -64,7 +89,7 @@ describe('mention picker (files + threads, #644)', () => {
     inputBar.append(textarea)
     document.body.append(inputBar)
     dispose = initMentionPicker({
-      textarea,
+      input: asTextInput(textarea),
       inputBar,
       store,
       api: fakeApi(threads, files),

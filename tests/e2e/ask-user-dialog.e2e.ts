@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { setComposerValue } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -25,8 +26,7 @@ describe('ask_user dialog', () => {
   })
 
   it('shows the modal with options and returns the answer to the agent', async () => {
-    const textarea = await $('.prompt-input')
-    await textarea.setValue(
+    await setComposerValue(
       '[[mcp:ask_user {"questions":[{"question":"Which HTTP client should we use?","options":["axios","fetch"]}]}]]',
     )
     await $('.submit-btn').click()

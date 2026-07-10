@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { seedProjectConfig } from './helpers.ts'
+import { setComposerValue } from './helpers/composer.ts'
 
 const SCREENSHOTS = join(process.cwd(), 'test-results', 'skills-screenshots')
 
@@ -21,14 +22,14 @@ describe('skills', () => {
 
     const textarea = await $('.prompt-input')
     await textarea.click()
-    await textarea.setValue('/demo')
+    await setComposerValue('/demo')
 
     await $('.skill-picker .skill-item-name').waitForExist({ timeout: 10_000 })
     await expect($('.skill-item-name*=/demo-skill')).toBeDisplayed()
 
     await browser.saveScreenshot(join(SCREENSHOTS, '01-slash-picker.png'))
 
-    await textarea.setValue('/demo-skill validate skills support')
+    await setComposerValue('/demo-skill validate skills support')
     await browser.saveScreenshot(join(SCREENSHOTS, '02-skill-input.png'))
 
     await $('.submit-btn').click()

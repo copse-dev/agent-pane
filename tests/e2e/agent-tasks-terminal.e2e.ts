@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { setComposerValue } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -31,8 +32,7 @@ describe('agent tasks in terminal tab', () => {
     await terminalBtn.click()
     await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
 
-    const textarea = await $('.prompt-input')
-    await textarea.setValue('[[mcp:run_shell {"command":"echo agent-task-hello"}]]')
+    await setComposerValue('[[mcp:run_shell {"command":"echo agent-task-hello"}]]')
     await $('.submit-btn').click()
 
     // A plain command still prompts for approval on platforms without an OS

@@ -22,6 +22,9 @@ Object.assign(globalThis, {
   CustomEvent: win.CustomEvent,
   ErrorEvent: win.ErrorEvent,
   Element: win.Element,
+  // Node carries the nodeType constants (Node.TEXT_NODE, …) that DOM-walking
+  // renderer code (e.g. the composer editor's serializer) compares against.
+  Node: win.Node,
   // requestAnimationFrame is a standard part of a browser DOM environment that
   // happy-dom doesn't surface as a bare global. Real renderer views call it (e.g.
   // the conversation list's scroll-pin reset), so component tests that mount those

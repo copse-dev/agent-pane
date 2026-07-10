@@ -51,21 +51,47 @@ describe('modern CSS adoptions', () => {
     )
   })
 
-  it('auto-sizes the composer textarea to its content', () => {
-    const css = read('input-bar.css')
+  it('clips attachment-chip labels inside the pill', () => {
+    const css = read('composer-extras.css')
     assert.ok(
-      declares(css, '.prompt-input', /field-sizing:\s*content/),
-      '.prompt-input must use field-sizing: content to grow without JS measuring',
+      declares(css, '.attachment-chip', /max-width:/),
+      '.attachment-chip must cap its width so long labels cannot stretch the row',
     )
+    assert.ok(
+      declares(css, '.attachment-chip-label', /overflow:\s*hidden/) &&
+        declares(css, '.attachment-chip-label', /text-overflow:\s*ellipsis/),
+      '.attachment-chip-label must ellipsize instead of overflowing the pill border',
+    )
+    assert.ok(
+      declares(css, '.attachment-chip-label', /min-width:\s*0/),
+      '.attachment-chip-label needs min-width: 0 so the flex item can shrink below its content',
+    )
+  })
+
+  it('auto-sizes the composer to its content', () => {
+    const css = read('input-bar.css')
+    // The composer is a contenteditable (composer-editor.ts), which grows with
+    // its content natively — the cap + scroll and the resting floor carry the
+    // old field-sizing contract.
     assert.ok(
       declares(css, '.prompt-input', /max-height:/),
       '.prompt-input must cap its growth so long input scrolls internally',
     )
-    // field-sizing: content ignores the `rows` attribute, so without a min-height
-    // floor the empty composer collapses below the chat layout's 72px clamp.
+    assert.ok(
+      declares(css, '.prompt-input', /overflow-y:\s*auto/),
+      '.prompt-input must scroll internally once it hits the height cap',
+    )
+    // Without a min-height floor the empty composer collapses below the chat
+    // layout's 72px clamp.
     assert.ok(
       declares(css, '.prompt-input', /min-height:/),
-      '.prompt-input must set a min-height floor (field-sizing ignores rows)',
+      '.prompt-input must set a min-height floor',
+    )
+    // Typed newlines are text nodes in the contenteditable, not <br>s; without
+    // pre-wrap they render as spaces.
+    assert.ok(
+      declares(css, '.prompt-input', /white-space:\s*pre-wrap/),
+      '.prompt-input must render newline text nodes with white-space: pre-wrap',
     )
   })
 })
