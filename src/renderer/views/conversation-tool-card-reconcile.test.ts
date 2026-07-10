@@ -37,8 +37,8 @@ const editCall: ToolCall = {
   result: 'ok',
 }
 
-function runningSubagent(content: string): ToolCall {
-  const session: SubagentSession = {
+function subagentSession(content: string): SubagentSession {
+  return {
     id: 'sub-session-1',
     kind: 'explore',
     status: 'running',
@@ -46,13 +46,16 @@ function runningSubagent(content: string): ToolCall {
     summary: null,
     messages: [{ id: 'sub-msg-1', role: 'assistant', content, toolCalls: [] }],
   }
+}
+
+function runningSubagent(content: string): ToolCall {
   return {
     id: 'tc-sub-1',
     name: 'explore',
     args: { query: 'Find README' },
     status: 'running',
     result: null,
-    subagent: session,
+    subagent: subagentSession(content),
   }
 }
 
@@ -86,7 +89,7 @@ describe('tool card reconciliation on tool_call_updated (#728)', () => {
 
     // A progress tick that only grows the subagent's streamed text.
     updateToolCall(store, messageId, 'tc-sub-1', {
-      subagent: runningSubagent('Analyzing the').subagent,
+      subagent: subagentSession('Analyzing the'),
     })
 
     const editAfter = host.querySelector('[data-tool-id="tc-edit-1"]')
@@ -108,7 +111,7 @@ describe('tool card reconciliation on tool_call_updated (#728)', () => {
     ;(streamBefore as HTMLElement).dataset['sentinel'] = 'kept'
 
     updateToolCall(store, messageId, 'tc-sub-1', {
-      subagent: runningSubagent('Analyzing the code').subagent,
+      subagent: subagentSession('Analyzing the code'),
     })
 
     const cardAfter = host.querySelector('.tool-card-subagent')
