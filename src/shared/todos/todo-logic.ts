@@ -131,6 +131,19 @@ export function findNewlyCompleted(
   return null
 }
 
+/** Max parent continuation turns before post-turn review when todos are still open. */
+export const MAX_PRE_REVIEW_TODO_ATTEMPTS = 2
+
+/** Max review → parent remediation cycles after an editing turn. */
+export const MAX_POST_TURN_REVIEW_CYCLES = 2
+
+export const OPEN_TODOS_PRE_REVIEW_NUDGE = `Before this turn can finish, reconcile the task plan:
+- Call update_todos (merge=true) to mark completed items done and cancel any you will not do, OR
+- Continue working on pending/in_progress items until they are truly finished, then update_todos.
+Inspect the diff and transcript — do not leave the plan out of sync with what you actually did.`
+
+export const OPEN_TODOS_REVIEW_REMEDIATION_NUDGE = `Post-turn review flagged follow-up work. Address the review findings below, reconcile todos with update_todos (merge=true), and fix any code issues mentioned.`
+
 export const TODO_STEERING_PROMPT = `When the user asks for multi-step work (refactors, implement-and-test, changes across several files):
 1. Call update_todos once with 3+ concrete steps before executing tools.
 2. Mark one item in_progress at a time; set completed when done (checks run automatically).

@@ -5,6 +5,7 @@ import {
   REVIEW_TOOL_NAMES,
   isEditTool,
   buildReviewPrompt,
+  parseReviewVerdict,
   REVIEW_SYSTEM_PROMPT,
 } from './review-subagent.ts'
 
@@ -40,6 +41,34 @@ describe('review-subagent helpers', () => {
     assert.match(prompt, /Fix the login bug/)
     assert.match(prompt, /\+fixed/)
     assert.match(prompt, /```diff/)
+  })
+
+  it('includes the task plan when todos are provided', () => {
+    const prompt = buildReviewPrompt('Fix bug', '+change', [
+      { id: 't1', content: 'Add tests', status: 'pending' },
+    ])
+    assert.match(prompt, /Task plan to verify/)
+    assert.match(prompt, /Add tests/)
+    assert.match(prompt, /id: t1/)
+  })
+
+  it('parses structured REVIEW_JSON verdicts', () => {
+    const parsed = parseReviewVerdict(`1 likely bug
+
+- missing unregister
+
+REVIEW_JSON: {"issuesFound":true,"requestFollowUp":true,"todoUpdates":[{"id":"t1","content":"Fix leak","status":"pending"}],"followUpPrompt":"Unregister on close"}`)
+    assert.equal(parsed.issuesFound, true)
+    assert.equal(parsed.requestFollowUp, true)
+    assert.equal(parsed.todoUpdates.length, 1)
+    assert.equal(parsed.followUpPrompt, 'Unregister on close')
+    assert.doesNotMatch(parsed.summary, /REVIEW_JSON/)
+  })
+
+  it('infers follow-up from free-text when JSON is missing', () => {
+    const parsed = parseReviewVerdict('1 likely bug: globalShortcut never unregistered')
+    assert.equal(parsed.requestFollowUp, true)
+    assert.equal(parsed.todoUpdates.length, 0)
   })
 
   it('truncates very large diffs', () => {

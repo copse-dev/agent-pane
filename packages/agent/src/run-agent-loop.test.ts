@@ -10,7 +10,7 @@ import {
   TRUNCATION_CONTINUE_NUDGE,
 } from '@copse/llm/provider-stop-reason.ts'
 import type { LLMMessage, LLMProvider, ProviderStreamChunk } from '@copse/llm/wire-types.ts'
-import type { AgentStreamChunk } from './wire-types.ts'
+import type { AgentStreamChunk, TodoItem } from './wire-types.ts'
 
 function mockProvider(chunks: ProviderStreamChunk[][]): LLMProvider {
   let call = 0
@@ -527,19 +527,68 @@ src/renderer/views/projects-pane.ts
     assert.equal(cancelled.length, 1)
   })
 
-  it('nudges to close open todos before finalize', async () => {
+  it('requires update_todos closeout when todos remain open at finalize', async () => {
     const chunks: AgentStreamChunk[] = []
-    let nudgeText = ''
+    let nudgeCount = 0
+    const provider: LLMProvider = {
+      async *stream(messages, tools) {
+        const last = messages.at(-1)
+        const content =
+          last && 'content' in last && typeof last.content === 'string' ? last.content : ''
+        if (content.includes('update_todos') || content.includes('open todos')) {
+          nudgeCount++
+          if (tools.length > 0 && nudgeCount === 1) {
+            yield {
+              type: 'tool_call',
+              toolCall: {
+                id: 'todo-1',
+                name: 'update_todos',
+                args: {
+                  merge: true,
+                  todos: [{ id: '1', content: 'Pending step', status: 'completed' }],
+                },
+              },
+            }
+            yield { type: 'done' }
+            return
+          }
+          yield { type: 'text', text: 'Closing out plan.' }
+        } else if (content.includes('final answer')) {
+          yield { type: 'text', text: 'Done.' }
+        }
+        yield { type: 'done' }
+      },
+    }
+
+    const todos: TodoItem[] = [{ id: '1', content: 'Pending step', status: 'pending' }]
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'big task' }],
+      tools: [{ name: 'update_todos', description: 'x', parameters: {} }],
+      maxSteps: 1,
+      getOpenTodos: () => todos,
+      onChunk: (c) => chunks.push(c),
+      executeTool: async (name) => {
+        if (name === 'update_todos') {
+          const first = todos[0]
+          if (first) first.status = 'completed'
+        }
+        return 'Plan updated (1/1 done).'
+      },
+    })
+    assert.ok(nudgeCount >= 1)
+    assert.equal(todos[0]?.status, 'completed')
+    assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('Done.')))
+  })
+
+  it('surfaces a note when todos stay open after closeout attempts', async () => {
+    const chunks: AgentStreamChunk[] = []
     const provider: LLMProvider = {
       async *stream(messages) {
         const last = messages.at(-1)
-        if (
-          last &&
-          'content' in last &&
-          typeof last.content === 'string' &&
-          last.content.includes('open todos')
-        ) {
-          nudgeText = last.content
+        const content =
+          last && 'content' in last && typeof last.content === 'string' ? last.content : ''
+        if (content.includes('update_todos') || content.includes('open todos')) {
           yield { type: 'text', text: 'All todos done.' }
         }
         yield { type: 'done' }
@@ -554,8 +603,9 @@ src/renderer/views/projects-pane.ts
       onChunk: (c) => chunks.push(c),
       executeTool: async () => '',
     })
-    assert.match(nudgeText, /open todos/)
-    assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('All todos done')))
+    assert.ok(
+      chunks.some((c) => c.type === 'text' && c.text.includes('task plan still has open items')),
+    )
   })
 
   it('leaves API-valid history (no orphan tool_use) after mid-batch abort', async () => {
