@@ -29,12 +29,15 @@ import {
   buildProvider,
   buildSubagentRoute,
   buildReviewRoute,
+  isBillableModel,
   isLocalChatModel,
 } from './providers/provider-selection.ts'
+import { requestApproval } from './approval.ts'
 import {
   applyReviewTodoUpdates,
   buildReviewRemediationNudge,
   MAX_POST_TURN_REVIEW_CYCLES,
+  reviewSpendApprovalBody,
   runParentContinuationTurn,
   runPostTurnReviewOnce,
   runPreReviewTodoGate,
@@ -128,16 +131,50 @@ function toolSchemaReserveForModel(model: string): number {
 
 /**
  * True when the working diff the post-turn review would consume has fewer than
- * `min` changed lines. Drives the review diff-size gate (#584). Measures the exact
- * diff the review sees — `getGitDiffText()` (unstaged tracked changes + untracked
- * new files) — so a turn that only adds a large new file is NOT wrongly skipped
- * (its additions live in that diff even though `git diff --numstat` omits them).
- * An unmeasurable diff (git unavailable) falls through to running the review.
+ * `min` changed lines. Drives the review "nothing to review" gate (#584): with the
+ * default threshold of 1 this skips only an empty diff (e.g. right after a commit),
+ * and a larger threshold additionally skips trivial edits. Measures the exact diff
+ * the review sees — `getGitDiffText()` (unstaged tracked changes + untracked new
+ * files) — so a turn that only adds a large new file is NOT wrongly skipped (its
+ * additions live in that diff even though `git diff --numstat` omits them). An
+ * unmeasurable diff (git unavailable) falls through to running the review.
  */
 async function changedLinesBelow(min: number): Promise<boolean> {
   if (!isGitAvailable()) return false
   const diff = await getGitDiffText()
   return countDiffChangedLines(diff) < min
+}
+
+// Threads whose user approved spending on the post-turn review ("always review
+// with this model in this chat"). Per-thread, not process-global, so approving a
+// billable review in one project never silently authorizes it in another — the
+// same cross-project prompt-leakage guard the model-comparison approval uses.
+const approvedReviewThreads = new Set<string>()
+
+/**
+ * Gate a billable post-turn review behind a spend approval, remembered per thread
+ * (#584). Non-billable review models never reach here. Returns false when declined
+ * or the run was cancelled; the abort signal is checked around the modal so a Stop
+ * press mid-prompt doesn't start a billable review for an aborted turn.
+ */
+async function ensureReviewApproved(
+  reviewModel: string,
+  threadId: string,
+  signal: AbortSignal,
+): Promise<boolean> {
+  if (approvedReviewThreads.has(threadId)) return true
+  if (signal.aborted) return false
+  const { approved, remember } = await requestApproval({
+    type: 'review-spend',
+    title: 'Review this diff with a paid model?',
+    body: reviewSpendApprovalBody(reviewModel),
+    allowRemember: true,
+    rememberLabel: 'Always review with this model in this chat',
+  })
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- signal.aborted can flip during the awaited approval; TS narrows it from the guard above
+  if (signal.aborted) return false
+  if (approved && remember) approvedReviewThreads.add(threadId)
+  return approved
 }
 
 export const PARENT_DELEGATED_TOOLS = [
@@ -705,28 +742,41 @@ export async function runAgent(
     // bounded parent remediation loop when the reviewer requests follow-up. Runs
     // before the deferred `done` so the thread stays "running" until it lands.
     //
-    // Diff-size gate (#584): a full review LLM run on every file-mutating turn is
-    // wasteful for trivial edits, so skip it when the working diff is smaller than
-    // `postTurnReviewMinChangedLines`. The gate only applies when the threshold is
-    // set (>0) and the change size is measurable — an unmeasurable diff (no git
-    // repo) falls through to the review rather than being silently skipped.
+    // Cost gates (#584): (a) skip when the working diff is empty / below
+    // `postTurnReviewMinChangedLines` — there's nothing worth a review LLM run; and
+    // (b) when the review would use a billable model, ask once per chat for spend
+    // approval (remembered) so paid reviews on every file-mutating turn are opt-in.
+    // A free / local review model runs on the full diff with no prompt.
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated inside the runAgentLoop callback above; TS narrows to the `false` initializer
     if (turnChangedFiles && getSetting<boolean>('postTurnReviewEnabled', true)) {
-      const minChangedLines = getSetting<number>('postTurnReviewMinChangedLines', 5)
-      const belowThreshold = minChangedLines > 0 && (await changedLinesBelow(minChangedLines))
-      if (belowThreshold) {
+      const reviewRoute = await buildReviewRoute()
+      const reviewProvider = reviewRoute?.provider ?? provider
+      const reviewUsageModel = reviewRoute?.usageModel ?? model
+      const reviewContextWindow = reviewRoute?.contextWindow ?? contextWindow
+      const reviewToolSchemaReserve = reviewRoute?.toolSchemaReserve ?? toolSchemaReserve
+
+      const minChangedLines = getSetting<number>('postTurnReviewMinChangedLines', 1)
+      const nothingToReview = minChangedLines > 0 && (await changedLinesBelow(minChangedLines))
+      const reviewApproved =
+        nothingToReview ||
+        !isBillableModel(reviewUsageModel) ||
+        (await ensureReviewApproved(reviewUsageModel, threadId, controller.signal))
+
+      if (nothingToReview) {
         sendChunk({
           type: 'post_turn_review',
           status: 'skipped',
-          summary: `Skipped — under ${String(minChangedLines)}-line review threshold.`,
+          summary: 'Nothing to review in the working diff.',
+        })
+      } else if (!reviewApproved) {
+        sendChunk({
+          type: 'post_turn_review',
+          status: 'skipped',
+          summary: controller.signal.aborted
+            ? 'Review cancelled.'
+            : `Review skipped — spending on ${reviewUsageModel} was not approved.`,
         })
       } else {
-        const reviewRoute = await buildReviewRoute()
-        const reviewProvider = reviewRoute?.provider ?? provider
-        const reviewUsageModel = reviewRoute?.usageModel ?? model
-        const reviewContextWindow = reviewRoute?.contextWindow ?? contextWindow
-        const reviewToolSchemaReserve = reviewRoute?.toolSchemaReserve ?? toolSchemaReserve
-
         for (let cycle = 0; cycle < MAX_POST_TURN_REVIEW_CYCLES; cycle++) {
           sendChunk({ type: 'post_turn_review', status: 'running', summary: '' })
           try {

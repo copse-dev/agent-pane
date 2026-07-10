@@ -117,7 +117,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   },
   { name: 'localTodoItemsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'postTurnReviewEnabled', kind: 'checkbox', default: true, save: true },
-  { name: 'postTurnReviewMinChangedLines', kind: 'number', default: 5, save: true },
+  { name: 'postTurnReviewMinChangedLines', kind: 'number', default: 1, save: true },
   { name: 'bundledCursorSkillsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'skillExternalLinkWarnings', kind: 'checkbox', default: true, save: true },
   { name: 'skillSandboxGuidance', kind: 'checkbox', default: true, save: true },
@@ -519,7 +519,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Review the diff with a subagent after each editing turn
               </label>
               <label>
-                Skip that review below this many changed lines (0 = always review)
+                Skip that review below this many changed lines (1 = only skip an empty
+                diff, 0 = always review)
                 <input
                   type="number"
                   name="postTurnReviewMinChangedLines"
@@ -528,6 +529,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   class="settings-number-input"
                 />
               </label>
+              <p class="field-hint">
+                When the review runs on a paid model, you'll be asked to approve the spend
+                once per chat. Set a local review model above to review for free.
+              </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="safetyClassifierEnabled" />
                 Use instruct model to identify dangerous external shell commands for strict-mode blocking

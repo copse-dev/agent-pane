@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { applyReviewTodoUpdates } from './post-turn-orchestration.ts'
+import { applyReviewTodoUpdates, reviewSpendApprovalBody } from './post-turn-orchestration.ts'
 import type { ParsedReviewVerdict } from '@copse/agent/review-subagent.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
 
@@ -37,5 +37,12 @@ describe('post-turn orchestration helpers', () => {
     const next = applyReviewTodoUpdates(current, verdict)
     assert.notEqual(next, current)
     assert.deepEqual(next, current)
+  })
+
+  it('reviewSpendApprovalBody names the model and mentions the free local alternative', () => {
+    const body = reviewSpendApprovalBody('openrouter:openai/gpt-4o')
+    assert.match(body, /openrouter:openai\/gpt-4o/)
+    assert.match(body, /billable/i)
+    assert.match(body, /local review model/i)
   })
 })
