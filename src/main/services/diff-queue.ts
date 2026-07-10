@@ -504,6 +504,24 @@ export function initDiffQueue(win: BrowserWindow): void {
     removeEntry(path)
   })
 
+  // On-demand fetch of a queued diff's full content. `agent:show_diff` pushes the
+  // before/after payload once when a diff is staged, but the renderer's Changes
+  // pane can miss that event — it mounts a turn after the agent proposes (Monaco
+  // loads async, #459) or is remounted on popout/workspace switch, and nothing
+  // replays the push. Selecting such a proposed file would otherwise clear the
+  // viewer; this lets the pane pull the content the queue still holds.
+  ipcMain.handle('diff:content', (event, path: string) => {
+    assertMainFrameSender(event, win)
+    const entry = typeof path === 'string' ? getStagedDiffEntry(path) : null
+    if (!entry) return null
+    return {
+      path: entry.path,
+      before: entry.before,
+      after: entry.after,
+      language: entry.language,
+    }
+  })
+
   ipcMain.handle('diff:approveAll', (event) => {
     assertMainFrameSender(event, win)
     return approveAllStagedDiffs()
