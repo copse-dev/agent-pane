@@ -129,7 +129,7 @@ test.describe('MCP validation', () => {
 
       const dialog = win.locator('#approval-dialog')
       await expect(dialog).toBeVisible({ timeout: 15_000 })
-      await expect(dialog.locator('.approval-title')).toContainText('MCP tool: mock/echo')
+      await expect(dialog.locator('.approval-heading')).toContainText('MCP tool: mock/echo')
       await expect(dialog.locator('.approval-remember')).toBeVisible()
       await win.screenshot({ path: join(SCREENSHOT_DIR, 'mcp-approval-dialog.png') })
 
