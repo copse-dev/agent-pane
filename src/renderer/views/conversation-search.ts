@@ -75,7 +75,12 @@ export function mountConversationSearch(root: HTMLElement): void {
   const count = el('span', { class: 'chat-search-count', 'aria-live': 'polite' })
   const prevBtn = el(
     'button',
-    { type: 'button', class: 'chat-search-nav', 'aria-label': 'Previous match', title: 'Previous (Shift+Enter)' },
+    {
+      type: 'button',
+      class: 'chat-search-nav',
+      'aria-label': 'Previous match',
+      title: 'Previous (Shift+Enter)',
+    },
     chevronUpIcon('ui-icon ui-icon-sm'),
   )
   const nextBtn = el(
@@ -85,14 +90,23 @@ export function mountConversationSearch(root: HTMLElement): void {
   )
   const closeBtn = el(
     'button',
-    { type: 'button', class: 'chat-search-close', 'aria-label': 'Close find', title: 'Close (Esc)' },
+    {
+      type: 'button',
+      class: 'chat-search-close',
+      'aria-label': 'Close find',
+      title: 'Close (Esc)',
+    },
     closeIcon('ui-icon ui-icon-sm'),
   )
 
   const bar = el(
     'div',
     { class: 'chat-search', role: 'search', hidden: true },
-    el('span', { class: 'chat-search-icon', 'aria-hidden': 'true' }, searchIcon('ui-icon ui-icon-sm')),
+    el(
+      'span',
+      { class: 'chat-search-icon', 'aria-hidden': 'true' },
+      searchIcon('ui-icon ui-icon-sm'),
+    ),
     input,
     count,
     el('div', { class: 'chat-search-actions' }, prevBtn, nextBtn, closeBtn),

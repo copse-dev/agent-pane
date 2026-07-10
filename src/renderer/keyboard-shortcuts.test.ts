@@ -64,8 +64,14 @@ describe('keyboard-shortcuts', () => {
 
   it('matchFindInChatShortcut ignores modified or unrelated chords', () => {
     assert.equal(matchFindInChatShortcut(keyEvent({ key: 'f' })), false)
-    assert.equal(matchFindInChatShortcut(keyEvent({ ctrlKey: true, shiftKey: true, key: 'f' })), false)
-    assert.equal(matchFindInChatShortcut(keyEvent({ metaKey: true, altKey: true, key: 'f' })), false)
+    assert.equal(
+      matchFindInChatShortcut(keyEvent({ ctrlKey: true, shiftKey: true, key: 'f' })),
+      false,
+    )
+    assert.equal(
+      matchFindInChatShortcut(keyEvent({ metaKey: true, altKey: true, key: 'f' })),
+      false,
+    )
     assert.equal(matchFindInChatShortcut(keyEvent({ ctrlKey: true, key: 'p' })), false)
   })
 
