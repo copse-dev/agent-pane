@@ -4,11 +4,18 @@ import { chevronRightIcon, externalLinkIcon, refreshIcon } from '../dom/icons.ts
 import { panePopoutButton } from './pane-popout-button.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { GhCliStatus, GhPrChecksState, GhPrDetails, GhPrSummary } from '@shared/types/git.ts'
+import type {
+  GhCliStatus,
+  GhPrChecksState,
+  GhPrDetails,
+  GhPrSummary,
+  PrActionResult,
+} from '@shared/types/git.ts'
 import { getActiveThread, switchThread } from '@shared/store/thread-helpers.ts'
 import { at } from '@shared/array-utils.ts'
 import { extractGithubPrUrls, githubPrKey } from '@shared/git/github-pr-url.ts'
 import { remoteAgentPrIndexKey, type RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
+import { mergePrLists, placeholderPrTitle, prListDisplayTitle, type PrRef } from './pr-pane-list.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { sanitizeRenderedMarkdown } from '@copse/streaming-markdown'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
@@ -19,12 +26,6 @@ import {
   observeDiffHostLayout,
   setGitFileDiffModel,
 } from '../monaco/git-diff-viewer.ts'
-
-interface PrRef {
-  owner: string
-  repo: string
-  number: number
-}
 
 const STATUS_LABEL: Record<string, string> = {
   added: 'A',
@@ -74,37 +75,6 @@ function collectLinkedPrs(store: AppStore): PrRef[] {
     }
   }
   return refs
-}
-
-function mergePrLists(linked: PrRef[], pools: GhPrSummary[][]): GhPrSummary[] {
-  const seen = new Set<string>()
-  const merged: GhPrSummary[] = []
-  const known = pools.flat()
-  for (const ref of linked) {
-    const key = githubPrKey(ref)
-    if (seen.has(key)) continue
-    seen.add(key)
-    const fromPools = known.find(
-      (pr) => pr.owner === ref.owner && pr.repo === ref.repo && pr.number === ref.number,
-    )
-    merged.push(
-      fromPools ?? {
-        ...ref,
-        title: `PR #${String(ref.number)}`,
-        url: `https://github.com/${ref.owner}/${ref.repo}/pull/${String(ref.number)}`,
-        state: 'OPEN',
-      },
-    )
-  }
-  for (const pool of pools) {
-    for (const pr of pool) {
-      const key = githubPrKey(pr)
-      if (seen.has(key)) continue
-      seen.add(key)
-      merged.push(pr)
-    }
-  }
-  return merged
 }
 
 export function mountPrPane(
@@ -159,6 +129,10 @@ export function mountPrPane(
   let selectRequestId = 0
   let diffLoadQueue: Promise<void> = Promise.resolve()
   let pendingOpen: PrRef | null = null
+  // Last lifecycle-action result, shown under the PR actions until another PR is
+  // selected. Kept across the re-select an action triggers so its outcome stays
+  // visible while the refreshed details load.
+  let lastActionMessage: { text: string; ok: boolean } | null = null
 
   // Cross-repo "your PRs" are lazy: not queried until the section is expanded,
   // so the default view costs only the workspace + chat-linked lookups.
@@ -262,6 +236,7 @@ export function mountPrPane(
           '🤖',
         )
       : null
+    const titleText = prListDisplayTitle(pr)
     const row = el(
       'button',
       {
@@ -270,7 +245,7 @@ export function mountPrPane(
         'data-pr-section': section,
       },
       el('span', { class: 'pr-list-number' }, `#${String(pr.number)}`),
-      el('span', { class: 'git-change-path pr-list-title' }, pr.title),
+      el('span', { class: 'git-change-path pr-list-title', title: titleText }, titleText),
       ...(agentBadge ? [agentBadge] : []),
       ci,
     )
@@ -390,6 +365,66 @@ export function mountPrPane(
     renderList()
   }
 
+  function isStillSelected(ref: PrRef): boolean {
+    return (
+      selectedPr != null &&
+      selectedPr.owner === ref.owner &&
+      selectedPr.repo === ref.repo &&
+      selectedPr.number === ref.number
+    )
+  }
+
+  /**
+   * Reload a PR's details after a lifecycle action without the heavier
+   * selectPr(): keep the existing details (and therefore the action buttons and
+   * the outcome status line) if the reload fails, and bail if the user has since
+   * selected a different PR so we never render one PR's data into another's view.
+   */
+  async function refreshDetailsAfterAction(ref: PrRef): Promise<void> {
+    if (!isStillSelected(ref)) return
+    let fresh: GhPrDetails | null
+    try {
+      fresh = await api.gh.prDetails(ref.owner, ref.repo, ref.number)
+    } catch {
+      fresh = null
+    }
+    if (!isStillSelected(ref)) return
+    if (fresh) prDetails = fresh
+    renderMeta()
+  }
+
+  /** A PR lifecycle action button: confirm → invoke → show outcome → refresh. */
+  function actionButton(
+    label: string,
+    confirmMessage: string,
+    run: (ref: PrRef) => Promise<PrActionResult>,
+  ): HTMLButtonElement {
+    const btn = el('button', { type: 'button', class: 'pr-action-btn' }, label)
+    btn.addEventListener('click', () => {
+      const ref = selectedPr
+      if (!ref) return
+      if (!window.confirm(confirmMessage)) return
+      for (const other of metaHost.querySelectorAll<HTMLButtonElement>('.pr-action-btn')) {
+        other.disabled = true
+      }
+      void (async (): Promise<void> => {
+        let outcome: { text: string; ok: boolean }
+        try {
+          const result = await run(ref)
+          outcome = { text: result.message, ok: result.ok }
+        } catch (err) {
+          outcome = { text: err instanceof Error ? err.message : 'Action failed', ok: false }
+        }
+        // Only surface the outcome if this PR is still the one on screen — a
+        // mid-flight switch to another PR must not show this result there.
+        if (!isStillSelected(ref)) return
+        lastActionMessage = outcome
+        await refreshDetailsAfterAction(ref)
+      })()
+    })
+    return btn
+  }
+
   function renderMeta(): void {
     clear(metaHost)
     if (!prDetails || !selectedPr) return
@@ -438,11 +473,62 @@ export function mountPrPane(
       stats.push(`${prDetails.headRefName} → ${prDetails.baseRefName}`)
     }
 
+    const badges = el('span', { class: 'pr-viewer-badges' })
+    if (prDetails.isDraft) badges.append(el('span', { class: 'pr-badge pr-badge-draft' }, 'Draft'))
+    if (prDetails.reviewDecision === 'APPROVED') {
+      badges.append(el('span', { class: 'pr-badge pr-badge-approved' }, 'Approved'))
+    }
+    if (prDetails.autoMergeEnabled) {
+      badges.append(el('span', { class: 'pr-badge pr-badge-automerge' }, 'Auto-merge'))
+    }
+
+    const actions = el(
+      'div',
+      { class: 'pr-viewer-actions' },
+      openBtn,
+      ...(openThreadBtn ? [openThreadBtn] : []),
+    )
+    if (prDetails.state === 'OPEN') {
+      const ref = { owner: prDetails.owner, repo: prDetails.repo, number: prDetails.number }
+      actions.append(
+        actionButton('Rerun CI', `Re-run the failed CI runs for #${String(ref.number)}?`, (r) =>
+          api.gh.rerunFailedRuns(r.owner, r.repo, r.number),
+        ),
+        actionButton('Approve', `Approve pull request #${String(ref.number)}?`, (r) =>
+          api.gh.approvePr(r.owner, r.repo, r.number),
+        ),
+      )
+      if (prDetails.isDraft) {
+        actions.append(
+          actionButton('Mark ready', `Mark #${String(ref.number)} ready for review?`, (r) =>
+            api.gh.markPrReady(r.owner, r.repo, r.number),
+          ),
+        )
+      }
+      if (!prDetails.autoMergeEnabled) {
+        actions.append(
+          actionButton(
+            'Enable auto-merge',
+            `Enable merge-when-ready for #${String(ref.number)}?`,
+            (r) => api.gh.enableAutoMerge(r.owner, r.repo, r.number),
+          ),
+        )
+      }
+    }
+
+    const statusLine = el(
+      'div',
+      { class: 'pr-action-status', 'data-ok': String(lastActionMessage?.ok ?? true) },
+      lastActionMessage?.text ?? '',
+    )
+    statusLine.hidden = !lastActionMessage
+
     metaHost.append(
       el(
         'div',
         { class: 'pr-viewer-title-row' },
         el('h3', { class: 'pr-viewer-title' }, prDetails.title),
+        badges,
       ),
       el(
         'div',
@@ -450,7 +536,8 @@ export function mountPrPane(
         `#${String(prDetails.number)} · ${prDetails.owner}/${prDetails.repo}`,
         stats.length > 0 ? ` · ${stats.join(' · ')}` : '',
       ),
-      el('div', { class: 'pr-viewer-actions' }, openBtn, ...(openThreadBtn ? [openThreadBtn] : [])),
+      actions,
+      statusLine,
     )
   }
 
@@ -539,6 +626,13 @@ export function mountPrPane(
   }
 
   async function selectPr(ref: PrRef | GhPrSummary): Promise<void> {
+    const sameAsCurrent =
+      selectedPr?.owner === ref.owner &&
+      selectedPr.repo === ref.repo &&
+      selectedPr.number === ref.number
+    // Switching PRs drops the previous action outcome; re-selecting the same PR
+    // (after an action) keeps it so the message survives the details reload.
+    if (!sameAsCurrent) lastActionMessage = null
     selectedPr = { owner: ref.owner, repo: ref.repo, number: ref.number }
     prDetails = null
     selectedFile = null
@@ -620,7 +714,7 @@ export function mountPrPane(
       workspacePrs = []
       prList = linkedRefs.map((ref) => ({
         ...ref,
-        title: `PR #${String(ref.number)}`,
+        title: placeholderPrTitle(ref.number),
         url: `https://github.com/${ref.owner}/${ref.repo}/pull/${String(ref.number)}`,
         state: 'OPEN',
       }))

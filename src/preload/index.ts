@@ -480,9 +480,21 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('gh:prFileDiff', owner, repo, number, path),
     resolvePrUrl: (url: string) => ipcRenderer.invoke('gh:resolvePrUrl', url),
     agentPrLinks: () => ipcRenderer.invoke('gh:agentPrLinks'),
+    rerunFailedRuns: (owner: string, repo: string, number: number) =>
+      ipcRenderer.invoke('gh:rerunFailedRuns', owner, repo, number),
+    approvePr: (owner: string, repo: string, number: number) =>
+      ipcRenderer.invoke('gh:approvePr', owner, repo, number),
+    markPrReady: (owner: string, repo: string, number: number) =>
+      ipcRenderer.invoke('gh:markPrReady', owner, repo, number),
+    enableAutoMerge: (owner: string, repo: string, number: number) =>
+      ipcRenderer.invoke('gh:enableAutoMerge', owner, repo, number),
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
+  },
+  editors: {
+    list: () => ipcRenderer.invoke('editors:list'),
+    open: (editorId: string) => ipcRenderer.invoke('editors:open', editorId),
   },
   panes: {
     popout: (mode: string) => ipcRenderer.invoke('panes:popout', mode),

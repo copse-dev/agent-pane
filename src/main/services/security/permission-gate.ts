@@ -21,11 +21,13 @@ import {
   backgroundAllowsPortBinding,
   backgroundCommandFromArgs,
   formatExternalSandboxPromptBody,
+  formatExpectedSandboxBlockPromptBody,
   formatInstallPromptBody,
   formatEphemeralRunnerPromptBody,
   shellRequiresOutsideSandbox,
   mcpToolLabel,
   GITHUB_READONLY_CI_TOOLS,
+  GITHUB_WRITE_TOOLS,
 } from './permission-policy.ts'
 import { detectPackageInstall } from './safe-install.ts'
 import {
@@ -118,6 +120,23 @@ export async function promptUnsandboxedShell(command: string, reasons: string[])
     'Run outside sandbox?',
     formatUnsandboxedPromptBody(command, reasons),
   )
+}
+
+/**
+ * Prompt when the agent declared up front (via `expects_sandbox_block`) that it
+ * expects an ambiguously-external command to be blocked, asking to run it outside
+ * the sandbox before the first attempt instead of after a recorded block.
+ */
+export async function promptExpectedSandboxBlock(
+  command: string,
+  reasons: string[],
+): Promise<boolean> {
+  const { approved } = await requestApproval({
+    title: 'Run outside sandbox?',
+    body: formatExpectedSandboxBlockPromptBody(command, reasons),
+    type: 'shell',
+  })
+  return approved
 }
 
 /**
@@ -239,6 +258,21 @@ async function checkCustomToolPermission(toolName: string, args: unknown): Promi
     allowRemember: !alwaysPrompt,
   })
   if (approved && remember && !alwaysPrompt) await rememberCustomTool(toolName)
+  return approved
+}
+
+/**
+ * Mutating GitHub PR actions always prompt (issue #690 Q3). There is no
+ * "remember" yet — the per-repo grant granularity is still an open question, so
+ * every approve / merge-when-ready / mark-ready / rerun-CI call asks first.
+ */
+async function checkGithubWriteToolPermission(toolName: string, args: unknown): Promise<boolean> {
+  const { approved } = await requestApproval({
+    title: `GitHub action: ${toolName}`,
+    body: JSON.stringify(args, null, 2),
+    type: 'mcp',
+    allowRemember: false,
+  })
   return approved
 }
 
@@ -494,6 +528,12 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
   // They auto-run without prompting; nothing they do needs user approval.
   if (GITHUB_READONLY_CI_TOOLS.has(toolName)) {
     return true
+  }
+
+  // Mutating PR actions (approve / merge-when-ready / mark-ready / rerun CI)
+  // change state on github.com, so they always prompt — never auto-run.
+  if (GITHUB_WRITE_TOOLS.has(toolName)) {
+    return checkGithubWriteToolPermission(toolName, args)
   }
 
   if (toolName.startsWith('mcp__')) {

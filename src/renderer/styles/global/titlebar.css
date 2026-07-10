@@ -101,3 +101,98 @@
 .titlebar select {
   -webkit-app-region: no-drag;
 }
+
+/* "Open in editor" split control (Codex-style): a primary launch button joined
+   to a caret that opens the list of detected editors. */
+.open-in-editor {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  -webkit-app-region: no-drag;
+}
+.open-in-editor[hidden] {
+  display: none;
+}
+.open-in-editor-primary {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.open-in-editor-caret {
+  padding: 3px 4px;
+  margin-left: -1px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.open-in-editor-caret[hidden] {
+  display: none;
+}
+/* Restore the primary's rounded right edge when the caret is hidden, so a lone
+   detected editor renders as a normal button rather than a clipped half. */
+.open-in-editor:has(.open-in-editor-caret[hidden]) .open-in-editor-primary {
+  border-top-right-radius: var(--radius);
+  border-bottom-right-radius: var(--radius);
+}
+.open-in-editor-caret[aria-expanded='true'] {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+.open-in-editor-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+.open-in-editor-menu {
+  position: absolute;
+  z-index: 70;
+  top: calc(100% + 4px);
+  /* Right-aligned: the control leads the right-hand titlebar cluster, so the
+     menu grows leftward to stay clear of the window edge. */
+  right: 0;
+  width: max-content;
+  min-width: 160px;
+  max-width: min(320px, 90vw);
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-xs) 0;
+  box-shadow: var(--shadow-md);
+}
+.open-in-editor-menu[hidden] {
+  display: none;
+}
+/* Transparent click-catcher that dismisses the menu even over the titlebar's
+   drag region (which otherwise swallows clicks before the DOM sees them).
+   Painted within #titlebar's stacking context, above the buttons and below the
+   menu; no-drag so it actually receives the click. */
+.open-in-editor-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  background: transparent;
+  -webkit-app-region: no-drag;
+}
+.open-in-editor-backdrop[hidden] {
+  display: none;
+}
+.open-in-editor-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  padding: 6px var(--spacing-md);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.open-in-editor-option:hover {
+  background: var(--bg-hover);
+}
+.open-in-editor-option.is-default {
+  color: var(--accent);
+}

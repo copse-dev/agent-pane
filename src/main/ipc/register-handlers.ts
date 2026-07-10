@@ -67,6 +67,10 @@ import {
   loadProjectCatalog,
 } from '../services/thread-store.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
+import {
+  listExternalEditors,
+  openWorkspaceInExternalEditor,
+} from '../services/editors/editor-launcher.ts'
 import { listAcpModelsForAgent } from '../services/acp/acp-agent-service.ts'
 import { runAcpAutoSetup } from '../services/acp/acp-auto-setup.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
@@ -111,6 +115,12 @@ import {
   listWorkspaceOpenPrs,
   resolveGithubPrRef,
 } from '../services/github/gh-pr-service.ts'
+import {
+  approvePr,
+  enablePrAutoMerge,
+  markPrReady,
+  rerunFailedPrRuns,
+} from '../services/github/gh-pr-actions-service.ts'
 import {
   getMcpServerStatuses,
   reloadMcpServers,
@@ -625,6 +635,33 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Local-only: which PRs in the active project were opened by an agent this app
   // launched (issue #690, Q6). No network, no user input — reads the thread metas.
   ipcMain.handle('gh:agentPrLinks', () => listActiveProjectAgentPrLinks())
+  // PR lifecycle write actions. Unlike the read handlers above, these mutate
+  // GitHub state, so each asserts a main-frame sender before acting.
+  const parsePrRef = (
+    owner: unknown,
+    repo: unknown,
+    number: unknown,
+  ): { owner: string; repo: string; number: number } => ({
+    owner: parseIpcArgs(z.string().min(1).max(128), [owner]),
+    repo: parseIpcArgs(z.string().min(1).max(128), [repo]),
+    number: parseIpcArgs(z.number().int().positive(), [number]),
+  })
+  ipcMain.handle('gh:rerunFailedRuns', (event, owner: unknown, repo: unknown, number: unknown) => {
+    assertMainFrameSender(event, win)
+    return rerunFailedPrRuns(parsePrRef(owner, repo, number))
+  })
+  ipcMain.handle('gh:approvePr', (event, owner: unknown, repo: unknown, number: unknown) => {
+    assertMainFrameSender(event, win)
+    return approvePr(parsePrRef(owner, repo, number))
+  })
+  ipcMain.handle('gh:markPrReady', (event, owner: unknown, repo: unknown, number: unknown) => {
+    assertMainFrameSender(event, win)
+    return markPrReady(parsePrRef(owner, repo, number))
+  })
+  ipcMain.handle('gh:enableAutoMerge', (event, owner: unknown, repo: unknown, number: unknown) => {
+    assertMainFrameSender(event, win)
+    return enablePrAutoMerge(parsePrRef(owner, repo, number))
+  })
   ipcMain.handle('remoteAgent:downloadArtifact', async (event, agentId: unknown, path: unknown) => {
     assertMainFrameSender(event, win)
     const parsedAgentId = parseIpcArgs(z.string().min(1).max(128), [agentId])
@@ -660,6 +697,20 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       throw new IpcValidationError('URL must be http or https')
     }
     return shell.openExternal(href)
+  })
+
+  ipcMain.handle('editors:list', (event) => {
+    assertMainFrameSender(event, win)
+    return listExternalEditors()
+  })
+  ipcMain.handle('editors:open', (event, editorId: unknown) => {
+    assertMainFrameSender(event, win)
+    // Only a known editor id crosses this boundary; the folder to open is the
+    // main process's own workspace root, never renderer-supplied.
+    const parsedId = parseIpcArgs(z.string().regex(/^[a-z][a-z0-9-]{0,63}$/), [editorId])
+    const root = getWorkspaceRoot()
+    if (!root) throw new IpcValidationError('No workspace open')
+    return openWorkspaceInExternalEditor(parsedId, root)
   })
 
   ipcMain.handle('panes:popout', (event, mode: unknown) => {
