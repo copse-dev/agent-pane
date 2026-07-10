@@ -6,6 +6,7 @@ import type { IPty } from 'node-pty'
 import quote from 'shell-quote'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { posixQuote } from '../services/security/safe-install.ts'
+import { envForRendererChildProcess } from '../services/exec/child-process-env.ts'
 import {
   ensureWorkspaceTmpDir,
   portBindingSandboxOverlay,
@@ -48,6 +49,18 @@ function withWorkspaceTmpEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return { ...env, TMPDIR: tmpDir, TMP: tmpDir, TEMP: tmpDir }
 }
 
+/**
+ * The inherited base env for a renderer/agent-driven child, scrubbed of LLM/provider
+ * secrets (#579). This must be the *base*, never an overlay: a stripped env merged on
+ * top of full `process.env` does NOT remove a secret key — the base value survives. In
+ * particular ASRT's `wrapWithSandboxArgv` returns `process.env` verbatim on POSIX, so
+ * its env is re-scrubbed here before it reaches a child. A caller that genuinely needs a
+ * secret still opts in explicitly via `opts.env`, which is overlaid last.
+ */
+function strippedBaseEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return envForRendererChildProcess(base)
+}
+
 /** POSIX-only: run the child as its own process-group leader so the group can be killed together. */
 const detachForGroupKill = process.platform !== 'win32'
 const DEFAULT_SANDBOX_SHELL = '/bin/bash'
@@ -82,7 +95,7 @@ export async function spawnInProjectSandbox(
   if (!isProjectSandboxEnabled() || opts.unsandboxed) {
     return spawn(executable, args, {
       cwd: opts.cwd,
-      env: opts.env ?? process.env,
+      env: opts.env ?? strippedBaseEnv(),
       stdio: opts.stdio,
       signal: opts.signal,
       detached: detachForGroupKill,
@@ -103,7 +116,7 @@ export async function spawnInProjectSandbox(
   if (!file) throw new Error('sandbox wrap produced empty argv')
   return spawn(file, argv.slice(1), {
     cwd: opts.cwd,
-    env: mergeSpawnEnv(withWorkspaceTmpEnv(env), opts.env),
+    env: mergeSpawnEnv(withWorkspaceTmpEnv(strippedBaseEnv(env)), opts.env),
     stdio: opts.stdio,
     signal: opts.signal,
     detached: detachForGroupKill,
@@ -125,7 +138,7 @@ export async function spawnShellInProjectSandbox(
       process.platform === 'win32' ? ['/c', shellCommandLine] : ['-c', shellCommandLine]
     return spawn(shell, shellArgs, {
       cwd: opts.cwd,
-      env: opts.env ?? process.env,
+      env: opts.env ?? strippedBaseEnv(),
       stdio: opts.stdio,
       signal: opts.signal,
       detached: detachForGroupKill,
@@ -144,7 +157,7 @@ export async function spawnShellInProjectSandbox(
   if (!file) throw new Error('sandbox wrap produced empty argv')
   return spawn(file, argv.slice(1), {
     cwd: opts.cwd,
-    env: mergeSpawnEnv(withWorkspaceTmpEnv(env), opts.env),
+    env: mergeSpawnEnv(withWorkspaceTmpEnv(strippedBaseEnv(env)), opts.env),
     stdio: opts.stdio,
     signal: opts.signal,
     detached: detachForGroupKill,
@@ -175,7 +188,7 @@ export async function spawnBackgroundProcess(
       process.platform === 'win32' ? ['/c', shellCommandLine] : ['-c', shellCommandLine]
     return spawn(shell, shellArgs, {
       cwd: opts.cwd,
-      env: opts.env ?? process.env,
+      env: opts.env ?? strippedBaseEnv(),
       stdio: 'pipe',
       detached: detachForGroupKill,
     })
@@ -202,7 +215,7 @@ export async function spawnBackgroundProcess(
     if (!file) throw new Error('sandbox wrap produced empty argv')
     const child = spawn(file, argv.slice(1), {
       cwd: opts.cwd,
-      env: mergeSpawnEnv(withWorkspaceTmpEnv(env), opts.env),
+      env: mergeSpawnEnv(withWorkspaceTmpEnv(strippedBaseEnv(env)), opts.env),
       stdio: 'pipe',
       detached: detachForGroupKill,
     })
@@ -254,7 +267,7 @@ export async function spawnPtyInProjectSandbox(
   opts: SpawnPtyOptions,
 ): Promise<IPty> {
   const termEnv: NodeJS.ProcessEnv = {
-    ...process.env,
+    ...strippedBaseEnv(),
     ...opts.env,
     TERM: 'xterm-256color',
     COLORTERM: 'truecolor',
@@ -286,7 +299,8 @@ export async function spawnPtyInProjectSandbox(
   return pty.spawn(file, argv.slice(1), {
     ...ptyOpts,
     // Workspace tmp wins over the host TMPDIR carried in termEnv: this branch is
-    // sandbox-wrapped, so the system temp dir is denied (issue #481).
-    env: withWorkspaceTmpEnv({ ...env, ...termEnv }),
+    // sandbox-wrapped, so the system temp dir is denied (issue #481). The wrap env is
+    // process.env verbatim on POSIX, so scrub it too (#579) — termEnv is already scrubbed.
+    env: withWorkspaceTmpEnv({ ...strippedBaseEnv(env), ...termEnv }),
   })
 }
