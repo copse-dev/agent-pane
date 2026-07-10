@@ -3,6 +3,7 @@ import { isWorkspaceTrusted } from './workspace-trust.ts'
 import { runPermissionHooks } from '../skills/cursor-hooks.ts'
 import type { CursorPermissionHookEvent } from '@shared/types/cursor-hooks.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
+import { isSandboxNetworkScopeActive } from '../../project-sandbox/network-scope.ts'
 import { classifyShellScope } from './safety-classifier.ts'
 import { requestApproval } from '../approval.ts'
 import { getSetting, setSetting } from '../storage/settings.ts'
@@ -279,6 +280,19 @@ async function checkGithubWriteToolPermission(toolName: string, args: unknown): 
 async function checkShellPermission(args: unknown): Promise<boolean> {
   const command = shellCommandFromArgs(args)
   if (!command) return promptShell('(invalid command)', ['missing command argument'], false)
+
+  // ASRT's network allowlist is process-global. While an ACP agent or a
+  // port-binding background task has widened it, an otherwise-contained shell
+  // command could inherit that egress. Suspend every auto-run path — including
+  // explicit trusted-command routing — until the scope releases. Manual approval
+  // is still available for deliberate overlapping work. (#803)
+  if (isSandboxNetworkScopeActive()) {
+    return promptShell(
+      command,
+      ['sandbox network access is temporarily widened for another process'],
+      false,
+    )
+  }
 
   // Trusted-command fast path: a command whose every segment is either an
   // explicitly trusted (allow-listed) command or a trivially-safe prep step runs

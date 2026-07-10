@@ -96,6 +96,11 @@ project-defined MCP servers are gated behind workspace trust, the
   tools always prompt before running.
 - **OS sandbox (macOS).** Sandbox-contained commands auto-run inside a seatbelt
   profile; external commands prompt and run outside only when approved.
+- **Global network-scope guard.** When a sandboxed ACP agent or a loopback
+  background task temporarily widens ASRT's process-global network allowlist,
+  all shell and background-start commands require explicit approval until the
+  final scope releases. This prevents unrelated auto-run commands inheriting
+  temporary network egress.
 - **Trust gating.** Project-supplied MCP config is gated behind workspace trust;
   full-privilege custom tools load only from `<userData>/tools/`.
 - **Secret handling.** Provider keys stored via `safeStorage` where a keyring is

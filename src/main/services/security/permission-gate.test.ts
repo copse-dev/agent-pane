@@ -20,6 +20,7 @@ import { decideMcpPermission, describeMcpAnnotations } from './permission-policy
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
 import { setApprovalHandler } from '../approval.ts'
+import { acquireSandboxNetworkScope } from '../../project-sandbox/network-scope.ts'
 import {
   rememberCustomTool,
   setCustomToolRequiresApprovalForTests,
@@ -101,6 +102,29 @@ describe('ensureToolPermitted', () => {
       )
     } finally {
       setApprovalHandler(null)
+    }
+  })
+
+  it('forces approval for a concurrent shell call while a network scope is widened', async () => {
+    setPermissionGateForTests(null)
+    const release = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+    })
+    let approvalBody = ''
+    setApprovalHandler(async (request) => {
+      approvalBody = request.body
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureToolPermitted({ toolName: 'run_shell', args: { command: 'printf hello' } }),
+        false,
+      )
+      assert.match(approvalBody, /network access is temporarily widened/i)
+    } finally {
+      setApprovalHandler(null)
+      release()
     }
   })
 })
