@@ -90,6 +90,20 @@ test('round-trips a user message with transcript attachments', () => {
   deepStrictEqual(roundTrip(messages).messages, messages)
 })
 
+test('round-trips a message-anchored post-turn review', () => {
+  const messages: Message[] = [
+    {
+      id: 'a1',
+      role: 'assistant',
+      content: 'done',
+      toolCalls: [],
+      review: { status: 'done', summary: '1 likely bug: off-by-one in the loop.' },
+      createdAt: 7,
+    },
+  ]
+  deepStrictEqual(roundTrip(messages).messages, messages)
+})
+
 test('round-trips tool calls with inline args and a spilled result', () => {
   const messages: Message[] = [
     {

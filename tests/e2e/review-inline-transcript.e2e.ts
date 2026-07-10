@@ -6,10 +6,11 @@ import { resetUserData, seedReviewInlineFixture } from './helpers/seed-config.ts
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
 // Visual eval for #480: the post-turn review card moved from a sibling host
-// (.conversation-review-host, pinned below the scroller) into .messages-list so
-// it joins the transcript and scrolls with it. Component tests cover the DOM
-// shape; this spec proves it in the real Electron renderer and captures a
-// screenshot for visual inspection of spacing/placement.
+// (.conversation-review-host, pinned below the scroller) into .messages-list,
+// anchored to the message that concluded its turn so it joins the transcript in
+// position and scrolls with it. Component tests cover the DOM shape; this spec
+// proves it in the real Electron renderer and captures a screenshot for visual
+// inspection of spacing/placement.
 describe('post-turn review inline in transcript', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
@@ -22,31 +23,33 @@ describe('post-turn review inline in transcript', () => {
     resetUserData()
   })
 
-  it('renders the review card inside the scrolling message list, below the messages', async () => {
+  it('renders the review card inline, anchored after its message and above the follow-up', async () => {
     await $('.messages-list').waitForExist({ timeout: 30_000 })
     await $('.messages-list [data-review-card]').waitForExist({ timeout: 30_000 })
 
     const layout = await browser.execute(() => {
       const list = document.querySelector('.messages-list')
       const card = document.querySelector('[data-review-card]')
+      const assistant = document.querySelector('[data-message-id="msg-assistant-review"]')
       const followup = document.querySelector('[data-message-id="msg-user-followup"]')
       return {
         cardInList: !!list && !!card && list.contains(card),
-        cardIsLast: !!list && !!card && list.lastElementChild === card,
-        followupAboveCard:
+        cardAfterAssistant: !!assistant && !!card && assistant.nextElementSibling === card,
+        followupBelowCard:
           !!card &&
           !!followup &&
-          (followup.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+          (card.compareDocumentPosition(followup) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
         hasPinnedHost: !!document.querySelector('.conversation-review-host'),
       }
     })
 
-    // Joins the transcript as the last child of the scroller…
+    // Joins the transcript inside the scroller…
     expect(layout.cardInList).toBe(true)
-    expect(layout.cardIsLast).toBe(true)
-    // …with the follow-up message staying above it…
-    expect(layout.followupAboveCard).toBe(true)
-    // …and the old pinned sibling host gone.
+    // …anchored right after the turn it reviewed…
+    expect(layout.cardAfterAssistant).toBe(true)
+    // …so a later follow-up message sits below it (the card is in position, not pinned)…
+    expect(layout.followupBelowCard).toBe(true)
+    // …and the old pinned sibling host is gone.
     expect(layout.hasPinnedHost).toBe(false)
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'review-inline-transcript.png'))
