@@ -47,9 +47,7 @@ describe('parseSs', () => {
 
   it('yields a null pid when process info is absent', () => {
     const out = 'LISTEN 0 4096 0.0.0.0:5432 0.0.0.0:*'
-    assert.deepEqual(parseSs(out), [
-      { port: 5432, pid: null, command: '', address: '0.0.0.0' },
-    ])
+    assert.deepEqual(parseSs(out), [{ port: 5432, pid: null, command: '', address: '0.0.0.0' }])
   })
 
   it('ignores blank and non-LISTEN lines', () => {
@@ -59,9 +57,15 @@ describe('parseSs', () => {
 
 describe('parseLsof', () => {
   it('groups n-lines under the preceding p/c and emits one port each', () => {
-    const out = ['p12345', 'cnode', 'n*:3000', 'n[::1]:3000', 'p999', 'credis-server', 'n127.0.0.1:6379'].join(
-      '\n',
-    )
+    const out = [
+      'p12345',
+      'cnode',
+      'n*:3000',
+      'n[::1]:3000',
+      'p999',
+      'credis-server',
+      'n127.0.0.1:6379',
+    ].join('\n')
     assert.deepEqual(parseLsof(out), [
       { port: 3000, pid: 12345, command: 'node', address: '*' },
       { port: 3000, pid: 12345, command: 'node', address: '::1' },

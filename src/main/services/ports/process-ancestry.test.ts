@@ -33,7 +33,10 @@ describe('findOwner', () => {
       [5, 6],
       [6, 5],
     ])
-    assert.equal(findOwner(5, (p) => cyclic.get(p) ?? null, owned), null)
+    assert.equal(
+      findOwner(5, (p) => cyclic.get(p) ?? null, owned),
+      null,
+    )
   })
 })
 
