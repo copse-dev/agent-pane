@@ -124,8 +124,10 @@ Two defaults harden every invoked skill, trusted or not (both toggleable in
   release's Sigstore-signed `checksums.txt`.
 - Replace `npx electron-rebuild` in postinstall with a pinned devDependency
   invocation; audit all lifecycle scripts.
-- Add a CI gate: `npm audit --audit-level=high` (or `osv-scanner`/`socket`),
-  Dependabot/Renovate, and consider `--ignore-scripts` for CI installs.
+- CI runs `npm audit --audit-level=high` against the lockfile-exact dependency
+  tree. CodeQL analyzes JavaScript/TypeScript and gitleaks scans repository
+  history on GitHub-hosted runners, including fork pull requests without secrets.
+  Add Dependabot/Renovate and consider `--ignore-scripts` for CI installs.
 - Evaluate npm provenance / `npm audit signatures`.
 
 ### Phase 4 — Defense in depth & observability

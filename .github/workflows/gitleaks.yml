@@ -1,0 +1,28 @@
+name: Secret scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '41 6 * * 1'
+
+# A fork scan receives only the default read token and runs on a GitHub-hosted
+# runner. No secrets or self-hosted runners are exposed to the scanned history.
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: Scan repository history
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
