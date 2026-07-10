@@ -46,6 +46,27 @@ export function resolveAcpSandbox(config: AcpAgentConfig): AcpAgentSandboxConfig
 }
 
 /**
+ * Resolve the ACP **session mode** an agent should start each session in
+ * (issue #607). A user-set `permissionMode` on the config always wins. Absent,
+ * we fall back to the `KNOWN_ACP_AGENTS` catalog's `sandboxedPermissionMode`
+ * **only when the agent will actually spawn sandboxed** — the seatbelt makes
+ * prompt-per-edit friction without safety, so the Claude presets relax to
+ * `acceptEdits`. Unsandboxed agents (and any agent with no catalog default)
+ * keep their own default prompting. Returns `undefined` for "agent default".
+ *
+ * `sandboxed` is the caller's `willSandboxAcpAgent(...)` result, so this stays
+ * in lockstep with the spawn decision (platform + project-sandbox gating).
+ */
+export function resolveAcpPermissionMode(
+  config: AcpAgentConfig,
+  sandboxed: boolean,
+): string | undefined {
+  if (config.permissionMode) return config.permissionMode
+  if (!sandboxed) return undefined
+  return KNOWN_ACP_AGENTS.find((known) => known.id === config.id)?.sandboxedPermissionMode
+}
+
+/**
  * Insert or replace an agent config by id and persist the list. Used by
  * auto-setup to register a preset (and later stamp its detected models) without
  * the renderer round-trip. Returns the updated list.

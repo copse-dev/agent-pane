@@ -106,14 +106,15 @@ also edit it directly (e.g. from the app DevTools console with
 `window.api.settings.set('registeredAcpAgents', [...])`). Each entry matches the
 `AcpAgentConfig` shape:
 
-| Field     | Required | Notes                                                              |
-| --------- | -------- | ------------------------------------------------------------------ |
-| `id`      | yes      | Lowercase slug (`a-z`, `0-9`, `-`). The model value is `acp:<id>`. |
-| `title`   | yes      | Shown in the model picker.                                         |
-| `command` | yes      | Executable to spawn (absolute path or on `PATH`).                  |
-| `args`    | no       | Arguments passed to the command.                                   |
-| `env`     | no       | Extra environment variables for the agent process.                 |
-| `enabled` | yes      | Only enabled agents appear in the picker.                          |
+| Field            | Required | Notes                                                              |
+| ---------------- | -------- | ------------------------------------------------------------------ |
+| `id`             | yes      | Lowercase slug (`a-z`, `0-9`, `-`). The model value is `acp:<id>`. |
+| `title`          | yes      | Shown in the model picker.                                         |
+| `command`        | yes      | Executable to spawn (absolute path or on `PATH`).                  |
+| `args`           | no       | Arguments passed to the command.                                   |
+| `env`            | no       | Extra environment variables for the agent process.                 |
+| `permissionMode` | no       | ACP **session mode** to start each session in — see below.         |
+| `enabled`        | yes      | Only enabled agents appear in the picker.                          |
 
 Example value:
 
@@ -132,6 +133,30 @@ Example value:
 
 Once saved, pick **Gemini CLI** from the model dropdown (under **ACP agents**)
 and chat as usual. Open a folder first — the agent needs a workspace to act in.
+
+### Permission mode (relaxing the agent's prompting)
+
+In ACP **client** mode, whether the agent asks for approval is entirely the
+_agent's_ own policy — Copse just renders the `session/request_permission`
+dialog it sends. ACP exposes that policy as **session modes** (e.g. Claude
+Code's `default` / `acceptEdits` / `bypassPermissions` / `plan`). Set
+`permissionMode` on the agent config (or pick one in the **Permission mode**
+dropdown after **Detect models**) and Copse applies it with `session/set_mode`
+right after the session is created — before the first prompt — so the agent's
+own prompting is relaxed or tightened for the whole session. The dropdown is
+populated from the modes the agent advertises in `session/new`; leave it on
+**Agent default** to keep the agent's own behavior. An unknown/stale value
+silently degrades to the agent's default rather than failing the turn.
+
+> **Sandboxed Claude presets default to `acceptEdits`.** When a Claude preset
+> runs under the workspace seatbelt (issue #590), the seatbelt already contains
+> writes to the workspace and scratch dirs and the post-turn audit surfaces
+> anything that bypassed the diff queue — so prompt-per-edit adds friction
+> without adding safety. Copse therefore defaults those sandboxed sessions to
+> `acceptEdits` unless you set `permissionMode` yourself. Unsandboxed agents
+> keep their own default prompting. Note that approving a request never lifts
+> the seatbelt: a sandboxed agent that asks to touch a genuinely denied path
+> (system `/tmp`, network) still fails with `EPERM` even after you approve it.
 
 ### A note on secrets
 

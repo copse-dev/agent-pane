@@ -1,5 +1,5 @@
 import type { ApiClient } from '../../../preload/api.d.ts'
-import type { AcpAgentConfig, AcpModelChoice } from '@shared/types/acp.ts'
+import type { AcpAgentConfig, AcpModeChoice, AcpModelChoice } from '@shared/types/acp.ts'
 import {
   KNOWN_ACP_AGENTS,
   type DetectedAcpAgent,
@@ -271,6 +271,30 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
     )
     const modelStatus = el('span', { class: 'field-hint' })
 
+    // Permission-mode picker (issue #607): the ACP session mode the agent starts
+    // each session in. "Agent default" leaves the agent's own prompting alone
+    // (sandboxed Claude presets still auto-relax to acceptEdits at spawn time —
+    // that default only applies when this is unset). Filled by "Detect models".
+    const DEFAULT_MODE_LABEL = 'Agent default'
+    const modeSelect = el('select', {})
+    const setModeOptions = (choices: AcpModeChoice[], selected: string): void => {
+      modeSelect.replaceChildren(el('option', { value: '' }, DEFAULT_MODE_LABEL))
+      for (const choice of choices) {
+        modeSelect.append(
+          el(
+            'option',
+            { value: choice.value, ...(choice.description ? { title: choice.description } : {}) },
+            choice.label,
+          ),
+        )
+      }
+      // Preserve a saved value even if it isn't in the (not-yet-detected) list.
+      if (selected && !choices.some((c) => c.value === selected)) {
+        modeSelect.append(el('option', { value: selected }, `${selected} (saved)`))
+      }
+      modeSelect.value = selected
+    }
+
     if (options.initial) {
       idInput.value = options.initial.id
       titleInput.value = options.initial.title
@@ -283,6 +307,8 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
     // without re-spawning; seeded from the saved config, refreshed by "Detect".
     let detectedModels: AcpModelChoice[] = options.initial?.availableModels ?? []
     setModelOptions(detectedModels, options.initial?.model ?? '')
+    let detectedModes: AcpModeChoice[] = options.initial?.availablePermissionModes ?? []
+    setModeOptions(detectedModes, options.initial?.permissionMode ?? '')
 
     // Detection resolves the agent by its saved id, so it only works once the
     // agent has been saved (a fresh, unsaved agent has nothing to spawn yet).
@@ -293,29 +319,36 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
       detectModels.disabled = true
       setInlineStatus(modelStatus, 'pending', 'Detecting… (starting the agent)')
       void api.acp
-        .listModels(id)
-        .then((selector) => {
-          if (!selector) {
-            detectedModels = []
-            modelStatus.textContent = 'This agent exposes no selectable models.'
-            return
+        .probeAgent(id)
+        .then((probe) => {
+          detectedModels = probe.models?.choices ?? []
+          detectedModes = probe.modes?.choices ?? []
+          if (probe.models) {
+            setModelOptions(probe.models.choices, modelSelect.value || probe.models.currentValue)
           }
-          detectedModels = selector.choices
-          setModelOptions(selector.choices, modelSelect.value || selector.currentValue)
-          // Persist immediately so the models appear in the main picker without a
+          if (probe.modes) {
+            setModeOptions(probe.modes.choices, modeSelect.value || probe.modes.currentValue)
+          }
+          // Persist immediately so the detected models/modes appear without a
           // separate Save. Merge onto the *saved* config (not the in-progress form
           // draft) so any unsaved field edits aren't clobbered, and skip the full
           // re-render so this form stays as the user left it.
           const saved = agents.find((candidate) => candidate.id === id)
           if (saved) {
-            agents = upsertAgent(agents, { ...saved, availableModels: selector.choices })
+            agents = upsertAgent(agents, {
+              ...saved,
+              ...(probe.models ? { availableModels: probe.models.choices } : {}),
+              ...(probe.modes ? { availablePermissionModes: probe.modes.choices } : {}),
+            })
             void api.settings.set('registeredAcpAgents', agents)
           }
-          setInlineStatus(
-            modelStatus,
-            'ok',
-            `${String(selector.choices.length)} models added to the picker (default: ${selector.currentValue}).`,
-          )
+          const bits = [
+            probe.models
+              ? `${String(probe.models.choices.length)} models (default: ${probe.models.currentValue})`
+              : 'no selectable models',
+            probe.modes ? `${String(probe.modes.choices.length)} permission modes` : '',
+          ].filter(Boolean)
+          setInlineStatus(modelStatus, 'ok', `Detected ${bits.join(', ')}.`)
         })
         .catch((err: unknown) => {
           setInlineStatus(modelStatus, 'error', err instanceof Error ? err.message : String(err))
@@ -347,6 +380,7 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
       const env = parseEnvText(envArea.value)
       const args = parseArgsText(argsArea.value)
       const model = modelSelect.value.trim()
+      const permissionMode = modeSelect.value.trim()
       options.onSubmit({
         id,
         title: draft.title,
@@ -355,6 +389,8 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
         ...(Object.keys(env).length ? { env } : {}),
         ...(model ? { model } : {}),
         ...(detectedModels.length ? { availableModels: detectedModels } : {}),
+        ...(permissionMode ? { permissionMode } : {}),
+        ...(detectedModes.length ? { availablePermissionModes: detectedModes } : {}),
         enabled: enabledBox.checked,
       })
     })
@@ -373,6 +409,18 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
         'Model',
         el('div', { class: 'acp-model-row' }, modelSelect, detectModels),
         modelStatus,
+      ),
+      el(
+        'label',
+        {},
+        'Permission mode',
+        modeSelect,
+        el(
+          'span',
+          { class: 'field-hint' },
+          'ACP session mode. Relaxes or tightens the agent’s own approval prompting. ' +
+            'Sandboxed Claude presets default to acceptEdits.',
+        ),
       ),
       el('label', { class: 'checkbox-label' }, enabledBox, ' Enabled (shown in the model picker)'),
     )
