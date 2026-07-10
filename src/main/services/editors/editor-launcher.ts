@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
 import type { ExternalEditorList } from '@shared/types/editors.ts'
+import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
 import {
   type DetectedEditorLaunch,
@@ -49,6 +50,12 @@ export async function openWorkspaceInExternalEditor(editorId: string, root: stri
   // Under the e2e mock there is nothing real to launch.
   if (parseMockEditorIds(process.env['COPSE_PANEL_MOCK_EDITORS']) !== null) return
   const { command, args } = buildEditorLaunch(detected, root)
-  const child = spawn(command, args, { detached: true, stdio: 'ignore' })
+  // Strip Copse's LLM/provider keys from the editor's env (#579): an external editor
+  // never needs them, and it (or its extensions) can spawn arbitrary child processes.
+  const child = spawn(command, args, {
+    detached: true,
+    stdio: 'ignore',
+    env: envForRendererChildProcess(),
+  })
   child.unref()
 }

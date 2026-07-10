@@ -43,4 +43,28 @@ describe('envForRendererChildProcess', () => {
     assert.equal(env['NPM_TOKEN'], 'npm')
     assert.equal(env['AWS_ACCESS_KEY_ID'], 'aws')
   })
+
+  // Regression for #579: the strip must be applied to the *base* env, never as an
+  // overlay. A stripped env spread on top of a full one does NOT remove a secret key —
+  // the base value survives. This is exactly how the sandboxed/PTY spawn paths in
+  // project-sandbox/spawn.ts leaked despite their callers passing a scrubbed env.
+  it('as an overlay it does NOT remove a secret already in the base (the bug)', () => {
+    const full = { PATH: '/usr/bin', ANTHROPIC_API_KEY: 'sk-ant-secret' }
+    const stripped = envForRendererChildProcess({ PATH: '/usr/bin' })
+    // The wrong pattern: full env as base, stripped env overlaid on top.
+    const merged: Record<string, string> = { ...full, ...stripped }
+    assert.equal(merged['ANTHROPIC_API_KEY'], 'sk-ant-secret')
+  })
+
+  it('as the base the secret is gone even when an explicit opt-in env is overlaid', () => {
+    const full = { PATH: '/usr/bin', ANTHROPIC_API_KEY: 'sk-ant-secret' }
+    // The correct pattern: scrub the base first, then overlay opts.env.
+    const merged: Record<string, string> = {
+      ...envForRendererChildProcess(full),
+      GIT_AUTHOR_NAME: 'Copse',
+    }
+    assert.equal(merged['ANTHROPIC_API_KEY'], undefined)
+    assert.equal(merged['PATH'], '/usr/bin')
+    assert.equal(merged['GIT_AUTHOR_NAME'], 'Copse')
+  })
 })
