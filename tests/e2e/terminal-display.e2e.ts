@@ -36,16 +36,9 @@ describe('integrated terminal', () => {
     await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 })
     // macOS confines the PTY with the project seatbelt. Linux CI has no such
     // boundary, so it correctly asks the user before opening a host terminal.
-    const approval = await $('#approval-dialog')
-    await browser.waitUntil(
-      async () =>
-        (await approval.isDisplayed().catch(() => false)) || (await xtermText()).length > 0,
-      {
-        timeout: 20_000,
-        timeoutMsg: 'expected either a running terminal or its required approval dialog',
-      },
-    )
-    if (await approval.isDisplayed().catch(() => false)) {
+    if (process.platform !== 'darwin') {
+      const approval = await $('#approval-dialog')
+      await approval.waitForDisplayed({ timeout: 30_000 })
       await expect(approval.$('.approval-heading')).toHaveText('Open unsandboxed terminal?')
       await approval.$('.approval-approve').click()
       await approval.waitForDisplayed({ reverse: true, timeout: 10_000 })
