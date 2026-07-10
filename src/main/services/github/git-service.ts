@@ -466,6 +466,22 @@ export function sumDiffNumstat(raw: string): { additions: number; deletions: num
 }
 
 /**
+ * Count added + removed lines in a unified diff (the `+`/`-` body lines, skipping
+ * the `+++`/`---` file headers). Operates on the exact text a diff consumer sees,
+ * so it correctly counts untracked new files (which `git diff --numstat` omits) as
+ * long as they're present in the diff — unlike `sumDiffNumstat`, which reads a
+ * separate `--numstat` invocation. Used to gate the post-turn review (#584).
+ */
+export function countDiffChangedLines(diff: string): number {
+  let changed = 0
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('+++') || line.startsWith('---')) continue
+    if (line.startsWith('+') || line.startsWith('-')) changed++
+  }
+  return changed
+}
+
+/**
  * Live add/delete line totals across the working tree (staged + unstaged), or
  * null when there is nothing to show. Cheap enough to call on every filesystem
  * change so the "Changes" follow-up chip stays current instead of freezing on a

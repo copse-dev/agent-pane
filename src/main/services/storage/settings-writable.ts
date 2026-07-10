@@ -125,6 +125,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   localSubagentsEnabled: z.boolean(),
   localTodoItemsEnabled: z.boolean(),
   postTurnReviewEnabled: z.boolean(),
+  // Skip the post-turn review when a turn's total changed lines (additions +
+  // deletions across the working diff) fall below this threshold, so trivial
+  // edits don't each trigger a full review LLM run (#584). 0 = always review.
+  postTurnReviewMinChangedLines: z.number().int().min(0).max(100_000),
   bundledCursorSkillsEnabled: z.boolean(),
   skillsEnabled: z.boolean(),
   // Skill safety toggles (default on). Warn up front when an invoked skill
