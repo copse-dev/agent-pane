@@ -1,5 +1,5 @@
 import type { AppStore } from '@shared/store/store.ts'
-import { workspaceLinkTargetFromHref } from '@copse/streaming-markdown'
+import { workspaceLinkTargetFromHref } from '@copse/streaming-markdown/host/workspace'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { activateWorkspaceReference } from '../controller/files.ts'
 import { showErrorToast } from '../views/toast.ts'

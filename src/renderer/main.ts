@@ -74,6 +74,7 @@ import { isRightPanelPosition } from '@shared/types/state.ts'
 import { installArtifactImagePolicy } from './markdown/artifact-image-policy.ts'
 import { installSanitizerBackend } from './markdown/sanitizer-backend.ts'
 import { installHighlighterBackend } from './markdown/highlighter-backend.ts'
+import { installAppLinkDecorator } from './markdown/link-decorator.ts'
 
 // Inject host markdown policies into @copse/streaming-markdown before any view
 // renders: turn remote-agent artifact <img> tags into inert placeholders that
@@ -87,6 +88,9 @@ const sanitizerReady = installSanitizerBackend()
 // awaits it before the first render.
 const highlighterReady = installHighlighterBackend()
 installArtifactImagePolicy()
+// streaming-markdown 0.10.0 ships a neutral default link decorator (#112); opt
+// back into the workspace/browser `data-*` link hooks our click handlers bind.
+installAppLinkDecorator()
 
 const store = createStore()
 const api = window.api
