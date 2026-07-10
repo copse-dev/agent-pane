@@ -2,6 +2,9 @@ name: CI
 on:
   push:
     branches: [main]
+    # A release tag must receive this exact same aggregate gate before the
+    # publishing workflow will package it. See release-mac.yml's preflight.
+    tags: ['v*']
   # `labeled` is included so adding the `update-screenshots` or `ci-full` label
   # kicks a fresh run on the PR head — plan-e2e then forces mode=full
   # (update-screenshots additionally refreshes the reference shots). Without it the label only takes effect on the
