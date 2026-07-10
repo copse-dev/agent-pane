@@ -243,11 +243,23 @@ function gortexRunOpts(
   }
 }
 
+/** How long to wait for a freshly-spawned daemon to bind its socket. */
+const DAEMON_READY_TIMEOUT_MS = 10_000
+/** Poll interval while waiting for the daemon socket after `daemon start`. */
+const DAEMON_READY_POLL_MS = 250
+
 /**
  * Unlike vera, gortex is daemon-based: `track` and `call` fail hard
  * when no daemon is listening, and `daemon start --detach` exits non-zero when
- * one already is. Probe status first, spawn once per app session, and re-check
- * status after a failed spawn so a lost start race still counts as ready.
+ * one already is. Probe status first, spawn once per app session, then poll
+ * status until the socket is up.
+ *
+ * `daemon start --detach` returns as soon as the child is forked — the daemon
+ * binds its unix socket a beat later — so a single immediate status check races
+ * the socket creation and reports "daemon failed to start" for a daemon that is
+ * in fact coming up. This only bites when the daemon isn't already running
+ * (first launch, post-reboot, after a crash/kill), since a live daemon persists
+ * across app sessions and short-circuits at the first status probe.
  */
 async function ensureGortexDaemon(workspaceRoot: string): Promise<boolean> {
   const existing = gortexDaemonReady
@@ -262,13 +274,24 @@ async function ensureGortexDaemon(workspaceRoot: string): Promise<boolean> {
       ['daemon', 'start', '--detach', '--no-progress'],
       gortexRunOpts(workspaceRoot),
     ).catch(() => undefined)
-    return probeWithOpts(cmd, statusArgs, gortexRunOpts(workspaceRoot))
+    // Poll rather than check once: the detached daemon isn't reachable the
+    // instant `start` returns.
+    const deadline = Date.now() + DAEMON_READY_TIMEOUT_MS
+    for (;;) {
+      if (await probeWithOpts(cmd, statusArgs, gortexRunOpts(workspaceRoot))) return true
+      if (Date.now() >= deadline) return false
+      await delay(DAEMON_READY_POLL_MS)
+    }
   })()
 
   gortexDaemonReady = startup
   const ready = await startup.catch(() => false)
   if (!ready && gortexDaemonReady === startup) gortexDaemonReady = null
   return ready
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 async function probeWithOpts(
