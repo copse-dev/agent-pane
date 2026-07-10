@@ -59,7 +59,6 @@ describe('export thread', () => {
     const t = thread()
     t.status = 'error'
     t.todos = [{ id: 'todo-1', content: 'do thing', status: 'pending' }]
-    t.review = { status: 'done', summary: 'looks good' }
     t.workingBrief = 'fix the bug'
     t.gitBranch = 'feature/x'
     t.contextSnapshot = {
@@ -76,10 +75,9 @@ describe('export thread', () => {
       string,
       unknown
     >
-    assert.equal(header['exportVersion'], 3)
+    assert.equal(header['exportVersion'], 4)
     assert.equal(header['status'], 'error')
     assert.deepEqual(header['todos'], t.todos)
-    assert.deepEqual(header['review'], t.review)
     assert.equal(header['workingBrief'], 'fix the bug')
     assert.equal(header['gitBranch'], 'feature/x')
     assert.deepEqual(header['contextSnapshot'], t.contextSnapshot)
@@ -166,5 +164,25 @@ describe('export thread', () => {
 
     const line = JSON.parse(at(jsonl.trimEnd().split('\n'), 1)) as { reasoning?: string }
     assert.equal(line.reasoning, 'thinking step by step')
+  })
+
+  it('exports a message-anchored post-turn review on its message line', () => {
+    const jsonl = threadToJsonl(
+      thread([
+        {
+          id: 'message-1',
+          role: 'assistant',
+          content: 'done with the change',
+          toolCalls: [],
+          review: { status: 'done', summary: '1 likely bug.' },
+          createdAt: 2,
+        },
+      ]),
+    )
+
+    const line = JSON.parse(at(jsonl.trimEnd().split('\n'), 1)) as {
+      review?: { status: string; summary: string }
+    }
+    assert.deepEqual(line.review, { status: 'done', summary: '1 likely bug.' })
   })
 })

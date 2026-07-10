@@ -2,7 +2,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
   setThreadComparison,
-  setThreadReview,
+  setMessageReview,
   setThreadStatus,
 } from '@shared/store/thread-helpers.ts'
 import { syncAgentActivity } from '../agent-activity.ts'
@@ -19,11 +19,18 @@ function retryPayload(store: AppStore, threadId: string): string {
   })
 }
 
-/** Re-run the post-turn review for a thread whose review card failed. */
-export function retryReview(store: AppStore, api: ApiClient, threadId: string): void {
+/** Re-run the post-turn review for the turn whose review card failed. */
+export function retryReview(
+  store: AppStore,
+  api: ApiClient,
+  threadId: string,
+  messageId: string,
+): void {
   // Flip the card to its running state optimistically so the click has instant
-  // feedback; main re-emits the same `running` chunk when it starts.
-  setThreadReview(store, threadId, { status: 'running', summary: '' })
+  // feedback; main re-emits the same `running` chunk when it starts. The re-run
+  // reviews the current working diff, so its verdict lands on the same message
+  // the failed card is anchored to (main's chunk targets that turn's message).
+  setMessageReview(store, threadId, messageId, { status: 'running', summary: '' })
   setThreadStatus(store, threadId, 'running')
   syncAgentActivity(store, threadId, false)
   void api.agent.retryReview(threadId, retryPayload(store, threadId))

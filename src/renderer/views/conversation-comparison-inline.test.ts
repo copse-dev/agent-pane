@@ -6,7 +6,7 @@ import {
   addMessage,
   createThread,
   setThreadComparison,
-  setThreadReview,
+  setMessageReview,
 } from '@shared/store/thread-helpers.ts'
 import type { ModelComparison } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -99,16 +99,17 @@ describe('model comparison renders inline in the transcript (component)', () => 
   it('keeps the review card above the comparison card when the comparison lands first', () => {
     const store = createStore()
     const threadId = createThread(store)
-    addMessage(store, threadId, 'assistant', 'Working.')
+    const messageId = addMessage(store, threadId, 'assistant', 'Working.')
 
     const host = document.createElement('div')
     document.body.append(host)
     mountConversation(host, store, fakeApi())
 
     // The manual tool can emit the comparison mid-turn, then the post-turn review
-    // lands after it — the review must still render above the comparison.
+    // lands after it — the review is anchored to its message and so still renders
+    // above the trailing comparison card.
     setThreadComparison(store, threadId, comparison)
-    setThreadReview(store, threadId, { status: 'done', summary: 'Looks correct.' })
+    setMessageReview(store, threadId, messageId, { status: 'done', summary: 'Looks correct.' })
 
     const list = document.querySelector('.messages-list')
     assert.ok(list)

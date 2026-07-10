@@ -15,7 +15,7 @@ import {
   recordContextTrim,
   updateContextSnapshot,
   setThreadTodos,
-  setThreadReview,
+  setMessageReview,
   setThreadComparison,
   getThreadById,
 } from '@shared/store/thread-helpers.ts'
@@ -290,7 +290,17 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         break
       }
       case 'post_turn_review': {
-        setThreadReview(store, threadId, { status: chunk.status, summary: chunk.summary })
+        // Anchor the review to the turn's final assistant message so it renders
+        // inline right after that turn. `st.msgId` is the current turn's message
+        // and is still live here (the deferred `done` clears turn state later);
+        // fall back to the thread's last message for a tool-only turn.
+        const anchorId = st.msgId ?? getThreadById(store, threadId)?.messages.at(-1)?.id ?? null
+        if (anchorId) {
+          setMessageReview(store, threadId, anchorId, {
+            status: chunk.status,
+            summary: chunk.summary,
+          })
+        }
         if (chunk.status === 'running') store.emit('agent_activity', threadId, 'Reviewing changes…')
         break
       }
