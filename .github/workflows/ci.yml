@@ -84,6 +84,9 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm run check:dead-code
+      # Fail closed on high/critical dependency advisories. This runs after the
+      # lockfile-exact setup, so it audits precisely the tree CI will execute.
+      - run: npm audit --audit-level=high
       # Guard the e2e oracle that gates the `e2e` job: every spec must stay
       # selectable (liveness) and the mapping invariants must hold, so the gate
       # can't silently start skipping specs it should run.
