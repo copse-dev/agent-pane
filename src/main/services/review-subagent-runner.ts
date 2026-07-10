@@ -5,6 +5,7 @@ import {
   REVIEW_TOOL_NAMES,
   REVIEW_SYSTEM_PROMPT,
   buildReviewPrompt,
+  parseReviewVerdict,
 } from '@copse/agent/review-subagent.ts'
 import type {
   LLMProvider,
@@ -118,6 +119,9 @@ export async function runPostTurnReview(
       usageModel,
     })
 
-    return { summary, usage }
+    // The shared review system prompt now asks for a trailing REVIEW_JSON line;
+    // these legacy single-shot consumers (model comparison, standalone review)
+    // only want the human-facing verdict, so strip it here.
+    return { summary: parseReviewVerdict(summary).summary, usage }
   })
 }
