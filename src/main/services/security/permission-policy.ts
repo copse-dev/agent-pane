@@ -190,6 +190,17 @@ export function formatPortBindingPromptBody(workspaceRoot: string, command: stri
   )
 }
 
+export function formatUnsandboxedTerminalPromptBody(workspaceRoot: string): string {
+  return (
+    `Open an interactive terminal OUTSIDE the project sandbox?\n\n` +
+    `Project: ${workspaceRoot}\n\n` +
+    `By default the terminal is confined to this project by the macOS seatbelt ` +
+    `(no network, no access outside the workspace). Running it unsandboxed gives ` +
+    `the shell full user-level filesystem and network access, the same as a normal ` +
+    `terminal — only approve this if you trust everything you will run in it.`
+  )
+}
+
 export function formatExternalSandboxPromptBody(command: string, reasons: string[]): string {
   const detail = reasons.length ? reasons.join('; ') : 'network or outside-workspace access'
   return (

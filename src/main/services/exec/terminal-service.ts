@@ -96,6 +96,7 @@ async function spawnShell(
   ownerId: number,
   cols: number,
   rows: number,
+  unsandboxed: boolean,
 ): Promise<TerminalSession> {
   const shell = defaultShell()
   const ptyProcess = await spawnPtyInProjectSandbox(shell, {
@@ -103,7 +104,9 @@ async function spawnShell(
     rows,
     cwd: sessionCwd(),
     env: envForRendererChildProcess(),
-    unsandboxed: true,
+    // Confined by the project seatbelt by default (#662); an unsandboxed shell is
+    // an explicit, user-approved escalation resolved by the permission gate.
+    unsandboxed,
   })
 
   const session: TerminalSession = { id: randomUUID(), pty: ptyProcess, ownerId }
@@ -117,8 +120,9 @@ export async function createTerminalSession(
   ownerId: number,
   cols = DEFAULT_COLS,
   rows = DEFAULT_ROWS,
+  unsandboxed = false,
 ): Promise<string> {
-  const session = await spawnShell(win, ownerId, cols, rows)
+  const session = await spawnShell(win, ownerId, cols, rows, unsandboxed)
   return session.id
 }
 

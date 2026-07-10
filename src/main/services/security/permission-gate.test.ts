@@ -15,7 +15,11 @@ import {
 import { DEFAULT_WEB_ALLOWED_ORIGINS } from './web-origin-policy.ts'
 import { detectSandboxFailure } from './sandbox-failure.ts'
 import { setPermissionGateForTests } from '../tool-registry.ts'
-import { ensureToolPermitted, ensureTerminalPermitted } from './permission-gate.ts'
+import {
+  ensureToolPermitted,
+  ensureTerminalPermitted,
+  ensureUnsandboxedTerminalApproved,
+} from './permission-gate.ts'
 import { decideMcpPermission, describeMcpAnnotations } from './permission-policy.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
@@ -291,10 +295,10 @@ describe('run_background permission', () => {
 })
 
 describe('ensureTerminalPermitted', () => {
-  it('allows integrated terminal without shell approval when workspace is open', async () => {
+  it('permits a confined terminal without approval when a workspace is open', async () => {
     const restore = setWorkspaceRootForTest('/tmp/project')
     try {
-      assert.equal(await ensureTerminalPermitted(), true)
+      assert.deepEqual(await ensureTerminalPermitted(), { permitted: true, unsandboxed: false })
     } finally {
       restore()
     }
@@ -306,6 +310,56 @@ describe('ensureTerminalPermitted', () => {
       await assert.rejects(() => ensureTerminalPermitted(), /No workspace open/)
     } finally {
       restore()
+    }
+  })
+
+  it('does not prompt for an unsandboxed request when no OS sandbox is active', async () => {
+    // In this (non-macOS/uninitialized) test env the project sandbox is off, so
+    // there is nothing to escape and the request falls back to a confined shell.
+    const restore = setWorkspaceRootForTest('/tmp/project')
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts++
+      return { approved: true, remember: false }
+    })
+    try {
+      assert.deepEqual(await ensureTerminalPermitted(true), { permitted: true, unsandboxed: false })
+      assert.equal(prompts, 0)
+    } finally {
+      setApprovalHandler(null)
+      restore()
+    }
+  })
+})
+
+describe('ensureUnsandboxedTerminalApproved', () => {
+  it('prompts once then remembers the grant per workspace', async () => {
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts++
+      return { approved: true, remember: true }
+    })
+    try {
+      assert.equal(await ensureUnsandboxedTerminalApproved('/tmp/unsandboxed-remember'), true)
+      assert.equal(await ensureUnsandboxedTerminalApproved('/tmp/unsandboxed-remember'), true)
+      assert.equal(prompts, 1, 'a remembered workspace must not re-prompt')
+    } finally {
+      setApprovalHandler(null)
+    }
+  })
+
+  it('returns false and does not remember when the user declines', async () => {
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts++
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(await ensureUnsandboxedTerminalApproved('/tmp/unsandboxed-declined'), false)
+      assert.equal(await ensureUnsandboxedTerminalApproved('/tmp/unsandboxed-declined'), false)
+      assert.equal(prompts, 2, 'a decline must not be remembered')
+    } finally {
+      setApprovalHandler(null)
     }
   })
 })

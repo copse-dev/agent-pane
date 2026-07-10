@@ -18,6 +18,7 @@ import {
   shellCommandFromArgs,
   formatShellPromptBody,
   formatPortBindingPromptBody,
+  formatUnsandboxedTerminalPromptBody,
   backgroundAllowsPortBinding,
   backgroundCommandFromArgs,
   formatExternalSandboxPromptBody,
@@ -423,11 +424,61 @@ export async function ensureShellCommandPermitted(command: string): Promise<bool
   return checkShellPermission({ command })
 }
 
-/** Integrated terminal is a direct user UI action; PTY always runs outside seatbelt (#180). */
-// eslint-disable-next-line @typescript-eslint/require-await -- part of the uniformly-async permission-gate API (awaited by the terminal IPC handler)
-export async function ensureTerminalPermitted(): Promise<boolean> {
-  if (!getWorkspaceRoot()) throw new Error('No workspace open.')
-  return true
+export interface TerminalPermission {
+  /** Whether the terminal may open at all. Always true today; a seam for tightening later (#662). */
+  permitted: boolean
+  /** Whether it runs OUTSIDE the project seatbelt — only after an explicit, approved escalation. */
+  unsandboxed: boolean
+}
+
+const UNSANDBOXED_TERMINAL_ALLOWED_ROOTS_SETTING = 'unsandboxedTerminalAllowedRoots'
+
+/**
+ * Prompt (once per workspace, then remembered) to run the interactive terminal
+ * outside the project seatbelt. Same prompt-once grant model as port binding and
+ * browser origins. Exported for direct testing of the grant/remember path.
+ */
+export async function ensureUnsandboxedTerminalApproved(root: string): Promise<boolean> {
+  const allowed = getSetting<string[]>(UNSANDBOXED_TERMINAL_ALLOWED_ROOTS_SETTING, [])
+  if (allowed.includes(root)) return true
+
+  const { approved, remember } = await requestApproval({
+    title: 'Run the terminal outside the sandbox?',
+    body: formatUnsandboxedTerminalPromptBody(root),
+    type: 'shell',
+    allowRemember: true,
+    rememberLabel: 'Always allow an unsandboxed terminal in this project',
+  })
+  if (approved && remember && !allowed.includes(root)) {
+    await setSetting(UNSANDBOXED_TERMINAL_ALLOWED_ROOTS_SETTING, [...allowed, root])
+  }
+  return approved
+}
+
+/**
+ * Gate an integrated-terminal spawn (issue #662). The terminal is a direct user
+ * UI action, but it used to spawn a shell fully OUTSIDE the seatbelt with this gate
+ * hard-returning `true`. Now it runs CONFINED by the project sandbox by default;
+ * a caller may request an unsandboxed shell, which is an explicit escalation gated
+ * on user approval (remembered per workspace). A declined request — or no active
+ * sandbox to escape from (non-macOS / sandbox init failed) — falls back to the
+ * confined terminal, so a terminal is always available once a workspace is open.
+ */
+export async function ensureTerminalPermitted(
+  requestUnsandboxed = false,
+): Promise<TerminalPermission> {
+  const root = getWorkspaceRoot()
+  if (!root) throw new Error('No workspace open.')
+
+  // Confined is the default and always permitted. When no OS sandbox is active
+  // the PTY runs unconfined regardless, so there is nothing to escalate and we
+  // skip the (meaningless) prompt.
+  if (!requestUnsandboxed || !isProjectSandboxEnabled()) {
+    return { permitted: true, unsandboxed: false }
+  }
+
+  const unsandboxed = await ensureUnsandboxedTerminalApproved(root)
+  return { permitted: true, unsandboxed }
 }
 
 /** Map a tool call to the Cursor permission-hook event + payload it should fire. */
