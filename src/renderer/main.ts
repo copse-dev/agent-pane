@@ -48,6 +48,12 @@ import {
   closeFileSearchDialog,
   isFileSearchDialogOpen,
 } from './views/file-search-dialog.ts'
+import {
+  mountConversationSearch,
+  openConversationSearch,
+  closeConversationSearch,
+  isConversationSearchOpen,
+} from './views/conversation-search.ts'
 import { startAgentController } from './controller/agent.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
 import {
@@ -67,7 +73,7 @@ import { loadMonaco } from './monaco/setup.ts'
 import { mountPaneResizers, parseSavedLayout } from './views/pane-resizer.ts'
 import { bindChatComposerLayout } from './views/chat-layout.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
-import { registerPanelKeyboardShortcuts } from './keyboard-shortcuts.ts'
+import { registerPanelKeyboardShortcuts, matchFindInChatShortcut } from './keyboard-shortcuts.ts'
 import { showErrorToast } from './views/toast.ts'
 import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layout.ts'
 import { isRightPanelPosition } from '@shared/types/state.ts'
@@ -297,7 +303,9 @@ function mountFullLayout(): void {
   mountProjectsPane(requireElement('pane-projects'), store, api)
   const inputRoot = requireElement('input-bar')
   mountInputBar(inputRoot, store, api)
-  mountConversation(requireElement('conversation'), store, api)
+  const conversationRoot = requireElement('conversation')
+  mountConversation(conversationRoot, store, api)
+  mountConversationSearch(conversationRoot)
   if (!inputRoot.querySelector('.prompt-input')) {
     throw new Error('Chat composer failed to mount (#input-bar missing .prompt-input)')
   }
@@ -374,6 +382,13 @@ function registerKeyboardShortcuts(): void {
       e.preventDefault()
       if (store.getState().workspaceRoot) openFileSearchDialog()
     }
+    // Cmd/Ctrl+F opens the in-conversation find bar (find-in-page for the chat).
+    // Skipped while a modal dialog owns the screen so it can't open behind it.
+    if (matchFindInChatShortcut(e)) {
+      if (isFileSearchDialogOpen() || isSettingsDialogOpen()) return
+      e.preventDefault()
+      openConversationSearch()
+    }
     // Cmd/Ctrl+O is handled by the native File ▸ Open Folder… menu accelerator.
     if (meta && e.key === ',') {
       e.preventDefault()
@@ -384,6 +399,10 @@ function registerKeyboardShortcuts(): void {
       confirmDeleteThread()
     }
     if (e.key === 'Escape') {
+      if (isConversationSearchOpen()) {
+        closeConversationSearch()
+        return
+      }
       if (isFileSearchDialogOpen()) {
         closeFileSearchDialog()
         return
