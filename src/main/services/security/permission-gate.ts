@@ -21,6 +21,7 @@ import {
   backgroundAllowsPortBinding,
   backgroundCommandFromArgs,
   formatExternalSandboxPromptBody,
+  formatExpectedSandboxBlockPromptBody,
   formatInstallPromptBody,
   formatEphemeralRunnerPromptBody,
   shellRequiresOutsideSandbox,
@@ -118,6 +119,23 @@ export async function promptUnsandboxedShell(command: string, reasons: string[])
     'Run outside sandbox?',
     formatUnsandboxedPromptBody(command, reasons),
   )
+}
+
+/**
+ * Prompt when the agent declared up front (via `expects_sandbox_block`) that it
+ * expects an ambiguously-external command to be blocked, asking to run it outside
+ * the sandbox before the first attempt instead of after a recorded block.
+ */
+export async function promptExpectedSandboxBlock(
+  command: string,
+  reasons: string[],
+): Promise<boolean> {
+  const { approved } = await requestApproval({
+    title: 'Run outside sandbox?',
+    body: formatExpectedSandboxBlockPromptBody(command, reasons),
+    type: 'shell',
+  })
+  return approved
 }
 
 /**
