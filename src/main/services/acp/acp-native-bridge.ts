@@ -67,13 +67,22 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
 ]
 
 /**
- * Per-tool matchers over a permission request's title: the bridge server name
- * (`copse`), a separator, then a bridged tool name — e.g. `copse-gh_pr_list`.
- * Requiring both tokens keeps a bare `fetch_url` from some *other* server out.
+ * Per-tool matchers over a permission request's title, anchored at the *start*
+ * of the (code-unwrapped, trimmed) title: the bridge server name (`copse`), a
+ * single separator, then a bridged tool name — e.g. `copse-gh_pr_list`, the one
+ * format we have actually observed (Cursor titles the call
+ * `copse-gh_pr_list: gh_pr_list`).
+ *
+ * Anchoring — rather than searching anywhere in the title — matters because
+ * `copse` is a common token in this very repo: a prose title like
+ * `Edit copse-gh_pr_list-notes.md` must not be mistaken for a bridged call. The
+ * separator is left as any single non-alphanumeric joiner (the inherent shape of
+ * `server<sep>tool`) rather than hard-coded to `-`, so a future agent that joins
+ * with `/`, `_`, or `.` still matches; a title in some entirely different shape
+ * just falls through to the normal prompt.
  */
 const BRIDGE_TITLE_MATCHERS: readonly RegExp[] = BRIDGE_TOOL_NAMES.map(
-  (tool) =>
-    new RegExp(`(?:^|[^a-z0-9])${BRIDGE_MCP_SERVER_NAME}[^a-z0-9]+${tool}(?![a-z0-9])`, 'i'),
+  (tool) => new RegExp(`^${BRIDGE_MCP_SERVER_NAME}[^a-z0-9]${tool}(?![a-z0-9_])`, 'i'),
 )
 
 /**
@@ -81,9 +90,12 @@ const BRIDGE_TITLE_MATCHERS: readonly RegExp[] = BRIDGE_TOOL_NAMES.map(
  * bridged native tools, so the client can auto-approve it instead of showing a
  * prompt that only duplicates the bridge's own gate.
  *
- * The signal is the tool-call *title* the external agent sends, which for an
- * MCP-mounted tool embeds the server name Copse gave the bridge
- * (`BRIDGE_MCP_SERVER_NAME`) plus the tool name.
+ * The signal is the tool-call *title* the external agent sends. ACP does not
+ * specify the title's contents, so this recognises only the shape we have
+ * observed — the bridge's server name (`BRIDGE_MCP_SERVER_NAME`) prefixing the
+ * tool name at the start of the title (see BRIDGE_TITLE_MATCHERS). Any other
+ * shape falls through to a normal prompt, so broadening this stays additive as
+ * more agents are observed.
  *
  * This is advisory, not proof: the title is authored by the external agent, so
  * it cannot be made unforgeable (the agent even knows the server name — Copse

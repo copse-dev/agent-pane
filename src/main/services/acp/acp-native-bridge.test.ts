@@ -158,22 +158,29 @@ describe('startAcpNativeBridge', () => {
 })
 
 describe('isBridgedNativeToolTitle', () => {
-  it("matches the agent's server-prefixed title for a bridged tool", () => {
-    // Cursor's format for an MCP tool call: "<server>-<tool>: <tool>".
+  it("matches the observed Cursor title '<server>-<tool>: <tool>'", () => {
     assert.ok(isBridgedNativeToolTitle(`${BRIDGE_MCP_SERVER_NAME}-gh_pr_list: gh_pr_list`))
     assert.ok(isBridgedNativeToolTitle('copse-semantic_search'))
     assert.ok(isBridgedNativeToolTitle('copse-fetch_url: fetch_url'))
   })
 
-  it('tolerates the separators agents use between server and tool', () => {
+  it('accepts any single non-alphanumeric separator after the server name', () => {
     assert.ok(isBridgedNativeToolTitle('copse/gh_pr_view'))
     assert.ok(isBridgedNativeToolTitle('copse.staged_diffs'))
-    assert.ok(isBridgedNativeToolTitle('copse__wait_for_ci_checks'))
-    assert.ok(isBridgedNativeToolTitle('Copse - GH_PR_LIST')) // case-insensitive
+    assert.ok(isBridgedNativeToolTitle('copse_wait_for_ci_checks'))
+    assert.ok(isBridgedNativeToolTitle('COPSE-GH_PR_LIST')) // case-insensitive
   })
 
   it('unwraps an inline-code-wrapped title before matching', () => {
     assert.ok(isBridgedNativeToolTitle('`copse-gh_pr_list`'))
+  })
+
+  it('only matches at the start, so prose that merely mentions copse is safe', () => {
+    // `copse` is a common token in this repo; a description that happens to
+    // contain a bridged tool name must not be taken for a bridged call.
+    assert.ok(!isBridgedNativeToolTitle('Edit copse-gh_pr_list-notes.md'))
+    assert.ok(!isBridgedNativeToolTitle('Sync copse - gh_pr_list config'))
+    assert.ok(!isBridgedNativeToolTitle('Run copse gh_pr_list now'))
   })
 
   it('rejects titles that lack the bridge server prefix', () => {
@@ -186,6 +193,8 @@ describe('isBridgedNativeToolTitle', () => {
   it('rejects a copse-prefixed title for a tool we do not bridge', () => {
     assert.ok(!isBridgedNativeToolTitle('copse-run_shell'))
     assert.ok(!isBridgedNativeToolTitle('copse-delete_file'))
+    // A bridged name with trailing chars is a different, unknown tool.
+    assert.ok(!isBridgedNativeToolTitle('copse-gh_pr_lists'))
   })
 
   it('rejects empty and non-title input', () => {
