@@ -95,7 +95,27 @@ describe('PR panel (mock gh)', () => {
     await expect(await $('.pr-viewer-description')).not.toHaveText(
       expect.stringMatching(/template hint|<!--|Copse PR template/i),
     )
+
+    // Changed files start collapsed (a count-only toggle) and, with no file
+    // selected, the description takes the whole column — no dead
+    // "Select a changed file" area.
+    const filesToggle = await $('.pr-files-header')
+    await expect(filesToggle).toHaveText(expect.stringMatching(/changed files \(4\)/i))
+    await expect(filesToggle).toHaveAttribute('aria-expanded', 'false')
+    await expect(await $('.pr-file-row')).not.toBeExisting()
+    await expect(await $('.pr-viewer-description-fill')).toBeDisplayed()
+    await expect(await $('#pane-files .panel-empty')).not.toBeDisplayed()
     await saveElementScreenshot('#pane-files', 'pr-panel-viewer.png')
+
+    // Expanding the toggle reveals the file list; opening a file swaps the
+    // filled description for the diff editor.
+    await filesToggle.click()
+    await expect(filesToggle).toHaveAttribute('aria-expanded', 'true')
+    await expect(await $$('.pr-file-row')).toBeElementsArrayOfSize(4)
+    await (await $('.pr-file-row*=pr-pane.ts')).click()
+    await (await $('#pane-files .git-diff-editor-wrap')).waitForDisplayed({ timeout: 15_000 })
+    await expect(await $('.pr-viewer-description-fill')).not.toBeExisting()
+    await saveElementScreenshot('#pane-files', 'pr-panel-viewer-file-diff.png')
 
     await $('[aria-label="Toggle right panel"]').click()
     await browser.pause(200)
