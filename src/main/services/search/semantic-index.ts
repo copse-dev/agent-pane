@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path'
 import { app } from 'electron'
 import { getBundledGortexPath } from './bundled-semantic.ts'
 import { GORTEX_EXCLUDE_PATTERNS } from './index-ignore.ts'
+import { computeGitIgnoreExcludes } from './git-derived-excludes.ts'
 import { runCommand, type RunCommandOptions } from '../exec/command-runner.ts'
 import { COMMAND_RUNNER_LONG_TIMEOUT_MS } from '../exec/subprocess-output-cap.ts'
 import { toRelativePath } from '../workspace.ts'
@@ -444,7 +445,12 @@ async function ensureGortexExcludes(workspaceRoot: string): Promise<void> {
   if (existing) return existing
 
   const ready = (async (): Promise<void> => {
-    for (const pattern of GORTEX_EXCLUDE_PATTERNS) {
+    // Derive excludes from git (per nested repo) so build output is skipped for
+    // any ecosystem without a hardcoded list; union with the small static base
+    // for repos that aren't git-tracked and for Copse's own dist-* variants.
+    const gitPatterns = await computeGitIgnoreExcludes(workspaceRoot).catch(() => [])
+    const patterns = [...new Set<string>([...GORTEX_EXCLUDE_PATTERNS, ...gitPatterns])]
+    for (const pattern of patterns) {
       // Best-effort + idempotent: re-adding a pattern is a no-op, and a single
       // failed exclude must not block the index build.
       await runCommand(
