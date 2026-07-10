@@ -48,7 +48,13 @@ import {
   isAgentRunTimeoutAbort,
   isStreamOutputRunaway,
 } from './agent-loop-limits.ts'
-import { hasOpenTodos, OPEN_TODOS_FINALIZE_NUDGE } from './agent-loop-guards.ts'
+import {
+  hasOpenTodos,
+  OPEN_TODOS_FINALIZE_NUDGE,
+  OPEN_TODOS_FINALIZE_NUDGE_STRICT,
+  OPEN_TODOS_STILL_OPEN_MESSAGE,
+  MAX_TODO_CLOSEOUT_ATTEMPTS,
+} from './agent-loop-guards.ts'
 
 const RECENT_FINGERPRINT_WINDOW = 16
 /** Consecutive reasoning-only runaway streams tolerated before the run gives up. */
@@ -316,6 +322,137 @@ async function streamTextOnlyTurn(
   }
   emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
   return { answerText: trimmed, pendingToolCalls: [] }
+}
+
+type AgentStepContext = {
+  provider: LLMProvider
+  messages: LLMMessage[]
+  tools: LLMTool[]
+  onChunk: (chunk: AgentStreamChunk) => void
+  executeTool: AgentLoopOptions['executeTool']
+  signal?: AbortSignal | undefined
+  budget: LlmCallBudget
+  recentFingerprints: string[]
+  getLastUsage?: () => { inputTokens: number; outputTokens: number } | null
+  usageModel?: string
+  coerceTextToolCallArgs?: CoerceToolArgsFn
+  maxContextTokens?: number
+  toolSchemaReserveTokens: number
+  onHistoryTrimmed?: () => void
+}
+
+/** One tool-enabled turn after injecting a user nudge (used for todo closeout). */
+async function runToolEnabledNudgeTurn(
+  ctx: AgentStepContext,
+  nudge: string,
+): Promise<{ answerText: string; executedTools: boolean }> {
+  const {
+    provider,
+    messages,
+    tools,
+    onChunk,
+    executeTool,
+    signal,
+    budget,
+    recentFingerprints,
+    getLastUsage,
+    usageModel,
+    coerceTextToolCallArgs,
+    maxContextTokens,
+    toolSchemaReserveTokens,
+    onHistoryTrimmed,
+  } = ctx
+
+  messages.push({ role: 'user', content: nudge })
+  if (!reserveLlmCall(budget)) return { answerText: '', executedTools: false }
+
+  let assistantText = ''
+  const pendingToolCalls: ToolCallChunk[] = []
+  let streamUsage: StepUsage | null = null
+
+  budget.deadline.pause()
+  try {
+    for await (const chunk of provider.stream(messages, tools, signal)) {
+      if (signal?.aborted) break
+      if (chunk.type === 'reasoning') onChunk(chunk)
+      if (chunk.type === 'text') {
+        assistantText += chunk.text
+        onChunk(chunk)
+      }
+      if (chunk.type === 'tool_call') {
+        pendingToolCalls.push(chunk.toolCall)
+        onChunk(chunk)
+      }
+      if (chunk.type === 'usage') {
+        streamUsage = {
+          inputTokens: chunk.inputTokens,
+          outputTokens: chunk.outputTokens,
+          ...(chunk.cacheReadTokens !== undefined
+            ? { cacheReadTokens: chunk.cacheReadTokens }
+            : {}),
+          ...(chunk.cacheCreationTokens !== undefined
+            ? { cacheCreationTokens: chunk.cacheCreationTokens }
+            : {}),
+        }
+      }
+      if (chunk.type === 'done') break
+    }
+  } finally {
+    budget.deadline.resume()
+  }
+  recordRunActivity(budget)
+  emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
+
+  assistantText = applyTextToolCallRecovery(
+    assistantText,
+    pendingToolCalls,
+    onChunk,
+    coerceTextToolCallArgs,
+  )
+
+  if (pendingToolCalls.length > 0) {
+    messages.push({
+      role: 'assistant',
+      content: pendingToolCalls.map((tc) => ({ id: tc.id, name: tc.name, args: tc.args })),
+    })
+    await executeToolBatch({
+      pendingToolCalls,
+      messages,
+      executeTool,
+      signal,
+      onChunk,
+      recentFingerprints,
+      budget,
+    })
+    if (maxContextTokens) {
+      const reserve = tools.length > 0 ? toolSchemaReserveTokens : 0
+      if (trimMessagesInPlace(messages, maxContextTokens, { reserveTokens: reserve })) {
+        onHistoryTrimmed?.()
+      }
+    }
+    return { answerText: assistantText.trim(), executedTools: true }
+  }
+
+  if (assistantText.trim()) {
+    messages.push({ role: 'assistant', content: assistantText })
+  }
+  return { answerText: assistantText.trim(), executedTools: false }
+}
+
+/** Run up to {@link MAX_TODO_CLOSEOUT_ATTEMPTS} tool-enabled nudge turns while
+ * open todos remain, escalating the nudge after the first attempt. Returns true
+ * once no todos are open. */
+async function closeOpenTodosBeforeFinalize(
+  ctx: AgentStepContext,
+  getOpenTodos: () => readonly TodoItem[],
+): Promise<boolean> {
+  for (let attempt = 0; attempt < MAX_TODO_CLOSEOUT_ATTEMPTS; attempt++) {
+    if (!hasOpenTodos(getOpenTodos())) return true
+    const nudge = attempt === 0 ? OPEN_TODOS_FINALIZE_NUDGE : OPEN_TODOS_FINALIZE_NUDGE_STRICT
+    await runToolEnabledNudgeTurn(ctx, nudge)
+    if (ctx.signal?.aborted) break
+  }
+  return !hasOpenTodos(getOpenTodos())
 }
 
 type ToolBatchContext = {
@@ -823,44 +960,77 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   }
 
   if (!signal?.aborted && !finishedWithAnswer && !hitRunLimit) {
-    const openTodos = getOpenTodos?.() ?? []
-    const nudge =
-      openTodos.length > 0 && hasOpenTodos(openTodos) ? OPEN_TODOS_FINALIZE_NUDGE : FINALIZE_NUDGE
-    let finalResult = await streamTextOnlyTurn(
+    // When open todos remain, run up to MAX_TODO_CLOSEOUT_ATTEMPTS tool-enabled
+    // closeout turns so the model reconciles the plan via update_todos — a
+    // plain-text "all done" no longer satisfies finalize. Only once the plan is
+    // clean (or after closeout gives up) do we fall through to the text-only
+    // finalize that produces the user-facing answer.
+    const stepCtx: AgentStepContext = {
       provider,
       messages,
+      tools,
       onChunk,
+      executeTool: opts.executeTool,
+      signal,
       budget,
-      nudge,
-      getLastUsage,
-      usageModel,
-      coerceTextToolCallArgs,
-    )
-    while (finalResult.pendingToolCalls.length > 0 && !runBudgetExhausted(budget)) {
-      await executeToolBatch({
-        pendingToolCalls: finalResult.pendingToolCalls,
-        messages,
-        executeTool: opts.executeTool,
-        signal,
-        onChunk,
-        recentFingerprints,
-        budget,
-      })
-      finalResult = await streamTextOnlyTurn(
+      recentFingerprints,
+      ...(getLastUsage !== undefined ? { getLastUsage } : {}),
+      ...(usageModel !== undefined ? { usageModel } : {}),
+      ...(coerceTextToolCallArgs !== undefined ? { coerceTextToolCallArgs } : {}),
+      ...(maxContextTokens !== undefined ? { maxContextTokens } : {}),
+      toolSchemaReserveTokens,
+      ...(onHistoryTrimmed !== undefined ? { onHistoryTrimmed } : {}),
+    }
+
+    if (getOpenTodos && hasOpenTodos(getOpenTodos())) {
+      const closed = await closeOpenTodosBeforeFinalize(stepCtx, getOpenTodos)
+      if (!closed && !signal?.aborted) {
+        onChunk({ type: 'text', text: OPEN_TODOS_STILL_OPEN_MESSAGE })
+        messages.push({ role: 'assistant', content: OPEN_TODOS_STILL_OPEN_MESSAGE })
+      }
+    }
+
+    if (!hasOpenTodos(getOpenTodos?.() ?? [])) {
+      let finalResult = await streamTextOnlyTurn(
         provider,
         messages,
         onChunk,
         budget,
-        nudge,
+        FINALIZE_NUDGE,
         getLastUsage,
         usageModel,
         coerceTextToolCallArgs,
       )
-    }
-    if (!finalResult.answerText.trim()) {
-      onChunk({ type: 'text', text: INCOMPLETE_RUN_MESSAGE })
-      messages.push({ role: 'assistant', content: INCOMPLETE_RUN_MESSAGE })
-    } else {
+      while (finalResult.pendingToolCalls.length > 0 && !runBudgetExhausted(budget)) {
+        await executeToolBatch({
+          pendingToolCalls: finalResult.pendingToolCalls,
+          messages,
+          executeTool: opts.executeTool,
+          signal,
+          onChunk,
+          recentFingerprints,
+          budget,
+        })
+        finalResult = await streamTextOnlyTurn(
+          provider,
+          messages,
+          onChunk,
+          budget,
+          FINALIZE_NUDGE,
+          getLastUsage,
+          usageModel,
+          coerceTextToolCallArgs,
+        )
+      }
+      if (!finalResult.answerText.trim()) {
+        onChunk({ type: 'text', text: INCOMPLETE_RUN_MESSAGE })
+        messages.push({ role: 'assistant', content: INCOMPLETE_RUN_MESSAGE })
+      } else {
+        finishedWithAnswer = true
+      }
+    } else if (getOpenTodos && hasOpenTodos(getOpenTodos())) {
+      // Closeout ran its attempts and todos are still open (already noted above);
+      // treat the run as finished so we don't also emit the incomplete-run text.
       finishedWithAnswer = true
     }
   }
