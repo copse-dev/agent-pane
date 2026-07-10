@@ -687,8 +687,9 @@ function raceDecisionAgainstAbort(
  */
 export const ACP_TURN_PROMPT_NOTE =
   'Session notes: this session persists across turns, and background or async ' +
-  'subagents survive the end of a turn — their results are delivered when the ' +
-  'next turn starts. The session IS reaped after ~10 idle minutes or on app ' +
+  'subagents survive the end of a turn — their results surface in the thread ' +
+  'live as they complete, even while no turn is running. The session IS ' +
+  'reaped after ~10 idle minutes or on app ' +
   'shutdown, so keep background work bounded rather than open-ended. Keep ' +
   'exploration lean: prefer targeted searches (specific paths, rg with globs) ' +
   'over broad find/ls directory dumps, and prefer the "copse" MCP tools (e.g. ' +
