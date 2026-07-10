@@ -93,19 +93,30 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: string; ambiguous?: boolean
   // scanner deliberately skips `/dev/`, so it must be flagged here. (#581)
   { re: /\/dev\/(?:tcp|udp)\//i, reason: 'raw network socket via /dev/tcp|/dev/udp redirect' },
   // Allow interspersed global options (`git -c protocol.ext.allow=always clone …`,
-  // which is a classic clone-time RCE vector) and cover submodule/archive, which
-  // also reach the network. `-c` takes a `key=val` argument that isn't flag-shaped,
-  // so it gets its own alternative. `fetch` is deliberately absent here — it's a
-  // network *read* handled by the ambiguous matcher below.
+  // which is a classic clone-time RCE vector) and cover archive, which also reaches
+  // the network. `-c` takes a `key=val` argument that isn't flag-shaped, so it gets
+  // its own alternative. `fetch` and read-only `submodule` are deliberately absent
+  // here — see the dedicated matchers below.
   {
-    re: /\bgit\s+(?:-c\s+\S+\s+|--?\S+\s+)*(push|pull|clone|remote|submodule|archive)\b/i,
+    re: /\bgit\s+(?:-c\s+\S+\s+|--?\S+\s+)*(push|pull|clone|remote|archive)\b/i,
     reason: 'git network operation',
   },
+  // `git submodule` is mixed: `update`/`add` fetch from the network and check out +
+  // run hooks (a clone-style RCE surface), and `foreach` runs an arbitrary command,
+  // so those stay a hard external prompt. Bare `git submodule` and `submodule status`
+  // / `summary` are purely local reads (recorded SHAs + working-tree state, like
+  // `git status`), so the negative lookahead lets them fall through to `sandbox`. The
+  // match fails safe: any subcommand that isn't an explicit read verb stays external.
+  // (#500)
+  {
+    re: /\bgit\s+(?:-c\s+\S+\s+|--?\S+\s+)*submodule\s+(?!status\b|summary\b)\S/i,
+    reason: 'git submodule network/checkout operation',
+  },
   // `git fetch` only reads refs/objects from the remote — it doesn't modify the
-  // remote or run the checkout/merge hooks that `clone`/`submodule`/`pull` can. Treat
-  // it as a network read (like the ephemeral runners above): auto-run *inside* an OS
-  // sandbox (a blocked network escalates to an unsandboxed retry) and prompt without
-  // one, rather than a hard upfront prompt on every fetch. (#500)
+  // remote or run the checkout/merge hooks that `clone`/`submodule update`/`pull` can.
+  // Treat it as a network read (like the ephemeral runners above): auto-run *inside*
+  // an OS sandbox (a blocked network escalates to an unsandboxed retry) and prompt
+  // without one, rather than a hard upfront prompt on every fetch. (#500)
   {
     re: /\bgit\s+(?:-c\s+\S+\s+|--?\S+\s+)*fetch\b/i,
     reason: 'git network read (fetch)',

