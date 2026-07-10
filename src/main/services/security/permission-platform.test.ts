@@ -61,48 +61,48 @@ describe('shell permissions: macOS with ASRT sandbox active', () => {
 })
 
 for (const platform of ['Linux', 'Windows'] as const) {
-describe(`shell permissions: ${platform} (no OS sandbox)`, () => {
-  const opts = {
-    workspaceRoot: root,
-    sandboxEnabled: false,
-    autoRun: true,
-  }
+  describe(`shell permissions: ${platform} (no OS sandbox)`, () => {
+    const opts = {
+      workspaceRoot: root,
+      sandboxEnabled: false,
+      autoRun: true,
+    }
 
-  it('prompts for static-analysis "external" verdicts regardless of classifier', () => {
-    const d = decideShellPermission(EXTERNAL, {
-      ...opts,
-      classification: { scope: 'sandbox', confidence: 0.99, reason: 'looks fine' },
+    it('prompts for static-analysis "external" verdicts regardless of classifier', () => {
+      const d = decideShellPermission(EXTERNAL, {
+        ...opts,
+        classification: { scope: 'sandbox', confidence: 0.99, reason: 'looks fine' },
+      })
+      // Static "external" wins before the classifier is consulted.
+      assert.equal(d.action, 'prompt')
     })
-    // Static "external" wins before the classifier is consulted.
-    assert.equal(d.action, 'prompt')
-  })
 
-  it('prompts even when the classifier is confident the command is sandbox-scoped', () => {
-    const d = decideShellPermission(SANDBOXED, {
-      ...opts,
-      classification: { scope: 'sandbox', confidence: 0.9, reason: 'local test runner' },
+    it('prompts even when the classifier is confident the command is sandbox-scoped', () => {
+      const d = decideShellPermission(SANDBOXED, {
+        ...opts,
+        classification: { scope: 'sandbox', confidence: 0.9, reason: 'local test runner' },
+      })
+      assert.equal(d.action, 'prompt')
     })
-    assert.equal(d.action, 'prompt')
-  })
 
-  it('prompts when the classifier is below the confidence threshold', () => {
-    const d = decideShellPermission(SANDBOXED, {
-      ...opts,
-      classification: { scope: 'sandbox', confidence: 0.5, reason: 'unsure' },
+    it('prompts when the classifier is below the confidence threshold', () => {
+      const d = decideShellPermission(SANDBOXED, {
+        ...opts,
+        classification: { scope: 'sandbox', confidence: 0.5, reason: 'unsure' },
+      })
+      assert.equal(d.action, 'prompt')
     })
-    assert.equal(d.action, 'prompt')
-  })
 
-  it('prompts when the classifier is unavailable (no LM Studio safety model)', () => {
-    const d = decideShellPermission(SANDBOXED, { ...opts, classification: null })
-    assert.equal(d.action, 'prompt')
-    assert.ok(d.reasons.some((r) => /sandbox unavailable/i.test(r)))
-  })
+    it('prompts when the classifier is unavailable (no LM Studio safety model)', () => {
+      const d = decideShellPermission(SANDBOXED, { ...opts, classification: null })
+      assert.equal(d.action, 'prompt')
+      assert.ok(d.reasons.some((r) => /sandbox unavailable/i.test(r)))
+    })
 
-  it('never claims a command needs to run "outside the sandbox" when there is no sandbox', () => {
-    assert.equal(shellRequiresOutsideSandbox(EXTERNAL, root, false), false)
+    it('never claims a command needs to run "outside the sandbox" when there is no sandbox', () => {
+      assert.equal(shellRequiresOutsideSandbox(EXTERNAL, root, false), false)
+    })
   })
-})
 }
 
 describe('shell permissions: agent-declared "expects_sandbox_block" up-front escalation', () => {
