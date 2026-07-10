@@ -30,7 +30,7 @@ describe('package install approval', () => {
     const dialog = await $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
 
-    await expect(dialog.$('.approval-title')).toHaveText('Run package install?')
+    await expect(dialog.$('.approval-heading')).toHaveText('Run package install?')
 
     const body = await dialog.$('.approval-body').getText()
     expect(body).toContain('npm install')
