@@ -114,6 +114,12 @@ describe('shell permissions: agent-declared "expects_sandbox_block" up-front esc
     assert.ok(e.reasons.some((r) => /GitHub CLI/i.test(r)))
   })
 
+  it('allows a known host-dependent build driver to request the same up-front approval (#786)', () => {
+    const e = shellExpectedBlockEscalation('xcodebuild -workspace App.xcworkspace build', root, true)
+    assert.equal(e.eligible, true)
+    assert.ok(e.reasons.some((r) => /build driver may require host caches/i.test(r)))
+  })
+
   it('is NOT eligible for a hard-external command (it already prompts + runs outside)', () => {
     assert.equal(shellExpectedBlockEscalation(EXTERNAL, root, true).eligible, false)
     assert.equal(shellExpectedBlockEscalation(OUTSIDE_FS, root, true).eligible, false)

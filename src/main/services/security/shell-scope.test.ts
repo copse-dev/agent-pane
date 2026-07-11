@@ -74,6 +74,33 @@ describe('analyzeShellCommand', () => {
     assert.equal(analyzeShellCommand('echo hi && gh pr view', root).verdict, 'sandbox')
   })
 
+  it('flags host-dependent build drivers as ambiguous (#786)', () => {
+    for (const cmd of [
+      'xcodebuild -workspace Copse.xcworkspace build',
+      'gradle test',
+      'swift build',
+      'swift test',
+      'cargo build --release',
+      'cargo test',
+    ]) {
+      const r = analyzeShellCommand(cmd, root)
+      assert.equal(r.verdict, 'ambiguous', `expected ambiguous for: ${cmd}`)
+      assert.ok(r.reasons.some((x) => /build driver may require host caches/.test(x)), cmd)
+    }
+  })
+
+  it('does not flag non-build compiler queries as host-dependent build drivers', () => {
+    assert.equal(analyzeShellCommand('swift --version', root).verdict, 'sandbox')
+    assert.equal(analyzeShellCommand('cargo metadata --no-deps', root).verdict, 'sandbox')
+  })
+
+  it('keeps a build driver paired with a hard signal external', () => {
+    assert.equal(
+      analyzeShellCommand('xcodebuild build && curl https://example.com', root).verdict,
+      'external',
+    )
+  })
+
   it('does not treat gh inside a path/argument as the GitHub CLI', () => {
     // `gh` is a substring of the filename, not an invoked command — a read-only
     // grep must not be misclassified as a GitHub CLI call at all.
