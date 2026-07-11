@@ -34,6 +34,7 @@ import {
   DEFAULT_TINT_COLOR,
   DEFAULT_TINT_STRENGTH,
 } from './views/settings-dialog.ts'
+import { resolveTheme, applyThemeToDocument, watchSystemTheme } from './dom/theme.ts'
 import {
   mountOnboardingDialog,
   openOnboardingDialog,
@@ -48,6 +49,12 @@ import {
   closeFileSearchDialog,
   isFileSearchDialogOpen,
 } from './views/file-search-dialog.ts'
+import {
+  mountConversationSearch,
+  openConversationSearch,
+  closeConversationSearch,
+  isConversationSearchOpen,
+} from './views/conversation-search.ts'
 import { startAgentController } from './controller/agent.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
 import {
@@ -67,10 +74,14 @@ import { loadMonaco } from './monaco/setup.ts'
 import { mountPaneResizers, parseSavedLayout } from './views/pane-resizer.ts'
 import { bindChatComposerLayout } from './views/chat-layout.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
-import { registerPanelKeyboardShortcuts } from './keyboard-shortcuts.ts'
+import { registerPanelKeyboardShortcuts, matchFindInChatShortcut } from './keyboard-shortcuts.ts'
 import { showErrorToast } from './views/toast.ts'
 import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layout.ts'
-import { isRightPanelPosition } from '@shared/types/state.ts'
+import {
+  isRightPanelPosition,
+  isThemePreference,
+  DEFAULT_THEME_PREFERENCE,
+} from '@shared/types/state.ts'
 import { installArtifactImagePolicy } from './markdown/artifact-image-policy.ts'
 import { installSanitizerBackend } from './markdown/sanitizer-backend.ts'
 import { installHighlighterBackend } from './markdown/highlighter-backend.ts'
@@ -162,14 +173,26 @@ async function boot(): Promise<void> {
   // the document root before the layout paints — panes read both from the store
   // as they mount below, so no post-mount re-theming is needed.
   const savedTheme = await api.settings.get('theme')
-  const theme =
-    savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : store.getState().theme
+  const themePreference = isThemePreference(savedTheme) ? savedTheme : DEFAULT_THEME_PREFERENCE
+  // `system` resolves against the OS here; a watcher below keeps it live.
+  const theme = resolveTheme(themePreference)
   const savedFontSize = await api.settings.get('fontSize')
   const fontSize =
     typeof savedFontSize === 'number' && savedFontSize >= 8 && savedFontSize <= 32
       ? savedFontSize
       : store.getState().fontSize
-  document.documentElement.dataset['theme'] = theme
+  applyThemeToDocument(theme)
+  // When the preference is `system`, follow OS light/dark flips live so the app
+  // re-themes without a relaunch. Reads the preference from the store each time,
+  // so switching to a pinned theme in Settings stops the OS from overriding it.
+  watchSystemTheme(
+    () => store.getState().themePreference,
+    (nextTheme) => {
+      applyThemeToDocument(nextTheme)
+      store.setState({ theme: nextTheme })
+      store.emit('theme_changed', nextTheme)
+    },
+  )
   // Restore the whole-app tint before the layout paints so surfaces come up
   // already tinted rather than flashing neutral then shifting.
   const savedTintColor = await api.settings.get('uiTintColor')
@@ -182,6 +205,7 @@ async function boot(): Promise<void> {
     settings: { model: savedModel ?? DEFAULT_APP_CHAT_MODEL },
     layout: parseSavedLayout(savedLayout),
     theme,
+    themePreference,
     fontSize,
     autoPortraitRightPanel:
       typeof savedAutoPortraitRightPanel === 'boolean' ? savedAutoPortraitRightPanel : true,
@@ -297,7 +321,9 @@ function mountFullLayout(): void {
   mountProjectsPane(requireElement('pane-projects'), store, api)
   const inputRoot = requireElement('input-bar')
   mountInputBar(inputRoot, store, api)
-  mountConversation(requireElement('conversation'), store, api)
+  const conversationRoot = requireElement('conversation')
+  mountConversation(conversationRoot, store, api)
+  mountConversationSearch(conversationRoot)
   if (!inputRoot.querySelector('.prompt-input')) {
     throw new Error('Chat composer failed to mount (#input-bar missing .prompt-input)')
   }
@@ -374,6 +400,13 @@ function registerKeyboardShortcuts(): void {
       e.preventDefault()
       if (store.getState().workspaceRoot) openFileSearchDialog()
     }
+    // Cmd/Ctrl+F opens the in-conversation find bar (find-in-page for the chat).
+    // Skipped while a modal dialog owns the screen so it can't open behind it.
+    if (matchFindInChatShortcut(e)) {
+      if (isFileSearchDialogOpen() || isSettingsDialogOpen()) return
+      e.preventDefault()
+      openConversationSearch()
+    }
     // Cmd/Ctrl+O is handled by the native File ▸ Open Folder… menu accelerator.
     if (meta && e.key === ',') {
       e.preventDefault()
@@ -384,6 +417,10 @@ function registerKeyboardShortcuts(): void {
       confirmDeleteThread()
     }
     if (e.key === 'Escape') {
+      if (isConversationSearchOpen()) {
+        closeConversationSearch()
+        return
+      }
       if (isFileSearchDialogOpen()) {
         closeFileSearchDialog()
         return

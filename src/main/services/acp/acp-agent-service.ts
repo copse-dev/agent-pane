@@ -36,6 +36,7 @@ import { listForwardableMcpServers } from '../mcp/mcp-registry.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import { isAcpPermissionRemembered, rememberAcpPermission } from './acp-permission-grants.ts'
 import { permissionKindLabel, presentPermissionRequest } from './acp-approval-presentation.ts'
+import { isBridgedNativeToolTitle } from './acp-native-bridge.ts'
 import { requestApproval } from '../approval.ts'
 import {
   awaitStagedDiffDecision,
@@ -460,6 +461,18 @@ async function respondToPermission(
   const kind = req.toolCall.kind ?? 'other'
   if (isAcpPermissionRemembered(agent.id, kind)) {
     return permissionResponseFor(req.options, true, { preferAlways: true })
+  }
+  // Copse's own bridged tools (gh_*/CI, semantic search, staged diffs, browser,
+  // web fetch) reach the agent as an MCP server Copse mounts and *re-gates on
+  // execution* — so this ACP prompt only duplicates that gate. Auto-approve when
+  // the request is identifiably one of ours, so they sail through like the
+  // native tools do. See isBridgedNativeToolTitle for why the title is a sound
+  // (if best-effort) signal and why forgery isn't in scope.
+  if (
+    getSetting<boolean>('acpAutoApproveNativeBridgeTools', true) &&
+    isBridgedNativeToolTitle(req.toolCall.title)
+  ) {
+    return permissionResponseFor(req.options, true)
   }
   // File-mutating kinds (edit/delete/move) are auto-approved once a durable
   // backup of the user's worktree exists — the same safety net the native tools

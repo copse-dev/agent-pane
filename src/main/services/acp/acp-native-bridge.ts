@@ -7,6 +7,15 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { errorMessage } from '@shared/errors.ts'
 import { getSetting } from '../storage/settings.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
+import { unwrapInlineCode } from './session-update-adapter.ts'
+
+/**
+ * The MCP server name Copse assigns its native-tool bridge when handing it to
+ * the external agent in `session/new` `mcpServers`. The agent prefixes bridged
+ * tool calls with it (e.g. Cursor titles a call `copse-gh_pr_list: gh_pr_list`),
+ * which is how the client recognises its own tools in a permission request.
+ */
+export const BRIDGE_MCP_SERVER_NAME = 'copse'
 
 /**
  * Native-tool MCP bridge for ACP client mode (issue #602, tier 2): expose a
@@ -57,6 +66,53 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'browser_tabs',
 ]
 
+/**
+ * Per-tool matchers over a permission request's title, anchored at the *start*
+ * of the (code-unwrapped, trimmed) title: the bridge server name (`copse`), a
+ * single separator, then a bridged tool name — e.g. `copse-gh_pr_list`, the one
+ * format we have actually observed (Cursor titles the call
+ * `copse-gh_pr_list: gh_pr_list`).
+ *
+ * Anchoring — rather than searching anywhere in the title — matters because
+ * `copse` is a common token in this very repo: a prose title like
+ * `Edit copse-gh_pr_list-notes.md` must not be mistaken for a bridged call. The
+ * separator is left as any single non-alphanumeric joiner (the inherent shape of
+ * `server<sep>tool`) rather than hard-coded to `-`, so a future agent that joins
+ * with `/`, `_`, or `.` still matches; a title in some entirely different shape
+ * just falls through to the normal prompt.
+ */
+const BRIDGE_TITLE_MATCHERS: readonly RegExp[] = BRIDGE_TOOL_NAMES.map(
+  (tool) => new RegExp(`^${BRIDGE_MCP_SERVER_NAME}[^a-z0-9]${tool}(?![a-z0-9_])`, 'i'),
+)
+
+/**
+ * Best-effort check that an ACP permission request describes one of Copse's own
+ * bridged native tools, so the client can auto-approve it instead of showing a
+ * prompt that only duplicates the bridge's own gate.
+ *
+ * The signal is the tool-call *title* the external agent sends. ACP does not
+ * specify the title's contents, so this recognises only the shape we have
+ * observed — the bridge's server name (`BRIDGE_MCP_SERVER_NAME`) prefixing the
+ * tool name at the start of the title (see BRIDGE_TITLE_MATCHERS). Any other
+ * shape falls through to a normal prompt, so broadening this stays additive as
+ * more agents are observed.
+ *
+ * This is advisory, not proof: the title is authored by the external agent, so
+ * it cannot be made unforgeable (the agent even knows the server name — Copse
+ * hands it the bridge in `session/new`). It doesn't need to be. Every bridged
+ * call re-enters Copse's native permission gate when the bridge executes it
+ * (`ToolRegistry.executeNormalized`), so an honestly-labelled call is still
+ * enforced there — read-only tools auto-run, `fetch_url` still origin-gates —
+ * and a dishonest agent forging the title is already outside this gate's remit:
+ * its own read/edit/execute tools are the larger surface, gated by these same
+ * prompts. All this removes is the duplicate approval for the honest case.
+ */
+export function isBridgedNativeToolTitle(title: string | null | undefined): boolean {
+  if (!title) return false
+  const text = unwrapInlineCode(title)
+  return BRIDGE_TITLE_MATCHERS.some((re) => re.test(text))
+}
+
 export interface AcpNativeBridge {
   /** MCP endpoint the agent should connect to (session/new `mcpServers`). */
   url: string
@@ -80,7 +136,7 @@ function bridgedTools(
 function buildMcpServer(registry: ToolRegistry, signal: AbortSignal): McpBridgeServer {
   // eslint-disable-next-line @typescript-eslint/no-deprecated -- see the note on the signature
   const server = new McpBridgeServer(
-    { name: 'copse', version: '1.0.0' },
+    { name: BRIDGE_MCP_SERVER_NAME, version: '1.0.0' },
     { capabilities: { tools: {} } },
   )
   server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: bridgedTools(registry) }))

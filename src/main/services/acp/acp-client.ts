@@ -27,6 +27,7 @@ import type { StreamChunk } from '@shared/types'
 import type { AcpAgentSandboxConfig, AcpModelChoice, AcpModelSelector } from '@shared/types/acp.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunk } from './session-update-adapter.ts'
+import { BRIDGE_MCP_SERVER_NAME } from './acp-native-bridge.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { acpAgentSandboxOverlay, ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
 import { acquireSandboxNetworkScope } from '../../project-sandbox/network-scope.ts'
@@ -396,7 +397,7 @@ export async function openAcpSession(
     if (config.nativeBridge && mcpCapabilities?.http === true) {
       mcpServers.push({
         type: 'http',
-        name: 'copse',
+        name: BRIDGE_MCP_SERVER_NAME,
         url: config.nativeBridge.url,
         headers: [{ name: 'Authorization', value: `Bearer ${config.nativeBridge.token}` }],
       })

@@ -12,6 +12,15 @@ export function isRightPanelPosition(value: unknown): value is RightPanelPositio
   return typeof value === 'string' && (RIGHT_PANEL_POSITIONS as readonly string[]).includes(value)
 }
 export type Theme = 'light' | 'dark'
+// What the user picked in Settings. `system` follows the OS colour scheme and
+// resolves to a concrete `Theme` at runtime; `light`/`dark` pin it. The store
+// keeps both: `themePreference` (this) and `theme` (the resolved value panes read).
+export type ThemePreference = 'system' | Theme
+export const THEME_PREFERENCES: readonly ThemePreference[] = ['system', 'light', 'dark']
+export const DEFAULT_THEME_PREFERENCE: ThemePreference = 'system'
+export function isThemePreference(value: unknown): value is ThemePreference {
+  return typeof value === 'string' && (THEME_PREFERENCES as readonly string[]).includes(value)
+}
 
 export interface OpenFile {
   path: string
@@ -49,7 +58,8 @@ export interface AppState {
   filesPaneOpen: boolean // right pane (explorer + file viewer) visibility
   rightPanelMode: RightPanelMode // explorer tree vs terminal column in right pane
   layout: LayoutState
-  theme: Theme
+  theme: Theme // Resolved effective theme (never `system`); what panes render.
+  themePreference: ThemePreference // The user's choice; `system` tracks the OS.
   fontSize: number // 12–20, applied to app + Monaco
   autoPortraitRightPanel: boolean // Auto-stack the right panel below chat on portrait windows.
   rightPanelPosition: RightPanelPosition // Where the right panel (explorer/terminal/etc.) lives.
