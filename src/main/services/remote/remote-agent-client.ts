@@ -12,6 +12,7 @@ import {
   REMOTE_AGENT_MODELS,
   REMOTE_AGENT_MODEL_PREFIX,
   REMOTE_AGENT_PROVIDER_ANTHROPIC,
+  REMOTE_AGENT_PROVIDER_CODEX,
   REMOTE_AGENT_PROVIDER_CURSOR,
   type RemoteAgentProvider,
 } from '@shared/remote-agent.ts'
@@ -21,6 +22,7 @@ import { getCurrentBranchName } from '../github/git-service.ts'
 import { getActiveProjectId } from '../workspace.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
 import { clearManagedAgentSession, runManagedAgentFromSettings } from './managed-agents-client.ts'
+import { clearCodexAgentSession, runCodexAgentFromSettings } from './codex-agent-client.ts'
 import {
   resolveRemoteAgentRepository,
   type RemoteAgentRunOptions,
@@ -121,9 +123,11 @@ function writeSession(threadId: string, session: RemoteAgentSession): void {
 
 export function clearRemoteAgentSession(threadId: string): void {
   storageSet(sessionKey(threadId), null)
-  // Clear the Claude Managed Agents session for this thread too, so a fresh chat
-  // starts a new remote session regardless of which provider was last used.
+  // Clear the Claude Managed Agents and Codex Cloud sessions for this thread too,
+  // so a fresh chat starts a new remote session regardless of which provider was
+  // last used.
   clearManagedAgentSession(threadId)
+  clearCodexAgentSession(threadId)
 }
 
 function cursorAuthHeader(apiKey: string): string {
@@ -549,6 +553,9 @@ export async function runRemoteAgentFromSettings(
   // Each remote provider has its own API shape; route to the matching adapter.
   if (options.provider === REMOTE_AGENT_PROVIDER_ANTHROPIC) {
     return runManagedAgentFromSettings(options)
+  }
+  if (options.provider === REMOTE_AGENT_PROVIDER_CODEX) {
+    return runCodexAgentFromSettings(options)
   }
 
   const fetchImpl = options.fetchImpl ?? fetch

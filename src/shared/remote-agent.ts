@@ -6,16 +6,19 @@ import { REMOTE_AGENT_MODEL_PREFIX } from '@copse/llm/reserved-prefixes.ts'
 
 export const REMOTE_AGENT_PROVIDER_CURSOR = 'cursor'
 export const REMOTE_AGENT_PROVIDER_ANTHROPIC = 'anthropic'
+export const REMOTE_AGENT_PROVIDER_CODEX = 'codex'
 
 export const REMOTE_AGENT_PROVIDERS = [
   REMOTE_AGENT_PROVIDER_CURSOR,
   REMOTE_AGENT_PROVIDER_ANTHROPIC,
+  REMOTE_AGENT_PROVIDER_CODEX,
 ] as const
 
 export type RemoteAgentProvider = (typeof REMOTE_AGENT_PROVIDERS)[number]
 
 export const DEFAULT_CURSOR_AGENT_BASE_URL = 'https://api.cursor.com'
 export const DEFAULT_ANTHROPIC_AGENT_BASE_URL = 'https://api.anthropic.com'
+export const DEFAULT_OPENAI_AGENT_BASE_URL = 'https://api.openai.com'
 
 export interface RemoteAgentModelOption {
   provider: RemoteAgentProvider
@@ -33,6 +36,11 @@ export const REMOTE_AGENT_MODELS: readonly RemoteAgentModelOption[] = [
     provider: REMOTE_AGENT_PROVIDER_ANTHROPIC,
     value: `${REMOTE_AGENT_MODEL_PREFIX}${REMOTE_AGENT_PROVIDER_ANTHROPIC}`,
     label: 'Claude Cloud Agent',
+  },
+  {
+    provider: REMOTE_AGENT_PROVIDER_CODEX,
+    value: `${REMOTE_AGENT_MODEL_PREFIX}${REMOTE_AGENT_PROVIDER_CODEX}`,
+    label: 'Codex Cloud Agent',
   },
 ]
 
