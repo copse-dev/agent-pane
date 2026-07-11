@@ -129,17 +129,29 @@ function itemToChunks(item: CodexThreadItem, state: CodexSdkStreamState): Stream
     case 'command_execution': {
       if (!id) return []
       const exit = typeof item.exit_code === 'number' ? `\n[exit ${String(item.exit_code)}]` : ''
-      return toolCallChunks(state, id, 'shell', { command: item.command ?? '' }, {
-        text: `${item.aggregated_output ?? ''}${exit}`,
-        isError: commandFailed(item),
-      })
+      return toolCallChunks(
+        state,
+        id,
+        'shell',
+        { command: item.command ?? '' },
+        {
+          text: `${item.aggregated_output ?? ''}${exit}`,
+          isError: commandFailed(item),
+        },
+      )
     }
     case 'file_change': {
       if (!id) return []
-      return toolCallChunks(state, id, 'apply_patch', { changes: item.changes ?? [] }, {
-        text: summarizeFileChanges(item.changes),
-        isError: item.status === 'failed',
-      })
+      return toolCallChunks(
+        state,
+        id,
+        'apply_patch',
+        { changes: item.changes ?? [] },
+        {
+          text: summarizeFileChanges(item.changes),
+          isError: item.status === 'failed',
+        },
+      )
     }
     case 'mcp_tool_call': {
       if (!id) return []
@@ -152,10 +164,16 @@ function itemToChunks(item: CodexThreadItem, state: CodexSdkStreamState): Stream
     }
     case 'web_search': {
       if (!id) return []
-      return toolCallChunks(state, id, 'web_search', { query: item.query ?? '' }, {
-        text: '',
-        isError: false,
-      })
+      return toolCallChunks(
+        state,
+        id,
+        'web_search',
+        { query: item.query ?? '' },
+        {
+          text: '',
+          isError: false,
+        },
+      )
     }
     case 'error': {
       const message = item.message ?? 'unknown error'

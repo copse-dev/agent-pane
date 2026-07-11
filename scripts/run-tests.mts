@@ -18,8 +18,15 @@ await esbuild.build({
   platform: 'node',
   format: 'cjs',
   sourcemap: true,
-  external: ['electron', 'node-pty',
-    '@openai/codex-sdk', 'jsdom', '@mozilla/readability', 'turndown', 'mermaid'],
+  external: [
+    'electron',
+    'node-pty',
+    '@openai/codex-sdk',
+    'jsdom',
+    '@mozilla/readability',
+    'turndown',
+    'mermaid',
+  ],
   alias: {
     '@shared': resolve('./src/shared'),
     '@copse/agent': resolve('./packages/agent/src'),
