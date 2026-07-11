@@ -5,7 +5,14 @@ import { panePopoutButton } from './pane-popout-button.ts'
 import { at } from '@shared/array-utils.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { GitChange, GitChangeStatus, GitFileDiff, GitStatusResult } from '@shared/types/git.ts'
+import type {
+  GitChange,
+  GitChangeStatus,
+  GitFileDiff,
+  GitStatusResult,
+  SessionBackup,
+} from '@shared/types/git.ts'
+import { showToast, showErrorToast } from './toast.ts'
 import type { ActiveDiff } from '@shared/types/state.ts'
 import {
   pruneStagedDiffCache,
@@ -135,8 +142,21 @@ export function mountGitChangesPane(
     refreshBtn,
   )
 
+  // "Restore pre-session changes": surfaces the session's refs/copse/backups/*
+  // snapshot so a user can one-click revert the paths Copse auto-applied over
+  // their uncommitted work back to their pre-session content (#699).
+  const restoreBanner = el('div', { class: 'git-changes-restore' })
+  const restoreLabel = el('span', { class: 'git-changes-restore-label' })
+  const restoreBtn = el(
+    'button',
+    { type: 'button', class: 'git-changes-restore-btn' },
+    'Restore pre-session changes',
+  )
+  restoreBanner.append(restoreLabel, restoreBtn)
+  restoreBanner.hidden = true
+
   const listBody = el('div', { class: 'git-changes-list' })
-  listRoot.append(listHeader, listBody)
+  listRoot.append(listHeader, restoreBanner, listBody)
 
   const conflictBanner = el('div', { class: 'diff-conflict-banner' })
   conflictBanner.hidden = true
@@ -156,6 +176,8 @@ export function mountGitChangesPane(
   let diffLoadQueue: Promise<void> = Promise.resolve()
   let status: GitStatusResult | null = null
   let gitAvailable = false
+  let sessionBackup: SessionBackup | null = null
+  let restoreInFlight = false
   let selection: ChangeSelection | null = null
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
   let cancelPendingDiffReveal: (() => void) | null = null
@@ -282,6 +304,54 @@ export function mountGitChangesPane(
       renderGitSection('Unstaged', status.unstaged, false)
     }
   }
+
+  function renderRestoreBanner(): void {
+    const paths = sessionBackup?.paths ?? []
+    if (paths.length === 0) {
+      restoreBanner.hidden = true
+      return
+    }
+    restoreBanner.hidden = false
+    restoreLabel.textContent =
+      paths.length === 1
+        ? '1 file was changed over your uncommitted work this session.'
+        : `${String(paths.length)} files were changed over your uncommitted work this session.`
+    restoreBtn.disabled = restoreInFlight
+  }
+
+  async function restorePreSessionChanges(): Promise<void> {
+    const backup = sessionBackup
+    if (!backup || restoreInFlight) return
+    const count = backup.paths.length
+    const confirmed = window.confirm(
+      `Restore ${count === 1 ? 'this file' : `these ${String(count)} files`} to their state ` +
+        `before this session? Any edits Copse applied to ` +
+        `${count === 1 ? 'it' : 'them'} will be replaced with your pre-session version. ` +
+        `A snapshot of the current state is kept so this can be undone via git.`,
+    )
+    if (!confirmed) return
+    restoreInFlight = true
+    renderRestoreBanner()
+    try {
+      const ok = await api.git.restoreBackup()
+      if (ok) {
+        showToast(
+          count === 1
+            ? 'Restored 1 pre-session file.'
+            : `Restored ${String(count)} pre-session files.`,
+        )
+      } else {
+        showToast('Could not restore pre-session changes.', { variant: 'error' })
+      }
+    } catch (error) {
+      showErrorToast('Restore failed', error)
+    } finally {
+      restoreInFlight = false
+      await refresh()
+    }
+  }
+
+  restoreBtn.addEventListener('click', () => void restorePreSessionChanges())
 
   function hideApprovalButtons(): void {
     acceptBtn.hidden = true
@@ -494,11 +564,15 @@ export function mountGitChangesPane(
     gitAvailable = await api.git.isAvailable()
     if (!gitAvailable) {
       status = null
+      sessionBackup = null
+      renderRestoreBanner()
       renderList()
       await syncSelection()
       return
     }
     status = await api.git.status()
+    sessionBackup = await api.git.sessionBackup()
+    renderRestoreBanner()
     renderList()
     await syncSelection()
   }
@@ -546,6 +620,8 @@ export function mountGitChangesPane(
     }),
     store.on('workspace_changed', () => {
       status = null
+      sessionBackup = null
+      renderRestoreBanner()
       pendingProposedNavigate = null
       clearSelection()
       conflictBanner.hidden = true

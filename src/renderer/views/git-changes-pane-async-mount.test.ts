@@ -37,6 +37,7 @@ function makeApi(calls: { isAvailable: number; status: number }): ApiClient {
         return emptyStatus
       },
       fileDiff: async () => null,
+      sessionBackup: async () => null,
     },
     diff: {
       approve: async () => {},
