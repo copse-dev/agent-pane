@@ -87,7 +87,9 @@ function resolveCodexApiKey(): string {
 function resolveWorkingDirectory(): string {
   const root = getActiveProjectRoot() ?? getWorkspaceRoot()
   if (!root) {
-    throw new Error('Open a project folder before running Codex — it works in your local workspace.')
+    throw new Error(
+      'Open a project folder before running Codex — it works in your local workspace.',
+    )
   }
   return root
 }
