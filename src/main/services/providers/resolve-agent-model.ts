@@ -2,6 +2,7 @@ import { DEFAULT_APP_CHAT_MODEL, LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-d
 import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
 import {
   REMOTE_AGENT_MODELS,
+  REMOTE_AGENT_PROVIDER_CODEX,
   REMOTE_AGENT_PROVIDER_CURSOR,
   parseRemoteAgentModel,
   type RemoteAgentProvider,
@@ -21,7 +22,11 @@ export interface ResolvedAgentChatModel {
 }
 
 function remoteProviderKeySlug(provider: RemoteAgentProvider): string {
-  return provider === REMOTE_AGENT_PROVIDER_CURSOR ? 'cursor' : 'anthropic'
+  // Codex Cloud authenticates with the OpenAI key; Cursor and Claude each use
+  // their own provider key (slug === provider name).
+  if (provider === REMOTE_AGENT_PROVIDER_CURSOR) return 'cursor'
+  if (provider === REMOTE_AGENT_PROVIDER_CODEX) return 'openai'
+  return 'anthropic'
 }
 
 function remoteAgentLabel(provider: RemoteAgentProvider): string {

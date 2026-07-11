@@ -391,11 +391,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return result
   })
   ipcMain.handle('settings:availableProviders', async () => {
+    const openaiUsable = await isProviderKeyUsable('openai')
     const available: Record<string, boolean> = {
       anthropic: await isProviderKeyUsable('anthropic'),
-      openai: await isProviderKeyUsable('openai'),
+      openai: openaiUsable,
       cursor: await isProviderKeyUsable('cursor'),
       openrouter: await isProviderKeyUsable('openrouter'),
+      // Codex Cloud Agent authenticates with the OpenAI key, so its picker entry
+      // gates on the same key rather than a dedicated `codex` provider slug.
+      codex: openaiUsable,
     }
     for (const provider of getResolvedExtraProviders()) {
       // Local servers need no API key, so treat them as available; their models

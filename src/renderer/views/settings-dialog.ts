@@ -318,12 +318,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <fieldset>
               <legend>Remote agents</legend>
               <p class="settings-fieldset-desc">
-                Choose <strong>Cursor Cloud Agent</strong> or <strong>Claude Agent</strong> as your
-                model to run chat turns on a remote machine. The conversation streams back here just
-                like a normal chat, but the work happens in the cloud: the agent runs its own tools,
-                pushes commits to a branch, and (optionally) opens a pull request. It does
-                <strong>not</strong> edit the files in this local workspace — review its changes in
-                the branch / PR it links in the reply.
+                Choose <strong>Cursor Cloud Agent</strong>, <strong>Claude Agent</strong>, or
+                <strong>Codex Cloud Agent</strong> as your model to run chat turns on a remote
+                machine. The conversation streams back here just like a normal chat, but the work
+                happens in the cloud: the agent runs its own tools, pushes commits to a branch, and
+                (optionally) opens a pull request. It does <strong>not</strong> edit the files in
+                this local workspace — review its changes in the branch / PR it links in the reply.
               </p>
               <div class="provider-chips" role="tablist" id="settings-remote-agent-tabs"></div>
               <div id="settings-cursor-panel" class="remote-agent-panel">
@@ -335,6 +335,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   Claude Agent needs an Anthropic API key plus a GitHub token: the token is used only
                   to clone and push the repository — the agent never handles it directly. It always
                   uses <code>https://api.anthropic.com</code>.
+                </p>
+              </div>
+              <div id="settings-codex-panel" class="remote-agent-panel" hidden>
+                <div id="settings-codex-key-host"></div>
+                <p class="field-hint">
+                  Codex Cloud Agent authenticates with your OpenAI API key and clones this project's
+                  GitHub repository on OpenAI's side (via your account's GitHub connection). It always
+                  uses <code>https://api.openai.com</code>.
                 </p>
               </div>
               <p class="settings-fieldset-desc remote-agent-common-note">
@@ -1034,6 +1042,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   })
   qsRequired(overlay, '#settings-claude-agent-key-host').append(claudeAgentKeySection.root)
 
+  const codexAgentKeySection = createApiKeysSection(api, {
+    legend: 'Codex authentication',
+    providers: ['openai'],
+  })
+  qsRequired(overlay, '#settings-codex-key-host').append(codexAgentKeySection.root)
+
   // Provider tabs for the Remote agents section: a chip selects one provider and
   // shows just its auth panel (mirrors the Providers chip row). The common run
   // options below the panels apply to whichever remote agent is run.
@@ -1041,10 +1055,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   const remoteTabs: ReadonlyArray<{ id: string; label: string }> = [
     { id: 'cursor', label: 'Cursor Cloud Agent' },
     { id: 'anthropic', label: 'Claude Agent' },
+    { id: 'codex', label: 'Codex Cloud Agent' },
   ]
   const remotePanels: Record<string, HTMLElement> = {
     cursor: overlay.querySelector('#settings-cursor-panel') as HTMLElement,
     anthropic: overlay.querySelector('#settings-claude-panel') as HTMLElement,
+    codex: overlay.querySelector('#settings-codex-panel') as HTMLElement,
   }
   function showRemoteTab(id: string): void {
     for (const [provider, panel] of Object.entries(remotePanels)) panel.hidden = provider !== id
@@ -1568,6 +1584,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     void (async (): Promise<void> => {
       await cursorKeySection.refreshKeyStatus()
       await claudeAgentKeySection.refreshKeyStatus()
+      await codexAgentKeySection.refreshKeyStatus()
       await customProvidersSection.refresh()
       await envKeyDetectSection.refresh()
       await localProvidersSection.refresh()
@@ -1670,6 +1687,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       await cursorKeySection.saveKeys()
       await claudeAgentKeySection.saveKeys()
+      await codexAgentKeySection.saveKeys()
       await customProvidersSection.saveKeys()
       await localProvidersSection.saveKeys()
       await lmStudioSection.saveConnection()
