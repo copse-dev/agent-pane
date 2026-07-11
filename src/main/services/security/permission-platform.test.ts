@@ -115,7 +115,11 @@ describe('shell permissions: agent-declared "expects_sandbox_block" up-front esc
   })
 
   it('allows a known host-dependent build driver to request the same up-front approval (#786)', () => {
-    const e = shellExpectedBlockEscalation('xcodebuild -workspace App.xcworkspace build', root, true)
+    const e = shellExpectedBlockEscalation(
+      'xcodebuild -workspace App.xcworkspace build',
+      root,
+      true,
+    )
     assert.equal(e.eligible, true)
     assert.ok(e.reasons.some((r) => /build driver may require host caches/i.test(r)))
   })

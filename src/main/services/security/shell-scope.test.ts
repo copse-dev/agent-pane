@@ -85,7 +85,10 @@ describe('analyzeShellCommand', () => {
     ]) {
       const r = analyzeShellCommand(cmd, root)
       assert.equal(r.verdict, 'ambiguous', `expected ambiguous for: ${cmd}`)
-      assert.ok(r.reasons.some((x) => /build driver may require host caches/.test(x)), cmd)
+      assert.ok(
+        r.reasons.some((x) => /build driver may require host caches/.test(x)),
+        cmd,
+      )
     }
   })
 
