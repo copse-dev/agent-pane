@@ -42,9 +42,10 @@ jobs:
   # Tradeoff vs the probe: nothing auto-detects the fleet going offline. If the
   # variable names a fleet with no online runner, routed jobs queue until a
   # runner returns or the variable is cleared — clear it when taking the fleet
-  # down. Fork-PR safety is unchanged: every routed job that executes repo code
-  # keeps its same-repo `if` guard (and ci-passed checks out no code), so
-  # untrusted commits never run on the fleet.
+  # down. Fork PRs run only the `precheck` safe tier, forced onto a GitHub-hosted
+  # runner with a read-only token. Every heavier job that executes repository
+  # code keeps its same-repo `if` guard, so untrusted commits never run on the
+  # self-hosted fleet.
 
   # Cheap static gate + e2e planning. Runs the fast static checks (typecheck,
   # lint, format, dead-code, oracle liveness) AND computes the e2e oracle plan in
@@ -54,10 +55,14 @@ jobs:
   # Folding the former standalone `plan-e2e` job in here drops a duplicate
   # checkout + node setup (and its rounded-up billed minute) from every run.
   precheck:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    # Self-hosted copse-checks fleet when CHECKS_RUNNER is set, else
-    # GitHub-hosted — see the routing note at the top of `jobs:`.
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    # Fork code gets a deliberately small, read-only check tier on an ephemeral
+    # GitHub-hosted runner. Same-repo work can use the configured check fleet.
+    runs-on: >-
+      ${{ github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          'ubuntu-latest' || vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    permissions:
+      contents: read
     # Consumed by the e2e job: how much of the e2e tier this run needs (mode/
     # specs), and the runner-dependent shard fan-out (e2e_shards / shard_total).
     outputs:
@@ -71,6 +76,9 @@ jobs:
       - uses: actions/checkout@v6.0.3
         with:
           fetch-depth: 0
+          # Do not leave even the read-only GITHUB_TOKEN in a fork checkout.
+          # Same-repo runs keep credentials for the oracle's base ref fetches.
+          persist-credentials: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
       - uses: ./.github/actions/setup
       - run: npm run typecheck
       - run: npm run lint
@@ -847,17 +855,31 @@ jobs:
   # turns the whole pipeline into one green/red status. New jobs or e2e shard
   # counts can change without touching the required-checks list — just add the
   # job to `needs` here. `if: always()` so this runs even when an upstream job
-  # fails/is skipped; we then assert none failed or were cancelled. Skipped is
-  # treated as a pass so the fork guard above (which skips every job on fork
-  # PRs) doesn't wedge the gate.
+  # fails/is skipped; we then assert none failed or were cancelled. Fork PRs
+  # have their own explicit safe-tier result below: they may pass only after
+  # `precheck` actually ran on a GitHub-hosted runner, never merely because all
+  # code-executing jobs were skipped.
   ci-passed:
     name: CI Passed
     if: always()
     needs: [precheck, check, bench, build, e2e]
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    runs-on: >-
+      ${{ github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          'ubuntu-latest' || vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     steps:
       - name: Check upstream job results
         run: |
+          FORK_PR=${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+          if $FORK_PR; then
+            if [ "${{ needs.precheck.result }}" != "success" ]; then
+              echo "Fork PR safe check tier was not executed successfully."
+              echo '${{ toJSON(needs) }}'
+              exit 1
+            fi
+            echo "Fork PR safe check tier passed; privileged jobs were intentionally skipped."
+            exit 0
+          fi
           MODE="${{ needs.precheck.outputs.mode }}"
           ANY_FAILURE=${{ contains(needs.*.result, 'failure') }}
           ANY_BAD=${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
