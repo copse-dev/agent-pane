@@ -116,6 +116,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // agent renders/screenshots web UIs in-app instead of installing a browser.
   { name: 'browserToolsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'acpAutoApproveEditsWithBackup', kind: 'checkbox', default: true, save: true },
+  { name: 'acpAutoApproveNativeBridgeTools', kind: 'checkbox', default: true, save: true },
   // Experimental, opt-in features (off by default).
   { name: 'mcpUiArtefactsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'ciInvestigatorEnabled', kind: 'checkbox', default: false, save: true },
@@ -545,6 +546,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 edits, deletes, and moves once Copse has snapshotted your uncommitted work to a
                 restorable <code>refs/copse/backups/*</code> ref. Shell commands and web fetches still
                 prompt. Turn off to review every agent file edit.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="acpAutoApproveNativeBridgeTools" />
+                Auto-approve calls to Copse's own bridged tools
+              </label>
+              <p class="field-hint">
+                External ACP agents reach Copse's own tools (GitHub/CI, semantic search, staged
+                diffs, browser, web fetch) through a bridge that re-applies Copse's native
+                permission checks when each call runs — so the extra approval prompt only duplicates
+                that gate. Turn off to prompt for every bridged tool call.
               </p>
             </fieldset>
 
