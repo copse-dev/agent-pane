@@ -318,12 +318,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <fieldset>
               <legend>Remote agents</legend>
               <p class="settings-fieldset-desc">
-                Choose <strong>Cursor Cloud Agent</strong>, <strong>Claude Agent</strong>, or
-                <strong>Codex Cloud Agent</strong> as your model to run chat turns on a remote
-                machine. The conversation streams back here just like a normal chat, but the work
-                happens in the cloud: the agent runs its own tools, pushes commits to a branch, and
-                (optionally) opens a pull request. It does <strong>not</strong> edit the files in
-                this local workspace — review its changes in the branch / PR it links in the reply.
+                Choose <strong>Cursor Cloud Agent</strong> or <strong>Claude Agent</strong> as your
+                model to run chat turns on a remote machine. The conversation streams back here just
+                like a normal chat, but the work happens in the cloud: the agent runs its own tools,
+                pushes commits to a branch, and (optionally) opens a pull request. It does
+                <strong>not</strong> edit the files in this local workspace — review its changes in
+                the branch / PR it links in the reply.
               </p>
               <div class="provider-chips" role="tablist" id="settings-remote-agent-tabs"></div>
               <div id="settings-cursor-panel" class="remote-agent-panel">
@@ -335,14 +335,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   Claude Agent needs an Anthropic API key plus a GitHub token: the token is used only
                   to clone and push the repository — the agent never handles it directly. It always
                   uses <code>https://api.anthropic.com</code>.
-                </p>
-              </div>
-              <div id="settings-codex-panel" class="remote-agent-panel" hidden>
-                <div id="settings-codex-key-host"></div>
-                <p class="field-hint">
-                  Codex Cloud Agent authenticates with your OpenAI API key and clones this project's
-                  GitHub repository on OpenAI's side (via your account's GitHub connection). It always
-                  uses <code>https://api.openai.com</code>.
                 </p>
               </div>
               <p class="settings-fieldset-desc remote-agent-common-note">
@@ -357,6 +349,22 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <input type="checkbox" name="remoteAgentWorkOnCurrentBranch" />
                 Push directly to the current branch instead of a new branch
               </label>
+            </fieldset>
+
+            <fieldset>
+              <legend>Codex CLI</legend>
+              <p class="settings-fieldset-desc">
+                Select <strong>Codex CLI (local)</strong> as your model to run chat turns through
+                OpenAI's Codex on <strong>this machine</strong>. Unlike the cloud agents above, Codex
+                runs its own tools and <strong>edits files directly in the current project's
+                workspace</strong> — there is no branch or pull request. It needs the
+                <a href="https://developers.openai.com/codex" target="_blank" rel="noreferrer"
+                  ><code>codex</code> CLI</a
+                >
+                installed and authenticates with your OpenAI API key (or a
+                <code>CODEX_API_KEY</code> environment variable).
+              </p>
+              <div id="settings-codex-key-host"></div>
             </fieldset>
 
             <fieldset>
@@ -1055,12 +1063,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   const remoteTabs: ReadonlyArray<{ id: string; label: string }> = [
     { id: 'cursor', label: 'Cursor Cloud Agent' },
     { id: 'anthropic', label: 'Claude Agent' },
-    { id: 'codex', label: 'Codex Cloud Agent' },
   ]
   const remotePanels: Record<string, HTMLElement> = {
     cursor: overlay.querySelector('#settings-cursor-panel') as HTMLElement,
     anthropic: overlay.querySelector('#settings-claude-panel') as HTMLElement,
-    codex: overlay.querySelector('#settings-codex-panel') as HTMLElement,
   }
   function showRemoteTab(id: string): void {
     for (const [provider, panel] of Object.entries(remotePanels)) panel.hidden = provider !== id

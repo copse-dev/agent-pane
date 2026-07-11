@@ -20,6 +20,7 @@ type AvailableProviders = Awaited<ReturnType<ApiClient['settings']['availablePro
 import {
   REMOTE_AGENT_MODELS,
   REMOTE_AGENT_MODEL_PREFIX,
+  REMOTE_AGENT_PROVIDER_CODEX as CODEX_LOCAL_AGENT_PROVIDER,
   parseRemoteAgentModel,
 } from '@shared/remote-agent.ts'
 import { ACP_MODEL_PREFIX, acpGroupLabel, acpModelValue, parseAcpModel } from '@shared/acp.ts'
@@ -192,13 +193,16 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
     options.push(...extraProviderOptions(provider, isAvailable(provider.id), current))
   }
 
-  // Remote agents (Cursor Cloud, Claude Cloud): only listed once the matching
-  // provider key is configured. Each remote model gates on its own provider.
+  // Externally-executed agents: the cloud remote agents (Cursor Cloud, Claude
+  // Cloud) and the local Codex CLI. Each gates on its own provider key. Codex runs
+  // on this machine and edits the workspace, so it is grouped apart from the cloud
+  // agents rather than mislabeled as remote.
   const remoteGroup = 'Remote agents'
+  const localAgentGroup = 'Local agents'
   for (const remote of REMOTE_AGENT_MODELS) {
-    if (isAvailable(remote.provider)) {
-      options.push({ value: remote.value, label: remote.label, group: remoteGroup })
-    }
+    if (!isAvailable(remote.provider)) continue
+    const group = remote.provider === CODEX_LOCAL_AGENT_PROVIDER ? localAgentGroup : remoteGroup
+    options.push({ value: remote.value, label: remote.label, group })
   }
 
   // ACP agents (external coding agents Copse drives): only listed once configured.
