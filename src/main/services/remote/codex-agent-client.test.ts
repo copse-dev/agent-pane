@@ -19,9 +19,7 @@ function jsonResponse(payload: unknown): Response {
 }
 
 function sseResponse(events: Array<{ event: string; data: unknown }>): Response {
-  const body = events
-    .map((e) => `event: ${e.event}\ndata: ${JSON.stringify(e.data)}\n\n`)
-    .join('')
+  const body = events.map((e) => `event: ${e.event}\ndata: ${JSON.stringify(e.data)}\n\n`).join('')
   return new Response(body, {
     status: 200,
     headers: { 'content-type': 'text/event-stream' },
@@ -77,10 +75,7 @@ describe('runCodexAgentFromSettings', () => {
 
     const requests: RecordedRequest[] = []
     const chunks: StreamChunk[] = []
-    const fetchImpl = async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ): Promise<Response> => {
+    const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const method = init?.method ?? 'GET'
       const href = typeof input === 'string' || input instanceof URL ? String(input) : input.url
       const path = new URL(href).pathname
