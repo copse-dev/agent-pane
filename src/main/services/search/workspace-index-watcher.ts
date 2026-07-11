@@ -10,6 +10,7 @@ let watcher: fs.FSWatcher | null = null
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let watchedRoot: string | null = null
 let rebuildInFlight: Promise<void> | null = null
+let rebuildQueued = false
 
 export function startWorkspaceIndexWatcher(root: string): void {
   stopWorkspaceIndexWatcher()
@@ -32,10 +33,39 @@ export function stopWorkspaceIndexWatcher(): void {
   watcher?.close()
   watcher = null
   watchedRoot = null
+  rebuildQueued = false
   if (debounceTimer) {
     clearTimeout(debounceTimer)
     debounceTimer = null
   }
+}
+
+/**
+ * Start (or coalesce onto) a full index rebuild.
+ *
+ * A whole-repo `rg --files` + semantic reindex can outlast the debounce window,
+ * so a burst of changes must not stack fresh rebuilds on top of an in-flight
+ * one. At most one runs at a time; a request that lands mid-run sets
+ * `rebuildQueued`, and the finished run kicks off exactly one trailing pass —
+ * mirroring the semantic index's own coalescer (#517).
+ */
+function startRebuild(root: string): void {
+  if (rebuildInFlight) {
+    rebuildQueued = true
+    return
+  }
+  rebuildInFlight = Promise.all([buildIndex(root), updateSemanticIndex(root)])
+    .then(() => undefined)
+    .catch((err: unknown) => {
+      console.warn('[copse-panel] workspace index rebuild failed:', err)
+    })
+    .finally(() => {
+      rebuildInFlight = null
+      if (rebuildQueued) {
+        rebuildQueued = false
+        startRebuild(root)
+      }
+    })
 }
 
 export function scheduleIndexRebuild(): void {
@@ -45,24 +75,17 @@ export function scheduleIndexRebuild(): void {
   if (debounceTimer) clearTimeout(debounceTimer)
   debounceTimer = setTimeout(() => {
     debounceTimer = null
-    rebuildInFlight = Promise.all([buildIndex(root), updateSemanticIndex(root)])
-      .then(() => {})
-      .catch((err: unknown) => {
-        console.warn('[copse-panel] workspace index rebuild failed:', err)
-      })
+    startRebuild(root)
   }, REBUILD_DEBOUNCE_MS)
 }
 
-/** Test hook — await any in-flight debounced rebuild. */
+/** Test hook — await any in-flight or debounced rebuild, including a trailing pass. */
 export async function flushScheduledIndexRebuild(): Promise<void> {
   if (debounceTimer) {
     clearTimeout(debounceTimer)
     debounceTimer = null
     const root = watchedRoot ?? getWorkspaceRoot()
-    if (root) {
-      rebuildInFlight = Promise.all([buildIndex(root), updateSemanticIndex(root)]).then(() => {})
-    }
+    if (root) startRebuild(root)
   }
-  await rebuildInFlight
-  rebuildInFlight = null
+  while (rebuildInFlight) await rebuildInFlight
 }
