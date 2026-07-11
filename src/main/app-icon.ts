@@ -13,7 +13,7 @@ import { getSetting } from './services/storage/settings.ts'
 const assetsDir = join(__dirname, '../assets')
 
 function resolveVariantDir(variant: AppIconVariant): string {
-  return variant === 'classic' ? join(assetsDir, 'icons') : join(assetsDir, 'icons', variant)
+  return join(assetsDir, 'icons', variant)
 }
 
 export function getAppIconVariant(): AppIconVariant {
@@ -22,9 +22,6 @@ export function getAppIconVariant(): AppIconVariant {
 }
 
 export function getAppIconPath(variant = getAppIconVariant()): string {
-  if (variant === 'classic') {
-    return join(assetsDir, 'icon.png')
-  }
   return join(resolveVariantDir(variant), 'icon-256.png')
 }
 

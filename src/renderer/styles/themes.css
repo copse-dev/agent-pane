@@ -23,12 +23,18 @@
 }
 [data-theme='light'] {
   color-scheme: light;
-  /* Re-derive the surfaces from light greys so the tint still washes through. */
-  --bg-base: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #ffffff);
-  --bg-elevated: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #f3f3f3);
-  --bg-hover: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #e8e8e8);
-  --bg-muted: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #ececec);
-  --bg-subtle: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #f7f7f7);
+  /* Re-derive the surfaces from light greys so the tint still washes through.
+     The same mix ratio reads far weaker against near-white than against the
+     dark greys (7% of a hue barely shifts #ffffff but clearly shifts #1e1e1e),
+     so light surfaces scale the amount up (--tint-light-boost) to make the tint
+     perceptible at parity with dark. */
+  --tint-light-boost: 1.9;
+  --tint-amount-light: calc(var(--tint-amount) * var(--tint-light-boost));
+  --bg-base: color-mix(in srgb, var(--tint-hue) var(--tint-amount-light), #ffffff);
+  --bg-elevated: color-mix(in srgb, var(--tint-hue) var(--tint-amount-light), #f3f3f3);
+  --bg-hover: color-mix(in srgb, var(--tint-hue) var(--tint-amount-light), #e8e8e8);
+  --bg-muted: color-mix(in srgb, var(--tint-hue) var(--tint-amount-light), #ececec);
+  --bg-subtle: color-mix(in srgb, var(--tint-hue) var(--tint-amount-light), #f7f7f7);
   --bg-active: #0060c0;
   --bg-selected: color-mix(in srgb, var(--accent) 13%, var(--bg-elevated));
   /* The dark-theme greys read as low-contrast smudges on white — every text
