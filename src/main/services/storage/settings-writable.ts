@@ -98,7 +98,7 @@ export const trustedShellCommandsSchema = z.array(z.string().min(1).max(128)).ma
 
 export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   model: z.string().max(256),
-  theme: z.enum(['light', 'dark']),
+  theme: z.enum(['system', 'light', 'dark']),
   fontSize: z.number().int().min(8).max(32),
   autoPortraitRightPanel: z.boolean(),
   rightPanelPosition: z.enum(['auto', 'side', 'bottom']),
@@ -149,6 +149,12 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // worktree backup of the user's uncommitted work exists, instead of prompting
   // per edit. Default on. Off restores the per-edit approval modal.
   acpAutoApproveEditsWithBackup: z.boolean(),
+  // Auto-approve an external ACP agent's calls to Copse's *own* bridged native
+  // tools (gh_*/CI, semantic search, staged diffs, browser, web fetch). These
+  // re-enter Copse's native permission gate when the bridge executes them, so
+  // the ACP prompt only duplicates that gate. Default on. Off restores the
+  // per-call prompt for bridged tools.
+  acpAutoApproveNativeBridgeTools: z.boolean(),
   // Experimental features, opt-in and off by default. See the experimental
   // section in Settings.
   mcpUiArtefactsEnabled: z.boolean(),

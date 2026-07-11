@@ -21,6 +21,10 @@ export function chevronDownIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('chevron-down', ['m6 9 6 6 6-6'], className)
 }
 
+export function chevronUpIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon('chevron-up', ['m18 15-6-6-6 6'], className)
+}
+
 export function arrowLeftIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('arrow-left', ['M19 12H5', 'm12 19-7-7 7-7'], className)
 }
