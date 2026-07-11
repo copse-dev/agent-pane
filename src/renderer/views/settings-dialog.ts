@@ -552,8 +552,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <p class="field-hint">
                 External ACP agents (e.g. Claude) skip the per-edit approval modal for
                 edits, deletes, and moves once Copse has snapshotted your uncommitted work to a
-                restorable <code>refs/copse/backups/*</code> ref. Shell commands and web fetches still
-                prompt. Turn off to review every agent file edit.
+                restorable <code>refs/copse/backups/*</code> ref. If an edit overwrites your
+                uncommitted work, the Changes panel offers a one-click
+                <strong>Restore pre-session changes</strong> to bring it back. Shell commands and web
+                fetches still prompt. Turn off to review every agent file edit.
               </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="acpAutoApproveNativeBridgeTools" />
