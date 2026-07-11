@@ -59,8 +59,11 @@ export type SettingsSection =
  * tokens.css folds into every --bg-* surface (see its --tint-* comment).
  */
 export type UiTintStrength = 'off' | 'subtle' | 'medium' | 'strong'
-export const DEFAULT_TINT_COLOR = '#007acc'
-export const DEFAULT_TINT_STRENGTH: UiTintStrength = 'off'
+// Ships on by default as a gentle wash that matches the default "Rose" app
+// icon (its #F472B6 mark). Users can dial it up, recolour it, or set the
+// strength to Off for the plain neutral surfaces.
+export const DEFAULT_TINT_COLOR = '#F472B6'
+export const DEFAULT_TINT_STRENGTH: UiTintStrength = 'subtle'
 const TINT_STRENGTH_AMOUNTS: Record<UiTintStrength, string> = {
   off: '0%',
   subtle: '4%',
