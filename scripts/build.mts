@@ -38,6 +38,7 @@ const nodeOpts = {
     '@anthropic-ai/sandbox-runtime',
     'shell-quote',
     'node-pty',
+    '@openai/codex-sdk',
     'jsdom',
     '@mozilla/readability',
     'turndown',

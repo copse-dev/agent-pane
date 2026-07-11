@@ -84,6 +84,11 @@ export async function resolveAgentChatModel(requested: string): Promise<Resolved
   const remoteProvider = parseRemoteAgentModel(requested)
   if (!remoteProvider) return { model: requested }
 
+  // Codex also accepts a CODEX_API_KEY env var directly (passed to the SDK), so
+  // that alone is enough to run even without a stored/validated OpenAI key.
+  if (remoteProvider === REMOTE_AGENT_PROVIDER_CODEX && process.env['CODEX_API_KEY']?.trim()) {
+    return { model: requested }
+  }
   const slug = remoteProviderKeySlug(remoteProvider)
   if (await isProviderKeyUsable(slug)) return { model: requested }
 

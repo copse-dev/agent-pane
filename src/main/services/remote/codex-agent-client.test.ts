@@ -1,130 +1,208 @@
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { StreamChunk } from '@shared/types'
-import { clearCodexAgentSession, runCodexAgentFromSettings } from './codex-agent-client.ts'
-import { storageSet } from '../storage/storage.ts'
+import {
+  clearCodexAgentSession,
+  runCodexAgentFromSettings,
+  type CreateCodex,
+} from './codex-agent-client.ts'
+import { storageGet, storageSet } from '../storage/storage.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 
-interface RecordedRequest {
-  method: string
-  path: string
-  body: Record<string, unknown> | null
+interface StartCall {
+  method: 'startThread' | 'resumeThread'
+  id?: string | undefined
+  workingDirectory?: string | undefined
+  input?: unknown
 }
 
-function jsonResponse(payload: unknown): Response {
-  return new Response(JSON.stringify(payload), {
-    status: 200,
-    headers: { 'content-type': 'application/json' },
-  })
+/**
+ * Build a fake Codex SDK client that records how it was driven and replays a
+ * scripted event stream, so the adapter is exercised without spawning the real
+ * `codex` CLI.
+ */
+interface FakeThread {
+  readonly id: string | null
+  runStreamed(input: unknown): Promise<{ events: AsyncGenerator<Record<string, unknown>> }>
 }
 
-function sseResponse(events: Array<{ event: string; data: unknown }>): Response {
-  const body = events.map((e) => `event: ${e.event}\ndata: ${JSON.stringify(e.data)}\n\n`).join('')
-  return new Response(body, {
-    status: 200,
-    headers: { 'content-type': 'text/event-stream' },
+function fakeCodex(
+  events: Array<Record<string, unknown>>,
+  calls: StartCall[],
+  threadId = 'codex_thread_1',
+): CreateCodex {
+  async function* gen(): AsyncGenerator<Record<string, unknown>> {
+    for (const event of events) yield event
+  }
+  const makeThread = (call: StartCall): FakeThread => ({
+    get id(): string | null {
+      return threadId
+    },
+    runStreamed(input: unknown): Promise<{ events: AsyncGenerator<Record<string, unknown>> }> {
+      call.input = input
+      return Promise.resolve({ events: gen() })
+    },
   })
+  const codex = {
+    startThread(options: { workingDirectory?: string }): FakeThread {
+      const call: StartCall = { method: 'startThread', workingDirectory: options.workingDirectory }
+      calls.push(call)
+      return makeThread(call)
+    },
+    resumeThread(id: string, options: { workingDirectory?: string }): FakeThread {
+      const call: StartCall = {
+        method: 'resumeThread',
+        id,
+        workingDirectory: options.workingDirectory,
+      }
+      calls.push(call)
+      return makeThread(call)
+    },
+  }
+  return () => codex as unknown as ReturnType<CreateCodex>
 }
 
 describe('runCodexAgentFromSettings', () => {
-  const prevKey = process.env['OPENAI_API_KEY']
+  const prevOpenai = process.env['OPENAI_API_KEY']
+  const prevCodex = process.env['CODEX_API_KEY']
 
   afterEach(() => {
-    if (prevKey === undefined) delete process.env['OPENAI_API_KEY']
-    else process.env['OPENAI_API_KEY'] = prevKey
-    storageSet('projects', [])
-    storageSet('activeProjectId', null)
+    if (prevOpenai === undefined) delete process.env['OPENAI_API_KEY']
+    else process.env['OPENAI_API_KEY'] = prevOpenai
+    if (prevCodex === undefined) delete process.env['CODEX_API_KEY']
+    else process.env['CODEX_API_KEY'] = prevCodex
   })
 
-  it('rejects a non-GitHub project with a Codex-specific error', async () => {
-    // No workspace / active project → no repository can be resolved. Codex Cloud
-    // has no repo-less mode, so a fresh run must reject before any network call.
-    const restoreWorkspace = setWorkspaceRootForTest(null)
-    clearCodexAgentSession('thread-codex-no-repo')
+  it('requires an open project (working directory)', async () => {
+    const restore = setWorkspaceRootForTest(null)
     process.env['OPENAI_API_KEY'] = 'sk-test'
     try {
       await assert.rejects(
         runCodexAgentFromSettings({
-          threadId: 'thread-codex-no-repo',
+          threadId: 'thread-codex-no-dir',
           provider: 'codex',
           userPrompt: 'do something',
           signal: new AbortController().signal,
           onChunk: () => {},
-          fetchImpl: () => {
-            throw new Error('unexpected network call')
-          },
         }),
-        /needs a project backed by a GitHub remote/,
+        /Open a project folder before running Codex/,
       )
     } finally {
-      restoreWorkspace()
+      restore()
     }
   })
 
-  it('reuses an existing task on a follow-up: new turn, stream, and usage', async () => {
-    // Seed a prior session so the run takes the reuse path — no repository lookup,
-    // just a new turn on the existing task.
+  it('starts a Codex thread, streams items, reports usage, and persists the thread id', async () => {
+    const restore = setWorkspaceRootForTest('/work/project')
+    process.env['OPENAI_API_KEY'] = 'sk-test'
+    clearCodexAgentSession('thread-codex-first')
+    const calls: StartCall[] = []
+    const chunks: StreamChunk[] = []
+    try {
+      const result = await runCodexAgentFromSettings(
+        {
+          threadId: 'thread-codex-first',
+          provider: 'codex',
+          userPrompt: 'fix the bug',
+          signal: new AbortController().signal,
+          onChunk: (c) => chunks.push(c),
+        },
+        {
+          createCodex: fakeCodex(
+            [
+              { type: 'thread.started', thread_id: 'codex_thread_1' },
+              {
+                type: 'item.completed',
+                item: { id: 'a1', type: 'agent_message', text: 'Fixed it.' },
+              },
+              {
+                type: 'turn.completed',
+                usage: { input_tokens: 12, output_tokens: 34 },
+              },
+            ],
+            calls,
+          ),
+        },
+      )
+
+      assert.equal(calls.length, 1)
+      const call = calls[0]
+      assert.ok(call)
+      assert.equal(call.method, 'startThread')
+      assert.equal(call.workingDirectory, '/work/project')
+
+      const notice = chunks.find((c) => c.type === 'text')
+      assert.ok(notice && 'text' in notice)
+      assert.match(notice.text, /Running Codex locally/)
+
+      const usage = chunks.find((c) => c.type === 'usage')
+      assert.ok(usage && 'inputTokens' in usage)
+      assert.equal(usage.inputTokens, 12)
+      assert.equal(usage.outputTokens, 34)
+
+      assert.equal(result.assistantText, 'Fixed it.')
+      assert.equal(result.inputTokens, 12)
+      assert.equal(result.outputTokens, 34)
+
+      const session = storageGet('codex-agent-session:thread-codex-first') as {
+        threadId?: string
+        workingDirectory?: string
+      } | null
+      assert.ok(session)
+      assert.equal(session.threadId, 'codex_thread_1')
+      assert.equal(session.workingDirectory, '/work/project')
+    } finally {
+      restore()
+    }
+  })
+
+  it('resumes the persisted thread on a follow-up in the same workspace', async () => {
+    const restore = setWorkspaceRootForTest('/work/project')
     process.env['OPENAI_API_KEY'] = 'sk-test'
     storageSet('codex-agent-session:thread-codex-reuse', {
       v: 1,
       provider: 'codex',
-      baseUrl: 'https://api.openai.com',
-      taskId: 'task_1',
-      url: 'https://chatgpt.com/codex/tasks/task_1',
+      threadId: 'codex_thread_existing',
+      workingDirectory: '/work/project',
     })
-
-    const requests: RecordedRequest[] = []
+    const calls: StartCall[] = []
     const chunks: StreamChunk[] = []
-    const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      const method = init?.method ?? 'GET'
-      const href = typeof input === 'string' || input instanceof URL ? String(input) : input.url
-      const path = new URL(href).pathname
-      const body =
-        typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : null
-      requests.push({ method, path, body })
+    try {
+      await runCodexAgentFromSettings(
+        {
+          threadId: 'thread-codex-reuse',
+          provider: 'codex',
+          userPrompt: 'now add a test',
+          signal: new AbortController().signal,
+          onChunk: (c) => chunks.push(c),
+          priorMessages: [{ role: 'user', content: 'earlier context' }],
+        },
+        {
+          createCodex: fakeCodex(
+            [
+              { type: 'item.completed', item: { id: 'a1', type: 'agent_message', text: 'Added.' } },
+              { type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 2 } },
+            ],
+            calls,
+            'codex_thread_existing',
+          ),
+        },
+      )
 
-      if (method === 'POST' && path === '/v1/codex/tasks/task_1/turns') {
-        return jsonResponse({ turn: { id: 'turn_2' } })
-      }
-      if (method === 'GET' && path === '/v1/codex/tasks/task_1/turns/turn_2/events') {
-        return sseResponse([
-          { event: 'response.output_text.delta', data: { delta: 'Hello from Codex' } },
-          { event: 'response.completed', data: { response: { status: 'completed' } } },
-        ])
-      }
-      if (method === 'GET' && path === '/v1/codex/tasks/task_1/turns/turn_2') {
-        return jsonResponse({ usage: { input_tokens: 11, output_tokens: 22 } })
-      }
-      throw new Error(`Unexpected request: ${method} ${path}`)
+      assert.equal(calls.length, 1)
+      const call = calls[0]
+      assert.ok(call)
+      assert.equal(call.method, 'resumeThread')
+      assert.equal(call.id, 'codex_thread_existing')
+      // A resumed thread already holds history, so the follow-up sends only the
+      // new message — no context preamble prepended.
+      assert.equal(call.input, 'now add a test')
+
+      const notice = chunks.find((c) => c.type === 'text')
+      assert.ok(notice && 'text' in notice)
+      assert.match(notice.text, /Continuing with Codex/)
+    } finally {
+      restore()
     }
-
-    const result = await runCodexAgentFromSettings({
-      threadId: 'thread-codex-reuse',
-      provider: 'codex',
-      userPrompt: 'continue',
-      signal: new AbortController().signal,
-      onChunk: (chunk) => chunks.push(chunk),
-      fetchImpl,
-    })
-
-    const turnCreate = requests.find(
-      (r) => r.method === 'POST' && r.path === '/v1/codex/tasks/task_1/turns',
-    )
-    assert.ok(turnCreate?.body)
-    // Follow-ups send only the new message — no repo, no context preamble.
-    assert.equal('repo' in turnCreate.body, false)
-
-    const launchNotice = chunks.find((c) => c.type === 'text')
-    assert.ok(launchNotice && 'text' in launchNotice)
-    assert.match(launchNotice.text, /Continuing on Codex Cloud Agent/)
-
-    const usage = chunks.find((c) => c.type === 'usage')
-    assert.ok(usage && 'inputTokens' in usage)
-    assert.equal(usage.inputTokens, 11)
-    assert.equal(usage.outputTokens, 22)
-
-    assert.equal(result.assistantText, 'Hello from Codex')
-    assert.equal(result.inputTokens, 11)
-    assert.equal(result.outputTokens, 22)
   })
 })

@@ -397,9 +397,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       openai: openaiUsable,
       cursor: await isProviderKeyUsable('cursor'),
       openrouter: await isProviderKeyUsable('openrouter'),
-      // Codex Cloud Agent authenticates with the OpenAI key, so its picker entry
-      // gates on the same key rather than a dedicated `codex` provider slug.
-      codex: openaiUsable,
+      // Codex (local CLI) authenticates with the OpenAI key or a CODEX_API_KEY
+      // env var, so its picker entry gates on either rather than a dedicated
+      // `codex` provider slug.
+      codex: openaiUsable || !!process.env['CODEX_API_KEY']?.trim(),
     }
     for (const provider of getResolvedExtraProviders()) {
       // Local servers need no API key, so treat them as available; their models

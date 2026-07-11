@@ -18,7 +18,6 @@ export type RemoteAgentProvider = (typeof REMOTE_AGENT_PROVIDERS)[number]
 
 export const DEFAULT_CURSOR_AGENT_BASE_URL = 'https://api.cursor.com'
 export const DEFAULT_ANTHROPIC_AGENT_BASE_URL = 'https://api.anthropic.com'
-export const DEFAULT_OPENAI_AGENT_BASE_URL = 'https://api.openai.com'
 
 export interface RemoteAgentModelOption {
   provider: RemoteAgentProvider
@@ -38,9 +37,12 @@ export const REMOTE_AGENT_MODELS: readonly RemoteAgentModelOption[] = [
     label: 'Claude Cloud Agent',
   },
   {
+    // Codex runs locally via the `@openai/codex-sdk` CLI (it edits this
+    // workspace), unlike the cloud Cursor/Claude agents — but it reuses the same
+    // externally-executed-turn plumbing, so it lives in this list too.
     provider: REMOTE_AGENT_PROVIDER_CODEX,
     value: `${REMOTE_AGENT_MODEL_PREFIX}${REMOTE_AGENT_PROVIDER_CODEX}`,
-    label: 'Codex Cloud Agent',
+    label: 'Codex CLI (local)',
   },
 ]
 
