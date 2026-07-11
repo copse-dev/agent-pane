@@ -1,7 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { containedSandboxNetworkConfig } from './config.ts'
-import { acquireSandboxNetworkScope, mergedScopeNetwork } from './network-scope.ts'
+import {
+  acquireSandboxNetworkScope,
+  isSandboxNetworkScopeActive,
+  mergedScopeNetwork,
+} from './network-scope.ts'
 
 describe('mergedScopeNetwork', () => {
   it('is the contained deny-all base with no active scopes', () => {
@@ -33,5 +37,24 @@ describe('acquireSandboxNetworkScope', () => {
     })
     release()
     release()
+  })
+
+  it('reports a widened scope until every concurrent holder releases', () => {
+    const first = acquireSandboxNetworkScope({
+      domains: ['first.example'],
+      allowLocalBinding: false,
+    })
+    const second = acquireSandboxNetworkScope({
+      domains: ['second.example'],
+      allowLocalBinding: false,
+    })
+    try {
+      assert.equal(isSandboxNetworkScopeActive(), true)
+      first()
+      assert.equal(isSandboxNetworkScopeActive(), true)
+    } finally {
+      second()
+    }
+    assert.equal(isSandboxNetworkScopeActive(), false)
   })
 })
