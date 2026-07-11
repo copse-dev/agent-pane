@@ -15,12 +15,12 @@ import { containedSandboxNetworkConfig } from './config.ts'
  *
  * Scopes are refcounted: the effective allowlist is the union of all active
  * scopes, and when the last one releases the config drops back to the
- * contained deny-all base. Trade-off, documented deliberately: while an ACP
- * agent scope is active, *other* sandbox-contained processes (auto-run
- * `run_shell` commands) can also reach the scope's domains. That widens the
- * M6-style exfiltration surface to the agent's own vendor domains for the
- * duration of a turn — bounded, but real; per-connection attribution would
- * need upstream ASRT support.
+ * contained deny-all base. ASRT cannot attribute the global scope to one
+ * process, so {@link isSandboxNetworkScopeActive} lets the shell permission
+ * gate suspend auto-run while any scope is widened (issue #803). A user can
+ * still explicitly approve a command during that interval; the important
+ * invariant is that unrelated commands never receive temporary egress without
+ * that approval.
  */
 export interface SandboxNetworkScope {
   domains: readonly string[]
@@ -28,6 +28,11 @@ export interface SandboxNetworkScope {
 }
 
 const activeScopes = new Set<SandboxNetworkScope>()
+
+/** Whether ASRT's process-global network policy is currently widened. */
+export function isSandboxNetworkScopeActive(): boolean {
+  return activeScopes.size > 0
+}
 
 /** Union the active scopes into a network config; deny-all when none. Pure. */
 export function mergedScopeNetwork(

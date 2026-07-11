@@ -21,6 +21,20 @@ export interface GitFileDiff {
   afterImage?: string | null
 }
 
+/**
+ * A restore point for the user's pre-agent worktree. `ref` names a
+ * `refs/copse/backups/*` commit capturing every uncommitted change (tracked and
+ * untracked) as it was before Copse began applying edits over it. Surfaced to
+ * the renderer so the git-changes pane can offer a one-click restore.
+ */
+export interface SessionBackup {
+  ref: string
+  /** Epoch millis when the snapshot was taken. */
+  createdAt: number
+  /** Workspace-relative paths that were dirty when the backup was taken. */
+  paths: string[]
+}
+
 export interface GitOpenPr {
   number: number
   title: string
