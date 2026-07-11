@@ -128,7 +128,21 @@ export function seedOnboardingFixture(): void {
 
 function writeSettings(settings: Record<string, unknown>): void {
   mkdirSync(USER_DATA, { recursive: true })
-  writeFileSync(SETTINGS_PATH, JSON.stringify({ onboardingCompleted: true, ...settings }), 'utf8')
+  // Pin appearance so reference screenshots are deterministic: the app now
+  // defaults to `system` theme (which resolves to whatever prefers-color-scheme
+  // the CI runner reports) and a pink interface tint — both would make shots
+  // depend on the host / drift with brand tweaks. Force the historical
+  // neutral-dark look here; individual specs can override via `settings`.
+  writeFileSync(
+    SETTINGS_PATH,
+    JSON.stringify({
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      ...settings,
+    }),
+    'utf8',
+  )
 }
 
 /** Pin Electron window size for deterministic e2e reference screenshots. Call before reloadSession(). */

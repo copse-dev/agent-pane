@@ -1,6 +1,11 @@
 import { errorMessage } from '@shared/errors.ts'
 import type { AppStore } from '@shared/store/store.ts'
-import { isRightPanelPosition } from '@shared/types/state.ts'
+import {
+  isRightPanelPosition,
+  isThemePreference,
+  DEFAULT_THEME_PREFERENCE,
+} from '@shared/types/state.ts'
+import { resolveTheme } from '../dom/theme.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
   APP_ICON_VARIANTS,
@@ -54,8 +59,11 @@ export type SettingsSection =
  * tokens.css folds into every --bg-* surface (see its --tint-* comment).
  */
 export type UiTintStrength = 'off' | 'subtle' | 'medium' | 'strong'
-export const DEFAULT_TINT_COLOR = '#007acc'
-export const DEFAULT_TINT_STRENGTH: UiTintStrength = 'off'
+// Ships on by default as a gentle wash that matches the default "Rose" app
+// icon (its #F472B6 mark). Users can dial it up, recolour it, or set the
+// strength to Off for the plain neutral surfaces.
+export const DEFAULT_TINT_COLOR = '#F472B6'
+export const DEFAULT_TINT_STRENGTH: UiTintStrength = 'subtle'
 const TINT_STRENGTH_AMOUNTS: Record<UiTintStrength, string> = {
   off: '0%',
   subtle: '4%',
@@ -711,6 +719,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <label>
                 Theme
                 <select name="theme">
+                  <option value="system">System</option>
                   <option value="dark">Dark</option>
                   <option value="light">Light</option>
                 </select>
@@ -774,7 +783,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <label class="app-icon-option">
                   <input type="radio" name="appIconVariant" value="${variant}" />
                   <span class="app-icon-preview">
-                    <img src="./icon-previews/${variant}.png" alt="" width="64" height="64" />
+                    <img src="./icon-previews/${variant}.png" alt="" width="80" height="80" />
                   </span>
                   <span class="app-icon-label">${APP_ICON_VARIANT_LABELS[variant]}</span>
                 </label>`,
@@ -1635,7 +1644,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         formatTrustedCommands(
           sanitizeTrustedCommands(await api.settings.get(TRUSTED_COMMANDS_SETTING)),
         )
-      ;(form.elements.namedItem('theme') as HTMLSelectElement).value = store.getState().theme
+      ;(form.elements.namedItem('theme') as HTMLSelectElement).value =
+        store.getState().themePreference
       ;(form.elements.namedItem('fontSize') as HTMLInputElement).value = String(
         store.getState().fontSize,
       )
@@ -1687,7 +1697,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const routingValues = modelRoutingSection.readValues()
 
       const model = data.get('model') as string
-      const theme = data.get('theme') as 'light' | 'dark'
+      const themePrefRaw = data.get('theme')
+      const themePreference = isThemePreference(themePrefRaw)
+        ? themePrefRaw
+        : DEFAULT_THEME_PREFERENCE
+      // `theme` is the concrete value panes render; `system` resolves against the OS.
+      const theme = resolveTheme(themePreference)
       const fontSize = parseInt(data.get('fontSize') as string, 10)
       const autoPortraitRightPanel = data.get('autoPortraitRightPanel') === 'on'
       const rightPanelPositionRaw = data.get('rightPanelPosition')
@@ -1717,7 +1732,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         await api.settings.set(key, ((data.get(key) as string | null) ?? '').trim())
       }
       await saveSimpleFields(data, api)
-      await api.settings.set('theme', theme)
+      await api.settings.set('theme', themePreference)
       await api.settings.set('fontSize', fontSize)
       await api.settings.set('autoPortraitRightPanel', autoPortraitRightPanel)
       await api.settings.set('rightPanelPosition', rightPanelPosition)
@@ -1746,6 +1761,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       store.setState({
         theme,
+        themePreference,
         fontSize,
         autoPortraitRightPanel,
         rightPanelPosition,
