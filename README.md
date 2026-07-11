@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/icons/wave/icon-dock-512.png" alt="Copse" width="96" height="96">
+  <img src="assets/icons/rose/icon-dock-512.png" alt="Copse" width="96" height="96">
 </p>
 
 # Copse

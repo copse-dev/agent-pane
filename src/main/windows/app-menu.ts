@@ -142,7 +142,17 @@ export function buildAppMenu(win: BrowserWindow): void {
           },
         },
         { type: 'separator' as const },
-        { role: 'reload' as const },
+        // Deliberately not the `reload` role: that binds Cmd+R to reloading the
+        // whole renderer, which users hit expecting to refresh content (browser,
+        // explorer) — each of which has its own reload — not blow away the entire
+        // interface. Keep a menu escape hatch for reloading the shell, but with
+        // no accelerator so Cmd+R no longer nukes the app.
+        {
+          label: 'Reload Interface',
+          click: (): void => {
+            win.webContents.reload()
+          },
+        },
         { role: 'toggleDevTools' as const },
         { type: 'separator' as const },
         { role: 'resetZoom' as const },
