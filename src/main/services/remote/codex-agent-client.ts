@@ -134,7 +134,11 @@ async function readJson<T>(response: Response, label: string): Promise<T> {
   }
 }
 
-function taskBody(input: { prompt: PromptPayload; repository: string; startingRef: string }): string {
+function taskBody(input: {
+  prompt: PromptPayload
+  repository: string
+  startingRef: string
+}): string {
   return JSON.stringify({
     prompt: input.prompt,
     // Codex Cloud clones the source repo on its side (via the account's GitHub

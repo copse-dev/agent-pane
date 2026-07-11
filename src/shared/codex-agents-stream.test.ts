@@ -14,8 +14,14 @@ function evt(event: string, data: unknown): { event: string; data: string } {
 describe('codexAgentEventToChunks', () => {
   it('maps output_text deltas to text chunks and accumulates them', () => {
     const state = createCodexAgentStreamState()
-    const first = codexAgentEventToChunks(evt('response.output_text.delta', { delta: 'Hel' }), state)
-    const second = codexAgentEventToChunks(evt('response.output_text.delta', { delta: 'lo' }), state)
+    const first = codexAgentEventToChunks(
+      evt('response.output_text.delta', { delta: 'Hel' }),
+      state,
+    )
+    const second = codexAgentEventToChunks(
+      evt('response.output_text.delta', { delta: 'lo' }),
+      state,
+    )
 
     assert.deepEqual(first, [{ type: 'text', text: 'Hel' }])
     assert.deepEqual(second, [{ type: 'text', text: 'lo' }])
@@ -110,6 +116,9 @@ describe('codexAgentEventToChunks', () => {
   it('ignores unknown events and invalid JSON', () => {
     const state = createCodexAgentStreamState()
     assert.deepEqual(codexAgentEventToChunks(evt('response.created', {}), state), [])
-    assert.deepEqual(codexAgentEventToChunks({ event: 'response.output_text.delta', data: '{' }, state), [])
+    assert.deepEqual(
+      codexAgentEventToChunks({ event: 'response.output_text.delta', data: '{' }, state),
+      [],
+    )
   })
 })
