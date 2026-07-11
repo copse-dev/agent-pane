@@ -366,6 +366,82 @@ export async function createWorktreeBackup(label: string): Promise<string | null
   }
 }
 
+/**
+ * Revert `paths` (workspace-relative) to the content held in a
+ * `refs/copse/backups/*` snapshot, undoing whatever Copse or the agent wrote
+ * over the user's pre-session work. Only the listed paths are touched — files
+ * the agent newly created outside the snapshot are left alone. A path the
+ * snapshot did not contain (a pre-session deletion) is removed from the worktree
+ * so the result matches the snapshot exactly for those paths. Returns true when
+ * every path restored, false when git is unavailable or any restore failed.
+ *
+ * `git restore --worktree` touches only the working tree, never the user's
+ * index, mirroring how {@link createWorktreeBackup} snapshots without disturbing
+ * staged state. `--no-overlay` is git's default but is passed explicitly because
+ * it is what lets a captured-but-since-recreated path be deleted back to its
+ * pre-session absence.
+ */
+export async function restoreWorktreeBackup(ref: string, paths: string[]): Promise<boolean> {
+  if (!isGitAvailable() || !(await isInsideGitWorkTree())) return false
+  if (paths.length === 0) return true
+  // Restore one path at a time so a single path git cannot match (a pre-session
+  // deletion the agent left absent, which the snapshot also lacks — nothing to
+  // recover) never aborts recovery of the paths that DO have work to restore.
+  let ok = true
+  for (const path of paths) {
+    const { code } = await runGit([
+      'restore',
+      '--source',
+      ref,
+      '--worktree',
+      '--no-overlay',
+      '--',
+      path,
+    ])
+    // A matched path either reverts to the snapshot or, when absent from it, is
+    // deleted from the worktree — both are code 0. A non-zero code means git had
+    // nothing to match (the path is in neither the snapshot nor the index): the
+    // snapshot is the pre-session truth, so drop any agent-created file left at
+    // that path best-effort rather than reporting a failed restore.
+    if (code === 0) continue
+    try {
+      await fsp.rm(resolveWorkspacePath(path), { force: true })
+    } catch {
+      ok = false
+    }
+  }
+  return ok
+}
+
+/**
+ * Delete all but the newest `keep` `refs/copse/backups/*` refs so per-turn
+ * snapshots don't pile up unboundedly in the user's repository. Refs are named
+ * by creation timestamp; the newest `keep` are retained and the rest deleted
+ * (their now-unreferenced commits become eligible for git's own GC). No-op when
+ * git is unavailable or there is nothing to prune.
+ */
+export async function pruneWorktreeBackups(keep: number): Promise<void> {
+  if (!isGitAvailable() || !(await isInsideGitWorkTree())) return
+  const { stdout, code } = await runGit([
+    'for-each-ref',
+    '--format=%(refname)',
+    'refs/copse/backups',
+  ])
+  if (code !== 0) return
+  const refs = stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+  if (refs.length <= keep) return
+  // Sort by the trailing timestamp so "newest" is robust even if ref names ever
+  // vary in length; fall back to lexicographic when a name has no numeric tail.
+  const stamp = (ref: string): number => Number.parseInt(ref.split('/').pop() ?? '', 10) || 0
+  const stale = refs.sort((a, b) => stamp(b) - stamp(a)).slice(keep)
+  for (const ref of stale) {
+    await runGit(['update-ref', '-d', ref])
+  }
+}
+
 export async function getGitStatus(): Promise<GitStatusResult | null> {
   if (!isGitAvailable() || !(await isInsideGitWorkTree())) return null
   const { stdout: prefix, code: prefixCode } = await runGit(['rev-parse', '--show-prefix'])

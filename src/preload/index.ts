@@ -467,6 +467,8 @@ contextBridge.exposeInMainWorld('api', {
     checkoutBranch: (branch: string) => ipcRenderer.invoke('git:checkoutBranch', branch),
     listBranches: () => ipcRenderer.invoke('git:listBranches'),
     getDefaultBranch: () => ipcRenderer.invoke('git:getDefaultBranch'),
+    sessionBackup: () => ipcRenderer.invoke('git:sessionBackup'),
+    restoreBackup: () => ipcRenderer.invoke('git:restoreBackup'),
   },
   gh: {
     status: () => ipcRenderer.invoke('gh:status'),

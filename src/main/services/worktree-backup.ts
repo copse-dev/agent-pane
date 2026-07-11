@@ -1,16 +1,19 @@
-import { createWorktreeBackup, getGitStatus } from './github/git-service.ts'
+import type { SessionBackup } from '@shared/types/git.ts'
+import {
+  createWorktreeBackup,
+  getGitStatus,
+  pruneWorktreeBackups,
+  restoreWorktreeBackup,
+} from './github/git-service.ts'
+
+export type { SessionBackup }
 
 /**
- * A restore point for the user's pre-agent worktree. `ref` names a
- * `refs/copse/backups/*` commit capturing every uncommitted change (tracked and
- * untracked) as it was before Copse began applying edits over it.
+ * How many `refs/copse/backups/*` snapshots to retain. Each dirty turn mints one
+ * ref; without a cap they accumulate for the life of the repository. A handful
+ * keeps a short trail of recent restore points while bounding the clutter.
  */
-export interface SessionBackup {
-  ref: string
-  createdAt: number
-  /** Workspace-relative paths that were dirty when the backup was taken. */
-  paths: string[]
-}
+const BACKUP_RETENTION = 10
 
 let current: SessionBackup | null = null
 let inFlight: Promise<SessionBackup | null> | null = null
@@ -37,6 +40,9 @@ export async function ensureSessionBackup(): Promise<SessionBackup | null> {
     if (paths.length === 0) return null
     const ref = await createWorktreeBackup(`pre-turn snapshot (${String(paths.length)} path(s))`)
     if (!ref) return null
+    // Prune older snapshots now that a fresh one exists so refs don't accumulate
+    // unboundedly; failure to prune must never sink the backup itself.
+    await pruneWorktreeBackups(BACKUP_RETENTION).catch(() => {})
     current = { ref, createdAt: Date.now(), paths }
     return current
   })()
@@ -69,6 +75,22 @@ export async function ensureWorktreeRecoverable(): Promise<boolean> {
 /** The backup taken this turn, if any. */
 export function getSessionBackup(): SessionBackup | null {
   return current
+}
+
+/**
+ * Revert the paths captured in the current session backup to their pre-session
+ * content — the one-click "Restore pre-session changes" action. Before reverting
+ * it snapshots the current (post-agent) worktree so the restore is itself
+ * undoable via git, then restores the at-risk paths. Returns false when there is
+ * no backup to restore from or the restore could not complete.
+ */
+export async function restoreSessionBackup(): Promise<boolean> {
+  const backup = current
+  if (!backup) return false
+  // A pre-restore snapshot makes this destructive step reversible: the agent's
+  // version of the reverted paths stays recoverable from git even after restore.
+  await createWorktreeBackup('pre-restore snapshot').catch(() => null)
+  return restoreWorktreeBackup(backup.ref, backup.paths)
 }
 
 /**

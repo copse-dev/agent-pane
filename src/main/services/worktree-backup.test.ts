@@ -1,15 +1,20 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, writeFile, rm, readFile } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { createWorktreeBackup } from './github/git-service.ts'
+import {
+  createWorktreeBackup,
+  pruneWorktreeBackups,
+  restoreWorktreeBackup,
+} from './github/git-service.ts'
 import {
   ensureSessionBackup,
   ensureWorktreeRecoverable,
   getSessionBackup,
   resetSessionBackup,
+  restoreSessionBackup,
 } from './worktree-backup.ts'
 import { setGitAvailableForTest } from './tool-availability.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
@@ -69,6 +74,130 @@ describe('createWorktreeBackup', () => {
   it('returns null when git is unavailable', async () => {
     setGitAvailableForTest(false)
     assert.equal(await createWorktreeBackup('x'), null)
+  })
+})
+
+describe('restoreWorktreeBackup', () => {
+  let root = ''
+  let restoreWorkspace: (() => void) | undefined
+
+  beforeEach(async () => {
+    setGitAvailableForTest(true)
+    root = await mkdtemp(join(tmpdir(), 'agent-pane-restore-'))
+    git(root, ['init'])
+    await writeFile(join(root, 'tracked.txt'), 'line1\nline2\n', 'utf-8')
+    git(root, ['add', '-A'])
+    git(root, ['commit', '-m', 'initial'])
+    restoreWorkspace = setWorkspaceRootForTest(root)
+  })
+
+  afterEach(async () => {
+    setGitAvailableForTest(null)
+    restoreWorkspace?.()
+    if (root) await rm(root, { recursive: true, force: true })
+  })
+
+  it('reverts a modified tracked file to its snapshot content', async () => {
+    await writeFile(join(root, 'tracked.txt'), 'line1\nMINE\n', 'utf-8')
+    const ref = await createWorktreeBackup('snapshot')
+    assert.ok(ref)
+
+    // The agent overwrites the user's uncommitted edit.
+    await writeFile(join(root, 'tracked.txt'), 'AGENT REWROTE EVERYTHING\n', 'utf-8')
+
+    assert.equal(await restoreWorktreeBackup(ref, ['tracked.txt']), true)
+    const restored = await readFile(join(root, 'tracked.txt'), 'utf-8')
+    assert.equal(restored, 'line1\nMINE\n')
+  })
+
+  it('recreates an untracked file the snapshot captured', async () => {
+    await writeFile(join(root, 'scratch.txt'), 'user scratch\n', 'utf-8')
+    const ref = await createWorktreeBackup('snapshot')
+    assert.ok(ref)
+
+    // The agent overwrites the brand-new untracked file.
+    await writeFile(join(root, 'scratch.txt'), 'clobbered\n', 'utf-8')
+
+    assert.equal(await restoreWorktreeBackup(ref, ['scratch.txt']), true)
+    const restored = await readFile(join(root, 'scratch.txt'), 'utf-8')
+    assert.equal(restored, 'user scratch\n')
+  })
+
+  it('leaves paths outside the list alone', async () => {
+    await writeFile(join(root, 'tracked.txt'), 'line1\nMINE\n', 'utf-8')
+    const ref = await createWorktreeBackup('snapshot')
+    assert.ok(ref)
+    await writeFile(join(root, 'agent-new.txt'), 'agent work\n', 'utf-8')
+    await writeFile(join(root, 'tracked.txt'), 'clobbered\n', 'utf-8')
+
+    assert.equal(await restoreWorktreeBackup(ref, ['tracked.txt']), true)
+    const agentFile = await readFile(join(root, 'agent-new.txt'), 'utf-8')
+    assert.equal(agentFile, 'agent work\n', 'agent-created file must survive restore')
+  })
+
+  it('deletes a captured path the snapshot no longer holds (pre-session deletion)', async () => {
+    // User staged a deletion of a tracked file before the agent ran, so the
+    // snapshot lacks it; the agent then recreated it as an untracked file.
+    git(root, ['rm', '--quiet', 'tracked.txt'])
+    const ref = await createWorktreeBackup('snapshot')
+    assert.ok(ref)
+    await writeFile(join(root, 'tracked.txt'), 'agent recreated\n', 'utf-8')
+
+    assert.equal(await restoreWorktreeBackup(ref, ['tracked.txt']), true)
+    const { access } = await import('node:fs/promises')
+    await assert.rejects(access(join(root, 'tracked.txt')), 'file should be gone after restore')
+  })
+
+  it('is a no-op with an empty path list and false when git is unavailable', async () => {
+    assert.equal(await restoreWorktreeBackup('refs/copse/backups/1', []), true)
+    setGitAvailableForTest(false)
+    assert.equal(await restoreWorktreeBackup('refs/copse/backups/1', ['tracked.txt']), false)
+  })
+})
+
+describe('pruneWorktreeBackups', () => {
+  let root = ''
+  let restoreWorkspace: (() => void) | undefined
+
+  beforeEach(async () => {
+    setGitAvailableForTest(true)
+    root = await mkdtemp(join(tmpdir(), 'agent-pane-prune-'))
+    git(root, ['init'])
+    git(root, ['commit', '--allow-empty', '-m', 'initial'])
+    restoreWorkspace = setWorkspaceRootForTest(root)
+  })
+
+  afterEach(async () => {
+    setGitAvailableForTest(null)
+    restoreWorkspace?.()
+    if (root) await rm(root, { recursive: true, force: true })
+  })
+
+  function backupRefs(): string[] {
+    return git(root, ['for-each-ref', '--format=%(refname)', 'refs/copse/backups'])
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+  }
+
+  it('keeps the newest N refs and deletes the rest', async () => {
+    const head = git(root, ['rev-parse', 'HEAD']).trim()
+    for (const stamp of [100, 200, 300, 400, 500]) {
+      git(root, ['update-ref', `refs/copse/backups/${String(stamp)}`, head])
+    }
+    assert.equal(backupRefs().length, 5)
+
+    await pruneWorktreeBackups(2)
+
+    const remaining = backupRefs().sort()
+    assert.deepEqual(remaining, ['refs/copse/backups/400', 'refs/copse/backups/500'])
+  })
+
+  it('does nothing when at or below the retention count', async () => {
+    const head = git(root, ['rev-parse', 'HEAD']).trim()
+    git(root, ['update-ref', 'refs/copse/backups/1', head])
+    await pruneWorktreeBackups(10)
+    assert.equal(backupRefs().length, 1)
   })
 })
 
@@ -133,5 +262,22 @@ describe('ensureSessionBackup / resetSessionBackup', () => {
     await writeFile(join(root, 'dirty.txt'), 'work\n', 'utf-8')
     setGitAvailableForTest(false)
     assert.equal(await ensureWorktreeRecoverable(), false)
+  })
+
+  it('restoreSessionBackup reverts the captured paths to their pre-session content', async () => {
+    await writeFile(join(root, 'dirty.txt'), 'user work\n', 'utf-8')
+    const backup = await ensureSessionBackup()
+    assert.ok(backup)
+
+    // The agent overwrites the user's uncommitted file this session.
+    await writeFile(join(root, 'dirty.txt'), 'agent rewrote it\n', 'utf-8')
+
+    assert.equal(await restoreSessionBackup(), true)
+    assert.equal(await readFile(join(root, 'dirty.txt'), 'utf-8'), 'user work\n')
+  })
+
+  it('restoreSessionBackup returns false when there is no backup', async () => {
+    assert.equal(getSessionBackup(), null)
+    assert.equal(await restoreSessionBackup(), false)
   })
 })

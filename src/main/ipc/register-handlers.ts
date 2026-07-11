@@ -105,6 +105,7 @@ import {
   isInsideGitWorkTree,
 } from '../services/github/git-service.ts'
 import { getGitBranchStatus } from '../services/github/pr-context-service.ts'
+import { getSessionBackup, restoreSessionBackup } from '../services/worktree-backup.ts'
 import { isGitAvailable } from '../services/tool-availability.ts'
 import {
   getGhCliStatus,
@@ -595,6 +596,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   })
   ipcMain.handle('git:listBranches', () => getBranches())
   ipcMain.handle('git:getDefaultBranch', () => getDefaultBranch())
+  ipcMain.handle('git:sessionBackup', () => getSessionBackup())
+  ipcMain.handle('git:restoreBackup', async (event) => {
+    assertMainFrameSender(event, win)
+    return restoreSessionBackup()
+  })
 
   ipcMain.handle('gh:status', () => getGhCliStatus())
   ipcMain.handle('gh:listMyOpenPrs', () => listMyOpenPrs())

@@ -81,6 +81,7 @@ function makeApi(stagedContent: Record<string, ActiveDiff>, contentCalls: string
       isAvailable: async () => true,
       status: async () => emptyStatus,
       fileDiff: async () => null,
+      sessionBackup: async () => null,
     },
     diff: {
       approve: async () => {},

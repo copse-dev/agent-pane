@@ -9,6 +9,7 @@ import type {
   GitStatusResult,
   GitBranchStatus,
   GitBranchInfo,
+  SessionBackup,
   GhCliStatus,
   GhPrChecksState,
   GhPrDetails,
@@ -382,6 +383,10 @@ export interface ApiClient {
     checkoutBranch: (branch: string) => Promise<void>
     listBranches: () => Promise<GitBranchInfo[]>
     getDefaultBranch: () => Promise<string | null>
+    /** The pre-session worktree backup taken this session, or null when none. */
+    sessionBackup: () => Promise<SessionBackup | null>
+    /** Revert the session backup's captured paths to their pre-session content. */
+    restoreBackup: () => Promise<boolean>
   }
   gh: {
     status: () => Promise<GhCliStatus>
