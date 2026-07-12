@@ -43,7 +43,10 @@ describe('decision-log schema', () => {
 
   it('omits absent optional fields (no undefined keys)', () => {
     const e = makeDecisionEvent(baseInput, 'id', 1)
-    assert.deepEqual(Object.keys(e).sort(), ['actor', 'at', 'id', 'kind', 'subject', 'type', 'v', 'verdict'].sort())
+    assert.deepEqual(
+      Object.keys(e).sort(),
+      ['actor', 'at', 'id', 'kind', 'subject', 'type', 'v', 'verdict'].sort(),
+    )
   })
 
   it('drops an empty reasons array', () => {
@@ -76,10 +79,7 @@ describe('decision-log schema', () => {
   })
 
   it('serializeDecisionLog produces one line per event with a trailing newline', () => {
-    const events = [
-      makeDecisionEvent(baseInput, 'a', 1),
-      makeDecisionEvent(baseInput, 'b', 2),
-    ]
+    const events = [makeDecisionEvent(baseInput, 'a', 1), makeDecisionEvent(baseInput, 'b', 2)]
     const body = serializeDecisionLog(events)
     assert.equal(body.endsWith('\n'), true)
     assert.equal(body.trim().split('\n').length, 2)
@@ -120,7 +120,10 @@ describe('redactSecrets', () => {
   })
 
   it('redacts known provider token shapes anywhere', () => {
-    assert.equal(redactSecrets('curl -H x sk-ABCDEFGHIJKLMNOP1234').includes('sk-ABCDEFGHIJKLMNOP1234'), false)
+    assert.equal(
+      redactSecrets('curl -H x sk-ABCDEFGHIJKLMNOP1234').includes('sk-ABCDEFGHIJKLMNOP1234'),
+      false,
+    )
   })
 
   it('redacts Bearer header values', () => {

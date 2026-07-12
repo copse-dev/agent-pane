@@ -343,12 +343,8 @@ export interface ApiClient {
     getPlanUsage: () => Promise<import('@copse/plan-usage').PlanUsageSnapshot>
   }
   decisions: {
-    list: (
-      projectId?: string,
-    ) => Promise<import('@shared/threads/decision-log.ts').DecisionEvent[]>
-    export: (
-      projectId?: string,
-    ) => Promise<{ path: string; count: number }>
+    list: (projectId?: string) => Promise<import('@shared/threads/decision-log.ts').DecisionEvent[]>
+    export: (projectId?: string) => Promise<{ path: string; count: number }>
   }
   index: {
     query: (pattern: string) => Promise<string[]>

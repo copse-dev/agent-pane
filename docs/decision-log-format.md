@@ -2,8 +2,8 @@
 
 Durable, append-only audit trail of **control-plane decisions** introduced in
 [#656](https://github.com/jonathanKingston/agent-pane/issues/656). Where the
-[thread store](./thread-store-format.md) records *what the agent did* (tool calls
-and their results), this records the permission layer *around* those calls —
+[thread store](./thread-store-format.md) records _what the agent did_ (tool calls
+and their results), this records the permission layer _around_ those calls —
 tool approvals/denials, the "remember" (sticky-grant) checkbox, sandbox-vs-
 external scope classifications, and hook allow/block verdicts — so questions like
 "what did I approve, when, at what scope, and did I make it sticky?" survive the
@@ -26,28 +26,28 @@ session.
 
 ## Line schema (`type: "decision"`)
 
-| field        | type                                                        | notes |
-| ------------ | ----------------------------------------------------------- | ----- |
-| `v`          | number                                                      | schema version (`1`) |
-| `type`       | `"decision"`                                                | discriminator |
-| `id`         | string (uuid)                                               | unique per event |
-| `at`         | number                                                      | epoch ms |
-| `kind`       | string                                                      | domain: `shell` \| `mcp` \| `web` \| `pii` \| `browser` \| `github-write` \| `custom-tool` \| `port-binding` \| `model-compare` \| `install` \| `classification` \| `hook` \| … (free string; treat unknowns gracefully) |
-| `actor`      | `"user"` \| `"classifier"` \| `"hook"`                      | who decided |
-| `verdict`    | `"approved"` \| `"denied"` \| `"allowed"` \| `"blocked"` \| `"ask"` \| `"timeout"` | `approved`/`denied` are user verdicts; the rest are non-interactive policy/hook verdicts |
-| `subject`    | string                                                      | redacted command / tool name / origin |
-| `scope`      | string?                                                     | e.g. `sandbox` \| `external` |
-| `remembered` | boolean?                                                    | whether the grant was made sticky |
-| `confidence` | number?                                                     | classifier confidence in `[0, 1]` |
-| `reasons`    | string[]?                                                   | redacted policy / classifier / hook reasons |
-| `threadId`   | string?                                                     | originating thread id (links back to the spine) |
-| `source`     | string?                                                     | redacted context: hook event name, classifier model, … |
+| field        | type                                                                               | notes                                                                                                                                                                                                                    |
+| ------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `v`          | number                                                                             | schema version (`1`)                                                                                                                                                                                                     |
+| `type`       | `"decision"`                                                                       | discriminator                                                                                                                                                                                                            |
+| `id`         | string (uuid)                                                                      | unique per event                                                                                                                                                                                                         |
+| `at`         | number                                                                             | epoch ms                                                                                                                                                                                                                 |
+| `kind`       | string                                                                             | domain: `shell` \| `mcp` \| `web` \| `pii` \| `browser` \| `github-write` \| `custom-tool` \| `port-binding` \| `model-compare` \| `install` \| `classification` \| `hook` \| … (free string; treat unknowns gracefully) |
+| `actor`      | `"user"` \| `"classifier"` \| `"hook"`                                             | who decided                                                                                                                                                                                                              |
+| `verdict`    | `"approved"` \| `"denied"` \| `"allowed"` \| `"blocked"` \| `"ask"` \| `"timeout"` | `approved`/`denied` are user verdicts; the rest are non-interactive policy/hook verdicts                                                                                                                                 |
+| `subject`    | string                                                                             | redacted command / tool name / origin                                                                                                                                                                                    |
+| `scope`      | string?                                                                            | e.g. `sandbox` \| `external`                                                                                                                                                                                             |
+| `remembered` | boolean?                                                                           | whether the grant was made sticky                                                                                                                                                                                        |
+| `confidence` | number?                                                                            | classifier confidence in `[0, 1]`                                                                                                                                                                                        |
+| `reasons`    | string[]?                                                                          | redacted policy / classifier / hook reasons                                                                                                                                                                              |
+| `threadId`   | string?                                                                            | originating thread id (links back to the spine)                                                                                                                                                                          |
+| `source`     | string?                                                                            | redacted context: hook event name, classifier model, …                                                                                                                                                                   |
 
 ## Where events come from
 
 - **User approvals/denials** — every `requestApproval`
   ([`approval.ts`](../src/main/services/approval.ts)) is recorded as an `actor:
-  "user"` event, so all shell / MCP / web / browser / GitHub-write / custom-tool
+"user"` event, so all shell / MCP / web / browser / GitHub-write / custom-tool
   / port-binding / PII / model-compare prompts are captured in one place, along
   with the `remember` grant.
 - **Classifier verdicts** — the sandbox-vs-external scope classification

@@ -52,7 +52,13 @@ describe('decision-log-store', () => {
   })
 
   it('writes decisions.jsonl under the project dir', async () => {
-    recordDecision({ projectId: PROJECT, kind: 'mcp', actor: 'user', verdict: 'denied', subject: 'mcp__x__y' })
+    recordDecision({
+      projectId: PROJECT,
+      kind: 'mcp',
+      actor: 'user',
+      verdict: 'denied',
+      subject: 'mcp__x__y',
+    })
     await readDecisionLog(PROJECT)
     assert.equal(existsSync(join(root, PROJECT, 'decisions.jsonl')), true)
   })
@@ -73,7 +79,13 @@ describe('decision-log-store', () => {
 
   it('appends multiple decisions in order (append-only)', async () => {
     for (let i = 0; i < 5; i++) {
-      recordDecision({ projectId: PROJECT, kind: 'shell', actor: 'user', verdict: 'approved', subject: `cmd-${String(i)}` })
+      recordDecision({
+        projectId: PROJECT,
+        kind: 'shell',
+        actor: 'user',
+        verdict: 'approved',
+        subject: `cmd-${String(i)}`,
+      })
     }
     const events = await readDecisionLog(PROJECT)
     assert.deepEqual(
@@ -87,8 +99,20 @@ describe('decision-log-store', () => {
   })
 
   it('exports a manifest + events bundle', async () => {
-    recordDecision({ projectId: PROJECT, kind: 'shell', actor: 'user', verdict: 'approved', subject: 'a' })
-    recordDecision({ projectId: PROJECT, kind: 'web', actor: 'user', verdict: 'denied', subject: 'https://x.test' })
+    recordDecision({
+      projectId: PROJECT,
+      kind: 'shell',
+      actor: 'user',
+      verdict: 'approved',
+      subject: 'a',
+    })
+    recordDecision({
+      projectId: PROJECT,
+      kind: 'web',
+      actor: 'user',
+      verdict: 'denied',
+      subject: 'https://x.test',
+    })
     const result = await exportDecisionLog(PROJECT)
     assert.equal(result.count, 2)
     assert.equal(existsSync(result.path), true)
@@ -108,7 +132,13 @@ describe('decision-log-store', () => {
   it('does not throw when recording is impossible', () => {
     // A record with a bogus (unstringifiable) confidence still must not throw.
     assert.doesNotThrow(() => {
-      recordDecision({ projectId: PROJECT, kind: 'hook', actor: 'hook', verdict: 'blocked', subject: 'run_shell' })
+      recordDecision({
+        projectId: PROJECT,
+        kind: 'hook',
+        actor: 'hook',
+        verdict: 'blocked',
+        subject: 'run_shell',
+      })
     })
   })
 })
