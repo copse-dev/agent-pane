@@ -36,7 +36,7 @@ jobs:
     # Electron to cross-build the Intel artifacts in the same run.
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
       - uses: ./.github/actions/setup
       # Build + package. release:mac signs (CSC_*), notarizes (APPLE_* +
       # `-c.mac.notarize=true`), and publishes; dist:mac is the unsigned dry run
