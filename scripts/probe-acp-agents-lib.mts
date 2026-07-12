@@ -171,4 +171,9 @@ async function main(): Promise<void> {
   }
 }
 
-await main()
+if (require.main === module) {
+  main().catch((err: unknown) => {
+    console.error(err)
+    process.exit(1)
+  })
+}
