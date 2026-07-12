@@ -73,7 +73,7 @@ jobs:
     steps:
       # fetch-depth: 0 so the e2e oracle (plan step) can diff against the PR base
       # / previous main tip.
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
         with:
           fetch-depth: 0
           # Do not leave even the read-only GITHUB_TOKEN in a fork checkout.
@@ -214,7 +214,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
         with:
           ref: ${{ github.head_ref }}
           token: ${{ secrets.SCREENSHOTS_PAT || github.token }}
@@ -242,7 +242,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
       - uses: ./.github/actions/setup
       # Unit suite under c8 + coverage-baseline.json ratchet (replaces the
       # separate coverage job — same tests, no duplicate npm test run).
@@ -268,7 +268,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
       - uses: ./.github/actions/setup
       # Guarantee the gortex binary independently of the setup action. On a
       # self-hosted runner whose baked image predates gortex, the baked-deps seed
@@ -319,7 +319,7 @@ jobs:
        contains(github.event.pull_request.labels.*.name, 'bench-agent'))
     runs-on: ${{ vars.LM_EVAL_RUNNER }}
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
       - uses: ./.github/actions/setup
       # Resolve the pinned instance ids into task files (network required).
       - run: npm run bench:swe-tasks
@@ -346,7 +346,7 @@ jobs:
     # full tree (worker files, nested dirs, exec bits) verbatim, so the shards
     # get a byte-identical dist without each rebuilding it.
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
       - uses: ./.github/actions/setup
       - run: npm run build
       - run: tar -cf dist.tar dist
@@ -413,7 +413,7 @@ jobs:
     env:
       SHARD_TOTAL: ${{ needs.precheck.outputs.e2e_shard_total }}
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
       - uses: ./.github/actions/setup
       # Reclaim ~20-30 GB of runner-preloaded toolchains (dotnet/android/ghc/
       # CodeQL/swift) and cached Docker images. The e2e shards have hit "No space
@@ -575,7 +575,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
@@ -717,7 +717,7 @@ jobs:
         # flapping or contested, OR main couldn't be merged automatically because
         # source conflicts need a human.
         if: steps.diff.outputs.changed == 'true' || steps.filter.outputs.ignored-count != '0' || steps.filter.outputs.flapping-count != '0' || steps.filter.outputs.contested-count != '0' || steps.reconcile.outputs.manual == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           CHANGED_FILES: ${{ steps.diff.outputs.files }}
           COMMIT_SHA: ${{ steps.push.outputs.sha }}

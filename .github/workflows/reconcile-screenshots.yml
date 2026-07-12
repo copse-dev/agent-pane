@@ -46,7 +46,7 @@ jobs:
       prs: ${{ steps.find.outputs.prs }}
     steps:
       - id: find
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -99,7 +99,7 @@ jobs:
       # recursion-guarded and wouldn't fire `synchronize`, leaving ci-passed stale
       # on the new head). Falls back to github.token: the conflict still clears,
       # just without the CI re-trigger.
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
         with:
           ref: ${{ matrix.pr.head }}
           fetch-depth: 0
@@ -139,7 +139,7 @@ jobs:
           echo "resolved=true" >> "$GITHUB_OUTPUT"
       - name: Comment when manual resolution is needed
         if: steps.merge.outputs.manual == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           PR_NUMBER: ${{ matrix.pr.number }}
           MANUAL_FILES: ${{ steps.merge.outputs.manual-files }}

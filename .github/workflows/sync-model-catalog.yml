@@ -21,7 +21,7 @@ jobs:
     # ci.yml's routing note); hosted otherwise. Scheduled, trusted-main only.
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
 
       - uses: actions/setup-node@v6
         with: { node-version: '22', cache: 'npm' }

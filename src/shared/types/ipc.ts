@@ -87,7 +87,6 @@ export interface IpcInvokeMap {
       prefs: {
         localServerUrl: string
         safetyClassifierEnabled: boolean
-        safetySandboxAllowThreshold: number
         safetyExternalDenyThreshold: number
         safetyModel: string
         autoRunSandboxCommands: boolean

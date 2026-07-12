@@ -254,7 +254,6 @@ export interface ApiClient {
     setSecurity: (prefs: {
       localServerUrl: string
       safetyClassifierEnabled: boolean
-      safetySandboxAllowThreshold: number
       safetyExternalDenyThreshold: number
       safetyModel: string
       reviewModel?: string
