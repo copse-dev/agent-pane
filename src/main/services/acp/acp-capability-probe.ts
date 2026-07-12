@@ -354,7 +354,9 @@ async function drainUpdates(
     const next = nextUpdate()
     let timer: ReturnType<typeof setTimeout> | undefined
     const timeout = new Promise<'timeout'>((res) => {
-      timer = setTimeout(() => res('timeout'), remaining)
+      timer = setTimeout(() => {
+        res('timeout')
+      }, remaining)
     })
     const outcome = await Promise.race([next, timeout])
     if (timer) clearTimeout(timer)
