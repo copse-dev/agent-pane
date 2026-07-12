@@ -29,13 +29,13 @@ in the tools I was using.
 The other itch was context. The big editors hide what they're stuffing into the
 prompt, then bill you for it. Copse shows a context wheel that breaks the window
 down — system prompt, tools, MCP, skills, conversation, your message — so I can
-*see* the bloat and cut it: trim history, switch off MCP servers and skills I don't
+_see_ the bloat and cut it: trim history, switch off MCP servers and skills I don't
 need for this task. You get a lean window without giving up the things that made
 Cursor pleasant to use.
 
 ## It runs where I can see it
 
-Freedom isn't only about *which* provider — it's about what the tool is allowed to
+Freedom isn't only about _which_ provider — it's about what the tool is allowed to
 do behind your back. Copse is sandboxed by default: the agent reads and writes only
 inside the workspace, and every shell command is classified before it runs, so
 anything reaching for the network or outside the project stops and asks instead of
@@ -72,7 +72,7 @@ A few things I'm building toward, because they're the actual point:
 
 - **Provability** — every decision the agent makes (what it ran, what I approved,
   at what scope) recorded to an exportable, machine-readable log, so a run can be
-  *audited and evaluated* after the fact, not just watched live.
+  _audited and evaluated_ after the fact, not just watched live.
 - **Judges, not a judge** — configurable quorums of review agents that have to
   agree with each other, instead of trusting a single pass.
 - **Steering without stopping** — nudge a running turn with a correction rather
