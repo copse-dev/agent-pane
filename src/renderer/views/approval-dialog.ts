@@ -144,7 +144,7 @@ export function mountApprovalDialog(
    * preserving arrival order (older requests stay at the top of the list). */
   function drainShowableIntoBatch(): number {
     let moved = 0
-    for (let i = 0; i < queue.length; ) {
+    for (let i = 0; i < queue.length;) {
       const req = queue[i]
       if (req && isShowable(req)) {
         queue.splice(i, 1)

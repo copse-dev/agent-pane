@@ -99,7 +99,7 @@ export function parsePorcelainV1(raw: string): GitStatusResult {
   if (!raw) return { staged, unstaged }
 
   const entries = raw.split('\0').filter(Boolean)
-  for (let i = 0; i < entries.length; ) {
+  for (let i = 0; i < entries.length;) {
     const entry = entries[i]
     if (entry === undefined || entry.length < 3) {
       i++

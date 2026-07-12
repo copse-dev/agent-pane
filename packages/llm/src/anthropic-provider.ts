@@ -226,10 +226,7 @@ function toAnthropicContent(
     if (c.type === 'image' && c.dataUrl) {
       const [header, data] = c.dataUrl.split(',')
       const mediaType = (header?.match(/:(.*?);/)?.[1] ?? 'image/png') as
-        | 'image/png'
-        | 'image/jpeg'
-        | 'image/gif'
-        | 'image/webp'
+        'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp'
       return { type: 'image', source: { type: 'base64', media_type: mediaType, data: data ?? '' } }
     }
     return { type: 'text', text: '' }

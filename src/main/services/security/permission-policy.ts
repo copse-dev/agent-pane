@@ -476,8 +476,7 @@ export function isStructurallyReadOnlyMcpToolName(toolName: string | undefined):
 }
 
 export type McpPermissionDecision =
-  | { action: 'allow'; reasons: string[] }
-  | { action: 'prompt'; reasons: string[] }
+  { action: 'allow'; reasons: string[] } | { action: 'prompt'; reasons: string[] }
 
 export interface McpPermissionInput {
   /** Full tool name (`mcp__<server>__<tool>`), used for the structural read-only name check. */

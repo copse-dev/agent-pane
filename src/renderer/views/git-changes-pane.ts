@@ -85,8 +85,7 @@ const STATUS_LABEL: Record<GitChangeStatus, string> = {
 }
 
 type ChangeSelection =
-  | { kind: 'proposed'; path: string }
-  | { kind: 'git'; path: string; staged: boolean }
+  { kind: 'proposed'; path: string } | { kind: 'git'; path: string; staged: boolean }
 
 function changesModeActive(store: AppStore): boolean {
   const { filesPaneOpen, rightPanelMode } = store.getState()

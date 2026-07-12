@@ -11,8 +11,7 @@
 // ── Messages sent to a provider ──────────────────────────────────────────────
 
 export type UserContent =
-  | string
-  | Array<{ type: 'text'; text: string } | { type: 'image'; dataUrl: string }>
+  string | Array<{ type: 'text'; text: string } | { type: 'image'; dataUrl: string }>
 
 export type LLMMessage =
   | { role: 'system'; content: string }

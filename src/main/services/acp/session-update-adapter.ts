@@ -40,13 +40,11 @@ export function streamChunkToSessionUpdate(chunk: StreamChunk): SessionUpdate | 
             (todo): todo is TodoItem & { status: PlanEntry['status'] } =>
               todo.status !== 'cancelled',
           )
-          .map(
-            (todo): PlanEntry => ({
-              content: todo.content,
-              priority: 'medium',
-              status: todo.status,
-            }),
-          ),
+          .map((todo): PlanEntry => ({
+            content: todo.content,
+            priority: 'medium',
+            status: todo.status,
+          })),
       }
     case 'tool_call':
       return {
@@ -85,13 +83,11 @@ export function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk |
     case 'plan':
       return {
         type: 'todo_update',
-        todos: update.entries.map(
-          (entry, index): TodoItem => ({
-            id: `acp-plan-${String(index + 1)}`,
-            content: entry.content,
-            status: entry.status,
-          }),
-        ),
+        todos: update.entries.map((entry, index): TodoItem => ({
+          id: `acp-plan-${String(index + 1)}`,
+          content: entry.content,
+          status: entry.status,
+        })),
       }
     case 'tool_call':
       return {
