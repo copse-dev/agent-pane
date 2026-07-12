@@ -274,6 +274,8 @@ describe('renderMatrixMarkdown / buildMatrixJson', () => {
     assert.match(md, /Session load \(resume prior\)/)
     assert.match(md, /_\(unstable\)_/) // fork/acp rows carry the marker
     assert.match(md, /\*\*Probe failed:\*\* nope/)
+    // Slash-command count renders as a lower bound (async discovery race).
+    assert.match(md, /≥1/)
     // Rich agent supports loadSession (✓); broken agent column is unknown (—).
     const loadRow = md.split('\n').find((l) => l.startsWith('| Session load'))
     assert.ok(loadRow?.includes('✓'))

@@ -101,5 +101,6 @@ where it lands is tracked in [`docs/acp-v2-readiness.md`](acp-v2-readiness.md).
 ## See also
 
 - [`docs/acp-agents.md`](acp-agents.md) — using external ACP agents (client role).
+- [`docs/acp-support-findings.md`](acp-support-findings.md) — findings from the first real probe run.
 - [`docs/acp-v2-readiness.md`](acp-v2-readiness.md) — what ACP v2 changes and our migration plan.
 - [`docs/plans/acp-client-support.md`](plans/acp-client-support.md) — the phased rollout.

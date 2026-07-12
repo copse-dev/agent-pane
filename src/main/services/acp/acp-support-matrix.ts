@@ -47,8 +47,11 @@ const ROWS: Row[] = [
   { label: 'Model selector (count)', cell: (s) => (s.models ? String(s.models.count) : CELL.no) },
   { label: 'Auth methods', cell: (s) => String(s.authMethods.length) },
   {
+    // A lower bound, not a fact: agents register commands asynchronously (often
+    // one MCP server at a time), so a fixed settle window samples a race. Marked
+    // `≥` and footnoted so the count is never read as authoritative.
     label: 'Slash commands (on connect)',
-    cell: (s) => String(s.slashCommands.length),
+    cell: (s) => (s.slashCommands.length > 0 ? `≥${String(s.slashCommands.length)}` : CELL.no),
   },
   {
     label: '_meta keys',
@@ -97,6 +100,12 @@ export function renderMatrixMarkdown(
     )
     lines.push(`| ${[label, ...cells].join(' | ')} |`)
   }
+  lines.push('')
+  lines.push(
+    '> `≥` on _Slash commands_ is a lower bound: agents register commands asynchronously ' +
+      '(often one MCP server at a time), so the fixed settle window samples whatever has arrived. ' +
+      'Widen it with `--settle <ms>` for a fuller count.',
+  )
   lines.push('')
 
   // Per-agent detail: errors, model/mode/command/_meta lists that don't fit a cell.
