@@ -717,7 +717,7 @@ jobs:
         # flapping or contested, OR main couldn't be merged automatically because
         # source conflicts need a human.
         if: steps.diff.outputs.changed == 'true' || steps.filter.outputs.ignored-count != '0' || steps.filter.outputs.flapping-count != '0' || steps.filter.outputs.contested-count != '0' || steps.reconcile.outputs.manual == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           CHANGED_FILES: ${{ steps.diff.outputs.files }}
           COMMIT_SHA: ${{ steps.push.outputs.sha }}
