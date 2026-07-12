@@ -6,8 +6,8 @@
  * - macOS + ASRT sandbox active  → sandbox-contained commands auto-run,
  *   network and outside-filesystem commands prompt before running outside the sandbox.
  * - Any platform, sandbox unavailable (Linux/Windows, or macOS init failure)
- *   → static analysis decides; the optional LM Studio classifier can upgrade a
- *   prompt to auto-run only when confident enough.
+ *   → every shell command prompts. The optional LM Studio classifier can only
+ *   support a strict-mode denial; it can never authorize host execution.
  * - Auto-run disabled in Settings → always prompt, on every platform.
  */
 import { describe, it } from 'node:test'
@@ -29,7 +29,6 @@ describe('shell permissions: macOS with ASRT sandbox active', () => {
     workspaceRoot: root,
     sandboxEnabled: true,
     autoRun: true,
-    sandboxAllowThreshold: 0.85,
   }
 
   it('auto-runs sandbox-contained commands without consulting a classifier', () => {
@@ -61,49 +60,50 @@ describe('shell permissions: macOS with ASRT sandbox active', () => {
   })
 })
 
-describe('shell permissions: Linux/Windows or macOS sandbox-init failure (no OS sandbox)', () => {
-  const opts = {
-    workspaceRoot: root,
-    sandboxEnabled: false,
-    autoRun: true,
-    sandboxAllowThreshold: 0.85,
-  }
+for (const platform of ['Linux', 'Windows'] as const) {
+  describe(`shell permissions: ${platform} (no OS sandbox)`, () => {
+    const opts = {
+      workspaceRoot: root,
+      sandboxEnabled: false,
+      autoRun: true,
+    }
 
-  it('prompts for static-analysis "external" verdicts regardless of classifier', () => {
-    const d = decideShellPermission(EXTERNAL, {
-      ...opts,
-      classification: { scope: 'sandbox', confidence: 0.99, reason: 'looks fine' },
+    it('prompts for static-analysis "external" verdicts regardless of classifier', () => {
+      const d = decideShellPermission(EXTERNAL, {
+        ...opts,
+        classification: { scope: 'sandbox', confidence: 0.99, reason: 'looks fine' },
+      })
+      // Static "external" wins before the classifier is consulted.
+      assert.equal(d.action, 'prompt')
     })
-    // Static "external" wins before the classifier is consulted.
-    assert.equal(d.action, 'prompt')
-  })
 
-  it('auto-runs only when the classifier is confident the command is sandbox-scoped', () => {
-    const d = decideShellPermission(SANDBOXED, {
-      ...opts,
-      classification: { scope: 'sandbox', confidence: 0.9, reason: 'local test runner' },
+    it('prompts even when the classifier is confident the command is sandbox-scoped', () => {
+      const d = decideShellPermission(SANDBOXED, {
+        ...opts,
+        classification: { scope: 'sandbox', confidence: 0.9, reason: 'local test runner' },
+      })
+      assert.equal(d.action, 'prompt')
     })
-    assert.equal(d.action, 'allow')
-  })
 
-  it('prompts when the classifier is below the confidence threshold', () => {
-    const d = decideShellPermission(SANDBOXED, {
-      ...opts,
-      classification: { scope: 'sandbox', confidence: 0.5, reason: 'unsure' },
+    it('prompts when the classifier is below the confidence threshold', () => {
+      const d = decideShellPermission(SANDBOXED, {
+        ...opts,
+        classification: { scope: 'sandbox', confidence: 0.5, reason: 'unsure' },
+      })
+      assert.equal(d.action, 'prompt')
     })
-    assert.equal(d.action, 'prompt')
-  })
 
-  it('prompts when the classifier is unavailable (no LM Studio safety model)', () => {
-    const d = decideShellPermission(SANDBOXED, { ...opts, classification: null })
-    assert.equal(d.action, 'prompt')
-    assert.ok(d.reasons.some((r) => /sandbox unavailable/i.test(r)))
-  })
+    it('prompts when the classifier is unavailable (no LM Studio safety model)', () => {
+      const d = decideShellPermission(SANDBOXED, { ...opts, classification: null })
+      assert.equal(d.action, 'prompt')
+      assert.ok(d.reasons.some((r) => /sandbox unavailable/i.test(r)))
+    })
 
-  it('never claims a command needs to run "outside the sandbox" when there is no sandbox', () => {
-    assert.equal(shellRequiresOutsideSandbox(EXTERNAL, root, false), false)
+    it('never claims a command needs to run "outside the sandbox" when there is no sandbox', () => {
+      assert.equal(shellRequiresOutsideSandbox(EXTERNAL, root, false), false)
+    })
   })
-})
+}
 
 describe('shell permissions: agent-declared "expects_sandbox_block" up-front escalation', () => {
   it('is eligible for an ambiguous command when the sandbox is active', () => {
@@ -137,7 +137,6 @@ describe('shell permissions: auto-run disabled in Settings', () => {
       sandboxEnabled: true,
       autoRun: false,
       classification: { scope: 'sandbox', confidence: 1, reason: 'safe' },
-      sandboxAllowThreshold: 0.85,
     })
     assert.equal(d.action, 'prompt')
     assert.ok(d.reasons.some((r) => /auto-run.*disabled/i.test(r)))

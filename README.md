@@ -70,7 +70,7 @@ LM Studio reloads local models at a small default context length after a reboot,
 
 On **macOS** with the project sandbox (seatbelt) active, sandbox-contained commands auto-run inside the sandbox; external commands (network, `gh`, `git push`, etc.) prompt and run outside when approved.
 
-On **Linux / Windows** (no OS sandbox), auto-run relies on static analysis plus an optional local safety classifier — a UX hint, not a security boundary. Approve external commands explicitly.
+On **Linux / Windows** (no OS sandbox), every agent-proposed shell command requires approval unless you explicitly add its binary to the trusted-command allow-list. The optional local safety classifier can only add a strict-mode block for a dangerous external command; it can never authorize host execution.
 
 ## Layout
 

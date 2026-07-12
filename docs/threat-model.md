@@ -120,9 +120,10 @@ These are the places where the posture above is aspirational rather than
 enforced, ordered by how much they widen the blast radius:
 
 - **No OS sandbox on Linux/Windows.** The seatbelt boundary is `darwin`-only. On
-  other platforms, auto-run relies on static analysis plus an optional local
-  classifier — a UX hint, not a security boundary. Approved external commands run
-  with the user's full privilege.
+  other platforms, every agent-proposed shell command requires explicit approval
+  unless the user has explicitly allow-listed its binary as trusted; the optional
+  local classifier can only make strict-mode blocks, never authorize host
+  execution. Approved commands run with the user's full privilege.
 - **Auto-run classifier is bypassable.** The auto-run decision is made by pattern
   matching over the raw command string, which is evadable (quote-splitting,
   interpreter-run of agent-written files, `git` transport tricks). It should fail

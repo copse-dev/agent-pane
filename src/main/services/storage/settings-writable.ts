@@ -210,9 +210,9 @@ export function parseRendererWritableSetting(
 export const securitySettingsSchema = z.object({
   localServerUrl: z.string().max(2048),
   safetyClassifierEnabled: z.boolean(),
-  // Split thresholds sent by the Settings dialog. The legacy single value is kept
-  // optional for back-compat with older stored bundles but is no longer written.
-  safetySandboxAllowThreshold: z.number().min(0).max(1),
+  // Deprecated compatibility values accepted from older renderer bundles. They
+  // are intentionally not written by current UI and cannot authorize shell runs.
+  safetySandboxAllowThreshold: z.number().min(0).max(1).optional(),
   safetyExternalDenyThreshold: z.number().min(0).max(1),
   safetyConfidenceThreshold: z.number().min(0).max(1).optional(),
   safetyModel: z.string().max(256),
