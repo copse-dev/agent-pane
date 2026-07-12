@@ -1,20 +1,56 @@
 # ACP v2 readiness
 
 **Short answer: the capability probe (and all of Copse's ACP integration) is
-v1, by design. ACP v2 is an unstable draft that no shipping agent speaks yet, so
-there is nothing to probe today — but it is a large breaking change, so this
-page tracks what's coming and where it will land.**
+v1, by design. The _protocol_ project is well into v2 — there is a stable v2
+baseline schema, a migration guide, and an active commit stream — but the
+_TypeScript SDK we consume_ has not adopted v2 yet, so there is nothing to probe
+today. This page tracks what's coming, how far along it is, and where it lands.**
+
+## Where v2 actually stands (dug through the SDKs + schema, 2026-07)
+
+Two different projects, at two very different stages:
+
+- **The schema source-of-truth (`agentclientprotocol/agent-client-protocol`,
+  the `@agentclientprotocol/schema` Rust crate + generators) is actively
+  building v2.** It generates a **stable v2 baseline** (`schema/v2/schema.json`,
+  `"version": 2`) plus an unstable layer (`schema/v2/schema.unstable.json`),
+  gated behind a Cargo `unstable_protocol_v2` feature. The v2 Rust modules have
+  materially diverged from v1 (e.g. `tool_call.rs` +68%, `content.rs` +41%),
+  there's a full `docs/protocol/v2/` doc set + a "Migrating from v1" guide, and a
+  steady stream of `feat(unstable-v2)` commits implementing the RFDs (diff
+  format, session/load→resume, permission subjects, ID unification, MCP content
+  alignment). v2 schema releases have been explicitly enabled. So on the protocol
+  side v2 is real and moving, though the guide still says to "gate v2 behind
+  explicit version negotiation and feature flags until it stabilizes."
+- **The published TypeScript SDK (`@agentclientprotocol/sdk`) — the one Copse
+  depends on — is still v1-only.** Latest is **1.2.1** (`latest` tag; the 0.29→1.x
+  jump is v1 going _stable_, not v2). Its dist ships `PROTOCOL_VERSION === 1`,
+  only `schema/schema.json` (v1), zero v2 types, and there is no v2/`next`
+  dist-tag on npm. The Rust crate isn't published to npm at all
+  (`@agentclientprotocol/schema` 404s), so the JSON schema reaches us only
+  through the SDK.
+
+**Net:** v2 is coming and its shape is now concrete, but we can't _consume_ it
+until the TS SDK generates v2 types. Two takeaways for us:
+
+1. **We're behind on the v1 SDK too.** `package.json` pins `^0.29.0`; latest is
+   `1.2.1`. Bumping to the stable v1 1.x is an independent, low-risk maintenance
+   item worth doing regardless of v2.
+2. **v2 stays a watch item** — track when the SDK ships v2 types (or a `next`
+   tag), then execute the plan below.
 
 ## Why the probe can't (and shouldn't) see v2 today
 
 Three independent facts, all verifiable in the pinned SDK
-(`@agentclientprotocol/sdk@0.29.0`):
+(`@agentclientprotocol/sdk`, v1 through the current 1.2.1):
 
 1. **The SDK is v1.** `PROTOCOL_VERSION === 1`; there are no v2 types in the
    package. The probe requests v1 in `initialize`.
-2. **Version negotiation downgrades.** A client asks for a version and the agent
-   answers with one it supports (≤ requested). A v2-capable agent talking to our
-   v1 request answers **v1**. So we never receive v2 shapes.
+2. **Version negotiation downgrades.** The client sends the latest version it
+   supports; the agent answers with the same version or its own latest. To use
+   v2 a client must send `protocolVersion: 2` — which our v1 SDK cannot — so a
+   v2-capable agent answers **v1** and we never receive v2 shapes. (This is
+   exactly the mechanism the `--protocol` hook targets.)
 3. **Unknown fields are stripped.** Incoming notifications are zod-parsed
    (`zSessionNotification.parse`) against a v1-only union, and zod v4 strips
    unknown keys. Even if a v2 field leaked through, it would be dropped before
@@ -22,9 +58,8 @@ Three independent facts, all verifiable in the pinned SDK
    the v1 union outright.
 
 So "does the probe cover v2?" is really "should a v1 client synthesize v2
-data?" — no. v2 is **opt-in, off by default, explicitly unstable** per the
-[v2 overview RFD](https://agentclientprotocol.com/rfds/v2/overview). It's a
-future migration of the whole integration, not a hole in the probe.
+data?" — no. It's a future migration of the whole integration, not a hole in the
+probe.
 
 ### The forward hook that exists now
 
@@ -76,10 +111,13 @@ Both narrow gaps that earlier favored a direct Claude Agent SDK backend over ACP
 
 ## When v2 stabilizes — the plan
 
-1. Bump the SDK to a version that publishes v2 types (opt-in/unstable).
+1. Bump `@agentclientprotocol/sdk` to a version that publishes v2 types (the v1
+   1.x bump can happen now, independently). Version negotiation is per
+   connection, so keep the v1 surface — the migration guide is explicit that
+   v1-only agents and clients stay common "for some time."
 2. Add a v2 branch to `extractCapabilitySnapshot` reading the new `capabilities`
-   / `info` shape, and probe with `--protocol 2`. Keep the v1 path — agents will
-   speak both for a long transition.
+   / `info` shape, and probe with `--protocol 2` (sends `protocolVersion: 2`; a
+   v1 agent still answers v1 and the matrix flags the downgrade).
 3. Teach `session-update-adapter.ts` the new update kinds (`state_update`,
    whole-message, tool-call upsert, `plan_update`).
 4. Revisit permission handling to consume the structured `subject`, and the
