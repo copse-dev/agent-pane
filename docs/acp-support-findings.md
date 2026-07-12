@@ -74,19 +74,25 @@ advantages are all **behavioral / enforcement**, none of which Tier 1 can see:
 2. hook-based containment of shell writes into the diff queue,
 3. in-process tool injection.
 
-Those are exactly what **Tier 2** (behavioral probes) measures. So the decision
-is now: build a Claude SDK backend only if those three enforcement gaps matter —
-and Tier 2 is what turns that from inference into evidence.
+Those are exactly what **Tier 2** (behavioral probes,
+[#832](https://github.com/copse-dev/agent-pane/issues/832)) measures. So the
+decision is now: build a Claude SDK backend only if those three enforcement gaps
+matter — and Tier 2 is what turns that from inference into evidence.
 
 ## Actionable Copse gaps the matrix exposed
 
 These are "ACP already supports it, we don't use it" gaps, independent of the
-big decision (tracked as issues):
+big decision:
 
 - **Use ACP `session/load`/`resume` for warm sessions** instead of the 10-minute
   reap + replay-preamble hack — Claude and Codex both advertise it.
+  ([#830](https://github.com/copse-dev/agent-pane/issues/830))
 - **Forward image content blocks** to agents advertising `prompt.image` — all
   three do; we currently drop attachments before prompting.
+  ([#831](https://github.com/copse-dev/agent-pane/issues/831))
+
+The behavioral follow-up (Tier 2) is tracked in
+[#832](https://github.com/copse-dev/agent-pane/issues/832).
 
 ## Caveat: slash-command counts are a race
 

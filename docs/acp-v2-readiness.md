@@ -31,18 +31,18 @@ Two different projects, at two very different stages:
   through the SDK.
 
 **Net:** v2 is coming and its shape is now concrete, but we can't _consume_ it
-until the TS SDK generates v2 types. Two takeaways for us:
+until the TS SDK generates v2 types. Takeaway: **v2 stays a watch item** — track
+when the SDK ships v2 types (or a `next` tag), then execute the plan below.
 
-1. **We're behind on the v1 SDK too.** `package.json` pins `^0.29.0`; latest is
-   `1.2.1`. Bumping to the stable v1 1.x is an independent, low-risk maintenance
-   item worth doing regardless of v2.
-2. **v2 stays a watch item** — track when the SDK ships v2 types (or a `next`
-   tag), then execute the plan below.
+> The v1 SDK bump has since landed on this branch (via `main`): `package.json`
+> now depends on `@agentclientprotocol/sdk@^1.1.0` (locked `1.1.0`), the stable
+> v1 line. Latest is `1.2.1`. This does not change anything below — `1.1.0` is
+> still `PROTOCOL_VERSION === 1`, v1-only.
 
 ## Why the probe can't (and shouldn't) see v2 today
 
-Three independent facts, all verifiable in the pinned SDK
-(`@agentclientprotocol/sdk`, v1 through the current 1.2.1):
+Three independent facts, all verifiable in the SDK we depend on
+(`@agentclientprotocol/sdk@1.1.0`, v1 like the whole current 1.x line):
 
 1. **The SDK is v1.** `PROTOCOL_VERSION === 1`; there are no v2 types in the
    package. The probe requests v1 in `initialize`.
@@ -112,7 +112,7 @@ Both narrow gaps that earlier favored a direct Claude Agent SDK backend over ACP
 ## When v2 stabilizes — the plan
 
 1. Bump `@agentclientprotocol/sdk` to a version that publishes v2 types (the v1
-   1.x bump can happen now, independently). Version negotiation is per
+   1.x bump has already landed — we're on `1.1.0`). Version negotiation is per
    connection, so keep the v1 surface — the migration guide is explicit that
    v1-only agents and clients stay common "for some time."
 2. Add a v2 branch to `extractCapabilitySnapshot` reading the new `capabilities`
