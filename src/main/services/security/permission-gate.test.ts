@@ -421,29 +421,32 @@ describe('decideShellPermission', () => {
     assert.ok(d.reasons.some((x) => x.includes('GitHub CLI')))
   })
 
-  it('lets a read-only gh subcommand auto-run via the classifier with no OS sandbox (#500)', () => {
+  it('carves a read-only gh subcommand out of the external prompt lane with no OS sandbox (#500)', () => {
     // Read-only `gh pr view` now carries no external signal, so — unlike an ambiguous
-    // writing subcommand, which always prompts here — it can be auto-allowed when the
-    // safety classifier is confident it is sandbox-scoped.
+    // writing subcommand — it is no longer prompted via the "GitHub CLI" external
+    // matcher. With no OS sandbox it falls through to the generic sandbox-unavailable
+    // prompt like any other local command. (A sandbox-scoped classification is never
+    // an authorization boundary without an OS sandbox — see the tests below — so it
+    // still prompts; but the reason reflects the #500 carve-out.)
     const readOnly = decideShellPermission('gh pr view --json state', {
       workspaceRoot: root,
       sandboxEnabled: false,
       autoRun: true,
       classification: { scope: 'sandbox', confidence: 0.9, reason: 'read-only GitHub query' },
-      sandboxAllowThreshold: 0.85,
     })
-    assert.equal(readOnly.action, 'allow')
+    assert.equal(readOnly.action, 'prompt')
+    assert.ok(!readOnly.reasons.some((x) => x.includes('GitHub CLI')))
 
-    // The same classification cannot rescue a writing subcommand — the ambiguous
-    // verdict prompts before the classifier is consulted.
+    // A writing subcommand still matches the ambiguous GitHub-CLI matcher, so it
+    // prompts with the "GitHub CLI" external reason before any classifier is consulted.
     const writing = decideShellPermission('gh pr create --fill', {
       workspaceRoot: root,
       sandboxEnabled: false,
       autoRun: true,
       classification: { scope: 'sandbox', confidence: 0.9, reason: 'looks fine' },
-      sandboxAllowThreshold: 0.85,
     })
     assert.equal(writing.action, 'prompt')
+    assert.ok(writing.reasons.some((x) => x.includes('GitHub CLI')))
   })
 
   it('does not offer unsandboxed retries for network-only sandbox failures', () => {
