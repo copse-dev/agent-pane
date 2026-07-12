@@ -344,12 +344,6 @@ export function createLmStudioSection(
     if (lmKey) await api.settings.setKey('lmstudio', lmKey)
     const lmUrl = urlInput.value.trim()
     const currentSafety = (await api.settings.get('safetyModel')) as string | undefined
-    const legacyThreshold = (await api.settings.get('safetyConfidenceThreshold')) as
-      | number
-      | undefined
-    const currentSandboxAllow = (await api.settings.get('safetySandboxAllowThreshold')) as
-      | number
-      | undefined
     const currentExternalDeny = (await api.settings.get('safetyExternalDenyThreshold')) as
       | number
       | undefined
@@ -369,7 +363,6 @@ export function createLmStudioSection(
     await api.settings.setSecurity({
       localServerUrl: lmUrl,
       safetyClassifierEnabled: currentSafetyEnabled ?? true,
-      safetySandboxAllowThreshold: currentSandboxAllow ?? legacyThreshold ?? 0.85,
       safetyExternalDenyThreshold: currentExternalDeny ?? 1,
       safetyModel: opts?.safetyModel ?? currentSafety ?? at(PREFERRED_MODELS, 2).id,
       autoRunSandboxCommands: currentAutoRun ?? true,

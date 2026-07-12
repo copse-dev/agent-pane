@@ -68,8 +68,6 @@ export function decideShellPermission(
     sandboxEnabled: boolean
     autoRun: boolean
     classification: ClassificationResult | null
-    /** Min confidence for a `sandbox`-scoped classification to auto-run (default 0.85). */
-    sandboxAllowThreshold: number
     /**
      * Strict-mode hard-deny bar: when the classifier is at least this confident a
      * command is `external` *and* a deterministic destructive signal fires, the
@@ -111,7 +109,7 @@ export function decideShellPermission(
   // No OS sandbox: the heuristic is the only guard, so an ambiguous "may reach network"
   // verdict must prompt exactly like a hard-external one — auto-running it would be an
   // unprompted network/out-of-workspace call.
-  const { classification, sandboxAllowThreshold } = opts
+  const { classification } = opts
   const externalDenyThreshold = opts.externalDenyThreshold ?? 1
 
   // Strict-mode hard-deny: refuse outright (no click-through) only when the safety
@@ -141,19 +139,10 @@ export function decideShellPermission(
     return { action: 'prompt', reasons: dangerous }
   }
 
-  if (
-    classification &&
-    classification.scope === 'sandbox' &&
-    classification.confidence >= sandboxAllowThreshold
-  ) {
-    return { action: 'allow', reasons: [classification.reason] }
-  }
-  const reasons = classification
-    ? [
-        `safety model: ${classification.reason} (confidence ${classification.confidence.toFixed(2)})`,
-      ]
-    : ['OS sandbox unavailable — prompt required']
-  return { action: 'prompt', reasons }
+  // A model verdict is useful as a strict-mode signal above, but is never an
+  // authorization boundary. Without an OS sandbox, even apparently ordinary
+  // commands can invoke repository-controlled code, so require approval.
+  return { action: 'prompt', reasons: ['OS sandbox unavailable — prompt required'] }
 }
 
 export function shellCommandFromArgs(args: unknown): string | null {
