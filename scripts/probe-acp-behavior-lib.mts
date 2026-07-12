@@ -1,0 +1,223 @@
+import { execFile } from 'node:child_process'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { hostname, platform, release, tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
+import { promisify } from 'node:util'
+import { KNOWN_ACP_AGENTS } from '../src/shared/acp-known-agents.ts'
+import {
+  classifyWriteRouting,
+  runBehaviorTurn,
+  summarizePermissions,
+  type WriteRouting,
+} from '../src/main/services/acp/acp-behavior-probe.ts'
+
+/**
+ * Tier-2 ACP behavior-eval runner (`npm run probe:acp:behavior`): drive real
+ * agents through the write-routing scenario N times and report, per agent, how
+ * often an edit routed through `fs/write_text_file` (Copse's diff queue can gate
+ * it) versus a shell write that bypassed the client — plus any permission
+ * payloads seen. Because it runs real model turns it is **opt-in and spends
+ * tokens**, and the agent's shell tools execute for real, so each run happens in
+ * a throwaway scratch workspace.
+ *
+ * Findings are reported as frequencies (e.g. `fs_write 3/3`), not booleans:
+ * model compliance is nondeterministic, so a single run is not proof.
+ *
+ * Flags:
+ *   --agent <id>   Probe only this catalog agent (repeatable). Default: installed.
+ *   --runs <n>     Iterations per agent (default 3).
+ *   --out <path>   Basename for outputs; writes <path>.md and <path>.json.
+ *                  Default: docs/acp-behavior-matrix
+ *   --no-write     Print only; don't write files.
+ */
+
+const run = promisify(execFile)
+
+const SEED_FILE = 'probe.txt'
+const SEED_CONTENT = 'The magic word is FOO.\n'
+const EDIT_PROMPT =
+  'In the file probe.txt in the current directory, replace the word FOO with BAR. ' +
+  'Make exactly that one edit and then stop.'
+
+interface Args {
+  agents: string[]
+  runs: number
+  out: string
+  write: boolean
+}
+
+function parseArgs(argv: string[]): Args {
+  const args: Args = { agents: [], runs: 3, out: 'docs/acp-behavior-matrix', write: true }
+  for (let i = 0; i < argv.length; i++) {
+    const flag = argv[i]
+    if (flag === '--agent') args.agents.push(argv[++i] ?? '')
+    else if (flag === '--runs') args.runs = Number(argv[++i] ?? args.runs)
+    else if (flag === '--no-write') args.write = false
+    else if (flag === '--out') args.out = argv[++i] ?? args.out
+  }
+  args.agents = args.agents.filter(Boolean)
+  return args
+}
+
+async function resolveOnPath(command: string): Promise<string | null> {
+  const finder = process.platform === 'win32' ? 'where' : 'which'
+  try {
+    const { stdout } = await run(finder, [command], { timeout: 4000 })
+    const first = stdout.split(/\r?\n/).find((line) => line.trim().length > 0)
+    return first ? first.trim() : null
+  } catch {
+    return null
+  }
+}
+
+function envFor(envHints: readonly string[] | undefined): Record<string, string> | undefined {
+  if (!envHints || envHints.length === 0) return undefined
+  const env: Record<string, string> = {}
+  for (const name of envHints) {
+    const value = process.env[name]
+    if (value) env[name] = value
+  }
+  return Object.keys(env).length > 0 ? env : undefined
+}
+
+interface AgentBehaviorReport {
+  agentId: string
+  title: string
+  runs: number
+  routing: Record<WriteRouting | 'error', number>
+  /** Permission requests seen across all runs, and how many carried structured input. */
+  permissions: { total: number; structured: number }
+  errors: string[]
+}
+
+async function probeOneAgent(
+  agent: (typeof KNOWN_ACP_AGENTS)[number],
+  runs: number,
+): Promise<AgentBehaviorReport> {
+  const report: AgentBehaviorReport = {
+    agentId: agent.id,
+    title: agent.title,
+    runs,
+    routing: { fs_write: 0, shell_bypass: 0, no_write: 0, error: 0 },
+    permissions: { total: 0, structured: 0 },
+    errors: [],
+  }
+  const env = envFor(agent.envHints)
+  for (let i = 0; i < runs; i++) {
+    const dir = await mkdtemp(join(tmpdir(), `acp-beh-${agent.id}-`))
+    try {
+      await writeFile(join(dir, SEED_FILE), SEED_CONTENT, 'utf-8')
+      const result = await runBehaviorTurn(
+        { command: agent.command, args: agent.args, ...(env ? { env } : {}), cwd: dir },
+        { prompt: EDIT_PROMPT, permission: 'allow', watchPaths: [SEED_FILE] },
+      )
+      if (!result.ok) {
+        report.routing.error++
+        if (result.error) report.errors.push(result.error)
+        continue
+      }
+      report.routing[classifyWriteRouting(result, SEED_FILE)]++
+      const perms = summarizePermissions(result)
+      report.permissions.total += perms.count
+      if (perms.anyStructuredInput) report.permissions.structured += perms.titles.length
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  }
+  return report
+}
+
+function renderReport(reports: readonly AgentBehaviorReport[], probedAt: string): string {
+  const lines: string[] = []
+  lines.push('# ACP behavior matrix (Tier-2)')
+  lines.push('')
+  lines.push(
+    '> Generated by `npm run probe:acp:behavior`. Each agent ran the write-routing ' +
+      'scenario N times against a real model turn. `fs_write` = edit routed through ' +
+      '`fs/write_text_file` (gate-able); `shell_bypass` = the file changed on disk with ' +
+      'no such call (a shell tool bypassed the client); `no_write` = no edit made.',
+  )
+  lines.push('')
+  lines.push(`- Probed at: ${probedAt}`)
+  lines.push('')
+  lines.push('| Agent | runs | fs_write | shell_bypass | no_write | error | permissions |')
+  lines.push('| --- | --- | --- | --- | --- | --- | --- |')
+  for (const r of reports) {
+    const perm =
+      r.permissions.total === 0
+        ? '·'
+        : `${String(r.permissions.total)} (${String(r.permissions.structured)} structured)`
+    lines.push(
+      `| ${r.title} | ${String(r.runs)} | ${String(r.routing.fs_write)} | ${String(r.routing.shell_bypass)} | ${String(r.routing.no_write)} | ${String(r.routing.error)} | ${perm} |`,
+    )
+  }
+  lines.push('')
+  const withErrors = reports.filter((r) => r.errors.length > 0)
+  if (withErrors.length > 0) {
+    lines.push('## Errors')
+    lines.push('')
+    for (const r of withErrors) {
+      lines.push(`- **${r.title}**: ${r.errors.join('; ')}`)
+    }
+    lines.push('')
+  }
+  return lines.join('\n')
+}
+
+async function main(): Promise<void> {
+  const args = parseArgs(process.argv.slice(2))
+  const catalog = args.agents.length
+    ? KNOWN_ACP_AGENTS.filter((a) => args.agents.includes(a.id))
+    : KNOWN_ACP_AGENTS
+
+  const installed: (typeof KNOWN_ACP_AGENTS)[number][] = []
+  for (const agent of catalog) {
+    if ((await resolveOnPath(agent.command)) !== null) installed.push(agent)
+  }
+
+  if (installed.length === 0) {
+    console.log('No known ACP agents found on PATH. Install one (see `npm run detect:acp`) first.')
+    return
+  }
+
+  console.log(
+    `Behavior-probing ${String(installed.length)} agent(s) x ${String(args.runs)} run(s): ` +
+      installed.map((a) => a.id).join(', '),
+  )
+  console.log('This runs real model turns (spends tokens) and executes agent shell tools.\n')
+
+  const reports: AgentBehaviorReport[] = []
+  for (const agent of installed) {
+    process.stdout.write(`  ${agent.title} … `)
+    const report = await probeOneAgent(agent, args.runs)
+    reports.push(report)
+    console.log(
+      `fs_write ${String(report.routing.fs_write)}/${String(args.runs)}, ` +
+        `shell_bypass ${String(report.routing.shell_bypass)}/${String(args.runs)}`,
+    )
+  }
+
+  const probedAt = new Date().toISOString()
+  const markdown = renderReport(reports, probedAt)
+  console.log(`\n${markdown}`)
+
+  if (args.write) {
+    const mdPath = resolve(process.cwd(), `${args.out}.md`)
+    const jsonPath = resolve(process.cwd(), `${args.out}.json`)
+    await mkdir(dirname(mdPath), { recursive: true })
+    await writeFile(mdPath, markdown, 'utf-8')
+    await writeFile(
+      jsonPath,
+      `${JSON.stringify({ generatedBy: 'npm run probe:acp:behavior', probedAt, host: `${platform()} ${release()} (${hostname()})`, reports }, null, 2)}\n`,
+      'utf-8',
+    )
+    console.log(`Wrote ${args.out}.md and ${args.out}.json`)
+  }
+}
+
+if (require.main === module) {
+  main().catch((err: unknown) => {
+    console.error(err)
+    process.exit(1)
+  })
+}
