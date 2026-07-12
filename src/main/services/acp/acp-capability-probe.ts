@@ -325,7 +325,7 @@ function spawnProbeTransport(
     env: { ...process.env, ...(config.env ?? {}) },
     stdio: ['pipe', 'pipe', 'inherit'],
   })
-  if (!child.stdin || !child.stdout) throw new Error('ACP agent spawned without stdio pipes')
+  // `stdio: ['pipe', 'pipe', ...]` types stdin/stdout as non-null.
   const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
   const readable = Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>
   return Promise.resolve({
@@ -396,9 +396,12 @@ export async function probeAgentCapabilities(
   }
 
   let transport: { stream: Stream; dispose: () => void } | null = null
-  let timedOut = false
+  // Mutated only inside the timeout closure, so a plain `let` would be
+  // control-flow-narrowed to `false` at the read site below. An object property
+  // keeps its declared type across the async boundary.
+  const state = { timedOut: false }
   const timer = setTimeout(() => {
-    timedOut = true
+    state.timedOut = true
     transport?.dispose()
   }, timeoutMs)
 
@@ -423,7 +426,7 @@ export async function probeAgentCapabilities(
 
     return { ...base, ok: true, snapshot }
   } catch (err) {
-    const reason = timedOut
+    const reason = state.timedOut
       ? `timed out after ${String(timeoutMs)}ms`
       : err instanceof Error
         ? err.message

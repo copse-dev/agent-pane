@@ -162,8 +162,9 @@ describe('extractCapabilitySnapshot', () => {
     assert.equal(snapshot.mcpHttp, true)
     assert.equal(snapshot.mcpSse, false)
     assert.deepEqual(snapshot.modes, { current: 'default', available: ['default', 'plan'] })
-    assert.equal(snapshot.models?.count, 2)
-    assert.equal(snapshot.models?.current, 'sonnet')
+    assert.ok(snapshot.models)
+    assert.equal(snapshot.models.count, 2)
+    assert.equal(snapshot.models.current, 'sonnet')
     assert.deepEqual(snapshot.authMethods, [{ id: 'api-key', name: 'API key' }])
     assert.deepEqual(snapshot.slashCommands, ['compact'])
     assert.deepEqual(snapshot.observedUpdateKinds, ['available_commands_update'])
@@ -207,13 +208,14 @@ describe('probeAgentCapabilities (in-memory agent)', () => {
     })
 
     assert.equal(report.ok, true)
-    assert.equal(report.snapshot?.loadSession, true)
-    assert.equal(report.snapshot?.sessionResume, true)
-    assert.equal(report.snapshot?.promptImage, true)
-    assert.equal(report.snapshot?.mcpHttp, true)
-    assert.equal(report.snapshot?.agentInfo?.version, '9.9.9')
-    assert.deepEqual(report.snapshot?.slashCommands, ['plan', 'compact'])
-    assert.deepEqual(report.snapshot?.metaKeys, ['initialize:vendor/feature'])
+    assert.ok(report.snapshot)
+    assert.equal(report.snapshot.loadSession, true)
+    assert.equal(report.snapshot.sessionResume, true)
+    assert.equal(report.snapshot.promptImage, true)
+    assert.equal(report.snapshot.mcpHttp, true)
+    assert.equal(report.snapshot.agentInfo?.version, '9.9.9')
+    assert.deepEqual(report.snapshot.slashCommands, ['plan', 'compact'])
+    assert.deepEqual(report.snapshot.metaKeys, ['initialize:vendor/feature'])
   })
 
   it('probes a bare agent without pushed updates', async () => {
@@ -222,8 +224,9 @@ describe('probeAgentCapabilities (in-memory agent)', () => {
       createTransport: fakeAgentTransport({}),
     })
     assert.equal(report.ok, true)
-    assert.equal(report.snapshot?.loadSession, false)
-    assert.deepEqual(report.snapshot?.slashCommands, [])
+    assert.ok(report.snapshot)
+    assert.equal(report.snapshot.loadSession, false)
+    assert.deepEqual(report.snapshot.slashCommands, [])
   })
 
   it('captures a transport failure as ok:false instead of throwing', async () => {
@@ -245,8 +248,9 @@ describe('probeAgentCapabilities (in-memory agent)', () => {
       createTransport: fakeAgentTransport({}),
     })
     assert.equal(report.requestedProtocolVersion, 2)
-    assert.equal(report.snapshot?.protocolVersion, PROTOCOL_VERSION)
-    assert.notEqual(report.snapshot?.protocolVersion, report.requestedProtocolVersion)
+    assert.ok(report.snapshot)
+    assert.equal(report.snapshot.protocolVersion, PROTOCOL_VERSION)
+    assert.notEqual(report.snapshot.protocolVersion, report.requestedProtocolVersion)
   })
 })
 
