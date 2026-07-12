@@ -182,8 +182,18 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   `registeredAcpAgents` entry to opt them in, or `sandbox: false` to opt a
   catalog agent out (#590).
 
+## Comparing agents (capability probe)
+
+Not sure what a given agent actually supports? `npm run probe:acp` spawns each
+installed agent, runs the `initialize` / `session/new` handshake (no prompt, no
+tokens), and writes a support matrix comparing session resume, prompt content
+types, MCP transports, modes, models, auth, and any `_meta` each adapter
+tunnels. See [`docs/acp-capability-probe.md`](acp-capability-probe.md).
+
 ## See also
 
+- [`docs/acp-capability-probe.md`](acp-capability-probe.md) — the Tier-1
+  capability probe and support matrix (`npm run probe:acp`).
 - [`docs/plans/acp-client-support.md`](plans/acp-client-support.md) — the design
   notes and phased rollout.
 - [Agent Client Protocol](https://agentclientprotocol.com/) — the protocol spec
