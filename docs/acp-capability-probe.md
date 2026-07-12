@@ -89,7 +89,17 @@ count — this is the record for spotting what a vendor adapter tunnels through
 fake agent** with controllable capabilities, so the extraction is verified in CI
 with no agent installed.
 
+## Protocol version (v1 today)
+
+The probe is a **v1 client** — it requests the SDK's `PROTOCOL_VERSION` (1) in
+`initialize`, and by ACP's version negotiation every agent answers v1. The
+`--protocol <n>` flag sets the requested version and the report records
+requested-vs-negotiated (flagging a downgrade), which is the forward hook for
+**ACP v2** — an unstable draft no shipping agent speaks yet. What v2 changes and
+where it lands is tracked in [`docs/acp-v2-readiness.md`](acp-v2-readiness.md).
+
 ## See also
 
 - [`docs/acp-agents.md`](acp-agents.md) — using external ACP agents (client role).
+- [`docs/acp-v2-readiness.md`](acp-v2-readiness.md) — what ACP v2 changes and our migration plan.
 - [`docs/plans/acp-client-support.md`](plans/acp-client-support.md) — the phased rollout.

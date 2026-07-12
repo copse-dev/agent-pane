@@ -127,6 +127,14 @@ export interface AcpCapabilityReport {
   args: string[]
   /** ISO timestamp; set by the caller when assembling a matrix. */
   probedAt?: string
+  /**
+   * Protocol version we asked for in `initialize`. The agent negotiates DOWN to
+   * a version it supports (see {@link AcpCapabilitySnapshot.protocolVersion} for
+   * what it actually settled on). Defaults to the SDK's `PROTOCOL_VERSION` (v1);
+   * request a higher version to probe how an agent handles / downgrades a newer
+   * request once the SDK can speak it.
+   */
+  requestedProtocolVersion: number
   /** True when initialize + session/new completed and a snapshot was produced. */
   ok: boolean
   /** Populated when `ok` is false. */
@@ -155,6 +163,14 @@ export interface AcpProbeOptions {
   settleMs?: number
   /** Overall timeout for the whole probe before the agent is killed. Default 20s. */
   timeoutMs?: number
+  /**
+   * Protocol version to request in `initialize`. Defaults to the SDK's
+   * `PROTOCOL_VERSION`. This is the forward hook for ACP v2: once the pinned SDK
+   * can speak a newer protocol, bumping this (via `--protocol`) probes it with no
+   * other change. Today the SDK is v1-only, so a higher value just reveals how
+   * each agent negotiates a newer request down.
+   */
+  protocolVersion?: number
   /** Transport injection point so tests can wire an in-process agent. */
   createTransport?: (config: AcpProbeConfig) => Promise<{ stream: Stream; dispose: () => void }>
 }
@@ -366,6 +382,7 @@ export async function probeAgentCapabilities(
 ): Promise<AcpCapabilityReport> {
   const settleMs = options.settleMs ?? 750
   const timeoutMs = options.timeoutMs ?? 20_000
+  const requestedProtocolVersion = options.protocolVersion ?? PROTOCOL_VERSION
   const createTransport = options.createTransport ?? spawnProbeTransport
 
   const base = {
@@ -373,6 +390,7 @@ export async function probeAgentCapabilities(
     title: config.title,
     command: config.command,
     args: config.args ?? [],
+    requestedProtocolVersion,
   }
 
   let transport: { stream: Stream; dispose: () => void } | null = null
@@ -390,7 +408,7 @@ export async function probeAgentCapabilities(
 
     const snapshot = await app.connectWith(transport.stream, async (ctx) => {
       const init = await ctx.request(methods.agent.initialize, {
-        protocolVersion: PROTOCOL_VERSION,
+        protocolVersion: requestedProtocolVersion,
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
       })
       return ctx.buildSession(config.cwd).withSession(async (session) => {

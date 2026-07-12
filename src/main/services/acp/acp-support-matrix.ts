@@ -115,6 +115,11 @@ export function renderMatrixMarkdown(
     if (s.agentInfo) {
       lines.push(`- Agent info: ${s.agentInfo.name} ${s.agentInfo.version}`)
     }
+    if (s.protocolVersion !== report.requestedProtocolVersion) {
+      lines.push(
+        `- **Protocol negotiated down:** requested v${String(report.requestedProtocolVersion)}, agent settled on v${String(s.protocolVersion)}`,
+      )
+    }
     if (s.modes) {
       lines.push(`- Modes: ${s.modes.available.join(', ')} (current: ${s.modes.current})`)
     }

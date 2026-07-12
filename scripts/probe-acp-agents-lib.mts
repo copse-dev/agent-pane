@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { hostname, platform, release } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { promisify } from 'node:util'
+import { PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
 import { KNOWN_ACP_AGENTS } from '../src/shared/acp-known-agents.ts'
 import {
   probeAgentCapabilities,
@@ -26,6 +27,8 @@ import {
  *                  Default: docs/acp-support-matrix
  *   --no-write     Print only; don't write files.
  *   --settle <ms>  Post-connect update drain window (default 750).
+ *   --protocol <n> Protocol version to request in initialize (default: SDK's v1).
+ *                  The forward hook for ACP v2 — see docs/acp-v2-readiness.md.
  */
 
 const run = promisify(execFile)
@@ -36,6 +39,7 @@ interface Args {
   out: string
   write: boolean
   settleMs: number
+  protocolVersion: number | undefined
 }
 
 function parseArgs(argv: string[]): Args {
@@ -45,6 +49,7 @@ function parseArgs(argv: string[]): Args {
     out: 'docs/acp-support-matrix',
     write: true,
     settleMs: 750,
+    protocolVersion: undefined,
   }
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i]
@@ -53,6 +58,7 @@ function parseArgs(argv: string[]): Args {
     else if (flag === '--no-write') args.write = false
     else if (flag === '--out') args.out = argv[++i] ?? args.out
     else if (flag === '--settle') args.settleMs = Number(argv[++i] ?? args.settleMs)
+    else if (flag === '--protocol') args.protocolVersion = Number(argv[++i])
   }
   args.agents = args.agents.filter(Boolean)
   return args
@@ -120,6 +126,7 @@ async function main(): Promise<void> {
         title: agent.title,
         command: agent.command,
         args: agent.args,
+        requestedProtocolVersion: args.protocolVersion ?? PROTOCOL_VERSION,
         ok: false,
         error: 'not installed (not on PATH)',
       })
@@ -136,7 +143,10 @@ async function main(): Promise<void> {
         ...(env ? { env } : {}),
         cwd,
       },
-      { settleMs: args.settleMs },
+      {
+        settleMs: args.settleMs,
+        ...(args.protocolVersion !== undefined ? { protocolVersion: args.protocolVersion } : {}),
+      },
     )
     reports.push(report)
     console.log(report.ok ? 'ok' : `failed (${report.error ?? 'unknown'})`)

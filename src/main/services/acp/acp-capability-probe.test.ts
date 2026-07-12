@@ -235,6 +235,19 @@ describe('probeAgentCapabilities (in-memory agent)', () => {
     assert.match(report.error ?? '', /ENOENT/)
     assert.equal(report.snapshot, undefined)
   })
+
+  it('records the requested protocol version (forward hook for v2)', async () => {
+    // The default fake agent always answers v1; requesting v2 surfaces the
+    // negotiate-down so the matrix can flag it.
+    const report = await probeAgentCapabilities(CONFIG, {
+      settleMs: 0,
+      protocolVersion: 2,
+      createTransport: fakeAgentTransport({}),
+    })
+    assert.equal(report.requestedProtocolVersion, 2)
+    assert.equal(report.snapshot?.protocolVersion, PROTOCOL_VERSION)
+    assert.notEqual(report.snapshot?.protocolVersion, report.requestedProtocolVersion)
+  })
 })
 
 describe('renderMatrixMarkdown / buildMatrixJson', () => {
