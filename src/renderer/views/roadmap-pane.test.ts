@@ -144,7 +144,7 @@ function makeApi(
       },
       openIssues: async () => {
         calls.openIssues++
-        return issues.map((i) => ({ ...i }))
+        return { slug: 'octo/demo', issues: issues.map((i) => ({ ...i })) }
       },
       importIssues: async (selected: { number: number; title: string; body: string }[]) => {
         calls.importIssues.push(selected)
@@ -461,6 +461,24 @@ describe('roadmap pane', () => {
       assert.ok(titles.join('\n').includes('#52'), 'the imported item appears in the list')
       // The picker closes after a successful import.
       assert.equal(viewer.querySelector<HTMLElement>('.roadmap-import')?.hidden, true)
+    } finally {
+      unmount()
+    }
+  })
+
+  it('names the queried repo when it has no open issues', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api } = makeApi([], [])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-import-btn')?.click()
+      await flush()
+      assert.equal(
+        viewer.querySelector('.roadmap-import-status')?.textContent,
+        'No open issues found in octo/demo.',
+      )
     } finally {
       unmount()
     }
