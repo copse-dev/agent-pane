@@ -70,6 +70,7 @@ export interface AppState {
   fontSize: number // 12–20, applied to app + Monaco
   autoPortraitRightPanel: boolean // Auto-stack the right panel below chat on portrait windows.
   rightPanelPosition: RightPanelPosition // Where the right panel (explorer/terminal/etc.) lives.
+  openLinksInBuiltInBrowser: boolean // Clicked http(s) links open in the in-app browser vs the system browser.
   settings?: { model: string }
 }
 

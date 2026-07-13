@@ -175,6 +175,16 @@ dialog.settings-overlay::backdrop {
   color: var(--text-muted);
   line-height: 1.4;
 }
+/* Inline preview of the external-link glyph shown in the links hint copy. */
+.external-link-hint-icon {
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  vertical-align: -0.1em;
+  background-color: currentColor;
+  -webkit-mask: var(--external-link-mask);
+  mask: var(--external-link-mask);
+}
 /* A range slider paired with a live numeric readout. */
 .slider-row {
   display: flex;
