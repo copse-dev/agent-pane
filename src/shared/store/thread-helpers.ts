@@ -72,7 +72,7 @@ export function normalizeBlankThreads(store: AppStore): void {
   pruneBlankThreads(store, keepIds)
 }
 
-export function createThread(store: AppStore): string {
+export function createThread(store: AppStore, draftPrompt?: string): string {
   const id = randomUUID()
   const defaultModel = store.getState().settings?.model
   const threads = [
@@ -85,6 +85,10 @@ export function createThread(store: AppStore): string {
       // Only set model when a default exists; omit under exactOptionalPropertyTypes
       // rather than assigning undefined. Absent means "use the global default".
       ...(defaultModel !== undefined ? { model: defaultModel } : {}),
+      // A caller-seeded draft (e.g. starting a thread from a roadmap item) must
+      // be on the thread before threads_changed fires: the composer loads
+      // draftPrompt exactly once, when the active thread id changes.
+      ...(draftPrompt?.trim() ? { draftPrompt } : {}),
       createdAt: Date.now(),
       updatedAt: Date.now(),
     },

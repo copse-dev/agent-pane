@@ -14,6 +14,7 @@ const TITLES: Record<PopoutMode, string> = {
   changes: 'Changes — Copse',
   prs: 'Pull requests — Copse',
   memories: 'Memories — Copse',
+  roadmap: 'Roadmap — Copse',
   browser: 'Browser — Copse',
 }
 

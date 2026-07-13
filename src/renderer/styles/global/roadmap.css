@@ -1,0 +1,35 @@
+/* Roadmap pane (issue #556; #645 Phase 3). The pane reuses the memories pane's
+   layout primitives (memories.css) and the git-changes list classes; these rules
+   only add what is roadmap-specific — the per-item lifecycle status badge and
+   the status select. */
+.roadmap-status-badge {
+  align-self: flex-start;
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 0 6px;
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.roadmap-status-badge.is-ready {
+  background: color-mix(in srgb, var(--success, #3fb950) 18%, transparent);
+  color: var(--success, #3fb950);
+}
+.roadmap-status-badge.is-blocked {
+  background: color-mix(in srgb, var(--warning, #d29922) 18%, transparent);
+  color: var(--warning, #d29922);
+}
+.roadmap-status-badge.is-conflicts {
+  background: color-mix(in srgb, var(--danger, #f14c4c) 16%, transparent);
+  color: var(--danger, #f14c4c);
+}
+/* done keeps the neutral chip; archived fades the whole row. */
+.roadmap-row:has(.roadmap-status-badge.is-archived) .roadmap-row-title {
+  color: var(--text-muted);
+}
+.roadmap-status-select {
+  width: auto;
+  align-self: flex-start;
+}

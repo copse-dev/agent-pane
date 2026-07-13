@@ -935,12 +935,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Let the agent keep a roadmap of future-work prompts
               </label>
               <p class="field-hint">
-                Adds a <code>roadmap_plan</code> tool so the agent can record prompts to run over a
-                longer time horizon than the current change and track each item's status
-                (ready / blocked / conflicts / done) across sessions — a notes app for future work,
-                so longer-horizon plans aren't started before the PRs they depend on merge. Items
-                are stored per project under <code>~/.copse/roadmap</code>. While off, the tool is
-                not registered.
+                Adds a <code>roadmap_plan</code> tool and a Roadmap pane (titlebar button) for
+                jotting prompts to run over a longer time horizon than the current change, with a
+                per-item status (ready / blocked / conflicts / done) tracked across sessions — a
+                notes app for future work, so longer-horizon plans aren't started before the PRs
+                they depend on merge. Items are stored per project in the knowledge store under
+                <code>~/.copse/knowledge</code>. While off, the tool is not registered and the
+                pane is hidden.
               </p>
             </fieldset>
 

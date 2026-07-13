@@ -27,11 +27,25 @@ grinding out large amounts of work before those PRs merge.
   under `~/.copse/roadmap/<workspace>/items.json`, mirroring the memories store's
   workspace-namespacing. Items have `id`, `prompt`, `notes`, `status`, timestamps.
 - **Tool** `roadmap_plan` (`src/main/tools/roadmap-tools.ts`) — `add` / `list` /
-  `set_status`, registered only when the flag is on (`registry-bootstrap.ts`).
-- **Tests** `roadmap-plans-store.test.ts`.
+  `set_status`, registered only when the flag is on (`registry-bootstrap.ts`). The
+  registration now syncs live when the flag is toggled (`syncRoadmapPlanTools`), so no
+  app restart is needed.
+- **Tests** `roadmap-plans-store.test.ts` (superseded by `knowledge-store.test.ts` after
+  the #645 migration).
+- **UI surface** — the Roadmap pane (`src/renderer/views/roadmap-pane.ts`), a titlebar
+  button shown while the flag is on. Mirrors the Memories pane over the same knowledge
+  store: a backlog list with per-item status badges plus an inline editor to jot a new
+  prompt (with optional notes) and update an item's prompt / notes / status. Backed by
+  `roadmap:*` IPC handlers (`register-handlers.ts`) that only touch `Roadmap`-typed
+  notes; the pane can be popped out into its own window like the other panes.
+- **Start thread** — a button on each saved item that opens a fresh thread with the
+  composer pre-filled from the item's prompt (notes appended as a context line) and
+  focused. Deliberately not auto-sent: the user reviews and hits send, which also
+  leaves the item's status for the agent/user to update once work actually starts.
+  Hidden in pop-out windows, which have no chat pane.
 
-While the flag is off the tool is not registered and nothing reads or writes the store —
-the feature is fully inert.
+While the flag is off the tool is not registered, the pane's titlebar button is hidden,
+and nothing reads or writes the store — the feature is fully inert.
 
 ## Not yet built (follow-ups on the issue)
 
@@ -39,6 +53,6 @@ the feature is fully inert.
   items auto-flag as `blocked` / `conflicts` and unblock when PRs merge.
 - **Premature-work guard** — the agent should refuse to start a `blocked` / `conflicts`
   item until its blockers merge, then re-check before starting.
-- **UI surface** — a pane or an extension of the PRs pane (#512) to view/reorder the
-  backlog, rather than tool-only access.
+- **Reordering** — the pane lists items in store order; drag-to-reorder (the store's
+  `order` already supports it) is not surfaced yet.
 - Decide whether `docs/plans/*.md` or the JSON store is the source of truth.
