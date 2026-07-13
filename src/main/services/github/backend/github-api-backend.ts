@@ -341,6 +341,33 @@ export const githubApiBackend: GitHubBackend = {
     )
   },
 
+  async getIssue(ref: PrRef): Promise<GhIssueSummary | null> {
+    const result = await rest(`/repos/${ref.owner}/${ref.repo}/issues/${String(ref.number)}`)
+    if (result.status === 404) return null
+    if (!result.ok) throw new Error(result.errorMessage ?? 'Could not load issue.')
+    const item = result.json as Record<string, unknown>
+    // The issues endpoint also serves PRs; a roadmap pin must be a real issue.
+    if ('pull_request' in item) return null
+    const title = typeof item['title'] === 'string' ? item['title'] : null
+    const url = typeof item['html_url'] === 'string' ? item['html_url'] : null
+    if (!title || !url) return null
+    const summary: GhIssueSummary = {
+      owner: ref.owner,
+      repo: ref.repo,
+      number: ref.number,
+      title,
+      url,
+      body: typeof item['body'] === 'string' ? item['body'].slice(0, 8000) : '',
+      labels: Array.isArray(item['labels'])
+        ? (item['labels'] as Array<Record<string, unknown>>)
+            .map((l) => (typeof l['name'] === 'string' ? l['name'] : null))
+            .filter((name): name is string => name != null)
+        : [],
+    }
+    if (typeof item['updated_at'] === 'string') summary.updatedAt = item['updated_at']
+    return summary
+  },
+
   async getPrDetails(ref: PrRef): Promise<GhPrDetails | null> {
     // The pull, its files, and its review decision are independent — fetch
     // concurrently rather than serially. reviewDecision is GraphQL-only (the

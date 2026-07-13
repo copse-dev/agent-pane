@@ -1,6 +1,7 @@
 import { el, clear, qsRequired } from '../dom/helpers.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { isRoadmapComplexity } from '@shared/roadmap/complexity.ts'
+import { isRoadmapFit } from '@shared/roadmap/fit.ts'
 import { createThread } from '@shared/store/thread-helpers.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import type { AppStore } from '@shared/store/store.ts'
@@ -70,6 +71,9 @@ export function mountRoadmapPane(
   // instead of the editor until the user imports or cancels.
   let importing = false
   let openIssues: OpenIssue[] = []
+  // While a fit check runs, its progress/error text owns the fit box and
+  // renderEditor must not overwrite it from the store.
+  let fitCheckInFlight = false
   let loadToken = 0
 
   // --- list column ----------------------------------------------------------
@@ -151,6 +155,7 @@ export function mountRoadmapPane(
   const statusLabel = el('label', { class: 'memories-label' }, 'Status')
   const metaLine = el('div', { class: 'memories-meta' })
   const errorLine = el('div', { class: 'memories-error', hidden: true })
+  const fitResult = el('div', { class: 'roadmap-fit-result', hidden: true })
 
   const saveBtn = el(
     'button',
@@ -169,6 +174,17 @@ export function mountRoadmapPane(
     },
     'Start thread',
   )
+  // Advisory: asks the small-tasks model whether executing the prompt would
+  // plausibly resolve the pinned issue. Only offered while an issue is pinned.
+  const fitBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'memories-btn roadmap-fit-btn',
+      title: 'Ask the local model whether this prompt would resolve the pinned issue',
+    },
+    'Check fit',
+  )
   const deleteBtn = el(
     'button',
     { type: 'button', class: 'memories-btn memories-btn-danger roadmap-delete-btn' },
@@ -179,7 +195,15 @@ export function mountRoadmapPane(
     { type: 'button', class: 'memories-btn roadmap-cancel-btn' },
     'Cancel',
   )
-  const actions = el('div', { class: 'memories-actions' }, saveBtn, startBtn, deleteBtn, cancelBtn)
+  const actions = el(
+    'div',
+    { class: 'memories-actions' },
+    saveBtn,
+    startBtn,
+    fitBtn,
+    deleteBtn,
+    cancelBtn,
+  )
 
   form.append(
     el('label', { class: 'memories-label' }, 'Prompt'),
@@ -192,6 +216,7 @@ export function mountRoadmapPane(
     statusSelect,
     metaLine,
     errorLine,
+    fitResult,
     actions,
   )
   // --- import-from-issues picker (shown in the viewer column while importing) --
@@ -266,7 +291,22 @@ export function mountRoadmapPane(
     statusLabel.hidden = !item
     statusSelect.hidden = !item
     startBtn.hidden = !item
+    fitBtn.hidden = !item || !itemIssue(item)
     deleteBtn.hidden = !item
+    // The stored verdict + reasoning render whenever the item is shown, so a
+    // past check survives closing the pane. While a check is in flight,
+    // checkFit owns this box (progress/error text) and blocks this rewrite.
+    if (!fitCheckInFlight) {
+      const fit = item ? item.fields['fit'] : undefined
+      if (item && isRoadmapFit(fit)) {
+        fitResult.hidden = false
+        const detail = item.fields['fitDetail']
+        fitResult.textContent = detail ? `fit: ${fit} — ${detail}` : `fit: ${fit}`
+      } else {
+        fitResult.hidden = true
+        fitResult.textContent = ''
+      }
+    }
     if (item?.updatedAt) {
       metaLine.hidden = false
       metaLine.textContent = `Updated ${item.updatedAt}`
@@ -313,6 +353,21 @@ export function mountRoadmapPane(
               title: 'Estimated prompt complexity (classified on save)',
             },
             complexity,
+          ),
+        )
+      }
+      // A fit verdict survives until the prompt or pin changes (the update
+      // path drops stale ones).
+      const fit = item.fields['fit']
+      if (isRoadmapFit(fit)) {
+        meta.append(
+          el(
+            'span',
+            {
+              class: `roadmap-fit-badge is-${fit}`,
+              title: 'Model verdict: would this prompt resolve the pinned issue?',
+            },
+            `fit: ${fit}`,
           ),
         )
       }
@@ -443,6 +498,26 @@ export function mountRoadmapPane(
     renderEditor()
   }
 
+  async function checkFit(): Promise<void> {
+    if (!selectedId) return
+    fitBtn.disabled = true
+    fitCheckInFlight = true
+    fitResult.hidden = false
+    fitResult.textContent = 'Checking fit against the pinned issue…'
+    try {
+      await api.roadmap.checkFit(selectedId)
+      // The verdict + reasoning were stamped into the note; re-render from the
+      // store (the durable form) without clobbering open edits.
+      fitCheckInFlight = false
+      await refresh({ preserveDirty: true })
+    } catch (err) {
+      fitResult.textContent = ipcErrorMessage(err, 'Fit check failed.')
+    } finally {
+      fitCheckInFlight = false
+      fitBtn.disabled = false
+    }
+  }
+
   // Open a fresh thread pre-filled with the item's prompt (plus its notes as a
   // trailing context line). Uses the editor's *current* text so an unsaved
   // tweak goes to the thread the user is looking at, not a stale stored copy.
@@ -564,6 +639,7 @@ export function mountRoadmapPane(
     void save()
   })
   startBtn.addEventListener('click', startThread)
+  fitBtn.addEventListener('click', () => void checkFit())
   deleteBtn.addEventListener('click', () => void remove())
   cancelBtn.addEventListener('click', cancel)
 

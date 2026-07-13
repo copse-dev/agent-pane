@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseIssueRef, issueRefToUrl } from './issue-ref.ts'
+import { parseIssueRef, issueRefToUrl, resolveIssueRef } from './issue-ref.ts'
 
 describe('parseIssueRef', () => {
   it('canonicalizes the forms people paste', () => {
@@ -24,6 +24,25 @@ describe('parseIssueRef', () => {
     assert.equal(parseIssueRef('#12a'), null)
     assert.equal(parseIssueRef('https://github.com/octo/hello-world/pull/7'), null)
     assert.equal(parseIssueRef('https://example.com/octo/hello/issues/7'), null)
+  })
+})
+
+describe('resolveIssueRef', () => {
+  it('anchors short refs on the workspace slug', () => {
+    assert.deepEqual(resolveIssueRef('#12', 'octo/hello'), {
+      owner: 'octo',
+      repo: 'hello',
+      number: 12,
+    })
+    assert.equal(resolveIssueRef('#12', null), null)
+  })
+
+  it('reads full refs directly', () => {
+    assert.deepEqual(resolveIssueRef('a/b#3', null), { owner: 'a', repo: 'b', number: 3 })
+  })
+
+  it('rejects malformed refs', () => {
+    assert.equal(resolveIssueRef('nope', 'octo/hello'), null)
   })
 })
 
