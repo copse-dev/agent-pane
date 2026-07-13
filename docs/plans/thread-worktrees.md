@@ -16,7 +16,7 @@ semantic index + watcher, terminal cwd, the git service, the editor. Threads
 carry a `gitBranch` label, but it is a fiction under concurrency:
 
 - `src/shared/git/sync-thread-branch.ts` exists to rebind a thread when
-  *another thread* moves HEAD under it.
+  _another thread_ moves HEAD under it.
 - `src/main/services/worktree-backup.ts` keeps the pre-turn safety snapshot in
   a process-global singleton, so concurrent threads silently share one backup
   and "Restore pre-session changes" can restore the wrong baseline.
@@ -31,16 +31,16 @@ Decided lazily at **first message** (not thread creation — blank threads and
 drafts stay free), at the same point `bindThreadGitBranchIfUnset` runs today
 (`src/renderer/views/input-bar.ts`).
 
-| Situation at first message | Default |
-| --- | --- |
-| Checkout on the default branch (`getDefaultBranch()`) | **New worktree**, new branch `copse/<thread-slug>` |
-| Checkout on a non-default branch | Share the checkout (status quo — user is mid-feature and likely wants the agent alongside them) |
-| Not a git repo / no default branch resolvable / submodules detected | Share the checkout |
-| Explicit user choice (chip in the input bar, see UX) | Wins over all of the above |
+| Situation at first message                                          | Default                                                                                         |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Checkout on the default branch (`getDefaultBranch()`)               | **New worktree**, new branch `copse/<thread-slug>`                                              |
+| Checkout on a non-default branch                                    | Share the checkout (status quo — user is mid-feature and likely wants the agent alongside them) |
+| Not a git repo / no default branch resolvable / submodules detected | Share the checkout                                                                              |
+| Explicit user choice (chip in the input bar, see UX)                | Wins over all of the above                                                                      |
 
 Rationale for the main-branch trigger: work started from main is almost always
-a *new* task, where isolation is pure upside; work started from a feature
-branch is usually *continuation*, where the user expects the agent to see the
+a _new_ task, where isolation is pure upside; work started from a feature
+branch is usually _continuation_, where the user expects the agent to see the
 branch state and their editor.
 
 Project-level setting `worktreeMode`: `from-default-branch` (default) ·
@@ -72,7 +72,7 @@ invisible or surprising.
    threaded through the tool registry so `resolveWorkspacePath`,
    `assertWorkspaceWriteTarget`, shell-tool cwd, and the read/write fs IPC
    resolve against the thread's root instead of the global. The global
-   `workspaceRoot` remains the *project* root; a thread without a worktree has
+   `workspaceRoot` remains the _project_ root; a thread without a worktree has
    `root === workspaceRoot`, so the shared-checkout path stays the same code
    path, not a second mode.
 
@@ -87,7 +87,7 @@ New `src/main/services/worktree-manager.ts`:
   sandboxing are per-thread-root from the start.
 - `remove(threadId, { force })`, `list(projectRoot)`,
   `pruneOrphans(projectRoot)` (worktrees whose thread no longer exists in the
-  catalog *and* whose branch is merged/clean; anything dirty or unmerged is
+  catalog _and_ whose branch is merged/clean; anything dirty or unmerged is
   kept and surfaced, never silently deleted).
 - Placement: `~/.copse/worktrees/<projectId>/<threadId>/` — outside the repo
   (no `.gitignore` change, never indexed by the project, consistent with the
@@ -108,7 +108,7 @@ worktree?: { path: string; baseBranch: string; baseCommit: string; createdAt: nu
 
 - Policy function (pure, unit-tested) in `src/shared/git/worktree-policy.ts`
   taking `{ currentBranch, defaultBranch, isGitRepo, hasSubmodules, setting,
-  explicitChoice }` → `'worktree' | 'shared'`.
+explicitChoice }` → `'worktree' | 'shared'`.
 - **Composer chip** (input bar, pre-first-message): shows what will happen —
   `⎇ isolated · copse/fix-flicker` or `⎇ shared · main` — click to flip. After
   the first message it becomes the existing footer branch status. One glance
@@ -141,12 +141,12 @@ Isolation is only ergonomic if the return trip is one click:
 - **Changes chip** on each worktree thread: ahead/behind vs `baseBranch`,
   dirty-file count (data via the root-parameterized `getGitChangeStats`).
 - **"Bring into project" action** with three modes:
-  1. *Merge to <base>* — commit (existing `commitWithAttribution`), then
+  1. _Merge to <base>_ — commit (existing `commitWithAttribution`), then
      fast-forward/merge in the main checkout; conflicts open the existing
      diff view.
-  2. *Create PR* — reuses the existing remote-agent/PR flow; the thread
+  2. _Create PR_ — reuses the existing remote-agent/PR flow; the thread
      already owns a real branch, so this is free.
-  3. *Keep branch* — just leave `copse/<slug>` for manual handling.
+  3. _Keep branch_ — just leave `copse/<slug>` for manual handling.
 - After a successful merge + clean tree, offer to retire the worktree.
 
 ### Phase 5 — lifecycle, environment bootstrap, polish
@@ -161,10 +161,10 @@ Isolation is only ergonomic if the return trip is one click:
     failures are visible and retryable.
   - `worktreeCopyGlobs` — untracked files copied from the main checkout (e.g.
     `.env`, `.env.local`). Copy, never symlink — trees diverge.
-  First worktree in a project without these configured gets a one-time,
-  dismissible hint when the agent's first command fails in a way that smells
-  like missing deps. v2: warm-spare tree (pre-created + pre-installed) to make
-  allocation instant for heavyweight projects.
+    First worktree in a project without these configured gets a one-time,
+    dismissible hint when the agent's first command fails in a way that smells
+    like missing deps. v2: warm-spare tree (pre-created + pre-installed) to make
+    allocation instant for heavyweight projects.
 
 ## Edge cases
 
@@ -178,7 +178,7 @@ Isolation is only ergonomic if the return trip is one click:
   shared mode with a notice; `git worktree prune` cleans the stale entry.
 - **Disk pressure:** worktree checkout cost is tracked-files only, but setup
   commands can be heavy; GC settings plus the changes chip keep it visible.
-- **`workspace:set` gating:** worktree roots are registered as *allowed* roots
+- **`workspace:set` gating:** worktree roots are registered as _allowed_ roots
   for containment but are not offered as openable projects — they belong to
   their parent project.
 
