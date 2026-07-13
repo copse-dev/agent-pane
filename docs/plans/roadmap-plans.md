@@ -38,6 +38,11 @@ grinding out large amounts of work before those PRs merge.
   prompt (with optional notes) and update an item's prompt / notes / status. Backed by
   `roadmap:*` IPC handlers (`register-handlers.ts`) that only touch `Roadmap`-typed
   notes; the pane can be popped out into its own window like the other panes.
+- **Start thread** — a button on each saved item that opens a fresh thread with the
+  composer pre-filled from the item's prompt (notes appended as a context line) and
+  focused. Deliberately not auto-sent: the user reviews and hits send, which also
+  leaves the item's status for the agent/user to update once work actually starts.
+  Hidden in pop-out windows, which have no chat pane.
 
 While the flag is off the tool is not registered, the pane's titlebar button is hidden,
 and nothing reads or writes the store — the feature is fully inert.

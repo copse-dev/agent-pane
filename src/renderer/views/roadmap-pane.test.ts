@@ -249,6 +249,42 @@ describe('roadmap pane', () => {
     }
   })
 
+  it('starts a new thread with the composer draft pre-filled from the item', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api } = makeApi([makeItem('a', 'Ship the thing', 'ready', 'after #99 merges')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      const startBtn = viewer.querySelector<HTMLButtonElement>('.roadmap-start-btn')
+      assert.ok(startBtn)
+      assert.equal(startBtn.hidden, false, 'offered for an existing item')
+      let opened = 0
+      store.on('new_thread_opened', () => opened++)
+      startBtn.click()
+      assert.equal(opened, 1, 'opens a new thread')
+      const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
+      assert.equal(thread?.draftPrompt, 'Ship the thing\n\nNotes: after #99 merges')
+    } finally {
+      unmount()
+    }
+  })
+
+  it('hides the start-thread button on a blank new-item form', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api } = makeApi([])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-new-btn')?.click()
+      assert.equal(viewer.querySelector<HTMLButtonElement>('.roadmap-start-btn')?.hidden, true)
+    } finally {
+      unmount()
+    }
+  })
+
   it('does not discard an in-progress edit on a background refresh', async () => {
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
     const { api } = makeApi([makeItem('a', 'Old prompt')])
