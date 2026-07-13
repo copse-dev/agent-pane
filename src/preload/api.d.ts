@@ -373,6 +373,9 @@ export interface ApiClient {
     importIssues: (
       issues: { number: number; title: string; body: string }[],
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote[]>
+    checkFit: (
+      id: string,
+    ) => Promise<import('../main/services/roadmap-fit-check.ts').RoadmapFitResult>
   }
   skills: {
     list: () => Promise<SkillSummary[]>

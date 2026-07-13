@@ -58,6 +58,13 @@ grinding out large amounts of work before those PRs merge.
   `src/shared/roadmap/complexity.ts`). Stored in the `complexity` frontmatter field and
   shown as a badge on the list row. Status/notes-only edits keep the stored stamp —
   no model call.
+- **Check fit** — for a pinned item, an on-demand button asks the small-tasks model
+  whether executing the prompt would plausibly resolve the pinned issue
+  (`src/main/services/roadmap-fit-check.ts`, `getIssue` on the GitHub backend). Verdict
+  `likely` / `partial` / `unlikely` is stamped into the `fit` frontmatter field (a badge
+  on the row) with free-form reasoning shown once in the editor. Advisory only, never
+  run on save; a prompt or pin edit drops the stale verdict. No heuristic fallback — a
+  keyword match cannot judge fit, so without a model the check explains why instead.
 - **Start thread** — a button on each saved item that opens a fresh thread with the
   composer pre-filled from the item's prompt (notes appended as a context line) and
   focused. Deliberately not auto-sent: the user reviews and hits send, which also

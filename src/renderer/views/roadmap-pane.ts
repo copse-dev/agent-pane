@@ -1,6 +1,7 @@
 import { el, clear, qsRequired } from '../dom/helpers.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { isRoadmapComplexity } from '@shared/roadmap/complexity.ts'
+import { isRoadmapFit } from '@shared/roadmap/fit.ts'
 import { createThread } from '@shared/store/thread-helpers.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import type { AppStore } from '@shared/store/store.ts'
@@ -144,6 +145,7 @@ export function mountRoadmapPane(
   const statusLabel = el('label', { class: 'memories-label' }, 'Status')
   const metaLine = el('div', { class: 'memories-meta' })
   const errorLine = el('div', { class: 'memories-error', hidden: true })
+  const fitResult = el('div', { class: 'roadmap-fit-result', hidden: true })
 
   const saveBtn = el(
     'button',
@@ -162,6 +164,17 @@ export function mountRoadmapPane(
     },
     'Start thread',
   )
+  // Advisory: asks the small-tasks model whether executing the prompt would
+  // plausibly resolve the pinned issue. Only offered while an issue is pinned.
+  const fitBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'memories-btn roadmap-fit-btn',
+      title: 'Ask the local model whether this prompt would resolve the pinned issue',
+    },
+    'Check fit',
+  )
   const deleteBtn = el(
     'button',
     { type: 'button', class: 'memories-btn memories-btn-danger roadmap-delete-btn' },
@@ -172,7 +185,15 @@ export function mountRoadmapPane(
     { type: 'button', class: 'memories-btn roadmap-cancel-btn' },
     'Cancel',
   )
-  const actions = el('div', { class: 'memories-actions' }, saveBtn, startBtn, deleteBtn, cancelBtn)
+  const actions = el(
+    'div',
+    { class: 'memories-actions' },
+    saveBtn,
+    startBtn,
+    fitBtn,
+    deleteBtn,
+    cancelBtn,
+  )
 
   form.append(
     el('label', { class: 'memories-label' }, 'Prompt'),
@@ -185,6 +206,7 @@ export function mountRoadmapPane(
     statusSelect,
     metaLine,
     errorLine,
+    fitResult,
     actions,
   )
   // --- import-from-issues picker (shown in the viewer column while importing) --
@@ -259,6 +281,7 @@ export function mountRoadmapPane(
     statusLabel.hidden = !item
     statusSelect.hidden = !item
     startBtn.hidden = !item
+    fitBtn.hidden = !item || !itemIssue(item)
     deleteBtn.hidden = !item
     if (item?.updatedAt) {
       metaLine.hidden = false
@@ -309,6 +332,21 @@ export function mountRoadmapPane(
           ),
         )
       }
+      // A fit verdict survives until the prompt or pin changes (the update
+      // path drops stale ones).
+      const fit = item.fields['fit']
+      if (isRoadmapFit(fit)) {
+        meta.append(
+          el(
+            'span',
+            {
+              class: `roadmap-fit-badge is-${fit}`,
+              title: 'Model verdict: would this prompt resolve the pinned issue?',
+            },
+            `fit: ${fit}`,
+          ),
+        )
+      }
       const issue = itemIssue(item)
       if (issue) {
         const chip = el(
@@ -338,6 +376,7 @@ export function mountRoadmapPane(
         selectedId = item.id
         creating = false
         importing = false
+        fitResult.hidden = true
         renderList()
         renderEditor()
       })
@@ -432,8 +471,26 @@ export function mountRoadmapPane(
   function cancel(): void {
     creating = false
     selectedId = null
+    fitResult.hidden = true
     renderList()
     renderEditor()
+  }
+
+  async function checkFit(): Promise<void> {
+    if (!selectedId) return
+    fitBtn.disabled = true
+    fitResult.hidden = false
+    fitResult.textContent = 'Checking fit against the pinned issue…'
+    try {
+      const { verdict, detail } = await api.roadmap.checkFit(selectedId)
+      fitResult.textContent = detail ? `${verdict}\n${detail}` : verdict
+      // Pick up the stamped verdict badge without clobbering open edits.
+      await refresh({ preserveDirty: true })
+    } catch (err) {
+      fitResult.textContent = err instanceof Error ? err.message : 'Fit check failed.'
+    } finally {
+      fitBtn.disabled = false
+    }
   }
 
   // Open a fresh thread pre-filled with the item's prompt (plus its notes as a
@@ -549,6 +606,7 @@ export function mountRoadmapPane(
     void save()
   })
   startBtn.addEventListener('click', startThread)
+  fitBtn.addEventListener('click', () => void checkFit())
   deleteBtn.addEventListener('click', () => void remove())
   cancelBtn.addEventListener('click', cancel)
 
