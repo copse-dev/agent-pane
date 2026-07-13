@@ -11,6 +11,7 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     const isChanges = mode === 'changes'
     const isPrs = mode === 'prs'
     const isMemories = mode === 'memories'
+    const isRoadmap = mode === 'roadmap'
     const isBrowser = mode === 'browser'
 
     const treeHost = document.getElementById('file-tree-host')
@@ -18,6 +19,7 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     const gitChangesHost = document.getElementById('git-changes-host')
     const prListHost = document.getElementById('pr-list-host')
     const memoriesHost = document.getElementById('memories-host')
+    const roadmapHost = document.getElementById('roadmap-host')
     const browserTabsHost = document.getElementById('browser-tabs-host')
     const treeResizer = document.getElementById('resizer-tree')
     const fileViewer = document.getElementById('file-viewer')
@@ -25,6 +27,7 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     const gitDiffViewer = document.getElementById('git-diff-viewer-host')
     const prViewer = document.getElementById('pr-viewer-host')
     const memoriesViewer = document.getElementById('memories-viewer-host')
+    const roadmapViewer = document.getElementById('roadmap-viewer-host')
     const browserViewer = document.getElementById('browser-viewer-host')
 
     if (treeHost) treeHost.hidden = !isExplorer
@@ -32,12 +35,14 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     if (gitChangesHost) gitChangesHost.hidden = !isChanges
     if (prListHost) prListHost.hidden = !isPrs
     if (memoriesHost) memoriesHost.hidden = !isMemories
+    if (roadmapHost) roadmapHost.hidden = !isRoadmap
     if (browserTabsHost) browserTabsHost.hidden = !isBrowser
     if (fileViewer) fileViewer.hidden = !isExplorer
     if (terminalsViewer) terminalsViewer.hidden = !isTerminal
     if (gitDiffViewer) gitDiffViewer.hidden = !isChanges
     if (prViewer) prViewer.hidden = !isPrs
     if (memoriesViewer) memoriesViewer.hidden = !isMemories
+    if (roadmapViewer) roadmapViewer.hidden = !isRoadmap
     if (browserViewer) browserViewer.hidden = !isBrowser
     if (treeResizer) treeResizer.hidden = !store.getState().filesPaneOpen
   }

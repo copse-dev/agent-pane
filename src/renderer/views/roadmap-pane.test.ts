@@ -1,0 +1,312 @@
+import '../../../tests/setup-dom.ts'
+import { afterEach, describe, it } from 'node:test'
+import assert from 'node:assert/strict'
+import { createStore } from '@shared/store/store.ts'
+import type { ApiClient } from '../../preload/api.d.ts'
+import { mountRoadmapPane } from './roadmap-pane.ts'
+
+// Minimal KnowledgeNote (Roadmap) factory; only the fields the pane reads matter.
+function makeItem(
+  id: string,
+  prompt: string,
+  status = 'ready',
+  notes?: string,
+): {
+  id: string
+  type: string
+  title: string
+  body: string
+  tags: string[]
+  status: string
+  fields: Record<string, string>
+  createdAt: string
+  updatedAt: string
+  file: string
+} {
+  return {
+    id,
+    type: 'Roadmap',
+    title: prompt.slice(0, 80),
+    body: prompt,
+    tags: [],
+    status,
+    fields: notes ? { notes } : {},
+    createdAt: '2026-07-13T00:00:00.000Z',
+    updatedAt: '2026-07-13T00:00:00.000Z',
+    file: `/tmp/${id}.md`,
+  }
+}
+
+interface RoadmapCalls {
+  list: number
+  create: { prompt: string; notes: string | undefined }[]
+  update: { id: string; prompt: string; notes: string | undefined; status: string }[]
+  delete: string[]
+}
+
+/** A fake api whose roadmap methods mutate an in-memory list, like the store. */
+function makeApi(seed: ReturnType<typeof makeItem>[]): { api: ApiClient; calls: RoadmapCalls } {
+  const items = seed.map((i) => ({ ...i }))
+  const calls: RoadmapCalls = { list: 0, create: [], update: [], delete: [] }
+  const api = {
+    panes: { popout: async (): Promise<void> => {} },
+    roadmap: {
+      list: async () => {
+        calls.list++
+        return items.map((i) => ({ ...i }))
+      },
+      create: async (prompt: string, notes?: string) => {
+        calls.create.push({ prompt, notes })
+        const item = makeItem(`new-${String(items.length)}`, prompt, 'ready', notes)
+        items.push(item)
+        return item
+      },
+      update: async (id: string, prompt: string, notes: string | undefined, status: string) => {
+        calls.update.push({ id, prompt, notes, status })
+        const item = items.find((i) => i.id === id)
+        if (!item) return null
+        item.title = prompt.slice(0, 80)
+        item.body = prompt
+        item.status = status
+        item.fields = notes ? { notes } : {}
+        return { ...item }
+      },
+      delete: async (id: string) => {
+        calls.delete.push(id)
+        const i = items.findIndex((n) => n.id === id)
+        if (i >= 0) items.splice(i, 1)
+        return i >= 0
+      },
+    },
+  } as unknown as ApiClient
+  return { api, calls }
+}
+
+/** Flush enough microtasks for the pane's chained async refresh to settle. */
+async function flush(): Promise<void> {
+  for (let i = 0; i < 8; i++) await Promise.resolve()
+}
+
+function mountHosts(): { list: HTMLElement; viewer: HTMLElement } {
+  const list = document.createElement('div')
+  const viewer = document.createElement('div')
+  document.body.append(list, viewer)
+  return { list, viewer }
+}
+
+afterEach(() => {
+  document.body.replaceChildren()
+})
+
+describe('roadmap pane', () => {
+  it('lists items with their status badges when mounted with the pane active', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([
+      makeItem('a', 'Refactor the settings dialog', 'ready'),
+      makeItem('b', 'Port e2e specs', 'blocked', 'waiting on PR #400'),
+    ])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      assert.equal(calls.list, 1, 'fetches the roadmap on active mount')
+      const titles = [...list.querySelectorAll('.roadmap-row-title')].map((e) => e.textContent)
+      assert.deepEqual(titles, ['Refactor the settings dialog', 'Port e2e specs'])
+      const badges = [...list.querySelectorAll('.roadmap-status-badge')].map((e) => e.textContent)
+      assert.deepEqual(badges, ['ready', 'blocked'])
+      assert.ok(list.querySelector('.roadmap-status-badge.is-blocked'), 'status styles the badge')
+    } finally {
+      unmount()
+    }
+  })
+
+  it('does not fetch when the pane is inactive on mount', async () => {
+    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    const { api, calls } = makeApi([makeItem('a', 'X')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      assert.equal(calls.list, 0)
+    } finally {
+      unmount()
+    }
+  })
+
+  it('opens an item in the editor, including notes and status', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api } = makeApi([makeItem('a', 'Do the thing', 'blocked', 'after #99 merges')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      const prompt = viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')
+      const notes = viewer.querySelector<HTMLInputElement>('.roadmap-notes-input')
+      const status = viewer.querySelector<HTMLSelectElement>('.roadmap-status-select')
+      assert.ok(prompt && notes && status)
+      assert.equal(prompt.value, 'Do the thing')
+      assert.equal(notes.value, 'after #99 merges')
+      assert.equal(status.value, 'blocked')
+      // Status and Delete are offered for an existing item.
+      assert.equal(status.hidden, false)
+      assert.equal(viewer.querySelector<HTMLButtonElement>('.roadmap-delete-btn')?.hidden, false)
+    } finally {
+      unmount()
+    }
+  })
+
+  it('creates a new item from the blank form (status control hidden)', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-new-btn')?.click()
+      const prompt = viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')
+      const notes = viewer.querySelector<HTMLInputElement>('.roadmap-notes-input')
+      const status = viewer.querySelector<HTMLSelectElement>('.roadmap-status-select')
+      assert.ok(prompt && notes && status)
+      // New items always start `ready`: no status control, no Delete.
+      assert.equal(status.hidden, true)
+      assert.equal(viewer.querySelector<HTMLButtonElement>('.roadmap-delete-btn')?.hidden, true)
+      prompt.value = 'Add dark-mode screenshots to CI'
+      notes.value = 'idea from review'
+      viewer.querySelector('.roadmap-form')?.dispatchEvent(new Event('submit'))
+      await flush()
+      assert.deepEqual(calls.create, [
+        { prompt: 'Add dark-mode screenshots to CI', notes: 'idea from review' },
+      ])
+      const titles = [...list.querySelectorAll('.roadmap-row-title')].map((e) => e.textContent)
+      assert.deepEqual(titles, ['Add dark-mode screenshots to CI'], 'the new item appears')
+    } finally {
+      unmount()
+    }
+  })
+
+  it('rejects saving a blank prompt', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-new-btn')?.click()
+      viewer.querySelector('.roadmap-form')?.dispatchEvent(new Event('submit'))
+      await flush()
+      assert.equal(calls.create.length, 0)
+      assert.equal(viewer.querySelector<HTMLElement>('.memories-error')?.hidden, false)
+    } finally {
+      unmount()
+    }
+  })
+
+  it('saves prompt and status edits to an existing item', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([makeItem('a', 'Old prompt', 'ready')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      const prompt = viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')
+      const status = viewer.querySelector<HTMLSelectElement>('.roadmap-status-select')
+      assert.ok(prompt && status)
+      prompt.value = 'New prompt'
+      status.value = 'done'
+      viewer.querySelector('.roadmap-form')?.dispatchEvent(new Event('submit'))
+      await flush()
+      assert.deepEqual(calls.update, [
+        { id: 'a', prompt: 'New prompt', notes: undefined, status: 'done' },
+      ])
+      const badges = [...list.querySelectorAll('.roadmap-status-badge')].map((e) => e.textContent)
+      assert.deepEqual(badges, ['done'])
+    } finally {
+      unmount()
+    }
+  })
+
+  it('deletes the selected item after confirmation', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([makeItem('a', 'Doomed')])
+    const { list, viewer } = mountHosts()
+    const priorConfirm = globalThis.confirm
+    globalThis.confirm = (): boolean => true
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      viewer.querySelector<HTMLButtonElement>('.roadmap-delete-btn')?.click()
+      await flush()
+      assert.deepEqual(calls.delete, ['a'])
+      assert.equal(list.querySelectorAll('.roadmap-row').length, 0)
+      // With nothing selected, the editor falls back to its empty state.
+      assert.equal(viewer.querySelector<HTMLElement>('.roadmap-empty')?.hidden, false)
+    } finally {
+      globalThis.confirm = priorConfirm
+      unmount()
+    }
+  })
+
+  it('starts a new thread with the composer draft pre-filled from the item', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api } = makeApi([makeItem('a', 'Ship the thing', 'ready', 'after #99 merges')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      const startBtn = viewer.querySelector<HTMLButtonElement>('.roadmap-start-btn')
+      assert.ok(startBtn)
+      assert.equal(startBtn.hidden, false, 'offered for an existing item')
+      let opened = 0
+      store.on('new_thread_opened', () => opened++)
+      startBtn.click()
+      assert.equal(opened, 1, 'opens a new thread')
+      const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
+      assert.equal(thread?.draftPrompt, 'Ship the thing\n\nNotes: after #99 merges')
+    } finally {
+      unmount()
+    }
+  })
+
+  it('hides the start-thread button on a blank new-item form', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api } = makeApi([])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-new-btn')?.click()
+      assert.equal(viewer.querySelector<HTMLButtonElement>('.roadmap-start-btn')?.hidden, true)
+    } finally {
+      unmount()
+    }
+  })
+
+  it('does not discard an in-progress edit on a background refresh', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api } = makeApi([makeItem('a', 'Old prompt')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      const prompt = viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')
+      assert.ok(prompt)
+      // User is mid-edit...
+      prompt.value = 'Half-typed new prompt'
+      // ...when a background store event fires (e.g. the staged-diff queue drains).
+      store.emit('files_pane_changed')
+      await flush()
+      // The draft must survive rather than being overwritten with the stored item.
+      assert.equal(
+        viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')?.value,
+        'Half-typed new prompt',
+      )
+    } finally {
+      unmount()
+    }
+  })
+})

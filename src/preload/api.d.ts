@@ -353,6 +353,20 @@ export interface ApiClient {
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
     delete: (id: string) => Promise<boolean>
   }
+  roadmap: {
+    list: () => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote[]>
+    create: (
+      prompt: string,
+      notes?: string,
+    ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote>
+    update: (
+      id: string,
+      prompt: string,
+      notes: string | undefined,
+      status: import('../main/tools/roadmap-tools.ts').RoadmapStatus,
+    ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
+    delete: (id: string) => Promise<boolean>
+  }
   skills: {
     list: () => Promise<SkillSummary[]>
   }

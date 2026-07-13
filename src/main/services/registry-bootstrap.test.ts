@@ -3,7 +3,12 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { createRegistry, registerSkillTools, syncOkfMemoryTools } from './registry-bootstrap.ts'
+import {
+  createRegistry,
+  registerSkillTools,
+  syncOkfMemoryTools,
+  syncRoadmapPlanTools,
+} from './registry-bootstrap.ts'
 import { ToolRegistry } from './tool-registry.ts'
 import { refreshSkillsRegistry, setSkillsForTest } from './skills/skills-registry.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
@@ -113,5 +118,31 @@ describe('syncOkfMemoryTools', () => {
     syncOkfMemoryTools(registry)
     assert.equal(registry.has('remember'), false)
     assert.equal(registry.has('recall'), false)
+  })
+})
+
+describe('syncRoadmapPlanTools', () => {
+  afterEach(() => {
+    setSetting('roadmapPlansEnabled', false)
+  })
+
+  it('adds the roadmap tool when enabled and removes it when disabled', () => {
+    const registry = new ToolRegistry()
+
+    setSetting('roadmapPlansEnabled', false)
+    syncRoadmapPlanTools(registry)
+    assert.equal(registry.has('roadmap_plan'), false)
+
+    setSetting('roadmapPlansEnabled', true)
+    syncRoadmapPlanTools(registry)
+    assert.equal(registry.has('roadmap_plan'), true)
+
+    // Idempotent while enabled — a second sync keeps the tool registered.
+    syncRoadmapPlanTools(registry)
+    assert.equal(registry.has('roadmap_plan'), true)
+
+    setSetting('roadmapPlansEnabled', false)
+    syncRoadmapPlanTools(registry)
+    assert.equal(registry.has('roadmap_plan'), false)
   })
 })
