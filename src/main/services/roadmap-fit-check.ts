@@ -18,9 +18,9 @@ import { getGithubRepoSlug } from './github/git-service.ts'
  * never on save. Unlike complexity there is no heuristic fallback: a keyword
  * match cannot judge fit, so without a model the check reports why instead.
  *
- * The verdict is stamped into the note's `fit` frontmatter field; the
- * reasoning is returned for display but not persisted (frontmatter scalars
- * stay short).
+ * The verdict is stamped into the note's `fit` frontmatter field and the
+ * reasoning into `fitDetail` (bullets flattened to one bounded line —
+ * frontmatter scalars stay short), so both survive closing the pane.
  */
 
 const FIT_TIMEOUT_MS = 30_000
@@ -66,7 +66,19 @@ export async function checkRoadmapFit(id: string): Promise<RoadmapFitResult> {
   }
   const verdict = parseFitVerdict(text)
   if (!verdict) throw new Error('The model returned no verdict — try again.')
-  updateKnowledgeNote(id, { fields: { ...note.fields, fit: verdict } })
   const detail = text.trim().split('\n').slice(1).join('\n').trim()
+  const flatDetail = detail
+    .split('\n')
+    .map((line) => line.replace(/^\s*[-*•]\s*/, '').trim())
+    .filter(Boolean)
+    .join(' • ')
+    .slice(0, 600)
+  updateKnowledgeNote(id, {
+    fields: {
+      ...note.fields,
+      fit: verdict,
+      ...(flatDetail ? { fitDetail: flatDetail } : {}),
+    },
+  })
   return { verdict, detail }
 }

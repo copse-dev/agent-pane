@@ -151,7 +151,13 @@ function makeApi(
       checkFit: async (id: string) => {
         calls.checkFit.push(id)
         const item = items.find((i) => i.id === id)
-        if (item) item.fields = { ...item.fields, fit: 'partial' }
+        if (item) {
+          item.fields = {
+            ...item.fields,
+            fit: 'partial',
+            fitDetail: 'prompt does not mention the startup flash',
+          }
+        }
         return { verdict: 'partial', detail: '- prompt does not mention the startup flash' }
       },
       importIssues: async (selected: { number: number; title: string; body: string }[]) => {
@@ -434,6 +440,28 @@ describe('roadmap pane', () => {
       await flush()
       list.querySelector<HTMLButtonElement>('.roadmap-new-btn')?.click()
       assert.equal(viewer.querySelector<HTMLButtonElement>('.roadmap-start-btn')?.hidden, true)
+    } finally {
+      unmount()
+    }
+  })
+
+  it('renders a persisted fit verdict when an item is reopened', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const seeded = makeItem('a', 'Fix the flash', 'ready', undefined, '#41')
+    seeded.fields['fit'] = 'likely'
+    seeded.fields['fitDetail'] = 'covers the repro and the fix location'
+    const { api } = makeApi([seeded])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      // Verdict badge in the list without any check having run this session.
+      assert.equal(list.querySelector('.roadmap-fit-badge')?.textContent, 'fit: likely')
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      const result = viewer.querySelector<HTMLElement>('.roadmap-fit-result')
+      assert.ok(result)
+      assert.equal(result.hidden, false)
+      assert.equal(result.textContent, 'fit: likely — covers the repro and the fix location')
     } finally {
       unmount()
     }

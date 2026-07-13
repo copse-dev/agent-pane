@@ -71,6 +71,9 @@ export function mountRoadmapPane(
   // instead of the editor until the user imports or cancels.
   let importing = false
   let openIssues: OpenIssue[] = []
+  // While a fit check runs, its progress/error text owns the fit box and
+  // renderEditor must not overwrite it from the store.
+  let fitCheckInFlight = false
   let loadToken = 0
 
   // --- list column ----------------------------------------------------------
@@ -290,6 +293,20 @@ export function mountRoadmapPane(
     startBtn.hidden = !item
     fitBtn.hidden = !item || !itemIssue(item)
     deleteBtn.hidden = !item
+    // The stored verdict + reasoning render whenever the item is shown, so a
+    // past check survives closing the pane. While a check is in flight,
+    // checkFit owns this box (progress/error text) and blocks this rewrite.
+    if (!fitCheckInFlight) {
+      const fit = item ? item.fields['fit'] : undefined
+      if (item && isRoadmapFit(fit)) {
+        fitResult.hidden = false
+        const detail = item.fields['fitDetail']
+        fitResult.textContent = detail ? `fit: ${fit} — ${detail}` : `fit: ${fit}`
+      } else {
+        fitResult.hidden = true
+        fitResult.textContent = ''
+      }
+    }
     if (item?.updatedAt) {
       metaLine.hidden = false
       metaLine.textContent = `Updated ${item.updatedAt}`
@@ -383,7 +400,6 @@ export function mountRoadmapPane(
         selectedId = item.id
         creating = false
         importing = false
-        fitResult.hidden = true
         renderList()
         renderEditor()
       })
@@ -478,7 +494,6 @@ export function mountRoadmapPane(
   function cancel(): void {
     creating = false
     selectedId = null
-    fitResult.hidden = true
     renderList()
     renderEditor()
   }
@@ -486,16 +501,19 @@ export function mountRoadmapPane(
   async function checkFit(): Promise<void> {
     if (!selectedId) return
     fitBtn.disabled = true
+    fitCheckInFlight = true
     fitResult.hidden = false
     fitResult.textContent = 'Checking fit against the pinned issue…'
     try {
-      const { verdict, detail } = await api.roadmap.checkFit(selectedId)
-      fitResult.textContent = detail ? `${verdict}\n${detail}` : verdict
-      // Pick up the stamped verdict badge without clobbering open edits.
+      await api.roadmap.checkFit(selectedId)
+      // The verdict + reasoning were stamped into the note; re-render from the
+      // store (the durable form) without clobbering open edits.
+      fitCheckInFlight = false
       await refresh({ preserveDirty: true })
     } catch (err) {
-      fitResult.textContent = err instanceof Error ? err.message : 'Fit check failed.'
+      fitResult.textContent = ipcErrorMessage(err, 'Fit check failed.')
     } finally {
+      fitCheckInFlight = false
       fitBtn.disabled = false
     }
   }
