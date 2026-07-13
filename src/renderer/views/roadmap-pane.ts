@@ -11,7 +11,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 // the IPC surface so this view never imports main-process types directly.
 type RoadmapItem = Awaited<ReturnType<ApiClient['roadmap']['list']>>[number]
 type RoadmapStatus = Parameters<ApiClient['roadmap']['update']>[3]
-type OpenIssue = Awaited<ReturnType<ApiClient['roadmap']['openIssues']>>[number]
+type OpenIssue = Awaited<ReturnType<ApiClient['roadmap']['openIssues']>>['issues'][number]
 
 // The lifecycle the roadmap_plan tool maintains; the IPC layer re-validates, so
 // a drifted entry here fails loudly rather than corrupting a note.
@@ -557,12 +557,13 @@ export function mountRoadmapPane(
     renderEditor()
     void api.roadmap
       .openIssues()
-      .then((issues) => {
+      .then(({ slug, issues }) => {
         if (!importing) return
         openIssues = issues
+        // Naming the queried repo surfaces a stale or fork origin at a glance.
         importStatus.textContent = issues.length
-          ? 'Pick the issues to turn into roadmap prompts.'
-          : 'No open issues found in this repo.'
+          ? `Pick the issues to turn into roadmap prompts (${slug}).`
+          : `No open issues found in ${slug}.`
         renderImportList()
       })
       .catch((err: unknown) => {
