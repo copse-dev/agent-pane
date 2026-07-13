@@ -110,8 +110,10 @@ import {
   getGitChangeStats,
   getGitFileDiff,
   getGitStatus,
+  getGithubRepoSlug,
   isInsideGitWorkTree,
 } from '../services/github/git-service.ts'
+import { parseIssueRef, issueRefToUrl } from '@shared/git/issue-ref.ts'
 import { getGitBranchStatus } from '../services/github/pr-context-service.ts'
 import { getSessionBackup, restoreSessionBackup } from '../services/worktree-backup.ts'
 import { isGitAvailable } from '../services/tool-availability.ts'
@@ -325,17 +327,41 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Roadmap pane (issue #556; #645 Phase 3). Reads and edits the `Roadmap` notes
   // the agent's roadmap_plan tool authors: the prompt is the note body with the
   // title derived from it (roadmapTitleFromPrompt), waiting-on context lives in a
-  // `notes` frontmatter field, and the lifecycle status is one of
-  // ROADMAP_STATUSES. Update/delete verify the note's type so this surface can
-  // never mutate Memory (or other) knowledge notes.
+  // `notes` frontmatter field, an optional pinned GitHub issue in an `issue`
+  // field (canonical short ref, see issue-ref.ts), and the lifecycle status is
+  // one of ROADMAP_STATUSES. Update/delete verify the note's type so this
+  // surface can never mutate Memory (or other) knowledge notes.
   const zRoadmapPrompt = z.string().max(1_000_000)
   const zRoadmapNotes = z.string().max(10_000)
+  const zRoadmapIssue = z.string().max(256)
   const zRoadmapStatus = z.enum(ROADMAP_STATUSES)
   const zRoadmapId = zNonEmptyString.max(128)
 
-  function roadmapFields(existing: Record<string, string>, notes: string): Record<string, string> {
-    const { notes: _dropped, ...rest } = existing
-    return notes ? { ...rest, notes } : rest
+  function roadmapFields(
+    existing: Record<string, string>,
+    notes: string,
+    issue: string,
+  ): Record<string, string> {
+    const { notes: _n, issue: _i, ...rest } = existing
+    return {
+      ...rest,
+      ...(notes ? { notes } : {}),
+      ...(issue ? { issue } : {}),
+    }
+  }
+
+  // Empty string unpins; anything else must canonicalize or the save is
+  // rejected, so a typo never silently stores an unlinkable ref.
+  function parseRoadmapIssue(raw: unknown): string {
+    const input = parseIpcArgs(zRoadmapIssue.optional(), [raw])?.trim() ?? ''
+    if (!input) return ''
+    const ref = parseIssueRef(input)
+    if (!ref) {
+      throw new IpcValidationError(
+        'Unrecognized issue reference — use #123, owner/repo#123, or a GitHub issue URL',
+      )
+    }
+    return ref
   }
 
   ipcMain.handle('roadmap:list', (event) => {
@@ -343,28 +369,40 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return loadKnowledgeNotes(ROADMAP_TYPE)
   })
 
-  ipcMain.handle('roadmap:create', (event, rawPrompt: unknown, rawNotes: unknown) => {
-    assertMainFrameSender(event, win)
-    const prompt = parseIpcArgs(zRoadmapPrompt, [rawPrompt]).trim()
-    const notes = parseIpcArgs(zRoadmapNotes.optional(), [rawNotes])?.trim() ?? ''
-    if (!prompt) throw new IpcValidationError('Roadmap prompt must not be empty')
-    return addKnowledgeNote({
-      type: ROADMAP_TYPE,
-      title: roadmapTitleFromPrompt(prompt),
-      body: prompt,
-      status: 'ready',
-      fields: roadmapFields({}, notes),
-    })
-  })
+  ipcMain.handle(
+    'roadmap:create',
+    (event, rawPrompt: unknown, rawNotes: unknown, rawIssue: unknown) => {
+      assertMainFrameSender(event, win)
+      const prompt = parseIpcArgs(zRoadmapPrompt, [rawPrompt]).trim()
+      const notes = parseIpcArgs(zRoadmapNotes.optional(), [rawNotes])?.trim() ?? ''
+      const issue = parseRoadmapIssue(rawIssue)
+      if (!prompt) throw new IpcValidationError('Roadmap prompt must not be empty')
+      return addKnowledgeNote({
+        type: ROADMAP_TYPE,
+        title: roadmapTitleFromPrompt(prompt),
+        body: prompt,
+        status: 'ready',
+        fields: roadmapFields({}, notes, issue),
+      })
+    },
+  )
 
   ipcMain.handle(
     'roadmap:update',
-    (event, rawId: unknown, rawPrompt: unknown, rawNotes: unknown, rawStatus: unknown) => {
+    (
+      event,
+      rawId: unknown,
+      rawPrompt: unknown,
+      rawNotes: unknown,
+      rawStatus: unknown,
+      rawIssue: unknown,
+    ) => {
       assertMainFrameSender(event, win)
       const id = parseIpcArgs(zRoadmapId, [rawId])
       const prompt = parseIpcArgs(zRoadmapPrompt, [rawPrompt]).trim()
       const notes = parseIpcArgs(zRoadmapNotes.optional(), [rawNotes])?.trim() ?? ''
       const status = parseIpcArgs(zRoadmapStatus, [rawStatus])
+      const issue = parseRoadmapIssue(rawIssue)
       if (!prompt) throw new IpcValidationError('Roadmap prompt must not be empty')
       const existing = getKnowledgeNote(id)
       if (!existing || existing.type !== ROADMAP_TYPE) return null
@@ -372,10 +410,18 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         title: roadmapTitleFromPrompt(prompt),
         body: prompt,
         status,
-        fields: roadmapFields(existing.fields, notes),
+        fields: roadmapFields(existing.fields, notes, issue),
       })
     },
   )
+
+  // Resolve a stored issue ref to a URL at click time, so short `#123` refs
+  // always follow the workspace's *current* origin remote.
+  ipcMain.handle('roadmap:issueUrl', async (event, rawRef: unknown) => {
+    assertMainFrameSender(event, win)
+    const ref = parseIpcArgs(zRoadmapIssue, [rawRef]).trim()
+    return issueRefToUrl(ref, await getGithubRepoSlug())
+  })
 
   ipcMain.handle('roadmap:delete', (event, rawId: unknown) => {
     assertMainFrameSender(event, win)
