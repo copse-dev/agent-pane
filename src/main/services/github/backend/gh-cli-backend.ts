@@ -6,6 +6,7 @@ import { deriveOverallState, rollupToCiChecks } from '../github-ci-service.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
 import type {
   GhCliStatus,
+  GhIssueSummary,
   GhPrChangedFile,
   GhPrChecksState,
   GhPrDetails,
@@ -333,6 +334,55 @@ export const ghCliBackend: GitHubBackend = {
         return toGhPrSummary({ owner, repo, number: entry.number }, { ...entry, url: entry.url })
       })
       .filter((entry): entry is GhPrSummary => entry != null)
+  },
+
+  async listWorkspaceOpenIssues(limit: number): Promise<GhIssueSummary[]> {
+    const slug = await getGithubRepoSlug()
+    if (!slug) return []
+    const [owner, repo] = slug.split('/')
+    if (!owner || !repo || !isGhAvailable()) return []
+    const { stdout, stderr, code } = await runGh([
+      'issue',
+      'list',
+      '--repo',
+      slug,
+      '--state',
+      'open',
+      '--limit',
+      String(limit),
+      '--json',
+      'number,title,url,body,labels,updatedAt',
+    ])
+    if (code !== 0) throw new Error(formatGhError(stderr, code))
+    const list = safeJsonParse<
+      Array<{
+        number?: number
+        title?: string
+        url?: string
+        body?: string
+        labels?: Array<{ name?: string }>
+        updatedAt?: string
+      }>
+    >(stdout.trim())
+    if (!Array.isArray(list)) return []
+    return list
+      .map((entry) => {
+        if (typeof entry.number !== 'number' || !entry.title || !entry.url) return null
+        const summary: GhIssueSummary = {
+          owner,
+          repo,
+          number: entry.number,
+          title: entry.title,
+          url: entry.url,
+          body: (entry.body ?? '').slice(0, 4000),
+          labels: (entry.labels ?? [])
+            .map((l) => l.name)
+            .filter((name): name is string => typeof name === 'string'),
+        }
+        if (entry.updatedAt) summary.updatedAt = entry.updatedAt
+        return summary
+      })
+      .filter((entry): entry is GhIssueSummary => entry != null)
   },
 
   async getPrDetails(ref: PrRef): Promise<GhPrDetails | null> {

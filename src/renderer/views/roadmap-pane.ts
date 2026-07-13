@@ -9,6 +9,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 // the IPC surface so this view never imports main-process types directly.
 type RoadmapItem = Awaited<ReturnType<ApiClient['roadmap']['list']>>[number]
 type RoadmapStatus = Parameters<ApiClient['roadmap']['update']>[3]
+type OpenIssue = Awaited<ReturnType<ApiClient['roadmap']['openIssues']>>[number]
 
 // The lifecycle the roadmap_plan tool maintains; the IPC layer re-validates, so
 // a drifted entry here fails loudly rather than corrupting a note.
@@ -57,6 +58,10 @@ export function mountRoadmapPane(
   // form (selectedId null, form shown) from the no-selection empty state.
   let selectedId: string | null = null
   let creating = false
+  // Import-from-issues mode: the viewer column shows the open-issue picker
+  // instead of the editor until the user imports or cancels.
+  let importing = false
+  let openIssues: OpenIssue[] = []
   let loadToken = 0
 
   // --- list column ----------------------------------------------------------
@@ -78,6 +83,16 @@ export function mountRoadmapPane(
       'button',
       {
         type: 'button',
+        class: 'git-changes-refresh-btn roadmap-import-btn',
+        'aria-label': 'Import from GitHub issues',
+        title: 'Import from GitHub issues',
+      },
+      '⇩',
+    ),
+    el(
+      'button',
+      {
+        type: 'button',
         class: 'git-changes-refresh-btn roadmap-refresh-btn',
         'aria-label': 'Refresh roadmap',
         title: 'Refresh',
@@ -86,6 +101,7 @@ export function mountRoadmapPane(
     ),
   )
   const newBtn = qsRequired<HTMLButtonElement>(listHeader, '.roadmap-new-btn')
+  const importBtn = qsRequired<HTMLButtonElement>(listHeader, '.roadmap-import-btn')
   const refreshBtn = qsRequired<HTMLButtonElement>(listHeader, '.roadmap-refresh-btn')
   const listBody = el('div', { class: 'git-changes-list roadmap-list' })
   listRoot.append(listHeader, listBody)
@@ -170,7 +186,29 @@ export function mountRoadmapPane(
     errorLine,
     actions,
   )
-  viewerRoot.append(emptyState, form)
+  // --- import-from-issues picker (shown in the viewer column while importing) --
+  const importStatus = el('div', { class: 'memories-meta roadmap-import-status' })
+  const importList = el('div', { class: 'roadmap-import-list' })
+  const importConfirmBtn = el(
+    'button',
+    { type: 'button', class: 'memories-btn memories-btn-primary roadmap-import-confirm' },
+    'Import selected',
+  )
+  const importCancelBtn = el(
+    'button',
+    { type: 'button', class: 'memories-btn roadmap-import-cancel' },
+    'Cancel',
+  )
+  const importView = el(
+    'div',
+    { class: 'memories-form roadmap-import', hidden: true },
+    el('label', { class: 'memories-label' }, 'Open issues'),
+    importStatus,
+    importList,
+    el('div', { class: 'memories-actions' }, importConfirmBtn, importCancelBtn),
+  )
+
+  viewerRoot.append(emptyState, form, importView)
 
   function showError(message: string): void {
     errorLine.textContent = message
@@ -192,6 +230,12 @@ export function mountRoadmapPane(
   // Explicit navigation (selecting an item, New, Cancel) passes it unset to load fresh.
   function renderEditor(opts?: { preserveDirty?: boolean }): void {
     errorLine.hidden = true
+    importView.hidden = !importing
+    if (importing) {
+      form.hidden = true
+      emptyState.hidden = true
+      return
+    }
     const item = selectedId ? items.find((m) => m.id === selectedId) : null
     const editing = !form.hidden
     const dirty = editing && (creating || isEditorDirty(item))
@@ -277,6 +321,7 @@ export function mountRoadmapPane(
       row.addEventListener('click', () => {
         selectedId = item.id
         creating = false
+        importing = false
         renderList()
         renderEditor()
       })
@@ -309,6 +354,7 @@ export function mountRoadmapPane(
   function startNew(): void {
     selectedId = null
     creating = true
+    importing = false
     renderList()
     renderEditor()
     promptInput.focus()
@@ -391,6 +437,95 @@ export function mountRoadmapPane(
     getPromptAttachmentHandlers()?.focusComposer?.()
   }
 
+  // --- import-from-issues flow -----------------------------------------------
+  function issueAlreadyPinned(issue: OpenIssue): boolean {
+    const short = `#${String(issue.number)}`
+    const full = `${issue.owner}/${issue.repo}${short}`
+    return items.some((i) => itemIssue(i) === short || itemIssue(i) === full)
+  }
+
+  function renderImportList(): void {
+    clear(importList)
+    for (const issue of openIssues) {
+      const pinned = issueAlreadyPinned(issue)
+      const checkbox = el('input', {
+        type: 'checkbox',
+        class: 'roadmap-import-check',
+        'data-number': String(issue.number),
+        disabled: pinned,
+      })
+      const label = el(
+        'label',
+        { class: `roadmap-import-row${pinned ? ' is-pinned' : ''}` },
+        checkbox,
+        el('span', { class: 'roadmap-import-title' }, `#${String(issue.number)} ${issue.title}`),
+      )
+      if (pinned) label.append(el('span', { class: 'memories-meta' }, 'already on roadmap'))
+      importList.append(label)
+    }
+  }
+
+  function startImport(): void {
+    importing = true
+    creating = false
+    selectedId = null
+    openIssues = []
+    clear(importList)
+    importConfirmBtn.disabled = false
+    importStatus.textContent = 'Loading open issues…'
+    renderList()
+    renderEditor()
+    void api.roadmap
+      .openIssues()
+      .then((issues) => {
+        if (!importing) return
+        openIssues = issues
+        importStatus.textContent = issues.length
+          ? 'Pick the issues to turn into roadmap prompts.'
+          : 'No open issues found (is this workspace a GitHub repo?).'
+        renderImportList()
+      })
+      .catch((err: unknown) => {
+        if (!importing) return
+        importStatus.textContent =
+          err instanceof Error ? err.message : 'Could not list open issues.'
+      })
+  }
+
+  async function confirmImport(): Promise<void> {
+    const selected = [...importList.querySelectorAll<HTMLInputElement>('.roadmap-import-check')]
+      .filter((c) => c.checked)
+      .map((c) => Number(c.dataset['number']))
+    const payload = openIssues
+      .filter((i) => selected.includes(i.number))
+      .map((i) => ({ number: i.number, title: i.title, body: i.body }))
+    if (payload.length === 0) {
+      importStatus.textContent = 'Select at least one issue to import.'
+      return
+    }
+    importConfirmBtn.disabled = true
+    importStatus.textContent = `Drafting ${String(payload.length)} prompt${payload.length === 1 ? '' : 's'}…`
+    try {
+      await api.roadmap.importIssues(payload)
+      importing = false
+      await refresh()
+    } catch (err) {
+      importStatus.textContent =
+        err instanceof Error ? err.message : 'Could not import the selected issues.'
+    } finally {
+      importConfirmBtn.disabled = false
+    }
+  }
+
+  function cancelImport(): void {
+    importing = false
+    renderEditor()
+  }
+
+  importBtn.addEventListener('click', startImport)
+  importConfirmBtn.addEventListener('click', () => void confirmImport())
+  importCancelBtn.addEventListener('click', cancelImport)
+
   newBtn.addEventListener('click', startNew)
   refreshBtn.addEventListener('click', () => void refresh())
   form.addEventListener('submit', (e) => {
@@ -412,6 +547,7 @@ export function mountRoadmapPane(
       // The roadmap is per-project; drop the previous workspace's selection.
       selectedId = null
       creating = false
+      importing = false
       items = []
       if (roadmapModeActive(store)) void refresh()
       else {

@@ -1,5 +1,6 @@
 import type {
   GhCliStatus,
+  GhIssueSummary,
   GhPrChecksState,
   GhPrDetails,
   GhPrFileDiff,
@@ -41,6 +42,8 @@ export interface GitHubBackend {
   getPrDetails(ref: PrRef): Promise<GhPrDetails | null>
   getPrFileDiff(ref: PrRef, path: string): Promise<GhPrFileDiff | null>
   getPrChecksState(ref: PrRef): Promise<GhPrChecksState>
+  /** Open issues in the workspace repo (PRs excluded) — backs roadmap import. */
+  listWorkspaceOpenIssues(limit: number): Promise<GhIssueSummary[]>
 
   // Writes — Wave 1 PR lifecycle actions.
   rerunFailedRuns(ref: PrRef): Promise<PrActionResult>

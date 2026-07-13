@@ -51,10 +51,37 @@ interface RoadmapCalls {
   delete: string[]
   issueUrl: string[]
   openExternal: string[]
+  openIssues: number
+  importIssues: { number: number; title: string; body: string }[][]
+}
+
+interface MockOpenIssue {
+  owner: string
+  repo: string
+  number: number
+  title: string
+  url: string
+  body: string
+  labels: string[]
+}
+
+function makeOpenIssue(number: number, title: string, body = ''): MockOpenIssue {
+  return {
+    owner: 'octo',
+    repo: 'demo',
+    number,
+    title,
+    url: `https://github.com/octo/demo/issues/${String(number)}`,
+    body,
+    labels: [],
+  }
 }
 
 /** A fake api whose roadmap methods mutate an in-memory list, like the store. */
-function makeApi(seed: ReturnType<typeof makeItem>[]): { api: ApiClient; calls: RoadmapCalls } {
+function makeApi(
+  seed: ReturnType<typeof makeItem>[],
+  issues: MockOpenIssue[] = [],
+): { api: ApiClient; calls: RoadmapCalls } {
   const items = seed.map((i) => ({ ...i }))
   const calls: RoadmapCalls = {
     list: 0,
@@ -63,6 +90,8 @@ function makeApi(seed: ReturnType<typeof makeItem>[]): { api: ApiClient; calls: 
     delete: [],
     issueUrl: [],
     openExternal: [],
+    openIssues: 0,
+    importIssues: [],
   }
   const api = {
     panes: { popout: async (): Promise<void> => {} },
@@ -107,6 +136,24 @@ function makeApi(seed: ReturnType<typeof makeItem>[]): { api: ApiClient; calls: 
       issueUrl: async (ref: string) => {
         calls.issueUrl.push(ref)
         return `https://github.com/octo/demo/issues/${ref.replace('#', '')}`
+      },
+      openIssues: async () => {
+        calls.openIssues++
+        return issues.map((i) => ({ ...i }))
+      },
+      importIssues: async (selected: { number: number; title: string; body: string }[]) => {
+        calls.importIssues.push(selected)
+        const created = selected.map((s) =>
+          makeItem(
+            `imported-${String(s.number)}`,
+            `Resolve GitHub issue #${String(s.number)}: ${s.title}`,
+            'ready',
+            `Imported from issue #${String(s.number)}: ${s.title}`,
+            `#${String(s.number)}`,
+          ),
+        )
+        items.push(...created)
+        return created
       },
     },
   } as unknown as ApiClient
@@ -352,6 +399,62 @@ describe('roadmap pane', () => {
       await flush()
       list.querySelector<HTMLButtonElement>('.roadmap-new-btn')?.click()
       assert.equal(viewer.querySelector<HTMLButtonElement>('.roadmap-start-btn')?.hidden, true)
+    } finally {
+      unmount()
+    }
+  })
+
+  it('imports selected open issues as pinned roadmap items', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi(
+      [makeItem('a', 'Existing item', 'ready', undefined, '#41')],
+      [makeOpenIssue(41, 'Already pinned issue'), makeOpenIssue(52, 'Terminal shortcut', 'Body')],
+    )
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-import-btn')?.click()
+      await flush()
+      assert.equal(calls.openIssues, 1)
+      const checks = [...viewer.querySelectorAll<HTMLInputElement>('.roadmap-import-check')]
+      assert.equal(checks.length, 2)
+      const [pinnedCheck, freeCheck] = checks
+      assert.ok(pinnedCheck && freeCheck)
+      // The issue already pinned by an existing item cannot be re-imported.
+      assert.equal(pinnedCheck.disabled, true)
+      assert.equal(freeCheck.disabled, false)
+      freeCheck.click()
+      viewer.querySelector<HTMLButtonElement>('.roadmap-import-confirm')?.click()
+      await flush()
+      assert.deepEqual(calls.importIssues, [
+        [{ number: 52, title: 'Terminal shortcut', body: 'Body' }],
+      ])
+      const titles = [...list.querySelectorAll('.roadmap-row-title')].map((e) => e.textContent)
+      assert.ok(titles.join('\n').includes('#52'), 'the imported item appears in the list')
+      // The picker closes after a successful import.
+      assert.equal(viewer.querySelector<HTMLElement>('.roadmap-import')?.hidden, true)
+    } finally {
+      unmount()
+    }
+  })
+
+  it('requires a selection before importing', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([], [makeOpenIssue(52, 'Terminal shortcut')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-import-btn')?.click()
+      await flush()
+      viewer.querySelector<HTMLButtonElement>('.roadmap-import-confirm')?.click()
+      await flush()
+      assert.equal(calls.importIssues.length, 0)
+      assert.match(
+        viewer.querySelector('.roadmap-import-status')?.textContent ?? '',
+        /Select at least one issue/,
+      )
     } finally {
       unmount()
     }
