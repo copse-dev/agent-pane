@@ -123,6 +123,9 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // Built-in browser tools (Electron's bundled Chromium); on by default so the
   // agent renders/screenshots web UIs in-app instead of installing a browser.
   { name: 'browserToolsEnabled', kind: 'checkbox', default: true, save: true },
+  // On by default: clicked links open in the in-app browser pane. Off routes
+  // external links to the system browser and marks them with an external icon.
+  { name: 'openLinksInBuiltInBrowser', kind: 'checkbox', default: true, save: true },
   { name: 'acpAutoApproveEditsWithBackup', kind: 'checkbox', default: true, save: true },
   { name: 'acpAutoApproveNativeBridgeTools', kind: 'checkbox', default: true, save: true },
   // Experimental, opt-in features (off by default).
@@ -432,6 +435,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Lets the agent open and inspect pages in the app's bundled browser instead of
                 installing a separate browser (e.g. Playwright). Localhost auto-runs; other origins
                 prompt.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="openLinksInBuiltInBrowser" />
+                Open links in the built-in browser
+              </label>
+              <p class="field-hint">
+                When on, http(s) links you click in chat, PR, and preview surfaces open in the
+                in-app browser pane. Turn off to open them in your default browser instead — external
+                links then show an
+                <span class="external-link-hint-icon" aria-hidden="true"></span> icon.
               </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="webAllowUserApproval" />
@@ -1737,6 +1750,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         fontSize,
         autoPortraitRightPanel,
         rightPanelPosition,
+        openLinksInBuiltInBrowser: data.get('openLinksInBuiltInBrowser') === 'on',
         settings: { ...store.getState().settings, model },
       })
       store.emit('theme_changed', theme)

@@ -28,8 +28,24 @@ export function bindBrowserLinkClicks(
   api?: {
     remoteAgent: Pick<ApiClient['remoteAgent'], 'downloadArtifact'>
     gh?: Pick<ApiClient['gh'], 'status'>
+    shell?: Pick<ApiClient['shell'], 'openExternal'>
   },
 ): () => void {
+  // Marks this container as one whose external links follow the "open links in
+  // built-in browser" setting, so CSS can badge them when the setting is off.
+  root.classList.add('browser-links-scope')
+
+  // Plain external link: honour the setting. On (default) → in-app browser pane;
+  // off → the system browser. The PR-pane and artifact-viewer paths above are
+  // in-app features and stay regardless.
+  const openPlainLink = (href: string): void => {
+    if (!store.getState().openLinksInBuiltInBrowser && api?.shell) {
+      void api.shell.openExternal(href)
+      return
+    }
+    openBrowserUrl(store, href)
+  }
+
   const onClick = (event: MouseEvent): void => {
     const target = event.target
     if (!target || typeof (target as Element).closest !== 'function') return
@@ -63,12 +79,12 @@ export function bindBrowserLinkClicks(
           openPullRequest(store, githubPr)
           return
         }
-        openBrowserUrl(store, href)
+        openPlainLink(href)
       })
       return
     }
 
-    openBrowserUrl(store, href)
+    openPlainLink(href)
   }
 
   root.addEventListener('click', onClick)

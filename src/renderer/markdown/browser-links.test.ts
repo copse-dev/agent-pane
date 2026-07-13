@@ -31,6 +31,34 @@ describe('markdown browser links', () => {
     assert.deepEqual(requested, ['https://example.com/docs'])
   })
 
+  it('opens plain links in the system browser when the built-in setting is off', () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<a href="https://example.com/docs">docs</a>'
+    const store = createStore({
+      filesPaneOpen: false,
+      rightPanelMode: 'explorer',
+      openLinksInBuiltInBrowser: false,
+    })
+    const requested: string[] = []
+    store.on('browser_url_requested', (url) => requested.push(url))
+    const opened: string[] = []
+    const unbind = bindBrowserLinkClicks(root, store, {
+      remoteAgent: { downloadArtifact: async () => 'https://example.com' },
+      shell: { openExternal: async (url) => void opened.push(url) },
+    })
+
+    const event = new window.MouseEvent('click', { bubbles: true, cancelable: true })
+    qsRequired(root, 'a').dispatchEvent(event)
+
+    unbind()
+    assert.equal(event.defaultPrevented, true)
+    assert.deepEqual(opened, ['https://example.com/docs'])
+    assert.deepEqual(requested, [])
+    assert.equal(store.getState().rightPanelMode, 'explorer')
+    // The container is tagged so CSS can badge external links.
+    assert.ok(root.classList.contains('browser-links-scope'))
+  })
+
   it('opens remote agent launch notice links in the browser panel', () => {
     const href = 'https://cursor.com/agents/bc-f048baf8-bbc6-4def-b722-4f12008284be'
     const root = document.createElement('div')
