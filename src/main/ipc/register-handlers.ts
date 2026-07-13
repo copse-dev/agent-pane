@@ -116,6 +116,7 @@ import {
 import { parseIssueRef, issueRefToUrl } from '@shared/git/issue-ref.ts'
 import { resolveGitHubBackend } from '../services/github/backend/backend.ts'
 import { importIssuesAsRoadmapItems } from '../services/roadmap-issue-import.ts'
+import { classifyRoadmapComplexity } from '../services/roadmap-complexity.ts'
 import { getGitBranchStatus } from '../services/github/pr-context-service.ts'
 import { getSessionBackup, restoreSessionBackup } from '../services/worktree-backup.ts'
 import { isGitAvailable } from '../services/tool-availability.ts'
@@ -343,12 +344,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     existing: Record<string, string>,
     notes: string,
     issue: string,
+    complexity?: string,
   ): Record<string, string> {
     const { notes: _n, issue: _i, ...rest } = existing
     return {
       ...rest,
       ...(notes ? { notes } : {}),
       ...(issue ? { issue } : {}),
+      ...(complexity ? { complexity } : {}),
     }
   }
 
@@ -373,25 +376,27 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   ipcMain.handle(
     'roadmap:create',
-    (event, rawPrompt: unknown, rawNotes: unknown, rawIssue: unknown) => {
+    async (event, rawPrompt: unknown, rawNotes: unknown, rawIssue: unknown) => {
       assertMainFrameSender(event, win)
       const prompt = parseIpcArgs(zRoadmapPrompt, [rawPrompt]).trim()
       const notes = parseIpcArgs(zRoadmapNotes.optional(), [rawNotes])?.trim() ?? ''
       const issue = parseRoadmapIssue(rawIssue)
       if (!prompt) throw new IpcValidationError('Roadmap prompt must not be empty')
+      // One-shot on save: timeout + heuristic fallback inside keep this bounded.
+      const complexity = await classifyRoadmapComplexity(prompt)
       return addKnowledgeNote({
         type: ROADMAP_TYPE,
         title: roadmapTitleFromPrompt(prompt),
         body: prompt,
         status: 'ready',
-        fields: roadmapFields({}, notes, issue),
+        fields: roadmapFields({}, notes, issue, complexity),
       })
     },
   )
 
   ipcMain.handle(
     'roadmap:update',
-    (
+    async (
       event,
       rawId: unknown,
       rawPrompt: unknown,
@@ -408,11 +413,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       if (!prompt) throw new IpcValidationError('Roadmap prompt must not be empty')
       const existing = getKnowledgeNote(id)
       if (!existing || existing.type !== ROADMAP_TYPE) return null
+      // Re-classify only when the prompt itself changed — a status or notes
+      // edit keeps the stored complexity without a model round-trip.
+      const complexity =
+        prompt === existing.body ? undefined : await classifyRoadmapComplexity(prompt)
       return updateKnowledgeNote(id, {
         title: roadmapTitleFromPrompt(prompt),
         body: prompt,
         status,
-        fields: roadmapFields(existing.fields, notes, issue),
+        fields: roadmapFields(existing.fields, notes, issue, complexity),
       })
     },
   )

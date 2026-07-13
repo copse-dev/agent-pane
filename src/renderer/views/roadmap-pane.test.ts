@@ -12,6 +12,7 @@ function makeItem(
   status = 'ready',
   notes?: string,
   issue?: string,
+  complexity?: string,
 ): {
   id: string
   type: string
@@ -31,7 +32,11 @@ function makeItem(
     body: prompt,
     tags: [],
     status,
-    fields: { ...(notes ? { notes } : {}), ...(issue ? { issue } : {}) },
+    fields: {
+      ...(notes ? { notes } : {}),
+      ...(issue ? { issue } : {}),
+      ...(complexity ? { complexity } : {}),
+    },
     createdAt: '2026-07-13T00:00:00.000Z',
     updatedAt: '2026-07-13T00:00:00.000Z',
     file: `/tmp/${id}.md`,
@@ -323,6 +328,28 @@ describe('roadmap pane', () => {
       assert.equal(viewer.querySelector<HTMLElement>('.roadmap-empty')?.hidden, false)
     } finally {
       globalThis.confirm = priorConfirm
+      unmount()
+    }
+  })
+
+  it('shows a complexity badge for stamped items and none for legacy values', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api } = makeApi([
+      makeItem('a', 'Big refactor', 'ready', undefined, undefined, 'high'),
+      makeItem('b', 'Unstamped'),
+      makeItem('c', 'Bad value', 'ready', undefined, undefined, 'frontier'),
+    ])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      const badges = [...list.querySelectorAll('.roadmap-complexity-badge')]
+      assert.equal(badges.length, 1, 'only the valid stamp renders')
+      const badge = badges[0]
+      assert.ok(badge)
+      assert.equal(badge.textContent, 'high')
+      assert.ok(badge.classList.contains('is-high'))
+    } finally {
       unmount()
     }
   })

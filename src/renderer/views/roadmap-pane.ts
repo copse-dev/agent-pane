@@ -1,5 +1,6 @@
 import { el, clear, qsRequired } from '../dom/helpers.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
+import { isRoadmapComplexity } from '@shared/roadmap/complexity.ts'
 import { createThread } from '@shared/store/thread-helpers.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import type { AppStore } from '@shared/store/store.ts'
@@ -293,6 +294,21 @@ export function mountRoadmapPane(
         { class: 'roadmap-row-meta' },
         el('span', { class: `roadmap-status-badge is-${status}` }, status),
       )
+      // Complexity is stamped on save (roadmap-complexity.ts); older items
+      // that predate stamping simply have no badge.
+      const complexity = item.fields['complexity']
+      if (isRoadmapComplexity(complexity)) {
+        meta.append(
+          el(
+            'span',
+            {
+              class: `roadmap-complexity-badge is-${complexity}`,
+              title: 'Estimated prompt complexity (classified on save)',
+            },
+            complexity,
+          ),
+        )
+      }
       const issue = itemIssue(item)
       if (issue) {
         const chip = el(
