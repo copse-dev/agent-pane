@@ -29,6 +29,10 @@ function itemNotes(item: RoadmapItem): string {
   return item.fields['notes'] ?? ''
 }
 
+function itemIssue(item: RoadmapItem): string {
+  return item.fields['issue'] ?? ''
+}
+
 function itemStatus(item: RoadmapItem): RoadmapStatus {
   return (STATUS_OPTIONS as readonly string[]).includes(item.status ?? '')
     ? (item.status as RoadmapStatus)
@@ -105,6 +109,12 @@ export function mountRoadmapPane(
     placeholder: 'Notes (e.g. blocked on PR #123)',
     'aria-label': 'Roadmap notes',
   })
+  const issueInput = el('input', {
+    type: 'text',
+    class: 'memories-field roadmap-issue-input',
+    placeholder: 'Issue this solves (#123, owner/repo#123, or URL)',
+    'aria-label': 'Pinned GitHub issue',
+  })
   const statusSelect = el('select', {
     class: 'memories-field roadmap-status-select',
     'aria-label': 'Roadmap status',
@@ -152,6 +162,8 @@ export function mountRoadmapPane(
     promptInput,
     el('label', { class: 'memories-label' }, 'Notes'),
     notesInput,
+    el('label', { class: 'memories-label' }, 'Issue'),
+    issueInput,
     statusLabel,
     statusSelect,
     metaLine,
@@ -170,6 +182,7 @@ export function mountRoadmapPane(
     return (
       promptInput.value !== (item?.body ?? '') ||
       notesInput.value !== (item ? itemNotes(item) : '') ||
+      issueInput.value !== (item ? itemIssue(item) : '') ||
       (item != null && statusSelect.value !== itemStatus(item))
     )
   }
@@ -195,6 +208,7 @@ export function mountRoadmapPane(
     if (!(opts?.preserveDirty && dirty)) {
       promptInput.value = item?.body ?? ''
       notesInput.value = item ? itemNotes(item) : ''
+      issueInput.value = item ? itemIssue(item) : ''
       statusSelect.value = item ? itemStatus(item) : 'ready'
     }
     statusLabel.hidden = !item
@@ -230,9 +244,34 @@ export function mountRoadmapPane(
         class: `git-change-row memories-row roadmap-row${isSelected ? ' is-selected' : ''}`,
       })
       const main = el('div', { class: 'memories-row-main' })
+      const meta = el(
+        'div',
+        { class: 'roadmap-row-meta' },
+        el('span', { class: `roadmap-status-badge is-${status}` }, status),
+      )
+      const issue = itemIssue(item)
+      if (issue) {
+        const chip = el(
+          'span',
+          {
+            class: 'roadmap-issue-chip',
+            role: 'link',
+            title: `Open ${issue} on GitHub`,
+          },
+          issue,
+        )
+        chip.addEventListener('click', (e) => {
+          // The row itself selects the item; the chip only opens the issue.
+          e.stopPropagation()
+          void api.roadmap.issueUrl(issue).then((url) => {
+            if (url) void api.shell.openExternal(url)
+          })
+        })
+        meta.append(chip)
+      }
       main.append(
         el('span', { class: 'memories-row-title roadmap-row-title' }, item.title || '(untitled)'),
-        el('span', { class: `roadmap-status-badge is-${status}` }, status),
+        meta,
       )
       row.append(main)
       row.addEventListener('click', () => {
@@ -282,10 +321,11 @@ export function mountRoadmapPane(
       showError('Add a prompt before saving.')
       return
     }
+    const issue = issueInput.value.trim()
     saveBtn.disabled = true
     try {
       if (creating || !selectedId) {
-        const created = await api.roadmap.create(prompt, notes || undefined)
+        const created = await api.roadmap.create(prompt, notes || undefined, issue || undefined)
         selectedId = created.id
         creating = false
       } else {
@@ -294,6 +334,7 @@ export function mountRoadmapPane(
           prompt,
           notes || undefined,
           statusSelect.value as RoadmapStatus,
+          issue || undefined,
         )
         if (!updated) {
           showError('This roadmap item no longer exists.')

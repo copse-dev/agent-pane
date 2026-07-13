@@ -38,6 +38,12 @@ grinding out large amounts of work before those PRs merge.
   prompt (with optional notes) and update an item's prompt / notes / status. Backed by
   `roadmap:*` IPC handlers (`register-handlers.ts`) that only touch `Roadmap`-typed
   notes; the pane can be popped out into its own window like the other panes.
+- **Issue pinning** — an item can be pinned to the GitHub issue it is meant to solve.
+  Stored as a canonical short ref (`#123` / `owner/repo#123`) in the note's `issue`
+  frontmatter field (`src/shared/git/issue-ref.ts` parses pasted forms, including full
+  URLs). Both surfaces support it: the pane's Issue field (with a clickable chip on the
+  list row, resolved against the current origin remote at click time) and an `issue`
+  parameter on `roadmap_plan add`.
 - **Start thread** — a button on each saved item that opens a fresh thread with the
   composer pre-filled from the item's prompt (notes appended as a context line) and
   focused. Deliberately not auto-sent: the user reviews and hits send, which also

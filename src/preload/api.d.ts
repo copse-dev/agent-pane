@@ -358,14 +358,17 @@ export interface ApiClient {
     create: (
       prompt: string,
       notes?: string,
+      issue?: string,
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote>
     update: (
       id: string,
       prompt: string,
       notes: string | undefined,
       status: import('../main/tools/roadmap-tools.ts').RoadmapStatus,
+      issue?: string,
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
     delete: (id: string) => Promise<boolean>
+    issueUrl: (ref: string) => Promise<string | null>
   }
   skills: {
     list: () => Promise<SkillSummary[]>

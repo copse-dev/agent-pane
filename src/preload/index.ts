@@ -422,10 +422,17 @@ contextBridge.exposeInMainWorld('api', {
   },
   roadmap: {
     list: () => ipcRenderer.invoke('roadmap:list'),
-    create: (prompt: string, notes?: string) => ipcRenderer.invoke('roadmap:create', prompt, notes),
-    update: (id: string, prompt: string, notes: string | undefined, status: string) =>
-      ipcRenderer.invoke('roadmap:update', id, prompt, notes, status),
+    create: (prompt: string, notes?: string, issue?: string) =>
+      ipcRenderer.invoke('roadmap:create', prompt, notes, issue),
+    update: (
+      id: string,
+      prompt: string,
+      notes: string | undefined,
+      status: string,
+      issue?: string,
+    ) => ipcRenderer.invoke('roadmap:update', id, prompt, notes, status, issue),
     delete: (id: string) => ipcRenderer.invoke('roadmap:delete', id),
+    issueUrl: (ref: string) => ipcRenderer.invoke('roadmap:issueUrl', ref),
   },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),

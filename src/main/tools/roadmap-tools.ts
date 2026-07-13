@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
+import { parseIssueRef } from '@shared/git/issue-ref.ts'
 import {
   addKnowledgeNote,
   getKnowledgeNote,
@@ -43,8 +44,9 @@ export const ROADMAP_STATUSES = ['ready', 'blocked', 'conflicts', 'done', 'archi
 export type RoadmapStatus = (typeof ROADMAP_STATUSES)[number]
 
 function formatItem(note: KnowledgeNote): string {
+  const issue = note.fields['issue'] ? ` [${note.fields['issue']}]` : ''
   const notes = note.fields['notes'] ? `\n  notes: ${note.fields['notes']}` : ''
-  return `- [${note.id}] (${note.status ?? 'ready'}) ${note.body}${notes}`
+  return `- [${note.id}] (${note.status ?? 'ready'})${issue} ${note.body}${notes}`
 }
 
 export const roadmapPlanTool = defineTool({
@@ -60,19 +62,32 @@ export const roadmapPlanTool = defineTool({
       .string()
       .optional()
       .describe('For action=add: optional context, e.g. which PR this waits on.'),
+    issue: z
+      .string()
+      .optional()
+      .describe(
+        'For action=add: optional GitHub issue this item is meant to solve — "#123", "owner/repo#123", or an issue URL.',
+      ),
     id: z.string().optional().describe('For action=set_status: the item id from `list`.'),
     status: z.enum(ROADMAP_STATUSES).optional().describe('For action=set_status: the new status.'),
   }),
-  execute({ action, prompt, notes, id, status }) {
+  execute({ action, prompt, notes, id, status, issue }) {
     if (action === 'add') {
       const trimmed = prompt?.trim()
       if (!trimmed) return 'roadmap_plan add requires a non-empty prompt.'
+      const issueRef = issue?.trim() ? parseIssueRef(issue) : null
+      if (issue?.trim() && !issueRef) {
+        return `Unrecognized issue reference "${issue}". Use #123, owner/repo#123, or a GitHub issue URL.`
+      }
       const note = addKnowledgeNote({
         type: ROADMAP_TYPE,
         title: roadmapTitleFromPrompt(trimmed),
         body: trimmed,
         status: 'ready',
-        fields: notes?.trim() ? { notes: notes.trim() } : {},
+        fields: {
+          ...(notes?.trim() ? { notes: notes.trim() } : {}),
+          ...(issueRef ? { issue: issueRef } : {}),
+        },
       })
       return `Added roadmap item ${note.id}.\n${formatItem(note)}`
     }
