@@ -247,7 +247,7 @@ jobs:
       # Unit suite under c8 + coverage-baseline.json ratchet (replaces the
       # separate coverage job — same tests, no duplicate npm test run).
       - run: npm run coverage:ci
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage-report
@@ -287,7 +287,7 @@ jobs:
       - run: >-
           node scripts/semantic-search-bench.mts --backend gortex --gate
           --min-recall 0.65 --max-p95-ms 3000 --json bench-semantic.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: bench-semantic
@@ -298,7 +298,7 @@ jobs:
       # write → grading) and the --gate ratchet compares solve rate and
       # tokens-per-solve against benchmarks/bench-baseline.json. No model, ~30s.
       - run: npm run bench:agent -- --mock --gate
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: bench-agent-mock
@@ -328,7 +328,7 @@ jobs:
           LM_STUDIO_MODEL: ${{ vars.LM_STUDIO_MODEL }}
           LM_STUDIO_API_KEY: ${{ secrets.LM_STUDIO_API_KEY }}
         run: npm run bench:agent -- --tasks benchmarks/tasks/swe-bench --gate
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: bench-agent-model
@@ -350,7 +350,7 @@ jobs:
       - uses: ./.github/actions/setup
       - run: npm run build
       - run: tar -cf dist.tar dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist-tar
           path: dist.tar
@@ -514,7 +514,7 @@ jobs:
             cp "$f" "changed/tests/e2e/screenshots/"
           done
           echo "Collected ${#files[@]} changed screenshot(s) for shard ${{ matrix.shard }}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: success() && github.event_name == 'pull_request'
         with:
           name: screenshots-shard-${{ matrix.shard }}
@@ -524,7 +524,7 @@ jobs:
       # On failure, surface the screenshot + page source captured in afterTest so
       # the constrained-runner render/OOM flakes can be inspected. Skipped when a
       # hard runner OOM ("shutdown signal") kills the job before this step runs.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: e2e-failure-artifacts-shard-${{ matrix.shard }}
