@@ -44,6 +44,8 @@ export interface GitHubBackend {
   getPrChecksState(ref: PrRef): Promise<GhPrChecksState>
   /** Open issues in the workspace repo (PRs excluded) — backs roadmap import. */
   listWorkspaceOpenIssues(limit: number): Promise<GhIssueSummary[]>
+  /** One issue by coordinates (any state); null when missing or actually a PR. */
+  getIssue(ref: PrRef): Promise<GhIssueSummary | null>
 
   // Writes — Wave 1 PR lifecycle actions.
   rerunFailedRuns(ref: PrRef): Promise<PrActionResult>

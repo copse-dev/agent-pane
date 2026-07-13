@@ -436,6 +436,7 @@ contextBridge.exposeInMainWorld('api', {
     openIssues: () => ipcRenderer.invoke('roadmap:openIssues'),
     importIssues: (issues: { number: number; title: string; body: string }[]) =>
       ipcRenderer.invoke('roadmap:importIssues', issues),
+    checkFit: (id: string) => ipcRenderer.invoke('roadmap:checkFit', id),
   },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
