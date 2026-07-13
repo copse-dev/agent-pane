@@ -36,9 +36,31 @@ export function parseIssueRef(input: string): string | null {
  * null when the ref is short and no slug is known (no remote → no link).
  */
 export function issueRefToUrl(ref: string, repoSlug: string | null): string | null {
+  const coords = resolveIssueRef(ref, repoSlug)
+  return coords
+    ? `https://github.com/${coords.owner}/${coords.repo}/issues/${String(coords.number)}`
+    : null
+}
+
+/**
+ * Owner/repo/number coordinates for a stored ref, anchoring short `#123` refs
+ * on `repoSlug`; null when the ref is malformed or a short ref has no slug.
+ */
+export function resolveIssueRef(
+  ref: string,
+  repoSlug: string | null,
+): { owner: string; repo: string; number: number } | null {
   const full = FULL_REF.exec(ref)
-  if (full) return `https://github.com/${full[1] ?? ''}/issues/${full[2] ?? ''}`
+  if (full) {
+    const [owner, repo] = (full[1] ?? '').split('/')
+    if (!owner || !repo) return null
+    return { owner, repo, number: Number(full[2]) }
+  }
   const short = SHORT_REF.exec(ref)
-  if (short) return repoSlug ? `https://github.com/${repoSlug}/issues/${short[1] ?? ''}` : null
+  if (short && repoSlug) {
+    const [owner, repo] = repoSlug.split('/')
+    if (!owner || !repo) return null
+    return { owner, repo, number: Number(short[1]) }
+  }
   return null
 }

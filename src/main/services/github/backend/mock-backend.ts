@@ -119,6 +119,12 @@ export const mockGitHubBackend: GitHubBackend = {
     return Promise.resolve(status.authenticated ? MOCK_OPEN_ISSUES.slice(0, limit) : [])
   },
 
+  getIssue(ref: PrRef): Promise<GhIssueSummary | null> {
+    const status = mockGhCliStatus()
+    if (!status.authenticated) return Promise.resolve(null)
+    return Promise.resolve(MOCK_OPEN_ISSUES.find((i) => i.number === ref.number) ?? null)
+  },
+
   getPrDetails(ref: PrRef): Promise<GhPrDetails | null> {
     const base = mockGetGhPrDetails(ref)
     if (!base) return Promise.resolve(null)

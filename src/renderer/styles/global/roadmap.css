@@ -68,6 +68,33 @@
   color: var(--danger, #f14c4c);
 }
 
+/* Fit verdict — on-demand model judgement against the pinned issue. */
+.roadmap-fit-badge {
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 0 6px;
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+.roadmap-fit-badge.is-likely {
+  color: var(--success, #3fb950);
+}
+.roadmap-fit-badge.is-partial {
+  color: var(--warning, #d29922);
+}
+.roadmap-fit-badge.is-unlikely {
+  color: var(--danger, #f14c4c);
+}
+.roadmap-fit-result {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-xs) var(--spacing-sm);
+}
+
 /* Import-from-issues picker (viewer column). */
 .roadmap-import-list {
   flex: 1;

@@ -385,6 +385,46 @@ export const ghCliBackend: GitHubBackend = {
       .filter((entry): entry is GhIssueSummary => entry != null)
   },
 
+  async getIssue(ref: PrRef): Promise<GhIssueSummary | null> {
+    if (!isGhAvailable()) return null
+    const { stdout, stderr, code } = await runGh([
+      'issue',
+      'view',
+      String(ref.number),
+      '--repo',
+      `${ref.owner}/${ref.repo}`,
+      '--json',
+      'number,title,url,body,labels,updatedAt',
+    ])
+    if (code !== 0) {
+      // `gh issue view` exits non-zero for a missing number; treat as absent.
+      if (/could not find|no issues? found|not found/i.test(stderr)) return null
+      throw new Error(formatGhError(stderr, code))
+    }
+    const entry = safeJsonParse<{
+      number?: number
+      title?: string
+      url?: string
+      body?: string
+      labels?: Array<{ name?: string }>
+      updatedAt?: string
+    }>(stdout.trim())
+    if (!entry || typeof entry.number !== 'number' || !entry.title || !entry.url) return null
+    const summary: GhIssueSummary = {
+      owner: ref.owner,
+      repo: ref.repo,
+      number: entry.number,
+      title: entry.title,
+      url: entry.url,
+      body: (entry.body ?? '').slice(0, 8000),
+      labels: (entry.labels ?? [])
+        .map((l) => l.name)
+        .filter((name): name is string => typeof name === 'string'),
+    }
+    if (entry.updatedAt) summary.updatedAt = entry.updatedAt
+    return summary
+  },
+
   async getPrDetails(ref: PrRef): Promise<GhPrDetails | null> {
     if (!isGhAvailable()) return null
     const { stdout, stderr, code } = await runGh([

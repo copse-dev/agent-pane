@@ -117,6 +117,7 @@ import { parseIssueRef, issueRefToUrl } from '@shared/git/issue-ref.ts'
 import { resolveGitHubBackend } from '../services/github/backend/backend.ts'
 import { importIssuesAsRoadmapItems } from '../services/roadmap-issue-import.ts'
 import { classifyRoadmapComplexity } from '../services/roadmap-complexity.ts'
+import { checkRoadmapFit } from '../services/roadmap-fit-check.ts'
 import { getGitBranchStatus } from '../services/github/pr-context-service.ts'
 import { getSessionBackup, restoreSessionBackup } from '../services/worktree-backup.ts'
 import { isGitAvailable } from '../services/tool-availability.ts'
@@ -417,11 +418,17 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       // edit keeps the stored complexity without a model round-trip.
       const complexity =
         prompt === existing.body ? undefined : await classifyRoadmapComplexity(prompt)
+      const fields = roadmapFields(existing.fields, notes, issue, complexity)
+      // A stored fit verdict judges a specific prompt/issue pair; either side
+      // changing invalidates it.
+      if (prompt !== existing.body || issue !== (existing.fields['issue'] ?? '')) {
+        delete fields['fit']
+      }
       return updateKnowledgeNote(id, {
         title: roadmapTitleFromPrompt(prompt),
         body: prompt,
         status,
-        fields: roadmapFields(existing.fields, notes, issue, complexity),
+        fields,
       })
     },
   )
@@ -456,6 +463,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const issues = parseIpcArgs(zRoadmapImportIssues, [rawIssues])
     return importIssuesAsRoadmapItems(issues)
+  })
+
+  // Advisory fit check of an item's prompt against its pinned issue,
+  // explicitly triggered from the pane (see roadmap-fit-check.ts).
+  ipcMain.handle('roadmap:checkFit', (event, rawId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zRoadmapId, [rawId])
+    return checkRoadmapFit(id)
   })
 
   ipcMain.handle('roadmap:delete', (event, rawId: unknown) => {

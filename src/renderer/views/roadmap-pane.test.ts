@@ -58,6 +58,7 @@ interface RoadmapCalls {
   openExternal: string[]
   openIssues: number
   importIssues: { number: number; title: string; body: string }[][]
+  checkFit: string[]
 }
 
 interface MockOpenIssue {
@@ -97,6 +98,7 @@ function makeApi(
     openExternal: [],
     openIssues: 0,
     importIssues: [],
+    checkFit: [],
   }
   const api = {
     panes: { popout: async (): Promise<void> => {} },
@@ -145,6 +147,12 @@ function makeApi(
       openIssues: async () => {
         calls.openIssues++
         return issues.map((i) => ({ ...i }))
+      },
+      checkFit: async (id: string) => {
+        calls.checkFit.push(id)
+        const item = items.find((i) => i.id === id)
+        if (item) item.fields = { ...item.fields, fit: 'partial' }
+        return { verdict: 'partial', detail: '- prompt does not mention the startup flash' }
       },
       importIssues: async (selected: { number: number; title: string; body: string }[]) => {
         calls.importIssues.push(selected)
@@ -426,6 +434,40 @@ describe('roadmap pane', () => {
       await flush()
       list.querySelector<HTMLButtonElement>('.roadmap-new-btn')?.click()
       assert.equal(viewer.querySelector<HTMLButtonElement>('.roadmap-start-btn')?.hidden, true)
+    } finally {
+      unmount()
+    }
+  })
+
+  it('offers Check fit only for pinned items and displays the verdict', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([
+      makeItem('a', 'Fix the flash', 'ready', undefined, '#41'),
+      makeItem('b', 'Unpinned item'),
+    ])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      const rows = [...list.querySelectorAll<HTMLButtonElement>('.roadmap-row')]
+      // Unpinned item: no fit button offered.
+      rows[1]?.click()
+      assert.equal(viewer.querySelector<HTMLButtonElement>('.roadmap-fit-btn')?.hidden, true)
+      // Pinned item: check runs and shows verdict + reasoning.
+      rows[0]?.click()
+      const fitBtn = viewer.querySelector<HTMLButtonElement>('.roadmap-fit-btn')
+      assert.ok(fitBtn)
+      assert.equal(fitBtn.hidden, false)
+      fitBtn.click()
+      await flush()
+      assert.deepEqual(calls.checkFit, ['a'])
+      const result = viewer.querySelector<HTMLElement>('.roadmap-fit-result')
+      assert.ok(result)
+      assert.equal(result.hidden, false)
+      assert.match(result.textContent, /partial/)
+      assert.match(result.textContent, /startup flash/)
+      // The stamped verdict shows as a badge after the follow-up refresh.
+      assert.equal(list.querySelector('.roadmap-fit-badge')?.textContent, 'fit: partial')
     } finally {
       unmount()
     }
