@@ -51,6 +51,13 @@ grinding out large amounts of work before those PRs merge.
   back to a deterministic template when no model is available
   (`src/main/services/roadmap-issue-import.ts`). Issues already pinned by an item are
   shown but not re-importable.
+- **Complexity on save** — saving a prompt (create, edit, or import) classifies its
+  complexity one-shot as `low` / `medium` / `high` via the small-tasks model, with a 10s
+  timeout and the #557 heuristic classifier as fallback so a save never hangs on a model
+  (`src/main/services/roadmap-complexity.ts`; vocabulary in
+  `src/shared/roadmap/complexity.ts`). Stored in the `complexity` frontmatter field and
+  shown as a badge on the list row. Status/notes-only edits keep the stored stamp —
+  no model call.
 - **Start thread** — a button on each saved item that opens a fresh thread with the
   composer pre-filled from the item's prompt (notes appended as a context line) and
   focused. Deliberately not auto-sent: the user reviews and hits send, which also
