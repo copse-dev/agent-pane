@@ -72,8 +72,12 @@ export function bindBrowserLinkClicks(
       return
     }
 
+    // The in-app PR pane is a nicer view of a GitHub PR, but it is still an
+    // in-app destination — so it only applies while links are set to open in
+    // the built-in browser. With that off, the toggle is a true global switch
+    // and a PR link opens in the system browser like any other external link.
     const githubPr = parseGithubPrUrl(href)
-    if (githubPr && api?.gh) {
+    if (githubPr && api?.gh && store.getState().openLinksInBuiltInBrowser) {
       void api.gh.status().then((status) => {
         if (status.installed && status.authenticated) {
           openPullRequest(store, githubPr)

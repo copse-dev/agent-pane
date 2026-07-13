@@ -206,6 +206,47 @@ describe('markdown browser links', () => {
     assert.deepEqual(requested, [href])
   })
 
+  it('opens GitHub PR links in the system browser when the built-in setting is off', async () => {
+    const href = 'https://github.com/org/repo/pull/42'
+    const root = document.createElement('div')
+    root.innerHTML = `<a href="${href}">PR</a>`
+    const store = createStore({
+      filesPaneOpen: false,
+      rightPanelMode: 'explorer',
+      openLinksInBuiltInBrowser: false,
+    })
+    const prRequested: unknown[] = []
+    const browserRequested: string[] = []
+    const opened: string[] = []
+    store.on('pr_open_requested', (owner, repo, number) =>
+      prRequested.push({ owner, repo, number }),
+    )
+    store.on('browser_url_requested', (url) => browserRequested.push(url))
+    let ghStatusChecked = false
+    const unbind = bindBrowserLinkClicks(root, store, {
+      remoteAgent: { downloadArtifact: async () => 'https://example.com' },
+      gh: {
+        status: async () => {
+          ghStatusChecked = true
+          return { installed: true, authenticated: true, username: 'dev', message: null }
+        },
+      },
+      shell: { openExternal: async (url) => void opened.push(url) },
+    })
+
+    const event = new window.MouseEvent('click', { bubbles: true, cancelable: true })
+    qsRequired(root, 'a').dispatchEvent(event)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    unbind()
+    // The toggle is a global switch: the PR pane is skipped entirely (gh isn't
+    // even consulted) and the link opens in the system browser.
+    assert.equal(ghStatusChecked, false)
+    assert.deepEqual(prRequested, [])
+    assert.deepEqual(browserRequested, [])
+    assert.deepEqual(opened, [href])
+  })
+
   it('hydrates remote artifact image tags from the thread agent link', async () => {
     const root = document.createElement('div')
     root.className = 'messages-list'
