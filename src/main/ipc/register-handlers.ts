@@ -441,10 +441,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         status.message ?? 'GitHub is not connected — sign in via `gh auth login` or a token.',
       )
     }
-    if (!(await getGithubRepoSlug())) {
+    const slug = await getGithubRepoSlug()
+    if (!slug) {
       throw new Error('No GitHub origin remote detected in this workspace.')
     }
-    return backend.listWorkspaceOpenIssues(50)
+    // Return the slug too: an empty result names the repo it actually queried,
+    // which surfaces stale/fork origins immediately.
+    return { slug, issues: await backend.listWorkspaceOpenIssues(50) }
   })
 
   const zRoadmapImportIssues = z

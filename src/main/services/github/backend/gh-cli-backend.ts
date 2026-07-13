@@ -364,7 +364,12 @@ export const ghCliBackend: GitHubBackend = {
         updatedAt?: string
       }>
     >(stdout.trim())
-    if (!Array.isArray(list)) return []
+    if (!Array.isArray(list)) {
+      // Never report unparseable output as "no issues" — surface it.
+      throw new Error(
+        `Unexpected \`gh issue list\` output: ${stdout.trim().slice(0, 200) || '(empty)'}`,
+      )
+    }
     return list
       .map((entry) => {
         if (typeof entry.number !== 'number' || !entry.title || !entry.url) return null
