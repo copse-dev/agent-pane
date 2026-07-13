@@ -369,7 +369,10 @@ export interface ApiClient {
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
     delete: (id: string) => Promise<boolean>
     issueUrl: (ref: string) => Promise<string | null>
-    openIssues: () => Promise<import('../shared/types/git.ts').GhIssueSummary[]>
+    openIssues: () => Promise<{
+      slug: string
+      issues: import('../shared/types/git.ts').GhIssueSummary[]
+    }>
     importIssues: (
       issues: { number: number; title: string; body: string }[],
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote[]>
