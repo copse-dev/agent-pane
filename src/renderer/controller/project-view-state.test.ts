@@ -31,6 +31,7 @@ function stateWith(partial: Partial<AppState>): AppState {
     fontSize: 14,
     autoPortraitRightPanel: true,
     rightPanelPosition: 'auto',
+    openLinksInBuiltInBrowser: true,
     ...partial,
   }
 }
