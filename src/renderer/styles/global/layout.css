@@ -1160,6 +1160,51 @@
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+.browser-menu-wrap {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+}
+.browser-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 200px;
+  padding: var(--spacing-xs);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md, 0 6px 20px rgb(0 0 0 / 25%));
+}
+.browser-menu[hidden] {
+  display: none;
+}
+.browser-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 6px 8px;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  border-radius: var(--radius);
+  text-align: left;
+  white-space: nowrap;
+}
+.browser-menu-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.browser-menu-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.browser-menu-item .ui-icon {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
 .browser-webview-host {
   flex: 1;
   display: flex;
