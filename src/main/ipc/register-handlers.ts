@@ -114,6 +114,8 @@ import {
   isInsideGitWorkTree,
 } from '../services/github/git-service.ts'
 import { parseIssueRef, issueRefToUrl } from '@shared/git/issue-ref.ts'
+import { resolveGitHubBackend } from '../services/github/backend/backend.ts'
+import { importIssuesAsRoadmapItems } from '../services/roadmap-issue-import.ts'
 import { getGitBranchStatus } from '../services/github/pr-context-service.ts'
 import { getSessionBackup, restoreSessionBackup } from '../services/worktree-backup.ts'
 import { isGitAvailable } from '../services/tool-availability.ts'
@@ -421,6 +423,30 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const ref = parseIpcArgs(zRoadmapIssue, [rawRef]).trim()
     return issueRefToUrl(ref, await getGithubRepoSlug())
+  })
+
+  // Import-from-issues flow: list the workspace's open issues, then turn the
+  // selected ones into roadmap items (prompt drafted by the small-tasks model,
+  // falling back to a template — see roadmap-issue-import.ts).
+  ipcMain.handle('roadmap:openIssues', (event) => {
+    assertMainFrameSender(event, win)
+    return resolveGitHubBackend().listWorkspaceOpenIssues(50)
+  })
+
+  const zRoadmapImportIssues = z
+    .array(
+      z.object({
+        number: z.number().int().positive(),
+        title: z.string().max(512),
+        body: z.string().max(20_000),
+      }),
+    )
+    .max(20)
+
+  ipcMain.handle('roadmap:importIssues', (event, rawIssues: unknown) => {
+    assertMainFrameSender(event, win)
+    const issues = parseIpcArgs(zRoadmapImportIssues, [rawIssues])
+    return importIssuesAsRoadmapItems(issues)
   })
 
   ipcMain.handle('roadmap:delete', (event, rawId: unknown) => {

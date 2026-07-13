@@ -51,3 +51,30 @@
 .roadmap-issue-chip:hover {
   text-decoration: underline;
 }
+
+/* Import-from-issues picker (viewer column). */
+.roadmap-import-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.roadmap-import-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.roadmap-import-row.is-pinned {
+  color: var(--text-muted);
+  cursor: default;
+}
+.roadmap-import-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -5,6 +5,7 @@ import { deriveOverallState, rollupToCiChecks } from '../github-ci-service.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
 import type {
   GhCliStatus,
+  GhIssueSummary,
   GhPrChangedFile,
   GhPrChecksState,
   GhPrDetails,
@@ -307,6 +308,37 @@ export const githubApiBackend: GitHubBackend = {
           : null,
       )
       .filter((entry): entry is GhPrSummary => entry != null)
+  },
+
+  async listWorkspaceOpenIssues(limit: number): Promise<GhIssueSummary[]> {
+    const slug = await getGithubRepoSlug()
+    if (!slug) return []
+    const [owner, repo] = slug.split('/')
+    if (!owner || !repo) return []
+    const result = await rest(`/repos/${owner}/${repo}/issues?state=open&per_page=${String(limit)}`)
+    if (!result.ok) throw new Error(result.errorMessage ?? 'Could not list issues.')
+    const items = Array.isArray(result.json) ? (result.json as Array<Record<string, unknown>>) : []
+    return (
+      items
+        // The REST /issues listing includes pull requests; keep real issues only.
+        .filter((item) => !('pull_request' in item))
+        .map((item) => {
+          const number = typeof item['number'] === 'number' ? item['number'] : null
+          const title = typeof item['title'] === 'string' ? item['title'] : null
+          const url = typeof item['html_url'] === 'string' ? item['html_url'] : null
+          if (number == null || !title || !url) return null
+          const body = typeof item['body'] === 'string' ? item['body'].slice(0, 4000) : ''
+          const labels = Array.isArray(item['labels'])
+            ? (item['labels'] as Array<Record<string, unknown>>)
+                .map((l) => (typeof l['name'] === 'string' ? l['name'] : null))
+                .filter((name): name is string => name != null)
+            : []
+          const summary: GhIssueSummary = { owner, repo, number, title, url, body, labels }
+          if (typeof item['updated_at'] === 'string') summary.updatedAt = item['updated_at']
+          return summary
+        })
+        .filter((entry): entry is GhIssueSummary => entry != null)
+    )
   },
 
   async getPrDetails(ref: PrRef): Promise<GhPrDetails | null> {

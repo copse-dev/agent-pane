@@ -44,6 +44,13 @@ grinding out large amounts of work before those PRs merge.
   URLs). Both surfaces support it: the pane's Issue field (with a clickable chip on the
   list row, resolved against the current origin remote at click time) and an `issue`
   parameter on `roadmap_plan add`.
+- **Import from issues** — the pane's ⇩ button lists the workspace repo's open GitHub
+  issues (new `listWorkspaceOpenIssues` on the GitHub backend, all three impls) and turns
+  the selected ones into roadmap items pinned to their issue. Each prompt is drafted by
+  the configured small-tasks model (the local default used for titles/summaries), falling
+  back to a deterministic template when no model is available
+  (`src/main/services/roadmap-issue-import.ts`). Issues already pinned by an item are
+  shown but not re-importable.
 - **Start thread** — a button on each saved item that opens a fresh thread with the
   composer pre-filled from the item's prompt (notes appended as a context line) and
   focused. Deliberately not auto-sent: the user reviews and hits send, which also

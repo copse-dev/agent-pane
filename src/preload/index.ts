@@ -433,6 +433,9 @@ contextBridge.exposeInMainWorld('api', {
     ) => ipcRenderer.invoke('roadmap:update', id, prompt, notes, status, issue),
     delete: (id: string) => ipcRenderer.invoke('roadmap:delete', id),
     issueUrl: (ref: string) => ipcRenderer.invoke('roadmap:issueUrl', ref),
+    openIssues: () => ipcRenderer.invoke('roadmap:openIssues'),
+    importIssues: (issues: { number: number; title: string; body: string }[]) =>
+      ipcRenderer.invoke('roadmap:importIssues', issues),
   },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
