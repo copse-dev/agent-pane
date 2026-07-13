@@ -1,5 +1,7 @@
 import { el, clear, qsRequired } from '../dom/helpers.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
+import { createThread } from '@shared/store/thread-helpers.ts'
+import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 
@@ -121,6 +123,18 @@ export function mountRoadmapPane(
     { type: 'submit', class: 'memories-btn memories-btn-primary roadmap-save-btn' },
     'Save',
   )
+  // Runs the jotted prompt: opens a fresh thread with the composer pre-filled
+  // (not auto-sent — the user reviews, tweaks, and hits send). Hidden in
+  // pop-out windows, where there is no chat pane to land in (popout.css).
+  const startBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'memories-btn roadmap-start-btn',
+      title: 'Open a new thread with this prompt in the composer',
+    },
+    'Start thread',
+  )
   const deleteBtn = el(
     'button',
     { type: 'button', class: 'memories-btn memories-btn-danger roadmap-delete-btn' },
@@ -131,7 +145,7 @@ export function mountRoadmapPane(
     { type: 'button', class: 'memories-btn roadmap-cancel-btn' },
     'Cancel',
   )
-  const actions = el('div', { class: 'memories-actions' }, saveBtn, deleteBtn, cancelBtn)
+  const actions = el('div', { class: 'memories-actions' }, saveBtn, startBtn, deleteBtn, cancelBtn)
 
   form.append(
     el('label', { class: 'memories-label' }, 'Prompt'),
@@ -185,6 +199,7 @@ export function mountRoadmapPane(
     }
     statusLabel.hidden = !item
     statusSelect.hidden = !item
+    startBtn.hidden = !item
     deleteBtn.hidden = !item
     if (item?.updatedAt) {
       metaLine.hidden = false
@@ -318,12 +333,30 @@ export function mountRoadmapPane(
     renderEditor()
   }
 
+  // Open a fresh thread pre-filled with the item's prompt (plus its notes as a
+  // trailing context line). Uses the editor's *current* text so an unsaved
+  // tweak goes to the thread the user is looking at, not a stale stored copy.
+  function startThread(): void {
+    const prompt = promptInput.value.trim()
+    if (!prompt) {
+      showError('Add a prompt before starting a thread.')
+      return
+    }
+    const notes = notesInput.value.trim()
+    const draft = notes ? `${prompt}\n\nNotes: ${notes}` : prompt
+    // Persist whatever is in the chat composer to its thread before switching.
+    store.emit('composer_draft_flush')
+    createThread(store, draft)
+    getPromptAttachmentHandlers()?.focusComposer?.()
+  }
+
   newBtn.addEventListener('click', startNew)
   refreshBtn.addEventListener('click', () => void refresh())
   form.addEventListener('submit', (e) => {
     e.preventDefault()
     void save()
   })
+  startBtn.addEventListener('click', startThread)
   deleteBtn.addEventListener('click', () => void remove())
   cancelBtn.addEventListener('click', cancel)
 

@@ -46,6 +46,19 @@ describe('panel persistence on new thread', () => {
     assert.equal(store.getState().filesPaneOpen, false)
   })
 
+  it('createThread seeds a caller-provided draft on the new thread', () => {
+    const store = createStore()
+
+    const id = createThread(store, 'Run the roadmap prompt')
+
+    const thread = store.getState().threads.find((t) => t.id === id)
+    assert.equal(thread?.draftPrompt, 'Run the roadmap prompt')
+    // A blank/whitespace draft is omitted entirely, not stored as ''.
+    const blankId = createThread(store, '   ')
+    const blank = store.getState().threads.find((t) => t.id === blankId)
+    assert.equal(blank?.draftPrompt, undefined)
+  })
+
   it('openNewThread reuse path keeps the panel open and resets viewer content', () => {
     const store = createStore()
     const blankId = createThread(store)
