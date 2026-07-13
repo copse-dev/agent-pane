@@ -55,6 +55,12 @@ import {
   closeConversationSearch,
   isConversationSearchOpen,
 } from './views/conversation-search.ts'
+import {
+  mountKeyboardShortcutsDialog,
+  openKeyboardShortcutsDialog,
+  closeKeyboardShortcutsDialog,
+  isKeyboardShortcutsDialogOpen,
+} from './views/keyboard-shortcuts-dialog.ts'
 import { startAgentController } from './controller/agent.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
 import {
@@ -160,6 +166,7 @@ async function boot(): Promise<void> {
   mountApprovalDialog(api, store)
   mountAskUserDialog(api, store)
   mountFileSearchDialog(store, api)
+  mountKeyboardShortcutsDialog()
   // Mounted after settings (it subscribes to the settings-close event to re-check).
   const contextWarningBanner = mountContextWarningBanner(api)
 
@@ -255,6 +262,12 @@ async function boot(): Promise<void> {
   api.menu.onShowBrowser(() => {
     ensureLayout()
     openRightPanelWithWorkspace(store, api, 'browser')
+  })
+
+  // Help ▸ Keyboard Shortcuts (Cmd/Ctrl+/) opens the shortcut cheat sheet. Unlike
+  // the panel items it needs no workspace, so it works from the welcome screen too.
+  api.menu.onKeyboardShortcuts(() => {
+    openKeyboardShortcutsDialog()
   })
 
   // MCP-UI canvas: an artefact from a (bundled or external) MCP server opens in
@@ -403,7 +416,8 @@ function registerKeyboardShortcuts(): void {
     // Cmd/Ctrl+F opens the in-conversation find bar (find-in-page for the chat).
     // Skipped while a modal dialog owns the screen so it can't open behind it.
     if (matchFindInChatShortcut(e)) {
-      if (isFileSearchDialogOpen() || isSettingsDialogOpen()) return
+      if (isFileSearchDialogOpen() || isSettingsDialogOpen() || isKeyboardShortcutsDialogOpen())
+        return
       e.preventDefault()
       openConversationSearch()
     }
@@ -412,11 +426,20 @@ function registerKeyboardShortcuts(): void {
       e.preventDefault()
       openSettingsDialog()
     }
+    // Cmd/Ctrl+/ opens the keyboard-shortcut cheat sheet (Help ▸ Keyboard Shortcuts).
+    if (meta && e.key === '/') {
+      e.preventDefault()
+      openKeyboardShortcutsDialog()
+    }
     if (meta && e.key === 'w') {
       e.preventDefault()
       confirmDeleteThread()
     }
     if (e.key === 'Escape') {
+      if (isKeyboardShortcutsDialogOpen()) {
+        closeKeyboardShortcutsDialog()
+        return
+      }
       if (isConversationSearchOpen()) {
         closeConversationSearch()
         return
