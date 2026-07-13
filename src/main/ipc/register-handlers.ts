@@ -444,9 +444,23 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Import-from-issues flow: list the workspace's open issues, then turn the
   // selected ones into roadmap items (prompt drafted by the small-tasks model,
   // falling back to a template — see roadmap-issue-import.ts).
-  ipcMain.handle('roadmap:openIssues', (event) => {
+  ipcMain.handle('roadmap:openIssues', async (event) => {
     assertMainFrameSender(event, win)
-    return resolveGitHubBackend().listWorkspaceOpenIssues(50)
+    // The backend impls return [] for "gh missing", "not authenticated", and
+    // "no origin remote" alike — fine for the PR panel, which surfaces status
+    // separately, but here an empty picker must mean "no open issues". Turn
+    // the not-connected cases into real errors the picker can display.
+    const backend = resolveGitHubBackend()
+    const status = await backend.getStatus()
+    if (!status.installed || !status.authenticated) {
+      throw new Error(
+        status.message ?? 'GitHub is not connected — sign in via `gh auth login` or a token.',
+      )
+    }
+    if (!(await getGithubRepoSlug())) {
+      throw new Error('No GitHub origin remote detected in this workspace.')
+    }
+    return backend.listWorkspaceOpenIssues(50)
   })
 
   const zRoadmapImportIssues = z
