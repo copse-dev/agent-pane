@@ -22,7 +22,16 @@ import {
 export const ROADMAP_PLANS_ENABLED_SETTING = 'roadmapPlansEnabled'
 
 /** Knowledge-note type used for roadmap items. */
-const ROADMAP_TYPE = 'Roadmap'
+export const ROADMAP_TYPE = 'Roadmap'
+
+/**
+ * Roadmap items keep the full prompt in the note body; the title is a derived
+ * preview of it. Shared with the Roadmap pane's create/update path so both
+ * surfaces produce identically-shaped notes.
+ */
+export function roadmapTitleFromPrompt(prompt: string): string {
+  return prompt.slice(0, 80)
+}
 
 /**
  * Where a roadmap item sits relative to in-flight work. `ready` means nothing
@@ -60,7 +69,7 @@ export const roadmapPlanTool = defineTool({
       if (!trimmed) return 'roadmap_plan add requires a non-empty prompt.'
       const note = addKnowledgeNote({
         type: ROADMAP_TYPE,
-        title: trimmed.slice(0, 80),
+        title: roadmapTitleFromPrompt(trimmed),
         body: trimmed,
         status: 'ready',
         fields: notes?.trim() ? { notes: notes.trim() } : {},

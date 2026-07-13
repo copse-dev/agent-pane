@@ -70,6 +70,14 @@ function memoriesIcon(): SVGSVGElement {
   )
 }
 
+function roadmapIcon(): SVGSVGElement {
+  return outlineIcon(
+    'roadmap',
+    ['M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4Z', 'M8 2v16', 'M16 6v16'],
+    'titlebar-btn-icon',
+  )
+}
+
 export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   // The structural #titlebar div needs the .titlebar class for its flex layout,
   // height, and traffic-light clearance to apply. Without it the controls
@@ -119,6 +127,13 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     memoriesIcon(),
     'Memories',
   )
+  // Likewise gated, on the experimental roadmapPlansEnabled setting.
+  const roadmapBtn = el(
+    'button',
+    { class: 'titlebar-btn titlebar-text-btn', 'aria-label': 'Open roadmap', hidden: true },
+    roadmapIcon(),
+    'Roadmap',
+  )
   const browserBtn = el(
     'button',
     { class: 'titlebar-btn titlebar-text-btn', 'aria-label': 'Open browser' },
@@ -133,6 +148,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     changesBtn,
     prsBtn,
     memoriesBtn,
+    roadmapBtn,
     browserBtn,
   )
 
@@ -168,6 +184,11 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     syncPanelBtns()
   })
 
+  roadmapBtn.addEventListener('click', () => {
+    toggleRightPanelWithWorkspace(store, api, 'roadmap')
+    syncPanelBtns()
+  })
+
   browserBtn.addEventListener('click', () => {
     toggleRightPanelWithWorkspace(store, api, 'browser')
     syncPanelBtns()
@@ -180,15 +201,19 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     changesBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'changes')
     prsBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'prs')
     memoriesBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'memories')
+    roadmapBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'roadmap')
     browserBtn.classList.toggle('active', filesPaneOpen && rightPanelMode === 'browser')
   }
 
-  // Reveal the Memories button only while the experimental OKF memories feature
-  // is enabled. Read on mount and again whenever settings change so toggling it
-  // in the dialog takes effect without a restart.
-  function syncMemoriesBtn(): void {
+  // Reveal the Memories and Roadmap buttons only while their experimental
+  // features are enabled. Read on mount and again whenever settings change so
+  // toggling them in the dialog takes effect without a restart.
+  function syncExperimentalBtns(): void {
     void api.settings.get('okfMemoriesEnabled').then((enabled) => {
       memoriesBtn.hidden = enabled !== true
+    })
+    void api.settings.get('roadmapPlansEnabled').then((enabled) => {
+      roadmapBtn.hidden = enabled !== true
     })
   }
 
@@ -247,7 +272,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
   syncBranch()
   syncPanelBtns()
   syncChangesBadge()
-  syncMemoriesBtn()
+  syncExperimentalBtns()
   const unsubs = [
     store.on('workspace_changed', () => {
       syncName()
@@ -258,7 +283,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     store.on('files_pane_changed', syncPanelBtns),
     store.on('right_panel_mode_changed', syncPanelBtns),
     store.on('staged_diffs_changed', syncChangesBadge),
-    store.on('settings_changed', syncMemoriesBtn),
+    store.on('settings_changed', syncExperimentalBtns),
   ]
 
   return () => {

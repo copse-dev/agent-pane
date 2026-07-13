@@ -143,9 +143,7 @@ export function createRegistry(): ToolRegistry {
   // Experimental roadmap plans (off by default, issue #556). Adds a roadmap_plan
   // tool that records future-work prompts and tracks their status across
   // sessions so longer-horizon work is captured without being started early.
-  if (getSetting<boolean>(ROADMAP_PLANS_ENABLED_SETTING, false)) {
-    registry.register(roadmapPlanTool)
-  }
+  syncRoadmapPlanTools(registry)
   // Experimental background tasks (off by default, issue #691). Lets the agent
   // run a long-lived command (dev server, watcher, build) that stays alive
   // across turns. A task may opt into loopback port binding, which prompts for a
@@ -185,6 +183,20 @@ export function syncOkfMemoryTools(registry: ToolRegistry): void {
   } else {
     registry.unregister('remember')
     registry.unregister('recall')
+  }
+}
+
+/**
+ * Register or unregister the experimental roadmap_plan tool to match the current
+ * `roadmapPlansEnabled` setting. Called at startup (via createRegistry) and again
+ * whenever the setting is toggled, so enabling the feature (e.g. to use the
+ * Roadmap pane) also gives the agent its tool without an app restart.
+ */
+export function syncRoadmapPlanTools(registry: ToolRegistry): void {
+  if (getSetting<boolean>(ROADMAP_PLANS_ENABLED_SETTING, false)) {
+    if (!registry.has('roadmap_plan')) registry.register(roadmapPlanTool)
+  } else {
+    registry.unregister('roadmap_plan')
   }
 }
 

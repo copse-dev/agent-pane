@@ -82,6 +82,7 @@ import {
   registerSkillTools,
   syncOkfMemoryTools,
   syncPiiTools,
+  syncRoadmapPlanTools,
 } from '../services/registry-bootstrap.ts'
 import { PII_REDACTION_ENABLED_SETTING } from '../services/security/pii-redactor.ts'
 import {
@@ -90,8 +91,15 @@ import {
   migrateLegacyMemories,
 } from '../tools/memory-tools.ts'
 import {
+  ROADMAP_PLANS_ENABLED_SETTING,
+  ROADMAP_STATUSES,
+  ROADMAP_TYPE,
+  roadmapTitleFromPrompt,
+} from '../tools/roadmap-tools.ts'
+import {
   addKnowledgeNote,
   deleteKnowledgeNote,
+  getKnowledgeNote,
   loadKnowledgeNotes,
   updateKnowledgeNote,
 } from '../services/storage/knowledge-store.ts'
@@ -314,6 +322,69 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return deleteKnowledgeNote(id)
   })
 
+  // Roadmap pane (issue #556; #645 Phase 3). Reads and edits the `Roadmap` notes
+  // the agent's roadmap_plan tool authors: the prompt is the note body with the
+  // title derived from it (roadmapTitleFromPrompt), waiting-on context lives in a
+  // `notes` frontmatter field, and the lifecycle status is one of
+  // ROADMAP_STATUSES. Update/delete verify the note's type so this surface can
+  // never mutate Memory (or other) knowledge notes.
+  const zRoadmapPrompt = z.string().max(1_000_000)
+  const zRoadmapNotes = z.string().max(10_000)
+  const zRoadmapStatus = z.enum(ROADMAP_STATUSES)
+  const zRoadmapId = zNonEmptyString.max(128)
+
+  function roadmapFields(existing: Record<string, string>, notes: string): Record<string, string> {
+    const { notes: _dropped, ...rest } = existing
+    return notes ? { ...rest, notes } : rest
+  }
+
+  ipcMain.handle('roadmap:list', (event) => {
+    assertMainFrameSender(event, win)
+    return loadKnowledgeNotes(ROADMAP_TYPE)
+  })
+
+  ipcMain.handle('roadmap:create', (event, rawPrompt: unknown, rawNotes: unknown) => {
+    assertMainFrameSender(event, win)
+    const prompt = parseIpcArgs(zRoadmapPrompt, [rawPrompt]).trim()
+    const notes = parseIpcArgs(zRoadmapNotes.optional(), [rawNotes])?.trim() ?? ''
+    if (!prompt) throw new IpcValidationError('Roadmap prompt must not be empty')
+    return addKnowledgeNote({
+      type: ROADMAP_TYPE,
+      title: roadmapTitleFromPrompt(prompt),
+      body: prompt,
+      status: 'ready',
+      fields: roadmapFields({}, notes),
+    })
+  })
+
+  ipcMain.handle(
+    'roadmap:update',
+    (event, rawId: unknown, rawPrompt: unknown, rawNotes: unknown, rawStatus: unknown) => {
+      assertMainFrameSender(event, win)
+      const id = parseIpcArgs(zRoadmapId, [rawId])
+      const prompt = parseIpcArgs(zRoadmapPrompt, [rawPrompt]).trim()
+      const notes = parseIpcArgs(zRoadmapNotes.optional(), [rawNotes])?.trim() ?? ''
+      const status = parseIpcArgs(zRoadmapStatus, [rawStatus])
+      if (!prompt) throw new IpcValidationError('Roadmap prompt must not be empty')
+      const existing = getKnowledgeNote(id)
+      if (!existing || existing.type !== ROADMAP_TYPE) return null
+      return updateKnowledgeNote(id, {
+        title: roadmapTitleFromPrompt(prompt),
+        body: prompt,
+        status,
+        fields: roadmapFields(existing.fields, notes),
+      })
+    },
+  )
+
+  ipcMain.handle('roadmap:delete', (event, rawId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zRoadmapId, [rawId])
+    const existing = getKnowledgeNote(id)
+    if (!existing || existing.type !== ROADMAP_TYPE) return false
+    return deleteKnowledgeNote(id)
+  })
+
   ipcMain.handle('settings:get', (event, key: unknown) => {
     assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(128), [key])
@@ -340,6 +411,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // live registry so it takes effect without an app restart.
     if (k === OKF_MEMORIES_ENABLED_SETTING) {
       syncOkfMemoryTools(registry)
+    }
+    // Same for the experimental roadmap plans tool (the Roadmap pane shares
+    // this flag, so enabling it there should arm the agent tool live too).
+    if (k === ROADMAP_PLANS_ENABLED_SETTING) {
+      syncRoadmapPlanTools(registry)
     }
     // Same for the experimental PII redaction reveal tool.
     if (k === PII_REDACTION_ENABLED_SETTING) {
@@ -722,7 +798,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('panes:popout', (event, mode: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
-      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'browser']),
+      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser']),
       [mode],
     )
     createPanePopoutWindow(parsed)
