@@ -67,6 +67,19 @@ export interface GhCliStatus {
 /** Overall CI rollup for a PR head, mirroring github-ci-service's CiOverallState. */
 export type GhPrChecksState = 'pending' | 'success' | 'failure' | 'no_checks'
 
+/** An open issue in the workspace repo, as listed for roadmap import. */
+export interface GhIssueSummary {
+  owner: string
+  repo: string
+  number: number
+  title: string
+  url: string
+  /** Issue body (truncated by the backend); used to draft a roadmap prompt. */
+  body: string
+  labels: string[]
+  updatedAt?: string
+}
+
 export interface GhPrSummary {
   owner: string
   repo: string

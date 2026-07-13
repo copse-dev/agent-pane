@@ -1,5 +1,6 @@
 import type {
   GhCliStatus,
+  GhIssueSummary,
   GhPrChecksState,
   GhPrDetails,
   GhPrFileDiff,
@@ -29,6 +30,30 @@ interface MockPrState {
   isDraft: boolean
   failedRuns: number
 }
+
+// Fixture issues for the roadmap "import from issues" flow.
+const MOCK_OPEN_ISSUES: GhIssueSummary[] = [
+  {
+    owner: 'copse-mock',
+    repo: 'demo',
+    number: 41,
+    title: 'Dark mode flashes light theme on startup',
+    url: 'https://github.com/copse-mock/demo/issues/41',
+    body: 'On launch the window paints light for ~200ms before the persisted dark theme applies.',
+    labels: ['bug', 'ui'],
+    updatedAt: '2026-07-01T10:00:00Z',
+  },
+  {
+    owner: 'copse-mock',
+    repo: 'demo',
+    number: 52,
+    title: 'Add keyboard shortcut to toggle the terminal pane',
+    url: 'https://github.com/copse-mock/demo/issues/52',
+    body: '',
+    labels: ['enhancement'],
+    updatedAt: '2026-07-05T10:00:00Z',
+  },
+]
 
 const prState = new Map<string, MockPrState>()
 
@@ -87,6 +112,11 @@ export const mockGitHubBackend: GitHubBackend = {
   listWorkspaceOpenPrs(limit: number): Promise<GhPrSummary[]> {
     const status = mockGhCliStatus()
     return Promise.resolve(status.authenticated ? mockListWorkspaceOpenPrs().slice(0, limit) : [])
+  },
+
+  listWorkspaceOpenIssues(limit: number): Promise<GhIssueSummary[]> {
+    const status = mockGhCliStatus()
+    return Promise.resolve(status.authenticated ? MOCK_OPEN_ISSUES.slice(0, limit) : [])
   },
 
   getPrDetails(ref: PrRef): Promise<GhPrDetails | null> {
