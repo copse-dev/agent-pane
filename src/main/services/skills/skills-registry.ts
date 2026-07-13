@@ -221,6 +221,25 @@ export function listSkills(): SkillSummary[] {
   }))
 }
 
+/**
+ * Skills the model may be told about in its system-prompt catalog. Excludes any
+ * skill whose frontmatter sets `disable-model-invocation: true` — those stay
+ * user-only: they remain in {@link listSkills} (so the `/name` picker and manual
+ * invocation still work) but are never advertised to the model, so it cannot
+ * pick them up on its own.
+ */
+export function listModelInvocableSkills(): SkillSummary[] {
+  return cachedSkills
+    .filter((skill) => !skill.disableModelInvocation)
+    .map(({ name, description, source, skillPath, externalLinks }) => ({
+      name,
+      description,
+      source,
+      skillPath,
+      externalLinks,
+    }))
+}
+
 export function getSkill(name: string): SkillMetadata | null {
   return cachedSkills.find((skill) => skill.name === name) ?? null
 }

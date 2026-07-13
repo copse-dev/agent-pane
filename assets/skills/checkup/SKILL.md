@@ -1,6 +1,7 @@
 ---
 name: checkup
-description: Run a Copse setup health check (doctor). Use when the user types /checkup or /doctor, or asks to check, diagnose, or troubleshoot their Copse/app setup, API keys, providers, MCP servers, skills, or terminal.
+description: Run a Copse setup health check (doctor). Use when the user types /checkup or asks to check, diagnose, or troubleshoot their Copse/app setup, API keys, providers, MCP servers, skills, or terminal.
+disable-model-invocation: true
 ---
 
 # Checkup
@@ -8,6 +9,9 @@ description: Run a Copse setup health check (doctor). Use when the user types /c
 A read-only health check of the user's Copse setup — the same idea as Claude
 Code's `/checkup` / `/doctor`: diagnose the setup, report findings, and offer to
 fix what's actionable.
+
+Only run this when the user explicitly invokes it (`/checkup`) — never start a
+checkup on your own initiative.
 
 Follow these steps exactly when this skill is invoked:
 

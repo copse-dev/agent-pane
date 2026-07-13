@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import {
   refreshSkillsRegistry,
   listSkills,
+  listModelInvocableSkills,
   readSkill,
   getSkill,
   setSkillsForTest,
@@ -131,6 +132,38 @@ description: Run a Copse setup health check
     const skill = listSkills().find((s) => s.name === 'checkup')
     assert.ok(skill, 'expected the built-in checkup skill to be discovered')
     assert.equal(skill.source, 'bundled')
+
+    await rm(builtinRoot, { recursive: true, force: true })
+  })
+
+  it('omits disable-model-invocation skills from listModelInvocableSkills but keeps them in listSkills', async () => {
+    const builtinRoot = await mkdtemp(join(tmpdir(), 'copse-builtin-noinvoke-'))
+    await mkdir(join(builtinRoot, 'checkup'), { recursive: true })
+    await writeFile(
+      join(builtinRoot, 'checkup', 'SKILL.md'),
+      `---
+name: checkup
+description: Run a Copse setup health check
+disable-model-invocation: true
+---
+
+# Checkup`,
+      'utf-8',
+    )
+
+    setBuiltinSkillsRootForTest(builtinRoot)
+    await refreshSkillsRegistry()
+    assert.ok(
+      listSkills().some((s) => s.name === 'checkup'),
+      'checkup stays user-invocable via listSkills',
+    )
+    assert.equal(
+      listModelInvocableSkills().some((s) => s.name === 'checkup'),
+      false,
+      'checkup is hidden from the model catalog',
+    )
+    // A normal project skill is still model-invocable.
+    assert.ok(listModelInvocableSkills().some((s) => s.name === 'demo-skill'))
 
     await rm(builtinRoot, { recursive: true, force: true })
   })
