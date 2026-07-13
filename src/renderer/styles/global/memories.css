@@ -1,6 +1,7 @@
 /* Memories pane (issue #645, Phase 3). The list column reuses the git-changes
    list primitives; these rules cover the row layout, tag chips, and the inline
-   editor in the viewer column. */
+   editor in the viewer column. The Roadmap pane shares these `memories-*`
+   primitives; its additions live in roadmap.css. */
 .memories-host {
   flex: 1;
   display: flex;

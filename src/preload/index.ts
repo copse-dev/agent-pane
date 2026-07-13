@@ -420,6 +420,13 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('memories:update', id, title, body, tags),
     delete: (id: string) => ipcRenderer.invoke('memories:delete', id),
   },
+  roadmap: {
+    list: () => ipcRenderer.invoke('roadmap:list'),
+    create: (prompt: string, notes?: string) => ipcRenderer.invoke('roadmap:create', prompt, notes),
+    update: (id: string, prompt: string, notes: string | undefined, status: string) =>
+      ipcRenderer.invoke('roadmap:update', id, prompt, notes, status),
+    delete: (id: string) => ipcRenderer.invoke('roadmap:delete', id),
+  },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
   },

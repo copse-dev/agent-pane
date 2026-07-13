@@ -23,6 +23,7 @@ import { mountAgentTasks } from './views/agent-tasks.ts'
 import { mountGitChangesPane } from './views/git-changes-pane.ts'
 import { mountPrPane } from './views/pr-pane.ts'
 import { mountMemoriesPane } from './views/memories-pane.ts'
+import { mountRoadmapPane } from './views/roadmap-pane.ts'
 import { mountBrowserPane } from './views/browser-pane.ts'
 import {
   mountSettingsDialog,
@@ -117,6 +118,7 @@ const POPOUT_MODES = new Set<RightPanelMode>([
   'prs',
   'browser',
   'memories',
+  'roadmap',
 ])
 function getPopoutMode(): RightPanelMode | null {
   const raw = new URLSearchParams(window.location.search).get('popout')
@@ -351,6 +353,12 @@ function mountFullLayout(): void {
   mountMemoriesPane(
     requireElement('memories-host'),
     requireElement('memories-viewer-host'),
+    store,
+    api,
+  )
+  mountRoadmapPane(
+    requireElement('roadmap-host'),
+    requireElement('roadmap-viewer-host'),
     store,
     api,
   )
