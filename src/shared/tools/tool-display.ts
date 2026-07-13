@@ -36,6 +36,7 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   run_shell: 'Run command',
   ask_user: 'Ask user',
   update_todos: 'Update plan',
+  run_checkup: 'Run checkup',
 }
 
 const TOOL_GROUPS: Record<string, { tools: string[]; label: string }> = {

@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { discoverCursorPluginRoots, resolvePluginSkillsDir } from './cursor-plugins.ts'
 import { listBundledCursorPluginRoots } from './bundled-cursor-skills.ts'
+import { getBuiltinSkillsRoot } from './builtin-skills.ts'
 import { getSetting } from '../storage/settings.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import {
@@ -171,6 +172,14 @@ async function collectDiscoveryRoots(): Promise<Array<{ root: string; source: Sk
       continue
     }
     roots.push({ root: resolved, source: 'plugin-path' })
+  }
+
+  // First-party skills shipped with Copse (e.g. /checkup). Added last so a
+  // user/project/plugin skill of the same name takes precedence (first-writer
+  // wins during discovery), letting anyone override a built-in.
+  const builtinRoot = getBuiltinSkillsRoot()
+  if (builtinRoot && (await pathExists(builtinRoot))) {
+    roots.push({ root: builtinRoot, source: 'bundled' })
   }
 
   return roots
