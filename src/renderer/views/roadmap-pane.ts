@@ -527,13 +527,22 @@ export function mountRoadmapPane(
       return
     }
     importConfirmBtn.disabled = true
-    importStatus.textContent = `Drafting ${String(payload.length)} prompt${payload.length === 1 ? '' : 's'}…`
     try {
-      await api.roadmap.importIssues(payload)
+      // One issue per call so each item lands on the roadmap as soon as its
+      // prompt is drafted, instead of after the whole batch. On failure the
+      // already-imported items stay and the picker reports where it stopped.
+      for (const [index, issue] of payload.entries()) {
+        importStatus.textContent = `Drafting prompt ${String(index + 1)} of ${String(payload.length)}: #${String(issue.number)}…`
+        await api.roadmap.importIssues([issue])
+        if (!importing) return
+        await refresh({ preserveDirty: true })
+        renderImportList()
+      }
       importing = false
       await refresh()
     } catch (err) {
       importStatus.textContent = ipcErrorMessage(err, 'Could not import the selected issues.')
+      renderImportList()
     } finally {
       importConfirmBtn.disabled = false
     }

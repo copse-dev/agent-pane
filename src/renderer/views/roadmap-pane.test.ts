@@ -466,6 +466,34 @@ describe('roadmap pane', () => {
     }
   })
 
+  it('imports issue-by-issue so items land as each prompt drafts', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi(
+      [],
+      [makeOpenIssue(11, 'First'), makeOpenIssue(12, 'Second', 'B body')],
+    )
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-import-btn')?.click()
+      await flush()
+      for (const check of viewer.querySelectorAll<HTMLInputElement>('.roadmap-import-check')) {
+        check.click()
+      }
+      viewer.querySelector<HTMLButtonElement>('.roadmap-import-confirm')?.click()
+      await flush()
+      // One call per issue, in selection order — not a single batch.
+      assert.deepEqual(calls.importIssues, [
+        [{ number: 11, title: 'First', body: '' }],
+        [{ number: 12, title: 'Second', body: 'B body' }],
+      ])
+      assert.equal(list.querySelectorAll('.roadmap-row').length, 2)
+    } finally {
+      unmount()
+    }
+  })
+
   it('names the queried repo when it has no open issues', async () => {
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
     const { api } = makeApi([], [])

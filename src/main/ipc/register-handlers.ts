@@ -455,8 +455,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       throw new Error('No GitHub origin remote detected in this workspace.')
     }
     // Return the slug too: an empty result names the repo it actually queried,
-    // which surfaces stale/fork origins immediately.
-    return { slug, issues: await backend.listWorkspaceOpenIssues(50) }
+    // which surfaces stale/fork origins immediately. Limit 30: even with
+    // per-issue bodies bounded at the backend, the gh CLI path must stay
+    // comfortably under runCommand's 100 KiB stdout cap.
+    return { slug, issues: await backend.listWorkspaceOpenIssues(30) }
   })
 
   const zRoadmapImportIssues = z

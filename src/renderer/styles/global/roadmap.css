@@ -79,11 +79,20 @@
 }
 .roadmap-import-row {
   display: flex;
-  align-items: baseline;
-  gap: var(--spacing-xs);
+  align-items: center;
+  gap: var(--spacing-sm);
   font-size: var(--font-size-sm);
   color: var(--text-primary);
   cursor: pointer;
+}
+/* The global input rule gives checkboxes a text-field border and padding —
+   undo it so the box sits inline beside its title. */
+.roadmap-import-check {
+  width: auto;
+  padding: 0;
+  margin: 0;
+  flex: none;
+  accent-color: var(--accent);
 }
 .roadmap-import-row.is-pinned {
   color: var(--text-muted);
