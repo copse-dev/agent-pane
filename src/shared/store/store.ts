@@ -32,6 +32,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     fontSize: 14,
     autoPortraitRightPanel: true,
     rightPanelPosition: 'auto',
+    openLinksInBuiltInBrowser: true,
     ...initial,
   }
 
