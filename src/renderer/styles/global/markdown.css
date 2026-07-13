@@ -165,3 +165,33 @@
   max-height: 240px;
   overflow: auto;
 }
+
+/* Lucide "external-link" glyph as an alpha mask so it inherits the link colour
+   via `background-color: currentColor`. Matches externalLinkIcon() in
+   dom/icons.ts. */
+:root {
+  --external-link-mask: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23000'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M15%203h6v6'/%3E%3Cpath%20d='M10%2014%2021%203'/%3E%3Cpath%20d='M18%2013v6a2%202%200%200%201-2%202H5a2%202%200%200%201-2-2V8a2%202%200%200%201%202-2h6'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+
+/* When "Open links in built-in browser" is off, http(s) links inside a
+   browser-links scope (chat, PR body, file preview) open in the system browser,
+   so badge them with an external-link glyph — the same affordance the PR pane's
+   "View on GitHub" link uses. Pure CSS so streamed/late-rendered links pick it up
+   without a re-decoration pass. File-reference and workspace links are in-app
+   navigations and stay unmarked. */
+html.mark-external-links
+  .browser-links-scope
+  a[href^='http']:not([data-file-reference-path]):not([data-workspace-link])::after {
+  content: '';
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  margin-inline-start: 0.2em;
+  vertical-align: -0.08em;
+  background-color: currentColor;
+  -webkit-mask: var(--external-link-mask);
+  mask: var(--external-link-mask);
+  /* Purely decorative — the link text already announces the destination. */
+  pointer-events: none;
+}
