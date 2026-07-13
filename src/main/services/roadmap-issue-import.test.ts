@@ -46,7 +46,9 @@ describe('importIssuesAsRoadmapItems', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  it('creates one ready item per issue, pinned and drafted', async () => {
+  const stubClassify = (): Promise<'medium'> => Promise.resolve('medium')
+
+  it('creates one ready item per issue, pinned, drafted, and stamped', async () => {
     const drafted: number[] = []
     const created = await importIssuesAsRoadmapItems(
       [ISSUE, { number: 52, title: 'Add terminal shortcut', body: '' }],
@@ -54,6 +56,7 @@ describe('importIssuesAsRoadmapItems', () => {
         drafted.push(issue.number)
         return Promise.resolve(`Do the work for issue ${String(issue.number)}`)
       },
+      stubClassify,
     )
     assert.deepEqual(drafted, [41, 52])
     assert.equal(created.length, 2)
@@ -63,12 +66,15 @@ describe('importIssuesAsRoadmapItems', () => {
     assert.ok(first, 'item pinned to #41 exists')
     assert.equal(first.body, 'Do the work for issue 41')
     assert.equal(first.status, 'ready')
+    assert.equal(first.fields['complexity'], 'medium')
     assert.match(first.fields['notes'] ?? '', /Imported from issue #41/)
   })
 
   it('falls back to the template when the draft fn fails', async () => {
-    const created = await importIssuesAsRoadmapItems([ISSUE], () =>
-      Promise.resolve(templateRoadmapPrompt(ISSUE)),
+    const created = await importIssuesAsRoadmapItems(
+      [ISSUE],
+      () => Promise.resolve(templateRoadmapPrompt(ISSUE)),
+      stubClassify,
     )
     assert.match(created[0]?.body ?? '', /^Resolve GitHub issue #41/)
   })

@@ -52,6 +52,22 @@
   text-decoration: underline;
 }
 
+/* Complexity badge — stamped on save by the small-tasks model (or heuristic). */
+.roadmap-complexity-badge {
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 0 6px;
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+.roadmap-complexity-badge.is-medium {
+  color: var(--warning, #d29922);
+}
+.roadmap-complexity-badge.is-high {
+  color: var(--danger, #f14c4c);
+}
+
 /* Import-from-issues picker (viewer column). */
 .roadmap-import-list {
   flex: 1;
