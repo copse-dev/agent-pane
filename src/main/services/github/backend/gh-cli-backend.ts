@@ -341,6 +341,10 @@ export const ghCliBackend: GitHubBackend = {
     if (!slug) return []
     const [owner, repo] = slug.split('/')
     if (!owner || !repo || !isGhAvailable()) return []
+    // Slim the payload inside gh itself: full issue bodies on an issue-heavy
+    // repo overflow runCommand's 100 KiB stdout cap and truncate the JSON
+    // mid-stream. The jq filter bounds each body (drafting only reads the
+    // first ~2000 chars anyway) and flattens labels to names.
     const { stdout, stderr, code } = await runGh([
       'issue',
       'list',
@@ -352,6 +356,8 @@ export const ghCliBackend: GitHubBackend = {
       String(limit),
       '--json',
       'number,title,url,body,labels,updatedAt',
+      '--jq',
+      '[.[] | {number, title, url, updatedAt, body: ((.body // "")[0:2000]), labels: [.labels[].name]}]',
     ])
     if (code !== 0) throw new Error(formatGhError(stderr, code))
     const list = safeJsonParse<
@@ -360,7 +366,7 @@ export const ghCliBackend: GitHubBackend = {
         title?: string
         url?: string
         body?: string
-        labels?: Array<{ name?: string }>
+        labels?: string[]
         updatedAt?: string
       }>
     >(stdout.trim())
@@ -380,9 +386,7 @@ export const ghCliBackend: GitHubBackend = {
           title: entry.title,
           url: entry.url,
           body: (entry.body ?? '').slice(0, 4000),
-          labels: (entry.labels ?? [])
-            .map((l) => l.name)
-            .filter((name): name is string => typeof name === 'string'),
+          labels: (entry.labels ?? []).filter((name): name is string => typeof name === 'string'),
         }
         if (entry.updatedAt) summary.updatedAt = entry.updatedAt
         return summary
