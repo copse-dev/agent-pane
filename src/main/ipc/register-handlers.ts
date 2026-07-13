@@ -420,9 +420,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         prompt === existing.body ? undefined : await classifyRoadmapComplexity(prompt)
       const fields = roadmapFields(existing.fields, notes, issue, complexity)
       // A stored fit verdict judges a specific prompt/issue pair; either side
-      // changing invalidates it.
+      // changing invalidates it (and its reasoning).
       if (prompt !== existing.body || issue !== (existing.fields['issue'] ?? '')) {
         delete fields['fit']
+        delete fields['fitDetail']
       }
       return updateKnowledgeNote(id, {
         title: roadmapTitleFromPrompt(prompt),
