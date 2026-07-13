@@ -439,6 +439,30 @@ describe('roadmap pane', () => {
     }
   })
 
+  it('surfaces a not-connected error in the picker, stripped of IPC noise', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api } = makeApi([])
+    ;(api.roadmap as { openIssues: () => Promise<unknown> }).openIssues = (): Promise<unknown> =>
+      Promise.reject(
+        new Error(
+          "Error invoking remote method 'roadmap:openIssues': Error: GitHub CLI (gh) is not installed or not on PATH.",
+        ),
+      )
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-import-btn')?.click()
+      await flush()
+      assert.equal(
+        viewer.querySelector('.roadmap-import-status')?.textContent,
+        'GitHub CLI (gh) is not installed or not on PATH.',
+      )
+    } finally {
+      unmount()
+    }
+  })
+
   it('requires a selection before importing', async () => {
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
     const { api, calls } = makeApi([], [makeOpenIssue(52, 'Terminal shortcut')])

@@ -34,6 +34,13 @@ function itemIssue(item: RoadmapItem): string {
   return item.fields['issue'] ?? ''
 }
 
+// Electron prefixes errors thrown by ipcMain.handle with
+// "Error invoking remote method 'x:y': Error: " — noise for the user.
+function ipcErrorMessage(err: unknown, fallback: string): string {
+  if (!(err instanceof Error)) return fallback
+  return err.message.replace(/^Error invoking remote method '[^']*':\s*(?:Error:\s*)?/, '')
+}
+
 function itemStatus(item: RoadmapItem): RoadmapStatus {
   return (STATUS_OPTIONS as readonly string[]).includes(item.status ?? '')
     ? (item.status as RoadmapStatus)
@@ -482,13 +489,12 @@ export function mountRoadmapPane(
         openIssues = issues
         importStatus.textContent = issues.length
           ? 'Pick the issues to turn into roadmap prompts.'
-          : 'No open issues found (is this workspace a GitHub repo?).'
+          : 'No open issues found in this repo.'
         renderImportList()
       })
       .catch((err: unknown) => {
         if (!importing) return
-        importStatus.textContent =
-          err instanceof Error ? err.message : 'Could not list open issues.'
+        importStatus.textContent = ipcErrorMessage(err, 'Could not list open issues.')
       })
   }
 
@@ -510,8 +516,7 @@ export function mountRoadmapPane(
       importing = false
       await refresh()
     } catch (err) {
-      importStatus.textContent =
-        err instanceof Error ? err.message : 'Could not import the selected issues.'
+      importStatus.textContent = ipcErrorMessage(err, 'Could not import the selected issues.')
     } finally {
       importConfirmBtn.disabled = false
     }
