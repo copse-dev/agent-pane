@@ -28,8 +28,24 @@ export function bindBrowserLinkClicks(
   api?: {
     remoteAgent: Pick<ApiClient['remoteAgent'], 'downloadArtifact'>
     gh?: Pick<ApiClient['gh'], 'status'>
+    shell?: Pick<ApiClient['shell'], 'openExternal'>
   },
 ): () => void {
+  // Marks this container as one whose external links follow the "open links in
+  // built-in browser" setting, so CSS can badge them when the setting is off.
+  root.classList.add('browser-links-scope')
+
+  // Plain external link: honour the setting. On (default) → in-app browser pane;
+  // off → the system browser. The PR-pane and artifact-viewer paths above are
+  // in-app features and stay regardless.
+  const openPlainLink = (href: string): void => {
+    if (!store.getState().openLinksInBuiltInBrowser && api?.shell) {
+      void api.shell.openExternal(href)
+      return
+    }
+    openBrowserUrl(store, href)
+  }
+
   const onClick = (event: MouseEvent): void => {
     const target = event.target
     if (!target || typeof (target as Element).closest !== 'function') return
@@ -56,19 +72,23 @@ export function bindBrowserLinkClicks(
       return
     }
 
+    // The in-app PR pane is a nicer view of a GitHub PR, but it is still an
+    // in-app destination — so it only applies while links are set to open in
+    // the built-in browser. With that off, the toggle is a true global switch
+    // and a PR link opens in the system browser like any other external link.
     const githubPr = parseGithubPrUrl(href)
-    if (githubPr && api?.gh) {
+    if (githubPr && api?.gh && store.getState().openLinksInBuiltInBrowser) {
       void api.gh.status().then((status) => {
         if (status.installed && status.authenticated) {
           openPullRequest(store, githubPr)
           return
         }
-        openBrowserUrl(store, href)
+        openPlainLink(href)
       })
       return
     }
 
-    openBrowserUrl(store, href)
+    openPlainLink(href)
   }
 
   root.addEventListener('click', onClick)

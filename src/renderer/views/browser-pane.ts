@@ -1,5 +1,12 @@
 import { el } from '../dom/helpers.ts'
-import { arrowLeftIcon, arrowRightIcon, refreshIcon } from '../dom/icons.ts'
+import {
+  arrowLeftIcon,
+  arrowRightIcon,
+  externalLinkIcon,
+  moreHorizontalIcon,
+  refreshIcon,
+  searchIcon,
+} from '../dom/icons.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { CanvasArtefact } from '@shared/types/canvas.ts'
@@ -19,6 +26,7 @@ interface BrowserWebviewElement extends HTMLElement {
   loadURL(url: string): void
   getURL(): string
   getTitle(): string
+  openDevTools(): void
 }
 
 interface BrowserTab {
@@ -39,6 +47,16 @@ interface BrowserTab {
   /** When set, this tab renders a sandboxed MCP-UI artefact; the data: URL is
    * hidden from the address bar in favour of this friendly title. */
   artefactTitle: string | null
+  /** Collapse this tab's overflow ("…") menu, if open. */
+  closeMenu: () => void
+}
+
+/** The current page URL when it is a real http(s) address (not about:blank or a
+ * data: artefact) — i.e. something the system browser can open. */
+function currentHttpUrl(tab: BrowserTab): string | null {
+  if (tab.artefactTitle) return null
+  const url = webviewUrl(tab) || tab.pendingUrl || ''
+  return /^https?:\/\//i.test(url) ? url : null
 }
 
 /** Encode an HTML document as a base64 `data:` URL (opaque origin, no network). */
@@ -118,6 +136,10 @@ export function mountBrowserPane(
   const tabs = new Map<string, BrowserTab>()
   let activeTabId: string | null = null
   let resizeObserver: ResizeObserver | null = null
+
+  function closeAllMenus(): void {
+    for (const tab of tabs.values()) tab.closeMenu()
+  }
 
   function updateNavButtons(tab: BrowserTab): void {
     const webview = tab.webview
@@ -386,6 +408,38 @@ export function mountBrowserPane(
       'Go',
     )
 
+    const menuBtn = el(
+      'button',
+      {
+        type: 'button',
+        class: 'browser-nav-btn browser-menu-btn',
+        'aria-label': 'More actions',
+        title: 'More actions',
+        'aria-haspopup': 'menu',
+        'aria-expanded': 'false',
+      },
+      moreHorizontalIcon('ui-icon ui-icon-sm'),
+    )
+    const openExternalItem = el(
+      'button',
+      { type: 'button', class: 'browser-menu-item', role: 'menuitem' },
+      externalLinkIcon('ui-icon ui-icon-sm'),
+      el('span', {}, 'Open in default browser'),
+    )
+    const inspectorItem = el(
+      'button',
+      { type: 'button', class: 'browser-menu-item', role: 'menuitem' },
+      searchIcon('ui-icon ui-icon-sm'),
+      el('span', {}, 'Open inspector'),
+    )
+    const menu = el(
+      'div',
+      { class: 'browser-menu', role: 'menu', hidden: '' },
+      openExternalItem,
+      inspectorItem,
+    )
+    const menuWrap = el('div', { class: 'browser-menu-wrap' }, menuBtn, menu)
+
     const toolbar = el(
       'div',
       { class: 'browser-toolbar' },
@@ -394,6 +448,7 @@ export function mountBrowserPane(
       reloadBtn,
       urlInput,
       goBtn,
+      menuWrap,
     )
     const webviewHost = el('div', { class: 'browser-webview-host' })
     const panel = el('div', { class: 'browser-tab-panel', 'data-tab-id': id }, toolbar, webviewHost)
@@ -414,7 +469,47 @@ export function mountBrowserPane(
       pendingUrl: null,
       loadError: null,
       artefactTitle: null,
+      closeMenu: () => {
+        setMenuOpen(false)
+      },
     }
+
+    let menuOpen = false
+    function setMenuOpen(next: boolean): void {
+      menuOpen = next
+      menuBtn.setAttribute('aria-expanded', String(next))
+      if (next) {
+        // "Open in default browser" only makes sense for a real web page.
+        openExternalItem.disabled = !currentHttpUrl(tab) || !api?.shell
+        inspectorItem.disabled = !tab.webview
+        menu.removeAttribute('hidden')
+      } else {
+        menu.setAttribute('hidden', '')
+      }
+    }
+    menuBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const opening = !menuOpen
+      closeAllMenus()
+      setMenuOpen(opening)
+    })
+    // Clicks inside the menu shouldn't reach the document dismiss handler.
+    menu.addEventListener('click', (e) => {
+      e.stopPropagation()
+    })
+    openExternalItem.addEventListener('click', () => {
+      setMenuOpen(false)
+      const url = currentHttpUrl(tab)
+      if (url && api?.shell) void api.shell.openExternal(url).catch(() => undefined)
+    })
+    inspectorItem.addEventListener('click', () => {
+      setMenuOpen(false)
+      try {
+        tab.webview?.openDevTools()
+      } catch {
+        /* devtools unavailable (webview not yet attached) */
+      }
+    })
 
     goBtn.addEventListener('click', () => {
       navigateTab(tab, tab.urlInput.value)
@@ -492,6 +587,16 @@ export function mountBrowserPane(
 
   onBrowserModeChange()
 
+  // Dismiss any open overflow menu on an outside click or Escape.
+  const onDocumentClick = (): void => {
+    closeAllMenus()
+  }
+  const onDocumentKeydown = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape') closeAllMenus()
+  }
+  document.addEventListener('click', onDocumentClick)
+  document.addEventListener('keydown', onDocumentKeydown)
+
   const unsubs = [
     store.on('right_panel_mode_changed', onBrowserModeChange),
     store.on('files_pane_changed', onBrowserModeChange),
@@ -500,6 +605,12 @@ export function mountBrowserPane(
     // cmd/ctrl click and target=_blank links inside a guide open as a new
     // background tab (main blocks the popup window and forwards the URL here).
     api?.browser.onOpenTab((url) => addTab({ url, activate: false })),
+    (): void => {
+      document.removeEventListener('click', onDocumentClick)
+    },
+    (): void => {
+      document.removeEventListener('keydown', onDocumentKeydown)
+    },
   ]
 
   return () => {

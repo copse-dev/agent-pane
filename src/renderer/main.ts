@@ -170,6 +170,7 @@ async function boot(): Promise<void> {
   const savedLayout = await api.settings.get('layout')
   const savedAutoPortraitRightPanel = await api.settings.get('autoPortraitRightPanel')
   const savedRightPanelPosition = await api.settings.get('rightPanelPosition')
+  const savedOpenLinksInBuiltInBrowser = await api.settings.get('openLinksInBuiltInBrowser')
   // Theme and editor font size persist too. Restore them here (the store
   // otherwise keeps its dark/14 defaults on every launch) and apply the theme to
   // the document root before the layout paints — panes read both from the store
@@ -214,7 +215,19 @@ async function boot(): Promise<void> {
     rightPanelPosition: isRightPanelPosition(savedRightPanelPosition)
       ? savedRightPanelPosition
       : 'auto',
+    openLinksInBuiltInBrowser:
+      typeof savedOpenLinksInBuiltInBrowser === 'boolean' ? savedOpenLinksInBuiltInBrowser : true,
   })
+  // Reflect the "open links in built-in browser" choice onto the document root so
+  // CSS can flag external links with an icon (and re-sync when Settings saves).
+  const applyExternalLinkMarks = (): void => {
+    document.documentElement.classList.toggle(
+      'mark-external-links',
+      !store.getState().openLinksInBuiltInBrowser,
+    )
+  }
+  applyExternalLinkMarks()
+  store.on('settings_changed', applyExternalLinkMarks)
   // A pop-out window is a secondary view of the same workspace; let the main
   // window own the agent loop and config autosave so the two don't race.
   if (!popoutMode) {
