@@ -145,6 +145,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   registeredAcpAgents: registeredAcpAgentsSchema,
   browserToolsEnabled: z.boolean(),
   browserAllowedOrigins: z.array(z.string().max(2048)).max(256),
+  // When on (default), http(s) links clicked in chat/PR/preview surfaces open in
+  // the in-app browser pane. When off, they open in the user's default browser
+  // and render an external-link icon so it's clear they leave the app.
+  openLinksInBuiltInBrowser: z.boolean(),
   // Auto-approve an external ACP agent's file edits/deletes/moves once a durable
   // worktree backup of the user's uncommitted work exists, instead of prompting
   // per edit. Default on. Off restores the per-edit approval modal.
