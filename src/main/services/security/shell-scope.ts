@@ -46,7 +46,11 @@ const REASON_LOCAL_EXECUTABLE =
 // escalation if the OS actually blocks them, instead of prompting upfront on a
 // guess. Without an OS sandbox they still prompt, like any external command.
 const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: string; ambiguous?: boolean }> = [
-  { re: /\bcurl\b|\bwget\b|\bfetch\b/i, reason: 'network download (curl/wget/fetch)' },
+  { re: /\bcurl\b|\bwget\b/i, reason: 'network download (curl/wget)' },
+  // The standalone `fetch` downloader is anchored to a command position so it fires
+  // on `fetch <url>` but NOT on `git fetch` (where `fetch` is git's subcommand — a
+  // network *read* handled by the ambiguous git matcher below). (#500)
+  { re: new RegExp(`${CMD_POS}fetch\\b`, 'i'), reason: 'network download (fetch)' },
   {
     // `dlx` is intentionally absent: it's an ephemeral runner, handled by the
     // ambiguous ephemeral-runner matcher below so it gets the same in-sandbox
@@ -89,12 +93,34 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: string; ambiguous?: boolean
   // scanner deliberately skips `/dev/`, so it must be flagged here. (#581)
   { re: /\/dev\/(?:tcp|udp)\//i, reason: 'raw network socket via /dev/tcp|/dev/udp redirect' },
   // Allow interspersed global options (`git -c protocol.ext.allow=always clone …`,
-  // which is a classic clone-time RCE vector) and cover submodule/archive, which
-  // also reach the network. `-c` takes a `key=val` argument that isn't flag-shaped,
-  // so it gets its own alternative.
+  // which is a classic clone-time RCE vector) and cover archive, which also reaches
+  // the network. `-c` takes a `key=val` argument that isn't flag-shaped, so it gets
+  // its own alternative. `fetch` and read-only `submodule` are deliberately absent
+  // here — see the dedicated matchers below.
   {
-    re: /\bgit\s+(?:-c\s+\S+\s+|--?\S+\s+)*(push|pull|fetch|clone|remote|submodule|archive)\b/i,
+    re: /\bgit\s+(?:-c\s+\S+\s+|--?\S+\s+)*(push|pull|clone|remote|archive)\b/i,
     reason: 'git network operation',
+  },
+  // `git submodule` is mixed: `update`/`add` fetch from the network and check out +
+  // run hooks (a clone-style RCE surface), and `foreach` runs an arbitrary command,
+  // so those stay a hard external prompt. Bare `git submodule` and `submodule status`
+  // / `summary` are purely local reads (recorded SHAs + working-tree state, like
+  // `git status`), so the negative lookahead lets them fall through to `sandbox`. The
+  // match fails safe: any subcommand that isn't an explicit read verb stays external.
+  // (#500)
+  {
+    re: /\bgit\s+(?:-c\s+\S+\s+|--?\S+\s+)*submodule\s+(?!status\b|summary\b)\S/i,
+    reason: 'git submodule network/checkout operation',
+  },
+  // `git fetch` only reads refs/objects from the remote — it doesn't modify the
+  // remote or run the checkout/merge hooks that `clone`/`submodule update`/`pull` can.
+  // Treat it as a network read (like the ephemeral runners above): auto-run *inside*
+  // an OS sandbox (a blocked network escalates to an unsandboxed retry) and prompt
+  // without one, rather than a hard upfront prompt on every fetch. (#500)
+  {
+    re: /\bgit\s+(?:-c\s+\S+\s+|--?\S+\s+)*fetch\b/i,
+    reason: 'git network read (fetch)',
+    ambiguous: true,
   },
   { re: /\bdocker\s+(pull|push|run)\b/i, reason: 'docker network/container operation' },
   { re: /\bkubectl\b|\bhelm\s+install\b/i, reason: 'kubernetes remote operation' },
@@ -103,8 +129,15 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: string; ambiguous?: boolean
     reason: 'cloud CLI (may reach external services)',
     ambiguous: true,
   },
+  // GitHub CLI. Read-only subcommands (`gh pr view`, `gh issue list`, `gh run status`,
+  // …) are carved out by the negative lookahead below: they only *read* from GitHub,
+  // so they fall through to a `sandbox` verdict (classifier/seatbelt-gated like any
+  // local command) instead of prompting outright where there's no OS sandbox to
+  // auto-run inside. Kept deliberately narrow — `gh api` (can POST/DELETE) and every
+  // write subcommand (`create`, `merge`, `close`, …) still match here and stay
+  // ambiguous. (#500)
   {
-    re: new RegExp(`${CMD_POS}gh\\b`, 'i'),
+    re: new RegExp(`${CMD_POS}gh\\b(?!\\s+(?:pr|issue|run)\\s+(?:list|view|status)\\b)`, 'i'),
     reason: 'GitHub CLI (may reach GitHub)',
     ambiguous: true,
   },

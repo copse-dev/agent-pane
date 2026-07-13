@@ -31,6 +31,34 @@ describe('markdown browser links', () => {
     assert.deepEqual(requested, ['https://example.com/docs'])
   })
 
+  it('opens plain links in the system browser when the built-in setting is off', () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<a href="https://example.com/docs">docs</a>'
+    const store = createStore({
+      filesPaneOpen: false,
+      rightPanelMode: 'explorer',
+      openLinksInBuiltInBrowser: false,
+    })
+    const requested: string[] = []
+    store.on('browser_url_requested', (url) => requested.push(url))
+    const opened: string[] = []
+    const unbind = bindBrowserLinkClicks(root, store, {
+      remoteAgent: { downloadArtifact: async () => 'https://example.com' },
+      shell: { openExternal: async (url) => void opened.push(url) },
+    })
+
+    const event = new window.MouseEvent('click', { bubbles: true, cancelable: true })
+    qsRequired(root, 'a').dispatchEvent(event)
+
+    unbind()
+    assert.equal(event.defaultPrevented, true)
+    assert.deepEqual(opened, ['https://example.com/docs'])
+    assert.deepEqual(requested, [])
+    assert.equal(store.getState().rightPanelMode, 'explorer')
+    // The container is tagged so CSS can badge external links.
+    assert.ok(root.classList.contains('browser-links-scope'))
+  })
+
   it('opens remote agent launch notice links in the browser panel', () => {
     const href = 'https://cursor.com/agents/bc-f048baf8-bbc6-4def-b722-4f12008284be'
     const root = document.createElement('div')
@@ -176,6 +204,47 @@ describe('markdown browser links', () => {
     unbind()
     assert.equal(store.getState().rightPanelMode, 'browser')
     assert.deepEqual(requested, [href])
+  })
+
+  it('opens GitHub PR links in the system browser when the built-in setting is off', async () => {
+    const href = 'https://github.com/org/repo/pull/42'
+    const root = document.createElement('div')
+    root.innerHTML = `<a href="${href}">PR</a>`
+    const store = createStore({
+      filesPaneOpen: false,
+      rightPanelMode: 'explorer',
+      openLinksInBuiltInBrowser: false,
+    })
+    const prRequested: unknown[] = []
+    const browserRequested: string[] = []
+    const opened: string[] = []
+    store.on('pr_open_requested', (owner, repo, number) =>
+      prRequested.push({ owner, repo, number }),
+    )
+    store.on('browser_url_requested', (url) => browserRequested.push(url))
+    let ghStatusChecked = false
+    const unbind = bindBrowserLinkClicks(root, store, {
+      remoteAgent: { downloadArtifact: async () => 'https://example.com' },
+      gh: {
+        status: async () => {
+          ghStatusChecked = true
+          return { installed: true, authenticated: true, username: 'dev', message: null }
+        },
+      },
+      shell: { openExternal: async (url) => void opened.push(url) },
+    })
+
+    const event = new window.MouseEvent('click', { bubbles: true, cancelable: true })
+    qsRequired(root, 'a').dispatchEvent(event)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    unbind()
+    // The toggle is a global switch: the PR pane is skipped entirely (gh isn't
+    // even consulted) and the link opens in the system browser.
+    assert.equal(ghStatusChecked, false)
+    assert.deepEqual(prRequested, [])
+    assert.deepEqual(browserRequested, [])
+    assert.deepEqual(opened, [href])
   })
 
   it('hydrates remote artifact image tags from the thread agent link', async () => {
