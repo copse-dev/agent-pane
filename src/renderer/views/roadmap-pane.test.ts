@@ -11,6 +11,7 @@ function makeItem(
   prompt: string,
   status = 'ready',
   notes?: string,
+  issue?: string,
 ): {
   id: string
   type: string
@@ -30,7 +31,7 @@ function makeItem(
     body: prompt,
     tags: [],
     status,
-    fields: notes ? { notes } : {},
+    fields: { ...(notes ? { notes } : {}), ...(issue ? { issue } : {}) },
     createdAt: '2026-07-13T00:00:00.000Z',
     updatedAt: '2026-07-13T00:00:00.000Z',
     file: `/tmp/${id}.md`,
@@ -39,36 +40,62 @@ function makeItem(
 
 interface RoadmapCalls {
   list: number
-  create: { prompt: string; notes: string | undefined }[]
-  update: { id: string; prompt: string; notes: string | undefined; status: string }[]
+  create: { prompt: string; notes: string | undefined; issue: string | undefined }[]
+  update: {
+    id: string
+    prompt: string
+    notes: string | undefined
+    status: string
+    issue: string | undefined
+  }[]
   delete: string[]
+  issueUrl: string[]
+  openExternal: string[]
 }
 
 /** A fake api whose roadmap methods mutate an in-memory list, like the store. */
 function makeApi(seed: ReturnType<typeof makeItem>[]): { api: ApiClient; calls: RoadmapCalls } {
   const items = seed.map((i) => ({ ...i }))
-  const calls: RoadmapCalls = { list: 0, create: [], update: [], delete: [] }
+  const calls: RoadmapCalls = {
+    list: 0,
+    create: [],
+    update: [],
+    delete: [],
+    issueUrl: [],
+    openExternal: [],
+  }
   const api = {
     panes: { popout: async (): Promise<void> => {} },
+    shell: {
+      openExternal: async (url: string): Promise<void> => {
+        calls.openExternal.push(url)
+      },
+    },
     roadmap: {
       list: async () => {
         calls.list++
         return items.map((i) => ({ ...i }))
       },
-      create: async (prompt: string, notes?: string) => {
-        calls.create.push({ prompt, notes })
-        const item = makeItem(`new-${String(items.length)}`, prompt, 'ready', notes)
+      create: async (prompt: string, notes?: string, issue?: string) => {
+        calls.create.push({ prompt, notes, issue })
+        const item = makeItem(`new-${String(items.length)}`, prompt, 'ready', notes, issue)
         items.push(item)
         return item
       },
-      update: async (id: string, prompt: string, notes: string | undefined, status: string) => {
-        calls.update.push({ id, prompt, notes, status })
+      update: async (
+        id: string,
+        prompt: string,
+        notes: string | undefined,
+        status: string,
+        issue?: string,
+      ) => {
+        calls.update.push({ id, prompt, notes, status, issue })
         const item = items.find((i) => i.id === id)
         if (!item) return null
         item.title = prompt.slice(0, 80)
         item.body = prompt
         item.status = status
-        item.fields = notes ? { notes } : {}
+        item.fields = { ...(notes ? { notes } : {}), ...(issue ? { issue } : {}) }
         return { ...item }
       },
       delete: async (id: string) => {
@@ -76,6 +103,10 @@ function makeApi(seed: ReturnType<typeof makeItem>[]): { api: ApiClient; calls: 
         const i = items.findIndex((n) => n.id === id)
         if (i >= 0) items.splice(i, 1)
         return i >= 0
+      },
+      issueUrl: async (ref: string) => {
+        calls.issueUrl.push(ref)
+        return `https://github.com/octo/demo/issues/${ref.replace('#', '')}`
       },
     },
   } as unknown as ApiClient
@@ -176,7 +207,7 @@ describe('roadmap pane', () => {
       viewer.querySelector('.roadmap-form')?.dispatchEvent(new Event('submit'))
       await flush()
       assert.deepEqual(calls.create, [
-        { prompt: 'Add dark-mode screenshots to CI', notes: 'idea from review' },
+        { prompt: 'Add dark-mode screenshots to CI', notes: 'idea from review', issue: undefined },
       ])
       const titles = [...list.querySelectorAll('.roadmap-row-title')].map((e) => e.textContent)
       assert.deepEqual(titles, ['Add dark-mode screenshots to CI'], 'the new item appears')
@@ -218,7 +249,7 @@ describe('roadmap pane', () => {
       viewer.querySelector('.roadmap-form')?.dispatchEvent(new Event('submit'))
       await flush()
       assert.deepEqual(calls.update, [
-        { id: 'a', prompt: 'New prompt', notes: undefined, status: 'done' },
+        { id: 'a', prompt: 'New prompt', notes: undefined, status: 'done', issue: undefined },
       ])
       const badges = [...list.querySelectorAll('.roadmap-status-badge')].map((e) => e.textContent)
       assert.deepEqual(badges, ['done'])
@@ -245,6 +276,47 @@ describe('roadmap pane', () => {
       assert.equal(viewer.querySelector<HTMLElement>('.roadmap-empty')?.hidden, false)
     } finally {
       globalThis.confirm = priorConfirm
+      unmount()
+    }
+  })
+
+  it('renders a pinned issue as a chip that opens on GitHub without selecting', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([makeItem('a', 'Fix the flaky test', 'ready', undefined, '#42')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      const chip = list.querySelector<HTMLElement>('.roadmap-issue-chip')
+      assert.ok(chip)
+      assert.equal(chip.textContent, '#42')
+      chip.click()
+      await flush()
+      assert.deepEqual(calls.issueUrl, ['#42'])
+      assert.deepEqual(calls.openExternal, ['https://github.com/octo/demo/issues/42'])
+      // The chip click must not select the row into the editor.
+      assert.equal(viewer.querySelector<HTMLElement>('.roadmap-empty')?.hidden, false)
+    } finally {
+      unmount()
+    }
+  })
+
+  it('saves the pinned issue with edits', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([makeItem('a', 'Do the thing')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      const issue = viewer.querySelector<HTMLInputElement>('.roadmap-issue-input')
+      assert.ok(issue)
+      issue.value = '#77'
+      viewer.querySelector('.roadmap-form')?.dispatchEvent(new Event('submit'))
+      await flush()
+      assert.equal(calls.update[0]?.issue, '#77')
+      assert.equal(list.querySelector<HTMLElement>('.roadmap-issue-chip')?.textContent, '#77')
+    } finally {
       unmount()
     }
   })

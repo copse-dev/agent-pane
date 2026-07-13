@@ -33,3 +33,21 @@
   width: auto;
   align-self: flex-start;
 }
+.roadmap-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.roadmap-issue-chip {
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 0 6px;
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+  color: var(--accent);
+  cursor: pointer;
+}
+.roadmap-issue-chip:hover {
+  text-decoration: underline;
+}
