@@ -1,7 +1,7 @@
 import { runCommand } from '../exec/command-runner.ts'
 import { runGh, parseGhJson } from './gh-service.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
-import { isGitAvailable, isGhAvailable } from '../tool-availability.ts'
+import { isGitAvailableForTarget, isGhAvailable } from '../tool-availability.ts'
 import { isInsideGitWorkTree, getCurrentBranchName } from './git-service.ts'
 import type { PrWorkspaceContext } from '@shared/follow-ups/types.ts'
 import type { GitBranchStatus, GitOpenPr } from '@shared/types/git.ts'
@@ -123,7 +123,7 @@ export async function getPrWorkspaceContext(): Promise<PrWorkspaceContext> {
     changeStats: null,
   }
 
-  if (!isGitAvailable() || !(await isInsideGitWorkTree())) return empty
+  if (!(await isGitAvailableForTarget()) || !(await isInsideGitWorkTree())) return empty
 
   const branchResult = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'])
   const branch = branchResult.code === 0 ? branchResult.stdout.trim() || null : null
