@@ -5,6 +5,7 @@ import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import type { HooksListResult, HookTestRequest, HookTestResult } from '@shared/types/hooks.ts'
 import type { PacksListResult } from '@shared/types/packs.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
+import type { CursorRuleSummary } from '@shared/types/cursor-rules.ts'
 import type {
   GitFileDiff,
   GitStatusResult,
@@ -470,6 +471,9 @@ export interface ApiClient {
   }
   instructions: {
     list: () => Promise<ProjectInstructionSummary[]>
+  }
+  cursorRules: {
+    list: () => Promise<CursorRuleSummary[]>
   }
   terminal: {
     create: (

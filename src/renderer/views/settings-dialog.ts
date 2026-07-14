@@ -751,11 +751,25 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Files appended to the system prompt, in precedence order. Global steering
                 (<code>~/AGENTS.md</code>, <code>~/.claude/CLAUDE.md</code>) loads first, then
                 project <code>AGENT.md</code>/<code>AGENTS.md</code> (cross-tool),
-                <code>CLAUDE.md</code> (Claude Code), and Cursor rules
-                (<code>.cursor/rules/*.mdc</code> marked <code>alwaysApply</code>, plus
-                <code>.cursorrules</code>) when present.
+                <code>CLAUDE.md</code> (Claude Code), and always-applied Cursor rules
+                (<code>.cursor/rules/*.mdc</code> with <code>alwaysApply: true</code>, plus
+                <code>.cursorrules</code>). Auto-attached and manually <code>@</code>-mentioned
+                rules also join this list for the turn that activates them.
               </p>
               <div id="sources-instructions-list" class="sources-group">
+                <span class="sources-empty">Loading…</span>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Cursor rules</legend>
+              <p class="settings-fieldset-desc">
+                Project rules under <code>.cursor/rules/*.mdc</code> (and legacy
+                <code>.cursorrules</code>), classified by activation: always, auto (globs),
+                agent (description — catalogued for <code>read_file</code>), or manual
+                (<code>@</code>-mention).
+              </p>
+              <div id="sources-cursor-rules-list" class="sources-group">
                 <span class="sources-empty">Loading…</span>
               </div>
             </fieldset>
@@ -1623,8 +1637,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const statusEl = qsRequired(overlay, '#sources-reload-status')
     statusEl.textContent = 'Loading…'
     try {
-      const [instructions, skills, hooks, plugins] = await Promise.all([
+      const [instructions, cursorRules, skills, hooks, plugins] = await Promise.all([
         api.instructions.list(),
+        api.cursorRules.list(),
         api.skills.list(),
         api.hooks.list(),
         api.plugins.list(),
@@ -1638,6 +1653,31 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           }),
         ),
         'No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root, or ~/AGENTS.md globally).',
+      )
+
+      const kindLabel: Record<string, string> = {
+        always: 'always',
+        auto: 'auto',
+        agent: 'agent',
+        manual: 'manual',
+      }
+      fillSourceList(
+        '#sources-cursor-rules-list',
+        cursorRules.map((r) => {
+          const bits = [`${String(r.bytes)} B`]
+          if (r.globs?.length) bits.push(`globs: ${r.globs.join(', ')}`)
+          if (r.description) bits.push(r.description)
+          bits.push(r.path)
+          return makeSourceRow(r.name, kindLabel[r.kind] ?? r.kind, bits.join(' · '), {
+            badgeClass:
+              r.kind === 'always'
+                ? 'sources-badge-project'
+                : r.kind === 'auto'
+                  ? 'sources-badge-auto'
+                  : undefined,
+          })
+        }),
+        'No Cursor rules (add .cursor/rules/*.mdc or a legacy .cursorrules file).',
       )
 
       fillSourceList(
