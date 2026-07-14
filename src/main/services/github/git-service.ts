@@ -187,23 +187,23 @@ export function classifyGitBlob(stdout: string, code: number): GitBlobResult {
  * it escapes the root) and return it workspace-relative, so blob pathspecs are
  * normalized the same way working-tree reads are (`resolveWorkspacePath`).
  */
-export function resolveWorkspaceRelativeGitPath(path: string): string {
-  return toRelativePath(resolveWorkspacePath(path))
+export async function resolveWorkspaceRelativeGitPath(path: string): Promise<string> {
+  return toRelativePath(await resolveWorkspacePath(path))
 }
 
-function gitObjectSpec(ref: string, path: string): string {
-  const gitPath = toGitShowPath(resolveWorkspaceRelativeGitPath(path))
+async function gitObjectSpec(ref: string, path: string): Promise<string> {
+  const gitPath = toGitShowPath(await resolveWorkspaceRelativeGitPath(path))
   return ref === ':' ? `:${gitPath}` : `${ref}:${gitPath}`
 }
 
 async function readGitBlob(ref: string, path: string): Promise<GitBlobResult> {
-  const { stdout, code } = await runGit(['show', gitObjectSpec(ref, path)])
+  const { stdout, code } = await runGit(['show', await gitObjectSpec(ref, path)])
   return classifyGitBlob(stdout, code)
 }
 
 async function readWorkingTree(path: string): Promise<string> {
   try {
-    const abs = resolveWorkspacePath(path)
+    const abs = await resolveWorkspacePath(path)
     return await fsp.readFile(abs, 'utf-8')
   } catch {
     return ''
@@ -238,16 +238,15 @@ function bufferToDataUrl(buf: Buffer, mime: string): string {
   return `data:${mime};base64,${buf.toString('base64')}`
 }
 
-// eslint-disable-next-line @typescript-eslint/require-await -- mirrors the async readWorkingTreeImage; both feed the async blob fallback
 async function readGitBlobImage(ref: string, path: string, mime: string): Promise<string | null> {
-  const { stdout, code } = runGitBuffer(['show', gitObjectSpec(ref, path)])
+  const { stdout, code } = runGitBuffer(['show', await gitObjectSpec(ref, path)])
   if (code !== 0 || stdout.length === 0) return null
   return bufferToDataUrl(stdout, mime)
 }
 
 async function readWorkingTreeImage(path: string, mime: string): Promise<string | null> {
   try {
-    const abs = resolveWorkspacePath(path)
+    const abs = await resolveWorkspacePath(path)
     const buf = await fsp.readFile(abs)
     if (buf.length === 0) return null
     return bufferToDataUrl(buf, mime)
@@ -404,7 +403,7 @@ export async function restoreWorktreeBackup(ref: string, paths: string[]): Promi
     // that path best-effort rather than reporting a failed restore.
     if (code === 0) continue
     try {
-      await fsp.rm(resolveWorkspacePath(path), { force: true })
+      await fsp.rm(await resolveWorkspacePath(path), { force: true })
     } catch {
       ok = false
     }
@@ -763,7 +762,7 @@ export async function getGitShowText(ref: string, path?: string): Promise<string
       // Resolves + validates the path against the workspace boundary; throws when
       // it escapes the root. Caught here so the service is self-contained even if
       // a caller skips its own validation.
-      args = ['show', gitObjectSpec(trimmedRef, path)]
+      args = ['show', await gitObjectSpec(trimmedRef, path)]
     } catch (err) {
       return errorMessage(err)
     }

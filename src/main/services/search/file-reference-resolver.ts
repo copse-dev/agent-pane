@@ -25,16 +25,16 @@ function basename(path: string): string {
 }
 
 /** Resolve a path on disk when it is missing from the workspace file index. */
-function resolveOnFilesystem(
+async function resolveOnFilesystem(
   candidate: string,
   normalized: string,
-): FileReferenceResolution | null {
+): Promise<FileReferenceResolution | null> {
   if (!getWorkspaceRoot()) return null
   try {
-    const abs = resolveWorkspacePath(normalized)
+    const abs = await resolveWorkspacePath(normalized)
     if (!existsSync(abs)) return null
     const stat = statSync(abs)
-    const path = toRelativePath(abs)
+    const path = await toRelativePath(abs)
     if (stat.isDirectory()) return { candidate, path, kind: 'directory' }
     if (stat.isFile()) return { candidate, path, kind: 'file' }
     return null
@@ -43,7 +43,9 @@ function resolveOnFilesystem(
   }
 }
 
-export function resolveFileReferences(candidates: string[]): FileReferenceResolution[] {
+export async function resolveFileReferences(
+  candidates: string[],
+): Promise<FileReferenceResolution[]> {
   const idx = getIndex()
   if (!idx) return []
 
@@ -70,7 +72,7 @@ export function resolveFileReferences(candidates: string[]): FileReferenceResolu
       continue
     }
 
-    const onDisk = resolveOnFilesystem(candidate, normalized)
+    const onDisk = await resolveOnFilesystem(candidate, normalized)
     if (onDisk) {
       resolutions.push(onDisk)
       continue

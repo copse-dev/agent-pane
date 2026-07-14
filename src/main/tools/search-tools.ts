@@ -42,7 +42,7 @@ export const searchCodeTool = defineTool({
     if (searchPattern === undefined) {
       return 'Provide a search pattern via `pattern` (its alias `query` also works).'
     }
-    const searchRoot = path ? resolveReadablePath(path) : root
+    const searchRoot = path ? await resolveReadablePath(path) : root
 
     if (!isRgAvailable()) {
       return slowCodeSearch({

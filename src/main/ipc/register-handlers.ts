@@ -185,20 +185,18 @@ const SKILLS_RELOAD_KEYS = new Set([
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
   const storedProjects = (storageGet('projects') as { path: string }[] | null) ?? []
-  seedAllowedWorkspaceRoots(storedProjects.map((p) => p.path))
+  void seedAllowedWorkspaceRoots(storedProjects.map((p) => p.path))
   const persistedRoot = getWorkspaceRoot()
   if (persistedRoot) {
-    try {
-      registerAllowedWorkspaceRoot(persistedRoot)
-    } catch {
+    void registerAllowedWorkspaceRoot(persistedRoot).catch(() => {
       // Stale workspaceRoot in config — ignore until user picks a folder.
-    }
+    })
   }
 
   ipcMain.handle('workspace:open', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
     if (result.canceled || !result.filePaths[0]) return null
-    const root = registerAllowedWorkspaceRoot(result.filePaths[0])
+    const root = await registerAllowedWorkspaceRoot(result.filePaths[0])
     setWorkspaceRoot(root)
     // Scheduled, not awaited — index builds must not block the renderer's
     // swap to the full layout; the footer indicator reports progress.
@@ -214,8 +212,8 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const parsedRoot = parseIpcArgs(zPathString, [root])
     const projects = (storageGet('projects') as { path: string }[] | null) ?? []
-    seedAllowedWorkspaceRoots(projects.map((p) => p.path))
-    const canonical = assertAllowedWorkspaceRoot(parsedRoot)
+    await seedAllowedWorkspaceRoots(projects.map((p) => p.path))
+    const canonical = await assertAllowedWorkspaceRoot(parsedRoot)
     setWorkspaceRoot(canonical)
     startWorkspaceIndexing(canonical)
     await initSkillsRegistry()
@@ -226,7 +224,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('fs:readFile', async (event, path: unknown) => {
     assertMainFrameSender(event, win)
     const relPath = parseIpcArgs(zPathString, [path])
-    const abs = resolveWorkspacePath(relPath)
+    const abs = await resolveWorkspacePath(relPath)
     return gatewayReadFile(abs)
   })
 
@@ -235,7 +233,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const relPath = parseIpcArgs(zPathString, [path])
     if (typeof content !== 'string') throw new IpcValidationError('File content must be a string')
     assertFsWriteContent(content)
-    const abs = resolveWorkspacePath(relPath)
+    const abs = await resolveWorkspacePath(relPath)
     await gatewayWriteFile(abs, content)
     scheduleIndexRebuild()
   })
@@ -243,14 +241,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('fs:readdir', async (event, path: unknown) => {
     assertMainFrameSender(event, win)
     const relPath = parseIpcArgs(zPathString, [path])
-    const abs = resolveWorkspacePath(relPath)
+    const abs = await resolveWorkspacePath(relPath)
     return gatewayReaddir(abs)
   })
 
   ipcMain.handle('fs:listDir', async (event, path: unknown) => {
     assertMainFrameSender(event, win)
     const relPath = parseIpcArgs(zPathString.optional(), [path])
-    const abs = resolveWorkspacePath(relPath || '.')
+    const abs = await resolveWorkspacePath(relPath || '.')
     const dirents = await gatewayListDir(abs)
     return dirents
       .filter((d) => !d.name.startsWith('.') && d.name !== 'node_modules')
@@ -283,7 +281,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const candidates = parseIpcArgs(z.array(z.string().min(1).max(4096)).max(200), [rawCandidates])
     await whenFileIndexReady()
-    return resolveFileReferences(candidates)
+    return await resolveFileReferences(candidates)
   })
 
   // OKF memories management. The renderer's Memories pane (issue #645, Phase 3)

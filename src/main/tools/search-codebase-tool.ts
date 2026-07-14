@@ -63,7 +63,7 @@ export const searchCodebaseTool = defineTool({
     }
 
     const resolvedMode = mode === 'auto' ? classifySearchQuery(searchText) : mode
-    const filterPath = path ? toRelativePath(resolveWorkspacePath(path)) : undefined
+    const filterPath = path ? await toRelativePath(await resolveWorkspacePath(path)) : undefined
 
     let semanticFallback: 'building' | 'unavailable' | null = null
     if (resolvedMode === 'semantic') {
@@ -93,7 +93,7 @@ export const searchCodebaseTool = defineTool({
 
     // Regex path resolves the read-only chat store too (#644); the semantic index
     // below stays workspace-only (chat-store discovery goes through catalog.jsonl).
-    const searchRoot = path ? resolveReadablePath(path) : root
+    const searchRoot = path ? await resolveReadablePath(path) : root
     const { lines, backend } = await searchCodeContent({
       pattern: searchText,
       searchRoot,
@@ -137,7 +137,7 @@ export const semanticSearchTool = defineTool({
       return 'Provide a query via `query` (its alias `pattern` also works).'
     }
 
-    const filterPath = path ? toRelativePath(resolveWorkspacePath(path)) : undefined
+    const filterPath = path ? await toRelativePath(await resolveWorkspacePath(path)) : undefined
     const semantic = await executeSemanticSearch(
       {
         query: searchText,
