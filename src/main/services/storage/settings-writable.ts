@@ -236,6 +236,10 @@ export const securitySettingsSchema = z.object({
   defaultReadonlyMode: z.boolean(),
   webAllowedOrigins: webAllowedOriginsSchema,
   webAllowUserApproval: z.boolean(),
+  // Custom LLM provider host allowlist (issue #438). Optional so older renderer
+  // bundles that never send them don't clobber a saved list / toggle.
+  approvedProviderHosts: z.array(z.string().max(256)).max(256).optional(),
+  providerAllowUserApproval: z.boolean().optional(),
   // Allow-list of command basenames trusted to run unsandboxed with no prompt.
   // Optional so bundles that never send it don't clobber a saved list.
   trustedShellCommands: trustedShellCommandsSchema.optional(),

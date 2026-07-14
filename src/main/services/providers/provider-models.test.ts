@@ -1,6 +1,7 @@
-import { describe, it, afterEach } from 'node:test'
+import { describe, it, afterEach, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { fetchOpenAiCompatibleModels } from './provider-models.ts'
+import { setSetting } from '../storage/settings.ts'
 
 const realFetch = globalThis.fetch
 function stubFetch(impl: (url: string) => Partial<Response>): void {
@@ -8,6 +9,11 @@ function stubFetch(impl: (url: string) => Partial<Response>): void {
 }
 
 describe('fetchOpenAiCompatibleModels', () => {
+  beforeEach(async () => {
+    // Approve the public test host used below (issue #438 allowlist).
+    await setSetting('approvedProviderHosts', ['api.example.com'])
+  })
+
   afterEach(() => {
     globalThis.fetch = realFetch
   })
@@ -21,6 +27,19 @@ describe('fetchOpenAiCompatibleModels', () => {
     const res = await fetchOpenAiCompatibleModels('   ')
     assert.equal(res.ok, false)
     assert.equal(called, false)
+  })
+
+  it('rejects an unapproved public host without a network call', async () => {
+    await setSetting('approvedProviderHosts', [])
+    let called = false
+    stubFetch(() => {
+      called = true
+      return { ok: true, status: 200 }
+    })
+    const res = await fetchOpenAiCompatibleModels('https://evil.example/v1', 'secret-key')
+    assert.equal(res.ok, false)
+    assert.equal(called, false)
+    assert.match(res.error ?? '', /not approved/)
   })
 
   it('rejects an unsafe base URL without a network call (no key sent)', async () => {

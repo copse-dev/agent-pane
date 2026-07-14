@@ -13,6 +13,7 @@ import {
 } from '@copse/llm/extra-providers.ts'
 import { providerSlugFromBaseUrl, uniqueProviderSlug } from '@copse/llm/provider-slug.ts'
 import { getSetting, setSetting, deleteApiKey, resolveApiKey } from '../storage/settings.ts'
+import { ensureProviderHostApproved } from './approved-provider-hosts.ts'
 import { fetchHuggingFaceModels } from './huggingface-models.ts'
 
 /** Built-in slug of the Hugging Face Inference Providers provider. */
@@ -57,6 +58,15 @@ export async function saveExtraProvider(
         providerSlugFromBaseUrl(record.baseUrl ?? ''),
         current.map((p) => p.slug),
       )
+
+  // Custom (non-builtin) providers: approve the host before it is ever persisted
+  // so a disallowed baseUrl cannot land in settings (issue #438). Built-in
+  // overrides ignore baseUrl via mergeBuiltin, so they skip this gate.
+  const isBuiltin = BUILTIN_EXTRA_PROVIDER_SLUGS.includes(slug)
+  const baseUrl = record.baseUrl?.trim()
+  if (!isBuiltin && baseUrl) {
+    await ensureProviderHostApproved(baseUrl)
+  }
 
   const next: StoredExtraProvider = { ...record, slug }
   const idx = current.findIndex((p) => p.slug === slug)

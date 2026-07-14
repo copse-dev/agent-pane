@@ -1,4 +1,4 @@
-import { describe, it, beforeEach } from 'node:test'
+import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   getResolvedExtraProviders,
@@ -7,6 +7,7 @@ import {
   deleteExtraProvider,
 } from './extra-providers-store.ts'
 import { setSetting, setApiKey, hasApiKey } from '../storage/settings.ts'
+import { setApprovalHandler } from '../approval.ts'
 import { BUILTIN_EXTRA_PROVIDER_SLUGS } from '@copse/llm/extra-providers.ts'
 
 const slugs = (): string[] => getResolvedExtraProviders().map((p) => p.id)
@@ -15,6 +16,14 @@ const PRESETS = [...BUILTIN_EXTRA_PROVIDER_SLUGS]
 describe('extra-providers-store', () => {
   beforeEach(async () => {
     await setSetting('extraProviders', [])
+    await setSetting('approvedProviderHosts', [])
+    await setSetting('providerAllowUserApproval', true)
+    // Custom cloud hosts require approval (issue #438); auto-approve in unit tests.
+    setApprovalHandler(async () => ({ approved: true, remember: true }))
+  })
+
+  afterEach(() => {
+    setApprovalHandler(null)
   })
 
   it('resolves the shipped presets when nothing is stored', () => {
@@ -72,6 +81,15 @@ describe('extra-providers-store', () => {
     await deleteExtraProvider('together')
     assert.deepEqual(slugs(), PRESETS)
     assert.equal(hasApiKey('together'), false)
+  })
+
+  it('rejects saving a custom provider when the host is denied', async () => {
+    setApprovalHandler(async () => ({ approved: false, remember: false }))
+    await assert.rejects(
+      () => saveExtraProvider({ label: 'Evil', baseUrl: 'https://evil.example/v1' }),
+      /not approved/,
+    )
+    assert.equal(getResolvedExtraProvider('evil'), null)
   })
 
   it('reverts a built-in override on delete but keeps its key', async () => {
