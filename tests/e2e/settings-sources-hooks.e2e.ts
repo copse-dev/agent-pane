@@ -76,7 +76,7 @@ describe('settings sources hooks (Claude Code)', () => {
     assert.match(text, /PreToolUse · Bash/)
     assert.match(text, /Claude Code/)
     assert.match(text, /block-destructive\.sh/)
-    assert.match(text, /project/)
+    assert.match(text, /PROJECT/i)
 
     await saveElementScreenshot(
       '.settings-section[data-section="sources"]',
