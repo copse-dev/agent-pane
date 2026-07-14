@@ -562,5 +562,8 @@ if (process.env['COPSE_E2E'] === '1') {
     clearMockScript() {
       return ipcRenderer.invoke('test:clearMockScript')
     },
+    requestSshPrompt(prompt: string, kind: 'confirm' | 'secret') {
+      return ipcRenderer.invoke('test:requestSshPrompt', prompt, kind)
+    },
   })
 }

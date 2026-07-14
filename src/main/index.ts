@@ -143,7 +143,7 @@ app
 
     initApproval(win)
     initAskUser(win)
-    initSshAskpassServer()
+    initSshAskpassServer(app.getPath('userData'))
     initSshPrompt(win)
     initDiffQueue(win)
     initFsWatcher(win)

@@ -27,8 +27,10 @@ client.on('end', () => {
       (typeof parsed.response === 'string' || parsed.response === null)
     ) {
       if (!parsed.response) process.exit(1)
-      process.stdout.write(parsed.response)
-      process.exit(0)
+      process.stdout.write(parsed.response, (error) => {
+        process.exit(error ? 1 : 0)
+      })
+      return
     }
   } catch {
     // fall through

@@ -76,6 +76,10 @@ export function mountSshPromptDialog(api: ApiClient): void {
     if (!active || active.kind !== 'secret') return
     finish(secretInput.value)
   })
+  dialog.addEventListener('cancel', (event) => {
+    event.preventDefault()
+    finish('')
+  })
   cancelBtn.addEventListener('click', () => {
     finish('')
   })

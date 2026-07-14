@@ -33,6 +33,7 @@ function askpassDir(): string {
 }
 
 let userDataDirOverride: string | null = null
+let configuredUserDataDir: string | null = null
 
 /** Test hook: point askpass state at a throwaway directory. */
 export function setSshAskpassUserDataDirForTests(dir: string | null): void {
@@ -41,25 +42,12 @@ export function setSshAskpassUserDataDirForTests(dir: string | null): void {
 
 function userDataDir(): string {
   if (userDataDirOverride) return userDataDirOverride
-  try {
-    // Lazy require: the unit-test bundle has no Electron app object.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { app } = require('electron') as typeof import('electron')
-    if (typeof app.getPath === 'function') return app.getPath('userData')
-  } catch {
-    // fall through
-  }
+  if (configuredUserDataDir) return configuredUserDataDir
   return join(tmpdir(), 'copse-ssh-askpass')
 }
 
 function isAskpassAvailable(): boolean {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { app } = require('electron') as typeof import('electron')
-    return typeof app.getPath === 'function'
-  } catch {
-    return false
-  }
+  return userDataDirOverride !== null || configuredUserDataDir !== null
 }
 
 function helperScriptPath(): string {
@@ -132,7 +120,8 @@ async function respondToAskpass(socket: Socket, line: string): Promise<void> {
   socket.end(JSON.stringify({ response }) + '\n')
 }
 
-export function initSshAskpassServer(): void {
+export function initSshAskpassServer(userDataDirectory?: string): void {
+  if (userDataDirectory) configuredUserDataDir = userDataDirectory
   if (server) return
   ensureAskpassWrapper()
   socketPath = join(askpassDir(), 'askpass.sock')
@@ -200,4 +189,5 @@ export function resetSshAskpassForTests(): void {
   }
   wrapperPath = null
   userDataDirOverride = null
+  configuredUserDataDir = null
 }
