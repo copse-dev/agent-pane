@@ -90,6 +90,7 @@ describe('indexed-grep parsing', () => {
     setIndexedGrepBackendForTest('rg')
     assert.equal(formatCodeSearchResults([], 5, 'rg'), 'No matches found.')
     assert.match(formatCodeSearchResults(['a.ts:1: x', 'a.ts:2: y'], 2, 'ig'), /indexed ig backend/)
+    assert.match(formatCodeSearchResults(['a.ts:1: x'], 5, 'grep'), /grep -r/)
   })
 })
 

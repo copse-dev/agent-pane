@@ -3,7 +3,7 @@ import micromatch from 'micromatch'
 import { defineTool } from '@shared/types'
 import { resolveSearchText } from '@copse/agent/search-routing.ts'
 import { resolveReadablePath, getWorkspaceRoot } from '../services/workspace.ts'
-import { isRgAvailable } from '../services/tool-availability.ts'
+import { isRgAvailableForTarget } from '../services/tool-availability.ts'
 import { getIndex, whenFileIndexReady } from '../services/search/file-index.ts'
 import { formatCodeSearchResults, searchCodeContent } from '../services/search/indexed-grep.ts'
 import { slowCodeSearch } from '../services/search/slow-code-search.ts'
@@ -44,7 +44,7 @@ export const searchCodeTool = defineTool({
     }
     const searchRoot = path ? await resolveReadablePath(path) : root
 
-    if (!isRgAvailable()) {
+    if (!(await isRgAvailableForTarget())) {
       return slowCodeSearch({
         searchRoot,
         pattern: searchPattern,

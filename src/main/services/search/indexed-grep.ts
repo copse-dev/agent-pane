@@ -1,8 +1,15 @@
 import { runCommand } from '../exec/command-runner.ts'
+import { isRgAvailableForTarget } from '../tool-availability.ts'
+import {
+  isSshExecutionTarget,
+  getActiveExecutionTarget,
+} from '../ssh-workspace/execution-target.ts'
 import { toRelativePath } from '../workspace.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
 
-export type IndexedGrepBackend = 'ig' | 'trigrep' | 'instant-grep' | 'rg'
+export type IndexedGrepBackend = 'ig' | 'trigrep' | 'instant-grep' | 'rg' | 'grep'
+
+type IndexedCliBackend = Exclude<IndexedGrepBackend, 'rg' | 'grep'>
 
 export interface CodeContentSearchOptions {
   pattern: string
@@ -57,10 +64,20 @@ async function probe(cmd: string, args: string[]): Promise<boolean> {
 export async function searchCodeContent(
   opts: CodeContentSearchOptions,
 ): Promise<{ lines: string[]; backend: IndexedGrepBackend }> {
+  const target = getActiveExecutionTarget()
+  if (isSshExecutionTarget(target)) {
+    if (await isRgAvailableForTarget(target)) {
+      const lines = await searchWithRipgrep(opts)
+      return { lines, backend: 'rg' }
+    }
+    const lines = await searchWithGrepRecursive(opts)
+    return { lines, backend: 'grep' }
+  }
+
   const backend = activeBackend
-  if (backend === 'rg') {
+  if (backend === 'rg' || backend === 'grep') {
     const lines = await searchWithRipgrep(opts)
-    return { lines, backend }
+    return { lines, backend: 'rg' }
   }
 
   try {
@@ -73,7 +90,7 @@ export async function searchCodeContent(
 }
 
 async function searchWithIndexedCli(
-  backend: Exclude<IndexedGrepBackend, 'rg'>,
+  backend: IndexedCliBackend,
   opts: CodeContentSearchOptions,
 ): Promise<string[]> {
   const args = buildIndexedCliArgs(backend, opts)
@@ -81,10 +98,7 @@ async function searchWithIndexedCli(
   return await parseGrepStdout(stdout, opts.maxResults)
 }
 
-function buildIndexedCliArgs(
-  backend: Exclude<IndexedGrepBackend, 'rg'>,
-  opts: CodeContentSearchOptions,
-): string[] {
+function buildIndexedCliArgs(backend: IndexedCliBackend, opts: CodeContentSearchOptions): string[] {
   const common = [
     ...(opts.fixedString ? ['-F'] : []),
     ...(opts.caseSensitive ? [] : ['-i']),
@@ -145,6 +159,22 @@ async function searchWithRipgrep(opts: CodeContentSearchOptions): Promise<string
 
   const { stdout } = await runCommand('rg', args, opts.signal ? { signal: opts.signal } : {})
   return await parseRipgrepJson(stdout, opts.maxResults)
+}
+
+async function searchWithGrepRecursive(opts: CodeContentSearchOptions): Promise<string[]> {
+  const args = [
+    '-r',
+    '-n',
+    '-H',
+    ...(opts.fixedString ? ['-F'] : []),
+    ...(opts.caseSensitive ? [] : ['-i']),
+    ...(opts.fileGlob ? ['--include', opts.fileGlob] : []),
+    '--',
+    opts.pattern,
+    opts.searchRoot,
+  ]
+  const { stdout } = await runCommand('grep', args, opts.signal ? { signal: opts.signal } : {})
+  return await parseGrepStdout(stdout, opts.maxResults)
 }
 
 export async function parseRipgrepJson(stdout: string, maxResults: number): Promise<string[]> {
@@ -217,6 +247,11 @@ export function formatCodeSearchResults(
     matchLineCount >= maxResults
       ? `\n[Truncated at ${String(maxResults)} results. Narrow your search.]`
       : ''
-  const backendNote = backend === 'rg' ? '' : `\n[Searched via indexed ${backend} backend.]`
+  const backendNote =
+    backend === 'rg'
+      ? ''
+      : backend === 'grep'
+        ? '\n[Searched via remote grep -r — install rg on the host for faster search.]'
+        : `\n[Searched via indexed ${backend} backend.]`
   return lines.join('\n') + suffix + backendNote
 }

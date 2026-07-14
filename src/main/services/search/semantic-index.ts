@@ -7,6 +7,7 @@ import { GORTEX_EXCLUDE_PATTERNS } from './index-ignore.ts'
 import { computeGitIgnoreExcludes } from './git-derived-excludes.ts'
 import { runCommand, type RunCommandOptions } from '../exec/command-runner.ts'
 import { COMMAND_RUNNER_LONG_TIMEOUT_MS } from '../exec/subprocess-output-cap.ts'
+import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { toRelativePath } from '../workspace.ts'
 import {
   indexBuildStarted,
@@ -144,6 +145,7 @@ export function getSemanticBackend(): SemanticBackend | null {
 }
 
 export function isSemanticSearchAvailable(): boolean {
+  if (isActiveSshWorkspace()) return false
   return activeBackend !== null
 }
 
@@ -310,6 +312,7 @@ async function probeWithOpts(
 
 /** Register and build the semantic index when a workspace opens. */
 export async function ensureSemanticIndex(workspaceRoot: string): Promise<void> {
+  if (isActiveSshWorkspace()) return
   const backend = activeBackend
   if (!backend) return
 
@@ -358,6 +361,7 @@ export async function ensureSemanticIndex(workspaceRoot: string): Promise<void> 
  * per-process thread cap and lagging the UI.
  */
 export async function updateSemanticIndex(workspaceRoot: string): Promise<void> {
+  if (isActiveSshWorkspace()) return
   const backend = activeBackend
   if (!backend) return
 

@@ -1,5 +1,6 @@
 import { buildSearchRoutingPromptBlock } from '@copse/agent/search-routing.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
+import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { getWorkspaceIndexStatus } from './index-status.ts'
 import {
   ensureSemanticIndex,
@@ -32,6 +33,12 @@ export type SemanticSearchOutcome =
  * tools until the index is queryable.
  */
 export function semanticIndexBuildingNote(): string {
+  if (isActiveSshWorkspace()) {
+    return (
+      'Semantic search is unavailable for SSH remote workspaces (v1). ' +
+      'Use regex search (search_code, or search_codebase with mode: regex) instead.'
+    )
+  }
   const startedAt = getWorkspaceIndexStatus().semantic.startedAt
   const elapsed =
     startedAt !== undefined
