@@ -1,7 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { KnownAcpAgent } from '@shared/acp-known-agents.ts'
-import { planAcpAutoSetup, type AcpAutoSetupInput } from './acp-auto-setup.ts'
+import {
+  planAcpAutoSetup,
+  planAcpPackageUpdates,
+  type AcpAutoSetupInput,
+} from './acp-auto-setup.ts'
 
 const claude: KnownAcpAgent = {
   id: 'claude-agent-acp',
@@ -19,6 +23,15 @@ const cursor: KnownAcpAgent = {
   command: 'cursor-agent',
   args: ['acp'],
   requiresClient: 'cursor-agent',
+  preset: true,
+}
+const codex: KnownAcpAgent = {
+  id: 'codex',
+  title: 'Codex',
+  command: 'codex-acp',
+  args: [],
+  installPackage: '@agentclientprotocol/codex-acp',
+  autoInstall: true,
   preset: true,
 }
 const nonPreset: KnownAcpAgent = {
@@ -65,6 +78,18 @@ describe('planAcpAutoSetup', () => {
     ])
     assert.deepEqual(plan.install, [])
     assert.deepEqual(plan.register, [])
+  })
+
+  it('installs + registers a standalone npm preset with no gating client', () => {
+    const plan = planAcpAutoSetup([input(codex, { clientInstalled: true, agentInstalled: false })])
+    assert.deepEqual(
+      plan.install.map((k) => k.id),
+      ['codex'],
+    )
+    assert.deepEqual(
+      plan.register.map((k) => k.id),
+      ['codex'],
+    )
   })
 
   it('never installs a non-npm preset (Cursor); registers only when its binary exists', () => {
@@ -121,5 +146,27 @@ describe('planAcpAutoSetup', () => {
       input(claude, { configured: true, agentInstalled: false, hasModels: false }),
     ])
     assert.deepEqual(plan.refreshModels, [])
+  })
+})
+
+describe('planAcpPackageUpdates', () => {
+  it('refreshes installed auto-managed npm presets', () => {
+    const plan = planAcpPackageUpdates([
+      input(codex, { agentInstalled: true }),
+      input(claude, { agentInstalled: true, clientInstalled: false }),
+    ])
+    assert.deepEqual(
+      plan.map((k) => k.id),
+      ['codex', 'claude-agent-acp'],
+    )
+  })
+
+  it('skips missing, non-auto, and non-preset agents', () => {
+    const plan = planAcpPackageUpdates([
+      input(codex, { agentInstalled: false }),
+      input(cursor, { agentInstalled: true, clientInstalled: true }),
+      input(nonPreset, { agentInstalled: true, clientInstalled: true }),
+    ])
+    assert.deepEqual(plan, [])
   })
 })

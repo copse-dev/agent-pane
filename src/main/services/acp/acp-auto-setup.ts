@@ -4,22 +4,26 @@ import { listAcpAgentModels } from './acp-client.ts'
 import { listAcpAgents, upsertAcpAgent } from './acp-agent-registry.ts'
 import { resolveOnPath } from './acp-detect.ts'
 import { installGlobalNpmPackage } from '../security/socket-firewall.ts'
+import { storageGet, storageSet } from '../storage/storage.ts'
 import { getActiveProjectRoot, getWorkspaceRoot } from '../workspace.ts'
 
 /**
- * One-shot "just works" setup for the curated ACP presets (Claude, Cursor),
- * run when the ACP settings tab opens. For each preset it:
+ * "Just works" setup for curated ACP presets. It runs when ACP settings opens,
+ * and a bounded variant also runs during app startup. For each preset it:
  *
- *  1. Detects the agent binary and its gating client (`claude`, `cursor-agent`).
- *  2. Installs a missing npm adapter through Socket Firewall — but only when its
- *     client is present and the adapter opts in (`autoInstall`). Script-installed
+ *  1. Detects the agent binary and any gating client (`claude`, `cursor-agent`).
+ *  2. Installs a missing npm adapter through Socket Firewall when the adapter opts
+ *     in (`autoInstall`) and its client prerequisite is present. Script-installed
  *     binaries (Cursor) are never auto-installed; the UI shows their command.
  *  3. Registers a ready-to-use config for any preset whose binary is available.
  *  4. Best-effort detects + caches the agent's models (needs an open folder), so
  *     they appear in the picker without a manual "Detect".
  *
- * The planning half is a pure function so the install/register decisions are unit
- * tested without spawning anything.
+ * Startup maintenance also refreshes already-installed, auto-managed npm adapters
+ * through Socket Firewall on a daily throttle.
+ *
+ * The planning half is a pure function so the install/register/update decisions
+ * are unit tested without spawning anything.
  */
 
 export interface AcpAutoSetupInput {
@@ -48,6 +52,15 @@ export interface AcpAutoSetupPlan {
   refreshModels: KnownAcpAgent[]
 }
 
+type AutoManagedNpmAcpAgent = KnownAcpAgent & {
+  installPackage: string
+  autoInstall: true
+  preset: true
+}
+
+const ACP_STARTUP_PACKAGE_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000
+const ACP_STARTUP_PACKAGE_REFRESH_KEY = 'acp:lastStartupPackageRefreshAt'
+
 /** Decide, from detection facts, what to install, register, and re-probe. Pure. */
 export function planAcpAutoSetup(inputs: readonly AcpAutoSetupInput[]): AcpAutoSetupPlan {
   const install: KnownAcpAgent[] = []
@@ -70,6 +83,20 @@ export function planAcpAutoSetup(inputs: readonly AcpAutoSetupInput[]): AcpAutoS
   return { install, register, refreshModels }
 }
 
+/** Decide which installed, auto-managed npm presets should be refreshed. Pure. */
+export function planAcpPackageUpdates(
+  inputs: readonly AcpAutoSetupInput[],
+): AutoManagedNpmAcpAgent[] {
+  const update: AutoManagedNpmAcpAgent[] = []
+  for (const { known, agentInstalled } of inputs) {
+    if (!known.preset) continue
+    if (!known.autoInstall || !known.installPackage) continue
+    if (!agentInstalled) continue
+    update.push(known)
+  }
+  return update
+}
+
 export type { AcpAutoSetupResult }
 
 /**
@@ -90,6 +117,7 @@ function presetToConfig(known: KnownAcpAgent): AcpAgentConfig {
 }
 
 let inFlight: Promise<AcpAutoSetupResult> | null = null
+let startupMaintenanceInFlight: Promise<void> | null = null
 
 /** Run auto-setup, coalescing concurrent calls (e.g. the tab opened twice). */
 export function runAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupResult> {
@@ -99,17 +127,45 @@ export function runAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupResult
   return inFlight
 }
 
-async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupResult> {
-  const result: AcpAutoSetupResult = {
-    installed: [],
-    registered: [],
-    modelsDetected: [],
-    failed: [],
+/** Run bounded startup maintenance without blocking app launch. */
+export function runAcpStartupMaintenance(signal: AbortSignal): Promise<void> {
+  startupMaintenanceInFlight ??= performAcpStartupMaintenance(signal).finally(() => {
+    startupMaintenanceInFlight = null
+  })
+  return startupMaintenanceInFlight
+}
+
+async function performAcpStartupMaintenance(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return
+
+  const setup = await runAcpAutoSetup(signal)
+  if (signal.aborted || !shouldRefreshStartupPackages()) return
+
+  const installedNow = new Set(setup.installed)
+  const inputs = await detectPresetInputs()
+  const updates = planAcpPackageUpdates(inputs).filter((known) => !installedNow.has(known.id))
+
+  for (const known of updates) {
+    if (signal.aborted) break
+    const ok = await installGlobalNpmPackage(known.installPackage, signal)
+    if (!ok) {
+      console.warn(`[acp] package refresh failed for ${known.id}`)
+    }
   }
+
+  if (!signal.aborted) storageSet(ACP_STARTUP_PACKAGE_REFRESH_KEY, Date.now())
+}
+
+function shouldRefreshStartupPackages(now = Date.now()): boolean {
+  const raw = storageGet(ACP_STARTUP_PACKAGE_REFRESH_KEY)
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return true
+  return now - raw >= ACP_STARTUP_PACKAGE_REFRESH_INTERVAL_MS
+}
+
+async function detectPresetInputs(): Promise<AcpAutoSetupInput[]> {
   const existing = new Map(listAcpAgents().map((agent) => [agent.id, agent]))
   const presets = KNOWN_ACP_AGENTS.filter((known) => known.preset)
-
-  const inputs: AcpAutoSetupInput[] = await Promise.all(
+  return Promise.all(
     presets.map(async (known) => ({
       known,
       agentInstalled: (await resolveOnPath(known.command)) !== null,
@@ -120,6 +176,17 @@ async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupRes
       hasModels: (existing.get(known.id)?.availableModels?.length ?? 0) > 0,
     })),
   )
+}
+
+async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupResult> {
+  const result: AcpAutoSetupResult = {
+    installed: [],
+    registered: [],
+    modelsDetected: [],
+    failed: [],
+  }
+  const inputs = await detectPresetInputs()
+  const existing = new Map(listAcpAgents().map((agent) => [agent.id, agent]))
   const plan = planAcpAutoSetup(inputs)
 
   const installedNow = new Set<string>()
