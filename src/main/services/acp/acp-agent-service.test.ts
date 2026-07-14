@@ -107,9 +107,9 @@ describe('isRetryableAcpError', () => {
     assert.ok(isRetryableAcpError(new Error('Internal Server Error')))
   })
 
-  it('retries a dropped connection so the turn respawns a fresh session', () => {
-    assert.ok(isRetryableAcpError(new Error('ACP connection closed')))
-    assert.ok(isRetryableAcpError(new Error('write EPIPE')))
+  it('does not retry a dropped connection because the agent may have run unseen work', () => {
+    assert.ok(!isRetryableAcpError(new Error('ACP connection closed')))
+    assert.ok(!isRetryableAcpError(new Error('write EPIPE')))
   })
 
   it('rejects non-transient failures', () => {
@@ -136,19 +136,19 @@ describe('runWithAcpRetry', () => {
     assert.equal(attempts, 3)
   })
 
-  it('retries a no-progress dropped connection and succeeds', async () => {
+  it('does not retry a dropped connection even with no visible progress', async () => {
     let attempts = 0
-    const result = await runWithAcpRetry(
-      () => {
-        attempts++
-        return attempts < 2
-          ? Promise.reject(new Error('ACP connection closed'))
-          : Promise.resolve('ok')
-      },
-      { signal: noAbort, hasProgress: () => false, delayMs: () => 0 },
+    await assert.rejects(
+      runWithAcpRetry(
+        () => {
+          attempts++
+          return Promise.reject(new Error('ACP connection closed'))
+        },
+        { signal: noAbort, hasProgress: () => false, delayMs: () => 0 },
+      ),
+      /connection closed/,
     )
-    assert.equal(result, 'ok')
-    assert.equal(attempts, 2)
+    assert.equal(attempts, 1)
   })
 
   it('does not retry a dropped connection once the turn streamed something', async () => {

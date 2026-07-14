@@ -70,8 +70,10 @@ import {
  * Sessions are persistent per thread (issue #605): the agent process and ACP
  * session live in `acp-session-pool.ts` across turns, so the agent keeps its
  * own memory (no transcript replay on reuse) and background helpers it spawned
- * survive between turns. History is replayed only into a fresh session — first
- * turn, config change, post-failure respawn, or idle-reap.
+ * survive between turns. After a transport drop, an agent that advertises
+ * `session/resume` keeps that memory on the next connection; history is replayed
+ * only into a genuinely fresh session — first turn, config change, failed
+ * resume, or idle reap.
  */
 
 export interface RunAcpAgentOptions {
@@ -181,10 +183,12 @@ export function isTransientProviderError(err: unknown): boolean {
  * A dropped ACP *transport* — the connection closed or the agent process died
  * (crash, broken stdio pipe) rather than a provider hiccup. Kept distinct from
  * {@link isTransientProviderError} because the remedy differs: the failed
- * attempt disposes the dead session (see `attempt()` below), so the retry
- * respawns the agent and replays history into a fresh session instead of
- * re-driving a connection that no longer exists. This is the `"ACP connection
- * closed"` case that previously surfaced straight to the user with no retry.
+ * attempt disposes the dead transport (see `attempt()` below), retaining its
+ * session ID only when the agent advertised `session/resume`. The next user
+ * turn then restores that session without replaying work already accepted by
+ * the agent; otherwise it opens a fresh session and replays history. This is
+ * the `"ACP connection closed"` case that previously surfaced straight to the
+ * user with no recovery path.
  */
 export function isAcpConnectionDropped(err: unknown): boolean {
   const msg = errorMessage(err)
@@ -196,21 +200,23 @@ export function isAcpConnectionDropped(err: unknown): boolean {
 }
 
 /**
- * Retryability gate for ACP turn failures: a transient provider error or a
- * dropped connection. Either is safe to retry only because `runWithAcpRetry`
- * still requires `hasProgress()` to be false — a failure that arrives after
- * tool calls ran or text streamed is never re-run.
+ * Retryability gate for ACP turn failures. Only provider failures are retried:
+ * after a transport drop, `hasProgress()` cannot prove that the agent did not
+ * already execute a tool before the stdio stream vanished. The session is
+ * retained for `session/resume` on the next user turn instead of risking a
+ * duplicate prompt or write.
  */
 export function isRetryableAcpError(err: unknown): boolean {
-  return isTransientProviderError(err) || isAcpConnectionDropped(err)
+  return isTransientProviderError(err)
 }
 
 /**
- * Retry a whole-turn ACP prompt on a retryable failure (a transient provider
- * error or a dropped connection — see {@link isRetryableAcpError}), mirroring
- * `yieldStreamWithRetry`'s guard: only attempts that made no visible progress
- * (`hasProgress()` false — no chunk reached the UI yet) are retried, so a
- * mid-turn failure never re-runs tool calls or duplicates streamed text.
+ * Retry a whole-turn ACP prompt on a retryable provider failure (see
+ * {@link isRetryableAcpError}), mirroring `yieldStreamWithRetry`'s guard: only
+ * attempts that made no visible progress (`hasProgress()` false — no chunk
+ * reached the UI yet) are retried, so a mid-turn failure never re-runs tool
+ * calls or duplicates streamed text. Transport drops deliberately do not retry
+ * here; their session ID is saved for `session/resume` on the next turn.
  */
 export async function runWithAcpRetry<T>(
   run: () => Promise<T>,
@@ -325,9 +331,9 @@ export async function runAcpAgentFromSettings(
 
   // One attempt = acquire (reuse the thread's live session, or open a fresh
   // one), install this turn's handlers, prompt. History is replayed only into
-  // a FRESH session — a reused one already has its own memory of the thread
-  // (issue #605). A failed attempt disposes the session so the retry (and the
-  // next turn) reopens cleanly with a full replay.
+  // a FRESH session — a reused or resumed one already has its own memory of
+  // the thread (issue #605). A transport drop preserves a resumable session ID
+  // for the retry/next turn; all other failures reopen with a full replay.
   let lastPrompt = ''
   const attempt = async (): Promise<{ stopReason: StopReason; usage?: Usage | null }> => {
     const { entry, fresh } = await acquireAcpSession({
@@ -345,7 +351,7 @@ export async function runAcpAgentFromSettings(
     try {
       return await runAcpSessionPrompt(entry.open, prompt, model, options.signal)
     } catch (err) {
-      disposeAcpSession(options.threadId)
+      disposeAcpSession(options.threadId, { preserveForResume: isAcpConnectionDropped(err) })
       throw err
     } finally {
       entry.lastUsedAt = Date.now()
