@@ -1,6 +1,7 @@
 import * as fsp from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import type {
+  ContentBlock,
   ReadTextFileRequest,
   ReadTextFileResponse,
   RequestPermissionRequest,
@@ -275,7 +276,10 @@ export async function runAcpAgentFromSettings(
 
   const sandbox = resolveAcpSandbox(agent)
   const sandboxed = willSandboxAcpAgent(sandbox)
-  if (!promptPayloadFromUserContent(options.userPrompt).text.trim()) {
+  const outboundPayload = promptPayloadFromUserContent(options.userPrompt)
+  const hasText = Boolean(outboundPayload.text.trim())
+  const hasImages = (outboundPayload.images?.length ?? 0) > 0
+  if (!hasText && !hasImages) {
     throw new Error('ACP agent prompt cannot be empty.')
   }
 
@@ -350,14 +354,29 @@ export async function runAcpAgentFromSettings(
       registry: options.registry,
     })
     entry.open.handlers.current = handlers
-    const prompt = buildAcpPrompt(options.userPrompt, fresh ? options.priorMessages : [], {
-      sandboxed,
-      includeNotes: fresh,
-      ...(skillsBlock ? { skills: skillsBlock } : {}),
-    })
-    lastPrompt = prompt
+    // Issue #831: only attach image content blocks when the agent advertised
+    // `promptCapabilities.image`. Agents without it keep the prior text-only
+    // behaviour (images dropped). Images-only prompts fail clearly rather than
+    // sending an empty text block.
+    const includeImages = entry.open.promptImage && hasImages
+    if (!hasText && !includeImages) {
+      throw new Error(
+        'This ACP agent does not support image prompts. Add text, or use an agent that advertises prompt.image.',
+      )
+    }
+    const promptBlocks = buildAcpPromptContent(
+      options.userPrompt,
+      fresh ? options.priorMessages : [],
+      {
+        sandboxed,
+        includeNotes: fresh,
+        includeImages,
+        ...(skillsBlock ? { skills: skillsBlock } : {}),
+      },
+    )
+    lastPrompt = promptBlocks.map((block) => (block.type === 'text' ? block.text : '')).join('')
     try {
-      return await runAcpSessionPrompt(entry.open, prompt, model, options.signal)
+      return await runAcpSessionPrompt(entry.open, promptBlocks, model, options.signal)
     } catch (err) {
       disposeAcpSession(options.threadId, { preserveForResume: isAcpConnectionDropped(err) })
       throw err
@@ -807,6 +826,39 @@ export function buildAcpPrompt(
     'for context, then respond to the new message.\n\n' +
     `${transcript}\n\n--- New message ---\n${current}`
   )
+}
+
+/**
+ * Build the ACP `session/prompt` content blocks for a turn (issue #831).
+ *
+ * Always includes one text block from {@link buildAcpPrompt}. When
+ * `includeImages` is true (agent advertised `promptCapabilities.image`), also
+ * appends image content blocks from the current user message so vision-capable
+ * agents receive the attachments instead of having them dropped.
+ */
+export function buildAcpPromptContent(
+  userPrompt: UserContent,
+  priorMessages: LLMMessage[],
+  opts?: {
+    sandboxed?: boolean
+    includeNotes?: boolean
+    skills?: string
+    includeImages?: boolean
+  },
+): ContentBlock[] {
+  const text = buildAcpPrompt(userPrompt, priorMessages, {
+    ...(opts?.sandboxed !== undefined ? { sandboxed: opts.sandboxed } : {}),
+    ...(opts?.includeNotes !== undefined ? { includeNotes: opts.includeNotes } : {}),
+    ...(opts?.skills !== undefined ? { skills: opts.skills } : {}),
+  })
+  const blocks: ContentBlock[] = [{ type: 'text', text }]
+  if (opts?.includeImages) {
+    const { images } = promptPayloadFromUserContent(userPrompt)
+    for (const image of images ?? []) {
+      blocks.push({ type: 'image', mimeType: image.mimeType, data: image.data })
+    }
+  }
+  return blocks
 }
 
 function messageLine(message: LLMMessage): string {
