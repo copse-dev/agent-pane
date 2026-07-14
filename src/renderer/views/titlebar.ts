@@ -86,8 +86,9 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
 
   const leftCluster = el('div', { class: 'titlebar-left' })
   const workspaceName = el('span', { class: 'workspace-name' }, 'No folder')
+  const sshTarget = el('span', { class: 'workspace-ssh-target', hidden: true })
   const workspaceBranch = el('span', { class: 'workspace-branch', hidden: true })
-  leftCluster.append(workspaceName, workspaceBranch)
+  leftCluster.append(workspaceName, sshTarget, workspaceBranch)
 
   const dragRegion = el('div', { class: 'titlebar-drag' })
   // Opening projects lives in the projects panel; the titlebar only toggles the
@@ -227,8 +228,25 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
   }
 
   function syncName(): void {
-    const r = store.getState().workspaceRoot
-    workspaceName.textContent = r ? basename(r) : 'No folder'
+    const { workspaceRoot, activeProjectId, projects } = store.getState()
+    const project = projects.find((p) => p.id === activeProjectId)
+    workspaceName.textContent = workspaceRoot ? basename(workspaceRoot) : 'No folder'
+    if (project?.sshHost) {
+      void api.sshWorkspace.listHosts().then((hosts) => {
+        const host = hosts.find((h) => h.id === project.sshHost)
+        if (!host) {
+          sshTarget.hidden = true
+          return
+        }
+        const target = host.user ? `${host.user}@${host.host}` : host.host
+        sshTarget.hidden = false
+        sshTarget.textContent = `⚡ ${target}`
+        sshTarget.title = `SSH workspace on ${target}`
+      })
+    } else {
+      sshTarget.hidden = true
+      sshTarget.textContent = ''
+    }
   }
 
   // The current checked-out branch of the active workspace. branchStatus() reads
@@ -278,6 +296,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
       syncName()
       syncBranch()
     }),
+    store.on('projects_changed', syncName),
     store.on('git_branch_changed', syncBranch),
     api.fs.onChanged(scheduleBranchSync),
     store.on('files_pane_changed', syncPanelBtns),

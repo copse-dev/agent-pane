@@ -5,12 +5,14 @@ import micromatch from 'micromatch'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
 import {
   assertAllowedWorkspaceRoot,
+  getActiveProjectSshHost,
   getWorkspaceRoot,
   registerAllowedWorkspaceRoot,
   resolveWorkspacePath,
   scheduleAllowedWorkspaceRootsBootstrap,
   seedAllowedWorkspaceRoots,
   setWorkspaceRoot,
+  type WorkspaceProjectRef,
 } from '../services/workspace.ts'
 import {
   assertFsWriteContent,
@@ -78,8 +80,7 @@ import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
-import { listCursorHooksForSources } from '../services/skills/cursor-hooks.ts'
-import { listClaudeHooks } from '../services/skills/claude-hooks.ts'
+import { listCursorHooks } from '../services/skills/cursor-hooks.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
   registerSkillTools,
@@ -167,7 +168,6 @@ import {
 } from '../services/providers/provider-key-status.ts'
 import { getUsageSummary, recordUsageEvent } from '../services/storage/usage-ledger.ts'
 import { parseUsageRecordInput } from '../services/storage/usage-record-schema.ts'
-import { loadPlanUsageSnapshot } from '../services/plan-usage-bridge.ts'
 import {
   fetchRemoteArtifactImageDataUrl,
   resolveRemoteArtifactDownloadUrl,
@@ -187,13 +187,14 @@ const SKILLS_RELOAD_KEYS = new Set([
 ])
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
-  const storedProjects = (storageGet('projects') as { path: string }[] | null) ?? []
+  const storedProjects = (storageGet('projects') as WorkspaceProjectRef[] | null) ?? []
   scheduleAllowedWorkspaceRootsBootstrap(async () => {
-    await seedAllowedWorkspaceRoots(storedProjects.map((p) => p.path))
+    await seedAllowedWorkspaceRoots(storedProjects)
     const persistedRoot = getWorkspaceRoot()
     if (persistedRoot) {
+      const sshHost = getActiveProjectSshHost()
       try {
-        await registerAllowedWorkspaceRoot(persistedRoot)
+        await registerAllowedWorkspaceRoot(persistedRoot, sshHost)
       } catch {
         // Stale workspaceRoot in config — ignore until user picks a folder.
       }
@@ -218,9 +219,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('workspace:set', async (event, root: unknown) => {
     assertMainFrameSender(event, win)
     const parsedRoot = parseIpcArgs(zPathString, [root])
-    const projects = (storageGet('projects') as { path: string }[] | null) ?? []
-    await seedAllowedWorkspaceRoots(projects.map((p) => p.path))
-    const canonical = await assertAllowedWorkspaceRoot(parsedRoot)
+    const projects = (storageGet('projects') as WorkspaceProjectRef[] | null) ?? []
+    await seedAllowedWorkspaceRoots(projects)
+    const sshHost = getActiveProjectSshHost()
+    const canonical = await assertAllowedWorkspaceRoot(parsedRoot, sshHost)
     setWorkspaceRoot(canonical)
     startWorkspaceIndexing(canonical)
     await initSkillsRegistry()
@@ -684,7 +686,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     recordUsageEvent(parseUsageRecordInput(input))
   })
   ipcMain.handle('usage:getSummary', () => getUsageSummary())
-  ipcMain.handle('usage:getPlanUsage', async () => loadPlanUsageSnapshot())
   ipcMain.handle('storage:get', (event, key: unknown) => {
     assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(256), [key])
@@ -750,14 +751,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   ipcMain.handle('skills:list', () => listSkills())
   ipcMain.handle('plugins:list', () => listCursorPlugins())
-  ipcMain.handle('hooks:list', async () => {
+  ipcMain.handle('hooks:list', () => {
     const root = getWorkspaceRoot()
-    const opts = { workspaceRoot: root, projectTrusted: isWorkspaceTrusted(root) }
-    const [cursor, claude] = await Promise.all([
-      listCursorHooksForSources(opts),
-      listClaudeHooks(opts),
-    ])
-    return { hooks: [...cursor.hooks, ...claude], warnings: cursor.warnings }
+    return listCursorHooks({ workspaceRoot: root, projectTrusted: isWorkspaceTrusted(root) })
   })
   ipcMain.handle('instructions:list', async () =>
     (await loadProjectInstructionSources()).map(({ path, name, scope, content }) => ({

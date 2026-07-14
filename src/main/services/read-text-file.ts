@@ -217,11 +217,14 @@ export function readTextLineRangeFromUtf8Content(
       charTruncated: false,
     }
   }
-  let normalized = content
-  if (encoding === 'utf8' && bomSkip > 0 && normalized.charCodeAt(0) === 0xfeff) {
-    normalized = normalized.slice(1)
-  }
-  normalized = normalized.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  // UTF-8 BOM decodes to one JS character; byte-oriented bomSkip would over-strip.
+  const body =
+    encoding === 'utf8' && bomSkip === 3 && content.charCodeAt(0) === 0xfeff
+      ? content.slice(1)
+      : bomSkip > 0
+        ? content.slice(bomSkip)
+        : content
+  const normalized = body.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
   const lines = normalized.split('\n')
   if (lines.at(-1) === '') lines.pop()
 
