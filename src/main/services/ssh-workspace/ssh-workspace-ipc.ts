@@ -5,11 +5,16 @@ import {
   assertMainFrameSender,
   IpcValidationError,
   parseIpcArgs,
+  zPathString,
   zSshHostId,
 } from '../../ipc/ipc-guards.ts'
 import { readSshConfigAliases } from './ssh-config.ts'
 import { hostFromSshConfigAlias, listConfiguredSshHosts } from './hosts.ts'
 import { getSshConnectionManager } from './connection-manager.ts'
+import { listRemoteDirectory, registerRemoteWorkspaceRoot } from './remote-directory.ts'
+import { z } from 'zod'
+
+const sshBrowseSchema = z.tuple([zSshHostId, zPathString])
 
 export function initSshWorkspaceIpc(win: BrowserWindow): void {
   const manager = getSshConnectionManager()
@@ -65,6 +70,28 @@ export function initSshWorkspaceIpc(win: BrowserWindow): void {
       const hostId = parseIpcArgs(zSshHostId, rawArgs)
       await manager.reconnect(hostId)
       return manager.listStates()
+    } catch (err) {
+      if (err instanceof IpcValidationError) throw err
+      throw err
+    }
+  })
+
+  ipcMain.handle('ssh-workspace:listDirectory', async (event, ...rawArgs) => {
+    try {
+      assertMainFrameSender(event, win)
+      const [hostId, dirPath] = parseIpcArgs(sshBrowseSchema, rawArgs)
+      return await listRemoteDirectory(hostId, dirPath)
+    } catch (err) {
+      if (err instanceof IpcValidationError) throw err
+      throw err
+    }
+  })
+
+  ipcMain.handle('ssh-workspace:registerRoot', async (event, ...rawArgs) => {
+    try {
+      assertMainFrameSender(event, win)
+      const [hostId, dirPath] = parseIpcArgs(sshBrowseSchema, rawArgs)
+      return await registerRemoteWorkspaceRoot(hostId, dirPath)
     } catch (err) {
       if (err instanceof IpcValidationError) throw err
       throw err

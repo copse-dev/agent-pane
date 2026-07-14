@@ -24,5 +24,6 @@
 @import './global/todo.css';
 @import './global/toasts.css';
 @import './global/context-warning.css';
+@import './global/ssh-workspace.css';
 @import './global/memories.css';
 @import './global/roadmap.css';

@@ -14,6 +14,26 @@ let workspaceRoot: string | null = (storageGet(WORKSPACE_KEY) as string | null |
 /** Roots the renderer may activate via `workspace:set` (dialog-opened or persisted projects). */
 const allowedWorkspaceRoots = new Set<string>()
 
+export interface WorkspaceProjectRef {
+  path: string
+  sshHost?: string
+}
+
+/** Normalize a remote POSIX workspace path for allowlist keys and storage. */
+export function normalizeRemoteWorkspacePath(path: string): string {
+  let p = path.trim()
+  if (!p) return '/'
+  if (!p.startsWith('/')) p = `/${p}`
+  const trimmed = p.replace(/\/+$/, '')
+  return trimmed || '/'
+}
+
+/** Allowlist key for `(sshHost ?? '', path)` dedup and guard checks. */
+export function workspaceRootKey(path: string, sshHost?: string): string {
+  const normalized = sshHost ? normalizeRemoteWorkspacePath(path) : path
+  return `${sshHost ?? ''}\0${normalized}`
+}
+
 /**
  * macOS seatbelt (ASRT) confines spawned shell/git tools to the workspace, but
  * `fs:*` IPC handlers read/write via node:fs in the unsandboxed main process.
@@ -36,10 +56,16 @@ export async function canonicalWorkspaceRoot(
   return real
 }
 
-export async function seedAllowedWorkspaceRoots(paths: Iterable<string>): Promise<void> {
-  for (const p of paths) {
+export async function seedAllowedWorkspaceRoots(
+  projects: Iterable<WorkspaceProjectRef>,
+): Promise<void> {
+  for (const project of projects) {
     try {
-      allowedWorkspaceRoots.add(await canonicalWorkspaceRoot(p))
+      if (project.sshHost) {
+        allowedWorkspaceRoots.add(workspaceRootKey(project.path, project.sshHost))
+      } else {
+        allowedWorkspaceRoots.add(workspaceRootKey(await canonicalWorkspaceRoot(project.path)))
+      }
     } catch {
       // Ignore stale or missing persisted project paths.
     }
@@ -47,15 +73,30 @@ export async function seedAllowedWorkspaceRoots(paths: Iterable<string>): Promis
 }
 
 /** Register a folder the user opened or saved as a project (canonical path). */
-export async function registerAllowedWorkspaceRoot(root: string): Promise<string> {
+export async function registerAllowedWorkspaceRoot(
+  root: string,
+  sshHost?: string,
+): Promise<string> {
+  if (sshHost) {
+    const normalized = normalizeRemoteWorkspacePath(root)
+    allowedWorkspaceRoots.add(workspaceRootKey(normalized, sshHost))
+    return normalized
+  }
   const canonical = await canonicalWorkspaceRoot(root)
-  allowedWorkspaceRoots.add(canonical)
+  allowedWorkspaceRoots.add(workspaceRootKey(canonical))
   return canonical
 }
 
-export async function assertAllowedWorkspaceRoot(root: string): Promise<string> {
+export async function assertAllowedWorkspaceRoot(root: string, sshHost?: string): Promise<string> {
+  if (sshHost) {
+    const normalized = normalizeRemoteWorkspacePath(root)
+    if (!allowedWorkspaceRoots.has(workspaceRootKey(normalized, sshHost))) {
+      throw new Error('Workspace root is not an allowed project folder')
+    }
+    return normalized
+  }
   const canonical = await canonicalWorkspaceRoot(root)
-  if (!allowedWorkspaceRoots.has(canonical)) {
+  if (!allowedWorkspaceRoots.has(workspaceRootKey(canonical))) {
     throw new Error('Workspace root is not an allowed project folder')
   }
   return canonical
@@ -95,6 +136,24 @@ export function getActiveProjectRoot(): string | null {
   })
 
   return activeProject?.path ?? workspaceRoot
+}
+
+/** SSH host id (`sshWorkspaceHosts[].id`) for the active project, if any. */
+export function getActiveProjectSshHost(): string | undefined {
+  const activeProjectId = storageGet(ACTIVE_PROJECT_KEY)
+  if (typeof activeProjectId !== 'string') return undefined
+
+  const projects = storageGet(PROJECTS_KEY)
+  if (!Array.isArray(projects)) return undefined
+
+  for (const project of projects) {
+    if (!project || typeof project !== 'object') continue
+    const candidate = project as { id?: unknown; sshHost?: unknown }
+    if (candidate.id === activeProjectId && typeof candidate.sshHost === 'string') {
+      return candidate.sshHost
+    }
+  }
+  return undefined
 }
 
 export function setWorkspaceRoot(root: string | null): void {

@@ -42,6 +42,11 @@ export interface SshConnectionState {
   lastError?: string
 }
 
+export interface SshRemoteDirEntry {
+  name: string
+  path: string
+}
+
 export interface SshExecResult {
   stdout: string
   stderr: string

@@ -31,6 +31,7 @@ import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createGhCliSection } from './setup/gh-cli-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
 import { createUsageSection } from './setup/usage-section.ts'
+import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
 import {
   DEFAULT_WEB_ALLOWED_ORIGINS,
   WEB_ALLOWED_ORIGINS_SETTING,
@@ -50,6 +51,7 @@ export type SettingsSection =
   | 'mcp'
   | 'sources'
   | 'appearance'
+  | 'ssh'
   | 'experimental'
 
 /**
@@ -291,6 +293,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <button type="button" class="settings-nav-btn" data-section="mcp">MCP servers</button>
           <button type="button" class="settings-nav-btn" data-section="sources">Sources</button>
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
+          <button type="button" class="settings-nav-btn" data-section="ssh">SSH</button>
           <button type="button" class="settings-nav-btn" data-section="experimental">Experimental</button>
         </nav>
 
@@ -804,6 +807,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
           </section>
 
+          <section class="settings-section" data-section="ssh">
+            <h3>SSH</h3>
+            <p class="settings-section-desc">
+              Connect Copse to a remote Linux workspace over SSH — shell, git, search, and file
+              tools run on the host while the UI stays local.
+            </p>
+            <div id="settings-ssh-workspace-host" class="settings-mount"></div>
+          </section>
+
           <section class="settings-section" data-section="experimental">
             <h3>Experimental</h3>
             <p class="settings-section-desc">
@@ -1044,6 +1056,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   const acpAgentsSection = createAcpAgentsSection(api)
   qsRequired(overlay, '#settings-acp-agents-host').append(acpAgentsSection.root)
 
+  const sshWorkspaceSection = createSshWorkspaceSection(api)
+  qsRequired(overlay, '#settings-ssh-workspace-host').append(sshWorkspaceSection.root)
+
   const envKeyDetectSection = createEnvKeyDetectSection(api, {
     onImported: () => {
       void cursorKeySection.refreshKeyStatus()
@@ -1234,6 +1249,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         // Defer disk scans until each tab is opened, so users who never visit them
         // don't trigger a which/ps scan (Experimental) or fs walk (Sources) on open.
         if (id === 'experimental') void acpAgentsSection.refresh()
+        if (id === 'ssh') void sshWorkspaceSection.refresh()
         if (id === 'sources') void refreshSources()
       }
     })

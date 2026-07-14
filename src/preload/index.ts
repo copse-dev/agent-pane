@@ -233,6 +233,10 @@ contextBridge.exposeInMainWorld('api', {
     connect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:connect', hostId),
     disconnect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:disconnect', hostId),
     reconnect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:reconnect', hostId),
+    listDirectory: (hostId: string, dirPath: string) =>
+      ipcRenderer.invoke('ssh-workspace:listDirectory', hostId, dirPath),
+    registerRoot: (hostId: string, dirPath: string) =>
+      ipcRenderer.invoke('ssh-workspace:registerRoot', hostId, dirPath),
     onConnectionChanged: (
       handler: (states: import('@shared/types/ssh-workspace.ts').SshConnectionState[]) => void,
     ) => {

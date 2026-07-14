@@ -163,6 +163,14 @@ export function seedE2eThreePaneLayout(): void {
   })
 }
 
+/** SSH workspace settings for remote-folder / SSH settings UI e2e specs. */
+export function seedSshWorkspaceSettings(): void {
+  writeSettings({
+    sshWorkspaceEnabled: true,
+    sshWorkspaceHosts: [{ id: 'dev', label: 'Dev Server', host: 'dev.example', user: 'ubuntu' }],
+  })
+}
+
 export function seedEmptyProject(
   workspaceRoot: string,
   projectId: string,

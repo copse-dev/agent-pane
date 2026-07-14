@@ -137,7 +137,10 @@ export function mountOpenInEditor(
 
   function syncVisibility(): void {
     const hasFolder = store.getState().workspaceRoot !== null
-    wrap.hidden = editors.length === 0 || !hasFolder
+    const project = store.getState().projects.find((p) => p.id === store.getState().activeProjectId)
+    const isRemote = !!project?.sshHost
+    const hasRemoteCapable = editors.some((e) => e.id === 'vscode' || e.id === 'cursor')
+    wrap.hidden = editors.length === 0 || !hasFolder || (isRemote && !hasRemoteCapable)
     if (wrap.hidden) setOpen(false)
   }
 
@@ -176,6 +179,7 @@ export function mountOpenInEditor(
       if (e.key === 'Escape' && open) setOpen(false)
     }),
     store.on('workspace_changed', syncVisibility),
+    store.on('projects_changed', syncVisibility),
   )
 
   void refresh()
