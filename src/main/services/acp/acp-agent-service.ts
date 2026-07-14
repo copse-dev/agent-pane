@@ -579,7 +579,7 @@ function pickPermissionOption(
 
 /** Back `fs/read_text_file` with a workspace-scoped read (path sandbox enforced). */
 async function readTextFile(req: ReadTextFileRequest): Promise<ReadTextFileResponse> {
-  const absPath = resolveWorkspacePath(req.path)
+  const absPath = await resolveWorkspacePath(req.path)
   const content = await fsp.readFile(absPath, 'utf-8')
   return { content: sliceLines(content, req.line, req.limit) }
 }
@@ -691,8 +691,8 @@ async function writeViaDiffQueue(
   signal: AbortSignal,
   queueWrites: Set<string>,
 ): Promise<WriteTextFileResponse> {
-  const absPath = resolveWorkspacePath(req.path)
-  const relPath = toRelativePath(absPath)
+  const absPath = await resolveWorkspacePath(req.path)
+  const relPath = await toRelativePath(absPath)
   let before = ''
   try {
     before = await fsp.readFile(absPath, 'utf-8')

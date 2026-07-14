@@ -188,7 +188,7 @@ export function getPendingAfterContent(path: string): string | null {
 
 async function readCurrentContent(path: string): Promise<string> {
   try {
-    return await fsp.readFile(resolveWorkspacePath(path), 'utf-8')
+    return await fsp.readFile(await resolveWorkspacePath(path), 'utf-8')
   } catch {
     return ''
   }
@@ -387,7 +387,7 @@ export async function applyDiffEntry(entry: QueueEntry): Promise<ApplyResult> {
 }
 
 async function applyWrite(entry: QueueEntry): Promise<ApplyResult> {
-  const absPath = resolveWorkspacePath(entry.path)
+  const absPath = await resolveWorkspacePath(entry.path)
   let current = ''
   try {
     current = await fsp.readFile(absPath, 'utf-8')
@@ -398,7 +398,7 @@ async function applyWrite(entry: QueueEntry): Promise<ApplyResult> {
     return { status: 'conflict', current }
   }
   try {
-    assertWorkspaceWriteTarget(absPath)
+    await assertWorkspaceWriteTarget(absPath)
     await fsp.mkdir(dirname(absPath), { recursive: true })
     await fsp.writeFile(absPath, entry.after, 'utf-8')
   } catch (err) {
@@ -408,7 +408,7 @@ async function applyWrite(entry: QueueEntry): Promise<ApplyResult> {
 }
 
 async function applyDelete(entry: QueueEntry): Promise<ApplyResult> {
-  const absPath = resolveWorkspacePath(entry.path)
+  const absPath = await resolveWorkspacePath(entry.path)
   let current: string
   try {
     current = await fsp.readFile(absPath, 'utf-8')
@@ -433,8 +433,8 @@ async function applyDelete(entry: QueueEntry): Promise<ApplyResult> {
 
 async function applyRename(entry: QueueEntry): Promise<ApplyResult> {
   if (!entry.renameTo) return { status: 'error', error: 'rename target missing' }
-  const fromAbs = resolveWorkspacePath(entry.path)
-  const toAbs = resolveWorkspacePath(entry.renameTo)
+  const fromAbs = await resolveWorkspacePath(entry.path)
+  const toAbs = await resolveWorkspacePath(entry.renameTo)
   let current: string
   try {
     current = await fsp.readFile(fromAbs, 'utf-8')
@@ -452,7 +452,7 @@ async function applyRename(entry: QueueEntry): Promise<ApplyResult> {
     /* destination is free */
   }
   try {
-    assertWorkspaceWriteTarget(toAbs)
+    await assertWorkspaceWriteTarget(toAbs)
     await fsp.mkdir(dirname(toAbs), { recursive: true })
     await fsp.rename(fromAbs, toAbs)
   } catch (err) {
@@ -462,9 +462,9 @@ async function applyRename(entry: QueueEntry): Promise<ApplyResult> {
 }
 
 async function applyMkdir(entry: QueueEntry): Promise<ApplyResult> {
-  const absPath = resolveWorkspacePath(entry.path)
+  const absPath = await resolveWorkspacePath(entry.path)
   try {
-    assertWorkspaceWriteTarget(absPath)
+    await assertWorkspaceWriteTarget(absPath)
     await fsp.mkdir(absPath, { recursive: true })
   } catch (err) {
     return { status: 'error', error: errorMessage(err) }

@@ -34,7 +34,7 @@ export const strReplaceTool = defineTool({
   async execute({ path, old_string, new_string, replace_all }) {
     if (!old_string) return 'old_string must not be empty'
 
-    const absPath = resolveWorkspacePath(path)
+    const absPath = await resolveWorkspacePath(path)
     let before = getPendingAfterContent(path)
     if (before === null) {
       try {

@@ -30,43 +30,43 @@ describe('file-reference-resolver', () => {
     void rm(tempRoot, { recursive: true, force: true })
   })
 
-  it('resolves exact workspace-relative paths', () => {
-    assert.deepEqual(resolveFileReferences(['src/main/index.ts']), [
+  it('resolves exact workspace-relative paths', async () => {
+    assert.deepEqual(await resolveFileReferences(['src/main/index.ts']), [
       { candidate: 'src/main/index.ts', path: 'src/main/index.ts', kind: 'file' },
     ])
   })
 
-  it('resolves bare filenames only when the basename is unique', () => {
-    assert.deepEqual(resolveFileReferences(['renderer.ts', 'index.ts']), [
+  it('resolves bare filenames only when the basename is unique', async () => {
+    assert.deepEqual(await resolveFileReferences(['renderer.ts', 'index.ts']), [
       { candidate: 'renderer.ts', path: 'src/renderer/markdown/renderer.ts', kind: 'file' },
       { candidate: 'index.ts', path: 'src/main/index.ts', kind: 'file' },
     ])
   })
 
-  it('does not resolve ambiguous basenames', () => {
-    assert.deepEqual(resolveFileReferences(['renderer.test.ts']), [])
+  it('does not resolve ambiguous basenames', async () => {
+    assert.deepEqual(await resolveFileReferences(['renderer.test.ts']), [])
   })
 
-  it('rejects absolute and parent-relative candidates', () => {
-    assert.deepEqual(resolveFileReferences(['/workspace/README.md', '../README.md']), [])
+  it('rejects absolute and parent-relative candidates', async () => {
+    assert.deepEqual(await resolveFileReferences(['/workspace/README.md', '../README.md']), [])
   })
 
-  it('normalizes leading dot-slash exact paths', () => {
-    assert.deepEqual(resolveFileReferences(['./scripts/build.mts']), [
+  it('normalizes leading dot-slash exact paths', async () => {
+    assert.deepEqual(await resolveFileReferences(['./scripts/build.mts']), [
       { candidate: './scripts/build.mts', path: 'scripts/build.mts', kind: 'file' },
     ])
   })
 
   it('resolves gitignored and unindexed files that exist on disk', async () => {
     await writeFile(join(tempRoot, 'DEVELOPMENT-NOTES.md'), '# notes\n', 'utf-8')
-    assert.deepEqual(resolveFileReferences(['DEVELOPMENT-NOTES.md']), [
+    assert.deepEqual(await resolveFileReferences(['DEVELOPMENT-NOTES.md']), [
       { candidate: 'DEVELOPMENT-NOTES.md', path: 'DEVELOPMENT-NOTES.md', kind: 'file' },
     ])
   })
 
   it('resolves workspace directories that are not in the file index', async () => {
     await mkdir(join(tempRoot, 'src', 'renderer', 'views'), { recursive: true })
-    assert.deepEqual(resolveFileReferences(['src/renderer/views']), [
+    assert.deepEqual(await resolveFileReferences(['src/renderer/views']), [
       { candidate: 'src/renderer/views', path: 'src/renderer/views', kind: 'directory' },
     ])
   })
