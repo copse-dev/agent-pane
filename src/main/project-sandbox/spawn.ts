@@ -14,6 +14,17 @@ import {
 } from './config.ts'
 import { acquireSandboxNetworkScope } from './network-scope.ts'
 import { isProjectSandboxActive, setProjectSandboxActive } from './state.ts'
+import {
+  isSshExecutionTarget,
+  resolveExecutionTarget,
+  type ExecutionTarget,
+} from '../services/ssh-workspace/execution-target.ts'
+import {
+  spawnRemoteShellCommand,
+  buildRemotePtyLaunch,
+} from '../services/ssh-workspace/ssh-spawn.ts'
+
+export type { ExecutionTarget }
 
 export function isProjectSandboxEnabled(): boolean {
   return isProjectSandboxActive() && SandboxManager.isSandboxingEnabled()
@@ -90,8 +101,21 @@ export async function spawnInProjectSandbox(
     signal?: AbortSignal
     unsandboxed?: boolean
     sandboxConfig?: Partial<SandboxRuntimeConfig>
+    executionTarget?: ExecutionTarget
   } & Pick<SpawnOptionsWithoutStdio, 'stdio'>,
 ): Promise<ChildProcess> {
+  const target = resolveExecutionTarget(opts.executionTarget)
+  if (isSshExecutionTarget(target)) {
+    const command = shellCommand(executable, args)
+    return spawnRemoteShellCommand(command, {
+      hostId: target.hostId,
+      remoteRoot: target.remoteRoot,
+      stdio: opts.stdio,
+      ...(opts.env ? { env: opts.env } : {}),
+      ...(opts.signal ? { signal: opts.signal } : {}),
+    })
+  }
+
   if (!isProjectSandboxEnabled() || opts.unsandboxed) {
     return spawn(executable, args, {
       cwd: opts.cwd,
@@ -130,8 +154,20 @@ export async function spawnShellInProjectSandbox(
     env?: NodeJS.ProcessEnv
     signal?: AbortSignal
     unsandboxed?: boolean
+    executionTarget?: ExecutionTarget
   } & Pick<SpawnOptionsWithoutStdio, 'stdio'>,
 ): Promise<ChildProcess> {
+  const target = resolveExecutionTarget(opts.executionTarget)
+  if (isSshExecutionTarget(target)) {
+    return spawnRemoteShellCommand(shellCommandLine, {
+      hostId: target.hostId,
+      remoteRoot: target.remoteRoot,
+      stdio: opts.stdio,
+      ...(opts.env ? { env: opts.env } : {}),
+      ...(opts.signal ? { signal: opts.signal } : {}),
+    })
+  }
+
   if (!isProjectSandboxEnabled() || opts.unsandboxed) {
     const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh'
     const shellArgs =
@@ -180,8 +216,23 @@ export async function spawnShellInProjectSandbox(
  */
 export async function spawnBackgroundProcess(
   shellCommandLine: string,
-  opts: { cwd: string; env?: NodeJS.ProcessEnv; allowPortBinding?: boolean },
+  opts: {
+    cwd: string
+    env?: NodeJS.ProcessEnv
+    allowPortBinding?: boolean
+    executionTarget?: ExecutionTarget
+  },
 ): Promise<ChildProcess> {
+  const target = resolveExecutionTarget(opts.executionTarget)
+  if (isSshExecutionTarget(target)) {
+    return spawnRemoteShellCommand(shellCommandLine, {
+      hostId: target.hostId,
+      remoteRoot: target.remoteRoot,
+      stdio: 'pipe',
+      ...(opts.env ? { env: opts.env } : {}),
+    })
+  }
+
   if (!isProjectSandboxEnabled()) {
     const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh'
     const shellArgs =
@@ -259,6 +310,7 @@ export interface SpawnPtyOptions {
   env?: NodeJS.ProcessEnv
   /** Integrated terminals are user-controlled; default is outside the project sandbox. */
   unsandboxed?: boolean
+  executionTarget?: ExecutionTarget
 }
 
 /** Spawn an interactive shell PTY; optionally routed through ASRT when the project sandbox is active. */
@@ -266,6 +318,27 @@ export async function spawnPtyInProjectSandbox(
   shell: string,
   opts: SpawnPtyOptions,
 ): Promise<IPty> {
+  const target = resolveExecutionTarget(opts.executionTarget)
+  if (isSshExecutionTarget(target)) {
+    const launch = await buildRemotePtyLaunch(target.hostId, target.remoteRoot, shell, opts.env)
+    const termEnv: NodeJS.ProcessEnv = {
+      ...launch.env,
+      TERM: 'xterm-256color',
+      COLORTERM: 'truecolor',
+    }
+    const ptyProcess = pty.spawn(launch.file, launch.args, {
+      name: 'xterm-256color',
+      cols: opts.cols,
+      rows: opts.rows,
+      cwd: opts.cwd,
+      env: termEnv,
+    })
+    ptyProcess.onExit(() => {
+      launch.release()
+    })
+    return ptyProcess
+  }
+
   const termEnv: NodeJS.ProcessEnv = {
     ...strippedBaseEnv(),
     ...opts.env,

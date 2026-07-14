@@ -192,6 +192,9 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // SSH host-key policy for git-over-SSH in runners and the shell tool. See
   // docs/plans/ssh-remote-repo.md Phase 0.
   sshStrictHostKeys: z.enum(['accept-new', 'strict']),
+  // Experimental: route shell/terminal/background spawns through the SSH workspace
+  // connection when the active project has an `sshHost`. See ssh-remote-repo.md.
+  sshWorkspaceEnabled: z.boolean(),
   // SSH workspace hosts (Phase 1 connection manager). See ssh-remote-repo.md.
   sshWorkspaceHosts: z
     .array(
