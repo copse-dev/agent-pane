@@ -1,8 +1,8 @@
-import * as fsp from 'node:fs/promises'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { computeLineDiffStats } from '@shared/diff/line-stats.ts'
 import { resolveWorkspacePath } from '../services/workspace.ts'
+import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.ts'
 import { getPendingAfterContent, applyOrStageDiff } from '../services/diff-queue.ts'
 import { detectLanguage } from '../services/language.ts'
 
@@ -38,7 +38,7 @@ export const strReplaceTool = defineTool({
     let before = getPendingAfterContent(path)
     if (before === null) {
       try {
-        before = await fsp.readFile(absPath, 'utf-8')
+        before = await getActiveWorkspaceFs().readFile(absPath, 'utf-8')
       } catch {
         return `File not found: ${path}`
       }

@@ -199,3 +199,62 @@ export async function readTextLineRange(
     charTruncated,
   }
 }
+
+/** Line-range read from an already-loaded UTF-8 string (remote WorkspaceFs reads). */
+export function readTextLineRangeFromUtf8Content(
+  content: string,
+  opts: ReadTextLineRangeOptions,
+): ReadTextLineRangeResult {
+  const sample = Buffer.from(content.slice(0, SNIFF_BYTES), 'utf-8')
+  const { encoding, bomSkip } = detectTextEncoding(sample)
+  if (isLikelyBinaryText(sample, encoding)) {
+    return {
+      text: '[Binary file — cannot display as text]',
+      startLine: opts.startLine,
+      endLine: 0,
+      totalLines: 0,
+      lineTruncated: false,
+      charTruncated: false,
+    }
+  }
+  void bomSkip
+  const normalized = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const lines = normalized.split('\n')
+  if (lines.at(-1) === '') lines.pop()
+
+  const startLine = opts.startLine
+  const startIdx = startLine - 1
+  const selected: string[] = []
+  let charTruncated = false
+  const endInclusive = plannedEndInclusive(startIdx, opts.endLine, opts.maxLines)
+
+  for (let lineNumber = 1; lineNumber <= lines.length; lineNumber++) {
+    if (lineNumber <= startIdx) continue
+    if (lineNumber > endInclusive) continue
+    if (charTruncated) continue
+    const line = lines[lineNumber - 1] ?? ''
+    selected.push(line)
+    const joined = selected.join('\n')
+    if (joined.length > opts.maxChars) {
+      const over = joined.length - opts.maxChars
+      selected.pop()
+      const trimmedLast = line.slice(0, Math.max(0, line.length - over))
+      if (trimmedLast.length > 0) selected.push(trimmedLast)
+      charTruncated = true
+    }
+  }
+
+  const totalLines = lines.length
+  const endLine = selected.length > 0 ? startLine + selected.length - 1 : Math.max(0, startLine - 1)
+  const lineTruncated =
+    sliceEndInclusive(totalLines, startIdx, opts.endLine, opts.maxLines) < totalLines
+
+  return {
+    text: selected.join('\n'),
+    startLine,
+    endLine,
+    totalLines,
+    lineTruncated,
+    charTruncated,
+  }
+}

@@ -1,15 +1,11 @@
 import type { ExecutionTarget } from '../ssh-workspace/execution-target.ts'
 import { getActiveExecutionTarget } from '../ssh-workspace/execution-target.ts'
+import { getWorkspaceFs } from './get-workspace-fs.ts'
 import type { PathBackend } from './path-backend.ts'
-import { localPathBackend } from './local-path-backend.ts'
 
-/**
- * Resolve the path backend for workspace containment checks. Phase 3a always
- * returns the local backend; Phase 3b will route SSH targets through remote fs.
- */
-export function getPathBackend(_target: ExecutionTarget): PathBackend {
-  void _target
-  return localPathBackend
+/** Path probes share the active {@link getWorkspaceFs} backend. */
+export function getPathBackend(target: ExecutionTarget): PathBackend {
+  return getWorkspaceFs(target)
 }
 
 export function getActivePathBackend(): PathBackend {
