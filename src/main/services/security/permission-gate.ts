@@ -67,6 +67,12 @@ export { decideShellPermission } from './permission-policy.ts'
 
 import type { PermissionCheck } from './permission-policy.ts'
 
+export interface ShellCommandPermissionOptions {
+  sandboxEnabled?: boolean
+  autoRun?: boolean
+  networkScopeAlreadyApplies?: boolean
+}
+
 /**
  * Offer "always allow `<binary>` in trusted projects" on an escalation to run a
  * command outside the sandbox, when a single eligible binary is resolvable (see
@@ -281,12 +287,20 @@ async function checkShellPermission(args: unknown): Promise<boolean> {
   const command = shellCommandFromArgs(args)
   if (!command) return promptShell('(invalid command)', ['missing command argument'], false)
 
+  return ensureShellCommandPermitted(command)
+}
+
+/** Gate a raw shell command string through the same approval flow as run_shell. */
+export async function ensureShellCommandPermitted(
+  command: string,
+  opts: ShellCommandPermissionOptions = {},
+): Promise<boolean> {
   // ASRT's network allowlist is process-global. While an ACP agent or a
   // port-binding background task has widened it, an otherwise-contained shell
   // command could inherit that egress. Suspend every auto-run path — including
   // explicit trusted-command routing — until the scope releases. Manual approval
   // is still available for deliberate overlapping work. (#803)
-  if (isSandboxNetworkScopeActive()) {
+  if (isSandboxNetworkScopeActive() && !opts.networkScopeAlreadyApplies) {
     return promptShell(
       command,
       ['sandbox network access is temporarily widened for another process'],
@@ -302,9 +316,9 @@ async function checkShellPermission(args: unknown): Promise<boolean> {
   // co-segment, so this can only fire for a genuinely safe command line.
   if (routeShellCommand(command).outcome === 'allow') return true
 
-  const autoRun = getSetting<boolean>('autoRunSandboxCommands', true)
+  const autoRun = opts.autoRun ?? getSetting<boolean>('autoRunSandboxCommands', true)
   const workspaceRoot = getWorkspaceRoot()
-  const sandboxEnabled = isProjectSandboxEnabled()
+  const sandboxEnabled = opts.sandboxEnabled ?? isProjectSandboxEnabled()
   const decision = decideShellPermission(command, {
     workspaceRoot,
     sandboxEnabled,
@@ -426,11 +440,6 @@ async function checkBackgroundProcessPermission(args: unknown): Promise<boolean>
     await setSetting(PORT_BINDING_ALLOWED_ROOTS_SETTING, [...allowed, root])
   }
   return approved
-}
-
-/** Gate a raw shell command string (todo verification, etc.) through the same policy as run_shell. */
-export async function ensureShellCommandPermitted(command: string): Promise<boolean> {
-  return checkShellPermission({ command })
 }
 
 /** Integrated terminal is a direct user UI action; PTY always runs outside seatbelt (#180). */

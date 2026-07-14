@@ -1,6 +1,8 @@
+import { basename } from 'node:path'
+import { parse as parseShellCommand } from 'shell-quote'
+import type { McpToolAnnotations } from '@shared/types/mcp.ts'
 import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts'
 import type { ClassificationResult } from './safety-classifier.ts'
-import type { McpToolAnnotations } from '@shared/types/mcp.ts'
 import { isWebOriginAllowed, parseFetchUrl, webOriginKey } from './web-origin-policy.ts'
 
 /** Tools that always auto-run (writes still go through the diff queue). */
@@ -149,6 +151,97 @@ export function shellCommandFromArgs(args: unknown): string | null {
   if (typeof args !== 'object' || args === null || !('command' in args)) return null
   const cmd = (args as { command?: unknown }).command
   return typeof cmd === 'string' ? cmd : null
+}
+
+const READ_ONLY_SHELL_BASENAMES = new Set([
+  'pwd',
+  'ls',
+  'cat',
+  'head',
+  'tail',
+  'wc',
+  'sort',
+  'uniq',
+  'grep',
+  'egrep',
+  'fgrep',
+  'rg',
+  'fd',
+  'tree',
+  'stat',
+  'file',
+  'du',
+  'jq',
+  'cut',
+  'tr',
+  'basename',
+  'dirname',
+  'realpath',
+])
+
+const READ_ONLY_GIT_SUBCOMMANDS = new Set([
+  'status',
+  'diff',
+  'log',
+  'show',
+  'grep',
+  'ls-files',
+  'ls-tree',
+  'cat-file',
+  'rev-parse',
+])
+
+/**
+ * Conservative structural read-only check for shell commands. This is not a
+ * sandbox boundary; callers must compose it with normal scope analysis. It only
+ * recognizes simple read/query commands and pipelines thereof, rejecting shell
+ * control flow, redirection, substitutions, and command families with common
+ * mutating modes.
+ */
+export function isStructurallyReadOnlyShellCommand(command: string): boolean {
+  const trimmed = command.trim()
+  if (!trimmed) return false
+  if (/[`$<>&();]|\|\|/.test(trimmed) || trimmed.includes('&&')) return false
+  const segments = trimmed.split('|').map((segment) => segment.trim())
+  return segments.length > 0 && segments.every(isReadOnlySimpleCommand)
+}
+
+function isReadOnlySimpleCommand(segment: string): boolean {
+  let tokens: ReturnType<typeof parseShellCommand>
+  try {
+    tokens = parseShellCommand(segment)
+  } catch {
+    return false
+  }
+  if (tokens.length === 0 || !tokens.every((token): token is string => typeof token === 'string')) {
+    return false
+  }
+
+  const argv = tokens
+  const commandName = basename(argv[0] ?? '')
+  if (!commandName) return false
+  if (commandName === 'git') return isReadOnlyGitCommand(argv)
+  if (!READ_ONLY_SHELL_BASENAMES.has(commandName)) return false
+  if (commandName === 'rg' && argv.some((arg) => arg === '--pre' || arg.startsWith('--pre='))) {
+    return false
+  }
+  return true
+}
+
+function isReadOnlyGitCommand(argv: readonly string[]): boolean {
+  const subcommand = argv[1]
+  if (!subcommand || !READ_ONLY_GIT_SUBCOMMANDS.has(subcommand)) return false
+  return !argv
+    .slice(2)
+    .some(
+      (arg) =>
+        arg === '-o' ||
+        arg === '-O' ||
+        arg === '--output' ||
+        arg.startsWith('--output=') ||
+        arg.startsWith('--exec=') ||
+        arg === '--exec',
+    )
 }
 
 export function formatShellPromptBody(command: string, reasons: string[]): string {
