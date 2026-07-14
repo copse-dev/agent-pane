@@ -23,6 +23,7 @@ import { initApproval } from './services/approval.ts'
 import { initAskUser } from './services/ask-user.ts'
 import { initSshPrompt } from './services/ssh-workspace/ssh-prompt.ts'
 import { initSshAskpassServer } from './services/ssh-workspace/askpass.ts'
+import { initSshWorkspaceIpc } from './services/ssh-workspace/ssh-workspace-ipc.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
 import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-watcher.ts'
@@ -145,6 +146,7 @@ app
     initAskUser(win)
     initSshAskpassServer(app.getPath('userData'))
     initSshPrompt(win)
+    initSshWorkspaceIpc(win)
     initDiffQueue(win)
     initFsWatcher(win)
     const disposeTerminalHandlers = initTerminal(win)
