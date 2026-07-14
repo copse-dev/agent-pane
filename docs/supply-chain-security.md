@@ -125,8 +125,10 @@ Two defaults harden every invoked skill, trusted or not (both toggleable in
 - Replace `npx electron-rebuild` in postinstall with a pinned devDependency
   invocation; audit all lifecycle scripts.
 - CI runs `npm audit --audit-level=high` against the lockfile-exact dependency
-  tree. CodeQL analyzes JavaScript/TypeScript and gitleaks scans repository
-  history on GitHub-hosted runners, including fork pull requests without secrets.
+  tree. CodeQL analyzes JavaScript/TypeScript and the checksum-pinned, open-source
+  gitleaks CLI scans repository history on GitHub-hosted runners, including fork
+  pull requests without secrets. The CLI path avoids gitleaks-action's separate
+  organization-repository license requirement.
   Add Dependabot/Renovate and consider `--ignore-scripts` for CI installs.
 - Evaluate npm provenance / `npm audit signatures`.
 
