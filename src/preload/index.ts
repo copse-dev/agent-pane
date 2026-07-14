@@ -209,6 +209,23 @@ contextBridge.exposeInMainWorld('api', {
   ask: {
     respond: (id: string, answers: string[]) => ipcRenderer.invoke('ask:respond', id, answers),
   },
+  sshPrompt: {
+    respond: (id: string, value: string) => ipcRenderer.invoke('ssh-prompt:respond', id, value),
+    onRequest: (
+      handler: (req: { id: string; prompt: string; kind: 'confirm' | 'secret' }) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        req: { id: string; prompt: string; kind: 'confirm' | 'secret' },
+      ): void => {
+        handler(req)
+      }
+      ipcRenderer.on('ssh:prompt_request', listener)
+      return (): void => {
+        ipcRenderer.off('ssh:prompt_request', listener)
+      }
+    },
+  },
   mcp: {
     list: () => ipcRenderer.invoke('mcp:list'),
     reload: () => ipcRenderer.invoke('mcp:reload'),
@@ -544,6 +561,9 @@ if (process.env['COPSE_E2E'] === '1') {
     },
     clearMockScript() {
       return ipcRenderer.invoke('test:clearMockScript')
+    },
+    requestSshPrompt(prompt: string, kind: 'confirm' | 'secret') {
+      return ipcRenderer.invoke('test:requestSshPrompt', prompt, kind)
     },
   })
 }
