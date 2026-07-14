@@ -605,6 +605,9 @@ contextBridge.exposeInMainWorld('api', {
   instructions: {
     list: () => ipcRenderer.invoke('instructions:list'),
   },
+  cursorRules: {
+    list: () => ipcRenderer.invoke('cursorRules:list'),
+  },
   terminal: {
     create: (cols: number, rows: number, meta?: { label?: string; threadId?: string | null }) =>
       ipcRenderer.invoke('terminal:create', cols, rows, meta),
