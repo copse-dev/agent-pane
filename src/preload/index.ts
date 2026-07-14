@@ -232,6 +232,28 @@ contextBridge.exposeInMainWorld('api', {
       }
     },
   },
+  sshWorkspace: {
+    listHosts: () => ipcRenderer.invoke('ssh-workspace:listHosts'),
+    listConfigAliases: () => ipcRenderer.invoke('ssh-workspace:listConfigAliases'),
+    getStates: () => ipcRenderer.invoke('ssh-workspace:getStates'),
+    connect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:connect', hostId),
+    disconnect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:disconnect', hostId),
+    reconnect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:reconnect', hostId),
+    onConnectionChanged: (
+      handler: (states: import('@shared/types/ssh-workspace.ts').SshConnectionState[]) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        states: import('@shared/types/ssh-workspace.ts').SshConnectionState[],
+      ): void => {
+        handler(states)
+      }
+      ipcRenderer.on('ssh:connection_changed', listener)
+      return (): void => {
+        ipcRenderer.off('ssh:connection_changed', listener)
+      }
+    },
+  },
   mcp: {
     list: () => ipcRenderer.invoke('mcp:list'),
     reload: () => ipcRenderer.invoke('mcp:reload'),

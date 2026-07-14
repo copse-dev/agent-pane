@@ -328,6 +328,7 @@ export interface IpcEventMap {
       kind: 'confirm' | 'secret'
     },
   ]
+  'ssh:connection_changed': [states: import('./ssh-workspace.ts').SshConnectionState[]]
   'mcp:status_changed': [statuses: McpServerStatus[]]
   'index:status_changed': [status: import('./index-status.ts').WorkspaceIndexStatus]
   'diff:queued': [entries: { path: string; language: string }[]]
