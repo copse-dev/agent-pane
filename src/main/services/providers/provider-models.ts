@@ -8,6 +8,7 @@
 
 import { validateCredentialBaseUrl } from '@copse/llm/credential-url.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
+import { assertApprovedProviderHost } from './approved-provider-hosts.ts'
 import { parseContextFromModelRecord, stripTrailingSlash } from './lm-studio-models.ts'
 
 export interface FetchedProviderModel {
@@ -34,6 +35,16 @@ export async function fetchOpenAiCompatibleModels(
       ok: false,
       models: [],
       error: err instanceof Error ? err.message : 'Invalid base URL',
+    }
+  }
+  // Host allowlist (issue #438) — never send the key to an unapproved host.
+  try {
+    assertApprovedProviderHost(base)
+  } catch (err) {
+    return {
+      ok: false,
+      models: [],
+      error: err instanceof Error ? err.message : 'Provider host is not approved',
     }
   }
   const key = apiKey?.trim()

@@ -1,5 +1,6 @@
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import type { ExtraProvider } from '@copse/llm/extra-providers.ts'
+import { assertApprovedProviderHost } from './approved-provider-hosts.ts'
 import { getResolvedExtraProvider } from './extra-providers-store.ts'
 import { getSetting } from '../storage/settings.ts'
 import { OPENROUTER_BASE_URL } from '@copse/llm/openrouter.ts'
@@ -156,6 +157,17 @@ export async function validateExtraProviderApiKey(
   if (!trimmed) return { ok: false, error: 'Key is empty' }
   if (provider.keyPrefix && !trimmed.startsWith(provider.keyPrefix)) {
     return { ok: false, error: `Key should start with ${provider.keyPrefix}`, formatOk: false }
+  }
+
+  // Host allowlist (issue #438) — never send the key to an unapproved host.
+  try {
+    assertApprovedProviderHost(provider.baseUrl)
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Provider host is not approved',
+      formatOk: true,
+    }
   }
 
   try {

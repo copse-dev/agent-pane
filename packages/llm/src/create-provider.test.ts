@@ -5,11 +5,13 @@ import { anthropicMaxOutputTokens, getModelInfo } from './model-catalog.ts'
 import { isRetryableStreamError, streamRetryDelayMs } from './stream-retry.ts'
 import type { ProviderStreamChunk } from './wire-types.ts'
 import {
+  createExtraCloudProvider,
   createLocalOpenAIProvider,
   createOpenRouterProvider,
   createProvider,
 } from './create-provider.ts'
 import { OpenAIProvider } from './openai-provider.ts'
+import type { ExtraProvider } from './extra-providers.ts'
 
 describe('anthropicMaxOutputTokens', () => {
   it('uses per-model catalog metadata', () => {
@@ -178,5 +180,46 @@ describe('createLocalOpenAIProvider', () => {
     }
 
     assert.equal(captured.request?.stream_options?.include_usage, true)
+  })
+})
+
+describe('createExtraCloudProvider host allowlist', () => {
+  const custom: ExtraProvider = {
+    id: 'together',
+    label: 'Together',
+    prefix: 'together:',
+    baseUrl: 'https://api.together.xyz/v1',
+    builtin: false,
+    local: false,
+    keyLabel: 'Key',
+    keyPlaceholder: '…',
+    keyHint: '',
+    fallbackContextWindow: 128_000,
+    models: [],
+  }
+
+  it('constructs when the custom host is approved', () => {
+    const provider = createExtraCloudProvider(custom, 'model', 'sk-test', ['api.together.xyz'])
+    assert.ok(provider instanceof OpenAIProvider)
+  })
+
+  it('throws before constructing when the custom host is not approved', () => {
+    assert.throws(() => {
+      createExtraCloudProvider(custom, 'model', 'sk-test', [])
+    }, /not approved/)
+  })
+
+  it('allows a local provider without approval', () => {
+    const local: ExtraProvider = {
+      ...custom,
+      id: 'ollama',
+      prefix: 'ollama:',
+      baseUrl: 'http://localhost:11434/v1',
+      builtin: true,
+      local: true,
+    }
+    assert.doesNotThrow(() => {
+      createExtraCloudProvider(local, 'llama', '', [])
+    })
   })
 })

@@ -7,6 +7,10 @@ import {
   WEB_ALLOW_USER_APPROVAL_SETTING,
 } from '@shared/web-origins.ts'
 import {
+  APPROVED_PROVIDER_HOSTS_SETTING,
+  PROVIDER_ALLOW_USER_APPROVAL_SETTING,
+} from '@shared/provider-hosts.ts'
+import {
   LM_STUDIO_CONTEXT_GUIDE_URL,
   RECOMMENDED_MIN_CONTEXT_WINDOW,
   VRAM_CALCULATOR_URL,
@@ -360,6 +364,13 @@ export function createLmStudioSection(
     const currentWebApproval = (await api.settings.get(WEB_ALLOW_USER_APPROVAL_SETTING)) as
       | boolean
       | undefined
+    const currentProviderHosts = (await api.settings.get(APPROVED_PROVIDER_HOSTS_SETTING)) as
+      | string[]
+      | undefined
+      | null
+    const currentProviderApproval = (await api.settings.get(
+      PROVIDER_ALLOW_USER_APPROVAL_SETTING,
+    )) as boolean | undefined
     await api.settings.setSecurity({
       localServerUrl: lmUrl,
       safetyClassifierEnabled: currentSafetyEnabled ?? true,
@@ -372,6 +383,10 @@ export function createLmStudioSection(
         ? currentWebOrigins
         : [...DEFAULT_WEB_ALLOWED_ORIGINS],
       webAllowUserApproval: currentWebApproval ?? true,
+      ...(Array.isArray(currentProviderHosts)
+        ? { approvedProviderHosts: currentProviderHosts }
+        : {}),
+      providerAllowUserApproval: currentProviderApproval ?? true,
     })
     keyInput.value = ''
     const lmSet = await api.settings.getKey('lmstudio')

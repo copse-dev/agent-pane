@@ -48,6 +48,7 @@ import {
   securitySettingsSchema,
 } from '../services/storage/settings-writable.ts'
 import { storedExtraProviderSchema } from '../services/storage/settings-schema.ts'
+import { migrateApprovedProviderHosts } from '../services/providers/approved-provider-hosts.ts'
 import {
   getResolvedExtraProviders,
   saveExtraProvider,
@@ -183,6 +184,9 @@ const SKILLS_RELOAD_KEYS = new Set([
 ])
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+  // Issue #438: persist grandfathered custom-provider hosts once so Settings
+  // and runtime gates share the same allowlist after upgrade.
+  void migrateApprovedProviderHosts()
   const storedProjects = (storageGet('projects') as { path: string }[] | null) ?? []
   seedAllowedWorkspaceRoots(storedProjects.map((p) => p.path))
   const persistedRoot = getWorkspaceRoot()
@@ -551,7 +555,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('settings:setSecurity', async (event, raw: unknown) => {
     assertMainFrameSender(event, win)
     const prefs = securitySettingsSchema.parse(raw)
-    await Promise.all(Object.entries(prefs).map(([k, v]) => setSetting(k, v)))
+    await Promise.all(
+      Object.entries(prefs)
+        .filter(([, v]) => v !== undefined)
+        .map(([k, v]) => setSetting(k, v)),
+    )
   })
   ipcMain.handle('settings:getKey', (event, provider: unknown) => {
     assertMainFrameSender(event, win)

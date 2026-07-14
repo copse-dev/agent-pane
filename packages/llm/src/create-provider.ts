@@ -3,6 +3,7 @@ import { OpenAIProvider } from './openai-provider.ts'
 import { MockLLMProvider } from './mock-provider.ts'
 import { DEFAULT_CLOUD_MODEL } from './model-catalog.ts'
 import { OPENROUTER_BASE_URL } from './openrouter.ts'
+import { assertProviderHostAllowed } from './provider-host-policy.ts'
 import type { ExtraProvider } from './extra-providers.ts'
 import type { LLMProvider } from './types.ts'
 
@@ -105,11 +106,17 @@ export function createOpenRouterProvider(
 // on for billed cloud APIs and off for a localhost server (which rarely reports
 // usage); `extraBody` carries any provider-specific request fields (e.g. an
 // OpenRouter-style routing hint a user pastes into the advanced field).
+//
+// `approvedHosts` is the user-approved custom-provider host list (issue #438).
+// Built-in / loopback hosts pass without it; an unapproved custom host throws
+// before the SDK client is constructed so no key or prompt is sent.
 export function createExtraCloudProvider(
   provider: ExtraProvider,
   model: string,
   apiKey: string,
+  approvedHosts: readonly string[] = [],
 ): LLMProvider {
+  assertProviderHostAllowed(provider.baseUrl, approvedHosts)
   return new OpenAIProvider(model, {
     baseURL: provider.baseUrl,
     // Local servers usually run without auth but still want a non-empty key

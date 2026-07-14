@@ -378,6 +378,8 @@ contextBridge.exposeInMainWorld('api', {
       defaultReadonlyMode: boolean
       webAllowedOrigins: string[]
       webAllowUserApproval: boolean
+      approvedProviderHosts?: string[]
+      providerAllowUserApproval?: boolean
       trustedShellCommands?: string[]
     }) => ipcRenderer.invoke('settings:setSecurity', prefs),
     getKey: (provider: string) => ipcRenderer.invoke('settings:getKey', provider),
