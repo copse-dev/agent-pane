@@ -35,7 +35,11 @@ import { buildInvokedSkillsBlock } from '../skills/skill-prompt.ts'
 import { listForwardableMcpServers } from '../mcp/mcp-registry.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import { isAcpPermissionRemembered, rememberAcpPermission } from './acp-permission-grants.ts'
-import { permissionKindLabel, presentPermissionRequest } from './acp-approval-presentation.ts'
+import {
+  acpExecuteCommandText,
+  permissionKindLabel,
+  presentPermissionRequest,
+} from './acp-approval-presentation.ts'
 import { isBridgedNativeToolTitle } from './acp-native-bridge.ts'
 import { requestApproval } from '../approval.ts'
 import {
@@ -47,6 +51,8 @@ import {
 import { networkDenialMarker, networkDenialsSince } from '../../project-sandbox/network-scope.ts'
 import { ensureWorktreeRecoverable, resetSessionBackup } from '../worktree-backup.ts'
 import { getSetting } from '../storage/settings.ts'
+import { ensureShellCommandPermitted } from '../security/permission-gate.ts'
+import { isStructurallyReadOnlyShellCommand } from '../security/permission-policy.ts'
 import { detectLanguage } from '../language.ts'
 import {
   getActiveProjectRoot,
@@ -268,6 +274,7 @@ export async function runAcpAgentFromSettings(
   }
 
   const sandbox = resolveAcpSandbox(agent)
+  const sandboxed = willSandboxAcpAgent(sandbox)
   if (!promptPayloadFromUserContent(options.userPrompt).text.trim()) {
     throw new Error('ACP agent prompt cannot be empty.')
   }
@@ -308,7 +315,8 @@ export async function runAcpAgentFromSettings(
   const queueWrites = new Set<string>()
   const handlers: AcpClientHandlers = {
     onChunk,
-    requestPermission: (req) => respondToPermission(agent, req),
+    requestPermission: (req) =>
+      respondToPermission({ id: agent.id, title: agent.title, sandboxed }, req),
     readTextFile,
     writeTextFile: (req) => writeViaDiffQueue(req, options.signal, queueWrites),
   }
@@ -326,7 +334,7 @@ export async function runAcpAgentFromSettings(
   // way the agent gets the instructions. Sent every turn a skill is invoked
   // (not gated on session freshness): the agent does not retain it across turns.
   const skillsBlock = await buildInvokedSkillsBlock(options.invokedSkills ?? [], {
-    sandboxActive: willSandboxAcpAgent(sandbox),
+    sandboxActive: sandboxed,
   })
 
   // One attempt = acquire (reuse the thread's live session, or open a fresh
@@ -343,7 +351,7 @@ export async function runAcpAgentFromSettings(
     })
     entry.open.handlers.current = handlers
     const prompt = buildAcpPrompt(options.userPrompt, fresh ? options.priorMessages : [], {
-      sandboxed: willSandboxAcpAgent(sandbox),
+      sandboxed,
       includeNotes: fresh,
       ...(skillsBlock ? { skills: skillsBlock } : {}),
     })
@@ -443,6 +451,39 @@ export async function listAcpModelsForAgent(agentId: string): Promise<AcpModelSe
 }
 
 /**
+ * ACP tool kinds whose only effect is mutating files in the worktree, so a
+ * worktree backup fully covers the risk. Shell (`execute`) and web (`fetch`) are
+ * excluded: their side effects (deleting outside the tree, spending money,
+ * sending data) are not undone by restoring a git snapshot.
+ */
+const WRITE_TOOL_KINDS = new Set(['edit', 'delete', 'move'])
+const READ_ONLY_ACP_TOOL_KINDS = new Set(['read', 'search'])
+
+export function shouldAutoApproveLowRiskAcpPermission(
+  req: RequestPermissionRequest,
+  opts: { sandboxed: boolean },
+): boolean {
+  if (!opts.sandboxed) return false
+  const kind = req.toolCall.kind ?? 'other'
+  return READ_ONLY_ACP_TOOL_KINDS.has(kind)
+}
+
+async function respondToAcpExecutePermission(
+  agent: { sandboxed: boolean },
+  req: RequestPermissionRequest,
+): Promise<RequestPermissionResponse | null> {
+  const command = acpExecuteCommandText(req.toolCall)
+  if (!command) return null
+  const readOnly = agent.sandboxed && isStructurallyReadOnlyShellCommand(command)
+  const approved = await ensureShellCommandPermitted(command, {
+    sandboxEnabled: agent.sandboxed,
+    autoRun: getSetting<boolean>('autoRunSandboxCommands', true) || readOnly,
+    networkScopeAlreadyApplies: agent.sandboxed,
+  })
+  return permissionResponseFor(req.options, approved)
+}
+
+/**
  * Map the external agent's `session/request_permission` to Copse's approval
  * dialog, then translate the user's yes/no back to one of the agent-provided
  * option ids, or `cancelled` when the agent offered no matching option.
@@ -452,21 +493,19 @@ export async function listAcpModelsForAgent(agentId: string): Promise<AcpModelSe
  * a grant and also answers with the agent's own `allow_always` option so the
  * agent-side session stops asking within the turn.
  */
-/**
- * ACP tool kinds whose only effect is mutating files in the worktree, so a
- * worktree backup fully covers the risk. Shell (`execute`) and web (`fetch`) are
- * excluded: their side effects (deleting outside the tree, spending money,
- * sending data) are not undone by restoring a git snapshot.
- */
-const WRITE_TOOL_KINDS = new Set(['edit', 'delete', 'move'])
-
 async function respondToPermission(
-  agent: { id: string; title: string },
+  agent: { id: string; title: string; sandboxed: boolean },
   req: RequestPermissionRequest,
 ): Promise<RequestPermissionResponse> {
   const kind = req.toolCall.kind ?? 'other'
   if (isAcpPermissionRemembered(agent.id, kind)) {
     return permissionResponseFor(req.options, true, { preferAlways: true })
+  }
+  // Low-risk ACP reads/searches from a sandboxed agent should not require users
+  // to enable a broad scary toggle. Shell commands are routed through the same
+  // approval flow as native run_shell below.
+  if (shouldAutoApproveLowRiskAcpPermission(req, { sandboxed: agent.sandboxed })) {
+    return permissionResponseFor(req.options, true)
   }
   // Copse's own bridged tools (gh_*/CI, semantic search, staged diffs, browser,
   // web fetch) reach the agent as an MCP server Copse mounts and *re-gates on
@@ -479,6 +518,10 @@ async function respondToPermission(
     isBridgedNativeToolTitle(req.toolCall.title)
   ) {
     return permissionResponseFor(req.options, true)
+  }
+  if (kind === 'execute') {
+    const executeResponse = await respondToAcpExecutePermission(agent, req)
+    if (executeResponse) return executeResponse
   }
   // File-mutating kinds (edit/delete/move) are auto-approved once a durable
   // backup of the user's worktree exists — the same safety net the native tools

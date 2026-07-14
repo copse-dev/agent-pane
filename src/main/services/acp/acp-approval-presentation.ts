@@ -100,6 +100,40 @@ export function permissionKindLabel(kind: string): string {
   }
 }
 
+export function acpExecuteCommandText(
+  toolCall: RequestPermissionRequest['toolCall'],
+): string | null {
+  const input = toolCall.rawInput
+  const record = isRecord(input) ? input : null
+  const rawCommand = record?.['command']
+  if (typeof rawCommand === 'string') return unwrapInlineCode(rawCommand)
+  if (Array.isArray(rawCommand) && rawCommand.every((part) => typeof part === 'string')) {
+    return rawCommand.join(' ')
+  }
+  if (rawCommand !== undefined && rawCommand !== null) {
+    return stringifyUnknownForDisplay(rawCommand)
+  }
+  return toolCall.title ? unwrapInlineCode(toolCall.title) : null
+}
+
+function stringifyUnknownForDisplay(value: unknown): string {
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    typeof value === 'bigint' ||
+    typeof value === 'symbol'
+  ) {
+    return String(value)
+  }
+  try {
+    const json = JSON.stringify(value, null, 2)
+    return typeof json === 'string' ? json : Object.prototype.toString.call(value)
+  } catch {
+    return Object.prototype.toString.call(value)
+  }
+}
+
 function buildBody(req: RequestPermissionRequest, kind: string): string {
   const toolTitle = req.toolCall.title ? unwrapInlineCode(req.toolCall.title) : ''
   const input = req.toolCall.rawInput
@@ -121,8 +155,8 @@ function buildBody(req: RequestPermissionRequest, kind: string): string {
   if (kind === 'execute') {
     // Like native shell prompts: the command bare on top, the agent's
     // description as its own paragraph.
-    const command = typeof record?.['command'] === 'string' ? record['command'] : toolTitle
-    push(command)
+    const command = acpExecuteCommandText(req.toolCall)
+    push(command ?? toolTitle)
     skipKeys.add('command')
     if (typeof record?.['description'] === 'string') {
       push(record['description'])
