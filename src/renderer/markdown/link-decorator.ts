@@ -1,4 +1,4 @@
-import { setLinkDecorator } from '@copse/streaming-markdown'
+import { setDefaultConfig } from '@copse/streaming-markdown'
 import { appLinkDecorator } from '@copse/streaming-markdown/host/workspace'
 
 /**
@@ -9,9 +9,9 @@ import { appLinkDecorator } from '@copse/streaming-markdown/host/workspace'
  * `target="_blank"`, `rel`, `class="workspace-markdown-link"`, `data-workspace-link`,
  * or `data-browser-link`. agent-pane's `workspace-links.ts` / `browser-links.ts`
  * click handlers bind those `data-*` hooks, so we opt back into the host decorator
- * once before any markdown sink renders. The decorator is global module state in the
- * package, so a single call is enough; it is idempotent.
+ * once before any markdown sink renders. The decorator is an application default
+ * in the package, so a single call is enough; it is idempotent.
  */
 export function installAppLinkDecorator(): void {
-  setLinkDecorator(appLinkDecorator)
+  setDefaultConfig({ linkDecorator: appLinkDecorator })
 }
