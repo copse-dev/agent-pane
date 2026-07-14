@@ -90,6 +90,18 @@ export class SshWorkspaceFs implements WorkspaceFsPathProbe {
     return result.stdout
   }
 
+  async readFileBytes(path: string): Promise<Buffer> {
+    const result = await this.exec(
+      `base64 -w0 ${this.quote(path)} 2>/dev/null || base64 ${this.quote(path)}`,
+    )
+    if (result.code !== 0) {
+      const err = remoteFsError(path, result)
+      err.code = 'ENOENT'
+      throw err
+    }
+    return Buffer.from(result.stdout.replace(/\s/g, ''), 'base64')
+  }
+
   async writeFile(path: string, content: string, encoding: 'utf-8'): Promise<void> {
     void encoding
     const dir = dirname(path)

@@ -121,7 +121,7 @@ import { classifyRoadmapComplexity } from '../services/roadmap-complexity.ts'
 import { checkRoadmapFit } from '../services/roadmap-fit-check.ts'
 import { getGitBranchStatus } from '../services/github/pr-context-service.ts'
 import { getSessionBackup, restoreSessionBackup } from '../services/worktree-backup.ts'
-import { isGitAvailable } from '../services/tool-availability.ts'
+import { isGitAvailableForTarget } from '../services/tool-availability.ts'
 import {
   getGhCliStatus,
   getGhPrChecksState,
@@ -755,7 +755,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     })),
   )
 
-  ipcMain.handle('git:isAvailable', async () => isGitAvailable() && (await isInsideGitWorkTree()))
+  ipcMain.handle(
+    'git:isAvailable',
+    async () => (await isGitAvailableForTarget()) && (await isInsideGitWorkTree()),
+  )
   ipcMain.handle('git:status', () => getGitStatus())
   ipcMain.handle('git:changeStats', () => getGitChangeStats())
   ipcMain.handle('git:fileDiff', (event, path: unknown, staged: unknown) => {

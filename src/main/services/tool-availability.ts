@@ -1,6 +1,13 @@
 import { runCommand } from './exec/command-runner.ts'
 import { probeIndexedGrepBackends } from './search/indexed-grep.ts'
 import { isSemanticBackendBundled, probeSemanticBackends } from './search/semantic-index.ts'
+import type { ExecutionTarget } from './ssh-workspace/execution-target.ts'
+import {
+  getActiveExecutionTarget,
+  isSshExecutionTarget,
+  isSshWorkspaceExecutionEnabled,
+} from './ssh-workspace/execution-target.ts'
+import { getSshConnectionManager } from './ssh-workspace/connection-manager.ts'
 
 let rgAvail: boolean | null = null
 let gitAvail: boolean | null = null
@@ -47,6 +54,27 @@ export async function checkToolAvailability(): Promise<void> {
 export const isRgAvailable = (): boolean => rgAvail === true
 export const isGitAvailable = (): boolean => gitAvail === true
 export const isGhAvailable = (): boolean => ghAvail === true
+
+/**
+ * Whether git is available for the active (or given) execution target. Local
+ * workspaces use the startup PATH probe; SSH workspaces use the connection
+ * capability report (remote git on the host).
+ */
+export async function isGitAvailableForTarget(
+  target: ExecutionTarget = getActiveExecutionTarget(),
+): Promise<boolean> {
+  if (!isSshExecutionTarget(target)) return isGitAvailable()
+  if (!isSshWorkspaceExecutionEnabled()) return false
+  const mgr = getSshConnectionManager()
+  const existing = mgr.getConnection(target.hostId)
+  if (existing?.capabilities) return existing.capabilities.git
+  try {
+    const conn = await mgr.connect(target.hostId)
+    return conn.capabilities?.git ?? false
+  } catch {
+    return false
+  }
+}
 
 /** Test hook — force ripgrep availability without probing PATH. */
 export function setRgAvailableForTest(value: boolean | null): void {
