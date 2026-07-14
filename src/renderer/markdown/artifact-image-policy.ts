@@ -1,7 +1,6 @@
 import {
   escapeHtml,
-  setRawImageRenderer,
-  setSanitizeExtension,
+  setDefaultConfig,
   type RawImageTag,
   type SanitizeExtension,
 } from '@copse/streaming-markdown'
@@ -62,12 +61,15 @@ const remoteArtifactSanitizeExtension: SanitizeExtension = {
 let installed = false
 
 /**
- * Inject the remote-agent artifact-image render + sanitize policy into
- * @copse/streaming-markdown. Call once before any markdown is rendered.
+ * Register the remote-agent artifact-image render + sanitize policy as the app's
+ * default @copse/streaming-markdown configuration. Call once before any markdown
+ * is rendered.
  */
 export function installArtifactImagePolicy(): void {
   if (installed) return
   installed = true
-  setRawImageRenderer(remoteArtifactImageRenderer)
-  setSanitizeExtension(remoteArtifactSanitizeExtension)
+  setDefaultConfig({
+    rawImageRenderer: remoteArtifactImageRenderer,
+    sanitizeExtension: remoteArtifactSanitizeExtension,
+  })
 }

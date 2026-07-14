@@ -1,4 +1,4 @@
-import { isBrowserSanitizerSupported, setSanitizerBackend } from '@copse/streaming-markdown'
+import { isBrowserSanitizerSupported, setDefaultConfig } from '@copse/streaming-markdown'
 
 let ready: Promise<void> | null = null
 
@@ -19,7 +19,7 @@ export function installSanitizerBackend(): Promise<void> {
   ready ??= isBrowserSanitizerSupported()
     ? Promise.resolve()
     : import('@copse/streaming-markdown/sanitizers/dompurify').then(({ dompurifyBackend }) => {
-        setSanitizerBackend(dompurifyBackend)
+        setDefaultConfig({ sanitizerBackend: dompurifyBackend })
       })
   return ready
 }
