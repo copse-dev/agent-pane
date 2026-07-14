@@ -1,6 +1,7 @@
 import * as fs from 'node:fs'
 import { buildIndex } from './file-index.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
+import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { isIgnoredWorkspacePath } from './index-ignore.ts'
 import { updateSemanticIndex } from './semantic-index.ts'
 
@@ -54,7 +55,10 @@ function startRebuild(root: string): void {
     rebuildQueued = true
     return
   }
-  rebuildInFlight = Promise.all([buildIndex(root), updateSemanticIndex(root)])
+  rebuildInFlight = Promise.all([
+    buildIndex(root),
+    ...(isActiveSshWorkspace() ? [] : [updateSemanticIndex(root)]),
+  ])
     .then(() => undefined)
     .catch((err: unknown) => {
       console.warn('[copse-panel] workspace index rebuild failed:', err)

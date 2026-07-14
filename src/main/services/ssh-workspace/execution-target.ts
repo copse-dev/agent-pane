@@ -56,3 +56,8 @@ export function isSshExecutionTarget(
 ): target is Extract<ExecutionTarget, { kind: 'ssh' }> {
   return target.kind === 'ssh'
 }
+
+/** True when the active project routes shell/fs/git through an SSH workspace. */
+export function isActiveSshWorkspace(): boolean {
+  return isSshWorkspaceExecutionEnabled() && isSshExecutionTarget(getActiveExecutionTarget())
+}
