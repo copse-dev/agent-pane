@@ -19,6 +19,7 @@ import {
 } from './services/mcp/mcp-registry.ts'
 import { loadCustomTools } from './services/mcp/custom-tools-registry.ts'
 import { disposeAllAcpSessions } from './services/acp/acp-session-pool.ts'
+import { runAcpStartupMaintenance } from './services/acp/acp-auto-setup.ts'
 import { initApproval } from './services/approval.ts'
 import { initAskUser } from './services/ask-user.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
@@ -72,6 +73,10 @@ import {
 } from './ipc/ipc-guards.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
+
+function logAcpStartupMaintenanceFailure(error: unknown): void {
+  console.warn('[acp] startup maintenance failed', error)
+}
 
 // Prevent multiple instances stacking invisible windows at the same position.
 // A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.
@@ -145,6 +150,9 @@ app
     initFsWatcher(win)
     const disposeTerminalHandlers = initTerminal(win)
     registerAllHandlers(win, registry)
+    void runAcpStartupMaintenance(new AbortController().signal).catch(
+      logAcpStartupMaintenanceFailure,
+    )
 
     // Register before async bootstrap so onboarding/settings can query models on first paint.
     ipcMain.handle('lmstudio:test', async (event, url: unknown, apiKey?: unknown) => {
