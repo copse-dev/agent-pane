@@ -4,7 +4,11 @@ import Anthropic from '@anthropic-ai/sdk'
 import { anthropicMaxOutputTokens, getModelInfo } from './model-catalog.ts'
 import { isRetryableStreamError, streamRetryDelayMs } from './stream-retry.ts'
 import type { ProviderStreamChunk } from './wire-types.ts'
-import { createLocalOpenAIProvider, createProvider } from './create-provider.ts'
+import {
+  createLocalOpenAIProvider,
+  createOpenRouterProvider,
+  createProvider,
+} from './create-provider.ts'
 import { OpenAIProvider } from './openai-provider.ts'
 
 describe('anthropicMaxOutputTokens', () => {
@@ -73,6 +77,65 @@ describe('createProvider routing', () => {
       if (prevOpenai === undefined) delete process.env['OPENAI_API_KEY']
       else process.env['OPENAI_API_KEY'] = prevOpenai
     }
+  })
+})
+
+// Capture the request body a provider sends by stubbing its private OpenAI client.
+async function captureRequest(provider: OpenAIProvider): Promise<{ prompt_cache_key?: string }> {
+  const captured: { request?: { prompt_cache_key?: string } } = {}
+  ;(
+    provider as unknown as {
+      client: {
+        chat: {
+          completions: {
+            create: (request: { prompt_cache_key?: string }) => AsyncIterable<{
+              choices: Array<{ delta?: { content?: string }; finish_reason?: string }>
+            }>
+          }
+        }
+      }
+    }
+  ).client.chat.completions.create = (
+    request,
+  ): AsyncIterable<{
+    choices: Array<{ delta?: { content?: string }; finish_reason?: string }>
+  }> => {
+    captured.request = request
+    return (async function* (): AsyncGenerator<{
+      choices: Array<{ delta?: { content?: string }; finish_reason?: string }>
+    }> {
+      yield { choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }
+    })()
+  }
+  for await (const _ of provider.stream([{ role: 'user', content: 'hi' }], [])) void _
+  return captured.request ?? {}
+}
+
+describe('createProvider prompt cache key', () => {
+  it('threads promptCacheKey into the OpenAI request body', async () => {
+    const provider = createProvider(
+      'gpt-4o',
+      { openAiApiKey: 'test-openai' },
+      'thread-xyz',
+    ) as OpenAIProvider
+    const request = await captureRequest(provider)
+    assert.equal(request.prompt_cache_key, 'thread-xyz')
+  })
+
+  it('threads promptCacheKey into the OpenRouter request body', async () => {
+    const provider = createOpenRouterProvider(
+      'openai/gpt-4o',
+      'sk-or-test',
+      'thread-xyz',
+    ) as OpenAIProvider
+    const request = await captureRequest(provider)
+    assert.equal(request.prompt_cache_key, 'thread-xyz')
+  })
+
+  it('omits prompt_cache_key when no key is supplied', async () => {
+    const provider = createProvider('gpt-4o', { openAiApiKey: 'test-openai' }) as OpenAIProvider
+    const request = await captureRequest(provider)
+    assert.equal(request.prompt_cache_key, undefined)
   })
 })
 

@@ -28,6 +28,13 @@ describe('settings-writable', () => {
     assert.equal(parseRendererWritableSetting('autoPortraitRightPanel', false), false)
   })
 
+  it('accepts a non-negative integer post-turn-review diff threshold, rejects negatives', () => {
+    assert.equal(isRendererWritableSettingKey('postTurnReviewMinChangedLines'), true)
+    assert.equal(parseRendererWritableSetting('postTurnReviewMinChangedLines', 0), 0)
+    assert.equal(parseRendererWritableSetting('postTurnReviewMinChangedLines', 15), 15)
+    assert.throws(() => parseRendererWritableSetting('postTurnReviewMinChangedLines', -1))
+  })
+
   it('parses security settings bundle', () => {
     const parsed = securitySettingsSchema.parse({
       localServerUrl: 'http://127.0.0.1:1234/v1',

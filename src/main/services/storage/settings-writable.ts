@@ -125,6 +125,11 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   localSubagentsEnabled: z.boolean(),
   localTodoItemsEnabled: z.boolean(),
   postTurnReviewEnabled: z.boolean(),
+  // Skip the post-turn review when the working diff has fewer changed lines than
+  // this threshold (#584). Default 1 skips only an empty diff (nothing to review);
+  // a larger value also skips trivial edits; 0 always reviews. Separately, billable
+  // review models are gated by a per-chat spend approval (see agent-service.ts).
+  postTurnReviewMinChangedLines: z.number().int().min(0).max(100_000),
   bundledCursorSkillsEnabled: z.boolean(),
   skillsEnabled: z.boolean(),
   // Skill safety toggles (default on). Warn up front when an invoked skill
