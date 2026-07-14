@@ -151,6 +151,11 @@ export interface ApiClient {
     reconnect: (
       hostId: string,
     ) => Promise<import('@shared/types/ssh-workspace.ts').SshConnectionState[]>
+    listDirectory: (
+      hostId: string,
+      dirPath: string,
+    ) => Promise<import('@shared/types/ssh-workspace.ts').SshRemoteDirEntry[]>
+    registerRoot: (hostId: string, dirPath: string) => Promise<string>
     onConnectionChanged: (
       handler: (states: import('@shared/types/ssh-workspace.ts').SshConnectionState[]) => void,
     ) => () => void

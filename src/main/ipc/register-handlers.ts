@@ -5,11 +5,13 @@ import micromatch from 'micromatch'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
 import {
   assertAllowedWorkspaceRoot,
+  getActiveProjectSshHost,
   getWorkspaceRoot,
   registerAllowedWorkspaceRoot,
   resolveWorkspacePath,
   seedAllowedWorkspaceRoots,
   setWorkspaceRoot,
+  type WorkspaceProjectRef,
 } from '../services/workspace.ts'
 import {
   assertFsWriteContent,
@@ -184,11 +186,12 @@ const SKILLS_RELOAD_KEYS = new Set([
 ])
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
-  const storedProjects = (storageGet('projects') as { path: string }[] | null) ?? []
-  void seedAllowedWorkspaceRoots(storedProjects.map((p) => p.path))
+  const storedProjects = (storageGet('projects') as WorkspaceProjectRef[] | null) ?? []
+  void seedAllowedWorkspaceRoots(storedProjects)
   const persistedRoot = getWorkspaceRoot()
   if (persistedRoot) {
-    void registerAllowedWorkspaceRoot(persistedRoot).catch(() => {
+    const sshHost = getActiveProjectSshHost()
+    void registerAllowedWorkspaceRoot(persistedRoot, sshHost).catch(() => {
       // Stale workspaceRoot in config — ignore until user picks a folder.
     })
   }
@@ -211,9 +214,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('workspace:set', async (event, root: unknown) => {
     assertMainFrameSender(event, win)
     const parsedRoot = parseIpcArgs(zPathString, [root])
-    const projects = (storageGet('projects') as { path: string }[] | null) ?? []
-    await seedAllowedWorkspaceRoots(projects.map((p) => p.path))
-    const canonical = await assertAllowedWorkspaceRoot(parsedRoot)
+    const projects = (storageGet('projects') as WorkspaceProjectRef[] | null) ?? []
+    await seedAllowedWorkspaceRoots(projects)
+    const sshHost = getActiveProjectSshHost()
+    const canonical = await assertAllowedWorkspaceRoot(parsedRoot, sshHost)
     setWorkspaceRoot(canonical)
     startWorkspaceIndexing(canonical)
     await initSkillsRegistry()

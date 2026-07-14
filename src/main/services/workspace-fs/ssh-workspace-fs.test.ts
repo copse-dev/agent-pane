@@ -6,17 +6,19 @@ import {
   getSshConnectionManager,
   setSshTransportFactory,
 } from '../ssh-workspace/connection-manager.ts'
-import { storageSet } from '../storage/storage.ts'
+import { setSetting } from '../storage/settings.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { clearSshWorkspaceFsCacheForTest, SshWorkspaceFs } from './ssh-workspace-fs.ts'
 
 describe('SshWorkspaceFs', () => {
   let cleanupRoot: (() => void) | undefined
 
-  beforeEach(() => {
+  beforeEach(async () => {
     resetSshConnectionManagerForTests()
     clearSshWorkspaceFsCacheForTest()
-    storageSet('sshWorkspaceHosts', [{ id: 'dev', label: 'Dev', host: 'dev.example', user: 'me' }])
+    await setSetting('sshWorkspaceHosts', [
+      { id: 'dev', label: 'Dev', host: 'dev.example', user: 'me' },
+    ])
     setSshTransportFactory(
       () =>
         new FakeSshTransport([

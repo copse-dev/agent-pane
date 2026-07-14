@@ -301,4 +301,17 @@ describe('allowed workspace roots', () => {
     await assert.doesNotReject(() => assertAllowedWorkspaceRoot(allowed))
     await assert.rejects(() => assertAllowedWorkspaceRoot(other), /not an allowed project/)
   })
+
+  it('tracks SSH project roots by host id and path', async () => {
+    await registerAllowedWorkspaceRoot('/var/www/app', 'dev')
+    await assert.doesNotReject(() => assertAllowedWorkspaceRoot('/var/www/app', 'dev'))
+    await assert.rejects(
+      () => assertAllowedWorkspaceRoot('/var/www/app', 'staging'),
+      /not an allowed project/,
+    )
+    await assert.rejects(
+      () => assertAllowedWorkspaceRoot('/var/www/other', 'dev'),
+      /not an allowed/,
+    )
+  })
 })
