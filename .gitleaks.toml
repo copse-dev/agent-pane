@@ -1,0 +1,17 @@
+title = "Copse gitleaks configuration"
+
+[extend]
+useDefault = true
+
+# These files intentionally contain inert example credentials to prove that the
+# application's redactors recognize them. Scope each exemption to the specific
+# default rules those fixtures exercise; other secret rules still scan the files.
+[[allowlists]]
+description = "Curl authorization-header redaction fixture"
+targetRules = ["curl-auth-header"]
+paths = ['''^src/shared/threads/decision-log\.test\.ts$''']
+
+[[allowlists]]
+description = "AWS and private-key redaction fixtures"
+targetRules = ["aws-access-token", "private-key"]
+paths = ['''^src/shared/llm/redact-secrets\.test\.ts$''']
