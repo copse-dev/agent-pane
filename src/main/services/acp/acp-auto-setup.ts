@@ -61,6 +61,14 @@ type AutoManagedNpmAcpAgent = KnownAcpAgent & {
 const ACP_STARTUP_PACKAGE_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000
 const ACP_STARTUP_PACKAGE_REFRESH_KEY = 'acp:lastStartupPackageRefreshAt'
 
+function isAutoManagedNpmAgent(known: KnownAcpAgent): known is AutoManagedNpmAcpAgent {
+  return known.preset === true && known.autoInstall === true && Boolean(known.installPackage)
+}
+
+function wasAborted(signal: AbortSignal): boolean {
+  return signal.aborted
+}
+
 /** Decide, from detection facts, what to install, register, and re-probe. Pure. */
 export function planAcpAutoSetup(inputs: readonly AcpAutoSetupInput[]): AcpAutoSetupPlan {
   const install: KnownAcpAgent[] = []
@@ -89,8 +97,7 @@ export function planAcpPackageUpdates(
 ): AutoManagedNpmAcpAgent[] {
   const update: AutoManagedNpmAcpAgent[] = []
   for (const { known, agentInstalled } of inputs) {
-    if (!known.preset) continue
-    if (!known.autoInstall || !known.installPackage) continue
+    if (!isAutoManagedNpmAgent(known)) continue
     if (!agentInstalled) continue
     update.push(known)
   }
@@ -127,7 +134,7 @@ export function runAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupResult
   return inFlight
 }
 
-/** Run bounded startup maintenance without blocking app launch. */
+/** Refresh already-installed adapters without installing missing tools during app launch. */
 export function runAcpStartupMaintenance(signal: AbortSignal): Promise<void> {
   startupMaintenanceInFlight ??= performAcpStartupMaintenance(signal).finally(() => {
     startupMaintenanceInFlight = null
@@ -136,24 +143,22 @@ export function runAcpStartupMaintenance(signal: AbortSignal): Promise<void> {
 }
 
 async function performAcpStartupMaintenance(signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return
+  if (wasAborted(signal)) return
 
-  const setup = await runAcpAutoSetup(signal)
-  if (signal.aborted || !shouldRefreshStartupPackages()) return
+  if (!shouldRefreshStartupPackages()) return
 
-  const installedNow = new Set(setup.installed)
   const inputs = await detectPresetInputs()
-  const updates = planAcpPackageUpdates(inputs).filter((known) => !installedNow.has(known.id))
+  const updates = planAcpPackageUpdates(inputs)
 
   for (const known of updates) {
-    if (signal.aborted) break
+    if (wasAborted(signal)) break
     const ok = await installGlobalNpmPackage(known.installPackage, signal)
     if (!ok) {
       console.warn(`[acp] package refresh failed for ${known.id}`)
     }
   }
 
-  if (!signal.aborted) storageSet(ACP_STARTUP_PACKAGE_REFRESH_KEY, Date.now())
+  if (!wasAborted(signal)) storageSet(ACP_STARTUP_PACKAGE_REFRESH_KEY, Date.now())
 }
 
 function shouldRefreshStartupPackages(now = Date.now()): boolean {
