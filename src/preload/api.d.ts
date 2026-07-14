@@ -247,6 +247,7 @@ export interface ApiClient {
     onShowTerminal: (handler: () => void) => () => void
     onShowChanges: (handler: () => void) => () => void
     onShowBrowser: (handler: () => void) => () => void
+    onKeyboardShortcuts: (handler: () => void) => () => void
   }
   settings: {
     get: (key: string) => Promise<unknown>

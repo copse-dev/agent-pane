@@ -170,6 +170,18 @@ export function buildAppMenu(win: BrowserWindow): void {
         ...(isMac ? [{ role: 'front' as const }] : [{ role: 'close' as const }]),
       ],
     },
+    {
+      role: 'help' as const,
+      submenu: [
+        {
+          label: 'Keyboard Shortcuts',
+          accelerator: 'CmdOrCtrl+/',
+          click: (): void => {
+            win.webContents.send('menu:keyboardShortcuts')
+          },
+        },
+      ],
+    },
   ]
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
