@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { PermissionOption } from '@agentclientprotocol/sdk'
+import type { PermissionOption, RequestPermissionRequest } from '@agentclientprotocol/sdk'
 import {
   AcpTurnFailure,
   buildAcpPrompt,
@@ -8,6 +8,7 @@ import {
   isRetryableAcpError,
   isTransientProviderError,
   permissionResponseFor,
+  shouldAutoApproveLowRiskAcpPermission,
   runWithAcpRetry,
   sliceLines,
 } from './acp-agent-service.ts'
@@ -19,6 +20,43 @@ const ALLOW_ALWAYS: PermissionOption = {
   kind: 'allow_always',
 }
 const REJECT_ONCE: PermissionOption = { optionId: 'r1', name: 'Reject', kind: 'reject_once' }
+
+function permissionRequest(
+  toolCall: Partial<RequestPermissionRequest['toolCall']>,
+): RequestPermissionRequest {
+  return {
+    sessionId: 's1',
+    toolCall: { toolCallId: 't1', ...toolCall },
+    options: [ALLOW_ONCE, REJECT_ONCE],
+  }
+}
+
+describe('shouldAutoApproveLowRiskAcpPermission', () => {
+  it('auto-approves ACP read/search only when the agent is sandboxed', () => {
+    assert.equal(
+      shouldAutoApproveLowRiskAcpPermission(permissionRequest({ kind: 'read' }), {
+        sandboxed: true,
+      }),
+      true,
+    )
+    assert.equal(
+      shouldAutoApproveLowRiskAcpPermission(permissionRequest({ kind: 'search' }), {
+        sandboxed: false,
+      }),
+      false,
+    )
+  })
+
+  it('leaves ACP execute requests to the shared shell approval flow', () => {
+    assert.equal(
+      shouldAutoApproveLowRiskAcpPermission(
+        permissionRequest({ kind: 'execute', rawInput: { command: 'rg TODO src | head -20' } }),
+        { sandboxed: true },
+      ),
+      false,
+    )
+  })
+})
 
 describe('permissionResponseFor', () => {
   it('selects a one-shot allow option on approval, preferring allow_once', () => {

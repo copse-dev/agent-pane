@@ -69,6 +69,28 @@ describe('presentPermissionRequest', () => {
     assert.equal(p.body, 'git status')
   })
 
+  it('renders non-string shell command payloads so approvals show the command', () => {
+    const argv = presentPermissionRequest(
+      'A',
+      permissionRequest({
+        kind: 'execute',
+        title: 'Run command',
+        rawInput: { command: ['git', 'status'] },
+      }),
+    )
+    assert.equal(argv.body, 'git status')
+
+    const nested = presentPermissionRequest(
+      'A',
+      permissionRequest({
+        kind: 'execute',
+        title: 'Run command',
+        rawInput: { command: { cmd: 'git', args: ['status'] } },
+      }),
+    )
+    assert.equal(nested.body, JSON.stringify({ cmd: 'git', args: ['status'] }, null, 2))
+  })
+
   it('renders an edit diff content block as -/+ snippet lines, not key: value dumps', () => {
     const p = presentPermissionRequest(
       'Claude Agent',

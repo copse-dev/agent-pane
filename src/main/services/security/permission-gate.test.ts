@@ -11,11 +11,16 @@ import {
   backgroundCommandFromArgs,
   backgroundAllowsPortBinding,
   SANDBOX_TOOLS,
+  isStructurallyReadOnlyShellCommand,
 } from './permission-policy.ts'
 import { DEFAULT_WEB_ALLOWED_ORIGINS } from './web-origin-policy.ts'
 import { detectSandboxFailure } from './sandbox-failure.ts'
 import { setPermissionGateForTests } from '../tool-registry.ts'
-import { ensureToolPermitted, ensureTerminalPermitted } from './permission-gate.ts'
+import {
+  ensureShellCommandPermitted,
+  ensureTerminalPermitted,
+  ensureToolPermitted,
+} from './permission-gate.ts'
 import { decideMcpPermission, describeMcpAnnotations } from './permission-policy.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
@@ -25,6 +30,21 @@ import {
   rememberCustomTool,
   setCustomToolRequiresApprovalForTests,
 } from '../mcp/custom-tools-registry.ts'
+
+describe('isStructurallyReadOnlyShellCommand', () => {
+  it('accepts simple read commands and read-only pipelines', () => {
+    assert.equal(isStructurallyReadOnlyShellCommand('git status --short'), true)
+    assert.equal(isStructurallyReadOnlyShellCommand('rg TODO src | head -20'), true)
+  })
+
+  it('rejects mutating commands, redirection, and command control flow', () => {
+    assert.equal(isStructurallyReadOnlyShellCommand('npm test'), false)
+    assert.equal(isStructurallyReadOnlyShellCommand('find . -delete'), false)
+    assert.equal(isStructurallyReadOnlyShellCommand('rg TODO > out.txt'), false)
+    assert.equal(isStructurallyReadOnlyShellCommand('git diff --output=patch.txt'), false)
+    assert.equal(isStructurallyReadOnlyShellCommand('GIT_PAGER=cat git log'), false)
+  })
+})
 
 describe('SANDBOX_TOOLS', () => {
   it('includes read_skill so skill reads auto-run without approval', () => {
@@ -125,6 +145,35 @@ describe('ensureToolPermitted', () => {
     } finally {
       setApprovalHandler(null)
       release()
+    }
+  })
+
+  it('can share the active network scope with an already-sandboxed ACP command', async () => {
+    setPermissionGateForTests(null)
+    const restore = setWorkspaceRootForTest('/tmp/acp-network-scope-project')
+    const release = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+    })
+    let prompted = false
+    setApprovalHandler(async () => {
+      prompted = true
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureShellCommandPermitted('rg TODO src', {
+          sandboxEnabled: true,
+          autoRun: true,
+          networkScopeAlreadyApplies: true,
+        }),
+        true,
+      )
+      assert.equal(prompted, false)
+    } finally {
+      setApprovalHandler(null)
+      release()
+      restore()
     }
   })
 })
