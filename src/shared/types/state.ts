@@ -48,6 +48,8 @@ export interface Project {
   id: string
   path: string
   name: string
+  /** SSH workspace host id (`sshWorkspaceHosts[].id`) when this project is remote. */
+  sshHost?: string
 }
 
 export interface AppState {

@@ -1,4 +1,6 @@
 import type { ChildProcess } from 'node:child_process'
+import { getRemoteProcessMeta } from '../ssh-workspace/remote-process-meta.ts'
+import { killRemoteProcessGroup } from './remote-process-kill.ts'
 
 /** Grace period between SIGTERM and the SIGKILL fallback when terminating a subprocess. */
 export const SUBPROCESS_KILL_GRACE_MS = 2_000
@@ -35,6 +37,10 @@ export function terminateProcessTree(
   proc: ChildProcess,
   graceMs = SUBPROCESS_KILL_GRACE_MS,
 ): () => void {
+  const remote = getRemoteProcessMeta(proc)
+  if (remote) {
+    void killRemoteProcessGroup(remote.hostId, remote.pgid)
+  }
   signalProcessTree(proc, 'SIGTERM')
 
   // Not unref'd: the timer must fire to guarantee escalation, and the caller always

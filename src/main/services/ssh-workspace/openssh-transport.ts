@@ -30,6 +30,19 @@ function strictHostKeyOption(): string {
   return mode === 'strict' ? 'yes' : 'accept-new'
 }
 
+/** argv for `ssh … host <remoteCommand>` (local OpenSSH client). */
+export function sshExecArgs(host: SshWorkspaceHost, remoteCommand: string): string[] {
+  return [...baseSshArgs(host, controlSocketPath(host.id)), remoteCommand]
+}
+
+/** argv for interactive `ssh -tt … host <remoteCommand>`. */
+export function sshPtyArgs(host: SshWorkspaceHost, remoteCommand: string): string[] {
+  const base = baseSshArgs(host, controlSocketPath(host.id))
+  const target = base[base.length - 1]
+  if (!target) throw new Error('SSH target missing')
+  return ['-tt', ...base.slice(0, -1), target, remoteCommand]
+}
+
 function baseSshArgs(host: SshWorkspaceHost, controlPath: string): string[] {
   const args = ['-o', `StrictHostKeyChecking=${strictHostKeyOption()}`]
   if (supportsControlMaster()) {
