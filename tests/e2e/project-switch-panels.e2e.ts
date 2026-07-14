@@ -11,13 +11,28 @@ async function clickProject(name: string): Promise<void> {
   await row.click()
 }
 
+async function approveUnsandboxedTerminalIfPrompted(): Promise<void> {
+  const dialog = await $('#approval-dialog')
+  if (!(await dialog.isDisplayed())) return
+
+  await expect(dialog.$('h2')).toHaveText('Open unsandboxed terminal?')
+  await dialog.$('.approve-btn').click()
+  await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
+}
+
 async function openTerminalPane(): Promise<void> {
   // Scope to #titlebar — portrait chrome mounts a second Open-terminal control
   // under the composer with the same aria-label.
   const terminalBtn = await $('#titlebar .titlebar-btn[aria-label="Open terminal"]')
   await terminalBtn.click()
+  await approveUnsandboxedTerminalIfPrompted()
   await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
   await expect(terminalBtn).toHaveElementClass('active')
+}
+
+async function createTerminal(): Promise<void> {
+  await $('.terminals-new-btn').click()
+  await approveUnsandboxedTerminalIfPrompted()
 }
 
 async function terminalModeActive(): Promise<boolean> {
@@ -54,7 +69,7 @@ describe('project switch panel and terminal scoping', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     await openTerminalPane()
-    await $('.terminals-new-btn').click()
+    await createTerminal()
     await browser.waitUntil(async () => (await visibleTerminalTabCount()) >= 1, {
       timeout: 10_000,
       timeoutMsg: 'expected a terminal tab on project A',
@@ -72,7 +87,7 @@ describe('project switch panel and terminal scoping', () => {
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'project-switch-b.png'))
 
     await openTerminalPane()
-    await $('.terminals-new-btn').click()
+    await createTerminal()
     await browser.waitUntil(async () => (await visibleTerminalTabCount()) >= 1, {
       timeout: 10_000,
       timeoutMsg: 'expected a terminal tab on project B',
