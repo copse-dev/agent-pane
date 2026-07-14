@@ -44,6 +44,7 @@ import {
 import { mountContextWarningBanner } from './views/context-warning-banner.ts'
 import { mountApprovalDialog } from './views/approval-dialog.ts'
 import { mountAskUserDialog } from './views/ask-user-dialog.ts'
+import { mountSshPromptDialog } from './views/ssh-prompt-dialog.ts'
 import {
   mountFileSearchDialog,
   openFileSearchDialog,
@@ -167,6 +168,7 @@ async function boot(): Promise<void> {
   mountOnboardingDialog(store, api)
   mountApprovalDialog(api, store)
   mountAskUserDialog(api, store)
+  mountSshPromptDialog(api)
   mountFileSearchDialog(store, api)
   mountKeyboardShortcutsDialog()
   // Mounted after settings (it subscribes to the settings-close event to re-check).
