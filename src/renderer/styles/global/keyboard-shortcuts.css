@@ -1,0 +1,83 @@
+/* Cmd/Ctrl+/ keyboard-shortcut cheat sheet — a native <dialog> centred near
+   the top, styled to match the file-search palette and settings dialog. */
+.keyboard-shortcuts-overlay {
+  margin: 10vh auto 0;
+  padding: 0;
+  width: min(720px, 90vw);
+  max-height: 70vh;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+}
+.keyboard-shortcuts-overlay::backdrop {
+  background: rgb(0 0 0 / 40%);
+}
+.keyboard-shortcuts-shell {
+  display: flex;
+  flex-direction: column;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.keyboard-shortcuts-title {
+  margin: 0;
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}
+.keyboard-shortcuts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--spacing-lg);
+  padding: var(--spacing-lg);
+}
+.keyboard-shortcuts-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.keyboard-shortcuts-group-title {
+  margin: 0 0 var(--spacing-xs);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.keyboard-shortcuts-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: 5px var(--spacing-xs);
+  border-radius: var(--radius);
+}
+.keyboard-shortcuts-row:hover {
+  background: var(--bg-hover);
+}
+.keyboard-shortcuts-label {
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+.keyboard-shortcuts-keys {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 4px;
+}
+.keyboard-shortcuts-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+}

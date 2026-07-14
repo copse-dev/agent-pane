@@ -343,6 +343,15 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('menu:showBrowser', listener)
       }
     },
+    onKeyboardShortcuts: (handler: () => void) => {
+      const listener = (): void => {
+        handler()
+      }
+      ipcRenderer.on('menu:keyboardShortcuts', listener)
+      return (): void => {
+        ipcRenderer.off('menu:keyboardShortcuts', listener)
+      }
+    },
   },
   remoteAgent: {
     downloadArtifact: (agentId: string, path: string) =>
