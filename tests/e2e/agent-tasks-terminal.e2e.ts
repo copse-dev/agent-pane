@@ -30,6 +30,15 @@ describe('agent tasks in terminal tab', () => {
     // Open the Terminal tab so the agent-tasks pane is visible.
     const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]')
     await terminalBtn.click()
+
+    // Opening the integrated terminal itself requires a separate approval on
+    // platforms without an OS sandbox. Resolve that prompt before submitting
+    // the agent's run_shell call, which has its own approval below.
+    const terminalApproval = await $('#approval-dialog')
+    if (await terminalApproval.isDisplayed().catch(() => false)) {
+      await expect(terminalApproval.$('.approval-heading')).toHaveText('Open unsandboxed terminal?')
+      await terminalApproval.$('.approval-approve').click()
+    }
     await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
 
     await setComposerValue('[[mcp:run_shell {"command":"echo agent-task-hello"}]]')
