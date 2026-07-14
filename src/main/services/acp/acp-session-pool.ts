@@ -15,8 +15,10 @@ import type { ToolRegistry } from '../tool-registry.ts'
  * - Follow-up turns reuse the live session (no replay, background work
  *   survives; updates arriving between turns surface in the UI immediately
  *   via the session's update pump — see `startAcpUpdatePump` in acp-client.ts).
- * - A config change (different agent/args/env/sandbox/servers) or a dead
- *   connection evicts and respawns; the caller then replays history once.
+ * - After a dropped connection, agents that advertise `session/resume` restore
+ *   the same session on the replacement transport. If resuming is unavailable
+ *   or rejected, a config change, or idle reaping forces a new session and the
+ *   caller replays history once.
  * - Sessions idle longer than {@link IDLE_MS} are reaped, and everything is
  *   disposed at app shutdown.
  *
@@ -48,6 +50,8 @@ const IDLE_MS = 10 * 60 * 1000
 const REAP_INTERVAL_MS = 60 * 1000
 
 const pool = new Map<string, PooledAcpSession>()
+/** Session IDs retained only long enough to reconnect after a transport drop. */
+const resumeCandidates = new Map<string, { fingerprint: string; sessionId: string }>()
 let reaper: NodeJS.Timeout | null = null
 
 /** Everything that decides whether an existing session can serve this turn.
@@ -78,6 +82,7 @@ export function reapIdleAcpSessions(now = Date.now(), idleMs = IDLE_MS): string[
     if (now - entry.lastUsedAt >= idleMs) {
       entry.dispose()
       pool.delete(threadId)
+      resumeCandidates.delete(threadId)
       reaped.push(threadId)
     }
   }
@@ -93,6 +98,7 @@ export async function acquireAcpSession(
 ): Promise<{ entry: PooledAcpSession; fresh: boolean }> {
   ensureReaper()
   const fingerprint = acpSessionFingerprint(opts.config)
+  let resumeSessionId: string | undefined
 
   const existing = pool.get(opts.threadId)
   if (existing) {
@@ -100,8 +106,19 @@ export async function acquireAcpSession(
       existing.lastUsedAt = Date.now()
       return { entry: existing, fresh: false }
     }
+    if (existing.fingerprint === fingerprint && existing.open.canResume) {
+      resumeSessionId = existing.open.session.sessionId
+    } else {
+      resumeCandidates.delete(opts.threadId)
+    }
     existing.dispose()
     pool.delete(opts.threadId)
+  }
+  const candidate = resumeCandidates.get(opts.threadId)
+  if (candidate?.fingerprint === fingerprint) {
+    resumeSessionId ??= candidate.sessionId
+  } else if (candidate) {
+    resumeCandidates.delete(opts.threadId)
   }
 
   // Bridge before spawn: a sandboxed agent's seatbelt profile must include
@@ -118,12 +135,13 @@ export async function acquireAcpSession(
 
   let open: OpenAcpSession
   try {
-    open = await openAcpSession(config, { current: null }, opts.createTransport)
+    open = await openAcpSession(config, { current: null }, opts.createTransport, resumeSessionId)
   } catch (err) {
     bridgeAbort.abort()
     await bridge?.close()
     throw err
   }
+  resumeCandidates.delete(opts.threadId)
 
   const entry: PooledAcpSession = {
     open,
@@ -137,13 +155,27 @@ export async function acquireAcpSession(
     },
   }
   pool.set(opts.threadId, entry)
-  return { entry, fresh: true }
+  return { entry, fresh: !open.resumed }
 }
 
 /** Evict and tear down one thread's session (e.g. after a broken turn). */
-export function disposeAcpSession(threadId: string): void {
+export function disposeAcpSession(
+  threadId: string,
+  options: { preserveForResume?: boolean } = {},
+): void {
   const entry = pool.get(threadId)
-  if (!entry) return
+  if (!entry) {
+    if (!options.preserveForResume) resumeCandidates.delete(threadId)
+    return
+  }
+  if (options.preserveForResume && entry.open.canResume) {
+    resumeCandidates.set(threadId, {
+      fingerprint: entry.fingerprint,
+      sessionId: entry.open.session.sessionId,
+    })
+  } else {
+    resumeCandidates.delete(threadId)
+  }
   entry.dispose()
   pool.delete(threadId)
 }
@@ -152,6 +184,7 @@ export function disposeAcpSession(threadId: string): void {
 export function disposeAllAcpSessions(): void {
   for (const entry of pool.values()) entry.dispose()
   pool.clear()
+  resumeCandidates.clear()
   if (reaper) {
     clearInterval(reaper)
     reaper = null
