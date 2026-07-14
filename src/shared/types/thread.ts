@@ -47,7 +47,7 @@ export interface ContextSnapshot {
 
 /** Verdict from the post-turn review subagent for the most recent editing turn. */
 export interface ThreadReview {
-  status: 'running' | 'done' | 'error'
+  status: 'running' | 'done' | 'error' | 'skipped'
   summary: string
 }
 

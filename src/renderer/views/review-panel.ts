@@ -12,6 +12,8 @@ function statusLabel(status: ThreadReview['status']): string {
       return 'Reviewing…'
     case 'error':
       return 'Review failed'
+    case 'skipped':
+      return 'Review skipped'
     default:
       return 'Review'
   }

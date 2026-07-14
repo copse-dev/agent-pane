@@ -14,12 +14,18 @@ interface ProviderKeys {
 // `model` is the user's selected model (from settings). It both picks the
 // provider family (claude* → Anthropic, gpt* → OpenAI) and is passed through as
 // the model id. Falls back to whichever key is present; mock only when
-// COPSE_PANEL_MOCK_LLM=1 (tests / dev).
-export function createProvider(model?: string, keys: ProviderKeys = {}): LLMProvider {
+// COPSE_PANEL_MOCK_LLM=1 (tests / dev). `promptCacheKey` is a stable per-thread
+// hint forwarded to OpenAI's `prompt_cache_key` to raise cache hit rates (#584).
+export function createProvider(
+  model?: string,
+  keys: ProviderKeys = {},
+  promptCacheKey?: string,
+): LLMProvider {
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') {
     return new MockLLMProvider()
   }
   const m = model ?? ''
+  const cacheKeyOpt = promptCacheKey ? { promptCacheKey } : {}
   const anthropicApiKey = keys.anthropicApiKey ?? process.env['ANTHROPIC_API_KEY']
   const openAiApiKey = keys.openAiApiKey ?? process.env['OPENAI_API_KEY']
   if (m.startsWith('gpt')) {
@@ -28,7 +34,7 @@ export function createProvider(model?: string, keys: ProviderKeys = {}): LLMProv
         'OpenAI is not configured. Add OPENAI_API_KEY in Settings or choose a Claude or LM Studio model.',
       )
     }
-    return new OpenAIProvider(m, { apiKey: openAiApiKey })
+    return new OpenAIProvider(m, { apiKey: openAiApiKey, ...cacheKeyOpt })
   }
   if (m.startsWith('claude')) {
     if (!anthropicApiKey) {
@@ -46,6 +52,7 @@ export function createProvider(model?: string, keys: ProviderKeys = {}): LLMProv
   if (openAiApiKey) {
     return new OpenAIProvider(model ?? process.env['OPENAI_MODEL'] ?? 'gpt-4o', {
       apiKey: openAiApiKey,
+      ...cacheKeyOpt,
     })
   }
   throw new Error(
@@ -78,12 +85,17 @@ export const createLMStudioProvider = createLocalOpenAIProvider
 // upstream endpoints that support every parameter we send — crucially `tools`.
 // Without it a model id can be load-balanced onto an endpoint that ignores
 // function calling, so the model narrates instead of emitting tool calls.
-export function createOpenRouterProvider(model: string, apiKey: string): LLMProvider {
+export function createOpenRouterProvider(
+  model: string,
+  apiKey: string,
+  promptCacheKey?: string,
+): LLMProvider {
   return new OpenAIProvider(model, {
     baseURL: OPENROUTER_BASE_URL,
     apiKey,
     includeUsage: true,
     extraBody: { provider: { require_parameters: true } },
+    ...(promptCacheKey ? { promptCacheKey } : {}),
   })
 }
 

@@ -36,6 +36,10 @@ export type StreamChunk =
       content: string
     }
   | { type: 'todo_worker_done'; todoId: string; summary: string; passed: boolean }
-  | { type: 'post_turn_review'; status: 'running' | 'done' | 'error'; summary: string }
+  | {
+      type: 'post_turn_review'
+      status: 'running' | 'done' | 'error' | 'skipped'
+      summary: string
+    }
   /** Two-model diff-review comparison (running placeholder, then the full result). */
   | { type: 'model_comparison'; comparison: ModelComparison }
