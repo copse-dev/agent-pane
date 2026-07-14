@@ -429,7 +429,7 @@ jobs:
             /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/boost || true
           sudo docker image prune --all --force >/dev/null 2>&1 || true
           df -h /
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dist-tar
       - run: tar -xf dist.tar
@@ -581,7 +581,7 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.SCREENSHOTS_PAT || github.token }}
       - name: Download regenerated screenshots
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: screenshots-shard-*
           merge-multiple: true
