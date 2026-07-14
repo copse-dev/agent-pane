@@ -412,7 +412,7 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
       ),
       el(
         'label',
-        {},
+        { class: 'acp-permission-mode-field' },
         'Permission mode',
         modeSelect,
         el(
