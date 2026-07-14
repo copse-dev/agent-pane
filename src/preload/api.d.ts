@@ -126,6 +126,12 @@ export interface ApiClient {
   ask: {
     respond: (id: string, answers: string[]) => Promise<void>
   }
+  sshPrompt: {
+    respond: (id: string, value: string) => Promise<void>
+    onRequest: (
+      handler: (req: { id: string; prompt: string; kind: 'confirm' | 'secret' }) => void,
+    ) => () => void
+  }
   mcp: {
     list: () => Promise<McpServerStatus[]>
     reload: () => Promise<McpServerStatus[]>

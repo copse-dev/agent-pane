@@ -1,0 +1,47 @@
+#ssh-prompt-dialog {
+  max-width: 560px;
+}
+.ssh-prompt-title {
+  margin-bottom: var(--spacing-md);
+}
+.ssh-prompt-body {
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin: 0 0 var(--spacing-md);
+  max-height: 12rem;
+  overflow: auto;
+}
+.ssh-prompt-secret-field {
+  margin-bottom: var(--spacing-md);
+}
+.ssh-prompt-input {
+  width: 100%;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+}
+.ssh-prompt-buttons {
+  display: flex;
+  gap: var(--spacing-sm);
+  justify-content: flex-end;
+}
+.ssh-prompt-cancel {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 14px;
+  cursor: pointer;
+}
+.ssh-prompt-submit {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: var(--radius);
+  padding: 6px 14px;
+  cursor: pointer;
+}

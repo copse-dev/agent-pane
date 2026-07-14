@@ -21,6 +21,7 @@ import {
   shellSandboxFailureShouldOfferUnsandboxedRetry,
 } from '../services/security/permission-policy.ts'
 import { envForRendererChildProcess } from '../services/exec/child-process-env.ts'
+import { leaseGitSshEnv } from '../services/ssh-workspace/git-ssh-env.ts'
 import { getSetting } from '../services/storage/settings.ts'
 import { detectPackageInstall, wrapWithSocketFirewall } from '../services/security/safe-install.ts'
 import {
@@ -301,8 +302,10 @@ export const runShellTool = defineTool({
     // Strip LLM API keys (and other secrets) from the child env so a compromised
     // command — especially an unsandboxed retry with full network — cannot exfiltrate
     // them (issue #108). prepareCommand's own additions (e.g. npm_config_ignore_scripts)
-    // are preserved on top.
-    const childEnv = envForRendererChildProcess(env)
+    // are preserved on top. Git-over-SSH askpass vars are merged so `sh -c "git push"`
+    // can prompt for passphrases / host keys instead of failing in BatchMode.
+    const gitSsh = leaseGitSshEnv(envForRendererChildProcess(env))
+    const childEnv = gitSsh.env
 
     // Bracket the run so any file this agent-triggered command changes (e.g. a
     // formatter rewriting a file Copse just edited) is adopted as Copse-owned —
@@ -340,6 +343,7 @@ export const runShellTool = defineTool({
 
       throw formatShellFailure(result)
     } finally {
+      gitSsh.release()
       await adoptWorktreeChangesSince(baseline)
     }
   },

@@ -6,6 +6,7 @@ import { errorMessage } from '@shared/errors.ts'
 import { getWorkspaceRoot, resolveWorkspacePath, toRelativePath } from '../workspace.ts'
 import { runCommand } from '../exec/command-runner.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
+import { leaseGitSshEnv, withGitInvocationArgs } from '../ssh-workspace/git-ssh-env.ts'
 import { isGitAvailable } from '../tool-availability.ts'
 import { detectLanguage } from '../language.ts'
 import { parseGithubRepoSlug } from '@shared/git/github-link-steering.ts'
@@ -214,25 +215,23 @@ const GIT_IMAGE_MAX_BYTES = 50 * 1024 * 1024
 function runGitBuffer(args: string[]): { stdout: Buffer; code: number } {
   const cwd = getWorkspaceRoot()
   if (!cwd) return { stdout: Buffer.alloc(0), code: 1 }
-  const prepared = ['--no-pager', '-c', 'core.pager=cat', '-c', 'color.ui=false', ...args]
-  // Strip LLM/provider secrets from the env, matching runCommand (#579).
-  const env: NodeJS.ProcessEnv = {
-    ...envForRendererChildProcess(),
-    GIT_OPTIONAL_LOCKS: '0',
-    GIT_PAGER: 'cat',
-    GIT_TERMINAL_PROMPT: '0',
-    GIT_SSH_COMMAND: process.env['GIT_SSH_COMMAND'] ?? 'ssh -oBatchMode=yes',
+  const baseEnv = envForRendererChildProcess()
+  const gitSsh = leaseGitSshEnv(baseEnv)
+  try {
+    const prepared = withGitInvocationArgs(args)
+    const result = spawnSync('git', prepared, {
+      cwd,
+      env: gitSsh.env,
+      encoding: 'buffer',
+      maxBuffer: GIT_IMAGE_MAX_BYTES,
+    })
+    // spawnSync types stdout as non-null, but it is null at runtime when the
+    // process fails to spawn (e.g. ENOENT), so the fallback is a real guard.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    return { stdout: result.stdout ?? Buffer.alloc(0), code: result.status ?? 1 }
+  } finally {
+    gitSsh.release()
   }
-  const result = spawnSync('git', prepared, {
-    cwd,
-    env,
-    encoding: 'buffer',
-    maxBuffer: GIT_IMAGE_MAX_BYTES,
-  })
-  // spawnSync types stdout as non-null, but it is null at runtime when the
-  // process fails to spawn (e.g. ENOENT), so the fallback is a real guard.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  return { stdout: result.stdout ?? Buffer.alloc(0), code: result.status ?? 1 }
 }
 
 function bufferToDataUrl(buf: Buffer, mime: string): string {
