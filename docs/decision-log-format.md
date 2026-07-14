@@ -35,7 +35,7 @@ session.
 | `kind`       | string                                                                             | domain: `shell` \| `mcp` \| `web` \| `pii` \| `browser` \| `github-write` \| `custom-tool` \| `port-binding` \| `model-compare` \| `install` \| `classification` \| `hook` \| … (free string; treat unknowns gracefully) |
 | `actor`      | `"user"` \| `"classifier"` \| `"hook"`                                             | who decided                                                                                                                                                                                                              |
 | `verdict`    | `"approved"` \| `"denied"` \| `"allowed"` \| `"blocked"` \| `"ask"` \| `"timeout"` | `approved`/`denied` are user verdicts; the rest are non-interactive policy/hook verdicts                                                                                                                                 |
-| `subject`    | string                                                                             | redacted command / tool name / origin                                                                                                                                                                                    |
+| `subject`    | string                                                                             | redacted operation / tool name / origin; shell arguments are omitted                                                                                                                                                     |
 | `scope`      | string?                                                                            | e.g. `sandbox` \| `external`                                                                                                                                                                                             |
 | `remembered` | boolean?                                                                           | whether the grant was made sticky                                                                                                                                                                                        |
 | `confidence` | number?                                                                            | classifier confidence in `[0, 1]`                                                                                                                                                                                        |
@@ -59,11 +59,12 @@ session.
 
 ## Redaction
 
-Secrets that commonly appear verbatim in recorded commands are stripped at write
-time (`redactSecrets`): URL userinfo, `Authorization`/`Bearer` values, known
-provider token shapes (`ghp_…`, `sk-…`, `xox…`, `AKIA…`, `AIza…`), and
-`*_TOKEN=`/`--password …`-style assignments. Conservative by design — it removes
-the obvious secrets, not a guarantee that none ever slips through.
+Shell decisions record the fixed subject `shell command (arguments omitted)`;
+raw command text is never persisted because arbitrary positional secrets cannot
+be redacted reliably. Other free-text fields are still passed through
+`redactSecrets`, which strips URL userinfo, `Authorization`/`Bearer` values,
+known provider token shapes (`ghp_…`, `sk-…`, `xox…`, `AKIA…`, `AIza…`), and
+`*_TOKEN=`/`--password …`-style assignments as defense in depth.
 
 ## Machine-readability / provability
 

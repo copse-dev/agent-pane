@@ -26,9 +26,10 @@ export interface ApprovalRequest {
   /** Initial reviewer/judge ids when `type === 'model-compare'` (renderer shows pickers). */
   comparisonModels?: ComparisonModelSelection
   /**
-   * Structured subject for the durable decision log (#656) — the command, tool
-   * name, or origin the prompt is about. Falls back to {@link title} when unset.
-   * Prefer a raw value here; the audit writer redacts secrets before persisting.
+   * Structured subject for the durable decision log (#656) — the operation,
+   * tool name, or origin the prompt is about. Falls back to {@link title} when
+   * unset. Callers must omit arbitrary secret-bearing arguments; the writer's
+   * redaction is defense in depth, not a guarantee.
    */
   subject?: string
   /** Scope the decision applies at (e.g. `sandbox` | `external`), for the audit log. */
