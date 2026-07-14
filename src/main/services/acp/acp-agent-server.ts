@@ -38,6 +38,8 @@ export interface AcpTurnContext {
   sessionId: string
   /** The user's prompt, flattened to text from the ACP content blocks. */
   prompt: string
+  /** Original ACP content blocks (text, images, …) from `session/prompt`. */
+  promptBlocks: PromptRequest['prompt']
   /** Aborts when the client sends `session/cancel` for this session. */
   signal: AbortSignal
   /** Stream a Copse chunk back to the client as a `session/update`. */
@@ -57,6 +59,8 @@ export interface AcpAgentOptions {
   loadSession?: boolean
   /** Whether the agent supports reconnecting a prior session. Defaults to false. */
   resume?: boolean
+  /** Whether the agent accepts image content blocks in `session/prompt`. Defaults to false. */
+  promptImage?: boolean
 }
 
 function randomSessionId(): string {
@@ -87,6 +91,7 @@ export function buildAcpAgentApp(runner: AcpTurnRunner, options: AcpAgentOptions
       agentCapabilities: {
         loadSession: options.loadSession ?? false,
         ...(options.resume ? { sessionCapabilities: { resume: {} } } : {}),
+        ...(options.promptImage ? { promptCapabilities: { image: true } } : {}),
       },
     }))
     .onRequest('authenticate', () => ({}))
@@ -111,6 +116,7 @@ export function buildAcpAgentApp(runner: AcpTurnRunner, options: AcpAgentOptions
       const turnCtx: AcpTurnContext = {
         sessionId: params.sessionId,
         prompt: promptToText(params.prompt),
+        promptBlocks: params.prompt,
         signal: controller.signal,
         emit: async (chunk) => {
           const update = streamChunkToSessionUpdate(chunk)

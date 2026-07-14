@@ -87,8 +87,10 @@ big decision:
 - **Use ACP `session/load`/`resume` for warm sessions** instead of the 10-minute
   reap + replay-preamble hack — Claude and Codex both advertise it.
   ([#830](https://github.com/copse-dev/agent-pane/issues/830))
-- **Forward image content blocks** to agents advertising `prompt.image` — all
-  three do; we currently drop attachments before prompting.
+- ~~**Forward image content blocks** to agents advertising `prompt.image`~~ —
+  done: when the agent advertises `promptCapabilities.image`, attached images
+  ride as ACP image content blocks on `session/prompt` (`buildAcpPromptContent`);
+  agents without the capability keep the prior text-only behaviour.
   ([#831](https://github.com/copse-dev/agent-pane/issues/831))
 
 The behavioral follow-up (Tier 2) is tracked in

@@ -192,4 +192,65 @@ describe('acp-session-pool', () => {
     assert.equal(next.fresh, true)
     assert.equal(log.spawns, 2)
   })
+
+  it('forwards image content blocks when the agent advertises prompt.image (issue #831)', async () => {
+    const received: Array<{ type: string; mimeType?: string; data?: string; text?: string }> = []
+    const runner: AcpTurnRunner = async (ctx) => {
+      for (const block of ctx.promptBlocks) {
+        if (block.type === 'text') received.push({ type: 'text', text: block.text })
+        else if (block.type === 'image') {
+          received.push({ type: 'image', mimeType: block.mimeType, data: block.data })
+        }
+      }
+      await ctx.emit({ type: 'text', text: 'saw-image' })
+      return { stopReason: 'end_turn' }
+    }
+    const createTransport = (): Promise<{
+      stream: ReturnType<typeof ndJsonStream>
+      dispose: () => void
+    }> => {
+      const c2a = new TransformStream<Uint8Array, Uint8Array>()
+      const a2c = new TransformStream<Uint8Array, Uint8Array>()
+      buildAcpAgentApp(runner, { name: 'image-capable-agent', promptImage: true }).connect(
+        ndJsonStream(a2c.writable, c2a.readable),
+      )
+      return Promise.resolve({
+        stream: ndJsonStream(c2a.writable, a2c.readable),
+        dispose: () => {},
+      })
+    }
+
+    const { entry } = await acquireAcpSession({
+      threadId: 'img-thread',
+      config: CONFIG,
+      createTransport,
+    })
+    assert.equal(entry.open.promptImage, true)
+    entry.open.handlers.current = sink([])
+    await runAcpSessionPrompt(
+      entry.open,
+      [
+        { type: 'text', text: 'describe' },
+        { type: 'image', mimeType: 'image/png', data: 'abc123' },
+      ],
+      undefined,
+    )
+    assert.equal(received.length, 2)
+    const textBlock = received[0]
+    assert.ok(textBlock)
+    assert.equal(textBlock.type, 'text')
+    assert.match(textBlock.text ?? '', /describe/)
+    assert.deepEqual(received[1], { type: 'image', mimeType: 'image/png', data: 'abc123' })
+  })
+
+  it('records promptImage=false when the agent omits the capability', async () => {
+    const log: AgentLog = { spawns: 0, promptSessions: [] }
+    const createTransport = makeTransportFactory(log)
+    const { entry } = await acquireAcpSession({
+      threadId: 't-no-img',
+      config: CONFIG,
+      createTransport,
+    })
+    assert.equal(entry.open.promptImage, false)
+  })
 })

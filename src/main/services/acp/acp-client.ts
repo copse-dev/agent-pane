@@ -4,6 +4,7 @@ import {
   ndJsonStream,
   PROTOCOL_VERSION,
   type ClientConnection,
+  type ContentBlock,
   type McpCapabilities,
   type McpServer,
   type NewSessionResponse,
@@ -317,6 +318,11 @@ export interface OpenAcpSession {
   mcpCapabilities: McpCapabilities | undefined
   /** Whether this agent advertised the optional `session/resume` capability. */
   canResume: boolean
+  /**
+   * Whether this agent advertised `promptCapabilities.image` — when true,
+   * Copse forwards attached images as ACP image content blocks (issue #831).
+   */
+  promptImage: boolean
   /** True when this connection restored a prior ACP session rather than creating one. */
   resumed: boolean
   /** Last model applied via `session/set_config_option` (avoid re-sending). */
@@ -460,6 +466,7 @@ export async function openAcpSession(
     })
     const mcpCapabilities = initResponse.agentCapabilities?.mcpCapabilities
     const canResume = Boolean(initResponse.agentCapabilities?.sessionCapabilities?.resume)
+    const promptImage = initResponse.agentCapabilities?.promptCapabilities?.image === true
     const mcpServers = toAcpMcpServers(config.mcpServers ?? [], mcpCapabilities)
     // Copse's own tools ride the same channel as forwarded servers: an http
     // MCP endpoint the agent mounts itself (#602 tier 2). http-capable only —
@@ -506,6 +513,7 @@ export async function openAcpSession(
       handlers,
       mcpCapabilities,
       canResume,
+      promptImage,
       resumed,
       appliedModel: undefined,
       suppressChunks: false,
@@ -543,12 +551,24 @@ export async function openAcpSession(
 export const ACP_CANCEL_GRACE_MS = 2000
 
 /**
+ * Normalize a string or content-block prompt into the ACP `session/prompt`
+ * shape. Strings stay one text block (existing tests / call sites); arrays
+ * pass through so image blocks (issue #831) are kept.
+ */
+export function toAcpPromptBlocks(prompt: string | ContentBlock[]): ContentBlock[] {
+  return typeof prompt === 'string' ? [{ type: 'text', text: prompt }] : prompt
+}
+
+/**
  * Run one prompt turn on a persistent session: apply a model change if the
  * picker's selection moved, send the prompt, and wait for the turn's stop. The
  * agent's updates — this turn's and any that arrive between turns — are
  * forwarded to the UI by the session's update pump (see
  * {@link startAcpUpdatePump}). The prompt response settles this turn after the
  * agent completes the request.
+ *
+ * `prompt` may be a plain string (one text block) or a full ACP content-block
+ * array — use the latter when forwarding images (issue #831).
  *
  * Cancellation (`signal` abort, i.e. the Stop button): we send `session/cancel`
  * and stop forwarding the agent's chunks to the UI immediately
@@ -560,12 +580,13 @@ export const ACP_CANCEL_GRACE_MS = 2000
  */
 export async function runAcpSessionPrompt(
   open: OpenAcpSession,
-  prompt: string,
+  prompt: string | ContentBlock[],
   model: string | undefined,
   signal?: AbortSignal,
   cancelGraceMs: number = ACP_CANCEL_GRACE_MS,
 ): Promise<AcpTurnStop> {
   const { session, connection } = open
+  const promptBlocks = toAcpPromptBlocks(prompt)
 
   // Resolves only once the user has aborted AND the agent has failed to settle
   // its prompt within the grace window — our cue to stop waiting on a stuck
@@ -629,7 +650,7 @@ export async function runAcpSessionPrompt(
     void connection.agent
       .request(methods.agent.session.prompt, {
         sessionId: session.sessionId,
-        prompt: [{ type: 'text', text: prompt }],
+        prompt: promptBlocks,
       })
       .then(settleStop.resolve, settleStop.reject)
     const outcome = await Promise.race([stopped, graceExpired])
