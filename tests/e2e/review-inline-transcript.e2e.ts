@@ -32,6 +32,7 @@ describe('post-turn review inline in transcript', () => {
       const card = document.querySelector('[data-review-card]')
       const assistant = document.querySelector('[data-message-id="msg-assistant-review"]')
       const followup = document.querySelector('[data-message-id="msg-user-followup"]')
+      const details = card instanceof HTMLDetailsElement ? card : null
       return {
         cardInList: !!list && !!card && list.contains(card),
         cardAfterAssistant: !!assistant && !!card && assistant.nextElementSibling === card,
@@ -40,6 +41,7 @@ describe('post-turn review inline in transcript', () => {
           !!followup &&
           (card.compareDocumentPosition(followup) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
         hasPinnedHost: !!document.querySelector('.conversation-review-host'),
+        isCollapsedCleanReview: !!details && !details.open,
       }
     })
 
@@ -51,6 +53,8 @@ describe('post-turn review inline in transcript', () => {
     expect(layout.followupBelowCard).toBe(true)
     // …and the old pinned sibling host is gone.
     expect(layout.hasPinnedHost).toBe(false)
+    // Clean reviews collapse by default so they don't dominate the transcript.
+    expect(layout.isCollapsedCleanReview).toBe(true)
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'review-inline-transcript.png'))
   })

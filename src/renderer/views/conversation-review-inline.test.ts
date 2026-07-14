@@ -34,7 +34,11 @@ describe('post-turn review renders inline in the transcript (component)', () => 
     document.body.append(host)
     mountConversation(host, store, fakeApi())
 
-    setMessageReview(store, threadId, messageId, { status: 'done', summary: 'Looks correct.' })
+    setMessageReview(store, threadId, messageId, {
+      status: 'done',
+      summary: 'Looks correct.',
+      issuesFound: false,
+    })
 
     const list = document.querySelector('.messages-list')
     assert.ok(list, 'expected the scrolling message list to exist')
@@ -49,6 +53,8 @@ describe('post-turn review renders inline in the transcript (component)', () => 
     assert.ok(msgEl)
     assert.equal(msgEl.nextElementSibling, card, 'review card must follow its message')
     assert.equal(card.getAttribute('data-review-for'), messageId)
+    assert.equal(card.tagName, 'DETAILS', 'clean reviews collapse in a details disclosure')
+    assert.equal((card as HTMLDetailsElement).open, false)
     // And it must NOT live in a sibling host pinned below the scroller.
     assert.equal(
       document.querySelector('.conversation-review-host'),

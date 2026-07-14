@@ -933,6 +933,7 @@ export function seedReviewInlineFixture(workspaceRoot: string): void {
               status: 'done',
               summary:
                 'Reviewed the change to `src/parser.ts`. The null guard is correct and the new test covers the empty-input case. No issues found.',
+              issuesFound: false,
             },
             createdAt: now + 1,
           },

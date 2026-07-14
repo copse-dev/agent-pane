@@ -155,6 +155,17 @@
   letter-spacing: 0.04em;
   color: var(--text-secondary);
 }
+/* Clean reviews collapse by default; the summary row is the disclosure control. */
+.review-panel-collapsible > .review-panel-header {
+  cursor: pointer;
+  list-style: none;
+}
+.review-panel-collapsible > .review-panel-header::-webkit-details-marker {
+  display: none;
+}
+.review-panel-collapsible:not([open]) > .review-panel-body {
+  display: none;
+}
 .review-panel-body {
   margin-top: var(--spacing-xs);
 }
