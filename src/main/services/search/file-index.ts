@@ -18,10 +18,12 @@ export async function buildIndex(workspaceRoot: string): Promise<void> {
     let paths: string[]
     if (isRgAvailable()) {
       const { stdout } = await runCommand('rg', ['--files', '--sort', 'path', workspaceRoot])
-      paths = stdout
-        .split('\n')
-        .filter(Boolean)
-        .map((p) => toRelativePath(p))
+      paths = await Promise.all(
+        stdout
+          .split('\n')
+          .filter(Boolean)
+          .map((p) => toRelativePath(p)),
+      )
     } else {
       paths = await walkPaths(workspaceRoot, workspaceRoot)
     }
@@ -71,7 +73,7 @@ async function walkPaths(root: string, dir: string): Promise<string[]> {
     if (e.name.startsWith('.') || e.name === 'node_modules') continue
     const full = `${dir}/${e.name}`
     if (e.isDirectory()) paths.push(...(await walkPaths(root, full)))
-    else paths.push(toRelativePath(full))
+    else paths.push(await toRelativePath(full))
   }
   return paths
 }

@@ -105,7 +105,7 @@ export async function gatewayWriteFile(absPath: string, content: string): Promis
   // The diff-queue write path already asserts this; the `fs:writeFile` IPC path
   // reaches the filesystem through here, so guarding at this chokepoint covers
   // both the direct-fs and sandbox-worker branches below.
-  assertWorkspaceWriteTarget(absPath)
+  await assertWorkspaceWriteTarget(absPath)
   if (!useSandboxFsGateway()) {
     await fsp.mkdir(dirname(absPath), { recursive: true })
     await fsp.writeFile(absPath, content, 'utf-8')
