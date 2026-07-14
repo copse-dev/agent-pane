@@ -17,7 +17,7 @@ export function buildAppMenu(win: BrowserWindow): void {
     // workspace root, mirroring the workspace:open/set IPC handlers. A
     // non-canonical (symlinked) root makes toRelativePath emit broken paths and
     // would leave the index and renderer 'workspace:opened' path inconsistent.
-    const root = registerAllowedWorkspaceRoot(result.filePaths[0])
+    const root = await registerAllowedWorkspaceRoot(result.filePaths[0])
     setWorkspaceRoot(root)
     // Same indexing flow as workspace:open/set — this path previously built
     // only the file index, silently skipping the semantic index and watcher.

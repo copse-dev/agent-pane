@@ -78,7 +78,7 @@ async function searchWithIndexedCli(
 ): Promise<string[]> {
   const args = buildIndexedCliArgs(backend, opts)
   const { stdout } = await runCommand(backend, args, opts.signal ? { signal: opts.signal } : {})
-  return parseGrepStdout(stdout, opts.maxResults)
+  return await parseGrepStdout(stdout, opts.maxResults)
 }
 
 function buildIndexedCliArgs(
@@ -144,10 +144,10 @@ async function searchWithRipgrep(opts: CodeContentSearchOptions): Promise<string
   ]
 
   const { stdout } = await runCommand('rg', args, opts.signal ? { signal: opts.signal } : {})
-  return parseRipgrepJson(stdout, opts.maxResults)
+  return await parseRipgrepJson(stdout, opts.maxResults)
 }
 
-export function parseRipgrepJson(stdout: string, maxResults: number): string[] {
+export async function parseRipgrepJson(stdout: string, maxResults: number): Promise<string[]> {
   const entries = stdout
     .split('\n')
     .filter(Boolean)
@@ -172,11 +172,11 @@ export function parseRipgrepJson(stdout: string, maxResults: number): string[] {
       if (matchCount >= maxResults) break
       matchCount++
       out.push(
-        `${toRelativePath(data.path.text)}:${String(data.line_number)}: ${data.lines.text.trimEnd()}`,
+        `${await toRelativePath(data.path.text)}:${String(data.line_number)}: ${data.lines.text.trimEnd()}`,
       )
     } else {
       out.push(
-        `${toRelativePath(data.path.text)}-${String(data.line_number)}- ${data.lines.text.trimEnd()}`,
+        `${await toRelativePath(data.path.text)}-${String(data.line_number)}- ${data.lines.text.trimEnd()}`,
       )
     }
   }
@@ -184,24 +184,24 @@ export function parseRipgrepJson(stdout: string, maxResults: number): string[] {
   return out
 }
 
-export function parseGrepStdout(stdout: string, maxResults: number): string[] {
+export async function parseGrepStdout(stdout: string, maxResults: number): Promise<string[]> {
   const lines: string[] = []
   for (const raw of stdout.split('\n')) {
     const line = raw.trimEnd()
     if (!line) continue
-    const normalized = normalizeGrepLine(line)
+    const normalized = await normalizeGrepLine(line)
     if (normalized) lines.push(normalized)
     if (lines.length >= maxResults) break
   }
   return lines
 }
 
-function normalizeGrepLine(line: string): string | null {
+async function normalizeGrepLine(line: string): Promise<string | null> {
   const match = line.match(/^(.+?):(\d+)(?::\d+)?:\s?(.*)$/)
   if (!match) return null
   const [, file, lineNo, content] = match
   if (!file || !lineNo) return null
-  return `${toRelativePath(file)}:${lineNo}: ${content ?? ''}`
+  return `${await toRelativePath(file)}:${lineNo}: ${content ?? ''}`
 }
 
 export function formatCodeSearchResults(

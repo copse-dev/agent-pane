@@ -32,7 +32,7 @@ async function resolveArtefactHtml(input: {
   title?: string | undefined
 }): Promise<{ html: string; title: string }> {
   if (input.path) {
-    const abs = resolveWorkspacePath(input.path) // throws if outside the workspace
+    const abs = await resolveWorkspacePath(input.path) // throws if outside the workspace
     let raw: string
     try {
       raw = await readFile(abs, 'utf8')

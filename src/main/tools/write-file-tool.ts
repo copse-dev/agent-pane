@@ -15,7 +15,7 @@ export const writeFileTool = defineTool({
     content: z.string().describe('Complete new file content'),
   }),
   async execute({ path, content }) {
-    const absPath = resolveWorkspacePath(path)
+    const absPath = await resolveWorkspacePath(path)
     let before = ''
     try {
       before = await fsp.readFile(absPath, 'utf-8')
