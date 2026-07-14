@@ -10,6 +10,11 @@ import type {
 } from '@shared/types/git.ts'
 import { getSetting } from '../../storage/settings.ts'
 import { isGhAvailable } from '../../tool-availability.ts'
+import {
+  getActiveExecutionTarget,
+  isSshExecutionTarget,
+  isSshWorkspaceExecutionEnabled,
+} from '../../ssh-workspace/execution-target.ts'
 import { isMockGhEnabled } from '../gh-pr-mock.ts'
 import { hasGitHubApiToken } from './github-token.ts'
 import { ghCliBackend } from './gh-cli-backend.ts'
@@ -78,9 +83,12 @@ export function decideBackendKind(opts: {
   preference: GitHubBackendPreference
   ghAvailable: boolean
   hasApiToken: boolean
+  /** When true, prefer the HTTPS API backend (remote host may lack gh). */
+  sshWorkspace?: boolean
 }): 'cli' | 'api' {
   if (opts.preference === 'cli') return 'cli'
   if (opts.preference === 'api') return 'api'
+  if (opts.sshWorkspace && opts.hasApiToken) return 'api'
   if (opts.ghAvailable) return 'cli'
   return opts.hasApiToken ? 'api' : 'cli'
 }
@@ -92,10 +100,13 @@ export function resolveGitHubBackend(): GitHubBackend {
   if (isMockGhEnabled()) return mockGitHubBackend
   const preference =
     backendEnvOverride() ?? getSetting<GitHubBackendPreference>(GITHUB_BACKEND_SETTING, 'auto')
+  const target = getActiveExecutionTarget()
+  const sshWorkspace = isSshWorkspaceExecutionEnabled() && isSshExecutionTarget(target)
   const kind = decideBackendKind({
     preference,
     ghAvailable: isGhAvailable(),
     hasApiToken: hasGitHubApiToken(),
+    sshWorkspace,
   })
   return kind === 'api' ? githubApiBackend : ghCliBackend
 }

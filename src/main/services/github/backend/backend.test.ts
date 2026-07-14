@@ -21,6 +21,18 @@ describe('decideBackendKind', () => {
     )
   })
 
+  it('auto prefers the api on an SSH workspace when a token is configured', () => {
+    assert.equal(
+      decideBackendKind({
+        preference: 'auto',
+        ghAvailable: true,
+        hasApiToken: true,
+        sshWorkspace: true,
+      }),
+      'api',
+    )
+  })
+
   it('auto falls back to the api only when gh is absent and a token exists', () => {
     assert.equal(
       decideBackendKind({ preference: 'auto', ghAvailable: false, hasApiToken: true }),
