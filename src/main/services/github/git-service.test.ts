@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process'
 import {
   classifyGitBlob,
+  countDiffChangedLines,
   getDefaultBranch,
   getGitDiffText,
   getGitFileDiff,
@@ -32,6 +33,44 @@ describe('sumDiffNumstat', () => {
 
   it('returns zeros for empty output', () => {
     assert.deepEqual(sumDiffNumstat(''), { additions: 0, deletions: 0 })
+  })
+})
+
+describe('countDiffChangedLines', () => {
+  it('counts + and - body lines but not the +++/--- headers', () => {
+    const diff = [
+      'diff --git a/src/foo.ts b/src/foo.ts',
+      'index 111..222 100644',
+      '--- a/src/foo.ts',
+      '+++ b/src/foo.ts',
+      '@@ -1,3 +1,3 @@',
+      ' context',
+      '-old line',
+      '+new line',
+      '+another added line',
+    ].join('\n')
+    assert.equal(countDiffChangedLines(diff), 3)
+  })
+
+  it('counts a new untracked file as additions (the numstat blind spot #584)', () => {
+    // Shape of `git diff --no-index /dev/null newfile` for a brand-new file.
+    const diff = [
+      'diff --git a/newfile.ts b/newfile.ts',
+      'new file mode 100644',
+      'index 000..abc',
+      '--- /dev/null',
+      '+++ b/newfile.ts',
+      '@@ -0,0 +1,3 @@',
+      '+line one',
+      '+line two',
+      '+line three',
+    ].join('\n')
+    assert.equal(countDiffChangedLines(diff), 3)
+  })
+
+  it('returns 0 for empty or output-free diffs', () => {
+    assert.equal(countDiffChangedLines(''), 0)
+    assert.equal(countDiffChangedLines('(no output)'), 0)
   })
 })
 

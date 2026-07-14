@@ -97,8 +97,8 @@ export function applyUiTint(color: string, strength: UiTintStrength): void {
  */
 interface SettingField {
   name: string
-  kind: 'checkbox' | 'text'
-  default: boolean | string
+  kind: 'checkbox' | 'text' | 'number'
+  default: boolean | string | number
   /** Whether the save handler writes this field via api.settings.set. */
   save: boolean
 }
@@ -117,6 +117,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   },
   { name: 'localTodoItemsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'postTurnReviewEnabled', kind: 'checkbox', default: true, save: true },
+  { name: 'postTurnReviewMinChangedLines', kind: 'number', default: 1, save: true },
   { name: 'bundledCursorSkillsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'skillExternalLinkWarnings', kind: 'checkbox', default: true, save: true },
   { name: 'skillSandboxGuidance', kind: 'checkbox', default: true, save: true },
@@ -166,6 +167,12 @@ async function loadSimpleFields(form: HTMLFormElement, api: ApiClient): Promise<
   }
 }
 
+/** Parse a `number`-kind field's form value, clamping to a non-negative integer. */
+function parseNonNegativeInt(value: string, fallback: number): number {
+  const n = Number.parseInt(value, 10)
+  return Number.isFinite(n) && n >= 0 ? n : fallback
+}
+
 /**
  * Keep the strict-deny slider's numeric readout in sync as it moves. Called after
  * the generic field load.
@@ -190,6 +197,9 @@ async function saveSimpleFields(data: FormData, api: ApiClient): Promise<void> {
     if (!field.save) continue
     if (field.kind === 'checkbox') {
       await api.settings.set(field.name, data.get(field.name) === 'on')
+    } else if (field.kind === 'number') {
+      const value = (data.get(field.name) as string | null) ?? ''
+      await api.settings.set(field.name, parseNonNegativeInt(value, field.default as number))
     } else {
       const value = (data.get(field.name) as string | null) ?? ''
       const trimmed = field.name === 'customInstructions'
@@ -508,6 +518,21 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <input type="checkbox" name="postTurnReviewEnabled" />
                 Review the diff with a subagent after each editing turn
               </label>
+              <label>
+                Skip that review below this many changed lines (1 = only skip an empty
+                diff, 0 = always review)
+                <input
+                  type="number"
+                  name="postTurnReviewMinChangedLines"
+                  min="0"
+                  step="1"
+                  class="settings-number-input"
+                />
+              </label>
+              <p class="field-hint">
+                When the review runs on a paid model, you'll be asked to approve the spend
+                once per chat. Set a local review model above to review for free.
+              </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="safetyClassifierEnabled" />
                 Use instruct model to identify dangerous external shell commands for strict-mode blocking

@@ -126,6 +126,19 @@ export function applyReviewTodoUpdates(
   return applyTodoUpdate(current, verdict.todoUpdates, true)
 }
 
+/**
+ * Body for the "review this diff with a paid model?" approval prompt (#584). Kept
+ * pure so it's unit-testable; the caller supplies the resolved review model id.
+ */
+export function reviewSpendApprovalBody(reviewModel: string): string {
+  return [
+    `Review the working diff after each editing turn using ${reviewModel}?`,
+    '',
+    'This makes billable calls to that model on every turn that changes files.',
+    'Set a local review model in Settings to review for free instead.',
+  ].join('\n')
+}
+
 export function buildReviewRemediationNudge(verdict: ParsedReviewVerdict): string {
   const parts = [OPEN_TODOS_REVIEW_REMEDIATION_NUDGE]
   if (verdict.followUpPrompt) {

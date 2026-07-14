@@ -29,12 +29,15 @@ import {
   buildProvider,
   buildSubagentRoute,
   buildReviewRoute,
+  isBillableModel,
   isLocalChatModel,
 } from './providers/provider-selection.ts'
+import { requestApproval } from './approval.ts'
 import {
   applyReviewTodoUpdates,
   buildReviewRemediationNudge,
   MAX_POST_TURN_REVIEW_CYCLES,
+  reviewSpendApprovalBody,
   runParentContinuationTurn,
   runPostTurnReviewOnce,
   runPreReviewTodoGate,
@@ -80,7 +83,8 @@ import {
   buildGithubLinkSteeringPrompt,
   shouldSteerGithubLinks,
 } from '@shared/git/github-link-steering.ts'
-import { getGithubRepoSlug } from './github/git-service.ts'
+import { getGithubRepoSlug, getGitDiffText, countDiffChangedLines } from './github/git-service.ts'
+import { isGitAvailable } from './tool-availability.ts'
 import {
   shouldSteerTodos,
   formatTodosForPrompt,
@@ -123,6 +127,54 @@ const abortMap = new Map<string, AbortController>()
 // path and the standalone review/comparison retries below.
 function toolSchemaReserveForModel(model: string): number {
   return model === 'lm-studio' || model.startsWith('lmstudio:') ? 2_500 : 1_000
+}
+
+/**
+ * True when the working diff the post-turn review would consume has fewer than
+ * `min` changed lines. Drives the review "nothing to review" gate (#584): with the
+ * default threshold of 1 this skips only an empty diff (e.g. right after a commit),
+ * and a larger threshold additionally skips trivial edits. Measures the exact diff
+ * the review sees — `getGitDiffText()` (unstaged tracked changes + untracked new
+ * files) — so a turn that only adds a large new file is NOT wrongly skipped (its
+ * additions live in that diff even though `git diff --numstat` omits them). An
+ * unmeasurable diff (git unavailable) falls through to running the review.
+ */
+async function changedLinesBelow(min: number): Promise<boolean> {
+  if (!isGitAvailable()) return false
+  const diff = await getGitDiffText()
+  return countDiffChangedLines(diff) < min
+}
+
+// Threads whose user approved spending on the post-turn review ("always review
+// with this model in this chat"). Per-thread, not process-global, so approving a
+// billable review in one project never silently authorizes it in another — the
+// same cross-project prompt-leakage guard the model-comparison approval uses.
+const approvedReviewThreads = new Set<string>()
+
+/**
+ * Gate a billable post-turn review behind a spend approval, remembered per thread
+ * (#584). Non-billable review models never reach here. Returns false when declined
+ * or the run was cancelled; the abort signal is checked around the modal so a Stop
+ * press mid-prompt doesn't start a billable review for an aborted turn.
+ */
+async function ensureReviewApproved(
+  reviewModel: string,
+  threadId: string,
+  signal: AbortSignal,
+): Promise<boolean> {
+  if (approvedReviewThreads.has(threadId)) return true
+  if (signal.aborted) return false
+  const { approved, remember } = await requestApproval({
+    type: 'review-spend',
+    title: 'Review this diff with a paid model?',
+    body: reviewSpendApprovalBody(reviewModel),
+    allowRemember: true,
+    rememberLabel: 'Always review with this model in this chat',
+  })
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- signal.aborted can flip during the awaited approval; TS narrows it from the guard above
+  if (signal.aborted) return false
+  if (approved && remember) approvedReviewThreads.add(threadId)
+  return approved
 }
 
 export const PARENT_DELEGATED_TOOLS = [
@@ -325,7 +377,7 @@ export async function runAgent(
     )
     const contextWindow = await resolveContextWindow(model)
     const toolSchemaReserve = toolSchemaReserveForModel(model)
-    const provider = await buildProvider(model)
+    const provider = await buildProvider(model, threadId)
     const subagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
     const subagentUsageModel = subagentRoute?.usageModel ?? model
     // Local routing was asked for (cloud parent + setting on) but no local
@@ -689,6 +741,12 @@ export async function runAgent(
     // Post-turn review: read-only review over the working diff, with an optional
     // bounded parent remediation loop when the reviewer requests follow-up. Runs
     // before the deferred `done` so the thread stays "running" until it lands.
+    //
+    // Cost gates (#584): (a) skip when the working diff is empty / below
+    // `postTurnReviewMinChangedLines` — there's nothing worth a review LLM run; and
+    // (b) when the review would use a billable model, ask once per chat for spend
+    // approval (remembered) so paid reviews on every file-mutating turn are opt-in.
+    // A free / local review model runs on the full diff with no prompt.
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated inside the runAgentLoop callback above; TS narrows to the `false` initializer
     if (turnChangedFiles && getSetting<boolean>('postTurnReviewEnabled', true)) {
       const reviewRoute = await buildReviewRoute()
@@ -697,61 +755,84 @@ export async function runAgent(
       const reviewContextWindow = reviewRoute?.contextWindow ?? contextWindow
       const reviewToolSchemaReserve = reviewRoute?.toolSchemaReserve ?? toolSchemaReserve
 
-      for (let cycle = 0; cycle < MAX_POST_TURN_REVIEW_CYCLES; cycle++) {
-        sendChunk({ type: 'post_turn_review', status: 'running', summary: '' })
-        try {
-          const review = await runPostTurnReviewOnce({
-            parentGoal,
-            todos: getAgentRunTodos(),
-            provider: reviewProvider,
-            registry,
-            contextWindow: reviewContextWindow,
-            toolSchemaReserve: reviewToolSchemaReserve,
-            signal: controller.signal,
-            usageModel: reviewUsageModel,
-            onUsage: (u) => {
-              inputTokens += u.inputTokens
-              outputTokens += u.outputTokens
-              sendChunk({
-                type: 'usage',
-                model: reviewUsageModel,
-                inputTokens: u.inputTokens,
-                outputTokens: u.outputTokens,
-              })
-            },
-          })
+      const minChangedLines = getSetting<number>('postTurnReviewMinChangedLines', 1)
+      const nothingToReview = minChangedLines > 0 && (await changedLinesBelow(minChangedLines))
+      const reviewApproved =
+        nothingToReview ||
+        !isBillableModel(reviewUsageModel) ||
+        (await ensureReviewApproved(reviewUsageModel, threadId, controller.signal))
 
-          const todosAfterReview = applyReviewTodoUpdates(getAgentRunTodos(), review.verdict)
-          if (todosAfterReview.length > 0 || getAgentRunTodos().length > 0) {
-            setAgentRunTodos(todosAfterReview)
-          }
-
-          sendChunk({ type: 'post_turn_review', status: 'done', summary: review.summary })
-
-          const lastCycle = cycle >= MAX_POST_TURN_REVIEW_CYCLES - 1
-          if (!review.verdict.requestFollowUp || lastCycle || controller.signal.aborted) {
-            break
-          }
-
-          const remediation = { madeEdits: false }
-          await runWithAgentRunReadFileLimits(runReadLimits, async () => {
-            await runParentContinuationTurn({
-              ...parentContinuationBase,
-              userNudge: buildReviewRemediationNudge(review.verdict),
-              maxSteps: 8,
-              onEditTool: (name: string): void => {
-                if (isEditTool(name)) {
-                  turnChangedFiles = true
-                  remediation.madeEdits = true
-                }
+      if (nothingToReview) {
+        sendChunk({
+          type: 'post_turn_review',
+          status: 'skipped',
+          summary: 'Nothing to review in the working diff.',
+        })
+      } else if (!reviewApproved) {
+        sendChunk({
+          type: 'post_turn_review',
+          status: 'skipped',
+          summary: controller.signal.aborted
+            ? 'Review cancelled.'
+            : `Review skipped — spending on ${reviewUsageModel} was not approved.`,
+        })
+      } else {
+        for (let cycle = 0; cycle < MAX_POST_TURN_REVIEW_CYCLES; cycle++) {
+          sendChunk({ type: 'post_turn_review', status: 'running', summary: '' })
+          try {
+            const review = await runPostTurnReviewOnce({
+              parentGoal,
+              todos: getAgentRunTodos(),
+              provider: reviewProvider,
+              registry,
+              contextWindow: reviewContextWindow,
+              toolSchemaReserve: reviewToolSchemaReserve,
+              signal: controller.signal,
+              usageModel: reviewUsageModel,
+              onUsage: (u) => {
+                inputTokens += u.inputTokens
+                outputTokens += u.outputTokens
+                sendChunk({
+                  type: 'usage',
+                  model: reviewUsageModel,
+                  inputTokens: u.inputTokens,
+                  outputTokens: u.outputTokens,
+                })
               },
             })
-          })
-          if (!remediation.madeEdits) break
-        } catch (err) {
-          const detail = controller.signal.aborted ? 'Review cancelled.' : classifyAgentError(err)
-          sendChunk({ type: 'post_turn_review', status: 'error', summary: detail })
-          break
+
+            const todosAfterReview = applyReviewTodoUpdates(getAgentRunTodos(), review.verdict)
+            if (todosAfterReview.length > 0 || getAgentRunTodos().length > 0) {
+              setAgentRunTodos(todosAfterReview)
+            }
+
+            sendChunk({ type: 'post_turn_review', status: 'done', summary: review.summary })
+
+            const lastCycle = cycle >= MAX_POST_TURN_REVIEW_CYCLES - 1
+            if (!review.verdict.requestFollowUp || lastCycle || controller.signal.aborted) {
+              break
+            }
+
+            const remediation = { madeEdits: false }
+            await runWithAgentRunReadFileLimits(runReadLimits, async () => {
+              await runParentContinuationTurn({
+                ...parentContinuationBase,
+                userNudge: buildReviewRemediationNudge(review.verdict),
+                maxSteps: 8,
+                onEditTool: (name: string): void => {
+                  if (isEditTool(name)) {
+                    turnChangedFiles = true
+                    remediation.madeEdits = true
+                  }
+                },
+              })
+            })
+            if (!remediation.madeEdits) break
+          } catch (err) {
+            const detail = controller.signal.aborted ? 'Review cancelled.' : classifyAgentError(err)
+            sendChunk({ type: 'post_turn_review', status: 'error', summary: detail })
+            break
+          }
         }
       }
     }
@@ -833,7 +914,7 @@ export async function retryPostTurnReview(
   try {
     const contextWindow = await resolveContextWindow(model)
     const toolSchemaReserve = toolSchemaReserveForModel(model)
-    const provider = await buildProvider(model)
+    const provider = await buildProvider(model, threadId)
     const parentGoal = resolveParentGoal(options?.workingBrief, priorMessages, '')
     const reviewRoute = await buildReviewRoute()
     const reviewUsageModel = reviewRoute?.usageModel ?? model
