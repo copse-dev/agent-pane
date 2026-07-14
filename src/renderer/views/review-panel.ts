@@ -19,15 +19,32 @@ function statusLabel(status: ThreadReview['status']): string {
   }
 }
 
-// TODO(#480): Collapse the card by default when the review found no issues
-// (positive verdict). This needs an explicit structured signal — e.g. an
-// `issuesFound: boolean` (or a `verdict: 'clean' | 'concerns'`) field on
-// `ThreadReview`, plumbed from the review subagent through the
-// `post_turn_review` stream chunk (src/shared/types/stream.ts) and
-// agent-service.ts. The subagent prompt (review-subagent.ts) currently only
-// asks for a free-text one-line summary, so the verdict can only be inferred by
-// string-sniffing the summary, which we deliberately avoid. Once that signal
-// exists, render this card as a collapsed <details> when there are no issues.
+function isCleanReview(review: ThreadReview): boolean {
+  return review.status === 'done' && review.issuesFound === false
+}
+
+function createReviewHeader(review: ThreadReview, onRetry?: () => void): HTMLElement {
+  const header = el('summary', { class: 'review-panel-header' })
+  header.append(
+    el(
+      'span',
+      { class: 'review-panel-icon', 'aria-hidden': 'true' },
+      searchIcon('ui-icon ui-icon-sm'),
+    ),
+    el('span', { class: 'review-panel-title' }, statusLabel(review.status)),
+  )
+  if (review.status === 'error' && onRetry) {
+    header.append(createRetryButton(onRetry))
+  }
+  return header
+}
+
+function createReviewBody(review: ThreadReview, api: ApiClient): HTMLElement {
+  const body = el('div', { class: 'review-panel-body message-text streaming-markdown' })
+  body.innerHTML = renderMarkdown(review.summary || '(no review output)')
+  void annotateFileReferences(body, api)
+  return body
+}
 
 /** Compact card summarising the post-turn review verdict for a thread. */
 export function createReviewCardEl(
@@ -35,11 +52,37 @@ export function createReviewCardEl(
   api: ApiClient,
   onRetry?: () => void,
 ): HTMLElement {
+  if (review.status === 'running') {
+    const panel = el('div', {
+      class: `review-panel review-panel-${review.status}`,
+      'data-status': review.status,
+    })
+    const header = el('div', { class: 'review-panel-header' })
+    header.append(
+      el(
+        'span',
+        { class: 'review-panel-icon', 'aria-hidden': 'true' },
+        searchIcon('ui-icon ui-icon-sm'),
+      ),
+      el('span', { class: 'review-panel-title' }, statusLabel(review.status)),
+    )
+    panel.append(header)
+    return panel
+  }
+
+  if (isCleanReview(review)) {
+    const details = el('details', {
+      class: `review-panel review-panel-${review.status} review-panel-collapsible`,
+      'data-status': review.status,
+    })
+    details.append(createReviewHeader(review), createReviewBody(review, api))
+    return details
+  }
+
   const panel = el('div', {
     class: `review-panel review-panel-${review.status}`,
     'data-status': review.status,
   })
-
   const header = el('div', { class: 'review-panel-header' })
   header.append(
     el(
@@ -49,23 +92,9 @@ export function createReviewCardEl(
     ),
     el('span', { class: 'review-panel-title' }, statusLabel(review.status)),
   )
-  // A failed review is usually recoverable in place (the local model server had
-  // the wrong model loaded, a transient provider error): offer a one-click
-  // re-run rather than making the user re-send the whole turn.
   if (review.status === 'error' && onRetry) {
     header.append(createRetryButton(onRetry))
   }
-  panel.append(header)
-
-  if (review.status === 'running') return panel
-
-  const body = el('div', { class: 'review-panel-body message-text streaming-markdown' })
-  body.innerHTML = renderMarkdown(review.summary || '(no review output)')
-  // Linkify printed file paths in the review subagent's output so they open in
-  // the explorer, matching main-chat assistant text. Click handling is already
-  // delegated from the conversation root (bindFileReferenceClicks) that this
-  // card is mounted under.
-  void annotateFileReferences(body, api)
-  panel.append(body)
+  panel.append(header, createReviewBody(review, api))
   return panel
 }

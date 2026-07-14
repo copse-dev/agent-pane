@@ -49,6 +49,8 @@ export interface ContextSnapshot {
 export interface ThreadReview {
   status: 'running' | 'done' | 'error' | 'skipped'
   summary: string
+  /** Structured signal from REVIEW_JSON; when false on a done review, the card collapses. */
+  issuesFound?: boolean
 }
 
 /**

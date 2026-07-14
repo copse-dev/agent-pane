@@ -55,6 +55,32 @@ describe('review panel (subagent file links)', () => {
     assert.equal(card.querySelector('.card-retry-button'), null)
   })
 
+  it('collapses a clean review (issuesFound false) in a details disclosure', () => {
+    const review: ThreadReview = {
+      status: 'done',
+      summary: 'No issues found.',
+      issuesFound: false,
+    }
+    const card = createReviewCardEl(review, fakeApi())
+    assert.equal(card.tagName, 'DETAILS')
+    assert.equal(card.classList.contains('review-panel-collapsible'), true)
+    assert.equal((card as HTMLDetailsElement).open, false)
+    assert.ok(card.querySelector('summary.review-panel-header'))
+    assert.equal(card.querySelector('.review-panel-body')?.textContent, 'No issues found.')
+  })
+
+  it('keeps a review with issues expanded as a plain card', () => {
+    const review: ThreadReview = {
+      status: 'done',
+      summary: '1 likely bug.',
+      issuesFound: true,
+    }
+    const card = createReviewCardEl(review, fakeApi())
+    assert.equal(card.tagName, 'DIV')
+    assert.equal(card.classList.contains('review-panel-collapsible'), false)
+    assert.equal(card.querySelector('.review-panel-body')?.textContent, '1 likely bug.')
+  })
+
   it('linkifies printed file paths in the review summary so they open in the explorer', async () => {
     const review: ThreadReview = {
       status: 'done',
