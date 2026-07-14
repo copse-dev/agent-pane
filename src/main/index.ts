@@ -22,6 +22,8 @@ import { disposeAllAcpSessions } from './services/acp/acp-session-pool.ts'
 import { runAcpStartupMaintenance } from './services/acp/acp-auto-setup.ts'
 import { initApproval } from './services/approval.ts'
 import { initAskUser } from './services/ask-user.ts'
+import { initSshPrompt } from './services/ssh-workspace/ssh-prompt.ts'
+import { initSshAskpassServer } from './services/ssh-workspace/askpass.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
 import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-watcher.ts'
@@ -146,6 +148,8 @@ app
 
     initApproval(win)
     initAskUser(win)
+    initSshAskpassServer(app.getPath('userData'))
+    initSshPrompt(win)
     initDiffQueue(win)
     initFsWatcher(win)
     const disposeTerminalHandlers = initTerminal(win)
