@@ -56,6 +56,7 @@ const roots = [
   // Entry points — keep in sync with scripts/build.mts.
   'src/main/index.ts',
   'src/main/project-sandbox/sandbox-fs-worker.ts',
+  'src/main/services/ssh-workspace/askpass-helper.ts',
   'src/preload/index.ts',
   'src/renderer/main.ts',
   // Standalone bundle injected lazily at runtime (not imported by product code).

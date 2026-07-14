@@ -112,6 +112,8 @@ export const approvalRespondSchema = z.tuple([z.uuid(), z.boolean(), z.boolean()
 // renderer can't feed an unbounded blob back into the agent's context.
 export const askRespondSchema = z.tuple([z.uuid(), z.array(z.string().max(8192)).max(10)])
 
+export const sshPromptRespondSchema = z.tuple([z.uuid(), z.string().max(8192)])
+
 export const providerSchema = z.enum([
   'anthropic',
   'openai',

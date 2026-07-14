@@ -68,6 +68,12 @@ await esbuild.build({
 })
 await esbuild.build({
   ...nodeOpts,
+  entryPoints: ['src/main/services/ssh-workspace/askpass-helper.ts'],
+  outfile: 'dist/main/ssh-askpass-helper.js',
+  banner: { js: '#!/usr/bin/env node' },
+})
+await esbuild.build({
+  ...nodeOpts,
   entryPoints: ['src/preload/index.ts'],
   outfile: 'dist/preload/index.js',
 })

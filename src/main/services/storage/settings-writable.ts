@@ -189,6 +189,9 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // Opt-in consent for scanning the shell environment / start-up files for
   // provider API keys (default off; see env-key-detection.ts).
   envKeyAutoDetectEnabled: z.boolean(),
+  // SSH host-key policy for git-over-SSH in runners and the shell tool. See
+  // docs/plans/ssh-remote-repo.md Phase 0.
+  sshStrictHostKeys: z.enum(['accept-new', 'strict']),
 } as const satisfies Record<string, z.ZodType>
 
 export type RendererWritableSettingKey = keyof typeof RENDERER_WRITABLE_SETTING_SCHEMAS
