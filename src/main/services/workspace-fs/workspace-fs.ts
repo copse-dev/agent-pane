@@ -1,6 +1,7 @@
 /** Async workspace filesystem operations — local or remote (SSH). */
 export interface WorkspaceFs {
   readFile(path: string, encoding: 'utf-8'): Promise<string>
+  readFileBytes(path: string): Promise<Buffer>
   writeFile(path: string, content: string, encoding: 'utf-8'): Promise<void>
   mkdir(path: string, options?: { recursive?: boolean }): Promise<void>
   rm(path: string, options?: { force?: boolean; recursive?: boolean }): Promise<void>

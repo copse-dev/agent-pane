@@ -45,6 +45,10 @@ export const localWorkspaceFs: WorkspaceFsPathProbe = {
     return fsp.readFile(path, encoding)
   },
 
+  readFileBytes(path: string): Promise<Buffer> {
+    return fsp.readFile(path)
+  },
+
   async writeFile(path: string, content: string, encoding: 'utf-8'): Promise<void> {
     await fsp.writeFile(path, content, encoding)
   },
