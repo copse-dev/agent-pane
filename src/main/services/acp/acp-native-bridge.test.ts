@@ -36,8 +36,17 @@ function testRegistry(executed: string[]): ToolRegistry {
   })
   registry.register({
     name: 'run_shell',
-    description: 'Not bridgeable',
+    description: 'Run a shell command',
     parameters: z.object({ command: z.string() }),
+    execute: ({ command }) => {
+      executed.push(`run_shell:${command}`)
+      return Promise.resolve(`ran ${command}`)
+    },
+  })
+  registry.register({
+    name: 'ask_user',
+    description: 'Native-loop orchestration tool; not bridgeable',
+    parameters: z.object({ question: z.string() }),
     execute: () => Promise.resolve('should never run over the bridge'),
   })
   return registry
@@ -95,7 +104,11 @@ describe('startAcpNativeBridge', () => {
 
   it('serves only curated tools and executes through the registry gate', async () => {
     const executed: string[] = []
-    setPermissionGateForTests(() => Promise.resolve(true))
+    const permissionChecks: string[] = []
+    setPermissionGateForTests((check) => {
+      permissionChecks.push(check.toolName)
+      return Promise.resolve(true)
+    })
     bridge = await startAcpNativeBridge(testRegistry(executed), new AbortController().signal)
     assert.ok(bridge, 'bridge should start when a bridgeable tool is registered')
 
@@ -105,7 +118,7 @@ describe('startAcpNativeBridge', () => {
       .result.tools
     assert.deepEqual(
       tools.map((tool) => tool.name),
-      ['staged_diffs'],
+      ['staged_diffs', 'run_shell'],
     )
     // Schemas must be draft 2020-12, not the openapi-3.0 flavor: the agent
     // forwards them to the Anthropic API, which 400s on `nullable` / boolean
@@ -123,18 +136,29 @@ describe('startAcpNativeBridge', () => {
     const result = (call.json as { result: { content: { text: string }[] } }).result
     assert.equal(result.content[0]?.text, 'no pending diffs')
     assert.deepEqual(executed, ['staged_diffs'])
+
+    const shellCall = await rpc(bridge, {
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: { name: 'run_shell', arguments: { command: 'npm test' } },
+    })
+    const shellResult = (shellCall.json as { result: { content: { text: string }[] } }).result
+    assert.equal(shellResult.content[0]?.text, 'ran npm test')
+    assert.deepEqual(executed, ['staged_diffs', 'run_shell:npm test'])
+    assert.deepEqual(permissionChecks, ['staged_diffs', 'run_shell'])
   })
 
   it('refuses tools outside the curated list even when registered', async () => {
     setPermissionGateForTests(() => Promise.resolve(true))
     bridge = await startAcpNativeBridge(testRegistry([]), new AbortController().signal)
     assert.ok(bridge)
-    assert.ok(!BRIDGE_TOOL_NAMES.includes('run_shell'))
+    assert.ok(!BRIDGE_TOOL_NAMES.includes('ask_user'))
     const call = await rpc(bridge, {
       jsonrpc: '2.0',
-      id: 3,
+      id: 4,
       method: 'tools/call',
-      params: { name: 'run_shell', arguments: { command: 'rm -rf /' } },
+      params: { name: 'ask_user', arguments: { question: 'Continue?' } },
     })
     const result = (call.json as { result: { content: { text: string }[]; isError?: boolean } })
       .result
@@ -191,8 +215,8 @@ describe('isBridgedNativeToolTitle', () => {
   })
 
   it('rejects a copse-prefixed title for a tool we do not bridge', () => {
-    assert.ok(!isBridgedNativeToolTitle('copse-run_shell'))
-    assert.ok(!isBridgedNativeToolTitle('copse-delete_file'))
+    assert.ok(!isBridgedNativeToolTitle('copse-ask_user'))
+    assert.ok(!isBridgedNativeToolTitle('copse-explore'))
     // A bridged name with trailing chars is a different, unknown tool.
     assert.ok(!isBridgedNativeToolTitle('copse-gh_pr_lists'))
   })

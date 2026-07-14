@@ -264,10 +264,12 @@ describe('buildAcpPrompt', () => {
     const sandboxed = buildAcpPrompt('hello', [], { sandboxed: true })
     assert.match(sandboxed, /Environment note: this session runs inside a filesystem sandbox/)
     assert.match(sandboxed, /hello$/)
-    // The note must steer away from hardcoded /tmp and warn that approval
-    // cannot override the sandbox.
+    // The note must steer away from hardcoded /tmp, distinguish the agent's
+    // private shell from Copse's bridge, and point at the shared escape path.
     assert.match(sandboxed, /\$TMPDIR/)
-    assert.match(sandboxed, /approval\s+prompts cannot override/i)
+    assert.match(sandboxed, /cannot unsandbox your own shell/i)
+    assert.match(sandboxed, /copse[\s\S]+run_shell/i)
+    assert.match(sandboxed, /approved external work outside this sandbox/i)
     assert.doesNotMatch(buildAcpPrompt('hello', [], { sandboxed: false }), /Environment note:/)
   })
 

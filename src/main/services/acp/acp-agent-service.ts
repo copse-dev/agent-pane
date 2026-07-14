@@ -705,22 +705,29 @@ export const ACP_TURN_PROMPT_NOTE =
   'reaped after ~10 idle minutes or on app ' +
   'shutdown, so keep background work bounded rather than open-ended. Keep ' +
   'exploration lean: prefer targeted searches (specific paths, rg with globs) ' +
-  'over broad find/ls directory dumps, and prefer the "copse" MCP tools (e.g. ' +
-  'semantic_search) when available.'
+  'over broad find/ls directory dumps. Prefer the "copse" MCP tools when ' +
+  "available: they reuse Copse's native workspace, Git, command, GitHub, and " +
+  'web implementations. In particular, use copse run_shell/run_background for ' +
+  'commands and copse write/replace/file-operation tools for edits so the same ' +
+  'sandbox, approval, and diff-queue rules as a built-in Copse model apply.'
 
 /**
  * Steering prepended to the prompt when the agent process runs under the
  * workspace seatbelt (issue #590). A silent $TMPDIR redirect is not enough:
  * models habitually hardcode `/tmp`, which the seatbelt denies — and unlike
- * native run_shell there is no approve-to-run-unsandboxed path, so without
- * this note the agent walks into EPERMs that user approval cannot fix.
+ * the agent's private shell has no approve-to-run-unsandboxed path. The native
+ * bridge does, so steer commands through its run_shell implementation instead
+ * of letting the agent walk into EPERMs that its own approval cannot fix.
  */
 export const ACP_SANDBOX_PROMPT_NOTE =
   'Environment note: this session runs inside a filesystem sandbox. Writes are ' +
   'allowed only inside the workspace and $TMPDIR; the system /tmp, the rest of ' +
-  'the home directory, and most network destinations are blocked — approval ' +
-  'prompts cannot override the sandbox, so do not retry blocked paths. Put ' +
-  'scratch files in $TMPDIR or the workspace.'
+  'the home directory, and most network destinations are blocked. Approval ' +
+  'cannot unsandbox your own shell. When the "copse" MCP server is available, ' +
+  "use its run_shell tool for commands: it applies Copse's normal command " +
+  'policy and can ask the user to run approved external work outside this ' +
+  'sandbox. Do not retry blocked paths with your own shell. Put scratch files ' +
+  'in $TMPDIR or the workspace.'
 
 /**
  * Flatten the user prompt to text. With persistent sessions (issue #605) the
