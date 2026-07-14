@@ -78,8 +78,16 @@ describe('settings sources hooks (Claude Code)', () => {
     assert.match(text, /block-destructive\.sh/)
     assert.match(text, /PROJECT/i)
 
+    // Scroll the Hooks fieldset into view — Sources is long (skills list) and the
+    // section screenshot would otherwise capture only Instructions + Skills.
+    await browser.execute(() => {
+      const hooks = document.querySelector('#sources-hooks-list')
+      hooks?.closest('fieldset')?.scrollIntoView({ block: 'start' })
+    })
+    await browser.pause(100)
+
     await saveElementScreenshot(
-      '.settings-section[data-section="sources"]',
+      'fieldset:has(#sources-hooks-list)',
       'settings-sources-claude-hooks.png',
     )
   })
