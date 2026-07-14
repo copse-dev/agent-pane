@@ -76,6 +76,27 @@ export async function isGitAvailableForTarget(
   }
 }
 
+/**
+ * Whether ripgrep is available for the active (or given) execution target. Local
+ * workspaces use the startup PATH probe; SSH workspaces use the connection
+ * capability report (remote rg on the host).
+ */
+export async function isRgAvailableForTarget(
+  target: ExecutionTarget = getActiveExecutionTarget(),
+): Promise<boolean> {
+  if (!isSshExecutionTarget(target)) return isRgAvailable()
+  if (!isSshWorkspaceExecutionEnabled()) return false
+  const mgr = getSshConnectionManager()
+  const existing = mgr.getConnection(target.hostId)
+  if (existing?.capabilities) return existing.capabilities.rg
+  try {
+    const conn = await mgr.connect(target.hostId)
+    return conn.capabilities?.rg ?? false
+  } catch {
+    return false
+  }
+}
+
 /** Test hook — force ripgrep availability without probing PATH. */
 export function setRgAvailableForTest(value: boolean | null): void {
   rgAvail = value
