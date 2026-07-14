@@ -2,6 +2,10 @@ import { join } from 'node:path'
 import { dirname } from 'node:path'
 import { MAX_FS_WRITE_BYTES } from '../ipc/ipc-guards.ts'
 import { assertWorkspaceWriteTarget, getWorkspaceRoot } from '../services/workspace.ts'
+import {
+  getActiveExecutionTarget,
+  isSshExecutionTarget,
+} from '../services/ssh-workspace/execution-target.ts'
 import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.ts'
 import { runCommand } from '../services/exec/command-runner.ts'
 import { fsWorkerSandboxOverlay } from './config.ts'
@@ -81,6 +85,7 @@ async function invokeWorkerOneShot<T extends Record<string, unknown>>(
 }
 
 function useSandboxFsGateway(): boolean {
+  if (isSshExecutionTarget(getActiveExecutionTarget())) return false
   return isProjectSandboxEnabled()
 }
 
