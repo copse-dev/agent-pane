@@ -29,12 +29,13 @@ export const BRIDGE_MCP_SERVER_NAME = 'copse'
  * seatbelted agent that can't reach GitHub itself can still drive Copse's
  * `gh_*`/CI tools through the bridge, with Copse's auth and approvals.
  *
- * The bridge is deliberately curated, not a mirror: the agent brings its own
- * read/search/shell tools, so only capabilities unique to Copse are exposed —
- * GitHub/CI (Copse's gh auth + network), the semantic index, staged-diff
- * visibility, and the origin-gated web/browser tools. Requests must carry the
- * per-turn bearer token; the server binds 127.0.0.1 on an ephemeral port and
- * lives only for the turn.
+ * The bridge is deliberately curated, not a mirror. It exposes Copse's
+ * context-free workspace tools so ACP and native model runs share the same
+ * schemas, permission policy, sandbox escape flow, diff queue, and Git/GitHub
+ * implementations. Orchestration tools that depend on native-loop context
+ * (ask_user, explore/advisor subagents, todos, memories, etc.) stay private.
+ * Requests must carry the per-session bearer token; the server binds 127.0.0.1
+ * on an ephemeral port and lives only for the pooled ACP session.
  */
 
 /**
@@ -42,6 +43,31 @@ export const BRIDGE_MCP_SERVER_NAME = 'copse'
  * registered (e.g. browser tools only exist when enabled in Settings).
  */
 export const BRIDGE_TOOL_NAMES: readonly string[] = [
+  // Workspace reads, searches, and diff-queued edits. Offering these lets an
+  // ACP agent opt into the exact same path validation and edit approval model
+  // as a native run instead of relying on adapter-specific implementations.
+  'read_file',
+  'write_file',
+  'str_replace',
+  'delete_file',
+  'rename_file',
+  'make_directory',
+  'list_dir',
+  'search_code',
+  'find_files',
+  'search_codebase',
+  'semantic_search',
+  // Local Git operations, including Copse's attributed commit implementation.
+  'git_status',
+  'git_diff',
+  'git_log',
+  'git_show',
+  'git_commit',
+  // Command execution. These are the important sandbox-parity tools: calls
+  // re-enter run_shell/run_background through ToolRegistry, so external work
+  // prompts and, when approved, runs outside the ACP process's seatbelt.
+  'run_shell',
+  'run_background',
   // GitHub / CI — run with Copse's gh auth and network access.
   'gh_pr_list',
   'gh_pr_view',
@@ -51,12 +77,15 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'get_ci_status',
   'wait_for_ci_checks',
   'get_ci_failure_logs',
-  // Search backed by Copse's local semantic index.
-  'semantic_search',
+  'gh_pr_rerun_failed_ci',
+  'gh_pr_approve',
+  'gh_pr_mark_ready',
+  'gh_pr_enable_auto_merge',
   // Visibility into pending diff-queue approvals.
   'staged_diffs',
   'read_staged_diff',
   // Origin-gated web + in-app browser tools.
+  'web_search',
   'fetch_url',
   'browser_navigate',
   'browser_snapshot',

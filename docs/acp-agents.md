@@ -34,11 +34,13 @@ approval UX.
 - Your configured **MCP servers** (stdio, plus http when the agent supports it)
   are handed to the agent via `session/new`, so it can mount them itself. The
   same trust and enable gating applies as for Copse's own connections.
-- A curated slice of **Copse's own tools** (GitHub/CI, semantic search,
-  staged-diff visibility, web/browser) is offered as a per-session localhost MCP
-  server (the **native-tool bridge**, issue #602) when the agent supports http
-  MCP servers. Calls execute inside Copse, so the normal permission gate and
-  approval dialogs apply. Disable with the `acpNativeBridgeEnabled` setting.
+- A curated, context-free slice of **Copse's own tools** (workspace
+  read/search/edit, Git, shell/background commands, GitHub/CI, staged-diff
+  visibility, and web/browser) is offered as a per-session localhost MCP server
+  (the **native-tool bridge**, issue #602) when the agent supports http MCP
+  servers. Calls execute through the same `ToolRegistry` as built-in model runs,
+  so the normal path validation, diff queue, permission policy, sandbox escape,
+  and approval dialogs apply. Disable with the `acpNativeBridgeEnabled` setting.
 - Known agents (the Claude and Gemini catalog entries) are **spawned under the
   workspace seatbelt** on macOS when the project sandbox is active (issue
   #590): writes confined to the workspace, home denied except the agent's own
@@ -47,9 +49,10 @@ approval UX.
   no per-config copy — and the config's optional `sandbox` field overrides them
   (an object for custom confines, `false` to opt out). The agent's shell
   children inherit the same confines, and approval prompts cannot override the
-  sandbox — sandboxed turns get a prompt note telling the agent so. Agent-run
-  `git push`/`npm install` fail inside the sandbox — use Copse's own tools (or
-  the bridge) for those.
+  agent's own shell sandbox. Sandboxed turns steer commands through the bridge's
+  `run_shell`: that reuses Copse's native permission decision and can run
+  approved external commands outside the agent sandbox. Direct agent-shell
+  `git push`/`npm install` still fail inside the sandbox.
 - **Sessions persist per thread** (issue #605): follow-up turns reuse the same
   agent process and ACP session, so the agent keeps its own context (no
   transcript replay) and background helpers it spawned keep running between
@@ -143,15 +146,15 @@ tokens such as `GITHUB_TOKEN` are passed through.
 ACP client mode and the **built-in Copse agent loop** (cloud/local models such as
 Fable or Sonnet) do **not** expose the same tool surface today:
 
-| Capability                              | Built-in Copse (native model)                                                               | ACP client (`acp:<id>`)                                  |
-| --------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| Read/search files                       | `read_file`, `search_codebase`, `search_code`, … (default) or `explore` subagent (optional) | External agent's own tools (e.g. Read/Grep/Bash) via ACP |
-| Edit files                              | `write_file` / `str_replace` → diff approval when needed                                    | `fs/write_text_file` → Copse diff-approval queue         |
-| Shell / CLI                             | `run_shell` (structured; prefer dedicated tools for reads)                                  | External agent's shell tool                              |
-| Git / GitHub                            | `git_*`, `gh_*`, CI tools                                                                   | External agent (may shell out)                           |
-| MCP servers                             | Copse `ToolRegistry` (`mcp__*` tools)                                                       | Forwarded via `session/new` (agent mounts them itself)   |
-| GitHub/CI, semantic search, web/browser | Copse `ToolRegistry`                                                                        | Native-tool bridge (localhost MCP, approval-gated)       |
-| Skills, todo/plan tools                 | Copse `ToolRegistry`                                                                        | **Not forwarded**                                        |
+| Capability                       | Built-in Copse (native model)                                                               | ACP client (`acp:<id>`)                                                             |
+| -------------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Read/search files                | `read_file`, `search_codebase`, `search_code`, … (default) or `explore` subagent (optional) | External agent tools, plus equivalent bridged Copse tools                           |
+| Edit files                       | `write_file` / `str_replace` → diff approval when needed                                    | `fs/write_text_file` or bridged edit tools → same queue                             |
+| Shell / CLI                      | `run_shell` (structured; prefer dedicated tools for reads)                                  | Bridged `run_shell` / `run_background` (preferred); private shell remains sandboxed |
+| Git / GitHub                     | `git_*`, `gh_*`, CI tools                                                                   | Equivalent bridged Copse tools                                                      |
+| MCP servers                      | Copse `ToolRegistry` (`mcp__*` tools)                                                       | Forwarded via `session/new` (agent mounts them itself)                              |
+| Shared context-free native tools | Copse `ToolRegistry`                                                                        | Native-tool bridge (localhost MCP, approval-gated)                                  |
+| Skills, todo/plan tools          | Copse `ToolRegistry`                                                                        | **Not forwarded**                                                                   |
 
 **Default native behavior** (Settings → Local models → _Route reads and searches
 through exploration subagents_ **off**) exposes direct read/search tools so native
