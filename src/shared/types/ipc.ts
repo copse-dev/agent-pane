@@ -311,6 +311,13 @@ export interface IpcEventMap {
       questions: { question: string; options?: string[] }[]
     },
   ]
+  'ssh:prompt_request': [
+    {
+      id: string
+      prompt: string
+      kind: 'confirm' | 'secret'
+    },
+  ]
   'mcp:status_changed': [statuses: McpServerStatus[]]
   'index:status_changed': [status: import('./index-status.ts').WorkspaceIndexStatus]
   'diff:queued': [entries: { path: string; language: string }[]]
