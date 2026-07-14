@@ -308,8 +308,21 @@ describe('allowed workspace roots', () => {
     const allowed = mkdtempSync(join(tmpdir(), 'copse-bootstrap-'))
     scheduleAllowedWorkspaceRootsBootstrap(async () => {
       await new Promise((resolve) => setTimeout(resolve, 5))
-      await seedAllowedWorkspaceRoots([allowed])
+      await seedAllowedWorkspaceRoots([{ path: allowed }])
     })
     await assert.doesNotReject(() => assertAllowedWorkspaceRoot(allowed))
+  })
+
+  it('tracks SSH project roots by host id and path', async () => {
+    await registerAllowedWorkspaceRoot('/var/www/app', 'dev')
+    await assert.doesNotReject(() => assertAllowedWorkspaceRoot('/var/www/app', 'dev'))
+    await assert.rejects(
+      () => assertAllowedWorkspaceRoot('/var/www/app', 'staging'),
+      /not an allowed project/,
+    )
+    await assert.rejects(
+      () => assertAllowedWorkspaceRoot('/var/www/other', 'dev'),
+      /not an allowed/,
+    )
   })
 })

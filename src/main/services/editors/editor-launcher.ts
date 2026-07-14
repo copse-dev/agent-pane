@@ -5,9 +5,12 @@ import { storageGet, storageSet } from '../storage/storage.ts'
 import {
   type DetectedEditorLaunch,
   buildEditorLaunch,
+  buildRemoteEditorLaunch,
   detectExternalEditors,
   parseMockEditorIds,
 } from './editor-detect.ts'
+import { findConfiguredSshHost } from '../ssh-workspace/hosts.ts'
+import { getActiveProjectSshHost } from '../workspace.ts'
 
 const LAST_USED_KEY = 'openInEditorLastUsed'
 
@@ -49,7 +52,16 @@ export async function openWorkspaceInExternalEditor(editorId: string, root: stri
   storageSet(LAST_USED_KEY, editorId)
   // Under the e2e mock there is nothing real to launch.
   if (parseMockEditorIds(process.env['COPSE_PANEL_MOCK_EDITORS']) !== null) return
-  const { command, args } = buildEditorLaunch(detected, root)
+  const sshHostId = getActiveProjectSshHost()
+  let launch: { command: string; args: string[] }
+  if (sshHostId) {
+    const host = findConfiguredSshHost(sshHostId)
+    if (!host) throw new Error(`SSH host is not configured: ${sshHostId}`)
+    launch = buildRemoteEditorLaunch(detected, root, host.host)
+  } else {
+    launch = buildEditorLaunch(detected, root)
+  }
+  const { command, args } = launch
   // Strip Copse's LLM/provider keys from the editor's env (#579): an external editor
   // never needs them, and it (or its extensions) can spawn arbitrary child processes.
   const child = spawn(command, args, {
