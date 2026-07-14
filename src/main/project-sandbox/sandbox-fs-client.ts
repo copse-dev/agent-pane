@@ -1,8 +1,8 @@
 import { join } from 'node:path'
-import * as fsp from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { MAX_FS_WRITE_BYTES } from '../ipc/ipc-guards.ts'
 import { assertWorkspaceWriteTarget, getWorkspaceRoot } from '../services/workspace.ts'
+import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.ts'
 import { runCommand } from '../services/exec/command-runner.ts'
 import { fsWorkerSandboxOverlay } from './config.ts'
 import { isProjectSandboxEnabled } from './spawn.ts'
@@ -86,7 +86,7 @@ function useSandboxFsGateway(): boolean {
 
 export async function gatewayReadFile(absPath: string): Promise<string> {
   if (!useSandboxFsGateway()) {
-    return fsp.readFile(absPath, 'utf-8')
+    return getActiveWorkspaceFs().readFile(absPath, 'utf-8')
   }
   const res = await invokeWorker<{ data?: string }>({
     op: 'readFile',
@@ -107,8 +107,9 @@ export async function gatewayWriteFile(absPath: string, content: string): Promis
   // both the direct-fs and sandbox-worker branches below.
   await assertWorkspaceWriteTarget(absPath)
   if (!useSandboxFsGateway()) {
-    await fsp.mkdir(dirname(absPath), { recursive: true })
-    await fsp.writeFile(absPath, content, 'utf-8')
+    const fs = getActiveWorkspaceFs()
+    await fs.mkdir(dirname(absPath), { recursive: true })
+    await fs.writeFile(absPath, content, 'utf-8')
     return
   }
   await invokeWorker({ op: 'writeFile', path: absPath, content, encoding: 'utf-8' })
@@ -116,7 +117,7 @@ export async function gatewayWriteFile(absPath: string, content: string): Promis
 
 export async function gatewayReaddir(absPath: string): Promise<string[]> {
   if (!useSandboxFsGateway()) {
-    return fsp.readdir(absPath)
+    return getActiveWorkspaceFs().readdir(absPath)
   }
   const res = await invokeWorker<{ entries?: string[] }>({ op: 'readdir', path: absPath })
   return res.entries ?? []
@@ -124,8 +125,7 @@ export async function gatewayReaddir(absPath: string): Promise<string[]> {
 
 export async function gatewayListDir(absPath: string): Promise<{ name: string; isDir: boolean }[]> {
   if (!useSandboxFsGateway()) {
-    const dirents = await fsp.readdir(absPath, { withFileTypes: true })
-    return dirents.map((d) => ({ name: d.name, isDir: d.isDirectory() }))
+    return getActiveWorkspaceFs().readdirWithTypes(absPath)
   }
   const res = await invokeWorker<{ dirents?: { name: string; isDir: boolean }[] }>({
     op: 'statDir',
