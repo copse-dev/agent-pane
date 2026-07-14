@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { getAppIcon } from '../app-icon.ts'
 import { getSetting, setSetting } from '../services/storage/settings.ts'
 import { attachWebContentsLockdown } from './web-contents-lockdown.ts'
+import { bootThemeWindowOptions } from './boot-theme.ts'
 
 let mainWin: BrowserWindow | null = null
 
@@ -43,6 +44,7 @@ function sanitizeBounds(saved: Bounds): Bounds {
 export function createMainWindow(): BrowserWindow {
   const saved = sanitizeBounds(getSetting<Bounds>('windowBounds', { width: 1200, height: 800 }))
   const icon = getAppIcon()
+  const bootTheme = bootThemeWindowOptions()
   const win = new BrowserWindow({
     ...saved,
     ...(icon ? { icon } : {}),
@@ -52,7 +54,7 @@ export function createMainWindow(): BrowserWindow {
     titleBarStyle: 'hidden',
     // y centers 12px traffic lights in the titlebar ((titlebar-height − 12) / 2).
     trafficLightPosition: { x: 12, y: 14 },
-    backgroundColor: '#1e1e1e',
+    backgroundColor: bootTheme.backgroundColor,
     show: false,
     webPreferences: {
       contextIsolation: true,
@@ -77,7 +79,7 @@ export function createMainWindow(): BrowserWindow {
     if (!win.isDestroyed() && !win.isVisible()) win.show()
   }, 3000)
   win.on('close', () => void setSetting('windowBounds', win.getBounds()))
-  void win.loadFile(join(__dirname, '../renderer/index.html'))
+  void win.loadFile(join(__dirname, '../renderer/index.html'), { query: bootTheme.query })
   return win
 }
 

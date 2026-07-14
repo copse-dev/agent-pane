@@ -152,6 +152,16 @@ export function seedE2eViewport(
   writeSettings({ windowBounds: bounds })
 }
 
+/** Workspace + pinned theme for the preload boot-theme e2e (#41). */
+export function seedThemeBootFixture(workspaceRoot: string, theme: 'light' | 'dark'): void {
+  resetUserData()
+  writeSeedConfig({
+    projects: [{ id: 'p1', path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: 'p1',
+  })
+  writeSettings({ theme, uiTintStrength: 'off' })
+}
+
 /** Layout for three-pane todo plan reference screenshots. Call before reloadSession(). */
 export function seedE2eThreePaneLayout(): void {
   writeSettings({
