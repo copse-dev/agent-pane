@@ -26,15 +26,10 @@ function shouldCollapseCleanReview(review: ThreadReview): boolean {
   return review.status === 'done' && review.issuesFound === false
 }
 
-function appendReviewHeader(
-  panel: HTMLElement,
-  review: ThreadReview,
-  onRetry?: () => void,
-): void {
-  const header = el(
-    shouldCollapseCleanReview(review) ? 'summary' : 'div',
-    { class: 'review-panel-header' },
-  )
+function appendReviewHeader(panel: HTMLElement, review: ThreadReview, onRetry?: () => void): void {
+  const header = el(shouldCollapseCleanReview(review) ? 'summary' : 'div', {
+    class: 'review-panel-header',
+  })
   header.append(
     el(
       'span',
