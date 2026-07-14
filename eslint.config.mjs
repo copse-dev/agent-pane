@@ -114,4 +114,20 @@ export default ts.config(
       },
     },
   },
+  {
+    // Synchronous first-paint theme script copied to dist; not part of the TS project graph.
+    files: ['src/renderer/theme-boot.js'],
+    extends: [ts.configs.disableTypeChecked],
+    languageOptions: {
+      sourceType: 'script',
+      globals: {
+        window: 'readonly',
+        document: 'readonly',
+        URLSearchParams: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off',
+    },
+  },
 )

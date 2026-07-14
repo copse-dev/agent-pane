@@ -4,6 +4,7 @@ import type { RightPanelMode } from '@shared/types/state.ts'
 import { getAppIcon } from '../app-icon.ts'
 import { attachWebContentsLockdown } from './web-contents-lockdown.ts'
 import { registerTrustedAppFrame, unregisterTrustedAppFrame } from './app-frames.ts'
+import { bootThemeWindowOptions } from './boot-theme.ts'
 
 /** Any right-panel pane can be detached into its own window. */
 export type PopoutMode = RightPanelMode
@@ -37,6 +38,7 @@ export function createPanePopoutWindow(mode: PopoutMode): BrowserWindow {
   }
 
   const icon = getAppIcon()
+  const bootTheme = bootThemeWindowOptions()
   const win = new BrowserWindow({
     width: 560,
     height: 780,
@@ -44,7 +46,7 @@ export function createPanePopoutWindow(mode: PopoutMode): BrowserWindow {
     minHeight: 420,
     ...(icon ? { icon } : {}),
     title: TITLES[mode],
-    backgroundColor: '#1e1e1e',
+    backgroundColor: bootTheme.backgroundColor,
     show: false,
     webPreferences: {
       contextIsolation: true,
@@ -71,6 +73,9 @@ export function createPanePopoutWindow(mode: PopoutMode): BrowserWindow {
     popoutWindows.delete(mode)
   })
 
-  void win.loadFile(join(__dirname, '../renderer/index.html'), { search: `popout=${mode}` })
+  void win.loadFile(join(__dirname, '../renderer/index.html'), {
+    search: `popout=${mode}`,
+    query: bootTheme.query,
+  })
   return win
 }

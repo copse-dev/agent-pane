@@ -13,6 +13,7 @@ cpSync('node_modules/vscode-material-icons/generated/icons', 'dist/renderer/mate
   recursive: true,
 })
 copyFileSync('src/renderer/index.html', 'dist/renderer/index.html')
+copyFileSync('src/renderer/theme-boot.js', 'dist/renderer/theme-boot.js')
 cpSync('assets', 'dist/assets', { recursive: true })
 copyFileSync('assets/icons/rose/icon-32.png', 'dist/renderer/favicon.png')
 cpSync('src/renderer/icon-previews', 'dist/renderer/icon-previews', { recursive: true })

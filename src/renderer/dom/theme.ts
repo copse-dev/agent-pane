@@ -1,4 +1,5 @@
 import type { Theme, ThemePreference } from '@shared/types/state.ts'
+import { resolveThemeFromPreference } from '@shared/theme.ts'
 
 /** The OS "dark mode" media query, read live each call (cheap, and avoids
  *  caching a stale MediaQueryList across pop-out windows). */
@@ -9,8 +10,7 @@ function prefersDark(): MediaQueryList {
 /** Resolve a stored preference to the concrete theme the UI should render.
  *  `system` follows the OS; `light`/`dark` pass through. */
 export function resolveTheme(preference: ThemePreference): Theme {
-  if (preference === 'light' || preference === 'dark') return preference
-  return prefersDark().matches ? 'dark' : 'light'
+  return resolveThemeFromPreference(preference, prefersDark().matches)
 }
 
 /** Reflect the effective theme on <html> so tokens.css / themes.css apply. */
