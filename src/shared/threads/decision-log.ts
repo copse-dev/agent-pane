@@ -82,6 +82,14 @@ export interface DecisionEvent {
 const MAX_FIELD_LEN = 4000
 
 /**
+ * Durable shell events intentionally omit the command text. Best-effort
+ * redaction cannot identify arbitrary positional secrets (for example,
+ * `sshpass -p hunter2`), so persisting the raw command would turn the audit log
+ * into a credential sink.
+ */
+export const SHELL_DECISION_SUBJECT = 'shell command (arguments omitted)'
+
+/**
  * Redact secrets that commonly appear verbatim in recorded commands before they
  * are written to the durable log (#656 asks for a redaction policy). Conservative
  * by design — it targets well-known secret shapes and `KEY=`/`--flag value`

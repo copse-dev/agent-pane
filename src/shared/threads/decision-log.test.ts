@@ -4,6 +4,7 @@ import {
   DECISION_LOG_CONFORMANCE,
   DECISION_LOG_MEDIA_TYPE,
   DECISION_LOG_SCHEMA_VERSION,
+  SHELL_DECISION_SUBJECT,
   decisionLogManifest,
   makeDecisionEvent,
   parseDecisionLine,
@@ -102,6 +103,11 @@ describe('decision-log schema', () => {
 })
 
 describe('redactSecrets', () => {
+  it('uses an argument-free subject for durable shell decisions', () => {
+    assert.equal(SHELL_DECISION_SUBJECT, 'shell command (arguments omitted)')
+    assert.equal(SHELL_DECISION_SUBJECT.includes('hunter2'), false)
+  })
+
   it('redacts secret-ish env assignments in a command', () => {
     const out = redactSecrets('GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz012345 gh pr view')
     assert.equal(out.includes('ghp_abcdefghijklmnopqrstuvwxyz012345'), false)

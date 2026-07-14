@@ -76,6 +76,7 @@ import {
 } from '../mcp/custom-tools-registry.ts'
 import { isAgentRunReadonly } from '../agent-run-readonly.ts'
 import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
+import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
 
 export type { ShellPermissionDecision, PermissionCheck } from './permission-policy.ts'
 export { decideShellPermission } from './permission-policy.ts'
@@ -113,7 +114,7 @@ async function requestEscalationApproval(
     title,
     body,
     type: 'shell',
-    subject: command,
+    subject: SHELL_DECISION_SUBJECT,
     scope: 'external',
     allowRemember: trustable !== null,
     ...(trustable ? { rememberLabel: `Always allow \`${trustable}\` in trusted projects` } : {}),
@@ -140,7 +141,7 @@ async function promptShell(
     title: 'Run shell command?',
     body: formatShellPromptBody(command, reasons),
     type: 'shell',
-    subject: command,
+    subject: SHELL_DECISION_SUBJECT,
     scope: 'sandbox',
   })
   return approved
@@ -168,7 +169,7 @@ export async function promptExpectedSandboxBlock(
     title: 'Run outside sandbox?',
     body: formatExpectedSandboxBlockPromptBody(command, reasons),
     type: 'shell',
-    subject: command,
+    subject: SHELL_DECISION_SUBJECT,
     scope: 'external',
   })
   return approved
@@ -400,7 +401,7 @@ export async function ensureShellCommandPermitted(
       kind: 'classification',
       actor: 'classifier',
       verdict: classification.scope === 'sandbox' ? 'allowed' : 'blocked',
-      subject: command,
+      subject: SHELL_DECISION_SUBJECT,
       scope: classification.scope,
       confidence: classification.confidence,
       ...(classification.reason ? { reasons: [classification.reason] } : {}),
@@ -447,7 +448,7 @@ export async function ensureShellCommandPermitted(
             title: 'Run package command?',
             body: formatEphemeralRunnerPromptBody(command, { outsideSandbox, safeInstall }),
             type: 'shell',
-            subject: command,
+            subject: SHELL_DECISION_SUBJECT,
             scope: outsideSandbox ? 'external' : 'sandbox',
           }
         : {
@@ -458,7 +459,7 @@ export async function ensureShellCommandPermitted(
               jsManager: install.jsManager,
             }),
             type: 'shell',
-            subject: command,
+            subject: SHELL_DECISION_SUBJECT,
             scope: outsideSandbox ? 'external' : 'sandbox',
           },
     )
