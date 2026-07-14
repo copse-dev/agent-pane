@@ -3,7 +3,11 @@ import assert from 'node:assert/strict'
 import { setSetting } from '../storage/settings.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { storageSet } from '../storage/storage.ts'
-import { getActiveExecutionTarget, isSshWorkspaceExecutionEnabled } from './execution-target.ts'
+import {
+  getActiveExecutionTarget,
+  isActiveSshWorkspace,
+  isSshWorkspaceExecutionEnabled,
+} from './execution-target.ts'
 import { wrapRemoteShellWithPgid } from './ssh-spawn.ts'
 import { remoteEnvAllowList, REMOTE_PGID_PREFIX } from './remote-env.ts'
 
@@ -65,5 +69,9 @@ describe('getActiveExecutionTarget', () => {
   it('returns local when execution is disabled', async () => {
     await setSetting('sshWorkspaceEnabled', false)
     assert.deepEqual(getActiveExecutionTarget(), { kind: 'local' })
+  })
+
+  it('isActiveSshWorkspace reflects enabled ssh project', () => {
+    assert.equal(isActiveSshWorkspace(), true)
   })
 })

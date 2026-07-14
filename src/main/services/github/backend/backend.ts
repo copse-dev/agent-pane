@@ -10,11 +10,7 @@ import type {
 } from '@shared/types/git.ts'
 import { getSetting } from '../../storage/settings.ts'
 import { isGhAvailable } from '../../tool-availability.ts'
-import {
-  getActiveExecutionTarget,
-  isSshExecutionTarget,
-  isSshWorkspaceExecutionEnabled,
-} from '../../ssh-workspace/execution-target.ts'
+import { isActiveSshWorkspace } from '../../ssh-workspace/execution-target.ts'
 import { isMockGhEnabled } from '../gh-pr-mock.ts'
 import { hasGitHubApiToken } from './github-token.ts'
 import { ghCliBackend } from './gh-cli-backend.ts'
@@ -100,8 +96,7 @@ export function resolveGitHubBackend(): GitHubBackend {
   if (isMockGhEnabled()) return mockGitHubBackend
   const preference =
     backendEnvOverride() ?? getSetting<GitHubBackendPreference>(GITHUB_BACKEND_SETTING, 'auto')
-  const target = getActiveExecutionTarget()
-  const sshWorkspace = isSshWorkspaceExecutionEnabled() && isSshExecutionTarget(target)
+  const sshWorkspace = isActiveSshWorkspace()
   const kind = decideBackendKind({
     preference,
     ghAvailable: isGhAvailable(),
