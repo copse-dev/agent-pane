@@ -55,6 +55,8 @@ export interface AcpAgentOptions {
   name?: string
   /** Whether the agent supports `session/load`. Defaults to false. */
   loadSession?: boolean
+  /** Whether the agent supports reconnecting a prior session. Defaults to false. */
+  resume?: boolean
 }
 
 function randomSessionId(): string {
@@ -77,14 +79,28 @@ function decisionFromOutcome(outcome: RequestPermissionOutcome): AcpPermissionDe
  */
 export function buildAcpAgentApp(runner: AcpTurnRunner, options: AcpAgentOptions = {}): AgentApp {
   const pending = new Map<string, AbortController>()
+  const sessions = new Set<string>()
 
   return agent({ name: options.name ?? 'copse' })
     .onRequest('initialize', () => ({
       protocolVersion: PROTOCOL_VERSION,
-      agentCapabilities: { loadSession: options.loadSession ?? false },
+      agentCapabilities: {
+        loadSession: options.loadSession ?? false,
+        ...(options.resume ? { sessionCapabilities: { resume: {} } } : {}),
+      },
     }))
     .onRequest('authenticate', () => ({}))
-    .onRequest('session/new', () => ({ sessionId: randomSessionId() }))
+    .onRequest('session/new', () => {
+      const sessionId = randomSessionId()
+      sessions.add(sessionId)
+      return { sessionId }
+    })
+    .onRequest('session/resume', (ctx) => {
+      if (!options.resume || !sessions.has(ctx.params.sessionId)) {
+        throw new Error('ACP session is not resumable')
+      }
+      return {}
+    })
     .onRequest('session/prompt', async (ctx) => {
       const params = ctx.params
       const peer = ctx.client

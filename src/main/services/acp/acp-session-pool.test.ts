@@ -50,6 +50,31 @@ function makeTransportFactory(log: AgentLog): () => Promise<{
   }
 }
 
+/** Keep one agent app alive while each transport connection is replaced. */
+function makeResumableTransportFactory(log: AgentLog): () => Promise<{
+  stream: ReturnType<typeof ndJsonStream>
+  dispose: () => void
+}> {
+  const runner: AcpTurnRunner = async (ctx) => {
+    log.promptSessions.push(ctx.sessionId)
+    await ctx.emit({ type: 'text', text: `echo:${ctx.prompt}` })
+    return { stopReason: 'end_turn' }
+  }
+  const app = buildAcpAgentApp(runner, { name: 'resumable-pool-test-agent', resume: true })
+  return () => {
+    log.spawns++
+    const c2a = new TransformStream<Uint8Array, Uint8Array>()
+    const a2c = new TransformStream<Uint8Array, Uint8Array>()
+    const agentConnection = app.connect(ndJsonStream(a2c.writable, c2a.readable))
+    return Promise.resolve({
+      stream: ndJsonStream(c2a.writable, a2c.readable),
+      dispose: () => {
+        agentConnection.close()
+      },
+    })
+  }
+}
+
 function sink(into: StreamChunk[]): AcpClientHandlers {
   return {
     onChunk: (chunk) => into.push(chunk),
@@ -133,6 +158,28 @@ describe('acp-session-pool', () => {
     const reaped = reapIdleAcpSessions(Date.now() + 61_000, 60_000)
     assert.deepEqual(reaped, ['t1'])
     assert.equal(acpSessionPoolSize(), 0)
+  })
+
+  it('resumes a dropped resumable session without replaying history', async () => {
+    const log: AgentLog = { spawns: 0, promptSessions: [] }
+    const createTransport = makeResumableTransportFactory(log)
+    const first = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
+    first.entry.open.handlers.current = sink([])
+    await runAcpSessionPrompt(first.entry.open, 'one', undefined)
+    const originalSessionId = first.entry.open.session.sessionId
+
+    // This mirrors a connection-closed turn: preserve the agent's opaque
+    // session ID while replacing its dead stdio transport.
+    disposeAcpSession('t1', { preserveForResume: true })
+    const resumed = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
+
+    assert.equal(resumed.fresh, false)
+    assert.equal(resumed.entry.open.resumed, true)
+    assert.equal(resumed.entry.open.session.sessionId, originalSessionId)
+    resumed.entry.open.handlers.current = sink([])
+    await runAcpSessionPrompt(resumed.entry.open, 'two', undefined)
+    assert.equal(log.spawns, 2)
+    assert.deepEqual(log.promptSessions, [originalSessionId, originalSessionId])
   })
 
   it('a disposed session reports closed so acquire never reuses it', async () => {

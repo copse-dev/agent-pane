@@ -3,8 +3,6 @@ import {
   methods,
   ndJsonStream,
   PROTOCOL_VERSION,
-  type ActiveSession,
-  type ActiveSessionMessage,
   type ClientConnection,
   type McpCapabilities,
   type McpServer,
@@ -13,7 +11,9 @@ import {
   type ReadTextFileResponse,
   type RequestPermissionRequest,
   type RequestPermissionResponse,
+  type ResumeSessionResponse,
   type SessionConfigOption,
+  type SessionUpdate,
   type StopReason,
   type Stream,
   type Usage,
@@ -104,7 +104,9 @@ const UNSUPPORTED = (method: string) => (): Promise<never> =>
  * Returns `null` when the agent exposes no such option (model is then fixed to
  * the agent's own default).
  */
-export function modelSelectorFrom(response: NewSessionResponse): AcpModelSelector | null {
+export function modelSelectorFrom(
+  response: NewSessionResponse | ResumeSessionResponse,
+): AcpModelSelector | null {
   const option = (response.configOptions ?? []).find(
     (candidate): candidate is SessionConfigOption =>
       candidate.category === 'model' && candidate.type === 'select',
@@ -246,16 +248,77 @@ export interface AcpTurnStop {
   usage?: Usage | null
 }
 
+/** The session state returned by either `session/new` or `session/resume`. */
+export interface ManagedAcpSession {
+  sessionId: string
+  response: NewSessionResponse | ResumeSessionResponse
+}
+
+/**
+ * Minimal async queue for session updates. The SDK only exposes this routing
+ * through its `ActiveSession` wrapper, which cannot be reconstructed after a
+ * raw `session/resume` response. Keeping the queue here lets new and resumed
+ * sessions share one typed update pump.
+ */
+class AcpUpdateQueue {
+  private readonly pending: SessionUpdate[] = []
+  private waiter: {
+    resolve: (update: SessionUpdate) => void
+    reject: (reason: unknown) => void
+  } | null = null
+  private failure: Error | null = null
+
+  enqueue(update: SessionUpdate): void {
+    if (this.failure !== null) return
+    const waiter = this.waiter
+    if (waiter) {
+      this.waiter = null
+      waiter.resolve(update)
+    } else {
+      this.pending.push(update)
+    }
+  }
+
+  next(): Promise<SessionUpdate> {
+    const update = this.pending.shift()
+    if (update) return Promise.resolve(update)
+    if (this.failure !== null) return Promise.reject(this.failure)
+    return new Promise<SessionUpdate>((resolve, reject) => {
+      this.waiter = { resolve, reject }
+    })
+  }
+
+  fail(reason: Error): void {
+    if (this.failure !== null) return
+    this.failure = reason
+    const waiter = this.waiter
+    if (waiter) {
+      this.waiter = null
+      waiter.reject(reason)
+    }
+  }
+}
+
+function closedConnectionError(reason: unknown): Error {
+  if (reason instanceof Error) return reason
+  return new Error(typeof reason === 'string' ? reason : 'ACP connection closed')
+}
+
 /**
  * A live, reusable connection + session to an external ACP agent. Created by
  * {@link openAcpSession}; drive turns with {@link runAcpSessionPrompt}; the
  * owner (the session pool) calls `dispose` on eviction.
  */
 export interface OpenAcpSession {
-  session: ActiveSession
+  session: ManagedAcpSession
   connection: ClientConnection
+  updates: AcpUpdateQueue
   handlers: MutableAcpHandlers
   mcpCapabilities: McpCapabilities | undefined
+  /** Whether this agent advertised the optional `session/resume` capability. */
+  canResume: boolean
+  /** True when this connection restored a prior ACP session rather than creating one. */
+  resumed: boolean
   /** Last model applied via `session/set_config_option` (avoid re-sending). */
   appliedModel: string | undefined
   /**
@@ -300,42 +363,34 @@ async function spawnTransport(
 }
 
 /**
- * The session's single consumer of `session.nextUpdate()`, running from open to
- * dispose (issue #588). The SDK's update queue serves concurrent waiters FIFO,
- * so exactly one loop may consume it — this pump owns that role for the
- * session's whole life, which is what lets updates arriving BETWEEN turns (a
- * background subagent finishing after its turn ended) surface in the UI
- * immediately instead of queueing invisibly until the user's next message.
+ * The session's single consumer of the update queue, running from open to
+ * dispose (issue #588). Exactly one loop may consume it — this pump owns that
+ * role for the session's whole life, which is what lets updates arriving
+ * BETWEEN turns (a background subagent finishing after its turn ended) surface
+ * in the UI immediately instead of queueing invisibly until the user's next
+ * message.
  *
  * Routing:
- * - `stop` messages settle the in-flight turn via {@link OpenAcpSession.turnStop}.
- *   The SDK enqueues a prompt's stop only after the response resolves, i.e.
- *   after every update the agent sent before stopping was already pumped — so
- *   a turn never settles ahead of its own chunks.
  * - Updates translate to chunks and go to the CURRENT (or, between turns, the
  *   most recent) handlers — unless {@link OpenAcpSession.suppressChunks} is set
  *   by an aborted turn.
- * - A rejected `nextUpdate` is a failed prompt request (also settles the turn;
- *   double-settling is a no-op) or the connection closing (pump exits).
+ * - A rejected queue means the connection closed (pump exits). Prompt responses
+ *   settle turns directly, after their request resolves.
  */
 function startAcpUpdatePump(open: OpenAcpSession): void {
   void (async (): Promise<void> => {
     for (;;) {
-      let message: ActiveSessionMessage
+      let update: SessionUpdate
       try {
-        message = await open.session.nextUpdate()
+        update = await open.updates.next()
       } catch (err) {
         if (open.isClosed()) return
         open.turnStop?.reject(err)
         continue
       }
-      if (message.kind === 'stop') {
-        open.turnStop?.resolve(message.response)
-        continue
-      }
       if (open.suppressChunks) continue
       try {
-        const chunk = sessionUpdateToStreamChunk(message.update)
+        const chunk = sessionUpdateToStreamChunk(update)
         if (chunk) open.handlers.current?.onChunk(chunk)
       } catch {
         // A sink failure must not kill the pump: turn-stop routing (and every
@@ -357,10 +412,24 @@ export async function openAcpSession(
   config: AcpAgentSpawnConfig,
   handlers: MutableAcpHandlers,
   createTransport: AcpTransportFactory = spawnTransport,
+  resumeSessionId?: string,
 ): Promise<OpenAcpSession> {
   const transport = await createTransport(config)
 
+  let activeUpdates: { sessionId: string; queue: AcpUpdateQueue } | null = null
+  const pendingUpdates = new Map<string, SessionUpdate[]>()
+
   const app = client({ name: 'copse' })
+    .onNotification(methods.client.session.update, (ctx) => {
+      const { sessionId, update } = ctx.params
+      if (activeUpdates?.sessionId === sessionId) {
+        activeUpdates.queue.enqueue(update)
+        return
+      }
+      const pending = pendingUpdates.get(sessionId) ?? []
+      pending.push(update)
+      pendingUpdates.set(sessionId, pending)
+    })
     .onRequest(methods.client.session.requestPermission, (ctx) => {
       const current = handlers.current
       if (!current) return { outcome: { outcome: 'cancelled' as const } }
@@ -390,6 +459,7 @@ export async function openAcpSession(
       clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
     })
     const mcpCapabilities = initResponse.agentCapabilities?.mcpCapabilities
+    const canResume = Boolean(initResponse.agentCapabilities?.sessionCapabilities?.resume)
     const mcpServers = toAcpMcpServers(config.mcpServers ?? [], mcpCapabilities)
     // Copse's own tools ride the same channel as forwarded servers: an http
     // MCP endpoint the agent mounts itself (#602 tier 2). http-capable only —
@@ -402,19 +472,56 @@ export async function openAcpSession(
         headers: [{ name: 'Authorization', value: `Bearer ${config.nativeBridge.token}` }],
       })
     }
-    const session = await connection.agent.buildSession({ cwd: config.cwd, mcpServers }).start()
+    let session: ManagedAcpSession | null = null
+    let resumed = false
+    if (resumeSessionId && canResume) {
+      try {
+        const response: ResumeSessionResponse = await connection.agent.request(
+          methods.agent.session.resume,
+          { sessionId: resumeSessionId, cwd: config.cwd, mcpServers },
+        )
+        session = { sessionId: resumeSessionId, response }
+        resumed = true
+      } catch {
+        // A session can expire while its client is disconnected. Fall back to a
+        // fresh session below; the pool will replay Copse's transcript once.
+      }
+    }
+    if (!session) {
+      const response = await connection.agent.request(methods.agent.session.new, {
+        cwd: config.cwd,
+        mcpServers,
+      })
+      session = { sessionId: response.sessionId, response }
+    }
+    const updates = new AcpUpdateQueue()
+    for (const update of pendingUpdates.get(session.sessionId) ?? []) updates.enqueue(update)
+    pendingUpdates.clear()
+    activeUpdates = { sessionId: session.sessionId, queue: updates }
 
     const open: OpenAcpSession = {
       session,
       connection,
+      updates,
       handlers,
       mcpCapabilities,
+      canResume,
+      resumed,
       appliedModel: undefined,
       suppressChunks: false,
       turnStop: null,
       isClosed: () => disposed || connection.signal.aborted,
       dispose,
     }
+    connection.signal.addEventListener(
+      'abort',
+      () => {
+        const reason = closedConnectionError(connection.signal.reason)
+        updates.fail(reason)
+        open.turnStop?.reject(reason)
+      },
+      { once: true },
+    )
     startAcpUpdatePump(open)
     return open
   } catch (err) {
@@ -440,8 +547,8 @@ export const ACP_CANCEL_GRACE_MS = 2000
  * picker's selection moved, send the prompt, and wait for the turn's stop. The
  * agent's updates — this turn's and any that arrive between turns — are
  * forwarded to the UI by the session's update pump (see
- * {@link startAcpUpdatePump}), which settles this turn once its stop message
- * comes through, after all of the turn's own chunks.
+ * {@link startAcpUpdatePump}). The prompt response settles this turn after the
+ * agent completes the request.
  *
  * Cancellation (`signal` abort, i.e. the Stop button): we send `session/cancel`
  * and stop forwarding the agent's chunks to the UI immediately
@@ -496,7 +603,7 @@ export async function runAcpSessionPrompt(
 
   try {
     if (!signal?.aborted && model && model !== open.appliedModel) {
-      const selector = modelSelectorFrom(session.newSessionResponse)
+      const selector = modelSelectorFrom(session.response)
       // Only switch when the value is a model the agent still offers and it
       // isn't already current. A stale/removed value (e.g. after an agent
       // version bump) is skipped, and a rejected set is swallowed, so a bad
@@ -519,13 +626,12 @@ export async function runAcpSessionPrompt(
       }
     }
 
-    // The turn's completion arrives back through the update pump as this
-    // turn's `stop`, strictly after the turn's own updates were forwarded. A
-    // failed prompt settles the turn here directly (the pump may also see the
-    // rejection; the second settle is a no-op).
-    void session.prompt(prompt).catch((err: unknown) => {
-      settleStop.reject(err)
-    })
+    void connection.agent
+      .request(methods.agent.session.prompt, {
+        sessionId: session.sessionId,
+        prompt: [{ type: 'text', text: prompt }],
+      })
+      .then(settleStop.resolve, settleStop.reject)
     const outcome = await Promise.race([stopped, graceExpired])
     if (outcome === 'grace-expired') {
       // The agent never acknowledged the cancel. Tear the session down so the
