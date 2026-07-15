@@ -156,7 +156,9 @@ describe('OpenRouter model picker', () => {
       await $('.model-picker-option').map(async (option) => ({
         text: await option.getText(),
         active: await option.getAttribute('aria-selected'),
-        hasActiveClass: await option.getAttribute('class').then((classes) => classes?.includes('is-active')),
+        hasActiveClass: await option
+          .getAttribute('class')
+          .then((classes) => classes?.includes('is-active')),
       })),
       [
         { text: 'Qwen3 235B A22B (free)', active: 'false', hasActiveClass: false },
@@ -173,9 +175,7 @@ describe('OpenRouter model picker', () => {
     await $('.model-picker-menu').waitForDisplayed({ reverse: true })
     assert.equal((await $('.model-picker-label').getText()).trim(), 'anthropic/claude-3.5-sonnet')
     assert.equal(
-      await browser.execute(() =>
-        document.activeElement?.classList.contains('prompt-input'),
-      ),
+      await browser.execute(() => document.activeElement?.classList.contains('prompt-input')),
       true,
       'composer should be focused after closing the picker',
     )
@@ -216,9 +216,7 @@ describe('OpenRouter model picker', () => {
     await browser.keys('Escape')
     await $('.model-picker-menu').waitForDisplayed({ reverse: true })
     assert.equal(
-      await browser.execute(() =>
-        document.activeElement?.classList.contains('prompt-input'),
-      ),
+      await browser.execute(() => document.activeElement?.classList.contains('prompt-input')),
       true,
       'composer should be focused after dismissing the picker with Escape',
     )
