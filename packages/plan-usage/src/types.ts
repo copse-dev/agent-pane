@@ -1,6 +1,6 @@
-/** Shared types for subscription plan-usage windows (Claude / Codex / Hugging Face). */
+/** Shared types for subscription plan-usage windows (Claude / Codex / HF / Cursor). */
 
-export type PlanProviderId = 'claude' | 'codex' | 'huggingface'
+export type PlanProviderId = 'claude' | 'codex' | 'huggingface' | 'cursor'
 
 /** One rolling (or fixed) usage window reported by a provider. */
 export interface PlanWindow {
@@ -37,6 +37,7 @@ export type FetchLike = (
   init?: {
     method?: string
     headers?: Record<string, string>
+    body?: string
     signal?: AbortSignal
   },
 ) => Promise<{

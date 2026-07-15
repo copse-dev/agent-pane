@@ -1,11 +1,12 @@
 import { execFileSync } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   getPlanUsageSnapshot,
   orderClaudeTokenCandidates,
   parseCodexAuthJson,
+  parseCursorSessionToken,
   parseHuggingFaceToken,
   type PlanUsageCredentials,
   type PlanUsageSnapshot,
@@ -17,6 +18,7 @@ import { resolveApiKey } from './storage/settings.ts'
 const MOCK_ENV = 'COPSE_PLAN_USAGE_MOCK'
 
 const CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials'
+const CURSOR_KEYCHAIN_SERVICE = 'cursor-access-token'
 
 function readJsonFile(path: string): unknown {
   try {
@@ -49,6 +51,68 @@ export function readClaudeKeychainCredentialsJson(): string | null {
   }
 }
 
+/** macOS Keychain JWT written by `cursor-agent` login. */
+export function readCursorKeychainAccessToken(): string | null {
+  if (process.platform !== 'darwin') return null
+  try {
+    const raw = execFileSync(
+      'security',
+      ['find-generic-password', '-s', CURSOR_KEYCHAIN_SERVICE, '-w'],
+      { encoding: 'utf8', timeout: 5_000 },
+    ).trim()
+    return parseCursorSessionToken(raw)
+  } catch {
+    return null
+  }
+}
+
+/** Candidate paths for Cursor IDE `state.vscdb` (ItemTable cursorAuth/accessToken). */
+export function cursorStateDbPaths(
+  home = homedir(),
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const paths: string[] = []
+  if (process.platform === 'darwin') {
+    paths.push(
+      join(
+        home,
+        'Library',
+        'Application Support',
+        'Cursor',
+        'User',
+        'globalStorage',
+        'state.vscdb',
+      ),
+    )
+  } else if (process.platform === 'win32') {
+    const appData = env['APPDATA']?.trim()
+    if (appData) {
+      paths.push(join(appData, 'Cursor', 'User', 'globalStorage', 'state.vscdb'))
+    }
+  } else {
+    paths.push(join(home, '.config', 'Cursor', 'User', 'globalStorage', 'state.vscdb'))
+  }
+  return paths
+}
+
+/**
+ * Read `cursorAuth/accessToken` from Cursor's local SQLite state DB via the
+ * `sqlite3` CLI (read-only). Returns null when sqlite3/DB/key are missing.
+ */
+export function readCursorAccessTokenFromStateDb(dbPath: string): string | null {
+  if (!existsSync(dbPath)) return null
+  try {
+    const raw = execFileSync(
+      'sqlite3',
+      [dbPath, "SELECT value FROM ItemTable WHERE key = 'cursorAuth/accessToken' LIMIT 1;"],
+      { encoding: 'utf8', timeout: 5_000 },
+    ).trim()
+    return parseCursorSessionToken(raw)
+  } catch {
+    return null
+  }
+}
+
 function discoverHuggingFaceToken(
   home: string,
   env: NodeJS.ProcessEnv,
@@ -62,12 +126,33 @@ function discoverHuggingFaceToken(
   return parseHuggingFaceToken(readTextFile(join(hfHome, 'token'))) ?? undefined
 }
 
-/** Discover Claude / Codex / Hugging Face tokens from Keychain, files, and env. */
+function discoverCursorSessionToken(
+  home: string,
+  env: NodeJS.ProcessEnv,
+  readKeychain: () => string | null,
+  readStateDb: (dbPath: string) => string | null,
+): string | undefined {
+  const fromEnv =
+    parseCursorSessionToken(env['CURSOR_SESSION_TOKEN'] ?? null) ||
+    parseCursorSessionToken(env['WORKOS_CURSOR_SESSION_TOKEN'] ?? null)
+  if (fromEnv) return fromEnv
+  const fromKeychain = readKeychain()
+  if (fromKeychain) return fromKeychain
+  for (const dbPath of cursorStateDbPaths(home, env)) {
+    const fromDb = readStateDb(dbPath)
+    if (fromDb) return fromDb
+  }
+  return undefined
+}
+
+/** Discover Claude / Codex / Hugging Face / Cursor tokens from Keychain, files, and env. */
 export function discoverPlanUsageCredentials(
   home = homedir(),
   env: NodeJS.ProcessEnv = process.env,
   readKeychain: () => string | null = readClaudeKeychainCredentialsJson,
   resolveHuggingFaceStored: () => string | null = () => resolveApiKey('huggingface'),
+  readCursorKeychain: () => string | null = readCursorKeychainAccessToken,
+  readCursorStateDb: (dbPath: string) => string | null = readCursorAccessTokenFromStateDb,
 ): PlanUsageCredentials {
   const candidates = orderClaudeTokenCandidates({
     keychainJson: readKeychain(),
@@ -89,6 +174,8 @@ export function discoverPlanUsageCredentials(
   }
   const hf = discoverHuggingFaceToken(home, env, resolveHuggingFaceStored)
   if (hf) credentials.huggingfaceToken = hf
+  const cursor = discoverCursorSessionToken(home, env, readCursorKeychain, readCursorStateDb)
+  if (cursor) credentials.cursorSessionToken = cursor
   return credentials
 }
 
@@ -166,6 +253,29 @@ function mockSnapshot(): PlanUsageSnapshot {
           checkedAt,
         },
       },
+      {
+        status: 'ok',
+        provider: 'cursor',
+        usage: {
+          provider: 'cursor',
+          plan: "You've used 4% of your included usage · Hard limit $50",
+          windows: [
+            {
+              id: 'plan',
+              label: 'Included usage ($400 pool)',
+              usedPercent: 4,
+              resetsAt: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString(),
+            },
+            {
+              id: 'spend_limit',
+              label: 'On-demand limit ($50)',
+              usedPercent: 0,
+              resetsAt: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString(),
+            },
+          ],
+          checkedAt,
+        },
+      },
     ],
   }
 }
@@ -191,6 +301,7 @@ export async function loadPlanUsageSnapshot(): Promise<PlanUsageSnapshot> {
         { status: 'error', provider: 'claude', message },
         { status: 'error', provider: 'codex', message },
         { status: 'error', provider: 'huggingface', message },
+        { status: 'error', provider: 'cursor', message },
       ],
     }
   }

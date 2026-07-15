@@ -9,6 +9,12 @@ import {
   parseHuggingFaceToken,
 } from './credentials.ts'
 import {
+  buildCursorSessionCookie,
+  fetchCursorPlanUsage,
+  formatCursorCents,
+  parseCursorUsage,
+} from './cursor.ts'
+import {
   fetchHuggingFacePlanUsage,
   formatNanoUsd,
   huggingFaceMonthBoundsUnix,
@@ -457,6 +463,78 @@ describe('fetchHuggingFacePlanUsage', () => {
   })
 })
 
+describe('fetchCursorPlanUsage', () => {
+  const periodFixture = {
+    billingCycleStart: '1784073267000',
+    billingCycleEnd: '1786751667000',
+    planUsage: {
+      totalSpend: 1575,
+      includedSpend: 1575,
+      remaining: 38425,
+      limit: 40000,
+      remainingBonus: false,
+      bonusTooltip: 'bonus',
+      autoPercentUsed: 1.575,
+      apiPercentUsed: 0,
+      totalPercentUsed: 1.05,
+    },
+    spendLimitUsage: {
+      individualLimit: 5000,
+      individualRemaining: 5000,
+      limitType: 'user',
+    },
+    displayThreshold: 200,
+    enabled: true,
+    displayMessage: "You've used 4% of your included usage",
+    autoModelSelectedDisplayMessage: 'auto',
+    namedModelSelectedDisplayMessage: 'named',
+    autoBucketModels: ['default'],
+  }
+
+  it('maps period usage cents into included + on-demand windows', async () => {
+    const fetchImpl: FetchLike = async (input) => {
+      const body = input.includes('get-hard-limit') ? { hardLimit: 50 } : periodFixture
+      return jsonFetch(body)(input)
+    }
+    const result = await fetchCursorPlanUsage('user_01ABC%3A%3Afake.jwt.token', {
+      fetch: fetchImpl,
+      now: () => Date.parse('2026-07-15T12:00:00Z'),
+    })
+    assert.equal(result.status, 'ok')
+    assert.match(result.usage.plan ?? '', /4%/)
+    assert.match(result.usage.plan ?? '', /Hard limit \$50/)
+    assert.equal(result.usage.windows.length, 2)
+    const plan = result.usage.windows.find((w) => w.id === 'plan')
+    const spend = result.usage.windows.find((w) => w.id === 'spend_limit')
+    assert.ok(plan)
+    assert.ok(spend)
+    assert.ok(plan.usedPercent > 3.9 && plan.usedPercent < 4.1)
+    assert.equal(spend.usedPercent, 0)
+    assert.equal(plan.resetsAt, '2026-08-14T23:54:27.000Z')
+  })
+
+  it('builds Workos cookie from a raw JWT sub claim', () => {
+    const header = Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url')
+    const payload = Buffer.from(JSON.stringify({ sub: 'user_01TEST' })).toString('base64url')
+    const jwt = `${header}.${payload}.sig`
+    assert.equal(buildCursorSessionCookie(jwt), 'user_01TEST%3A%3A' + jwt)
+    assert.equal(formatCursorCents(1575), '$15.75')
+  })
+
+  it('parseCursorUsage alone matches the captured dashboard payload', () => {
+    const usage = parseCursorUsage(periodFixture, Date.parse('2026-07-15T12:00:00Z'), {
+      hardLimit: 50,
+    })
+    assert.equal(usage.provider, 'cursor')
+    assert.equal(usage.windows[0]?.id, 'plan')
+  })
+
+  it('returns unavailable without a session', async () => {
+    const result = await fetchCursorPlanUsage(null)
+    assert.equal(result.status, 'unavailable')
+  })
+})
+
 describe('getPlanUsageSnapshot', () => {
   it('never throws when providers fail hard', async () => {
     const boom: FetchLike = async () => {
@@ -467,16 +545,17 @@ describe('getPlanUsageSnapshot', () => {
         claudeOAuthToken: 'sk-ant-oat01-x',
         codex: { accessToken: 'tok' },
         huggingfaceToken: 'hf_x',
+        cursorSessionToken: 'user_01::jwt',
       },
       { fetch: boom },
     )
-    assert.equal(snap.providers.length, 3)
+    assert.equal(snap.providers.length, 4)
     assert.ok(snap.providers.every((p) => p.status === 'error'))
   })
 
   it('reports unavailable when no credentials are supplied', async () => {
     const snap = await getPlanUsageSnapshot({})
-    assert.equal(snap.providers.length, 3)
+    assert.equal(snap.providers.length, 4)
     assert.ok(snap.providers.every((p) => p.status === 'unavailable'))
   })
 })

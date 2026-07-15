@@ -1,10 +1,10 @@
 # @copse/plan-usage
 
 Standalone client for **subscription plan usage** (Claude / Codex rolling
-windows and Hugging Face monthly Inference Providers spend). Extracted as an
-in-repo workspace package in the same staging shape as `@copse/llm` and
-`@copse/agent`: tsconfig + esbuild aliases, zero imports from the host app, and
-a public surface that **never throws**.
+windows, Hugging Face monthly Inference Providers spend, and Cursor included /
+on-demand pools). Extracted as an in-repo workspace package in the same staging
+shape as `@copse/llm` and `@copse/agent`: tsconfig + esbuild aliases, zero
+imports from the host app, and a public surface that **never throws**.
 
 If a provider is unsigned-in, the endpoint shape changes, or the network fails,
 callers get a typed `unavailable` / `error` result and keep working. The host
@@ -25,6 +25,10 @@ app's local token ledger is unrelated and unaffected.
   for the current UTC month. Maps `usage.inferenceProviders`
   (`usedNanoUsd` / `limitNanoUsd` / `periodEnd`) into a monthly window. Needs a
   user HF token (`HF_TOKEN`, Settings key, or `~/.cache/huggingface/token`).
+- **`fetchCursorPlanUsage`** — `POST https://cursor.com/api/dashboard/get-current-period-usage`
+  (+ `get-hard-limit`). Maps `planUsage` (USD cents) and `spendLimitUsage` into
+  included / on-demand windows. Needs a WorkOS session cookie
+  (`CURSOR_SESSION_TOKEN` or Cursor IDE `state.vscdb` JWT), not a `crsr_…` API key.
 - **`getPlanUsageSnapshot`** — fan-out over all providers; always resolves to a
   `PlanUsageSnapshot` (per-provider ok / unavailable / error).
 - **Credentials:** prefers `~/.claude/.credentials.json` / Keychain from browser
@@ -44,16 +48,16 @@ app's local token ledger is unrelated and unaffected.
 ## Schema probe CLI
 
 ```bash
-npm run probe:plan-usage                  # live Claude + Codex + Hugging Face
+npm run probe:plan-usage                  # live Claude + Codex + HF + Cursor
 npm run probe:plan-usage -- --provider claude --raw
-npm run probe:plan-usage -- --provider huggingface
-npm run probe:plan-usage -- --fixture ./sample.json --provider huggingface
+npm run probe:plan-usage -- --provider cursor
+npm run probe:plan-usage -- --fixture ./sample.json --provider cursor
 ```
 
 The probe drives the real fetch/parse path, then diffs the raw JSON against
-`CLAUDE_USAGE_SCHEMA` / `CODEX_USAGE_SCHEMA` / `HUGGINGFACE_USAGE_SCHEMA`.
-Unknown keys or `limits[].kind` values exit `1` so new fields fail loudly
-instead of being ignored.
+`CLAUDE_USAGE_SCHEMA` / `CODEX_USAGE_SCHEMA` / `HUGGINGFACE_USAGE_SCHEMA` /
+`CURSOR_PERIOD_USAGE_SCHEMA`. Unknown keys or `limits[].kind` values exit `1`
+so new fields fail loudly instead of being ignored.
 
 ## Remaining step for a true standalone repo
 

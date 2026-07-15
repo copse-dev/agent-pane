@@ -23,6 +23,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   claude: 'Claude',
   codex: 'Codex',
   huggingface: 'Hugging Face',
+  cursor: 'Cursor',
 }
 
 function formatReset(resetsAt: string | null): string {
@@ -107,7 +108,7 @@ function renderPlanSection(
   const intro = document.createElement('p')
   intro.className = 'field-hint'
   intro.textContent =
-    'Live Claude / Codex / Hugging Face plan windows when those accounts are signed in. Failures here never block Copse — the local ledger below still tracks this app’s usage.'
+    'Live Claude / Codex / Hugging Face / Cursor plan windows when those accounts are signed in. Failures here never block Copse — the local ledger below still tracks this app’s usage.'
   host.append(intro)
 
   if (error) {

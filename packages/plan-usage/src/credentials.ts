@@ -71,6 +71,18 @@ export function parseHuggingFaceToken(raw: unknown): string | null {
   return trimmed
 }
 
+/**
+ * Normalize a Cursor session token from env / cookie paste. Accepts the
+ * WorkosCursorSessionToken cookie value, `sub::jwt`, or a raw JWT.
+ */
+export function parseCursorSessionToken(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  if (trimmed.startsWith('{') || trimmed.startsWith('<')) return null
+  return trimmed
+}
+
 export interface ParsedCodexAuth {
   accessToken: string
   accountId: string | null

@@ -175,6 +175,56 @@ export const CODEX_USAGE_SCHEMA: SchemaNode = {
 }
 
 /**
+ * Allowed JSON shape for Cursor
+ * `POST /api/dashboard/get-current-period-usage`. Keep in sync with `cursor.ts`.
+ * Captured from live dashboard (2026-07).
+ */
+export const CURSOR_PERIOD_USAGE_SCHEMA: SchemaNode = {
+  type: 'object',
+  keys: {
+    billingCycleStart: { type: 'any' },
+    billingCycleEnd: { type: 'any' },
+    planUsage: {
+      type: 'object',
+      keys: {
+        totalSpend: { type: 'any' },
+        includedSpend: { type: 'any' },
+        remaining: { type: 'any' },
+        limit: { type: 'any' },
+        remainingBonus: { type: 'any' },
+        bonusTooltip: { type: 'any' },
+        autoPercentUsed: { type: 'any' },
+        apiPercentUsed: { type: 'any' },
+        totalPercentUsed: { type: 'any' },
+      },
+    },
+    spendLimitUsage: {
+      type: 'object',
+      keys: {
+        individualLimit: { type: 'any' },
+        individualRemaining: { type: 'any' },
+        limitType: { type: 'any' },
+      },
+    },
+    displayThreshold: { type: 'any' },
+    enabled: { type: 'any' },
+    displayMessage: { type: 'any' },
+    autoModelSelectedDisplayMessage: { type: 'any' },
+    namedModelSelectedDisplayMessage: { type: 'any' },
+    autoBucketModels: { type: 'any' },
+  },
+}
+
+/** `POST /api/dashboard/get-hard-limit` */
+export const CURSOR_HARD_LIMIT_SCHEMA: SchemaNode = {
+  type: 'object',
+  keys: {
+    hardLimit: { type: 'any' },
+    noUsageBasedAllowed: { type: 'any' },
+  },
+}
+
+/**
  * Allowed JSON shape for Hugging Face
  * `GET /api/settings/billing/usage-v2`. Keep in sync with `huggingface.ts`.
  * Captured from live personal billing (2026-07).

@@ -1,14 +1,13 @@
 #!/usr/bin/env node
 /**
- * Probe Claude / Codex / Hugging Face plan-usage endpoints through
+ * Probe Claude / Codex / Hugging Face / Cursor plan-usage endpoints through
  * `@copse/plan-usage`, then diff the raw JSON against the known schemas so
- * new fields (Fable landed this way) fail loudly instead of being silently
- * ignored.
+ * new fields fail loudly instead of being silently ignored.
  *
  *   npm run probe:plan-usage
  *   npm run probe:plan-usage -- --provider claude
- *   npm run probe:plan-usage -- --provider huggingface
- *   npm run probe:plan-usage -- --fixture path/to/claude.json --provider claude
+ *   npm run probe:plan-usage -- --provider cursor
+ *   npm run probe:plan-usage -- --fixture path/to/cursor.json --provider cursor
  *   npm run probe:plan-usage -- --json
  *
  * Exit codes:
@@ -18,18 +17,21 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import {
   fetchClaudePlanUsageFromCandidates,
   fetchCodexPlanUsage,
+  fetchCursorPlanUsage,
   fetchHuggingFacePlanUsage,
   orderClaudeTokenCandidates,
   parseCodexAuthJson,
+  parseCursorSessionToken,
   parseHuggingFaceToken,
   CLAUDE_USAGE_SCHEMA,
   CODEX_USAGE_SCHEMA,
+  CURSOR_PERIOD_USAGE_SCHEMA,
   HUGGINGFACE_USAGE_SCHEMA,
   findUnknownFields,
   type FetchLike,
@@ -40,6 +42,7 @@ import {
 } from '../packages/plan-usage/src/index.ts'
 
 const CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials'
+const CURSOR_KEYCHAIN_SERVICE = 'cursor-access-token'
 
 function readClaudeKeychainCredentialsJson(): string | null {
   if (process.platform !== 'darwin') return null
@@ -55,6 +58,58 @@ function readClaudeKeychainCredentialsJson(): string | null {
   }
 }
 
+function readCursorKeychainAccessToken(): string | null {
+  if (process.platform !== 'darwin') return null
+  try {
+    const raw = execFileSync(
+      'security',
+      ['find-generic-password', '-s', CURSOR_KEYCHAIN_SERVICE, '-w'],
+      { encoding: 'utf8', timeout: 5_000 },
+    ).trim()
+    return parseCursorSessionToken(raw)
+  } catch {
+    return null
+  }
+}
+
+function readCursorAccessTokenFromStateDb(): string | null {
+  const home = homedir()
+  const candidates =
+    process.platform === 'darwin'
+      ? [
+          join(
+            home,
+            'Library',
+            'Application Support',
+            'Cursor',
+            'User',
+            'globalStorage',
+            'state.vscdb',
+          ),
+        ]
+      : process.platform === 'win32'
+        ? process.env['APPDATA']
+          ? [join(process.env['APPDATA'], 'Cursor', 'User', 'globalStorage', 'state.vscdb')]
+          : []
+        : [join(home, '.config', 'Cursor', 'User', 'globalStorage', 'state.vscdb')]
+
+  for (const dbPath of candidates) {
+    if (!existsSync(dbPath)) continue
+    try {
+      const raw = execFileSync(
+        'sqlite3',
+        [dbPath, "SELECT value FROM ItemTable WHERE key = 'cursorAuth/accessToken' LIMIT 1;"],
+        { encoding: 'utf8', timeout: 5_000 },
+      ).trim()
+      const token = parseCursorSessionToken(raw)
+      if (token) return token
+    } catch {
+      // try next
+    }
+  }
+  return null
+}
+
 interface Args {
   provider: 'all' | PlanProviderId
   fixture: string | null
@@ -63,6 +118,14 @@ interface Args {
   strict: boolean
   help: boolean
 }
+
+const PROVIDERS: ReadonlyArray<'all' | PlanProviderId> = [
+  'all',
+  'claude',
+  'codex',
+  'huggingface',
+  'cursor',
+]
 
 function parseArgs(argv: string[]): Args {
   const args: Args = {
@@ -81,10 +144,12 @@ function parseArgs(argv: string[]): Args {
     else if (arg === '--no-strict') args.strict = false
     else if (arg === '--provider') {
       const value = argv[++i]
-      if (value !== 'all' && value !== 'claude' && value !== 'codex' && value !== 'huggingface') {
-        throw new Error(`--provider must be all|claude|codex|huggingface (got ${String(value)})`)
+      if (!PROVIDERS.includes(value as (typeof PROVIDERS)[number])) {
+        throw new Error(
+          `--provider must be all|claude|codex|huggingface|cursor (got ${String(value)})`,
+        )
       }
-      args.provider = value
+      args.provider = value as Args['provider']
     } else if (arg === '--fixture') {
       const value = argv[++i]
       if (!value) throw new Error('--fixture requires a path')
@@ -104,10 +169,6 @@ function readJsonFile(path: string): unknown {
   }
 }
 
-/**
- * Prefer Keychain (`claude /login`) → credentials.json → env. Env setup-tokens
- * lack `user:profile` and 403; candidates are tried until one succeeds.
- */
 function discoverClaudeCandidates(): ReturnType<typeof orderClaudeTokenCandidates> {
   return orderClaudeTokenCandidates({
     keychainJson: readClaudeKeychainCredentialsJson(),
@@ -131,6 +192,15 @@ function discoverHuggingFaceToken(): string | null {
   } catch {
     return null
   }
+}
+
+function discoverCursorSessionToken(): string | null {
+  return (
+    parseCursorSessionToken(process.env['CURSOR_SESSION_TOKEN'] ?? null) ||
+    parseCursorSessionToken(process.env['WORKOS_CURSOR_SESSION_TOKEN'] ?? null) ||
+    readCursorKeychainAccessToken() ||
+    readCursorAccessTokenFromStateDb()
+  )
 }
 
 /** Capture the JSON body while still driving the real package fetch/parse path. */
@@ -162,6 +232,31 @@ function fixtureFetch(body: unknown, status = 200): FetchLike {
     })
 }
 
+/** Cursor posts to period-usage + hard-limit; keep the period body for schema diff. */
+function cursorCapturingFetch(
+  inner: FetchLike,
+  periodSink: { body: unknown; status: number },
+): FetchLike {
+  return async (input, init) => {
+    const response = await inner(input, init)
+    const text = await response.text()
+    const url = input
+    if (url.includes('get-current-period-usage')) {
+      periodSink.status = response.status
+      try {
+        periodSink.body = JSON.parse(text) as unknown
+      } catch {
+        periodSink.body = text
+      }
+    }
+    return {
+      ok: response.ok,
+      status: response.status,
+      text: () => Promise.resolve(text),
+    }
+  }
+}
+
 interface ProviderProbeReport {
   provider: PlanProviderId
   parse: ProviderPlanResult
@@ -177,8 +272,6 @@ function unknownFieldsForOkParse(
   body: unknown,
   schema: SchemaNode,
 ): UnknownFieldFinding[] {
-  // Only schema-diff successful usage payloads. Error bodies (403/401 JSON)
-  // would otherwise flood the report with type/error/request_id noise.
   if (parse.status !== 'ok' || httpStatus < 200 || httpStatus >= 300) return []
   if (body === null || typeof body !== 'object') return []
   return findUnknownFields(body, schema)
@@ -269,6 +362,41 @@ async function probeHuggingFace(args: Args): Promise<ProviderProbeReport> {
   }
 }
 
+async function probeCursor(args: Args): Promise<ProviderProbeReport> {
+  const periodSink: { body: unknown; status: number } = { body: null, status: 0 }
+  let fetchImpl: FetchLike
+  let token: string | null = 'user_01fixture%3A%3Afake.jwt.token'
+
+  if (args.fixture) {
+    const body = JSON.parse(readFileSync(args.fixture, 'utf8')) as unknown
+    const hardLimitBody = { hardLimit: 50 }
+    fetchImpl = cursorCapturingFetch(async (input) => {
+      const payload = input.includes('get-hard-limit') ? hardLimitBody : body
+      return fixtureFetch(payload)(input)
+    }, periodSink)
+  } else {
+    token = discoverCursorSessionToken()
+    fetchImpl = cursorCapturingFetch(globalThis.fetch.bind(globalThis), periodSink)
+  }
+
+  const parse = await fetchCursorPlanUsage(token, {
+    fetch: fetchImpl,
+    signal: AbortSignal.timeout(12_000),
+  })
+  return {
+    provider: 'cursor',
+    parse,
+    unknownFields: unknownFieldsForOkParse(
+      parse,
+      periodSink.status,
+      periodSink.body,
+      CURSOR_PERIOD_USAGE_SCHEMA,
+    ),
+    raw: periodSink.body,
+    httpStatus: periodSink.status || null,
+  }
+}
+
 function printHuman(report: ProviderProbeReport, raw: boolean): void {
   console.log(`\n=== ${report.provider} ===`)
   if (report.claudeSources) {
@@ -292,7 +420,7 @@ function usage(): void {
   console.log(`Usage: npm run probe:plan-usage -- [options]
 
 Options:
-  --provider all|claude|codex|huggingface
+  --provider all|claude|codex|huggingface|cursor
                               Which provider(s) to probe (default: all)
   --fixture <path.json>         Skip network; feed a saved payload (requires --provider)
   --json                        Machine-readable report
@@ -303,11 +431,13 @@ Options:
 Exit 1 on schema drift (unknown keys/enums). Exit 2 when auth/fetch/parse fails.
 
 Claude auth order (macOS): Keychain "Claude Code-credentials" →
-~/.claude/.credentials.json → CLAUDE_CODE_OAUTH_TOKEN. Unset the env var if
-it came from \`claude setup-token\` (inference-only; 403s without user:profile).
+~/.claude/.credentials.json → CLAUDE_CODE_OAUTH_TOKEN.
 
-Hugging Face: HF_TOKEN / HUGGINGFACE_API_KEY → ~/.cache/huggingface/token
-(\`hf auth login\`). Endpoint is personal billing usage-v2 for the current UTC month.`)
+Hugging Face: HF_TOKEN / HUGGINGFACE_API_KEY → ~/.cache/huggingface/token.
+
+Cursor: CURSOR_SESSION_TOKEN / WORKOS_CURSOR_SESSION_TOKEN → macOS Keychain
+"cursor-access-token" → Cursor IDE state.vscdb (cursorAuth/accessToken).
+Posts get-current-period-usage (+ get-hard-limit) with Origin: https://cursor.com.`)
 }
 
 async function main(): Promise<number> {
@@ -324,7 +454,7 @@ async function main(): Promise<number> {
     return 0
   }
   if (args.fixture && args.provider === 'all') {
-    console.error('--fixture requires --provider claude|codex|huggingface')
+    console.error('--fixture requires --provider claude|codex|huggingface|cursor')
     return 2
   }
 
@@ -337,6 +467,9 @@ async function main(): Promise<number> {
   }
   if (args.provider === 'all' || args.provider === 'huggingface') {
     reports.push(await probeHuggingFace(args))
+  }
+  if (args.provider === 'all' || args.provider === 'cursor') {
+    reports.push(await probeCursor(args))
   }
 
   if (args.json) {

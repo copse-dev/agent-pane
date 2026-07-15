@@ -11,10 +11,18 @@ export function clampPercent(value: number): number {
   return value
 }
 
-/** Prefer ISO string; accept unix seconds from Codex-style payloads. */
+/** Prefer ISO string; accept unix seconds/ms (number or digit string). */
 export function toIsoTimestamp(value: unknown, nowMs: number): string | null {
   if (typeof value === 'string' && value.trim()) {
-    const parsed = Date.parse(value)
+    const trimmed = value.trim()
+    if (/^\d{10,}$/.test(trimmed)) {
+      const n = Number(trimmed)
+      if (Number.isFinite(n)) {
+        const ms = n > 1e12 ? n : n * 1000
+        return new Date(ms).toISOString()
+      }
+    }
+    const parsed = Date.parse(trimmed)
     return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null
   }
   if (typeof value === 'number' && Number.isFinite(value)) {
