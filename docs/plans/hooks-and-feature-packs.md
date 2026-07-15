@@ -1,0 +1,379 @@
+# Hooks platform & feature packs
+
+Status: **planned** — design settled (July 2026); no implementation started. This document
+is the source of truth for the phased issue breakdown below. It extends
+[`docs/cursor-hooks.md`](../cursor-hooks.md) (current Cursor-hooks support) and folds in
+PR #879 (Claude `PreToolUse` hooks) and the direction of PR #840 (permission-decision
+audit trail).
+
+## Why
+
+Two motivations, one architecture:
+
+1. **Hook parity and expressiveness.** Copse wires only three of Cursor's hook events
+   (`beforeShellExecution`, `beforeMCPExecution`, `beforeReadFile` — path only), and
+   supports only a fraction of the response vocabulary other agents honour
+   (`updated_input`, `additionalContext`, `continue: false`, follow-up messages, per-hook
+   timeouts). Users who bring hooks written for Cursor or Claude Code get silent partial
+   behavior.
+2. **Harness policy is hardcoded.** Loop nudges, intent steering, todo closeout, and
+   post-turn remediation are inline in `run-agent-loop.ts` and `agent-service.ts` — five
+   separate auto-continuation mechanisms with five counters and bespoke thread-lifecycle
+   handling (the deferred-`done` dance). Each is a candidate to become a named,
+   toggleable, individually testable hook. The end state generalizes to **feature
+   packs**: a feature (todos, post-turn review, model comparison) is a manifest-bundled
+   set of tools + hooks + prompt blocks + UI contributions that enables/disables as one
+   unit, like a browser extension.
+
+## Current state (audit)
+
+| Piece                      | Where                                                                             | Status                                                                  |
+| -------------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Cursor permission hooks    | `src/main/services/skills/cursor-hooks.ts`, `permission-gate.ts`                  | Wired: shell / MCP / read-path. Fail-open, tighten-only, 5s timeout     |
+| Cursor lifecycle events    | `CURSOR_HOOK_EVENTS` in `src/shared/types/cursor-hooks.ts`                        | `beforeSubmitPrompt`, `afterFileEdit`, `stop` parsed for discovery only |
+| Claude `PreToolUse` hooks  | PR #879 (`claude-hooks.ts`, shared `HookSummary`/`HookFamily`)                    | In flight; same gate, `.claude/settings.json` discovery                 |
+| Permission audit trail     | PR #840 (`decision-log-store.ts`)                                                 | In flight; becomes a subscriber of the `permissionDecision` event (F2)  |
+| Loop nudges                | `packages/agent/src/agent-loop-guards.ts`, `run-agent-loop.ts`                    | Inline; migrate in Phase E                                              |
+| Intent steering            | `agent-service.ts` + `todo-logic` / `github-link-steering` / `commit-attribution` | Inline; migrate in Phase E                                              |
+| Post-turn orchestration    | `post-turn-orchestration.ts` + deferred-`done` in `agent-service.ts`              | Inline; migrate in Phase E                                              |
+| Queued messages / send-now | `thread-helpers.ts` (`setQueuePaused`), renderer queue views                      | Exists; becomes the async hook output channel (C2)                      |
+| ACP plan ↔ todo mapping    | `src/main/services/acp/session-update-adapter.ts`                                 | Exists; precedent + data model for the declarative pack panel (P2)      |
+| Plugin manifest            | `cursor-plugins.ts` (`plugin.json`: skills + MCP)                                 | Exists; feature-pack manifest extends this shape                        |
+
+## Decisions log
+
+These were settled in design review and are **not** open questions. Changing one means
+revisiting this document, not silently diverging in an implementation PR.
+
+1. **One registry, one event vocabulary, two executor kinds.** A hook is
+   `(canonical event) → decision`. First-party hooks are in-process functions;
+   user/project hooks are spawned commands. Same registry, same events, same Sources UI.
+2. **Blocking vs async by capability, not by origin.** Decision/mutation hooks
+   (tool gates, `beforeSubmitPrompt`, mutating `afterFileEdit`) block — matching Cursor
+   and Claude Code. Observation hooks run async, opt-in per hook. Users are allowed to
+   slow the agent down with blocking hooks; document the cost, don't forbid it.
+3. **Detached async — no drain barrier.** Async hooks dispatch at the step that emitted
+   them and are **never awaited** — not by the loop, not by other hooks, not by `stop`.
+   "Stop stops agent work": abort/turn-end halts emission of new events but never kills
+   or waits for in-flight hooks. Spine records attribute each run to its emitting step.
+   The `stop` hook may fire while observation hooks are still running; a hook that needs
+   the complete turn uses blocking mode.
+4. **The pending-message queue is the only async output channel.** An async hook's
+   results land as queued messages (consumed at idle drain, or immediately if the hook
+   sets send-now — byte-for-byte the user's send-now semantics). No mid-turn injection
+   path exists for async hooks; late results are therefore safe by construction.
+5. **One auto-continuation budget.** A single counter per **turn tree** (everything
+   descending from one human-originated submission). Hook send-now, `stop`/`subagentStop`
+   follow-ups, post-turn remediation, and todo closeout all increment it. Hard cap
+   default 5; per-hook `loop_limit` can only tighten; Cursor's `loop_limit: null`
+   (unlimited) is clamped with a warning — human-in-the-loop is the floor. Exhaustion
+   queues the message **without** send-now plus a visible thread note. `COPSE_HOOK_DEPTH`
+   env guard prevents hook→Copse recursion.
+6. **Spine recording is always-on.** Every hook execution writes a `hook_run` event to
+   the thread spine (event name, hook id, emitting step, wall-clock duration, exit code,
+   `parse_ok`, normalized decision) with raw stdout **and stderr** as blobs (stderr is
+   currently discarded — must be captured). The response is _derived from_ stdout by
+   parsing; both raw and parsed are stored, so a debug print that corrupts a response is
+   visible as `parse_ok: false` next to the bytes.
+7. **Hooks are trusted by declaration; sandboxed by default anyway.** No PII redaction of
+   hook payloads (the user/workspace-trust gate is the consent). But hook processes run
+   **inside the project sandbox by default** (reversing today's outside-sandbox spawn),
+   with a per-hook `sandbox: false` escape in the Copse dialect surfaced in the trust
+   prompt. macOS-only enforcement (seatbelt); best-effort elsewhere — a default, not a
+   guarantee. Sandbox-blocked hooks surface via the spine + Sources, never silent
+   fail-open.
+8. **Dialect by source path, not prefixes or sniffing.** `.cursor/hooks.json` → Cursor
+   adapter, `.claude/settings.json` → Claude adapter, `.copse/hooks.json` → Copse
+   adapter. Adapters own discovery, parsing, matchers, and **wire marshalling both
+   directions** (a Claude hook sees Claude's stdin shape and tool names). Foreign files
+   stay strictly on their vendor's contract; Copse-native events live only in the Copse
+   dialect. Unknown events in a foreign file are warned about, never silently skipped.
+9. **Foreign dialects keep vendor failure semantics.** Cursor hooks fail open; Claude
+   exit-code-2 denies; each adapter owns its dialect's per-event exit-code table. The
+   configurable `onFailure: open|closed` knob exists only in the Copse dialect.
+   First-party (function) hooks fail **hard** — a throw is a bug, loud in dev,
+   log-with-telemetry in prod, never silently swallowed.
+10. **Hook UI is tool-call-style cards, right-aligned, same blue.** Hook executions,
+    deny/ask decisions, and queued hook messages render as a distinct card family — not
+    as user messages. Provenance (`origin: { kind: 'hook', hookId, event }`) lives in the
+    data model; message role stays `user` for the LLM. Editing a hook-queued message
+    keeps `kind: 'hook'` with `editedByUser: true` — the spine stays honest about
+    authorship.
+11. **`injectContext` from async hooks is converted to a queued message** (v1). Only
+    blocking hooks inject context at their fire point. This preserves decision 4 and
+    keeps turn content deterministic for evals. Claude's `asyncRewake` (background hook
+    waking the model mid-turn) is **unsupported in v1** and reported as such by the
+    adapter — it is exactly the mid-turn injection path we chose not to have.
+12. **`haltRun` (`continue: false`) is allowed from async hooks** and routes through the
+    existing abort path, attributed to the hook on a card and in the spine. It is a
+    programmatic stop button — the loop already handles that external signal.
+13. **Per-hook timeouts, vendor defaults.** Claude command hooks default to 600s; our
+    fixed 5s would kill real hooks. Blocking-hook wait pauses the idle deadline the same
+    way tool execution does. Async over-cap dispatches (concurrency cap ~8/thread) go
+    into a pending-dispatch FIFO (deferred spawn, still detached, no ordering promises;
+    cap ~100 then drop-with-spine-record). Nothing ever waits on the FIFO.
+14. **Payloads are treated as stable now; stability is _declared_ at publish time.**
+    Pre-v1 with zero consumers we don't version payloads, but every dialect wire payload
+    is snapshot-tested (G4) so the publish-time stability audit is a diff review.
+15. **Feature packs are the end state; two capability tiers, one lifecycle.** Following
+    VS Code's built-in-extensions model: first-party packs and user packs share the
+    manifest, registry, Settings surface, and disable semantics; first-party packs
+    additionally get typed `AgentStreamChunk` emission, typed loop-state access, and
+    real renderer views. External hooks can never emit feature chunks (`todo_update`,
+    `subagent_*`) — the typed stream stays first-party, which keeps transcripts
+    trustworthy.
+16. **Disabling a pack never breaks history.** Transcript rendering resolves from
+    shipped renderer code + spine data, **never from live registration state**. Opening
+    an old conversation shows a disabled pack's tool calls, cards, and panels exactly as
+    they ran (we ship the code; only _registration for new work_ is removed). Disable
+    semantics: tools leave the model's tool list, hooks stop firing, prompt blocks drop
+    out, UI contributions stop mounting _for new content_; pack storage persists like a
+    disabled browser extension's data.
+
+## Target architecture
+
+```mermaid
+flowchart TB
+    U["User"]
+
+    subgraph harness["Agent harness (owns all loop invariants)"]
+        loop["Core loop: stream → tools → trim → finalize"]
+        gate["Permission gate: policy matrix, sandbox, classifier"]
+        emit["Canonical event emitter (fixed points, typed payloads)"]
+        loop --> emit
+        gate --> emit
+    end
+
+    subgraph registry["Unified hook registry"]
+        fp["First-party hooks (function executor)<br/>in-process, fail-hard, typed chunk emission"]
+        blocking["Blocking dispatch<br/>gates, beforeSubmitPrompt, mutating hooks"]
+        async["Detached dispatch<br/>never awaited, concurrency cap + FIFO"]
+    end
+
+    subgraph adapters["Dialect adapters (source path = format)"]
+        ca[".cursor/hooks.json"]
+        cl[".claude/settings.json"]
+        co[".copse/hooks.json (ours)"]
+    end
+
+    scripts["Hook processes<br/>sandboxed by default, scrubbed env,<br/>per-hook timeout, output capped"]
+    mq["Pending message queue<br/>only async output channel,<br/>origin-attributed, edit/delete/send-now"]
+    budget["Auto-continuation budget<br/>one counter per turn tree, cap 5,<br/>exhaustion queues without send-now"]
+    spine["Thread spine<br/>hook_run events + stdout/stderr blobs"]
+    ui["UI: hook cards (right-aligned, blue),<br/>Sources panel, dry-run tester"]
+
+    U -->|"prompt / send-now (resets budget)"| harness
+    emit --> fp
+    emit --> blocking
+    emit --> async
+    blocking --> adapters
+    async --> adapters
+    adapters --> scripts
+    scripts -->|"decision / updatedInput / injectContext / haltRun"| blocking
+    blocking -->|"normalized decision"| harness
+    scripts -->|"queued message (may land late)"| mq
+    mq --> budget
+    budget -->|"within cap: new turn"| harness
+    budget -->|"cap hit: hold for human"| mq
+    fp --> spine
+    scripts --> spine
+    adapters -.->|"discovery + validation warnings"| ui
+    spine -.-> ui
+```
+
+### Canonical decision vocabulary
+
+The registry's normalized hook output (A1). Adapters translate each dialect's wire format
+to/from this; the harness consumes only this:
+
+```ts
+interface HookOutcome {
+  decision?: 'allow' | 'deny' | 'ask'
+  haltRun?: { reason: string } // continue:false — outranks everything
+  updatedInput?: Record<string, unknown> // tool gates only; re-runs policy analysis
+  injectContext?: string // blocking hooks only (v1); async → queued message
+  agentMessage?: string // fed to the model on deny/ask
+  userMessage?: string // shown to the user (hook card)
+  queueMessage?: { text: string; sendNow: boolean } // the async channel
+  sessionEnv?: Record<string, string> // sessionStart → later hook processes
+}
+```
+
+### Response-semantics parity (vendor audit)
+
+| Capability                                                  | Cursor           | Claude Code | This plan                                    |
+| ----------------------------------------------------------- | ---------------- | ----------- | -------------------------------------------- |
+| `permission` allow/deny/ask (+ Claude `defer`)              | ✅               | ✅          | A1/B4 (#879 maps `defer` → `ask`)            |
+| Deny reason to agent                                        | ✅               | ✅ (exit 2) | B4                                           |
+| Message to user (`user_message` / `systemMessage`)          | ✅               | ✅          | B4 → hook card                               |
+| Rewrite tool input (`updated_input`)                        | ✅               | —           | H1                                           |
+| Inject context into current turn (`additionalContext`)      | partial          | ✅          | H2 (blocking only in v1)                     |
+| Halt entire run (`continue: false` + `stopReason`)          | ✅               | ✅          | H3 (abort path, hook-attributed)             |
+| Auto-continue (`followup_message` / Stop `decision: block`) | ✅               | ✅          | C2 + C3 (queue + budget)                     |
+| Per-event exit-code protocol                                | ✅               | ✅ (rich)   | A2 (per-adapter tables)                      |
+| Per-hook `timeout` (Claude default 600s)                    | config           | ✅          | H4                                           |
+| `sessionStart` env propagation                              | ✅               | ✅          | H4                                           |
+| `suppressOutput`, >10k output spillover                     | —                | ✅          | H2 (spillover shares blob machinery)         |
+| Non-command executors (`http`/`prompt`/`agent`/`mcp_tool`)  | prompt (desktop) | ✅          | Out of scope v1; adapters report unsupported |
+| `asyncRewake` (background hook wakes model mid-turn)        | —                | ✅          | **Unsupported v1** (decision 11)             |
+| Long-tail Claude events (`Notification`, `TeammateIdle`, …) | —                | ✅          | Unsupported-and-reported + G3 drift detector |
+
+## Feature packs
+
+A pack is a manifest-bundled feature. It extends the `plugin.json` shape Copse already
+loads (skills + MCP) with the remaining slots:
+
+```
+pack manifest
+├── tools      MCP config (user packs) or native tool registrations (first-party)
+├── hooks      event → handler (command for users, function for first-party)
+├── prompt     skills / steering blocks (with trust framing)
+├── ui         contributions — see levels below
+├── settings   pack-scoped schema, rendered generically in Settings
+└── storage    namespaced state; survives disable
+```
+
+UI contribution levels:
+
+- **Level 1 — declarative cards**: the hook-card family. User-reachable.
+- **Level 2 — named panel slot**: pack supplies structured data, host renders a generic
+  list/tree panel. User-reachable. Data model extends the existing chunk vocabulary —
+  `todo_update` already round-trips to ACP `plan`
+  (`session-update-adapter.ts`), so pack panels are one adapter away from rendering in
+  other ACP clients. Precedents: VS Code TreeView, Raycast's fixed component catalog,
+  Slack Block Kit, ACP `plan`.
+- **Level 3 — real renderer views**: the actual plan panel. First-party privilege
+  (VS Code built-in-extensions model).
+
+**Pilot pack: todos.** Tools: `update_todos`. Hooks: `todo-steering` (turn start),
+`todo-pin` (turn start), `todo-closeout` (stop, consumes the C3 budget),
+`todo-compact-pin` (compaction). Prompt: the steering block. UI: plan panel (level 3) +
+`todo_update` binding. Acceptance: disabling the pack removes the tool from the model's
+tool list, all four hooks, the steering text, and the panel **in one action**; old
+conversations still render todo history (decision 16); `npm run check` dead-code gate
+passes because the pack is referenced by the registry, not the loop.
+
+Later packs, in extraction order: post-turn review, model comparison, GitHub-link
+steering, commit attribution, memory tools, browser tools. **Not packs** (the platform):
+permission gate, context trimming, the step machine, diff queue.
+
+## Issue breakdown
+
+Phases B–H all depend on A1–A2. Critical path: **A1 → A2 → {B\*, C1} → C2 → C3**; D/E/F/G/H/P
+parallelize after. Each E/P issue carries the acceptance criterion _“old inline mechanism
+deleted”_ (dead-code gate enforces it) and _“feature UI chunks byte-identical; existing
+WDIO specs pass unmodified.”_
+
+### Phase 0 — in flight
+
+- Land PR #879 (Claude `PreToolUse`); coordinate `permission-gate.ts` edits with PR #840.
+
+### Phase A — foundations
+
+| #   | Issue                                          | Scope                                                                                                                                                                                                                                      |
+| --- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A1  | Canonical hook model + unified registry        | Event taxonomy; `HookOutcome` vocabulary above; two executor kinds (function / command); executor capability split (function hooks may emit typed chunks + read loop state); function hooks fail hard, command hooks per-dialect semantics |
+| A2  | Restructure cursor-/claude-hooks into adapters | Source-path → dialect; adapters own discovery, parse, matchers, wire marshalling both directions, per-event exit-code tables, unsupported-capability reporting                                                                             |
+| A3  | Spine recording of hook executions             | `hook_run` events per decision 6; capture stderr (currently `'ignore'`); raw streams to blobs; always-on                                                                                                                                   |
+| A4  | Settings toggle + Sources hooks panel          | Expose `cursorHooksEnabled`; per-entry validation warnings; unsupported badges; per-hook error state deduped once per session                                                                                                              |
+
+### Phase B — complete the Cursor-declared surface
+
+| #   | Issue                        | Scope                                                                                                                                                               |
+| --- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B1  | Wire `beforeSubmitPrompt`    | Blocking, compose path; honour `continue: false` + `user_message`                                                                                                   |
+| B2  | Wire `afterFileEdit`         | Diff-queue / write-tool site; blocking by default (formatters), async opt-in; matchers                                                                              |
+| B3  | Wire `stop`                  | Fires the moment agent work stops (turn end or abort, `status` accordingly); **no drain barrier** (decision 3); follow-ups via C2, not a bespoke protocol           |
+| B4  | Complete permission-hook I/O | Real `conversation_id`/`generation_id`; `agentMessage` surfaced (hook card); `ask` escalates to an approval prompt; `beforeReadFile` receives content + deny/redact |
+
+### Phase C — async executor, output channel, budget
+
+| #   | Issue                                | Scope                                                                                                                                               |
+| --- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1  | Detached async executor              | Decision 3 + 13: dispatch at emission, never awaited, step-attributed; concurrency cap ~8/thread + pending-dispatch FIFO; abort stops emission only |
+| C2  | Hook → pending-message queue channel | Decision 4 + 10: origin attribution, full edit/delete/send-now affordances, `editedByUser` flag                                                     |
+| C3  | Unified auto-continuation budget     | Decision 5: one counter per turn tree; all mechanisms increment; graceful exhaustion; `COPSE_HOOK_DEPTH` guard                                      |
+
+### Phase D — parity tier 2 events
+
+| #   | Issue                                       | Scope                                                                                                 |
+| --- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| D1  | `subagentStart` / `subagentStop`            | Deniable start (matcher on subagent type); stop follow-ups via C2/C3. Sites: `run-subagent.ts` et al. |
+| D2  | `afterShellExecution` / `afterMCPExecution` | Async observations with capped output snapshot                                                        |
+| D3  | Matcher support                             | Cursor per-event matcher semantics (command text / tool type / subagent type) in adapter dispatch     |
+
+### Phase H — vendor response semantics
+
+| #   | Issue                             | Scope                                                                                                                                              |
+| --- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| H1  | `updatedInput` on tool gates      | Sequential pipeline across hooks in registration order; **rewritten input re-runs `analyzeShellCommand` / policy matrix**; flagged in spine + card |
+| H2  | Current-turn context injection    | `injectContext` from blocking hooks at fire point (system-reminder block); 10k cap with blob spillover; async → queued message (decision 11)       |
+| H3  | Halt-run semantics                | `haltRun` through the abort path, allowed from async hooks (decision 12); `stopReason` on a hook card; spine-recorded                              |
+| H4  | Per-hook timeout + `sessionStart` | Vendor timeout defaults per dialect; blocking wait pauses idle deadline; `sessionStart` fire-and-forget with `sessionEnv` propagation              |
+
+### Phase E — first-party migration (payback phase — not optional)
+
+| #   | Issue                           | Scope                                                                                                                                            |
+| --- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| E1  | Migrate loop nudges to registry | `LOOP_NUDGE`, `STUCK_FINALIZE`, truncation-continue, reasoning-runaway → named function hooks; behavior byte-identical (pin with existing tests) |
+| E2  | Migrate intent steering         | Todos / GitHub-link / commit steering → turn-start function hooks; leaves `runAgent`                                                             |
+| E3  | Migrate post-turn orchestration | Review remediation + todo closeout onto turn-boundary events + C3 budget; **deletes the deferred-`done` lifecycle handling**                     |
+
+### Phase F — Copse dialect, native events, sandbox
+
+| #   | Issue                                 | Scope                                                                                                                                  |
+| --- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| F1  | Copse dialect + published JSON schema | `.copse/hooks.json`: `async`, `onFailure`, `sandbox: false`, `loop_limit` (tighten-only); we publish an official schema                |
+| F2  | Copse-native events                   | `beforeDiffApply` / `afterDiffApply` (diff queue), `postTurnReview`, `permissionDecision` observation (aligns with #840's audit trail) |
+| F3  | Sandbox hooks by default              | Decision 7: reverse today's outside-sandbox spawn; per-hook escape in trust prompt; blocked-by-sandbox surfaced via A3/A4              |
+
+### Phase G — validation & tooling
+
+| #   | Issue                                | Scope                                                                                                                                                                                       |
+| --- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G1  | Hook cards UI                        | Decision 10: tool-call family, right-aligned, blue; executions, decisions, queued messages; origin marker on hook-originated turns; WDIO specs                                              |
+| G2  | Dry-run hook tester                  | `hooks:test` IPC + Sources button; synthetic payload per event; show stdin/stdout/stderr/exit/duration                                                                                      |
+| G3  | Vendored schemas + CI drift detector | Pin Claude SchemaStore + Cursor community schemas; **warn-level authoring lint only, never a load gate, never remote-fetched**; CI test diffs published event lists vs adapter-known events |
+| G4  | Payload snapshot tests               | Decision 14: snapshot every dialect wire payload now                                                                                                                                        |
+| G5  | Docs overhaul                        | `docs/hooks.md` architecture doc (this design); fix stale paths (`src/main/services/cursor-hooks.ts` → `skills/cursor-hooks.ts`); document the `loop_limit` clamp divergence                |
+
+### Phase P — feature packs
+
+| #   | Issue                                             | Scope                                                                                                                                                                                       |
+| --- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1  | Pack manifest + lifecycle                         | Extend `plugin.json` shape with hooks/prompt/ui/settings/storage slots; registry pack grouping; atomic enable/disable; **history rendering never consults live registration (decision 16)** |
+| P2  | Level-2 declarative panel contribution            | Generic list/tree panel from structured pack data; extend the chunk vocabulary (reuse the `todo_update` ↔ ACP `plan` mapping as the data-model seed)                                        |
+| P3  | Pack-scoped settings + pack list UI               | Extends A4: packs with enable toggles, their hooks/tools/UI enumerated — the `about:addons` of Copse                                                                                        |
+| P4  | Extract todos as the pilot pack                   | Manifest above; acceptance criteria in the pilot-pack section; proves disable semantics + history invariant                                                                                 |
+| P5  | Extract post-turn review + model comparison packs | Same pattern; each deletes its inline trigger code                                                                                                                                          |
+
+Sequencing risk: packs are the second floor. P1 must not start before A1/A2 and C3 are
+merged, or it freezes their shapes prematurely. P4 (todos) is the forcing function for
+every primitive the pack layer needs.
+
+## Codebase impact
+
+Total LOC goes up (registry, adapters, executors, budget: ~1.5–2k lines of new bounded
+modules). Complexity redistributes out of the three worst files:
+
+- `agent-service.ts` loses the steering string surgery and the deferred-`done` lifecycle
+  handling (E2/E3).
+- `run-agent-loop.ts` loses inline nudge conditions/injection at ~6 points (E1) and
+  becomes a cleaner state machine.
+- `permission-gate.ts` stops accreting per-consumer integrations (#879's
+  `claudePreToolUseForTool`, #840's audit calls) — one canonical event, N subscribers.
+
+The failure mode that makes this strictly worse: building the hook system while keeping
+the inline mechanisms alive. Phase E/P acceptance criteria ("inline mechanism deleted")
+exist to prevent that; the dead-code gate enforces them.
+
+## Related
+
+- [`docs/cursor-hooks.md`](../cursor-hooks.md) — current support + security/trust model
+- PR #879 — Claude `PreToolUse` hooks (Phase 0)
+- PR #840 — permission-decision audit trail (feeds F2)
+- [`docs/plans/settings-transparency.md`](./settings-transparency.md) — Sources panel (#639 context)
+- [`docs/cursor-plugins.md`](../cursor-plugins.md) — plugin manifest the pack manifest extends
+- [`docs/thread-store-format.md`](../thread-store-format.md) — spine format `hook_run` extends
+- Cursor hooks reference: <https://cursor.com/docs/hooks> · Claude Code hooks reference:
+  <https://code.claude.com/docs/en/hooks>
