@@ -48,6 +48,7 @@ export * from './hooks/hook-outcome.ts'
 export * from './hooks/canonical-events.ts'
 export * from './hooks/hook-registry.ts'
 export * from './hooks/turn-start-hooks.ts'
+export * from './hooks/before-finalize-hooks.ts'
 
 // Pure turn-start steering helpers (owned here so hooks stay Electron-free).
 export * from './todo-steering.ts'
