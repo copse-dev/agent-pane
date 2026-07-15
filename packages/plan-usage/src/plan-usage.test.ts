@@ -198,11 +198,19 @@ describe('fetchClaudePlanUsage', () => {
     )
   })
 
-  it('skips inactive zero-percent limits but keeps inactive non-zero (Fable)', async () => {
+  it('keeps inactive session + scoped caps with severity (live Max shape)', async () => {
     const result = await fetchClaudePlanUsage('sk-ant-oat01-x', {
       fetch: jsonFetch({
+        five_hour: { utilization: 0, resets_at: '2026-07-15T14:30:00Z' },
+        seven_day: { utilization: 99, resets_at: '2026-07-17T02:00:00Z' },
         limits: [
-          { kind: 'session', percent: 0, is_active: false, severity: 'normal' },
+          {
+            kind: 'session',
+            percent: 0,
+            is_active: false,
+            severity: 'normal',
+            resets_at: '2026-07-15T14:30:00Z',
+          },
           {
             kind: 'weekly_all',
             percent: 99,
@@ -230,6 +238,12 @@ describe('fetchClaudePlanUsage', () => {
         severity: w.severity,
       })),
       [
+        {
+          id: 'five_hour',
+          label: '5-hour (inactive)',
+          usedPercent: 0,
+          severity: 'normal',
+        },
         {
           id: 'seven_day',
           label: 'Weekly',
@@ -425,7 +439,8 @@ describe('fetchCodexPlanUsage', () => {
           },
           additional_rate_limits: [
             {
-              metered_feature: 'codex_spark',
+              limit_name: 'GPT-5.3-Codex-Spark',
+              metered_feature: 'codex_bengalfox',
               rate_limit: {
                 primary_window: {
                   used_percent: 40,
@@ -456,10 +471,10 @@ describe('fetchCodexPlanUsage', () => {
     assert.equal(result.status, 'ok')
     assert.equal(result.usage.plan, 'prolite')
     assert.ok(result.usage.windows.some((w) => w.id === 'primary'))
-    const spark = result.usage.windows.find((w) => w.id === 'codex-spark_primary')
+    const spark = result.usage.windows.find((w) => w.id === 'codex-bengalfox_primary')
     assert.ok(spark)
     assert.equal(spark.usedPercent, 40)
-    assert.match(spark.label, /codex_spark/i)
+    assert.match(spark.label, /GPT-5\.3-Codex-Spark/i)
   })
 
   it('returns unavailable without token', async () => {

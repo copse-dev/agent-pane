@@ -98,16 +98,21 @@ function parseAdditionalRateLimits(raw: unknown, nowMs: number, into: PlanWindow
   if (!Array.isArray(raw)) return
   for (const entry of raw) {
     if (!isRecord(entry)) continue
-    const featureRaw = entry['metered_feature'] ?? entry['meteredFeature'] ?? entry['limit_name']
-    const feature =
-      typeof featureRaw === 'string' && featureRaw.trim() ? featureRaw.trim() : 'extra'
+    // Stable id from metered_feature; human label prefers limit_name
+    // (e.g. "GPT-5.3-Codex-Spark" over "codex_bengalfox").
+    const featureIdRaw = entry['metered_feature'] ?? entry['meteredFeature'] ?? entry['limit_name']
+    const labelRaw = entry['limit_name'] ?? entry['limitName'] ?? featureIdRaw
+    const featureId =
+      typeof featureIdRaw === 'string' && featureIdRaw.trim() ? featureIdRaw.trim() : 'extra'
+    const labelPrefix =
+      typeof labelRaw === 'string' && labelRaw.trim() ? labelRaw.trim() : featureId
     const nested = entry['rate_limit'] ?? entry['rateLimit']
     if (isRecord(nested)) {
-      pushWindowsFromRateLimit(nested, slug(feature), feature, nowMs, into)
+      pushWindowsFromRateLimit(nested, slug(featureId), labelPrefix, nowMs, into)
       continue
     }
     // Some payloads flatten the window onto the additional entry itself.
-    pushWindowsFromRateLimit(entry, slug(feature), feature, nowMs, into)
+    pushWindowsFromRateLimit(entry, slug(featureId), labelPrefix, nowMs, into)
   }
 }
 

@@ -8,7 +8,8 @@ export function clampPercent(value: number): number {
   if (!Number.isFinite(value)) return 0
   if (value < 0) return 0
   if (value > 100) return 100
-  return value
+  // Two decimals keeps HF/Cursor fractional percents readable in probes.
+  return Math.round(value * 100) / 100
 }
 
 /** Prefer ISO string; accept unix seconds/ms (number or digit string). */

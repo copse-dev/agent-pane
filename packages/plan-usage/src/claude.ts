@@ -102,9 +102,8 @@ function parseLimitsArray(raw: unknown, nowMs: number): PlanWindow[] {
     const percent = entry['percent'] ?? entry['utilization']
     if (typeof percent !== 'number' || !Number.isFinite(percent)) continue
     const usedPercent = normalizePercent(percent)
-    // Skip inactive empty buckets (e.g. session 0% inactive); keep inactive
-    // non-zero scoped caps (Fable at 89% warning) so they stay visible.
-    if (entry['is_active'] === false && usedPercent === 0) continue
+    // Keep inactive windows (including 0% session) so severity + reset times
+    // come from `limits[]` rather than legacy flat keys resurrecting without them.
     const kind = typeof entry['kind'] === 'string' ? entry['kind'] : null
     const resetsAt = toIsoTimestamp(entry['resets_at'] ?? entry['resetsAt'], nowMs)
     const severity = parseSeverity(entry['severity'])
