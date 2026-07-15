@@ -97,36 +97,42 @@ describe('validateAdvisorPair', () => {
     assert.match(a.reason, /recommended pairing/i)
   })
 
-  it('warns on a fast-tier cloud advisor for a local executor', () => {
+  it('warns on a low-band cloud advisor for a local executor', () => {
     const a = validateAdvisorPair('lmstudio:qwen/qwen2.5-coder-32b', 'claude-haiku-4-5')
     assert.equal(a.ok, true)
     assert.equal(a.level, 'warn')
-    assert.match(a.reason, /frontier advisor/i)
+    assert.match(a.reason, /stronger advisor gives more lift/i)
   })
 
-  it('grades cloud pairings by annotated tier', () => {
+  it('marks a mid-band cloud advisor for a local executor as info, not warn', () => {
+    const a = validateAdvisorPair('lmstudio:qwen/qwen2.5-coder-32b', 'gpt-4o')
+    assert.equal(a.level, 'info')
+    assert.match(a.reason, /stronger advisor gives more lift/i)
+  })
+
+  it('grades cloud pairings by comparing intellect numbers', () => {
     // Stronger advisor: fine even across providers (no native table entry).
     const stronger = validateAdvisorPair('gpt-4o-mini', 'claude-opus-4-8')
     assert.equal(stronger.level, 'good')
-    assert.match(stronger.reason, /stronger tier/i)
+    assert.match(stronger.reason, /annotated stronger/i)
 
-    // Equal tiers: a second opinion, not lift.
+    // Equal intellect: a second opinion, not lift.
     const equal = validateAdvisorPair('gpt-4o', 'claude-sonnet-4-6')
     assert.equal(equal.level, 'info')
-    assert.match(equal.reason, /same capability tier/i)
+    assert.match(equal.reason, /same intellect/i)
 
     // Weaker advisor: warned, still allowed (client-side is permissive).
     const weaker = validateAdvisorPair('claude-opus-4-8', 'claude-haiku-4-5')
     assert.equal(weaker.ok, true)
     assert.equal(weaker.level, 'warn')
-    assert.match(weaker.reason, /weaker tier/i)
+    assert.match(weaker.reason, /annotated weaker/i)
   })
 
   it('keeps a cloud advisor informative when the executor has no annotation', () => {
     const a = validateAdvisorPair('openrouter:qwen/qwen3-235b-a22b:free', 'claude-opus-4-8')
     assert.equal(a.ok, true)
     assert.equal(a.level, 'info')
-    assert.match(a.reason, /frontier-tier/i)
+    assert.match(a.reason, /intellect 9/i)
   })
 
   it('compares catalogued local models by size when both executor and advisor are local', () => {
