@@ -134,6 +134,96 @@ describe('OpenRouter model picker', () => {
     await saveElementScreenshot('.model-picker-menu', 'openrouter-model-picker-menu.png')
   })
 
+  it('moves the highlighted model with arrow keys and applies it with Enter', async () => {
+    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await $('.model-picker-trigger').click()
+    const filter = await $('.model-picker-filter')
+
+    assert.deepEqual(
+      await $('.model-picker-option').map(async (option) => ({
+        text: await option.getText(),
+        active: await option.getAttribute('aria-selected'),
+      })),
+      [
+        { text: 'Qwen3 235B A22B (free)', active: 'true' },
+        { text: 'anthropic/claude-3.5-sonnet (custom)', active: 'false' },
+      ],
+      'the currently applied model should be highlighted when the picker opens',
+    )
+
+    await filter.keys('ArrowDown')
+    assert.deepEqual(
+      await $('.model-picker-option').map(async (option) => ({
+        text: await option.getText(),
+        active: await option.getAttribute('aria-selected'),
+        hasActiveClass: await option.getAttribute('class').then((classes) => classes?.includes('is-active')),
+      })),
+      [
+        { text: 'Qwen3 235B A22B (free)', active: 'false', hasActiveClass: false },
+        {
+          text: 'anthropic/claude-3.5-sonnet (custom)',
+          active: 'true',
+          hasActiveClass: true,
+        },
+      ],
+    )
+    await saveElementScreenshot('.model-picker-menu', 'openrouter-model-picker-keyboard.png')
+
+    await filter.keys('Enter')
+    await $('.model-picker-menu').waitForDisplayed({ reverse: true })
+    assert.equal((await $('.model-picker-label').getText()).trim(), 'anthropic/claude-3.5-sonnet')
+    assert.equal(
+      await browser.execute(() =>
+        document.activeElement?.classList.contains('prompt-input'),
+      ),
+      true,
+      'composer should be focused after closing the picker',
+    )
+  })
+
+  it('filters visible models immediately as text is entered', async () => {
+    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await browser.keys('Escape')
+    await $('.model-picker-trigger').click()
+    const filter = await $('.model-picker-filter')
+    assert.equal(
+      await browser.execute(() =>
+        document.activeElement?.classList.contains('model-picker-filter'),
+      ),
+      true,
+      'filter should be focused when the picker opens',
+    )
+
+    await filter.setValue('qwen')
+    await browser.waitUntil(
+      async () => (await $$('.model-picker-option').map((option) => option.getText())).length === 1,
+      { timeout: 2_000, timeoutMsg: 'model picker did not filter after typing' },
+    )
+    assert.deepEqual(await $$('.model-picker-option').map((option) => option.getText()), [
+      'Qwen3 235B A22B (free)',
+    ])
+    assert.deepEqual(await $$('.model-picker-group-label').map((label) => label.getText()), [
+      'OPENROUTER',
+    ])
+
+    await filter.setValue('no-such-model')
+    await $('.model-picker-empty').waitForDisplayed()
+    assert.equal((await $('.model-picker-empty').getText()).trim(), 'No matching models')
+    assert.equal((await $$('.model-picker-option')).length, 0)
+
+    await saveElementScreenshot('.model-picker-menu', 'openrouter-model-picker-filter.png')
+
+    await browser.keys('Escape')
+    await $('.model-picker-menu').waitForDisplayed({ reverse: true })
+    assert.equal(
+      await browser.execute(() =>
+        document.activeElement?.classList.contains('prompt-input'),
+      ),
+      true,
+      'composer should be focused after dismissing the picker with Escape',
+    )
+  })
+
   it('exposes an OpenRouter API key field and custom model input in the OpenRouter provider form', async () => {
     await browser.keys('Escape')
     await $('[aria-label="Settings"]').click()
