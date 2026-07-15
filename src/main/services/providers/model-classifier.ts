@@ -1,4 +1,5 @@
 import { getModelInfo, type TrackedModel } from '@copse/llm/model-catalog.ts'
+import { TIER_REPRESENTATIVE_MODEL, type ModelTier } from '@copse/llm/model-tiers.ts'
 import { getAgentRole, type AgentRoleId } from '@copse/llm/agent-roles.ts'
 
 /**
@@ -19,20 +20,6 @@ import { getAgentRole, type AgentRoleId } from '@copse/llm/agent-roles.ts'
  */
 export const MODEL_CLASSIFIER_ENABLED_SETTING = 'modelClassifierEnabled'
 
-/** Capability tiers, cheapest/fastest first. */
-export type ModelTier = 'fast' | 'balanced' | 'frontier'
-
-/**
- * Representative model per tier, drawn from the tracked catalog. Deliberately
- * Anthropic-only for now (the app's default family); mapping to the user's
- * actually-configured/available providers is a follow-up — see the issue.
- */
-const TIER_MODEL: Record<ModelTier, TrackedModel> = {
-  fast: 'claude-haiku-4-5',
-  balanced: 'claude-sonnet-4-6',
-  frontier: 'claude-opus-4-8',
-}
-
 export interface ClassifyModelInput {
   /** The task / prompt to route. */
   task: string
@@ -44,7 +31,7 @@ export interface ClassifyModelInput {
 
 export interface ModelRecommendation {
   tier: ModelTier
-  /** Representative model id for the tier (see {@link TIER_MODEL}). */
+  /** Representative model id for the tier (see {@link TIER_REPRESENTATIVE_MODEL}). */
   model: TrackedModel
   /** 0–1 confidence in the tier choice. */
   confidence: number
@@ -99,7 +86,7 @@ export function classifyModelForTask(input: ClassifyModelInput): ModelRecommenda
   }
 
   const tier: ModelTier = score >= 2 ? 'frontier' : score <= -2 ? 'fast' : 'balanced'
-  const model = TIER_MODEL[tier]
+  const model = TIER_REPRESENTATIVE_MODEL[tier]
 
   // If the estimated context exceeds the chosen model's window, say so — a real
   // router would escalate to a wider-context model here.
