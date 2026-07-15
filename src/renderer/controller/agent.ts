@@ -299,6 +299,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           setMessageReview(store, threadId, anchorId, {
             status: chunk.status,
             summary: chunk.summary,
+            ...(chunk.issuesFound !== undefined ? { issuesFound: chunk.issuesFound } : {}),
           })
         }
         if (chunk.status === 'running') store.emit('agent_activity', threadId, 'Reviewing changes…')
