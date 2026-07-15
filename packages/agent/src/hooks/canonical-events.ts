@@ -13,7 +13,9 @@
 //                      M0.2 — named hooks own the policy; `messages[0]` string
 //                      surgery stays in `runAgent`.
 //   - `beforeFinalize` fires in `runAgentLoop`'s finalize checks (open-todos
-//                      closeout nudge selection). Extracted in M0.3.
+//                      closeout nudge selection). Wired in M0.3 — named hooks
+//                      own the nudge / attempt-budget policy; the closeout
+//                      loop and still-open note stay in `runAgentLoop`.
 //
 // The payload shapes below carry what those fire sites hand their hooks.
 import type { TodoItem } from '../wire-types.ts'
