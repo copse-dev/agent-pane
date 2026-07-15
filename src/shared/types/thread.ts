@@ -49,6 +49,12 @@ export interface ContextSnapshot {
 export interface ThreadReview {
   status: 'running' | 'done' | 'error' | 'skipped'
   summary: string
+  /**
+   * Structured signal from the review subagent (`REVIEW_JSON.issuesFound`).
+   * Absent on older persisted reviews; when explicitly `false` the renderer
+   * collapses the review card by default.
+   */
+  issuesFound?: boolean
 }
 
 /**
