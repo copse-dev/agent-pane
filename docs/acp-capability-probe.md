@@ -21,11 +21,12 @@ This probe turns that guesswork into data. It's the cheap, near-deterministic
 - **Tier 1 (this):** connection-time negotiation only. No prompt, no model
   tokens, and (for well-behaved adapters) no auth required — `initialize`
   succeeds before sign-in. Runnable anywhere the agent binary is on `PATH`.
-- **Tier 2 (follow-up):** behavioural probes under real turns — does a file edit
-  route through `fs/write_text_file` (the diff queue) or land via the agent's
-  shell? What does a `session/request_permission` payload actually carry? Which
-  `_meta` keys appear mid-turn? Those need auth and spend tokens, so they'll run
-  opt-in like `npm run test:e2e:agent-eval`.
+- **Tier 2 (`npm run probe:acp:behavior`, issue #832):** behavioural probes
+  under one real `session/prompt` — does a file edit route through
+  `fs/write_text_file` (the diff queue) or land via an `execute`/shell tool
+  call? What does a `session/request_permission` payload actually carry?
+  Which `_meta` keys appear mid-turn? Needs auth and spends tokens, so it is
+  opt-in (same posture as `npm run test:e2e:agent-eval`).
 
 ## Running it
 
@@ -97,6 +98,39 @@ The probe is a **v1 client** — it requests the SDK's `PROTOCOL_VERSION` (1) in
 requested-vs-negotiated (flagging a downgrade), which is the forward hook for
 **ACP v2** — an unstable draft no shipping agent speaks yet. What v2 changes and
 where it lands is tracked in [`docs/acp-v2-readiness.md`](acp-v2-readiness.md).
+
+## Tier 2 — behavioural probe (`npm run probe:acp:behavior`)
+
+Issue [#832](https://github.com/copse-dev/agent-pane/issues/832). After the
+handshake, this probe sends one fixed `session/prompt` that asks the agent to
+write a marker file (`.copse-acp-behavior-probe.txt` with content `PROBE_OK`),
+auto-allows permissions, and records:
+
+| Observation             | What it answers                                                                                                        |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **Write routing**       | Did the agent call `fs/write_text_file` (diff-queue path), emit an `execute` tool call (shell path), both, or neither? |
+| **Permission payloads** | Kind, title, option ids/kinds, and `rawInput` _keys_ (values are never logged — they may contain secrets)              |
+| **Mid-turn `_meta`**    | Keys on permission requests, tool updates, fs writes, and message chunks during the turn                               |
+
+```sh
+npm run probe:acp:behavior              # every installed known agent
+npm run probe:acp:behavior -- --agent claude
+npm run probe:acp:behavior -- --no-write
+npm run probe:acp:behavior -- --timeout 180000
+```
+
+Writes `docs/acp-behavior-matrix.{md,json}` (git-ignored, same as Tier 1).
+
+How it's built:
+
+- `src/main/services/acp/acp-behavior-probe.ts` — prompt + observation
+  (`extractBehaviorSnapshot` is pure and unit-tested).
+- `src/main/services/acp/acp-behavior-matrix.ts` — Markdown + JSON rendering.
+- `scripts/probe-acp-behavior-lib.mts` / `scripts/run-probe-acp-behavior.mts` —
+  the runner.
+
+CI covers the extraction against in-memory fake agents that script each write
+routing and `_meta` shape — no real agent or tokens required for `npm test`.
 
 ## See also
 

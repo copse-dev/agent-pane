@@ -17,6 +17,7 @@
     "generate:icon": "node scripts/generate-icon.mts",
     "detect:acp": "node scripts/detect-acp-agents.mts",
     "probe:acp": "node scripts/run-probe-acp-agents.mts",
+    "probe:acp:behavior": "node scripts/run-probe-acp-behavior.mts",
     "icons:mac": "node scripts/generate-icon.mts && COPSE_PANEL_REFRESH_DOCK=1 node scripts/patch-dev-name.mts",
     "start:mac": "npm run icons:mac && env -u ELECTRON_RUN_AS_NODE electron dist/main/index.js",
     "prestart": "node scripts/patch-dev-name.mts",
