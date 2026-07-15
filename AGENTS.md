@@ -66,6 +66,15 @@ response) via `window.__copseE2e.setMockScript([…])` before submitting natural
 Define the script in the spec file next to the prompts it drives (`tests/e2e/mock-script-multiturn.e2e.ts`).
 The legacy `[[mcp:…]]` inline directives remain for one-shot tool steering.
 
+### Hooks / feature-pack work
+
+Any change touching agent hooks (`cursor-hooks`, `claude-hooks`, the permission-gate
+hook path), loop nudges/steering, auto-continuation, or feature-pack extraction MUST
+follow [`docs/plans/hooks-and-feature-packs.md`](docs/plans/hooks-and-feature-packs.md).
+Its decisions log is binding: on conflict, update that doc in the same PR — never
+silently diverge. Read its "Execution guidance" and "Known implementation traps"
+sections before writing code.
+
 ### Before committing
 
 Before opening a PR, rebase onto **`origin/main`** — GitHub PR CI tests the merge of base into head, not your branch tip alone.
