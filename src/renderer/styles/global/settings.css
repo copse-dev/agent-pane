@@ -592,7 +592,7 @@ dialog.settings-overlay::backdrop {
 .usage-plan-providers {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xl);
+  gap: calc(var(--spacing-xl) + var(--spacing-md));
 }
 .usage-plan-provider {
   display: flex;
