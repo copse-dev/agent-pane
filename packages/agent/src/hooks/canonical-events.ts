@@ -5,17 +5,17 @@
 // canonical events only; it never knows dialects or executor kinds exist. The
 // event names are final — changing one is a decisions-log edit, not a refactor.
 //
-// M0.1 wires only the two blocking *assembly* events used to lift the inline
+// M0 wires only the two blocking *assembly* events used to lift the inline
 // todo behavior out of the core files:
 //
 //   - `turnStart`      fires in `runAgent` after the system prompt is built,
-//                      before the loop (steering, prior-todos pin). Extracted in
-//                      M0.2.
+//                      before the loop (steering, prior-todos pin). Wired in
+//                      M0.2 — named hooks own the policy; `messages[0]` string
+//                      surgery stays in `runAgent`.
 //   - `beforeFinalize` fires in `runAgentLoop`'s finalize checks (open-todos
 //                      closeout nudge selection). Extracted in M0.3.
 //
-// The payload shapes below carry what those fire sites hand their hooks; M0.2/M0.3
-// own the wiring that populates and applies them.
+// The payload shapes below carry what those fire sites hand their hooks.
 import type { TodoItem } from '../wire-types.ts'
 import type { BlockingHookOutcome, AsyncHookOutcome } from './hook-outcome.ts'
 
@@ -78,12 +78,18 @@ export const HOOK_EVENT_SPECS: Record<HookEventName, HookEventSpec> = {
  * Cross-cutting services and signals a hook receives alongside its event
  * payload. First-party (function) hooks receive app services *here*, never by
  * importing them — that is what keeps `packages/agent` Electron-free
- * (execution-guidance rule 4). M0.1's zero hooks need only the run's abort
- * signal; later phases widen this as first-party hooks require more.
+ * (execution-guidance rule 4). M0.2's turn-start hooks need the abort signal
+ * plus an optional GitHub-slug resolver; later phases widen this further.
  */
 export interface HookContext {
   /** Abort signal for the current run; hooks should bail out if it fires. */
   signal?: AbortSignal
+  /**
+   * Resolve the workspace GitHub `org/repo` slug, or null when the remote is
+   * missing / not GitHub. Provided by the host so `github-link-steering` never
+   * imports the app's git service.
+   */
+  resolveGithubRepoSlug?: () => Promise<string | null>
 }
 
 type MaybePromise<T> = T | Promise<T>
