@@ -182,15 +182,80 @@ function discoverCodexAuth(): { accessToken: string; accountId: string | null } 
   return parseCodexAuthJson(file)
 }
 
-function discoverHuggingFaceToken(): string | null {
+/** Copse userData dir (same layout as e2e helpers / app-init). */
+function copseUserDataDir(): string {
+  const override = process.env['COPSE_PANEL_USER_DATA']?.trim()
+  if (override) return override
+  if (process.platform === 'darwin') {
+    return join(homedir(), 'Library', 'Application Support', 'copse-panel')
+  }
+  if (process.platform === 'win32') {
+    const appData = process.env['APPDATA']?.trim()
+    return appData ? join(appData, 'copse-panel') : join(homedir(), 'copse-panel')
+  }
+  return join(homedir(), '.config', 'copse-panel')
+}
+
+/**
+ * Read `apiKey.huggingface` from Copse `settings.json` without Electron.
+ * Only plaintext (`plain: true`) records are usable here — OS-encrypted keys
+ * need Electron safeStorage (available in the app, not this CLI).
+ */
+function readHuggingFaceTokenFromSettings(): {
+  token: string | null
+  encryptedPresent: boolean
+} {
+  const settings = readJsonFile(join(copseUserDataDir(), 'settings.json'))
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+    return { token: null, encryptedPresent: false }
+  }
+  const root = settings as Record<string, unknown>
+  const apiKeyRoot = root['apiKey']
+  const nested =
+    apiKeyRoot && typeof apiKeyRoot === 'object' && !Array.isArray(apiKeyRoot)
+      ? (apiKeyRoot as Record<string, unknown>)['huggingface']
+      : undefined
+  const flat = root['apiKey.huggingface']
+  const record = nested ?? flat
+  if (!record || typeof record !== 'object' || Array.isArray(record)) {
+    return { token: null, encryptedPresent: false }
+  }
+  const stored = record as Record<string, unknown>
+  const enc = stored['enc']
+  if (typeof enc !== 'string' || !enc) {
+    return { token: null, encryptedPresent: false }
+  }
+  if (stored['plain'] === true) {
+    try {
+      const token = parseHuggingFaceToken(Buffer.from(enc, 'base64').toString('utf8'))
+      return { token, encryptedPresent: false }
+    } catch {
+      return { token: null, encryptedPresent: false }
+    }
+  }
+  return { token: null, encryptedPresent: true }
+}
+
+function discoverHuggingFaceToken(): {
+  token: string | null
+  settingsEncrypted: boolean
+} {
   const fromEnv =
     process.env['HF_TOKEN']?.trim() || process.env['HUGGINGFACE_API_KEY']?.trim() || null
-  if (fromEnv) return fromEnv
+  if (fromEnv) return { token: fromEnv, settingsEncrypted: false }
+
   const home = process.env['HF_HOME']?.trim() || join(homedir(), '.cache', 'huggingface')
   try {
-    return parseHuggingFaceToken(readFileSync(join(home, 'token'), 'utf8'))
+    const fromFile = parseHuggingFaceToken(readFileSync(join(home, 'token'), 'utf8'))
+    if (fromFile) return { token: fromFile, settingsEncrypted: false }
   } catch {
-    return null
+    // continue
+  }
+
+  const fromSettings = readHuggingFaceTokenFromSettings()
+  return {
+    token: fromSettings.token,
+    settingsEncrypted: fromSettings.encryptedPresent,
   }
 }
 
@@ -340,19 +405,30 @@ async function probeHuggingFace(args: Args): Promise<ProviderProbeReport> {
   const sink: { body: unknown; status: number } = { body: null, status: 0 }
   let fetchImpl: FetchLike
   let token: string | null = 'fixture-token'
+  let settingsEncrypted = false
 
   if (args.fixture) {
     const body = JSON.parse(readFileSync(args.fixture, 'utf8')) as unknown
     fetchImpl = capturingFetch(fixtureFetch(body), sink)
   } else {
-    token = discoverHuggingFaceToken()
+    const discovered = discoverHuggingFaceToken()
+    token = discovered.token
+    settingsEncrypted = discovered.settingsEncrypted
     fetchImpl = capturingFetch(globalThis.fetch.bind(globalThis), sink)
   }
 
-  const parse = await fetchHuggingFacePlanUsage(token, {
+  let parse = await fetchHuggingFacePlanUsage(token, {
     fetch: fetchImpl,
     signal: AbortSignal.timeout(12_000),
   })
+  if (!args.fixture && !token && settingsEncrypted && parse.status === 'unavailable') {
+    parse = {
+      status: 'unavailable',
+      provider: 'huggingface',
+      reason:
+        'Copse Settings has a Hugging Face key, but it is OS-encrypted (Electron safeStorage) and this CLI cannot decrypt it. Settings → Usage in the app already works. To probe from the shell: `export HF_TOKEN=…` or run `hf auth login`.',
+    }
+  }
   return {
     provider: 'huggingface',
     parse,
@@ -433,7 +509,9 @@ Exit 1 on schema drift (unknown keys/enums). Exit 2 when auth/fetch/parse fails.
 Claude auth order (macOS): Keychain "Claude Code-credentials" →
 ~/.claude/.credentials.json → CLAUDE_CODE_OAUTH_TOKEN.
 
-Hugging Face: HF_TOKEN / HUGGINGFACE_API_KEY → ~/.cache/huggingface/token.
+Hugging Face: HF_TOKEN / HUGGINGFACE_API_KEY → ~/.cache/huggingface/token
+→ plaintext Copse Settings key. OS-encrypted Settings keys work in the app
+only (this CLI cannot use Electron safeStorage).
 
 Cursor: CURSOR_SESSION_TOKEN / WORKOS_CURSOR_SESSION_TOKEN → macOS Keychain
 "cursor-access-token" → Cursor IDE state.vscdb (cursorAuth/accessToken).

@@ -24,7 +24,9 @@ app's local token ledger is unrelated and unaffected.
 - **`fetchHuggingFacePlanUsage`** — `GET https://huggingface.co/api/settings/billing/usage-v2`
   for the current UTC month. Maps `usage.inferenceProviders`
   (`usedNanoUsd` / `limitNanoUsd` / `periodEnd`) into a monthly window. Needs a
-  user HF token (`HF_TOKEN`, Settings key, or `~/.cache/huggingface/token`).
+  user HF token (`HF_TOKEN`, or `~/.cache/huggingface/token`). Copse Settings
+  keys work inside the app (via Electron safeStorage); the probe CLI cannot
+  decrypt them — export `HF_TOKEN` to probe from the shell.
 - **`fetchCursorPlanUsage`** — `POST https://cursor.com/api/dashboard/get-current-period-usage`
   (+ `get-hard-limit`). Maps `planUsage` (USD cents) and `spendLimitUsage` into
   included / on-demand windows. Needs a WorkOS session cookie
