@@ -25,9 +25,9 @@ export function parseComplexityWord(text: string): RoadmapComplexity | null {
   return match ? (match[1] as RoadmapComplexity) : null
 }
 
-/** Map the heuristic model-classifier tier onto the complexity vocabulary. */
-export function tierToComplexity(tier: 'fast' | 'balanced' | 'frontier'): RoadmapComplexity {
-  if (tier === 'fast') return 'low'
-  if (tier === 'balanced') return 'medium'
+/** Map the model classifier's intellect band onto the complexity vocabulary. */
+export function bandToComplexity(band: 'low' | 'mid' | 'top'): RoadmapComplexity {
+  if (band === 'low') return 'low'
+  if (band === 'mid') return 'medium'
   return 'high'
 }

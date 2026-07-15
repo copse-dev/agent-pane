@@ -880,11 +880,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Let the agent get a best-fit model recommendation for a task
               </label>
               <p class="field-hint">
-                Adds a <code>suggest_model</code> tool that recommends a capability tier
-                (fast / balanced / frontier) and a representative model for a task, so cheap/fast
-                models handle trivial work and frontier models are reserved for the hard problems.
-                Advisory only — it does not switch the model in use. While off, the tool is not
-                registered.
+                Adds a <code>suggest_model</code> tool that places a task on the shared model
+                intellect scale (low / mid / top band — the same scale the advisor pairing uses) and
+                names a representative model, so cheap/fast models handle trivial work and
+                top-of-scale models are reserved for the hard problems. Advisory only — it does not
+                switch the model in use. While off, the tool is not registered.
               </p>
             </fieldset>
 

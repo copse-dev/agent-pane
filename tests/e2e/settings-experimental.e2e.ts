@@ -50,6 +50,14 @@ describe('experimental settings section', () => {
     await expect(memoriesToggle).toBeExisting()
     assert.equal(await memoriesToggle.isSelected(), false)
 
+    // The model classifier speaks the shared intellect scale, not a separate
+    // tier vocabulary (docs/plans/advisor-strategy.md).
+    const classifierHint = await experimental
+      .$('legend=Model classifier')
+      .parentElement()
+      .$('.field-hint')
+    assert.match(await classifierHint.getText(), /shared model\s+intellect scale/i)
+
     await saveElementScreenshot('#settings-dialog', 'settings-experimental-mcp-ui.png')
   })
 })

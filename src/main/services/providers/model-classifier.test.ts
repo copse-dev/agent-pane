@@ -3,24 +3,29 @@ import { describe, it } from 'node:test'
 import { classifyModelForTask, suggestRoleForTask } from './model-classifier.ts'
 
 describe('model-classifier', () => {
-  it('routes trivial mechanical edits to the fast tier', () => {
+  it('routes trivial mechanical edits to the low band', () => {
     const rec = classifyModelForTask({ task: 'Rename the variable foo to bar' })
-    assert.equal(rec.tier, 'fast')
+    assert.equal(rec.band, 'low')
     assert.equal(rec.model, 'claude-haiku-4-5')
   })
 
-  it('routes design/refactor work to the frontier tier', () => {
+  it('routes design/refactor work to the top band', () => {
     const rec = classifyModelForTask({
       task: 'Refactor the architecture of the agent loop to fix a race condition in concurrent tool calls',
     })
-    assert.equal(rec.tier, 'frontier')
+    assert.equal(rec.band, 'top')
     assert.equal(rec.model, 'claude-opus-4-8')
   })
 
-  it('defaults to the balanced tier when there are no strong signals', () => {
+  it('defaults to the mid band when there are no strong signals', () => {
     const rec = classifyModelForTask({ task: 'Update the changelog with the new entries listed' })
-    assert.equal(rec.tier, 'balanced')
+    assert.equal(rec.band, 'mid')
     assert.equal(rec.model, 'claude-sonnet-4-6')
+  })
+
+  it("reports the representative model's intellect from the shared scale", () => {
+    const rec = classifyModelForTask({ task: 'Rename the variable foo to bar' })
+    assert.equal(rec.intellect, 4)
   })
 
   it('flags when the estimated context exceeds the chosen model window', () => {

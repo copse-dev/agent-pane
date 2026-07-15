@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { TRACKED_MODELS } from './model-catalog.ts'
 import {
+  BAND_REPRESENTATIVE_MODEL,
   MODEL_INTELLECT,
   intellectBand,
   modelIntellect,
@@ -33,6 +34,17 @@ describe('model intellect scale', () => {
     assert.equal(intellectBand(8, scale), 'top')
     assert.equal(intellectBand(6, scale), 'mid')
     assert.equal(intellectBand(4, scale), 'low')
+  })
+
+  it('keeps each band representative inside its band as the scale evolves', () => {
+    // Static picks, dynamically validated: when a stronger model extends the
+    // scale and demotes yesterday's top band, this test fails and forces the
+    // representatives to be revisited instead of silently going stale.
+    for (const [band, model] of Object.entries(BAND_REPRESENTATIVE_MODEL)) {
+      const value = modelIntellect(model)
+      assert.ok(value !== null, `${model} must be annotated`)
+      assert.equal(intellectBand(value), band, `${model} must sit in the '${band}' band`)
+    }
   })
 
   it('re-bands automatically when a new frontier model extends the scale', () => {
