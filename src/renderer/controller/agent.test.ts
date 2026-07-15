@@ -113,6 +113,21 @@ function setup(
         trackingStartedAt: null,
         ledgerEventCount: 0,
       }),
+      getPlanUsage: async () => ({
+        checkedAt: new Date(0).toISOString(),
+        providers: [
+          {
+            status: 'unavailable' as const,
+            provider: 'claude' as const,
+            reason: 'test',
+          },
+          {
+            status: 'unavailable' as const,
+            provider: 'codex' as const,
+            reason: 'test',
+          },
+        ],
+      }),
     },
   } as unknown as ApiClient
 
