@@ -10,6 +10,7 @@ import {
   type CursorPermissionHookEvent,
 } from '@shared/types/cursor-hooks.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
+import { recordCommandHookRun } from '../hook-run-recorder.ts'
 
 /** Hooks that take longer than this are treated as failed-open (allow). */
 const HOOK_TIMEOUT_MS = 5_000
@@ -150,19 +151,56 @@ function auditProjectHook(hook: DiscoveredHook): void {
   )
 }
 
+/**
+ * Everything observed about one spawned hook execution. `response` is what the
+ * permission reduction consumes; the rest feeds the always-on spine record
+ * (decision 6 of docs/plans/hooks-and-feature-packs.md).
+ */
+interface HookCommandExecution {
+  response: HookPermissionResponse | null
+  /** Raw captured streams (stored verbatim as thread blobs). */
+  stdout: string
+  stderr: string
+  /** Process exit code; null when killed (timeout / output cap) or spawn failed. */
+  exitCode: number | null
+  startedAt: number
+  durationMs: number
+  /**
+   * Whether stdout was successfully converted into a response. Empty stdout is
+   * an intentional no-response (`true`); non-empty non-JSON output — e.g. a
+   * debug print corrupting the response channel — is `false`.
+   */
+  parseOk: boolean
+}
+
+/** Cap captured stream sizes so a runaway hook can't exhaust memory. */
+const OUTPUT_CAP_BYTES = 1_000_000
+
 /** Spawn one hook, feed it the JSON payload on stdin, and parse its stdout JSON. */
 function runHookCommand(
   hook: DiscoveredHook,
   payload: unknown,
   signal?: AbortSignal,
-): Promise<HookPermissionResponse | null> {
+): Promise<HookCommandExecution> {
   return new Promise((resolve) => {
+    const startedAt = Date.now()
+    let stdout = ''
+    let stderr = ''
+    let exitCode: number | null = null
     let settled = false
-    const finish = (value: HookPermissionResponse | null): void => {
+    const finish = (response: HookPermissionResponse | null, parseOk: boolean): void => {
       if (settled) return
       settled = true
       clearTimeout(timer)
-      resolve(value)
+      resolve({
+        response,
+        stdout,
+        stderr,
+        exitCode,
+        startedAt,
+        durationMs: Date.now() - startedAt,
+        parseOk,
+      })
     }
 
     auditProjectHook(hook)
@@ -174,41 +212,48 @@ function runHookCommand(
       cwd: hook.cwd,
       shell: true,
       env: envForRendererChildProcess(),
-      stdio: ['pipe', 'pipe', 'ignore'],
+      stdio: ['pipe', 'pipe', 'pipe'],
       signal,
     })
 
     const timer = setTimeout(() => {
       child.kill('SIGKILL')
-      finish(null)
+      finish(null, false)
     }, HOOK_TIMEOUT_MS)
 
-    let stdout = ''
     child.stdout.on('data', (chunk: Buffer) => {
       stdout += chunk.toString('utf-8')
-      // Cap captured output so a runaway hook can't exhaust memory.
-      if (stdout.length > 1_000_000) child.kill('SIGKILL')
+      // stdout is the response channel: a runaway response is fatal to the hook.
+      if (stdout.length > OUTPUT_CAP_BYTES) child.kill('SIGKILL')
+    })
+    // stderr is captured for the spine record (decision 6 — previously
+    // discarded via `'ignore'`). Overflow only truncates the capture; it never
+    // kills the hook, because stderr chatter carries no decision.
+    child.stderr.on('data', (chunk: Buffer) => {
+      if (stderr.length <= OUTPUT_CAP_BYTES) stderr += chunk.toString('utf-8')
     })
     child.on('error', () => {
-      finish(null)
+      finish(null, false)
     })
-    child.on('close', () => {
+    child.on('close', (code) => {
+      exitCode = code
       const text = stdout.trim()
       if (!text) {
-        finish(null)
+        // Empty stdout is an intentional no-response, not a parse failure.
+        finish(null, true)
         return
       }
       try {
-        finish(JSON.parse(text) as HookPermissionResponse)
+        finish(JSON.parse(text) as HookPermissionResponse, true)
       } catch {
-        finish(null)
+        finish(null, false)
       }
     })
 
     try {
       child.stdin.end(JSON.stringify(payload))
     } catch {
-      finish(null)
+      finish(null, false)
     }
   })
 }
@@ -237,12 +282,41 @@ export async function runPermissionHooks(
     workspace_roots: opts.workspaceRoot ? [opts.workspaceRoot] : [],
   }
 
-  const responses = await Promise.all(
+  const executions = await Promise.all(
     hooks.map((hook) => runHookCommand(hook, { ...base, ...payload }, opts.signal)),
   )
 
+  // Always-on spine recording (decision 6): one hook_run line per execution,
+  // with the raw stdout/stderr bytes as blobs. Attribution/persistence live in
+  // the recorder; a run with no attributable thread records nothing.
+  hooks.forEach((hook, i) => {
+    const execution = executions[i]
+    if (!execution) return
+    recordCommandHookRun({
+      event: hook.event,
+      hookId: hook.command,
+      startedAt: execution.startedAt,
+      durationMs: execution.durationMs,
+      exitCode: execution.exitCode,
+      parseOk: execution.parseOk,
+      decision: {
+        ...(execution.response?.permission !== undefined
+          ? { permission: execution.response.permission }
+          : {}),
+        ...(execution.response?.agentMessage !== undefined
+          ? { agentMessageChars: execution.response.agentMessage.length }
+          : {}),
+        ...(execution.response?.userMessage !== undefined
+          ? { userMessageChars: execution.response.userMessage.length }
+          : {}),
+      },
+      stdout: execution.stdout,
+      stderr: execution.stderr,
+    })
+  })
+
   let decision: CursorHookDecision = { permission: 'allow' }
-  for (const res of responses) {
+  for (const { response: res } of executions) {
     const permission = res?.permission
     if (permission === 'deny') {
       return {
