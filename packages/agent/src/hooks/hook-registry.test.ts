@@ -17,7 +17,7 @@ const turnStartPayload = { userText: 'do the thing', priorTodos: [] as const }
 const finalizePayload = { openTodos: [] as const, attempt: 0 }
 
 describe('canonical event catalogue', () => {
-  it('wires exactly the two blocking assembly events for M0.1', () => {
+  it('wires exactly the two blocking assembly events for M0', () => {
     assert.deepEqual([...HOOK_EVENT_NAMES], ['turnStart', 'beforeFinalize'])
     for (const name of HOOK_EVENT_NAMES) {
       assert.equal(HOOK_EVENT_SPECS[name].dispatch, 'blocking')
@@ -33,17 +33,22 @@ describe('HookRegistry.emit — zero registered hooks changes nothing', () => {
     assert.deepEqual(result.outcomes, [])
   })
 
-  it('the static first-party list is empty in M0.1, so the default registry is inert', async () => {
-    assert.equal(FIRST_PARTY_HOOKS.length, 0)
+  it('beforeFinalize still has no first-party subscribers, so the default emit is a no-op', async () => {
     const registry = createHookRegistry()
-    assert.deepEqual(
-      (await registry.emit('turnStart', turnStartPayload, emptyContext)).outcomes,
-      [],
-    )
     assert.deepEqual(
       (await registry.emit('beforeFinalize', finalizePayload, emptyContext)).outcomes,
       [],
     )
+  })
+})
+
+describe('FIRST_PARTY_HOOKS — M0.2 turn-start list', () => {
+  it('registers the four named turn-start hooks in assembly order', () => {
+    assert.deepEqual(
+      FIRST_PARTY_HOOKS.filter((h) => h.event === 'turnStart').map((h) => h.id),
+      ['todo-steering', 'github-link-steering', 'commit-steering', 'todo-pin'],
+    )
+    assert.equal(FIRST_PARTY_HOOKS.filter((h) => h.event === 'beforeFinalize').length, 0)
   })
 })
 
