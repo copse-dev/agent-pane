@@ -19,7 +19,9 @@
       "@copse/agent": ["./packages/agent/src/index.ts"],
       "@copse/agent/*": ["./packages/agent/src/*"],
       "@copse/llm": ["./packages/llm/src/index.ts"],
-      "@copse/llm/*": ["./packages/llm/src/*"]
+      "@copse/llm/*": ["./packages/llm/src/*"],
+      "@copse/plan-usage": ["./packages/plan-usage/src/index.ts"],
+      "@copse/plan-usage/*": ["./packages/plan-usage/src/*"]
     },
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
