@@ -95,6 +95,7 @@ export interface ApiClient {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        comparisonModels?: { a: string; b: string; judge: string }
       }) => void,
     ) => () => void
     onAskUserRequest: (
@@ -121,7 +122,12 @@ export interface ApiClient {
     onConflict: (handler: (paths: string[]) => void) => () => void
   }
   approval: {
-    respond: (id: string, approved: boolean, remember?: boolean) => Promise<void>
+    respond: (
+      id: string,
+      approved: boolean,
+      remember?: boolean,
+      comparisonModels?: { a: string; b: string; judge: string },
+    ) => Promise<void>
   }
   ask: {
     respond: (id: string, answers: string[]) => Promise<void>

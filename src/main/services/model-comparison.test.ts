@@ -6,6 +6,7 @@ import {
   billableComparisonModels,
   buildComparisonJudgePrompt,
   comparisonApprovalBody,
+  comparisonApprovalPickerIntro,
   comparisonNeedsApproval,
   comparisonReviewersDistinct,
   resolveComparisonModels,
@@ -93,6 +94,14 @@ describe('comparisonNeedsApproval / billableComparisonModels', () => {
       billableComparisonModels({ a: 'gpt-5', b: 'gpt-5', judge: 'claude-opus-4-8' }, isPaid),
       ['gpt-5', 'claude-opus-4-8'],
     )
+  })
+})
+
+describe('comparisonApprovalPickerIntro', () => {
+  it('describes the three-model comparison flow', () => {
+    const intro = comparisonApprovalPickerIntro()
+    assert.match(intro, /reviewer/i)
+    assert.match(intro, /judge/i)
   })
 })
 
