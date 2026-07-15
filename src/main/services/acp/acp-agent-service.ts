@@ -76,10 +76,10 @@ import {
  * Sessions are persistent per thread (issue #605): the agent process and ACP
  * session live in `acp-session-pool.ts` across turns, so the agent keeps its
  * own memory (no transcript replay on reuse) and background helpers it spawned
- * survive between turns. After a transport drop, an agent that advertises
- * `session/resume` keeps that memory on the next connection; history is replayed
- * only into a genuinely fresh session — first turn, config change, failed
- * resume, or idle reap.
+ * survive between turns. After a transport drop **or an idle reap**, an agent
+ * that advertises `session/resume` keeps that memory on the next connection
+ * (issue #830); history is replayed only into a genuinely fresh session —
+ * first turn, config change, or a failed/unavailable resume.
  */
 
 export interface RunAcpAgentOptions {

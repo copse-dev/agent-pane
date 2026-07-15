@@ -171,9 +171,12 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
 - **No terminals.** `terminal/*` requests are not backed yet.
 - **Sessions are per-thread and idle-bounded.** The agent process and its ACP
   session persist across turns in a thread (issue #605), so the agent keeps its
-  own memory and background helpers survive between turns — but a session idle
-  for 10 minutes is reaped, and a config change or failed turn respawns it; in
-  those cases the prior conversation is replayed once as a compact preamble.
+  own memory and background helpers survive between turns. A session idle for
+  10 minutes is reaped to free the process; agents that advertise
+  `session/resume` (Claude, Codex) restore the same session on the next turn
+  without a transcript replay (issue #830). Agents without resume (or a failed
+  resume), and config changes that force a new session, still get a one-shot
+  history preamble.
 - **Text only on input.** Image attachments are dropped before the prompt is
   sent (the agent receives the text blocks).
 - **Native-tool bridge is http-only.** Agents that support only stdio MCP

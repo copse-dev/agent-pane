@@ -15,12 +15,15 @@ import type { ToolRegistry } from '../tool-registry.ts'
  * - Follow-up turns reuse the live session (no replay, background work
  *   survives; updates arriving between turns surface in the UI immediately
  *   via the session's update pump — see `startAcpUpdatePump` in acp-client.ts).
- * - After a dropped connection, agents that advertise `session/resume` restore
- *   the same session on the replacement transport. If resuming is unavailable
- *   or rejected, a config change, or idle reaping forces a new session and the
- *   caller replays history once.
- * - Sessions idle longer than {@link IDLE_MS} are reaped, and everything is
- *   disposed at app shutdown.
+ * - After a dropped connection **or an idle reap**, agents that advertise
+ *   `session/resume` restore the same session on a replacement transport
+ *   (issue #830) — so the agent keeps its own memory and the caller skips the
+ *   transcript-replay preamble. If resuming is unavailable or rejected, or a
+ *   config change forces a genuinely new session, the caller replays history
+ *   once.
+ * - Sessions idle longer than {@link IDLE_MS} are reaped (process torn down to
+ *   free resources); resume-capable session IDs are retained for the next
+ *   acquire. Everything is disposed at app shutdown.
  *
  * Lifetime consequences, on purpose: the native-tool bridge and the sandbox
  * network scope now live as long as the session (not one turn) — the M6-style
@@ -75,14 +78,34 @@ function ensureReaper(): void {
   reaper.unref()
 }
 
+/**
+ * Remember a session ID for a later `session/resume` attempt, if the agent
+ * advertised the capability. Used after a transport drop and after idle reap
+ * (#830) so the next acquire can restore agent memory without a Copse-side
+ * transcript replay.
+ */
+function rememberResumeCandidate(threadId: string, entry: PooledAcpSession): void {
+  if (!entry.open.canResume) {
+    resumeCandidates.delete(threadId)
+    return
+  }
+  resumeCandidates.set(threadId, {
+    fingerprint: entry.fingerprint,
+    sessionId: entry.open.session.sessionId,
+  })
+}
+
 /** Evict sessions idle past `idleMs`. Exported with injectable `now` for tests. */
 export function reapIdleAcpSessions(now = Date.now(), idleMs = IDLE_MS): string[] {
   const reaped: string[] = []
   for (const [threadId, entry] of pool) {
     if (now - entry.lastUsedAt >= idleMs) {
+      // Tear down the live process, but keep the opaque session ID when the
+      // agent can resume — the next acquire spawns a fresh transport and calls
+      // `session/resume` instead of replaying the transcript (#830).
+      rememberResumeCandidate(threadId, entry)
       entry.dispose()
       pool.delete(threadId)
-      resumeCandidates.delete(threadId)
       reaped.push(threadId)
     }
   }
@@ -168,11 +191,8 @@ export function disposeAcpSession(
     if (!options.preserveForResume) resumeCandidates.delete(threadId)
     return
   }
-  if (options.preserveForResume && entry.open.canResume) {
-    resumeCandidates.set(threadId, {
-      fingerprint: entry.fingerprint,
-      sessionId: entry.open.session.sessionId,
-    })
+  if (options.preserveForResume) {
+    rememberResumeCandidate(threadId, entry)
   } else {
     resumeCandidates.delete(threadId)
   }

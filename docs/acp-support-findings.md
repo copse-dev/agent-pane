@@ -86,7 +86,12 @@ big decision:
 
 - **Use ACP `session/load`/`resume` for warm sessions** instead of the 10-minute
   reap + replay-preamble hack — Claude and Codex both advertise it.
-  ([#830](https://github.com/copse-dev/agent-pane/issues/830))
+  ([#830](https://github.com/copse-dev/agent-pane/issues/830)) —
+  **landed:** idle reap now retains the opaque session ID when the agent
+  advertises `session/resume`, and the next acquire restores it (same path as
+  a transport-drop reconnect). Agents without resume still get a fresh session
+  - preamble. Durable cross-app-restart persistence and Cursor's legacy
+    `loadSession` path remain follow-ups.
 - **Forward image content blocks** to agents advertising `prompt.image` — all
   three do; we currently drop attachments before prompting.
   ([#831](https://github.com/copse-dev/agent-pane/issues/831))
