@@ -1,0 +1,195 @@
+import {
+  clampPercent,
+  errorMessage,
+  isRecord,
+  readJsonBody,
+  toIsoTimestamp,
+} from './internal-utils.ts'
+import type {
+  FetchLike,
+  PlanUsageFetchOptions,
+  PlanWindow,
+  ProviderPlanResult,
+  ProviderPlanUsage,
+} from './types.ts'
+
+const DEFAULT_CODEX_USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage'
+
+function labelForDurationMins(mins: number | null): string {
+  if (mins === null) return 'Limit'
+  if (mins >= 60 * 24 * 28) return 'Monthly'
+  if (mins >= 60 * 24 * 6) return 'Weekly'
+  if (mins >= 60 * 23) return 'Daily'
+  if (mins >= 60 * 4) return '5-hour'
+  if (mins >= 60) return `${String(Math.round(mins / 60))}h`
+  return `${String(mins)}m`
+}
+
+function slug(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function parseRateWindow(
+  raw: unknown,
+  id: string,
+  labelPrefix: string | null,
+  nowMs: number,
+): PlanWindow | null {
+  if (!isRecord(raw)) return null
+  const used = raw['used_percent'] ?? raw['usedPercent']
+  if (typeof used !== 'number' || !Number.isFinite(used)) return null
+  const durationRaw =
+    raw['limit_window_seconds'] ?? raw['window_duration_mins'] ?? raw['windowDurationMins']
+  let durationMins: number | null = null
+  if (typeof durationRaw === 'number' && Number.isFinite(durationRaw)) {
+    // Some payloads use seconds (limit_window_seconds), others minutes.
+    durationMins =
+      raw['limit_window_seconds'] !== undefined ? Math.round(durationRaw / 60) : durationRaw
+  }
+  const resets = raw['reset_at'] ?? raw['resets_at'] ?? raw['resetsAt'] ?? raw['resetAt']
+  const baseLabel = labelForDurationMins(durationMins)
+  const label = labelPrefix ? `${labelPrefix} ${baseLabel}` : baseLabel
+  return {
+    id,
+    label,
+    usedPercent: clampPercent(used),
+    resetsAt: toIsoTimestamp(resets, nowMs),
+  }
+}
+
+function pushWindowsFromRateLimit(
+  rate: Record<string, unknown>,
+  idPrefix: string,
+  labelPrefix: string | null,
+  nowMs: number,
+  into: PlanWindow[],
+): void {
+  const primary = parseRateWindow(
+    rate['primary_window'] ?? rate['primaryWindow'] ?? rate['primary'],
+    idPrefix === '' ? 'primary' : `${idPrefix}_primary`,
+    labelPrefix,
+    nowMs,
+  )
+  if (primary) into.push(primary)
+  const secondary = parseRateWindow(
+    rate['secondary_window'] ?? rate['secondaryWindow'] ?? rate['secondary'],
+    idPrefix === '' ? 'secondary' : `${idPrefix}_secondary`,
+    labelPrefix,
+    nowMs,
+  )
+  if (secondary) into.push(secondary)
+}
+
+function pickRateLimitBlock(body: Record<string, unknown>): Record<string, unknown> | null {
+  const direct = body['rate_limit']
+  if (isRecord(direct)) return direct
+  const camel = body['rateLimit']
+  if (isRecord(camel)) return camel
+  // Newer multi-bucket payloads nest under rate_limits / rateLimits.
+  const nested = body['rate_limits'] ?? body['rateLimits']
+  if (isRecord(nested) && isRecord(nested['primary'])) return nested
+  return null
+}
+
+function parseAdditionalRateLimits(raw: unknown, nowMs: number, into: PlanWindow[]): void {
+  if (!Array.isArray(raw)) return
+  for (const entry of raw) {
+    if (!isRecord(entry)) continue
+    // Stable id from metered_feature; human label prefers limit_name
+    // (e.g. "GPT-5.3-Codex-Spark" over "codex_bengalfox").
+    const featureIdRaw = entry['metered_feature'] ?? entry['meteredFeature'] ?? entry['limit_name']
+    const labelRaw = entry['limit_name'] ?? entry['limitName'] ?? featureIdRaw
+    const featureId =
+      typeof featureIdRaw === 'string' && featureIdRaw.trim() ? featureIdRaw.trim() : 'extra'
+    const labelPrefix =
+      typeof labelRaw === 'string' && labelRaw.trim() ? labelRaw.trim() : featureId
+    const nested = entry['rate_limit'] ?? entry['rateLimit']
+    if (isRecord(nested)) {
+      pushWindowsFromRateLimit(nested, slug(featureId), labelPrefix, nowMs, into)
+      continue
+    }
+    // Some payloads flatten the window onto the additional entry itself.
+    pushWindowsFromRateLimit(entry, slug(featureId), labelPrefix, nowMs, into)
+  }
+}
+
+/** Exported for unit tests. */
+export function parseCodexUsage(body: unknown, nowMs: number): ProviderPlanUsage {
+  if (!isRecord(body)) throw new Error('Codex usage payload was not an object')
+
+  const rate = pickRateLimitBlock(body)
+  if (!rate) throw new Error('Codex usage payload had no rate_limit block')
+
+  const windows: PlanWindow[] = []
+  pushWindowsFromRateLimit(rate, '', null, nowMs, windows)
+  parseAdditionalRateLimits(
+    body['additional_rate_limits'] ?? body['additionalRateLimits'],
+    nowMs,
+    windows,
+  )
+
+  if (windows.length === 0) {
+    throw new Error('Codex usage payload had no recognizable windows')
+  }
+
+  const planRaw = body['plan_type'] ?? body['planType'] ?? rate['plan_type'] ?? rate['planType']
+  const plan = typeof planRaw === 'string' && planRaw.trim() ? planRaw.trim() : null
+
+  return {
+    provider: 'codex',
+    plan,
+    windows,
+    checkedAt: new Date(nowMs).toISOString(),
+  }
+}
+
+export interface CodexPlanUsageAuth {
+  accessToken: string | null | undefined
+  accountId?: string | null | undefined
+  /** Override for tests / self-hosted gateways. */
+  usageUrl?: string
+}
+
+/**
+ * Fetch ChatGPT/Codex plan windows. Never throws — returns typed failure
+ * results so the host can keep rendering the local ledger.
+ */
+export async function fetchCodexPlanUsage(
+  auth: CodexPlanUsageAuth,
+  options: PlanUsageFetchOptions = {},
+): Promise<ProviderPlanResult> {
+  const token = auth.accessToken?.trim()
+  if (!token) {
+    return {
+      status: 'unavailable',
+      provider: 'codex',
+      reason: 'No Codex / ChatGPT access token (run `codex login`)',
+    }
+  }
+
+  const fetchImpl: FetchLike = options.fetch ?? globalThis.fetch.bind(globalThis)
+  const now = options.now ?? Date.now
+  const url = auth.usageUrl?.trim() || DEFAULT_CODEX_USAGE_URL
+
+  try {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+    }
+    const accountId = auth.accountId?.trim()
+    if (accountId) headers['ChatGPT-Account-Id'] = accountId
+
+    const response = await fetchImpl(url, {
+      method: 'GET',
+      headers,
+      ...(options.signal ? { signal: options.signal } : {}),
+    })
+    const body = await readJsonBody(response, 'Codex plan usage')
+    return { status: 'ok', provider: 'codex', usage: parseCodexUsage(body, now()) }
+  } catch (err) {
+    return { status: 'error', provider: 'codex', message: errorMessage(err) }
+  }
+}

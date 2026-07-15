@@ -2,7 +2,7 @@ import type { StreamChunk, UsageDelta, ContextBreakdown } from '@shared/types'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
-import type { CursorHookSummary } from '@shared/types/cursor-hooks.ts'
+import type { HookSummary } from '@shared/types/hooks.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import type {
   GitFileDiff,
@@ -334,6 +334,7 @@ export interface ApiClient {
   usage: {
     record: (input: import('@shared/usage/usage-event.ts').UsageRecordInput) => Promise<void>
     getSummary: () => Promise<import('@shared/usage/aggregate-usage.ts').UsageSummary>
+    getPlanUsage: () => Promise<import('@copse/plan-usage').PlanUsageSnapshot>
   }
   index: {
     query: (pattern: string) => Promise<string[]>
@@ -394,7 +395,7 @@ export interface ApiClient {
     list: () => Promise<CursorPluginSummary[]>
   }
   hooks: {
-    list: () => Promise<CursorHookSummary[]>
+    list: () => Promise<HookSummary[]>
   }
   instructions: {
     list: () => Promise<ProjectInstructionSummary[]>

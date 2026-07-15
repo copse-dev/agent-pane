@@ -479,9 +479,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <section class="settings-section" data-section="usage">
             <h3>Usage</h3>
             <p class="settings-section-desc">
-              Estimated cloud spend and local (free) model token usage across all workspaces.
-              Costs are approximate and use catalog pricing, including Anthropic prompt-cache rates
-              when cache tokens are reported.
+              Subscription plan windows (Claude / Codex) when those CLIs are signed
+              in, plus estimated cloud spend and local (free) model token usage
+              across all workspaces. Plan fetch is best-effort and never blocks
+              Copse. Costs are approximate and use catalog pricing, including
+              Anthropic prompt-cache rates when cache tokens are reported.
             </p>
             <div id="settings-usage-host" class="settings-mount"></div>
           </section>
@@ -701,9 +703,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <fieldset>
               <legend>Hooks</legend>
               <p class="settings-fieldset-desc">
-                Cursor hooks from <code>~/.cursor/hooks.json</code> (user) and, when the workspace
-                is trusted, <code>.cursor/hooks.json</code> (project). Permission hooks can block or
-                gate the agent's tool calls.
+                Cursor hooks from <code>~/.cursor/hooks.json</code> and Claude Code hooks from
+                <code>~/.claude/settings.json</code> (user). When the workspace is trusted, also
+                <code>.cursor/hooks.json</code> and <code>.claude/settings.json</code> (project).
+                Permission hooks can block or gate the agent's tool calls.
               </p>
               <div id="sources-hooks-list" class="sources-group">
                 <span class="sources-empty">Loading…</span>
@@ -1319,12 +1322,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       fillSourceList(
         '#sources-hooks-list',
-        hooks.map((h) =>
-          makeSourceRow(h.event, h.scope, h.command, {
+        hooks.map((h) => {
+          const title = h.family === 'claude' && h.matcher ? `${h.event} · ${h.matcher}` : h.event
+          const detail = `${h.family === 'claude' ? 'Claude Code' : 'Cursor'} · ${h.command}`
+          return makeSourceRow(title, h.scope, detail, {
             badgeClass: h.scope === 'project' ? 'sources-badge-project' : undefined,
-          }),
-        ),
-        'No Cursor hooks configured.',
+          })
+        }),
+        'No Cursor or Claude Code hooks configured.',
       )
 
       fillSourceList(
