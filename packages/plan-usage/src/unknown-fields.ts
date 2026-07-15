@@ -6,6 +6,9 @@ import { isRecord } from './internal-utils.ts'
  * Keep this in sync with `claude.ts`. Anything not listed here is reported by
  * the probe CLI so we notice new buckets (Fable landed this way) before they
  * silently disappear into ignored keys.
+ *
+ * Expanded from live Max probe (2026-07-15): dollar fields on legacy windows,
+ * extra codename buckets, limits[].group/cardinality/scope.surface, spend.
  */
 export const CLAUDE_USAGE_SCHEMA: SchemaNode = {
   type: 'object',
@@ -18,6 +21,11 @@ export const CLAUDE_USAGE_SCHEMA: SchemaNode = {
     seven_day_cowork: { type: 'ref', ref: 'legacyWindow' },
     seven_day_omelette: { type: 'ref', ref: 'legacyWindow' },
     iguana_necktie: { type: 'ref', ref: 'legacyWindow' },
+    tangelo: { type: 'ref', ref: 'legacyWindow' },
+    omelette_promotional: { type: 'ref', ref: 'legacyWindow' },
+    nimbus_quill: { type: 'ref', ref: 'legacyWindow' },
+    cinder_cove: { type: 'ref', ref: 'legacyWindow' },
+    amber_ladder: { type: 'ref', ref: 'legacyWindow' },
     extra_usage: {
       type: 'object',
       keys: {
@@ -25,8 +33,15 @@ export const CLAUDE_USAGE_SCHEMA: SchemaNode = {
         monthly_limit: { type: 'any' },
         used_credits: { type: 'any' },
         utilization: { type: 'any' },
+        currency: { type: 'any' },
+        decimal_places: { type: 'any' },
+        disabled_reason: { type: 'any' },
+        daily: { type: 'any' },
+        weekly: { type: 'any' },
       },
     },
+    spend: { type: 'any' },
+    member_dashboard_available: { type: 'any' },
     limits: {
       type: 'array',
       item: {
@@ -41,6 +56,8 @@ export const CLAUDE_USAGE_SCHEMA: SchemaNode = {
           resets_at: { type: 'any' },
           resetsAt: { type: 'any' },
           is_active: { type: 'any' },
+          group: { type: 'any' },
+          cardinality: { type: 'any' },
           scope: {
             type: 'object',
             keys: {
@@ -52,6 +69,7 @@ export const CLAUDE_USAGE_SCHEMA: SchemaNode = {
                   slug: { type: 'any' },
                 },
               },
+              surface: { type: 'any' },
             },
           },
         },
@@ -65,6 +83,9 @@ export const CLAUDE_USAGE_SCHEMA: SchemaNode = {
       keys: {
         utilization: { type: 'any' },
         resets_at: { type: 'any' },
+        limit_dollars: { type: 'any' },
+        used_dollars: { type: 'any' },
+        remaining_dollars: { type: 'any' },
       },
     },
   },

@@ -217,6 +217,46 @@ describe('fetchClaudePlanUsage', () => {
     assert.equal(result.usage.windows[0]?.id, 'five_hour')
   })
 
+  it('fills five_hour from dollar fields when limits[] only has weekly', async () => {
+    const result = await fetchClaudePlanUsage('sk-ant-oat01-x', {
+      fetch: jsonFetch({
+        five_hour: {
+          utilization: null,
+          resets_at: '2026-07-15T14:00:00Z',
+          limit_dollars: 20,
+          used_dollars: 5,
+          remaining_dollars: 15,
+        },
+        seven_day: {
+          utilization: 99,
+          resets_at: '2026-07-17T02:00:00.200Z',
+          limit_dollars: 100,
+          used_dollars: 99,
+          remaining_dollars: 1,
+        },
+        limits: [
+          {
+            kind: 'weekly_all',
+            percent: 99,
+            group: 'weekly',
+            cardinality: 'all',
+            resets_at: '2026-07-17T02:00:00.200Z',
+          },
+        ],
+      }),
+      now: () => Date.parse('2026-07-15T08:00:00Z'),
+    })
+    assert.equal(result.status, 'ok')
+    assert.equal(result.usage.plan, 'Weekly $99 / $100')
+    assert.deepEqual(
+      result.usage.windows.map((w) => ({ id: w.id, usedPercent: w.usedPercent })),
+      [
+        { id: 'five_hour', usedPercent: 25 },
+        { id: 'seven_day', usedPercent: 99 },
+      ],
+    )
+  })
+
   it('returns error on HTTP failure without throwing', async () => {
     const result = await fetchClaudePlanUsage('sk-ant-oat01-x', {
       fetch: jsonFetch({ error: { message: 'nope' } }, 401),

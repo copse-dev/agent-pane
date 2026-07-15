@@ -30,6 +30,60 @@ describe('findUnknownFields (Claude)', () => {
     assert.deepEqual(findings, [])
   })
 
+  it('accepts dollar fields, codename buckets, and limits metadata from Max probe', () => {
+    const findings = findUnknownFields(
+      {
+        five_hour: {
+          utilization: null,
+          resets_at: '2026-07-15T12:00:00Z',
+          limit_dollars: 20,
+          used_dollars: 4,
+          remaining_dollars: 16,
+        },
+        seven_day: {
+          utilization: 99,
+          resets_at: '2026-07-17T02:00:00.200Z',
+          limit_dollars: 100,
+          used_dollars: 99,
+          remaining_dollars: 1,
+        },
+        tangelo: null,
+        omelette_promotional: null,
+        nimbus_quill: null,
+        cinder_cove: null,
+        amber_ladder: null,
+        extra_usage: {
+          is_enabled: false,
+          currency: 'USD',
+          decimal_places: 2,
+          disabled_reason: null,
+          daily: null,
+          weekly: null,
+        },
+        spend: { something: true },
+        member_dashboard_available: true,
+        limits: [
+          {
+            kind: 'weekly_all',
+            percent: 99,
+            group: 'weekly',
+            cardinality: 'all',
+            resets_at: '2026-07-17T02:00:00.200Z',
+          },
+          {
+            kind: 'weekly_scoped',
+            percent: 10,
+            group: 'weekly',
+            cardinality: 'scoped',
+            scope: { model: { display_name: 'Fable' }, surface: 'claude_code' },
+          },
+        ],
+      },
+      CLAUDE_USAGE_SCHEMA,
+    )
+    assert.deepEqual(findings, [])
+  })
+
   it('flags unknown top-level keys and unknown limit kinds', () => {
     const findings = findUnknownFields(
       {

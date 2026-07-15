@@ -40,6 +40,19 @@ function normalizePercent(value: number): number {
   return clampPercent(value > 0 && value <= 1 ? value * 100 : value)
 }
 
+function percentFromDollars(raw: Record<string, unknown>): number | null {
+  const used = raw['used_dollars']
+  const limit = raw['limit_dollars']
+  if (typeof used !== 'number' || !Number.isFinite(used)) return null
+  if (typeof limit !== 'number' || !Number.isFinite(limit) || limit <= 0) return null
+  return normalizePercent((used / limit) * 100)
+}
+
+function formatDollarPair(used: number, limit: number): string {
+  const fmt = (n: number): string => (Number.isInteger(n) ? `$${String(n)}` : `$${n.toFixed(2)}`)
+  return `${fmt(used)} / ${fmt(limit)}`
+}
+
 function parseLegacyWindow(
   raw: unknown,
   id: string,
@@ -48,11 +61,15 @@ function parseLegacyWindow(
 ): PlanWindow | null {
   if (!isRecord(raw)) return null
   const utilization = raw['utilization']
-  if (typeof utilization !== 'number' || !Number.isFinite(utilization)) return null
+  const usedPercent =
+    typeof utilization === 'number' && Number.isFinite(utilization)
+      ? normalizePercent(utilization)
+      : percentFromDollars(raw)
+  if (usedPercent === null) return null
   return {
     id,
     label,
-    usedPercent: normalizePercent(utilization),
+    usedPercent,
     resetsAt: toIsoTimestamp(raw['resets_at'], nowMs),
   }
 }
@@ -108,19 +125,59 @@ function parseLegacyFlatKeys(body: Record<string, unknown>, nowMs: number): Plan
   return windows
 }
 
+/** Prefer weekly dollars for a short plan label when Anthropic reports them. */
+function planLabelFromDollars(body: Record<string, unknown>): string | null {
+  for (const key of ['seven_day', 'five_hour'] as const) {
+    const raw = body[key]
+    if (!isRecord(raw)) continue
+    const used = raw['used_dollars']
+    const limit = raw['limit_dollars']
+    if (typeof used !== 'number' || !Number.isFinite(used)) continue
+    if (typeof limit !== 'number' || !Number.isFinite(limit) || limit <= 0) continue
+    const prefix = key === 'seven_day' ? 'Weekly' : '5-hour'
+    return `${prefix} ${formatDollarPair(used, limit)}`
+  }
+  return null
+}
+
+/**
+ * Merge `limits[]` (preferred) with legacy flat keys so a dollar-only
+ * `five_hour` still appears when `limits[]` only carried weekly_all.
+ */
+function mergeClaudeWindows(fromLimits: PlanWindow[], fromLegacy: PlanWindow[]): PlanWindow[] {
+  if (fromLimits.length === 0) return fromLegacy
+  if (fromLegacy.length === 0) return fromLimits
+  const seen = new Set(fromLimits.map((w) => w.id))
+  const out = [...fromLimits]
+  for (const window of fromLegacy) {
+    if (seen.has(window.id)) continue
+    seen.add(window.id)
+    out.push(window)
+  }
+  // Stable order: five_hour, seven_day, then scoped / extras.
+  const rank = (id: string): number => {
+    if (id === 'five_hour') return 0
+    if (id === 'seven_day') return 1
+    return 2
+  }
+  out.sort((a, b) => rank(a.id) - rank(b.id) || a.id.localeCompare(b.id))
+  return out
+}
+
 /** Exported for unit tests. */
 export function parseClaudeUsage(body: unknown, nowMs: number): ProviderPlanUsage {
   if (!isRecord(body)) throw new Error('Claude usage payload was not an object')
 
   const fromLimits = parseLimitsArray(body['limits'], nowMs)
-  const windows = fromLimits.length > 0 ? fromLimits : parseLegacyFlatKeys(body, nowMs)
+  const fromLegacy = parseLegacyFlatKeys(body, nowMs)
+  const windows = mergeClaudeWindows(fromLimits, fromLegacy)
   if (windows.length === 0) {
     throw new Error('Claude usage payload had no recognizable windows')
   }
 
   return {
     provider: 'claude',
-    plan: null,
+    plan: planLabelFromDollars(body),
     windows,
     checkedAt: new Date(nowMs).toISOString(),
   }
