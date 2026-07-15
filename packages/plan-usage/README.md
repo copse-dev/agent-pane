@@ -34,6 +34,18 @@ app's local token ledger is unrelated and unaffected.
 - **Undocumented endpoints.** Gated in the host behind optional UI; degrade to
   “no plan credentials” when auth or response shape breaks.
 
+## Schema probe CLI
+
+```bash
+npm run probe:plan-usage                  # live Claude + Codex (needs local CLI login)
+npm run probe:plan-usage -- --provider claude --raw
+npm run probe:plan-usage -- --fixture ./sample.json --provider claude
+```
+
+The probe drives the real fetch/parse path, then diffs the raw JSON against
+`CLAUDE_USAGE_SCHEMA` / `CODEX_USAGE_SCHEMA`. Unknown keys or `limits[].kind`
+values exit `1` so new fields (like Fable) fail loudly instead of being ignored.
+
 ## Remaining step for a true standalone repo
 
 Mirror `@copse/llm`: publish as its own package once the surface stabilizes.

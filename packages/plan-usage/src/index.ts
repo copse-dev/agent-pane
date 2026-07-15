@@ -16,3 +16,10 @@ export {
   parseCodexAuthJson,
   type ParsedCodexAuth,
 } from './credentials.ts'
+export {
+  CLAUDE_USAGE_SCHEMA,
+  CODEX_USAGE_SCHEMA,
+  findUnknownFields,
+  type SchemaNode,
+  type UnknownFieldFinding,
+} from './unknown-fields.ts'
