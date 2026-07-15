@@ -33,7 +33,7 @@ describe('HookRegistry.emit — zero registered hooks changes nothing', () => {
     assert.deepEqual(result.outcomes, [])
   })
 
-  it('beforeFinalize still has no first-party subscribers, so the default emit is a no-op', async () => {
+  it('beforeFinalize with closed todos is a no-op (hook abstains)', async () => {
     const registry = createHookRegistry()
     assert.deepEqual(
       (await registry.emit('beforeFinalize', finalizePayload, emptyContext)).outcomes,
@@ -42,13 +42,16 @@ describe('HookRegistry.emit — zero registered hooks changes nothing', () => {
   })
 })
 
-describe('FIRST_PARTY_HOOKS — M0.2 turn-start list', () => {
-  it('registers the four named turn-start hooks in assembly order', () => {
+describe('FIRST_PARTY_HOOKS — M0 turn-start + finalize lists', () => {
+  it('registers turn-start and beforeFinalize hooks in their assembly orders', () => {
     assert.deepEqual(
       FIRST_PARTY_HOOKS.filter((h) => h.event === 'turnStart').map((h) => h.id),
       ['todo-steering', 'github-link-steering', 'commit-steering', 'todo-pin'],
     )
-    assert.equal(FIRST_PARTY_HOOKS.filter((h) => h.event === 'beforeFinalize').length, 0)
+    assert.deepEqual(
+      FIRST_PARTY_HOOKS.filter((h) => h.event === 'beforeFinalize').map((h) => h.id),
+      ['todo-finalize-closeout'],
+    )
   })
 })
 
