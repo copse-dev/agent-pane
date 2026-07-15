@@ -2,34 +2,20 @@ import type { ApiClient } from '../../../preload/api.d.ts'
 import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 import { el, clear } from '../../dom/helpers.ts'
 import { setInlineStatus } from '../../dom/inline-status.ts'
+import {
+  emptySshHostDraft,
+  parseSshHostDraft,
+  removeHost,
+  slugifyHostId,
+  upsertHost,
+  type SshHostDraft,
+} from './ssh-host-helpers.ts'
+
+export { slugifyHostId, upsertHost, removeHost } from './ssh-host-helpers.ts'
 
 export interface SshWorkspaceSection {
   root: HTMLFieldSetElement
   refresh: () => Promise<void>
-}
-
-const ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/
-
-export function slugifyHostId(value: string): string {
-  return (
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9-]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 64) || 'host'
-  )
-}
-
-export function upsertHost(list: SshWorkspaceHost[], host: SshWorkspaceHost): SshWorkspaceHost[] {
-  const idx = list.findIndex((h) => h.id === host.id)
-  if (idx === -1) return [...list, host]
-  const next = [...list]
-  next[idx] = host
-  return next
-}
-
-export function removeHost(list: SshWorkspaceHost[], id: string): SshWorkspaceHost[] {
-  return list.filter((h) => h.id !== id)
 }
 
 export function createSshWorkspaceSection(api: ApiClient): SshWorkspaceSection {
@@ -42,15 +28,7 @@ export function createSshWorkspaceSection(api: ApiClient): SshWorkspaceSection {
     el('option', { value: 'strict' }, 'Strict — reject unknown host keys'),
   )
 
-  const draft = {
-    id: '',
-    label: '',
-    host: '',
-    user: '',
-    port: '',
-    identityFile: '',
-    forwardAgent: false,
-  }
+  const draft: SshHostDraft = emptySshHostDraft()
 
   const idInput = el('input', { name: 'sshHostId', placeholder: 'my-server' })
   const labelInput = el('input', { name: 'sshHostLabel', placeholder: 'Production' })
@@ -89,37 +67,8 @@ export function createSshWorkspaceSection(api: ApiClient): SshWorkspaceSection {
     await renderHosts()
   }
 
-  function readDraft(): SshWorkspaceHost | null {
-    const id = draft.id.trim() || slugifyHostId(draft.label || draft.host)
-    if (!ID_RE.test(id)) {
-      setInlineStatus(status, 'error', 'Host id must be a lowercase slug (a-z, 0-9, -).')
-      return null
-    }
-    if (!draft.label.trim() || !draft.host.trim()) {
-      setInlineStatus(status, 'error', 'Label and host are required.')
-      return null
-    }
-    const host: SshWorkspaceHost = {
-      id,
-      label: draft.label.trim(),
-      host: draft.host.trim(),
-    }
-    if (draft.user.trim()) host.user = draft.user.trim()
-    const port = Number.parseInt(draft.port.trim(), 10)
-    if (draft.port.trim() && Number.isFinite(port)) host.port = port
-    if (draft.identityFile.trim()) host.identityFile = draft.identityFile.trim()
-    if (draft.forwardAgent) host.forwardAgent = true
-    return host
-  }
-
   function clearDraft(): void {
-    draft.id = ''
-    draft.label = ''
-    draft.host = ''
-    draft.user = ''
-    draft.port = ''
-    draft.identityFile = ''
-    draft.forwardAgent = false
+    Object.assign(draft, emptySshHostDraft())
     idInput.value = ''
     labelInput.value = ''
     hostInput.value = ''
@@ -204,12 +153,15 @@ export function createSshWorkspaceSection(api: ApiClient): SshWorkspaceSection {
 
   form.querySelector('.ssh-host-save')?.addEventListener('click', () => {
     void (async (): Promise<void> => {
-      const host = readDraft()
-      if (!host) return
+      const parsed = parseSshHostDraft(draft)
+      if (!parsed.ok) {
+        setInlineStatus(status, 'error', parsed.error)
+        return
+      }
       const raw = await api.settings.get('sshWorkspaceHosts')
       const existing = Array.isArray(raw) ? (raw as SshWorkspaceHost[]) : []
-      await persistHosts(upsertHost(existing, host))
-      setInlineStatus(status, 'ok', `Saved host “${host.label}”.`)
+      await persistHosts(upsertHost(existing, parsed.host))
+      setInlineStatus(status, 'ok', `Saved host “${parsed.host.label}”.`)
       clearDraft()
     })()
   })
@@ -263,9 +215,9 @@ export function createSshWorkspaceSection(api: ApiClient): SshWorkspaceSection {
     el(
       'p',
       { class: 'settings-fieldset-desc' },
-      'Run shell, git, search, and file tools on a remote Linux host over SSH. Add hosts here, enable the feature, then use ',
+      'Run shell, git, search, and file tools on a remote Linux host over SSH. Add hosts here or in the ',
       el('strong', {}, 'Open remote folder'),
-      ' from the projects panel.',
+      ' dialog, enable the feature, then open a remote project from the projects panel.',
     ),
     el('label', { class: 'checkbox-label' }, enabledInput, ' Enable SSH workspaces (experimental)'),
     el('label', {}, 'Host key policy ', strictSelect),
