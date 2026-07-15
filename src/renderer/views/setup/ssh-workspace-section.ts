@@ -29,6 +29,7 @@ export function createSshWorkspaceSection(api: ApiClient): SshWorkspaceSection {
   )
 
   const draft: SshHostDraft = emptySshHostDraft()
+  let idTouched = false
 
   const idInput = el('input', { name: 'sshHostId', placeholder: 'my-server' })
   const labelInput = el('input', { name: 'sshHostLabel', placeholder: 'Production' })
@@ -69,6 +70,7 @@ export function createSshWorkspaceSection(api: ApiClient): SshWorkspaceSection {
 
   function clearDraft(): void {
     Object.assign(draft, emptySshHostDraft())
+    idTouched = false
     idInput.value = ''
     labelInput.value = ''
     hostInput.value = ''
@@ -87,6 +89,7 @@ export function createSshWorkspaceSection(api: ApiClient): SshWorkspaceSection {
     draft.port = host.port !== undefined ? String(host.port) : ''
     draft.identityFile = host.identityFile ?? ''
     draft.forwardAgent = host.forwardAgent === true
+    idTouched = true
     idInput.value = host.id
     labelInput.value = host.label
     hostInput.value = host.host
@@ -128,11 +131,12 @@ export function createSshWorkspaceSection(api: ApiClient): SshWorkspaceSection {
   }
 
   idInput.addEventListener('input', () => {
+    idTouched = true
     draft.id = idInput.value
   })
   labelInput.addEventListener('input', () => {
     draft.label = labelInput.value
-    if (!idInput.value && !idInput.disabled) idInput.value = slugifyHostId(draft.label)
+    if (!idTouched && !idInput.disabled) idInput.value = slugifyHostId(draft.label)
     draft.id = idInput.value
   })
   hostInput.addEventListener('input', () => {

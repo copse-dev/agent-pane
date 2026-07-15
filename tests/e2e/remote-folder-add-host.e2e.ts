@@ -17,7 +17,7 @@ describe('Open remote folder — add host inline', () => {
     resetUserData()
   })
 
-  it('lets you add a host from the open-remote dialog without visiting Settings', async () => {
+  it('shows an inline add-host form when no SSH hosts are configured', async () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
 
     const remoteButton = await $('.projects-open-remote-btn')
@@ -29,30 +29,22 @@ describe('Open remote folder — add host inline', () => {
 
     const addForm = await dialog.$('.remote-folder-add-host-form')
     await expect(addForm).toBeDisplayed()
+    await expect(dialog.$('.remote-folder-add-host-btn')).not.toBeDisplayed()
+    await expect(dialog.$('.remote-folder-import-config')).toBeDisplayed()
+    await expect(dialog.$('.remote-folder-save-host')).toBeDisplayed()
     assert.match(await dialog.$('.remote-folder-status').getText(), /Add a host below/i)
 
     await dialog.$('input[name="remoteFolderHostLabel"]').setValue('Staging Box')
     await dialog.$('input[name="remoteFolderHostHost"]').setValue('staging.example')
     await dialog.$('input[name="remoteFolderHostUser"]').setValue('deploy')
 
-    const idValue = await dialog.$('input[name="remoteFolderHostId"]').getValue()
-    assert.equal(idValue, 'staging-box')
-
-    await saveElementScreenshot('#remote-folder-dialog', 'remote-folder-add-host.png')
-
-    await dialog.$('.remote-folder-save-host').click()
-
     await browser.waitUntil(
-      async () => {
-        const options = await dialog.$$('.remote-folder-host option')
-        if (options.length === 0) return false
-        const text = await options[0]?.getText()
-        return Boolean(text && text.includes('Staging Box'))
-      },
-      { timeout: 10_000, timeoutMsg: 'saved host did not appear in the host select' },
+      async () => (await dialog.$('input[name="remoteFolderHostId"]').getValue()) === 'staging-box',
+      { timeout: 5_000, timeoutMsg: 'host id did not auto-slugify from the label' },
     )
 
-    await expect(dialog.$('.remote-folder-add-host-form')).not.toBeDisplayed()
-    await expect(dialog.$('.remote-folder-browse')).toBeDisplayed()
+    await saveElementScreenshot('#remote-folder-dialog', 'remote-folder-add-host.png')
+    await dialog.$('.remote-folder-cancel').click()
+    await expect(dialog).not.toBeDisplayed()
   })
 })
