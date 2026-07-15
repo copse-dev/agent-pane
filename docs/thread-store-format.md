@@ -61,6 +61,7 @@ append is the commit point). See [`spine-schema.ts`](../src/shared/threads/spine
   "id": "<messageId>",
   "role": "user" | "assistant" | "error",
   "createdAt": 1712345678901,
+  "model": "claude-sonnet-4-6", // optional: primary-chat model for this assistant turn
   "content": { "ref": "messages/<id>.md", "sha256": "<hex of body bytes>" },
   "reasoning": { "ref": "messages/<id>.reasoning.md", "sha256": "…" }, // optional
   "images": [{ "ref": "blobs/<imageId>.png", "mimeType": "image/png" }], // optional
@@ -79,6 +80,10 @@ append is the commit point). See [`spine-schema.ts`](../src/shared/threads/spine
 }
 ```
 
+`model` on a spine line is the primary-chat picker id for that assistant
+message. The transcript surfaces it only when more than one distinct primary
+model appears in the thread; explore/CI subagent models stay on the nested
+`subagent.model` field (already shown on their cards).
 Reconstruction (`foldThread`) folds `meta.json` + spine, resolves each ref, and
 **verifies its sha256** — a hash mismatch surfaces as a load error on that
 thread (skipped), never silent corruption. `parseSpine` tolerates unknown `v`
@@ -97,7 +102,7 @@ thread directories.
 ## Export
 
 `Export` (`⇩`) writes a single self-contained `.jsonl`
-([`export-thread.ts`](../src/renderer/export-thread.ts), `exportVersion: 3`): a
+([`export-thread.ts`](../src/renderer/export-thread.ts), `exportVersion: 5`): a
 `thread` header line then one `message` line per message, using the **same field
 names** as the spine but **inlining** the values the spine stores as refs (prose,
 tool results, full nested subagents) so the export is one portable file.
