@@ -575,6 +575,72 @@ dialog.settings-overlay::backdrop {
   flex-direction: column;
   gap: var(--spacing-md);
 }
+.usage-plan-section,
+.usage-ledger-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.usage-plan-heading,
+.usage-ledger-heading {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.usage-plan-providers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+.usage-plan-provider {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.usage-plan-provider-title {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.usage-plan-name {
+  margin: 0;
+}
+.usage-plan-status-error {
+  color: var(--danger, #c44);
+}
+.usage-plan-window {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.usage-plan-window-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--font-size-sm);
+}
+.usage-plan-window-label {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.usage-plan-window-stats {
+  color: var(--text-muted);
+}
+.usage-plan-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.usage-plan-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+}
 .usage-period-tabs {
   display: flex;
   flex-wrap: wrap;
