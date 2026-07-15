@@ -55,6 +55,31 @@ stop_reason? }` union, with an `advisor_redacted_result` branch reserved for par
 
 While the flag is off, nothing is registered and no advisor call is ever made.
 
+## Annotation-driven pair assessment (landed after the scaffold)
+
+The model-annotation work (`docs/plans/model-roles-and-defaults.md`) feeds the advisor
+strategy in three ways:
+
+- **`advisor` is a first-class agent role** (`packages/llm/src/agent-roles.ts`), so the
+  role indirection layer covers it: assigning a model to the `advisor` role in the
+  `roleModels` setting overrides the legacy `advisorModel` setting
+  (`ROUTED_SETTING_TO_ROLE` in `role-models.ts`, read by `resolveAdvisorModelId()`).
+- **Cloud capability tiers** (`packages/llm/src/model-tiers.ts`) annotate every tracked
+  cloud model as `fast` / `balanced` / `frontier`. The model classifier's representative
+  tier models now derive from the same annotations instead of a private copy.
+- **`validateAdvisorPair()` grades pairings from the annotations**, not just the native
+  table: local executor + frontier cloud advisor is flagged as the recommended pairing;
+  cloud/cloud pairings compare tiers (a weaker-tier advisor warns); local advisors
+  compare catalog sizing (`paramsB`) when both models are catalogued and warn otherwise.
+  Each assessment carries a `level` (`good` / `info` / `warn`) that the settings UI
+  renders live under the advisor picker (`#advisorPairHint`), re-grading when either the
+  chat model or advisor model changes. Unannotated models (OpenRouter / ACP /
+  uncatalogued ids) stay on the permissive generic note — the annotations steer, they
+  never block.
+
+Visual eval: `tests/e2e/advisor-pair-hint.e2e.ts` (screenshots
+`advisor-pair-hint-good.png` / `advisor-pair-hint-warn.png`).
+
 ## Deliberately out of scope (follow-ups on #566)
 
 - **Native `advisor_20260301` server tool** for Claude-cloud executors: attach the tool
@@ -64,7 +89,9 @@ While the flag is off, nothing is registered and no advisor call is ever made.
 - **Dedicated advisor cost line.** Advisor tokens currently fold into the run's aux-model
   usage (via `addSubagentUsage`). Split them onto their own line, mirroring the native
   `usage.iterations[].advisor_message`, billed at the advisor model's rate.
-- **Model picker UI** for the advisor (today a text field) and pair-validation surfacing.
+- ~~**Model picker UI** for the advisor (today a text field) and pair-validation
+  surfacing.~~ Done: picker in #572; annotation-driven pair assessment surfaced live in
+  settings (see above).
 - **Prompting/timing** — the docs' suggested system-prompt blocks and turn-2 nudge for
   under-calling (esp. small/local) executors; a per-conversation advisor-call cap and
   advisor-side prompt caching.

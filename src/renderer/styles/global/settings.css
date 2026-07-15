@@ -175,6 +175,14 @@ dialog.settings-overlay::backdrop {
   color: var(--text-muted);
   line-height: 1.4;
 }
+/* Live advisor-pair assessment under the advisor model picker: colour tracks
+   how much lift the model annotations expect from the pairing. */
+.advisor-pair-hint[data-level='good'] {
+  color: var(--success);
+}
+.advisor-pair-hint[data-level='warn'] {
+  color: var(--warning, #d29922);
+}
 /* Inline preview of the external-link glyph shown in the links hint copy. */
 .external-link-hint-icon {
   display: inline-block;

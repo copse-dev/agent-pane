@@ -170,6 +170,7 @@ export function seedEmptyProject(
     subagentsEnabled?: boolean
     mockFollowUps?: boolean
     model?: string
+    advisorModel?: string
     localServerUrl?: string
     localDefaultModel?: string
     subagentModel?: string
@@ -194,6 +195,9 @@ export function seedEmptyProject(
   }
   if (options?.model) {
     settings.model = options.model
+  }
+  if (options?.advisorModel) {
+    settings.advisorModel = options.advisorModel
   }
   if (options?.localServerUrl) {
     settings.localServerUrl = options.localServerUrl

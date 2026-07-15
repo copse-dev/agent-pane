@@ -1,4 +1,7 @@
 import type { LLMMessage, UserContent } from '@shared/types'
+import { isLocalModel } from '@copse/llm/estimate-cost.ts'
+import { getLocalModelCapability } from '@copse/llm/local-model-catalog.ts'
+import { cloudModelTier, compareModelTiers, type ModelTier } from '@copse/llm/model-tiers.ts'
 
 /**
  * Experimental, opt-in "advisor strategy" feature (tracked in
@@ -133,14 +136,42 @@ export interface AdvisorPairAssessment {
   ok: boolean
   /** Whether this pairing would also work with the native `advisor_20260301` tool. */
   native: boolean
+  /**
+   * Severity for the settings UI: `good` = the pairing the strategy is designed
+   * for, `info` = works but nothing special, `warn` = the annotations say the
+   * advisor is unlikely to add lift.
+   */
+  level: 'good' | 'info' | 'warn'
   /** Human-readable note for the settings UI. */
   reason: string
 }
 
 /**
+ * What the model annotations know about a model's capability: a tier for the
+ * tracked cloud models (`model-tiers.ts`), sizing for catalogued local models
+ * (`local-model-catalog.ts`), or nothing (OpenRouter / ACP / uncatalogued ids).
+ */
+type CapabilityAnnotation =
+  | { kind: 'cloud'; tier: ModelTier }
+  | { kind: 'local'; paramsB: number | null }
+  | { kind: 'unknown' }
+
+function annotationFor(model: string): CapabilityAnnotation {
+  if (isLocalModel(model)) {
+    const bareId = model.startsWith('lmstudio:') ? model.slice('lmstudio:'.length) : model
+    return { kind: 'local', paramsB: getLocalModelCapability(bareId)?.paramsB ?? null }
+  }
+  const tier = cloudModelTier(model)
+  return tier ? { kind: 'cloud', tier } : { kind: 'unknown' }
+}
+
+/**
  * Assess an (executor, advisor) pairing for the client-side strategy. Permissive
- * by design — the only pairing we discourage is advising with the *same* model,
- * which buys nothing. Reports whether the pairing is also native-compatible so
+ * by design — the only pairing we refuse to bless is advising with the *same*
+ * model, which buys nothing. Everything else is allowed, but the model
+ * annotations (cloud capability tiers, local catalog sizing) grade how much
+ * lift to expect so the settings UI can steer the user toward a genuinely
+ * stronger advisor. Also reports whether the pairing is native-compatible so
  * the UI can hint at a future zero-change switch to the server tool.
  */
 export function validateAdvisorPair(
@@ -152,6 +183,7 @@ export function validateAdvisorPair(
     return {
       ok: false,
       native,
+      level: 'warn',
       reason: 'Advisor and executor are the same model — pick a stronger advisor to get any lift.',
     }
   }
@@ -159,12 +191,99 @@ export function validateAdvisorPair(
     return {
       ok: true,
       native,
+      level: 'good',
       reason: 'Native-compatible pairing: also valid for Claude’s server-side advisor tool.',
     }
   }
+  const executor = annotationFor(executorModel)
+  const advisor = annotationFor(advisorModel)
+
+  if (advisor.kind === 'cloud' && executor.kind === 'local') {
+    // The pairing the strategy exists for: work stays on device, frontier
+    // intelligence is pulled in at the moments that matter.
+    if (advisor.tier === 'frontier') {
+      return {
+        ok: true,
+        native,
+        level: 'good',
+        reason:
+          'Recommended pairing: an on-device executor consulting a frontier cloud advisor — the setup this strategy is designed for.',
+      }
+    }
+    return {
+      ok: true,
+      native,
+      level: advisor.tier === 'fast' ? 'warn' : 'info',
+      reason: `On-device executor with a ${advisor.tier}-tier cloud advisor. A frontier advisor gives the most lift.`,
+    }
+  }
+
+  if (advisor.kind === 'cloud' && executor.kind === 'cloud') {
+    const diff = compareModelTiers(advisor.tier, executor.tier)
+    if (diff > 0) {
+      return {
+        ok: true,
+        native,
+        level: 'good',
+        reason: `Advisor is annotated a stronger tier than the executor (${advisor.tier} vs ${executor.tier}).`,
+      }
+    }
+    if (diff === 0) {
+      return {
+        ok: true,
+        native,
+        level: 'info',
+        reason: `Advisor and executor are annotated at the same capability tier (${advisor.tier}) — expect a second opinion rather than stronger guidance.`,
+      }
+    }
+    return {
+      ok: true,
+      native,
+      level: 'warn',
+      reason: `Advisor is annotated a weaker tier than the executor (${advisor.tier} vs ${executor.tier}) — its advice is unlikely to add lift.`,
+    }
+  }
+
+  if (advisor.kind === 'cloud') {
+    // Executor has no annotation (OpenRouter / ACP / uncatalogued id).
+    return {
+      ok: true,
+      native,
+      level: 'info',
+      reason: `Cloud advisor annotated ${advisor.tier}-tier; the executor isn’t in the capability annotations, so no strength comparison is possible.`,
+    }
+  }
+
+  if (advisor.kind === 'local') {
+    if (executor.kind === 'local' && advisor.paramsB !== null && executor.paramsB !== null) {
+      if (advisor.paramsB > executor.paramsB) {
+        return {
+          ok: true,
+          native,
+          level: 'info',
+          reason: `Advisor is a larger local model (~${String(advisor.paramsB)}B vs ~${String(executor.paramsB)}B) — modest lift; a frontier cloud advisor gives more.`,
+        }
+      }
+      return {
+        ok: true,
+        native,
+        level: 'warn',
+        reason: `Advisor (~${String(advisor.paramsB)}B) is not larger than the executor (~${String(executor.paramsB)}B) — pick a bigger model to get any lift.`,
+      }
+    }
+    return {
+      ok: true,
+      native,
+      level: 'warn',
+      reason:
+        'A local advisor is unlikely to out-think the executor — this strategy expects a larger (ideally frontier cloud) advisor.',
+    }
+  }
+
   return {
     ok: true,
     native,
+    level: 'info',
     reason:
       'Client-side pairing. Runs as a normal advisor call; not a valid pair for Claude’s native advisor tool.',
   }
