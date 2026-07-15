@@ -1,7 +1,7 @@
 import type { LLMMessage } from '@shared/types'
 import { buildProvider } from './providers/provider-selection.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
-import { getSettingTrimmed } from './storage/settings.ts'
+import { routedModelSetting } from './providers/role-models.ts'
 import { addSubagentUsage } from './subagent-usage.ts'
 import {
   ADVISOR_MODEL_SETTING,
@@ -11,9 +11,12 @@ import {
   renderAdvisorResult,
 } from './advisor-strategy.ts'
 
-/** Resolve the configured advisor model id (empty setting -> frontier default). */
+/**
+ * Resolve the configured advisor model id: a model assigned to the `advisor`
+ * role wins, then the legacy `advisorModel` setting, then the frontier default.
+ */
 export function resolveAdvisorModelId(): string {
-  return getSettingTrimmed(ADVISOR_MODEL_SETTING) || DEFAULT_ADVISOR_MODEL
+  return routedModelSetting(ADVISOR_MODEL_SETTING) || DEFAULT_ADVISOR_MODEL
 }
 
 /**

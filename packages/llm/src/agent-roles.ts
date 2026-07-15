@@ -24,6 +24,7 @@ export type AgentRoleId =
   | 'test-gen'
   | 'refactor'
   | 'planner'
+  | 'advisor'
   | 'docs'
   | 'research'
   | 'tool-use'
@@ -99,6 +100,12 @@ export const AGENT_ROLES: readonly AgentRole[] = [
     wants: ['gpqa', 'mmlu-pro', 'arena'],
   },
   {
+    id: 'advisor',
+    label: 'Advisor',
+    description: 'Strategic mid-task guidance to a cheaper executor (advisor strategy)',
+    wants: ['gpqa', 'mmlu-pro', 'swe-bench'],
+  },
+  {
     id: 'docs',
     label: 'Documentation',
     description: 'READMEs, comments, and API docs',
@@ -156,4 +163,6 @@ export const LEGACY_ROLE_ALIASES: Readonly<Record<string, AgentRoleId>> = {
   safetyModel: 'safety',
   // Titles and other lightweight prompts.
   smallTasksModel: 'small-tasks',
+  // Larger model consulted mid-task by the client-side advisor strategy.
+  advisorModel: 'advisor',
 }

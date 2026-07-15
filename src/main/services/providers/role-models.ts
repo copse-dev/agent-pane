@@ -25,6 +25,7 @@ export const ROUTED_SETTING_TO_ROLE: Readonly<Record<string, AgentRoleId>> = {
   localDefaultModel: 'coder',
   smallTasksModel: 'small-tasks',
   subagentModel: 'research',
+  advisorModel: 'advisor',
 }
 
 export type RoleModels = Record<string, string>

@@ -52,12 +52,19 @@ describe('role model resolution', () => {
     assert.equal(resolveRoutedModel('unknownKey', '', { roleModels, legacy }), 'lmstudio:security')
   })
 
-  it('routes exactly the three renderer-writable roles', () => {
+  it('routes exactly the renderer-writable roles', () => {
     assert.deepEqual(ROUTED_SETTING_TO_ROLE, {
       localDefaultModel: 'coder',
       smallTasksModel: 'small-tasks',
       subagentModel: 'research',
+      advisorModel: 'advisor',
     })
+  })
+
+  it('routes the advisor role for the advisor strategy', () => {
+    const { legacy } = legacyReader()
+    const roleModels: RoleModels = { advisor: 'claude-opus-4-8' }
+    assert.equal(resolveRoutedModel('advisorModel', '', { roleModels, legacy }), 'claude-opus-4-8')
   })
 
   it('routes the research role for the exploration subagent', () => {
