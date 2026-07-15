@@ -242,7 +242,7 @@ the phase listed. Names are final — changing one is a decisions-log edit, not 
 | Event                                | Kind                   | Fires at (site)                                                          | Phase |
 | ------------------------------------ | ---------------------- | ------------------------------------------------------------------------ | ----- |
 | `turnStart`                          | blocking, assembly     | `runAgent` after system prompt build, before loop (steering, pins)       | M0    |
-| `beforeFinalize`                     | blocking, assembly     | `runAgentLoop` finalize checks (closeout / stuck / open-todos nudges)    | M0    |
+| `beforeFinalize`                     | blocking, assembly     | `runAgentLoop` finalize checks (open-todos closeout nudges only)         | M0    |
 | `beforeSubmitPrompt`                 | blocking, decision     | Compose path, before `agent:run`                                         | B1    |
 | `toolGate`                           | blocking, decision     | `ensureToolPermitted` (maps beforeShell/MCP/ReadFile + `PreToolUse`)     | A2    |
 | `afterFileEdit`                      | blocking or async      | Diff-queue / write tools                                                 | B2    |
@@ -357,11 +357,11 @@ async dispatch, no queue/budget/epoch, no spine changes, no UI changes — those
 later and plug into the same seam. Proves the architecture is extensible before anything
 external depends on it.
 
-| #    | Issue                             | Scope                                                                                                                                                                                                                                                                                                                   |
-| ---- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| M0.1 | Registry core (function executor) | In `packages/agent` (Electron-free): typed canonical events (`turnStart`, `beforeFinalize` only), function executor, fail-hard semantics, static registration list, separate blocking/async outcome types (async unused for now but the split exists from day one). Emitting with zero registered hooks changes nothing |
-| M0.2 | Extract turn-start policy         | Todo steering, prior-todos pin, GitHub-link steering, commit steering → named `turnStart` hooks; the `messages[0]` string surgery leaves `runAgent`. Behavior byte-identical, pinned by existing tests                                                                                                                  |
-| M0.3 | Extract finalize policy           | Open-todos closeout nudge selection (`OPEN_TODOS_FINALIZE_*`, `MAX_TODO_CLOSEOUT_ATTEMPTS` gating) and stuck-finalize nudge → `beforeFinalize` hooks; the inline blocks leave `run-agent-loop.ts`. Behavior byte-identical                                                                                              |
+| #    | Issue                             | Scope                                                                                                                                                                                                                                                                                                                                                                               |
+| ---- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M0.1 | Registry core (function executor) | In `packages/agent` (Electron-free): typed canonical events (`turnStart`, `beforeFinalize` only), function executor, fail-hard semantics, static registration list, separate blocking/async outcome types (async unused for now but the split exists from day one). Emitting with zero registered hooks changes nothing                                                             |
+| M0.2 | Extract turn-start policy         | Todo steering, prior-todos pin, GitHub-link steering, commit steering → named `turnStart` hooks; the `messages[0]` string surgery leaves `runAgent`. Behavior byte-identical, pinned by existing tests                                                                                                                                                                              |
+| M0.3 | Extract finalize policy           | Open-todos closeout nudge selection (`OPEN_TODOS_FINALIZE_*`, `MAX_TODO_CLOSEOUT_ATTEMPTS` gating) → `beforeFinalize` hooks; the inline blocks leave `run-agent-loop.ts`. Behavior byte-identical. `STUCK_FINALIZE_NUDGE` is **not** included — despite its name it fires in the mid-loop `shouldForceTextAnswer` context-pressure path, so it is an in-loop nudge and stays for E1 |
 
 M0 acceptance: inline mechanisms deleted (dead-code gate); `npm run check` green;
 `todo_update` chunks and plan-panel behavior untouched (pure data plumbing — the
@@ -369,9 +369,10 @@ AGENTS.md "demonstrably invisible" exception applies, no visual eval needed);
 extensibility proven by registering one additional no-op hook in a test without touching
 loop code.
 
-What M0 deliberately does **not** move: the in-loop truncation/reasoning-runaway/loop
-nudges (E1 — they need a step-boundary event that M0 doesn't add) and todo compaction
-pinning. Scope discipline matters more than completeness here.
+What M0 deliberately does **not** move: the in-loop truncation, reasoning-runaway, loop,
+and stuck-finalize nudges (E1 — all four fire at step boundaries under pressure and need
+a step-boundary event that M0 doesn't add; `STUCK_FINALIZE_NUDGE` is in-loop despite its
+name) and todo compaction pinning. Scope discipline matters more than completeness here.
 
 ### Phase 0 — in flight
 
